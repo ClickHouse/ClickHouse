@@ -1,0 +1,46 @@
+<test>
+    <!-- Ten tables sorted by the same key, joined by it: one merge join of all inputs. -->
+    <create_query>CREATE TABLE multiway_t1 (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE multiway_t2 (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE multiway_t3 (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE multiway_t4 (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE multiway_t5 (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE multiway_t6 (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE multiway_t7 (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE multiway_t8 (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE multiway_t9 (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE multiway_t10 (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id</create_query>
+    <fill_query>INSERT INTO multiway_t1 SELECT number, number % 1000 FROM numbers_mt(2000000)</fill_query>
+    <fill_query>INSERT INTO multiway_t2 SELECT number, number % 1000 FROM numbers_mt(2000000)</fill_query>
+    <fill_query>INSERT INTO multiway_t3 SELECT number, number % 1000 FROM numbers_mt(2000000)</fill_query>
+    <fill_query>INSERT INTO multiway_t4 SELECT number, number % 1000 FROM numbers_mt(2000000)</fill_query>
+    <fill_query>INSERT INTO multiway_t5 SELECT number, number % 1000 FROM numbers_mt(2000000)</fill_query>
+    <fill_query>INSERT INTO multiway_t6 SELECT number, number % 1000 FROM numbers_mt(2000000)</fill_query>
+    <fill_query>INSERT INTO multiway_t7 SELECT number, number % 1000 FROM numbers_mt(2000000)</fill_query>
+    <fill_query>INSERT INTO multiway_t8 SELECT number, number % 1000 FROM numbers_mt(2000000)</fill_query>
+    <fill_query>INSERT INTO multiway_t9 SELECT number, number % 1000 FROM numbers_mt(2000000)</fill_query>
+    <fill_query>INSERT INTO multiway_t10 SELECT number, number % 1000 FROM numbers_mt(2000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE multiway_t1 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE multiway_t2 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE multiway_t3 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE multiway_t4 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE multiway_t5 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE multiway_t6 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE multiway_t7 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE multiway_t8 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE multiway_t9 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE multiway_t10 FINAL</fill_query>
+
+    <query>SELECT sum(t1.v + t2.v + t3.v + t4.v + t5.v + t6.v + t7.v + t8.v + t9.v + t10.v) FROM multiway_t1 AS t1 JOIN multiway_t2 AS t2 USING (id) JOIN multiway_t3 AS t3 USING (id) JOIN multiway_t4 AS t4 USING (id) JOIN multiway_t5 AS t5 USING (id) JOIN multiway_t6 AS t6 USING (id) JOIN multiway_t7 AS t7 USING (id) JOIN multiway_t8 AS t8 USING (id) JOIN multiway_t9 AS t9 USING (id) JOIN multiway_t10 AS t10 USING (id) SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_multiway_merge = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS multiway_t1</drop_query>
+    <drop_query>DROP TABLE IF EXISTS multiway_t2</drop_query>
+    <drop_query>DROP TABLE IF EXISTS multiway_t3</drop_query>
+    <drop_query>DROP TABLE IF EXISTS multiway_t4</drop_query>
+    <drop_query>DROP TABLE IF EXISTS multiway_t5</drop_query>
+    <drop_query>DROP TABLE IF EXISTS multiway_t6</drop_query>
+    <drop_query>DROP TABLE IF EXISTS multiway_t7</drop_query>
+    <drop_query>DROP TABLE IF EXISTS multiway_t8</drop_query>
+    <drop_query>DROP TABLE IF EXISTS multiway_t9</drop_query>
+    <drop_query>DROP TABLE IF EXISTS multiway_t10</drop_query>
+</test>

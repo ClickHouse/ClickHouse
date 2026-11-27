@@ -73,6 +73,8 @@ Además de la funcionalidad descrita al inicio de este documento, ClickHouse ofr
 
 Para cargas de trabajo de aplicaciones, considere [ClickHouse Managed Postgres](/es/products/managed-postgres/overview#transactions-and-analytics).
 
+Las sentencias que controlan las transacciones se describen en la página de referencia de [`BEGIN TRANSACTION`](/es/reference/statements/transactions).
+
 ### Requisitos {#requirements}
 
 * Implemente ClickHouse Keeper o ZooKeeper para hacer seguimiento de las transacciones
@@ -88,7 +90,7 @@ Para cargas de trabajo de aplicaciones, considere [ClickHouse Managed Postgres](
 ### Notas {#notes-1}
 
 * Esta es una funcionalidad experimental, por lo que es de esperar que haya cambios.
-* Si se produce una excepción durante una transacción, no puede hacer commit de la transacción. Esto incluye todas las excepciones, incluidas las excepciones `UNKNOWN_FUNCTION` causadas por errores tipográficos.
+* Si se produce una excepción durante una transacción, no puede hacer commit de la transacción. Esto incluye todas las excepciones, incluidas las excepciones `UNKNOWN_FUNCTION` causadas por errores tipográficos, salvo en el caso de una consulta que no se pueda analizar o cuyos parámetros de consulta falten o no sean válidos: dicha consulta no se ejecuta y la transacción sigue en ejecución.
 * No se admiten transacciones anidadas; en su lugar, finalice la transacción actual e inicie una nueva
 
 ### Configuración {#configuration}
@@ -209,6 +211,16 @@ Ok.
 ```
 
 #### Iniciar una transacción e insertar una fila {#begin-a-transaction-and-insert-a-row}
+
+Las inserciones asíncronas no son compatibles dentro de una transacción y [`async_insert`](/es/reference/settings/session-settings/async-insert#async_insert) está habilitado de forma predeterminada, así que primero desactívalo en la sesión:
+
+```sql
+SET async_insert = 0
+```
+
+```response
+Ok.
+```
 
 ```sql
 BEGIN TRANSACTION

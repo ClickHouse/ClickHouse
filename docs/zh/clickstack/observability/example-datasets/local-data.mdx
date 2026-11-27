@@ -1,0 +1,359 @@
+---
+slug: /clickstack/observability/example-datasets/local-data
+title: '本地日志与指标'
+toc_max_heading_level: 2
+description: '使用 ClickHouse Observability 采集本地日志和系统指标'
+doc_type: 'guide'
+keywords: ['clickstack', '示例数据', '样本数据集', '日志', '可观测性']
+sidebarTitle: '本地日志与指标'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+收集本地日志和系统指标，并将其发送到 **ClickHouse Observability** 进行可视化和分析。
+
+本示例适用于 Linux 上的 Docker 或 macOS 上的 Docker Desktop。开始之前，请先安装并启动 Docker，然后参考[全托管入门指南](/zh/clickstack/observability/getting-started)或[自管理入门指南](/zh/clickstack/self-configured/getting-started/managed)创建一个 ClickHouse Observability 服务。
+
+## 采集本地数据 {#collect-local-data}
+
+请在下方选择您的部署方式，配置并启动采集器。完成设置后，两种部署方式的数据探索步骤完全相同。
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 版产品" />
+
+    在您的 ClickHouse Observability 服务中，打开 **团队设置 → 数据**，复制 OTLP HTTP 端点和 API key。
+
+    <Steps>
+      <Step title="创建自定义 OpenTelemetry 配置" id="create-otel-configuration">
+        创建 `custom-local-config.yaml` 文件，内容如下：
+
+        ```yaml
+        receivers:
+          file_log:
+            include:
+              - /host/var/log/**/*.log
+              - /host/var/log/syslog
+              - /host/var/log/messages
+            start_at: end
+            resource:
+              service.name: system-logs
+
+          host_metrics:
+            root_path: ${env:HOST_METRICS_ROOT_PATH}
+            collection_interval: 30s
+            scrapers:
+              cpu:
+                metrics:
+                  system.cpu.utilization:
+                    enabled: true
+              memory:
+                metrics:
+                  system.memory.utilization:
+                    enabled: true
+              filesystem:
+              paging:
+              disk:
+              load:
+              network:
+
+        processors:
+          memory_limiter:
+            check_interval: 1s
+            limit_mib: 256
+            spike_limit_mib: 64
+          resource:
+            attributes:
+              - key: host.name
+                value: ${env:HOST_NAME}
+                action: upsert
+          batch:
+            timeout: 5s
+            send_batch_size: 1024
+
+        exporters:
+          otlp_http:
+            endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+            headers:
+              authorization: "Bearer ${env:OTEL_EXPORTER_OTLP_API_KEY}"
+
+        service:
+          pipelines:
+            logs:
+              receivers: [file_log]
+              processors: [memory_limiter, resource, batch]
+              exporters: [otlp_http]
+            metrics:
+              receivers: [host_metrics]
+              processors: [memory_limiter, resource, batch]
+              exporters: [otlp_http]
+        ```
+
+        `file_log` 接收器会持续读取本地日志文件中新写入的内容，`host_metrics` 接收器则负责采集系统指标。两条流水线均通过 HTTPS 将数据发送到您的托管遥测数据端点。
+
+        <Info>
+          此示例仅读取新的日志条目 (`start_at: end`) ，不会从日志正文中解析时间戳。如需保留原始事件时间，请为 file 接收器添加时间戳解析器。如需同时摄取新发现文件中的已有条目，请使用 `start_at: beginning`。
+        </Info>
+
+        有关 OpenTelemetry (OTel) 配置结构的更多详细信息，建议参阅[官方指南](https://opentelemetry.io/docs/collector/configuration/)。
+      </Step>
+
+      <Step title="启动 OpenTelemetry 收集器" id="start-the-otel-collector">
+        设置从 **团队设置 → 数据** 中复制的端点和 API key：
+
+        ```shell
+        export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+        printf "API key: "
+        read -r -s OTEL_EXPORTER_OTLP_API_KEY
+        printf "\n"
+        export OTEL_EXPORTER_OTLP_API_KEY
+        ```
+
+        该端点是 OTLP HTTP 的基础 URL，不包含 `/v1/logs` 或 `/v1/metrics`，采集器会自动追加相应的路径。
+
+        <Tabs>
+          <Tab title="Linux">
+            以只读方式挂载主机文件系统，使采集器能够读取主机指标和日志文件：
+
+            ```shell
+            docker run -d --name local-otel-collector \
+              --user 0:0 \
+              -e OTEL_EXPORTER_OTLP_ENDPOINT \
+              -e OTEL_EXPORTER_OTLP_API_KEY \
+              -e HOST_NAME="$(hostname)" \
+              -e HOST_METRICS_ROOT_PATH=/hostfs \
+              -v "$(pwd)/custom-local-config.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+              -v /:/hostfs:ro \
+              -v /var/log:/host/var/log:ro \
+              otel/opentelemetry-collector-contrib:0.161.0
+            ```
+          </Tab>
+
+          <Tab title="macOS (Docker Desktop)">
+            以只读方式挂载 macOS 日志目录。此时采集的指标反映的是 Docker Desktop 的 Linux 虚拟机，并使用相应的主机标签：
+
+            ```shell
+            docker run -d --name local-otel-collector \
+              --user 0:0 \
+              -e OTEL_EXPORTER_OTLP_ENDPOINT \
+              -e OTEL_EXPORTER_OTLP_API_KEY \
+              -e HOST_NAME="$(hostname)-docker-desktop" \
+              -e HOST_METRICS_ROOT_PATH=/ \
+              -v "$(pwd)/custom-local-config.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+              -v /private/var/log:/host/var/log:ro \
+              otel/opentelemetry-collector-contrib:0.161.0
+            ```
+
+            需确保 Docker Desktop 具有共享 `/private/var/log` 的权限。
+          </Tab>
+        </Tabs>
+
+        确认采集器已正常启动，且没有出现配置错误或导出错误：
+
+        ```shell
+        docker logs local-otel-collector
+        ```
+
+        指标每 30 秒采集一次。每当有新的日志条目追加到匹配的文件中，相应的日志就会显示出来。在后续步骤中探索数据时，请保持采集器持续运行。
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="自管理" id="self-managed">
+    请按照[自管理入门指南](/zh/clickstack/self-configured/getting-started/managed#next-steps)中的说明，使用 ClickHouse Cloud 服务的连接凭证。
+
+    <Steps>
+      <Step title="创建自定义 OpenTelemetry 配置" id="create-otel-configuration-self-configured">
+        创建 `custom-local-config.yaml` 文件，内容如下：
+
+        ```yaml
+        receivers:
+          file_log:
+            include:
+              - /host/var/log/**/*.log        # Linux logs from host
+              - /host/var/log/syslog
+              - /host/var/log/messages
+            start_at: beginning
+            resource:
+              service.name: "system-logs"
+
+          host_metrics:
+            root_path: ${env:HOST_METRICS_ROOT_PATH}
+            collection_interval: 1s
+            scrapers:
+              cpu:
+                metrics:
+                  system.cpu.time:
+                    enabled: true
+                  system.cpu.utilization:
+                    enabled: true
+              memory:
+                metrics:
+                  system.memory.usage:
+                    enabled: true
+                  system.memory.utilization:
+                    enabled: true
+              filesystem:
+                metrics:
+                  system.filesystem.usage:
+                    enabled: true
+                  system.filesystem.utilization:
+                    enabled: true
+              paging:
+                metrics:
+                  system.paging.usage:
+                    enabled: true
+                  system.paging.utilization:
+                    enabled: true
+                  system.paging.faults:
+                    enabled: true
+              disk:
+              load:
+              network:
+              processes:
+
+        service:
+          pipelines:
+            logs/local:
+              receivers: [file_log]
+              processors:
+                - memory_limiter
+                - batch
+              exporters:
+                - clickhouse
+            metrics/hostmetrics:
+              receivers: [host_metrics]
+              processors:
+                - memory_limiter
+                - batch
+              exporters:
+                - clickhouse
+        ```
+
+        此配置用于采集 macOS 和 Linux 系统的系统日志和指标，并将结果发送到您的服务。该配置在 ClickStack 采集器的基础上添加了新的接收器和流水线，您只需引用基础 ClickStack 采集器中已配置的 `clickhouse` 导出器和处理器 (`memory_limiter`、`batch`) 即可。
+
+        <Info>
+          **摄取时间戳**
+
+          此配置会在摄取时调整时间戳，为每个事件分配更新后的时间值。理想情况下，您应使用 OTel 处理器或操作员对日志文件中的时间戳进行[预处理或解析](/zh/clickstack/self-configured/ingesting-data/collector#processing-filtering-transforming-enriching-self-configured)，以确保保留准确的事件时间。
+
+          在此示例设置中，如果接收器或文件处理器配置为从文件开头读取，则所有现有日志条目都会被分配相同的调整后时间戳，即处理时间，而非原始事件时间。之后追加到文件中的新事件，其时间戳将接近实际生成时间。
+
+          为避免这种情况，您可以在接收器配置中将起始位置设置为 `end`。这样可以确保仅摄取新条目，且其时间戳接近实际到达时间。
+        </Info>
+
+        如需进一步了解 OpenTelemetry (OTel) 的配置结构，建议参阅[官方指南](https://opentelemetry.io/docs/collector/configuration/)。
+      </Step>
+
+      <Step title="启动 OpenTelemetry 收集器" id="start-the-otel-collector-self-configured">
+        使用已导出的 `CLICKHOUSE_ENDPOINT`、`CLICKHOUSE_USER` 和 `CLICKHOUSE_PASSWORD` 值，运行一个独立模式的采集器：
+
+        <Tabs>
+          <Tab title="Linux">
+            以只读方式挂载主机文件系统，使采集器能够读取主机指标和日志文件：
+
+            ```shell
+            docker run -d --name local-otel-collector \
+              --user 0:0 \
+              -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+              -e CLICKHOUSE_ENDPOINT \
+              -e CLICKHOUSE_USER \
+              -e CLICKHOUSE_PASSWORD \
+              -e HOST_METRICS_ROOT_PATH=/hostfs \
+              -v "$(pwd)/custom-local-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+              -v /:/hostfs:ro \
+              -v /var/log:/host/var/log:ro \
+              clickhouse/clickstack-otel-collector:latest
+            ```
+          </Tab>
+
+          <Tab title="macOS (Docker Desktop)">
+            以只读方式挂载 macOS 日志目录。注意，采集到的指标反映的是 Docker Desktop 的 Linux 虚拟机，而非 macOS 主机：
+
+            ```shell
+            docker run -d --name local-otel-collector \
+              --user 0:0 \
+              -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+              -e CLICKHOUSE_ENDPOINT \
+              -e CLICKHOUSE_USER \
+              -e CLICKHOUSE_PASSWORD \
+              -e HOST_METRICS_ROOT_PATH=/ \
+              -v "$(pwd)/custom-local-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+              -v /private/var/log:/host/var/log:ro \
+              clickhouse/clickstack-otel-collector:latest
+            ```
+
+            Docker Desktop 必须具有共享 `/private/var/log` 的权限。
+          </Tab>
+        </Tabs>
+
+        确认采集器已正常启动，且未出现配置错误或导出错误：
+
+        ```shell
+        docker logs local-otel-collector
+        ```
+
+        采集器会立即开始采集本地系统日志和指标。
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## 探索数据 {#explore-your-data}
+
+探索数据期间，请保持采集器运行。截图展示的是两种部署模式共用的 Search 和 Chart Explorer 界面。
+
+<Steps>
+  <Step title="探索系统日志" id="explore-system-logs">
+    在 ClickHouse Cloud 控制台中，选择您的服务并打开 ClickHouse Observability。
+
+    打开 [Search](/zh/clickstack/observability/features/search)，选择 **日志** source。选择涵盖采集器运行期间的时间范围，然后将 **ServiceName** 过滤为 `system-logs`。
+
+    展开某个事件即可查看其属性。截图展示的是示例数据，您实际看到的日志消息和主机属性会有所不同。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Observability 中的本地示例日志，显示日志文件名和主机属性](/images/clickstack/observability-local-logs.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="探索系统指标" id="explore-system-metrics">
+    打开 **Chart Explorer**，选择 **Time Series** 和 **指标** source。将聚合方式设为 **Maximum**，然后选择 `system.memory.utilization`。**Delta** 保持不勾选。
+
+    在 **Where** 字段中输入 `Attributes.state:"used"`，以显示已用内存。如果您从多个主机采集指标，还需按数据中的主机属性进行过滤。
+
+    选择涵盖采集器运行期间的时间范围，然后点击 **Run**。截图展示的是过滤到单个主机的示例数据。该指标是取值 0 到 1 的比率：值为 `0.62` 即表示利用率为 62%。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Observability 中示例主机的内存利用率（已过滤为已用内存）](/images/clickstack/observability-local-memory-utilization.png)
+      </Frame>
+    </div>
+
+    如需以百分比显示利用率，请打开 **Display Settings**，并在 **输出格式** 中选择 **Percentage**。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Chart Explorer 的 Display Settings，输出格式已选择 Percentage](/images/clickstack/observability-local-memory-display-settings.png)
+      </Frame>
+    </div>
+
+    点击 **Apply** 更新图表。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![以百分比显示的示例主机内存利用率](/images/clickstack/observability-local-memory-percentage.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 停止采集 {#stop-collection}
+
+完成后，停止采集并删除容器：
+
+```shell
+docker stop local-otel-collector
+docker rm local-otel-collector
+```

@@ -1,0 +1,92 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-07-17
+title: 'Demo days - 2026-07-17'
+sidebarTitle: '2026-07-17'
+description: 'ClickStack demo days del 2026-07-17'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Mejoras en los tooltips de los gráficos {#chart-tooltip-improvements}
+
+*Demostración a cargo de [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/EsnGp9RPSKM" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Los tooltips de los gráficos en ClickStack han recibido una importante mejora de usabilidad. Ahora, al hacer clic en un gráfico, el tooltip queda fijado en su sitio en lugar de desaparecer al apartar el ratón, de modo que puede leer los datos con calma. El tooltip fijado muestra todos los valores de la serie y, si hay muchos, puede desplazarse por la lista en lugar de que aparezca truncada.
+
+Además, ahora puede copiar valores directamente desde el tooltip, una mejora que surgió de los comentarios de los clientes. Antes, los clientes podían ver los datos que necesitaban, pero no tenían forma de copiarlos; ahora, basta con hacer clic en un valor para copiarlo al portapapeles.
+
+Todo ello se basa en una actualización de Recharts que renderiza los tooltips a través de un portal en lugar de dentro del propio contenedor del gráfico. Esto se nota especialmente en dashboards con muchos gráficos muy juntos, ya que los tooltips ya no quedan comprimidos ni recortados por los gráficos contiguos.
+
+**PRs relacionados:** [#2642](https://github.com/hyperdxio/hyperdx/pull/2642) feat(charts): pin chart tooltip on click with inline drill-down actions
+
+## Ejecución de evaluaciones de MCP desde un PR {#running-mcp-evals-from-a-pr}
+
+*Demostración a cargo de [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/YcDm1Mnw-Qc" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Ahora el equipo puede ejecutar evaluaciones de MCP directamente desde un PR de GitHub, y no solo en local, de modo que cualquiera puede ver cómo afecta un cambio de código a la calidad de MCP antes de que se fusione. Esta es la primera versión de la configuración: integra la canalización de evaluaciones en CI para que se ejecute automáticamente y publique una puntuación combinada en el PR.
+
+Para obtener más información sobre cómo funciona el marco de evaluaciones de MCP de ClickStack, consulte la entrada del blog [pruebas comparativas de rendimiento del servidor MCP de ClickStack con HDX evals](https://clickhouse.com/blog/benchmarking-the-clickstack-mcp-server-with-hdx-evals).
+
+**PRs relacionados:** [#2628](https://github.com/hyperdxio/hyperdx/pull/2628) feat(evals): M1 CI skeleton — run MCP evals end to end in GitHub Actions
+
+## Compatibilidad con métricas en el servidor MCP {#metrics-support-in-the-mcp-server}
+
+*Demostración a cargo de [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/GqJWQN3P86c" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+El servidor MCP ahora entiende las métricas, no solo los log y las trazas, y cuenta con un marco de evaluaciones asociado para medir lo bien que las utiliza. Se añaden generadores para los cinco tipos de métrica que admite ClickStack (gauge, sum, histogram, exponential histogram y summary), además de nuevos escenarios de evaluación que solo pueden resolverse con métricas, como una fuga de memoria de la JVM que es prácticamente imposible de diagnosticar únicamente con log y trazas.
+
+Los primeros resultados muestran que el servidor MCP con soporte de métricas resuelve estos escenarios notablemente más rápido que el servidor MCP basado únicamente en SQL estándar, sobre todo porque necesita menos llamadas a herramientas para llegar a la respuesta. Todavía queda trabajo de ajuste (en algunos escenarios, la coincidencia de patrones del LLM se confunde ante distintas notaciones de la misma métrica), pero el rumbo está claro: dar al agente acceso directo a las métricas hace posibles investigaciones que antes quedaban fuera de su alcance.
+
+**PRs relacionados:** [#2645](https://github.com/hyperdxio/hyperdx/pull/2645) feat(evals): support metric types and seeding
+
+## Mejoras en el selector de fuentes {#source-picker-improvements}
+
+*Demostración a cargo de [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/XTQygZSMUTs" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Elegir la fuente correcta solía ser cuestión de desplazarse por la lista y adivinar. En instancias con listas de fuentes largas, al abrir la lista desplegable no había ninguna indicación visual de qué fuente estaba realmente seleccionada. Esta actualización añade una marca de verificación junto a la fuente seleccionada, siguiendo el patrón de selección múltiple ya existente, para que siempre sepa de un vistazo cuál está activa antes de empezar a ejecutar consultas.
+
+Es un cambio pequeño, pero elimina ese momento de «espera, ¿cuál estoy viendo?» que, a lo largo de una jornada de trabajo, acaba sumando.
+
+**PRs relacionadas:** [#2651](https://github.com/hyperdxio/hyperdx/pull/2651) feat(app): clarify selected source in source picker
+
+## Conversión del creador de gráficos a SQL {#chart-builder-to-sql-conversion}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/IBNdi1rgiTc" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Antes, pasar del generador de consultas visual al modo SQL directo obligaba a empezar de cero. Si había creado una consulta con filtros y group-by en el generador y se encontraba con algo que este no podía expresar, al cambiar al modo SQL se topaba con un editor vacío.
+
+Ahora, al cambiar al modo SQL, la consulta del generador pasa por la misma canalización que renderiza el gráfico, de modo que llega al modo SQL con la consulta equivalente ya escrita mediante las macros adecuadas, en lugar de valores fijos en el código. La conversión inversa (de SQL al generador) aún no está disponible, pero ya figura en la hoja de ruta.
+
+**PRs relacionados:** [#2634](https://github.com/hyperdxio/hyperdx/pull/2634) feat: Auto-convert builder charts to Raw SQL, [#2666](https://github.com/hyperdxio/hyperdx/pull/2666) fix(charts): Keep selected source when switching from builder to SQL mode
+
+## Nuevo mecanismo de obtención de filtros {#new-filter-fetching-mechanism}
+
+*Demostración a cargo de [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/z31cAIJA3B4" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+La obtención de la lista de valores de filtro disponibles cuenta ahora con una capa de enrutamiento más inteligente. En lugar de aplicar una única estrategia fija, el nuevo sistema examina lo que ofrece el esquema, en particular si existen índices de texto, y elige la forma más eficiente de construir la lista de filtros.
+
+Cuando hay índices de texto disponibles, ClickStack los consulta directamente en lugar de recurrir a tablas de agregación, lo que además supone tener que mantener menos agregaciones y reduce el riesgo de la presión de memoria que algunos clientes han sufrido con el enfoque anterior. Eso sí, se requiere ClickHouse 26.3, por lo que quienes aún no tengan esa versión seguirán usando el enfoque actual basado en agregaciones hasta que actualicen; a partir de ese momento, el nuevo mecanismo se activará automáticamente.
+
+**PRs relacionados:** [#2643](https://github.com/hyperdxio/hyperdx/pull/2643) feat: rework getAllKeyValues and add filters populated from text indices
+
+## Panel de control de RUM mejorado {#improved-rum-dashboard}
+
+*Demostración a cargo de [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/roNhRzLvXro" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+El panel de control de Browser RUM ahora incluye codificación por colores, acompañada de una leyenda en Markdown que explica el significado de cada color (con margen para hacerla aún más clara en el futuro). Los mosaicos numéricos de métricas como las sesiones con errores ahora se colorean según umbrales configurables, de modo que las zonas problemáticas saltan a la vista en lugar de perderse en un mar de números neutros.
+
+**PRs relacionadas:** [#2671](https://github.com/hyperdxio/hyperdx/pull/2671) feat(dashboards): color-code Browser RUM web vitals, page-load &amp; error tiles

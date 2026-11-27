@@ -1,21 +1,30 @@
 ---
 slug: /use-cases/observability/clickstack/monitoring-kubernetes
-title: 'Monitoramento do Kubernetes com Managed ClickStack'
-description: 'Colete logs, métricas de infraestrutura e eventos de um cluster do Kubernetes para o Managed ClickStack'
+title: 'Monitoramento do Kubernetes com ClickHouse Observability'
+sidebarTitle: 'Monitorar o Kubernetes'
+description: 'Colete logs, métricas de infraestrutura e eventos de um cluster do Kubernetes para o ClickHouse Observability na experiência autogerenciada'
 doc_type: 'guide'
-keywords: ['clickstack', 'kubernetes', 'k8s', 'gerenciado', 'observabilidade', 'logs', 'métricas', 'eventos', 'conjunto de daemon', 'helm']
+keywords: ['clickstack', 'kubernetes', 'k8s', 'autogerenciado', 'ClickHouse Observability', 'logs', 'métricas', 'eventos', 'conjunto de daemon', 'helm']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
 ---
 
-Este guia orienta você na coleta de logs, métricas de infraestrutura e eventos do Kubernetes de um cluster para o Managed ClickStack e, em seguida, na visualização desses dados no dashboard integrado do Kubernetes.
+<Note>
+  **Você está no caminho autogerenciado**
 
-O padrão segue a arquitetura padrão do OpenTelemetry: dois coletores implantados por meio do [Chart do Helm do OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector), cada um encaminhando dados para o seu coletor gateway do ClickStack via OTLP. Um **Conjunto de Daemon** é executado em cada nó para coletar logs de contêineres e métricas do agente de nó do Kubernetes. Uma **Implantação** com uma única réplica coleta eventos do Kubernetes e métricas de todo o cluster. Para mais contexto sobre a função de gateway, consulte [Funções do coletor](/pt-BR/clickstack/ingesting-data/collector#collector-roles).
+  Você optou por configurar o ClickHouse Observability por conta própria, usando a [experiência autogerenciada](/pt-BR/clickstack/self-configured/overview). Neste caminho, você executa o coletor OpenTelemetry, gerencia a ingestão no seu Serviço do ClickHouse Cloud, ajusta o schema e separa as cargas de trabalho de ingestão e de consulta com warehouses. Consulte [Coletor OpenTelemetry](/pt-BR/clickstack/self-configured/ingesting-data/collector), [Ajuste de desempenho](/pt-BR/clickstack/self-configured/managing/performance-tuning) e [Isolando cargas de trabalho de leitura e gravação](/pt-BR/clickstack/self-configured/managing/isolating-read-write).
 
-Este guia pressupõe que você já concluiu [Configurando seu OpenTelemetry Collector](/pt-BR/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) e tem um coletor gateway do ClickStack em execução.
+  Prefere uma experiência serverless em que o ClickHouse cuida da ingestão, dos schemas e da computação para você? Nesse caso, use a experiência padrão do ClickHouse Observability e siga o guia [Monitoramento do Kubernetes com OpenTelemetry](/pt-BR/clickstack/managed-onboarding/monitoring-kubernetes-serverless).
+</Note>
 
-Para uma carga de trabalho em execução no Kubernetes, o próprio coletor gateway deve ser implantado **dentro do mesmo cluster usando o chart upstream do Helm do OpenTelemetry com a imagem do coletor ClickStack**. Siga o caminho do Helm em [Implantando o coletor](/pt-BR/clickstack/ingesting-data/collector#configuring-the-collector) para instalá-lo. **Certifique-se de ter anotado esse endpoint OTLP**.
+Este guia orienta você na coleta de logs, métricas de infraestrutura e eventos do Kubernetes de um cluster para o ClickHouse Observability e, em seguida, na visualização desses dados no dashboard integrado do Kubernetes.
+
+O padrão segue a arquitetura padrão do OpenTelemetry: dois coletores implantados por meio do [Chart do Helm do OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector), cada um encaminhando dados para o seu coletor gateway do ClickStack via OTLP. Um **Conjunto de Daemon** é executado em cada nó para coletar logs de contêineres e métricas do agente de nó do Kubernetes. Uma **Implantação** com uma única réplica coleta eventos do Kubernetes e métricas de todo o cluster. Para mais contexto sobre a função de gateway, consulte [Funções do coletor](/pt-BR/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured).
+
+Este guia pressupõe que você já concluiu [Configurando seu OpenTelemetry Collector](/pt-BR/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector) e tem um coletor gateway do ClickStack em execução.
+
+Para uma carga de trabalho em execução no Kubernetes, o próprio coletor gateway deve ser implantado **dentro do mesmo cluster usando o chart upstream do Helm do OpenTelemetry com a imagem do coletor ClickStack**. Siga o caminho do Helm em [Implantando o coletor](/pt-BR/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured) para instalá-lo. **Certifique-se de ter anotado esse endpoint OTLP**.
 
 <Steps>
   <Step title="Reúna os pré-requisitos" id="gather-prerequisites">
@@ -301,37 +310,25 @@ Para uma carga de trabalho em execução no Kubernetes, o próprio coletor gatew
     Abra seu serviço no [console do ClickHouse Cloud](https://console.clickhouse.cloud) e selecione **ClickStack** no menu à esquerda.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Abrir o ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Abrir o ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
+      </Frame>
     </div>
 
     Na visualização **Busca**, altere a fonte para `Logs` e defina o intervalo de tempo como **Últimos 15 minutos**. Os logs de contêiner de todo o cluster devem aparecer em alguns segundos, enriquecidos com atributos como `k8s.namespace.name`, `k8s.pod.name` e `k8s.node.name`.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Visualização Busca do ClickStack com logs do Kubernetes](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Visualização Busca do ClickStack com logs do Kubernetes](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
+      </Frame>
     </div>
 
     Para ver métricas e eventos de infraestrutura em contexto, abra o dashboard integrado **Kubernetes** navegando até **Dashboards** -&gt; **Kubernetes**. As abas `Pods`, `Nodes` e `Namespaces` devem estar todas preenchidas.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Dashboard Kubernetes do ClickStack](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Dashboard Kubernetes do ClickStack](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
+      </Frame>
     </div>
 
     Se nada aparecer:
@@ -342,10 +339,10 @@ Para uma carga de trabalho em execução no Kubernetes, o próprio coletor gatew
   </Step>
 
   <Step title="Leitura adicional" id="further-reading">
-    * [Referência da integração do Kubernetes](/pt-BR/clickstack/integration-examples/kubernetes) para o conjunto completo de receivers, processors e opções de ajuste.
-    * [Encaminhamento de tags de recurso para pods](/pt-BR/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) para mais detalhes sobre o enriquecimento no lado da aplicação.
-    * [Protegendo o collector](/pt-BR/clickstack/ingesting-data/collector#securing-the-collector) com TLS no endpoint OTLP e usuários de ingestão com o menor privilégio necessário.
-    * [Estimando recursos](/pt-BR/clickstack/ingesting-data/collector#estimating-resources) para implantações de gateway e agent na taxa de transferência esperada.
-    * [Colocando em produção](/pt-BR/clickstack/managing/production) para recomendações ao colocar em produção.
+    * [Referência da integração do Kubernetes](/pt-BR/clickstack/observability/integration-examples/kubernetes#self-managed) para o conjunto completo de receivers, processors e opções de ajuste.
+    * [Encaminhamento de tags de recurso para pods](/pt-BR/clickstack/observability/integration-examples/kubernetes#application-metadata) para mais detalhes sobre o enriquecimento no lado da aplicação.
+    * [Protegendo o collector](/pt-BR/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) com TLS no endpoint OTLP e usuários de ingestão com o menor privilégio necessário.
+    * [Estimando recursos](/pt-BR/clickstack/self-configured/ingesting-data/collector#estimating-resources-self-configured) para implantações de gateway e agent na taxa de transferência esperada.
+    * [Colocando em produção](/pt-BR/clickstack/self-configured/managing/production) para recomendações ao colocar em produção.
   </Step>
 </Steps>

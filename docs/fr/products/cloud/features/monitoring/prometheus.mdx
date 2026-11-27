@@ -16,7 +16,7 @@ Pour commencer, [générez une clé API](/fr/products/cloud/features/admin-featu
 Si vous recherchez l’endpoint équivalent pour les services [ClickHouse Managed Postgres](/fr/products/managed-postgres/overview), consultez le [ClickHouse Managed Postgres Prometheus endpoint](/fr/products/managed-postgres/monitoring/prometheus).
 
 <div id="prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics">
-  ## API de l’endpoint Prometheus pour récupérer les métriques ClickHouse Cloud
+  ## API de l’endpoint Prometheus pour récupérer les métriques ClickHouse Cloud {#prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics}
 </div>
 
 ### Référence de l’API {#api-reference}
@@ -42,7 +42,7 @@ Si vous recherchez l’endpoint équivalent pour les services [ClickHouse Manage
 Les schémas complets des requêtes et réponses pour ces endpoints sont disponibles dans la [référence de l’API Cloud](/fr/products/cloud/api-reference/prometheus).
 
 <div id="authentication">
-  ### Authentification
+  ### Authentification {#authentication}
 </div>
 
 Utilisez votre clé API ClickHouse Cloud pour l’authentification de base :
@@ -64,7 +64,7 @@ curl --silent --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organiz
 ```
 
 <div id="sample-response">
-  ### Exemple de réponse
+  ### Exemple de réponse {#sample-response}
 </div>
 
 ```response
@@ -92,7 +92,7 @@ ClickHouseProfileEvents_FileOpen{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1f
 # TYPE ClickHouseProfileEvents_Seek counter
 ClickHouseProfileEvents_Seek{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 1840
 
-# HELP ClickPipes_Info Always equal to 1. Label "clickpipe_state" contains the current state of the pipe: Stopped/Provisioning/Running/Paused/Failed
+# HELP ClickPipes_Info Always equal to 1. Label "clickpipe_status" contains the current state of the pipe: Stopped/Provisioning/Running/Paused/Failed
 # TYPE ClickPipes_Info gauge
 ClickPipes_Info{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent",clickpipe_status="Running"} 1
 
@@ -128,7 +128,7 @@ ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf
 ```
 
 <div id="metric-labels">
-  ### Libellés des métriques
+  ### Libellés des métriques {#metric-labels}
 </div>
 
 Toutes les métriques comportent les libellés suivants :
@@ -148,26 +148,26 @@ Pour ClickPipes, les métriques comportent également les libellés suivants :
 | clickpipe&#95;source | Type de source du ClickPipe |
 
 <div id="information-metrics">
-  ### Métriques d’information
+  ### Métriques d’information {#information-metrics}
 </div>
 
-ClickHouse Cloud fournit une métrique spéciale `ClickHouse_ServiceInfo`, qui est une `gauge` ayant toujours la valeur `1`. Cette métrique contient tous les **libellés de métrique** ainsi que les libellés suivants :
+ClickHouse Cloud fournit une métrique spéciale `ClickHouse_ServiceInfo`, qui est une `gauge` ayant toujours la valeur `1`. Cette métrique contient tous les **labels de métrique** ainsi que les labels suivants :
 
-| Libellé                           | Description                                                                                                                                      |
+| Label                           | Description                                                                                                                                      |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| clickhouse&#95;cluster&#95;status | État du service. Peut être l’un des suivants : [`awaking` | `running` | `degraded` | `idle` | `stopped`]                                         |
+| clickhouse&#95;cluster&#95;status | État du service. Peut être l’un des suivants : [`awaking` | `running` | `degraded` | `idle` | `stopped`]                                         |
 | clickhouse&#95;version            | Version du serveur ClickHouse utilisée par le service                                                                                            |
-| scrape                            | Indique l’état du dernier scrape. Peut être `full` ou `partial`                                                                                  |
-| full                              | Indique qu’aucune erreur ne s’est produite lors du dernier scrape des métriques                                                                  |
-| partial                           | Indique que des erreurs se sont produites lors du dernier scrape des métriques et que seule la métrique `ClickHouse_ServiceInfo` a été renvoyée. |
+| collecte                            | Indique l’état de la dernière collecte. Peut être `full` ou `partial`                                                                                  |
+| full                              | Indique qu’aucune erreur ne s’est produite lors de la dernière collecte des métriques                                                                  |
+| partial                           | Indique que des erreurs se sont produites lors de la dernière collecte des métriques et que seule la métrique `ClickHouse_ServiceInfo` a été renvoyée. |
 
 Les requêtes visant à récupérer des métriques ne réactiveront pas un service mis en veille. Si un service est dans l’état `idle`, seule la métrique `ClickHouse_ServiceInfo` sera renvoyée.
 
-Pour ClickPipes, il existe une métrique `gauge` similaire, `ClickPipes_Info`, qui contient, en plus des **libellés de métrique**, les libellés suivants :
+Pour ClickPipes, il existe une métrique `gauge` similaire, `ClickPipes_Info`, qui contient, en plus des **labels de métrique**, les labels suivants :
 
-| Libellé             | Description           |
-| ------------------- | --------------------- |
-| clickpipe&#95;state | L’état actuel du pipe |
+| Label              | Description           |
+| -------------------- | --------------------- |
+| clickpipe&#95;status | L’état actuel du pipe |
 
 ### Configuration de Prometheus {#configuring-prometheus}
 
@@ -258,7 +258,7 @@ Chaque cible porte également la région, le fournisseur de services cloud et le
 Les cibles découvertes collectent les métriques avec `filtered_metrics=true`. Pour découvrir les cibles qui collectent l’ensemble complet des métriques, ajoutez `?filtered_metrics=false` à l’URL de découverte. La spécification complète de l’endpoint est disponible dans la [référence de l’API Cloud](/fr/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get).
 
 <div id="integrating-with-grafana">
-  ## Intégration à Grafana
+  ## Intégration à Grafana {#integrating-with-grafana}
 </div>
 
 Les utilisateurs ont deux principales façons d’intégrer Grafana :
@@ -268,8 +268,7 @@ Les utilisateurs ont deux principales façons d’intégrer Grafana :
 
 Nous fournissons ci-dessous des instructions sur l’utilisation de ces options, en nous concentrant sur les détails propres au ClickHouse Cloud Prometheus Endpoint.
 
-<a id="grafana-cloud-with-metrics-endpoint" />
-### Grafana Cloud avec endpoint de métriques
+### Grafana Cloud avec endpoint de métriques {#grafana-cloud-with-metrics-endpoint}
 
 * Connectez-vous à votre compte Grafana Cloud
 * Ajoutez une nouvelle connexion en sélectionnant **endpoint de métriques**
@@ -277,59 +276,42 @@ Nous fournissons ci-dessous des instructions sur l’utilisation de ces options,
 * Testez la connexion pour vous assurer qu’elle fonctionne
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Configurer l’endpoint de métriques Grafana](/images/integrations/prometheus-grafana-metrics-endpoint.webp)
-
-</Frame>
-
+  <Frame>
+    ![Configurer l’endpoint de métriques Grafana](/images/integrations/prometheus-grafana-metrics-endpoint.webp)
+  </Frame>
 </div>
 
 <br />
 
-Une fois la configuration terminée, vous devriez voir les métriques dans le menu déroulant, que vous pourrez sélectionner pour configurer des tableaux de bord :
+Une fois la configuration terminée, vous devriez voir les métriques dans le menu déroulant, que vous pourrez sélectionner pour configurer des tableaux de bord :
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Menu déroulant de Grafana Metrics Explorer](/images/integrations/prometheus-grafana-dropdown.webp)
-
-</Frame>
-
+  <Frame>
+    ![Menu déroulant de Grafana Explorateur de métriques](/images/integrations/prometheus-grafana-dropdown.webp)
+  </Frame>
 </div>
 
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Graphique de Grafana Metrics Explorer](/images/integrations/prometheus-grafana-chart.webp)
-
-</Frame>
-
+  <Frame>
+    ![Graphique de Grafana Explorateur de métriques](/images/integrations/prometheus-grafana-chart.webp)
+  </Frame>
 </div>
 
-<a id="grafana-cloud-with-alloy" />
-### Grafana Cloud avec Alloy
+### Grafana Cloud avec Alloy {#grafana-cloud-with-alloy}
 
 Si vous utilisez Grafana Cloud, vous pouvez installer Alloy en accédant au menu Alloy dans Grafana et en suivant les instructions affichées à l’écran :
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Grafana Alloy](/images/integrations/prometheus-grafana-alloy.webp)
-
-</Frame>
-
+  <Frame>
+    ![Grafana Alloy](/images/integrations/prometheus-grafana-alloy.webp)
+  </Frame>
 </div>
 
 <br />
 
-Cela devrait configurer Alloy avec un composant `prometheus.remote_write` pour envoyer des données vers un endpoint Grafana Cloud à l’aide d’un jeton d’authentification. Il vous suffit ensuite de modifier la configuration d’Alloy (située dans `/etc/alloy/config.alloy` sous Linux) pour y inclure un collecteur pour le ClickHouse Cloud Prometheus Endpoint.
+Cela devrait configurer Alloy avec un composant `prometheus.remote_write` pour envoyer des données vers un endpoint Grafana Cloud à l’aide d’un jeton d’authentification. Il vous suffit ensuite de modifier la configuration d’Alloy (située dans `/etc/alloy/config.alloy` sous Linux) pour y inclure un Collecteur pour le ClickHouse Cloud Prometheus Endpoint.
 
 L’exemple suivant montre une configuration Alloy avec un composant `prometheus.scrape` pour collecter les métriques depuis le ClickHouse Cloud Endpoint, ainsi que le composant `prometheus.remote_write` configuré automatiquement. Notez que le composant de configuration `basic_auth` contient l’ID et le secret de notre clé Cloud API comme nom d’utilisateur et mot de passe, respectivement.
 
@@ -372,8 +354,7 @@ prometheus.scrape "clickhouse_cloud" {
 
 Notez que le paramètre de configuration `honor_labels` doit être défini sur `true` pour que l’étiquette d’instance soit correctement renseignée.
 
-<a id="grafana-self-managed-with-alloy" />
-### Grafana autogéré avec Alloy
+### Grafana autogéré avec Alloy {#grafana-self-managed-with-alloy}
 
 Les utilisateurs de Grafana autogéré peuvent consulter les instructions d’installation de l’agent Alloy [ici](https://grafana.com/docs/alloy/latest/get-started/install/). Nous partons du principe qu’Alloy est configuré pour envoyer les métriques Prometheus vers la destination souhaitée. Le composant `prometheus.scrape` ci-dessous permet à Alloy de collecter les métriques du ClickHouse Cloud Endpoint. Nous supposons que `prometheus.remote_write` reçoit les métriques collectées. Ajustez la clé `forward_to` vers la destination cible si elle n’existe pas.
 
@@ -406,21 +387,16 @@ Les utilisateurs de Grafana autogéré peuvent consulter les instructions d’in
 Une fois la configuration effectuée, vous devriez voir les métriques liées à ClickHouse dans votre explorateur de métriques :
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Explorateur de métriques Grafana](/images/integrations/prometheus-grafana-metrics-explorer.webp)
-
-</Frame>
-
+  <Frame>
+    ![Explorateur de métriques Grafana](/images/integrations/prometheus-grafana-metrics-explorer.webp)
+  </Frame>
 </div>
 
 <br />
 
 Notez que le paramètre de configuration `honor_labels` doit être défini sur `true` pour que l&#39;étiquette d’instance soit correctement renseignée.
 
-<a id="integrating-with-datadog" />
-## Intégration avec Datadog
+## Intégration avec Datadog {#integrating-with-datadog}
 
 Vous pouvez utiliser l’[Agent](https://docs.datadoghq.com/agent/?tab=Linux) Datadog et l’[intégration OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) pour collecter des métriques à partir de l’endpoint ClickHouse Cloud. Vous trouverez ci-dessous un exemple simple de configuration pour cet agent et cette intégration. Notez toutefois qu’il peut être préférable de ne sélectionner que les métriques les plus pertinentes pour vous. L’exemple passe-partout ci-dessous exportera plusieurs milliers de combinaisons métrique-instance, que Datadog considérera comme des métriques personnalisées.
 
@@ -439,17 +415,12 @@ instances:
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Intégration Prometheus-Datadog](/images/integrations/prometheus-datadog.webp)
-
-</Frame>
-
+  <Frame>
+    ![Intégration Prometheus Datadog](/images/integrations/prometheus-datadog.webp)
+  </Frame>
 </div>
 
-<a id="related" />
-## Pages associées
+## Pages associées {#related}
 
 * [Vue d’ensemble de Monitoring](/fr/products/cloud/features/monitoring/overview) — Comparez toutes les approches de monitoring pour ClickHouse Cloud
 * [Monitoring dans Cloud Console](/fr/products/cloud/features/monitoring/cloud-console) — Tableaux de bord intégrés ne nécessitant aucun outil externe

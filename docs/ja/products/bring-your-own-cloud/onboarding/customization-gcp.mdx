@@ -22,13 +22,9 @@ ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わり�
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Private Google Access が有効で、プライマリおよびセカンダリ IPv4 範囲が表示された BYOC GCP サブネットの詳細](/images/cloud/reference/byoc-gcp-subnet.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Private Google Access が有効で、プライマリおよびセカンダリ IPv4 範囲が表示された BYOC GCP サブネットの詳細](/images/cloud/reference/byoc-gcp-subnet.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -47,7 +43,7 @@ ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わり�
 
   <Step title="BYOC インフラストラクチャを設定する" id="set-up-byoc-infrastructure">
     <Note>
-      **Set up Infrastructure** をクリックすると、ClickHouse Cloud はプロビジョニング前に自動的に[プリフライト検証](/ja/products/bring-your-own-cloud/onboarding/standard#preflight-validation)を実行します。管理 service account に必要な権限があること、および必要な Google Cloud API が有効になっていることを確認するとともに、持ち込んだ VPC についても、ネットワークとサブネットが解決できること、サブネットのプライマリ範囲とポッド用セカンダリ範囲が十分な大きさであること、Cloud NAT ゲートウェイがそのネットワークをカバーしていることを検証します。不足があった場合、セットアップは中断され、修正すべき具体的な問題が示されます。
+      **Set up Infrastructure** をクリックすると、ClickHouse Cloud はプロビジョニング前に自動的に[プリフライト検証](/ja/products/bring-your-own-cloud/onboarding/standard#preflight-validation)を実行します。管理用サービスアカウントに必要な権限があること、および必要な Google Cloud API が有効になっていることを確認するとともに、持ち込んだ VPC についても、ネットワークとサブネットが解決できること、サブネットのプライマリ範囲とポッド用セカンダリ範囲が十分な大きさであること、Cloud NAT ゲートウェイがそのネットワークをカバーしていることを検証します。不足があった場合、セットアップは中断され、修正すべき具体的な問題が示されます。
     </Note>
 
     ClickHouse Cloud console で、新しいインフラストラクチャを設定する際に以下を構成します。
@@ -56,17 +52,13 @@ ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わり�
     2. **VPC network name** を入力します。
     3. ClickHouse 用に割り当てた **Subnet name** を入力します。
     4. 必要に応じて **Secondary range names** を入力し、GKE がポッド用に使用するサブネットのセカンダリ範囲を指定します。空のままにするとすべてのセカンダリ範囲が使用されます。指定する名前はいずれも、あらかじめそのサブネット上に存在している必要があります。
-    5. VPC が共有 VPC のホストプロジェクトにある場合は、**Shared VPC host project ID** を入力します。VPC がインフラストラクチャと同じプロジェクトにある場合は空のままにします。以下の[ホストプロジェクトからの共有 VPC](#shared-vpc-host-project) を参照してください。
+    5. VPC が共有 VPC のホストプロジェクトにある場合は、**Shared VPC host project ID** を入力します。VPC がインフラストラクチャと同じプロジェクトにある場合は空のままにします。以下の[ホストプロジェクトの共有 VPC](#shared-vpc-host-project) を参照してください。
     6. **Set up Infrastructure** をクリックして、プロビジョニングを開始します。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![GCP 用に Use existing VPC が選択され、VPC network name、subnet name、secondary range names、Shared VPC host project ID の各フィールドが表示された ClickHouse Cloud BYOC セットアップ UI](/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp)
-
-    </Frame>
-
+      <Frame>
+        ![GCP 用に Use existing VPC が選択され、VPC network name、subnet name、secondary range names、Shared VPC host project ID の各フィールドが表示された ClickHouse Cloud BYOC セットアップ UI](/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>

@@ -9,9 +9,19 @@ doc_type: 'reference'
 
 import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-## Regiones compatibles {#supported-regions}
+import { CloudRegionsMap } from "/snippets/es/components/CloudRegionsMap/CloudRegionsMap.jsx";
 
-Las siguientes tablas enumeran las regiones compatibles por proveedor de nube. Las insignias indican la disponibilidad: `Public` para las regiones de disponibilidad general y `Private`, `HIPAA` o `PCI` para las regiones que ofrecen estas opciones. `BYOC` identifica las regiones en las que están disponibles las implementaciones de [Bring Your Own Cloud](/es/products/cloud/guides/infrastructure/deployment-options/byoc/overview). En las regiones que también están marcadas como `Private`, BYOC está disponible previa solicitud.
+ClickHouse Cloud está disponible en regiones de AWS, Google Cloud y Microsoft Azure. Utilice el mapa y las tablas siguientes para encontrar una ubicación compatible para su servicio y comprobar qué opciones de implementación y de cumplimiento normativo hay disponibles.
+
+Busque en el mapa por código de región o ubicación, o filtre por proveedor de nube, regiones privadas, regiones exclusivas de BYOC o cumplimiento de HIPAA. Cada color identifica a un proveedor de nube. Los círculos rellenos indican regiones públicas; los círculos huecos, regiones privadas, y los círculos discontinuos, regiones exclusivas de BYOC. Las ubicaciones del mapa son aproximadas.
+
+<CloudRegionsMap />
+
+## Disponibilidad por región {#region-availability}
+
+Las tablas enumeran todas las regiones compatibles por proveedor de nube, independientemente de los filtros del mapa. Las insignias indican la disponibilidad: `Public` para las regiones de disponibilidad general y `Private`, `HIPAA` o `PCI` para las regiones que ofrecen estas opciones.
+
+`BYOC` identifica las regiones en las que están disponibles las implementaciones de [Bring Your Own Cloud](/es/products/cloud/guides/infrastructure/deployment-options/byoc/overview). En las regiones que también están marcadas como `Private`, BYOC está disponible previa solicitud. Las regiones marcadas únicamente como `BYOC` solo admiten implementaciones de BYOC.
 
 <Tabs>
   <Tab title="AWS" id="aws-regions" icon="aws">
@@ -33,7 +43,6 @@ Las siguientes tablas enumeran las regiones compatibles por proveedor de nube. L
     | `eu-west-1`      | Europa (Irlanda)                     | <Badge color="yellow">Público</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> <Badge color="orange">BYOC</Badge> |
     | `eu-west-2`      | Europa (Londres)                     | <Badge color="yellow">Público</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> <Badge color="orange">BYOC</Badge> |
     | `il-central-1`   | Israel (Tel Aviv)                    | <Badge color="yellow">Público</Badge> <Badge color="orange">BYOC</Badge>                                                                    |
-    | `me-central-1`   | Oriente Medio (EAU)                  | <Badge color="yellow">Público</Badge>                                                                                                       |
     | `mx-central-1`   | México (Centro)                      | <Badge color="purple">Privado</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                    |
     | `sa-east-1`      | América del Sur (São Paulo)          | <Badge color="purple">Privado</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>                                    |
     | `us-east-1`      | Este de EE. UU. (Virginia del Norte) | <Badge color="yellow">Público</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> <Badge color="orange">BYOC</Badge> |
@@ -52,16 +61,23 @@ Las siguientes tablas enumeran las regiones compatibles por proveedor de nube. L
     | `europe-west4`            | Eemshaven, Países Bajos         | <Badge color="yellow">Público</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> <Badge color="orange">BYOC</Badge> |
     | `europe-west6`            | Zúrich, Suiza                   | <Badge color="purple">Privado</Badge>                                                                                                       |
     | `northamerica-northeast1` | Montreal, Quebec                | <Badge color="purple">Privado</Badge>                                                                                                       |
-    | `us-central1`             | Council Bluffs, Iowa            | <Badge color="yellow">Público</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> <Badge color="orange">BYOC</Badge> |
+    | `us-central1`             | Council Bluffs, Iowa            | <Badge color="purple">Privado</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> <Badge color="orange">BYOC</Badge> |
     | `us-east1`                | Moncks Corner, Carolina del Sur | <Badge color="yellow">Público</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> <Badge color="orange">BYOC</Badge> |
     | `us-west1`                | The Dalles, Oregón              | <Badge color="purple">Privado</Badge>                                                                                                       |
+
+    <Note>
+      El acceso a `us-central1` de Google Cloud está restringido por limitaciones de capacidad. [Póngase en contacto con Ventas](https://clickhouse.com/company/contact) para solicitar acceso. Estas restricciones no se aplican a las implementaciones de BYOC.
+    </Note>
   </Tab>
 
   <Tab title="Azure" id="azure-regions" icon="/images/icons/cloud-providers/azure.svg">
     | Código de región     | Nombre de región     | Disponibilidad                                                           |
     | -------------------- | -------------------- | ------------------------------------------------------------------------ |
     | `australiaeast`      | Australia East       | <Badge color="purple">Privado</Badge> <Badge color="orange">BYOC</Badge> |
+    | `canadacentral`      | Canada Central       | <Badge color="orange">BYOC</Badge>                                       |
+    | `centralindia`       | Central India        | <Badge color="orange">BYOC</Badge>                                       |
     | `eastus2`            | East US 2            | <Badge color="yellow">Público</Badge> <Badge color="orange">BYOC</Badge> |
+    | `francecentral`      | France Central       | <Badge color="orange">BYOC</Badge>                                       |
     | `germanywestcentral` | Germany West Central | <Badge color="yellow">Público</Badge> <Badge color="orange">BYOC</Badge> |
     | `japaneast`          | Japan East           | <Badge color="purple">Privado</Badge> <Badge color="orange">BYOC</Badge> |
     | `uaenorth`           | UAE North            | <Badge color="purple">Privado</Badge>                                    |

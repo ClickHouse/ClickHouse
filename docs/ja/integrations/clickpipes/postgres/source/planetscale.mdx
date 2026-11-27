@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'Postgres 向け PlanetScale'
+sidebarTitle: 'PlanetScale for Postgres'
 description: 'ClickPipes のソースとして PlanetScale for Postgres を設定する'
 slug: /integrations/clickpipes/postgres/source/planetscale
 title: 'PlanetScale for Postgres ソース設定ガイド'
@@ -15,14 +15,12 @@ integration:
 </Info>
 
 <div id="supported-postgres-versions">
-  ## サポート対象のPostgresバージョン
+  ## サポート対象のPostgresバージョン {#supported-postgres-versions}
 </div>
 
 ClickPipes は Postgres バージョン 12 以降をサポートしています。
 
-<div id="enable-logical-replication">
-  ## 論理レプリケーションを有効にする
-</div>
+## 論理レプリケーションを有効にする {#enable-logical-replication}
 
 1. Postgresインスタンスでレプリケーションを有効にするには、まず以下の設定になっていることを確認する必要があります。
 
@@ -39,13 +37,9 @@ ClickPipes は Postgres バージョン 12 以降をサポートしています�
    デフォルトでは、出力は `logical` になっているはずです。そうでない場合は、PlanetScaleコンソールにログインし、`Cluster configuration->Parameters` に移動して `Write-ahead log` までスクロールし、設定を変更してください。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![PlanetScaleコンソールでwal_levelを調整](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp)
-
-</Frame>
-
+  <Frame>
+    ![PlanetScaleコンソールでwal_levelを調整](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp)
+  </Frame>
 </div>
 
 <Warning>
@@ -55,18 +49,12 @@ ClickPipes は Postgres バージョン 12 以降をサポートしています�
 2. また、設定 `max_slot_wal_keep_size` はデフォルトの4GBから増やすことを推奨します。これも PlanetScaleコンソールで `Cluster configuration->Parameters` に移動し、`Write-ahead log` までスクロールして設定します。新しい値の決め方については、[こちら](/ja/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings)を参照してください。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![PlanetScaleコンソールでmax_slot_wal_keep_sizeを調整](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp)
-
-</Frame>
-
+  <Frame>
+    ![PlanetScaleコンソールでmax_slot_wal_keep_sizeを調整](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp)
+  </Frame>
 </div>
 
-<div id="creating-a-user-with-permissions-and-publication">
-  ## 権限と publication を持つユーザーの作成
-</div>
+## 権限と publication を持つユーザーの作成 {#creating-a-user-with-permissions-and-publication}
 
 デフォルトの `postgres.<...>` ユーザーを使用して PlanetScale Postgres インスタンスに接続し、以下のコマンドを実行します。
 
@@ -102,16 +90,16 @@ ClickPipes は Postgres バージョン 12 以降をサポートしています�
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * 特定のスキーマ内のすべてのテーブルに対する publication を作成するには:
+* 特定のスキーマ内のすべてのテーブルに対する publication を作成するには:
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 `clickpipes` publication は、変更イベントが ClickPipes にストリーミングされる対象テーブルの集合を定義します。すべてのテーブルをレプリケートする予定でない限り、`FOR ALL TABLES` の使用は推奨しません。不要なテーブルを含めると、Postgres から ClickPipes への WAL トラフィックが増加し、レプリケーション全体の効率が低下するためです。
 
 <div id="caveats">
-  ## 注意事項
+  ## 注意事項 {#caveats}
 </div>
 
 1. PlanetScale Postgres に接続するには、現在のブランチを先ほど作成したユーザー名の末尾に追加する必要があります。たとえば、作成したユーザー名が `clickpipes_user` の場合、ClickPipe の作成時に指定する実際のユーザー名は `clickpipes_user`.`branch` である必要があります。ここで `branch` は、現在の PlanetScale Postgres [ブランチ](https://planetscale.com/docs/postgres/branching)の &quot;id&quot; を指します。これをすばやく確認するには、先ほどユーザー作成時に使用した `postgres` ユーザーのユーザー名を参照してください。ピリオド以降の部分がブランチ ID です。
@@ -119,7 +107,7 @@ ClickPipes は Postgres バージョン 12 以降をサポートしています�
 3. 接続先は必ずプライマリ インスタンスのみにしてください。現在、[レプリカ インスタンスへの接続](https://planetscale.com/docs/postgres/scaling/replicas#how-to-query-postgres-replicas)はサポートされていません。
 
 <div id="whats-next">
-  ## 次は？
+  ## 次は？ {#whats-next}
 </div>
 
 これで、[ClickPipe を作成](/ja/integrations/clickpipes/postgres/index) して、Postgres インスタンスから ClickHouse Cloud へのデータ取り込みを開始できます。

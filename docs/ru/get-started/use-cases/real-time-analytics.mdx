@@ -20,9 +20,7 @@ export const ExclusiveGroup = ({ name, children }) => {
 Пользователь обновляет панель мониторинга, открывает таблицу лидеров или разбирает инцидент и ожидает, что данные будут отражать то, что произошло только что.
 С технической точки зрения это означает не просто обеспечивать выполнение аналитических запросов с низкой задержкой, но и делать это при непрерывной вставке больших объёмов данных.
 
-<div id="system-properties">
-  ## Свойства системы Real-time аналитики
-</div>
+## Свойства системы Real-time аналитики {#system-properties}
 
 Когда клиенты оценивают платформу Real-time аналитики, они часто сосредотачиваются только на задержке запросов. «Может ли она вернуть ответ за 50 мс?» — вполне разумный вопрос, и большинство аналитических движков могут уверенно ответить на него утвердительно, если выделить достаточно вычислительных ресурсов для статического набора данных.
 
@@ -35,29 +33,19 @@ export const ExclusiveGroup = ({ name, children }) => {
 * **Время на выполнение запроса**: Сколько времени требуется, чтобы построить план и выполнить чтение после того, как данные стали доступны?
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Real-time аналитика: время на приём, преобразование и выполнение запроса](/images/use-cases/rta-considerations.webp)
-
-</Frame>
-
+  <Frame>
+    ![Real-time аналитика: время на приём, преобразование и выполнение запроса](/images/use-cases/rta-considerations.webp)
+  </Frame>
 </div>
 
-<div id="clickhouse-rta">
-  ## Как ClickHouse обеспечивает Real-time аналитику
-</div>
+## Как ClickHouse обеспечивает Real-time аналитику {#clickhouse-rta}
 
 <Columns cols={2}>
   <div>
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Как ClickHouse обеспечивает Real-time аналитику](/images/use-cases/real-time-analytics-architecture.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Как ClickHouse обеспечивает Real-time аналитику](/images/use-cases/real-time-analytics-architecture.webp)
+      </Frame>
     </div>
   </div>
 

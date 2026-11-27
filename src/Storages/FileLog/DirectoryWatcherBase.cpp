@@ -292,6 +292,7 @@ void DirectoryWatcherBase::onVnodeEvent(int fd, uint32_t fflags)
         if (st.st_nlink > 0)
         {
             watch_state->directory_changed = true;
+            watch_state->unlinked_inodes.insert(static_cast<UInt64>(st.st_ino));
             return;
         }
         watch_state->deleted_files.insert(name_it->second);
@@ -497,6 +498,7 @@ void DirectoryWatcherBase::onTimer()
             watch_state->structural_change_pending = false;
             watch_state->reported_modifications.clear();
             watch_state->setSnapshot(std::move(current_files_inodes));
+            watch_state->unlinked_inodes.clear();
         }
         catch (const std::exception & e)
         {
@@ -509,6 +511,7 @@ void DirectoryWatcherBase::onTimer()
     const auto & settings = owner.storage.getFileLogSettings();
     auto & snapshot = watch_state->snapshot;
     auto & deleted_files = watch_state->deleted_files;
+    const auto & unlinked_inodes = watch_state->unlinked_inodes;
 
     try
     {
@@ -560,6 +563,9 @@ void DirectoryWatcherBase::onTimer()
             return false;
         /// An unlinked name is not a rename source, even when a hard link brings its inode back.
         if (deleted_files.contains(snapshot_inode_name.at(inode)))
+            return false;
+        /// Nor is a file that lost a link and gained a name the path matches (the last scan listed all such names): it is new.
+        if (unlinked_inodes.contains(inode) && owner.storage.fileNameMatches(current_inode_name.at(inode)))
             return false;
         return snapshot_inode_name.at(inode) != current_inode_name.at(inode);
     };
@@ -697,6 +703,7 @@ void DirectoryWatcherBase::onTimer()
     /// This pass committed successfully, so the deletes it collected have been applied; start the next
     /// pass with a clean set. (On a retried pass we return early, keeping them.)
     deleted_files.clear();
+    watch_state->unlinked_inodes.clear();
     watch_state->reported_modifications.clear();
     watch_state->structural_change_pending = false;
 
