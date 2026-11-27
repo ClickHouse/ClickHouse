@@ -50,6 +50,10 @@ def set_environment_variables(logger, args, process_name: str) -> dict[str, str]
     if len(possible_timezones) > 0:
         test_env_variables["TZ"] = random.choice(possible_timezones)
 
+    # Fill memory on allocation and free, so a use-after-free or uninitialized read fails close to the bug
+    if random.randint(1, 4) == 1:
+        test_env_variables["MALLOC_CONF"] = "junk:true"
+
     if len(test_env_variables) > 0:
         logger.info(
             f"Setting environment variable(s) for {process_name}: {' '.join([f'{key}={value}' for key, value in test_env_variables.items()])}"

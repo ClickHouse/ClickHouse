@@ -97,10 +97,16 @@ def dind_containment_env(job_mem):
 
 integration_dind_env = dind_containment_env(LIMITED_MEM)
 
+# The command is part of every build job digest, and the digest is computed on the host
+# of the Config Workflow, not on the build host. Runners of the same instance type differ
+# by a few memory pages, so the exact value made the same build get different digests in
+# different runs (and missed the cache). Whole GiB is stable across such hosts.
+BINARY_DOCKER_MEM = Utils.physical_memory() // 1024**3 * 1024**3
+
 BINARY_DOCKER_COMMAND = (
     "clickhouse/binary-builder+--network=host"
-    f"+--memory={Utils.physical_memory() * 95 // 100}"
-    f"+--memory-reservation={Utils.physical_memory() * 9 // 10}"
+    f"+--memory={BINARY_DOCKER_MEM * 95 // 100}"
+    f"+--memory-reservation={BINARY_DOCKER_MEM * 9 // 10}"
     f"+--volume=.:/ClickHouse"
 )
 
@@ -381,11 +387,15 @@ class JobConfigs:
         name=JobNames.FAST_TEST,
         runs_on=RunnerLabels.ARM_LARGE,
         command="python3 ./ci/jobs/fast_test.py",
-        # --network=host required for ec2 metadata http endpoint to work
-        run_in_docker="clickhouse/fasttest+--network=host+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
+        run_in_docker="clickhouse/fasttest+--volume=./ci/tmp/var/lib/clickhouse:/var/lib/clickhouse+--volume=./ci/tmp/etc/clickhouse-client:/etc/clickhouse-client+--volume=./ci/tmp/etc/clickhouse-server:/etc/clickhouse-server+--volume=./ci/tmp/var/log:/var/log+--volume=.:/ClickHouse",
         digest_config=fast_test_digest_config,
         result_name_for_cidb="Tests",
         needs_submodules=True,
+    )
+    # The merge queue writes the sccache bucket and needs the EC2 metadata endpoint for credentials
+    fast_test_mq = fast_test.copy()
+    fast_test_mq.run_in_docker = fast_test.run_in_docker.replace(
+        "fasttest+", "fasttest+--network=host+", 1
     )
     darwin_fast_test_jobs = Job.Config(
         name="Fast test",
@@ -465,26 +475,17 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_DEBUG,
-            provides=[
-                ArtifactNames.CH_AMD_DEBUG,
-                ArtifactNames.UNITTEST_AMD_DEBUG,
-            ],
+            provides=[ArtifactNames.CH_AMD_DEBUG],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_ASAN_UBSAN,
-            provides=[
-                ArtifactNames.CH_AMD_ASAN_UBSAN,
-                ArtifactNames.UNITTEST_AMD_ASAN_UBSAN,
-            ],
+            provides=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_TSAN,
-            provides=[
-                ArtifactNames.CH_AMD_TSAN,
-                ArtifactNames.UNITTEST_AMD_TSAN,
-            ],
+            provides=[ArtifactNames.CH_AMD_TSAN],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
@@ -502,17 +503,26 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_DEBUG,
-            provides=[ArtifactNames.CH_ARM_DEBUG],
+            provides=[
+                ArtifactNames.CH_ARM_DEBUG,
+                ArtifactNames.UNITTEST_ARM_DEBUG,
+            ],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_ASAN_UBSAN,
-            provides=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+            provides=[
+                ArtifactNames.CH_ARM_ASAN_UBSAN,
+                ArtifactNames.UNITTEST_ARM_ASAN_UBSAN,
+            ],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_TSAN,
-            provides=[ArtifactNames.CH_ARM_TSAN],
+            provides=[
+                ArtifactNames.CH_ARM_TSAN,
+                ArtifactNames.UNITTEST_ARM_TSAN,
+            ],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
@@ -1349,14 +1359,14 @@ class JobConfigs:
     )
     # Builds the "before" unit_tests_dbms (merge-base + only the PR's unit-test file
     # changes) in-job, so it needs the binary-builder image and submodules. It does NOT
-    # require the PR's UNITTEST_AMD_ASAN_UBSAN artifact: the "touched tests pass on the
+    # require the PR's UNITTEST_ARM_ASAN_UBSAN artifact: the "touched tests pass on the
     # PR binary" side is delegated to the regular `Unit tests (asan_ubsan)` job (see the
-    # module docstring), so this job is not gated behind `build_amd_asan_ubsan` and
+    # module docstring), so this job is not gated behind `build_arm_asan_ubsan` and
     # builds the "before" binary in parallel with the build matrix — matching the early
     # start of the functional/integration bugfix validators.
     bugfix_validation_ut_job = Job.Config(
         name=JobNames.BUGFIX_VALIDATE_UT,
-        runs_on=RunnerLabels.AMD_LARGE,
+        runs_on=RunnerLabels.ARM_LARGE,
         command="python3 ./ci/jobs/unit_tests_bugfix_validation_job.py",
         # The job both builds and RUNS the before-binary in this container. Running
         # `unit_tests_dbms` needs `io_uring` (the `silk` fiber runtime calls
@@ -1396,27 +1406,28 @@ class JobConfigs:
     )
     # The sanitizer builds define `SANITIZER` and `DEBUG_OR_SANITIZER_BUILD`, so the suites
     # under `#if !defined(SANITIZER)` (`DateLUTImpl`, `AllocationInterceptors`) are compiled
-    # only into a plain build. `Build (amd_debug)` already builds `unit_tests_dbms`
-    # (`-DENABLE_TESTS=1`); the `amd_debug` job runs it, so these suites run in pull requests
+    # only into a plain build. `Build (arm_debug)` already builds `unit_tests_dbms`
+    # (`-DENABLE_TESTS=1`); the `arm_debug` job runs it, so these suites run in pull requests
     # and not only in `Unit tests (amd_llvm_coverage)`, which pull requests skip without the
     # `ci-coverage` label. The debug build still defines `DEBUG_OR_SANITIZER_BUILD`, so the
     # cases under `#ifndef DEBUG_OR_SANITIZER_BUILD` keep running only in the coverage job.
     unittest_jobs = common_unit_test_job_config.parametrize(
         Job.ParamSet(
-            parameter="amd_debug",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.UNITTEST_AMD_DEBUG],
+            parameter="arm_debug",
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.UNITTEST_ARM_DEBUG],
         ),
         Job.ParamSet(
             parameter="asan_ubsan",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.UNITTEST_AMD_ASAN_UBSAN],
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.UNITTEST_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="tsan",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.UNITTEST_AMD_TSAN],
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.UNITTEST_ARM_TSAN],
         ),
+        # aarch64 MSan reports uninitialized values in fiber code that x86-64 MSan finds clean.
         Job.ParamSet(
             parameter="msan",
             runs_on=RunnerLabels.AMD_LARGE,
@@ -1424,14 +1435,14 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="asan_ubsan, function_prop_fuzzer",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.UNITTEST_AMD_ASAN_UBSAN],
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.UNITTEST_ARM_ASAN_UBSAN],
             command=_fuzzer_command,
         ),
         Job.ParamSet(
             parameter="tsan, function_prop_fuzzer",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.UNITTEST_AMD_TSAN],
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.UNITTEST_ARM_TSAN],
             command=_fuzzer_command,
         ),
         Job.ParamSet(

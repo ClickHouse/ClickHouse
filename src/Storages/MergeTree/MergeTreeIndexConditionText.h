@@ -230,12 +230,19 @@ private:
     /// is a constant one that denotes the index tokenizer.
     [[nodiscard]] bool tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const;
 
+    /// `function_node` is the whole predicate, `function_name` is how it is analyzed, e.g. `like` for `position(s, 'x') > 0`.
+    /// `ascii_case_folding`: `ilike` stands for a function that folds the case of ASCII letters only.
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
+        const String & function_name,
         const RPNBuilderTreeNode & argument_node,
         DataTypePtr value_type,
         Field value_field,
-        RPNElement & out) const;
+        RPNElement & out,
+        bool ascii_case_folding = false) const;
+
+    /// `position(s, 'x') > 0` and similar checks, handled as `s LIKE '%x%'`.
+    bool traverseSubstringOccurrenceNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
     [[nodiscard]] TextIndexDirectReadMode getHintOrNoneMode() const;
 
@@ -285,11 +292,15 @@ private:
     /// Supports '%needle%', 'needle%' and '%needle'. See isInfixPattern for which of them is exact.
     /// `allow_arbitrary_patterns` needs a non-nullable value: an exact read of a NULL raises in the fallback (#113332).
     [[nodiscard]] std::vector<OptimizedRegularExpression>
-    stringLikeToPatterns(const Field & field, bool case_insensitive, bool allow_arbitrary_patterns) const;
+    stringLikeToPatterns(const Field & field, bool case_insensitive, bool allow_arbitrary_patterns, bool ascii_case_folding = false) const;
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
     [[nodiscard]] bool hasIndexForColumn(const String & column_name) const { return header.has(column_name) || column_name == normalized_index_column_name; }
+
+    /// The argument of `arrayJoin` that has the index. LEFT ARRAY JOIN is `arrayJoin(emptyArrayToSingle(arr))`:
+    /// `padded` is set when the index is on `arr`, which does not have the element added for an empty array.
+    [[nodiscard]] std::optional<RPNBuilderTreeNode> getIndexedArrayJoinArgument(const RPNBuilderTreeNode & node, bool & padded) const;
 
     /// Returns true if all tokens must be read for text index analysis
     /// and we cannot exit analysis earlier if some of the tokens are missing in granule.

@@ -645,6 +645,9 @@ def test_caches_with_the_same_configuration(cluster, node_name):
             """
         )
 
+    for table in ["test", "test2"]:
+        node.query(f"SYSTEM WAIT BLOBS CLEANUP '{table}'")
+
     size = int(
         node.query(
             "SELECT value FROM system.metrics WHERE name = 'FilesystemCacheSize'"
@@ -1264,6 +1267,8 @@ SETTINGS disk = disk(type = cache,
 
     node.query("INSERT INTO test_proactive_cleanup SELECT randomString(2000);")
     node.query("SELECT * FROM test_proactive_cleanup FORMAT Null")
+    # The disk's access check file is removed in the background, and its cache entry with it.
+    node.query(f"SYSTEM WAIT BLOBS CLEANUP '{cache_name}'")
 
     cached = int(
         node.query(
@@ -1304,6 +1309,7 @@ cache_dynamic_resize_config = """
             <hdd_blob>
                 <type>local_blob_storage</type>
                 <path>/</path>
+                <persistent_removal_log>true</persistent_removal_log>
             </hdd_blob>
             <cache_dynamic_resize>
                 <type>cache</type>
@@ -1685,6 +1691,7 @@ cache_dynamic_resize_slru_config = """
             <hdd_blob>
                 <type>local_blob_storage</type>
                 <path>/</path>
+                <persistent_removal_log>true</persistent_removal_log>
             </hdd_blob>
             <cache_dynamic_resize_slru>
                 <type>cache</type>
@@ -2049,6 +2056,8 @@ def test_reserve_granularity_reclaims_surplus_after_read(cluster):
         "SELECT value FROM test_reserve_granularity WHERE key = 0 SETTINGS max_read_buffer_size = 65536"
     )
 
+    node.query("SYSTEM WAIT BLOBS CLEANUP 'reserve_granularity_cache'")
+
     # The read buffer is destroyed and no background download is configured, so the touched
     # segment is completed and shrunk. `size` is the (boundary-aligned) segment range, while
     # `downloaded_size` is what was actually written; the segment must be partially downloaded
@@ -2096,6 +2105,7 @@ cache_dynamic_settings_config = """
             <hdd_blob>
                 <type>local_blob_storage</type>
                 <path>/</path>
+                <persistent_removal_log>true</persistent_removal_log>
             </hdd_blob>
             <cache_dynamic_resize>
                 <type>cache</type>

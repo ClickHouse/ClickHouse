@@ -412,6 +412,11 @@ void optimizeTreeSecondPass(
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
         });
 
+    /// Only a reference turns a `CommonSubplanStep` into a step that can be executed, so one whose references
+    /// were all removed by an optimization, such as an unused join with a decorrelated subquery, is still here.
+    if (optimization_settings.correlated_subqueries_use_in_memory_buffer)
+        traverseQueryPlan(stack, root, [&](auto & frame_node) { optimizeUnusedCommonSubplans(frame_node); });
+
     /// `JoinStepLogical::preCalculateKeys` computes an expression key below the join, after which the join no longer
     /// reads the columns the key was computed from. Prune them, or the join carries them as payload.
     if (join_runtime_filters_were_added && optimization_settings.remove_unused_columns)
@@ -570,7 +575,11 @@ void optimizeTreeSecondPass(
     /// when nothing was distributed).
     traverseQueryPlan(stack, root,
         [&](auto &) {},
-        [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
+        [&](auto & frame_node)
+        {
+            convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
+            skipDeduplicationAfterSetOperationJoin(frame_node);
+        });
 
     /// the conversion makes the pre-join expressions, also without plan optimizations
     lowerArrayJoinFunctions(root, nodes, extra_settings);
@@ -1031,6 +1040,10 @@ void optimizeTreeSecondPass(
 
     /// Propagate stream disjointness so that DISTINCT / LIMIT BY / GROUP BY can skip merging streams.
     applyStreamDisjointness(optimization_settings, root);
+
+    /// Before the sharding, which splits all inputs of the multiway join by the same ranges.
+    if (optimization_settings.query_plan_join_multiway_merge && !optimization_settings.make_distributed_plan)
+        optimizeMultiwayMergeJoin(root);
 
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);

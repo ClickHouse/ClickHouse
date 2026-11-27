@@ -10,14 +10,14 @@ keywords: ['clickstack', 'ttl', '데이터 보존', '수명 주기', '스토리�
 import OtelLogsSchema from '/snippets/ko/clickstack/_schema_otel_logs.mdx';
 
 <div id="ttl-clickstack">
-  ## ClickStack의 TTL
+  ## ClickStack의 TTL {#ttl-clickstack}
 </div>
 
 Time-to-Live(TTL)은 ClickStack에서 효율적인 데이터 보존 및 관리를 위해 중요한 기능이며, 특히 대량의 데이터가 지속적으로 생성되는 환경에서 더욱 그렇습니다. TTL을 사용하면 오래된 데이터를 자동으로 만료 및 삭제할 수 있으므로, 수동 개입 없이도 스토리지를 최적으로 활용하고 성능을 유지할 수 있습니다. 이 기능은 데이터베이스를 가볍게 유지하고 스토리지 비용을 절감하며, 가장 관련성이 높고 최신인 데이터에 집중함으로써 쿼리가 빠르고 효율적으로 유지되도록 하는 데 필수적입니다. 또한 데이터 수명 주기를 체계적으로 관리해 데이터 보존 정책에 대한 컴플라이언스를 지원하므로, 관측성 솔루션 전반의 지속 가능성과 확장성을 높이는 데 도움이 됩니다.
 
-**기본적으로 ClickStack은 데이터를 3일 동안 보존합니다. 이를 변경하려면 [&quot;TTL 수정&quot;](#modifying-ttl)를 참조하십시오.**
+**기본적으로 ClickStack은 데이터를 30일 동안 보존합니다. 이를 변경하려면 [&quot;TTL 수정&quot;](#modifying-ttl)를 참조하십시오.**
 
-ClickHouse에서는 TTL이 테이블 수준에서 제어됩니다. 예를 들어 logs의 기본 스키마는 아래와 같으며, collector가 테이블을 생성할 때 `${TABLES_TTL}`은 구성된 보존 기간(변경하지 않은 경우 3일)으로 대체됩니다.
+ClickHouse에서는 TTL이 테이블 수준에서 제어됩니다. 예를 들어 logs의 기본 스키마는 아래와 같으며, collector가 테이블을 생성할 때 `${LOGS_TTL}`은 구성된 보존 기간(변경하지 않은 경우 30일)으로 대체됩니다. 모든 테이블에 공통으로 적용되는 보존 기간을 구성하려면 `HYPERDX_OTEL_EXPORTER_TABLES_TTL`을 설정하고, 개별 시그널별로 재정의하려면 `HYPERDX_OTEL_EXPORTER_LOGS_TTL`, `HYPERDX_OTEL_EXPORTER_TRACES_TTL`, `HYPERDX_OTEL_EXPORTER_METRICS_TTL`, `HYPERDX_OTEL_EXPORTER_SESSIONS_TTL`을 사용하십시오. 시그널별 설정을 지정하지 않으면 공통 테이블 보존 기간이 적용됩니다.
 
 <OtelLogsSchema />
 
@@ -26,16 +26,12 @@ ClickHouse의 파티셔닝은 컬럼 또는 SQL 표현식에 따라 디스크에
 위 예시에서 볼 수 있듯이 파티셔닝은 테이블을 처음 정의할 때 `PARTITION BY` 절을 통해 지정합니다. 이 절에는 하나 이상의 컬럼에 대한 SQL 표현식을 포함할 수 있으며, 그 결과에 따라 각 행이 어느 파티션으로 전송될지가 결정됩니다. 이로 인해 데이터는 디스크에서 각 파티션과 논리적으로 연결되며(공통 폴더 이름 접두사를 통해), 이후 각 파티션만 따로 쿼리할 수 있습니다. 위 예시에서는 기본 `otel_logs` 스키마가 `toDate(Timestamp)` 표현식을 사용해 일 단위로 파티셔닝합니다. 행이 ClickHouse에 삽입되면 이 표현식이 각 행에 대해 평가되고, 해당 파티션이 이미 있으면 그 파티션으로 전달됩니다(해당 날짜의 첫 번째 행이면 파티션이 생성됩니다). 파티셔닝과 그 밖의 활용 사례에 대한 자세한 내용은 [&quot;Table Partitions&quot;](/ko/concepts/core-concepts/partitions)를 참조하십시오.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![파티션](/images/use-cases/observability/observability-14.webp)
-
-</Frame>
-
+  <Frame>
+    ![파티션](/images/use-cases/observability/observability-14.webp)
+  </Frame>
 </div>
 
-테이블 스키마에는 `TTL toDateTime(Timestamp) + ${TABLES_TTL}`와 설정 `ttl_only_drop_parts = 1`도 포함됩니다. 앞의 절은 데이터가 구성된 TTL(기본적으로 3일)보다 오래되면 삭제되도록 보장합니다. 설정 `ttl_only_drop_parts = 1`은 모든 데이터가 만료된 데이터 파트만 만료 대상으로 처리하도록 합니다(행을 부분적으로 삭제하려고 시도하는 대신). 또한 파티셔닝을 통해 서로 다른 날짜의 데이터가 절대 머지되지 않으므로 데이터를 효율적으로 삭제할 수 있습니다.
+테이블 스키마에는 `TTL toDateTime(Timestamp) + ${LOGS_TTL}`와 설정 `ttl_only_drop_parts = 1`도 포함됩니다. 앞의 절은 데이터가 구성된 TTL(기본적으로 30일)보다 오래되면 삭제되도록 보장합니다. 설정 `ttl_only_drop_parts = 1`은 모든 데이터가 만료된 데이터 파트만 만료 대상으로 처리하도록 합니다(행을 부분적으로 삭제하려고 시도하는 대신). 또한 파티셔닝을 통해 서로 다른 날짜의 데이터가 절대 머지되지 않으므로 데이터를 효율적으로 삭제할 수 있습니다.
 
 <Warning>
   **`ttl_only_drop_parts`**
@@ -52,7 +48,7 @@ ClickHouse의 파티셔닝은 컬럼 또는 SQL 표현식에 따라 디스크에
 </Info>
 
 <div id="modifying-ttl">
-  ## TTL 수정
+  ## TTL 수정 {#modifying-ttl}
 </div>
 
 TTL은 다음 두 가지 방법으로 수정할 수 있습니다:
@@ -74,7 +70,7 @@ exporters:
 ```
 
 <div id="column-level-ttl">
-  ### 컬럼 수준 TTL
+  ### 컬럼 수준 TTL {#column-level-ttl}
 </div>
 
 위의 예시에서는 데이터를 테이블 수준에서 만료합니다. 데이터는 컬럼 수준에서도 만료할 수 있습니다. 데이터가 오래될수록 조사에 활용했을 때의 가치가 보관에 따른 리소스 오버헤드를 정당화하지 못하는 컬럼을 삭제하는 데 이를 사용할 수 있습니다. 예를 들어, 삽입 시점에 아직 추출되지 않은 새로운 동적 메타데이터(예: 새로운 Kubernetes 레이블)가 추가될 가능성에 대비해 `Body` 컬럼을 유지할 것을 권장합니다. 예를 들어 1개월 정도 지난 후에는 이러한 추가 메타데이터가 유용하지 않다는 점이 분명해질 수 있으므로 `Body` 컬럼을 계속 유지할 가치도 낮아집니다.

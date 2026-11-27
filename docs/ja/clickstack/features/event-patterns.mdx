@@ -10,45 +10,33 @@ keywords: ['clickstack', 'イベントパターン', 'ログ分析', 'パター�
 ClickStack のイベントパターンを使うと、類似したメッセージが自動的にクラスター化されるため、大量のログやトレースの内容をすばやく把握できます。何百万もの個々のイベントを掘り下げる代わりに、意味のある少数のグループを確認するだけで済みます。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![イベントパターン](/images/use-cases/observability/event_patterns.webp)
-
-</Frame>
-
+  <Frame>
+    ![イベントパターン](/images/use-cases/observability/event_patterns.webp)
+  </Frame>
 </div>
 
 これにより、どのエラーや警告が新しいのか、どれが繰り返し発生しているのか、どれがログ量の急増を引き起こしているのかを、はるかに見つけやすくなります。イベントパターンは動的に生成されるため、正規表現を定義したり、パースルールを管理したりする必要はありません。ClickStack がフォーマットに関係なくイベントに自動的に適応します。
 
 このような高レベルの全体像は、インシデント対応だけでなく、コスト削減のために絞り込めるノイズの多いログソースを特定したり、サービスが生成するログのさまざまな種類を把握したり、システムが必要なシグナルをすでに出力しているかどうかをより迅速に判断したりするのにも役立ちます。
 
-<div id="accessing-event-patterns">
-  ## イベントパターンへのアクセス
-</div>
+## イベントパターンへのアクセス {#accessing-event-patterns}
 
 イベントパターンは、ClickStack の **Search** パネルから直接利用できます。
 
 左上の **Analysis Mode** セレクターで **イベントパターン** を選択すると、標準の **Results Table** から、類似したイベントをクラスターごとにまとめて表示するビューへ切り替わります。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![イベントパターン](/images/use-cases/observability/event_patterns_highlight.webp)
-
-</Frame>
-
+  <Frame>
+    ![イベントパターン](/images/use-cases/observability/event_patterns_highlight.webp)
+  </Frame>
 </div>
 
 これにより、個々のログやトレースを 1 件ずつスクロールして確認する既定の **Results Table** とは別の表示方法を利用できます。
 
-<div id="recommendations">
-  ## 推奨事項
-</div>
+## 推奨事項 {#recommendations}
 
-イベントパターンは、データを**絞り込んだ一部**に対して適用すると最も効果を発揮します。たとえば、イベントパターンを有効にする前に単一のサービスまで絞り込むと、何千ものサービス全体に一度にパターンを適用する場合よりも、通常は関連性が高く興味深いメッセージを見つけやすくなります。
+イベントパターンは、データを**絞り込んだサブセット**に適用したときに最も効果を発揮します。例えば、イベントパターンを有効にする前に単一のサービスに絞り込んでおくと、数千のサービスに対して一度にパターンを適用するよりも、関連性が高く有用なメッセージが見つかりやすくなります。
 
-また、ID やペイロードが異なる同種のエラーも簡潔なクラスターにまとめられるため、エラーメッセージの要約にも特に効果的です。
+また、イベントパターンはエラーメッセージの要約にも特に効果的です。ID やペイロードだけが異なる繰り返しのエラーが、簡潔なクラスターにまとめられます。
 
-実際の例については、[Remote Demo Dataset](/ja/clickstack/example-datasets/remote-demo-data#identify-error-patterns) でイベントパターンがどのように使われているかをご覧ください。
+実際の使用例については、[リモートデモデータセット](/ja/clickstack/example-datasets/remote-demo-data#identify-error-patterns)でイベントパターンがどのように活用されているかを参照してください。

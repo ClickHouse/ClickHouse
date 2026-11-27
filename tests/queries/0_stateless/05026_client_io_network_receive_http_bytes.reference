@@ -1,0 +1,8 @@
+client-fed INSERT streams NetworkReceiveBytes to the client: 1
+client-fed INSERT logs NetworkReceiveBytes: 1
+client-fed INSERT rows	100000
+url() write streams WriteBufferFromHTTPBytes to the client: 1
+url() write logs WriteBufferFromHTTPBytes: 1
+url() write rows	100000
+url() read streams ReadWriteBufferFromHTTPBytes to the client: 1
+url() read logs ReadWriteBufferFromHTTPBytes: 1

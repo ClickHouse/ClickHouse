@@ -18,6 +18,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
 #include <Planner/PlannerActionsVisitor.h>
+#include <Storages/VirtualColumnUtils.h>
 
 namespace DB
 {
@@ -675,9 +676,12 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
 
     RPNBuilderTreeNode tree_node(node_to_check, context);
 
+    /// A deterministic function like `plus(blockSize(), 1)` passes the check above, but its name still does not
+    /// make it the key column with the same name.
     auto column_name = tree_node.getColumnName();
     if (auto key_column_it = key_columns.find(column_name);
-        key_column_it != key_columns.end() && !isExpressionNamedLikeStoredKeyColumn(*node_to_check, column_name))
+        key_column_it != key_columns.end() && VirtualColumnUtils::isDeterministicInScopeOfQuery(node_to_check)
+        && !isExpressionNamedLikeStoredKeyColumn(*node_to_check, column_name))
     {
         /// A name match does not imply a type match: the query-side node can carry a `Nullable` the
         /// granule does not.
@@ -846,7 +850,8 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
         auto column_name = tree_node.getColumnName();
-        if (key_columns.contains(column_name) && !isExpressionNamedLikeStoredKeyColumn(node, column_name))
+        if (key_columns.contains(column_name) && VirtualColumnUtils::isDeterministicInScopeOfQuery(node_to_check)
+            && !isExpressionNamedLikeStoredKeyColumn(node, column_name))
             return false;
 
         auto function_name = node.function_base->getName();
