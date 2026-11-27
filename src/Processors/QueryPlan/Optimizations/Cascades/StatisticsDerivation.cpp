@@ -149,8 +149,19 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
                     auto other_column = other.column_statistics.find(input_headers.at(input_index)->getByPosition(position).name);
                     if (other_column == other.column_statistics.end())
                         continue;
-                    output_column->second.num_distinct_values
-                        = std::min(output_column->second.num_distinct_values, other_column->second.num_distinct_values);
+                    /// A smaller count of another input comes with its provenance: one estimated from metadata
+                    /// is an effective count and not the number of values, see `ColumnStats::numberOfValues`, and
+                    /// it must not pass for a count of the first input's origin. When the counts are equal, the
+                    /// origin of the estimate from metadata is taken, as in `updateJoinKeyDistinctCounts`.
+                    const auto & other_stats = other_column->second;
+                    const bool other_from_metadata = other_stats.ndv_provenance.origin == ColumnStatsOrigin::EstimatedFromMetadata;
+                    if (other_stats.num_distinct_values < output_column->second.num_distinct_values)
+                    {
+                        output_column->second.num_distinct_values = other_stats.num_distinct_values;
+                        output_column->second.ndv_provenance = other_stats.ndv_provenance;
+                    }
+                    else if (other_stats.num_distinct_values == output_column->second.num_distinct_values && other_from_metadata)
+                        output_column->second.ndv_provenance.origin = ColumnStatsOrigin::EstimatedFromMetadata;
                 }
             }
             /// Without the clamp a row-count reduction could leave a column NDV above the row count.
@@ -724,9 +735,9 @@ static constexpr Float64 DEFAULT_DISTINCT_VALUES_RATIO = 0.1;
 static Float64 keyDistinctValues(const String & column, const ExpressionStatistics & input_statistics)
 {
     auto column_stats = input_statistics.column_statistics.find(column);
-    if (column_stats != input_statistics.column_statistics.end() && column_stats->second.num_distinct_values > 0
-        && column_stats->second.ndv_provenance.origin != ColumnStatsOrigin::EstimatedFromMetadata)
-        return std::min(Float64(column_stats->second.num_distinct_values), input_statistics.max_row_count);
+    if (column_stats != input_statistics.column_statistics.end())
+        if (const auto number_of_values = column_stats->second.numberOfValues())
+            return std::min(Float64(*number_of_values), input_statistics.max_row_count);
     return DEFAULT_DISTINCT_VALUES_RATIO * input_statistics.estimated_row_count;
 }
 
@@ -840,6 +851,18 @@ ExpressionStatistics StatisticsDerivation::deriveDistinctStatistics(const Distin
     result.min_row_count = input_statistics.min_row_count > 0 ? 1 : 0;
     /// Every output row is distinct.
     result.estimated_distinct_bound = result.estimated_row_count;
+    /// A column of the `DISTINCT` with an NDV estimated from metadata gets the one of a column without statistics, as
+    /// a key of an aggregation does: its effective count describes the frequencies of the values in the input, while
+    /// every combination of values takes one row of the output.
+    for (const auto & column_name : distinct_step.getColumnNames())
+    {
+        auto column_stats = result.column_statistics.find(column_name);
+        if (column_stats == result.column_statistics.end()
+            || column_stats->second.ndv_provenance.origin != ColumnStatsOrigin::EstimatedFromMetadata)
+            continue;
+        column_stats->second.num_distinct_values = QueryPlanOptimizations::toUInt64Saturating(keyDistinctValues(column_name, input_statistics));
+        column_stats->second.ndv_provenance = {};
+    }
     /// Without the clamp the row-count reduction could leave a column NDV above the row count.
     for (auto & [column_name, column_stats] : result.column_statistics)
         column_stats.num_distinct_values = std::min(column_stats.num_distinct_values,

@@ -5,3 +5,9 @@ The grouped subquery is not estimated at fewer rows than its 10001 groups
 The same with the Cascades optimizer: the aggregation and the DISTINCT
 1
 1
+A DISTINCT over INTERSECT ALL of a column with statistics and the skewed one, in both orders
+1
+1
+The rule-based distributed plan shuffles the 10001 groups instead of merging them on one node
+1
+1

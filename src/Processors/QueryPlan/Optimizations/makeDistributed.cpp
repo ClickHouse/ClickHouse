@@ -842,9 +842,13 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         std::optional<UInt64> estimated_groups;
         for (const auto & key : aggregation_keys)
         {
+            /// Not a number of distinct values estimated from metadata, which is not the number of groups, see
+            /// `ColumnStats::numberOfValues`: the input row count is taken then, as without an NDV.
             auto it = input_stats.column_stats.find(key);
-            if (it != input_stats.column_stats.end() && it->second.num_distinct_values > 0)
-                estimated_groups = std::max(estimated_groups.value_or(0), it->second.num_distinct_values);
+            if (it == input_stats.column_stats.end())
+                continue;
+            if (const auto number_of_values = it->second.numberOfValues())
+                estimated_groups = std::max(estimated_groups.value_or(0), *number_of_values);
         }
 
         if (estimated_groups && input_stats.estimated_rows && *estimated_groups * 2 > *input_stats.estimated_rows)

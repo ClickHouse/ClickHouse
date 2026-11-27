@@ -78,7 +78,7 @@ estimateAggregatingStepStats(const Aggregator::Params & aggregator_params, bool 
         /// It is not the number of groups, so the key is taken as one without statistics, also in the output, where
         /// every key value takes one row whatever its frequency in the input.
         if (key_stats == input_stats.column_stats.end()
-            || key_stats->second.ndv_provenance.origin == ColumnStatsOrigin::EstimatedFromMetadata)
+            || (key_stats->second.num_distinct_values > 0 && !key_stats->second.numberOfValues()))
         {
             /// Cannot calculate total number of groups if we don't know NDV of any of the aggregation columns.
             /// The estimate then falls back to the input row count (an over-count of groups), so it is no longer

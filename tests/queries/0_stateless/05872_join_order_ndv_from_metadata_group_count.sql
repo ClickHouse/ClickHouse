@@ -11,6 +11,7 @@ SET query_plan_optimize_join_order_randomize = 0;
 
 DROP TABLE IF EXISTS skewed;
 DROP TABLE IF EXISTS dim;
+DROP TABLE IF EXISTS measured;
 
 -- `k` is 0 in 99% of the rows and has 10000 other values, one row each: it compresses to less than a bit per row.
 CREATE TABLE skewed (id UInt64, k UInt64 CODEC(LZ4))
@@ -24,6 +25,10 @@ ENGINE = MergeTree ORDER BY name
 SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0,
     index_granularity = 8192, index_granularity_bytes = '10Mi', min_compress_block_size = 65536, max_compress_block_size = 1048576;
 INSERT INTO dim SELECT number, toString(intHash64(number)) FROM numbers(100000);
+
+-- The rare values of `skewed`, with statistics.
+CREATE TABLE measured (k UInt64 STATISTICS(uniq)) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
+INSERT INTO measured SELECT number * 100 FROM numbers(10000);
 
 SELECT 'The column has an estimate from its compressed size, far below its 10001 values';
 SELECT toFloat64OrZero(extract(arrayStringConcat(groupArray(explain), '\n'), 'Selectivity: estimated \\(NDV\\) ([0-9.e+-]+)')) > 1 / 100
@@ -40,7 +45,23 @@ FROM (EXPLAIN estimates = 1 SELECT g.k FROM (SELECT k FROM skewed GROUP BY k) AS
 SELECT arrayMin(arrayMap(x -> toFloat64OrZero(x), extractAll(arrayStringConcat(groupArray(explain), '\n'), 'Distinct[^\n]*\\(rows: ~([0-9.e+]+)'))) >= 10001
 FROM (EXPLAIN estimates = 1 SELECT DISTINCT k FROM skewed);
 
+SELECT 'A DISTINCT over INTERSECT ALL of a column with statistics and the skewed one, in both orders';
+-- The 10000 values of `measured` are the rare values of `skewed`, so all of them are in the result. The smaller
+-- number of distinct values of the two inputs is the one from metadata: it must not pass for a measured one.
+SELECT arrayMin(arrayMap(x -> toFloat64OrZero(x), extractAll(arrayStringConcat(groupArray(explain), '\n'), 'Distinct[^\n]*\\(rows: ~([0-9.e+]+)'))) >= 1000
+FROM (EXPLAIN estimates = 1 SELECT DISTINCT k FROM (SELECT k FROM measured INTERSECT ALL SELECT k FROM skewed));
+SELECT arrayMin(arrayMap(x -> toFloat64OrZero(x), extractAll(arrayStringConcat(groupArray(explain), '\n'), 'Distinct[^\n]*\\(rows: ~([0-9.e+]+)'))) >= 1000
+FROM (EXPLAIN estimates = 1 SELECT DISTINCT k FROM (SELECT k FROM skewed INTERSECT ALL SELECT k FROM measured));
+
+SELECT 'The rule-based distributed plan shuffles the 10001 groups instead of merging them on one node';
+SET enable_cascades_optimizer = 0, distributed_plan_max_rows_to_broadcast = 1000;
+SELECT countIf(explain LIKE '%ShuffleExchange%') > 0
+FROM (EXPLAIN SELECT k, count() FROM skewed GROUP BY k);
+SELECT (SELECT groupArray(explain) FROM (EXPLAIN SELECT k, count() FROM skewed GROUP BY k))
+    = (SELECT groupArray(explain) FROM (EXPLAIN SELECT k, count() FROM skewed GROUP BY k SETTINGS estimate_distinct_values_from_metadata = 0));
+
 SET enable_cascades_optimizer = 0, make_distributed_plan = 0;
 
 DROP TABLE skewed;
+DROP TABLE measured;
 DROP TABLE dim;
