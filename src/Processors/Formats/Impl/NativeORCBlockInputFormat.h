@@ -154,6 +154,7 @@ public:
     /// `absent_columns` are proven missing from the file by Iceberg field id (see `column_mapper_`): no field of the file
     /// is read into them, and they get their `absent_column_defaults_` if any. A struct or list column whose subcolumns are
     /// requested is read with its type in `nested_table_type_hints_`, the one its fields were selected with, if it is there.
+    /// `file_column_names_` are the top-level field names of the file in file order, also of the fields that are not read.
     ORCColumnToCHColumn(
         const Block & header_,
         bool allow_missing_columns_,
@@ -166,7 +167,8 @@ public:
         NameSet absent_columns_ = {},
         UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults_ = {},
         UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints_ = {},
-        UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_ = {});
+        UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_ = {},
+        Names file_column_names_ = {});
 
     void orcTableToCHChunk(
         Chunk & res,
@@ -208,6 +210,8 @@ private:
     /// ORC column ids of the structs of the file a field of which has no Iceberg field id: their fields are matched by name,
     /// also when the fields read have one.
     const UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids;
+    const NameSet file_column_names;
+    const NameSet lowercase_file_column_names;
 };
 }
 #endif

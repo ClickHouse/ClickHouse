@@ -60,6 +60,7 @@ private:
     void prepareReader();
     void prepareStreamReader();
     void prepareFileReader();
+    void collectRequestedTopLevelFields();
     void collectDictionaryFields(const ArrowIPC::ArrowFields & fields);
     /// Decodes the values of one `DictionaryBatch` with `batch_decoder` and registers them in `dictionaries`
     /// under the batch's id, once for each position of a field encoding that dictionary (`dictionary_uses`).

@@ -7,7 +7,9 @@
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
+#include <functional>
 #include <map>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 
@@ -37,6 +39,10 @@ namespace Nested
     /// For example:
     /// Columns: "a.x", "b", "c". Name: "a.x.y.z". Result: ("a.x", "y.z").
     std::pair<std::string_view, std::string_view> getColumnAndSubcolumnPair(std::string_view name, const NameSet & storage_columns);
+
+    /// The first of `getAllColumnAndSubcolumnPairs(name)` whose column `is_column` accepts, nullopt if there is none.
+    std::optional<std::pair<std::string_view, std::string_view>> tryGetColumnAndSubcolumnPair(
+        std::string_view name, const std::function<bool(std::string_view)> & is_column);
 
     /// Given all existing columns, return column name of the subcolumn with specified name.
     /// For example:
@@ -119,8 +125,8 @@ namespace Nested
 }
 
 /// Use this class to extract element columns from columns of nested type in a block, e.g. named Tuple.
-/// The requested name is cut at the first dot: the head names a block column and the tail is a
-/// subcolumn of its type, so the result is whatever `SELECT <head>.<tail>` yields for that column.
+/// The requested name is cut after the shortest dotted prefix that names a block column: the head names that column and
+/// the tail is a subcolumn of its type, so the result is whatever `SELECT <head>.<tail>` yields for that column.
 class NestedColumnExtractHelper
 {
 public:

@@ -3145,15 +3145,16 @@ UnorderedMapWithMemoryTracking<String, DataTypePtr> RecordBatchDecoder::bindRequ
         return match;
     };
 
-    /// As `ArrowIPCBlockInputFormat::buildChunk` finds a column: the whole name as a top-level field, else its first component
-    /// as a top-level field and the rest as a field below it.
+    /// As `ArrowIPCBlockInputFormat::buildChunk` finds a column: the whole name as a top-level field, else its shortest dotted
+    /// prefix that is a top-level field and the rest as a field below it.
+    auto is_top_level_field = [&](std::string_view name) { return find(top_level_fields, "", name).has_value(); };
     UnorderedMapWithMemoryTracking<String, DataTypePtr> folded;
     for (const auto & column : header)
     {
         auto path = find(top_level_fields, "", column.name);
-        if (const auto [table, rest] = Nested::splitName(std::string_view(column.name)); !path && !rest.empty())
-            if (const auto root = find(top_level_fields, "", table))
-                path = find(nested_fields, *root + ".", rest);
+        if (!path)
+            if (const auto nested_names = Nested::tryGetColumnAndSubcolumnPair(column.name, is_top_level_field))
+                path = find(nested_fields, *find(top_level_fields, "", nested_names->first) + ".", nested_names->second);
         if (path && !types.contains(*path))
             if (auto [it, inserted] = folded.try_emplace(*path, column.type); !inserted)
                 it->second = nullptr;

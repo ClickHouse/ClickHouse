@@ -102,6 +102,15 @@ std::pair<std::string_view, std::string_view> getColumnAndSubcolumnPair(std::str
         boost::join(storage_columns, ", "));
 }
 
+std::optional<std::pair<std::string_view, std::string_view>> tryGetColumnAndSubcolumnPair(
+    std::string_view name, const std::function<bool(std::string_view)> & is_column)
+{
+    for (auto pair : getAllColumnAndSubcolumnPairs(name))
+        if (is_column(pair.first))
+            return pair;
+    return std::nullopt;
+}
+
 std::string_view getColumnFromSubcolumn(std::string_view name, const NameSet & storage_columns)
 {
     return getColumnAndSubcolumnPair(name, storage_columns).first;
@@ -748,25 +757,30 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(co
     if (block.has(column_name, case_insentive))
         return {block.getByName(column_name, case_insentive)};
 
-    const auto nested_names = Nested::splitName(column_name);
-    const auto * root = block.findByName(nested_names.first, case_insentive);
-    if (!root)
+    const ColumnWithTypeAndName * root = nullptr;
+    const auto nested_names = Nested::tryGetColumnAndSubcolumnPair(column_name, [&](std::string_view name)
+    {
+        root = block.findByName(name, case_insentive);
+        return root != nullptr;
+    });
+    if (!nested_names)
         return {};
+    const String subcolumn_name(nested_names->second);
 
     const auto & subcolumns = subcolumnsOf(*root);
     if (!subcolumns.complete)
-        return resolveSubcolumn(*root, nested_names.second, column_name);
+        return resolveSubcolumn(*root, subcolumn_name, column_name);
 
     /// A spelling that is itself a subcolumn name resolves to it, as it does in
     /// `IDataType::getSubcolumnData`; only one that names none is matched case-insensitively.
-    auto it = subcolumns.path_by_name.find(nested_names.second);
+    auto it = subcolumns.path_by_name.find(subcolumn_name);
     if (it == subcolumns.path_by_name.end() && case_insentive)
     {
-        const auto folded = subcolumns.names_by_lowercase.find(boost::to_lower_copy(nested_names.second));
+        const auto folded = subcolumns.names_by_lowercase.find(boost::to_lower_copy(subcolumn_name));
         if (folded != subcolumns.names_by_lowercase.end())
         {
             if (folded->second.size() > 1)
-                DataTypeTuple::throwAmbiguousCaseInsensitiveName(nested_names.second, folded->second[0], folded->second[1]);
+                DataTypeTuple::throwAmbiguousCaseInsensitiveName(subcolumn_name, folded->second[0], folded->second[1]);
             it = subcolumns.path_by_name.find(folded->second.front());
         }
     }
