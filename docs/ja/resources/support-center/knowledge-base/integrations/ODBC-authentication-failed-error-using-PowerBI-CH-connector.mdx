@@ -6,9 +6,7 @@ tags: ['ネイティブクライアントとインターフェイス', 'エラ�
 keywords: ['ODBC', 'Power BI Connector', '認証失敗']
 ---
 
-<div id="question">
-  ## 質問
-</div>
+## 質問 {#question}
 
 コネクタを使ってPowerBIからClickHouseに接続しようとすると、認証エラーが発生します。
 
@@ -26,17 +24,13 @@ ClickHouse is installed.
 ```
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Power BI ODBC の認証エラーダイアログ](/images/knowledgebase/powerbi_odbc_authentication_error.webp)
-
-</Frame>
-
+  <Frame>
+    ![Power BI ODBC 認証エラーのダイアログ](/images/knowledgebase/powerbi_odbc_authentication_error.webp)
+  </Frame>
 </div>
 
 <div id="answer">
-  ## 回答
+  ## 回答 {#answer}
 </div>
 
 ClickHouse ODBC ドライバをバージョン [1.4.1](https://github.com/ClickHouse/clickhouse-odbc/releases/tag/1.4.1.20250523) に更新してください。

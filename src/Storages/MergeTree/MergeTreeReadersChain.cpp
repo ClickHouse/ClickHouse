@@ -309,34 +309,11 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
     return must_convert;
 }
 
-/// Builds `ColumnsWithTypeAndName` using the on-disk column descriptions (from `IMergeTreeReader::getColumnsToRead`).
-/// This is important when columns have not yet been converted, i.e. their types with differ those contained in `getReadSampleBlock`.
-static ColumnsWithTypeAndName toColumnsWithTypeAndName(const Columns & columns, const NamesAndTypes & on_disk_columns)
-{
-    if (columns.size() != on_disk_columns.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Number of columns doesn't match number of on-disk columns, columns size: {}, on_disk_columns size: {}",
-            columns.size(),
-            on_disk_columns.size());
-
-    ColumnsWithTypeAndName res;
-    res.reserve(columns.size());
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        /// Columns might be null, e.g. not yet filled by `fillMissingColumns`.
-        if (columns[i])
-            res.emplace_back(columns[i], on_disk_columns[i].type, on_disk_columns[i].name);
-    }
-    return res;
-}
-
 MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     size_t max_rows,
     MarkRanges & ranges,
     std::vector<MarkRanges> & patch_ranges,
-    const DataflowCacheUpdateCallback & dataflow_cache_update_cb,
-    size_t max_block_size_rows)
+    size_t max_stripe_block_rows)
 {
     if (max_rows == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
@@ -348,15 +325,9 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
     auto & first_reader = range_readers.front();
 
-    size_t num_attributed_readers = 0;
-    if (first_reader.getReader()->getMergeTreeReaderSettings().use_query_condition_cache)
-        for (size_t i = 0; i < range_readers.size(); ++i)
-            if (const auto * step = range_readers[i].getPrewhereInfo(); step && step->query_condition_cache_attribution_boundary)
-                num_attributed_readers = i + 1;
-
     try
     {
-        read_result = first_reader.startReadingChain(max_rows, ranges, max_block_size_rows, columns_cache_readers);
+        read_result = first_reader.startReadingChain(max_rows, ranges, max_stripe_block_rows, columns_cache_readers);
         LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
     }
     catch (Exception & e)
@@ -413,18 +384,12 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         prewhere_prev_surviving = std::move(surviving);
     };
 
-    std::optional<bool> should_continue_sampling;
+    /// Flushed after every step, whether it returned rows or not: what a reader loaded is read all the same.
+    first_reader.getReader()->registerReadRanges();
+
     if (read_result.num_rows != 0)
     {
         first_reader.getReader()->fillVirtualColumns(read_result.columns, read_result.num_rows);
-
-        /// Record the statistics before `readPatches`, which fills the columns missing on disk.
-        if (dataflow_cache_update_cb)
-            dataflow_cache_update_cb(
-                toColumnsWithTypeAndName(read_result.columns, first_reader.getReader()->getColumnsToRead()),
-                first_reader.getReader()->getPartiallyReadColumns(),
-                read_result.num_bytes_read,
-                should_continue_sampling);
 
         readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
         executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, previous_steps_columns.front(), read_result.num_rows);
@@ -433,9 +398,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         addPatchVirtuals(read_result, first_reader.getSampleBlock());
 
         track_prewhere_granules(0);
-
-        if (num_attributed_readers != 0)
-            read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
     }
 
     for (size_t i = 1; i < range_readers.size(); ++i)
@@ -443,9 +405,9 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         if (prewhere_granule_stats_enabled && i == first_query_prewhere_reader_index)
             rows_entering_prewhere = read_result.survivingRowsPerGranule();
 
-        const size_t num_bytes_read_so_far = read_result.num_bytes_read;
         size_t num_read_rows = 0;
         auto columns = range_readers[i].continueReadingChain(read_result, num_read_rows);
+        range_readers[i].getReader()->registerReadRanges();
 
         /// Even if number of read rows is 0 we need to apply all steps to produce a block with correct structure.
         /// It's also needed to properly advancing streams in later steps.
@@ -462,18 +424,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
             if (num_read_rows == 0)
                 num_read_rows = read_result.num_rows;
 
-            if (dataflow_cache_update_cb)
-            {
-                chassert(read_result.num_bytes_read >= num_bytes_read_so_far);
-                // It is important that we call `recordInputColumns` here even if `should_continue_sampling`
-                // is already set to false, because we still need to update the total bytes seen.
-                dataflow_cache_update_cb(
-                    toColumnsWithTypeAndName(columns, range_readers[i].getReader()->getColumnsToRead()),
-                    range_readers[i].getReader()->getPartiallyReadColumns(),
-                    read_result.num_bytes_read - num_bytes_read_so_far,
-                    should_continue_sampling);
-            }
-
             executeActionsBeforePrewhere(read_result, columns, range_readers[i], previous_header, previous_steps_columns[i], num_read_rows);
             read_result.columns.insert(read_result.columns.end(), columns.begin(), columns.end());
         }
@@ -481,9 +431,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         executePrewhereActions(range_readers[i], read_result, previous_header, i + 1 == range_readers.size(), i < last_reader_evaluating_defaults);
 
         track_prewhere_granules(i);
-
-        if (i < num_attributed_readers)
-            read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
     }
 
     applyPatchesAfterReader(read_result, range_readers.size() - 1);

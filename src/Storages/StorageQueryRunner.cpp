@@ -610,7 +610,8 @@ private:
         std::swap(format_settings.native.encode_types_in_binary_format, format_settings.native.decode_types_in_binary_format);
         connection->setFormatSettings(format_settings);
 
-        auto registered = RegisteredRemoteQueryExecutor::tryCreate(cluster_executors, *connection, job.query, std::make_shared<const Block>(), job_context);
+        /// No header: the result of the job is read and thrown away, whatever its structure.
+        auto registered = RegisteredRemoteQueryExecutor::tryCreate(cluster_executors, *connection, job.query, SharedHeader{}, job_context);
         if (!registered)
             return;
         auto & executor = *registered;

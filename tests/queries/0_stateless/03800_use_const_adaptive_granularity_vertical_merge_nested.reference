@@ -50,47 +50,47 @@ foo	['GoodBye']	[1]
 SELECT 'compress_marks=1, replace_long_file_name_to_hash = 0';
 compress_marks=1, replace_long_file_name_to_hash = 0
 SELECT column, column_marks_bytes, subcolumns.names, subcolumns.marks_bytes FROM system.parts_columns WHERE database = currentDatabase() AND table = 'nested_no_pk' AND active ORDER BY column;
-complex.key	94	['size0']	[47]
-complex.value	47	['size0']	[47]
+complex.key	146	['size0']	[73]
+complex.value	73	['size0']	[73]
 OPTIMIZE TABLE nested_no_pk PARTITION tuple() FINAL;
 SELECT column, column_marks_bytes, subcolumns.names, subcolumns.marks_bytes FROM system.parts_columns WHERE database = currentDatabase() AND table = 'nested_no_pk' AND active ORDER BY column;
-complex.key	94	['size0']	[47]
-complex.value	47	['size0']	[47]
+complex.key	146	['size0']	[73]
+complex.value	73	['size0']	[73]
 SELECT * FROM nested_no_pk ORDER BY complex.key;
 ['GoodBye']	[1]
 -- { echo }
 SELECT column, column_marks_bytes, subcolumns.names, subcolumns.marks_bytes FROM system.parts_columns WHERE database = currentDatabase() AND table = 'nested_pk' AND active ORDER BY column;
-complex.key	94	['size0']	[47]
-complex.value	47	['size0']	[47]
-key	47	[]	[]
+complex.key	146	['size0']	[73]
+complex.value	73	['size0']	[73]
+key	73	[]	[]
 OPTIMIZE TABLE nested_pk FINAL;
 SELECT column, column_marks_bytes, subcolumns.names, subcolumns.marks_bytes FROM system.parts_columns WHERE database = currentDatabase() AND table = 'nested_pk' AND active ORDER BY column;
-complex.key	94	['size0']	[47]
-complex.value	47	['size0']	[47]
-key	47	[]	[]
+complex.key	146	['size0']	[73]
+complex.value	73	['size0']	[73]
+key	73	[]	[]
 SELECT * FROM nested_pk ORDER BY complex.key;
 foo	['GoodBye']	[1]
 -- { echo }
 SELECT 'compress_marks=1, replace_long_file_name_to_hash = 1';
 compress_marks=1, replace_long_file_name_to_hash = 1
 SELECT column, column_marks_bytes, subcolumns.names, subcolumns.marks_bytes FROM system.parts_columns WHERE database = currentDatabase() AND table = 'nested_no_pk' AND active ORDER BY column;
-complex.key	94	['size0']	[47]
-complex.value	47	['size0']	[47]
+complex.key	146	['size0']	[73]
+complex.value	73	['size0']	[73]
 OPTIMIZE TABLE nested_no_pk PARTITION tuple() FINAL;
 SELECT column, column_marks_bytes, subcolumns.names, subcolumns.marks_bytes FROM system.parts_columns WHERE database = currentDatabase() AND table = 'nested_no_pk' AND active ORDER BY column;
-complex.key	94	['size0']	[47]
-complex.value	47	['size0']	[47]
+complex.key	146	['size0']	[73]
+complex.value	73	['size0']	[73]
 SELECT * FROM nested_no_pk ORDER BY complex.key;
 ['GoodBye']	[1]
 -- { echo }
 SELECT column, column_marks_bytes, subcolumns.names, subcolumns.marks_bytes FROM system.parts_columns WHERE database = currentDatabase() AND table = 'nested_pk' AND active ORDER BY column;
-complex.key	94	['size0']	[47]
-complex.value	47	['size0']	[47]
-key	47	[]	[]
+complex.key	146	['size0']	[73]
+complex.value	73	['size0']	[73]
+key	73	[]	[]
 OPTIMIZE TABLE nested_pk FINAL;
 SELECT column, column_marks_bytes, subcolumns.names, subcolumns.marks_bytes FROM system.parts_columns WHERE database = currentDatabase() AND table = 'nested_pk' AND active ORDER BY column;
-complex.key	94	['size0']	[47]
-complex.value	47	['size0']	[47]
-key	47	[]	[]
+complex.key	146	['size0']	[73]
+complex.value	73	['size0']	[73]
+key	73	[]	[]
 SELECT * FROM nested_pk ORDER BY complex.key;
 foo	['GoodBye']	[1]

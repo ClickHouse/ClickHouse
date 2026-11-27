@@ -1,76 +1,64 @@
 ---
 slug: /use-cases/AI_ML/AIChat/semantic-layer
-sidebarTitle: 'Personnaliser le chat Assistant avec une couche sémantique'
-title: 'Optimiser les conversations Assistant avec une couche sémantique'
-description: 'Guide d''utilisation d''AGENTS.md pour fournir une logique métier personnalisée et des instructions spécifiques aux données à l''agent de chat Assistant'
-keywords: ['AI', 'ClickHouse Cloud', 'Agent', 'AGENTS.md', 'Couche sémantique', 'Instructions personnalisées', 'Prompt système']
+sidebarTitle: 'Personnaliser la conversation de l’Assistant avec une couche sémantique'
+title: 'Optimiser les conversations de l’Assistant avec une couche sémantique'
+description: 'Guide d’utilisation d’AGENTS.md pour fournir une logique métier personnalisée et des instructions propres à vos données à l’agent conversationnel de l’Assistant'
+keywords: ['AI', 'ClickHouse Cloud', 'Agent', 'AGENTS.md', 'Semantic Layer', 'Custom Instructions', 'System Prompt']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-L’agent de chat Assistant peut être personnalisé pour comprendre votre logique métier, vos structures de données et votre expertise métier grâce à **AGENTS.md** — une requête enregistrée spéciale qui sert de couche sémantique au prompt système de l’agent.
+L’agent conversationnel de l’Assistant peut être personnalisé afin de comprendre votre logique métier, vos structures de données et les connaissances propres à votre domaine grâce à **AGENTS.md** — une requête enregistrée spéciale qui agit comme une couche sémantique au-dessus de l’instruction système de l’agent.
 
-En créant un fichier AGENTS.md, vous pouvez fournir des instructions personnalisées injectées au début de chaque conversation afin d’orienter la génération de requêtes SQL et l’analyse des données selon les exigences, calculs et conventions propres à votre organisation.
+En créant un fichier AGENTS.md, vous pouvez fournir des instructions personnalisées, insérées en début de chaque conversation, pour orienter la génération de requêtes SQL et l’analyse des données selon les exigences, les calculs et les conventions propres à votre organisation.
 
-<div id="how-it-works">
-  ## Fonctionnement
-</div>
+## Fonctionnement {#how-it-works}
 
-Lorsque vous enregistrez une requête nommée &quot;AGENTS.md&quot; (sensible à la casse) dans la Cloud Console :
+Lorsque vous enregistrez une requête nommée « AGENTS.md » (sensible à la casse) dans la Console Cloud :
 
-1. Le agent de chat Assistant charge automatiquement ce fichier lorsqu&#39;un message est envoyé
-2. Le contenu est placé dans une balise de contenu structurée, puis injecté dans le prompt système de l&#39;agent
-3. Les instructions s&#39;appliquent à toutes les conversations Assistant chat de ce service
+1. L’agent conversationnel Assistant charge automatiquement ce fichier à chaque envoi de message
+2. Le contenu est encapsulé dans une balise de contenu structuré, puis injecté dans l’instruction système de l’agent
+3. Les instructions s’appliquent à toutes les conversations avec l’Assistant dans ce service
 
-<div id="creating-agents-md">
-  ## Création d’AGENTS.md
-</div>
+## Création du fichier AGENTS.md {#creating-agents-md}
 
 <Steps>
-  <Step title="Créez la requête enregistrée" id="create-query">
-    1. Dans le Cloud Console, créez une nouvelle requête
-    2. Nommez-la exactement : **&quot;AGENTS.md&quot;** (sensible à la casse)
-    3. Saisissez vos instructions personnalisées dans l’éditeur de texte de la requête (pas du SQL)
+  <Step title="Créer la requête enregistrée" id="create-query">
+    1. Dans la Console Cloud, créez une nouvelle requête
+    2. Nommez-la exactement **« AGENTS.md »** (sensible à la casse)
+    3. Rédigez vos instructions personnalisées dans l’éditeur de texte de la requête (il ne s’agit pas de véritable SQL)
     4. Enregistrez la requête
   </Step>
 
-  <Step title="Ajoutez vos instructions" id="add-instructions">
-    Structurez vos instructions dans un langage clair et directement exploitable. Incluez :
+  <Step title="Ajouter vos instructions" id="add-instructions">
+    Rédigez vos instructions dans un langage clair et directement exploitable. Indiquez notamment :
 
     * Les règles métier et les calculs
     * Des indications sur la structure des données
-    * La terminologie spécifique au domaine
-    * Les modèles de requête courants
+    * La terminologie propre au domaine
+    * Les modèles de requêtes courants
     * Les règles d’optimisation des performances
   </Step>
 </Steps>
 
-<div id="best-practices">
-  ## Bonnes pratiques
-</div>
+## Bonnes pratiques {#best-practices}
 
-<div id="finite-resource">
-  ### Considérez le contexte comme une ressource finie
-</div>
+### Considérer le contexte comme une ressource limitée {#finite-resource}
 
-Le contexte est précieux : chaque token entame le « budget d’attention » de l’agent. Comme les humains à la mémoire de travail limitée, les modèles de langage voient leurs performances se dégrader à mesure que le contexte s’allonge. Il faut donc trouver **le plus petit ensemble possible de tokens à forte valeur informative** qui maximise les chances d’obtenir le résultat souhaité.
+Le contexte est précieux : chaque jeton entame le « budget d’attention » de l’agent. À l’instar des humains, dont la mémoire de travail est limitée, les modèles de langage voient leurs performances se dégrader à mesure que le contexte s’allonge. L’enjeu consiste donc à trouver le **plus petit ensemble possible de jetons à forte valeur informative** qui maximise la probabilité d’obtenir le résultat souhaité.
 
-<div id="right-altitude">
-  ### Trouver le bon niveau de précision
-</div>
+### Trouver le bon niveau d&#39;abstraction {#right-altitude}
 
-Trouvez le bon équilibre entre deux extrêmes :
+Trouvez le juste équilibre entre deux extrêmes :
 
-* **Trop spécifique** : coder en dur une logique conditionnelle fragile avec des `if-else`, ce qui complexifie la maintenance
-* **Trop vague** : des recommandations trop générales qui ne donnent pas de signaux concrets ou supposent à tort un contexte partagé
+* **Trop spécifique** : coder en dur une logique if-else rigide, source de fragilité et de complexité de maintenance
+* **Trop vague** : des directives générales qui ne fournissent pas de signaux concrets ou présupposent à tort un contexte partagé
 
-Le niveau de précision optimal est suffisamment spécifique pour orienter efficacement le comportement, tout en restant assez flexible pour permettre au modèle d’appliquer de bonnes heuristiques. Commencez par un prompt minimal sur le meilleur modèle disponible, puis ajoutez des instructions claires en fonction des modes d’échec observés.
+Le niveau optimal est suffisamment précis pour orienter efficacement le comportement, tout en restant assez souple pour permettre au modèle d&#39;appliquer des heuristiques solides. Commencez par un prompt minimal avec le meilleur modèle disponible, puis ajoutez des instructions claires en fonction des modes de défaillance observés.
 
-<div id="structured-sections">
-  ### Organiser le contenu en sections structurées
-</div>
+### Structurer en sections {#structured-sections}
 
-Utilisez des balises XML ou des en-têtes Markdown pour créer des sections distinctes et faciles à parcourir :
+Utilisez des balises XML ou des titres Markdown pour créer des sections distinctes, faciles à parcourir d&#39;un coup d&#39;œil :
 
 ```xml
 <background_information>
@@ -86,30 +74,24 @@ How to use specific ClickHouse features
 </tool_guidance>
 ```
 
-<div id="canonical-examples">
-  ### Fournissez des exemples variés et canoniques
-</div>
+### Fournir des exemples variés et canoniques {#canonical-examples}
 
-Les exemples valent mille mots. Au lieu d’entasser tous les cas limites dans votre prompt, sélectionnez un ensemble ciblé d’exemples variés qui illustrent efficacement le comportement attendu.
+Les exemples sont ces « images qui valent mille mots ». Plutôt que d’entasser tous les cas limites dans votre prompt, sélectionnez un ensemble restreint d’exemples variés qui illustrent clairement le comportement attendu.
 
-<div id="minimal-complete">
-  ### Restez minimal, mais complet
-</div>
+### Rester minimal tout en étant complet {#minimal-complete}
 
-* Incluez uniquement les instructions fréquemment nécessaires
-* Soyez concis : un contexte plus long dégrade les performances à cause de la « dégradation du contexte »
+* N&#39;incluez que les instructions dont l&#39;agent a fréquemment besoin
+* Soyez concis : un contexte trop volumineux dégrade les performances, un phénomène appelé « context rot »
 * Supprimez les règles obsolètes ou rarement utilisées
-* Veillez à fournir suffisamment d’informations pour orienter le comportement souhaité
+* Fournissez suffisamment d&#39;informations pour orienter l&#39;agent vers le comportement souhaité
 
 <Tip>
-  Minimal ne signifie pas forcément court. Vous devez fournir suffisamment de détails pour que l’agent adopte le comportement attendu, tout en évitant toute verbosité inutile.
+  Minimal ne veut pas forcément dire court. Il faut suffisamment de détails pour que l&#39;agent adopte le comportement attendu ; évitez simplement toute verbosité superflue.
 </Tip>
 
-<div id="example-calculated-metrics">
-  ## Exemple : métriques calculées à partir de données brutes
-</div>
+## Exemple : métriques calculées à partir des données brutes {#example-calculated-metrics}
 
-Indiquez à l’agent lorsque les métriques nécessitent des calculs spécifiques plutôt qu’un accès direct aux colonnes :
+Guidez l&#39;agent lorsque les métriques nécessitent des calculs spécifiques plutôt qu&#39;un simple accès direct aux colonnes :
 
 ```xml
 <metric_calculations>
@@ -130,11 +112,9 @@ GROUP BY date;
 </metric_calculations>
 ```
 
-<div id="example-business-logic">
-  ## Exemple : Règles de logique métier
-</div>
+## Exemple : règles de logique métier {#example-business-logic}
 
-Définissez des calculs et des catégories propres à votre domaine :
+Définissez des calculs et des catégorisations propres à votre domaine métier :
 
 ```xml
 <business_rules>
@@ -166,11 +146,9 @@ Always include these categorizations when generating traffic or revenue reports.
 </business_rules>
 ```
 
-<div id="example-data-quirks">
-  ## Exemple : particularités des structures de données
-</div>
+## Exemple : particularités de la structure de données {#example-data-quirks}
 
-Consignez les formats de données non conventionnels ou les choix de schéma hérités :
+Documentez les formats de données atypiques ou les choix de schéma hérités :
 
 ```xml
 <data_structure_notes>
@@ -197,11 +175,9 @@ FROM products;
 </data_structure_notes>
 ```
 
-<div id="example-terminology">
-  ## Exemple : terminologie métier
-</div>
+## Exemple : terminologie métier {#example-terminology}
 
-Faites correspondre les termes métier à leur implémentation technique :
+Associez les termes métier à leur implémentation technique :
 
 ```xml
 <terminology>

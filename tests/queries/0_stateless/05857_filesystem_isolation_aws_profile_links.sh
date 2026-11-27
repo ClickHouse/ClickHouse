@@ -71,12 +71,16 @@ if ! grep -q 'Ready for connections' "$DIR/data/server.log" 2>/dev/null || ! gre
     cat "$DIR/server.out" "$DIR/data/server.err.log" >&2
     exit 1
 fi
+# With `CAP_SYS_ADMIN`, the supervisor stays outside of the namespaces, and its child, the init of the PID
+# namespace, is inside. Otherwise that process is inside.
+INSIDE=$PID
+[ "$(cat "/proc/$PID/comm")" = clickhouse-isol ] && INSIDE=$(cut -d' ' -f1 "/proc/$PID/task/$PID/children")
 
-echo "credentials: $(cat "/proc/$PID/root$DIR/home/.aws/credentials" 2>&1)"
-echo "config: $(cat "/proc/$PID/root$DIR/home/.aws/config" 2>&1)"
-echo "unrelated directory: $([ -e "/proc/$PID/root$DIR/unrelated/file" ] && echo visible || echo hidden)"
+echo "credentials: $(cat "/proc/$INSIDE/root$DIR/home/.aws/credentials" 2>&1)"
+echo "config: $(cat "/proc/$INSIDE/root$DIR/home/.aws/config" 2>&1)"
+echo "unrelated directory: $([ -e "/proc/$INSIDE/root$DIR/unrelated/file" ] && echo visible || echo hidden)"
 
 echo second > "$DIR/secrets/credentials.new"
 mv "$DIR/secrets/credentials.new" "$DIR/secrets/credentials"
 
-echo "renewed credentials: $(cat "/proc/$PID/root$DIR/home/.aws/credentials" 2>&1)"
+echo "renewed credentials: $(cat "/proc/$INSIDE/root$DIR/home/.aws/credentials" 2>&1)"

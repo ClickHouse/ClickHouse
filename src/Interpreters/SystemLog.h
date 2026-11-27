@@ -1037,6 +1037,60 @@ Here you can see:
 - `SourceFromSingleChunk` need to wait, because `ExpressionTransform` does not accept any data during execution of `sleep(1)`, so it will be in `PortFull` state for 1e6 us, and so `output_wait_elapsed_us` > 1e6.
 - `LimitsCheckingTransform`/`NullSource`/`LazyOutputFormat` need to wait until `ExpressionTransform` will execute `sleep(1)` to process the result, so `input_wait_elapsed_us` > 1e6.
 
+### Profiling a join {#profiling-a-join}
+
+When a query reads from several tables, every table has its own read pipeline, and rows pass through many processors on their way to the result.
+Summing `input_rows` or `output_rows` over all processors therefore counts the same rows several times and does not tell how much was read from each table.
+The following example uses two `MergeTree` tables of different sizes on a single server.
+
+```sql title="Query"
+CREATE TABLE big (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE small (id UInt64, w UInt64) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO big SELECT number, number FROM numbers(1000000);
+INSERT INTO small SELECT number, number FROM numbers(1000);
+
+EXPLAIN PIPELINE
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0;
+```
+
+`EXPLAIN PIPELINE` shows one read pipeline for each side of the join (`ReadFromMergeTree`, with `MergeTreeSelect` sources below it), connected by the join processors. `join_algorithm = 'hash'` and `enable_join_runtime_filters = 0` make this example reproducible: a join runtime filter cannot prune `big` before its source emits rows.
+
+```sql title="Query"
+SELECT count()
+FROM big AS b
+INNER JOIN small AS s ON b.id = s.id
+SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0, log_processors_profiles = 1;
+-- Note the query ID printed by the client, or look it up in `system.query_log`.
+
+SYSTEM FLUSH LOGS;
+
+SELECT
+    id,
+    parent_ids,
+    plan_step,
+    name,
+    plan_step_name,
+    plan_step_description,
+    input_rows,
+    output_rows,
+    elapsed_us
+FROM system.processors_profile_log
+WHERE query_id = '<query_id>'
+ORDER BY plan_step, id;
+```
+
+To interpret the result:
+
+- Look at the source processors, whose `name` is `MergeTreeSelect(...)` (or `MergeTreeSource`) and whose `plan_step_name` is `ReadFromMergeTree`. Their `output_rows` is the number of rows each source produced. Sum it per read step (`plan_step`), not over the whole query. The value is the number of rows that the read step passed on to the rest of the pipeline.
+- Each side of the join has its own `ReadFromMergeTree` step with a different `plan_step`. In the rows from this execution, `parent_ids` lists the IDs of downstream processors. Starting from a source, recursively match every `parent_ids` value to an `id` in the same `query_id` to follow the branch towards the join. This identifies, for example, the branch that feeds `FillingRightJoinSide`.
+- Processors above the sources (for example `ExpressionTransform`, `FillingRightJoinSide`, `ConcatProcessor`, or the join transform itself) consume and produce rows derived from the sources. Do not add their counters to the source counters, because that counts the same rows again.
+- The step information is not always enough to identify a source. `EXPLAIN PIPELINE` is a separate plan: it helps compare processor names and branch shapes, but its plain-text output has neither the logged `id` values nor `parent_ids`. If both tables have similar step descriptions, use the graph from the executed query and the known row counts. In this example, the read sources for `big` sum to 1,000,000 rows and those for `small` sum to 1,000 rows.
+- The row and byte counters of processors describe the data passing through the pipeline, not physical storage reads. They do not include granules or marks that were read and then filtered out, they are affected by the primary key and other index filtering, `PREWHERE`, and column pruning, and they do not reflect compressed bytes read from disk. `SelectedRows`, `SelectedBytes`, and `SelectedMarks` in `system.query_log` are logical selection statistics: they can be nonzero when all data comes from cache. To investigate file reads, use `ReadBufferFromFileDescriptorReadBytes`, which includes reads served by the OS page cache. To investigate local disk or block-device reads that exclude the OS page cache, use `OSReadBytes`.
+
 .see_also
 - [`EXPLAIN PIPELINE`](/reference/statements/explain#explain-pipeline)
 )DOCS_MD";

@@ -1,0 +1,20 @@
+top level
+2025-01-01	99
+2025-01-02	99
+2025-01-03	99
+subquery
+2025-01-01	99
+2025-01-02	99
+2025-01-03	99
+CTE
+2025-01-01	99
+2025-01-02	99
+2025-01-03	99
+outer query reads one of two interpolated columns
+2025-01-01	99
+2025-01-02	99
+2025-01-03	99
+outer query reads only the sort key
+2025-01-01
+2025-01-02
+2025-01-03

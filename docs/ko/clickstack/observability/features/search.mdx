@@ -1,0 +1,95 @@
+---
+slug: /clickstack/observability/features/search
+title: 'ClickHouse Observability로 검색하기'
+sidebarTitle: '검색'
+description: 'ClickHouse Observability로 검색하기'
+doc_type: 'guide'
+keywords: ['clickstack', 'search', 'logs', 'observability', 'full-text search']
+---
+
+import Tagging from '/snippets/ko/_observability_tagging.mdx';
+
+ClickHouse Observability에서는 이벤트(로그 및 트레이스)를 대상으로 전문 검색(Full-text search)을 수행할 수 있습니다. 이벤트와 일치하는 키워드를 입력하기만 하면 바로 검색을 시작할 수 있습니다. 예를 들어 로그에 &quot;Error&quot;가 포함되어 있다면 검색창에 &quot;Error&quot;를 입력하는 것만으로 해당 로그를 찾을 수 있습니다.
+
+대시보드와 차트에서 이벤트를 필터링할 때에도 동일한 검색 구문을 사용합니다.
+
+## 검색 기능 {#search-features}
+
+### Lucene 검색 구문 {#natural-language-syntax}
+
+* 검색은 대소문자를 구분하지 않습니다
+* 검색은 기본적으로 단어 전체가 일치하는 경우에만 매칭됩니다(예: `Error`는 `Error here`와
+  일치하지만 `Errors here`와는 일치하지 않습니다). 단어 양쪽을 와일드카드로 감싸면 단어의 일부만
+  일치해도 검색됩니다(예: `*Error*`는 `AnyError` 및 `AnyErrors`와 일치합니다)
+* 검색어는 순서와 관계없이 검색됩니다(예: `Hello World`는 `Hello World`와
+  `World Hello`를 포함하는 로그 모두와 일치합니다)
+* `NOT` 또는 `-`를 사용하여 키워드를 제외할 수 있습니다(예: `Error NOT Exception` 또는
+  `Error -Exception`)
+* `AND`와 `OR`를 사용하여 여러 키워드를 조합할 수 있습니다(예:
+  `Error OR Exception`)
+* 큰따옴표로 감싸면 정확히 일치하는 항목을 검색할 수 있습니다(예: `"Error tests not found"`)
+
+<div className="ch-image-md">
+  <Frame>
+    ![failed to watch 쿼리에 대한 로그 결과를 보여주는 완전 관리형 검색 화면](/images/clickstack/observability-search.png)
+  </Frame>
+</div>
+
+#### 컬럼/속성 검색 {#column-search}
+
+* `column:value` 형식으로 컬럼과 JSON/맵 속성을 검색할 수 있습니다(예: `SeverityText:error`,
+  `ServiceName:app`).
+* 비교 연산자(comparison operators)(`>`, `<`,
+  `>=`, `<=`)를 사용하여 값의 범위를 검색할 수 있습니다(예: `Duration:>1000`).
+* `property:*` 형식으로 특정 속성이 존재하는지 검색할 수 있습니다(예:
+  `Duration:*`).
+
+### 시간 입력 {#time-input}
+
+* 시간 입력에는 자연어 표현을 사용할 수 있습니다(예: `1 hour ago`, `yesterday`,
+  `last week`).
+* 특정 시점을 하나만 지정하면 해당 시점부터 현재까지를
+  검색합니다.
+* 시간 쿼리를 쉽게 디버깅할 수 있도록 검색 시 시간 범위는 항상 파싱된 시간 범위로
+  변환됩니다.
+* 히스토그램 막대를 드래그해 선택하면 특정 시간 범위로 확대할 수도 있습니다.
+
+### SQL 검색 구문 {#sql-syntax}
+
+필요한 경우 검색 입력을 SQL 모드로 전환할 수 있습니다. SQL 모드에서는 유효한 모든
+`WHERE` 절을 검색에 사용할 수 있으므로, Lucene 구문으로 표현할 수 없는
+복잡한 쿼리를 작성할 때 유용합니다.
+
+### SELECT 문 {#select-statement}
+
+검색 결과에 표시할 컬럼을 지정하려면 `SELECT`
+입력을 사용하면 됩니다. 이 입력은 검색 페이지에서 조회할 컬럼을 지정하는 SQL `SELECT` 표현식입니다.
+현재 별칭(Aliases)은 지원되지 않습니다(예: `column as "alias"`는 사용할 수 없습니다).
+
+## 저장된 검색 {#saved-searches}
+
+검색을 저장해 두면 나중에 빠르게 액세스할 수 있습니다. 저장된 검색은 `Saved Searches` 페이지에 표시되므로, 자주 사용하는 검색 쿼리를 다시 작성할 필요 없이 손쉽게 다시 열 수 있습니다.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![완전 관리형 ClickHouse Observability의 저장된 검색 페이지에 표시된 My Saved Search](/images/clickstack/observability-saved-search-listing.png)
+  </Frame>
+</div>
+
+검색을 저장하려면 쿼리를 구성한 후 **Save**를 선택하고 검색에 알아보기 쉬운 이름을 지정하십시오. 기존의 저장된 검색을 편집할 때는 아래 예시와 같이 대화 상자에 **Update**가 표시됩니다.
+
+<div className="ch-image-md">
+  <Frame>
+    ![기존 저장된 검색의 쿼리, 이름, 태그 및 Update 버튼이 표시된 Save Search 대화 상자](/images/clickstack/observability-save-search.png)
+  </Frame>
+</div>
+
+### 저장된 검색에 알림 추가하기 {#alerts-on-saved-searches}
+
+저장된 검색에 알림을 설정해 두면 특정 조건이 충족될 때 알림을 받을 수 있습니다. 예를 들어 저장된 검색과 일치하는 이벤트 수가 지정된 임계값을 초과하거나 그 아래로 떨어질 때 알림이 트리거되도록 설정할 수 있습니다.
+
+알림 설정 및 구성에 대한 자세한 내용은 [알림 문서](/ko/clickstack/observability/features/alerts)를 참조하십시오.
+
+### 태그 지정 {#tagging}
+
+<Tagging />

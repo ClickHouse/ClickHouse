@@ -833,9 +833,9 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 引入版本：v21.2.0
 
 返回给定 map 的键。
-启用设置 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 后，可对此函数进行优化。
-启用该设置后，此函数仅读取 `keys` 子列，而不是整个 map。
+当该 map 未在查询的其他位置使用时，此函数可以仅读取 `keys` 子列，而无需读取整个 map。
 查询 `SELECT mapKeys(m) FROM table` 会被转换为 `SELECT m.keys FROM table`。
+此优化由设置 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 控制，该设置默认已启用。
 
 **语法**
 
@@ -851,7 +851,7 @@ mapKeys(map)
 
 **返回值**
 
-返回包含该 Map 中所有键的数组。[`Array(T)`](/zh/reference/data-types/array)
+返回包含该 Map 中所有键的 array。[`Array(T)`](/zh/reference/data-types/array)
 
 **示例**
 
@@ -1167,9 +1167,9 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 引入版本：v21.2.0
 
 返回给定 map 的值。
-启用设置 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 后，此函数可得到优化。
-启用该设置后，该函数只会读取 `values` 子列，而不是整个 map。
+当该 map 未在查询的其他位置使用时，该函数可以只读取 `values` 子列，而不是整个 map。
 查询 `SELECT mapValues(m) FROM table` 会被转换为 `SELECT m.values FROM table`。
+此优化由设置 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 控制，该设置默认已启用。
 
 **语法**
 
@@ -1185,7 +1185,7 @@ mapValues(map)
 
 **返回值**
 
-返回一个数组，包含该 map 中的所有值。[`Array(T)`](/zh/reference/data-types/array)
+返回一个 array，包含该 map 中的所有值。[`Array(T)`](/zh/reference/data-types/array)
 
 **示例**
 

@@ -16,7 +16,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="overview">
-  ## 概要
+  ## 概要 {#overview}
 </div>
 
 AWS CloudWatch は、AWS のリソースやアプリケーションを監視するためのサービスです。CloudWatch にはログ集約機能もありますが、ログを ClickStack に転送することで、次のことが可能になります。
@@ -28,7 +28,7 @@ AWS CloudWatch は、AWS のリソースやアプリケーションを監視す�
 このガイドでは、OpenTelemetry Collector を使用して CloudWatch Logs を ClickStack に転送する方法を説明します。
 
 <div id="existing-cloudwatch">
-  ## 既存のCloudWatchロググループとのインテグレーション
+  ## 既存のCloudWatchロググループとのインテグレーション {#existing-cloudwatch}
 </div>
 
 このセクションでは、既存のCloudWatchロググループからログを取得してClickStackに転送するよう、OpenTelemetry Collectorを設定する方法について説明します。
@@ -36,7 +36,7 @@ AWS CloudWatch は、AWS のリソースやアプリケーションを監視す�
 本番環境向けの構成を設定する前にインテグレーションを試したい場合は、[デモデータセットのセクション](#demo-dataset)にあるデモデータセットでテストできます。
 
 <div id="prerequisites">
-  ### 前提条件
+  ### 前提条件 {#prerequisites}
 </div>
 
 * 稼働中の ClickStack インスタンス
@@ -51,19 +51,15 @@ AWS CloudWatch は、AWS のリソースやアプリケーションを監視す�
   <Step title="ClickStack API keyを取得する" id="get-api-key">
     OpenTelemetry Collector はデータを ClickStack の OTLP endpoint に送信しますが、これには認証が必要です。
 
-    1. ClickStack の URL (例: http://localhost:8080) で HyperDX を開きます
+    1. ClickStack の URL (例: http://localhost:8080) で ClickStack UI を開きます
     2. 必要に応じてアカウントを作成するか、ログインします
     3. **Team Settings → API Keys** に移動します
     4. **インジェスト API key** をコピーします
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ClickStack API Key](/images/clickstack/api-key.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickStack API Key](/images/clickstack/api-key.webp)
+      </Frame>
     </div>
 
     これを環境変数として保存します:
@@ -292,22 +288,18 @@ AWS CloudWatch は、AWS のリソースやアプリケーションを監視す�
     ```
   </Step>
 
-  <Step title="HyperDXでログを確認する" id="verify-logs">
+  <Step title="ClickStack UIでログを確認する" id="verify-logs">
     collector の実行後、次の手順を行います。
 
-    1. http://localhost:8080 で HyperDX を開きます (または ClickStack の URL にアクセスします)
+    1. http://localhost:8080 で ClickStack UI を開きます (または ClickStack の URL にアクセスします)
     2. **Logs** ビューに移動します
     3. ログが表示されるまで 1～2 分待ちます (poll interval に応じます)
     4. CloudWatch ロググループのログを検索します
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ログ検索ビュー](/images/clickstack/cloudwatch/log-search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ログ検索ビュー](/images/clickstack/cloudwatch/log-search-view.webp)
+      </Frame>
     </div>
 
     ログで次の主要な属性を確認します。
@@ -318,20 +310,14 @@ AWS CloudWatch は、AWS のリソースやアプリケーションを監視す�
     * `Body`: 実際のログメッセージの内容
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![エラーログのカラム値](/images/clickstack/cloudwatch/error-log-column-values.webp)
-
-    </Frame>
-
+      <Frame>
+        ![エラーログのカラム値](/images/clickstack/cloudwatch/error-log-column-values.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
-<div id="demo-dataset">
-  ## デモデータセット
-</div>
+## デモデータセット {#demo-dataset}
 
 本番の AWS 環境を構成する前に CloudWatch Logs インテグレーションを試したいユーザー向けに、複数の AWS サービスにまたがる実際の運用に近いパターンを示す、事前生成済みのログを含むサンプルデータセットを提供しています。
 
@@ -373,7 +359,7 @@ AWS CloudWatch は、AWS のリソースやアプリケーションを監視す�
   <Step title="デモデータを確認する" id="verify-demo-logs">
     インポートが完了したら、次の手順を実行します。
 
-    1. http://localhost:8080 で HyperDX を開いてログインします (必要に応じてアカウントを作成してください)
+    1. http://localhost:8080 で ClickStack UI を開いてログインします (必要に応じてアカウントを作成してください)
     2. **Logs** ビューに移動します
     3. 時間範囲を **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** に設定します
     4. `cloudwatch-demo` を検索するか、`LogAttributes['source'] = 'cloudwatch-demo'` でフィルタリングします
@@ -381,26 +367,20 @@ AWS CloudWatch は、AWS のリソースやアプリケーションを監視す�
     複数の CloudWatchロググループ からのログが表示されるはずです。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![デモ検索ビュー](/images/clickstack/cloudwatch/demo-search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![デモ検索ビュー](/images/clickstack/cloudwatch/demo-search-view.webp)
+      </Frame>
     </div>
 
     <Info>
       **タイムゾーン表示**
 
-      HyperDX はタイムスタンプをブラウザーのローカルタイムゾーンで表示します。デモデータの対象期間は **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** です。場所にかかわらずデモログを確実に表示するには、時間範囲を **2025-12-06 00:00:00 - 2025-12-09 00:00:00** に設定してください。ログが表示されたら、より見やすく可視化するために範囲を 24 時間に絞り込めます。
+      ClickStack UI はタイムスタンプをブラウザーのローカルタイムゾーンで表示します。デモデータの対象期間は **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** です。場所にかかわらずデモログを確実に表示するには、時間範囲を **2025-12-06 00:00:00 - 2025-12-09 00:00:00** に設定してください。ログが表示されたら、より見やすく可視化するために範囲を 24 時間に絞り込めます。
     </Info>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## ダッシュボードと可視化
-</div>
+## ダッシュボードと可視化 {#dashboards}
 
 ClickStack で CloudWatch Logs を監視できるように、重要な可視化を含むあらかじめ用意されたダッシュボードを提供しています。
 
@@ -410,29 +390,21 @@ ClickStack で CloudWatch Logs を監視できるように、重要な可視化�
   </Step>
 
   <Step title="ダッシュボードをインポートする" id="import-dashboard">
-    1. HyperDX を開き、Dashboards セクションに移動します
-    2. 右上の三点メニューにある **Import Dashboard** をクリックします
+    1. ClickStack UI を開き、ダッシュボード セクションに移動します
+    2. 右上の三点メニューにある **Import ダッシュボード** をクリックします
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ダッシュボードをインポートするボタン](/images/clickstack/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ダッシュボードをインポートするボタン](/images/clickstack/import-dashboard.webp)
+      </Frame>
     </div>
 
     3. `cloudwatch-logs-dashboard.json` ファイルをアップロードし、**Finish Import** をクリックします
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![インポート完了ダイアログ](/images/clickstack/cloudwatch/finish-import.webp)
-
-    </Frame>
-
+      <Frame>
+        ![インポート完了ダイアログ](/images/clickstack/cloudwatch/finish-import.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -440,13 +412,9 @@ ClickStack で CloudWatch Logs を監視できるように、重要な可視化�
     すべての可視化があらかじめ設定された状態でダッシュボードが作成されます。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![CloudWatch Logs ダッシュボード](/images/clickstack/cloudwatch/logs-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![CloudWatch Logs ダッシュボード](/images/clickstack/cloudwatch/logs-dashboard.webp)
+      </Frame>
     </div>
 
     <Note>
@@ -456,12 +424,10 @@ ClickStack で CloudWatch Logs を監視できるように、重要な可視化�
 </Steps>
 
 <div id="troubleshooting">
-  ## トラブルシューティング
+  ## トラブルシューティング {#troubleshooting}
 </div>
 
-<div id="no-logs">
-  ### HyperDX にログが表示されない
-</div>
+### ClickStack UI にログが表示されない {#no-logs}
 
 **AWS 認証情報が設定されていることを確認してください。**
 
@@ -477,8 +443,8 @@ AWS の認証情報に、必要な `logs:DescribeLogGroups` および `logs:Filt
 **collector のログでエラーを確認します:**
 
 ```bash
-# Dockerを直接使用している場合、ログはstdoutに出力されます
-# Docker Composeを使用している場合:
+# If using Docker directly, logs appear in stdout
+# If using Docker Compose:
 docker compose logs otel-collector
 ```
 
@@ -492,10 +458,10 @@ docker compose logs otel-collector
 **CloudWatchロググループ が存在し、最近のログがあることを確認してください:**
 
 ```bash
-# ロググループを一覧表示する
+# List your log groups
 aws logs describe-log-groups --region us-east-1
 
-# 特定のロググループに最近のログがあるか確認する（直近1時間）
+# Check if a specific log group has recent logs (last hour)
 aws logs filter-log-events \
   --log-group-name /aws/lambda/my-function \
   --region us-east-1 \
@@ -504,7 +470,7 @@ aws logs filter-log-events \
 ```
 
 <div id="missing-recent">
-  ### 古いログしか表示されない、または最新のログが表示されない
+  ### 古いログしか表示されない、または最新のログが表示されない {#missing-recent}
 </div>
 
 **CloudWatch receiver はデフォルトで「現在時刻」から開始します。**
@@ -526,7 +492,7 @@ docker run --rm ...
 receiver は新しいチェックポイントを作成し、現在時刻以降のログを収集します。
 
 <div id="expired-credentials">
-  ### 無効なセキュリティトークン / 認証情報の期限切れ
+  ### 無効なセキュリティトークン / 認証情報の期限切れ {#expired-credentials}
 </div>
 
 一時的な認証情報 (AWS SSO や引き受けたロール) を使用している場合、一定時間が経過すると期限切れになります。
@@ -547,7 +513,7 @@ docker restart <container-id>
 ```
 
 <div id="latency">
-  ### レイテンシが高い、または最新のログが表示されない
+  ### レイテンシが高い、または最新のログが表示されない {#latency}
 </div>
 
 **ポーリング間隔を短くする:**
@@ -561,7 +527,7 @@ logs:
 **注:** ポーリング間隔を短くすると、AWS API の呼び出し回数が増え、CloudWatch API のコストが高くなる可能性があります。
 
 <div id="memory">
-  ### collector のメモリ使用量が多すぎる
+  ### collector のメモリ使用量が多すぎる {#memory}
 </div>
 
 **バッチサイズを減らすか、タイムアウト時間を長くしてください。**
@@ -582,16 +548,14 @@ groups:
 ```
 
 <div id="next-steps">
-  ## 次のステップ
+  ## 次のステップ {#next-steps}
 </div>
 
 * 重大なイベント (接続障害、エラーの急増) に対する[アラート](/ja/clickstack/features/alerts)を設定する
 * ログを ClickStack に取り込めたので、保持期間を調整するか S3 にアーカイブして CloudWatch のコストを削減する
 * インジェスト量を減らすため、ノイズの多いロググループを collector の設定から削除する
 
-<div id="going-to-production">
-  ## 本番環境向け
-</div>
+## 本番環境向け {#going-to-production}
 
 このガイドでは、テスト目的で Docker Compose を使用して OpenTelemetry Collector をローカルで実行する方法を説明します。本番環境へのデプロイでは、アクセスキーの管理を不要にするため、AWS にアクセスできるインフラストラクチャ上で collector を実行してください (IAM ロールを使用する EC2、IRSA を使用する EKS、またはタスクロールを使用する ECS) 。レイテンシーとコストを抑えるため、CloudWatchロググループ と同じ AWS リージョンに collectors をデプロイしてください。
 
