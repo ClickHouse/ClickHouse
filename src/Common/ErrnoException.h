@@ -23,18 +23,15 @@ public:
     /// Message must be a compile-time constant
     template <typename T>
     requires std::is_convertible_v<T, String>
-    ErrnoException(int code, T && message) : Exception(message, code), saved_errno(errno)
+    ErrnoException(int code, T && message) : ErrnoException(std::string(message), code, errno)
     {
-        capture_thread_frame_pointers = getThreadFramePointers();
-        addMessage(", {}", errnoToString(saved_errno));
     }
 
     // Format message with fmt::format, like the logging functions.
     template <typename... Args>
     ErrnoException(int code, FormatStringHelper<Args...> fmt, Args &&... args)
-        : Exception(fmt.format(std::forward<Args>(args)...), code), saved_errno(errno)
+        : ErrnoException(code, errno, std::move(fmt), std::forward<Args>(args)...)
     {
-        addMessage(", {}", errnoToString(saved_errno));
     }
 
     template <typename... Args>
