@@ -611,7 +611,7 @@ StorageURLSource::StorageURLSource(
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
     , need_headers_virtual_column(info.requested_virtual_columns.contains("_headers"))
-    , requested_virtual_columns(info.requested_virtual_columns.eraseNames({"_headers"}))
+    , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
     , uri_iterator(uri_iterator_)
     , format(format_)
@@ -766,7 +766,9 @@ StorageURLSource::StorageURLSource(
 
         QueryPipelineBuilder builder;
         std::optional<size_t> num_rows_from_cache = std::nullopt;
-        if (need_only_count && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        /// The number of rows from the cache is returned without a request for the data, while the `_headers`
+        /// virtual column is the headers of the response to that request. Do the request when `_headers` is requested.
+        if (need_only_count && !need_headers_virtual_column && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
             num_rows_from_cache = tryGetNumRowsFromCache(curr_uri.toString(), current_file_last_modified);
 
         if (num_rows_from_cache)
@@ -1008,6 +1010,15 @@ Chunk StorageURLSource::generate()
                     getContext());
             }
 
+            chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
+            if (need_headers_virtual_column && !http_response_headers_initialized)
+            {
+                http_response_headers = dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get())->getResponseHeaders();
+                http_response_headers_initialized = true;
+            }
+
+            /// `_headers` is added along with the other virtual columns, in the order they are requested in,
+            /// which is the order of the columns in the header of the source.
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 requested_virtual_columns,
@@ -1018,25 +1029,11 @@ Chunk StorageURLSource::generate()
                     .last_modified = current_file_last_modified
                         ? std::optional<Poco::Timestamp>(Poco::Timestamp::fromEpochTime(*current_file_last_modified))
                         : std::nullopt,
+                    .http_response_headers = need_headers_virtual_column ? &http_response_headers : nullptr,
                 },
                 getContext(),
                 format_settings);
 
-            chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
-            if (need_headers_virtual_column)
-            {
-                if (!http_response_headers_initialized)
-                {
-                    http_response_headers = dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get())->getResponseHeaders();
-                    http_response_headers_initialized = true;
-                }
-
-                auto type = std::make_shared<DataTypeMap>(
-                    std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-                    std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
-
-                chunk.addColumn(type->createColumnConst(chunk.getNumRows(), http_response_headers)->convertToFullColumnIfConst());
-            }
             return chunk;
         }
 
