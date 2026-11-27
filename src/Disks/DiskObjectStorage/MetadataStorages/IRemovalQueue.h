@@ -18,13 +18,13 @@ public:
     virtual void submitForRemoval(const StoredObjects & blobs) = 0;
 
     /// Return up to `max_count` oldest blobs (0 means unlimited).
-    virtual StoredObjects takeFirst(int64_t max_count) const = 0;
+    [[nodiscard]] virtual StoredObjects takeFirst(int64_t max_count) const = 0;
 
     /// Remove blobs from the queue. Returns the number actually removed.
     virtual int64_t markAsRemoved(const StoredObjects & blobs) = 0;
 
     /// Return current number of entries in the queue.
-    virtual size_t size() const = 0;
+    [[nodiscard]] virtual size_t size() const = 0;
 };
 
 using RemovalQueuePtr = std::unique_ptr<IRemovalQueue>;

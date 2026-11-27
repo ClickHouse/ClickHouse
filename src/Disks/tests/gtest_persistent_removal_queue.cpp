@@ -61,7 +61,7 @@ public:
     /// The next read of a file returns this many bytes of it and then fails.
     mutable std::optional<size_t> fail_next_read_after;
 
-    std::unique_ptr<DB::ReadBufferFromFileBase> readFileIfExists(
+    [[nodiscard]] std::unique_ptr<DB::ReadBufferFromFileBase> readFileIfExists(
         const String & path, const DB::ReadSettings & settings, std::optional<size_t> read_hint) const override
     {
         auto buf = DiskLocal::readFileIfExists(path, settings, read_hint);
