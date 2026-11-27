@@ -1422,8 +1422,9 @@ Chunk StorageObjectStorageSource::generate()
 
             /// `_headers` is added along with the other virtual columns, in the order they are requested in,
             /// which is the order of the columns in the header of the source.
+            /// Only `Web` registers `_headers` as the response headers; for other storages it can only be a Hive partition key.
             std::optional<Map> http_response_headers;
-            if (read_from_format_info.requested_virtual_columns.contains("_headers"))
+            if (configuration->getType() == ObjectStorageType::Web && read_from_format_info.requested_virtual_columns.contains("_headers"))
                 http_response_headers = tryGetHeadersFromReadBuffer(reader.readBuffer()).value_or(objectAttributesToMap(object_metadata->attributes));
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(

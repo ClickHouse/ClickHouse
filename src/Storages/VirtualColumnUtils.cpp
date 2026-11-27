@@ -631,7 +631,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
-        else if (virtual_column.name == "_headers" && virtual_values.http_response_headers)
+        else if (virtual_column.name == "_headers" && virtual_values.http_response_headers && isMap(virtual_column.type))
         {
             /// Added here, in its place among the requested virtual columns, and not by the caller after the other ones:
             /// the columns of the chunk must go in the order of the header of the source, which is the requested order.
