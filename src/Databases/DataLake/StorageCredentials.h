@@ -20,7 +20,7 @@ public:
     virtual ~IStorageCredentials() = default;
 
     virtual void addCredentialsToEngineArgs(DB::ASTs & engine_args) const = 0;
-    virtual bool isEmpty() const = 0;
+    [[nodiscard]] virtual bool isEmpty() const = 0;
 };
 
 class S3Credentials final : public IStorageCredentials
@@ -116,7 +116,7 @@ public:
         engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(String(sas_token)));
     }
 
-    bool isEmpty() const override { return sas_token.empty(); }
+    [[nodiscard]] bool isEmpty() const override { return sas_token.empty(); }
 
     [[nodiscard]] std::string_view getToken() const { return sas_token; }
 
