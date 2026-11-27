@@ -13,6 +13,7 @@
 #include <Common/Hex.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
@@ -27,6 +28,8 @@ namespace ProfileEvents
 {
     extern const Event FileSegmentWaitMicroseconds;
     extern const Event FileSegmentWaitTimeouts;
+    extern const Event FileSegmentWaitWithoutData;
+    extern const Event FileSegmentWaitWithoutDataMicroseconds;
     extern const Event FileSegmentCompleteMicroseconds;
     extern const Event FileSegmentWriteMicroseconds;
     extern const Event FileSegmentIncreasePriorityMicroseconds;
@@ -130,6 +133,7 @@ FileSegment::FileSegment(
     , segment_kind(settings.kind)
     , is_unbound(settings.unbounded)
     , background_download_enabled(background_download_enabled_)
+    , is_temporary(settings.temporary)
     , size_in_filename(size_in_filename_)
     , download_state(download_state_)
     , key_metadata(key_metadata_)
@@ -379,6 +383,35 @@ String FileSegment::getOrSetDownloader(const IOSchedulingSettings & io_schedulin
     return current_downloader;
 }
 
+scope_guard FileSegment::tryTakeDownloaderOfPartiallyDownloaded()
+{
+    /// Most calls are for downloaded segments: skip the lock for them.
+    if (download_state != State::PARTIALLY_DOWNLOADED)
+        return {};
+
+    auto lk = lock();
+
+    if (download_state != State::PARTIALLY_DOWNLOADED)
+        return {};
+
+    /// Every transition to `PARTIALLY_DOWNLOADED` resets the downloader under the same lock.
+    chassert(getDownloaderUnlocked(lk).empty());
+
+    auto & download = getOrCreateDownloadDataUnlocked(lk);
+    /// The idle reader may still be bound to the I/O scheduling links of a previous downloader's query.
+    /// Unbind it like `getOrSetDownloader` does, because `complete` keeps the links while there is a downloader
+    /// and they would outlive the holder they belong to.
+    setReaderIOSchedulingUnlocked(download, {});
+    download.downloader_id = getCallerId();
+    setDownloadState(State::DOWNLOADING, lk);
+    return [this]
+    {
+        /// The guard runs in a destructor, and `resetDownloader` does small allocations.
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+        resetDownloader();
+    };
+}
+
 void FileSegment::resetDownloadingStateUnlocked(const FileSegmentGuard::Lock & lock)
 {
     chassert(isDownloaderUnlocked(lock));
@@ -490,8 +523,11 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
     download.remote_file_reader = remote_file_reader_;
 }
 
-void FileSegment::write(char * from, size_t size, size_t offset_in_file)
+void FileSegment::write(char * from, size_t size, size_t offset_in_file, bool keep_temporary)
 {
+    if (!keep_temporary)
+        is_temporary.store(false, std::memory_order_relaxed);
+
     /// Keeps the segment in DOWNLOADING state, for testing the concurrent download wait timeout.
     FailPointInjection::pauseFailPoint(FailPoints::file_segment_pause_before_write);
 
@@ -706,6 +742,13 @@ FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
             const auto slice = std::min<std::chrono::steady_clock::duration>(std::chrono::seconds(1), deadline - now);
             if (cv.wait_for(cv_lk, slice, downloaded))
                 break;
+        }
+
+        /// The downloader released the segment before it downloaded the awaited offset.
+        if (download_state != State::DOWNLOADING && offset >= getCurrentWriteOffset())
+        {
+            ProfileEvents::increment(ProfileEvents::FileSegmentWaitWithoutData);
+            ProfileEvents::increment(ProfileEvents::FileSegmentWaitWithoutDataMicroseconds, watch.elapsed());
         }
     }
 
@@ -1108,7 +1151,7 @@ void FileSegment::complete(
     if (!file_segment)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is nullptr");
 
-    if (file_segment->isCompleted())
+    if (file_segment->isCompleted() && !file_segment->is_temporary)
         return;
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);
@@ -1139,7 +1182,12 @@ void FileSegment::complete(
     auto segment_lock = lock();
 
     if (isCompleted(false))
+    {
+        /// A completed temporary segment also leaves the cache at its last release.
+        if (is_temporary && download_state == State::DOWNLOADED && locked_key->isLastOwnerOfFileSegment(offset()))
+            locked_key->removeFileSegment(offset(), segment_lock);
         return;
+    }
 
     const bool is_downloader = isDownloaderUnlocked(segment_lock);
     const bool is_last_holder = locked_key->isLastOwnerOfFileSegment(offset());
@@ -1166,7 +1214,7 @@ void FileSegment::complete(
         && sameLinks(download_data->reader_io_scheduling, holder_io_scheduling))
         setReaderIOSchedulingUnlocked(*download_data, {});
 
-    if (segment_kind == FileSegmentKind::Ephemeral && is_last_holder)
+    if ((segment_kind == FileSegmentKind::Ephemeral || is_temporary) && is_last_holder)
     {
         LOG_TEST(getLog(),"Removing temporary file segment: {}", getInfoForLogUnlocked(segment_lock));
         locked_key->removeFileSegment(offset(), segment_lock);
@@ -1568,6 +1616,8 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
 
 void FileSegment::increasePriority()
 {
+    is_temporary.store(false, std::memory_order_relaxed);
+
     if (!cache)
     {
         chassert(isDetached());
@@ -1587,7 +1637,12 @@ void FileSegment::increasePriority()
         auto it = getQueueIterator();
         if (it)
         {
-            if (!cache->tryIncreasePriority(*this))
+            /// A move between priority queues must not run concurrently with a space reservation for
+            /// this segment. A completed segment never reserves again. A partially downloaded one is
+            /// safe while we hold its downloader role, because only the downloader reserves.
+            const auto downloader_guard = tryTakeDownloaderOfPartiallyDownloaded();
+
+            if (!cache->tryIncreasePriority(*it, downloader_guard || isCompleted()))
                 ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
 
             /// Used only for system.filesystem_cache.

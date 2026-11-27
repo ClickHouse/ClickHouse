@@ -1,0 +1,311 @@
+---
+slug: /clickstack/observability/example-datasets/chrome-extension
+title: 'Extensión de Chrome'
+description: 'Captura de datos de reproducción de sesiones y RUM para ClickHouse Observability totalmente gestionado con la extensión de HyperDX para Chrome'
+doc_type: 'guide'
+keywords: ['clickstack', 'chrome extension', 'session replay', 'browser sdk', 'rum', 'observability', 'hyperdx']
+sidebarTitle: 'Extensión de Chrome'
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<Tabs>
+  <Tab title="Totalmente gestionado">
+    <BetaBadge label="Oferta en Beta" />
+
+    <Info>
+      **Resumen**
+
+      Esta guía muestra cómo inyectar el SDK para navegador en cualquier sitio web mediante la [Extensión de HyperDX para Chrome](https://github.com/kyreddie/hyperdx-chrome-extension). No es necesario modificar el código fuente de la aplicación de destino: configure la extensión una sola vez, navegue por el sitio y consulte las reproducciones de sesiones en ClickHouse Observability.
+
+      Tiempo necesario: 10-15 minutos
+    </Info>
+
+## Descripción general {#overview}
+
+    La [extensión de HyperDX para Chrome](https://github.com/kyreddie/hyperdx-chrome-extension) inyecta el SDK [@hyperdx/browser](https://github.com/hyperdxio/hyperdx-js) en las páginas que visita. Resulta útil cuando necesita depurar la reproducción de sesiones, RUM o la propagación de trazas en un sitio sin modificar su base de código: por ejemplo, una aplicación de terceros, un build de producción o un servidor de desarrollo local con una política de seguridad de contenido (Content Security Policy, CSP) estricta.
+
+    El SDK viene empaquetado dentro de la extensión (~480 KB), por lo que las páginas no necesitan cargar scripts desde una CDN en tiempo de ejecución. La extensión intenta primero la inyección de script externa mediante `chrome-extension://` y recurre a la inyección en línea como alternativa cuando la CSP bloquea los scripts con origen en la extensión.
+
+    A diferencia de la [Demostración de reproducción de sesiones](/es/clickstack/observability/example-datasets/session-replay), que instrumenta una aplicación de demostración bajo su control, este enfoque instrumenta las páginas compatibles que abra en Chrome; algunas páginas restringen la inyección de scripts. Los datos de sesión se generan al interactuar con el sitio como un usuario habitual.
+
+    Para obtener información general sobre la reproducción de sesiones y cómo encaja en ClickHouse Observability, consulte la página de la funcionalidad [Reproducción de sesiones](/es/clickstack/observability/features/session-replay).
+
+## Requisitos previos {#prerequisites}
+
+    * Google Chrome o un navegador basado en Chromium (Edge, Brave, etc.)
+    * Un servicio de ClickHouse Observability totalmente gestionado ya existente. Consulte la [guía de primeros pasos de la versión totalmente gestionada](/es/clickstack/observability/getting-started).
+
+## Ejecución de la demo {#running-the-demo}
+
+    <Steps>
+      <Step title="Clonar el repositorio de la extensión" id="clone-extension">
+        ```shell
+        git clone https://github.com/kyreddie/hyperdx-chrome-extension
+        cd hyperdx-chrome-extension
+        ```
+      </Step>
+
+      <Step title="Instalar la extensión" id="install-extension">
+        1. Abra Chrome y vaya a `chrome://extensions`.
+        2. Active el **Developer mode** (arriba a la derecha).
+        3. Haga clic en **Load unpacked**.
+        4. Seleccione el directorio `hyperdx-chrome-extension` que clonó.
+
+        La extensión aparecerá en la barra de herramientas como **HyperDX Browser Extension**.
+      </Step>
+
+      <Step title="Obtener los datos de conexión" id="get-connection-details">
+        Abra su servicio de ClickHouse Observability y vaya a **Team Settings → Managed Telemetry**. Copie el **OTLP HTTP endpoint** y la **API key** para configurar la extensión.
+
+        Utilice el endpoint HTTPS completo que se proporciona, con su puerto incluido y sin añadir `/v1/logs` ni `/v1/traces`.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![Managed Telemetry en Team Settings con el endpoint OTLP HTTP y la clave de API enmascarados](/images/clickstack/getting-started/observability-managed-telemetry.png)
+          </Frame>
+        </div>
+      </Step>
+
+      <Step title="Configurar la extensión" id="configure-extension">
+        Haga clic en el icono de **HyperDX Browser Extension** en la barra de herramientas de Chrome y complete los ajustes:
+
+        | Campo                            | Valor (servicio totalmente gestionado)         | Notas                                                                                                  |
+        | -------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+        | **Enable HyperDX Monitoring**    | Activado                                       | Interruptor general de la inyección                                                                    |
+        | **Service Name**                 | `my-frontend-app`                              | Obligatorio: identifica el servicio en ClickHouse Observability                                        |
+        | **API Key**                      | Su clave de API de telemetría gestionada       | Obligatorio; cópiela desde **Team Settings → Managed Telemetry**                                       |
+        | **Collector URL**                | Su endpoint OTLP HTTP de telemetría gestionada | Sustituya la URL predeterminada de la extensión por el endpoint de **Managed Telemetry**               |
+        | **Environment**                  | `development`                                  | Opcional: establece el atributo de recurso `deployment.environment`                                    |
+        | **Trace Propagation Targets**    | `/api\.myapp\.domain/i, /localhost/i`          | Opcional: patrones regex de JavaScript, separados por comas, para la propagación de cabeceras de traza |
+        | **Only inject on matching URLs** | Desactivado                                    | Actívelo para limitar los sitios que se instrumentan                                                   |
+        | **Capture console logs**         | Desactivado                                    | Actívelo para reenviar la salida de la consola del navegador                                           |
+        | **Advanced network capture**     | Desactivado                                    | Actívelo para capturar las solicitudes de red con más detalle                                          |
+
+        Haga clic en **Save Configuration** y, a continuación, recargue las pestañas que desee instrumentar.
+      </Step>
+
+      <Step title="Navegar por un sitio y generar una sesión" id="browse-site">
+        Abra cualquier sitio web o aplicación local en Chrome; por ejemplo, [http://localhost:3000](http://localhost:3000) si usa un servidor de desarrollo frontend.
+
+        Interactúe con la página con normalidad: haga clic en enlaces, envíe formularios, provoque errores y navegue entre vistas. Si la configuración es válida, la extensión inyecta automáticamente el Browser SDK cada vez que se carga una página.
+      </Step>
+
+      <Step title="Ver la reproducción de sesiones" id="view-session-replay">
+        En su servicio de ClickHouse Observability, abra **Client Sessions** desde la barra lateral izquierda. Elija un intervalo de tiempo que abarque su actividad de navegación.
+
+        Su sesión debería aparecer en la lista con su duración y número de eventos. Haga clic en el botón ▶️ para reproducirla.
+
+        Alterne entre los modos **Highlighted** y **All Events** para ajustar el nivel de detalle de la línea de tiempo.
+      </Step>
+    </Steps>
+
+## Filtrado de URL {#url-filtering}
+
+    De forma predeterminada, la extensión inyecta el SDK en todas las páginas que visita mientras la monitorización está activada. Para limitar la inyección a sitios concretos, active **Only inject on matching URLs** y añada un patrón por línea (o sepárelos con comas):
+
+    | Patrón                     | Partidos                                       |
+    | -------------------------- | ---------------------------------------------- |
+    | `http://homedepot.com/*`   | Solo HTTP en `homedepot.com`                   |
+    | `*://homedepot.com/*`      | HTTP y HTTPS en `homedepot.com`                |
+    | `*://*.homedepot.com/*`    | Subdominios como `www.homedepot.com`           |
+    | `https://localhost:3000/*` | Servidor de desarrollo local en el puerto 3000 |
+
+    Recargue la pestaña después de guardar los patrones de URL.
+
+## Verificar la inyección {#verify-injection}
+
+    Abra DevTools en una página monitorizada (pestaña **Consola**), recargue la página y busque:
+
+    ```text
+    [HyperDX Extension] Configuration valid, injecting HyperDX
+    [HyperDX Extension] Injected via extension scripts
+    [HyperDX Extension] HyperDX initialized
+    ```
+
+    Si la CSP bloquea los scripts procedentes de la extensión, esta registra un mensaje de alternativa de respaldo y vuelve a intentarlo mediante inyección en línea.
+
+## Resolución de problemas {#troubleshooting}
+
+    <Accordion title="Las sesiones no aparecen en ClickHouse Observability">
+      1. Revise la consola del navegador en busca de mensajes de registro o errores de `[HyperDX Extension]`
+      2. Compruebe que **Enable HyperDX Monitoring** está activado y que **Service Name** está configurado
+      3. Compruebe que **Collector URL** y **API Key** coinciden con los valores de **Team Settings → Managed Telemetry** de su servicio
+      4. Ajuste el intervalo de tiempo en la vista Client Sessions (pruebe con **Last 15 minutes**)
+      5. Fuerce la recarga del navegador: `Cmd+Shift+R` (Mac) o `Ctrl+Shift+R` (Windows/Linux)
+    </Accordion>
+
+    <Accordion title="errores de chrome-extension://invalid/">
+      Recargue la extensión en `chrome://extensions` y, a continuación, fuerce la actualización completa de la pestaña. Esto ocurre cuando la extensión se actualizó o se recargó mientras aún había pestañas abiertas.
+    </Accordion>
+
+    <Accordion title="Sin inyección en un sitio web">
+      1. Compruebe que la monitorización esté habilitada y que haya un nombre de servicio configurado
+      2. Si **Only inject on matching URLs** está activado, confirme que la URL de la página actual coincide con alguno de sus patrones
+      3. Algunos sitios bloquean mediante CSP tanto la inyección de scripts desde el origen de la extensión como la de scripts en línea, por lo que es posible que no se pueda realizar la inyección en esas páginas
+    </Accordion>
+
+    <Accordion title="HyperDX: Falta apiKey en la consola">
+      Introduzca la clave de API que encontrará en **Configuración del equipo → Telemetría gestionada**, guarde la configuración y recargue la página supervisada. Esta clave es necesaria para la ingestión totalmente gestionada.
+    </Accordion>
+
+## Privacidad {#privacy}
+
+    La extensión inyecta código de observabilidad en las páginas que visita. Úsela solo en sitios que tenga autorización para depurar. No comparta las claves de API ni las incluya en el control de versiones.
+
+## Más información {#learn-more}
+
+    * [Reproducción de sesiones](/es/clickstack/observability/features/session-replay) — descripción general de la funcionalidad, opciones del SDK y controles de privacidad
+    * [Referencia del SDK para navegadores](/es/clickstack/observability/ingesting-data/sdks/browser) — todas las opciones del SDK y configuración avanzada
+    * [Demostración de reproducción de sesiones](/es/clickstack/observability/example-datasets/session-replay) — cómo instrumentar una aplicación de demostración a partir del código fuente
+    * [Primeros pasos con la versión totalmente gestionada](/es/clickstack/observability/getting-started) — conecte su servicio e ingeste sus primeros datos
+    * [Extensión de HyperDX para Chrome en GitHub](https://github.com/kyreddie/hyperdx-chrome-extension) — código fuente y seguimiento de issues
+  </Tab>
+
+  <Tab title="Autogestionado">
+    Utilice la extensión con un recolector de OpenTelemetry existente que envíe datos a su servicio autogestionado de ClickHouse Observability.
+
+## Descripción general {#overview-self-configured}
+
+    La [extensión de HyperDX para Chrome](https://github.com/kyreddie/hyperdx-chrome-extension) inyecta el SDK [@hyperdx/browser](https://github.com/hyperdxio/hyperdx-js) en las páginas que visita. Resulta útil cuando necesita depurar la reproducción de sesiones, RUM o la propagación de trazas en un sitio sin modificar su base de código; por ejemplo, en una aplicación de terceros, un build de producción o un servidor de desarrollo local con una Content Security Policy (CSP) estricta.
+
+    El SDK viene incluido en la extensión (~480 KB), por lo que las páginas no necesitan cargar scripts desde una CDN en tiempo de ejecución. La extensión intenta primero la inyección de scripts externos mediante `chrome-extension://` y, si la CSP bloquea los scripts con origen en la extensión, recurre como alternativa a la inyección en línea.
+
+    A diferencia de la [Demostración de reproducción de sesiones](/es/clickstack/observability/example-datasets/session-replay), que instrumenta una aplicación de demostración bajo su control, este enfoque instrumenta las páginas compatibles que usted abre en Chrome; algunas páginas restringen la inyección de scripts. Los datos de sesión se generan al interactuar con el sitio como un usuario cualquiera.
+
+    Para obtener información general sobre la reproducción de sesiones y su funcionamiento, consulte la página de la funcionalidad [Reproducción de sesiones](/es/clickstack/observability/features/session-replay).
+
+## Requisitos previos {#prerequisites-self-configured}
+
+    * Google Chrome o un navegador basado en Chromium (Edge, Brave, etc.)
+    * Un servicio de Self-managed ClickHouse Observability ya existente y un recolector de ingestión en ejecución. Si es necesario, siga primero la [guía de configuración del recolector](/es/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured).
+    * El endpoint OTLP HTTP del recolector, accesible desde su navegador, y su token de autenticación, si está configurado.
+
+## Ejecución de la demo {#running-the-demo-self-configured}
+
+    <Steps>
+      <Step title="Clonar el repositorio de la extensión" id="clone-extension-self-configured">
+        ```shell
+        git clone https://github.com/kyreddie/hyperdx-chrome-extension
+        cd hyperdx-chrome-extension
+        ```
+      </Step>
+
+      <Step title="Instalar la extensión" id="install-extension-self-configured">
+        1. Abra Chrome y vaya a `chrome://extensions`.
+        2. Active el **Developer mode** (arriba a la derecha).
+        3. Haga clic en **Load unpacked**.
+        4. Seleccione el directorio `hyperdx-chrome-extension` que ha clonado.
+
+        La extensión aparecerá en la barra de herramientas como **HyperDX Browser Extension**.
+      </Step>
+
+      <Step title="Obtener los datos de conexión del recolector" id="get-api-key-self-configured">
+        Use el endpoint OTLP HTTP de su recolector en ejecución; por ejemplo, `http://localhost:4318` si el recolector se ejecuta en la misma máquina que su navegador. Para un recolector remoto, use su URL HTTPS accesible desde el navegador. No añada `/v1/logs` ni `/v1/traces`.
+
+        Si su recolector usa `OTLP_AUTH_TOKEN`, use ese token como **API Key** de la extensión, sin añadir el prefijo `Bearer`. Se trata de las credenciales de ingesta del recolector, no del nombre de usuario y la contraseña de su base de datos ClickHouse. Consulte [Proteger el recolector](/es/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
+      </Step>
+
+      <Step title="Configurar la extensión" id="configure-extension-self-configured">
+        Haga clic en el icono de **HyperDX Browser Extension** en la barra de herramientas de Chrome y complete la configuración:
+
+        | Campo                            | Configuración autogestionada               | Notas                                                                                                                 |
+        | -------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+        | **Enable HyperDX Monitoring**    | Activado                                   | Interruptor principal de la inyección                                                                                 |
+        | **Service Name**                 | `my-frontend-app`                          | Obligatorio: identifica el servicio en ClickHouse Observability                                                       |
+        | **API Key**                      | El token de autenticación de su recolector | Use el valor de `OTLP_AUTH_TOKEN` si está configurado                                                                 |
+        | **Collector URL**                | El endpoint OTLP HTTP de su recolector     | Sustituya la URL predeterminada de la extensión; use `http://localhost:4318` solo si el recolector está en su máquina |
+        | **Environment**                  | `development`                              | Opcional: establece el atributo de recurso `deployment.environment`                                                   |
+        | **Trace Propagation Targets**    | `/api\.myapp\.domain/i, /localhost/i`      | Opcional: expresiones regulares de JavaScript separadas por comas para la propagación de cabeceras de traza           |
+        | **Only inject on matching URLs** | Desactivado                                | Actívelo para limitar los sitios que se instrumentan                                                                  |
+        | **Capture console logs**         | Desactivado                                | Actívelo para reenviar la salida de la consola del navegador                                                          |
+        | **Advanced network capture**     | Desactivado                                | Actívelo para capturar en detalle las solicitudes de red                                                              |
+
+        Haga clic en **Save Configuration** y, a continuación, recargue las pestañas que desee instrumentar.
+
+        <div className="ch-image-sm">
+          <Frame>
+            ![Ventana emergente de configuración de la extensión de Chrome de HyperDX con ajustes locales de ClickStack](/images/clickstack/chrome-extension/extension-config.png)
+          </Frame>
+        </div>
+
+        La captura de pantalla anterior muestra una configuración local típica: monitorización activada, nombre del servicio definido, recolector apuntando a `http://localhost:4318` y propagación de trazas limitada a las URL de la API y de localhost.
+      </Step>
+
+      <Step title="Navegar por un sitio y generar una sesión" id="browse-site-self-configured">
+        Abra cualquier sitio web o aplicación local en Chrome; por ejemplo, [http://localhost:3000](http://localhost:3000) para un servidor de desarrollo frontend.
+
+        Interactúe con la página con normalidad: haga clic en enlaces, envíe formularios, provoque errores y navegue entre vistas. Si la configuración es válida, la extensión inyecta automáticamente el Browser SDK cada vez que se carga una página.
+      </Step>
+
+      <Step title="Ver la reproducción de la sesión" id="view-session-replay-self-configured">
+        Abra su servicio autogestionado de ClickHouse Observability en ClickHouse Cloud y seleccione **Client Sessions** en la barra lateral izquierda. Elija un intervalo de tiempo que abarque su actividad de navegación.
+
+        Su sesión debería aparecer en la lista con su duración y número de eventos. Haga clic en el botón ▶️ para reproducirla.
+
+        Alterne entre los modos **Highlighted** y **All Events** para ajustar el nivel de detalle de la línea de tiempo.
+      </Step>
+    </Steps>
+
+## Filtrado de URL {#url-filtering-self-configured}
+
+    De forma predeterminada, la extensión inyecta el SDK en todas las páginas que visite mientras la monitorización esté activada. Para limitar la inyección a sitios concretos, active **Only inject on matching URLs** y añada un patrón por línea (o separados por comas):
+
+    | Patrón                     | Coincidencias                                  |
+    | -------------------------- | ---------------------------------------------- |
+    | `http://homedepot.com/*`   | Solo HTTP en `homedepot.com`                   |
+    | `*://homedepot.com/*`      | HTTP y HTTPS en `homedepot.com`                |
+    | `*://*.homedepot.com/*`    | Subdominios como `www.homedepot.com`           |
+    | `https://localhost:3000/*` | Servidor de desarrollo local en el puerto 3000 |
+
+    Recargue la pestaña después de guardar los patrones de URL.
+
+## Verificar la inyección {#verify-injection-self-configured}
+
+    Abra DevTools en una página monitorizada (pestaña **Consola**), recargue la página y busque:
+
+    ```text
+    [HyperDX Extension] Configuration valid, injecting HyperDX
+    [HyperDX Extension] Injected via extension scripts
+    [HyperDX Extension] HyperDX initialized
+    ```
+
+    Si la CSP bloquea los scripts procedentes de la extensión, esta registra un mensaje de alternativa de respaldo y vuelve a intentarlo mediante inyección en línea.
+
+## Resolución de problemas {#troubleshooting-self-configured}
+
+    <Accordion title="Las sesiones no aparecen en la UI de ClickStack">
+      1. Revise la consola del navegador en busca de mensajes de registro o errores de `[HyperDX Extension]`
+      2. Confirme que **Enable HyperDX Monitoring** está activado y que **Service Name** está configurado
+      3. Verifique que el recolector esté en ejecución, que su endpoint OTLP HTTP sea accesible desde el navegador y que la clave de API coincida con su token de autenticación
+      4. Ajuste el intervalo de tiempo en la vista Client Sessions (pruebe con **Last 15 minutes**)
+      5. Fuerce la recarga completa del navegador: `Cmd+Shift+R` (Mac) o `Ctrl+Shift+R` (Windows/Linux)
+    </Accordion>
+
+    <Accordion title="errores de chrome-extension://invalid/">
+      Recarga la extensión en `chrome://extensions` y, después, fuerza la recarga de la pestaña. Esto ocurre cuando la extensión se ha actualizado o recargado mientras aún había pestañas abiertas.
+    </Accordion>
+
+    <Accordion title="Sin inyección en un sitio web">
+      1. Compruebe que la monitorización esté habilitada y que haya un nombre de servicio configurado
+      2. Si **Only inject on matching URLs** está activado, confirme que la URL de la página actual coincide con alguno de sus patrones
+      3. Algunos sitios bloquean mediante CSP tanto la inyección de scripts desde el origen de la extensión como la de scripts en línea, por lo que es posible que no se pueda realizar la inyección en esas páginas
+    </Accordion>
+
+    <Accordion title="HyperDX: Falta apiKey en la consola">
+      Si su recolector requiere autenticación, introduzca el token correspondiente en **Clave de API**, guarde la configuración y recargue la página supervisada. Para detectar errores de exportación, revise las solicitudes de red del navegador y los logs del recolector en lugar de fiarse únicamente del mensaje de inyección.
+    </Accordion>
+
+## Privacidad {#privacy-self-configured}
+
+    La extensión inyecta código de observabilidad en las páginas que visita. Úsela solo en sitios que tenga permiso para depurar. No comparta claves de API ni las incluya en el control de versiones.
+
+## Más información {#learn-more-self-configured}
+
+    * [Reproducción de sesiones](/es/clickstack/observability/features/session-replay) — descripción general de la funcionalidad, opciones del SDK y controles de privacidad
+    * [Referencia del SDK para navegadores](/es/clickstack/observability/ingesting-data/sdks/browser) — todas las opciones del SDK y configuración avanzada
+    * [Demostración de reproducción de sesiones](/es/clickstack/observability/example-datasets/session-replay) — instrumente una aplicación de demostración a partir del código fuente
+    * [Primeros pasos con la versión autogestionada](/es/clickstack/self-configured/getting-started/managed) — configure su servicio e ingeste sus primeros datos
+    * [Extensión de HyperDX para Chrome en GitHub](https://github.com/kyreddie/hyperdx-chrome-extension) — código fuente y gestor de issues
+  </Tab>
+</Tabs>

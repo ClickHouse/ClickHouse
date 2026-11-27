@@ -357,6 +357,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_rows(Keyword::ROWS);
     ParserKeyword s_first(Keyword::FIRST);
     ParserKeyword s_next(Keyword::NEXT);
+    ParserKeyword s_shuffle(Keyword::SHUFFLE);
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
@@ -668,6 +669,11 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         select_query->order_by_all = order_by_all;
     }
+    /// SHUFFLE is used in place of ORDER BY
+    else if (s_shuffle.ignore(pos, expected))
+    {
+        select_query->shuffle = true;
+    }
 
     /// This is needed for TOP expression, because it can also use WITH TIES.
     bool limit_with_ties_occurred = false;
@@ -924,7 +930,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [HAVING expr]
 [WINDOW window_expr_list]
 [QUALIFY expr]
-[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]] | [SHUFFLE]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
 [LIMIT [n] AFTER start_expr [ALL] [UNTIL end_expr] | LIMIT [n] UNTIL end_expr]
@@ -953,6 +959,7 @@ The expression list immediately after `SELECT` is required; all other clauses ar
 - [WINDOW clause](/reference/functions/window-functions/index)
 - [QUALIFY clause](/reference/statements/select/qualify)
 - [ORDER BY clause](/reference/statements/select/order-by)
+- [SHUFFLE clause](/reference/statements/select/shuffle)
 - [LIMIT BY clause](/reference/statements/select/limit-by)
 - [LIMIT clause](/reference/statements/select/limit)
 - [OFFSET clause](/reference/statements/select/offset)
@@ -1185,7 +1192,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [HAVING expr]
 [WINDOW window_expr_list]
 [QUALIFY expr]
-[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]] | [SHUFFLE]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
 [LIMIT [n] AFTER start_expr [ALL] [UNTIL end_expr] | LIMIT [n] UNTIL end_expr]
@@ -1314,24 +1321,11 @@ Two settings control when spilling starts:
 
 - `max_bytes_before_external_distinct` sets a threshold in bytes of total query memory. It defaults
   to `0` (disabled).
-- `max_bytes_ratio_before_external_distinct` sets a fraction of available memory under server or
-  user limits, measured at the start of execution. It defaults to `0.5` and has no effect when
-  neither limit applies.
+- `max_bytes_ratio_before_external_distinct` sets a fraction of available memory under the query's
+  `max_memory_usage` and the server or user limits, measured at the start of execution. It defaults
+  to `0.5` and has no effect when no limit applies.
 
 When both thresholds apply, the smaller is used. Set both settings to `0` to disable spilling.
-
-`max_memory_usage` does not affect the ratio. To configure spilling relative to a query memory limit,
-set an absolute threshold below that limit. For example, this query uses a 16 MiB spill threshold
-with a 256 MiB query memory limit:
-
-```sql
-SELECT DISTINCT number % 1000000 AS id
-FROM numbers(2000000)
-SETTINGS
-    max_bytes_before_external_distinct = 16777216,
-    max_bytes_ratio_before_external_distinct = 0,
-    max_memory_usage = 268435456;
-```
 
 These thresholds do not cap memory usage. Leave room for other query processing and the spill
 itself. Spilling may also start earlier under memory pressure.
@@ -2709,7 +2703,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 Less RAM is used if a small enough [LIMIT](/reference/statements/select/limit) is specified in addition to `ORDER BY`. Otherwise, the amount of memory spent is proportional to the volume of data for sorting. A [`LIMIT ... AFTER ... UNTIL`](/reference/statements/select/limit#limit-after-until) range does not reduce it, because the size of the range is unknown until the data is sorted. For distributed query processing, if [GROUP BY](/reference/statements/select/group-by) is omitted, sorting is partially done on remote servers, and the results are merged on the requestor server. This means that for distributed sorting, the volume of data to sort can be greater than the amount of memory on a single server.
 
-If there is not enough RAM, it is possible to perform sorting in external memory (creating temporary files on a disk). Use the setting `max_bytes_before_external_sort` for this purpose. If it is set to 0 (the default), external sorting is disabled. If it is enabled, when the volume of data to sort reaches the specified number of bytes, the collected data is sorted and dumped into a temporary file. After all data is read, all the sorted files are merged and the results are output. Files are written to the `/var/lib/clickhouse/tmp/` directory in the config (by default, but you can use the `tmp_path` parameter to change this setting). You can also use spilling to disk only if query exceeds memory limits, i.e. `max_bytes_ratio_before_external_sort=0.6` will enable spilling to disk only once the query hits `60%` memory limit (user/sever).
+If there is not enough RAM, it is possible to perform sorting in external memory (creating temporary files on a disk). Use the setting `max_bytes_before_external_sort` for this purpose. If it is set to 0 (the default), external sorting is disabled. If it is enabled, when the volume of data to sort reaches the specified number of bytes, the collected data is sorted and dumped into a temporary file. After all data is read, all the sorted files are merged and the results are output. Files are written to the `/var/lib/clickhouse/tmp/` directory in the config (by default, but you can use the `tmp_path` parameter to change this setting). You can also use spilling to disk only if query exceeds memory limits, i.e. `max_bytes_ratio_before_external_sort=0.6` will enable spilling to disk only once the query uses `60%` of the memory available under its `max_memory_usage` and the user and server limits.
 
 Running a query may use more memory than `max_bytes_before_external_sort`. For this reason, this setting must have a value significantly smaller than `max_memory_usage`. As an example, if your server has 128 GB of RAM and you need to run a single query, set `max_memory_usage` to 100 GB, and `max_bytes_before_external_sort` to 80 GB.
 
@@ -3109,6 +3103,68 @@ SELECT ... ORDER BY expr [ASC | DESC] [NULLS FIRST | NULLS LAST] [COLLATE 'local
 )",
         .parent = "SELECT",
         .related = {"SELECT", "LIMIT", "GROUP BY", "ALTER TABLE ... MODIFY ORDER BY"},
+    };
+
+    documentation["SHUFFLE"] =
+    {
+        .description = R"DOCS_MD(
+The `SHUFFLE` clause returns the rows of the query result in a uniformly random order. It is used in place of the [ORDER BY](/reference/statements/select/order-by) clause and cannot be combined with it.
+
+It returns the same result as `ORDER BY rand()`, but works in O(n) time instead of O(n * log(n)).
+
+`SHUFFLE` can be used without `LIMIT`, to randomize the order of all rows, or with `LIMIT n`, to take a uniformly random sample of `n` rows (also returned in a random order). With `LIMIT n`, every stream keeps only `n` rows, so the memory usage is O(n) regardless of the number of rows in the query result. `OFFSET` and `LIMIT BY` can be used as with `ORDER BY`.
+
+<Note>
+This is an experimental feature. Enable it with the setting [`allow_experimental_shuffle_query`](/reference/settings/session-settings#allow_experimental_shuffle_query).
+</Note>
+
+## Implementation details {#implementation-details}
+
+The random choices are made just in time: no random values are generated or stored for the rows in advance. Without `LIMIT`, every row is sent to a random one of `max_threads` streams, every stream is shuffled in parallel with the Fisher-Yates algorithm (in parts that fit in the CPU cache), and the streams are concatenated. With `LIMIT n`, every stream keeps a uniformly random sample of `n` rows by reservoir sampling, which skips the rows that cannot get into the sample without looking at them, and the samples are merged: the number of rows taken from every stream is drawn as sampling without replacement from the numbers of rows of the streams. In a distributed query, the remote servers shuffle their data and attach sorted random keys to the rows, and the initiator merges the shuffled streams by the keys, which takes O(1) memory.
+
+Without `LIMIT`, `SHUFFLE` keeps all rows in memory. Unlike `ORDER BY`, it does not spill data to disk.
+
+`ORDER BY rand()` and `ORDER BY rand64()` can be executed the same way as `SHUFFLE` (the setting `query_plan_use_shuffle_for_order_by_rand`) when the random value is not used anywhere else in the query and external sorting is disabled. When external sorting is configured, this optimization is disabled even with a finite `LIMIT`, because the sample may still exceed memory and `SHUFFLE` cannot spill to disk. `ORDER BY rand64()` with a finite limit retains sorting to preserve all bits of the random values.
+
+## Examples {#examples}
+
+```sql
+SET allow_experimental_shuffle_query = 1;
+
+SELECT number FROM numbers(5) SHUFFLE;
+```
+
+```text
+┌─number─┐
+│      3 │
+│      0 │
+│      4 │
+│      1 │
+│      2 │
+└────────┘
+```
+
+A random sample of three rows:
+
+```sql
+SELECT number FROM numbers(1000000) SHUFFLE LIMIT 3;
+```
+
+```text
+┌─number─┐
+│ 493721 │
+│  20857 │
+│ 871324 │
+└────────┘
+```
+
+`SHUFFLE` is a keyword after the `FROM` clause. To use `shuffle` as a table alias, write `AS shuffle`.
+)DOCS_MD",
+        .syntax = R"(
+SELECT ... SHUFFLE [LIMIT [n, ]m] ...
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "ORDER BY", "LIMIT", "SAMPLE"},
     };
 
     documentation["LIMIT"] =

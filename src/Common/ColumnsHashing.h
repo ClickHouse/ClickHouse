@@ -129,7 +129,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     /// The inline count runs only through `StateNoCache`, so the cached state has it off at compile time.
     bool mapped_in_table_only = false;
 
-    ALWAYS_INLINE bool mappedInTableOnly() const { return !use_cache && mapped_in_table_only; }
+    [[nodiscard]] ALWAYS_INLINE bool mappedInTableOnly() const { return !use_cache && mapped_in_table_only; }
 
     /// Scratch of `forEachPositionCount`: per dictionary position, the row count (zero between calls) and the
     /// first row relative to the range, plus the positions a call counted.
@@ -249,7 +249,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         filled_visit_cache_indexes.clear();
     }
 
-    ALWAYS_INLINE size_t getIndexAt(size_t row) const
+    [[nodiscard]] ALWAYS_INLINE size_t getIndexAt(size_t row) const
     {
         switch (size_of_index_type)
         {
@@ -271,7 +271,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     /// Like `getKeyHolder`, it does not handle the `NULL` sentinel at dictionary index 0: the caller must
     /// check `isNullAt` first. The adaptive aggregator, which uses it, rejects `LowCardinality` keys in
     /// `adaptiveAggregatorRejectionReason`.
-    std::string_view getKeyBytes(size_t row) const
+    [[nodiscard]] std::string_view getKeyBytes(size_t row) const
         requires requires (const Base & base) { base.getKeyBytes(row); }
     {
         return Base::getKeyBytes(getIndexAt(row));
@@ -347,6 +347,10 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         return getIndexAt(i) == 0;
     }
 
+    /// Whether a row of the block may have the NULL key, which `isNullAt` tells row by row: a nullable
+    /// dictionary may map any row to it. False means that no row has it.
+    [[nodiscard]] ALWAYS_INLINE bool mayHaveNullRows() const { return is_nullable; }
+
     template <typename Data>
     ALWAYS_INLINE FindResult findKey(Data & data, size_t row_, Arena & pool)
     {
@@ -402,7 +406,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 
     /// Whether `forEachPositionCount` can count the rows [row_begin, row_end) in its 32-bit scratch.
-    bool canCountPositions(size_t row_begin, size_t row_end) const
+    [[nodiscard]] bool canCountPositions(size_t row_begin, size_t row_end) const
     {
         return size_of_index_type < sizeof(UInt64) && row_end - row_begin <= std::numeric_limits<UInt32>::max();
     }
@@ -729,7 +733,7 @@ struct HashMethodSerialized
         /// it a key-only table (`GROUP BY` without aggregate functions) would wait for the byte
         /// threshold of a table twice as wide, and so start prefetching at twice the cardinality.
         const size_t min_bytes = minBytesForPrefetch<Data, Base::has_mapped>(min_bytes_for_prefetch);
-        if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes)
+        if (min_bytes_for_prefetch != 0 && bytesForPrefetch(data) <= min_bytes)
         {
             can_precompute_hashes = false;
             return;

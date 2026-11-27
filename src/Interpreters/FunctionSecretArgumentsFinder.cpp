@@ -4,6 +4,8 @@
 
 #include <Core/Field.h>
 #include <Common/HiddenSecret.h>
+#include <Functions/FunctionFactory.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <base/defines.h>
 
 namespace DB
@@ -59,10 +61,19 @@ void FunctionSecretArgumentsFinder::findPositionalAndNamedSecretArguments(const 
         findSecretSettingArguments(spec);
 }
 
-void FunctionSecretArgumentsFinder::maskEveryArgument()
+void FunctionSecretArgumentsFinder::maskEveryArgument(bool keep_identifier_keys)
 {
     for (size_t i = 0, size = function->arguments->size(); i < size; ++i)
-        markSecretArgument(i);
+    {
+        bool named = false;
+        if (keep_identifier_keys)
+        {
+            const auto equals = function->arguments->at(i)->getFunction();
+            named = equals && equals->name() == "equals" && equals->hasArguments() && equals->arguments->size() == 2
+                && equals->arguments->at(0)->isIdentifier();
+        }
+        markSecretArgument(i, named);
+    }
 }
 
 bool FunctionSecretArgumentsFinder::hasOnlyLiteralArguments(const AbstractFunction & function)
@@ -168,6 +179,21 @@ void FunctionSecretArgumentsFinder::maskPositionalsAfterCollectionName()
         if (i > 0 || !function->arguments->at(i)->isIdentifier())
             markSecretArgument(i, /* argument_is_named= */ false);
     }
+}
+
+void FunctionSecretArgumentsFinder::maskUnknownTableFunction(size_t index, bool argument_is_named)
+{
+    if (index >= function->arguments->size())
+        return;
+    auto call = function->arguments->at(index)->getFunction();
+    if (call && argument_is_named)
+        call = call->hasArguments() && call->arguments->size() == 2 ? call->arguments->at(1)->getFunction() : nullptr;
+    if (!call)
+        return;
+    const String name = call->name();
+    if (TableFunctionFactory::instance().isTableFunctionName(name) || FunctionFactory::instance().has(name))
+        return;
+    markSecretArgument(index, argument_is_named);
 }
 
 void FunctionSecretArgumentsFinder::findSecretSettingArguments(const SecretArgumentsSpec & spec)

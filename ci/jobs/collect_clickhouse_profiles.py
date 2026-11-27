@@ -99,7 +99,7 @@ SERVER_READINESS_POLL_S = 2
 # is honoured and the job fails fast (dumping the server log) instead.
 SERVER_READINESS_PROBE_TIMEOUT_S = 15
 
-LLVM_VERSION = "22"
+LLVM_VERSION = "23"
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -695,6 +695,7 @@ def main():
             f"cmake -DCMAKE_VERBOSE_MAKEFILE=1 -LA "
             f"-DCMAKE_BUILD_TYPE=None "
             f"-DENABLE_THINLTO=1 "
+            f"-DENABLE_THINLTO_CACHE=0 "
             f"-DCLICKHOUSE_PGO_PROFILE_PATH={PGO_PROFDATA_PATH} "
             f"-DENABLE_CLICKHOUSE_BOLT=ON "
             f"-DSANITIZE= "

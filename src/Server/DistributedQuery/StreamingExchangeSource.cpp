@@ -70,7 +70,7 @@ bool StreamingExchangeSource::connect(const Stopwatch & handshake_watch)
         return false;
     if (int err = socket->impl()->socketError())
         Poco::Net::SocketImpl::error(err);
-    socket->setReceiveBufferSize(10 * 1024 * 1024);
+    StreamingExchangeProtocol::applySocketBufferSizes(*socket);
     return true;
 }
 
@@ -491,7 +491,7 @@ std::optional<Chunk> StreamingExchangeSource::readChunk()
     }
     else
     {
-        auto packet = StreamingExchangeProtocol::readDataPacketBody(*packet_in, output.getHeader(), stream_name);
+        auto packet = StreamingExchangeProtocol::readDataPacketBody(*packet_in, output.getHeader(), stream_name, &type_cache);
         rows_read += packet.chunk.getNumRows();
         if (packet.end_of_stream)
             finished_reading = true;

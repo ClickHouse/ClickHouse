@@ -1,0 +1,21 @@
+<test>
+    <!-- `sum`, `avg` and `sumCount` without `GROUP BY` and filters, answered from per-part `basic` statistics. -->
+    <create_query>
+        CREATE TABLE sum_avg_stats (counter_id Int32, user_id Int64, width Int16, engine_id Int16, amount Decimal64(2))
+        ENGINE = MergeTree ORDER BY (counter_id, user_id)
+        SETTINGS auto_statistics_types = 'basic'
+    </create_query>
+
+    <fill_query>
+        INSERT INTO sum_avg_stats
+        SELECT number % 10000, intHash64(number), number % 2000, if(number % 5 = 0, number % 30, 0), number / 100
+        FROM numbers_mt(50000000)
+    </fill_query>
+
+    <query>SELECT sum(engine_id), count(), avg(width) FROM sum_avg_stats</query>
+    <query>SELECT avg(user_id) FROM sum_avg_stats</query>
+    <query>SELECT sum(width), sum(width + 1), sum(width + 2), sum(width + 3) FROM sum_avg_stats</query>
+    <query>SELECT sum(amount), avg(amount) FROM sum_avg_stats</query>
+
+    <drop_query>DROP TABLE IF EXISTS sum_avg_stats</drop_query>
+</test>

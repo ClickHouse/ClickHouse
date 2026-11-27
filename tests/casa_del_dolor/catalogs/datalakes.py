@@ -8,9 +8,15 @@ import time
 import threading
 
 from pathlib import Path
-from integration.helpers.client import Client
+from tests.integration.helpers.client import Client, QueryRuntimeException
 from pyiceberg.catalog import load_catalog
-from .kafkatest import KafkaHandler
+from .streamingtest import (
+    FileLogHandler,
+    KafkaHandler,
+    NATSHandler,
+    ObjectQueueHandler,
+    RabbitMQHandler,
+)
 from .filetables import FileHandler
 from .laketables import (
     TableStorage,
@@ -142,8 +148,8 @@ spark_properties = {
 
 
 def wait_for_port(host, port, timeout=90):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout:
         try:
             with socket.create_connection((host, port), 1):
                 return True
@@ -167,6 +173,9 @@ class DolorCatalog:
 
 
 class SparkHandler:
+    # Engines whose tables a broker, an object storage or a file handler feeds, keyed in `streaming_handlers`
+    STREAMING_ENGINES = ("kafka", "nats", "rabbitmq", "s3queue", "azurequeue", "filelog")
+
     def __init__(self, cluster, with_unity: bool, env: dict[str, str]):
         self.logger = logging.getLogger(__name__)
         self.catalogs_lock = threading.Lock()
@@ -245,8 +254,18 @@ logger.jetty.level = warn
 
         self.worker = BackgroundWorker(my_task, interval=1)
         self.worker.start()
+        # Kafka, NATS, RabbitMQ, S3Queue, AzureQueue and FileLog tables by engine name
+        self.streaming_handlers = {"filelog": FileLogHandler(cluster, self)}
+        if cluster.with_minio:
+            self.streaming_handlers["s3queue"] = ObjectQueueHandler(cluster, self, False)
+        if cluster.with_azurite:
+            self.streaming_handlers["azurequeue"] = ObjectQueueHandler(cluster, self, True)
         if cluster.with_kafka:
-            self.kafka_handler = KafkaHandler(cluster)
+            self.streaming_handlers["kafka"] = KafkaHandler(cluster, self)
+        if cluster.with_nats:
+            self.streaming_handlers["nats"] = NATSHandler(cluster, self)
+        if cluster.with_rabbitmq:
+            self.streaming_handlers["rabbitmq"] = RabbitMQHandler(cluster, self)
 
     def start_uc_server(self):
         with self.catalogs_lock:
@@ -445,7 +464,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                        f"http://{cluster.minio_ip}:{cluster.minio_port}",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -508,7 +527,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                        f"http://{cluster.minio_ip}:{cluster.minio_port}",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -566,7 +585,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                        f"http://{cluster.minio_ip}:{cluster.minio_port}",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -809,7 +828,7 @@ logger.jetty.level = warn
         # Load catalog if needed
         if next_lake == LakeFormat.Iceberg and next_storage == TableStorage.S3:
             params = {
-                "s3.endpoint": f"http://{cluster.get_instance_ip('minio')}:{cluster.minio_s3_port}",
+                "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
                 "s3.access-key-id": cluster.minio_access_key,
                 "s3.secret-access-key": cluster.minio_secret_key,
                 "s3.signing-region": "us-east-1",
@@ -929,13 +948,12 @@ logger.jetty.level = warn
         saved_exception = None
         if data["engine"] == "file":
             return self.file_handler.create_table(cluster, data)
-        if data["engine"] == "kafka":
-            # At the moment, this is an ugly hack
-            return self.kafka_handler.create_kafka_table(
-                cluster,
+        if data["engine"] in self.STREAMING_ENGINES:
+            return self.streaming_handlers[data["engine"]].create_table(
                 data["database_name"],
                 data["table_name"],
                 data["topic"],
+                data["group"],
                 data["format"],
                 data["columns"],
             )
@@ -1050,7 +1068,7 @@ logger.jetty.level = warn
         catalog_type = LakeCatalogs.NoCatalog
         run_background_worker = data["async"] == 0 and random.randint(1, 2) == 1
 
-        if data["engine"] not in ("kafka", "file"):
+        if data["engine"] not in self.STREAMING_ENGINES + ("file",):
             with self.catalogs_lock:
                 next_table = self.catalogs[catalog_name].spark_tables[
                     data["table_name"]
@@ -1073,7 +1091,7 @@ logger.jetty.level = warn
                 is_file = data["engine"] == "file"
                 tbl = (
                     quote_ch_table_path(data["catalog_name"], data["table_name"])
-                    if data["engine"] in ("kafka", "file")
+                    if data["engine"] in self.STREAMING_ENGINES + ("file",)
                     else next_table.get_clickhouse_path()
                 )
                 # For File tables, reuse the reader's decode settings so these concurrent
@@ -1088,23 +1106,36 @@ logger.jetty.level = warn
                             (data["catalog_name"], data["table_name"])
                         )
                 for _ in range(nloops):
+                    if self.worker.is_paused():
+                        # The update is over, and BuzzHouse may drop the table from now on
+                        break
                     if file_table is not None:
                         # Recompute per probe to rotate the reader/decoder choices
                         settings = f" SETTINGS {self.file_handler._full_decode_settings(file_table)}"
                     elif is_file:
                         settings = " SETTINGS engine_file_skip_empty_files = 1"
+                    elif data["engine"] in self.STREAMING_ENGINES:
+                        # Consumes the messages, racing with the views that read the table
+                        settings = " SETTINGS stream_like_engine_allow_direct_select = 1"
                     else:
                         settings = ""
-                    client.query(f"SELECT * FROM {tbl} LIMIT 100{settings};")
+                    query = f"SELECT * FROM {tbl} LIMIT 100{settings};"
+                    try:
+                        client.query(query, timeout=60)
+                    except QueryRuntimeException as e:
+                        # Broken messages and data files fail some reads on purpose, the next ones still run
+                        lines = str(e).splitlines()
+                        error = next((line for line in lines if line.startswith("Code:")), lines[0])
+                        self.logger.info(f"Background read failed: {query} {error}")
                     time.sleep(1)
 
             self.worker.set_task_function(my_new_task)
             self.worker.resume()
 
         try:
-            if data["engine"] == "kafka":
-                res = self.kafka_handler.update_table(
-                    cluster, data["catalog_name"], data["table_name"]
+            if data["engine"] in self.STREAMING_ENGINES:
+                res = self.streaming_handlers[data["engine"]].update_table(
+                    data["catalog_name"], data["table_name"]
                 )
             elif data["engine"] in ("file", "iceberg", "deltalake", "paimon"):
                 is_file = data["engine"] == "file"

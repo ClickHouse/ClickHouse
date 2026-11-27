@@ -7,8 +7,6 @@ title: 'Scaling recommendations'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Introduction {#introduction}
 
 Auto-scaling database resources requires careful balance: scaling up too slowly can risk performance degradation while scaling down too aggressively can trigger constant oscillations.
@@ -80,7 +78,15 @@ Instead of using a single window, ClickHouse Cloud uses two lookback windows wit
 Each window independently generates a recommendation using both memory and CPU analysis.
 The system then merges these recommendations based on the scaling direction each window suggests, as shown in the figure below:
 
-<Image img="/images/cloud/features/autoscaling/two-window-recommender.webp" size="lg" alt="Two-window recommender merging logic" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Two-window recommender merging logic](/images/cloud/features/autoscaling/two-window-recommender.webp)
+
+</Frame>
+
+</div>
 
 For a deep dive into the design decisions of the recommender, see ["Smarter Auto-Scaling for ClickHouse: The Two-Window Approach
 "](https://clickhouse.com/blog/smarter-auto-scaling#the-two-window-solution)

@@ -24,7 +24,7 @@ struct GenerateRandomOptions
     bool fuzzy = false;
 
     /// `null_ratio` expressed as a threshold out of 65536, the resolution of a null decision.
-    UInt32 nullThreshold() const;
+    [[nodiscard]] UInt32 nullThreshold() const;
 };
 
 ColumnPtr fillColumnWithRandomData(

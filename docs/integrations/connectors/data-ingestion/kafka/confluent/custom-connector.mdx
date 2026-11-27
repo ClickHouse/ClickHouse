@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
-import { Image } from "/snippets/components/Image.jsx";
 
 <div class='vimeo-container'>
   <Frame>
@@ -56,7 +55,15 @@ Navigate to "Connector Plugins" -> "Add plugin" and using the following settings
 'Sensitive properties' - 'password'. This will ensure entries of the ClickHouse password are masked during configuration.
 ```
 Example:
-<Image img="/images/integrations/data-ingestion/kafka/confluent/AddCustomConnectorPlugin.webp" size="md" alt="Confluent Platform UI showing settings for adding a custom ClickHouse connector" border/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Confluent Platform UI showing settings for adding a custom ClickHouse connector](/images/integrations/data-ingestion/kafka/confluent/AddCustomConnectorPlugin.webp)
+
+</Frame>
+
+</div>
 
 #### Gather your connection details {#gather-your-connection-details}
 <ConnectionDetails />

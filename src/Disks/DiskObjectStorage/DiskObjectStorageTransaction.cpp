@@ -24,6 +24,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStatus.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <base/defines.h>
 
@@ -53,12 +54,12 @@ namespace ErrorCodes
     extern const int FAULT_INJECTED;
 }
 
-void DiskObjectStorageTransaction::waitBlobRemoval(const StoredObjects & blobs) const
+void DiskObjectStorageTransaction::waitBlobRemoval(const StoredObjects & blobs, const BatchIds & batches) const
 {
     try
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::DiskObjectStorageWaitBlobRemovalMicroseconds);
-        for (size_t i = 0; i < 100 && metadata_storage->hasPendingRemovalBlobs(blobs); ++i)
+        for (size_t i = 0; i < 100 && (metadata_storage->hasPendingRemovalBlobs(blobs) || metadata_storage->hasPendingRemovalBatches(batches)); ++i)
             blob_killer->triggerAndWait();
 
         if (watch.elapsed() > 100'000)
@@ -509,14 +510,6 @@ void DiskObjectStorageTransaction::setLastModified(const std::string & path, con
     });
 }
 
-void DiskObjectStorageTransaction::chmod(const String & path, mode_t mode)
-{
-    addOperation([path, mode](MetadataTransactionPtr tx)
-    {
-        tx->chmod(path, mode);
-    });
-}
-
 void DiskObjectStorageTransaction::createFile(const std::string & path)
 {
     if (metadata_storage->supportsEmptyFilesWithoutBlobs())
@@ -664,7 +657,7 @@ void DiskObjectStorageTransaction::commit()
     }
 
     if (wait_blob_removal)
-        waitBlobRemoval(metadata_transaction->getSubmittedForRemovalBlobs());
+        waitBlobRemoval(metadata_transaction->getSubmittedForRemovalBlobs(), metadata_transaction->getSubmittedForRemovalBatches());
 
     operations_to_execute.clear();
     written_blobs.clear();
@@ -739,7 +732,7 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
     }
 
     if (wait_blob_removal)
-        waitBlobRemoval(metadata_transaction->getSubmittedForRemovalBlobs());
+        waitBlobRemoval(metadata_transaction->getSubmittedForRemovalBlobs(), metadata_transaction->getSubmittedForRemovalBatches());
 
     operations_to_execute.clear();
     written_blobs.clear();
@@ -750,15 +743,36 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
 
 void DiskObjectStorageTransaction::undo() noexcept
 {
+    /// Keep the retries of this cleanup when the query or merge is cancelled: nothing removes orphaned blobs later.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
     for (const auto & [location, blobs] : written_blobs)
     {
+        /// A decorator such as `CachedObjectStorage` removes only its own state for the blobs (the cache entries),
+        /// so remove them through every layer down to the base object storage, which deletes them.
+        /// Each layer is tried separately, so that a failure in a decorator does not leave the blobs in the base storage.
+        ObjectStoragePtr object_storage;
         try
         {
-            object_storages->takePointingTo(location)->removeObjectsIfExist(blobs);
+            object_storage = object_storages->takePointingTo(location);
         }
         catch (...)
         {
             tryLogCurrentException(getLogger("DiskObjectStorageTransaction"), fmt::format("An error occurred during transaction cleanup from location '{}'", location));
+        }
+
+        for (; object_storage; object_storage = object_storage->getUnderlying())
+        {
+            try
+            {
+                object_storage->removeObjectsIfExist(blobs);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    getLogger("DiskObjectStorageTransaction"),
+                    fmt::format("An error occurred during transaction cleanup from location '{}' in `{}`", location, object_storage->getName()));
+            }
         }
     }
 

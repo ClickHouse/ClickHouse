@@ -1,0 +1,121 @@
+---
+description: 'Como BACKUP e RESTORE lidam com coleções nomeadas criadas via SQL, e as configurações e privilégios que os controlam.'
+sidebarTitle: 'Coleções nomeadas'
+slug: /operations/backup/named-collections
+title: 'Backup e restauração de coleções nomeadas'
+keywords: ['backup', 'restore', 'named collections', 'backup_named_collections', 'restore_named_collections', 'create_named_collection']
+doc_type: 'reference'
+---
+
+[Coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections) criadas via SQL
+podem ser exportadas para um backup e restauradas a partir dele por meio da tabela `system.named_collections`.
+Uma coleção exportada inclui seus valores, inclusive os secretos; por isso, o backup e a restauração
+de coleções são controlados por privilégios e configurações próprios, documentados nesta página.
+
+Coleções definidas nos arquivos de configuração do servidor são renderizadas a partir da configuração e
+nunca fazem parte de um backup; restaurar uma coleção a partir de um backup não sobrescreve uma coleção
+de mesmo nome definida na configuração.
+
+## Seleção das coleções {#selecting-the-collections}
+
+Uma consulta `BACKUP` exporta as coleções nomeadas quando seleciona a tabela `system.named_collections`:
+
+* Explicitamente: `BACKUP TABLE system.named_collections`. Nesse caso, os privilégios necessários (veja abaixo) são
+  obrigatórios.
+* Implicitamente, por meio de um elemento `DATABASE system` ou `ALL`. Por padrão, esse tipo de backup exporta as
+  coleções somente se o usuário puder ler seus valores; caso contrário, ele as ignora e emite um aviso, para
+  que `BACKUP ALL` continue funcionando para um usuário que pode fazer backup de tudo, mas não pode ler os
+  valores.
+
+Uma seleção que exclui os dados da tabela — `BACKUP TABLE system.named_collections EXCEPT DATA FROM
+TABLE system.named_collections` ou um elemento com wildcard com `EXCEPT DATA FROM TABLES
+system.named_collections` — mantém apenas a definição da tabela no backup. Ela não exporta nenhuma
+coleção e não exige nenhum dos privilégios abaixo.
+
+## Privilégios necessários {#required-privileges}
+
+Exportar as coleções grava seus valores no backup; por isso, são exigidos os mesmos privilégios
+necessários para ler os valores de `system.named_collections`:
+[`SHOW NAMED COLLECTIONS`](/pt-BR/reference/statements/grant#named-collection-admin),
+`SHOW NAMED COLLECTIONS SECRETS` e
+[`displaySecretsInShowAndSelect`](/pt-BR/reference/statements/grant#displaysecretsinshowandselect).
+Isso também vale para um armazenamento criptografado de coleções nomeadas: as entradas são copiadas como texto cifrado,
+mas qualquer servidor que tenha a mesma chave as restaura em coleções cujos valores podem, então, ser lidos.
+
+A restauração das coleções exige o privilégio
+[`CREATE NAMED COLLECTION`](/pt-BR/reference/statements/grant#named-collection-admin), mas
+não os privilégios listados acima: um operador pode restaurar um backup sem conseguir
+lê-lo, e os erros e logs dessa restauração nunca mencionam o nome de uma coleção.
+
+Para `BACKUP ON CLUSTER` e `RESTORE ON CLUSTER`, os privilégios do usuário iniciador são verificados
+no host iniciador antes de a consulta ser encaminhada aos demais hosts. Durante um upgrade
+gradual, um host que executa uma versão com esta funcionalidade nunca exporta nem restaura as coleções em
+uma consulta encaminhada por um iniciador que executa uma versão sem ela, pois esse iniciador não consegue
+verificar os privilégios: a exportação é ignorada (ou, no caso de uma seleção explícita, rejeitada), e a
+restauração das entradas de coleção é rejeitada.
+
+## `backup_named_collections` {#backup-named-collections}
+
+Tipo: `Bool`. Opcional; não definido por padrão.
+
+Controla se uma consulta `BACKUP` exporta as coleções nomeadas:
+
+* Não definido (padrão): um elemento explícito `TABLE system.named_collections` as exporta e
+  exige os privilégios; um elemento `DATABASE system` ou `ALL` as exporta somente se o usuário
+  tiver os privilégios e, caso contrário, as ignora e emite um aviso.
+* `true`: o backup exporta as coleções sempre que a consulta seleciona a tabela, e a falta dos
+  privilégios gera um erro mesmo em uma seleção implícita.
+* `false`: o backup nunca exporta as coleções, mesmo quando a tabela `system.named_collections`
+  é especificada explicitamente, e não exige nenhum dos privilégios.
+
+```sql
+-- Fails instead of skipping the collections when the privileges are missing:
+BACKUP ALL TO Disk('backups', 'everything') SETTINGS backup_named_collections = 1
+
+-- Never exports the collections:
+BACKUP ALL TO Disk('backups', 'no_collections') SETTINGS backup_named_collections = 0
+```
+
+## `restore_named_collections` {#restore-named-collections}
+
+Tipo: `Bool`. Padrão: `true`.
+
+Define se uma consulta `RESTORE` restaura as coleções nomeadas contidas no backup. Ao contrário de
+[`restore_table_data`](/pt-BR/concepts/features/backup-restore/restore-settings) e das configurações semelhantes, o padrão continua
+`true` com `structure_only`: as coleções são definições, e uma tabela cujo motor
+faz referência a uma coleção (por exemplo, `ENGINE = URL(collection)`) não pode ser criada sem ela.
+
+```sql
+-- Restores everything except the named collections:
+RESTORE ALL FROM Disk('backups', 'everything') SETTINGS restore_named_collections = 0
+```
+
+## `create_named_collection` {#create-named-collection}
+
+Tipo: `String`. Padrão: `'if-not-exists'`.
+
+Como o `RESTORE` trata uma coleção nomeada que já existe:
+
+* `'if-not-exists'` (o padrão): a coleção existente é mantida e a do backup é
+  ignorada.
+* `'create'`: a existência da coleção faz a restauração falhar.
+* `'replace'`: a coleção existente é substituída pela do backup. Uma coleção definida na
+  configuração do servidor não pode ser substituída e faz a restauração falhar.
+
+```sql
+RESTORE TABLE system.named_collections FROM Disk('backups', 'everything')
+SETTINGS create_named_collection = 'replace'
+```
+
+## Armazenamento criptografado de coleções nomeadas {#encrypted-storage}
+
+Com um [armazenamento criptografado para coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections)
+(`local_encrypted` ou `zookeeper_encrypted`), as entradas são copiadas para o backup na forma do
+texto cifrado mantido pelo armazenamento, seguido de um código de autenticação: nenhum valor em texto simples aparece
+em parte alguma do backup, e uma entrada modificada faz a restauração falhar antes que qualquer dado seja descriptografado.
+
+Para restaurar um backup desse tipo, é necessário um servidor cujo armazenamento de coleções nomeadas também seja criptografado e
+contenha a chave usada para criptografar as coleções. As entradas restauradas são criptografadas novamente com a
+chave do servidor que realiza a restauração. Um backup com entradas criptografadas não pode ser restaurado em um armazenamento
+não criptografado; configure um armazenamento criptografado que contenha a chave ou ignore as coleções com
+`restore_named_collections = 0`.

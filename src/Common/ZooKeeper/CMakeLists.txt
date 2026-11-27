@@ -34,6 +34,11 @@ target_link_libraries (clickhouse_common_zookeeper_no_log
         clickhouse_compression
         common
 )
+
+if (TARGET ch_contrib::silk_fibers)
+    target_link_libraries (clickhouse_common_zookeeper_base PUBLIC ch_contrib::silk_fibers)
+    target_link_libraries (clickhouse_common_zookeeper_no_log PUBLIC ch_contrib::silk_fibers)
+endif()
 if (ENABLE_EXAMPLES)
     add_subdirectory(examples)
 endif()

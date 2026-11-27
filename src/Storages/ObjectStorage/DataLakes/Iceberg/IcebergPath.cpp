@@ -206,4 +206,19 @@ String IcebergPathResolver::resolve(const IcebergPathFromMetadata & metadata_pat
         throw ::DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Expected to find '{}' in data path: '{}'", table_root, raw_path);
     }
 }
+
+String IcebergPathResolver::storageIdentity(const IcebergPathFromMetadata & metadata_path) const
+{
+    String path = resolve(metadata_path);
+    /// A filesystem names `a/./b`, `a//b` and `a/b/` as `a/b`; an object key is a byte string.
+    if (blob_storage.type_name == "local" || blob_storage.type_name == "hdfs")
+        return String(trimTrailingSlashes(std::filesystem::path(path).lexically_normal().string()));
+    /// As in `S3ObjectStorage::splitBucketAndKey`, a fully qualified path names its bucket whatever its scheme.
+    if (blob_storage.type_name == "s3")
+    {
+        if (auto qualified = trySplitFullyQualifiedObjectPath(path))
+            return fmt::format("{}/{}", qualified->object_namespace, qualified->key);
+    }
+    return fmt::format("{}/{}", blob_storage.namespace_name, path);
+}
 }

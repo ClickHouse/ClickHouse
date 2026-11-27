@@ -44,6 +44,12 @@ public:
     /// boundary. The stream format leaves it at the default (only the absolute `MAX_REASONABLE` ceiling).
     bool readNextMessage(Message & out, Int64 expected_metadata_length = -1);
 
+    /// Throws if a vector of 8-byte elements of `batch` (`nodes`, `buffers`, `variadicBufferCounts`) is
+    /// misaligned (see `isFlatBuffersVectorAligned8`). `readNextMessage` checks the batch of a `RecordBatch`
+    /// message itself; the batch inside a `DictionaryBatch` is checked by the caller only when that
+    /// dictionary is needed, so a corrupted dictionary of an unrequested column does not fail a projected read.
+    static void checkRecordBatchAlignment(const flatbuf::RecordBatch & batch);
+
     /// Reads the message body of a record/dictionary batch into `body`, leaving the buffer positioned right
     /// after the whole `body_length`-byte body (so the next message follows). Only the prefix actually
     /// referenced by `batch.buffers()` is materialized: the maximum `buffer.offset + buffer.length` is

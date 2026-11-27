@@ -13,9 +13,7 @@ doc_type: 'reference'
 
 このエンジンは `MergeTree` と組み合わせて使用することを推奨します。完全なデータは `MergeTree` テーブルに保存し、`SummingMergeTree` は、たとえばレポート作成時の集計データの保存に使用します。このような構成にすることで、不適切に構成された主キーによって貴重なデータが失われるのを防げます。
 
-<div id="creating-a-table">
-  ## テーブルの作成
-</div>
+## テーブルの作成 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -32,22 +30,16 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 リクエストパラメータの説明については、[リクエストの説明](/ja/reference/statements/create/table)を参照してください。
 
-<div id="parameters-of-summingmergetree">
-  ### SummingMergeTree のパラメータ
-</div>
+### SummingMergeTree のパラメータ {#parameters-of-summingmergetree}
 
-<div id="columns">
-  #### カラム
-</div>
+#### カラム {#columns}
 
 `columns` - 値を合計する対象のカラム名を格納したタプルです。オプションのパラメータです。
 カラムは数値型である必要があり、パーティションキーまたはソートキーに含まれていてはなりません。
 
 `columns` が指定されていない場合、ClickHouse はソートキーに含まれていない、数値データ型のすべてのカラムの値を合計します。
 
-<div id="query-clauses">
-  ### クエリ句
-</div>
+### クエリ句 {#query-clauses}
 
 `SummingMergeTree` テーブルの作成時には、`MergeTree` テーブルの作成時と同じ [句](/ja/reference/engines/table-engines/mergetree-family/mergetree) が必要です。
 
@@ -72,9 +64,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
   * `columns` — 合計対象となるカラム名のタプル。省略可能なパラメータです。説明については、上記の本文を参照してください。
 </details>
 
-<div id="usage-example">
-  ## 使用例
-</div>
+## 使用例 {#usage-example}
 
 次のテーブルについて考えます。
 
@@ -107,35 +97,27 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 └─────┴────────────┘
 ```
 
-<div id="data-processing">
-  ## データ処理
-</div>
+## データ処理 {#data-processing}
 
 データがテーブルに挿入されると、そのまま保存されます。ClickHouse は挿入されたデータパーツを定期的にマージし、その過程で同じ主キーを持つ行を合算して、マージ後の各データパーツでは 1 行にまとめます。
 
 ただし、ClickHouse によるデータパーツのマージ後も、異なる結果データパーツに同じ主キーを持つ行が含まれることがあり、つまり合計が不完全になる可能性があります。したがって、上記の例で説明したとおり、クエリでは集約関数 [sum()](/ja/reference/functions/aggregate-functions/sum) と `GROUP BY` 句を使用する必要があります。
 
-<div id="common-rules-for-summation">
-  ### 合計に関する共通ルール
-</div>
+### 合計に関する共通ルール {#common-rules-for-summation}
 
 数値データ型のカラムの値は合計されます。カラムのセットは、パラメータ `columns` で定義されます。
 
-合計対象のすべてのカラムの値が 0 の場合、その行は削除されます。
+合計対象のすべてのカラムの値が 0 の場合、その行はマージ時に削除されます。[FINAL](/ja/reference/statements/select/from#final-modifier) 修飾子を指定したクエリは行を合計しますが、そのような行は削除しません。そのため、返される行の集合は、クエリがどのカラムを読み取るかに左右されません。なお、名前が `Map` で終わる[ネストされた構造](#nested-structures)を `FINAL` が通常のマージと同じ方法でマージするのは、クエリがその構造のすべてのカラムを読み取る場合に限られます。
 
 カラムが主キーに含まれず、かつ合計対象でない場合は、既存の値の中から任意の値が選択されます。
 
 主キーに含まれるカラムの値は合計されません。
 
-<div id="the-summation-in-the-aggregatefunction-columns">
-  ### AggregateFunction カラムでの合計
-</div>
+### AggregateFunction カラムでの合計 {#the-summation-in-the-aggregatefunction-columns}
 
 [AggregateFunction type](/ja/reference/data-types/aggregatefunction) 型のカラムでは、ClickHouse は関数に従って集約を行う [AggregatingMergeTree](/ja/reference/engines/table-engines/mergetree-family/aggregatingmergetree) エンジンのように動作します。
 
-<div id="nested-structures">
-  ### ネストされた構造
-</div>
+### ネストされた構造 {#nested-structures}
 
 テーブルは、特別な方法で処理されるネストされたデータ構造を持つことができます。
 
@@ -206,9 +188,7 @@ ARRAY JOIN
 
 ネストされたデータ構造では、集計用のカラムタプルにそのカラムを指定する必要はありません。
 
-<div id="tuple-element-aggregation">
-  ### タプル 要素の集約
-</div>
+### タプル 要素の集約 {#tuple-element-aggregation}
 
 `allow_tuple_element_aggregation` 設定が有効な場合、`Tuple` カラムは再帰的にフラット化され、各末端要素が個別に合計対象となります。これにより、複数のメトリクスを 1 つの `Tuple` カラムに格納し、マージ時に要素ごとに合計できるようになります。
 
@@ -217,7 +197,7 @@ ARRAY JOIN
 * 合計されるのは数値サブカラムのみです。
 * ソートキーまたはパーティションキー内の `Tuple` に属するサブカラムは、合計の対象から除外されます。
 * `columns` が指定されている場合、列挙された `Tuple` カラムのサブカラムのみが合計されます。
-* 合計後に行内のすべての数値サブカラムが 0 になった場合、その行は削除されます。
+* 合計後に行内のすべての数値サブカラムが 0 になった場合、その行はマージ時に削除されます (ただし、`FINAL` を指定したクエリでは削除されません) 。
 
 <Note>
   この設定は変更不可であり、テーブル作成時に指定する必要があります。
@@ -252,9 +232,7 @@ SELECT key, metrics.impressions, metrics.clicks, metrics.nested.conversions FROM
 └─────┴─────────────────────┴────────────────┴────────────────────────────┘
 ```
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * ブログ: [ClickHouseでArray、Map、stateに対してAggregate Combinatorを使用する](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
 

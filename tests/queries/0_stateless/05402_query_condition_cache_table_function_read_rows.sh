@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-parallel-replicas
+# Random settings limits: input_format_parquet_filter_push_down=(1, 1); input_format_parquet_bloom_filter_push_down=(1, 1); output_format_parquet_write_bloom_filter=(1, 1); output_format_parquet_bloom_filter_bits_per_value=(10.5, None)
 # Tag no-fasttest: needs Parquet
 # Tag no-parallel: relies on the entries of the instance-wide query condition cache, which a parallel
 # sibling test can wipe at any moment (see 04498_query_condition_cache_local_files).

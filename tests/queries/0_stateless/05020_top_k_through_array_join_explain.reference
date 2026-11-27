@@ -47,7 +47,7 @@ Limit
             Output: x, arr
 -- guard spans every joined column
 notEmpty(arr) OR notEmpty(arr2)
--- chained ARRAY JOIN: only the outermost step is rewritten
+-- chained ARRAY JOIN: the sort moves below both
 Output: x
 
 Limit
@@ -55,13 +55,13 @@ Limit
 │  Offset 0
 └──ArrayJoin
    │  ARRAY JOIN arr2
-   └──Sorting
-      │  Sort description: x ASC
-      │  Limit 10
-      └──Filter
-         │  Filter column: notEmpty(arr2)
-         └──ArrayJoin
-            │  ARRAY JOIN arr
+   └──ArrayJoin
+      │  ARRAY JOIN arr
+      └──Sorting
+         │  Sort description: x ASC
+         │  Limit 10
+         └──Filter
+            │  Filter column: notEmpty(arr2) AND notEmpty(arr)
             └──ReadFromMergeTree
                   Read type: Default
                   Parts: 1 | Granules: 1
@@ -192,12 +192,12 @@ Limit
    └──Sorting
       │  Sort description: pk ASC
       │  Limit 10
-      └──Filter
-         │  Filter column: notEmpty(arr)
+      └──Distinct
+         │  Columns: pk, x, arr
          └──Distinct
             │  Columns: pk, x, arr
-            └──Distinct
-               │  Columns: pk, x, arr
+            └──Filter
+               │  Filter column: notEmpty(arr)
                └──ReadFromMergeTree
                      Read type: Default
                      Parts: 1 | Granules: 1

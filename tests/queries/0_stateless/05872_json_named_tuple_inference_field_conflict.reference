@@ -1,0 +1,6 @@
+[(-1),(18446744073709551615)]	Array(Dynamic)
+[(-1),(18446744073709551615)]	Array(Dynamic)
+(NULL,1)	Nullable(Tuple(j Nullable(String), k Nullable(UInt64)))
+('x',18446744073709551615)	Nullable(Tuple(j Nullable(String), k Nullable(UInt64)))
+(-1)	Nullable(Tuple(k Variant(Int64, UInt64)))
+(18446744073709551615)	Nullable(Tuple(k Variant(Int64, UInt64)))

@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <functional>
@@ -60,7 +61,7 @@ size_t allocatedByAppend(
 TEST(PartitionedRecordBuffer, ChunkGrowthAndLargeRecords)
 {
     /// The last allocation group contains one partition. Mixed record sizes exercise chunk alignment,
-    /// block rollover, and records allocated separately because they exceed the shared chunk size.
+    /// block rollover, and records allocated separately because they take more than half of the chunk cap.
     PartitionedRecordBuffer buffer(3, 2);
     std::array<std::string, 3> expected;
     for (size_t row = 0; row < 300; ++row)
@@ -77,6 +78,52 @@ TEST(PartitionedRecordBuffer, ChunkGrowthAndLargeRecords)
         EXPECT_EQ(buffer.recordsOf(partition), 100);
         EXPECT_EQ(readPartition(buffer, partition), expected[partition]);
     }
+}
+
+TEST(PartitionedRecordBuffer, ChunksDoubleUpToTheCap)
+{
+    /// A partition's chunks double from the first chunk up to the cap the buffer is given, and no further: the largest
+    /// chunk of a long partition holds more than half the cap and no more than the cap.
+    for (const size_t cap : {PartitionedRecordBuffer::default_max_chunk_bytes, PartitionedRecordBuffer::default_max_chunk_bytes / 2})
+    {
+        PartitionedRecordBuffer buffer(1, 1, PartitionedRecordBuffer::max_first_chunk_bytes, cap);
+        std::string expected;
+        for (size_t row = 0; row < 1000; ++row)
+        {
+            const std::string record(100, static_cast<char>('a' + row % 26));
+            appendRecord(buffer, 0, record);
+            expected += record;
+        }
+        buffer.finishAppending();
+
+        size_t largest_chunk = 0;
+        buffer.forEachChunk(0, [&](std::string_view chunk) { largest_chunk = std::max(largest_chunk, chunk.size()); });
+        EXPECT_GT(largest_chunk, cap / 2) << cap;
+        EXPECT_LE(largest_chunk, cap) << cap;
+        EXPECT_EQ(readPartition(buffer, 0), expected);
+    }
+}
+
+TEST(PartitionedRecordBuffer, RecordsOverHalfTheCapTakeTheirOwnSize)
+{
+    /// A record of more than half the chunk cap gets a chunk of its own size, so a partition of such records takes
+    /// about the records' bytes, where capped chunks holding one record each would take the whole cap per record.
+    constexpr size_t record_size = PartitionedRecordBuffer::default_max_chunk_bytes / 2 + 1000;
+    constexpr size_t records = 10;
+    PartitionedRecordBuffer buffer(1, 1);
+    std::string expected;
+    for (size_t row = 0; row < records; ++row)
+    {
+        const std::string record(record_size, static_cast<char>('a' + row));
+        appendRecord(buffer, 0, record);
+        expected += record;
+    }
+    buffer.finishAppending();
+
+    /// Each chunk adds its header and the tail padding to the record.
+    EXPECT_LT(buffer.allocatedChunkBytes(), records * (record_size + 128));
+    EXPECT_EQ(buffer.recordsOf(0), records);
+    EXPECT_EQ(readPartition(buffer, 0), expected);
 }
 
 TEST(PartitionedRecordBuffer, RecordTooLargeForAChunk)
@@ -151,6 +198,55 @@ TEST(PartitionedRecordBuffer, ConcurrentPartitionRelease)
 
     for (size_t partition = 0; partition < partitions; ++partition)
         EXPECT_EQ(buffer.recordsOf(partition), 0);
+}
+
+/// `releasePartitions` releases consecutive partitions in one walk, in which the chunks of one block give their
+/// references back together. A block is freed with the last of its chunks, whichever call releases that chunk.
+/// Partitions 0 to 3 share the blocks of one group and partitions 4 to 7 the block of another. Partition 1 also holds a
+/// chunk of its own, and partition 2 holds 6 MB of records, whose chunks span more blocks than a batch of the walk
+/// keeps.
+TEST(PartitionedRecordBuffer, ReleaseOfConsecutivePartitions)
+{
+    runTracked([](const MemoryTracker & tracker)
+    {
+        constexpr size_t partitions = 8;
+        PartitionedRecordBuffer buffer(partitions, 4);
+        const Int64 empty = tracker.get();
+        const auto record = [](size_t partition) { return "record " + std::to_string(partition); };
+        for (size_t partition = 0; partition < partitions; ++partition)
+            appendRecord(buffer, partition, record(partition));
+        appendRecord(buffer, 1, std::string(10000, 'x'));
+        for (size_t i = 0; i < 6000; ++i)
+            appendRecord(buffer, 2, std::string(1000, 'y'));
+        buffer.finishAppending();
+        const Int64 full = tracker.get();
+
+        /// The first group, in one call.
+        buffer.releasePartitions(0, 4);
+        for (size_t partition = 0; partition < 4; ++partition)
+        {
+            EXPECT_EQ(buffer.recordsOf(partition), 0);
+            EXPECT_EQ(readPartition(buffer, partition), "");
+        }
+        for (size_t partition = 4; partition < partitions; ++partition)
+            EXPECT_EQ(readPartition(buffer, partition), record(partition));
+        const Int64 second_group = tracker.get();
+        EXPECT_LT(second_group, full);
+        EXPECT_GT(second_group, empty);
+
+        /// The second group, in two calls: its block goes with the last of its chunks.
+        buffer.releasePartitions(4, 3);
+        EXPECT_EQ(tracker.get(), second_group);
+        EXPECT_EQ(readPartition(buffer, 7), record(7));
+        buffer.releasePartitions(7, 1);
+        EXPECT_EQ(tracker.get(), empty);
+
+        /// Released partitions take appends again.
+        appendRecord(buffer, 2, "again");
+        buffer.finishAppending();
+        EXPECT_EQ(readPartition(buffer, 2), "again");
+        EXPECT_EQ(buffer.recordsOf(2), 1);
+    });
 }
 
 TEST(PartitionedRecordBuffer, RecordCountsWhileAppending)

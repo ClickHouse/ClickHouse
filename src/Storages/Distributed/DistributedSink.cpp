@@ -24,6 +24,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ProcessList.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/setThreadName.h>
@@ -70,7 +71,7 @@ namespace Setting
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsBool insert_distributed_one_random_shard;
     extern const SettingsUInt64 insert_shard_id;
-    extern const SettingsUInt64 max_distributed_connections;
+    extern const SettingsNonZeroUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsUInt64 max_network_bandwidth;
     extern const SettingsUInt64 max_network_bytes;
@@ -222,7 +223,17 @@ void DistributedSink::consume(Chunk & chunk)
 {
     if (is_first_chunk)
     {
-        storage.delayInsertOrThrowIfNeeded();
+        /// A write to a local shard runs this sink in a nested pipeline that a `KILL` of the query does not cancel.
+        auto query_status = context->getProcessListElementSafe();
+
+        /// A Buffer flush builds this context from the shared Buffer context, which has no process list element.
+        /// The flush runs on the thread of the INSERT that triggered it, so that thread's query context still sees the `KILL`.
+        /// Background flushes have no query context and keep waiting.
+        if (!query_status)
+            if (auto query_context = CurrentThread::tryGetQueryContext())
+                query_status = query_context->getProcessListElementSafe();
+
+        storage.delayInsertOrThrowIfNeeded([&] { return isCancelled() || (query_status && query_status->isKilled()); });
         is_first_chunk = false;
     }
 
@@ -496,7 +507,8 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /// The RemoteSink constructor sends the query to the shard and reads its header,
                     /// so a missing table or any other "before processing" exception surfaces here.
                     job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(
-                        *job.connection_entry, timeouts, query_string, settings, context->getClientInfo()));
+                        *job.connection_entry, timeouts, query_string, settings, context->getClientInfo(),
+                        context->getProcessListElementSafe()));
                     job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
                     job.executor->start();
                 }
@@ -759,7 +771,7 @@ DistributedSink::~DistributedSink()
 {
     /// A cancelled insert reaches neither `onFinish` nor, when the lock is contended, `onCancel`. Doing
     /// it here keeps every executor cancelled under `execution_mutex`, rather than leaving
-    /// `~PushingPipelineExecutor` to depend on an exception being in flight on the destroying thread.
+    /// `~PushingPipelineExecutor` to depend on an exception being in flight on the destroying thread
     std::lock_guard lock(execution_mutex);
     cancelExecutors();
 }
@@ -981,16 +993,20 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             /// `client_agent` is intentionally excluded from the embedded `ClientInfo` here and written
             /// as a trailing header field below, so that older binaries draining these queue files read
             /// the embedded `ClientInfo` in the old, append-compatible layout.
-            if (OpenTelemetry::CurrentContext().isTraceEnabled())
             {
-                // if the distributed tracing is enabled, use the trace context in current thread as parent of next span
                 auto client_info = context->getClientInfo();
-                client_info.client_trace_context = OpenTelemetry::CurrentContext();
+                // if the distributed tracing is enabled, use the trace context in current thread as parent of next span
+                if (OpenTelemetry::CurrentContext().isTraceEnabled())
+                    client_info.client_trace_context = OpenTelemetry::CurrentContext();
+                /// Background contexts (e.g. the ones of `Kafka` / `RabbitMQ` streaming into views) have
+                /// `query_kind = NO_QUERY`, for which `ClientInfo::write` stores nothing but the kind. The
+                /// replayed insert would then reach the shard with an empty `initial_user`, which a shard
+                /// accepting the interserver `<secret>` executes with full access, losing the identity
+                /// (e.g. the definer of a `SQL SECURITY DEFINER` view) that the query is bound to.
+                /// `RemoteInserter` sends the insert as a secondary query anyway, so persist it as such.
+                if (client_info.query_kind == ClientInfo::QueryKind::NO_QUERY)
+                    client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
                 client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION, /*with_trailing_fields=*/ false);
-            }
-            else
-            {
-                context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION, /*with_trailing_fields=*/ false);
             }
 
             writeVarUInt(block.rows(), header_buf);

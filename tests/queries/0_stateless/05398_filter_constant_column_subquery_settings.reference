@@ -1,0 +1,37 @@
+inner disabled, outer enabled
+0
+0
+inner enabled, outer disabled
+1
+1
+partial PREWHERE, inner disabled, outer enabled
+0
+0
+partial PREWHERE, inner enabled, outer disabled
+1
+1
+serialized plan, inner disabled, outer enabled
+0
+0
+serialized plan, inner enabled, outer disabled
+1
+1
+lazy materialization, inner disabled, outer enabled
+0	1000
+0	1000
+lazy materialization, inner enabled, outer disabled
+1	1000
+1	1000
+aggregate projection, inner disabled, outer enabled
+10
+aggregate projection, inner enabled, outer disabled
+10
+aggregate projection, filter output is constant
+05398_projection_inner_disabled	0
+05398_projection_inner_enabled	1
+prewhere after final, inner disabled, outer enabled
+0
+0
+prewhere after final, inner enabled, outer disabled
+1
+1

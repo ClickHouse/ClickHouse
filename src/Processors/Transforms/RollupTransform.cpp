@@ -10,6 +10,7 @@ GroupByModifierTransform::GroupByModifierTransform(SharedHeader header, Aggregat
     : IAccumulatingTransform(std::move(header), std::make_shared<const Block>(generateOutputHeader(params_->getHeader(), params_->params.keys, use_nulls_)))
     , params(std::move(params_))
     , use_nulls(use_nulls_)
+    , finalized_header(params->getHeader())
 {
     keys.reserve(params->params.keys_size);
     for (const auto & key : params->params.keys)
@@ -99,7 +100,7 @@ Chunk RollupTransform::generate()
         current_chunk = merge(std::move(chunks), !use_nulls, false);
     }
 
-    finalizeChunk(gen_chunk, aggregates_mask);
+    finalizeChunk(gen_chunk, aggregates_mask, finalized_header);
     if (!gen_chunk.empty())
         gen_chunk.addColumn(0, ColumnUInt64::create(gen_chunk.getNumRows(), set_counter++));
     return gen_chunk;

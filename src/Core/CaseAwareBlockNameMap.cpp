@@ -33,11 +33,11 @@ public:
     /// Sets the size of the map
     virtual void setSize(size_t size) = 0;
     /// Gets the size
-    virtual size_t size() const = 0;
+    [[nodiscard]] virtual size_t size() const = 0;
     /// Gets the value for the given key, returns NOT_FOUND if key is not present
-    virtual size_t get(std::string_view key) const = 0;
+    [[nodiscard]] virtual size_t get(std::string_view key) const = 0;
     /// Method used by the map to compare strings
-    virtual bool stringCompare(std::string_view left, std::string_view right) const = 0;
+    [[nodiscard]] virtual bool stringCompare(std::string_view left, std::string_view right) const = 0;
 };
 
 struct CaseInsensitiveHash
@@ -83,9 +83,9 @@ public:
 
     void add(const std::string_view key, size_t idx) override { map[key] = idx; }
 
-    size_t size() const override { return expected_size; }
+    [[nodiscard]] size_t size() const override { return expected_size; }
 
-    size_t get(const std::string_view key) const override
+    [[nodiscard]] size_t get(const std::string_view key) const override
     {
         auto it = map.find(key);
         if (it == map.end())
@@ -95,7 +95,7 @@ public:
         return it->second;
     }
 
-    bool stringCompare(std::string_view left, std::string_view right) const override { return left == right; }
+    [[nodiscard]] bool stringCompare(std::string_view left, std::string_view right) const override { return left == right; }
 
 private:
     ::google::dense_hash_map<std::string_view, size_t, StringViewHash> map;
@@ -125,12 +125,12 @@ public:
         map[key] = idx;
     }
 
-    size_t size() const override { return expected_size; }
+    [[nodiscard]] size_t size() const override { return expected_size; }
 
     /// Retrieves the position of a given key
     /// Can throw in the case where `key` is ambiguous
     /// For example: Name and namE will both map to the same key (name)
-    size_t get(const std::string_view key) const override
+    [[nodiscard]] size_t get(const std::string_view key) const override
     {
         auto it = map.find(key);
         if (it == map.end())
@@ -144,7 +144,7 @@ public:
         return it->second;
     }
 
-    bool stringCompare(std::string_view left, std::string_view right) const override { return CaseInsensitiveEquality::equal(left, right); }
+    [[nodiscard]] bool stringCompare(std::string_view left, std::string_view right) const override { return CaseInsensitiveEquality::equal(left, right); }
 
 protected:
     ::google::dense_hash_map<std::string_view, size_t, CaseInsensitiveHash, CaseInsensitiveEquality> map;
@@ -170,7 +170,7 @@ public:
         i_map.add(key, idx);
     }
 
-    size_t size() const override { return expected_size; }
+    [[nodiscard]] size_t size() const override { return expected_size; }
 
     /** Retrieves the position of a given key
       * Can throw in the case where `key` is ambiguous
@@ -181,7 +181,7 @@ public:
       *  map[namE] -> 1
       *  map[name] -> error, ambiguous
       */
-    size_t get(const std::string_view key) const override
+    [[nodiscard]] size_t get(const std::string_view key) const override
     {
         // First check if the key has an exact match
         auto idx = map.get(key);
@@ -194,7 +194,7 @@ public:
         return i_map.get(key);
     }
 
-    bool stringCompare(std::string_view left, std::string_view right) const override { return map.stringCompare(left, right); }
+    [[nodiscard]] bool stringCompare(std::string_view left, std::string_view right) const override { return map.stringCompare(left, right); }
 
 private:
     CaseSensitiveBlockNameMap map;

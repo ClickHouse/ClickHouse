@@ -9,6 +9,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
@@ -18,50 +19,11 @@
 #include <optional>
 
 
-namespace DB::ErrorCodes
-{
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
-}
-
-
 namespace DB::PrometheusQueryToSQL
 {
 
 namespace
 {
-
-/// Checks that the arguments are valid for `predict_linear`:
-///   - exactly 2 arguments
-///   - first argument is a RANGE_VECTOR
-///   - second argument is a SCALAR
-void checkArgumentTypes(std::string_view function_name, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
-{
-    if (arguments.size() != 2)
-    {
-        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "Function '{}' expects 2 arguments, but was called with {} arguments",
-                        function_name, arguments.size());
-    }
-
-    const auto & range_argument = arguments[0];
-    if (range_argument.type != ResultType::RANGE_VECTOR)
-    {
-        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "Function {} expects first argument of type {}, but expression {} has type {}",
-                        function_name, ResultType::RANGE_VECTOR,
-                        getPromQLText(range_argument, context), range_argument.type);
-    }
-
-    const auto & scalar_argument = arguments[1];
-    if (scalar_argument.type != ResultType::SCALAR)
-    {
-        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "Function {} expects second argument of type {}, but expression {} has type {}",
-                        function_name, ResultType::SCALAR,
-                        getPromQLText(scalar_argument, context), scalar_argument.type);
-    }
-}
-
 
 /// The prediction horizon (the 2nd argument of `predict_linear`, in seconds) converted to an AST.
 struct PredictionOffset
@@ -113,7 +75,7 @@ PredictionOffset getPredictionOffset(SQLQueryPiece & scalar_argument, ConverterC
         case StoreMethod::SAMPLES:
         case StoreMethod::TIMESTAMP_AND_VALUE:
         {
-            /// Can't get in here because these store methods are incompatible with a scalar (see checkArgumentTypes()).
+            /// Can't get in here because these store methods are incompatible with a scalar (see the checks in `applyFunctionPredictLinear`).
             throwUnexpectedStoreMethod(scalar_argument, context);
         }
     }
@@ -121,7 +83,7 @@ PredictionOffset getPredictionOffset(SQLQueryPiece & scalar_argument, ConverterC
 }
 
 
-/// How a fixed @ modifier shifts the prediction horizons: the horizon of the grid point `i` becomes
+/// How a fixed @ modifier or an offset shifts the prediction horizons: the horizon of the grid point `i` becomes
 /// `horizon + (shift_at_start + i * step_in_seconds)`, where `shift_at_start` is the distance in seconds from the frozen
 /// timestamp to the first grid point.
 struct HorizonShift
@@ -155,15 +117,17 @@ ASTPtr makePredictions(ASTPtr && regression, PredictionOffset && prediction_offs
 
     if (horizon_shift)
     {
-        horizon = makeASTFunction(
-            "plus",
-            std::move(horizon),
-            makeASTFunction(
+        ASTPtr shift = make_intrusive<ASTLiteral>(horizon_shift->shift_at_start);
+        if (horizon_shift->step_in_seconds != 0)
+        {
+            shift = makeASTFunction(
                 "plus",
-                make_intrusive<ASTLiteral>(horizon_shift->shift_at_start),
-                makeASTFunction("multiply", make_intrusive<ASTIdentifier>("i"), make_intrusive<ASTLiteral>(horizon_shift->step_in_seconds))));
-        lambda_parameters.push_back("i");
-        arrays.push_back(makeASTFunction("range", make_intrusive<ASTLiteral>(horizon_shift->grid_size)));
+                std::move(shift),
+                makeASTFunction("multiply", make_intrusive<ASTIdentifier>("i"), make_intrusive<ASTLiteral>(horizon_shift->step_in_seconds)));
+            lambda_parameters.push_back("i");
+            arrays.push_back(makeASTFunction("range", make_intrusive<ASTLiteral>(horizon_shift->grid_size)));
+        }
+        horizon = makeASTFunction("plus", std::move(horizon), std::move(shift));
     }
 
     ASTPtr prediction = makeASTFunction(
@@ -191,8 +155,9 @@ bool isFunctionPredictLinear(std::string_view function_name)
 SQLQueryPiece applyFunctionPredictLinear(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
-    const auto function_name = function_node->function_name;
-    checkArgumentTypes(function_name, arguments, context);
+    checkNumberOfArguments(function_node, arguments, 2);
+    checkArgumentType(function_node, arguments, 0, ResultType::RANGE_VECTOR, context);
+    checkArgumentType(function_node, arguments, 1, ResultType::SCALAR, context);
 
     auto node_range = context.node_range_getter.get(function_node);
     if (node_range.empty())
@@ -215,9 +180,9 @@ SQLQueryPiece applyFunctionPredictLinear(
 
     ASTs aggregate_function_arguments = getToGridAggregateFunctionArguments(range_argument, context);
 
-    /// A fixed @ on the range vector freezes the sample window at the fixed timestamp.
+    /// A fixed @ on the range vector freezes the sample window, and an offset shifts it back.
     const auto * fixed_at_node = getFixedAtModifier(range_argument);
-    const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
+    const auto aggregation_range = getRangeAggregationRange(range_argument, node_range, context);
     const size_t result_grid_size = stepsInTimeSeriesRange(start_time, end_time, step);
 
     /// A range vector made from a scalar has no `group` column. The result is still a vector grid with one series without
@@ -259,6 +224,15 @@ SQLQueryPiece applyFunctionPredictLinear(
             .shift_at_start = DecimalUtils::convertTo<Float64>(
                 DurationType{start_time.value - aggregation_range.start_time.value}, context.result_timestamp_scale),
             .step_in_seconds = DecimalUtils::convertTo<Float64>(step, context.result_timestamp_scale),
+            .grid_size = result_grid_size};
+    }
+    else if (aggregation_range.start_time != start_time)
+    {
+        /// An offset shifts only the sample window back, the prediction is still made from the evaluation time.
+        horizon_shift = HorizonShift{
+            .shift_at_start = DecimalUtils::convertTo<Float64>(
+                DurationType{start_time.value - aggregation_range.start_time.value}, context.result_timestamp_scale),
+            .step_in_seconds = 0,
             .grid_size = result_grid_size};
     }
 

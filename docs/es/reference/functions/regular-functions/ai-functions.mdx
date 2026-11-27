@@ -28,12 +28,13 @@ Todas las funciones comparten una infraestructura común que proporciona:
 
 * **Aplicación de cuotas**: Límites por consulta de tokens ([`ai_function_max_input_tokens_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) y llamadas a la API ([`ai_function_max_api_calls_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 * **Reintentos con backoff**: Los fallos transitorios se reintentan ([`ai_function_max_retries`](/es/reference/settings/session-settings/ai-function#ai_function_max_retries)) con backoff exponencial ([`ai_function_retry_initial_delay_ms`](/es/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
+* **Solicitudes concurrentes**: Las solicitudes se envían desde un pool de hilos compartido por todo el servidor, varias a la vez (controladas mediante [`ai_function_max_concurrent_requests_per_thread`](/es/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
 
 ## Configuración {#configuration}
 
-Las funciones de IA hacen referencia a una **colección nombrada** que almacena las credenciales del proveedor y la configuración. Se pueden crear y usar distintas colecciones nombradas para diferentes funciones o llamadas a funciones. Por ejemplo, quizá quiera definir una colección nombrada distinta para usar con las funciones de texto (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) en lugar de las funciones de embedding (`aiEmbed`, `aiSimilarity`), ya que requieren endpoints diferentes y normalmente usan modelos distintos.
+Las funciones de IA requieren el permiso `AI FUNCTIONS` (consulte [Control de acceso](#access-control)) y hacen referencia a una **colección con nombre** que almacena las credenciales del proveedor y la configuración. Se pueden crear y usar distintas colecciones con nombre para diferentes funciones o llamadas a funciones. Por ejemplo, quizá quiera definir una colección con nombre distinta para usar con las funciones de texto (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) en lugar de las funciones de embedding (`aiEmbed`, `aiSimilarity`), ya que requieren endpoints diferentes y normalmente usan modelos distintos.
 
-Ejemplo de sentencia para crear una colección nombrada con credenciales del proveedor: una con un endpoint de chat y otra con un endpoint de embeddings:
+Ejemplo de sentencia para crear una colección con nombre con credenciales del proveedor: una con un endpoint de chat y otra con un endpoint de embeddings:
 
 ```sql
 CREATE NAMED COLLECTION ai_text_credentials AS
@@ -49,6 +50,41 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/embeddings',
     api_key = 'sk-...';
+```
+
+### Control de acceso {#access-control}
+
+Para llamar a una función de IA se necesitan dos privilegios:
+
+* el privilegio de la función: ya sea el privilegio específico de la función (p. ej., `aiGenerate`) o el grupo `AI FUNCTIONS` (consulte [`GRANT`](/es/reference/statements/grant#ai-functions));
+* el privilegio `NAMED COLLECTION` sobre las credenciales seleccionadas.
+
+```sql
+GRANT AI FUNCTIONS ON *.* TO ai_user_role;
+GRANT aiGenerate, aiClassify ON *.* TO ai_analyst_role;
+GRANT NAMED COLLECTION ON ai_text_credentials TO ai_user_role, ai_analyst_role;
+```
+
+El parámetro de configuración [`allow_ai_functions`](/es/reference/settings/session-settings/allow#allow_ai_functions) (habilitado de forma predeterminada) deshabilita las funciones de IA cuando se establece en `0`, por ejemplo, en un perfil de configuración o mediante una restricción. Con `CONST`, los usuarios del perfil no pueden volver a habilitarlas:
+
+```sql
+CREATE SETTINGS PROFILE no_ai SETTINGS allow_ai_functions = 0 CONST TO ai_restricted_role;
+```
+
+Las funciones de IA solo se ejecutan en consultas lanzadas por un usuario. Se rechazan en las mutaciones (`ALTER TABLE ... UPDATE`, `ALTER TABLE ... DELETE`) y en las claves, el TTL, los índices de omisión y las proyecciones de una tabla, que se ejecutan en segundo plano; además, los vaciados de `Buffer` lanzan una excepción cuando evalúan una función de IA. Las columnas `DEFAULT` y `MATERIALIZED` se evalúan durante la inserción; cuando se añade una columna de este tipo con `ALTER TABLE`, las partes existentes la calculan en segundo plano, donde las funciones de IA no se ejecutan.
+
+Para rellenar una columna en filas existentes, utilice un [`UPDATE`](/es/reference/statements/update) ligero, que se ejecuta como parte de la consulta y escribe solo la columna actualizada:
+
+```sql
+UPDATE t SET y = aiEmbed(x, 'model') WHERE empty(y) SETTINGS enable_lightweight_update = 1;
+```
+
+Para una tabla que no cumpla los [requisitos de la actualización ligera](/es/reference/statements/update#lightweight-update-requirements), utilice `INSERT ... SELECT`, por ejemplo, partición por partición:
+
+```sql
+CREATE TABLE t_tmp AS t;
+INSERT INTO t_tmp SELECT x, aiEmbed(x, 'model') AS y FROM t WHERE _partition_id = '202610';
+ALTER TABLE t REPLACE PARTITION ID '202610' FROM t_tmp;
 ```
 
 ### Parámetros de la colección nombrada {#named-collection-parameters}
@@ -115,6 +151,24 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
 
 Toda la configuración relacionada con la IA se enumera en [Configuración](/es/reference/settings/session-settings) con el prefijo `ai_function_`.
 
+### Configuración del servidor {#server-configuration}
+
+El ajuste del servidor `ai_function_allow_sql_named_collections` (valor predeterminado: `true`) determina qué colecciones con nombre aceptan las funciones de IA. Si se establece en `false`, las funciones de IA solo aceptan colecciones con nombre definidas en el archivo de configuración del servidor, y usar una colección creada con `CREATE NAMED COLLECTION` lanza una excepción. Esto se aplica tanto al parámetro `credentials` como a los ajustes de la configuración default-credentials. Para que un cambio en este parámetro de configuración surta efecto, es necesario reiniciar el servidor.
+
+```xml
+<clickhouse>
+    <ai_function_allow_sql_named_collections>false</ai_function_allow_sql_named_collections>
+    <named_collections>
+        <ai_text_credentials>
+            <provider>openai</provider>
+            <endpoint>https://api.openai.com/v1/chat/completions</endpoint>
+            <model>gpt-4o-mini</model>
+            <api_key>sk-...</api_key>
+        </ai_text_credentials>
+    </named_collections>
+</clickhouse>
+```
+
 ### Restricción de hosts de endpoint {#restricting-endpoint-hosts}
 
 La URL de `endpoint` en una colección nombrada de IA es un destino saliente al que el servidor se conecta con su propia identidad, y puede enviar (si se especifica) la `api_key` de la colección nombrada en los encabezados de la solicitud. De forma predeterminada, ClickHouse permite cualquier host. Para restringir las funciones a un conjunto específico de proveedores, configure [`remote_url_allow_hosts`](/es/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) en la configuración del servidor, por ejemplo:
@@ -139,6 +193,35 @@ De forma predeterminada, las funciones de IA rechazan un `endpoint` que enviarí
 
 Tenga en cuenta que, en cualquiera de los dos casos, el proveedor recibe los datos de entrada en texto sin formato después de la terminación de TLS; TLS protege los datos solo en la ruta de red entre el servidor y el proveedor.
 
+### Caudal {#throughput}
+
+Las funciones de IA se diferencian de la mayoría de las funciones tradicionales de ClickHouse en que su caudal depende casi por completo del endpoint remoto al que envían las solicitudes, y no de la CPU ni de la E/S locales. Por ello, se benefician considerablemente de una concurrencia superior al valor estándar de `max_threads` que se utiliza en todo ClickHouse. Por este motivo, las solicitudes se emiten desde un pool de hilos dedicado a nivel de servidor. Su tamaño (`ai_function_max_thread_pool_size`, un ajuste del servidor) limita cuántas solicitudes al proveedor de IA puede tener en curso simultáneamente el servidor en su conjunto, sumando todas las consultas.
+
+[`ai_function_max_concurrent_requests_per_thread`](/es/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) limita la parte de ese pool que corresponde a cada thread de una consulta, de modo que una consulta que se ejecuta en varios threads (como máximo `max_threads`) puede tener hasta ese número de solicitudes en curso por thread. Para impedir que las consultas aumenten este valor, establezca un valor máximo para el parámetro de configuración mediante una [restricción de perfil de configuración](/es/concepts/features/configuration/settings/constraints-on-settings). Este máximo se sigue aplicando por thread, por lo que una consulta puede tener en curso hasta dicho máximo multiplicado por su número de threads. Por ejemplo:
+
+```xml
+<profiles>
+    <default>
+        <constraints>
+            <ai_function_max_concurrent_requests_per_thread>
+                <max>16</max>
+            </ai_function_max_concurrent_requests_per_thread>
+        </constraints>
+    </default>
+</profiles>
+```
+
+El valor predeterminado es `8`. Un valor superior a `1` relaja dos garantías:
+
+* El consumo de tokens de una solicitud solo se conoce cuando llega su respuesta, por lo que [`ai_function_max_input_tokens_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) y [`ai_function_max_output_tokens_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) pueden superarse en el equivalente a una solicitud por cada solicitud en curso, en lugar de en el equivalente a una sola solicitud en total.
+* Se envía una tanda de solicitudes antes de detectar cualquiera de sus errores, por lo que una consulta que falla en su primera fila puede haber emitido (y generado cargos por) tantas solicitudes como permita la concurrencia.
+
+[`ai_function_max_api_calls_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) no se ve afectado y sigue siendo un límite exacto, ya que se reserva un cupo antes de enviar cada solicitud.
+
+<Note>
+  En el caso de una vista materializada, los ajustes deben especificarse en el `INSERT` que alimenta la tabla de origen de la vista, no en la sentencia `CREATE MATERIALIZED VIEW`: las cuotas se leen de la consulta de nivel superior, y cualquier cláusula `SETTINGS` incluida en la definición de la vista se ignora.
+</Note>
+
 ## Proveedores compatibles {#supported-providers}
 
 | Proveedor | Valor de `provider` | Funciones de chat | Notas                           |
@@ -148,38 +231,63 @@ Tenga en cuenta que, en cualquiera de los dos casos, el proveedor recibe los dat
 
 ## Observabilidad {#observability}
 
-La actividad de la función de IA se supervisa mediante los [ProfileEvents](/es/reference/system-tables/query_log) de ClickHouse:
+La actividad de las funciones de IA se registra mediante los [ProfileEvents](/es/reference/system-tables/query_log) de ClickHouse:
 
-| ProfileEvent      | Description                                                                                         |
-| ----------------- | --------------------------------------------------------------------------------------------------- |
-| `AIAPICalls`      | Número de solicitudes HTTP realizadas al proveedor de IA.                                           |
-| `AIInputTokens`   | Total de tokens de entrada consumidos.                                                              |
-| `AIOutputTokens`  | Total de tokens de salida consumidos.                                                               |
-| `AIRowsProcessed` | Número de filas que recibieron un resultado.                                                        |
-| `AIRowsSkipped`   | Número de filas omitidas (se superó la cuota o hubo un error con `ai_function_throw_on_error = 0`). |
+| ProfileEvent                 | Descripción                                                                                                                                                                                                    |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AIAPICalls`                 | Número de solicitudes HTTP realizadas al proveedor de IA.                                                                                                                                                      |
+| `AIInputTokens`              | Total de tokens de entrada consumidos, incluidas las lecturas y escrituras en caché.                                                                                                                           |
+| `AIOutputTokens`             | Total de tokens de salida consumidos.                                                                                                                                                                          |
+| `AICacheReadTokens`          | Tokens de entrada leídos de la caché de prompts del proveedor.                                                                                                                                                 |
+| `AICacheWriteTokens`         | Tokens de entrada escritos en la caché de prompts del proveedor.                                                                                                                                               |
+| `AIRequestMicroseconds`      | Tiempo total empleado en las llamadas al proveedor de IA (serialización de la solicitud, ida y vuelta HTTP, análisis de la respuesta), incluidos los intentos fallidos y excluido el backoff entre reintentos. |
+| `AIRetryBackoffMicroseconds` | Tiempo total de espera antes de reintentar las llamadas fallidas al proveedor de IA.                                                                                                                           |
+| `AIRowsProcessed`            | Número de filas que recibieron un resultado.                                                                                                                                                                   |
+| `AIRowsSkipped`              | Número de filas omitidas (por cuota excedida o por error con `ai_function_throw_on_error = 0`).                                                                                                                |
 
-Consulta estos eventos:
+Los tiempos se suman entre ejecuciones y threads, por lo que pueden superar el tiempo de reloj de la consulta.
+Divida `AIRequestMicroseconds` entre `AIAPICalls` para obtener la latencia media por solicitud, incluidos los intentos fallidos.
+Estos contadores son por consulta; no proporcionan información de latencia por solicitud.
+Si una consulta llama a varias funciones de IA, sus recuentos se suman.
+
+Los contadores de caché son subconjuntos de `AIInputTokens`, no tokens adicionales. Reflejan las lecturas y escrituras en caché que informa el proveedor, no el almacenamiento en caché interno de ClickHouse. Un proveedor que no informa del uso de caché aporta
+cero tokens de caché.
+
+Consulte estos eventos:
 
 ```sql
+SYSTEM FLUSH LOGS;
+
 SELECT
+    query_duration_ms,
     ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIRequestMicroseconds'] / 1000 AS request_ms,
+    request_ms / nullIf(api_calls, 0) AS mean_request_ms,
+    ProfileEvents['AIRetryBackoffMicroseconds'] / 1000 AS retry_backoff_ms,
+    ProfileEvents['AIRowsProcessed'] AS rows_processed,
+    ProfileEvents['AIRowsSkipped'] AS rows_skipped,
     ProfileEvents['AIInputTokens'] AS input_tokens,
-    ProfileEvents['AIOutputTokens'] AS output_tokens
+    ProfileEvents['AIOutputTokens'] AS output_tokens,
+    ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
+    ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens
 FROM system.query_log
 WHERE query_id = 'query_id'
-AND type = 'QueryFinish'
+AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
 ORDER BY event_time DESC;
 ```
 
+`log_queries` y `log_profile_events` están habilitados de forma predeterminada para registrar estos eventos en `system.query_log`.
+Los totales a nivel de servidor también están disponibles en `system.events`.
+
 {/*
-  El contenido interno de las etiquetas siguientes se sustituye durante la compilación del framework de documentación por
-  documentación generada a partir de system.functions. Por favor, no modifique ni elimine las etiquetas.
+  El contenido de las siguientes etiquetas se reemplaza durante el proceso de build del sistema de documentación por
+  documentación generada a partir de system.functions. No modifique ni elimine las etiquetas.
   Consulte: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
   */}
 
 {/*AUTOGENERATED_START*/}
 
-## aiClassify
+## aiClassify {#aiClassify}
 
 Introducido en: v26.4.0
 
@@ -231,7 +339,7 @@ INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
-## aiEmbed
+## aiEmbed {#aiEmbed}
 
 Introducido en: v26.6.0
 
@@ -295,7 +403,7 @@ INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
-## aiExtract
+## aiExtract {#aiExtract}
 
 Introducido en: v26.4.0
 
@@ -353,7 +461,7 @@ INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only tw
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
-## aiFilter
+## aiFilter {#aiFilter}
 
 Introducido en: v26.8.0
 
@@ -414,7 +522,7 @@ INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
 ```
 
-## aiGenerate
+## aiGenerate {#aiGenerate}
 
 Introducido en: v26.4.0
 
@@ -477,7 +585,7 @@ INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
-## aiRedact
+## aiRedact {#aiRedact}
 
 Introducido en: v26.8.0
 
@@ -549,7 +657,7 @@ INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 ```
 
-## aiSimilarity
+## aiSimilarity {#aiSimilarity}
 
 Introducido en: v26.8.0
 
@@ -612,7 +720,7 @@ INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse databas
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
-## aiTranslate
+## aiTranslate {#aiTranslate}
 
 Introducido en: v26.4.0
 

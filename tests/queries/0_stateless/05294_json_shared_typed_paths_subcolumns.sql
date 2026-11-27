@@ -1,5 +1,7 @@
--- Tags: long
+-- Tags: long, no-msan
 -- long: many statements; over the time limit of the flaky check under the thread fuzzer.
+-- no-msan: a median of 340 s under MSan with a p99 of 585 s, against the 600 s per-test timeout; the data is already 20 rows
+-- per table and the time goes into the 200 statements themselves. The test still runs under ASan, UBSan and TSan.
 
 -- Every path type read whole, as subcolumns from disk and extracted from the whole path, in a Wide part, a Compact part
 -- with substream marks and a Compact part without them, compared with a Memory table of the type without SHARED filled

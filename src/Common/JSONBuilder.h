@@ -3,6 +3,7 @@
 #include <vector>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <IO/writeJSONNumber.h>
 
 namespace DB
 {
@@ -18,7 +19,15 @@ struct FormatSettings
     size_t indent = 2;
     bool print_simple_arrays_in_single_row = true;
     bool solid = false; // the output will not contain spaces and line breaks
+    /// Write the keys of maps in camelCase (see `toCamelCaseKey`): `Node Type` as `nodeType`. Values are written as is.
+    bool camel_case_keys = false;
 };
+
+/// `Node Type` -> `nodeType`, `HAVING Pre-filter` -> `havingPreFilter`, `TopN Filter Column` -> `topNFilterColumn`. The key
+/// is split into words at every character that is not an ASCII letter or digit. The first word is lowercased, the
+/// following words get an uppercase first letter, and a word in capitals only is treated as a regular word (`FINAL`
+/// -> `final` or `Final`).
+std::string toCamelCaseKey(std::string_view key);
 
 struct FormatContext
 {

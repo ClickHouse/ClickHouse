@@ -1,0 +1,84 @@
+-- id_mode_physical_names: Spark layout, physical names and field ids
+1	alice
+2	bob
+-- id_mode_containers: Spark layout for a list and a map
+1	[10,11]	{'k':100}
+2	[20]	{'q':200}
+[20]	200
+-- id_mode_missing_column: the first file predates column c
+1	alice	\N
+2	bob	\N
+3	carol	30
+3	30
+-- id_mode_no_field_ids_physical: no field ids, physical column names
+1	alice
+2	bob
+-- name_mode_physical_names
+1	alice
+2	bob
+-- name_mode_legacy_protocol: reader version 2 implies column mapping
+1	alice
+2	bob
+-- name_mode_nested_ids: nested ids written by UniForm are ignored in name mode
+1	[10,11]	{'k':100}
+2	[20]	{'q':200}
+10	100
+11	100
+-- partitioned_two_columns_name_mode: partition columns before and between data columns, and a NULL partition
+p1	Nullable(String)					
+id	Nullable(Int32)					
+p2	Nullable(String)					
+v	Nullable(Int32)					
+x	1	y	10
+z	2	\N	20
+2
+2
+-- spark_partitioned_name_mode
+1	a	10
+2	a	20
+3	b	30
+4	\N	40
+a	2
+b	1
+\N	1
+3
+-- spark_partitioned_id_mode
+1	a	10
+2	a	20
+3	b	30
+4	\N	40
+4
+-- spark_renamed_name_mode: one row before RENAME COLUMN s TO who, one after
+1	before
+2	after
+1
+id	s
+1	before
+-- spark_renamed_id_mode
+1	before
+2	after
+id	s
+1	before
+-- spark_nested_name_mode: struct field s.x renamed to s.x2 between two inserts, structs inside an array and a map
+1	(10,'one')	[1,2]	[(1)]	{'k1':(100)}
+2	(20,'two')	[3]	[(2)]	{'k2':(200)}
+10	one
+20	two
+[1]	[100]
+[2]	[200]
+-- spark_nested_id_mode
+1	(10,'one')	[1,2]	[(1)]	{'k1':(100)}
+2	(20,'two')	[3]	[(2)]	{'k2':(200)}
+[1]	[100]
+[2]	[200]
+-- spark_quoted_name_mode: struct fields with a quote and a dot in their names
+id	Nullable(Int32)					
+s	Tuple(\n    `a"b` Int32,\n    `c.d` Int32)					
+1	(1,2)
+1	2
+-- spark_quoted_id_mode
+1	(1,2)
+-- invalid annotations are refused
+invalid_id_null: DELTA_KERNEL_ERROR
+invalid_id_string: DELTA_KERNEL_ERROR
+invalid_physical_name_empty: INCORRECT_DATA

@@ -9,7 +9,8 @@ node = cluster.add_instance(
     "node1",
     with_zookeeper=True,
     macros={"replica": "r1"},
-    main_configs=["config/config.xml", "config/config1.xml"],
+    main_configs=["config/config.xml", "config/config1.xml", "config/backups.xml"],
+    user_configs=["config/users_named_collections.xml"],
 )
 
 node2 = cluster.add_instance(
@@ -538,3 +539,41 @@ def test_runtime_config_reload_of_to_throw_limits(
     finally:
         _cleanup()
         _reload_without_override()
+
+
+def test_restore_named_collections_at_limit(started_cluster):
+    # `max_named_collection_num_to_throw` must hold for collections added by RESTORE like for
+    # CREATE (both go through `NamedCollectionFactory::createFromSQL`), while entries which
+    # already exist do not increase the count and stay allowed at the limit.
+    limit = 10
+    backup_name = "File('/var/lib/clickhouse/backups/nc_at_limit')"
+    fillers = 0
+    try:
+        node.query("CREATE NAMED COLLECTION nc_restore_a AS key1 = 'a'")
+        node.query("CREATE NAMED COLLECTION nc_restore_b AS key1 = 'b'")
+        node.query(f"BACKUP TABLE system.named_collections TO {backup_name}")
+
+        # Fill up to exactly the limit.
+        fillers = limit - int(
+            node.query("SELECT count() FROM system.named_collections").strip()
+        )
+        for i in range(fillers):
+            node.query(f"CREATE NAMED COLLECTION nc_filler_{i} AS key1 = '{i}'")
+
+        # At the limit, a restore whose entries all exist already adds nothing and succeeds.
+        node.query(f"RESTORE TABLE system.named_collections FROM {backup_name}")
+
+        # Make room for only one of the two backed up collections: the restore must refuse
+        # the second one.
+        node.query("DROP NAMED COLLECTION nc_restore_a")
+        node.query("DROP NAMED COLLECTION nc_restore_b")
+        node.query("CREATE NAMED COLLECTION nc_filler_extra AS key1 = 'x'")
+        assert "TOO_MANY_NAMED_COLLECTIONS" in node.query_and_get_error(
+            f"RESTORE TABLE system.named_collections FROM {backup_name}"
+        )
+    finally:
+        node.query("DROP NAMED COLLECTION IF EXISTS nc_restore_a")
+        node.query("DROP NAMED COLLECTION IF EXISTS nc_restore_b")
+        node.query("DROP NAMED COLLECTION IF EXISTS nc_filler_extra")
+        for i in range(fillers):
+            node.query(f"DROP NAMED COLLECTION IF EXISTS nc_filler_{i}")

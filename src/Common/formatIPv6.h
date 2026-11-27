@@ -6,6 +6,7 @@
 #include <type_traits>
 #include <utility>
 #include <Common/Hex.h>
+#include <base/itoa.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 #include <base/MemorySanitizer.h>
@@ -18,8 +19,6 @@ constexpr size_t IPV6_MAX_TEXT_LENGTH = 45;
 
 namespace DB
 {
-
-extern const std::array<std::pair<const char *, size_t>, 256> one_byte_to_string_lookup_table;
 
 /** Rewritten inet_ntop6 from http://svn.apache.org/repos/asf/apr/apr/trunk/network_io/unix/inet_pton.c
   *  performs significantly faster than the reference implementation due to the absence of sprintf calls,
@@ -417,11 +416,9 @@ inline void formatIPv4(const unsigned char * src, size_t src_size, char *& dst, 
             value = static_cast<uint8_t>(src[IPV4_BINARY_LENGTH - octet - 1]);
         else
             value = static_cast<uint8_t>(src[octet]);
-        const auto len = one_byte_to_string_lookup_table[value].second;
-        const char* str = one_byte_to_string_lookup_table[value].first;
-
-        memcpy(dst, str, len);
-        dst += len;
+        std::string_view text = oneByteToString(value);
+        memcpy(dst, text.data(), text.size());
+        dst += text.size();
         if (octet < 3)
             *dst++ = '.';
     }

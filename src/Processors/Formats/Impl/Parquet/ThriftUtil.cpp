@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 
 #include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/defines.h>
 #include <IO/WriteBuffer.h>
 
@@ -79,6 +80,11 @@ auto parseThrift(size_t limit, F && parse)
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to parse Parquet Thrift metadata from {} bytes: {}", limit, e.what());
     }
+    catch (const Exception &)
+    {
+        /// Keeps the code, e.g. `MEMORY_LIMIT_EXCEEDED` from a tracked container.
+        throw;
+    }
     catch (const std::exception & e)
     {
         /// Convert to DB::Exception for convenience, so that callers can catch+addMessage+rethrow.
@@ -86,7 +92,7 @@ auto parseThrift(size_t limit, F && parse)
     }
 }
 
-size_t countColumnChunks(const std::vector<UInt32> & offsets)
+size_t countColumnChunks(const VectorWithMemoryTracking<UInt32> & offsets)
 {
     return offsets.empty() ? 0 : offsets.size() - 1;
 }
@@ -369,7 +375,7 @@ private:
 class ColumnChunkSkippingProtocol : public CompactProtocol
 {
 public:
-    ColumnChunkSkippingProtocol(std::shared_ptr<MemoryTransport> trans, size_t limit_, std::vector<std::vector<UInt32>> & offsets_)
+    ColumnChunkSkippingProtocol(std::shared_ptr<MemoryTransport> trans, size_t limit_, ColumnChunkOffsets & offsets_)
         : CompactProtocol(trans, /*string_limit=*/ sizeLimit(limit_), /*container_limit=*/ sizeLimit(limit_))
         , limit(limit_)
         , offsets(offsets_)
@@ -437,10 +443,10 @@ private:
     static constexpr int16_t FILE_META_DATA_ROW_GROUPS = 4;
     static constexpr int16_t ROW_GROUP_COLUMNS = 1;
 
-    UInt32 position() const { return UInt32(limit - trans_->available_read()); }
+    [[nodiscard]] UInt32 position() const { return UInt32(limit - trans_->available_read()); }
 
     const size_t limit;
-    std::vector<std::vector<UInt32>> & offsets;
+    ColumnChunkOffsets & offsets;
     /// Depth of the struct that the generated reader is reading, 1 for FileMetaData.
     size_t depth = 0;
     /// field_ids[d] is the id of the current field of the struct at depth d.
@@ -469,7 +475,7 @@ size_t FileFooter::numColumnChunks(size_t row_group_idx) const
 }
 
 void deserializeFileMetaDataWithoutColumnChunks(
-    parq::FileMetaData & out, const char * buf, size_t limit, std::vector<std::vector<UInt32>> & column_chunk_offsets)
+    parq::FileMetaData & out, const char * buf, size_t limit, ColumnChunkOffsets & column_chunk_offsets)
 {
     limit = std::min(limit, size_t(UINT32_MAX));
     column_chunk_offsets.clear();
@@ -486,8 +492,8 @@ void deserializeFileMetaDataWithoutColumnChunks(
 }
 
 void deserializeColumnChunks(
-    const char * buf, size_t limit, const std::vector<std::vector<UInt32>> & column_chunk_offsets,
-    const std::vector<size_t> & column_indices, std::vector<FileColumnChunks> & out)
+    const char * buf, size_t limit, const ColumnChunkOffsets & column_chunk_offsets,
+    const ColumnIndices & column_indices, VectorWithMemoryTracking<FileColumnChunks> & out)
 {
     limit = std::min(limit, size_t(UINT32_MAX));
     out.clear();
@@ -559,5 +565,103 @@ template std::string thriftToString<parq::SchemaElement>(const parq::SchemaEleme
 template std::string thriftToString<parq::PageType::type>(const parq::PageType::type &);
 template std::string thriftToString<parq::PageLocation>(const parq::PageLocation &);
 template std::string thriftToString<parq::Type::type>(const parq::Type::type &);
+
+}
+
+namespace DB::Parquet
+{
+
+/// Kept offset indexes belong to the cache, not to the query that reads or evicts them.
+KeptOffsetIndexes::~KeptOffsetIndexes()
+{
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    UnorderedMapWithMemoryTracking<UInt64, OffsetIndexPtr>().swap(offset_indexes);
+    UnorderedMapWithMemoryTracking<UInt64, ColumnIndexPtr>().swap(column_indexes);
+}
+
+KeptOffsetIndexes::OffsetIndexPtr KeptOffsetIndexes::get(size_t row_group_idx, size_t column_idx) const
+{
+    std::lock_guard lock(mutex);
+    auto it = offset_indexes.find(makeKey(row_group_idx, column_idx));
+    return it == offset_indexes.end() ? nullptr : it->second;
+}
+
+KeptOffsetIndexes::ColumnIndexPtr KeptOffsetIndexes::getColumnIndex(size_t row_group_idx, size_t column_idx) const
+{
+    std::lock_guard lock(mutex);
+    auto it = column_indexes.find(makeKey(row_group_idx, column_idx));
+    return it == column_indexes.end() ? nullptr : it->second;
+}
+
+bool KeptOffsetIndexes::add(const VectorWithMemoryTracking<Entry> & entries)
+{
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    std::lock_guard lock(mutex);
+    UnorderedMapWithMemoryTracking<UInt64, OffsetIndexPtr> added_offset_indexes;
+    UnorderedMapWithMemoryTracking<UInt64, ColumnIndexPtr> added_column_indexes;
+    size_t added_offset_index_bytes = 0;
+    size_t added_column_index_bytes = 0;
+    auto add_index = [&](UInt64 key, const auto & index, const auto & kept, auto & added, size_t kept_bytes, size_t & added_bytes)
+    {
+        if (!index)
+            return;
+        size_t entry_bytes = entryBytes(*index);
+        if (kept_bytes + added_bytes + entry_bytes <= max_bytes && !kept.contains(key) && added.emplace(key, index).second)
+            added_bytes += entry_bytes;
+    };
+    for (const auto & entry : entries)
+    {
+        UInt64 key = makeKey(entry.row_group_idx, entry.column_idx);
+        add_index(key, entry.offset_index, offset_indexes, added_offset_indexes, offset_index_bytes, added_offset_index_bytes);
+        add_index(key, entry.column_index, column_indexes, added_column_indexes, column_index_bytes, added_column_index_bytes);
+    }
+    if (added_offset_indexes.empty() && added_column_indexes.empty())
+        return false;
+    /// `reserve` first, so that `merge` does not allocate.
+    offset_indexes.reserve(offset_indexes.size() + added_offset_indexes.size());
+    column_indexes.reserve(column_indexes.size() + added_column_indexes.size());
+    offset_indexes.merge(added_offset_indexes);
+    column_indexes.merge(added_column_indexes);
+    offset_index_bytes += added_offset_index_bytes;
+    column_index_bytes += added_column_index_bytes;
+    return true;
+}
+
+size_t KeptOffsetIndexes::bytes() const
+{
+    std::lock_guard lock(mutex);
+    return offset_index_bytes + column_index_bytes;
+}
+
+size_t KeptOffsetIndexes::remainingBytes() const
+{
+    std::lock_guard lock(mutex);
+    return max_bytes - offset_index_bytes;
+}
+
+size_t KeptOffsetIndexes::remainingColumnIndexBytes() const
+{
+    std::lock_guard lock(mutex);
+    return max_bytes - column_index_bytes;
+}
+
+/// With an estimate for the node of the map and the control block of the pointer.
+static constexpr size_t KEPT_INDEX_ENTRY_OVERHEAD = 64;
+
+size_t KeptOffsetIndexes::entryBytes(const parq::OffsetIndex & offset_index)
+{
+    return sizeof(parq::OffsetIndex) + KEPT_INDEX_ENTRY_OVERHEAD + offset_index.page_locations.capacity() * sizeof(parq::PageLocation)
+        + offset_index.unencoded_byte_array_data_bytes.capacity() * sizeof(offset_index.unencoded_byte_array_data_bytes[0]);
+}
+
+size_t KeptOffsetIndexes::entryBytes(std::span<const char> column_index)
+{
+    return columnIndexEntryBytes(column_index.size());
+}
+
+size_t KeptOffsetIndexes::columnIndexEntryBytes(size_t column_index_size)
+{
+    return sizeof(StringWithMemoryTracking) + KEPT_INDEX_ENTRY_OVERHEAD + column_index_size;
+}
 
 }

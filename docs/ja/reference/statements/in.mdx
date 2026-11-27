@@ -124,9 +124,7 @@ ORDER BY EventDate ASC
 3月17日以降の各日について、3月17日にサイトを訪問したユーザーによるページビューの割合を求めます。
 `IN` 句内のサブクエリは、常に単一のサーバー上で一度だけ実行されます。依存サブクエリはありません。
 
-<div id="null-processing">
-  ## NULL の処理
-</div>
+## NULL の処理 {#null-processing}
 
 リクエストの処理中、`IN` 演算子は、[NULL](/ja/reference/settings/formats/input-format#input_format_null_as_default) を含む演算の結果を、`NULL` が演算子の右辺・左辺のどちらにあっても常に `0` と見なします。[transform&#95;null&#95;in = 0](/ja/reference/settings/session-settings/other#transform_null_in) の場合、`NULL` 値はいかなるデータセットにも含まれず、互いに対応せず、比較もできません。
 
@@ -161,9 +159,62 @@ FROM t_null
 └───────────────────────┘
 ```
 
-<div id="distributed-subqueries">
-  ## 分散サブクエリ
-</div>
+## 外部メモリでの IN {#in-in-external-memory}
+
+`IN` がサブクエリまたはテーブルから構築する集合は、大きすぎてメモリに保持できない場合、ディスクに書き込まれることがあります。
+その場合、ルックアップはディスクから集合を読み取るため、追加のディスク I/O が発生し、
+クエリが遅くなる可能性があります。`IN (1, 2, 3)` のような値のリストや、`Set` エンジンを使用するテーブルは、
+常にメモリ上に保持されます。
+
+スピルを開始するタイミングは、次の 2 つの設定で制御します。
+
+* `max_bytes_before_external_set` は、クエリ全体のメモリ使用量に対するしきい値をバイト単位で指定します。デフォルトは `0`
+  (無効) です。
+* `max_bytes_ratio_before_external_set` は、サーバーまたはユーザーの制限の範囲内で利用可能なメモリに対する割合を指定します。この値は
+  実行開始時点で計測されます。デフォルトは `0.5` (利用可能なメモリの半分) で、
+  どちらの制限も適用されていない場合は効果がありません。
+
+両方のしきい値が適用される場合は、小さい方が使用されます。集合がディスクに書き込まれるのは、そのサイズが 16 MiB
+(しきい値がそれより小さい場合はしきい値) 以上になった場合のみです。例えば次のクエリでは、集合のサイズが 16 MiB 以上になった時点で
+集合をディスクに書き込みます。
+
+```sql
+SELECT count()
+FROM numbers(10000000)
+WHERE number IN (SELECT number * 3 FROM numbers(10000000))
+SETTINGS max_bytes_before_external_set = 16777216;
+```
+
+集合は通常、クエリの他の処理が多くのメモリを消費する前に構築されます。構築中にメモリ上に保持されていた集合であっても、
+後でクエリがその集合を使用している間にディスクへ書き込まれることがあります。クエリのメモリ使用量と、
+集合がディスク上にあるときに保持するメモリ (ブルームフィルタなど) の合計がしきい値を超えると、集合は
+ディスクに書き込まれ、そのメモリの大部分が解放されます。解放されたメモリは、集合の構築後に増大する集約など、
+クエリの他の処理に使用されます。
+
+`max_memory_usage` はこの比率に影響しません。クエリのメモリ制限を基準にスピルを設定するには、
+その制限より小さい絶対値でしきい値を設定してください。これらのしきい値はメモリ使用量の上限ではありません。
+他のクエリ処理やスピル自体に必要なメモリの余裕を残しておいてください。
+
+ディスク上の集合は、キーのブルームフィルタをメモリ上に保持します。これにより、集合に含まれないキーのルックアップでは
+ディスクの読み取りをスキップできます。`max_bytes_for_external_set_bloom_filter` はこのフィルタが使用するメモリの上限で、
+デフォルトは 128 MiB です。
+
+ディスク上の集合は、ルックアップで読み取ったブロックもメモリ上にキャッシュします。これにより、同じブロック内のキーに対する
+以降のルックアップでは、ディスクを再度読み取る必要がありません。`max_bytes_for_external_set_cache` はこの
+キャッシュが使用するメモリの上限で、デフォルトは 128 MiB です。
+
+構築中にディスクへ書き込まれた集合は、主キーやデータスキッピングインデックスでは使用できません。
+`GLOBAL IN` の場合、サブクエリの結果をリモートサーバーへ送信する一時テーブルはメモリ上に保持されますが、
+リモートサーバーがそれをもとに構築する集合はディスクに書き込まれることがあります。
+
+構築中に集合がディスクへ書き込まれる場合、集合のサイズ制限がチェックされる前にサブクエリ全体が読み込まれます。
+`max_rows_in_set` は集合内の重複しないキーの数を数え、`max_bytes_in_set` は各キーを集合内での幅 (1 ～ 32 バイト。
+例えば `UInt64` は 8 バイト、`String` は 16 バイト) で数えますが、ブルームフィルタやキャッシュなど、ルックアップが使用するメモリは数えません。
+`set_overflow_mode = 'break'` の場合、集合には、サブクエリの最初の行のキーではなく、
+ディスク上の格納順で先頭に来るキーが制限に達するまで保持されます。数値、日付、短い `FixedString` 値のキー
+(単独またはタプル内) の場合、これらは最小のキーになります。`String` などのその他のキーの場合は任意の部分集合となります。
+
+## 分散サブクエリ {#distributed-subqueries}
 
 サブクエリを伴う `IN` 演算子には (`JOIN` 演算子と同様に) 、通常の `IN` / `JOIN` と `GLOBAL IN` / `GLOBAL JOIN` の2種類があります。これらは分散クエリ処理での実行方法が異なります。
 
@@ -267,9 +318,7 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
 
 また、このローカルテーブルが要求元サーバーでしか利用できず、そのデータをリモートサーバーで使いたい場合には、`GLOBAL IN` 句でローカルテーブルを指定するのも合理的です。
 
-<div id="distributed-subqueries-and-max_rows_in_set">
-  ### 分散サブクエリと max_rows_in_set
-</div>
+### 分散サブクエリと max_rows_in_set {#distributed-subqueries-and-max_rows_in_set}
 
 [`max_rows_in_set`](/ja/reference/settings/session-settings/max-rows#max_rows_in_set) と [`max_bytes_in_set`](/ja/reference/settings/session-settings/max-bytes#max_bytes_in_set) を使うと、分散クエリで転送されるデータ量を制御できます。
 
@@ -281,9 +330,7 @@ SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_p
 
 `some_predicate` の選択性が十分でない場合、大量のデータが返され、パフォーマンス上の問題を引き起こす可能性があります。そのような場合は、ネットワーク経由のデータ転送を制限するのが賢明です。また、[`set_overflow_mode`](/ja/reference/settings/session-settings/other#set_overflow_mode) は (デフォルトで) `throw` に設定されており、これらの閾値に達すると例外が送出される点にも注意してください。
 
-<div id="distributed-subqueries-and-max_parallel_replicas">
-  ### 分散サブクエリと max_parallel_replicas
-</div>
+### 分散サブクエリと max_parallel_replicas {#distributed-subqueries-and-max_parallel_replicas}
 
 [max&#95;parallel&#95;replicas](#distributed-subqueries-and-max_parallel_replicas) が 1 より大きい場合、分散クエリにはさらに変換が加えられます。
 

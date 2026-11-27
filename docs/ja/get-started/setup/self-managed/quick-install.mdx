@@ -18,10 +18,19 @@ doc_type: 'guide'
     curl https://clickhouse.com/ | sh
     ```
 
-    Linux および macOS では、ClickHouse CLI の [`clickhousectl`](/ja/get-started/setup/self-managed/clickhousectl) も
-    `~/.local/bin` にインストールされます (`chctl` エイリアス付き) 。`clickhousectl` を使用すると、
-    複数のローカル ClickHouse バージョンのインストールと管理、バックグラウンドでのサーバー実行、
-    ClickHouse Cloud の管理を行えます。CLI ベースのワークフローについては、
+    Linux および macOS (x86&#95;64 および ARM64) では、ClickHouse CLI の [`clickhousectl`](/ja/get-started/setup/self-managed/clickhousectl) も
+    `~/.local/bin` にインストールされます (`chctl` エイリアス付き) 。`~/.local/bin` が
+    `PATH` に含まれていないとスクリプトに表示された場合は、次のように追加してください。
+
+    ```bash
+    export PATH="$HOME/.local/bin:$PATH"
+    ```
+
+    `clickhousectl` を使用すると、複数のローカル ClickHouse バージョンのインストールと管理、
+    バックグラウンドでの ClickHouse サーバーおよび Postgres サーバーの実行、ClickHouse Cloud の管理を行えます。
+
+    代わりに `clickhousectl` に ClickHouse バージョンのインストールと管理を任せる場合は、
+    `clickhousectl local use latest` を実行します。CLI ベースのワークフローについては、
     [clickhousectl のインストールページ](/ja/get-started/setup/self-managed/clickhousectl)を参照してください。
 
     `clickhousectl` なしで `clickhouse` バイナリのみをインストールするには、
@@ -88,7 +97,7 @@ doc_type: 'guide'
     これで ClickHouse に SQL コマンドを送信する準備が整いました。
 
     <Tip>
-      [クイックスタート](/ja/get-started/setup/install) では、テーブルの作成とデータの挿入の手順を案内します。
+      [ClickHouse でのテーブルの作成](/ja/get-started/quickstarts/creating-tables) では、テーブルの作成とデータの挿入の手順を案内します。
     </Tip>
   </Step>
 </Steps>

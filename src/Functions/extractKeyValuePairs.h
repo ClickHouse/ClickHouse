@@ -50,7 +50,7 @@ public:
 
     /// Calls `on_pair` for every extracted pair. Without escaping the views point into `data`;
     /// with escaping they may point into a scratch buffer and are valid only during the call.
-    size_t forEachPair(std::string_view data, const PairCallback & on_pair) const;
+    size_t forEachPair(std::string_view data, const PairCallback & on_pair) const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
 
 private:
     struct Impl;

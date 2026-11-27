@@ -36,7 +36,7 @@ coordinators_for() {
     ${CLICKHOUSE_CLIENT} --query "
         SELECT count()
         FROM system.text_log
-        WHERE query_id = '$query_id'
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id'
           AND message LIKE '%Creating parallel replicas coordinator%'"
 }
 
@@ -64,7 +64,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count() > 0
     FROM system.text_log
-    WHERE query_id = '$top_id'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$top_id'
       AND message LIKE '%Creating parallel replicas coordinator%'"
 
 # The scalar subqueries must also still return correct results.

@@ -42,7 +42,7 @@ AggregateFunctionMerge::AggregateFunctionMerge(const AggregateFunctionPtr & nest
             data_type->getFunctionName(),
             nested_func->getName());
 
-    if (nested_func->canMergeStateFromDifferentVariant(*argument_func))
+    if (canMergeStatesOf(*nested_func, *argument_func))
     {
         merge_state_from_different_variant = true;
         return;
@@ -82,11 +82,17 @@ namespace
 class AggregateFunctionCombinatorMerge final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "Merge"; }
+    [[nodiscard]] String getName() const override { return "Merge"; }
 
-    bool transformsArgumentTypes() const override { return true; }
+    [[nodiscard]] bool transformsArgumentTypes() const override { return true; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    [[nodiscard]] bool acceptsNestedFunction(const IAggregateFunction & nested_function, const DataTypes & arguments) const override
+    {
+        const auto * argument = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
+        return argument && AggregateFunctionMerge::canMergeStatesOf(nested_function, *argument->getFunction());
+    }
+
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.size() != 1)
             throw Exception(
@@ -107,7 +113,7 @@ public:
         return function->getArgumentsDataTypes();
     }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,

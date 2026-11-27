@@ -11,6 +11,7 @@
 #include <Common/typeid_cast.h>
 #include <Poco/SHA1Engine.h>
 #include <Access/Common/OneTimePassword.h>
+#include <Access/OneTimePasswordUsageTracker.h>
 
 #include <base/types.h>
 #include "config.h"
@@ -53,7 +54,7 @@ namespace
         engine.update(password_double_sha1.data(), sha1_size);
         const Poco::SHA1Engine::Digest & digest = engine.digest();
 
-        Poco::SHA1Engine::Digest calculated_password_sha1(sha1_size);
+        Digest calculated_password_sha1(sha1_size);
         for (size_t i = 0; i < sha1_size; ++i)
             calculated_password_sha1[i] = static_cast<UInt8>(scrambled_password[i] ^ digest[i]);
 
@@ -90,7 +91,7 @@ namespace
             && external_authenticators.checkKerberosCredentials(authentication_method.getKerberosRealm(), *gss_acceptor_context);
     }
 
-    std::string computeScramSHA256ClientProof(const std::vector<uint8_t> & salted_password [[maybe_unused]], const std::string& auth_message [[maybe_unused]])
+    std::string computeScramSHA256ClientProof(const Digest & salted_password [[maybe_unused]], const std::string& auth_message [[maybe_unused]])
     {
 #if USE_SSL
         auto client_key = hmacSHA256(salted_password, "Client Key");
@@ -466,7 +467,11 @@ bool Authentication::mysqlNative41CannotVerify(const AuthenticationData & authen
     }
 }
 
-bool Authentication::consumeOneTimePassword(const Credentials & credentials, const AuthenticationData & authentication_method)
+bool Authentication::consumeOneTimePassword(
+    const Credentials & credentials,
+    const String & user_name,
+    const AuthenticationData & authentication_method,
+    OneTimePasswordUsageTracker & usage_tracker)
 {
     const auto & otp_secret = authentication_method.getOneTimePassword();
     if (!otp_secret)
@@ -481,7 +486,7 @@ bool Authentication::consumeOneTimePassword(const Credentials & credentials, con
     if (one_time_password.empty())
         return true;
 
-    return checkAndConsumeOneTimePassword(one_time_password, *otp_secret);
+    return usage_tracker.tryConsume(user_name, one_time_password, *otp_secret);
 }
 
 }

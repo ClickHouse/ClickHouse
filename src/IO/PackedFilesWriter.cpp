@@ -6,7 +6,6 @@
 #include <IO/copyData.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include <Common/escapeForFileName.h>
 
 #include <algorithm>
 
@@ -219,34 +218,24 @@ PackedFilesWriter::FinalizePlan PackedFilesWriter::prepareFinalize(const Strings
     ordered_file_names.reserve(num_files);
     /// Order files according to the hint.
     {
-        UnorderedSetWithMemoryTracking<String> already_added_files;
+        /// The hint names the files as they are stored, so it is looked up as is.
+        /// The keys of `written_files` are not moved, so the set refers to them.
+        UnorderedSetWithMemoryTracking<std::string_view> already_added_files;
+        already_added_files.reserve(num_files);
         for (const auto & hinted_name : files_order_hint)
         {
-            std::string found_file_name;
-            bool found = false;
-            for (const auto & [key, _] : written_files)
-            {
-                if (unescapeForFileName(key) == hinted_name)
-                {
-                    found_file_name = key;
-                    found = true;
-                    break;
-                }
-            }
+            auto it = written_files.find(hinted_name);
+            if (it == written_files.end())
+                continue;
 
-            if (found && !already_added_files.contains(found_file_name))
-            {
-                ordered_file_names.push_back(found_file_name);
-                already_added_files.insert(found_file_name);
-            }
+            if (already_added_files.insert(it->first).second)
+                ordered_file_names.push_back(it->first);
         }
+
         for (const auto & [name, _] : written_files)
         {
             if (!already_added_files.contains(name))
-            {
                 ordered_file_names.push_back(name);
-                already_added_files.insert(name);
-            }
         }
     }
     chassert(ordered_file_names.size() == num_files, "Number of files in ordered list doesn't match the number of written files");

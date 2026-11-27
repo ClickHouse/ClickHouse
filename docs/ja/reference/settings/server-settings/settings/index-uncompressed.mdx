@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouse serverを設定するもので、ClickHouseのソースコードから自動生成されています。
 
-<div id="index_uncompressed_cache_policy">
-  ## index_uncompressed_cache_policy
-</div>
+## index_uncompressed_cache_policy {#index_uncompressed_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />セカンダリ索引の非圧縮cacheポリシー名。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />セカンダリ索引の非圧縮cacheのエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
 
-<div id="index_uncompressed_cache_size">
-  ## index_uncompressed_cache_size
-</div>
+## index_uncompressed_cache_size {#index_uncompressed_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -32,9 +28,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
   この設定は実行時に変更でき、即座に反映されます。
 </Note>
 
-<div id="index_uncompressed_cache_size_ratio">
-  ## index_uncompressed_cache_size_ratio
-</div>
+## index_uncompressed_cache_size_ratio {#index_uncompressed_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />セカンダリ索引の非圧縮cacheにおいて、保護キュー (SLRU policy の場合) がcache全体に占めるサイズの比率。
 
