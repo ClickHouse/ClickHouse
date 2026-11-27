@@ -20,4 +20,11 @@
     <query>SELECT URL, count() AS c FROM hits_10m_single GROUP BY URL ORDER BY c ASC LIMIT 10000 FORMAT Null</query>
     <query>SELECT URL, count() AS c FROM hits_10m_single GROUP BY URL ORDER BY c ASC LIMIT 10 FORMAT Null</query>
     <query>SELECT URL, uniqExact(UserID) AS u FROM hits_10m_single GROUP BY URL ORDER BY u ASC LIMIT 10 FORMAT Null</query>
+
+    <!-- The staging of the producers with little of the merge after it. Every row is a new key with a
+         variable-size record, and every group has one row, so the ascending order settles on the first
+         converted units and the merge skips the staged records of the rest. What is left is the scan and
+         the appends of the records to the chunks of the partitions. -->
+    <query>SELECT concat('u', toString(number)) AS a, concat('v', toString(number + 1)) AS b, count() AS c FROM numbers_mt(10000000) GROUP BY a, b ORDER BY c ASC LIMIT 10 FORMAT Null</query>
+    <query>SELECT concat('https://example.com/item/', toString(number)) AS a, count() AS c FROM numbers_mt(10000000) GROUP BY a ORDER BY c ASC LIMIT 10 FORMAT Null</query>
 </test>
