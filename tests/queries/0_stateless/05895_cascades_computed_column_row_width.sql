@@ -37,3 +37,34 @@ FROM t_row_width_fact AS f INNER JOIN (SELECT k, cityHash64(url) AS c FROM t_row
 
 DROP TABLE t_row_width_fact;
 DROP TABLE t_row_width_dim;
+
+-- A filter directly above a read. The width of the rows of the read comes from all its columns, before the filter is
+-- applied, so a filter that computes `concat` from two columns emits rows as wide as a filter that passes the two
+-- columns. The tables have real data and column statistics, without hints. The part of `t_row_width_measured` is
+-- compact: the storage has one size for all its columns together, and most of it goes to the wide column `unused`,
+-- so the size of `url` comes from the statistics.
+DROP TABLE IF EXISTS t_row_width_keys;
+DROP TABLE IF EXISTS t_row_width_measured;
+
+CREATE TABLE t_row_width_keys (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic, uniq_v2';
+SET allow_suspicious_fixed_string_types = 1;
+CREATE TABLE t_row_width_measured (k UInt64, url String, phone String, unused FixedString(4096)) ENGINE = MergeTree ORDER BY k
+SETTINGS auto_statistics_types = 'basic, uniq_v2', min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
+SET materialize_statistics_on_insert = 1;
+INSERT INTO t_row_width_keys SELECT number % 1000 FROM numbers(1000000);
+INSERT INTO t_row_width_measured SELECT number, repeat('x', 8192), '25-989', '' FROM numbers(1000);
+
+SET use_statistics = 1;
+-- The condition stays in a filter step above the read.
+SET optimize_move_to_prewhere = 0;
+
+SELECT '-- concat is computed in the filter above the read: a shuffle join';
+EXPLAIN SELECT count(), sum(length(d.c))
+FROM t_row_width_keys AS f INNER JOIN (SELECT k, concat(url, phone) AS c FROM t_row_width_measured WHERE length(c) > 0) AS d ON f.k = d.k;
+
+SELECT '-- the filter passes url and phone, an expression above it computes concat: the same join';
+EXPLAIN SELECT count(), sum(length(d.c))
+FROM t_row_width_keys AS f INNER JOIN (SELECT k, concat(url, phone) AS c FROM t_row_width_measured WHERE length(url) + length(phone) > 0) AS d ON f.k = d.k;
+
+DROP TABLE t_row_width_keys;
+DROP TABLE t_row_width_measured;

@@ -24,3 +24,31 @@ Expression ((Project names + Projection))
               GatherExchange
                 Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
                   ReadFromMergeTree (ParallelRead default.t_row_width_dim)
+-- concat is computed in the filter above the read: a shuffle join
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin )
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_row_width_keys)
+            Expression ((Change column names to column identifiers + (Project names + Projection)))
+              Filter ((WHERE + Change column names to column identifiers))
+                ShuffleExchange
+                  ReadFromMergeTree (ParallelRead default.t_row_width_measured)
+-- the filter passes url and phone, an expression above it computes concat: the same join
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin )
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_row_width_keys)
+            Expression ((Change column names to column identifiers + (Project names + Projection)))
+              Filter ((WHERE + Change column names to column identifiers))
+                ShuffleExchange
+                  ReadFromMergeTree (ParallelRead default.t_row_width_measured)
