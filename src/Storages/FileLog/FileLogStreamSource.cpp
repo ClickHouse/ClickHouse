@@ -220,6 +220,7 @@ FileLogStreamSource::FileLogStreamSource(
     , log(storage.getLog())
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+    , pending_report(stream_settings.subscribe_for_updates ? nullptr : context->getStreamingCursor())
 {
 }
 
@@ -422,7 +423,7 @@ bool FileLogStreamSource::tryUpdateFiles(bool initial)
     return consistent;
 }
 
-void FileLogStreamSource::reportFinalCursor() const
+void FileLogStreamSource::reportFinalCursor()
 {
     /// Only an incremental refresh of a materialized view has the holder of the cursor.
     auto streaming_cursor = context->getStreamingCursor();
@@ -453,6 +454,7 @@ void FileLogStreamSource::reportFinalCursor() const
         entry->setValue("fingerprint", fingerprint(state));
     }
     streaming_cursor->replace(cursor);
+    pending_report.finish();
 }
 
 void FileLogStreamSource::resetPosition(FileState & state)
@@ -472,12 +474,15 @@ bool FileLogStreamSource::consumedContentsChanged(const FileState & state)
 
     if (state.last_record_hash)
     {
-        /// The last record read is right before the read position, without its newline.
+        /// The last record read is right before the read position, which is right after its newline. The newline is
+        /// checked too: otherwise a rewrite that only extends the last record (e.g. `a` to `ab`) keeps its hash, while the
+        /// read position falls inside the new record.
         chassert(state.last_offset >= 0 && state.position > static_cast<UInt64>(state.last_offset));
         const UInt64 record_offset = static_cast<UInt64>(state.last_offset);
-        const size_t record_size = state.position - 1 - record_offset;
+        const size_t record_size = state.position - record_offset;
         const String record = readRange(fd, state.name, record_offset, record_size);
-        if (record.size() != record_size || sipHash64(record) != *state.last_record_hash)
+        if (record.size() != record_size || record.back() != '\n'
+            || sipHash64(record.data(), record_size - 1) != *state.last_record_hash)
             return true;
     }
 
@@ -511,7 +516,16 @@ IProcessor::Status FileLogStreamSource::prepare()
         return Status::Ready;
     }
 
-    return ISource::prepare();
+    const auto status = ISource::prepare();
+    if (status == Status::Finished)
+        pending_report.finish();
+    return status;
+}
+
+void FileLogStreamSource::onCancel() noexcept
+{
+    /// The query fails, so the cursor does not matter.
+    pending_report.finish();
 }
 
 std::optional<Chunk> FileLogStreamSource::tryGenerate()
@@ -612,6 +626,11 @@ Chunk FileLogStreamSource::generate()
         bool has_last_record = false;
         while (skip_remaining_records || total_rows < max_block_size)
         {
+            /// Skipping the remaining records does not stop at `max_block_size`, so it checks the cancellation itself.
+            /// A cancelled query fails, so the cursor is not reported.
+            if (skip_remaining_records && isCancelled())
+                break;
+
             const UInt64 offset = state.position;
             if (state.bound && offset >= *state.bound)
             {

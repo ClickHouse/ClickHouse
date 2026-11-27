@@ -350,6 +350,7 @@ using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHold
 
 class QueryMetadataCache;
 class CursorTreeNode;
+struct EventFD;
 using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
 /// The cursor that a bounded streaming read (`STREAM BOUNDED`) advanced to, see `IStorage::reportsStreamingCursor`.
@@ -379,14 +380,53 @@ struct StreamingCursor
 
     static std::shared_ptr<StreamingCursor> createChild(std::shared_ptr<StreamingCursor> parent, Strings path);
 
+    /// A read that is going to report its cursor to the holder, from its creation until it reports it or finishes.
+    ///
+    /// A query can finish its output before all its reads report: e.g. a `DISTINCT` by constants closes the parallel
+    /// streams of a table when one of them gives the row, and each of them reports from its own shutdown later. A target
+    /// that commits the cursor along with its data (e.g. `Iceberg`) does it when its input is finished, so its input
+    /// waits for the pending reads first, see `WaitForStreamingCursorTransform`.
+    class PendingReport
+    {
+    public:
+        PendingReport() = default;
+        explicit PendingReport(std::shared_ptr<StreamingCursor> holder_);
+        PendingReport(PendingReport && other) noexcept;
+        PendingReport & operator=(PendingReport && other) noexcept;
+        ~PendingReport();
+
+        /// The read reported its cursor or finished without it (e.g. it failed or was cancelled).
+        void finish() noexcept;
+
+    private:
+        /// The root holder, which counts the pending reads.
+        std::shared_ptr<StreamingCursor> holder;
+    };
+
+    /// Whether some reads did not report yet (the count is in the root holder).
+    bool hasPendingReports();
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// A descriptor that becomes readable when there are no pending reads.
+    int pendingReportsFD();
+#endif
+
+    StreamingCursor();
+    ~StreamingCursor();
+
 private:
     void mergeAt(const Strings & sub_path, const CursorTreeNodePtr & cursor);
     void replaceAt(Strings full_path, CursorTreeNodePtr canonical);
+    StreamingCursor & root();
 
     std::shared_ptr<StreamingCursor> parent;
     Strings path;
     /// The paths (split at dots) under which a cursor was already reported, only in the root holder.
     std::set<Strings> reported_paths;
+
+    /// The pending reads, only in the root holder. The event is created on demand, and written to once their count drops
+    /// to zero.
+    size_t pending_reports = 0;
+    std::unique_ptr<EventFD> no_pending_reports;
 };
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;

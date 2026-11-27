@@ -13,6 +13,7 @@
 #include <Poco/UUID.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+#include <Common/EventFD.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
@@ -5401,6 +5402,92 @@ std::shared_ptr<StreamingCursor> StreamingCursor::createChild(std::shared_ptr<St
     child->path = std::move(path);
     return child;
 }
+
+StreamingCursor::StreamingCursor() = default;
+StreamingCursor::~StreamingCursor() = default;
+
+StreamingCursor & StreamingCursor::root()
+{
+    StreamingCursor * node = this;
+    while (node->parent)
+        node = node->parent.get();
+    return *node;
+}
+
+StreamingCursor::PendingReport::PendingReport(std::shared_ptr<StreamingCursor> holder_)
+{
+    if (!holder_)
+        return;
+
+    /// Keep the root alive: the children of a composite read hold their parents.
+    StreamingCursor * root_holder = &holder_->root();
+    std::shared_ptr<StreamingCursor> root_ptr(holder_, root_holder);
+    {
+        std::lock_guard lock(root_holder->mutex);
+        ++root_holder->pending_reports;
+    }
+    holder = std::move(root_ptr);
+}
+
+StreamingCursor::PendingReport::PendingReport(PendingReport && other) noexcept
+    : holder(std::move(other.holder))
+{
+}
+
+StreamingCursor::PendingReport & StreamingCursor::PendingReport::operator=(PendingReport && other) noexcept
+{
+    if (this != &other)
+    {
+        finish();
+        holder = std::move(other.holder);
+    }
+    return *this;
+}
+
+StreamingCursor::PendingReport::~PendingReport()
+{
+    finish();
+}
+
+void StreamingCursor::PendingReport::finish() noexcept
+{
+    if (!holder)
+        return;
+
+    auto finished_holder = std::exchange(holder, nullptr);
+    std::lock_guard lock(finished_holder->mutex);
+    chassert(finished_holder->pending_reports > 0);
+    if (--finished_holder->pending_reports == 0 && finished_holder->no_pending_reports)
+    {
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        /// Writing to an eventfd fails only on a counter overflow, which cannot happen for a single write.
+        [[maybe_unused]] const bool written = finished_holder->no_pending_reports->write();
+        chassert(written);
+#endif
+    }
+}
+
+bool StreamingCursor::hasPendingReports()
+{
+    auto & root_holder = root();
+    std::lock_guard lock(root_holder.mutex);
+    return root_holder.pending_reports > 0;
+}
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+int StreamingCursor::pendingReportsFD()
+{
+    auto & root_holder = root();
+    std::lock_guard lock(root_holder.mutex);
+    if (!root_holder.no_pending_reports)
+    {
+        root_holder.no_pending_reports = std::make_unique<EventFD>();
+        if (root_holder.pending_reports == 0 && !root_holder.no_pending_reports->write())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot notify the end of the pending reports of a streaming cursor");
+    }
+    return root_holder.no_pending_reports->fd;
+}
+#endif
 
 
 void Context::setProgressCallback(ProgressCallback callback)

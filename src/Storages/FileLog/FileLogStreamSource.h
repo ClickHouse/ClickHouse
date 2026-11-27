@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Core/Streaming/Settings.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Processors/ISource.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/Logger.h>
@@ -58,6 +58,7 @@ public:
     String getName() const override { return "FileLogStreamSource"; }
 
     Status prepare() override;
+    void onCancel() noexcept override;
     Chunk generate() override;
     std::optional<Chunk> tryGenerate() override;
 
@@ -97,7 +98,7 @@ private:
     void updateFiles(bool initial);
     /// Returns false if a name was given to another file while the files were being listed.
     bool tryUpdateFiles(bool initial);
-    void reportFinalCursor() const;
+    void reportFinalCursor();
     /// Read the records again from the beginning of the file.
     static void resetPosition(FileState & state);
     /// The file does not have the contents that were read from it any more.
@@ -130,6 +131,9 @@ private:
     /// The query does not need more rows, but the bounded read of an incremental refresh has to get to its end
     /// to report the cursor: the remaining records are skipped without parsing.
     bool skip_remaining_records = false;
+    /// A bounded read for an incremental refresh is pending until it reports its cursor or finishes, so that a target
+    /// that commits the cursor with its data waits for it (see `WaitForStreamingCursorTransform`).
+    StreamingCursor::PendingReport pending_report;
 };
 
 }
