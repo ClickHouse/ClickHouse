@@ -3667,7 +3667,7 @@ void IMergeTreeDataPart::checkDataFileCoversMarks(
     size_t available_bytes = 0;
     if (last_mark.offset_in_compressed_file < data_file_size)
     {
-        CompressedReadBufferFromFile data_in(getDataPartStorage().readFile(data_file_name, getReadSettings(), data_file_size));
+        CompressedReadBufferFromFile data_in(getDataPartStorage().readFile(data_file_name, getReadSettings(), data_file_size), true);
         data_in.seek(last_mark.offset_in_compressed_file, last_mark.offset_in_decompressed_block);
         available_bytes = data_in.tryIgnore(expected_bytes);
     }
