@@ -22,9 +22,13 @@ public:
         LimitGroupRows,
     };
 
+    /// A block sized by a byte target keeps at least this many rows unless the row limit is smaller, because
+    /// smaller blocks cost more in per-block overhead than they save in memory.
+    static constexpr size_t MIN_BYTE_SIZED_BLOCK_ROWS = 128;
+
     /// A nonzero `preferred_block_bytes` reduces the row limit using the average allocated row size.
-    /// The byte target is approximate and keeps at least 128 rows unless the row limit is smaller.
-    /// Zero disables byte-based sizing. `group_limit` applies to `Mode::LimitGroupRows` and must be positive.
+    /// The byte target is approximate and keeps at least `MIN_BYTE_SIZED_BLOCK_ROWS` rows. Zero disables
+    /// byte-based sizing. `group_limit` applies to `Mode::LimitGroupRows` and must be positive.
     MergeSorter(
         SharedHeader header, Chunks chunks_, const SortDescription & description,
         size_t max_merged_block_size_, UInt64 limit_, Mode mode_ = Mode::PreserveRows, size_t preferred_block_bytes = 0,

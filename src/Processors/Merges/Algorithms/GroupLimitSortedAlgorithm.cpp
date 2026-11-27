@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <limits>
 
+#include <Processors/Transforms/SortingTransform.h>
 #include <base/arithmeticOverflow.h>
 
 namespace DB
@@ -178,17 +179,24 @@ void GroupLimitSortedAlgorithm::saveLastKey()
 bool GroupLimitSortedAlgorithm::isOutputBlockFull() const
 {
     return consumed_rows == max_block_size_rows
-        || (max_block_size_bytes && estimated_merged_bytes >= max_block_size_bytes);
+        || (max_block_size_bytes && merged_data.mergedRows() >= MergeSorter::MIN_BYTE_SIZED_BLOCK_ROWS
+            && estimated_merged_bytes >= max_block_size_bytes);
 }
 
 size_t GroupLimitSortedAlgorithm::rowsBeforeByteBound(size_t source_num, size_t rows) const
 {
-    chassert(rows > 0 && (!max_block_size_bytes || estimated_merged_bytes < max_block_size_bytes));
+    chassert(rows > 0 && !isOutputBlockFull());
     const size_t row_bytes = sources[source_num].average_row_bytes;
     if (!max_block_size_bytes || estimated_merged_bytes + rows * row_bytes < max_block_size_bytes)
         return rows;
-    /// The rows cross the bound and the block is below it, so `row_bytes` and the result are positive.
-    return (max_block_size_bytes - estimated_merged_bytes + row_bytes - 1) / row_bytes;
+    /// The block is not full: it is below the byte bound, which these rows cross, so `row_bytes` is positive,
+    /// or it holds fewer than the minimum rows. Either way the result is positive.
+    const size_t rows_to_bound = estimated_merged_bytes < max_block_size_bytes
+        ? (max_block_size_bytes - estimated_merged_bytes + row_bytes - 1) / row_bytes
+        : 0;
+    constexpr size_t min_rows = MergeSorter::MIN_BYTE_SIZED_BLOCK_ROWS;
+    const size_t rows_to_minimum = min_rows - std::min<size_t>(merged_data.mergedRows(), min_rows);
+    return std::min(rows, std::max(rows_to_bound, rows_to_minimum));
 }
 
 void GroupLimitSortedAlgorithm::insertRows(const SortCursorImpl & cursor, size_t start, size_t length)

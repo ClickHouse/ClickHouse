@@ -24,9 +24,10 @@ namespace DB
 /// and each takes the next rank. Seen rows are never emitted. With the window `[0, 1)` of `DISTINCT`, equal
 /// keys retain the first input row in source order.
 /// An output block ends after `max_block_size_rows` consumed rows, seen and skipped rows included, or with
-/// the first row at which its estimated size reaches `max_block_size_bytes`, unless that is 0. The estimate
-/// counts each row as the average output row of its input chunk, so it needs no per-row measurement. An input
-/// chunk forwarded whole stays one block of its own size.
+/// the first row at which it holds at least `MergeSorter::MIN_BYTE_SIZED_BLOCK_ROWS` rows and its estimated
+/// size reaches `max_block_size_bytes`, unless that is 0. The estimate counts each row as the average output
+/// row of its input chunk, so it needs no per-row measurement. An input chunk forwarded whole stays one block
+/// of its own size.
 class GroupLimitSortedAlgorithm final : public IMergingAlgorithm
 {
 public:
@@ -62,8 +63,8 @@ private:
     /// Whether the output block has reached its row or byte bound (see the class comment).
     [[nodiscard]] bool isOutputBlockFull() const;
     /// Returns how many of the next `rows` rows of the current chunk of `source_num` to take: all of them, or
-    /// those up to the row with which the output block reaches its byte bound. The caller guarantees that the
-    /// block is below the bound and that `rows` is positive.
+    /// those up to the row with which the output block reaches its byte bound (see the class comment). The
+    /// caller guarantees that the block is not full and that `rows` is positive.
     [[nodiscard]] size_t rowsBeforeByteBound(size_t source_num, size_t rows) const;
     /// Inserts rows of the input-row chunk under `cursor` into the output block and adds their size estimate.
     void insertRows(const SortCursorImpl & cursor, size_t start, size_t length);

@@ -93,11 +93,11 @@ size_t MergeSorter::calculateMaxMergedBlockSize(
         return max_block_rows;
 
     /// Smaller spill blocks reduce the decoded memory held by each merge input. Average row size
-    /// gives a byte target rather than a strict bound for uneven rows. The minimum of 128 rows
-    /// avoids excessive per-block overhead, while the explicit row limit still takes precedence.
-    /// Compact column representations can use less than one allocated byte per row.
+    /// gives a byte target rather than a strict bound for uneven rows. The minimum of
+    /// `MIN_BYTE_SIZED_BLOCK_ROWS` avoids excessive per-block overhead, while the explicit row limit
+    /// still takes precedence. Compact column representations can use less than one allocated byte per row.
     const size_t average_row_bytes = std::max<size_t>(1, input_bytes / input_rows);
-    return std::min(max_block_rows, std::max<size_t>(128, preferred_block_bytes / average_row_bytes));
+    return std::min(max_block_rows, std::max(MIN_BYTE_SIZED_BLOCK_ROWS, preferred_block_bytes / average_row_bytes));
 }
 
 Chunk MergeSorter::read()

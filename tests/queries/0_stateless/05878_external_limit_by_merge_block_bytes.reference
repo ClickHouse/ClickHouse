@@ -1,4 +1,6 @@
 1	999424
 1	1048576
+1	999424
 limit_1_by	1	1
 limit_2_by	1	1
+target_above_minimum	1	1
