@@ -2147,37 +2147,32 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         table_expression_query_node->setIsGroupByWithTotals(false);
                 }
 
-                /// Re-resolve subquery columns setting the unique alias
+                /// Keep the original projection and its positional sort bindings intact.
+                /// Rename its outputs and pack a multi-column value in the wrapper below.
                 auto subquery_projection_columns = subquery_node->as<QueryNode>()->getProjectionColumns();
+                Names inner_column_names;
+                inner_column_names.reserve(subquery_projection_columns.size());
+                for (size_t i = 0; i < subquery_projection_columns.size(); ++i)
+                    inner_column_names.push_back(fmt::format("{}_{}", unique_column_name, i));
                 subquery_node->as<QueryNode>()->clearProjectionColumns();
-                if (subquery_projection_columns.size() == 1)
-                {
-                    subquery_node->as<QueryNode>()->setProjectionAliasesToOverride({unique_column_name});
-                    subquery_node->as<QueryNode>()->resolveProjectionColumns(subquery_projection_columns);
-                }
-                else
-                {
-                    /// It there are multiple columns, wrap them in a Tuple()
-                    auto projection = subquery_node->as<QueryNode>()->getProjection().clone();
+                subquery_node->as<QueryNode>()->setProjectionAliasesToOverride(inner_column_names);
+                subquery_node->as<QueryNode>()->resolveProjectionColumns(subquery_projection_columns);
 
-                    QueryTreeNodePtr wrapper_tuple_node = std::make_shared<FunctionNode>("tuple");
-                    wrapper_tuple_node->as<FunctionNode>()->getArguments().getNodes() = std::move(projection->as<ListNode>()->getNodes());
-                    resolveFunction(wrapper_tuple_node, scope);
-
-                    /// Replace the original projection columns with one Tuple column
-                    subquery_node->as<QueryNode>()->getProjection().getNodes() = { std::move(wrapper_tuple_node) };
-                    DataTypes wrapper_tuple_element_types;
-                    for (const auto & c : subquery_projection_columns)
-                        wrapper_tuple_element_types.push_back(c.type);
-                    auto wrapper_tuple_data_type = std::make_shared<DataTypeTuple>(wrapper_tuple_element_types);
-                    /// Return the Tuple under unique name
-                    subquery_node->as<QueryNode>()->resolveProjectionColumns(NamesAndTypes{{unique_column_name, wrapper_tuple_data_type}});
-                }
-
-                /// SELECT * AS _unique_name_ FROM subquery
+                /// Project one named value from the wrapper around the original subquery.
                 auto internal_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
                 internal_exists_subquery->setIsSubquery(true);
-                internal_exists_subquery->getProjection().getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{unique_column_name}));
+                internal_exists_subquery->setProjectionAliasesToOverride({unique_column_name});
+                QueryTreeNodePtr wrapped_value;
+                if (inner_column_names.size() == 1)
+                    wrapped_value = std::make_shared<IdentifierNode>(Identifier{inner_column_names.front()});
+                else
+                {
+                    auto tuple = std::make_shared<FunctionNode>("tuple");
+                    for (const auto & inner_name : inner_column_names)
+                        tuple->getArguments().getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{inner_name}));
+                    wrapped_value = std::move(tuple);
+                }
+                internal_exists_subquery->getProjection().getNodes().push_back(std::move(wrapped_value));
                 internal_exists_subquery->getJoinTreeNode() = std::move(subquery_node);
 
                 /// SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE a = _unique_name_ LIMIT 1

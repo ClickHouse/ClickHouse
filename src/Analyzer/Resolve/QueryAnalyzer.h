@@ -276,7 +276,7 @@ private:
         bool allow_niladic_functions = true,
         bool is_top_level_projection = false);
 
-    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true, bool is_top_level_projection = false);
+    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true, bool is_top_level_projection = false, std::vector<std::optional<size_t>> * positions = nullptr);
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
@@ -290,7 +290,7 @@ private:
 
     void resolveWindowNodeList(QueryTreeNodePtr & window_node_list, IdentifierResolveScope & scope);
 
-    NamesAndTypes resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope);
+    NamesAndTypes resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, std::vector<std::optional<size_t>> * positions = nullptr);
 
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 #include <Columns/Collator.h>
 
 #include <Analyzer/IQueryTreeNode.h>
@@ -148,6 +150,25 @@ public:
 
     [[nodiscard]] const std::string & getColumnName() const { return column_name; }
 
+    void setProjectionIndex(size_t projection_index_) { projection_index = projection_index_; }
+
+    void setPositionalProjectionIndex(size_t projection_index_)
+    {
+        projection_index = projection_index_;
+        positional_projection_reference = true;
+    }
+
+    void clearProjectionIndex()
+    {
+        projection_index.reset();
+        positional_projection_reference = false;
+        projection_column_name.clear();
+    }
+
+    void setProjectionColumnName(std::string name_) { projection_column_name = std::move(name_); }
+
+    [[nodiscard]] std::optional<size_t> getProjectionIndex() const { return projection_index; }
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -168,6 +189,10 @@ private:
     static constexpr size_t children_size = fill_staleness_child_index + 1;
 
     std::string column_name;
+    /// Zero-based index of a projection expression referenced by ORDER BY.
+    std::optional<size_t> projection_index;
+    std::string projection_column_name;
+    bool positional_projection_reference = false;
     SortDirection sort_direction = SortDirection::ASCENDING;
     std::optional<SortDirection> nulls_sort_direction;
     std::shared_ptr<Collator> collator;

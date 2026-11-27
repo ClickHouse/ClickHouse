@@ -98,7 +98,7 @@ QueryAnalysisResult QueryAnalysisResult::create(const QueryTreeNodePtr & query_t
     result.query_has_array_join_in_join_tree = queryHasArrayJoinInJoinTree(query_tree);
     result.query_has_with_totals_in_any_subquery_in_join_tree = queryHasWithTotalsInAnySubqueryInJoinTree(query_tree);
 
-    result.sort_description = extractSortDescription(query_node.getOrderByNode(), *planner_context);
+    result.sort_description = extractSortDescription(query_node.getOrderByNode(), *planner_context, query_node.getProjectionNode());
 
     /// The sort description of `SHUFFLE` is used to merge the shuffled streams from remote servers by the internal
     /// key column, which is added only to the result of a shard (see `addShuffleStep`).

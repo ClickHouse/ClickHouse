@@ -922,8 +922,9 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
     for (auto & node : node_list_typed.getNodes())
     {
         auto * node_to_replace = &node;
+        auto * sort_node = node->as<SortNode>();
 
-        if (auto * sort_node = node->as<SortNode>())
+        if (sort_node)
             node_to_replace = &sort_node->getExpression();
 
         auto * constant_node = (*node_to_replace)->as<ConstantNode>();
@@ -965,6 +966,8 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
                 scope.scope_node->formatASTForErrorMessage());
 
         --pos;
+        if (sort_node)
+            sort_node->setPositionalProjectionIndex(pos);
         *node_to_replace = projection_nodes[pos]->clone();
         if (auto it = resolved_expressions.find(projection_nodes[pos]); it != resolved_expressions.end())
         {
@@ -4510,7 +4513,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
     bool allow_lambda_expression,
     bool allow_table_expression,
     bool allow_niladic_functions,
-    bool is_top_level_projection
+    bool is_top_level_projection,
+    std::vector<std::optional<size_t>> * positions
 )
 {
     auto & node_list_typed = node_list->as<ListNode &>();
@@ -4523,6 +4527,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
 
     for (auto & node : node_list_typed.getNodes())
     {
+        const size_t first_result_position = result_nodes.size();
         auto node_to_resolve = node;
         auto expression_node_projection_names = resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression, false /*ignore_alias*/, allow_niladic_functions, is_top_level_projection);
         size_t expected_projection_names_size = 1;
@@ -4536,6 +4541,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
         {
             result_nodes.push_back(std::move(node_to_resolve));
         }
+
+        if (positions)
+            positions->push_back(first_result_position < result_nodes.size()
+                ? std::optional<size_t>{first_result_position} : std::nullopt);
 
         if (expression_node_projection_names.size() != expected_projection_names_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -5014,9 +5023,10 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
         resolveWindow(node, scope);
 }
 
-NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
+NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(
+    QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, std::vector<std::optional<size_t>> * positions)
 {
-    ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, true /*allow_niladic_functions*/, true /*is_top_level_projection*/);
+    ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, true /*allow_niladic_functions*/, true /*is_top_level_projection*/, positions);
 
     auto projection_nodes = projection_node_list->as<ListNode &>().getNodes();
     size_t projection_nodes_size = projection_nodes.size();
@@ -7942,11 +7952,67 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (scope.group_by_use_nulls)
     {
-        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
+        std::vector<std::optional<size_t>> projection_positions;
+        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope, &projection_positions);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
                 scope.scope_node->formatASTForErrorMessage());
+
+        /// Positional sort keys refer to entries in the unresolved projection.
+        /// Use the positions recorded while flattening it, since resolving a
+        /// scalar subquery clone can generate a different output name.
+        if (query_node_typed.hasOrderBy())
+        {
+            for (const auto & sort_node : query_node_typed.getOrderBy().getNodes())
+            {
+                auto & sort = sort_node->as<SortNode &>();
+                if (!sort.getProjectionIndex())
+                    continue;
+
+                const auto old_index = *sort.getProjectionIndex();
+                if (old_index >= projection_positions.size() || !projection_positions[old_index])
+                    sort.clearProjectionIndex();
+                else
+                    sort.setProjectionIndex(*projection_positions[old_index]);
+            }
+        }
+    }
+
+    if (query_node_typed.hasOrderBy())
+    {
+        const auto & projection_nodes = query_node_typed.getProjection().getNodes();
+        chassert(projection_nodes.size() == projection_columns.size());
+        for (const auto & sort_node : query_node_typed.getOrderBy().getNodes())
+        {
+            auto & sort_node_typed = sort_node->as<SortNode &>();
+            if (sort_node_typed.getProjectionIndex() || !containsCorrelatedSubquery(sort_node_typed.getExpression()))
+                continue;
+
+            std::optional<size_t> projection_index;
+            for (size_t i = 0; i < projection_nodes.size(); ++i)
+            {
+                if (projection_nodes[i] == sort_node_typed.getExpression())
+                {
+                    projection_index = i;
+                    break;
+                }
+
+                if (sort_node_typed.getColumnName().empty() || projection_columns[i].name != sort_node_typed.getColumnName())
+                    continue;
+
+                if (projection_index && !projection_nodes[*projection_index]->isEqual(*projection_nodes[i]))
+                {
+                    projection_index.reset();
+                    break;
+                }
+                if (!projection_index)
+                    projection_index = i;
+            }
+
+            if (projection_index)
+                sort_node_typed.setProjectionIndex(*projection_index);
+        }
     }
 
     /** Resolve nodes with duplicate aliases.

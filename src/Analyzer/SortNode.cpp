@@ -9,6 +9,7 @@
 #include <IO/Operators.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -127,6 +128,9 @@ QueryTreeNodePtr SortNode::cloneImpl() const
     /// clone machinery does not reproduce it. The planner reads it (`PlannerSorting`) and it appears
     /// in `EXPLAIN`, so a clone must carry it explicitly.
     result->column_name = column_name;
+    result->projection_index = projection_index;
+    result->projection_column_name = projection_column_name;
+    result->positional_projection_reference = positional_projection_reference;
     return result;
 }
 
@@ -140,7 +144,10 @@ ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
 
     result->nulls_direction_was_explicitly_specified = nulls_sort_direction.has_value();
 
-    result->children.push_back(getExpression()->toAST(options));
+    if (projection_index && !positional_projection_reference && !projection_column_name.empty())
+        result->children.push_back(make_intrusive<ASTIdentifier>(projection_column_name));
+    else
+        result->children.push_back(getExpression()->toAST(options));
 
     if (collator)
         result->setCollation(make_intrusive<ASTLiteral>(Field(collator->getLocale())));

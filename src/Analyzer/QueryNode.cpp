@@ -30,6 +30,7 @@
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/InterpolateNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
@@ -82,6 +83,21 @@ void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
             projection_columns_value[i].name = this->projection_aliases_to_override[i];
     }
     projection_columns = std::move(projection_columns_value);
+
+    if (hasOrderBy())
+    {
+        for (const auto & node : getOrderBy().getNodes())
+        {
+            auto & sort = node->as<SortNode &>();
+            if (auto index = sort.getProjectionIndex())
+            {
+                if (*index >= projection_columns.size())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Sort projection index {} is out of bounds for {} columns",
+                        *index, projection_columns.size());
+                sort.setProjectionColumnName(projection_columns[*index].name);
+            }
+        }
+    }
 }
 
 void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes)
@@ -89,12 +105,14 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     auto & projection_nodes = getProjection().getNodes();
     size_t projection_columns_size = projection_columns.size();
     size_t write_index = 0;
+    std::unordered_map<size_t, size_t> old_to_new_projection_index;
 
     for (size_t i = 0; i < projection_columns_size; ++i)
     {
         if (!used_projection_columns_indexes.contains(i))
             continue;
 
+        old_to_new_projection_index.emplace(i, write_index);
         projection_nodes[write_index] = projection_nodes[i];
         projection_columns[write_index] = projection_columns[i];
         ++write_index;
@@ -102,6 +120,21 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
 
     projection_nodes.erase(projection_nodes.begin() + write_index, projection_nodes.end());
     projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
+
+    if (hasOrderBy())
+    {
+        for (const auto & sort_node : getOrderBy().getNodes())
+        {
+            auto & sort_node_typed = sort_node->as<SortNode &>();
+            if (auto projection_index = sort_node_typed.getProjectionIndex())
+            {
+                auto it = old_to_new_projection_index.find(*projection_index);
+                if (it == old_to_new_projection_index.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Sort projection index {} was removed", *projection_index);
+                sort_node_typed.setProjectionIndex(it->second);
+            }
+        }
+    }
 
     if (hasInterpolate())
     {
