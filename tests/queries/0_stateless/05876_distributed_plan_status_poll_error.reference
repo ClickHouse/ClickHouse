@@ -1,1 +1,5 @@
-FAULT_INJECTED
+-- One worker's status poller is held while the other one fails before its request: the query ends with the injected
+-- error of the failed poller (before the fix it waited until its time limit and failed with TIMEOUT_EXCEEDED).
+┌─error──────────┬─poller_failure_logged─┐
+│ FAULT_INJECTED │                     1 │
+└────────────────┴───────────────────────┘

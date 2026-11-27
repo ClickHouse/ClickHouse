@@ -44,4 +44,12 @@ wait_for "SELECT count() > 0 FROM $TEXT_LOG AND query_id = '$QUERY_ID' AND messa
 $CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT distributed_plan_status_poll_pause_before_snapshot"
 
 wait $CLIENT_PID
-cat "${CLICKHOUSE_TMP}/status_poll_error_code"
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
+echo "-- One worker's status poller is held while the other one fails before its request: the query ends with the injected"
+echo "-- error of the failed poller (before the fix it waited until its time limit and failed with TIMEOUT_EXCEEDED)."
+$CLICKHOUSE_CLIENT --query "
+    SELECT '$(cat "${CLICKHOUSE_TMP}/status_poll_error_code")' AS error,
+        countIf(message LIKE '%Injected failure while copying the tasks to poll%') > 0 AS poller_failure_logged
+    FROM $TEXT_LOG AND query_id = '$QUERY_ID'
+    SETTINGS output_format_pretty_row_numbers = 0
+    FORMAT PrettyCompactMonoBlock"
