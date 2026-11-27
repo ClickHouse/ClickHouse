@@ -30,7 +30,7 @@ echo "--- sparse_grams with no arguments ---"
 $CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL INDEX hi ON t_hypo_noargs (b) TYPE sparse_grams GRANULARITY 1;" 2>&1 | grep -m1 -oE 'INCORRECT_QUERY|BAD_ARGUMENTS'
 
 echo "--- vector_similarity with no arguments ---"
-$CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL INDEX hi ON t_hypo_noargs (v) TYPE vector_similarity GRANULARITY 1;" 2>&1 | grep -m1 -oE 'INCORRECT_QUERY|BAD_ARGUMENTS'
+$CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL INDEX hi ON t_hypo_noargs (v) TYPE vector_similarity GRANULARITY 1;" 2>&1 | grep -m1 -oE 'INCORRECT_QUERY|BAD_ARGUMENTS|NOT_IMPLEMENTED'
 
 echo "--- server is still alive ---"
 $CLICKHOUSE_CLIENT -q "SELECT 1"

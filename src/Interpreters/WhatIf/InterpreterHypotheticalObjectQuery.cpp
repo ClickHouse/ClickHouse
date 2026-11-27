@@ -188,10 +188,7 @@ BlockIO createHypotheticalIndex(
     context->checkAccess(
         AccessType::SELECT, table_id, columns.getColumnNamesForSelectAccessCheck(referenced_columns, context, table_id));
 
-    /// validates the arguments, which get() below reads unguarded
-    checkHypotheticalObjectIsAddable(merge_tree, metadata, expanded_index_decl, context);
-
-    /// fail closed, a newly registered index type is rejected until someone checks it
+    /// fail closed before the validation, which analyzes the arguments: a new index type is rejected until someone checks it
     static constexpr std::string_view supported_types[]
         {"bloom_filter", "minmax", "ngrambf_v1", "set", "sparse_grams", "tokenbf_v1"};
     if (!std::ranges::contains(supported_types, index_desc.type))
@@ -200,6 +197,9 @@ BlockIO createHypotheticalIndex(
             "Hypothetical indexes of type '{}' are not supported. Supported types: {}",
             index_desc.type,
             fmt::join(supported_types, ", "));
+
+    /// validates the arguments, which get() below reads unguarded
+    checkHypotheticalObjectIsAddable(merge_tree, metadata, expanded_index_decl, context);
 
     /// some argument checks live in the creator, not the validator (tokenizer bounds for
     /// sparse_grams), so construct once here instead of failing later inside EXPLAIN WHATIF

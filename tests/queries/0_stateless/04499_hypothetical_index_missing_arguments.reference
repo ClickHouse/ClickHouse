@@ -7,7 +7,7 @@ BAD_ARGUMENTS
 --- sparse_grams with no arguments ---
 BAD_ARGUMENTS
 --- vector_similarity with no arguments ---
-INCORRECT_QUERY
+NOT_IMPLEMENTED
 --- server is still alive ---
 1
 --- well-formed set is still accepted ---
