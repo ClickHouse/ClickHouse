@@ -46,6 +46,7 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Set.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/setThreadName.h>
@@ -1251,6 +1252,26 @@ static const ORC::Type * findORCTypeOfPredicateColumn(const ORCPredicateColumnTy
     return orc_type;
 }
 
+/// Whether `orc_type` is an unshredded variant, a struct of exactly two binary fields `metadata` and `value`, requested as
+/// `Dynamic` or `JSON`.
+static bool isORCVariantRead(const ORC::Type & orc_type, const DataTypePtr & type_hint)
+{
+    if (orc_type.getKind() != ORC::STRUCT || orc_type.getSubtypeCount() != 2 || !type_hint)
+        return false;
+
+    const DataTypePtr target = removeNullable(type_hint);
+    if (!isDynamic(target) && !isObject(target))
+        return false;
+
+    for (const char * name : {"metadata", "value"})
+    {
+        const auto pos = findORCStructFieldByName(&orc_type, name, /*ignore_case=*/false);
+        if (!pos || orc_type.getSubtype(*pos)->getKind() != ORC::BINARY)
+            return false;
+    }
+    return true;
+}
+
 static std::optional<VectorWithMemoryTracking<Int64>> getORCFieldIcebergIds(const ORC::Type & struct_type);
 
 /// Selects the ORC type ids to read for `type`. Under the data lake schema (`column_mapper` and the path `mapper_path` of
@@ -1759,11 +1780,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
 
     orc_column_to_ch_column = std::make_unique<ORCColumnToCHColumn>(
         header,
-        format_settings.orc.allow_missing_columns,
-        format_settings.null_as_default,
-        format_settings.orc.case_insensitive_column_matching,
-        format_settings.orc.dictionary_as_low_cardinality,
-        format_settings.date_time_overflow_behavior,
+        format_settings,
         std::move(count_only_fields),
         column_mapper,
         std::move(absent_columns),
@@ -1986,11 +2003,7 @@ std::optional<size_t> NativeORCSchemaReader::readNumberOrRows()
 
 ORCColumnToCHColumn::ORCColumnToCHColumn(
     const Block & header_,
-    bool allow_missing_columns_,
-    bool null_as_default_,
-    bool case_insensitive_matching_,
-    bool dictionary_as_low_cardinality_,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
+    const FormatSettings & format_settings_,
     UnorderedSetWithMemoryTracking<UInt64> count_only_fields_,
     const ColumnMapper * column_mapper_,
     NameSet absent_columns_,
@@ -1998,11 +2011,12 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints_,
     UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_)
     : header(header_)
-    , allow_missing_columns(allow_missing_columns_)
-    , null_as_default(null_as_default_)
-    , case_insensitive_matching(case_insensitive_matching_)
-    , dictionary_as_low_cardinality(dictionary_as_low_cardinality_)
-    , date_time_overflow_behavior(date_time_overflow_behavior_)
+    , format_settings(format_settings_)
+    , allow_missing_columns(format_settings.orc.allow_missing_columns)
+    , null_as_default(format_settings.null_as_default)
+    , case_insensitive_matching(format_settings.orc.case_insensitive_column_matching)
+    , dictionary_as_low_cardinality(format_settings.orc.dictionary_as_low_cardinality)
+    , date_time_overflow_behavior(format_settings.date_time_overflow_behavior)
     , count_only_fields(std::move(count_only_fields_))
     , column_mapper(column_mapper_)
     , absent_columns(std::move(absent_columns_))
@@ -2885,6 +2899,41 @@ static DataTypes computeOrcUnionBranchHints(const ORC::Type * orc_type, const Da
     return branch_hints;
 }
 
+ColumnWithTypeAndName ORCColumnToCHColumn::readVariantFromORCStruct(
+    const ORC::ColumnVectorBatch * orc_column,
+    const ORC::Type * orc_type,
+    const std::string & column_name,
+    const DataTypePtr & type_hint) const
+{
+    const auto metadata_pos = findORCStructFieldByName(orc_type, "metadata", /*ignore_case=*/false);
+    const auto value_pos = findORCStructFieldByName(orc_type, "value", /*ignore_case=*/false);
+    chassert(metadata_pos && value_pos);
+
+    const auto & struct_column = dynamic_cast<const ORC::StructVectorBatch &>(*orc_column);
+    const size_t num_rows = orc_column->numElements;
+
+    auto read_blobs = [&](size_t pos, const char * field)
+    {
+        /// A dictionary-encoded field is read as LowCardinality.
+        ColumnPtr blobs = readColumnFromORCColumn(struct_column.fields[pos], orc_type->getSubtype(pos), field, false)
+                              .column->convertToFullColumnIfLowCardinality();
+        /// A null field is read as NULL, so an empty blob is malformed: an encoded value starts with a header byte.
+        const auto * nullable = typeid_cast<const ColumnNullable *>(blobs.get());
+        const IColumn & strings = nullable ? nullable->getNestedColumn() : *blobs;
+        for (size_t row = 0; row < num_rows; ++row)
+            if ((!nullable || !nullable->isNullAt(row)) && strings.getDataAt(row).empty())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ORC variant column '{}': a row has an empty `{}`", column_name, field);
+        return blobs;
+    };
+    const ColumnPtr metadata = read_blobs(*metadata_pos, "metadata");
+    const ColumnPtr value = read_blobs(*value_pos, "value");
+
+    auto result = type_hint->createColumn();
+    result->reserve(num_rows);
+    Parquet::decodeVariantColumn(*metadata, *value, *result, type_hint, column_name, num_rows, Parquet::VariantSettings(format_settings));
+    return {std::move(result), type_hint, column_name};
+}
+
 ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     const ORC::ColumnVectorBatch * orc_column,
     const ORC::Type * orc_type,
@@ -2896,6 +2945,10 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     /// Reading a nested LIST/MAP/STRUCT recurses through this function over the ORC type tree, whose
     /// depth is attacker-controlled, so guard the native stack on the data-read path as well.
     checkStackSize();
+
+    /// Before the Nullable wrapping below: `Dynamic` cannot be inside `Nullable`, and the decoder makes NULLs itself.
+    if (isORCVariantRead(*orc_type, type_hint))
+        return readVariantFromORCStruct(orc_column, orc_type, column_name, type_hint);
 
     bool skipped = false;
 
@@ -3736,6 +3789,7 @@ The table below compares supported ORC data types and their corresponding ClickH
 
 - Other types are not supported.
 - An ORC `Union` column is read as a [Variant](/reference/data-types/variant) over the union's branch types, and a `Variant` column is written as an ORC `Union` over its branch types. Note that `Variant` sorts its branch types, so the branch order may differ from the ORC file. Unions with duplicate branch types (e.g. `uniontype<int,int>`) are not supported.
+- An ORC `Struct` of two `Binary` fields named `metadata` and `value`, which is how Iceberg v3 stores a `variant`, is read into a [Dynamic](/reference/data-types/dynamic) or [JSON](/reference/data-types/newjson) column with the [variant binary encoding](https://github.com/apache/parquet-format/blob/master/VariantEncoding.md), the same way as a variant column of the `Parquet` format.
 - Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
 - The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
 - `DateTime64` values between `1969-12-31 23:59:59.001` and `1969-12-31 23:59:59.999999999` (UTC) are written as `1970-01-01 00:00:00`. This is a gap in the [ORC specification](https://orc.apache.org/specification/ORCv1/#timestamp-columns), which stores the seconds and the nanoseconds of a timestamp, with the nanoseconds not negative. The reference implementations add one second to a negative timestamp with more than 999999 nanoseconds, and the readers subtract it, but a timestamp between -1 and 0 seconds would then be stored as 0 seconds and read back after the epoch. The implementations write such a timestamp differently: the Java and C++ writers of Apache ORC write it so that it is read back one second later, and the Arrow ORC adapter (PyArrow) writes negative nanoseconds, which the specification does not allow and the Java reader rejects. ClickHouse writes the epoch instead, which all readers read back the same way.

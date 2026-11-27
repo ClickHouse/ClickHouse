@@ -408,6 +408,7 @@ add_object_library(clickhouse_interpreters_cache Interpreters/Cache)
 add_object_library(clickhouse_interpreters_filecache Interpreters/FileCache)
 add_object_library(clickhouse_interpreters_hash_join Interpreters/HashJoin)
 add_object_library(clickhouse_interpreters_adaptive_aggregation Interpreters/AdaptiveAggregation)
+add_object_library(clickhouse_interpreters_disk_set Interpreters/DiskSet)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_whatif Interpreters/WhatIf)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
@@ -574,8 +575,8 @@ add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 
 if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
-elseif (USE_AVRO)
-    # The Avro input format reads Iceberg variants with the Parquet variant decoder.
+elseif (USE_AVRO OR USE_ORC)
+    # The Avro and ORC input formats read Iceberg variants with the Parquet variant decoder.
     list (APPEND dbms_sources Processors/Formats/Impl/Parquet/VariantEncoding.cpp)
     list (APPEND dbms_headers Processors/Formats/Impl/Parquet/VariantEncoding.h)
 endif()

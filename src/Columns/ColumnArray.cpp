@@ -68,13 +68,15 @@ static constexpr size_t max_array_size_as_field = 1000000;
 
 static constexpr size_t max_average_array_size_to_gather = 16;
 static constexpr size_t max_elements_to_gather_at_once = 65536;
+/// From about this many elements per range, one `insertRangeFrom` per range of consecutive rows is cheaper than gathering the elements.
+static constexpr size_t RANGE_COPY_MIN_ELEMENTS_PER_RANGE = 8;
 
 namespace
 {
 
 /// Gathers `limit` rows of an array column, the row `i` of the result is the row `source_row(i)` of the column.
 /// `source_row` is called with non-decreasing `i` in each of the passes over the rows, and every pass starts from 0.
-/// With `copy_long_rows`, long rows of any elements are copied row by row instead of gathered.
+/// With `copy_long_rows`, long rows are copied row by row instead of gathered.
 template <typename SourceRow>
 ColumnPtr gatherArrayRows(
     const IColumn & data, const ColumnArray::Offsets & offsets, size_t limit, bool copy_long_rows, SourceRow && source_row)
@@ -110,14 +112,45 @@ ColumnPtr gatherArrayRows(
         }
     };
 
-    /// Long rows are copied row by row: their virtual calls are cheap compared with the copy. Fixed-size elements are
-    /// reserved exactly.
-    const bool fixed_size_elements = data.isFixedAndContiguous();
-    if (current_offset > limit * max_average_array_size_to_gather && (fixed_size_elements || copy_long_rows))
+    /// Fixed-size elements of consecutive source rows are copied as one range each into the exactly reserved result.
+    if (current_offset != 0 && data.isFixedAndContiguous())
+    {
+        size_t num_ranges = 1;
+        size_t prev_row = source_row(0);
+        for (size_t i = 1; i < limit; ++i)
+        {
+            const size_t row = source_row(i);
+            num_ranges += row != prev_row + 1;
+            prev_row = row;
+        }
+
+        if (current_offset / num_ranges >= RANGE_COPY_MIN_ELEMENTS_PER_RANGE)
+        {
+            auto res_data = data.cloneEmpty();
+            res_data->reserve(current_offset);
+            for (size_t i = 0; i < limit;)
+            {
+                const size_t first_row = source_row(i);
+                size_t last_row = first_row;
+                size_t j = i + 1;
+                for (; j < limit; ++j)
+                {
+                    const size_t row = source_row(j);
+                    if (row != last_row + 1)
+                        break;
+                    last_row = row;
+                }
+                res_data->insertRangeFrom(data, offset_at(first_row), offsets[last_row] - offset_at(first_row));
+                i = j;
+            }
+            return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
+        }
+    }
+
+    /// Long rows are copied row by row in replication: their virtual calls are cheap compared with the copy.
+    if (copy_long_rows && current_offset > limit * max_average_array_size_to_gather)
     {
         auto res_data = data.cloneEmpty();
-        if (fixed_size_elements)
-            res_data->reserve(current_offset);
         for (size_t i = 0; i < limit; ++i)
         {
             const size_t row = source_row(i);
