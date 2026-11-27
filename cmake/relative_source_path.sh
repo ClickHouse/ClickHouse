@@ -2,10 +2,11 @@
 #
 # A compiler launcher for reproducible builds (see ENABLE_BUILD_PATH_MAPPING):
 #
-#     relative_source_path.sh [<launcher>...] <compiler> <arguments>... <source>
+#     relative_source_path.sh [<launcher>...] <compiler> <arguments>... -c [<options>...] <source> [<arguments>...]
 #
-# It runs the command with the source file, the last argument, as in the commands of CMake (`-c <source>`) and of the `cc`
-# crate, given relative to the working directory, if both are in the source
+# It runs the command with the source file, the first argument after `-c` that is not an option, as in the commands of CMake
+# (`-c <source>`, sometimes followed by options of the source file) and of the `cc` crate (`-c <assembler options> <source>`),
+# given relative to the working directory, if both are in the source
 # directory, the parent of the directory of this script.
 #
 # Clang writes the path of the source file, exactly as it is on the command line, into the module as `source_filename`, and
@@ -41,11 +42,30 @@ do
     fi
 done
 
-if [ "$#" -eq 0 ]
+args=("$@")
+source_index=-1
+after_c=0
+for ((i = 0; i < ${#args[@]}; ++i))
+do
+    if [ "$after_c" -eq 0 ]
+    then
+        if [ "${args[i]}" = "-c" ]
+        then
+            after_c=1
+        fi
+    elif [[ "${args[i]}" != -* ]]
+    then
+        source_index=$i
+        break
+    fi
+done
+
+if [ "$source_index" -lt 0 ]
 then
-    exit 1
+    exec "$@"
 fi
-source="${!#}"
+
+source="${args[source_index]}"
 relative=""
 case "$source" in
     "$source_dir/"*) relative="${source#"$source_dir/"}" ;;
@@ -56,9 +76,9 @@ then
     exec "$@"
 fi
 
-args=("${@:1:$#-1}")
+args[source_index]="$up$relative"
 if [ -n "$up" ]
 then
     args+=("-ffile-prefix-map=$up=")
 fi
-exec "${args[@]}" "$up$relative"
+exec "${args[@]}"
