@@ -26,7 +26,7 @@ public:
         MaterializedCTEWeakPtr materialized_cte_
     );
 
-    String getName() const override { return "MaterializingCTE"; }
+    [[nodiscard]] String getName() const override { return "MaterializingCTE"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -51,7 +51,7 @@ class MaterializingCTEsStep : public IQueryPlanStep
 public:
     MaterializingCTEsStep(SharedHeaders input_headers_, VectorWithMemoryTracking<MaterializedCTEPtr> ctes_);
 
-    String getName() const override { return "MaterializingCTEs"; }
+    [[nodiscard]] String getName() const override { return "MaterializingCTEs"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
@@ -82,7 +82,7 @@ public:
 
     DelayedMaterializingCTEsStep(SharedHeader input_header, VectorWithMemoryTracking<MaterializedCTEPtr> ctes_);
 
-    String getName() const override { return "DelayedMaterializingCTEs"; }
+    [[nodiscard]] String getName() const override { return "DelayedMaterializingCTEs"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &) override;
 

@@ -9,6 +9,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
@@ -18,50 +19,11 @@
 #include <optional>
 
 
-namespace DB::ErrorCodes
-{
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
-}
-
-
 namespace DB::PrometheusQueryToSQL
 {
 
 namespace
 {
-
-/// Checks that the arguments are valid for `predict_linear`:
-///   - exactly 2 arguments
-///   - first argument is a RANGE_VECTOR
-///   - second argument is a SCALAR
-void checkArgumentTypes(std::string_view function_name, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
-{
-    if (arguments.size() != 2)
-    {
-        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "Function '{}' expects 2 arguments, but was called with {} arguments",
-                        function_name, arguments.size());
-    }
-
-    const auto & range_argument = arguments[0];
-    if (range_argument.type != ResultType::RANGE_VECTOR)
-    {
-        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "Function {} expects first argument of type {}, but expression {} has type {}",
-                        function_name, ResultType::RANGE_VECTOR,
-                        getPromQLText(range_argument, context), range_argument.type);
-    }
-
-    const auto & scalar_argument = arguments[1];
-    if (scalar_argument.type != ResultType::SCALAR)
-    {
-        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                        "Function {} expects second argument of type {}, but expression {} has type {}",
-                        function_name, ResultType::SCALAR,
-                        getPromQLText(scalar_argument, context), scalar_argument.type);
-    }
-}
-
 
 /// The prediction horizon (the 2nd argument of `predict_linear`, in seconds) converted to an AST.
 struct PredictionOffset
@@ -113,7 +75,7 @@ PredictionOffset getPredictionOffset(SQLQueryPiece & scalar_argument, ConverterC
         case StoreMethod::SAMPLES:
         case StoreMethod::TIMESTAMP_AND_VALUE:
         {
-            /// Can't get in here because these store methods are incompatible with a scalar (see checkArgumentTypes()).
+            /// Can't get in here because these store methods are incompatible with a scalar (see the checks in `applyFunctionPredictLinear`).
             throwUnexpectedStoreMethod(scalar_argument, context);
         }
     }
@@ -193,8 +155,9 @@ bool isFunctionPredictLinear(std::string_view function_name)
 SQLQueryPiece applyFunctionPredictLinear(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
-    const auto function_name = function_node->function_name;
-    checkArgumentTypes(function_name, arguments, context);
+    checkNumberOfArguments(function_node, arguments, 2);
+    checkArgumentType(function_node, arguments, 0, ResultType::RANGE_VECTOR, context);
+    checkArgumentType(function_node, arguments, 1, ResultType::SCALAR, context);
 
     auto node_range = context.node_range_getter.get(function_node);
     if (node_range.empty())

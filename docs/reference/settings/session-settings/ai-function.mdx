@@ -58,7 +58,7 @@ Maximum number of HTTP requests that AI functions may dispatch per query. 0 (def
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "New setting"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "8"},{"label": "New setting"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "8"},{"label": "The change was backported to 26.8 and is recorded there."}]}]}/>
 
 Maximum number of provider requests one query thread has in flight at the same time. `1` issues requests one at a time.
 
@@ -77,7 +77,7 @@ A value above `1` loosens two guarantees:
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000000"},{"label": "New setting"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "The AI function per-query quotas are disabled by default: 0 means no limit."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "The AI function per-query quotas are disabled by default: 0 means no limit."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "1000000"},{"label": "New setting"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "0"},{"label": "The change was backported to 26.7 and is recorded there."}]}]}/>
 
 Maximum total input (prompt) tokens across all AI function API calls in a single query including cache reads and writes. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
@@ -89,7 +89,7 @@ This limit is only enforced for providers that report a `usage` object in their 
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "500000"},{"label": "New setting"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "The AI function per-query quotas are disabled by default: 0 means no limit."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "The AI function per-query quotas are disabled by default: 0 means no limit."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "500000"},{"label": "New setting"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "0"},{"label": "The change was backported to 26.7 and is recorded there."}]}]}/>
 
 Maximum total output (completion) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of output tokens per in-flight request, since a call's output tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
@@ -101,7 +101,7 @@ This limit is only enforced for providers that report a `usage` object in their 
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "New setting"}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "3"},{"label": "Retry a transient API error up to three times by default, to reduce load on an overloaded rate-limited provider under concurrent requests."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "3"},{"label": "Retry a transient API error up to three times by default, so a 429 or 5xx from the provider does not fail the query and an overloaded rate-limited provider is retried under concurrent requests."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "New setting"}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "3"},{"label": "The change was backported to 26.8 and is recorded there."}]}]}/>
 
 Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_function_retry_initial_delay_ms`. At most 5.
 

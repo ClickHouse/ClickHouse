@@ -2,18 +2,18 @@
 title: 如何在 Docker 中设置 ClickHouse，并通过 ODBC 连接到 Microsoft SQL Server (MSSQL) 数据库
 description: "如何在 Docker 中设置 ClickHouse，并通过 ODBC 连接到 Microsoft SQL Server (MSSQL) 数据库"
 date: 2024-05-29
-tags: ['原生客户端和接口']
+tags: ['Native Clients and Interfaces']
 keywords: ['Docker', 'ODBC', 'Microsoft SQL Server', 'MSSQL']
 ---
 
 <div id="question">
-  ## 问题
+  ## 问题 {#question}
 </div>
 
 如何使用 Docker 镜像部署 ClickHouse 并连接到 Microsoft SQL Server？
 
 <div id="answer">
-  ## 答案
+  ## 答案 {#answer}
 </div>
 
 ***本示例的说明***
@@ -23,62 +23,44 @@ keywords: ['Docker', 'ODBC', 'Microsoft SQL Server', 'MSSQL']
 * 使用 MSSQL Server 2012R2
 * 本示例中的 Windows 主机名为 `MARSDB2.marsnet2.local`，IP 地址为：`192.168.1.133` (请替换为你的主机名和/或 IP)
 * MSSQL 实例名称为 `MARSDB2`
-* MSSQL 登录用户和数据库用户均为 `sql_user`
+* MSSQL 登录名和数据库用户均为 `sql_user`
 
-<div id="example-setup-in-mssql-for-testing-">
-  ### MSSQL 测试示例配置
-</div>
+### MSSQL 中的测试示例设置 {#example-setup-in-mssql-for-testing-}
 
 在 MSSQL 中创建的数据库和表：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![MSSQL 数据库和表结构](/images/knowledgebase/ikb273/c8a5492f-5910-4454-bfbc-5c6ceda15ccd.webp)
-
-</Frame>
-
+  <Frame>
+    ![MSSQL 数据库和表结构](/images/knowledgebase/ikb273/c8a5492f-5910-4454-bfbc-5c6ceda15ccd.webp)
+  </Frame>
 </div>
 
-MSSQL 登录用户 `sql_user`：
+MSSQL 登录名用户 `sql_user`：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![MSSQL 登录用户配置](/images/knowledgebase/ikb273/568f1143-475e-422f-a26a-2c23ac324771.webp)
-
-</Frame>
-
+  <Frame>
+    ![MSSQL 登录名用户配置](/images/knowledgebase/ikb273/568f1143-475e-422f-a26a-2c23ac324771.webp)
+  </Frame>
 </div>
 
 `sql_user` 的数据库成员身份角色：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![MSSQL 数据库成员身份角色](/images/knowledgebase/ikb273/63992978-7078-4985-b661-a3c095099ea7.webp)
-
-</Frame>
-
+  <Frame>
+    ![MSSQL 数据库成员身份角色](/images/knowledgebase/ikb273/63992978-7078-4985-b661-a3c095099ea7.webp)
+  </Frame>
 </div>
 
-具有登录名的数据库用户：
+映射到登录名的数据库用户：
 
 <div className="ch-image-md">
-
-<Frame>
-
-![具有登录名的 MSSQL 数据库用户](/images/knowledgebase/ikb273/15a407ca-53c1-45b1-9beb-ddd8eedde64a.webp)
-
-</Frame>
-
+  <Frame>
+    ![映射到登录名的 MSSQL 数据库用户](/images/knowledgebase/ikb273/15a407ca-53c1-45b1-9beb-ddd8eedde64a.webp)
+  </Frame>
 </div>
 
 <div id="configuring-clickhouse-with-odbc">
-  ### 使用 ODBC 配置 ClickHouse
+  ### 使用 ODBC 配置 ClickHouse {#configuring-clickhouse-with-odbc}
 </div>
 
 创建工作目录：
@@ -123,7 +105,7 @@ UsageCount = 1
 ```
 
 <div id="configure-a-dockerfile-to-download-the-image-and-add-the-tds-and-required-odbc-libraries">
-  ### 配置 Dockerfile 以拉取镜像并添加 TDS 及所需的 ODBC 库
+  ### 配置 Dockerfile 以拉取镜像并添加 TDS 及所需的 ODBC 库 {#configure-a-dockerfile-to-download-the-image-and-add-the-tds-and-required-odbc-libraries}
 </div>
 
 创建 Dockerfile：
@@ -209,7 +191,7 @@ CONTAINER ID   IMAGE                           COMMAND            CREATED       
 ```
 
 <div id="test-odbc-connection">
-  ### 测试 ODBC 连接
+  ### 测试 ODBC 连接 {#test-odbc-connection}
 </div>
 
 使用 ClickHouse 客户端登录：

@@ -48,12 +48,20 @@ SETTINGS optimize_move_to_prewhere = 0, log_comment = 'parallel_probe_large';
 SYSTEM FLUSH LOGS query_log, text_log;
 
 -- The last column is the number of probes that analyzed the parts in parallel.
+-- A concurrent query can clear the whole primary index cache (`CREATE TABLE ... UUID`, dropping a table in
+-- an `Ordinary` database), and then the next probe finds the indexes not in memory and runs in parallel again.
+-- A parallel probe loads the indexes of all parts into the cache, so with the cache the column is whether
+-- the probe ran in parallel at least once, and at most once per load of the indexes of all parts.
 WITH (
     SELECT groupArray(query_id) FROM system.text_log
     WHERE event_date >= yesterday() AND event_time >= now() - 600
         AND message_format_string = 'Analyzing the primary key of parts in {} threads to decide whether to load statistics'
 ) AS parallel_probes
-SELECT log_comment, ProfileEvents['LoadedStatistics'] > 0, ProfileEvents['SelectedParts'], countEqual(parallel_probes, query_id)
+SELECT log_comment, ProfileEvents['LoadedStatistics'] > 0, ProfileEvents['SelectedParts'],
+    if(log_comment = 'parallel_probe_small_cache',
+        toUInt64(countEqual(parallel_probes, query_id) BETWEEN 1
+            AND intDiv(ProfileEvents['LoadedPrimaryIndexFiles'], ProfileEvents['SelectedParts'])),
+        countEqual(parallel_probes, query_id))
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, 'parallel_probe_')

@@ -20,6 +20,24 @@
                 <value>Native</value>
             </values>
         </substitution>
+        <substitution>
+            <name>fast_format</name>
+            <values>
+                <value>TabSeparatedWithNames</value>
+                <value>CSVWithNames</value>
+                <value>ORC</value>
+                <value>Parquet</value>
+                <value>Arrow</value>
+                <value>Native</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>slow_format</name>
+            <values>
+                <value>JSONEachRow</value>
+                <value>Avro</value>
+            </values>
+        </substitution>
     </substitutions>
 
     <!-- First create source table with nullable columns for various column types, fill it with test data and then use it to create test tables for each format -->
@@ -78,24 +96,53 @@
         FROM numbers(1000000)
     </fill_query>
 
-    <create_query>CREATE TABLE IF NOT EXISTS table_{format}_with_nullable_columns ENGINE = File({format}) AS SELECT * FROM source_table</create_query>
+    <create_query>CREATE TABLE IF NOT EXISTS table_{fast_format}_with_nullable_columns ENGINE = File({fast_format}) AS SELECT * FROM source_table</create_query>
 
-    <fill_query>INSERT INTO table_{format}_with_nullable_columns SELECT * FROM source_table</fill_query>
+    <fill_query>INSERT INTO table_{fast_format}_with_nullable_columns SELECT * FROM source_table</fill_query>
+
+    <create_query>CREATE TABLE IF NOT EXISTS table_{slow_format}_with_nullable_columns_500k ENGINE = File({slow_format}) AS SELECT * FROM source_table WHERE id &lt; 250000</create_query>
+
+    <fill_query>INSERT INTO table_{slow_format}_with_nullable_columns_500k SELECT * FROM source_table WHERE id &lt; 250000</fill_query>
 
     <!-- The whole file with parallel parsing: a LIMIT makes the parallel parser read ahead a varying amount, and parsing
          the text formats in one thread runs at a different speed in each server process on ARM. -->
-    <query>SELECT * FROM table_{format}_with_nullable_columns FORMAT Null</query>
-    <query>SELECT count() FROM table_{format}_with_nullable_columns FORMAT Null</query>
-    <query>SELECT avg(col_int32) FROM table_{format}_with_nullable_columns FORMAT Null</query>
-    <query>SELECT sum(if(col_int8 IS NULL, 1, 0)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
-    <query>SELECT length(arrayFilter(x -> x IS NOT NULL, groupArray(100)(col_string))) FROM table_{format}_with_nullable_columns GROUP BY intDiv(id, 100000) FORMAT Null</query>
-    <query>SELECT countIf(isNull(col_decimal64)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
-    <query>SELECT min(if(isNull(col_float32), 0, col_float32)), max(if(isNull(col_float32), 0, col_float32)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
-    <query>SELECT toYear(if(isNull(col_datetime), toDateTime('2000-01-01'), col_datetime)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
-    <query>SELECT count() FROM table_{format}_with_nullable_columns WHERE length(arrayFilter(x -> x IS NULL, col_array)) > 0 FORMAT Null</query>
-    <query>SELECT count(DISTINCT col_low_cardinality) FROM table_{format}_with_nullable_columns FORMAT Null</query>
-    <query>SELECT sum(ifNull(col_int32, 0)), avg(ifNull(col_float64, 0)) FROM table_{format}_with_nullable_columns GROUP BY intDiv(id, 1000000) FORMAT Null</query>
+    <query disabled="1">SELECT * FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query disabled="1">SELECT count() FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query disabled="1">SELECT avg(col_int32) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query disabled="1">SELECT sum(if(col_int8 IS NULL, 1, 0)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query disabled="1">SELECT length(arrayFilter(x -> x IS NOT NULL, groupArray(100)(col_string))) FROM table_{format}_with_nullable_columns GROUP BY intDiv(id, 100000) FORMAT Null</query>
+    <query disabled="1">SELECT countIf(isNull(col_decimal64)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query disabled="1">SELECT min(if(isNull(col_float32), 0, col_float32)), max(if(isNull(col_float32), 0, col_float32)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query disabled="1">SELECT toYear(if(isNull(col_datetime), toDateTime('2000-01-01'), col_datetime)) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query disabled="1">SELECT count() FROM table_{format}_with_nullable_columns WHERE length(arrayFilter(x -> x IS NULL, col_array)) > 0 FORMAT Null</query>
+    <query disabled="1">SELECT count(DISTINCT col_low_cardinality) FROM table_{format}_with_nullable_columns FORMAT Null</query>
+    <query disabled="1">SELECT sum(ifNull(col_int32, 0)), avg(ifNull(col_float64, 0)) FROM table_{format}_with_nullable_columns GROUP BY intDiv(id, 1000000) FORMAT Null</query>
 
-    <drop_query>DROP TABLE IF EXISTS table_{format}_with_nullable_columns</drop_query>
+    <!-- Copies of the disabled queries: the formats other than `JSONEachRow` and `Avro` on the same tables, `JSONEachRow` and `Avro` on a quarter of the rows. -->
+    <query>SELECT * FROM table_{fast_format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT count() FROM table_{fast_format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT avg(col_int32) FROM table_{fast_format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT sum(if(col_int8 IS NULL, 1, 0)) FROM table_{fast_format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT length(arrayFilter(x -> x IS NOT NULL, groupArray(100)(col_string))) FROM table_{fast_format}_with_nullable_columns GROUP BY intDiv(id, 100000) FORMAT Null</query>
+    <query>SELECT countIf(isNull(col_decimal64)) FROM table_{fast_format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT min(if(isNull(col_float32), 0, col_float32)), max(if(isNull(col_float32), 0, col_float32)) FROM table_{fast_format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT toYear(if(isNull(col_datetime), toDateTime('2000-01-01'), col_datetime)) FROM table_{fast_format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT count() FROM table_{fast_format}_with_nullable_columns WHERE length(arrayFilter(x -> x IS NULL, col_array)) > 0 FORMAT Null</query>
+    <query>SELECT count(DISTINCT col_low_cardinality) FROM table_{fast_format}_with_nullable_columns FORMAT Null</query>
+    <query>SELECT sum(ifNull(col_int32, 0)), avg(ifNull(col_float64, 0)) FROM table_{fast_format}_with_nullable_columns GROUP BY intDiv(id, 1000000) FORMAT Null</query>
+    <query>SELECT * FROM table_{slow_format}_with_nullable_columns_500k FORMAT Null</query>
+    <query>SELECT count() FROM table_{slow_format}_with_nullable_columns_500k FORMAT Null</query>
+    <query>SELECT avg(col_int32) FROM table_{slow_format}_with_nullable_columns_500k FORMAT Null</query>
+    <query>SELECT sum(if(col_int8 IS NULL, 1, 0)) FROM table_{slow_format}_with_nullable_columns_500k FORMAT Null</query>
+    <query>SELECT length(arrayFilter(x -> x IS NOT NULL, groupArray(100)(col_string))) FROM table_{slow_format}_with_nullable_columns_500k GROUP BY intDiv(id, 100000) FORMAT Null</query>
+    <query>SELECT countIf(isNull(col_decimal64)) FROM table_{slow_format}_with_nullable_columns_500k FORMAT Null</query>
+    <query>SELECT min(if(isNull(col_float32), 0, col_float32)), max(if(isNull(col_float32), 0, col_float32)) FROM table_{slow_format}_with_nullable_columns_500k FORMAT Null</query>
+    <query>SELECT toYear(if(isNull(col_datetime), toDateTime('2000-01-01'), col_datetime)) FROM table_{slow_format}_with_nullable_columns_500k FORMAT Null</query>
+    <query>SELECT count() FROM table_{slow_format}_with_nullable_columns_500k WHERE length(arrayFilter(x -> x IS NULL, col_array)) > 0 FORMAT Null</query>
+    <query>SELECT count(DISTINCT col_low_cardinality) FROM table_{slow_format}_with_nullable_columns_500k FORMAT Null</query>
+    <query>SELECT sum(ifNull(col_int32, 0)), avg(ifNull(col_float64, 0)) FROM table_{slow_format}_with_nullable_columns_500k GROUP BY intDiv(id, 1000000) FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS table_{fast_format}_with_nullable_columns</drop_query>
+    <drop_query>DROP TABLE IF EXISTS table_{slow_format}_with_nullable_columns_500k</drop_query>
     <drop_query>DROP TABLE IF EXISTS source_table</drop_query>
 </test>

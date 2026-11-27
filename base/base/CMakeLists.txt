@@ -36,6 +36,11 @@ set (SRCS
     wide_integer_to_string.cpp
 )
 
+# The UBSan runtime of a CFI diagnostic build lists modules through `dl_iterate_phdr` with a callback that has no CFI type.
+if (ENABLE_CFI_DIAGNOSTICS)
+    set_source_files_properties (phdr_cache.cpp PROPERTIES COMPILE_OPTIONS "-fno-sanitize=cfi-icall")
+endif ()
+
 add_library (common ${SRCS})
 
 if (WITH_COVERAGE)

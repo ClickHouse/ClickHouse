@@ -41,3 +41,17 @@ def test_backward_compatability1(start_cluster):
     node1.query("SYSTEM SYNC REPLICA t", timeout=10)
 
     assert node1.query("SELECT count() FROM t") == "1\n"
+
+
+def test_new_client_and_initiator_with_negative_seconds_in_old_server_profile(start_cluster):
+    node1.query("DROP USER IF EXISTS u_negative_seconds")
+    node1.query("CREATE USER u_negative_seconds IDENTIFIED WITH no_password SETTINGS max_execution_time = -1")
+    node1.query("GRANT SELECT ON system.one TO u_negative_seconds")
+    try:
+        # `node1.query*` runs the tested client against the old server; the client warns about the value it skips.
+        out, err = node1.query_and_get_answer_with_error("SELECT 1", user="u_negative_seconds")
+        assert out == "1\n"
+        assert "Cannot parse the value of setting `max_execution_time`, skipping it" in err
+        assert node2.query("SELECT count() FROM remote('node1', system.one, 'u_negative_seconds', '')") == "1\n"
+    finally:
+        node1.query("DROP USER IF EXISTS u_negative_seconds")

@@ -86,7 +86,12 @@ ColumnDynamic::ColumnDynamic(size_t max_dynamic_types_) : max_dynamic_types(max_
 ColumnDynamic::ColumnDynamic(
     MutableColumnPtr variant_column_, const DataTypePtr & variant_type_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_)
     : variant_column(std::move(variant_column_))
-    , variant_column_ptr(assert_cast<ColumnVariant *>(variant_column.get()))
+    /// Use the const overload of `WrappedPtr::get` so this constructor can be reached from
+    /// `ColumnDynamic::create(const ColumnPtr &, ...)` with shared inputs (where the non-const
+    /// `WrappedPtr::get` would `chassert(use_count() == 1)` via `assumeMutableRef`). The cached
+    /// `variant_column_ptr` is used for read access in immutable mode; mutating operations
+    /// require going through `IColumn::mutate`, which deep-clones the variant column first.
+    , variant_column_ptr(assert_cast<ColumnVariant *>(const_cast<IColumn *>(std::as_const(variant_column).get())))
     , max_dynamic_types(max_dynamic_types_)
     , global_max_dynamic_types(global_max_dynamic_types_)
     , statistics(statistics_)
@@ -97,7 +102,12 @@ ColumnDynamic::ColumnDynamic(
 ColumnDynamic::ColumnDynamic(
     MutableColumnPtr variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_)
     : variant_column(std::move(variant_column_))
-    , variant_column_ptr(assert_cast<ColumnVariant *>(variant_column.get()))
+    /// Use the const overload of `WrappedPtr::get` so this constructor can be reached from
+    /// `ColumnDynamic::create(const ColumnPtr &, ...)` with shared inputs (where the non-const
+    /// `WrappedPtr::get` would `chassert(use_count() == 1)` via `assumeMutableRef`). The cached
+    /// `variant_column_ptr` is used for read access in immutable mode; mutating operations
+    /// require going through `IColumn::mutate`, which deep-clones the variant column first.
+    , variant_column_ptr(assert_cast<ColumnVariant *>(const_cast<IColumn *>(std::as_const(variant_column).get())))
     , variant_info(variant_info_)
     , max_dynamic_types(max_dynamic_types_)
     , global_max_dynamic_types(global_max_dynamic_types_)
@@ -763,7 +773,7 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
     /// We need to insert single value, try to add only corresponding variant.
     if (src_global_discr == ColumnVariant::NULL_DISCRIMINATOR)
     {
-        insertDefault();
+        insertManyDefaults(length);
         return;
     }
 
@@ -922,21 +932,72 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
         auto value = getSharedVariant().getDataAt(variant_col.offsetAt(n));
         ReadBufferFromMemory buf(value);
         auto type = decodeDataType(buf);
-        hash.update(type->getName());
+        updateHashWithTypeName(hash, type->getName());
         auto tmp_column = type->createColumn();
         type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
         tmp_column->updateHashWithValue(0, hash);
         return;
     }
 
-    hash.update(variant_info.variant_names[discr]);
+    updateHashWithTypeName(hash, variant_info.variant_names[discr]);
     variant_col.getVariantByGlobalDiscriminator(discr).updateHashWithValue(variant_col.offsetAt(n), hash);
+}
+
+void ColumnDynamic::updateHashWithTypeName(SipHash & hash, std::string_view type_name)
+{
+    hash.update(UInt8(0));
+    hash.update(type_name.size());
+    hash.update(type_name);
 }
 
 void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
     checkStackSize();
-    variant_column_ptr->updateHashWithValueRange(begin, end, hash);
+
+    /// A discriminator depends on which types the column holds, so the hash must identify a type by its name.
+    /// To hash each name once instead of once per row, a row hashes the index of its type in `types_in_range`
+    /// (types in order of first appearance in the range), and then each type hashes its name and its values.
+    const auto & variant_col = getVariantColumn();
+    const auto & local_discriminators = variant_col.getLocalDiscriminators();
+    const auto & offsets = variant_col.getOffsets();
+
+    struct TypeInRange
+    {
+        ColumnVariant::Discriminator local_discr;
+        /// The values of a type in a row range are contiguous in its variant column.
+        size_t first_offset;
+        size_t count = 0;
+    };
+    VectorWithMemoryTracking<TypeInRange> types_in_range;
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> type_index_by_local_discr(
+        variant_col.getNumVariants(), ColumnVariant::NULL_DISCRIMINATOR);
+
+    for (size_t i = begin; i < end; ++i)
+    {
+        const auto local_discr = local_discriminators[i];
+        if (local_discr == ColumnVariant::NULL_DISCRIMINATOR)
+        {
+            hash.update(local_discr);
+            continue;
+        }
+
+        auto & type_index = type_index_by_local_discr[local_discr];
+        if (type_index == ColumnVariant::NULL_DISCRIMINATOR)
+        {
+            type_index = static_cast<ColumnVariant::Discriminator>(types_in_range.size());
+            types_in_range.push_back({.local_discr = local_discr, .first_offset = offsets[i]});
+        }
+
+        hash.update(type_index);
+        ++types_in_range[type_index].count;
+    }
+
+    for (const auto & type : types_in_range)
+    {
+        updateHashWithTypeName(hash, variant_info.variant_names[variant_col.globalDiscriminatorByLocal(type.local_discr)]);
+        variant_col.getVariantByLocalDiscriminator(type.local_discr).updateHashWithValueRange(
+            type.first_offset, type.first_offset + type.count, hash);
+    }
 }
 
 namespace
@@ -1279,7 +1340,7 @@ struct ColumnDynamic::ComparatorBase
     {
     }
 
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         return parent.compareAt(lhs, rhs, parent, nan_direction_hint);
     }
@@ -1319,6 +1380,13 @@ ColumnPtr ColumnDynamic::compress(bool force_compression) const
     return ColumnCompressed::create(size(), byte_size,
         [my_variant_compressed = std::move(variant_compressed), my_variant_info = variant_info, my_max_dynamic_types = max_dynamic_types, my_global_max_dynamic_types = global_max_dynamic_types, my_statistics = statistics]() mutable
         {
+            /// `decompress` returns a fresh `ColumnVariant`, so the top level is reused without a copy.
+            /// A variant branch whose compression was a no-op is still shared with the owner captured
+            /// in the `ColumnVariant` decompression callback (it runs once per read, so it cannot give
+            /// it up), and `IColumn::mutate` in `create` deep copies that branch. This is accepted on
+            /// purpose, for the same reason as in `ColumnObject::compress`: `ColumnDynamic` keeps raw
+            /// mutable access to its variants, so it cannot borrow a shared child, and aliasing it via
+            /// `assumeMutable` is exactly what the ownership checks in `IColumn::mutate` exist to catch.
             return ColumnDynamic::create(my_variant_compressed->decompress(), my_variant_info, my_max_dynamic_types, my_global_max_dynamic_types, my_statistics);
         });
 }
@@ -1328,7 +1396,7 @@ ColumnCheckpointPtr ColumnDynamic::getCheckpoint() const
     checkStackSize();
     UnorderedMapWithMemoryTracking<String, ColumnCheckpointPtr> variants_checkpoints;
     for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
-        variants_checkpoints[name] = variant_column_ptr->getVariantByGlobalDiscriminator(discr).getCheckpoint();
+        variants_checkpoints[name] = getVariantColumn().getVariantByGlobalDiscriminator(discr).getCheckpoint();
     return std::make_shared<DynamicColumnCheckpoint>(size(), variants_checkpoints);
 }
 
@@ -1342,9 +1410,9 @@ void ColumnDynamic::updateCheckpoint(ColumnCheckpoint & checkpoint) const
         auto it = variants_checkpoints.find(name);
         /// If column has new variants since last checkpoint create checkpoints for them.
         if (it == variants_checkpoints.end())
-            variants_checkpoints.emplace(name, variant_column_ptr->getVariantByGlobalDiscriminator(discr).getCheckpoint());
+            variants_checkpoints.emplace(name, getVariantColumn().getVariantByGlobalDiscriminator(discr).getCheckpoint());
         else
-            variant_column_ptr->getVariantByGlobalDiscriminator(discr).updateCheckpoint(*it->second);
+            getVariantColumn().getVariantByGlobalDiscriminator(discr).updateCheckpoint(*it->second);
     }
 
     checkpoint.size = size();
@@ -1410,7 +1478,7 @@ void ColumnDynamic::getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> &
     auto shared_variant_discr = getSharedVariantDiscriminator();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
     {
-        if (i != shared_variant_discr && !variant_column_ptr->getVariantByGlobalDiscriminator(i).empty())
+        if (i != shared_variant_discr && !getVariantColumn().getVariantByGlobalDiscriminator(i).empty())
             names.insert(variant_info.variant_names[i]);
     }
 
@@ -1751,7 +1819,7 @@ ColumnDynamic::StatisticsPtr ColumnDynamic::getOrCalculateStatistics() const
 
     auto calculated_statistics = std::make_shared<Statistics>();
     for (const auto & [variant_name, discr] : variant_info.variant_name_to_discriminator)
-        calculated_statistics->variants_statistics[variant_name] = variant_column_ptr->getVariantByGlobalDiscriminator(discr).size();
+        calculated_statistics->variants_statistics[variant_name] = getVariantColumn().getVariantByGlobalDiscriminator(discr).size();
 
     const auto & shared_variant = getSharedVariant();
     for (size_t i = 0; i != shared_variant.size(); ++i)

@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Primeiros passos",
+      "group": "Get started",
       "pages": [
         "pt-BR/products/managed-postgres/overview",
         "pt-BR/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "Recursos",
+      "group": "Features",
       "pages": [
         "pt-BR/products/managed-postgres/connection",
         "pt-BR/products/managed-postgres/settings",
@@ -43,7 +43,7 @@
       ]
     },
     {
-      "group": "Guias",
+      "group": "Guides",
       "pages": [
         "pt-BR/products/managed-postgres/guides/bun",
         "pt-BR/products/managed-postgres/guides/cloudflare-workers",
@@ -63,20 +63,20 @@
       ]
     },
     {
-      "group": "Preços",
+      "group": "Pricing",
       "pages": [
         "pt-BR/products/managed-postgres/pricing"
       ]
     },
     {
-      "group": "Integração com ClickHouse",
+      "group": "ClickHouse Integration",
       "pages": [
         "pt-BR/products/managed-postgres/sync-to-clickhouse/clickpipes",
         "pt-BR/products/managed-postgres/sync-to-clickhouse/walshadow"
       ]
     },
     {
-      "group": "Migrações",
+      "group": "Migrations",
       "pages": [
         "pt-BR/products/managed-postgres/migrations/overview",
         "pt-BR/products/managed-postgres/migrations/clickpipes",
@@ -89,7 +89,7 @@
       ]
     },
     {
-      "group": "Monitoramento",
+      "group": "Monitoring",
       "pages": [
         "pt-BR/products/managed-postgres/monitoring/overview",
         "pt-BR/products/managed-postgres/monitoring/dashboard",
@@ -100,7 +100,7 @@
       ]
     },
     {
-      "group": "Perguntas frequentes",
+      "group": "FAQ",
       "pages": [
         "pt-BR/products/managed-postgres/faq"
       ]

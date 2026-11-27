@@ -66,9 +66,11 @@ struct DeserializedSetsRegistry;
 class SettingsChanges;
 
 /// The id of the exchange that each send and receive step writes to or reads from.
-using MapStepToExchangeIds = std::unordered_map<const IQueryPlanStep *, UInt32>;
+using MapStepToExchangeIds = UnorderedMapWithMemoryTracking<const IQueryPlanStep *, UInt32>;
 
 /// Options from EXPLAIN queries based on plan.
+class QueryPlanLogCapture;
+
 struct ExplainPlanOptions
 {
     /// Add output header to step.
@@ -120,7 +122,7 @@ struct ExplainPlanOptions
     /// writes to or reads from. Set by `EXPLAIN PLAN fragments = 1, json = 1` (see `explainAsFragmentsJSON`).
     const MapStepToExchangeIds * exchange_ids = nullptr;
 
-    SettingsChanges toSettingsChanges() const;
+    [[nodiscard]] SettingsChanges toSettingsChanges() const;
 };
 struct DistributedQueryPlan;
 struct DistributedPlanCut;
@@ -204,10 +206,13 @@ public:
     /// Why `applyDistributedPlanFallbackToLocal` rejected this plan; empty unless `didFallBackToLocal`.
     const String & getDistributedPlanFallbackReason() const { return distributed_plan_fallback_reason; }
 
+    /// `log_capture` is passed only by the caller whose plan is the query's own; the nested builds
+    /// of subqueries and of child plans pass nothing, so only one plan per query is ever captured.
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
         const BuildQueryPipelineSettings & build_pipeline_settings,
-        bool do_optimize=true);
+        bool do_optimize=true,
+        QueryPlanLogCapture * log_capture = nullptr);
 
     struct ExplainPipelineOptions
     {
@@ -276,7 +281,14 @@ public:
 
     /// Extract subplan from plan from the root node.
     /// The root node and all the children will be removed from the nodes.
+    /// The subplan holds no resources: use this overload for a fragment that is put back into the plan
+    /// that owns `nodes` (e.g. by `replaceNodeWithPlan`), which already holds them.
     static QueryPlan extractSubplan(Node * root, Nodes & nodes);
+    /// The same, but the subplan also inherits the execution limits and the resources of `source_plan`,
+    /// the plan that owns `nodes`. Use it for a subplan that is executed on its own, possibly after
+    /// `source_plan` has been consumed into a pipeline. Do not use it for a fragment that is put back into
+    /// `source_plan`: that would append the resources of `source_plan` to itself again.
+    static QueryPlan extractSubplan(Node * root, Nodes & nodes, const QueryPlan & source_plan);
 
     Node * getRootNode() const { return root; }
     void replaceRootNode(Node * new_root) { root = new_root; }

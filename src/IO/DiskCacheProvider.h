@@ -28,15 +28,16 @@ public:
         ByteRange range_in_file,
         size_t object_file_offset_,
         ThrottlerPtr local_throttler_,
-        ReaderAnchorCache * anchors_);
+        ReaderAnchorCache * anchors_,
+        bool counts_hits_ = true);
     ~DiskCacheReader() override;
 
-    ByteRange range() const override { return hit_range; }
+    [[nodiscard]] ByteRange range() const override { return hit_range; }
     ChainedBuffers read(ByteRange subrange) override;
 
 private:
     /// Our holder always carries exactly one segment (see the constructor); assert it on each access.
-    FileSegment & segment() const { chassert(segment_holder && segment_holder->size() == 1); return segment_holder->front(); }
+    [[nodiscard]] FileSegment & segment() const { chassert(segment_holder && segment_holder->size() == 1); return segment_holder->front(); }
 
     FileSegmentsHolderSharedPtr segment_holder;
     ByteRange hit_range;
@@ -46,6 +47,7 @@ private:
     ReaderAnchorCache * anchors = nullptr;
     /// Whether this reader served any bytes; the destructor then bumps the segment's cache priority.
     bool served = false;
+    bool counts_hits = true;
     LoggerPtr log = getLogger("DiskCacheReader");
 };
 
@@ -62,8 +64,8 @@ public:
         FileSegmentsHolderSharedPtr segment_holder_,
         ByteRange aligned_range_in_file);
 
-    ByteRange range() const override { return aligned_range; }
-    size_t committed() const override;
+    [[nodiscard]] ByteRange range() const override { return aligned_range; }
+    [[nodiscard]] size_t committed() const override;
     size_t write(ChainedBuffers data, const FillRole & role) override;
     ChainedBuffers read(ByteRange subrange) override;
     FillRole takeFillRole() override;
@@ -73,7 +75,7 @@ private:
     bool tryWriteToSegment(FileSegment & file_segment, char * data, size_t size, size_t offset);
 
     /// Our holder always carries exactly one segment (see the constructor); assert it on each access.
-    FileSegment & segment() const { chassert(segment_holder && segment_holder->size() == 1); return segment_holder->front(); }
+    [[nodiscard]] FileSegment & segment() const { chassert(segment_holder && segment_holder->size() == 1); return segment_holder->front(); }
 
     FileCachePtr cache;
     /// The blob's start offset in the logical file (multi-blob files); cache coordinates are blob-local.

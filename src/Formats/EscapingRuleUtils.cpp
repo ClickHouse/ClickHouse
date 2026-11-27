@@ -75,6 +75,14 @@ static NullOutput shared_null_output;
 
 void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
 {
+    /// The most common case, separately: a tail call that needs no stack frame, so with pointer authentication
+    /// there's no return address to sign and authenticate for every skipped field.
+    if (escaping_rule == FormatSettings::EscapingRule::Escaped)
+    {
+        readEscapedStringInto<NullOutput, false>(shared_null_output, buf);
+        return;
+    }
+
     NullOutput & out = shared_null_output;
     constexpr const char * field_name = "<SKIPPED COLUMN>";
     constexpr size_t field_name_len = 16;
@@ -474,7 +482,7 @@ DataTypes getDefaultDataTypeForEscapingRules(const std::vector<FormatSettings::E
 String getAdditionalFormatInfoForAllRowBasedFormats(const FormatSettings & settings)
 {
     return fmt::format(
-        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, max_bytes_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}, schema_inference_allow_nullable_tuple_type={}, date_time_input_format={}, input_format_try_infer_variants={}, max_parser_depth={}",
+        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, max_bytes_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}, schema_inference_allow_nullable_tuple_type={}, date_time_input_format={}, input_format_try_infer_variants={}, max_parser_depth={}, input_format_skip_duplicated_fields={}, input_format_column_name_matching_mode={}",
         settings.schema_inference_hints,
         settings.max_rows_to_read_for_schema_inference,
         settings.max_bytes_to_read_for_schema_inference,
@@ -482,7 +490,9 @@ String getAdditionalFormatInfoForAllRowBasedFormats(const FormatSettings & setti
         settings.schema_inference_allow_nullable_tuple_type,
         settings.date_time_input_format,
         settings.try_infer_variant,
-        settings.max_parser_depth);
+        settings.max_parser_depth,
+        settings.skip_duplicated_fields,
+        settings.input_format_column_matching_case_sensitivity);
 }
 
 String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule)

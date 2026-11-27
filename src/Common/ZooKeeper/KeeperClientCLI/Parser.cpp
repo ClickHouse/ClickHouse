@@ -137,7 +137,7 @@ bool KeeperParser::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         expected.add(pos, pair.first.data());
 
     for (const auto & four_letter_word_command : four_letter_word_commands)
-        expected.add(pos, four_letter_word_command.data());
+        expected.add(pos, four_letter_word_command);
 
     if (pos->type != TokenType::BareWord)
         return false;

@@ -17,6 +17,18 @@
 namespace DB
 {
 
+/// The digest of the storage is a rolling sum of the digests of its nodes. Nodes are added and
+/// removed in an arbitrary order, so the sum is taken modulo 2^64 and wraps around on purpose.
+inline void NO_SANITIZE_UNSIGNED_OVERFLOW addToDigest(uint64_t & digest, uint64_t node_digest)
+{
+    digest += node_digest;
+}
+
+inline void NO_SANITIZE_UNSIGNED_OVERFLOW removeFromDigest(uint64_t & digest, uint64_t node_digest)
+{
+    digest -= node_digest;
+}
+
 class KeeperStorage;
 struct KeeperSnapshotReader;
 
@@ -31,7 +43,7 @@ struct KeeperNodesReadView
 {
     std::shared_ptr<KeeperStorage> storage_holder;
 
-    virtual size_t getNodeCount() const = 0;
+    [[nodiscard]] virtual size_t getNodeCount() const = 0;
     virtual bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) = 0;
 
     virtual ~KeeperNodesReadView() = default;
@@ -98,7 +110,7 @@ struct KeeperNodesStorage
 
     /// List children names without data.
     /// (Implementation should not rely on getNumChildren() stat because it may be inaccurate for system nodes.)
-    virtual std::vector<std::string> listCommittedChildrenNames(std::string_view path) const = 0;
+    [[nodiscard]] virtual std::vector<std::string> listCommittedChildrenNames(std::string_view path) const = 0;
 
     /// Directly create or mutate a committed node. Used to set up system nodes and by tests.
     virtual bool addCommittedNodeIfNotExists(std::string_view path, const KeeperNodeStats & stats, std::string_view data, bool update_parent_num_children, uint64_t * out_digest) = 0;

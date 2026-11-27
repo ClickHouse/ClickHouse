@@ -1,0 +1,282 @@
+---
+slug: /clickstack/observability/features/dashboards/sql-visualizations
+title: '基于 SQL 的可视化'
+sidebarTitle: '基于 SQL 的可视化'
+description: '在 ClickHouse Observability 中使用 SQL 查询创建可视化'
+doc_type: 'guide'
+keywords: ['clickstack', 'dashboards', 'visualization', 'sql', 'observability']
+---
+
+ClickHouse Observability 支持基于原始 SQL 查询创建可视化。这样，您既能完全掌控查询逻辑，又能与仪表盘级别的时间范围、筛选条件和图表渲染相集成。
+
+当内置的 Chart Explorer 无法满足需求时，基于 SQL 的可视化就能派上用场，例如连接多个表，或构建图表构建器不支持的复杂聚合。
+
+## 创建基于 SQL 的可视化 {#creating-a-raw-sql-chart}
+
+要创建基于 SQL 的可视化，请打开仪表板面板编辑器并选择 **SQL**。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![包含查询指令和宏的 SQL 可视化编辑器](/images/clickstack/observability-sql-editor.png)
+  </Frame>
+</div>
+
+接下来：
+
+1. 选择要执行查询的 **Connection**。
+2. (可选) 选择一个 **Source**——这样即可通过 `$__filters` 宏将仪表板级筛选器应用到图表上。
+3. 在编辑器中编写 SQL 查询，并借助查询参数和宏与仪表盘的时间范围、筛选条件和变量相结合。
+4. 点击 **运行** 预览结果，然后点击 **保存** 保存该可视化。
+
+## 查询参数 {#query-parameters}
+
+借助[查询参数](/zh/reference/syntax#defining-and-using-query-parameters)，您可以在 SQL 中引用仪表盘当前的时间范围和粒度。查询参数采用 ClickHouse 的参数化查询语法：`{paramName:Type}`。
+
+### 可用参数 {#available-parameters}
+
+可用参数因图表类型而异：
+
+**时间序列图表 (包括堆叠条形图) ：**
+
+| 参数                              | 类型    | 描述                       |
+| ------------------------------- | ----- | ------------------------ |
+| `{startDateMilliseconds:Int64}` | Int64 | 仪表盘日期范围的起始时间 (自纪元起的毫秒数)  |
+| `{endDateMilliseconds:Int64}`   | Int64 | 仪表盘日期范围的结束时间 (自纪元起的毫秒数)  |
+| `{intervalSeconds:Int64}`       | Int64 | 时间桶大小，单位为秒 (由粒度决定)       |
+| `{intervalMilliseconds:Int64}`  | Int64 | 时间桶大小，单位为毫秒 (由粒度决定)      |
+
+**表格图、饼图和数值图：**
+
+| 参数                              | 类型    | 描述                       |
+| ------------------------------- | ----- | ------------------------ |
+| `{startDateMilliseconds:Int64}` | Int64 | 仪表盘日期范围的起始时间 (自纪元起的毫秒数)  |
+| `{endDateMilliseconds:Int64}`   | Int64 | 仪表盘日期范围的结束时间 (自纪元起的毫秒数)  |
+
+## 宏 {#macros}
+
+宏是一种快捷写法，可展开为常用的 ClickHouse SQL 表达式。宏以 `$__` 为前缀，会在查询发送到 ClickHouse 之前被替换。
+
+### 时间边界宏 {#time-boundary-macros}
+
+这些宏会返回一个 ClickHouse 表达式，表示仪表盘的开始时间或结束时间。它们不接受任何参数。
+
+| 宏                | 展开为                                                                   | 列类型        |
+| ---------------- | --------------------------------------------------------------------- | ---------- |
+| `$__fromTime`    | `toDateTime(fromUnixTimestamp64Milli({startDateMilliseconds:Int64}))` | DateTime   |
+| `$__toTime`      | `toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:Int64}))`   | DateTime   |
+| `$__fromTime_ms` | `fromUnixTimestamp64Milli({startDateMilliseconds:Int64})`             | DateTime64 |
+| `$__toTime_ms`   | `fromUnixTimestamp64Milli({endDateMilliseconds:Int64})`               | DateTime64 |
+| `$__interval_s`  | `{intervalSeconds:Int64}`                                             | Int64      |
+
+### 时间过滤器宏 {#time-filter-macros}
+
+这些宏会生成一个 `WHERE` 子句片段，用于将某一列限定在仪表盘的时间范围内。
+
+| 宏                                     | 描述                               |
+| ------------------------------------- | -------------------------------- |
+| `$__timeFilter(column)`               | 将 `DateTime` 列限定在仪表盘时间范围内        |
+| `$__timeFilter_ms(column)`            | 将 `DateTime64` (毫秒) 列限定在仪表盘时间范围内 |
+| `$__dateFilter(column)`               | 将 `Date` 列限定在仪表盘时间范围内            |
+| `$__dateTimeFilter(dateCol, timeCol)` | 使用分开的 `Date` 列和 `DateTime` 列进行过滤 |
+| `$__dt(dateCol, timeCol)`             | `$__dateTimeFilter` 的别名          |
+
+`$__timeFilter(TimestampTime)` 的**展开示例**：
+
+```sql
+TimestampTime >= toDateTime(fromUnixTimestamp64Milli({startDateMilliseconds:Int64}))
+AND TimestampTime <= toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:Int64}))
+```
+
+### 时间间隔宏 {#time-interval-macros}
+
+这些宏会将时间戳列按与仪表盘粒度一致的时间间隔分桶，通常用于时间序列图表的 `SELECT` 和 `GROUP BY` 子句中。这些宏仅适用于 **时间序列** 可视化 (包括堆叠条形图) 。
+
+| 宏                            | 描述                                               |
+| ---------------------------- | ------------------------------------------------ |
+| `$__timeInterval(column)`    | 将 `DateTime` 列按 `intervalSeconds` 的时间间隔分桶        |
+| `$__timeInterval_ms(column)` | 将 `DateTime64` 列按 `intervalMilliseconds` 的时间间隔分桶 |
+
+`$__timeInterval(TimestampTime)` 的**展开示例**：
+
+```sql
+toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} second)
+```
+
+### 仪表盘筛选宏 {#dashboard-filter-macro}
+
+| 宏            | 描述                           |
+| ------------ | ---------------------------- |
+| `$__filters` | 替换为仪表盘级别的过滤条件 (需先选择 Source)  |
+
+当图表已选择 **Source** 且仪表盘筛选条件处于活跃状态时，`$__filters` 会展开为相应的 SQL `WHERE` 条件。若未选择 source 或未应用任何筛选条件，它会展开为 `(1=1)`，因此始终可以安全地放入 `WHERE` 子句中。
+
+`$__filters` 只会应用已启用 **Broadcast filter condition** 的筛选条件。以变量形式公开的筛选条件则需要显式引用，详见下文。
+
+### 仪表盘变量宏 {#dashboard-variables}
+
+当仪表盘过滤器[可作为变量使用](/zh/clickstack/observability/features/dashboards/overview#dashboard-variables)时，可以在查询中的任意位置引用其选中的值。这些宏仅适用于至少声明了一个变量的仪表盘中的内容块。
+
+| 宏                                             | 描述                                                                                  |
+| --------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `$__filter($<variable>)`                      | 当 `variable` 有选中的值时，展开为 `toString(<filter expression>) IN ($variable)`，否则展开为 `1=1`。 |
+| `$__filter(<expression>, $<variable>)`        | 当 `variable` 有选中的值时，展开为 `<expression> IN ($variable)`，否则展开为 `1=1`。                  |
+| `$__conditionalAll(<condition>, $<variable>)` | 当变量有选中项时，展开为 `<condition>`，否则展开为 `1=1`。                                             |
+
+变量的值也可以通过 `$name` 或 `${name}` 直接插入，并可指定格式：`${name:sqlstring}` (默认) 、`${name:csv}` 或 `${name:regex}`。在默认格式下，若尚未选中任何值，直接引用会渲染为 `NULL`，因此在需要谓词的位置，应优先使用上述宏。
+
+## 查询结果的绘制方式 {#how-results-are-plotted}
+
+UI 会根据列类型，自动将结果列映射到图表元素上。映射规则因图表类型而异。
+
+### 时间序列图表 {#line-and-stacked-bar-charts}
+
+| 角色        | 列类型                        | 描述                          |
+| --------- | -------------------------- | --------------------------- |
+| **时间戳**   | 第一个 `Date` 或 `DateTime` 列  | 用作 x 轴。                     |
+| **数据系列值** | 所有数值列                      | 每个数值列分别绘制为一个独立的数据系列，通常为聚合值。 |
+| **分组名称**  | `String`、`Map` 或 `Array` 列 | 可选。分组值不同的行将分别绘制为独立的数据系列。    |
+
+### 饼图 {#pie-chart}
+
+| 角色       | 列类型                        | 描述                  |
+| -------- | -------------------------- | ------------------- |
+| **扇区值**  | 第一个数值列                     | 决定各扇区的大小。           |
+| **扇区标签** | `String`、`Map` 或 `Array` 列 | 可选。每个唯一值都会作为一个扇区标签。 |
+
+### 数值图 {#number-chart}
+
+| 角色     | 列类型    | 描述              |
+| ------ | ------ | --------------- |
+| **数值** | 第一个数值列 | 显示第一个数值列中第一行的值。 |
+
+### 表格图表 {#table-chart}
+
+所有结果列都会直接显示为表格中的列。
+
+## 示例 {#examples}
+
+<Info>
+  **示例表名**
+
+  以下示例使用 `otel_logs` 和 `otel_traces` 表。请根据您的数据调整表名和列名。在 [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) 上运行示例时，请改用 `otel_v2.otel_logs` 或 `otel_v2.otel_traces`。
+</Info>
+
+### 时间序列图表——按服务统计日志数量随时间的变化 {#example-line-chart}
+
+此查询按服务统计日志事件数量，并按与仪表盘粒度一致的时间间隔进行分桶。
+
+```sql
+SELECT
+  toStartOfInterval(TimestampTime, INTERVAL {intervalSeconds:Int64} second) AS ts,
+  ServiceName,
+  count() AS count
+FROM otel_logs
+WHERE TimestampTime >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
+  AND TimestampTime < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
+  AND $__filters
+GROUP BY ServiceName, ts
+ORDER BY ts ASC
+```
+
+* `ts` (`DateTime`) 用作 x 轴的时间戳。
+* `count` (数值) 作为数据系列的值进行绘制。
+* `ServiceName` (字符串) 为每个服务分别生成一条折线。
+
+### 时间序列图表——使用宏 {#example-line-chart-macros}
+
+以下是用宏改写的同一查询，更加简洁：
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  ServiceName,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filters
+GROUP BY ServiceName, ts
+ORDER BY ts ASC
+```
+
+### 时间序列图表 — 使用仪表盘变量 {#example-line-chart-variables}
+
+假设某个仪表盘包含一个基于 `ServiceName` 的 `service` 变量和一个基于 `SeverityText` 的 `severity` 变量，则此查询会将图表范围限定为当前选中的服务，并排除所选的严重级别。当对应变量未选择任何值时，这两个宏都会展开为 `1=1`，因此在查看者选择某个值之前，图表将以未过滤的状态渲染。
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ServiceName, $service)
+  AND $__conditionalAll(SeverityText NOT IN ($severity), $severity)
+GROUP BY ts
+ORDER BY ts ASC
+```
+
+### 堆叠条形图：按严重级别统计错误数 {#example-stacked-bar}
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  lower(SeverityText),
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND lower(SeverityText) IN ('error', 'warn')
+  AND $__filters
+GROUP BY SeverityText, ts
+ORDER BY ts ASC
+```
+
+### 表格图表：最慢的 10 个端点 {#example-table}
+
+```sql
+SELECT
+  SpanName AS endpoint,
+  avg(Duration) / 1000 AS avg_duration_ms,
+  count() AS request_count
+FROM otel_traces
+WHERE $__timeFilter(Timestamp)
+  AND $__filters
+GROUP BY SpanName
+ORDER BY avg_duration_ms DESC
+LIMIT 10
+```
+
+### 饼图：按服务统计的请求分布 {#example-pie}
+
+```sql
+SELECT
+  ServiceName,
+  count() AS request_count
+FROM otel_traces
+WHERE $__timeFilter(Timestamp)
+  AND $__filters
+GROUP BY ServiceName
+```
+
+* `request_count` (数值) 决定每个扇区的大小。
+* `ServiceName` (字符串) 作为每个扇区的标签。
+
+### 数值图——错误总数 {#example-number}
+
+```sql
+SELECT
+  count() AS total_errors
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND SeverityText = 'error'
+  AND $__filters
+```
+
+图表将显示第一行中的单个数值 `total_errors`。
+
+## 说明 {#notes}
+
+* 基于 SQL 的可视化在启用 `readonly` 模式的情况下执行，仅允许 `SELECT` 查询。
+* 每个基于 SQL 的可视化仅支持单个查询，不支持多个查询。
+* SQL 编辑器可为查询参数和宏提供自动补全建议。
+* 若要将仪表盘筛选条件应用于基于 SQL 的可视化，必须选择一个 source。该 source 应与所查询的表一致，以确保过滤结果准确。
+* 仪表盘变量无需 source：变量值来自仪表盘的筛选下拉列表，而非卡片自身的 source。
+* 如果 SQL 卡片引用了仪表盘变量，其告警在评估时会将所有变量视为空状态，而不会使用仪表盘上所选的值。

@@ -14,9 +14,9 @@ void registerAggregateFunctionTimeseriesPresentToGrid(AggregateFunctionFactory &
     FunctionDocumentation::Description description_timeSeriesPresentToGrid = R"(
 Aggregate function that checks whether time series data is present on the specified grid. For each point on the grid the function returns 1 if there is at least one sample within the specified time window, otherwise NULL.
 
-:::note
+<Note>
 This function is in private preview, enable it by setting `enable_time_series_aggregate_functions=true`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesPresentToGrid = R"(
 timeSeriesPresentToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)

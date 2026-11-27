@@ -33,7 +33,7 @@ public:
         MergeTreeWriterSettings writer_settings_,
         CompressionCodecPtr default_codec_,
         String marks_file_extension_,
-        const MergeTreeSettings & storage_settings);
+        MergeTreeSettingsPtr storage_settings_);
 
     String getName() const override { return "BuildTextIndexTransform"; }
 
@@ -61,6 +61,7 @@ private:
     MergeTreeWriterSettings writer_settings;
     CompressionCodecPtr default_codec;
     String marks_file_extension;
+    MergeTreeSettingsPtr storage_settings;
 
     /// Number of rows in blocks processed by the transform.
     size_t num_processed_rows = 0;
@@ -104,14 +105,14 @@ public:
 private:
     void finalize();
     void cancelImpl() noexcept;
-    Block getHeader() const;
+    [[nodiscard]] Block getHeader() const;
     void initializeTokensQueue();
 
     /// Cursor over the single String sort column with statically dispatched comparisons.
     using TokenSortCursor = SpecializedSingleColumnSortCursor<ColumnString>;
 
     /// Returns true if the given cursor points to a new token.
-    bool isNewToken(const TokenSortCursor & cursor) const;
+    [[nodiscard]] bool isNewToken(const TokenSortCursor & cursor) const;
     /// Reads the next dictionary block for the given source index.
     void readDictionaryBlock(size_t source_num);
     /// Throws CORRUPTED_DATA if the sorted row ids do not fit into the rows of the part; no-op without merged part offsets.

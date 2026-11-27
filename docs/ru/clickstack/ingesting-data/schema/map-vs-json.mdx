@@ -3,7 +3,7 @@ slug: /use-cases/observability/clickstack/ingesting-data/schema/map-vs-json
 description: 'Когда использовать тип Map вместо типа JSON для атрибутов в ClickStack'
 sidebarTitle: 'Map vs JSON'
 title: 'Типы Map и JSON в ClickStack'
-doc_type: 'справочник'
+doc_type: 'reference'
 keywords: ['ClickStack', 'json', 'map', 'атрибуты', 'схема', 'обсервабилити']
 ---
 
@@ -13,9 +13,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 **Для типичных рабочих нагрузок обсервабилити мы рекомендуем использовать [схему по умолчанию на основе `Map`](/ru/clickstack/ingesting-data/schemas).** Тип `JSON` доступен пользователям, которые хотят оценить его на рабочих нагрузках с небольшим стабильным набором ключей атрибутов, но для общего применения эта схема не рекомендуется.
 
-<div id="why-map">
-  ## Почему Map рекомендуется по умолчанию
-</div>
+## Почему Map рекомендуется по умолчанию {#why-map}
 
 В данных обсервабилити преобладают атрибуты ресурсов, областей видимости, а также атрибуты span и log. Эти наборы обычно велики, имеют высокую мощность и поступают с высокой пропускной способностью. Выбранная для этих атрибутов схема в первую очередь определяет затраты на приём и структуру хранения.
 
@@ -28,9 +26,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 * **Избирательные lookup через индексы.** Текстовые индексы по ключам и значениям Map позволяют выполнять точечные lookup без сканирования каждой строки.
 * **Предсказуемое поведение при высокой пропускной способности.** Map справляется со всплесками бессхемных наборов атрибутов, которые часто встречаются в трассировке и журналах, без накладных расходов на каждый ключ.
 
-<div id="why-not-json">
-  ## Почему не JSON по умолчанию
-</div>
+## Почему не JSON по умолчанию {#why-not-json}
 
 Тип `JSON` использует другой подход: при вставке ClickHouse динамически создаёт отдельный строго типизированный подстолбец для каждого обнаруженного пути. При чтении это удобно, поскольку считываются только запрошенные подстолбцы, типы сохраняются и не требуется приведение типов во время выполнения запроса.
 
@@ -38,9 +34,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Поскольку сериализация Map по бакетам устраняет большую часть исторических накладных расходов `Map` при чтении, преимущество `JSON` при чтении для типичных рабочих нагрузок обсервабилити больше не перевешивает его стоимость на этапе приёма.
 
-<div id="when-to-consider-json">
-  ## Когда JSON всё ещё стоит рассмотреть
-</div>
+## Когда JSON всё ещё стоит рассмотреть {#when-to-consider-json}
 
 Тип JSON может быть разумным выбором, если *выполняются все* следующие условия:
 
@@ -51,9 +45,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Если выполняются не все эти условия, используйте [схему по умолчанию на основе `Map`](/ru/clickstack/ingesting-data/schemas).
 
-<div id="beta-status">
-  ## Статус бета
-</div>
+## Статус бета {#beta-status}
 
 <BetaBadge />
 
@@ -65,34 +57,18 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 В ClickStack поддержка типа JSON в статусе бета доступна с версии `2.0.4`.
 
-<div id="enabling-json-support">
-  ## Включение поддержки JSON
-</div>
+## Включение поддержки JSON {#enabling-json-support}
 
 Чтобы использовать схемы с типом JSON вместо [схем на основе `Map`, используемых по умолчанию](/ru/clickstack/ingesting-data/schemas), задайте следующие переменные окружения.
 
-| Переменная                                                      | Где задаётся                   | Назначение                                                                                                            |
-| --------------------------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` | OTel collector                 | Создаёт схемы в ClickHouse с типом JSON.                                                                              |
-| `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true`                         | HyperDX (интерфейс ClickStack) | Позволяет уровню приложения выполнять запросы к схемам с типом JSON. Только для ClickStack с открытым исходным кодом. |
+| Переменная                                                      | Где задаётся         | Назначение                                                                                                            |
+| --------------------------------------------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` | OTel collector       | Создаёт схемы в ClickHouse с типом JSON.                                                                              |
+| `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true`                         | Интерфейс ClickStack | Позволяет прикладному уровню выполнять запросы к схемам с типом JSON. Только для ClickStack с открытым исходным кодом. |
 
-<div id="managed-clickstack">
-  ### Управляемый ClickStack
-</div>
+<a id="oss-clickstack" />
 
-Чтобы включить поддержку JSON в Управляемом ClickStack, до настройки коллектора обратитесь в службу поддержки support@clickhouse.com. Эту возможность также нужно включить в интерфейсе ClickStack (HyperDX) в ClickHouse Cloud.
-
-Установите `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` в коллекторе. Например:
-
-```shell
-docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
-```
-
-<div id="oss-clickstack">
-  ### ClickStack с открытым исходным кодом
-</div>
-
-Задайте `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` в любом развертывании, где используется коллектор, и `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` на уровне приложения HyperDX, чтобы оно могло выполнять запросы к схемам, использующим тип JSON.
+Задайте `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` для любого развертывания, в состав которого входит коллектор, и `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` для прикладного уровня интерфейса ClickStack, чтобы он мог выполнять запросы к схемам с типом JSON.
 
 Например:
 
@@ -100,9 +76,7 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e C
 docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
 ```
 
-<div id="migrating-from-map-to-json">
-  ## Миграция со схемы на основе Map на JSON
-</div>
+## Миграция со схемы на основе Map на JSON {#migrating-from-map-to-json}
 
 <Warning>
   **Обратная совместимость**
@@ -116,7 +90,7 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
   <Step title="Остановите OTel collector" id="stop-the-collector" />
 
   <Step title="Переименуйте существующие таблицы и обновите источники данных" id="rename-existing-tables-sources">
-    Переименуйте существующие таблицы и обновите источники данных в HyperDX.
+    Переименуйте существующие таблицы и обновите источники данных в интерфейсе ClickStack.
 
     Например:
 
@@ -130,20 +104,18 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
     Разверните коллектор, задав `OTEL_AGENT_FEATURE_GATE_ARG`.
   </Step>
 
-  <Step title="Перезапустите контейнер HyperDX с поддержкой схемы JSON" id="restart-the-hyperdx-container">
+  <Step title="Перезапустите контейнер интерфейса ClickStack с поддержкой схемы JSON" id="restart-the-hyperdx-container">
     ```shell
     export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
     ```
   </Step>
 
   <Step title="Создайте новые источники данных" id="create-new-data-sources">
-    Создайте в HyperDX новые источники данных, указывающие на таблицы JSON.
+    Создайте в интерфейсе ClickStack новые источники данных, указывающие на таблицы JSON.
   </Step>
 </Steps>
 
-<div id="migrating-existing-data">
-  ### Перенос существующих данных (необязательно)
-</div>
+### Перенос существующих данных (необязательно) {#migrating-existing-data}
 
 Чтобы перенести старые данные в новые JSON-таблицы:
 

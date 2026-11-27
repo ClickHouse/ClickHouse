@@ -21,33 +21,33 @@ public:
         , actions_dag(other.actions_dag.clone())
     {}
 
-    String getName() const override { return "Expression"; }
+    [[nodiscard]] String getName() const override { return "Expression"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void describeActions(FormatSettings & settings) const override;
 
     ActionsDAG & getExpression() { return actions_dag; }
-    const ActionsDAG & getExpression() const { return actions_dag; }
+    [[nodiscard]] const ActionsDAG & getExpression() const { return actions_dag; }
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
-    bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
+    [[nodiscard]] bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
     void decorrelateActions() { actions_dag.decorrelate(); }
 
-    bool supportsDataflowStatisticsCollection() const override { return true; }
+    [[nodiscard]] bool supportsDataflowStatisticsCollection() const override { return true; }
 
-    bool canRemoveUnusedColumns() const override;
+    [[nodiscard]] bool canRemoveUnusedColumns() const override;
     RemoveUnusedColumnsResult removeUnusedColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<PrunedInput> & inputs) override;
 
-    UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const override;
+    [[nodiscard]] UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const override;
 
 private:
     void updateOutputHeader() override;
@@ -66,13 +66,13 @@ private:
         size_t unneeded_dag_position_count = 0;
 
         /// The DAG outputs that remain, in their order.
-        ActionsDAG::NodeRawConstPtrs neededDAGOutputs(const ActionsDAG::NodeRawConstPtrs & outputs) const;
+        [[nodiscard]] ActionsDAG::NodeRawConstPtrs neededDAGOutputs(const ActionsDAG::NodeRawConstPtrs & outputs) const;
 
         /// What the step does not need of its child: the columns it neither reads nor passes on.
-        VectorWithMemoryTracking<size_t> unneededInputPositions() const;
+        [[nodiscard]] VectorWithMemoryTracking<size_t> unneededInputPositions() const;
     };
 
-    UnneededColumnsPlan analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const;
+    [[nodiscard]] UnneededColumnsPlan analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const;
 
     ActionsDAG actions_dag;
 };

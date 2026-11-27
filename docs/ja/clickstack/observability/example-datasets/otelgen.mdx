@@ -1,0 +1,190 @@
+---
+slug: /clickstack/observability/example-datasets/otelgen
+title: 'otelgen で合成 OpenTelemetry データを生成する'
+sidebarTitle: 'otelgen による合成データ'
+description: 'otelgen を使用して、合成したログ、トレース、メトリクスを完全マネージド型の ClickHouse オブザーバビリティに送信します'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'otelgen', '合成データ', 'OpenTelemetry', 'テスト', 'ログ', 'トレース', 'メトリクス', 'オブザーバビリティ']
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<Tabs>
+  <Tab title="完全マネージド型">
+    <BetaBadge label="ベータ版" />
+
+    [`otelgen`](https://github.com/krzko/otelgen) は、合成の OTLP ログ、トレース、メトリクスを生成する小規模な Go 製 CLI です。これを使って完全マネージド型の ClickHouse オブザーバビリティにテストデータを送信し、検索と Chart Explorer で結果を確認できます。
+
+    <Steps>
+      <Step title="前提条件" id="prerequisites-managed">
+        既存の完全マネージド型 ClickHouse オブザーバビリティサービスと、そのマネージドテレメトリーエンドポイントへのネットワークアクセスが必要です。[完全マネージド型の Getting Started ガイド](/ja/clickstack/observability/getting-started)を参照してください。
+      </Step>
+
+      <Step title="otelgen をインストールする" id="install-otelgen-managed">
+        Homebrew でインストールします:
+
+        ```shell
+        brew install krzko/tap/otelgen
+        ```
+
+        または Go でインストールします:
+
+        ```shell
+        go install github.com/krzko/otelgen@latest
+        ```
+      </Step>
+
+      <Step title="環境変数を設定する" id="set-env-vars-managed">
+        ClickHouse オブザーバビリティサービスを開き、**Team Settings → Managed Telemetry** に移動します。**OTLP HTTP endpoint** と **API key** をコピーします。
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![チーム設定の Managed Telemetry に、マスクされた OTLP HTTP エンドポイントと APIキーが表示されている画面](/images/clickstack/getting-started/observability-managed-telemetry.png)
+          </Frame>
+        </div>
+
+        エンドポイントには、`https://` プレフィックスを除いたホストとポートを設定します。たとえば、`https://YOUR_OTEL_ENDPOINT:4318` は `YOUR_OTEL_ENDPOINT:4318` とします。`/v1/logs` などのシグナルパスは付加しないでください。
+
+        ```shell
+        export OTEL_ENDPOINT='YOUR_OTEL_ENDPOINT:4318'
+        printf "API key: "
+        read -r -s OTEL_API_KEY
+        printf "\n"
+        export OTEL_API_KEY
+        ```
+
+        以下のコマンドでは `--insecure` を付けずに `--protocol http` を指定するため、`otelgen` は証明書検証を伴う HTTPS で接続します。エンドポイント引数から `https://` を除いても、TLS が無効になることはありません。各リクエストはマネージドテレメトリーの APIキーで認証されます。
+      </Step>
+
+      <Step title="トレースを生成する" id="generate-traces-managed">
+        複数のスパンを含むトレースを短時間に集中して送信します:
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint "${OTEL_ENDPOINT}" \
+          --header "authorization=Bearer ${OTEL_API_KEY}" \
+          --protocol http \
+          --rate 2 --duration 10 \
+          traces multi
+        ```
+
+        `--rate` は 1 秒あたりのトレース数、`--duration` は実行時間 (秒) です。証明書検証を伴う HTTPS で接続するため、`--insecure` は指定しないでください。
+      </Step>
+
+      <Step title="ログを生成する" id="generate-logs-managed">
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint "${OTEL_ENDPOINT}" \
+          --header "authorization=Bearer ${OTEL_API_KEY}" \
+          --protocol http \
+          --rate 2 \
+          logs multi --duration 10
+        ```
+      </Step>
+
+      <Step title="メトリクスを生成する" id="generate-metrics-managed">
+        次のコマンドを実行してメトリクスを生成し、数秒後に `Ctrl+C` を押して停止します。
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint "${OTEL_ENDPOINT}" \
+          --header "authorization=Bearer ${OTEL_API_KEY}" \
+          --protocol http \
+          --rate 2 \
+          metrics sum
+        ```
+
+        `otelgen` では、`metrics` 配下で `gauge`、`histogram`、`up-down-counter`、`exponential-histogram` の各サブコマンドも使用できます。
+      </Step>
+
+      <Step title="ClickHouse オブザーバビリティで確認する" id="verify-managed">
+        ClickHouse オブザーバビリティサービスで **Search** を開き、**Logs** と **Traces** のソースを切り替えて新しいイベントが届いていることを確認します。時間範囲を **Last 15 minutes** に設定し、デフォルトのサービス名 `otelgen` を探します。
+
+        **Chart Explorer** を開いて **Metrics** を選択し、`otelgen.metrics.sum` をチャートに表示して、メトリクスが取り込まれていることを確認します。
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="セルフマネージド">
+    [`otelgen`](https://github.com/krzko/otelgen) は、合成の OTLP ログ、トレース、メトリクスを生成する小さな Go 製 CLI です。既存の ClickStack OpenTelemetryコレクターがデータを受け付けているか、またイベントがオブザーバビリティ UI に表示されるかを確認する際に使用します。
+
+    このガイドは、collector がすでに稼働しており、`4317` (gRPC) と `4318` (HTTP) で OTLP エンドポイントを公開していることを前提としています。
+
+    <Steps>
+      <Step title="前提条件" id="prerequisites-managed-self-configured">
+        このガイドは、[ClickHouse オブザーバビリティ — セルフマネージドの入門ガイド](/ja/clickstack/self-configured/getting-started/managed) を完了しており、`otelgen` を実行するマシンから OTLP gRPC (`4317`) および HTTP (`4318`) エンドポイントに到達できる OpenTelemetry collector が稼働していることを前提としています。`OTLP_AUTH_TOKEN` を使用して [collector を保護](/ja/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) している場合は、その値を手元に用意しておいてください。
+      </Step>
+
+      <Step title="otelgen のインストール" id="install-otelgen-managed-self-configured">
+        Homebrew でインストールします:
+
+        ```shell
+        brew install krzko/tap/otelgen
+        ```
+
+        または Go でインストールします:
+
+        ```shell
+        go install github.com/krzko/otelgen@latest
+        ```
+      </Step>
+
+      <Step title="環境変数の設定" id="set-env-vars-managed-self-configured">
+        collector のエンドポイントと、collector が保護されている場合は認証トークンをエクスポートします:
+
+        ```shell
+        export OTEL_ENDPOINT=<host>:4317
+        export OTLP_AUTH_TOKEN=<your_otlp_auth_token>
+        ```
+
+        お使いの collector のホストとポートを指定してください。同じマシン上で collector を実行している場合は `localhost:4317` となります。
+
+        <Info>
+          **保護されていない collector**
+
+          ClickStack OpenTelemetryコレクターは、デフォルトでは認証なしで動作します。[collector の保護](/ja/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) の手順に従って `OTLP_AUTH_TOKEN` を設定していない場合は、ここでの `OTLP_AUTH_TOKEN` の設定は不要です。また、以下のコマンドから `--header` フラグを削除してください。
+        </Info>
+      </Step>
+
+      <Step title="トレースの生成" id="generate-traces-managed-self-configured">
+        複数のスパンを含むトレースを短時間で集中的に送信します:
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${OTLP_AUTH_TOKEN}" \
+          --protocol grpc --insecure \
+          --rate 2 --duration 10 \
+          traces multi
+        ```
+
+        `--rate` は 1 秒あたりのトレース数、`--duration` は実行時間 (秒) です。`--insecure` は gRPC 接続の TLS を無効にします。collector の平文の OTLP ポートに `otelgen` から送信する場合に必要です。
+      </Step>
+
+      <Step title="ログの生成" id="generate-logs-managed-self-configured">
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${OTLP_AUTH_TOKEN}" \
+          --protocol grpc --insecure \
+          --rate 2 --duration 10 \
+          logs multi
+        ```
+      </Step>
+
+      <Step title="メトリクスの生成" id="generate-metrics-managed-self-configured">
+        metrics サブコマンドは `--duration` に対応していません。コマンドを実行し、数秒後に `Ctrl+C` を押して停止してください。
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${OTLP_AUTH_TOKEN}" \
+          --protocol grpc --insecure \
+          --rate 2 \
+          metrics sum
+        ```
+
+        `otelgen` は、`metrics` 配下で `gauge`、`histogram`、`up-down-counter`、`exponential-histogram` サブコマンドもサポートしています。
+      </Step>
+
+      <Step title="オブザーバビリティ UI での確認" id="verify-managed-self-configured">
+        ClickHouse Cloud コンソールからオブザーバビリティ UI を開きます。`Search` ビューでソースを `Logs` と `Traces` に切り替えて、新しいイベントが届いていることを確認します。時間範囲は `Last 15 minutes` に設定してください。続いて `Chart Explorer` を開いて `Metrics` を選択し、`otelgen` が生成したメトリクス名 (例: `otelgen.metrics.sum`) のいずれかをチャートに表示して、メトリクスが取り込まれていることを確認します。
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

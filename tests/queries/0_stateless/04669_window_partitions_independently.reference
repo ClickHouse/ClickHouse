@@ -147,12 +147,14 @@ SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 S
 Skip stream merging: 1
 Read each partition through separate port: 1
 DROP TABLE test_win_sort_limits;
--- NEGATIVE: reading in order for the window (the sorting becomes FinishSorting, which merges to a single
--- stream; there is no scatter to skip and per-partition reading is not requested)
+-- Reading in order for the window is possible too, but processing every table partition by its own window
+-- needs neither the merge of the streams read in order nor a scatter, so it wins.
 DROP TABLE IF EXISTS test_win_read_in_order;
 CREATE TABLE test_win_read_in_order (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY (a, b) PARTITION BY a % 8;
 INSERT INTO test_win_read_in_order SELECT number % 64, number FROM numbers_mt(400);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT a, sum(b) OVER (PARTITION BY a ORDER BY b) FROM test_win_read_in_order SETTINGS allow_window_partitions_independently = 1, query_plan_reuse_storage_ordering_for_window_functions = 1, optimize_read_in_order = 1) WHERE explain LIKE '%Skip scatter by partition%' OR explain LIKE '%Read each partition through separate port%';
+Skip scatter by partition: 1
+Read each partition through separate port: 1
 SELECT (SELECT sum(cityHash64(a, s)) FROM (SELECT a, sum(b) OVER (PARTITION BY a ORDER BY b) AS s FROM test_win_read_in_order) SETTINGS allow_window_partitions_independently = 0) = (SELECT sum(cityHash64(a, s)) FROM (SELECT a, sum(b) OVER (PARTITION BY a ORDER BY b) AS s FROM test_win_read_in_order) SETTINGS allow_window_partitions_independently = 1, query_plan_reuse_storage_ordering_for_window_functions = 1, optimize_read_in_order = 1);
 1
 DROP TABLE test_win_read_in_order;

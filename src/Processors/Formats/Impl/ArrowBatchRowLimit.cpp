@@ -18,6 +18,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <IO/WriteBufferFromString.h>
+#include <Processors/Formats/Impl/ArrowOpaqueColumn.h>
 #include <Common/assert_cast.h>
 
 #include <algorithm>
@@ -96,7 +98,8 @@ size_t maxRowsForVariant(
     size_t begin,
     size_t end,
     bool fixed_string_as_fixed_byte_array,
-    UInt64 max_batch_bytes)
+    UInt64 max_batch_bytes,
+    const FormatSettings * variant_json_settings)
 {
     const size_t num_rows = end - begin;
     const auto & variant_column = assert_cast<const ColumnVariant &>(column);
@@ -131,7 +134,7 @@ size_t maxRowsForVariant(
             variant_type.getVariant(global_discr),
             nested_begin[local_discr],
             nested_begin[local_discr] + nested_rows[local_discr],
-            fixed_string_as_fixed_byte_array, max_batch_bytes);
+            fixed_string_as_fixed_byte_array, max_batch_bytes, variant_json_settings);
         all_fit &= nested_rows_that_fit[local_discr] == nested_rows[local_discr];
     }
     if (all_fit)
@@ -151,6 +154,32 @@ size_t maxRowsForVariant(
     return num_rows;
 }
 
+/// A `Variant` written with `output_format_arrow_variant_as_json_string` is one `Utf8` column with the JSON text of
+/// each value, made valid UTF-8, as `RecordBatchEncoder::encodeVariantAsJSONText` writes it. Measure the same text.
+/// A NULL value is counted as the text `null`, which only overestimates when it is written as an Arrow null.
+size_t maxRowsForVariantAsJSONText(
+    const IColumn & column,
+    const DataTypePtr & type,
+    size_t begin,
+    size_t end,
+    UInt64 max_batch_bytes,
+    const FormatSettings & json_settings)
+{
+    const auto serialization = type->getDefaultSerialization();
+    WriteBufferFromOwnString value;
+    String valid_utf8_scratch;
+    UInt64 total = 0;
+    for (size_t row = begin; row != end; ++row)
+    {
+        value.restart();
+        serialization->serializeTextJSON(column, row, value, json_settings);
+        total += makeValidUTF8View(value.stringView(), valid_utf8_scratch).size();
+        if (total > max_batch_bytes)
+            return row - begin;
+    }
+    return end - begin;
+}
+
 }
 
 size_t maxRowsFittingOneArrowBatch(
@@ -159,7 +188,8 @@ size_t maxRowsFittingOneArrowBatch(
     size_t begin,
     size_t end,
     bool fixed_string_as_fixed_byte_array,
-    UInt64 max_batch_bytes)
+    UInt64 max_batch_bytes,
+    const FormatSettings * variant_json_settings)
 {
     const size_t num_rows = end - begin;
     if (num_rows == 0)
@@ -171,8 +201,11 @@ size_t maxRowsFittingOneArrowBatch(
     if (type->lowCardinality())
         return maxRowsForLowCardinality(column, type, begin, end, fixed_string_as_fixed_byte_array, max_batch_bytes);
 
+    if (isVariant(type) && variant_json_settings)
+        return maxRowsForVariantAsJSONText(column, type, begin, end, max_batch_bytes, *variant_json_settings);
+
     if (isVariant(type))
-        return maxRowsForVariant(column, type, begin, end, fixed_string_as_fixed_byte_array, max_batch_bytes);
+        return maxRowsForVariant(column, type, begin, end, fixed_string_as_fixed_byte_array, max_batch_bytes, variant_json_settings);
 
     /// A null row is written as a zero-length slot, so measuring the nested column only overestimates.
     if (type->isNullable())
@@ -182,7 +215,7 @@ size_t maxRowsFittingOneArrowBatch(
             removeNullable(type),
             begin,
             end,
-            fixed_string_as_fixed_byte_array, max_batch_bytes);
+            fixed_string_as_fixed_byte_array, max_batch_bytes, variant_json_settings);
     }
 
     switch (WhichDataType(type).idx)
@@ -208,7 +241,7 @@ size_t maxRowsFittingOneArrowBatch(
                 assert_cast<const DataTypeArray &>(*type).getNestedType(),
                 nested_begin,
                 offsets[end - 1],
-                fixed_string_as_fixed_byte_array, max_batch_bytes);
+                fixed_string_as_fixed_byte_array, max_batch_bytes, variant_json_settings);
             return maxRowsByOffsets(offsets, begin, end, std::min<UInt64>(nested_rows, max_batch_bytes));
         }
         case TypeIndex::Map:
@@ -219,7 +252,7 @@ size_t maxRowsFittingOneArrowBatch(
                 assert_cast<const DataTypeMap &>(*type).getNestedType(),
                 begin,
                 end,
-                fixed_string_as_fixed_byte_array, max_batch_bytes);
+                fixed_string_as_fixed_byte_array, max_batch_bytes, variant_json_settings);
         }
         case TypeIndex::Tuple:
         {
@@ -231,7 +264,8 @@ size_t maxRowsFittingOneArrowBatch(
                 rows = std::min(
                     rows,
                     maxRowsFittingOneArrowBatch(
-                        tuple.getColumn(i), elements[i], begin, begin + rows, fixed_string_as_fixed_byte_array, max_batch_bytes));
+                        tuple.getColumn(i), elements[i], begin, begin + rows, fixed_string_as_fixed_byte_array, max_batch_bytes,
+                        variant_json_settings));
             }
             return rows;
         }
@@ -284,7 +318,8 @@ size_t maxRowsFittingOneArrowBatch(
     size_t begin,
     size_t end,
     bool fixed_string_as_fixed_byte_array,
-    UInt64 max_batch_bytes)
+    UInt64 max_batch_bytes,
+    const FormatSettings * variant_json_settings)
 {
     chassert(columns.size() == types.size());
     const size_t num_rows = end - begin;
@@ -306,7 +341,8 @@ size_t maxRowsFittingOneArrowBatch(
             rows = std::min(
                 rows,
                 maxRowsFittingOneArrowBatch(
-                    *columns[i], types[i], begin, begin + rows, fixed_string_as_fixed_byte_array, max_batch_bytes));
+                    *columns[i], types[i], begin, begin + rows, fixed_string_as_fixed_byte_array, max_batch_bytes,
+                    variant_json_settings));
 
         if (rows < window || window == num_rows)
             return rows;

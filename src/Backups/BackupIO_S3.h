@@ -45,7 +45,7 @@ public:
     BackupReaderS3(
         const S3::URI & s3_uri_,
         const String & access_key_id_,
-        const String & secret_access_key_,
+        std::string_view secret_access_key_,
         const String & role_arn,
         const String & role_session_name,
         const String & external_id,
@@ -69,7 +69,7 @@ public:
                              bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
                              WriteMode write_mode) override;
 
-    std::map<String, String> getSerializedSettings() const override;
+    [[nodiscard]] std::map<String, String> getSerializedSettings() const override;
 
 private:
     void copyToDiskImpl(const String & path_in_backup, size_t offset, size_t size, size_t file_size, bool is_range,
@@ -90,7 +90,7 @@ public:
     BackupWriterS3(
         const S3::URI & s3_uri_,
         const String & access_key_id_,
-        const String & secret_access_key_,
+        std::string_view secret_access_key_,
         const String & role_arn,
         const String & role_session_name,
         const String & external_id,

@@ -1,0 +1,56 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-05-08
+title: '演示日 - 2026-05-08'
+sidebarTitle: '2026-05-08'
+description: 'ClickStack 演示日：2026-05-08'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+## 改进 Webhook 中机密信息的处理 {#improved-handling-of-secrets-in-webhooks}
+
+*演示者：[@dhable](https://github.com/dhable)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/aD7sT5dc470" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Webhook URL 和请求头中常常以明文形式携带凭证。Slack Webhook URL 的路径中包含 secret token，而 HTTP Webhook 通常需要通过 Authorization 请求头进行身份验证。在此版本之前，HyperDX 用于列出和编辑 Webhook 的内部 API 每次请求都会原样返回这些敏感信息，也就是说，任何经过身份验证的团队成员只要调用该 API，就能读取这些机密信息。
+
+此次变更沿用了公共 API 已有的脱敏模式。返回的 Webhook URL 中，路径会被替换为 `****`，因此 Slack token (或路径中嵌入的任何其他密钥) 绝不会离开服务器。请求头默认同样会被脱敏：由于无法可靠地判断哪些请求头携带机密信息，所有值都会被替换为 `****`，仅显示请求头名称。
+
+编辑表单会将脱敏后的值视为“未更改”：不做改动，已存储的值保持不变；修改后，保存新值；清空后，则彻底移除该字段。这样既能让常见场景 (编辑单个字段) 的操作流程清晰直观，又无需让真实的机密信息经浏览器往返传输。
+
+**相关 PR：** [#2239](https://github.com/hyperdxio/hyperdx/pull/2239) [HDX-4173] 对内部 Webhook API 响应中的敏感字段进行脱敏
+
+## 告警中的额外元数据 {#extra-metadata-in-alerts}
+
+*演示者：[@dhable](https://github.com/dhable)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/evEd7Cc9e1c" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+这项功能源自社区 Slack 中的一个需求：为告警添加自由格式的上下文信息，用于记录阈值的历史变更、运行手册链接或给值班人员的备注。它还可以作为 AI 摘要的事实依据：任何响应已触发告警的 LLM 现在都能基于运维人员自己的判断思路进行分析，而不必仅凭查询本身去揣测其意图。
+
+说明字段支持 Markdown 渲染，因此可折叠区块、列表和链接均可正常使用。该字段保存在告警配置中，凡是展示该告警的地方都会显示。目前的用户体验尚未最终定型，Markdown 呈现方式只是起点，欢迎就其渲染方式提供反馈。
+
+此外，该 PR 还顺带优化了已保存的搜索中已触发告警的用户体验：当有告警触发时，告警 按钮上的铃铛图标会显示红点；对话框会高亮显示当前活跃的告警，而不只是提供链接；视觉风格也与仪表板面板在相同状态下的表现保持一致。
+
+**相关 PRs：** [#2210](https://github.com/hyperdxio/hyperdx/pull/2210) [HDX-3044] 为告警添加可选的说明字段
+
+## 可能的主题 {#possible-themes}
+
+*演示者 [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/JZYGz6ZOPf4" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+这是一次黑客松实验，为 ClickStack 用户界面引入了三款受 IDE 启发的主题：Nord (北极蓝调) 、Catppuccin (柔和粉彩) 和 One Dark (Atom 风格) ，每款主题均提供浅色和深色两种变体。我们尝试基于上述同名源主题生成颜色 token，效果已基本到位，只是侧边栏颜色和线条对比度方面还有些粗糙之处有待打磨。
+
+该 PR 最终被关闭，未予合并。团队正在向 ClickUI 迁移，而 ClickUI 目前仅支持单一主题；同时维护多套并行的颜色 token 会带来持续的维护负担，尤其是在开始逐一认真检查每种组合的对比度之后。因此，团队决定暂缓推进，待 ClickUI 本身支持多主题后再做考虑。
+
+我们认为，这次实验中有一条设计思路值得在日后重启该工作时参考。第一版按主题对 HyperDX 标志重新着色，结果削弱了品牌识别度。更合理的做法是：浅色主题使用深色标志，深色主题使用浅色标志，而绿色的 HyperDX 文字标识本身保持不变。
+
+**相关 PR：** [#2191](https://github.com/hyperdxio/hyperdx/pull/2191) feat: add IDE-inspired themes (Nord, Catppuccin, One Dark)

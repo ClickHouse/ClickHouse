@@ -25,29 +25,27 @@ namespace
         const SQLQueryPiece & right_argument,
         const ConverterContext & context)
     {
-        std::string_view operator_name = operator_node->operator_name;
-
         if ((left_argument.type != ResultType::SCALAR) && (left_argument.type != ResultType::INSTANT_VECTOR))
         {
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Binary operator '{}' expects two arguments of type {} or {}, but expression {} has type {}",
-                            operator_name, ResultType::SCALAR, ResultType::INSTANT_VECTOR,
+                            "{} expects two arguments of type {} or {}, but expression {} has type {}",
+                            operator_node->getTypeAndName(), ResultType::SCALAR, ResultType::INSTANT_VECTOR,
                             getPromQLText(left_argument, context), left_argument.type);
         }
 
         if ((right_argument.type != ResultType::SCALAR) && (right_argument.type != ResultType::INSTANT_VECTOR))
         {
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Binary operator '{}' expects two arguments of type {} or {}, but expression {} has type {}",
-                            operator_name, ResultType::SCALAR, ResultType::INSTANT_VECTOR,
+                            "{} expects two arguments of type {} or {}, but expression {} has type {}",
+                            operator_node->getTypeAndName(), ResultType::SCALAR, ResultType::INSTANT_VECTOR,
                             getPromQLText(right_argument, context), right_argument.type);
         }
 
         if (operator_node->bool_modifier)
         {
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Binary operator '{}' doesn't allow bool modifier",
-                            operator_name);
+                            "{} doesn't allow bool modifier",
+                            operator_node->getTypeAndName());
         }
 
         if ((left_argument.type != ResultType::INSTANT_VECTOR) || (right_argument.type != ResultType::INSTANT_VECTOR))
@@ -55,8 +53,8 @@ namespace
             if (operator_node->group_left || operator_node->group_right)
             {
                 throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                                "Binary operator '{}' with the group modifier expects two arguments of type {}, got {} and {}",
-                                operator_name, ResultType::INSTANT_VECTOR, left_argument.type, right_argument.type);
+                                "{} with the group modifier expects two arguments of type {}, got {} and {}",
+                                operator_node->getTypeAndName(), ResultType::INSTANT_VECTOR, left_argument.type, right_argument.type);
             }
         }
     }
