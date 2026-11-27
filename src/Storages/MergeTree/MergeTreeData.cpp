@@ -6373,10 +6373,10 @@ bool MergeTreeData::canAlterGranularitySettingForNewParts(const String & setting
     if (supportsReplication())
         return false;
 
-    /// A replicated or distributed metadata alter (a `Replicated` database, or `ON CLUSTER`) applies the same
-    /// change on replicas that can hold different local parts (e.g. after a non-replicated `ATTACH PARTITION
-    /// ... FROM`). The per-replica checks below would then disagree, letting one replica commit the shared
-    /// metadata while another rejects the replay. Refuse uniformly instead, independently of the local parts.
+    /// A `Replicated` database applies the change to shared metadata on replicas that can hold different local parts
+    /// (e.g. after a non-replicated `ATTACH PARTITION ... FROM`), and retries a replay until it succeeds. The checks
+    /// below could pass on one replica and fail on another, stalling the database queue. Refuse uniformly instead.
+    /// Ordinary `ON CLUSTER` has no such transaction and needs none: each host's table is independent.
     if (local_context->getZooKeeperMetadataTransaction())
         return false;
 
