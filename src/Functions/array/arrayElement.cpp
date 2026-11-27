@@ -2253,7 +2253,7 @@ ColumnPtr FunctionArrayElement<mode>::applyOuterNullMap(
     /// OR-ed in, which keeps the (type, column) pair consistent with `getReturnTypeImpl` and with reading
     /// the subcolumn directly.
     if (canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(element_type) || canContainNull(*element_type))
-        return NullableSubcolumnCreator(null_map_column).create(element_column);
+        return NullableSubcolumnCreator(null_map_column).create(element_column, element_type);
 
     /// A typed path that has no NULL representation at all (e.g. `Array`, `Map`) is default-filled for the
     /// outer-NULL rows, matching the stored subcolumn, instead of leaking the payload hidden under the mask.

@@ -250,7 +250,7 @@ SerializationPtr SerializationArray::SubcolumnCreator::create(const Serializatio
     return SerializationArray::create(prev, prev_type);
 }
 
-ColumnPtr SerializationArray::SubcolumnCreator::create(const ColumnPtr & prev) const
+ColumnPtr SerializationArray::SubcolumnCreator::create(const ColumnPtr & prev, const DataTypePtr &) const
 {
     return ColumnArray::create(prev, offsets);
 }

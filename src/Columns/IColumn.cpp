@@ -383,54 +383,55 @@ void IColumnHelper<Derived, Parent>::gather(ColumnGathererStream & gatherer)
     gatherer.gather(static_cast<Derived &>(*this));
 }
 
-void IColumn::insertFromOrDefaults(const IColumn & src, const Filter & filter, bool inverted)
+void IColumn::insertFromEither(
+    const IColumn & src_true, bool src_true_is_const, const IColumn & src_false, bool src_false_is_const, const Filter & condition)
 {
-    for (size_t row = 0; row < filter.size(); ++row)
+    for (size_t row = 0; row < condition.size(); ++row)
     {
-        if (static_cast<bool>(filter[row]) != inverted)
-            insertFrom(src, row);
+        if (condition[row])
+            insertFrom(src_true, src_true_is_const ? 0 : row);
         else
-            insertDefault();
+            insertFrom(src_false, src_false_is_const ? 0 : row);
     }
 }
 
-template <bool inverted, typename Derived>
-static void insertFromOrDefaultsImpl(Derived & dst, const IColumn & src, const IColumn::Filter & filter)
+template <bool src_true_is_const, bool src_false_is_const, typename Derived>
+static void insertFromEitherImpl(Derived & dst, const IColumn & src_true, const IColumn & src_false, const IColumn::Filter & condition)
 {
     static constexpr size_t chunk_size = 64;
 
-    const UInt8 * filter_data = filter.data();
-    const size_t rows = filter.size();
+    const UInt8 * condition_data = condition.data();
+    const size_t rows = condition.size();
+
+    auto insert_rows = [&](bool from_true, size_t start, size_t length)
+    {
+        const IColumn & src = from_true ? src_true : src_false;
+        if (from_true ? src_true_is_const : src_false_is_const)
+            dst.insertManyFrom(src, 0, length);
+        else
+            dst.insertRangeFrom(src, start, length);
+    };
 
     auto insert_row = [&](size_t row)
     {
-        if (static_cast<bool>(filter_data[row]) != inverted)
-            dst.insertFrom(src, row);
+        if (condition_data[row])
+            dst.insertFrom(src_true, src_true_is_const ? 0 : row);
         else
-            dst.insertDefault();
-    };
-
-    auto keep_mask = [&](size_t row)
-    {
-        const UInt64 mask = bytes64MaskToBits64Mask(filter_data + row);
-        return inverted ? ~mask : mask;
+            dst.insertFrom(src_false, src_false_is_const ? 0 : row);
     };
 
     size_t row = 0;
     while (row + chunk_size <= rows)
     {
-        const UInt64 mask = keep_mask(row);
+        const UInt64 mask = bytes64MaskToBits64Mask(condition_data + row);
         if (mask == 0 || mask == std::numeric_limits<UInt64>::max())
         {
-            /// Consecutive chunks that are entirely kept or entirely blank are inserted with one call.
+            /// Consecutive chunks taken entirely from the same source are inserted with one call.
             size_t end = row + chunk_size;
-            while (end + chunk_size <= rows && keep_mask(end) == mask)
+            while (end + chunk_size <= rows && bytes64MaskToBits64Mask(condition_data + end) == mask)
                 end += chunk_size;
 
-            if (mask)
-                dst.insertRangeFrom(src, row, end - row);
-            else
-                dst.insertManyDefaults(end - row);
+            insert_rows(mask != 0, row, end - row);
             row = end;
         }
         else
@@ -446,13 +447,18 @@ static void insertFromOrDefaultsImpl(Derived & dst, const IColumn & src, const I
 }
 
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::insertFromOrDefaults(const IColumn & src, const IColumn::Filter & filter, bool inverted)
+void IColumnHelper<Derived, Parent>::insertFromEither(
+    const IColumn & src_true, bool src_true_is_const, const IColumn & src_false, bool src_false_is_const, const IColumn::Filter & condition)
 {
     auto & dst = static_cast<Derived &>(*this);
-    if (inverted)
-        insertFromOrDefaultsImpl<true>(dst, src, filter);
+    if (src_true_is_const && src_false_is_const)
+        insertFromEitherImpl<true, true>(dst, src_true, src_false, condition);
+    else if (src_true_is_const)
+        insertFromEitherImpl<true, false>(dst, src_true, src_false, condition);
+    else if (src_false_is_const)
+        insertFromEitherImpl<false, true>(dst, src_true, src_false, condition);
     else
-        insertFromOrDefaultsImpl<false>(dst, src, filter);
+        insertFromEitherImpl<false, false>(dst, src_true, src_false, condition);
 }
 
 template <typename Derived, bool reversed>
@@ -686,10 +692,12 @@ static void gatherColumnFromRows(ColumnType * col, const RowPointers & rows, siz
     }
     else
         col->reserve(col->size() + count);
+    /// Check the range once, not for every row.
+    const char * const * selected_rows = std::span(rows).subspan(begin, count).data();
     for (size_t i = 0; i < count; ++i)
     {
         /// TODO: try prefetching the rows.
-        const char * row = rows[begin + i];
+        const char * row = selected_rows[i];
         chassert(row != nullptr);
 
         if constexpr (with_null_map)

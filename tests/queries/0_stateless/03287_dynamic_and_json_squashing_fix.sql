@@ -1,5 +1,3 @@
-set enable_json_type=1;
-set enable_dynamic_type=1;
 
 drop table if exists src;
 drop table if exists dst;

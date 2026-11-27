@@ -9,13 +9,14 @@
 # re-read rows are not input rows, so the source that reads them reports no read progress of its own
 # (SourceFromNativeStream::getReadProgress in AggregatingTransform.cpp:150 returns nullopt). Reported
 # read_rows must therefore stay equal to the number of rows actually read from the input, not grow by
-# the spilled rows read back during the merge.
+# the spilled rows read back during the merge. The adaptive aggregator also takes this single stream, but the
+# re-read checked here is the one of the ordinary external aggregation, so the query turns it off.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-QUERY="SELECT count() FROM (SELECT number FROM numbers(100000) GROUP BY number) SETTINGS max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0"
+QUERY="SELECT count() FROM (SELECT number FROM numbers(100000) GROUP BY number) SETTINGS max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0, enable_adaptive_aggregator = 0"
 
 QID="04201_read_rows_${CLICKHOUSE_DATABASE}"
 

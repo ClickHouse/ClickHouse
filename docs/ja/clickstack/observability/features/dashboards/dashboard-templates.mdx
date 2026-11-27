@@ -1,0 +1,65 @@
+---
+slug: /clickstack/observability/features/dashboards/dashboard-templates
+title: 'ダッシュボードテンプレート'
+sidebarTitle: 'ダッシュボードテンプレート'
+description: 'ClickHouse オブザーバビリティでの構築済みダッシュボードテンプレートのインポート'
+doc_type: 'guide'
+keywords: ['clickstack', 'dashboards', 'templates', 'import', 'observability']
+---
+
+ClickHouse オブザーバビリティには、一般的なインフラストラクチャやアプリケーションのテレメトリーを可視化できる、構築済みのダッシュボードテンプレートのライブラリが用意されています。テンプレートが必要とするテレメトリーを ClickHouse サービスが受信すると、チャートにデータが表示されます。
+
+## 利用可能なテンプレートの閲覧 {#browsing-templates}
+
+組み込みのテンプレートライブラリを閲覧するには、**ダッシュボード** に移動し、**Browse ダッシュボードテンプレート** をクリックします。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![ダッシュボードテンプレート閲覧ボタン](/images/clickstack/observability-browse-dashboard-templates.png)
+  </Frame>
+</div>
+
+テンプレートギャラリーが開き、テンプレートがカテゴリ別に表示されます。使用したいテンプレートの **Import** をクリックします。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![ダッシュボードテンプレートギャラリー](/images/clickstack/observability-dashboard-template-gallery.png)
+  </Frame>
+</div>
+
+## テンプレートのインポート {#importing-a-template}
+
+**Step 2: Map Data** で **Dashboard Name** と **Tags** を確認したうえで、各タイルおよびフィルタについて、**To** カラムで指定されているデータソースを確認します。ソースがあらかじめ選択されている場合もあります。以下の例では、Node.js Runtime Metrics テンプレートのチャートと サービスフィルタが **Metrics** ソースにマッピングされています。**Finish Import** をクリックすると、ダッシュボードが作成されます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![ダッシュボードテンプレートのインポート](/images/clickstack/observability-import-dashboard-template.png)
+  </Frame>
+</div>
+
+## 構築済みテンプレート {#pre-built-templates}
+
+### Browser RUM {#browser-rum}
+
+**Browser RUM** (リアルユーザー監視) テンプレートでは、Core Web Vitals、ページ読み込み時間のパーセンタイル、トラフィックの内訳、エラー追跡を確認できます。このテンプレートは、HyperDX ブラウザー SDK、または `rum.sessionId` を出力する OpenTelemetry RUM インストルメンテーションで計装済みのブラウザーセッションを利用します。
+
+### OTel ランタイムメトリクス {#otel-runtime-metrics}
+
+組み込みの OTel ランタイムメトリクステンプレートは、[OpenTelemetry ランタイムメトリクス](https://opentelemetry.io/docs/specs/semconv/runtime/)で計装済みのアプリケーション向けに設計されています。
+
+| テンプレート                      | 説明                                                          |
+| --------------------------- | ----------------------------------------------------------- |
+| **.NET Runtime Metrics**    | .NET アプリケーションのガベージコレクション、ヒープの断片化、例外、スレッドプールの使用状況、CPU のメトリクス |
+| **Go Runtime Metrics**      | Go アプリケーションのメモリ使用量、割り当て、GC ターゲット、CPU 使用率、goroutine のメトリクス   |
+| **JVM Runtime Metrics**     | JVM ベースのアプリケーションのヒープメモリ、CPU 使用率、スレッド、GC のメトリクス              |
+| **Node.js Runtime Metrics** | Node.js アプリケーションのイベントループ遅延、ヒープ使用量、CPU 使用率、V8 メモリ            |
+| **Python Runtime Metrics**  | Python アプリケーションの CPU 使用率、メモリ使用量、GC の回収回数、スレッド数              |
+
+注記:
+
+* 各テンプレートには、[`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) リソース属性がダッシュボードのランタイムと一致するサービスに絞り込む[カスタムフィルター](/ja/clickstack/observability/features/dashboards/overview#custom-filters)が設定されています。
+* メトリクス名は OpenTelemetry SDK のバージョンによって異なる場合があります。お使いの SDK が出力するメトリクス名が異なる場合は、データに合わせて[可視化を編集](/ja/clickstack/observability/features/dashboards/overview#dashboards-editing-visualizations)してください。
+
+## セルフマネージドのスキーマ {#self-configured-schemas}
+
+カスタムのメトリクステーブルスキーマを使用しているセルフマネージドのデプロイメントでは、テンプレートのサービスフィルタを調整し、該当するサービス名カラムとリソース属性カラムに対してクエリを実行するようにしてください。大量のデータを扱うワークロードでは、フィルタの読み込み時間を短縮するために、`ResourceAttributes['telemetry.sdk.language']` のような[頻繁にクエリされる属性をマテリアライズする](/ja/clickstack/self-configured/managing/performance-tuning#materialize-frequently-queried-attributes)ことを検討してください。

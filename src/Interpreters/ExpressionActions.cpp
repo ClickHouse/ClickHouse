@@ -278,7 +278,8 @@ static bool findLazyExecutedNodes(
     const ActionsDAG::NodeRawConstPtrs & children,
     std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> & lazy_execution_infos,
     bool force_enable_lazy_execution,
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes_out)
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes_out,
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & not_lazy_executed_nodes)
 {
     bool has_lazy_node = false;
     for (const auto * child : children)
@@ -290,8 +291,8 @@ static bool findLazyExecutedNodes(
             continue;
         }
 
-        /// Skip nodes that cannot be lazy executed.
-        if (!lazy_execution_infos[child].can_be_lazy_executed)
+        /// Skip nodes that cannot be lazy executed or were already found not lazy executed.
+        if (!lazy_execution_infos[child].can_be_lazy_executed || not_lazy_executed_nodes.contains(child))
             continue;
 
         /// We cannot propagate lazy execution through arrayJoin, because when we execute
@@ -306,7 +307,8 @@ static bool findLazyExecutedNodes(
             case ActionsDAG::ActionType::FUNCTION:
             {
                 /// Propagate lazy execution through function arguments.
-                bool has_lazy_child = findLazyExecutedNodes(child->children, lazy_execution_infos, force_enable_lazy_execution, lazy_executed_nodes_out);
+                bool has_lazy_child = findLazyExecutedNodes(
+                    child->children, lazy_execution_infos, force_enable_lazy_execution, lazy_executed_nodes_out, not_lazy_executed_nodes);
 
                 /// Use lazy execution when:
                 ///  - It's force enabled.
@@ -317,11 +319,17 @@ static bool findLazyExecutedNodes(
                     has_lazy_node = true;
                     lazy_executed_nodes_out.insert(child);
                 }
+                else
+                    not_lazy_executed_nodes.insert(child);
                 break;
             }
             case ActionsDAG::ActionType::ALIAS:
                 /// Propagate lazy execution through alias.
-                has_lazy_node |= findLazyExecutedNodes(child->children, lazy_execution_infos, force_enable_lazy_execution, lazy_executed_nodes_out);
+                if (findLazyExecutedNodes(
+                        child->children, lazy_execution_infos, force_enable_lazy_execution, lazy_executed_nodes_out, not_lazy_executed_nodes))
+                    has_lazy_node = true;
+                else
+                    not_lazy_executed_nodes.insert(child);
                 break;
             default:
                 break;
@@ -462,12 +470,15 @@ static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> processShortCirc
     UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> lazy_executed_nodes;
     for (const auto & [node, settings] : short_circuit_nodes)
     {
+        /// `force_enable_lazy_execution` can differ between functions, so the nodes found not lazy executed are not shared.
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> not_lazy_executed_nodes;
         /// Recursively find nodes that should be lazy executed.
         findLazyExecutedNodes(
             node->children,
             lazy_execution_infos,
             settings.force_enable_lazy_execution || short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::FORCE_ENABLE,
-            lazy_executed_nodes);
+            lazy_executed_nodes,
+            not_lazy_executed_nodes);
     }
     return lazy_executed_nodes;
 }

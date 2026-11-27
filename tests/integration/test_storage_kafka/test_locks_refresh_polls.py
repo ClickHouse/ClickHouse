@@ -1,4 +1,5 @@
 import json
+import time
 
 import pytest
 
@@ -156,3 +157,70 @@ def test_locks_refresh_polls_zero_still_consumes(kafka_cluster):
             int(instance.query(f"SELECT uniqExact(key) FROM test.dst_{suffix}").strip())
             == 50
         )
+
+
+def test_kafka2_partition_of_recreated_topic(kafka_cluster):
+    """A partition re-assigned while its topic is deleted is read after the topic is recreated."""
+    admin = k.get_admin_client(kafka_cluster)
+    # Unique per run, so that `wait_for_deletion` cannot match the log line of a previous run.
+    suffix = f"recreated_topic_{k.random_string(6)}"
+    topic_a = f"{suffix}_a"
+    topic_b = f"{suffix}_b"
+
+    # Only the rollbacks of the direct SELECTs below re-initialize the consumer.
+    set_locks_refresh_polls(10000)
+
+    def select_keys():
+        return instance.query(f"SELECT key FROM test.kafka_{suffix}").split()
+
+    def wait_for_key(key, timeout=30):
+        deadline = time.monotonic() + timeout
+        while str(key) not in select_keys():
+            assert time.monotonic() < deadline, f"key {key} was not read"
+            time.sleep(0.5)
+
+    def wait_for_deletion(topic):
+        instance.wait_for_log_line(
+            rf"Topic {topic} \(id [^)]*\) partition count changed from 1 to 0",
+            timeout=60,
+        )
+
+    k.kafka_create_topic(admin, topic_a)
+    k.kafka_create_topic(admin, topic_b)
+    try:
+        instance.query(
+            f"""
+            CREATE TABLE test.kafka_{suffix} (key UInt64, value UInt64)
+            ENGINE = Kafka('{instance.cluster.kafka_host}:19092', '{topic_a},{topic_b}', '{suffix}_cg', 'JSONEachRow', '\\n')
+            SETTINGS kafka_keeper_path = '/clickhouse/test/{suffix}',
+                     kafka_replica_name = 'r1',
+                     kafka_flush_interval_ms = 500,
+                     kafka_consumers_pool_ttl_ms = 600000
+            SETTINGS allow_kafka_offsets_storage_in_keeper = 1
+            """
+        )
+        produce(kafka_cluster, topic_a, 1, 1)
+        wait_for_key(1)
+
+        k.kafka_delete_topic(admin, topic_b)
+        wait_for_deletion(topic_b)
+        # Reading key 1 again rolls back, which re-assigns B:0 while librdkafka does not know it.
+        wait_for_key(1)
+
+        k.kafka_delete_topic(admin, topic_a)
+        wait_for_deletion(topic_a)
+        # Drain a prefetched copy of key 1, so that no later SELECT rolls back.
+        deadline = time.monotonic() + 30
+        empty_selects = 0
+        while empty_selects < 2:
+            assert time.monotonic() < deadline, "SELECTs keep returning rows"
+            empty_selects = 0 if select_keys() else empty_selects + 1
+
+        k.kafka_create_topic(admin, topic_b)
+        produce(kafka_cluster, topic_b, 3, 1)
+        wait_for_key(3, timeout=60)
+    finally:
+        instance.query(f"DROP TABLE IF EXISTS test.kafka_{suffix} SYNC")
+        for topic in (topic_a, topic_b):
+            if topic in admin.list_topics():
+                k.kafka_delete_topic(admin, topic)

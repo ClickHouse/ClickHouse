@@ -20,6 +20,10 @@ Ces paramètres configurent le serveur ClickHouse et sont générés automatique
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Réserve le GPU au démarrage du serveur afin d&#39;y exécuter les requêtes. Le serveur refuse de démarrer s&#39;il a été compilé sans prise en charge du GPU ou si aucun périphérique CUDA n&#39;est disponible.
 
+## enable_iceberg_rest_catalog {#enable_iceberg_rest_catalog}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Active le serveur expérimental de catalogue REST Iceberg, configuré dans la section `iceberg_rest_catalog`. Toute modification ne prend effet qu&#39;après un redémarrage du serveur.
+
 ## enable_read_through_distributed_cache {#enable_read_through_distributed_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />N&#39;a d&#39;effet que dans ClickHouse Cloud. Autorise la lecture depuis le cache distribué. Ce paramètre au niveau du serveur est appliqué sans redémarrage afin que les opérations en arrière-plan qui ne disposent pas de leur propre profil de requête (fusions, mutations, vidages des tables `Buffer`) le respectent également. Les requêtes individuelles peuvent y déroger à l&#39;aide du paramètre `force_read_through_distributed_cache`.

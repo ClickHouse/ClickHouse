@@ -651,10 +651,10 @@ if server_settings is not None:
     modified_server_settings, server_settings, generated_clusters = (
         modify_server_settings(args, cluster, is_private_binary, server_settings)
     )
-    if generated_clusters:
-        modified_user_settings, user_settings = modify_user_settings(
-            args, user_settings, generated_clusters
-        )
+if user_settings is not None:
+    modified_user_settings, user_settings = modify_user_settings(
+        args, user_settings, generated_clusters
+    )
 
 dolor_main_configs = [
     "../config/server.crt",

@@ -1,0 +1,90 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-05-22
+title: 'Demo days - 2026-05-22'
+sidebarTitle: '2026-05-22'
+description: 'ClickStack demo days del 2026-05-22'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Actualización de la generación de datos de ClickCannon {#clickcannon-data-generation-update}
+
+*Demostración a cargo de [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Zljd07_4uF4" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+[ClickCannon](https://github.com/clickhouse/clickcannon) es la herramienta que usamos internamente en los ejercicios de dimensionamiento: genera grandes volúmenes de datos de OpenTelemetry mientras lanza consultas concurrentes para estimar los recursos que necesitan los clientes para un workload determinado de ingesta y consultas. La presentamos públicamente en OpenHouse, y Spencer mostró su versión más reciente.
+
+En lugar de preconfigurar los datos en disco, ahora puede configurar el generador en línea. Basta con activarlo e indicar cuántos threads usar, cuántas filas por bloque, cuántas filas por segundo en total y algunas restricciones de memoria. Ya no es necesario preparar antes dos terabytes de datos de prueba en disco, que era precisamente lo que dificultaba compartir la herramienta.
+
+Animaremos a más usuarios a utilizar ClickCannon para sus propios trabajos de dimensionamiento. El repositorio está disponible en [https://github.com/clickhouse/clickcannon](https://github.com/clickhouse/clickcannon).
+
+## Entrada de fecha para bloques a pantalla completa y filtros limitados por fuente {#date-input-for-full-screen-tiles-and-source-scoped-filters}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Mop1EYtGwKc" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Se han incorporado a la vez dos mejoras relacionadas en los paneles de control. Al mostrar un único bloque a pantalla completa, ahora dispone de un selector de tiempo y un selector de granularidad propios, independientes del intervalo de tiempo del panel de control. Así, puede consultar en detalle un historial extenso de una métrica concreta (por ejemplo, un gráfico del panel de control del clúster de ClickHouse) sin obligar a que se actualicen todos los demás bloques del panel. Además, el nombre del panel de control aparece ahora en el título de la pestaña del navegador.
+
+La segunda novedad es la limitación por fuente de los filtros del panel de control. Los filtros pueden restringirse para que solo se difundan a los bloques basados en fuentes específicas, en lugar de aplicarse globalmente a todos los bloques. En un panel de control con fuentes mixtas que combine, por ejemplo, logs y trazas, puede evitar que un filtro se cuele en un bloque al que no corresponde.
+
+**PRs relacionados:** [#2302](https://github.com/hyperdxio/hyperdx/pull/2302) feat: Minor dashboard improvements, [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: Add source scoping to dashboard filters
+
+## Índice de texto reconocido sobre lower(Body) {#text-index-recognised-on-lower-body}
+
+*Demostración a cargo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/l0GpNBP859o" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Una corrección pequeña, pero importante, para la búsqueda sin distinguir entre mayúsculas y minúsculas. Si su fuente tiene un índice de texto definido sobre `lower(Body)` sin argumento de preprocesador, hasta ahora el planificador de consultas generaba una condición `hasAllTokens(Body, ...)`. Como esa expresión no coincidía con la expresión del índice, el índice de texto no se utilizaba y la consulta recurría a un escaneo.
+
+Ahora la consulta se genera como `hasAllTokens(lower(Body), ...)`, que sí coincide con la expresión del índice. Así, la búsqueda sin distinguir entre mayúsculas y minúsculas en las fuentes configuradas de este modo se acelera correctamente mediante el índice de texto.
+
+**PRs relacionados:** [#2326](https://github.com/hyperdxio/hyperdx/pull/2326) feat: support text index on lower(Body) with no preprocessor
+
+## Experiencia simplificada de Deltas de eventos {#simpler-event-deltas-experience}
+
+*Demostración a cargo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BrIHHFz_Aw8" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Antes, Deltas de eventos requería un paso adicional: había que hacer clic en un botón para entrar en el modo de comparación antes de arrastrar una selección sobre el mapa de calor. Ese paso ya no existe: las barras de distribución aparecen nada más cargar y, en cuanto arrastra una región sobre el mapa de calor, las barras pasan al modo de comparación entre selección y fondo. Si hace clic fuera de la selección, se vuelve a la vista de todos los spans.
+
+El cambio original se incorporó a OSS hace algunas semanas, pero faltaba una parte en Managed ClickStack. Ese hueco ya se ha cerrado, por lo que el flujo simplificado es ahora el mismo en ambas ediciones.
+
+**PRs relacionados:** [#1899](https://github.com/hyperdxio/hyperdx/pull/1899) feat: always-on attribute distribution mode
+
+## Tabla de contenido del panel de control y contracción masiva {#dashboard-table-of-contents-and-bulk-collapse}
+
+*Demostración a cargo de [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Pojo5zf_hrE" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Cuando un panel de control supera unas pocas secciones (algo deseable, ya que las secciones son la forma de organizar un panel de control grande), navegar por él se vuelve tedioso. Tom añadió una tabla de contenido en un panel lateral derecho que enumera todas las secciones y permite saltar directamente de una a otra. También hay un control para contraer y expandir todas las secciones a la vez, que oculta su contenido de golpe para que pueda revisar la estructura de un panel de control extenso sin tener que desplazarse por todo él.
+
+Todavía está en fase de borrador, pero ya resulta útil en los paneles de control de varias secciones que ofrecemos para las vistas de Clúster de ClickHouse y Kubernetes.
+
+**PRs relacionados:** [#2350](https://github.com/hyperdxio/hyperdx/pull/2350) feat(panel de control): add Table of Contents right rail with bulk collapse/expand
+
+## El ancho de las columnas se conserva entre sesiones {#column-resize-persisted-across-sessions}
+
+*Demostración a cargo de [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7l-Rz1tFlq8" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Un cliente nos lo comentó ayer: al cambiar el tamaño de una columna en una tabla de resultados, ese tamaño debería mantenerse. Ahora es así. Los anchos se guardan en el almacenamiento local, indexados por el ID de cada tabla, de modo que cada tabla conserva su propia disposición de columnas. Puede cerrar el navegador y volver más tarde: las columnas seguirán tal como las dejó. Además, añadir o eliminar una columna de la tabla tampoco restablece el ancho de las demás.
+
+**PRs relacionados:** [#2327](https://github.com/hyperdxio/hyperdx/pull/2327) fix: persist column widths in search results table

@@ -187,6 +187,8 @@ private:
         Container & out_container = concrete_out_data.getData();
         out_container.resize_exact(columns.size() * input_rows_count);
 
+        /// `containers` has an element for every column, so the loop below indexes it without checks.
+        const Container * const * containers_data = containers.data();
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
         {
             const size_t base = row_i * columns.size();
@@ -197,7 +199,7 @@ private:
 #pragma clang loop unroll(disable) vectorize(disable)
 #endif
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
-                out_container[base + col_i] = (*containers[col_i])[row_i];
+                out_container[base + col_i] = (*containers_data[col_i])[row_i];
         }
         return true;
     }
@@ -223,12 +225,13 @@ private:
         out_offsets.resize_exact(input_rows_count * columns.size());
 
         size_t cur_out_offset = 0;
+        const ColumnString * const * concrete_columns_data = concrete_columns.data();
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
         {
             const size_t base = row_i * columns.size();
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
             {
-                std::string_view ref = concrete_columns[col_i]->getDataAt(row_i);
+                std::string_view ref = concrete_columns_data[col_i]->getDataAt(row_i);
                 memcpySmallAllowReadWriteOverflow15(&out_chars[cur_out_offset], ref.data(), ref.size());
                 cur_out_offset += ref.size();
                 out_offsets[base + col_i] = cur_out_offset;
@@ -257,11 +260,12 @@ private:
         out_chars.resize_exact(total_bytes);
 
         size_t curr_out_offset = 0;
+        const ColumnFixedString * const * concrete_columns_data = concrete_columns.data();
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
         {
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
             {
-                std::string_view ref = concrete_columns[col_i]->getDataAt(row_i);
+                std::string_view ref = concrete_columns_data[col_i]->getDataAt(row_i);
                 memcpySmallAllowReadWriteOverflow15(&out_chars[curr_out_offset], ref.data(), n);
                 curr_out_offset += n;
             }
