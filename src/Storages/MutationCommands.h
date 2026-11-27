@@ -18,6 +18,7 @@ class ASTAlterCommand;
 class Context;
 class WriteBuffer;
 class ReadBuffer;
+struct StorageInMemoryMetadata;
 
 /// Represents set of actions which should be applied
 /// to values from set of columns which satisfy predicate.
@@ -150,7 +151,15 @@ struct MutationCommand
     [[nodiscard]] bool isEmptyCommand() const;
     [[nodiscard]] bool isDropOrRename() const;
     [[nodiscard]] bool affectsAllColumns() const;
+    /// `CLEAR COLUMN` of the virtual column `_block_number` or `_block_offset` stored in parts, see `DB::isClearOfBlockColumns`.
+    [[nodiscard]] bool isClearOfBlockColumns(const StorageInMemoryMetadata & metadata) const;
 };
+
+/// Whether `CLEAR COLUMN column_name` clears the virtual columns `_block_number` and `_block_offset` that the parts
+/// of a `MergeTree` table may store. Either name clears both of them: the mutation removes them from the parts,
+/// together with the skip indices and projections that use them, and a part then reads them as `min_block` and
+/// `_part_offset`.
+bool isClearOfBlockColumns(const String & column_name, const StorageInMemoryMetadata & metadata);
 
 /// Whether the command is scoped to specific partitions (`... IN PARTITION p`, or the multi-partition
 /// `... IN PARTITION p1, p2` of `DELETE`/`UPDATE`), so that it applies to the parts of those partitions

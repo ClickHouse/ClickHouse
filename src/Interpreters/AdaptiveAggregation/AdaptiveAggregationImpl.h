@@ -107,9 +107,10 @@ constexpr size_t adaptive_parallel_merge_max_work = 1'000'000;
 /// Each thread decides on its own stream: its baseline table would absorb only the repeats it sees itself,
 /// and a key that every thread stages once costs no more than the one cell per thread the baseline would
 /// keep. The repeat factor is estimated from a sparse sample of distinct staged hashes and the exact number
-/// of staged records. The repeats weigh only while the staged records are at least a share of the rows the
-/// frozen table saw (`adaptive_thaw_staged_share_inverse`): a table that absorbs nearly every row in place
-/// loses little to a sliver of repeated misses, and its thaw would give up the frozen table's merge.
+/// of staged records. For several producers, the repeats weigh only while the staged records are at least a
+/// share of the rows the frozen table saw (`adaptive_thaw_staged_share_inverse`): a table that absorbs nearly
+/// every row in place loses little to a sliver of repeated misses, and its thaw would give up the frozen
+/// table's merge; a lone producer has no such merge on its ordinary path.
 ///
 /// The weighting separates the shapes by how much a repeat costs. With an accurate cardinality estimate,
 /// a near-unique stream has repeat ~ 1 and wasted bytes ~ 0 regardless of the records' size. A stream of
