@@ -238,6 +238,23 @@ refused "ALTER TABLE tal7 DROP COLUMN flag" ALTER_OF_COLUMN_IS_FORBIDDEN
 $CLICKHOUSE_CLIENT -q "ALTER TABLE tal7 RENAME COLUMN tenant TO tenant_id"
 $CLICKHOUSE_CLIENT -q "SELECT 'scoped alias policy after rename', arraySort(groupArray(id)) FROM al7 SETTINGS enable_parallel_replicas = 0"
 
+echo "-- a CTE binds in its own subquery and in the subqueries inside, where a CTE of the same name hides it, and it can read a later CTE"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tal8 (id UInt32, tenant UInt32, flag UInt32, misc UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tal8 VALUES (1, 1, 1, 0), (2, 2, 1, 0), (3, 1, 1, 0);
+CREATE TABLE c8 (id UInt32, tenant UInt32, misc UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO c8 VALUES (1, 1, 1), (2, 1, 1), (3, 2, 1);
+CREATE TABLE al8 ENGINE = Alias(tal8);
+CREATE ROW POLICY pal8 ON $DB.al8 FOR SELECT USING id IN (WITH c8 AS (SELECT * FROM $DB.tal8) SELECT c8.id FROM c8)
+    AND id IN (SELECT id FROM c8 WHERE tenant = 1)
+    AND id IN (WITH c8 AS (SELECT * FROM $DB.tal8) SELECT id FROM (WITH c8 AS (SELECT * FROM $DB.c8) SELECT id FROM c8 WHERE misc = 1))
+    AND id IN (WITH x AS (SELECT * FROM y), y AS (SELECT * FROM $DB.tal8) SELECT id FROM x WHERE flag = 1) TO CURRENT_USER;
+"
+refused "ALTER TABLE tal8 DROP COLUMN flag" ALTER_OF_COLUMN_IS_FORBIDDEN
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tal8 RENAME COLUMN tenant TO tenant_id"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tal8 DROP COLUMN misc"
+$CLICKHOUSE_CLIENT -q "SELECT 'scoped CTE policy after rename and drop', arraySort(groupArray(id)) FROM al8 SETTINGS enable_parallel_replicas = 0"
+
 echo "-- a table qualifier that is also a column name is removed when the subcolumn does not exist"
 $CLICKHOUSE_CLIENT --multiquery -q "
 CREATE TABLE tc (id UInt32, tc UInt8, tenant UInt32) ENGINE = MergeTree ORDER BY id;
@@ -324,6 +341,7 @@ DROP ROW POLICY pal4 ON $DB.al4;
 DROP ROW POLICY pal5 ON $DB.al5;
 DROP ROW POLICY pal6 ON $DB.al6;
 DROP ROW POLICY pal7 ON $DB.al7;
+DROP ROW POLICY pal8 ON $DB.al8;
 DROP ROW POLICY pc ON $DB.tc;
 DROP ROW POLICY png ON $DB.tng;
 DROP ROW POLICY pm ON $DB.tm;
@@ -362,6 +380,9 @@ DROP TABLE tal6;
 DROP TABLE al7;
 DROP TABLE tal7;
 DROP TABLE other7;
+DROP TABLE al8;
+DROP TABLE tal8;
+DROP TABLE c8;
 DROP TABLE tc;
 DROP TABLE tng;
 DROP TABLE tm;

@@ -67,6 +67,9 @@ table function policy after drop	[1,3]
 -- a qualifier binds in its own subquery, an alias of another table there hides the policy table and the outer aliases
 ALTER_OF_COLUMN_IS_FORBIDDEN
 scoped alias policy after rename	[1,2]
+-- a CTE binds in its own subquery and in the subqueries inside, where a CTE of the same name hides it, and it can read a later CTE
+ALTER_OF_COLUMN_IS_FORBIDDEN
+scoped CTE policy after rename and drop	[1,2]
 -- a table qualifier that is also a column name is removed when the subcolumn does not exist
 ALTER_OF_COLUMN_IS_FORBIDDEN
 qualifier column policy after drop	[1]
