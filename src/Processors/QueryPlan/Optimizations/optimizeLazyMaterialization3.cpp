@@ -1087,6 +1087,8 @@ private:
     Assembled assembleSource(QueryPlan::Node * node, size_t source, const VectorWithMemoryTracking<size_t> & unneeded, QueryPlan::Nodes & nodes)
     {
         /// Whatever is below the source stays as it is.
+        /// The fragment does not inherit the resources of the plan: `apply` puts it back into that plan,
+        /// which already holds them, and appending them again would multiply them with every rewrite.
         Assembled result;
         auto & plan = result.plan;
         plan = QueryPlan::extractSubplan(node, nodes);

@@ -556,6 +556,22 @@ TEST(RequestQueue, MaxWaitingQueries)
     }
 }
 
+/// Signed cost counters wrap around on overflow instead of overflowing a signed integer.
+TEST(RequestQueue, RejectedCostWrapsAround)
+{
+    Fixture f(SchedulerAlgorithm::Fifo, CostUnit::IOByte, /*max_queued*/ 0);
+    auto * a = f.makeQuery();
+    TestRequest r1(1, ResourceCost{1} << 62);
+    TestRequest r2(2, ResourceCost{1} << 62);
+    for (TestRequest * r : {&r1, &r2})
+    {
+        r->scheduling.context = a;
+        EXPECT_THROW(f.queue->enqueueRequest(r), DB::Exception);
+    }
+    EXPECT_EQ(f.queue->rejected_requests.load(), 2u);
+    EXPECT_EQ(f.queue->rejected_cost.load(), std::numeric_limits<ResourceCost>::min());
+}
+
 /// updateQueueLimit(0) is valid: 0 means "reject every waiting request", the same limit applied at
 /// construction, so CREATE OR REPLACE WORKLOAD does not diverge from CREATE for max_waiting_queries=0.
 /// Only a negative limit is rejected.

@@ -66,6 +66,9 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_ast_depth;
+    extern const SettingsUInt64 max_ast_elements;
+    extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsUInt64 function_range_max_elements_in_block;
     extern const SettingsUInt64 highlight_max_matches_per_row;
     extern const SettingsUInt64 regexp_max_matches_per_row;
@@ -195,6 +198,11 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     hash.update(settings[Setting::max_query_size].value);
     hash.update(settings[Setting::max_parser_depth].value);
     hash.update(settings[Setting::max_parser_backtracks].value);
+    /// `parseQueryToJSON` and `formatQueryFromJSON` also snapshot the AST limits and
+    /// `allow_settings_after_format_in_insert`, which decide whether a query is converted or throws.
+    hash.update(settings[Setting::max_ast_depth].value);
+    hash.update(settings[Setting::max_ast_elements].value);
+    hash.update(settings[Setting::allow_settings_after_format_in_insert].value);
     /// Per-row limits that a function captures when it is built and that decide between a result and an
     /// exception (`range`, `highlight`, `extractAllGroups*`, `readWKB*`, `base58Decode` and friends), or that
     /// truncate the result (`extractKeyValuePairs` returns at most that many pairs). `validate_polygons` decides

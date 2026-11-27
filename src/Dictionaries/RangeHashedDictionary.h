@@ -148,7 +148,7 @@ private:
         HashMapWithSavedHash<std::string_view, IntervalMap<RangeStorageType>, DefaultHash<std::string_view>>>;
 
     template <typename Value>
-    using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array> || std::is_same_v<Value, Map> || std::is_same_v<Value, Object>, VectorWithMemoryTracking<Value>, PaddedPODArray<Value>>;
+    using AttributeContainerType = std::conditional_t<is_column_attribute_value<Value>, ColumnAttributeContainer<Value>, PaddedPODArray<Value>>;
 
     struct Attribute final
     {
@@ -240,7 +240,7 @@ private:
     static Attribute createAttribute(const DictionaryAttribute & dictionary_attribute);
 
     template <typename ValueType>
-    using ValueSetterFunc = std::function<void(size_t, const ValueType &, bool)>;
+    using ValueSetterFunc = std::function<void(size_t, const AttributeLookupValue<ValueType> &, bool)>;
 
     template <typename ValueType, bool is_nullable, typename DefaultValueExtractor>
     void getItemsImpl(
@@ -405,31 +405,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
-        if constexpr (std::is_same_v<ValueType, Array>)
-        {
-            auto * out = column.get();
-
-            getItemsInternalImpl<ValueType, false>(
-                attribute,
-                key_to_index,
-                [&](size_t, const Array & value, bool)
-                {
-                    out->insert(value);
-                });
-        }
-        else if constexpr (std::is_same_v<ValueType, Map>)
-        {
-            auto * out = column.get();
-
-            getItemsInternalImpl<ValueType, false>(
-                attribute,
-                key_to_index,
-                [&](size_t, const Map & value, bool)
-                {
-                    out->insert(value);
-                });
-        }
-        else if constexpr (std::is_same_v<ValueType, Object>)
+        if constexpr (is_column_attribute_value<ValueType>)
         {
             auto * out = column.get();
 
@@ -437,18 +413,18 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
                 getItemsInternalImpl<ValueType, true>(
                     attribute,
                     key_to_index,
-                    [&](size_t row, const Object & value, bool is_null)
+                    [&](size_t row, const ColumnAttributeValue<ValueType> & value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
-                        out->insert(value);
+                        value.insertInto(*out);
                     });
             else
                 getItemsInternalImpl<ValueType, false>(
                     attribute,
                     key_to_index,
-                    [&](size_t, const Object & value, bool)
+                    [&](size_t, const ColumnAttributeValue<ValueType> & value, bool)
                     {
-                        out->insert(value);
+                        value.insertInto(*out);
                     });
         }
         else if constexpr (std::is_same_v<ValueType, std::string_view>)
@@ -761,7 +737,10 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
 
             const auto & container = std::get<AttributeContainerType<ValueType>>(attribute.container);
 
-            bytes_allocated += container.size() * sizeof(ValueType);
+            if constexpr (is_column_attribute_value<ValueType>)
+                bytes_allocated += container.allocatedBytes();
+            else
+                bytes_allocated += container.size() * sizeof(ValueType);
 
             if (attribute.is_value_nullable)
                 bytes_allocated += ((*attribute.is_value_nullable).capacity() + 7) / 8;
@@ -792,7 +771,10 @@ typename RangeHashedDictionary<dictionary_key_type>::Attribute RangeHashedDictio
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
 
-        attribute.container = AttributeContainerType<ValueType>();
+        if constexpr (is_column_attribute_value<ValueType>)
+            attribute.container = AttributeContainerType<ValueType>(dictionary_attribute);
+        else
+            attribute.container = AttributeContainerType<ValueType>();
     };
 
     callOnDictionaryAttributeType(dictionary_attribute.underlying_type, type_call);
@@ -826,7 +808,7 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsInternalImpl(
             );
         }
 
-        AttributeType value = container[container_index];
+        AttributeLookupValue<AttributeType> value = container[container_index];
 
         if constexpr (is_nullable)
         {
@@ -1057,31 +1039,27 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & a
         using ValueType = DictionaryValueType<AttributeType>;
 
         auto & container = std::get<AttributeContainerType<ValueType>>(attribute.container);
-        container.emplace_back();
 
+        bool value_is_null = value.isNull();
         if (unlikely(attribute.is_value_nullable.has_value()))
-        {
-            bool value_is_null = value.isNull();
             attribute.is_value_nullable->emplace_back(value_is_null);
 
-            if (unlikely(value_is_null))
-                return;
-        }
-
-        ValueType value_to_insert;
-
-        if constexpr (std::is_same_v<AttributeType, String>)
+        if constexpr (is_column_attribute_value<ValueType>)
         {
-            const auto & string = value.safeGet<String>();
-            std::string_view string_ref = copyStringInArena(string_arena, string);
-            value_to_insert = string_ref;
+            container.insert(value);
         }
         else
         {
-            value_to_insert = static_cast<ValueType>(value.safeGet<ValueType>());
-        }
+            container.emplace_back();
 
-        container.back() = value_to_insert;
+            if (unlikely(value_is_null))
+                return;
+
+            if constexpr (std::is_same_v<AttributeType, String>)
+                container.back() = copyStringInArena(string_arena, value.safeGet<String>());
+            else
+                container.back() = static_cast<ValueType>(value.safeGet<ValueType>());
+        }
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);

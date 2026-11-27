@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/ORC/Compression.h>
 
+#include <base/sanitizer_defs.h>
 #include <Common/Exception.h>
 
 #include <lz4.h>
@@ -107,6 +108,9 @@ size_t decompressLzo(const char * src, size_t src_size, char * dst, size_t dst_c
             }
             else if (first_command)
             {
+                /// A first command below 17 would be a match, with nothing to match yet (17 is the end marker above).
+                if (command < 17)
+                    throwMalformedLzo(offset());
                 literal_length = command - 17;
             }
             else if ((command & 0xF0) == 0x10)
@@ -348,6 +352,8 @@ private:
 }
 
 
+/// `ZSTD_CONTENTSIZE_ERROR` is defined as `(0ULL - 2)`, which wraps around on purpose.
+NO_SANITIZE_UNSIGNED_OVERFLOW
 size_t maxDecompressedSize(CompressionKind kind, const char * src, size_t src_size)
 {
     /// The ratios are the theoretical maximums of the formats, rounded up, so that valid chunks are never rejected.

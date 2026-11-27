@@ -61,6 +61,13 @@ public:
 
     [[nodiscard]] Block getHeader() const;
 
+    /// Accept a block with no columns that declares rows, see `Block::setRowsWithoutColumns`. Such a block
+    /// is a part of an intermediate result of a query, so only the reader of such a result expects it, and
+    /// only from a peer at `DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT`. For every other reader it
+    /// is malformed data: the consumers of an ordinary result need not expect a block that has rows and
+    /// no columns.
+    void setAllowRowsWithoutColumns(bool allow) { allow_rows_without_columns = allow; }
+
     void resetParser();
 
     Block read();
@@ -85,6 +92,7 @@ private:
     BlockMissingValues * block_missing_values = nullptr;
     NativeReaderTypeCache * type_cache = nullptr;
     ISerialization::KindSet allowed_kinds = default_allowed_kinds;
+    bool allow_rows_without_columns = false;
 
     bool use_index = false;
     IndexForNativeFormat::Blocks::const_iterator index_block_it;

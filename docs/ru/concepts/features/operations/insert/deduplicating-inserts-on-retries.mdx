@@ -12,34 +12,24 @@ doc_type: 'guide'
 
 Дедупликация охватывает синхронные вставки, асинхронные вставки и запросы `INSERT ... SELECT`. Один параметр, `deduplicate_insert`, управляет синхронными и асинхронными вставками. Для `INSERT ... SELECT` требуется особое внимание, и у него есть собственный параметр. См. [Параметры, управляющие дедупликацией вставок](#settings-that-control-insert-deduplication).
 
-<div id="limitations">
-  ## Ограничения
-</div>
+## Ограничения {#limitations}
 
-<div id="uncertain-insert-status">
-  ### Неопределённый статус вставки
-</div>
+### Неопределённый статус вставки {#uncertain-insert-status}
 
 Пользователь должен повторять операцию вставки, пока она не завершится успешно. Если все повторные попытки окажутся неудачными, определить, были ли данные вставлены, невозможно. Если задействованы materialized views, также неясно, в каких таблицах могли появиться данные. Materialized views могут быть рассинхронизированы с исходной таблицей.
 
-<div id="deduplication-window-limit">
-  ### Ограничение окна дедупликации
-</div>
+### Ограничение окна дедупликации {#deduplication-window-limit}
 
 Если в ходе последовательности повторных попыток выполняется более `*_deduplication_window` других операций вставки, дедупликация может работать не так, как задумано. В этом случае одни и те же данные могут быть вставлены несколько раз.
 
-<div id="settings-that-control-insert-deduplication">
-  ## Настройки, управляющие дедупликацией вставок
-</div>
+## Настройки, управляющие дедупликацией вставок {#settings-that-control-insert-deduplication}
 
 ClickHouse выполняет дедупликацию вставки только при соблюдении обоих следующих условий:
 
 1. Целевая таблица хранит журнал дедупликации. Это настройка уровня таблицы.
 2. Для запроса включена дедупликация. Это настройка уровня запроса.
 
-<div id="insert-deduplication-for-tables">
-  ### Настройки уровня таблицы
-</div>
+### Настройки уровня таблицы {#insert-deduplication-for-tables}
 
 **Только движки `*MergeTree` поддерживают дедупликацию при вставке.**
 
@@ -51,9 +41,7 @@ ClickHouse выполняет дедупликацию вставки тольк
   [`replicated_deduplication_window_for_async_inserts`](/ru/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_for_async_inserts) и [`replicated_deduplication_window_seconds_for_async_inserts`](/ru/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds_for_async_inserts) — устаревшие настройки. Синхронные и асинхронные вставки теперь используют один журнал дедупликации, поэтому `replicated_deduplication_window` управляет обеими. Устаревшие настройки ограничивали размер старого каталога ClickHouse Keeper, что важно при поэтапном обновлении.
 </Note>
 
-<div id="query-level-insert-deduplication">
-  ### Настройки на уровне запроса
-</div>
+### Настройки на уровне запроса {#query-level-insert-deduplication}
 
 | Настройка                                                                                                                                             | Применяется к                                  | Значение по умолчанию  | Назначение                                                                 |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ---------------------- | -------------------------------------------------------------------------- |
@@ -70,17 +58,13 @@ ClickHouse выполняет дедупликацию вставки тольк
 
 Обратите внимание: запрос, выполняемый с `deduplicate_insert = disable`, не записывает `block_id` для своих блоков. Такие данные нельзя дедуплицировать позднее, даже если повторить вставку с `deduplicate_insert = enable`. То же относится к случаям, когда целевая таблица не хранит журнал дедупликации: ничего не записывается, поэтому при повторной попытке сопоставить данные будет не с чем.
 
-<div id="precedence">
-  ### Старшинство
-</div>
+### Старшинство {#precedence}
 
 1. Для запроса `INSERT ... SELECT` определяющим является параметр `deduplicate_insert_select`. См. [Дедупликация для INSERT ... SELECT](#deduplication-for-insert-select).
 2. Для всех остальных операций `INSERT` определяющим является параметр `deduplicate_insert`.
 3. Параметры `insert_deduplicate` и `async_insert_deduplicate` учитываются только при значении `backward_compatible_choice` параметра `deduplicate_insert`.
 
-<div id="legacy-and-obsolete-settings">
-  ### Устаревшие и упразднённые настройки
-</div>
+### Устаревшие и упразднённые настройки {#legacy-and-obsolete-settings}
 
 | Настройка                                                                                                | Статус                                                                               | Используйте вместо          |
 | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------- |
@@ -95,9 +79,7 @@ ClickHouse выполняет дедупликацию вставки тольк
 
 В версии 26.2 также были изменены значения по умолчанию для `async_insert` и `deduplicate_blocks_in_dependent_materialized_views`: теперь они включены. Настройка [`compatibility`](/ru/reference/settings/session-settings/compatibility#compatibility) управляет всеми тремя настройками. Если установить для `compatibility` версию ранее `26.2`, эти настройки сохранят прежние значения по умолчанию: для `deduplicate_insert` будет установлено `backward_compatible_choice`, и выбор будет передан `insert_deduplicate` и `async_insert_deduplicate`. Явно заданная настройка всегда применяется и не зависит от `compatibility`.
 
-<div id="how-insert-deduplication-works">
-  ## Как работает дедупликация при вставке
-</div>
+## Как работает дедупликация при вставке {#how-insert-deduplication-works}
 
 Когда данные вставляются в ClickHouse, система разбивает их на блоки в зависимости от количества строк и байтов.
 
@@ -107,9 +89,7 @@ ClickHouse выполняет дедупликацию вставки тольк
 
 Для запросов `INSERT ... VALUES` разбиение вставляемых данных на блоки детерминировано и задаётся настройками. Поэтому повторные попытки вставки следует выполнять с теми же значениями настроек, что и в исходной операции.
 
-<div id="deduplication-for-insert-select">
-  ## Дедупликация для `INSERT ... SELECT`
-</div>
+## Дедупликация для `INSERT ... SELECT` {#deduplication-for-insert-select}
 
 Для запросов `INSERT ... SELECT` часть `SELECT` должна при каждой попытке возвращать одни и те же данные в одном и том же порядке. В противном случае блоки и их `block_id` будут различаться, поэтому повторная попытка не будет распознана как дубликат.
 
@@ -138,9 +118,7 @@ ClickHouse не может проверить, что исходные данн�
 
 Выберите подход в соответствии с тем, какой смысл должна иметь повторная попытка. Кроме того, при вставке больших объёмов данных количество блоков может превысить размер окна журнала дедупликации, и ClickHouse не сможет дедуплицировать эти блоки.
 
-<div id="deduplication-for-asynchronous-inserts">
-  ## Дедупликация асинхронных вставок
-</div>
+## Дедупликация асинхронных вставок {#deduplication-for-asynchronous-inserts}
 
 Асинхронные вставки ([`async_insert`](/ru/reference/settings/session-settings/async-insert#async_insert), включенные по умолчанию с версии 26.2) дедуплицируются при повторных попытках так же, как синхронные вставки. Обоими типами управляет параметр `deduplicate_insert`, поэтому отдельный переключатель не нужен.
 
@@ -150,9 +128,7 @@ ClickHouse не может проверить, что исходные данн�
   До версии 26.2 дедупликация асинхронных вставок по умолчанию была отключена и управлялась параметром `async_insert_deduplicate`. Теперь этот параметр учитывается только при значении `backward_compatible_choice` параметра `deduplicate_insert`.
 </Note>
 
-<div id="asynchronous-insert-deduplication-granularity">
-  ### Гранулярность дедупликации
-</div>
+### Гранулярность дедупликации {#asynchronous-insert-deduplication-granularity}
 
 Сервер объединяет несколько асинхронных вставок в один батч и записывает его в виде одной или нескольких частей — как минимум по одной для каждого уникального значения ключа партиционирования. Дедупликация выполняется для каждого пользовательского запроса, а не для батча:
 
@@ -167,19 +143,17 @@ ClickHouse не может проверить, что исходные данн�
 
 События `DuplicatedAsyncInserts` и `SelfDuplicatedAsyncInserts` в [`system.events`](/ru/reference/system-tables/events) учитывают эти два случая.
 
-<div id="asynchronous-inserts-and-materialized-views">
-  ### Асинхронные вставки и materialized view
-</div>
+### Асинхронные вставки и materialized view {#asynchronous-inserts-and-materialized-views}
 
-Дедупликация асинхронных вставок работает совместно с зависимыми materialized view. Правило простое: один блок на входе — один блок на выходе. Если внутренний запрос представления преобразует один входной блок в один выходной, дедупликация работает. Если представление формирует второй блок, ClickHouse генерирует исключение `NOT_IMPLEMENTED`.
+Дедупликация асинхронных вставок работает и с зависимыми materialized view. Правило простое: один блок на входе — один блок на выходе. ClickHouse записывает результат представления для одного сброшенного на диск пакета единым блоком, что бы ни делал внутренний запрос: фильтрацию, aggregation, `ARRAY JOIN` или `JOIN`, добавляющий строки. Настройки размера блока [`min_insert_block_size_rows`](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_rows) и [`min_insert_block_size_bytes`](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) не разделяют такой блок.
 
-Представление формирует второй блок, когда его результат уже не помещается в один блок. [`max_block_size`](/ru/reference/settings/session-settings/max#max_block_size) задаёт количество строк, помещающихся в блок. Преобразования столбцов, фильтрация и агрегация никогда не добавляют строк, поэтому всегда остаются в одном блоке. `JOIN` может добавлять строки. Он работает, пока результат не превышает `max_block_size`, и завершается ошибкой при превышении этого значения.
+Ограничение здесь — память. Весь результат представления для одного пакета хранится в памяти, поэтому его размер примерно равен размеру пакета, умноженному на число строк, которые представление порождает из каждой входной строки. Если результат не укладывается в ограничения памяти запроса и сервера, вставка завершается исключением `MEMORY_LIMIT_EXCEEDED`. В первую очередь это касается представлений, которые размножают строки, например `ARRAY JOIN` по большим массивам или `JOIN`, которому соответствует много строк. Для такого представления можно:
 
-Чтобы выполнять вставку через представление, формирующее более одного блока, либо установите `deduplicate_blocks_in_dependent_materialized_views = 0`, либо используйте синхронные вставки.
+* Уменьшить размер пакетов с помощью [`async_insert_max_data_size`](/ru/reference/settings/session-settings/async-insert#async_insert_max_data_size).
+* Установить [`deduplicate_blocks_in_dependent_materialized_views`](/ru/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views) в `0`. В этом случае результат представления разбивается на блоки обычного размера, но при повторной вставке данные снова записываются в целевые таблицы представления.
+* Использовать синхронные вставки, которые выполняют дедупликацию результата представления, состоящего из нескольких блоков.
 
-<div id="insert-deduplication-with-materialized-views">
-  ## Дедупликация при вставке с materialized view
-</div>
+## Дедупликация при вставке с materialized view {#insert-deduplication-with-materialized-views}
 
 Если у таблицы есть одно или несколько materialized view, вставляемые данные также записываются в целевые таблицы этих представлений с заданными преобразованиями. Преобразованные данные тоже дедуплицируются при повторных попытках. ClickHouse выполняет дедупликацию для materialized view так же, как и для данных, вставляемых в целевую таблицу.
 
@@ -193,13 +167,9 @@ ClickHouse не может проверить, что исходные данн�
 
 При вставке блоков в таблицы materialized view ClickHouse вычисляет `block_id`, хешируя строку, которая объединяет `block_id` исходной таблицы и дополнительные идентификаторы. Это обеспечивает точную дедупликацию в materialized view и позволяет различать данные по их исходной вставке независимо от преобразований, применённых до записи в целевую таблицу materialized view.
 
-<div id="examples">
-  ## Примеры
-</div>
+## Примеры {#examples}
 
-<div id="identical-blocks-after-materialized-view-transformations">
-  ### Идентичные блоки после преобразований в materialized view
-</div>
+### Идентичные блоки после преобразований в materialized view {#identical-blocks-after-materialized-view-transformations}
 
 Идентичные блоки, сгенерированные при преобразовании внутри materialized view, не дедуплицируются, поскольку они основаны на разных вставленных данных.
 
@@ -319,9 +289,7 @@ ORDER by all;
 
 Здесь видно, что при повторной вставке все данные дедуплицируются. Дедупликация работает как для таблицы `dst`, так и для таблицы `mv_dst`.
 
-<div id="identical-blocks-on-insertion">
-  ### Идентичные блоки при вставке
-</div>
+### Идентичные блоки при вставке {#identical-blocks-on-insertion}
 
 ```sql
 CREATE TABLE dst
@@ -362,9 +330,7 @@ ORDER BY all;
 
 С указанными выше настройками в результате `select` получаются два блока — следовательно, для вставки в таблицу `dst` тоже должно быть два блока. Однако мы видим, что в таблицу `dst` был вставлен только один блок. Это произошло потому, что для второго блока была выполнена дедупликация. В нём те же данные и тот же ключ дедупликации `block_id`, который вычисляется как хеш от вставленных данных. Такое поведение не соответствует ожидаемому. Такие случаи редки, но теоретически возможны. Чтобы корректно обрабатывать такие ситуации, пользователь должен указать `insert_deduplication_token`. Исправим это на следующих примерах:
 
-<div id="identical-blocks-in-insertion-with-insert_deduplication_token">
-  ### Идентичные блоки при вставке с `insert_deduplication_token`
-</div>
+### Идентичные блоки при вставке с `insert_deduplication_token` {#identical-blocks-in-insertion-with-insert_deduplication_token}
 
 ```sql
 CREATE TABLE dst
@@ -459,9 +425,7 @@ ORDER BY all;
 
 Эта вставка также будет дедуплицирована, хотя и содержит другие вставленные данные. Обратите внимание, что `insert_deduplication_token` имеет более высокий приоритет: если указан `insert_deduplication_token`, ClickHouse не использует хеш-сумму данных.
 
-<div id="different-insert-operations-generate-the-same-data-after-transformation-in-the-underlying-table-of-the-materialized-view">
-  ### Разные операции вставки после преобразования создают одинаковые данные в базовой таблице materialized view
-</div>
+### Разные операции вставки после преобразования создают одинаковые данные в базовой таблице materialized view {#different-insert-operations-generate-the-same-data-after-transformation-in-the-underlying-table-of-the-materialized-view}
 
 ```sql
 CREATE TABLE dst
@@ -559,9 +523,7 @@ ORDER by all;
 
 Мы каждый раз вставляем разные данные. Однако в таблицу `mv_dst` вставляются одни и те же данные. Данные не дедуплицируются, потому что исходные данные различались.
 
-<div id="different-materialized-view-inserts-into-one-underlying-table-with-equivalent-data">
-  ### Разные варианты вставки через materialized view в одну базовую таблицу с эквивалентными данными
-</div>
+### Разные варианты вставки через materialized view в одну базовую таблицу с эквивалентными данными {#different-materialized-view-inserts-into-one-underlying-table-with-equivalent-data}
 
 ```sql
 CREATE TABLE dst

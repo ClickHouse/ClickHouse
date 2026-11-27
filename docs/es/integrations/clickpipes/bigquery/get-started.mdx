@@ -23,25 +23,17 @@ import IntroClickPipe from '/snippets/es/_intro.mdx';
     **1.** En ClickHouse Cloud, seleccione **Fuentes de datos** en el menú de navegación principal y haga clic en **Crear ClickPipe**.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Seleccionar importaciones](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Seleccionar importaciones](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+      </Frame>
     </div>
 
     **2.** Haga clic en la tarjeta **BigQuery**.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Seleccionar la tarjeta de BigQuery](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Seleccionar la tarjeta de BigQuery](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -51,25 +43,17 @@ import IntroClickPipe from '/snippets/es/_intro.mdx';
     **1.** Cargue el archivo de clave `.json` de la cuenta de servicio que creó para ClickPipes. Asegúrese de que la cuenta de servicio tenga los [permisos](/es/integrations/clickpipes/bigquery/overview#permissions) mínimos necesarios.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Cargar la clave de la cuenta de servicio](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Cargar la clave de la cuenta de servicio](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp)
+      </Frame>
     </div>
 
     **2.** Seleccione el **modo de replicación**: [solo carga inicial](/es/integrations/clickpipes/bigquery/overview#initial-load), **carga inicial + CDC** o **solo CDC**. Si selecciona un modo de CDC, elija un [método basado en consultas o en eventos](/es/integrations/clickpipes/bigquery/overview#cdc).
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Opciones del modo de replicación de BigQuery: solo carga inicial, carga inicial más CDC y solo CDC](/images/integrations/data-ingestion/clickpipes/bigquery/select-replication-mode.png)
-
-    </Frame>
-
+      <Frame>
+        ![Opciones del modo de replicación de BigQuery: solo carga inicial, carga inicial más CDC y solo CDC](/images/integrations/data-ingestion/clickpipes/bigquery/select-replication-mode.png)
+      </Frame>
     </div>
 
     **3.** Si va a realizar una carga inicial, proporcione la ruta del bucket de GCS que usará para almacenar temporalmente los datos.
@@ -81,13 +65,9 @@ import IntroClickPipe from '/snippets/es/_intro.mdx';
     Establezca los siguientes valores para las fases seleccionadas. La configuración de la carga inicial solo se aplica cuando ClickPipe importa los datos existentes; la configuración de CDC solo se aplica cuando continúa replicando los cambios.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Configuración de BigQuery ClickPipe para el intervalo de sincronización, la carga inicial y CDC](/images/integrations/data-ingestion/clickpipes/bigquery/configure-pipe.png)
-
-    </Frame>
-
+      <Frame>
+        ![Configuración de BigQuery ClickPipe para el intervalo de sincronización, la carga inicial y CDC](/images/integrations/data-ingestion/clickpipes/bigquery/configure-pipe.png)
+      </Frame>
     </div>
 
     | Configuración                                    | Qué controla                                                                                                                                                                                                                                                                                                                                                   |
@@ -98,7 +78,7 @@ import IntroClickPipe from '/snippets/es/_intro.mdx';
     | Número de tablas en paralelo de la instantánea   | Número máximo de tablas de origen que ClickPipes carga a la vez.                                                                                                                                                                                                                                                                                               |
     | Número de tablas en paralelo para CDC            | Número máximo de tablas que ClickPipes lee y envía a ClickHouse simultáneamente.                                                                                                                                                                                                                                                                               |
     | Búfer de seguridad de CDC (segundos)             | Tiempo de retraso con respecto a la hora actual de BigQuery hasta el que ClickPipes consulta los cambios en cada consulta de CDC. Así, las escrituras recientes tienen tiempo de estar disponibles antes de que ClickPipes las lea.                                                                                                                            |
-    | Ventana máxima de una consulta de CDC (segundos) | Rango de tiempo máximo que abarca una consulta de CDC. ClickPipes divide los períodos más largos en consultas independientes. Para la replicación con `CHANGES`, mantenga este valor en 86 400 segundos o menos, conforme al [límite de un día](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) de BigQuery. |
+    | Ventana máxima de una consulta de CDC (segundos) | Rango de tiempo máximo que abarca una consulta de CDC. ClickPipes divide los períodos más largos en consultas independientes. Para la replicación con `CHANGES`, mantenga este valor en 86,400 segundos o menos, conforme al [límite de un día](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) de BigQuery. |
   </Step>
 
   <Step title="Configurar tablas" id="4-configure-tables">
@@ -107,13 +87,9 @@ import IntroClickPipe from '/snippets/es/_intro.mdx';
     **2.** Seleccione las tablas de origen. En **Configuración de columnas**, puede cambiar el nombre de cada tabla de destino y elegir qué columnas replicar. En la lista solo aparecen los conjuntos de datos a los que tiene acceso la cuenta de servicio.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Seleccione una tabla de origen de BigQuery y configure el nombre de destino, la columna de marca de agua de CDC, la clave de ordenación y la configuración avanzada](/images/integrations/data-ingestion/clickpipes/bigquery/select-table-settings.png)
-
-    </Frame>
-
+      <Frame>
+        ![Seleccione una tabla de origen de BigQuery y configure el nombre de destino, la columna de marca de agua de CDC, la clave de ordenación y la configuración avanzada](/images/integrations/data-ingestion/clickpipes/bigquery/select-table-settings.png)
+      </Frame>
     </div>
 
     **3.** Configure la opción de CDC de cada tabla. La captura de pantalla muestra la configuración basada en consultas. Seleccione una **columna de marca de agua de CDC** de tipo `TIMESTAMP`, inclúyala entre las columnas replicadas y actualice su valor cada vez que cambie la fila. Si utiliza la replicación basada en eventos, seleccione [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) o [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes). [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) requiere `enable_change_history = TRUE` en la tabla de origen.
@@ -136,13 +112,9 @@ import IntroClickPipe from '/snippets/es/_intro.mdx';
     Haz clic en **Create ClickPipe** para completar la configuración. Se te redirigirá a la página de resumen, donde podrás seguir el progreso de la carga inicial y consultar los detalles de tus ClickPipes de BigQuery.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Permissions](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Permissions](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>

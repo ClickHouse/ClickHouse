@@ -382,10 +382,9 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, ColumnPtr null_map)
     if (src->onlyNull())
         return src;
 
-    ColumnPtr src_not_nullable = src;
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(src.get()))
     {
-        src_not_nullable = nullable->getNestedColumnPtr();
+        ColumnPtr src_not_nullable = nullable->getNestedColumnPtr();
         const auto & src_null_map = nullable->getNullMapColumn().getData();
 
         if (null_map)
@@ -449,10 +448,13 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, ColumnPtr null_map)
             : src;
         return ColumnNullable::create(inner->convertToFullColumnIfConst(), null_map);
     }
-
+    /// Past the `Nullable` and `Const` branches, `src` is guaranteed to be neither, so
+    /// `convertToFullColumnIfConst` would be a no-op that only adds a ref to the underlying
+    /// column. Pass `src` directly so that `ColumnNullable::create(const ColumnPtr &, ...)`
+    /// sees `use_count() == 1` when the caller is the unique owner.
     if (null_map)
-        return ColumnNullable::create(src->convertToFullColumnIfConst(), null_map);
-    return ColumnNullable::create(src->convertToFullColumnIfConst(), ColumnUInt8::create(src->size(), UInt8(0)));
+        return ColumnNullable::create(src, null_map);
+    return ColumnNullable::create(src, ColumnUInt8::create(src->size(), UInt8(0)));
 }
 
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
@@ -570,7 +572,7 @@ void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t
 ColumnWithTypeAndName castNullableEnumToResultType(const ColumnWithTypeAndName & argument, const DataTypePtr & result_type)
 {
     const auto target_type = makeNullableSafe(removeLowCardinality(result_type));
-    if (!argument.type->isNullable() || !isEnum(removeNullable(argument.type)) || !target_type->isNullable())
+    if (!argument.type->isNullable() || !target_type->isNullable() || removeNullable(argument.type)->isDefaultInsertTrivial())
         return argument;
 
     return {castColumn(argument, target_type), target_type, argument.name};

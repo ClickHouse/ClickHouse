@@ -368,6 +368,10 @@ def main():
                 f" -DENABLE_THINLTO=0"
                 f" -DCMAKE_C_COMPILER={STAGE1_INSTALL_DIR}/bin/clang"
                 f" -DCMAKE_CXX_COMPILER={STAGE1_INSTALL_DIR}/bin/clang++"
+                # Link with the distro lld: the instrumented one never writes a profile
+                # (lld exits with `_Exit`), and its multithreaded value profiling uses
+                # non-atomic updates on aarch64, which can make a link spin forever.
+                f" -DLINKER_NAME=ld.lld-{LLVM_VERSION}"
                 f" -DCOMPILER_CACHE=disabled"
                 f" -DENABLE_TESTS=0"
                 f" -DENABLE_UTILS=0"

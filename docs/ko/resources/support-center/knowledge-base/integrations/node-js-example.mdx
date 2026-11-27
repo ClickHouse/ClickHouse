@@ -6,9 +6,7 @@ tags: ['언어 클라이언트']
 keywords: ['NodeJS']
 ---
 
-<div id="use-nodejs-with-clickhouseclient">
-  ## NodeJS에서 @clickhouse/client 사용하기
-</div>
+## NodeJS에서 @clickhouse/client 사용하기 {#use-nodejs-with-clickhouseclient}
 
 다음은 기본적인 코드 예제 파일 `main.ts`입니다.
 
@@ -56,7 +54,8 @@ interface Count {
   c: number;
 }
 
-//`host`, `username`, `password`, `database` 등의 클라이언트 연결 매개변수를 필요에 따라 교체하십시오.
+//Please replace client connection parameters like`host`
+//`username`, `password`, `database` as needed.
 
 const initClickHouseClient = async (): Promise<ClickHouseClient> => {
   const client = createClient({

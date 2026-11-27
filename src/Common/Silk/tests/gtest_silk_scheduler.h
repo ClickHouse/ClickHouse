@@ -8,6 +8,8 @@
 
 #include <Common/Silk/FiberScheduler.h>
 
+#include <Poco/Message.h>
+
 /// Silk runtime only supports a single initialize/destroy per process lifetime,
 /// so we initialize lazily on first usage (to avoid initializing when not running Silk tests)
 /// and destroy after all tests finish.
@@ -22,7 +24,7 @@ inline void initializeFiberSchedulerForTests()
     if (silk_scheduler_initialized_for_tests)
         return;
 
-    Silk::initializeFiberScheduler(Silk::DEFAULT_FIBER_STACK_SIZE);
+    Silk::initialize(Silk::DEFAULT_FIBER_STACK_SIZE, Poco::Message::PRIO_INFORMATION);
     silk_scheduler_initialized_for_tests = true;
 }
 

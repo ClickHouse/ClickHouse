@@ -65,6 +65,22 @@ function maybeDecompress(buf) {
   return buf;
 }
 
+const httpAgent = new http.Agent({ keepAlive: true });
+const httpsAgent = new https.Agent({ keepAlive: true });
+
+// Documents shared by every job report of a run (commits.json, the workflow index JSON) are
+// fetched once.
+const fetchCache = new Map();
+const FETCH_CONCURRENCY = 16;
+function fetchUrlCached(urlString, credentials = null) {
+  let promise = fetchCache.get(urlString);
+  if (!promise) {
+    promise = fetchUrl(urlString, credentials);
+    fetchCache.set(urlString, promise);
+  }
+  return promise;
+}
+
 function fetchUrl(urlString, credentials = null) {
   return new Promise((resolve, reject) => {
     let parsedUrl;
@@ -78,7 +94,8 @@ function fetchUrl(urlString, credentials = null) {
 
     const options = {
       method: 'GET',
-      headers: {}
+      headers: {},
+      agent: parsedUrl.protocol === 'https:' ? httpsAgent : httpAgent
     };
 
     if (credentials) {
@@ -192,11 +209,17 @@ async function parseReportUrl(htmlUrl, credentials = null) {
     throw new Error('At least name_0 parameter is required');
   }
 
-  // Resolve sha=latest by fetching commits.json
+  return { baseUrl, suffix, sha: await resolveSha(baseUrl, suffix, sha, credentials), nameParams };
+}
+
+/**
+ * Resolve sha=latest to the last commit listed in commits.json
+ */
+async function resolveSha(baseUrl, suffix, sha, credentials) {
   let resolvedSha = sha;
   if (sha === 'latest') {
     const commitsUrl = `${baseUrl}/${suffix}/commits.json`;
-    const commitsText = await fetchUrl(commitsUrl, credentials);
+    const commitsText = await fetchUrlCached(commitsUrl, credentials);
     let commits;
     try {
       commits = JSON.parse(commitsText);
@@ -208,8 +231,26 @@ async function parseReportUrl(htmlUrl, credentials = null) {
     }
     resolvedSha = commits[commits.length - 1].sha;
   }
+  return resolvedSha;
+}
 
-  return { baseUrl, suffix, sha: resolvedSha, nameParams };
+/**
+ * Replace sha=latest in report URLs with the concrete SHA and dedupe: the bot comment links the
+ * same report both as sha=latest and as sha=<sha>.
+ */
+async function resolveLatestInUrls(urls, credentials) {
+  const resolved = await Promise.all(urls.map(async u => {
+    if (!/[?&]sha=latest(?:&|$)/.test(u)) return u;
+    const url = new URL(u);
+    const PR = url.searchParams.get('PR');
+    const REF = url.searchParams.get('REF');
+    if (!PR && !REF) return u;
+    const baseUrl = url.searchParams.get('base_url') || url.origin + url.pathname.split('/').slice(0, -1).join('/');
+    const suffix = PR ? `PRs/${encodeURIComponent(PR)}` : `REFs/${encodeURIComponent(REF)}`;
+    const sha = await resolveSha(baseUrl, suffix, 'latest', credentials);
+    return u.replace(/([?&]sha=)latest(?=&|$)/, `$1${sha}`);
+  }));
+  return [...new Set(resolved)];
 }
 
 /**
@@ -249,7 +290,8 @@ async function fetchJsonReport(baseUrl, suffix, sha, workflowName, taskName, cre
   const errors = [];
   for (const url of candidates) {
     try {
-      return { url, text: await fetchUrl(url, credentials) };
+      const fetcher = workflowName === taskName ? fetchUrlCached : fetchUrl;
+      return { url, text: await fetcher(url, credentials) };
     } catch (e) {
       errors.push(`  ${url}\n    -> ${e.message}`);
     }
@@ -668,9 +710,10 @@ async function renderMultiReport(ciUrls, options) {
     process.exit(1);
   }
   console.log(`Fetching all reports...\n`);
-  const allResults = [];
+  const allResults = new Array(ciUrls.length);
+  let nextIndex = 0;
 
-  for (let i = 0; i < ciUrls.length; i++) {
+  const fetchOne = async (i) => {
     const url = ciUrls[i];
     const nameMatch = url.match(/name_0=([^&]+)/);
     const name1Match = url.match(/name_1=([^&]+)/);
@@ -681,24 +724,31 @@ async function renderMultiReport(ciUrls, options) {
     try {
       console.log(`[${i + 1}/${ciUrls.length}] ${fullJobName}...`);
       const result = await fetchReport(url, { ...options, isSingleReport: true });
-      allResults.push({
+      allResults[i] = {
         index: i + 1,
         jobName: fullJobName,
         url,
         isPRLevel: !subJobName, // true if this is a PR-level report (no name_1)
         ...result
-      });
+      };
     } catch (error) {
-      console.log(`  Error: ${error.message}\n`);
-      allResults.push({
+      console.log(`  [${i + 1}] Error: ${error.message}\n`);
+      allResults[i] = {
         index: i + 1,
         jobName: fullJobName,
         url,
         isPRLevel: !subJobName,
         error: error.message
-      });
+      };
     }
-  }
+  };
+
+  const worker = async () => {
+    while (nextIndex < ciUrls.length) {
+      await fetchOne(nextIndex++);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(FETCH_CONCURRENCY, ciUrls.length) }, worker));
 
   // Print summary
   console.log('\n' + '='.repeat(80));
@@ -799,7 +849,7 @@ async function fetchReport(inputUrl, options = {}) {
 
     if (isGitHubPR) {
       // GitHub PR URL - extract CI report URLs
-      const ciUrls = await getCIReportsFromPR(inputUrl);
+      const ciUrls = await resolveLatestInUrls(await getCIReportsFromPR(inputUrl), options.credentials);
 
       // If the bot comment exposed only the top-level `PR` report (name_0=PR, no name_1), treat it
       // as an INDEX: its leaves are job/check names, not test cases, so descend into each FAILED
@@ -837,6 +887,10 @@ async function fetchReport(inputUrl, options = {}) {
       for (const { topLevelUrl, jsonData } of allGreenTopLevel) {
         if (failedChildCount > 0) {
           console.log(`Top-level report ${topLevelUrl} is all-green — not expanded, because another workflow has failed jobs.`);
+          continue;
+        }
+        if (options.failedOnly && !options.reportIndex) {
+          console.log(`Top-level report ${topLevelUrl} is all-green — not expanded with --failed.`);
           continue;
         }
         const allChildren = allChildReportUrls(topLevelUrl, jsonData).filter(isConcreteJobUrl);
@@ -955,6 +1009,10 @@ async function fetchReport(inputUrl, options = {}) {
             `&name_1=<job>. Failed jobs: ${failedNames.join(', ') || '(none)'}.`
           );
         }
+        if (options.failedOnly && failedChildren.length === 0) {
+          console.log(`Top-level '${nameParams[0]}' index is all-green: ${displayList.length} job(s), none failed.`);
+          return { testResults: [], artifactLinks: [], jsonData: topJson };
+        }
         const listDesc = failedChildren.length > 0 ? `${displayList.length} failed` : `all ${displayList.length}`;
         console.log(`Top-level '${nameParams[0]}' index — expanding into ${listDesc} job report(s).\n`);
         return await renderMultiReport(displayList, options);
@@ -984,6 +1042,14 @@ async function fetchReport(inputUrl, options = {}) {
           const found = jsonData.results.find(r => r.name === nameParams[1]);
           if (!found) {
             throw new Error(`Task not found: ${nameParams[1]}`);
+          }
+          // A job reused from cache did not run for this commit: its row links to the run that
+          // produced the result and the artifacts, possibly of another commit or PR.
+          const reusedFrom = found.info === 'reused from cache' && (found.links || []).find(l => l.includes('praktika.html'));
+          if (reusedFrom && !options.followedReuse) {
+            const deeper = nameParams.slice(2).map((n, i) => `&name_${i + 2}=${encodeURIComponent(n)}`).join('');
+            console.log(`'${nameParams[1]}' is reused from cache, following ${reusedFrom}\n`);
+            return await fetchReport(reusedFrom + deeper, { ...options, followedReuse: true });
           }
           targetData = found;
         }

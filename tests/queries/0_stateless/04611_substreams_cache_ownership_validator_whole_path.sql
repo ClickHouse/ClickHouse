@@ -8,8 +8,6 @@
 -- `ColumnsOwnershipValidator` (active in debug and sanitizer builds) must account for at that
 -- destruction point. The queries only need to run without tripping the validator (issue #105626).
 
-SET enable_json_type = 1;
-
 DROP TABLE IF EXISTS t_json_whole_path_ownership;
 
 -- A JSON column with a tiny `max_dynamic_paths` so most paths overflow into the shared-data

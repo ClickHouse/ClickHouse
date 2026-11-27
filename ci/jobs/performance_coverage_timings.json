@@ -1618,12 +1618,12 @@
       "kind": "measured_wall",
       "input_sha256": "b57b972da0419693173810948b57bac82ca4c0a64c7e9b4ed472537ad235e5c2"
     },
-    "ie_join_anti_sparse_bitmap.xml": {
+    "inequality_join_anti_sparse_bitmap.xml": {
       "seconds": 1.8682119846343994,
       "kind": "measured_wall",
       "input_sha256": "d55f7acf77ad521b8ea30450df9b1baaef786e21746db5f34e6205059a2ffcf3"
     },
-    "ie_join_selectivity_key_choice.xml": {
+    "inequality_join_selectivity_key_choice.xml": {
       "seconds": 1.0715599060058594,
       "kind": "measured_wall",
       "input_sha256": "5921c3924b2b781366a082420525ffc2da5adff987195e6ac50b2e134fe0619b"

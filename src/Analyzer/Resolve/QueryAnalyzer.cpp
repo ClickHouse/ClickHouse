@@ -51,6 +51,7 @@
 #include <Parsers/ASTSubquery.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -59,6 +60,8 @@
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/validateGroupByKeyType.h>
+
+#include <AggregateFunctions/Combinators/AggregateFunctionMerge.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -84,6 +87,7 @@
 #include <base/scope_guard.h>
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <memory>
@@ -230,37 +234,6 @@ bool isMaterializedCTEDefinition(const QueryTreeNodePtr & node)
     if (const auto * table_node = node->as<TableNode>())
         return table_node->isMaterializedCTE();
     return false;
-}
-
-/// Recursively clears aliases from `node` and all of its descendants, stopping at
-/// nested-scope boundaries (`QUERY`, `UNION`, `LAMBDA`).
-///
-/// Background: during identifier resolution, when an identifier resolves to an alias
-/// (e.g. `cond` in `PREWHERE cond` resolves to the projection alias `cond`), the alias
-/// body is deep-cloned and the clone replaces the identifier. Only the clone's root is
-/// registered for later alias removal; the clone's descendants — which carry the
-/// original inner aliases (clone preserves aliases) — are not. A plain non-recursive
-/// `removeAlias` on each registered node therefore leaks inner aliases when the alias
-/// body itself contains alias-bearing nodes.
-///
-/// This walk catches those inner aliases. Nested subqueries / lambdas live in separate
-/// scopes that are responsible for their own alias cleanup, so the walk stops at their
-/// boundary.
-void removeAliasesRecursive(QueryTreeNodePtr & node)
-{
-    if (!node)
-        return;
-
-    node->removeAlias();
-
-    auto node_type = node->getNodeType();
-    if (node_type == QueryTreeNodeType::QUERY
-        || node_type == QueryTreeNodeType::UNION
-        || node_type == QueryTreeNodeType::LAMBDA)
-        return;
-
-    for (auto & child : node->getChildren())
-        removeAliasesRecursive(child);
 }
 
 /// Hides lambda argument names in the scopes they belong to and restores them on destruction.
@@ -935,6 +908,7 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
   * Example: SELECT id, value FROM test_table ORDER BY 1, 2;
   * Example: SELECT id, value FROM test_table LIMIT 5 BY 1, 2;
   */
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope)
 {
     const auto & settings = scope.context->getSettingsRef();
@@ -1200,7 +1174,7 @@ std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(
 
     // We don't need to have GROUPING under GROUP BY ALL, so we treat GROUPING
     // as an aggregate function for GROUP BY ALL expansion
-    if (function->isAggregateFunction() || function->isWindowFunction() || Poco::icompare(function->getFunctionName(), "grouping") == 0)
+    if (function->isAggregationCall() || function->isWindowCall() || Poco::icompare(function->getFunctionName(), "grouping") == 0)
         return {true, 0};
 
     UInt64 pushed_children = 0;
@@ -1327,8 +1301,30 @@ void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)
     query_tree_node_typed.setIsLimitByAll(false);
 }
 
+namespace
+{
+
+bool isStateOf(const DataTypes & argument_types, const String & name, NullsAction action, const Array & parameters)
+{
+    if (argument_types.size() != 1)
+        return false;
+    const auto * state_type = typeid_cast<const DataTypeAggregateFunction *>(argument_types[0].get());
+    if (!state_type)
+        return false;
+
+    AggregateFunctionProperties properties;
+    auto function = AggregateFunctionFactory::instance().get(name, action, state_type->getArgumentsDataTypes(), parameters, properties);
+    return AggregateFunctionMerge::canMergeStatesOf(*function, *state_type->getFunction());
+}
+
+}
+
 std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
-    const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context)
+    const std::string & aggregate_function_name,
+    NullsAction action,
+    const DataTypes & argument_types,
+    const Array & parameters,
+    const ContextPtr & context)
 {
     std::string result_aggregate_function_name = aggregate_function_name;
     auto aggregate_function_name_lowercase = Poco::toLower(aggregate_function_name);
@@ -1354,7 +1350,21 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
         result_aggregate_function_name = result_aggregate_function_name.substr(0, prefix_length) + "DistinctIf";
     }
 
-    bool need_add_or_null = settings[Setting::aggregate_functions_null_for_empty] && !result_aggregate_function_name.ends_with("OrNull");
+    static constexpr std::array<std::string_view, 4> suffixes_to_replace = {"MergeState", "Merge", "State", "If"};
+
+    /// Must be idempotent: shards and parallel replicas resolve the rewritten names (`sumOrNullIf`) again.
+    auto is_already_rewritten = [&](std::string_view suffix)
+    {
+        if (!result_aggregate_function_name.ends_with("OrNull" + String(suffix)))
+            return false;
+        if (suffix != "MergeState" && suffix != "Merge")
+            return true;
+        /// `-Merge` over states of another function (e.g. stored `sumOrNullOrNull` states) is still rewritten.
+        auto nested_name = result_aggregate_function_name.substr(0, result_aggregate_function_name.size() - suffix.size());
+        return isStateOf(argument_types, nested_name, action, parameters);
+    };
+    bool need_add_or_null = settings[Setting::aggregate_functions_null_for_empty] && !result_aggregate_function_name.ends_with("OrNull")
+        && std::ranges::none_of(suffixes_to_replace, is_already_rewritten);
     if (need_add_or_null)
     {
         auto properties = AggregateFunctionFactory::instance().tryGetProperties(result_aggregate_function_name, action);
@@ -1374,7 +1384,6 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
         {
             size_t function_name_size = result_aggregate_function_name.size();
 
-            static constexpr std::array<std::string_view, 4> suffixes_to_replace = {"MergeState", "Merge", "State", "If"};
             for (const auto & suffix : suffixes_to_replace)
             {
                 auto suffix_string_value = String(suffix);
@@ -1383,7 +1392,13 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
                 if (!result_aggregate_function_name.ends_with(suffix_to_check))
                     continue;
 
-                result_aggregate_function_name = result_aggregate_function_name.substr(0, function_name_size - suffix_to_check.size());
+                auto base_name = result_aggregate_function_name.substr(0, function_name_size - suffix_to_check.size());
+
+                /// sumMergeOrNull consumes sum states, sumOrNullMerge consumes sumOrNull states
+                if ((suffix == "MergeState" || suffix == "Merge") && isStateOf(argument_types, base_name, action, parameters))
+                    break;
+
+                result_aggregate_function_name = std::move(base_name);
                 result_aggregate_function_name += "OrNull";
                 result_aggregate_function_name += suffix_string_value;
 
@@ -2441,7 +2456,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     chassert(matcher_node_typed.isQualified());
 
     auto expression_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
-    expression_identifier_lookup.is_matcher_qualifier = true;
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
     auto expression_query_tree_node = expression_identifier_resolve_result.resolved_identifier;
 
@@ -3031,7 +3045,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     ///
     /// We traverse the APPLY expression tree because the aggregate function may be nested
     /// inside other function calls (e.g. `toString(argMax(x, number))`), not just at the top level.
-    /// We use `AggregateFunctionFactory` name lookup (not `FunctionNode::isAggregateFunction`) because
+    /// We use `AggregateFunctionFactory` name lookup (not `FunctionNode::isAggregationCall`) because
     /// APPLY expressions have not been resolved yet at this point — `FunctionNode::kind` is still `UNKNOWN`.
     auto has_aggregate_function_in_tree = [](const IQueryTreeNode * root) -> bool
     {
@@ -4178,6 +4192,17 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     }
                 }
 
+                /// A qualifier that matches a table expression names it, see `tryResolveIdentifierFromTableExpression`.
+                if (from_clause_hint.empty())
+                {
+                    if (auto qualifying = IdentifierResolver::tryFindTableExpressionByQualifier(unresolved_identifier, scope); qualifying.node)
+                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier '{}' cannot be resolved from {}{}. In scope {}",
+                            unresolved_identifier.getFullName(),
+                            IdentifierResolver::describeTableExpressionForErrorMessage(qualifying.node, *qualifying.data),
+                            getHintsErrorMessageSuffix(hints),
+                            scope.scope_node->formatASTForErrorMessage());
+                }
+
                 /// The typo hint goes before the formatted query, which can be many kilobytes long, so that
                 /// the actionable part of the message does not end up behind it. The optional `FROM`-clause
                 /// hint is still attached via `addMessage` to keep the number of placeholders in
@@ -4710,7 +4735,12 @@ void expandTuplesInList(QueryTreeNodes & key_list)
     expanded_keys.reserve(key_list.size());
     for (auto const & key : key_list)
     {
-        if (auto * function = key->as<FunctionNode>(); function != nullptr && function->getFunctionName() == "tuple")
+        const auto * function = key->as<FunctionNode>();
+        /// a `tuple` that the query does not write is folded into a constant when its arguments are constants
+        if (const auto * constant = key->as<ConstantNode>(); constant && constant->hasSourceExpression() && !constant->getSourceExpression()->hasOriginalAST())
+            function = constant->getSourceExpression()->as<FunctionNode>();
+
+        if (function != nullptr && function->getFunctionName() == "tuple")
         {
             std::copy(function->getArguments().begin(), function->getArguments().end(), std::back_inserter(expanded_keys));
         }
@@ -4738,6 +4768,10 @@ bool convertNestedGroupByKeysToNullable(
     const QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> & nullable_group_by_keys,
     const ContextPtr & context)
 {
+    /// The identifier resolve cache can make several references one node: change it in place only through its own copy.
+    if (node.use_count() > 1)
+        node = node->clone();
+
     if (nodeSupportsConvertToNullable(node) && nullable_group_by_keys.contains(node))
     {
         node->convertToNullable();
@@ -7332,10 +7366,10 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & 
 
         if (auto * function_node = current->as<FunctionNode>())
         {
-            if (function_node->isWindowFunction())
+            if (function_node->isWindowCall())
                 return HavingConjunctMoveAction::AbortRewrite;
 
-            if (function_node->isOrdinaryFunction())
+            if (function_node->isOrdinaryCall())
             {
                 if (auto function_base = function_node->getFunction())
                 {
@@ -7347,7 +7381,7 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & 
                 }
             }
 
-            if (function_node->isAggregateFunction() && verdict == HavingConjunctMoveAction::Move)
+            if (function_node->isAggregationCall() && verdict == HavingConjunctMoveAction::Move)
                 verdict = HavingConjunctMoveAction::KeepInHaving;
 
             if (function_node->getFunctionName() == "grouping" && verdict == HavingConjunctMoveAction::Move)

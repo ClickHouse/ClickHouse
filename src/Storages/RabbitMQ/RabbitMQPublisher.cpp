@@ -66,11 +66,13 @@ void RabbitMQPublisher::connect()
 void RabbitMQPublisher::setupChannel()
 {
     channel = connection.createChannel();
+    channel_error.clear();
     LOG_TRACE(log, "Created a producer channel");
 
     channel->onError([&](const char * message)
     {
         LOG_ERROR(log, "Producer's channel {} error: {}", channel_id, message);
+        channel_error = message;
 
         /// Channel is not usable anymore. (https://github.com/CopernicaMarketingSoftware/AMQP-CPP/issues/36#issuecomment-125112236)
         channel->close();
@@ -118,13 +120,11 @@ void RabbitMQPublisher::setupChannel()
 
 void RabbitMQPublisher::removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish)
 {
-    auto record_iter = delivery_record.find(received_delivery_tag);
-    chassert(record_iter != delivery_record.end());
-
+    /// The delivery tag comes from the broker, so it may refer to a message that is not (or no longer) in `delivery_record`.
     if (multiple)
     {
         /// If multiple is true, then all delivery tags up to and including current are confirmed (with ack or nack).
-        ++record_iter;
+        auto record_iter = delivery_record.upper_bound(received_delivery_tag);
 
         if (republish)
             for (auto record = delivery_record.begin(); record != record_iter; ++record)
@@ -136,6 +136,13 @@ void RabbitMQPublisher::removeRecord(UInt64 received_delivery_tag, bool multiple
     }
     else
     {
+        auto record_iter = delivery_record.find(received_delivery_tag);
+        if (record_iter == delivery_record.end())
+        {
+            LOG_WARNING(log, "Received {} for unknown delivery tag {}, ignoring it", republish ? "nack" : "ack", received_delivery_tag);
+            return;
+        }
+
         if (republish)
             if (!returned.push(record_iter->second))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to returned queue");
@@ -206,7 +213,7 @@ void RabbitMQPublisher::publish(Payloads & messages, bool republishing)
     iterateEventLoop();
 }
 
-void RabbitMQPublisher::publishStep(Payloads & payloads)
+String RabbitMQPublisher::publishStep(Payloads & payloads)
 {
     /// If onReady callback is not received, channel->usable() will anyway return true,
     /// but must publish only after onReady callback.
@@ -225,9 +232,19 @@ void RabbitMQPublisher::publishStep(Payloads & payloads)
 
     if (!channel->usable())
     {
-        if (connection.reconnect())
+        /// The broker closes only the channel when it rejects a publish, e.g. NOT_FOUND for a missing exchange.
+        /// A new channel is rejected the same way.
+        if (!reconnect_failed && connection.isConnected())
+            return fmt::format(
+                "Cannot publish to RabbitMQ exchange '{}': {}",
+                exchange_name,
+                channel_error.empty() ? "the channel is closed" : channel_error);
+
+        reconnect_failed = !connection.reconnect();
+        if (!reconnect_failed)
             setupChannel();
     }
+    return {};
 }
 
 bool RabbitMQPublisher::isReusable()

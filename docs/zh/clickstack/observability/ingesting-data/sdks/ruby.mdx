@@ -1,0 +1,54 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/ruby
+description: '在 ClickHouse Observability 和自管理部署中设置和配置 Ruby on Rails。'
+title: 'Ruby on Rails'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', '插桩']
+sidebarTitle: 'Ruby on Rails'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+使用 OpenTelemetry Ruby SDK 将链路追踪数据发送至 ClickHouse Observability。
+
+<ClickStackIntegrates signals={['traces']} />
+
+## 设置 OpenTelemetry {#set-up-opentelemetry}
+
+请按照 [OpenTelemetry Ruby 官方设置指南](https://opentelemetry.io/docs/languages/ruby/getting-started/) 初始化 SDK，并对您的应用程序进行插桩。
+
+使用下方的连接设置，为链路追踪配置 [基于 HTTP 的 OTLP 导出](https://opentelemetry.io/docs/languages/ruby/exporters/)。请替换上游指南中所有的示例目标端，包括针对特定信号的端点覆盖配置。
+
+## 配置目标端 {#configure-destination}
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 版本" />
+
+    在您的服务中打开 **团队设置 → 数据 → Managed Telemetry**，复制 **OTLP HTTP 端点** 和 **API key**。请使用包含端口的完整 HTTPS 端点：
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+
+  <Tab title="自管理">
+    使用采集器的 OTLP HTTP 端点和摄取 key。如果采集器未配置 TLS，请将 `https://` 替换为 `http://`。有关采集器的配置方法，请参阅[使用 OpenTelemetry 摄取数据](/zh/clickstack/observability/ingesting-data/opentelemetry#sending-otel-data-self-configured)。
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+</Tabs>
+
+## 验证摄取 {#verify-ingestion}
+
+启动已插桩的应用程序，并产生一些请求流量。在 ClickHouse Observability 中，选择一个较近的时间范围，然后在 Traces 中找到您应用程序的服务名称。
+
+如需排查插桩和导出器相关问题，请参阅 [OpenTelemetry Ruby 文档](https://opentelemetry.io/docs/languages/ruby/)。

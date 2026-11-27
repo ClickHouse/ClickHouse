@@ -27,6 +27,8 @@ CREATE TABLE dim (k Int64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO dim VALUES (705), (710);
 CREATE TABLE dim64 (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO dim64 VALUES (5);
+CREATE TABLE dim_u8 (k UInt8) ENGINE = MergeTree ORDER BY k;
+INSERT INTO dim_u8 VALUES (1);
 " < /dev/null
 
 # Every setting that decides whether the probe side gets a runtime filter, or which side is probed, is pinned.
@@ -86,7 +88,12 @@ echo '--- H LEFT ANTI prunes nothing ---'
 probe h "SELECT count() FROM fact AS f LEFT ANTI JOIN dim AS d ON f.k = d.k"
 report h
 
+echo '--- F a key cast to Bool, compared with a UInt8 key ---'
+probe f "SELECT count(), sum(v) FROM fact AS f INNER JOIN dim_u8 AS d ON CAST(f.k32 AS Bool) = d.k"
+report f
+
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS fact SYNC;
     DROP TABLE IF EXISTS dim SYNC;
-    DROP TABLE IF EXISTS dim64 SYNC;"
+    DROP TABLE IF EXISTS dim64 SYNC;
+    DROP TABLE IF EXISTS dim_u8 SYNC;"

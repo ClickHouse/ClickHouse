@@ -7,9 +7,7 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Demo days']
 ---
 
-<div id="new-dashboard-and-saved-search-listing-pages">
-  ## Nouvelles pages de liste des tableaux de bord et des recherches enregistrées
-</div>
+## Nouvelles pages de liste des tableaux de bord et des recherches enregistrées {#new-dashboard-and-saved-search-listing-pages}
 
 *Démo par [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -25,9 +23,7 @@ Une nouvelle galerie de modèles complète l’ensemble. Quatre tableaux de bord
 
 **PR associées :** [#1971](https://github.com/hyperdxio/hyperdx/pull/1971) Ajouter une page de liste des tableaux de bord, [#2012](https://github.com/hyperdxio/hyperdx/pull/2012) Ajouter une page de liste des recherches enregistrées, [#2021](https://github.com/hyperdxio/hyperdx/pull/2021) Ajouter les favoris pour les tableaux de bord et les recherches enregistrées, [#2033](https://github.com/hyperdxio/hyperdx/pull/2033) Regrouper les tableaux de bord et les recherches par tag, [#2031](https://github.com/hyperdxio/hyperdx/pull/2031) Afficher les métadonnées de création/mise à jour, [#2053](https://github.com/hyperdxio/hyperdx/pull/2053) Ajouter des icônes d’alerte à la page de liste des tableaux de bord, [#2010](https://github.com/hyperdxio/hyperdx/pull/2010) Ajouter une galerie de modèles de tableaux de bord
 
-<div id="filters-for-filters">
-  ## Filtres pour les filtres
-</div>
+## Filtres pour les filtres {#filters-for-filters}
 
 *Démo par [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -41,9 +37,7 @@ Le sélecteur de filtre a également été mis à jour pour prendre en charge la
 
 **PR associées :** [#1969](https://github.com/hyperdxio/hyperdx/pull/1969) Ajouter des conditions aux filtres de tableau de bord ; prise en charge de la sélection multiple pour les filtres
 
-<div id="rbac-for-predefined-dashboards">
-  ## RBAC pour les tableaux de bord prédéfinis
-</div>
+## RBAC pour les tableaux de bord prédéfinis {#rbac-for-predefined-dashboards}
 
 *Démo par [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -55,9 +49,7 @@ Le contrôle d’accès basé sur les rôles s’applique désormais aux tableau
 
 Les permissions de lecture fines fonctionnent comme prévu. Un rôle configuré avec un accès en lecture seule à des services spécifiques limite les utilisateurs aux seuls tableaux de bord prédéfinis correspondant à ces services. Les utilisateurs associés à ce rôle peuvent consulter les tableaux de bord et leurs filtres, mais les contrôles de filtre sont verrouillés pour empêcher toute modification. La démo montre un rôle personnalisé avec une permission de lecture « services » restreinte à un service donné, ainsi qu’un utilisateur connecté avec ce rôle, qui voit exactement les tableaux de bord et l’état des filtres auxquels il est censé avoir accès.
 
-<div id="optimizations-for-searching">
-  ## Optimisations pour la recherche
-</div>
+## Optimisations pour la recherche {#optimizations-for-searching}
 
 *Démo par [@knudtty](https://github.com/knudtty)*
 
@@ -71,9 +63,7 @@ Le correctif consiste à ajouter en tête du tableau de requêtes par fenêtre u
 
 **PR associées :** [#2019](https://github.com/hyperdxio/hyperdx/pull/2019) Utiliser une fenêtre d’1 minute pour les recherches, [#2014](https://github.com/hyperdxio/hyperdx/pull/2014) Corriger les limites de l’optimisation ORDER BY pour otel&#95;traces
 
-<div id="copy-row-and-configurable-filter-sizes">
-  ## Copie de lignes et tailles de filtres configurables
-</div>
+## Copie de lignes et tailles de filtres configurables {#copy-row-and-configurable-filter-sizes}
 
 *Démo par [@knudtty](https://github.com/knudtty)*
 
@@ -87,9 +77,7 @@ Le nombre de clés de filtre récupérées dans la barre latérale est désormai
 
 **PR associées :** [#2035](https://github.com/hyperdxio/hyperdx/pull/2035) Ajouter un bouton pour copier la ligne au format JSON, [#2020](https://github.com/hyperdxio/hyperdx/pull/2020) Nouveau paramètre d&#39;équipe pour le nombre de filtres à récupérer, [#1979](https://github.com/hyperdxio/hyperdx/pull/1979) Virtualiser les groupes de filtres imbriqués
 
-<div id="tabs-and-groups-in-dashboards">
-  ## Onglets et groupes dans les tableaux de bord
-</div>
+## Onglets et groupes dans les tableaux de bord {#tabs-and-groups-in-dashboards}
 
 *Démo par [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -103,9 +91,7 @@ La démo montre un groupe avec quelques options de personnalisation activées ou
 
 **PR associées :** [#1972](https://github.com/hyperdxio/hyperdx/pull/1972) Groupes de tableau de bord avec onglets et options repliables/avec bordure, [#2015](https://github.com/hyperdxio/hyperdx/pull/2015) Unifier section/group en un seul Group
 
-<div id="clickstack-cli">
-  ## ClickStack CLI
-</div>
+## ClickStack CLI {#clickstack-cli}
 
 *Démo par [@wrn14897](https://github.com/wrn14897)*
 
@@ -113,8 +99,8 @@ La démo montre un groupe avec quelques options de personnalisation activées ou
   <iframe src="https://www.youtube.com/embed/9XqJNhstabw" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-Le CLI ClickStack (`hdx`) est une nouvelle interface TUI en terminal pour rechercher, suivre en temps réel et inspecter les logs et les traces sans quitter votre terminal. Il se connecte à votre instance HyperDX en utilisant le même mécanisme de session web que le navigateur, il n’y a donc pas de clé API distincte à gérer. Après un `hdx auth login` unique avec l’URL de votre instance et votre e-mail, il reste authentifié.
+Le CLI ClickStack (`hdx`) est une nouvelle interface TUI en terminal pour rechercher, suivre en temps réel et inspecter les logs et les traces sans quitter votre terminal. Il se connecte à votre instance de l’interface utilisateur de ClickStack en utilisant le même mécanisme de session web que le navigateur, il n’y a donc pas de clé API distincte à gérer. Après un `hdx auth login` unique avec l’URL de votre instance et votre e-mail, il reste authentifié.
 
-La TUI offre la même interface de recherche que l’application web : même syntaxe de requête, même sélection de source, même possibilité d’examiner le détail de chaque entrée de log. L’un des points forts est la vue en cascade des traces : lorsqu’on clique sur une entrée de log, la trace distribuée complète s’affiche directement dans le terminal. La démo présente aussi une première expérimentation d’usage agentique : en donnant à un AI Agent accès à la sortie d’introspection du schéma du CLI, ainsi qu’à la possibilité d’exécuter des requêtes via le proxy ClickHouse, l’agent peut analyser des incidents de façon autonome. La démo va encore plus loin et montre l’agent utiliser des sessions web pour naviguer dans l’UI HyperDX via Playwright, en extrayant des métriques de graphiques rendus afin de les recouper avec ce qu’il a trouvé dans les logs.
+La TUI offre la même interface de recherche que l’application web : même syntaxe de requête, même sélection de source, même possibilité d’examiner le détail de chaque entrée de log. L’un des points forts est la vue en cascade des traces : lorsqu’on clique sur une entrée de log, la trace distribuée complète s’affiche directement dans le terminal. La démo présente aussi une première expérimentation d’usage agentique : en donnant à un AI Agent accès à la sortie d’introspection du schéma du CLI, ainsi qu’à la possibilité d’exécuter des requêtes via le proxy ClickHouse, l’agent peut analyser des incidents de façon autonome. La démo va encore plus loin et montre l’agent utiliser des sessions web pour naviguer dans l’interface utilisateur de ClickStack via Playwright, en extrayant des métriques de graphiques rendus afin de les recouper avec ce qu’il a trouvé dans les logs.
 
-**PR associée :** [#2043](https://github.com/hyperdxio/hyperdx/pull/2043) Ajout du paquet @hyperdx/cli — TUI en terminal pour rechercher et suivre les événements
+**PR associée :** [#2043](https://github.com/hyperdxio/hyperdx/pull/2043) Ajout du paquet @hyperdx/cli — TUI en terminal pour rechercher et suivre les événements

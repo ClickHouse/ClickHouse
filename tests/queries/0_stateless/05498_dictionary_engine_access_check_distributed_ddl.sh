@@ -82,12 +82,9 @@ function as_user()
 }
 
 echo "--- ON CLUSTER"
-for version in 1 2 ""
-do
-    unload
-    as_user "CREATE TABLE ${cluster_db}.w_${version:-default} ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary(${CLICKHOUSE_DATABASE}.d)" "${version:+&distributed_ddl_entry_format_version=${version}}"
-    status
-done
+unload
+as_user "CREATE TABLE ${cluster_db}.w_default ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary(${CLICKHOUSE_DATABASE}.d)"
+status
 
 echo "--- inner table of a materialized view"
 unload
@@ -100,7 +97,7 @@ as_user "CREATE TABLE w_function (id UInt64, value String) AS dictionary('${CLIC
 status
 query "EXISTS TABLE w_function"
 unload
-as_user "CREATE TABLE ${cluster_db}.w_function ON CLUSTER test_shard_localhost (id UInt64, value String) AS dictionary('${CLICKHOUSE_DATABASE}.d')" "&distributed_ddl_entry_format_version=2"
+as_user "CREATE TABLE ${cluster_db}.w_function ON CLUSTER test_shard_localhost (id UInt64, value String) AS dictionary('${CLICKHOUSE_DATABASE}.d')"
 status
 query "EXISTS TABLE ${cluster_db}.w_function"
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
+# Random settings limits: input_format_parquet_use_offset_index=(1, 1); output_format_parquet_row_group_size_bytes=(536870912, None); output_format_parquet_max_dictionary_size=(1048576, None)
 # Tag no-fasttest: depends on S3
 
 # A Parquet reader of a file in object storage starts reading the column data of upcoming row groups
@@ -25,6 +26,9 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+
+# The reads go through the distributed cache by default where it is enabled, but the test checks the reads of this server.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --table_engine_read_through_distributed_cache 0"
 
 for i in 1 2; do
     $CLICKHOUSE_CLIENT --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_${i}.parquet', format = 'RawBLOB') SETTINGS s3_truncate_on_insert = 1 FORMAT RawBLOB" < "$CURDIR/data_parquet/02588_data.parquet"

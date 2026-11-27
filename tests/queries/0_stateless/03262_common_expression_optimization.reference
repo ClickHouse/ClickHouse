@@ -122,17 +122,17 @@ QUERY id: 0
       ARGUMENTS
         LIST id: 5, nodes: 4
           COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
-          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+          COLUMN id: 7, column_name: B, result_type: UInt8, source_id: 3
+          COLUMN id: 8, column_name: C, result_type: UInt8, source_id: 3
+          FUNCTION id: 9, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 8, nodes: 2
-                COLUMN id: 9, column_name: E, result_type: UInt8, source_id: 3
-                COLUMN id: 10, column_name: F, result_type: UInt8, source_id: 3
-          COLUMN id: 11, column_name: B, result_type: UInt8, source_id: 3
-          COLUMN id: 12, column_name: C, result_type: UInt8, source_id: 3
+              LIST id: 10, nodes: 2
+                COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
+                COLUMN id: 12, column_name: F, result_type: UInt8, source_id: 3
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE __table1.A AND (__table1.E OR __table1.F) AND __table1.B AND __table1.C
+WHERE __table1.A AND __table1.B AND __table1.C AND (__table1.E OR __table1.F)
 -9114056182077943575	1	1	1	1	0	1
 -8941493636296671386	1	1	1	1	1	1
 -8816638533025328863	1	1	1	0	1	1
@@ -166,17 +166,17 @@ QUERY id: 0
       ARGUMENTS
         LIST id: 5, nodes: 4
           COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
-          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+          COLUMN id: 7, column_name: B, result_type: UInt8, source_id: 3
+          COLUMN id: 8, column_name: C, result_type: UInt8, source_id: 3
+          FUNCTION id: 9, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 8, nodes: 2
-                COLUMN id: 9, column_name: E, result_type: UInt8, source_id: 3
-                COLUMN id: 10, column_name: F, result_type: UInt8, source_id: 3
-          COLUMN id: 11, column_name: B, result_type: UInt8, source_id: 3
-          COLUMN id: 12, column_name: C, result_type: UInt8, source_id: 3
+              LIST id: 10, nodes: 2
+                COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
+                COLUMN id: 12, column_name: F, result_type: UInt8, source_id: 3
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE __table1.A AND (__table1.E OR __table1.F) AND __table1.B AND __table1.C
+WHERE __table1.A AND __table1.B AND __table1.C AND (__table1.E OR __table1.F)
 -9137658153367139416	1	1	1	0	0	0
 -9137309194079040284	1	1	1	0	0	0
 -9121738304623869295	1	1	0	0	1	0
@@ -210,17 +210,17 @@ QUERY id: 0
       ARGUMENTS
         LIST id: 5, nodes: 3
           COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
-          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+          COLUMN id: 7, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 8, nodes: 3
-                COLUMN id: 9, column_name: C, result_type: UInt8, source_id: 3
-                COLUMN id: 10, column_name: D, result_type: UInt8, source_id: 3
-                COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
-          COLUMN id: 12, column_name: B, result_type: UInt8, source_id: 3
+              LIST id: 9, nodes: 3
+                COLUMN id: 10, column_name: C, result_type: UInt8, source_id: 3
+                COLUMN id: 11, column_name: D, result_type: UInt8, source_id: 3
+                COLUMN id: 12, column_name: E, result_type: UInt8, source_id: 3
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE __table1.A AND (__table1.C OR __table1.D OR __table1.E) AND __table1.B
+WHERE __table1.A AND __table1.B AND (__table1.C OR __table1.D OR __table1.E)
 -9137658153367139416	1	1	1	0	0	0
 -9137309194079040284	1	1	1	0	0	0
 -9121738304623869295	1	1	0	0	1	0
@@ -254,17 +254,17 @@ QUERY id: 0
       ARGUMENTS
         LIST id: 5, nodes: 3
           COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
-          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+          COLUMN id: 7, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 8, nodes: 3
-                COLUMN id: 9, column_name: C, result_type: UInt8, source_id: 3
-                COLUMN id: 10, column_name: D, result_type: UInt8, source_id: 3
-                COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
-          COLUMN id: 12, column_name: B, result_type: UInt8, source_id: 3
+              LIST id: 9, nodes: 3
+                COLUMN id: 10, column_name: C, result_type: UInt8, source_id: 3
+                COLUMN id: 11, column_name: D, result_type: UInt8, source_id: 3
+                COLUMN id: 12, column_name: E, result_type: UInt8, source_id: 3
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE __table1.A AND (__table1.C OR __table1.D OR __table1.E) AND __table1.B
+WHERE __table1.A AND __table1.B AND (__table1.C OR __table1.D OR __table1.E)
 -9217261049539683905	0	1	1	0	1	1
 -9137658153367139416	1	1	1	0	0	0
 -9137309194079040284	1	1	1	0	0	0
@@ -719,13 +719,13 @@ QUERY id: 0
     FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
         LIST id: 5, nodes: 4
-          FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+          COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+          COLUMN id: 7, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 7, nodes: 2
-                COLUMN id: 8, column_name: C, result_type: UInt8, source_id: 3
-                COLUMN id: 9, column_name: D, result_type: UInt8, source_id: 3
-          COLUMN id: 10, column_name: A, result_type: UInt8, source_id: 3
-          COLUMN id: 11, column_name: B, result_type: UInt8, source_id: 3
+              LIST id: 9, nodes: 2
+                COLUMN id: 10, column_name: C, result_type: UInt8, source_id: 3
+                COLUMN id: 11, column_name: D, result_type: UInt8, source_id: 3
           FUNCTION id: 12, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 13, nodes: 2
@@ -734,7 +734,7 @@ QUERY id: 0
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE (__table1.C OR __table1.D) AND __table1.A AND __table1.B AND (__table1.E OR __table1.F)
+WHERE __table1.A AND __table1.B AND (__table1.C OR __table1.D) AND (__table1.E OR __table1.F)
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64

@@ -19,31 +19,41 @@ ClickHouse는 일반적으로 [C++ 프로그램과 동일한 동작 방식](http
 
 예시:
 
-```sql
+```sql title="Query"
 SELECT
     toTypeName(toLowCardinality('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
+```
 
+```text title="Response"
 ┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
 │ LowCardinality(String) │ LowCardinality(String) │ String           │
 └────────────────────────┴────────────────────────┴──────────────────┘
+```
 
+```sql title="Query"
 SELECT
     toTypeName(toNullable('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
+```
 
+```text title="Response"
 ┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
 │ Nullable(String) │ Nullable(String)    │ String           │
 └──────────────────┴─────────────────────┴──────────────────┘
+```
 
+```sql title="Query"
 SELECT
     toTypeName(toNullable('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
 SETTINGS cast_keep_nullable = 1
+```
 
+```text title="Response"
 ┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
 │ Nullable(String) │ Nullable(String)    │ Nullable(String) │
 └──────────────────┴─────────────────────┴──────────────────┘
@@ -119,6 +129,51 @@ LIMIT 10
 값을 지정된 데이터 타입으로 변환합니다.
 reinterpret 함수와 달리, CAST는 대상 데이터 타입에서 동일한 값을 생성하려고 시도합니다.
 이것이 불가능하면 예외가 발생합니다.
+
+`CAST`는 `LowCardinality` 래퍼를 제거합니다. 반면 `to<Type>` 함수는 이를 유지합니다.
+`to<Type>` 함수는 `Nullable` 래퍼도 유지합니다. `CAST`는 기본적으로 `Nullable`을 제거하지만,
+[`cast_keep_nullable`](/ko/reference/settings/session-settings/cast#cast_keep_nullable)
+설정이 활성화되어 있으면 이를 유지합니다.
+
+```sql title="Query"
+SELECT
+    toTypeName(toLowCardinality('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
+│ LowCardinality(String) │ LowCardinality(String) │ String           │
+└────────────────────────┴────────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ String           │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+SETTINGS cast_keep_nullable = 1
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ Nullable(String) │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
 
 `x`가 숫자로 직접 쓰이고 `T`가 `Decimal` 또는 64비트보다 큰 정수 타입이면, 숫자의 자릿수를
 `T`로 직접 읽으므로 정밀도가 손실되지 않습니다. 이 방식을 적용하지 않으면
@@ -2722,7 +2777,7 @@ toBFloat16('42.7'):            42.5
 
 도입 버전: v1.1.0
 
-String 입력값을 BFloat16 유형의 값으로 변환합니다.
+String 입력값을 BFloat16 타입의 값으로 변환합니다.
 문자열이 부동소수점 값을 나타내지 않으면 NULL을 반환합니다.
 
 지원되는 인수:

@@ -2,8 +2,8 @@
 sidebarTitle: '代码解释器'
 slug: /agents/builder/code-interpreter
 title: '代码解释器'
-description: '在 ClickHouse 智能体中执行沙箱化代码'
-keywords: ['AI', 'ClickHouse Cloud', '智能体', '代码解释器', '沙箱', 'Python']
+description: '在 ClickHouse 智能体中于沙箱内执行代码'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'code interpreter', 'sandbox', 'python']
 doc_type: 'reference'
 ---
 
@@ -11,69 +11,55 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
-代码解释器允许 agent 在托管沙箱中执行代码。可将其用于计算、数据转换、格式转换、绘图，以及其他任何更适合用代码而非自然语言完成的任务。
+借助代码解释器，agent 可以在托管沙箱中执行代码。它适用于计算、数据转换、格式转换、绘图，以及其他任何用代码比用自然语言更易完成的任务。
 
-<div id="enable-it">
-  ## 启用代码解释器
-</div>
+## 启用代码解释器 {#enable-it}
 
-在 Agent Builder 中，在 **Capabilities** 部分启用 **Run Code**，然后保存。agent会根据用户请求及其自身指令，自行决定何时运行代码。
+在agent构建器的 **Capabilities** 部分中启用 **Run Code**，然后保存。agent会根据用户的请求及其指令，自行决定何时运行代码。
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Capabilities 面板中的 Run Code 部分，其中 Run Code 复选框已启用，并带有 Upload to Code Environment 按钮](/images/cloud/agent-builder/run-code/run-code.webp)
-
-</Frame>
-
+  <Frame>
+    ![Capabilities 面板中的 Run Code 部分，Run Code 复选框已勾选，下方有 Upload to Code Environment 按钮](/images/cloud/agent-builder/run-code/run-code.webp)
+  </Frame>
 </div>
 
-<div id="supported-languages">
-  ## 支持的语言
-</div>
+## 支持的语言 {#supported-languages}
 
-该沙箱是一个 Unix 环境，提供两种通用运行时和一些 shell 实用工具：
+沙箱是一个 Unix 环境，提供两种通用运行时和若干 shell 工具：
 
-* **Python 3** - 数据任务的默认选择。
-* **Node.js (JavaScript)** - 当agent更适合使用 JS 完成任务时。
-* **Bash** 和 **sh** - 用于串接命令和进行快速 I/O 的 shell 脚本。
+* **Python 3** - 数据类任务的默认选择。
+* **Node.js (JavaScript)** - 适用于agent倾向于用 JS 完成任务的场景。
+* **Bash** 和 **sh** - shell 脚本，用于串联命令和快速 I/O。
 * **AWK** 和 **sed** - 面向行的文本处理。
-* **bc** - 任意精度计算。
+* **bc** - 任意精度数学运算。
 
-凡是涉及数据解析、转换或计算的任务，agent都会优先使用 Python。
+凡是涉及数据解析、转换或计算的工作，agent都会优先使用 Python。
 
 <Tip>
-  仅在任务确实适合用单行命令解决时，才使用 shell 工具。
+  仅在确实适合用一行命令解决的任务中使用 shell 工具。
 </Tip>
 
-<div id="files">
-  ## 文件
-</div>
+## 文件 {#files}
 
-用户可以将文件上传到对话中；代码解释器可在沙箱的工作目录中访问这些文件。代码也可以生成输出文件 (CSV、图表、归档文件) ，并以可下载附件的形式显示在对话中。
+用户可以将文件上传到对话中，代码解释器可在沙箱工作目录中访问这些文件。代码也可以生成输出文件 (CSV、图表、归档文件) ，这些文件会以可下载附件的形式出现在对话中。
 
-<div id="sandbox-isolation">
-  ## 沙箱隔离
-</div>
+## 沙箱隔离 {#sandbox-isolation}
 
-每次执行都会在一个临时沙箱中运行，不提供网络访问，也不提供持久化存储。会话之间不共享状态——除非 agent 明确重新加载，否则某次运行中的变量和文件不会带到下一次运行中。
+每次执行都在临时沙箱中运行，无法访问网络，也没有持久化存储。会话之间不共享状态：除非 agent 显式重新加载，否则一次运行中的变量和文件不会带入下一次运行。
 
-不同方案的资源限制 (内存、每次运行可用的文件数、每月请求配额) 同样适用。错误和 stderr 会与 stdout 一并显示在对话中。
+资源限制 (内存、每次运行的文件数、每月请求配额) 因订阅套餐而异。错误信息和 stderr 会与 stdout 一同显示在对话中。
 
-<div id="when-to-use-it">
-  ## 何时使用它
-</div>
+## 何时使用 {#when-to-use-it}
 
-当答案需要依靠确定性计算，而语言模型仅凭推理无法稳定得出结果时，就应使用代码解释器。
+如果答案需要确定性的计算，而语言模型仅凭推理无法可靠地得出结果，就应使用代码解释器。
 典型场景包括：
 
 * 解析用户上传的 CSV 或 JSON 文件。
-* 计算汇总统计信息或进行快速模拟。
-* 在不同格式之间转换 (Parquet、JSON、CSV) 。
+* 计算汇总统计信息，或运行简单的模拟。
+* 在不同格式 (Parquet、JSON、CSV) 之间进行转换。
 * 根据查询结果生成图表。
 
 <Tip>
-  对于模型仅凭上下文就能回答的任务，应避免使用它。
-  代码执行会增加延迟，并消耗配额。
+  如果模型已能根据上下文回答，则无需使用代码解释器。
+  执行代码会增加延迟，并消耗配额。
 </Tip>

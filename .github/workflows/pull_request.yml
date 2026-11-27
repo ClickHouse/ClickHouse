@@ -323,13 +323,15 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_darwin
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -341,7 +343,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1085,12 +1087,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -1102,7 +1106,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1146,12 +1150,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -1163,7 +1169,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1207,12 +1213,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -1224,7 +1232,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1491,12 +1499,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -1508,7 +1518,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1553,11 +1563,14 @@ jobs:
     - build_amd_debug
     - build_amd_msan
     - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -1569,7 +1582,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1613,12 +1626,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -1630,7 +1645,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1675,11 +1690,14 @@ jobs:
     - build_amd_debug
     - build_amd_msan
     - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -1691,7 +1709,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1736,11 +1754,14 @@ jobs:
     - build_amd_debug
     - build_amd_msan
     - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -1752,7 +1773,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1797,11 +1818,14 @@ jobs:
     - build_amd_debug
     - build_amd_msan
     - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -1813,7 +1837,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1858,11 +1882,14 @@ jobs:
     - build_amd_debug
     - build_amd_msan
     - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -1874,7 +1901,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1919,11 +1946,14 @@ jobs:
     - build_amd_debug
     - build_amd_msan
     - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -1935,7 +1965,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -1980,11 +2010,14 @@ jobs:
     - build_amd_debug
     - build_amd_msan
     - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -1996,7 +2029,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2041,11 +2074,14 @@ jobs:
     - build_amd_debug
     - build_amd_msan
     - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -2057,7 +2093,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2102,11 +2138,14 @@ jobs:
     - build_amd_debug
     - build_amd_msan
     - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -2118,7 +2157,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2522,12 +2561,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -2539,7 +2580,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2583,12 +2624,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -2600,7 +2643,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2644,12 +2687,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -2661,7 +2706,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2705,12 +2750,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -2722,7 +2769,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2761,17 +2808,19 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Bugfix validation (integration tests, aarch64)' --workflow "PR" --ci --timestamp
 
   bugfix_validation_unit_tests:
-    runs-on: [self-hosted, pr-amd-large]
+    runs-on: [self-hosted, pr-arm-large]
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -2783,7 +2832,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2827,12 +2876,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -2845,7 +2896,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2889,12 +2940,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -2907,7 +2960,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -2951,12 +3004,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -2969,7 +3024,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3013,12 +3068,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -3031,7 +3088,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3075,12 +3132,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -3093,7 +3152,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3137,12 +3196,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -3155,7 +3216,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3199,12 +3260,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -3217,7 +3280,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3261,12 +3324,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -3279,7 +3344,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3323,12 +3388,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -3341,7 +3408,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3385,12 +3452,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -3403,7 +3472,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3447,12 +3516,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -3465,7 +3536,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3554,12 +3625,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -3571,7 +3644,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3615,12 +3688,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -3632,7 +3707,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3676,12 +3751,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -3693,7 +3770,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3918,11 +3995,14 @@ jobs:
     - build_amd_debug
     - build_amd_msan
     - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -3934,7 +4014,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -3978,13 +4058,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -3996,7 +4077,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4040,12 +4121,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -4057,7 +4140,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4101,12 +4184,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -4118,7 +4203,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4162,12 +4247,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -4179,7 +4266,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4223,12 +4310,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -4240,7 +4329,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4284,12 +4373,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -4301,7 +4392,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4345,12 +4436,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -4362,7 +4455,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4406,12 +4499,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -4423,7 +4518,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4467,12 +4562,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -4484,7 +4581,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4528,12 +4625,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -4545,7 +4644,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4589,12 +4688,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -4606,7 +4707,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4650,12 +4751,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -4667,7 +4770,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4711,12 +4814,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -4728,7 +4833,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4766,18 +4871,146 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (arm_binary, 5/5)' --workflow "PR" --ci --timestamp
 
+  stateless_tests_arm_binary_parallelreplicas_plan_based_s3_storage_parallel:
+    runs-on: [self-hosted, pr-arm-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_debug
+    - build_amd_msan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
+    - style_check
+    - unit_tests_arm_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBQYXJhbGxlbFJlcGxpY2FzLCBwbGFuLWJhc2VkLCBzMyBzdG9yYWdlLCBwYXJhbGxlbCk=') }}
+    name: "Stateless tests (arm_binary, ParallelReplicas, plan-based, s3 storage, parallel)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, ParallelReplicas, plan-based, s3 storage, parallel)' --workflow "PR" --ci --timestamp
+
+  stateless_tests_arm_binary_parallelreplicas_plan_based_s3_storage_sequential:
+    runs-on: [self-hosted, pr-arm-small]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_debug
+    - build_amd_msan
+    - build_arm_asan_ubsan
+    - build_arm_binary
+    - build_arm_debug
+    - build_arm_tidy_1_4
+    - build_arm_tidy_2_4
+    - build_arm_tidy_3_4
+    - build_arm_tidy_4_4
+    - build_arm_tsan
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential_1_2
+    - stateless_tests_arm_binary_sequential_2_2
+    - style_check
+    - unit_tests_arm_debug
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhcm1fYmluYXJ5LCBQYXJhbGxlbFJlcGxpY2FzLCBwbGFuLWJhc2VkLCBzMyBzdG9yYWdlLCBzZXF1ZW50aWFsKQ==') }}
+    name: "Stateless tests (arm_binary, ParallelReplicas, plan-based, s3 storage, sequential)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, ParallelReplicas, plan-based, s3 storage, sequential)' --workflow "PR" --ci --timestamp
+
   stateless_tests_amd_llvm_coverage_1_3:
     runs-on: [self-hosted, pr-amd-medium]
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -4790,7 +5023,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4834,12 +5067,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -4852,7 +5087,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4896,12 +5131,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -4914,7 +5151,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -4959,12 +5196,14 @@ jobs:
     - build_amd_binary
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -4976,7 +5215,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5020,12 +5259,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -5038,7 +5279,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5082,12 +5323,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -5100,7 +5343,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5144,12 +5387,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -5162,7 +5407,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5206,12 +5451,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -5224,7 +5471,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5268,12 +5515,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -5286,7 +5535,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5330,12 +5579,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -5348,7 +5599,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5392,12 +5643,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -5410,7 +5663,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5454,12 +5707,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -5472,7 +5727,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5517,12 +5772,14 @@ jobs:
     - build_amd_binary
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -5534,7 +5791,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5572,10 +5829,10 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_binary_excluded_from_llvm)' --workflow "PR" --ci --timestamp
 
-  unit_tests_amd_debug:
-    runs-on: [self-hosted, pr-amd-large]
+  unit_tests_arm_debug:
+    runs-on: [self-hosted, pr-arm-large]
     needs:
-    - build_amd_debug
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -5586,8 +5843,8 @@ jobs:
     - dockers_build_multiplatform_manifest
     - fast_test
     - style_check
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYW1kX2RlYnVnKQ==') }}
-    name: "Unit tests (amd_debug)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXJtX2RlYnVnKQ==') }}
+    name: "Unit tests (arm_debug)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -5615,12 +5872,12 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (amd_debug)' --workflow "PR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (arm_debug)' --workflow "PR" --ci --timestamp
 
   unit_tests_asan_ubsan:
-    runs-on: [self-hosted, pr-amd-large]
+    runs-on: [self-hosted, pr-arm-large]
     needs:
-    - build_amd_asan_ubsan
+    - build_arm_asan_ubsan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -5663,13 +5920,13 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (asan_ubsan)' --workflow "PR" --ci --timestamp
 
   unit_tests_tsan:
-    runs-on: [self-hosted, pr-amd-large]
+    runs-on: [self-hosted, pr-arm-large]
     needs:
-    - build_amd_tsan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -5753,9 +6010,9 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (msan)' --workflow "PR" --ci --timestamp
 
   unit_tests_asan_ubsan_function_prop_fuzzer:
-    runs-on: [self-hosted, pr-amd-large]
+    runs-on: [self-hosted, pr-arm-large]
     needs:
-    - build_amd_asan_ubsan
+    - build_arm_asan_ubsan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -5798,13 +6055,13 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (asan_ubsan, function_prop_fuzzer)' --workflow "PR" --ci --timestamp
 
   unit_tests_tsan_function_prop_fuzzer:
-    runs-on: [self-hosted, pr-amd-large]
+    runs-on: [self-hosted, pr-arm-large]
     needs:
-    - build_amd_tsan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -5893,12 +6150,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -5911,7 +6170,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -5979,7 +6238,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6047,7 +6306,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6114,7 +6373,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6181,7 +6440,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6248,7 +6507,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6315,7 +6574,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6382,7 +6641,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6449,7 +6708,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6516,7 +6775,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6583,7 +6842,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6627,12 +6886,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -6644,7 +6905,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6688,12 +6949,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -6705,7 +6968,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6750,11 +7013,14 @@ jobs:
     - build_amd_debug
     - build_amd_msan
     - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -6766,7 +7032,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6810,12 +7076,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -6827,7 +7095,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6894,7 +7162,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -6938,13 +7206,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -6956,7 +7225,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7000,13 +7269,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -7018,7 +7288,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7062,13 +7332,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -7080,7 +7351,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7124,8 +7395,9 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -7142,7 +7414,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7186,13 +7458,15 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -7204,7 +7478,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7271,7 +7545,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7315,12 +7589,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -7332,7 +7608,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7376,13 +7652,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -7394,7 +7671,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7439,11 +7716,14 @@ jobs:
     - build_amd_debug
     - build_amd_msan
     - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -7455,7 +7735,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7499,12 +7779,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -7516,7 +7798,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7583,7 +7865,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7627,12 +7909,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -7644,7 +7928,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7688,13 +7972,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -7706,7 +7991,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7751,11 +8036,14 @@ jobs:
     - build_amd_debug
     - build_amd_msan
     - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -7767,7 +8055,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7811,12 +8099,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -7828,7 +8118,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7895,7 +8185,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -7968,7 +8258,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8041,7 +8331,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8114,7 +8404,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8187,7 +8477,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8260,7 +8550,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8333,7 +8623,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8406,7 +8696,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8479,7 +8769,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8552,7 +8842,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8625,7 +8915,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8698,7 +8988,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8771,7 +9061,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8844,7 +9134,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8917,7 +9207,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -8990,7 +9280,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9063,7 +9353,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9136,7 +9426,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9209,7 +9499,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9282,7 +9572,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9355,7 +9645,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9428,7 +9718,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9501,7 +9791,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9574,7 +9864,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9647,7 +9937,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9720,7 +10010,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9793,7 +10083,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9866,7 +10156,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -9939,7 +10229,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10006,7 +10296,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10073,7 +10363,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10140,7 +10430,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10207,7 +10497,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10274,7 +10564,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10315,21 +10605,11 @@ jobs:
   parser_memory_check:
     runs-on: [self-hosted, pr-arm-small]
     needs:
-    - build_amd_asan_ubsan
-    - build_amd_binary
-    - build_amd_debug
-    - build_amd_msan
-    - build_amd_tsan
-    - build_arm_asan_ubsan
     - build_arm_binary
-    - build_arm_debug
-    - build_arm_msan
-    - build_arm_release
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
-    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -10370,21 +10650,11 @@ jobs:
   storage_memory_check:
     runs-on: [self-hosted, pr-arm-small]
     needs:
-    - build_amd_asan_ubsan
-    - build_amd_binary
-    - build_amd_debug
-    - build_amd_msan
-    - build_amd_tsan
-    - build_arm_asan_ubsan
     - build_arm_binary
-    - build_arm_debug
-    - build_arm_msan
-    - build_arm_release
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
-    - build_arm_tsan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm
@@ -10451,7 +10721,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10518,7 +10788,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10562,12 +10832,14 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_debug
     - build_amd_msan
-    - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -10602,8 +10874,8 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
     - unit_tests_amd_llvm_coverage
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10649,11 +10921,14 @@ jobs:
     - build_amd_debug
     - build_amd_msan
     - build_amd_tsan
+    - build_arm_asan_ubsan
     - build_arm_binary
+    - build_arm_debug
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
     - build_arm_tidy_4_4
+    - build_arm_tsan
     - build_llvm_coverage_build
     - config_workflow
     - dockers_build_amd
@@ -10684,7 +10959,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -10806,7 +11081,7 @@ jobs:
     - stateless_tests_arm_binary_sequential_1_2
     - stateless_tests_arm_binary_sequential_2_2
     - style_check
-    - unit_tests_amd_debug
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
@@ -11130,6 +11405,8 @@ jobs:
     - stateless_tests_arm_binary_asyncinsert_s3_storage_parallel
     - stateless_tests_arm_binary_asyncinsert_s3_storage_sequential
     - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_parallelreplicas_plan_based_s3_storage_parallel
+    - stateless_tests_arm_binary_parallelreplicas_plan_based_s3_storage_sequential
     - stateless_tests_arm_binary_s3_storage_dbreplicated_parallel_1_2
     - stateless_tests_arm_binary_s3_storage_dbreplicated_parallel_2_2
     - stateless_tests_arm_binary_s3_storage_dbreplicated_sequential
@@ -11147,8 +11424,8 @@ jobs:
     - stress_test_arm_release
     - stress_test_arm_tsan
     - style_check
-    - unit_tests_amd_debug
     - unit_tests_amd_llvm_coverage
+    - unit_tests_arm_debug
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_msan
