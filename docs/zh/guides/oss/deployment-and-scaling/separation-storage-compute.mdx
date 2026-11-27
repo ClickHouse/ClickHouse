@@ -8,7 +8,7 @@ keywords: ['存储', '计算', '架构', '可扩展性', '云']
 ---
 
 <div id="overview">
-  ## 概述
+  ## 概述 {#overview}
 </div>
 
 本指南将介绍如何使用 ClickHouse 和 S3 实现存储与计算分离的架构。
@@ -27,7 +27,7 @@ keywords: ['存储', '计算', '架构', '可扩展性', '云']
 
 <Steps>
   <Step title="将 S3 用作 ClickHouse 的磁盘" id="1-use-s3-as-a-clickhouse-disk">
-    ### 创建磁盘
+### 创建磁盘 {#creating-a-disk}
 
     在 ClickHouse 的 `config.d` 目录中新建一个文件，用于存放存储配置：
 
@@ -155,13 +155,9 @@ keywords: ['存储', '计算', '架构', '可扩展性', '云']
     如果一切都正常，你现在已经在使用采用存储与计算分离架构的 ClickHouse！
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![采用存储与计算分离的 S3 存储桶示例](/images/guides/s3_bucket_example.webp)
-
-    </Frame>
-
+      <Frame>
+        ![采用存储与计算分离的 S3 存储桶示例](/images/guides/s3_bucket_example.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -179,7 +175,7 @@ keywords: ['存储', '计算', '架构', '可扩展性', '云']
 </Steps>
 
 <div id="further-reading">
-  ## 延伸阅读
+  ## 延伸阅读 {#further-reading}
 </div>
 
 * [SharedMergeTree 表引擎](/zh/products/cloud/features/infrastructure/shared-merge-tree)

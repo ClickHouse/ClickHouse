@@ -1,13 +1,37 @@
 ---
-title: '¿ClickHouse tiene un optimizador basado en costos?'
+title: '¿Tiene ClickHouse un optimizador basado en costes?'
+sidebarTitle: 'Optimizador basado en costes'
 toc_hidden: true
 toc_priority: 10
 slug: /faq/general/cost-based
-description: 'ClickHouse tiene ciertos mecanismos de optimización basados en costos'
+description: 'ClickHouse dispone de un optimizador basado en costes para el orden de las uniones, el lado de construcción de las uniones y el orden de las condiciones de PREWHERE, a partir de estadísticas de columna recopiladas automáticamente'
 doc_type: 'reference'
-keywords: ['CBE', 'optimizer']
+keywords: ['CBO', 'optimizador basado en costes', 'optimizador', 'estadísticas', 'reordenamiento de uniones']
 ---
 
-ClickHouse tiene algunos mecanismos puntuales de optimización basados en costos, como el siguiente: el orden de lectura de las columnas viene determinado por el costo de leer rangos comprimidos de datos del disco.
+Sí. ClickHouse tiene un optimizador basado en costes (CBO). Este estima el número de filas que produce cada paso de una consulta a partir de las estadísticas de columna y utiliza esas estimaciones para elegir entre planes de consulta equivalentes.
 
-ClickHouse también reordena JOIN en función de las estadísticas de columnas; sin embargo, esto (a partir de 2025) ni de lejos es tan avanzado como el CBE de Postgres, Oracle o MS SQL Server.
+Las decisiones basadas en costes son las siguientes:
+
+* **Orden de las uniones.** En una consulta que une varias tablas, el planificador busca el orden de las uniones con el menor coste estimado. De forma predeterminada, utiliza el algoritmo de programación dinámica `dpsub`, que considera todos los órdenes de unión válidos, incluidos los que contienen uniones `LEFT`, `RIGHT`, `FULL`, `SEMI` y `ANTI`. La búsqueda abarca grupos de hasta 10 tablas, valor definido mediante `query_plan_optimize_join_order_limit`: una consulta que une más tablas se divide en grupos que se optimizan por separado. Si el límite se eleva por encima de 12, los grupos de más de 12 tablas se planifican con un algoritmo voraz. Consulte [`query_plan_optimize_join_order_algorithm`](/es/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_algorithm) y [`query_plan_optimize_join_order_limit`](/es/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit).
+* **Lado de construcción de la unión.** En una unión hash, el planificador coloca en la tabla hash la entrada con el menor tamaño estimado, independientemente del orden en que aparezcan las tablas en la consulta. Consulte [`query_plan_join_swap_table`](/es/reference/settings/session-settings/query-plan#query_plan_join_swap_table).
+* **Algoritmo de unión.** Cuando las tablas unidas pueden leerse en el orden de la clave de unión, el planificador elige entre una unión hash y `full_sorting_merge` en función del coste, y da preferencia a los planes cuya salida ordenada pueda aprovechar una unión posterior. Consulte [`query_plan_join_order_use_interesting_orders`](/es/reference/settings/session-settings/query-plan#query_plan_join_order_use_interesting_orders).
+* **Orden de los filtros.** Las condiciones de `WHERE` se trasladan a [`PREWHERE`](/es/optimize/prewhere) y se ordenan de modo que las condiciones poco costosas y selectivas se evalúen primero, en función del tamaño comprimido de las columnas y de la selectividad estimada de cada condición.
+
+## ¿De dónde provienen las estimaciones? {#where-do-the-estimates-come-from}
+
+Las tablas `MergeTree` recopilan estadísticas de columna automáticamente para cada parte de datos cuando las partes se fusionan, y también al insertar en tablas de tamaño inferior a [`materialize_statistics_on_insert_max_table_size`](/es/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert_max_table_size) (25 GiB de forma predeterminada), por lo que no es necesario ejecutar `ANALYZE` ni mantener las estadísticas manualmente. Los tipos de estadísticas se definen mediante el ajuste de tabla [`auto_statistics_types`](/es/reference/settings/merge-tree-settings/other#auto_statistics_types), cuyo valor predeterminado es `basic` (mínimo y máximo, número de valores predeterminados y `NULL`, longitud total de las cadenas) y `uniq_v2` (número de valores distintos). Otros tipos, como `tdigest` (distribución de valores) y `countmin` (frecuencias de valores individuales), mejoran las estimaciones para condiciones de rango y de igualdad sobre datos sesgados. Consulte [Estadísticas de columna](/es/reference/engines/table-engines/mergetree-family/mergetree#column-statistics).
+
+Las estadísticas se utilizan cuando [`use_statistics`](/es/reference/settings/session-settings/use-statistics#use_statistics) está habilitado, que es la opción predeterminada. Además de las estadísticas de columna, el optimizador del orden de JOIN puede utilizar los tamaños de las tablas hash observados en ejecuciones anteriores de la misma unión ([`use_hash_table_stats_for_join_reordering`](/es/reference/settings/session-settings/use#use_hash_table_stats_for_join_reordering)), así como las estadísticas de los archivos de manifiesto de Iceberg ([`use_datalake_metadata_statistics`](/es/reference/settings/session-settings/use)).
+
+## ¿Cómo puedo ver lo que hizo el optimizador? {#how-can-i-see-what-the-optimizer-did}
+
+Use [`EXPLAIN`](/es/reference/statements/explain) para ver el plan elegido y [`EXPLAIN ANALYZE`](/es/reference/statements/explain#explain-analyze) para ejecutar la consulta y ver las métricas reales de cada paso. En los pasos de unión, además, [compara el número de filas estimado con el real](/es/reference/statements/explain#explain-analyze-join-estimation).
+
+## ¿Cuándo importa el optimizador? {#when-does-the-optimizer-matter}
+
+Gran parte del rendimiento de ClickHouse no depende del optimizador: la clave primaria, los índices de omisión, la poda de particiones y la ejecución vectorizada hacen que una consulta sea rápida incluso sin búsqueda de planes. El optimizador basado en costes cobra mayor relevancia en consultas que combinan muchas tablas, como los workloads de TPC-H, TPC-DS y Join Order Benchmark.
+
+<Tip>
+  Para ver la lista completa de ajustes que controlan la planificación de JOIN, consulte [Ajustes de JOIN](/es/concepts/features/operations/select/join-settings).
+</Tip>

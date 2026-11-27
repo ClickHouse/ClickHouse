@@ -25,6 +25,7 @@
 #include <QueryPipeline/printPipeline.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/TemporaryFiles.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
@@ -999,6 +1000,14 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
 
     {
         QueryPlan query_plan = deserializeQueryPlan(task_description.serialized_query_plan, context);
+
+        if (context->getSettingsRef()[Setting::enable_join_runtime_filters_index_analysis] && !task.runtime_filter_descriptors.empty())
+        {
+            NameSet delivered_filter_ids;
+            for (const auto & descriptor : task.runtime_filter_descriptors)
+                delivered_filter_ids.insert(descriptor.filter_key);
+            QueryPlanOptimizations::collectDeliveredJoinRuntimeFilters(*query_plan.getRootNode(), delivered_filter_ids);
+        }
 
         /// A deserialized plan carries neither the thread limit nor the concurrency-control flag,
         /// so both come from the query's settings.

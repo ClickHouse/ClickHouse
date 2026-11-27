@@ -1207,11 +1207,22 @@ struct ToStartOfInterval<IntervalKind::Kind::Hour>
     }
     static UInt32 execute(UInt32 t, Int64 hours, const DateLUTImpl & time_zone, Int64)
     {
-        return time_zone.toStartOfHourInterval(t, hours);
+        /// Inlined into the per-row loop of the caller, so that the checks of `hours` and of the properties of
+        /// the time zone are done once before the loop. Without it, the compiler makes a call for every row,
+        /// which is a quarter slower for a one hour interval in zones such as `Asia/Kolkata`.
+        [[clang::always_inline]] return time_zone.toStartOfHourInterval(t, hours);
     }
-    static Int64 execute(Int64 t, Int64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
+    static Int64 execute(Int64 t, Int64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> origin = std::nullopt)
     {
-        return time_zone.toStartOfHourInterval(wholeSecondsRoundedDown(t, scale_multiplier), hours);
+        const Int64 whole_seconds = wholeSecondsRoundedDown(t, scale_multiplier);
+        if (!origin.has_value())
+            return time_zone.toStartOfHourInterval(whole_seconds, hours);
+
+        /// With an origin, `t` is the non-negative offset from it: a duration and not a point in time. It keeps
+        /// the grid counted from the local midnight, as the other units of this overload do, and does not follow
+        /// the clock on a day when the offset changes by a fraction of an hour: that would move the result off
+        /// the grid of whole hours whenever the duration, read as a time, happens to be on such a day.
+        return time_zone.toStartOfHourWindow(whole_seconds, hours);
     }
 };
 
@@ -1879,10 +1890,11 @@ struct TimeSlotImpl
 {
     static constexpr auto name = "timeSlot";
 
-    static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
+    static UInt32 execute(const DateTime64 & t, Int64 scale_multiplier, const DateLUTImpl & time_zone)
     {
         /// Clamped: see ToStartOfDayImpl.
-        return static_cast<UInt32>(std::clamp<Int64>(t.whole / 1800 * 1800, 0, std::numeric_limits<UInt32>::max()));
+        const Int64 seconds = executeExtendedResult(t, scale_multiplier, time_zone).value / scale_multiplier;
+        return static_cast<UInt32>(std::clamp<Int64>(seconds, 0, std::numeric_limits<UInt32>::max()));
     }
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl &)
@@ -1910,18 +1922,15 @@ struct TimeSlotImpl
         throwTimeIsNotSupported(name);
     }
 
-    static DecimalUtils::DecimalComponents<DateTime64>  executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
+    /// Rounds in ticks: whole seconds rounded down and scaled back can go below the `Int64` minimum.
+    static DateTime64 executeExtendedResult(const DateTime64 & t, Int64 scale_multiplier, const DateLUTImpl &)
     {
-        if (likely(t.whole >= 0))
-            return {t.whole / 1800 * 1800, 0};
-        return {(t.whole + 1 - 1800) / 1800 * 1800, 0};
+        return DateTime64(DateLUTImpl::roundDownToMultiple(t.value, 1800 * scale_multiplier));
     }
 
     static DecimalUtils::DecimalComponents<Time64> executeExtendedResult(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl &)
     {
-        if (likely(t.whole >= 0))
-            return {t.whole / 1800 * 1800, 0};
-        return {(t.whole + 1 - 1800) / 1800 * 1800, 0};
+        return {DateLUTImpl::roundDownToMultiple(t.whole, 1800), 0};
     }
 
     static Int64 executeExtendedResult(Int32, const DateLUTImpl &)

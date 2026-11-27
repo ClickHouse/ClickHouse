@@ -14,7 +14,7 @@ Essas configurações definem o servidor ClickHouse e são geradas automaticamen
 
 ## index_mark_cache_policy {#index_mark_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nome da política de evicção do cache de marcas de índice secundário. Valores possíveis: `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Política de evicção do cache de marcas de índices secundários. Valores possíveis: `LRU`, `SLRU`, `SIEVE`. Consulte [`index_mark_cache_size`](/pt-BR/reference/settings/server-settings/settings/index-mark#index_mark_cache_size) para a capacidade do cache e [`index_mark_cache_size_ratio`](/pt-BR/reference/settings/server-settings/settings/index-mark#index_mark_cache_size_ratio) para o tamanho da fila protegida na política SLRU.
 
 ## index_mark_cache_prewarm_ratio {#index_mark_cache_prewarm_ratio}
 
