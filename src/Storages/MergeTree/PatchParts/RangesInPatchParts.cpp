@@ -170,6 +170,17 @@ MarkRanges getRangesInPatchPartJoin(const PatchPartInfoForReader & patch)
     return optimizeRanges(patch_part_ranges);
 }
 
+/// Whether the sorting key tells the ranges of a `MergeOnKey` patch for a range of the part; otherwise it is read in full.
+bool canSelectRangesInPatchPartByKey(const DataPartPtr & original_part, const PatchPartInfoForReader & patch)
+{
+    chassert(patch.mode == PatchMode::MergeOnKey);
+    const auto main_index = original_part->getIndex();
+    const auto patch_index = patch.part->getIndexPtr();
+    if (!main_index || main_index->empty() || !patch_index || patch_index->empty() || !patch.sorting_key)
+        return false;
+    return std::min(main_index->size(), patch.sorting_key->column_names.size()) != 0;
+}
+
 MarkRanges getRangesInPatchPartMergeOnKey(
     const DataPartPtr & original_part,
     const PatchPartInfoForReader & patch,
@@ -195,18 +206,11 @@ MarkRanges getRangesInPatchPartMergeOnKey(
     auto main_index = original_part->getIndex();
     auto patch_index = patch.part->getIndexPtr();
 
-    if (!main_index || main_index->empty() || !patch_index || patch_index->empty())
-        return emit_all_patch_ranges();
-
-    if (!patch.sorting_key)
+    if (!canSelectRangesInPatchPartByKey(original_part, patch))
         return emit_all_patch_ranges();
 
     const auto & reverse_flags = patch.sorting_key->reverse_flags;
-    const size_t patch_sorting_key_prefix_size = patch.sorting_key->column_names.size();
-    const size_t common_prefix_size = std::min(main_index->size(), patch_sorting_key_prefix_size);
-
-    if (common_prefix_size == 0)
-        return emit_all_patch_ranges();
+    const size_t common_prefix_size = std::min(main_index->size(), patch.sorting_key->column_names.size());
 
     Columns main_sorting_key_columns(common_prefix_size);
     Columns patch_sorting_key_columns(common_prefix_size);
@@ -306,6 +310,21 @@ std::vector<MarkRanges> getRangesInPatchParts(const DataPartPtr & original_part,
 
 bool patchSplitsWithRead(const DataPartPtr & original_part, const PatchPartInfoForReader & patch, const MarkRanges & read_ranges)
 {
+    switch (patch.mode)
+    {
+        case PatchMode::Merge:
+            /// Its ranges are those of the rows the range of the part takes.
+            return true;
+        case PatchMode::Join:
+            return false;
+        case PatchMode::MergeOnKey:
+            if (!canSelectRangesInPatchPartByKey(original_part, patch))
+                return false;
+            break;
+    }
+
+    /// A piece also takes the granule at its boundary with each neighbour, so a granule can be taken by three pieces
+    /// that split the patch: fewer than 4 cannot tell that from a run of equal keys.
     constexpr size_t pieces = 4;
     const size_t marks = read_ranges.getNumberOfMarks();
     if (marks < pieces)
@@ -313,7 +332,7 @@ bool patchSplitsWithRead(const DataPartPtr & original_part, const PatchPartInfoF
 
     /// The bounds of the patch ranges of all the pieces: +1 at the begin of a range, -1 at its end.
     VectorWithMemoryTracking<std::pair<size_t, Int8>> bounds;
-    auto range_it = read_ranges.begin();
+    const auto * range_it = read_ranges.begin();
     size_t taken_from_range = 0;
     for (size_t i = 0; i < pieces; ++i)
     {
@@ -331,9 +350,7 @@ bool patchSplitsWithRead(const DataPartPtr & original_part, const PatchPartInfoF
                 taken_from_range = 0;
             }
         }
-        auto patch_ranges = getRangesInPatchPart(original_part, patch, piece);
-        std::ranges::sort(patch_ranges, std::less{}, &MarkRange::begin);
-        for (const auto & range : optimizeRanges(patch_ranges))
+        for (const auto & range : getRangesInPatchPartMergeOnKey(original_part, patch, piece))
         {
             bounds.emplace_back(range.begin, 1);
             bounds.emplace_back(range.end, -1);
@@ -346,7 +363,7 @@ bool patchSplitsWithRead(const DataPartPtr & original_part, const PatchPartInfoF
     for (const auto & [_, delta] : bounds)
     {
         pieces_taking += delta;
-        if (pieces_taking > 2)
+        if (pieces_taking == static_cast<Int64>(pieces))
             return false;
     }
     return true;

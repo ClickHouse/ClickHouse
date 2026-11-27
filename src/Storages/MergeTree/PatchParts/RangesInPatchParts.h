@@ -46,11 +46,11 @@ using MaybeMinMaxStats = std::optional<MinMaxStats>;
 using PatchStatsMap = absl::node_hash_map<MarkRange, PatchStats, MarkRangeHash>;
 
 /// Whether the reads of different ranges of the original part take different granules of the patch part, so that the
-/// patch is split between the replicas as the read is. Not when they all take all of it, as for a patch of a table without
-/// a sorting key or in `Join` mode, nor when a run of equal sorting keys gives the same granules to the reads around it.
-/// Tells by the patch ranges of pieces of `read_ranges`, the ranges the query reads from the part, as a run of equal keys
-/// can be most of what a query reads and a small piece of the part: a granule of the patch may be taken by two
-/// neighbouring pieces, not by more.
+/// patch is split between the replicas as the read is. A `Merge` patch is, by the offsets of the rows. A `Join` patch is
+/// not, nor a `MergeOnKey` one whose sorting key cannot select its ranges, as every read takes all of it. For another
+/// `MergeOnKey` patch, a run of equal keys can give the same granules to all the reads: it is not split when a granule of
+/// it is taken by each of 4 pieces of `read_ranges`, the ranges the query reads from the part. A read of fewer marks is
+/// taken to split it.
 bool patchSplitsWithRead(const DataPartPtr & original_part, const PatchPartInfoForReader & patch, const MarkRanges & read_ranges);
 
 /// `patchSplitsWithRead` of each patch of a part, computed once for all the tasks reading the part.
