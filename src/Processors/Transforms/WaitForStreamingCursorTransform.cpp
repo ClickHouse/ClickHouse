@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Processors/Port.h>
+#include <Common/EventFD.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -60,7 +61,13 @@ void WaitForStreamingCursorTransform::work()
 int WaitForStreamingCursorTransform::schedule()
 {
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-    return cursor->pendingReportsFD();
+    /// The event is registered once: once written, it stays readable.
+    if (!no_pending_reports)
+    {
+        no_pending_reports = std::make_shared<EventFD>();
+        cursor->notifyWhenNoPendingReports(no_pending_reports);
+    }
+    return no_pending_reports->fd;
 #else
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Waiting for the streaming cursor is not supported on this platform");
 #endif
