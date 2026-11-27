@@ -2195,24 +2195,29 @@ protected:
         return batch;
     }
 
+    /// Tracks the tasks of `batches` before they are sent, so the teardown cancels a task whose start is in flight.
+    void registerQueuedTasks(const VectorWithMemoryTracking<DistributedQueryTaskBatch> & batches)
+    {
+        for (const auto & batch : batches)
+        {
+            for (const auto & batch_stage : batch.stages)
+            {
+                for (const auto & batch_task : batch_stage.tasks)
+                {
+                    auto task_info = buildTaskInfo(batch_task.task.task_id);
+                    LOG_DEBUG(logger, "Queueing task {} for {}", task_info.task_id, task_info.endpoint_uri);
+                    running_tasks.registerTask(batch_stage.name, std::move(task_info));
+                    ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasks);
+                }
+            }
+        }
+    }
+
     void dispatchQueuedTasks() override
     {
         for (auto & [worker, batches] : queued_batches)
         {
-            for (const auto & batch : batches)
-            {
-                for (const auto & batch_stage : batch.stages)
-                {
-                    for (const auto & batch_task : batch_stage.tasks)
-                    {
-                        auto task_info = buildTaskInfo(batch_task.task.task_id);
-                        LOG_DEBUG(logger, "Queueing task {} for {}", task_info.task_id, task_info.endpoint_uri);
-                        /// Before the send, so the teardown cancels a task whose start is in flight.
-                        running_tasks.registerTask(batch_stage.name, std::move(task_info));
-                        ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasks);
-                    }
-                }
-            }
+            registerQueuedTasks(batches);
 
             auto & queue = send_queues[worker];
             if (!queue)
@@ -2260,6 +2265,23 @@ protected:
         queued_batches.clear();
     }
 
+    /// Pops the next batch of `queue` or returns nullopt when none is available
+    /// Clears the flag to enable new thread to send tasks over the same worker queue
+    std::optional<DistributedQueryTaskBatch> takeNextBatch(WorkerSendQueue & queue)
+    {
+        std::lock_guard lock(queue.mutex);
+        /// A cancelled query needs no more tasks; the teardown cancels the tracked ones on their worker.
+        if (queue.batches.empty() || cancellation->isCancelled())
+        {
+            queue.batches.clear();
+            queue.send_in_flight = false;
+            return std::nullopt;
+        }
+        auto batch = std::move(queue.batches.front());
+        queue.batches.pop_front();
+        return batch;
+    }
+
     /// Sends the batches of one worker in order until its queue is empty.
     void sendQueuedBatches(const WorkerIndex worker, const std::shared_ptr<WorkerSendQueue> & queue)
     {
@@ -2268,29 +2290,15 @@ protected:
         const String unique_query_id_string = toString(unique_query_id);
         try
         {
-            while (true)
+            while (auto batch = takeNextBatch(*queue))
             {
-                DistributedQueryTaskBatch batch;
-                {
-                    std::lock_guard lock(queue->mutex);
-                    /// A cancelled query needs no more tasks; the teardown cancels the tracked ones on their worker.
-                    if (queue->batches.empty() || cancellation->isCancelled())
-                    {
-                        queue->batches.clear();
-                        queue->send_in_flight = false;
-                        return;
-                    }
-                    batch = std::move(queue->batches.front());
-                    queue->batches.pop_front();
-                }
-
                 size_t task_count = 0;
-                for (const auto & batch_stage : batch.stages)
+                for (const auto & batch_stage : batch->stages)
                     task_count += batch_stage.tasks.size();
-                LOG_DEBUG(logger, "Sending a batch of {} tasks of {} stages to {}", task_count, batch.stages.size(), worker_endpoint_uris[worker]);
-                sendTaskBatch(worker_endpoint_uris[worker], unique_query_id_string, batch, unique_query_id_string, collectors, context);
+                LOG_DEBUG(logger, "Sending a batch of {} tasks of {} stages to {}", task_count, batch->stages.size(), worker_endpoint_uris[worker]);
+                sendTaskBatch(worker_endpoint_uris[worker], unique_query_id_string, *batch, unique_query_id_string, collectors, context);
                 ProfileEvents::increment(ProfileEvents::DistributedPlanTaskBatches);
-                for (const auto & batch_stage : batch.stages)
+                for (const auto & batch_stage : batch->stages)
                     for (const auto & batch_task : batch_stage.tasks)
                         running_tasks.startPolling(batch_stage.name, makeUniqueTaskId(unique_query_id, batch_task.task.task_id));
             }
