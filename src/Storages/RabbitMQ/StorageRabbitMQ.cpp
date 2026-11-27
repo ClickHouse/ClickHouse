@@ -947,8 +947,6 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
 }
 
 
-
-
 void StorageRabbitMQ::pushConsumer(RabbitMQConsumerPtr consumer)
 {
     std::lock_guard lock(consumers_mutex);
