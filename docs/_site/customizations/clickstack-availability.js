@@ -2614,7 +2614,7 @@
       ],
       [
         "ClickHouse Observability",
-        "/clickstack/demo-days/2026/2026-11-20"
+        "/clickstack/observability/demo-days/2026/2026-11-20"
       ]
     ]
   },
@@ -3046,6 +3046,23 @@
       [
         "ClickHouse Observability",
         "/clickstack/observability/demo-days/2026/2026-11-12"
+      ]
+    ]
+  },
+  "/clickstack/observability/demo-days/2026/2026-11-20": {
+    "observabilityOnly": [
+      "version-aware-app-builder",
+      "faster-app-builds-with-fewer-tokens"
+    ],
+    "openSourceOnly": [],
+    "variants": [
+      [
+        "Open Source",
+        "/clickstack/demo-days/2026/2026-11-20"
+      ],
+      [
+        "ClickHouse Observability",
+        "/clickstack/observability/demo-days/2026/2026-11-20"
       ]
     ]
   }

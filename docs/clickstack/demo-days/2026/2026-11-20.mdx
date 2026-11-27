@@ -99,7 +99,7 @@ Finally, the app info panel shows the queries the app runs. Previously, the agen
 
 Dashboards already support links to other dashboards. Clicking a row in a table tile can pass that row's values to another dashboard, and Markdown and table tiles can include plain links. But plain links didn't carry over the filters. You could filter an overview to one service's errors, follow a link to the service detail dashboard, and see every service again.
 
-Links can now include the current time range and filter selections using two global variables. `${__url_time_range}` expands to `from=…&to=…`, and `${__all_variables}` expands to the `filters=` parameter. This lets the destination dashboard open with the same services, statuses and time range selected. In the demo, we filter the overview to the API service's errors, then follow a link to the service detail dashboard, which already shows only that service's failing spans. The PR is still open.
+Links can now include the current time range and filter selections using two global variables. `$__url_time_range` expands to `from=…&to=…`, and `$__all_variables` expands to the `filters=` parameter. This lets the destination dashboard open with the same services, statuses and time range selected. In the demo, we filter the overview to the API service's errors, then follow a link to the service detail dashboard, which already shows only that service's failing spans. The PR is still open.
 
 **Related PRs:** [#3726](https://github.com/ClickHouse/ClickStack/pull/3726) More global vars for dashboard links (open)
 
