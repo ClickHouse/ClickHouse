@@ -27,7 +27,13 @@ private:
     struct Task;
 
 public:
-    void init(ReadBuffer * reader_, const ReadOptions & options, FormatParserSharedResourcesPtr parser_shared_resources_);
+    /// If `is_cancelled` is given and gets set while the whole file is being read into memory (when the input is not
+    /// seekable), reading stops early: the caller has to check `is_cancelled` before using the data.
+    void init(
+        ReadBuffer * reader_,
+        const ReadOptions & options,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
+        const std::atomic<int> * is_cancelled = nullptr);
 
     /// Waits for in-progress reads to complete, cancels queued reads that haven't started yet.
     ~Prefetcher();
@@ -233,7 +239,7 @@ private:
     /// (One mutex for all tasks because it's not used frequently.)
     std::mutex exception_mutex;
 
-    void determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOptions & options);
+    void determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOptions & options, const std::atomic<int> * is_cancelled);
     /// Reads from the underlying ReadBuffer, for readSync and for tasks.
     void readImpl(char * to, size_t n, size_t offset);
     /// Creates and starts a Task covering this request and possibly other nearby ranges.

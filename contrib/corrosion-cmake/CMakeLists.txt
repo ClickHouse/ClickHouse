@@ -156,7 +156,7 @@ if (CMAKE_OSX_DEPLOYMENT_TARGET)
 endif()
 
 if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
-    # The C and C++ code built by the crates (e.g. a copy of `zstd` in `zstd-sys`) is third-party,
+    # The C and C++ code built by the crates (e.g. the C code of `ring`) is third-party,
     # like the code in `contrib`, which is not checked for unsigned integer overflows either.
     set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -fno-sanitize=unsigned-integer-overflow")
     set(RUST_CFLAGS "${RUST_CFLAGS} -fno-sanitize=unsigned-integer-overflow")
@@ -305,6 +305,14 @@ if (SANITIZE)
     set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 1
 codegen-units = 4")
     message(STATUS "Rust release profile: opt-level = 1, to limit LLVM memory usage under sanitizers")
+elseif (ENABLE_CFI)
+    # CFI links the crates as bitcode, where every codegen unit repeats the inline functions it uses.
+    # vortex-array keeps 4 units so that it is not the longest ThinLTO backend job of the link.
+    set(RUST_RELEASE_PROFILE_EXTRA "codegen-units = 1
+
+[profile.release.package.vortex-array]
+codegen-units = 4")
+    message(STATUS "Rust release profile: one codegen unit per crate, for the CFI link")
 else()
     set(RUST_RELEASE_PROFILE_EXTRA "")
     message(STATUS "Rust release profile: optimized")
