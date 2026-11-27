@@ -32,6 +32,16 @@ SELECT count(), sum(length(reverse(payload)))
 FROM join_input_width_wide LEFT ALL JOIN join_input_width_narrow USING (k)
 SETTINGS query_plan_join_swap_table = 'auto';
 
+-- The wide payload is fetched after LIMIT, so it should not change which side is built.
+SELECT countIf(position(explain, 'JoinLazyColumnsStep') > 0), max(extract(explain, 'Type: (left|right)'))
+FROM (
+    EXPLAIN SELECT k, payload
+    FROM join_input_width_wide LEFT ALL JOIN join_input_width_narrow USING (k)
+    ORDER BY cityHash64(k) DESC LIMIT 10
+    SETTINGS query_plan_join_swap_table = 'auto', query_plan_optimize_lazy_materialization = 1,
+        query_plan_lazy_materialization_for_join = 1, query_plan_max_limit_for_lazy_materialization = 100
+);
+
 -- The narrow input now has many more keys, so building from it also needs more hash table entries.
 TRUNCATE TABLE join_input_width_wide;
 TRUNCATE TABLE join_input_width_narrow;

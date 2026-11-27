@@ -341,6 +341,7 @@ struct QueryGraphBuilder
         /// query in `optimizeJoinLogicalImpl`, which also counts the tables: only DPsub can plan such a
         /// group, and it turns down more tables than `DPSUB_MAX_RELATIONS`.
         bool allow_semi_anti_flattening = false;
+        bool allow_input_width_estimation = true;
 
         BuilderContext(
             const QueryPlanOptimizationSettings & optimization_settings_,
@@ -441,7 +442,7 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
 
 void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit);
 
-void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings, bool allow_input_width_estimation);
 
 constexpr bool isInnerOrCross(JoinKind kind)
 {
@@ -627,7 +628,7 @@ static size_t addChildQueryGraph(
                 return count;
             }
             /// Optimize child subplan before continuing to get size estimation
-            optimizeJoinLogicalImpl(child_join_step, *join_node, nodes, graph.context->optimization_settings);
+            optimizeJoinLogicalImpl(child_join_step, *join_node, nodes, graph.context->optimization_settings, graph.context->allow_input_width_estimation);
         }
     }
 
@@ -643,7 +644,7 @@ static size_t addChildQueryGraph(
         auto * child_join_step = typeid_cast<JoinStepLogical *>(child_node->step.get());
         if (child_join_step && !child_join_step->isOptimized())
         {
-            optimizeJoinLogicalImpl(child_join_step, *child_node, nodes, graph.context->optimization_settings);
+            optimizeJoinLogicalImpl(child_join_step, *child_node, nodes, graph.context->optimization_settings, graph.context->allow_input_width_estimation);
         }
     }
 
@@ -1094,7 +1095,8 @@ static const QueryPlan::Node * findColumnThroughRenames(const QueryPlan::Node & 
 
 /// Estimate the bytes carried by this input before the hash table is built. For a stored
 /// String, use its average uncompressed serialized width as a proxy for its in-memory width.
-static std::optional<Float64> estimateJoinInputBytes(const QueryPlan::Node & node, size_t estimated_rows)
+static std::optional<Float64> estimateJoinInputBytes(
+    const QueryPlan::Node & node, size_t estimated_rows, const QueryPlanOptimizationSettings & settings)
 {
     Float64 row_width = 0;
     for (const auto & column : *node.step->getOutputHeader())
@@ -1114,7 +1116,18 @@ static std::optional<Float64> estimateJoinInputBytes(const QueryPlan::Node & nod
         if (!WhichDataType(column.type).isString())
             return std::nullopt;
 
-        auto analyzed_result = read->getAnalyzedResultForEstimation();
+        /// Match row estimation in the automatic parallel replicas probe: its own read
+        /// skips range analysis, so use the corresponding single-node read.
+        if (settings.find_single_node_read)
+        {
+            read = settings.find_single_node_read(*read);
+            if (!read)
+                return std::nullopt;
+        }
+
+        auto analyzed_result = read->getAnalyzedResult();
+        if (!analyzed_result)
+            analyzed_result = read->getAnalyzedResultForEstimation();
         const auto & parts = analyzed_result ? analyzed_result->parts_with_ranges : read->getParts();
         Float64 sampled_rows = 0;
         Float64 sampled_bytes = 0;
@@ -1460,10 +1473,11 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 swap_on_sizes = *lhs_estimation < *rhs_estimation;
                 /// Keep row-based costing for join graphs. For a single join, account for
                 /// the data held by the build side when both MergeTree inputs can be estimated.
-                if (input_nodes.size() == 2 && join_operator.strictness == JoinStrictness::All && !join_operator.expression.empty())
+                if (query_graph_builder.context->allow_input_width_estimation && input_nodes.size() == 2
+                    && join_operator.strictness == JoinStrictness::All && !join_operator.expression.empty())
                 {
-                    const auto left_bytes = estimateJoinInputBytes(*left_child_node, *lhs_estimation);
-                    const auto right_bytes = estimateJoinInputBytes(*right_child_node, *rhs_estimation);
+                    const auto left_bytes = estimateJoinInputBytes(*left_child_node, *lhs_estimation, optimization_settings);
+                    const auto right_bytes = estimateJoinInputBytes(*right_child_node, *rhs_estimation, optimization_settings);
                     if (left_bytes && right_bytes && *left_bytes != *right_bytes)
                         swap_on_sizes = *left_bytes < *right_bytes;
                 }
@@ -1823,7 +1837,8 @@ static bool joinGraphHasOverlappingColumnNames(
     return false;
 }
 
-void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+void optimizeJoinLogical(
+    QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings, bool allow_input_width_estimation)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
     if (!join_step || join_step->isOptimized())
@@ -1833,10 +1848,10 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinOptimizeMicroseconds);
-    optimizeJoinLogicalImpl(join_step, node, nodes, optimization_settings);
+    optimizeJoinLogicalImpl(join_step, node, nodes, optimization_settings, allow_input_width_estimation);
 }
 
-void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings, bool allow_input_width_estimation)
 {
     for (auto * child : node.children)
     {
@@ -1897,6 +1912,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     }
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
+    query_graph_builder.context->allow_input_width_estimation = allow_input_width_estimation;
     query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
     query_graph_builder.context->allow_semi_anti_flattening = reorder_semi_anti;
 

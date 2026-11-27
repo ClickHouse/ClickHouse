@@ -443,7 +443,7 @@ bool convertLogicalJoinToPhysical(
     QueryPlan::Nodes &,
     const QueryPlanOptimizationSettings & optimization_settings);
 
-void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &, bool allow_input_width_estimation);
 
 /// Convert an OUTER join whose null-extended rows cannot survive above it, when the proof comes from
 /// arbitrarily higher in the plan (a filter, or the conditions of an enclosing INNER/SEMI join).
