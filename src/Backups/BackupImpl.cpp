@@ -138,10 +138,14 @@ namespace
     }
 
     /// A backup stores one object per data_file_name -- byte-identical files share one, and a file that is empty
-    /// or comes entirely from the base backup has none. This is what `num_entries` / `size_of_entries` count on
-    /// read; the write side counts the same objects by `data_file_index` (see writeBackupMetadata).
-    bool claimPhysicalEntry(const BackupFileInfo & info, UnorderedSetWithMemoryTracking<String> & counted_objects)
+    /// or comes entirely from the base backup has none. A plain backup (`deduplicate_files` = 0) instead stores one
+    /// object per file, empty files included. This is what `num_entries` / `size_of_entries` count on read; the
+    /// write side counts the same objects by `data_file_index` (see writeBackupMetadata).
+    bool claimPhysicalEntry(
+        const BackupFileInfo & info, bool deduplicate_files, UnorderedSetWithMemoryTracking<String> & counted_objects)
     {
+        if (!deduplicate_files)
+            return true;
         if (info.data_file_name.empty())
             return false;
         return counted_objects.emplace(info.data_file_name).second;
@@ -814,6 +818,8 @@ void BackupImpl::readBackupMetadata()
     UnorderedSetWithMemoryTracking<String> declared_packed_files;
 
     bool contents_seen = false;
+    /// Absent in manifests written before the setting existed, when every backup was deduplicated.
+    bool deduplicate_files = true;
 
     /// Strict parsers: reject trailing garbage / unknown boolean text (fail closed with BACKUP_DAMAGED)
     /// instead of DB::parse's lenient truncation (e.g. <size>12x34</size> read as 12).
@@ -864,6 +870,9 @@ void BackupImpl::readBackupMetadata()
 
         if (h.contains("backup_id"))
             backup_id = req("backup_id");
+
+        if (h.contains("deduplicate_files"))
+            deduplicate_files = to_bool(req("deduplicate_files"), "deduplicate_files");
 
         if (h.contains("num_packs"))
         {
@@ -999,7 +1008,7 @@ void BackupImpl::readBackupMetadata()
         ++num_files;
         total_size += info.size;
         /// Pack entries are counted in loadPackIndexes.
-        if (reads_data && !packed && claimPhysicalEntry(info, counted_objects))
+        if (reads_data && !packed && claimPhysicalEntry(info, deduplicate_files, counted_objects))
         {
             ++num_entries;
             size_of_entries += info.size - info.base_size;

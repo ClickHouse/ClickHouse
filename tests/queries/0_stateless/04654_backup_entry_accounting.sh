@@ -23,12 +23,12 @@ INSERT INTO t SELECT number, number, number FROM numbers(1000);
 "
 
 roundtrip() {
-    local tag=$1 backup_settings=$2
+    local tag=$1 backup_settings=$2 table=${3:-t}
     ${CLICKHOUSE_CLIENT} --query "
-        BACKUP TABLE t TO Disk('backups', '${name}_${tag}')
+        BACKUP TABLE ${table} TO Disk('backups', '${name}_${tag}')
         SETTINGS id='${name}_${tag}_backup'${backup_settings}" | grep -o BACKUP_CREATED
     ${CLICKHOUSE_CLIENT} --query "
-        RESTORE TABLE t AS t_${tag} FROM Disk('backups', '${name}_${tag}')
+        RESTORE TABLE ${table} AS ${table}_${tag} FROM Disk('backups', '${name}_${tag}')
         SETTINGS id='${name}_${tag}_restore'" | grep -o RESTORED
 }
 
@@ -36,6 +36,14 @@ roundtrip first ""
 roundtrip checksum ", data_file_name_generator='checksum'"
 # A plain backup stores every file as its own object, duplicates included.
 roundtrip nodedup ", deduplicate_files=0"
+
+# With every array empty, the Log table's element stream is an empty file, which a plain backup stores too.
+${CLICKHOUSE_CLIENT} -m --query "
+DROP TABLE IF EXISTS empty_stream;
+CREATE TABLE empty_stream (s Array(UInt64)) ENGINE=Log;
+INSERT INTO empty_stream SELECT [] FROM numbers(10);
+"
+roundtrip nodedup_empty ", deduplicate_files=0" empty_stream
 
 # Two KeeperMap tables sharing one Keeper path store the data once, so the second's entry references the first's file.
 # The reference has no object of its own: with packing on, it must not be counted in addition to the pack holding the bytes.
@@ -71,7 +79,7 @@ packref_restore packref_swapped zzz_km aaa_km
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS backup_log"
 
-for tag in first checksum nodedup packref packref_swapped; do
+for tag in first checksum nodedup nodedup_empty packref packref_swapped; do
     ${CLICKHOUSE_CLIENT} --query "
     SELECT '$tag',
         (SELECT (num_entries, uncompressed_size) FROM system.backup_log
@@ -92,4 +100,5 @@ SELECT
 
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP TABLE t; DROP TABLE t_first; DROP TABLE t_checksum; DROP TABLE t_nodedup;
+DROP TABLE empty_stream; DROP TABLE empty_stream_nodedup_empty;
 DROP TABLE km_a SYNC; DROP TABLE km_b SYNC"
