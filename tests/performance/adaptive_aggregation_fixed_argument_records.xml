@@ -1,0 +1,18 @@
+<test>
+    <!-- The staging of argument records of one size by the adaptive aggregator: fixed-width keys with only fixed-size
+         aggregate arguments. Almost every key is new to the frozen tables, so almost every row is staged as a record,
+         and the copies of the records to their partitions dominate the scan.
+
+         The first two queries are a synthetic ClickBench Q32, two fixed-width keys of 12 bytes together with `count`,
+         `sum` and `avg` of two 2-byte arguments, which makes records of 16 bytes: once with the whole result, and once
+         with Q32's `ORDER BY ... LIMIT`. The third query has two 8-byte arguments, which makes records of 28 bytes, and
+         the fourth four of them, which makes records of 44 bytes. -->
+    <settings>
+        <enable_adaptive_aggregator>1</enable_adaptive_aggregator>
+    </settings>
+
+    <query>SELECT w, ip, count(), sum(r), avg(rw) FROM (SELECT intHash64(number) AS w, toUInt32(number) AS ip, toInt16(number % 2) AS r, toInt16(number % 1920) AS rw FROM numbers_mt(10000000)) GROUP BY w, ip FORMAT Null</query>
+    <query>SELECT w, ip, count() AS c, sum(r), avg(rw) FROM (SELECT intHash64(number) AS w, toUInt32(number) AS ip, toInt16(number % 2) AS r, toInt16(number % 1920) AS rw FROM numbers_mt(10000000)) GROUP BY w, ip ORDER BY c DESC LIMIT 10 FORMAT Null</query>
+    <query>SELECT w, ip, count(), sum(a), avg(b) FROM (SELECT intHash64(number) AS w, toUInt32(number) AS ip, number AS a, toUInt64(number % 1920) AS b FROM numbers_mt(10000000)) GROUP BY w, ip FORMAT Null</query>
+    <query>SELECT w, ip, count(), sum(a), avg(b), min(c), max(d) FROM (SELECT intHash64(number) AS w, toUInt32(number) AS ip, number AS a, toUInt64(number % 1920) AS b, toUInt64(number % 7) AS c, toUInt64(number % 11) AS d FROM numbers_mt(10000000)) GROUP BY w, ip FORMAT Null</query>
+</test>

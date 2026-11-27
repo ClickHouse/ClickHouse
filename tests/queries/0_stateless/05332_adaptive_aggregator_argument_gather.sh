@@ -50,7 +50,11 @@ check 'Serialized key' '[number % 5000]' 0
 check 'Spilled arguments' 'toUInt64(number % 5000)' 1000000
 
 # Successive fixed records exercise key and argument copies at different alignments within a chunk.
-for width in 4 5 6 7
+# The key takes 8 bytes of a record, and a record of at most 64 bytes is assembled and then copied to
+# its partition: at once up to 16 bytes (widths 4 to 7), in two words up to 32 bytes (widths 9, 16 and
+# 24), and in a loop of words above that (widths 25, 40 and 56). A wider record is written in place
+# (width 57).
+for width in 4 5 6 7 9 16 24 25 40 56 57
 do
     aggregates="min(toFixedString(char(65 + number % 26), ${width}))"
     check "Fixed record width ${width}" 'toUInt64(number % 5000)' 0

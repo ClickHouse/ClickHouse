@@ -7,4 +7,11 @@ Fixed record width 4	1	1	0
 Fixed record width 5	1	1	0
 Fixed record width 6	1	1	0
 Fixed record width 7	1	1	0
+Fixed record width 9	1	1	0
+Fixed record width 16	1	1	0
+Fixed record width 24	1	1	0
+Fixed record width 25	1	1	0
+Fixed record width 40	1	1	0
+Fixed record width 56	1	1	0
+Fixed record width 57	1	1	0
 Contiguous row store
