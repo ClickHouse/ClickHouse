@@ -52,7 +52,7 @@ report() {
     coordinators=$(${CLICKHOUSE_CLIENT} --query "
         SELECT count()
         FROM system.text_log
-        WHERE query_id = '$query_id'
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id'
           AND message LIKE '%Creating parallel replicas coordinator%'")
     if [ "$expect" = positive ]; then
         echo "$label: analysis ok $ok, any coordinator $(( coordinators > 0 ? 1 : 0 ))"
@@ -94,7 +94,7 @@ echo -n 'plain query uses parallel replicas: '
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count() > 0
     FROM system.text_log
-    WHERE query_id = '$plain_id'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$plain_id'
       AND message LIKE '%Creating parallel replicas coordinator%'"
 
 # The analysis must return the same ranges with and without parallel replicas.

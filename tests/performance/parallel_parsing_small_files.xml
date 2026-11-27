@@ -1,0 +1,19 @@
+<test>
+    <!-- Small text files that fit into one parallel parsing segment: the per-file cost of the segmentator thread and the
+         parser pool job, which a single-segment input does not need. The last two queries are controls. -->
+    <settings>
+        <max_threads>4</max_threads>
+        <max_parsing_threads>64</max_parsing_threads>
+    </settings>
+
+    <fill_query>INSERT INTO FUNCTION file('pp_small_files/csv_{{_partition_id}}.csv', CSV, 'a UInt64, b String, c Float64') PARTITION BY a % 100 SELECT number, concat('str', toString(number % 997)), number / 7 FROM numbers(25000) SETTINGS engine_file_truncate_on_insert = 1</fill_query>
+    <fill_query>INSERT INTO FUNCTION file('pp_small_files/tsv_{{_partition_id}}.tsv', TSV, 'a UInt64, b String, c Float64') PARTITION BY a % 100 SELECT number, concat('str', toString(number % 997)), number / 7 FROM numbers(25000) SETTINGS engine_file_truncate_on_insert = 1</fill_query>
+    <fill_query>INSERT INTO FUNCTION file('pp_small_files/json_{{_partition_id}}.jsonl', JSONEachRow, 'a UInt64, b String, c Float64') PARTITION BY a % 100 SELECT number, concat('str', toString(number % 997)), number / 7 FROM numbers(25000) SETTINGS engine_file_truncate_on_insert = 1</fill_query>
+    <fill_query>INSERT INTO FUNCTION file('pp_small_files/large.csv', CSV, 'a UInt64, b String, c Float64') SELECT number, concat('str', toString(number % 997)), number / 7 FROM numbers(600000) SETTINGS engine_file_truncate_on_insert = 1</fill_query>
+
+    <query>SELECT count(), sum(a), sum(cityHash64(a, b, c)) FROM file('pp_small_files/csv_*.csv', CSV, 'a UInt64, b String, c Float64') FORMAT Null</query>
+    <query>SELECT count(), sum(a), sum(cityHash64(a, b, c)) FROM file('pp_small_files/tsv_*.tsv', TSV, 'a UInt64, b String, c Float64') FORMAT Null</query>
+    <query>SELECT count(), sum(a), sum(cityHash64(a, b, c)) FROM file('pp_small_files/json_*.jsonl', JSONEachRow, 'a UInt64, b String, c Float64') FORMAT Null</query>
+    <query>SELECT count(), sum(a), sum(cityHash64(a, b, c)) FROM file('pp_small_files/csv_*.csv', CSV, 'a UInt64, b String, c Float64') SETTINGS input_format_parallel_parsing = 0 FORMAT Null</query>
+    <query>SELECT count(), sum(a), sum(cityHash64(a, b, c)) FROM file('pp_small_files/large.csv', CSV, 'a UInt64, b String, c Float64') SETTINGS max_threads = 1 FORMAT Null</query>
+</test>

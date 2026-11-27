@@ -1,5 +1,5 @@
 url: https://github.com/ridiculousfish/widecharwidth
-commit: 62edda3d435392bf84c7db59f01f53370bbb1715
+commit: 55fd0df9f28238092940a23d25bfab82d6a59dfb
 
 widecharwidth is a Python script that outputs a C++11 header-only implementation of `wcwidth()`, by downloading and parsing the latest `UnicodeData.txt`, `EastAsianWidth.txt`, and `emoji-data.txt`.
 

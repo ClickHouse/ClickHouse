@@ -12,7 +12,7 @@ class InterpreterUpdateQuery : public IInterpreter, WithContext
 public:
     InterpreterUpdateQuery(ASTPtr query_ptr_, ContextPtr context_);
     BlockIO execute() override;
-    bool supportsTransactions() const override { return false; }
+    [[nodiscard]] bool supportsTransactions() const override { return false; }
 
 private:
     ASTPtr query_ptr;

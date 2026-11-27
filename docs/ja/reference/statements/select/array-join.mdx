@@ -378,6 +378,42 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
 
+## 行の順序とページング {#row-order-and-paging}
+
+`ARRAY JOIN` は、受け取った行の順序を保持します。各行について、要素をArray内での順序どおりに出力します。クエリに複数の `ARRAY JOIN` 句がある場合は、最初の句が外側のループになります：
+
+```sql
+SELECT x, y
+FROM (SELECT ['a', 'b'] AS xs, [1, 2] AS ys)
+ARRAY JOIN xs AS x
+ARRAY JOIN ys AS y;
+```
+
+```response
+┌─x─┬─y─┐
+│ a │ 1 │
+│ a │ 2 │
+│ b │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+1つの `ARRAY JOIN` 句に複数のArrayが含まれる場合 (たとえば `ARRAY JOIN xs AS x, ys AS y`) 、同じ位置にある要素は同じ行にまとめられます。この例では、結果は `('a', 1)` と `('b', 2)` の2行になります。
+
+`ORDER BY` を指定しない場合、`ARRAY JOIN` が受け取る行の順序は保証されません。たとえば、クエリがテーブルを複数のストリームで並列に読み取る場合があります。順序を安定させるには、元の行を識別するカラムと要素の位置を指定した `ORDER BY` を追加してください。`LIMIT` と `OFFSET` を使用して結果をページ単位で読み取る場合は、これが必須です:
+
+```sql
+SELECT id, num, x
+FROM t
+ARRAY JOIN xs AS x, arrayEnumerate(xs) AS num
+ORDER BY id, num
+LIMIT 10 OFFSET 20;
+```
+
+`ORDER BY` が `MergeTree` テーブルの sorting key のカラムで始まる場合、クエリはキーの順序でテーブルを読み取ります。この例では、テーブルに `ORDER BY id` が指定されている場合がこれに該当します。このとき、クエリは `LIMIT` に必要な行が揃った時点で停止し、残りの行のArrayは展開しません。詳細については、[データ読み取りの最適化](/ja/reference/statements/select/order-by#optimization-of-data-reading)および設定 [optimize&#95;read&#95;in&#95;order](/ja/reference/settings/session-settings/optimize#optimize_read_in_order) を参照してください。一方、`ORDER BY` がArrayの要素で始まる場合 (例: `ORDER BY num, id`) 、クエリはすべての行を展開してからソートします。
+
+[arrayJoin](/ja/reference/functions/regular-functions/array-join) 関数も、各Arrayの要素をArray内の順序どおりに生成します。ただし、クエリ内に `arrayJoin` の呼び出しが複数ある場合、最初の呼び出しが常に外側のループになるとは限りません。詳細については、[行の順序](/ja/reference/functions/regular-functions/array-join#row-order)を参照してください。
+
 ## 実装の詳細 {#implementation-details}
 
 `ARRAY JOIN` の実行時には、クエリの実行順序が最適化されます。`ARRAY JOIN` はクエリ内で常に [WHERE](/ja/reference/statements/select/where)/[PREWHERE](/ja/reference/statements/select/prewhere) 句より前に指定する必要がありますが、`ARRAY JOIN` の結果をフィルタリングに使用しない限り、技術的にはこれらはどの順序でも実行できます。処理順序はクエリオプティマイザによって制御されます。

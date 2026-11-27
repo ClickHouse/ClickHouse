@@ -33,7 +33,11 @@ public:
     ~AggregateFunctionCombinatorArgMinArgMaxData() { data().~SingleValueDataBase(); }
 
     SingleValueDataBase & data() { return v_data.get(); }
-    const SingleValueDataBase & data() const { return v_data.get(); }
+    [[nodiscard]] const SingleValueDataBase & data() const { return v_data.get(); }
+
+    /// False after the nested state is destroyed until it is created again, so a throwing nested `create` does not lead
+    /// to a second nested `destroy`.
+    bool nested_created = true;
 };
 
 template <bool isMin>
@@ -56,6 +60,19 @@ private:
     const AggregateFunctionCombinatorArgMinArgMaxData & data(ConstAggregateDataPtr __restrict place) const
     {
         return *reinterpret_cast<const Key *>(place + key_offset);
+    }
+
+    /// Replaces the nested state with an empty one.
+    void resetNested(AggregateDataPtr __restrict place) const
+    {
+        auto & key = data(place);
+        if (key.nested_created)
+        {
+            nested_function->destroy(place);
+            key.nested_created = false;
+        }
+        nested_function->create(place);
+        key.nested_created = true;
     }
 
 public:
@@ -89,7 +106,7 @@ public:
         forEachInTypeTree(*arguments[key_col], check_not_dynamic_or_variant);
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if constexpr (isMin)
             return nested_function->getName() + "ArgMin";
@@ -97,7 +114,7 @@ public:
             return nested_function->getName() + "ArgMax";
     }
 
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         if (!this->haveSameDefinition(rhs))
             return false;
@@ -120,8 +137,7 @@ public:
         if ((isMin && data(place).data().setIfSmaller(rhs_key.data(), arena))
             || (!isMin && data(place).data().setIfGreater(rhs_key.data(), arena)))
         {
-            nested_function->destroy(place);
-            nested_function->create(place);
+            resetNested(place);
             nested_function->mergeStateFromDifferentVariant(place, *rhs_nested, rhs_place, arena);
         }
         else if (data(place).data().isEqualTo(rhs_key.data()))
@@ -130,46 +146,58 @@ public:
         }
     }
 
-    bool isState() const override { return nested_function->isState(); }
+    [[nodiscard]] bool isState() const override { return nested_function->isState(); }
 
-    bool isVersioned() const override { return nested_function->isVersioned(); }
+    [[nodiscard]] bool isVersioned() const override { return nested_function->isVersioned(); }
 
-    size_t getVersionFromRevision(size_t revision) const override { return nested_function->getVersionFromRevision(revision); }
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override { return nested_function->getVersionFromRevision(revision); }
 
-    size_t getDefaultVersion() const override { return nested_function->getDefaultVersion(); }
+    [[nodiscard]] size_t getDefaultVersion() const override { return nested_function->getDefaultVersion(); }
 
-    DataTypePtr getStateType() const override { return this->getStateTypeWithVersionOf(*nested_function); }
+    [[nodiscard]] DataTypePtr getStateType() const override { return this->getStateTypeWithVersionOf(*nested_function); }
 
-    bool allocatesMemoryInArena() const override
+    [[nodiscard]] bool allocatesMemoryInArena() const override
     {
         return nested_function->allocatesMemoryInArena() || singleValueTypeAllocatesMemoryInArena(key_type->getTypeId());
     }
 
-    bool hasTrivialDestructor() const override
+    [[nodiscard]] bool hasTrivialDestructor() const override
     {
         return nested_function->hasTrivialDestructor() && /*false*/ std::is_trivially_destructible_v<SingleValueDataBase>;
     }
 
-    size_t sizeOfData() const override { return key_offset + sizeof(Key); }
+    [[nodiscard]] size_t sizeOfData() const override { return key_offset + sizeof(Key); }
 
-    size_t alignOfData() const override { return std::max(nested_function->alignOfData(), alignof(SingleValueDataBaseMemoryBlock)); }
+    [[nodiscard]] size_t alignOfData() const override { return std::max(nested_function->alignOfData(), alignof(SingleValueDataBaseMemoryBlock)); }
 
     void create(AggregateDataPtr __restrict place) const override
     {
         nested_function->create(place);
-        new (place + key_offset) Key(key_type);
+        try
+        {
+            new (place + key_offset) Key(key_type);
+        }
+        catch (...)
+        {
+            nested_function->destroy(place);
+            throw;
+        }
     }
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
+        const bool nested_created = data(place).nested_created;
         data(place).~Key();
-        nested_function->destroy(place);
+        if (nested_created)
+            nested_function->destroy(place);
     }
 
     void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
     {
+        const bool nested_created = data(place).nested_created;
         data(place).~Key();
-        nested_function->destroyUpToState(place);
+        if (nested_created)
+            nested_function->destroyUpToState(place);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -177,8 +205,7 @@ public:
         if ((isMin && data(place).data().setIfSmaller(*columns[key_col], row_num, arena))
             || (!isMin && data(place).data().setIfGreater(*columns[key_col], row_num, arena)))
         {
-            nested_function->destroy(place);
-            nested_function->create(place);
+            resetNested(place);
             nested_function->add(place, columns, row_num, arena);
         }
         else if (data(place).data().isEqualTo(*columns[key_col], row_num))
@@ -192,8 +219,7 @@ public:
         if ((isMin && data(place).data().setIfSmaller(data(rhs).data(), arena))
             || (!isMin && data(place).data().setIfGreater(data(rhs).data(), arena)))
         {
-            nested_function->destroy(place);
-            nested_function->create(place);
+            resetNested(place);
             nested_function->merge(place, rhs, arena);
         }
         else if (data(place).data().isEqualTo(data(rhs).data()))
@@ -204,12 +230,12 @@ public:
 
     /// The nested state is at the beginning of the state, so the parallel merge is forwarded to the nested
     /// function with the same places, restricted to the states that have the extremal key.
-    bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
+    [[nodiscard]] bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
 
     /// `parallelizeMergePrepare` is not forwarded: it would prepare (e.g. convert to two-level) the nested states
     /// of all places, including those that are discarded because their key is not extremal. The nested
     /// `parallelizeMergeMulti` handles the unprepared states of the selected places itself.
-    bool isParallelizeMergePrepareNeeded() const override { return false; }
+    [[nodiscard]] bool isParallelizeMergePrepareNeeded() const override { return false; }
 
     bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
     {
@@ -240,8 +266,7 @@ public:
         if ((isMin && data(place).data().setIfSmaller(data(rhs).data(), arena))
             || (!isMin && data(place).data().setIfGreater(data(rhs).data(), arena)))
         {
-            nested_function->destroy(place);
-            nested_function->create(place);
+            resetNested(place);
             nested_function->merge(place, rhs, thread_pool, is_cancelled, arena);
         }
         else if (data(place).data().isEqualTo(data(rhs).data()))
@@ -264,8 +289,7 @@ public:
             if ((isMin && data(dst).data().setIfSmaller(data(places[i]).data(), arena))
                 || (!isMin && data(dst).data().setIfGreater(data(places[i]).data(), arena)))
             {
-                nested_function->destroy(dst);
-                nested_function->create(dst);
+                resetNested(dst);
                 last_setter = i;
             }
         }
@@ -311,14 +335,14 @@ public:
         nested_function->rollbackInsertResult(place, to);
     }
 
-    AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
+    [[nodiscard]] AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 
 template <bool isMin>
 class CombinatorArgMinArgMax final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if constexpr (isMin)
             return "ArgMin";
@@ -326,7 +350,7 @@ public:
             return "ArgMax";
     }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             throw Exception(
@@ -337,16 +361,16 @@ public:
         return DataTypes(arguments.begin(), arguments.end() - 1);
     }
 
-    VectorWithMemoryTracking<size_t> getVariantArgumentsToConvert(const DataTypes & arguments) const override
+    [[nodiscard]] VectorWithMemoryTracking<size_t> getVariantArgumentsToConvert(const DataTypes & arguments) const override
     {
         if (!arguments.empty() && isVariant(arguments.back()))
             return {arguments.size() - 1};
         return {};
     }
 
-    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,

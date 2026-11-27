@@ -22,6 +22,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/Progress.h>
@@ -64,6 +65,7 @@ extern const Event IcebergMinMaxNonPrunedDeleteFiles;
 extern const Event IcebergMinMaxPrunedDeleteFiles;
 extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergPartitionPrunedManifestFiles;
+extern const Event IcebergRuntimeFilterPrunedFiles;
 };
 
 
@@ -78,7 +80,75 @@ namespace Setting
 {
 extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
+extern const SettingsBool enable_join_runtime_filters_index_analysis;
+extern const SettingsBool use_join_runtime_filters_for_iceberg_pruning;
 };
+
+namespace Iceberg
+{
+
+/// Skips a data file whose manifest bounds cannot contain any key of the JOIN runtime filters every row of the
+/// read passes. Files requested before every filter is built are not pruned.
+class RuntimeFilterFilePruning
+{
+public:
+    RuntimeFilterFilePruning(
+        std::shared_ptr<const RuntimeFilterPruningPredicate> predicate_,
+        ContextPtr context_,
+        const IcebergSchemaProcessor & schema_processor_,
+        Int32 table_schema_id_)
+        : predicate(std::move(predicate_))
+        , context(std::move(context_))
+        , schema_processor(schema_processor_)
+        , table_schema_id(table_schema_id_)
+    {
+    }
+
+    bool canBePruned(const ProcessedManifestFileEntryPtr & entry)
+    {
+        if (entry->parsed_entry->content_type != FileContentType::DATA)
+            return false;
+        const ManifestFilesPruner * pruner = getPruner(entry->resolved_schema_id);
+        if (!pruner)
+            return false;
+        const auto hyperrectangles = getDataFileHyperrectangles(
+            *entry, pruner->getMinMaxColumnTypes(), IcebergPathFromMetadata::deserialize(entry->manifest_file_path));
+        return pruner->canBePruned(entry, hyperrectangles) != PruningReturnStatus::NOT_PRUNED;
+    }
+
+private:
+    const ManifestFilesPruner * getPruner(Int32 schema_id)
+    {
+        auto predicate_dag = predicate->tryGet();
+        if (!predicate_dag || !*predicate_dag)
+            return nullptr;
+
+        std::lock_guard lock(mutex);
+        auto & pruner = pruners[schema_id];
+        if (!pruner)
+            pruner = std::make_unique<ManifestFilesPruner>(
+                schema_processor,
+                table_schema_id,
+                schema_id,
+                predicate_dag->get(),
+                /*partition_key_=*/nullptr,
+                PartitionSpecification{},
+                context);
+        return pruner.get();
+    }
+
+    /// Owns the DAG the pruners point to.
+    const std::shared_ptr<const RuntimeFilterPruningPredicate> predicate;
+    const ContextPtr context;
+    const IcebergSchemaProcessor & schema_processor;
+    const Int32 table_schema_id;
+
+    std::mutex mutex;
+    /// Never erased, so the pruner `getPruner` returns stays valid after the lock is released.
+    std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> pruners TSA_GUARDED_BY(mutex);
+};
+
+}
 
 
 using namespace Iceberg;
@@ -182,6 +252,18 @@ IcebergIterator::IcebergIterator(
         object_storage, persistent_components, local_context, logger, std::move(manifest_keys));
 }
 
+void IcebergIterator::setJoinRuntimeFilters(std::shared_ptr<const RuntimeFilterPruningPredicate> predicate)
+{
+    const auto & settings = local_context->getSettingsRef();
+    if (!table_state_snapshot || !settings[Setting::use_join_runtime_filters_for_iceberg_pruning]
+        || !settings[Setting::enable_join_runtime_filters_index_analysis] || !settings[Setting::use_iceberg_partition_pruning])
+        return;
+
+    LOG_DEBUG(logger, "Data files are pruned by {} JOIN runtime filter(s) once they are built", predicate->getDescriptors().size());
+    runtime_filter_pruning = std::make_unique<Iceberg::RuntimeFilterFilePruning>(
+        std::move(predicate), local_context, *persistent_components.schema_processor, table_state_snapshot->schema_id);
+}
+
 void IcebergIterator::ensureDeletesReady()
 {
     /// Threads arriving before the deletes are ready share the delete manifests; the last one to finish sorts.
@@ -206,6 +288,7 @@ void IcebergIterator::ensureDeletesReady()
             LOG_DEBUG(logger, "Taken {} position deletes file and {} equality deletes files in iceberg iterator", position_deletes_files.size(), equality_deletes_files.size());
             std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
             std::sort(position_deletes_files.begin(), position_deletes_files.end());
+            position_deletes_by_data_file = Iceberg::groupPositionDeletesByDataFile(position_deletes_files);
             deletes_ready = true;
             delete_manifest_parsed.notify_all();
             break;
@@ -387,54 +470,78 @@ ObjectInfoPtr IcebergIterator::next(size_t)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataReadWaitTimeMicroseconds);
     ensureDeletesReady();
-    if (auto manifest_file_entry = nextDataFileEntry())
+    while (auto manifest_file_entry = nextDataFileEntry())
     {
+        if (runtime_filter_pruning && runtime_filter_pruning->canBePruned(manifest_file_entry))
+        {
+            ProfileEvents::increment(ProfileEvents::IcebergRuntimeFilterPrunedFiles);
+            continue;
+        }
         IcebergDataObjectInfoPtr object_info
             = std::make_shared<IcebergDataObjectInfo>(
                 manifest_file_entry,
                 persistent_components.path_resolver.resolve(manifest_file_entry->parsed_entry->file_path_key),
                 table_state_snapshot->schema_id,
                 Iceberg::getIdentityPartitionColumnValues(*manifest_file_entry, *persistent_components.schema_processor));
-        for (const auto & position_delete :
-             defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
+        const auto & data_file_path = object_info->info.data_object_file_path_key;
+        const size_t suitable_position_deletes
+            = defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger).size();
+        size_t applied_position_deletes = 0;
+        auto apply_position_delete = [&](const Iceberg::ProcessedManifestFileEntryPtr & position_delete)
         {
-            const auto & data_file_path = object_info->info.data_object_file_path_key;
             const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
             const auto & upper = position_delete->parsed_entry->upper_reference_data_file_path;
-            bool can_contain_data_file_deletes
-                = (!lower.has_value() || *lower <= data_file_path)
-                && (!upper.has_value() || *upper >= data_file_path);
-            /// Skip position deletes that do not match the data file path.
-            if (!can_contain_data_file_deletes)
-            {
-                ProfileEvents::increment(ProfileEvents::IcebergMinMaxPrunedDeleteFiles);
-                LOG_TEST(
-                    logger,
-                    "Skipping position delete file `{}` for data file `{}` because position delete has out of bounds reference data file "
-                    "bounds: "
-                    "(lower bound: `{}`, upper bound: `{}`)",
-                    position_delete->parsed_entry->file_path_key,
-                    data_file_path,
-                    lower.has_value() ? lower->serialize() : "[no lower bound]",
-                    upper.has_value() ? upper->serialize() : "[no upper bound]");
-            }
+            LOG_TEST(
+                logger,
+                "Processing position delete file `{}` for data file `{}` with reference data file bounds: "
+                "(lower bound: `{}`, upper bound: `{}`)",
+                position_delete->parsed_entry->file_path_key,
+                data_file_path,
+                lower.has_value() ? lower->serialize() : "[no lower bound]",
+                upper.has_value() ? upper->serialize() : "[no upper bound]");
+            const auto resolved_delete_path = persistent_components.path_resolver.resolve(position_delete->parsed_entry->file_path_key);
+            if (position_delete->parsed_entry->isDeletionVector())
+                object_info->addDeletionVector(position_delete, resolved_delete_path);
             else
+                object_info->addPositionDeleteFile(position_delete, resolved_delete_path);
+            ++applied_position_deletes;
+        };
+        if (suitable_position_deletes != 0)
+        {
+            /// Both bounds are this data file path, so no bounds check is needed.
+            if (auto it = position_deletes_by_data_file.single_data_file.find(data_file_path);
+                it != position_deletes_by_data_file.single_data_file.end())
             {
-                ProfileEvents::increment(ProfileEvents::IcebergMinMaxNonPrunedDeleteFiles);
-                LOG_TEST(
-                    logger,
-                    "Processing position delete file `{}` for data file `{}` with reference data file bounds: "
-                    "(lower bound: `{}`, upper bound: `{}`)",
-                    position_delete->parsed_entry->file_path_key,
-                    data_file_path,
-                    lower.has_value() ? lower->serialize() : "[no lower bound]",
-                    upper.has_value() ? upper->serialize() : "[no upper bound]");
-                const auto resolved_delete_path = persistent_components.path_resolver.resolve(position_delete->parsed_entry->file_path_key);
-                if (position_delete->parsed_entry->isDeletionVector())
-                    object_info->addDeletionVector(position_delete, resolved_delete_path);
-                else
-                    object_info->addPositionDeleteFile(position_delete, resolved_delete_path);
+                for (const auto & position_delete : defineDeletesSpan(manifest_file_entry, it->second, /* is_equality_delete */ false, logger))
+                    apply_position_delete(position_delete);
             }
+            for (const auto & position_delete :
+                 defineDeletesSpan(manifest_file_entry, position_deletes_by_data_file.other, /* is_equality_delete */ false, logger))
+            {
+                const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
+                const auto & upper = position_delete->parsed_entry->upper_reference_data_file_path;
+                bool can_contain_data_file_deletes
+                    = (!lower.has_value() || *lower <= data_file_path)
+                    && (!upper.has_value() || *upper >= data_file_path);
+                /// Skip position deletes that do not match the data file path.
+                if (!can_contain_data_file_deletes)
+                {
+                    LOG_TEST(
+                        logger,
+                        "Skipping position delete file `{}` for data file `{}` because position delete has out of bounds reference data file "
+                        "bounds: "
+                        "(lower bound: `{}`, upper bound: `{}`)",
+                        position_delete->parsed_entry->file_path_key,
+                        data_file_path,
+                        lower.has_value() ? lower->serialize() : "[no lower bound]",
+                        upper.has_value() ? upper->serialize() : "[no upper bound]");
+                    continue;
+                }
+                apply_position_delete(position_delete);
+            }
+            /// Includes the delete files of other data files, which the lookup never visits.
+            ProfileEvents::increment(ProfileEvents::IcebergMinMaxPrunedDeleteFiles, suitable_position_deletes - applied_position_deletes);
+            ProfileEvents::increment(ProfileEvents::IcebergMinMaxNonPrunedDeleteFiles, applied_position_deletes);
         }
 
         if (object_info->info.hasPositionDeletes())

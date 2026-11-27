@@ -7,6 +7,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/assert_cast.h>
 #include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
@@ -17,7 +18,9 @@
 
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionCodecFirstApplicable.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/CompressionInfo.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
@@ -28,6 +31,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/TypeTree.h>
 
 #include <Interpreters/Context.h>
@@ -454,6 +458,12 @@ public:
             if (!done)
             {
                 /// Rollback partial writes.
+                /// It must not be interrupted by the memory limit: otherwise the table is left with
+                /// the in-memory marks out of sync, and the next `INSERT` fails with a logical error.
+                LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
+                /// Remove excessive marks first: it cannot fail, unlike the truncation of files below.
+                storage.removeUnsavedMarks(lock);
 
                 /// No more writing.
                 for (auto & [_, stream] : streams)
@@ -464,9 +474,6 @@ public:
 
                 /// Truncate files to the older sizes.
                 storage.file_checker.repair();
-
-                /// Remove excessive marks.
-                storage.removeUnsavedMarks(lock);
             }
         }
         catch (...)
@@ -589,7 +596,7 @@ void LogSink::onFinish()
 
 ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndTypePair & name_and_type)
 {
-    return [&] (const ISerialization::SubstreamPath & path) -> WriteBuffer *
+    return [this, name_and_type] (const ISerialization::SubstreamPath & path) -> WriteBuffer *
     {
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
         auto it = streams.find(data_file_name);
@@ -616,7 +623,7 @@ CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, const
         /// `FirstApplicable` selects the codec for the data type of every substream, as in `MergeTree`: the structural
         /// substreams (e.g. the sizes of an array) keep only generic codecs. Other codecs keep applying to the whole
         /// column type here, so that the data written by the previous versions does not change.
-        if (CompressionCodecFactory::hasFirstApplicable(column_desc.codec))
+        if (CompressionCodecFirstApplicable::isInChain(column_desc.codec))
         {
             const bool is_data_substream = ISerialization::isSpecialCompressionAllowed(substream_path);
             return CompressionCodecFactory::instance().get(
@@ -771,7 +778,8 @@ StorageLog::StorageLog(
     , use_marks_file(engine_name == "Log")
     , marks_file_path(table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME)
     , file_checker(disk, table_path + "sizes.json")
-    , max_compress_block_size(context_->getSettingsRef()[Setting::max_compress_block_size])
+    /// It also sizes the file write buffer, so it is limited like the compressed block (see `CompressedWriteBuffer`).
+    , max_compress_block_size(std::min<size_t>(context_->getSettingsRef()[Setting::max_compress_block_size], DBMS_MAX_DECOMPRESSED_SIZE))
 {
     checkSupportedDataTypes(columns_, getName());
     StorageInMemoryMetadata storage_metadata;
@@ -1459,18 +1467,22 @@ void registerStorageLog(StorageFactory & factory)
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
+        .stores_data_on_disk = true,
+        .supports_temporary = true,
     };
 
     auto create_fn = [](const StorageFactory::Arguments & args)
     {
         checkStorageSettingNames(args);
+        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
+            checkNoQuantizedCodec(args.columns.getAll(), args.engine_name);
 
         if (!args.engine_args.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
                 args.engine_name, args.engine_args.size());
 
         String disk_name = getDiskName(*args.storage_def, args.getContext());
-        DiskPtr disk = args.getContext()->getDisk(disk_name);
+        DiskPtr disk = args.getDisk(disk_name);
 
         return std::make_shared<StorageLog>(
             args.engine_name,
@@ -1486,8 +1498,6 @@ void registerStorageLog(StorageFactory & factory)
 
     factory.registerStorage("Log", create_fn, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # Log table engine
 
 <CloudNotSupportedBadge/>
@@ -1588,8 +1598,6 @@ SELECT * FROM log_table ORDER BY timestamp
 
     factory.registerStorage("TinyLog", create_fn, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # TinyLog table engine
 
 <CloudNotSupportedBadge/>

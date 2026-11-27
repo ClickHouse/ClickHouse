@@ -7,6 +7,7 @@ keywords: ['代替のクエリ言語', 'クエリのダイアレクト', 'MySQL�
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 Standard SQL に加えて、ClickHouse はデータのクエリに使用できるさまざまな代替クエリ言語をサポートしています。
@@ -36,7 +37,7 @@ SET dialect = 'clickhouse'
 PRQL を有効にするには:
 
 ```sql
-SET allow_experimental_prql_dialect = 1; -- このSETステートメントはClickHouse v25.1以降でのみ必要です
+SET enable_prql_dialect = 1; -- before ClickHouse 26.11 the setting is named `allow_experimental_prql_dialect` (since 25.1)
 SET dialect = 'prql'
 ```
 
@@ -54,12 +55,12 @@ aggregate {
 
 ## Kusto クエリ言語 (KQL) {#kusto-query-language-kql}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 KQL を有効にするには:
 
 ```sql
-SET allow_experimental_kusto_dialect = 1; -- このSETステートメントはClickHouseバージョン25.1以降でのみ必要です
+SET enable_kusto_dialect = 1; -- before ClickHouse 26.11 the setting is named `allow_experimental_kusto_dialect` (since 25.1)
 SET dialect = 'kusto'
 ```
 
@@ -109,7 +110,7 @@ _time:5m error | stats by (level) count() as hits | sort by (hits desc)
 
 ## Trino SQL {#trino-sql}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 Trino ダイアレクトを有効にするには:
 

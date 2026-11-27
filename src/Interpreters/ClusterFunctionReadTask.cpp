@@ -40,6 +40,8 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
         iceberg_info = dynamic_cast<IcebergDataObjectInfo &>(*object).info;
     }
 #endif
+    if (!iceberg_info.has_value())
+        file_size_hint = object->getFileSizeHint();
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
@@ -70,6 +72,10 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
 #else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg support is disabled");
 #endif
+    }
+    else if (file_size_hint)
+    {
+        object = std::make_shared<ObjectInfoWithFileSizeHint>(RelativePathWithMetadata{path}, *file_size_hint);
     }
     else
     {
@@ -178,6 +184,13 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
         if (data_lake_metadata.num_rows)
             writeVarUInt(*data_lake_metadata.num_rows, out);
     }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_FILE_SIZE)
+    {
+        writeVarUInt(file_size_hint.has_value(), out);
+        if (file_size_hint)
+            writeVarUInt(*file_size_hint, out);
+    }
 }
 
 void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
@@ -263,6 +276,17 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
             UInt64 value = 0;
             readVarUInt(value, in);
             data_lake_metadata.num_rows = value;
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_FILE_SIZE)
+    {
+        bool has_file_size_hint = false;
+        readVarUInt(has_file_size_hint, in);
+        if (has_file_size_hint)
+        {
+            UInt64 value = 0;
+            readVarUInt(value, in);
+            file_size_hint = value;
         }
     }
 }

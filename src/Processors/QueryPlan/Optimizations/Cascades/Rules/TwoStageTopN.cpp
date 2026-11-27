@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
@@ -27,8 +28,8 @@ namespace ErrorCodes
 class TwoStageTopN : public IOptimizationRule
 {
 public:
-    String getName() const override { return "TwoStageTopN"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & memo) const override
+    [[nodiscard]] String getName() const override { return "TwoStageTopN"; }
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & memo) const override
     {
         /// With `exact_rows_before_limit` the per-node sorts must feed the full row count
         /// into `rows_before_limit_at_least`, but the internal cap below cuts the pipeline
@@ -39,14 +40,14 @@ public:
         return isTopNSort(*expression->getQueryPlanStep())
             && !assert_cast<const SortingStep &>(*expression->getQueryPlanStep()).isPartialTopN();
     }
-    Promise getPromise() const override { return 5000; }
-    bool isTransformation() const override { return true; }
+    [[nodiscard]] Promise getPromise() const override { return 5000; }
+    [[nodiscard]] bool isTransformation() const override { return true; }
 
 protected:
-    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
-std::vector<GroupExpressionPtr> TwoStageTopN::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
+GroupExpressions TwoStageTopN::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
 {
     const auto * sorting_step = typeid_cast<const SortingStep *>(expression->getQueryPlanStep());
     if (!sorting_step)

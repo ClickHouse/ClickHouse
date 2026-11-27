@@ -34,7 +34,7 @@ public:
     KQLTabularExpressionPtr parseQuery();
 
     /// Offset just past the last consumed character, for the caller to resume from.
-    const char * getEndPosition() const;
+    [[nodiscard]] const char * getEndPosition() const;
 
 private:
     /** A `let`-bound function: `let f = (x: long, n: long = 2) { x * n }`.
@@ -98,12 +98,12 @@ private:
     };
 
     /// Token access.
-    const KQLToken & current() const { return tokens[index]; }
-    const KQLToken & lookahead(size_t offset = 1) const;
-    bool at(KQLTokenType type) const { return current().type == type; }
+    [[nodiscard]] const KQLToken & current() const { return tokens[index]; }
+    [[nodiscard]] const KQLToken & lookahead(size_t offset = 1) const;
+    [[nodiscard]] bool at(KQLTokenType type) const { return current().type == type; }
     /// KQL keywords are case-insensitive; every keyword test goes through here.
-    bool atKeyword(std::string_view keyword) const;
-    bool tokenIsKeyword(size_t position, std::string_view keyword) const;
+    [[nodiscard]] bool atKeyword(std::string_view keyword) const;
+    [[nodiscard]] bool tokenIsKeyword(size_t position, std::string_view keyword) const;
     bool consumeKeyword(std::string_view keyword);
     bool consume(KQLTokenType type);
     void expect(KQLTokenType type);
@@ -113,12 +113,12 @@ private:
     [[noreturn]] void failAt(const KQLToken & token, const String & message) const;
     /// Maps a KQL scalar type name from a `datatable` schema, a `typeof(...)` or a function
     /// parameter onto the ClickHouse type name, rejecting names with no faithful mapping.
-    const String & resolveScalarType(const KQLToken & type_token, const String & kql_type) const;
+    [[nodiscard]] const String & resolveScalarType(const KQLToken & type_token, const String & kql_type) const;
 
     /// Statements.
     void parseLetStatement();
     /// True when what follows a `let name =` is `( parameters ) {`, which no other form is.
-    bool atFunctionDefinition() const;
+    [[nodiscard]] bool atFunctionDefinition() const;
     void parseFunctionDefinition(const String & name);
     /// Whether the token range `[begin, end)` - any number of `let` statements followed by one
     /// expression - reads as a pipeline rather than a scalar expression. `tabular_names` seeds
@@ -127,7 +127,7 @@ private:
     /// that neither set knows is a physical table when `unknown_name_is_table` says so -
     /// inside `in (...)` such a name is a column reference instead.
     bool bodyLooksTabular(size_t begin, size_t end, std::set<String> tabular_names, std::set<String> scalar_names);
-    bool expressionLooksTabular(
+    [[nodiscard]] bool expressionLooksTabular(
         size_t begin,
         size_t end,
         const std::set<String> & tabular_names,
@@ -135,13 +135,13 @@ private:
         bool unknown_name_is_table = true) const;
     /// The names the current scope knows to stand for a table: the tabular bindings and the
     /// tabular-bodied functions. Seeds the classifiers above.
-    std::set<String> scopeTabularNames() const;
+    [[nodiscard]] std::set<String> scopeTabularNames() const;
     /// Likewise for the scalars: the scalar bindings and the scalar-bodied functions.
-    std::set<String> scopeScalarNames() const;
+    [[nodiscard]] std::set<String> scopeScalarNames() const;
     /// The first ';' outside any brackets at or after `position`, or `end`.
-    size_t statementEnd(size_t position, size_t end) const;
+    [[nodiscard]] size_t statementEnd(size_t position, size_t end) const;
     /// Where the bracket open just before `position` closes, or `tokens.size()`.
-    size_t closingBracket(size_t position) const;
+    [[nodiscard]] size_t closingBracket(size_t position) const;
 
     /// Calls. Which one applies is decided by where the name appears: a scalar expression
     /// position evaluates the body as an expression, a source position as a pipeline.

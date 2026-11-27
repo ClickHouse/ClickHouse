@@ -1,9 +1,10 @@
 ---
 slug: /use-cases/observability/clickstack/setting-up-your-opentelemetry-collector
 title: 'Setting up your OpenTelemetry Collector'
-description: 'Setting up an OpenTelemetry Collector for Managed ClickStack'
+sidebarTitle: 'Set up your OpenTelemetry Collector'
+description: 'Set up the OpenTelemetry Collector for the self-managed experience of ClickHouse Observability'
 doc_type: 'guide'
-keywords: ['clickstack', 'opentelemetry', 'collector', 'managed', 'observability', 'gateway', 'telemetrygen']
+keywords: ['clickstack', 'opentelemetry', 'collector', 'self-managed', 'ClickHouse Observability', 'gateway', 'telemetrygen']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
@@ -14,7 +15,16 @@ import CreateIngestionUser from '/snippets/clickstack/_create_ingestion_user.mdx
 import ConfirmInUI from '/snippets/clickstack/_confirm_in_ui.mdx';
 import { AgentPrompt } from '/snippets/components/AgentPrompt/AgentPrompt.jsx';
 
-This guide walks you through deploying an OpenTelemetry collector against an existing Managed ClickStack service, or adapting your existing collector, before verifying that data is flowing through.
+<Note>
+**You are on the self-managed route**
+
+You have chosen to set up ClickHouse Observability yourself, using the [self-managed experience](/clickstack/self-configured/overview). On this route you run the OpenTelemetry collector, manage ingestion into your ClickHouse Cloud service, tune the schema, and separate ingestion and query workloads with warehouses. See [OpenTelemetry collector](/clickstack/self-configured/ingesting-data/collector), [Performance tuning](/clickstack/self-configured/managing/performance-tuning), and [Isolating read and write workloads](/clickstack/self-configured/managing/isolating-read-write).
+
+Prefer a serverless experience where ClickHouse handles ingestion, schemas, and compute for you? Use the default ClickHouse Observability experience and follow the [Getting started guide](/clickstack/observability/getting-started) instead.
+</Note>
+
+
+This guide walks you through deploying an OpenTelemetry collector against your existing ClickHouse Observability service, or adapting your existing collector, before verifying that data is flowing through. On the self-managed experience you run this collector yourself: it receives OTLP from your applications and agents and writes into your ClickHouse Cloud service.
 
 Install the official ClickHouse agent skills before using the setup assistant:
 
@@ -31,7 +41,7 @@ clickhousectl skills --detected-only
 To target one agent, pass `--agent` (for example, `--agent claude`). Add `--global` to install into your home directory rather than the current project.
 
 <AgentPrompt
-  prompt="Use the clickstack-otel-collector skill to wire an OpenTelemetry collector into my Managed ClickStack service."
+  prompt="Use the clickstack-otel-collector skill to wire an OpenTelemetry collector into my self-managed ClickHouse Observability service."
   description="Your agent will set up the ClickStack OpenTelemetry collector for you. Works with Claude Code, Cursor, Codex, and other coding agents."
   repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
@@ -44,7 +54,7 @@ To target one agent, pass `--agent` (for example, `--agent claude`). Add `--glob
   ]}
 />
 
-The collector runs as a **gateway**: a single OTLP endpoint that your applications, SDKs, and agent collectors send to. The gateway batches events, applies any processing you've configured, and writes them to ClickHouse via the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). This pattern keeps collection logic out of your application code and lets you scale ingestion independently of the workloads producing data. For background on gateway versus agent roles, see [Collector roles](/clickstack/ingesting-data/collector#collector-roles).
+The collector runs as a **gateway**: a single OTLP endpoint that your applications, SDKs, and agent collectors send to. The gateway batches events, applies any processing you've configured, and writes them to ClickHouse via the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). This pattern keeps collection logic out of your application code and lets you scale ingestion independently of the workloads producing data. For background on gateway versus agent roles, see [Collector roles](/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured).
 
 <Info>
 **Existing collector**
@@ -69,7 +79,7 @@ Pick the tab that matches your situation:
 </Step>
 <Step title="Deploy the collector" id="deploy-the-collector">
 
-Deploy the **ClickStack distribution of the OpenTelemetry collector**, which is preconfigured for Managed ClickStack. In the example below, we run the collector locally and generate artificial telemetry from the same machine for simplicity.
+Deploy the **ClickStack distribution of the OpenTelemetry collector**, which is preconfigured for ClickHouse Observability. In the example below, we run the collector locally and generate artificial telemetry from the same machine for simplicity.
 
 <Note>
 In production, you would typically deploy the collector in a Kubernetes cluster, or on a virtual machine that can be reached by your OpenTelemetry SDKs, agents, and other collectors. This allows telemetry from across your environment to be centrally collected and forwarded to ClickStack.
@@ -103,7 +113,7 @@ The collector now exposes OTLP gRPC on `4317` and OTLP HTTP on `4318`. Applicati
 <Info>
 **Production deployments**
 
-For production, we recommend enabling TLS on the OTLP endpoint. See [Securing the collector](/clickstack/ingesting-data/collector#securing-the-collector).
+For production, we recommend enabling TLS on the OTLP endpoint. See [Securing the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
 </Info>
 </Step>
 <Step title="Verify the endpoint" id="verify-the-endpoint">
@@ -194,7 +204,7 @@ tg metrics --service payment   --metric-type ExponentialHistogram --otlp-metric-
 ```
 </Accordion>
 
-For the full set of flags and more variations, see [Synthetic data with telemetrygen](/clickstack/example-datasets/telemetrygen).
+For the full set of flags and more variations, see [Synthetic data with telemetrygen](/clickstack/observability/example-datasets/telemetrygen#self-managed).
 </Step>
 <Step title="Confirm in the ClickStack UI" id="confirm-in-ui">
 
@@ -217,7 +227,7 @@ For the full set of flags and more variations, see [Synthetic data with telemetr
 </Step>
 <Step title="Adapt your collector configuration" id="adapt-collector">
 
-Extend your existing collector configuration to write to Managed ClickStack via the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+Extend your existing collector configuration to write to your ClickHouse Observability service via the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
 
 <Info>
 **ClickHouse exporter required**
@@ -317,7 +327,7 @@ A few things to note:
 
 Reload your collector with the new configuration. Applications, SDKs, and agent collectors should then send to the OTLP endpoints exposed by your collector with whatever auth header your setup expects.
 
-For further details on configuring OpenTelemetry collectors against Managed ClickStack, see [Ingesting with OpenTelemetry](/clickstack/ingesting-data/opentelemetry).
+For further details on configuring OpenTelemetry collectors against ClickHouse Observability, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#self-managed).
 </Step>
 <Step title="Verify the endpoint" id="verify-the-endpoint-existing">
 
@@ -407,7 +417,7 @@ tg metrics --service payment   --metric-type ExponentialHistogram --otlp-metric-
 ```
 </Accordion>
 
-For the full set of flags and more variations, see [Synthetic data with telemetrygen](/clickstack/example-datasets/telemetrygen).
+For the full set of flags and more variations, see [Synthetic data with telemetrygen](/clickstack/observability/example-datasets/telemetrygen#self-managed).
 </Step>
 <Step title="Confirm in the ClickStack UI" id="confirm-in-ui-existing">
 
@@ -421,20 +431,20 @@ For the full set of flags and more variations, see [Synthetic data with telemetr
 
 ## Next steps: send your own data {#next-steps}
 
-The synthetic burst above only proves the pipeline works. To start sending real telemetry, instrument your own services with the [ClickStack SDKs](/clickstack/ingesting-data/sdks/index), which provide instrumentation for Node.js, Python, Go, Java, and other languages that export OTLP to the collector endpoint you just verified. For a complete worked example, follow [Instrument an application](/clickstack/managed-onboarding/instrument-application).
+The synthetic burst above only proves the pipeline works. To start sending real telemetry, instrument your own services with the [ClickStack SDKs](/clickstack/observability/ingesting-data/sdks), which provide instrumentation for Node.js, Python, Go, Java, and other languages that export OTLP to the collector endpoint you just verified. For a complete worked example, follow [Instrument an application](/clickstack/self-configured/managed-onboarding/instrument-application).
 
 To collect from infrastructure rather than application code:
 
-- [Monitoring Kubernetes](/clickstack/managed-onboarding/monitoring-kubernetes): collect logs, infrastructure metrics, and Kubernetes events from a cluster.
-- [Monitoring AWS CloudWatch logs](/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): forward CloudWatch logs via the OpenTelemetry CloudWatch receiver.
+- [Monitoring Kubernetes](/clickstack/self-configured/managed-onboarding/monitoring-kubernetes): collect logs, infrastructure metrics, and Kubernetes events from a cluster.
+- [Monitoring AWS CloudWatch logs](/clickstack/self-configured/managed-onboarding/monitoring-aws-cloudwatch-logs): forward CloudWatch logs via the OpenTelemetry CloudWatch receiver.
 
 ## Further reading {#further-reading}
 
-This guide covers a single collector instance in its simplest form. The [OpenTelemetry collector reference](/clickstack/ingesting-data/collector) covers what to do next:
+This guide covers a single collector instance in its simplest form. The [OpenTelemetry collector reference](/clickstack/self-configured/ingesting-data/collector) covers what to do next:
 
-- [Deploying the collector in Kubernetes](/clickstack/ingesting-data/collector#configuring-the-collector) with the upstream OpenTelemetry Helm chart and the ClickStack collector image.
-- [Securing the collector](/clickstack/ingesting-data/collector#securing-the-collector) with TLS on the OTLP endpoint and least-privilege ingestion users.
-- [Processing, filtering, and enriching](/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) events at the gateway.
-- [Extending the collector configuration](/clickstack/ingesting-data/collector#extending-collector-config) with custom receivers, processors, and pipelines.
-- [Estimating resources](/clickstack/ingesting-data/collector#estimating-resources) for gateway and agent deployments at your expected throughput.
-- [Going to production](/clickstack/managing/production)
+- [Deploying the collector in Kubernetes](/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured) with the upstream OpenTelemetry Helm chart and the ClickStack collector image.
+- [Securing the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) with TLS on the OTLP endpoint and least-privilege ingestion users.
+- [Processing, filtering, and enriching](/clickstack/self-configured/ingesting-data/collector#processing-filtering-transforming-enriching-self-configured) events at the gateway.
+- [Modifying the collector configuration](/clickstack/self-configured/ingesting-data/collector#modifying-otel-collector-configuration-managed-self-configured) with custom receivers, processors, and pipelines.
+- [Estimating resources](/clickstack/self-configured/ingesting-data/collector#estimating-resources-self-configured) for gateway and agent deployments at your expected throughput.
+- [Going to production](/clickstack/self-configured/managing/production)

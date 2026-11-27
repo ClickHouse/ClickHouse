@@ -1,5 +1,5 @@
 ---
-title: '使用 Terraform 置备 AWS 基础设施'
+title: '使用 Terraform 预配 AWS 基础设施'
 sidebarTitle: '在 AWS 上使用 Terraform'
 slug: /products/bring-your-own-cloud/connector/terraform-aws
 description: '使用 Terraform 或 OpenTofu 为托管模式创建 Amazon EKS cluster，或在现有的 VPC 或集群中添加托管模式所需的资源'
@@ -8,24 +8,27 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
 托管模式运行在您自有的 Amazon EKS cluster 上。每个发行版都附带四个 Terraform 根模块 (下文简称“根模块”) ，它们既可以创建满足要求的集群，也可以在您现有的 VPC 或集群中补充所需资源。根模块会创建集群及其系统节点组和托管插件 (`vpc-cni`、`kube-proxy`、`coredns`、`aws-ebs-csi-driver`) ，以及 IAM 角色、KMS 密钥和标签；`existing-eks` 则仅安装您在 `install_addons` 中指定的插件。对于 Helm 目标，接下来由 `clicklink clctl init` 根据这些输出和平台支持包安装平台层，包括 Karpenter、AWS Load Balancer 控制器、存储类以及固定版本的组件 (请参阅[根据 Terraform 输出初始化连接器](#hand-off)) 。根模块要求 Terraform 1.10+ 或 OpenTofu 1.12+，以及 AWS 提供商 `~> 6.0`。本页所有命令中的 `terraform` 均可替换为 `tofu`。
 
-<Image img="/images/cloud/reference/byoc-connector-terraform-flow.svg" size="lg" alt="AWS 上 ClickHouse 连接器的 Terraform 预配流程" />
+<div className="ch-image-lg">
+  <Frame>
+    ![AWS 上 ClickHouse 连接器的 Terraform 预配流程](/images/cloud/reference/byoc-connector-terraform-flow.svg)
+  </Frame>
+</div>
 
 ## 开始之前 {#before-you-begin}
 
-您需要：
+您需要准备：
 
-* Terraform 1.10+ 或 OpenTofu 1.12+，以及 AWS 提供商 `~> 6.0`。
+* Terraform 1.10+ 或 OpenTofu 1.12+，以及 AWS 提供程序 `~> 6.0`。
 * 一个 AWS 身份，且有权创建和修改所选根模块所需的资源。
-* `curl`、SHA-256 工具 (`sha256sum` 或 `shasum`) 以及 `cosign`，用于下载并验证发行版归档文件。
-* 在[注册](/zh/products/bring-your-own-cloud/connector/onboarding#registration)步骤中获取的以下信息：所有根模块都需要的 `chart_repository_arn`，以及最后执行 `init` 交接时所需的连接器端点、注册标记和平台支持包。
+* `curl`、SHA-256 工具 (`sha256sum` 或 `shasum`) 以及 `cosign`，用于下载并校验发行版归档文件。
+* 在[注册](/zh/products/bring-your-own-cloud/connector/onboarding#registration)步骤中获取的信息：所有根模块都需要的 `chart_repository_arn`，以及最后 `init` 交接步骤所需的连接器端点、注册标记和平台支持包。
 
-对于 `production` 和 `existing-vpc`，请提前规划运行 `clicklink clctl init` 和 `kubectl` 的机器如何访问私网 EKS API，例如通过 VPN、堡垒机、对等网络或 SSM 端口转发。
+对于 `production` 和 `existing-vpc`，请提前规划运行 `clicklink clctl init` 和 `kubectl` 的机器如何访问私有 EKS API，例如通过 VPN、堡垒机、对等网络或 SSM 端口转发。
 
 <Steps titleSize="h2">
   <Step title="选择适用于您环境的 Terraform 根目录" id="choose-a-root">

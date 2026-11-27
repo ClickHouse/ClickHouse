@@ -19,12 +19,12 @@ namespace
 class AggregateFunctionCombinatorForEach final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "ForEach"; }
+    [[nodiscard]] String getName() const override { return "ForEach"; }
 
-    bool transformsArgumentTypes() const override { return true; }
+    [[nodiscard]] bool transformsArgumentTypes() const override { return true; }
 
     /// The rows of the arrays are passed to the nested function one by one, so the arrays are converted around.
-    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
 
     void convertVariantArgumentsAround(
         DataTypes & arguments, const DataTypes & nested_arguments, const DataTypes & converted_nested_arguments) const override
@@ -34,7 +34,7 @@ public:
                 arguments[i] = std::make_shared<DataTypeArray>(converted_nested_arguments[i]);
     }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         DataTypes nested_arguments;
         for (const auto & type : arguments)
@@ -49,7 +49,7 @@ public:
         return nested_arguments;
     }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,

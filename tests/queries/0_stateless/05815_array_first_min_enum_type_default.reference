@@ -1,0 +1,20 @@
+1	y	x	x	y	y	y
+2	x	x	x	x	x	x
+3	y	x	x	x	y	y
+1	y	y
+2	x	x
+3	y	x
+1	x
+2	x
+3	x
+11	y
+12	x
+13	y
+x	x
+x	x
+x	x
+a	a	a	a	a
+('x',0)	('x',0)
+{"a":"x"}	{"a":"x"}
+0			\N	\N	\N	0	0
+Nothing, Nothing(size = 1)	Nothing, Nothing(size = 1)	Nothing, Nothing(size = 1)	Nothing, Nothing(size = 1)

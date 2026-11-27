@@ -48,7 +48,9 @@ template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Full, JoinStr
 template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::Anti, false>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
 template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::Anti, true>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
 template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Inner, JoinStrictness::Anti, prefer_use_maps_all> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Right, JoinStrictness::Anti, prefer_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
+/// RIGHT ANTI gets `MapsOne` only for `EXCEPT DISTINCT`, which emits one row per key.
+template <> struct MapGetterImpl<JoinKind::Right, JoinStrictness::Anti, false> { using Map = HashJoin::MapsOne; static constexpr bool flagged = true; };
+template <> struct MapGetterImpl<JoinKind::Right, JoinStrictness::Anti, true> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
 template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Full, JoinStrictness::Anti, prefer_use_maps_all>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
 
 template <JoinKind kind, bool prefer_use_maps_all>
@@ -65,6 +67,9 @@ struct MapGetter : MapGetterImpl<kind, join_strictness, maps_kind == JoinMapsKin
 /// nothing of the right side is selected, so neither ever reads a right row.
 template <> struct MapGetter<JoinKind::Left, JoinStrictness::Anti, JoinMapsKind::Set> { using Map = HashJoin::MapsSet; static constexpr bool flagged = false; };
 template <> struct MapGetter<JoinKind::Left, JoinStrictness::Semi, JoinMapsKind::Set> { using Map = HashJoin::MapsSet; static constexpr bool flagged = false; };
+/// INNER ANY that selects no right column needs only the keys. It emits one left row per key: the first row
+/// to find a key sets the used flag of its cell, and later rows with that key are dropped.
+template <> struct MapGetter<JoinKind::Inner, JoinStrictness::Any, JoinMapsKind::Set> { using Map = HashJoin::MapsSet; static constexpr bool flagged = true; };
 
 /// Constrain the pairs of routines that differ only in whether a right row can be read from the map.
 template <typename Maps>
@@ -139,9 +144,9 @@ inline bool joinDispatchInit(JoinKind kind, JoinStrictness strictness, HashJoin:
     });
 }
 
-/// Call function on specified join map
-template <typename MapsVariant, typename Func>
-inline bool joinDispatch(JoinKind kind, JoinStrictness strictness, MapsVariant & maps, JoinMapsKind maps_kind, Func && func)
+/// Calls `func.template operator()<kind, strictness, Maps>()` with the join kind and strictness as compile-time values, and the maps type.
+template <typename Func>
+inline bool dispatchJoinShape(JoinKind kind, JoinStrictness strictness, JoinMapsKind maps_kind, Func && func)
 {
     return static_for<0, KINDS.size() * STRICTNESSES.size()>([&](auto ij)
     {
@@ -153,38 +158,7 @@ inline bool joinDispatch(JoinKind kind, JoinStrictness strictness, MapsVariant &
         {
             dispatchOnMapsKind(maps_kind, [&]<JoinMapsKind mk>()
             {
-                func(
-                    std::integral_constant<JoinKind, KINDS[i]>(),
-                    std::integral_constant<JoinStrictness, STRICTNESSES[j]>(),
-                    std::get<typename MapGetter<KINDS[i], STRICTNESSES[j], mk>::Map>(maps));
-            });
-            return true;
-        }
-        return false;
-    });
-}
-
-/// Call function on specified join map
-template <typename MapsVariant, typename Func>
-inline bool joinDispatch(JoinKind kind, JoinStrictness strictness, std::vector<const MapsVariant *> & mapsv, JoinMapsKind maps_kind, Func && func)
-{
-    return static_for<0, KINDS.size() * STRICTNESSES.size()>([&](auto ij)
-    {
-        // NOTE: Avoid using nested static loop as GCC and CLANG have bugs in different ways
-        // See https://stackoverflow.com/questions/44386415/gcc-and-clang-disagree-about-c17-constexpr-lambda-captures
-        constexpr auto i = ij / STRICTNESSES.size();
-        constexpr auto j = ij % STRICTNESSES.size();
-        if (kind == KINDS[i] && strictness == STRICTNESSES[j])
-        {
-            dispatchOnMapsKind(maps_kind, [&]<JoinMapsKind mk>()
-            {
-                using MapType = typename MapGetter<KINDS[i], STRICTNESSES[j], mk>::Map;
-                std::vector<const MapType *> v;
-                v.reserve(mapsv.size());
-                for (const auto & el : mapsv)
-                    v.push_back(&std::get<MapType>(*el));
-
-                func(std::integral_constant<JoinKind, KINDS[i]>(), std::integral_constant<JoinStrictness, STRICTNESSES[j]>(), v);
+                func.template operator()<KINDS[i], STRICTNESSES[j], typename MapGetter<KINDS[i], STRICTNESSES[j], mk>::Map>();
             });
             return true;
         }

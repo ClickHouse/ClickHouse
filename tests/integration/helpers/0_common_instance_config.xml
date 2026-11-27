@@ -10,6 +10,7 @@
 
     <mlock_executable>false</mlock_executable>
     <skip_binary_checksum_checks>true</skip_binary_checksum_checks>
+    <disk_transaction_wait_for_blob_removal>false</disk_transaction_wait_for_blob_removal>
 
   <logger>
         <level>test</level>

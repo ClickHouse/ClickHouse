@@ -32,15 +32,15 @@ public:
         return std::make_shared<FunctionArrayZip>(name, allow_unaligned);
     }
 
-    String getName() const override { return function_name; }
+    [[nodiscard]] String getName() const override { return function_name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Same "T was not captured" issue as `array()` — the zero-arg case
         /// stays a separate alternative.
@@ -49,7 +49,7 @@ public:
         return "() -> Array(Tuple()) OR (Array(T), ...) -> Array(Tuple(T, ...))";
     }
 
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         size_t num_arguments = arguments.size();
@@ -136,7 +136,7 @@ private:
             {
                 const auto * array_column = array_columns[arg_i];
                 const auto & offsets = array_column->getOffsets();
-                size_t array_offset = offsets[row_i - 1];
+                size_t array_offset = offsets[static_cast<ssize_t>(row_i) - 1];
                 size_t array_size = offsets[row_i] - array_offset;
 
                 res_tuple_columns[arg_i]->insertRangeFrom(*tuple_columns[arg_i], array_offset, array_size);
@@ -147,7 +147,7 @@ private:
             {
                 const auto * array_column = array_columns[arg_i];
                 const auto & offsets = array_column->getOffsets();
-                size_t array_offset = offsets[row_i - 1];
+                size_t array_offset = offsets[static_cast<ssize_t>(row_i) - 1];
                 size_t array_size = offsets[row_i] - array_offset;
 
                 res_tuple_columns[arg_i]->insertManyDefaults(max_size - array_size);

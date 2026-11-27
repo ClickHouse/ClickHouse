@@ -176,14 +176,26 @@ ClickHouse، ثم اختر قاعدة بيانات Postgres ومخطط الوج�
 استيراد جداول ClickHouse إليه. انقر على **اتصال** لإنشاء الخادم الخارجي
 واستيراد المخطط.
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="نموذج إعداد pg_clickhouse لقاعدة بيانات سيارات الأجرة في ClickHouse Cloud console" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![نموذج إعداد pg_clickhouse لقاعدة بيانات سيارات الأجرة في ClickHouse Cloud console](/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp)
+  </Frame>
+</div>
 
 عند اكتمال الإعداد، تعرض وحدة التحكم رسالة تأكيد، ويظهر الخادم الخارجي
 في قائمة الخوادم.
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="اكتمال إعداد pg_clickhouse لقاعدة بيانات سيارات الأجرة في ClickHouse Cloud console" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![اكتمال إعداد pg_clickhouse لقاعدة بيانات سيارات الأجرة في ClickHouse Cloud console](/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp)
+  </Frame>
+</div>
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="قائمة الخوادم الخارجية التي تعرض اتصال pg_clickhouse لسيارات الأجرة" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![قائمة الخوادم الخارجية التي تعرض اتصال pg_clickhouse لسيارات الأجرة](/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp)
+  </Frame>
+</div>
 
 يمكنك الآن فتح **SQL console** في Postgres والاستعلام عن الجداول المستوردة:
 
@@ -328,24 +340,24 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 الآن نفّذ استعلامًا على الجدول:
 
 ```pgsql
- SELECT count(*) FROM taxi.trips;
-   count
- ---------
-  1999657
- (1 row)
+SELECT count(*) FROM taxi.trips;
+  count
+---------
+ 1999657
+(1 row)
 ```
 
 لاحظ مدى سرعة تنفيذ الاستعلام. يقوم pg&#95;clickhouse بتمرير الاستعلام بالكامل،
-بما في ذلك دالة التجميع `COUNT()`، لذا يُنفَّذ على ClickHouse ولا
+بما في ذلك دالة التجميع `COUNT()`، لذا يُنفَّذ على ClickHouse ولا
 يُعيد إلى Postgres إلا صفًا واحدًا. استخدم [EXPLAIN] لمعاينة ذلك:
 
 ```pgsql
- EXPLAIN select count(*) from taxi.trips;
-                    QUERY PLAN
- -------------------------------------------------
-  Foreign Scan  (cost=1.00..-0.90 rows=1 width=8)
-    Relations: Aggregate on (trips)
- (2 rows)
+EXPLAIN select count(*) from taxi.trips;
+                   QUERY PLAN
+-------------------------------------------------
+ Foreign Scan  (cost=1.00..-0.90 rows=1 width=8)
+   Relations: Aggregate on (trips)
+(2 rows)
 ```
 
 لاحظ أن &quot;Foreign Scan&quot; يظهر عند جذر الخطة، ما يعني أن
@@ -509,7 +521,7 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 
 ## إنشاء قاموس {#create-a-dictionary}
 
-أنشئ قاموسًا مرتبطًا بجدول في خدمة ClickHouse الخاصة بك. يعتمد كلٌّ من
+أنشئ قاموسًا مرتبطًا بجدول في خدمة ClickHouse الخاصة بك. يعتمد كلٌّ من
 الجدول والقاموس على ملف CSV يحتوي على صف لكل
 حيّ في مدينة نيويورك.
 
@@ -562,7 +574,7 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
    FROM SERVER taxi_srv INTO taxi;
    ```
 
-   3. تأكَّد من أنه يمكننا الاستعلام عنه:
+   3. تأكَّد من أنه يمكننا الاستعلام عنه:
 
    ```pgsql
    taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
@@ -607,7 +619,7 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
    مطارَي LaGuardia أو JFK. لاحظ أن هناك عددًا كبيرًا من الرحلات التي
    لا يكون فيها الحي الذي انطلقت منه الرحلة معروفًا.
 
-## تنفيذ عملية join {#perform-a-join}
+## تنفيذ عملية ربط {#perform-a-join}
 
 اكتب بعض الاستعلامات التي تربط `taxi_zone_dictionary` بجدول `trips`
 لديك.
@@ -667,7 +679,7 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
    ```
 
 2. يُرجع هذا الاستعلام صفوفًا لأعلى 1000 رحلة من حيث قيمة
-   الإكرامية، ثم يُجري INNER JOIN لكل صف مع قاموس:
+   الإكرامية، ثم يُجري ربطًا داخليًا لكل صف مع قاموس:
 
    ```sql
    taxi=# SELECT *
@@ -700,4 +712,4 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 
 [Postgres image]: https://hub.docker.com/_/postgres "image Postgres في Docker على Docker Hub"
 
-[Refreshing dictionary data using LIFETIME]: /reference/statements/create/dictionary/lifetime "مستندات ClickHouse: تحديث بيانات قاموس باستخدام LIFETIME"
+[Refreshing dictionary data using LIFETIME]: /reference/statements/create/dictionary/lifetime "مستندات ClickHouse: تحديث بيانات القاموس باستخدام LIFETIME"

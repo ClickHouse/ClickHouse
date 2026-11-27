@@ -61,7 +61,7 @@ String bufferToString(const gss_buffer_desc & buf)
 namespace
 {
 
-std::recursive_mutex gss_global_mutex;
+[[clang::no_destroy]] std::recursive_mutex gss_global_mutex;
 
 struct PrincipalName
 {

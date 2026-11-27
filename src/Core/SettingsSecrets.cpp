@@ -4,8 +4,9 @@
 #include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 
-#include <functional>
-#include <unordered_map>
+#include <array>
+#include <string_view>
+#include <utility>
 
 namespace DB::CoreSettings
 {
@@ -14,7 +15,7 @@ namespace
 {
 
 /// Rewrites the value in place and returns whether anything was masked.
-using ValueMaskingFunc = std::function<bool(String &)>;
+using ValueMaskingFunc = bool (*)(String &);
 
 /// A URL carries its credential either as `user:password@` userinfo or, when it is presigned, in the
 /// query parameters, and either form can appear in the same setting.
@@ -35,7 +36,7 @@ bool maskURLCredentials(String & value)
 
     /// `maskURIUserinfo` ends the authority where the RFC does, but the consumer of the value may read a
     /// wider userinfo, as the MongoDB driver does in `mongodb://u:1?pw@1@host`.
-    bool masked = maskURIUserinfo(value) || maskURIPassword(&value);
+    bool masked = maskURIUserinfo(value) || maskURIPassword(value);
     masked |= maskPresignedURLParameters(value);
     return masked;
 }
@@ -45,19 +46,23 @@ bool maskURLCredentials(String & value)
 ///
 /// Mirrors the per-engine `SETTINGS_TO_HIDE` maps (`Kafka_fwd.h`, `NATS_fwd.h`, ...), which do this
 /// for table engine settings.
-const std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
-{
+///
+/// A `constexpr` array rather than a map, which would be constructed by a static initializer.
+constexpr std::array<std::pair<std::string_view, ValueMaskingFunc>, 3> SETTINGS_TO_HIDE
+{{
     {"format_avro_schema_registry_url", maskURLCredentials},
     {"url_base", maskURLCredentials},
     {"s3_base", maskURLCredentials},
-};
+}};
 
 }
 
 bool maskSettingValue(const String & setting_name, String & value)
 {
-    auto it = SETTINGS_TO_HIDE.find(setting_name);
-    return it != SETTINGS_TO_HIDE.end() && it->second(value);
+    for (const auto & [name, mask] : SETTINGS_TO_HIDE)
+        if (name == setting_name)
+            return mask(value);
+    return false;
 }
 
 bool maskSettingValue(const String & setting_name, const Field & field, String & value)

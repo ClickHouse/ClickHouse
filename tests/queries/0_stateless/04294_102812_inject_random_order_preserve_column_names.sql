@@ -36,8 +36,8 @@ UNION ALL
 SELECT number, number + 2 AS n1 FROM numbers(2)
 FORMAT Null;
 
--- ORDER BY rand() injection must still happen for the wrapped query.
--- A simple SELECT should produce a Sorting step in the plan; a SELECT with explicit
--- ORDER BY must not produce a second one.
-SELECT count() FROM (EXPLAIN PLAN SELECT number FROM numbers(5)) WHERE explain LIKE '%Sorting%';
-SELECT count() FROM (EXPLAIN PLAN SELECT number FROM numbers(5) ORDER BY number) WHERE explain LIKE '%Sorting%';
+-- SHUFFLE injection must still happen for the wrapped query.
+-- A simple SELECT should produce a Shuffle step in the plan; a SELECT with explicit
+-- ORDER BY must not.
+SELECT count() FROM (EXPLAIN PLAN SELECT number FROM numbers(5)) WHERE trimLeft(explain) LIKE 'Shuffle%';
+SELECT count() FROM (EXPLAIN PLAN SELECT number FROM numbers(5) ORDER BY number) WHERE explain LIKE '%Shuffle%';

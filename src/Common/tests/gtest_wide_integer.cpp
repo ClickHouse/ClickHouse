@@ -547,8 +547,8 @@ template <typename T>
 boost::multiprecision::cpp_int toExactInteger(const T & num)
 {
     boost::multiprecision::cpp_int result = 0;
-    for (size_t i = std::size(num.items); i-- > 0;)
-        result = (result << 64) | boost::multiprecision::cpp_int(num.items[i]);
+    for (size_t i = std::size(num.items); i > 0; --i)
+        result = (result << 64) | boost::multiprecision::cpp_int(num.items[i - 1]);
 
     /// The limbs hold two's complement, so a negative value comes out as its residue modulo 2^Bits.
     if constexpr (is_signed_v<T>)

@@ -19,11 +19,11 @@ public:
     SubcolumnCodecsDescription(SubcolumnCodecsDescription &&) noexcept = default;
     SubcolumnCodecsDescription & operator=(SubcolumnCodecsDescription &&) noexcept = default;
 
-    bool empty() const { return !codecs || codecs->empty(); }
-    bool contains(const String & subcolumn_name) const { return codecs && codecs->contains(subcolumn_name); }
+    [[nodiscard]] bool empty() const { return !codecs || codecs->empty(); }
+    [[nodiscard]] bool contains(const String & subcolumn_name) const { return codecs && codecs->contains(subcolumn_name); }
 
     /// Returns the codec declared for the subcolumn, or nullptr.
-    ASTPtr get(const String & subcolumn_name) const;
+    [[nodiscard]] ASTPtr get(const String & subcolumn_name) const;
 
     /// Declares the codec for the subcolumn, replacing a declared one.
     void set(const String & subcolumn_name, ASTPtr codec);
@@ -37,13 +37,13 @@ public:
 
     /// Iterates in the order of the names, like the map.
     using Map = std::map<String, ASTPtr>;
-    Map::const_iterator begin() const { return map().begin(); }
-    Map::const_iterator end() const { return map().end(); }
+    [[nodiscard]] Map::const_iterator begin() const { return map().begin(); }
+    [[nodiscard]] Map::const_iterator end() const { return map().end(); }
     Map::iterator begin() { return mutableMap().begin(); }
     Map::iterator end() { return mutableMap().end(); }
 
 private:
-    const Map & map() const;
+    [[nodiscard]] const Map & map() const;
     Map & mutableMap();
 
     /// The map is allocated only when a codec is set.

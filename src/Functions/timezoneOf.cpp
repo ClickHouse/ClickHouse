@@ -21,29 +21,29 @@ class FunctionTimezoneOf final : public IFunction
 {
 public:
     static constexpr auto name = "timezoneOf";
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
     static FunctionPtr create(ContextPtr) { return std::make_unique<FunctionTimezoneOf>(); }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Legacy validator removed Nullable before checking DateTime/DateTime64.
         return "(MaybeNullable(DateTime | DateTime64)) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         DataTypePtr type_no_nullable = removeNullable(arguments[0].type);
 
@@ -51,7 +51,7 @@ public:
             dynamic_cast<const TimezoneMixin &>(*type_no_nullable).getTimeZone().getTimeZone());
     }
 
-    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
+    [[nodiscard]] ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
         DataTypePtr type_no_nullable = removeNullable(arguments[0].type);
 

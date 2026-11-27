@@ -1,0 +1,42 @@
+---
+slug: /clickstack/self-configured/managing/overview
+title: '管理 Self-managed ClickHouse Observability'
+sidebarTitle: '概览'
+description: '管理 Self-managed ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['管理 Self-managed ClickHouse Observability', '性能', '物化视图', '管理命令']
+---
+
+<Note>
+  本页介绍 **Self-managed ClickHouse Observability**。如需使用推荐的全托管方案，请参阅[此处](/zh/clickstack/observability/managing/overview)的文档。
+</Note>
+
+本节介绍如何管理 Self-managed ClickHouse Observability。
+
+## 管理员指南 {#admin-guides}
+
+| 章节                                                                | 描述                                                         |
+| ----------------------------------------------------------------- | ---------------------------------------------------------- |
+| [配置选项](/zh/clickstack/self-configured/managing/config)               | 各组件可用的配置选项。                                                |
+| [资源估算](/zh/clickstack/self-configured/managing/estimating-resources) | 介绍如何根据摄取量为 Self-managed ClickHouse Observability 规划计算资源规模。 |
+| [投入生产环境](/zh/clickstack/self-configured/managing/production)         | 在生产环境中运行服务前的推荐步骤与最佳实践。                                     |
+| [读写隔离](/zh/clickstack/self-configured/managing/isolating-read-write) | 借助 ClickHouse Cloud 仓库，将摄取与查询工作负载分离到专用计算资源上。               |
+| [物化视图](/zh/clickstack/self-configured/managing/materialized-views)   | 详细介绍如何使用物化视图提升查询性能。                                        |
+| [性能调优](/zh/clickstack/self-configured/managing/performance-tuning)   | 全面介绍如何针对大规模工作负载调优服务。                                       |
+| [RBAC](/zh/clickstack/observability/managing/rbac)                   | 配置基于角色的访问控制，管理团队对仪表盘、保存的搜索和数据源的权限。                         |
+| [管理 TTL](/zh/clickstack/self-configured/managing/ttl)                | 在服务中通过生存时间 (TTL) 管理数据保留期。                                  |
+
+## ClickHouse 核心概念 {#core-concepts}
+
+大多数管理任务都要求熟悉底层的 ClickHouse 数据库。在执行管理或性能相关操作之前，建议先了解以下 ClickHouse 核心概念。
+
+| 概念                 | 描述                                                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| **表**              | 数据源如何映射到底层的 ClickHouse 表。ClickHouse 表主要使用 [`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 引擎。 |
+| **Parts**          | 数据如何以不可变的 parts 形式写入，并随时间推移不断合并。                                                                                         |
+| **分区**             | 表数据片段的逻辑分组，可简化数据管理、查询和优化。                                                                                                |
+| **合并**             | 将多个 parts 合并的后台过程，可减少查询时涉及的 parts 数量，从而保持性能。                                                                             |
+| **粒度**             | 查询执行期间读取和裁剪数据的最小单位。                                                                                                      |
+| **主键 (排序键)&#x20;**&#x20;| `ORDER BY` 键如何决定磁盘上的数据布局、压缩效果以及查询裁剪行为。                                                                                   |
+
+这些概念是 ClickHouse 性能的基础，可帮助您在管理 Self-managed ClickHouse Observability 时做出明智的管理决策。

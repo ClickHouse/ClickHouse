@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
@@ -617,7 +618,9 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     if (variant_limits.empty())
     {
         variant_limits.resize(variant_serializations.size(), 0);
-        auto & discriminators_data = col.getLocalDiscriminators();
+        /// Read-only access — use the const overload to avoid `chassert(use_count() == 1)`
+        /// when the substream cache holds a reference to `local_discriminators`.
+        const auto & discriminators_data = std::as_const(col).getLocalDiscriminators();
 
         for (size_t i = discriminators_offset ; i != discriminators_data.size(); ++i)
         {
@@ -636,7 +639,8 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     ColumnVariant::Discriminator last_non_empty_discr = 0;
     for (ColumnVariant::Discriminator i = 0; i != variant_serializations.size(); ++i)
     {
-        variant_offsets[i] = col.getVariantByLocalDiscriminator(i).size();
+        /// Size-only read: a variant may already be referenced from the substreams cache.
+        variant_offsets[i] = std::as_const(col).getVariantByLocalDiscriminator(i).size();
         if (variant_limits[i])
         {
             ++num_non_empty_variants;
@@ -655,20 +659,22 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
                 settings, variant_state->variant_states[i], cache);
         settings.path.pop_back();
 
-        /// Verify that we deserialized the expected number of rows for this variant.
-        if (col.getVariantByLocalDiscriminator(i).size() < variant_offsets[i] + variant_limits[i])
+        /// Verify that we deserialized the expected number of rows for this variant (size-only read,
+        /// the nested serializer may have just cached this variant column).
+        if (std::as_const(col).getVariantByLocalDiscriminator(i).size() < variant_offsets[i] + variant_limits[i])
             throw Exception(
                 settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
                 "Size of variant {} is expected to be not less than {} according to discriminators, but it is {}",
                 variant_names[i],
                 variant_offsets[i] + variant_limits[i],
-                col.getVariantByLocalDiscriminator(i).size());
+                std::as_const(col).getVariantByLocalDiscriminator(i).size());
     }
     settings.path.pop_back();
 
     /// Fill offsets column. Offsets index this reader's own variant sub-columns, so they are always
-    /// recomputed here and never taken from the substreams cache.
-    auto & discriminators_data = col.getLocalDiscriminators();
+    /// recomputed here and never taken from the substreams cache. The discriminators, however, were
+    /// stored into the cache above, so they are only read here and only through the const accessor.
+    const auto & discriminators_data = std::as_const(col).getLocalDiscriminators();
     auto & offsets = col.getOffsets();
     size_t num_new_offsets = discriminators_data.size() - offsets.size();
     offsets.reserve(offsets.size() + num_new_offsets);
@@ -925,6 +931,10 @@ void SerializationVariant::serializeForHashCalculation(const IColumn & column, s
 namespace
 {
 
+/// Neighbouring types in the list below are this far apart, so a type can be ranked between two of them
+/// without changing the other scores, which Tuple and Map priorities sum.
+constexpr size_t text_deserialize_priority_step = 4;
+
 const std::unordered_map<TypeIndex, size_t> & getTypesTextDeserializePriorityMap()
 {
     static std::unordered_map<TypeIndex, size_t> priority_map = []
@@ -991,7 +1001,15 @@ const std::unordered_map<TypeIndex, size_t> & getTypesTextDeserializePriorityMap
 
         pm.reserve(priorities.size());
         for (size_t i = 0; i != priorities.size(); ++i)
-            pm[priorities[i]] = priorities.size() - i;
+            pm[priorities[i]] = (priorities.size() - i) * text_deserialize_priority_step;
+
+        pm[TypeIndex::BFloat16] = pm.at(TypeIndex::Float32) + 1;
+        /// Times go before Dates: they reject any text with a date part,
+        /// while DateTimes parsed with best_effort also accept a time alone.
+        pm[TypeIndex::Time] = pm.at(TypeIndex::Date) + 2;
+        pm[TypeIndex::Time64] = pm.at(TypeIndex::Date) + 1;
+        /// Intervals are read as plain integers: after every number, date and time, before the strings.
+        pm[TypeIndex::Interval] = pm.at(TypeIndex::FixedString) + 1;
         return pm;
     }();
 
@@ -1065,7 +1083,7 @@ std::tuple<size_t, size_t, size_t> getTypeTextDeserializePriority(const DataType
 
     /// Bool type should have priority higher then all integers.
     if (isBool(type))
-        return {nested_depth, priority_map.at(TypeIndex::Int8) + 1, simple_nested_depth};
+        return {nested_depth, priority_map.at(TypeIndex::Int8) + text_deserialize_priority_step, simple_nested_depth};
 
     auto it = priority_map.find(type->getTypeId());
     return {nested_depth, it == priority_map.end() ? 0 : it->second, simple_nested_depth};

@@ -24,7 +24,7 @@ public:
     ThreadPool & get();
 
     void initialize(size_t max_threads, size_t max_free_threads, size_t queue_size);
-    bool isInitialized() const;
+    [[nodiscard]] bool isInitialized() const;
     void reloadConfiguration(size_t max_threads, size_t max_free_threads, size_t queue_size);
 
     void shutdown();
@@ -72,6 +72,7 @@ private:
     M(MergeTreePrefixesDeserialization, "MergeTreePrefixesDeserializationThreadPool", MergeTreeSubcolumnsReader) \
     M(DropDistributedCache, "DropDistributedCacheThreadPool", DropDistributedCache) \
     M(FormatParsing, "FormatParsingThreadPool", FormatParsing) \
+    M(ParquetEncoder, "ParquetEncoderThreadPool", ParquetEncoder) \
     M(AIRequest, "AIRequestThreadPool", AIRequest)
 
 #define DECLARE_STATIC_THREAD_POOL_GETTER(SUFFIX, NAME, METRIC) StaticThreadPool & get##SUFFIX##ThreadPool();

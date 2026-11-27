@@ -46,4 +46,4 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ($(chain 'ANY LEFT JOIN')) WHE
 # concurrent run of this test stores the same entry while it runs, so it runs once more, when the entry is cached.
 ${CLICKHOUSE_CLIENT} --query_id="${query_id}_cached" --query "$join_query"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
-${CLICKHOUSE_CLIENT} --param_first="$query_id" --param_second="${query_id}_cached" --query "SELECT count() > 0 FROM system.text_log WHERE event_date >= yesterday() AND query_id IN ({first:String}, {second:String}) AND logger_name = 'HashTablesStatistics'"
+${CLICKHOUSE_CLIENT} --param_first="$query_id" --param_second="${query_id}_cached" --query "SELECT count() > 0 FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN ({first:String}, {second:String}) AND logger_name = 'HashTablesStatistics'"

@@ -1,0 +1,26 @@
+1	100
+2	200
+1	100
+2	200
+1	100
+2	200
+1	\N
+2	\N
+id	Nullable(Int64)					
+b	Nullable(Int64)					
+1	100
+2	200
+unknown field rejected
+1	100
+2	200
+1	100
+2	200
+a"b	Nullable(Int64)					
+c	Nullable(Int64)					
+1	100
+2	200
+\N	100
+1	100
+1	100
+1	100
+1	100

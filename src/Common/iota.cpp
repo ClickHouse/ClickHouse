@@ -1,5 +1,6 @@
 #include <base/defines.h>
 #include <Common/iota.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -14,7 +15,7 @@ namespace DB
 /// default. It is already 4 at the default `x86-64-v3` baseline and on Darwin AArch64.
 
 template <iota_supported_types T>
-void NO_INLINE iota(T * begin, size_t count, T first_value)
+void NO_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW iota(T * begin, size_t count, T first_value)
 {
     T value = first_value;
 #if defined(__aarch64__) && !defined(OS_DARWIN)
@@ -28,7 +29,7 @@ void NO_INLINE iota(T * begin, size_t count, T first_value)
 }
 
 template <iota_supported_types T>
-void NO_INLINE iotaWithStep(T * begin, size_t count, T first_value, T step)
+void NO_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW iotaWithStep(T * begin, size_t count, T first_value, T step)
 {
     T value = first_value;
 #if defined(__aarch64__) && !defined(OS_DARWIN)

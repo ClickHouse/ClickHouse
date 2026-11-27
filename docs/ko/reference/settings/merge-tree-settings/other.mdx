@@ -15,6 +15,22 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정들은 [system.merge&#95;tree&#95;settings](/ko/reference/system-tables/merge_tree_settings)에서 확인할 수 있으며, ClickHouse 소스 코드에서 자동 생성됩니다.
 
+## adaptive_codec_selection_period {#adaptive_codec_selection_period}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "8"},{"label": "새로운 설정"}]}]} />
+
+블록의 비용 산정이란 모든 후보 코덱으로 블록을 압축한 뒤 출력이 가장 작은 결과를 채택하는 것을 의미합니다. `enable_adaptive_codec_selection`을 사용하면 컬럼 스트림이 이 설정값만큼의 블록으로 구성된 윈도우로 분할됩니다. 각 윈도우에서 1개의 블록이 표본(sample)이 되어 비용이 산정되며, 나머지 블록은 이 블록에서 선정된 코덱을 재사용합니다.
+선정된 코덱을 재사용하는 블록의 원본 바이트당 기록량이 비용 산정 블록에서 차순위 코덱이 기록한 양보다 많으면 해당 블록의 비용을 다시 산정합니다. 어떤 코덱으로도 비용 산정 블록의 크기를 줄이지 못하면 선정된 코덱이 없으므로 다음 블록의 비용을 산정합니다.
+비용을 산정한 블록은 기본 코덱(Default Codec)을 사용했을 때보다 커지지 않지만, 선정된 코덱을 재사용하는 블록은 더 커질 수 있습니다.
+`1`로 설정하면 모든 블록의 비용을 산정합니다. 컴팩트 파트(compact parts)는 항상 모든 블록의 비용을 산정합니다.
+프로파일 이벤트(profile events) `AdaptiveCodecBlocksPriced`, `AdaptiveCodecBlocksRepriced`, `AdaptiveCodecBlocksReused`는 `system.part_log`에서 병합(Merge) 또는 변형(Mutation)마다 각 유형의 블록 수를 집계합니다.
+`AdaptiveCodecBytesDefault`와 `AdaptiveCodecBytesWritten`은 표본 블록의 기본 코덱 기준 크기와 실제 기록된 크기를 각각 합산합니다. 따라서 두 값의 비율은 적응형 선택으로 절감된 정도를 나타내며, 주기가 `1`이면 정확한 값이 됩니다.
+후보가 기본 코덱과 `NONE`뿐인 스트림은 집계되지 않습니다.
+
 ## adaptive_write_buffer_initial_size {#adaptive_write_buffer_initial_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
@@ -83,6 +99,16 @@ true로 설정하면 CollapsingMergeTree 또는 VersionedCollapsingMergeTree 테
 
 머지 또는 mutation의 한 단계 실행에 대한 목표 시간입니다. 한 단계 실행 시간이 더 길면
 이 값을 초과할 수 있습니다.
+
+## cache_temporarily_for_merges {#cache_temporarily_for_merges}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "새로운 실험적 설정."}]}]} />
+
+백그라운드 머지 및 뮤테이션 읽기에서 파일 시스템 캐시를 임시 버퍼로 사용합니다. 캐시 미스가 발생한 데이터는 캐시로 읽어 들인 뒤 캐시에서 제공하며, 더 이상 해당 데이터를 점유한 곳이 없으면 캐시에서 제거합니다. 단, 이 모드가 아닌 리더나 writer가 해당 데이터를 사용한 경우에는 제거하지 않습니다. 이 기능은 실험적 `ReaderExecutor`에서만 지원되며, 다른 리더는 캐시를 우회합니다. `force_read_through_cache_for_merges`가 설정된 경우 해당 설정이 우선 적용됩니다.
 
 ## clean_deleted_rows {#clean_deleted_rows}
 
@@ -165,7 +191,11 @@ Keeper와 왕복 통신하지 않고도 중복을 감지할 수 있습니다.
 1. 테이블 선언에서 해당 컬럼에 정의된 압축 코덱
 2. `default_compression_codec`에 정의된 압축 코덱(이 설정)
 3. `compression` 설정에 정의된 기본 압축 코덱
-   기본값: 빈 문자열(정의되지 않음)입니다.
+
+코덱 조합자(Combinator) `FirstApplicable`은 각 컬럼(및 해당 컬럼의 각 스트림)의 데이터 타입에 맞는 코덱을 선택합니다.
+예를 들어 `FirstApplicable(PCO, ZSTD(3))`은 숫자는 `PCO`로, 그 외 데이터는 `ZSTD(3)`으로 압축합니다. 지정된 코덱 중 최소 하나는
+모든 데이터 타입에 적용할 수 있어야 하며, 손실 압축 코덱은 포함할 수 없습니다.
+기본값: 빈 문자열(정의되지 않음)입니다.
 
 ## 디스크 {#disk}
 
@@ -184,6 +214,17 @@ Dynamic 데이터 타입의 직렬화 버전입니다. compatibility를 위해 �
 * `v1`
 * `v2`
 * `v3`
+
+## empty_parts_lifetime {#empty_parts_lifetime}
+
+<SettingsInfoBlock type="Seconds" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+
+`remove_empty_parts`가 빈 파트를 제거하기 전에 해당 파트가 경과해야 하는 최소 시간(초)입니다. 경과 시간은 파트의
+`modification_time`을 기준으로 계산되므로, 머지나 뮤테이션으로 새로운 빈 파트가 생성되면 처음부터 다시 계산됩니다. 이 설정은
+파트를 대체하는 다른 방식에는 영향을 주지 않습니다. 해당 파트를 포함하는 머지나 해당 파트를 대상으로 하는 `TRUNCATE` 또는 `DROP`이 실행되면, 다른 파트와 마찬가지로 해당 파트는 오래됨(outdated) 상태가 됩니다.
+0으로 설정하면 빈 파트를 대기 없이 즉시 제거합니다.
 
 ## enforce_index_structure_match_on_partition_manipulation {#enforce_index_structure_match_on_partition_manipulation}
 
@@ -220,6 +261,25 @@ Possible values:
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 백그라운드 머지 및 뮤테이션의 읽기 작업에서 캐시 미스(cache miss)를 처리하는 방식을 제어합니다. 비활성화하면 이미 캐시된 범위는 그대로 사용하지만, 캐시에 없는 범위는 캐시를 채우지 않고 기반 저장소에서 직접 읽습니다. 활성화하면 캐시에 없는 범위를 캐시를 거쳐 읽은 뒤 파일 시스템 캐시에 저장하며, Distributed Cache가 활성화되어 있으면 Distributed Cache에도 저장합니다. 이렇게 하면 이후 읽기에 대비해 데이터를 미리 캐시에 적재할 수 있지만, 그만큼 캐시 용량을 차지합니다.
+
+## group_fsync_before_insert_finish {#group_fsync_before_insert_finish}
+
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "auto"},{"label": "새로운 설정"}]}]} />
+
+테이블이 로컬 디스크에 저장되어 있으면 `fsync_after_insert`와 함께 적용됩니다.
+여러 파트를 기록하는 `INSERT`는 파트마다 fsync가 끝나기를 기다리지 않습니다. 각 파트는
+기록된 직후 커밋되고, 모든 파트의 파일은 `INSERT`가 완료되기 전에 한꺼번에 fsync됩니다
+(커밋된 지 30초가 넘은 파트는 그보다 먼저 fsync됩니다). 그동안 OS는 백그라운드에서 데이터를 디스크에 기록합니다.
+파트는 영구적으로 저장되기 전에 쿼리에 노출될 수 있지만, `INSERT`에 대한
+확인 응답은 영구 저장이 완료된 후에만 전송됩니다.
+
+비활성화하면 각 파트는 기록된 직후, 커밋되기 전에 fsync됩니다.
+
+기본값 `auto`는 비복제 테이블(Non-replicated Tables)에서만 이 설정을 활성화합니다. 복제된 테이블(replicated tables)에서는
+다른 레플리카가 이 레플리카에서 커밋되었지만 아직 fsync되지 않은 파트를 기준으로 `INSERT`를 중복 제거한 뒤,
+데이터가 영구적으로 저장되기 전에 확인 응답을 보낼 수 있기 때문입니다.
 
 ## initialization_retry_period {#initialization_retry_period}
 
@@ -334,6 +394,18 @@ JSON 데이터 타입의 직렬화 버전입니다. compatibility를 위해 필�
 
 shared data 직렬화 버전을 변경할 수 있는 버전은 `v3`뿐입니다.
 
+## object_typed_shared_data_serialization_version {#object_typed_shared_data_serialization_version}
+
+<SettingsInfoBlock type="MergeTreeObjectTypedSharedDataSerializationVersion" default_value="v1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "v1"},{"label": "새로운 설정"}]}]} />
+
+JSON 데이터 타입(data type) 내부에 있는 타입이 지정된 공유 데이터의 직렬화 버전(serialization version)입니다. 타입이 지정된 공유 데이터는 데이터 파트(part)에서 `SHARED`로 선언된 타입이 지정된 경로들을 경로별로 별도의 파일 집합에 나누어 저장하지 않고, 일정한 개수의 파일에 함께 저장하는 구조입니다.
+
+가능한 값:
+
+* `v1` - 각 그래뉼(granule)마다 모든 `SHARED` 경로의 데이터를 경로 순서대로 저장하고, 각 경로 데이터의 시작 위치를 마크 스트림에 기록합니다. 따라서 일부 경로만 읽을 때는 해당 경로만 디코딩합니다.
+
 ## old_parts_lifetime {#old_parts_lifetime}
 
 <SettingsInfoBlock type="Seconds" default_value="480" />
@@ -391,33 +463,58 @@ LZ4 및 ZSTD와 같은 범용 압축 코덱은 데이터에 패턴이 있을 때
 
   일반적으로 SQL에서는 행 순서만 다른 동일한 테이블(또는 테이블 파트)을 동등한 것으로 간주하므로, 테이블(또는 테이블 파트)의 행은 자유롭게 섞을 수 있습니다.
 
-  하지만 테이블에 기본 키(primary key)가 정의되어 있으면 이러한 자유는 제한됩니다.
-  ClickHouse에서 기본 키 `C1, C2, ..., CN`는 테이블 행이 컬럼 `C1`, `C2`, ... `Cn`을 기준으로 정렬되도록 강제합니다([clustered index](https://en.wikipedia.org/wiki/Database_index#Clustered)).
+  하지만 테이블에 프라이머리 키(프라이머리 키)가 정의되어 있으면 이러한 자유는 제한됩니다.
+  ClickHouse에서 프라이머리 키 `C1, C2, ..., CN`는 테이블 행이 컬럼 `C1`, `C2`, ... `Cn`을 기준으로 정렬되도록 강제합니다([clustered index](https://en.wikipedia.org/wiki/Database_index#Clustered)).
   그 결과 행은 &quot;동치 클래스&quot; 안에서만 섞을 수 있습니다.
-  즉, 기본 키 컬럼의 값이 같은 행들끼리만 재배치할 수 있습니다.
-  직관적으로, high-cardinality 기본 키(예: `DateTime64` timestamp 컬럼을 포함하는 기본 키)는 작은 동치 클래스를 많이 만듭니다.
-  반대로 low-cardinality 기본 키를 가진 테이블은 적은 수의 큰 동치 클래스를 만듭니다.
-  기본 키가 없는 테이블은 모든 행을 포괄하는 하나의 동치 클래스만 있는 극단적인 경우에 해당합니다.
+  즉, 프라이머리 키 컬럼의 값이 같은 행들끼리만 재배치할 수 있습니다.
+  직관적으로, high-cardinality 프라이머리 키(예: `DateTime64` timestamp 컬럼을 포함하는 프라이머리 키)는 작은 동치 클래스를 많이 만듭니다.
+  반대로 low-cardinality 프라이머리 키를 가진 테이블은 적은 수의 큰 동치 클래스를 만듭니다.
+  프라이머리 키가 없는 테이블은 모든 행을 포괄하는 하나의 동치 클래스만 있는 극단적인 경우에 해당합니다.
 
   동치 클래스의 수가 적고 크기가 클수록 행을 다시 섞을 수 있는 자유도는 높아집니다.
 
   각 동치 클래스 내에서 최적의 행 순서를 찾기 위해 적용되는 휴리스틱은 D. Lemire, O. Kaser의
   [Reordering columns for smaller indexes](https://doi.org/10.1016/j.ins.2011.02.002)에서 제안되었으며,
-  각 동치 클래스 내의 행을 기본 키가 아닌 컬럼의 cardinality 오름차순으로 정렬하는 방식에 기반합니다.
+  각 동치 클래스 내의 행을 프라이머리 키가 아닌 컬럼의 cardinality 오름차순으로 정렬하는 방식에 기반합니다.
 
   이 과정은 3단계로 이루어집니다:
 
-  1. 기본 키 컬럼의 행 값을 기준으로 모든 동치 클래스를 찾습니다.
-  2. 각 동치 클래스에 대해 기본 키가 아닌 컬럼의 cardinality를 계산합니다(일반적으로는 추정).
-  3. 각 동치 클래스에 대해 기본 키가 아닌 컬럼의 cardinality 오름차순으로 행을 정렬합니다.
+  1. 프라이머리 키 컬럼의 행 값을 기준으로 모든 동치 클래스를 찾습니다.
+  2. 각 동치 클래스에 대해 프라이머리 키가 아닌 컬럼의 cardinality를 계산합니다(일반적으로는 추정).
+  3. 각 동치 클래스에 대해 프라이머리 키가 아닌 컬럼의 cardinality 오름차순으로 행을 정렬합니다.
 </details>
 
 활성화하면 새 데이터의 행 순서를 분석하고 최적화하기 위한 추가 CPU 비용이 삽입 작업에 발생합니다.
 데이터 특성에 따라 INSERT는 30-50% 더 오래 걸릴 수 있습니다.
 LZ4 또는 ZSTD의 압축률은 평균적으로 20-40% 향상됩니다.
 
-이 설정은 기본 키가 없거나 low-cardinality 기본 키를 가진 테이블, 즉 서로 다른 기본 키 값이 적은 테이블에서 가장 효과적입니다.
-예를 들어 `DateTime64` 타입의 timestamp 컬럼을 포함하는 high-cardinality 기본 키는 이 설정의 효과를 보기 어렵습니다.
+이 설정은 프라이머리 키가 없거나 low-cardinality 프라이머리 키를 가진 테이블, 즉 서로 다른 프라이머리 키 값이 적은 테이블에서 가장 효과적입니다.
+예를 들어 `DateTime64` 타입의 timestamp 컬럼을 포함하는 high-cardinality 프라이머리 키는 이 설정의 효과를 보기 어렵습니다.
+
+## optimize_row_order_if_no_order_by {#optimize_row_order_if_no_order_by}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "정렬 키가 없는 일반 MergeTree 계열 테이블에 대해 행 순서 최적화를 자동으로 활성화하는 새로운 설정입니다."}]}]} />
+
+정렬 키가 비어 있는 테이블, 즉 `ORDER BY ()` 또는 `ORDER BY tuple()`로
+선언된 테이블에서 삽입 시 행 순서 최적화(`optimize_row_order` 참조)를
+자동으로 적용할지 여부를 제어합니다.
+
+기본값은 비활성화입니다. 삽입 순서 및 삽입 처리량을 유지하는 것보다
+LZ4 또는 ZSTD로 새로 삽입된 파트의 압축률을 높이는 것이 더 중요한 테이블에서 활성화하십시오.
+
+`optimize_row_order`와 마찬가지로, 삽입 시 새 데이터의 행 순서를 분석하고
+최적화하는 데 추가 CPU 비용이 발생합니다. 압축보다 행의 원래 삽입 순서를
+유지하거나 삽입 처리량을 극대화하는 것이 더 중요하다면 이 설정을 비활성화하십시오.
+
+`optimize_row_order = 0`을 명시적으로 설정하면 해당 값이 우선 적용됩니다. 이러한 테이블에는
+이 설정과 관계없이 행 순서 최적화가 적용되지 않습니다.
+
+`optimize_row_order`와 마찬가지로, 이 최적화는 `ReplicatedMergeTree`를 포함한
+일반 `MergeTree` 계열 테이블에만 적용됩니다. `ReplacingMergeTree`,
+`CollapsingMergeTree`, `AggregatingMergeTree` 등 이 계열의 특수 엔진에는
+행 순서 최적화가 적용되지 않으며, 삽입된 행의 순서가 그대로 유지됩니다.
 
 ## packed_skip_index_max_bytes {#packed_skip_index_max_bytes}
 
