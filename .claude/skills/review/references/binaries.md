@@ -61,9 +61,9 @@ FULL BUILDS: EARLIER COMMITS OF THE PR
 - The Evidence line names the job and the commit, for example `✅ Reproduced with Build (arm_asan_ubsan) of 1a2b3c4d (differs from the head only in tests)`.
 
 MASTER
-- To show behavior before the PR, or when the PR has no binary (documentation and CI only), use a master build. Only merge commits of master have them, and not all of them. Start the search at the base of the PR (the first parent of the checked-out merge), so that the build is not newer than the base:
+- To show behavior before the PR, or when the PR has no binary (documentation and CI only), use a master build. Only merge commits of master have them, and not all of them. Start the search at the merge base of the PR, so that the build is not newer than the base:
   ```bash
-  base=$(git cat-file -p HEAD | awk '$1 == "parent" { print $2; exit }')
+  base=$(gh api "repos/ClickHouse/ClickHouse/compare/master...<head sha>" --jq '.merge_base_commit.sha')
   for sha in $(gh api "repos/ClickHouse/ClickHouse/commits?sha=$base&per_page=30" --jq '.[].sha')
   do
     url="https://clickhouse-builds.s3.amazonaws.com/REFs/master/$sha/masterci/build_arm_release/clickhouse"
