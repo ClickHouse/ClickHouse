@@ -26,8 +26,6 @@
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <IO/S3Defines.h>
 
-#    include <Common/Silk/FiberMutex.h>
-
 class SipHash;
 namespace DB::S3
 {
@@ -81,7 +79,7 @@ private:
 
 
     const Aws::String endpoint;
-    mutable Silk::FiberMutex token_mutex;
+    mutable std::mutex token_mutex;
     mutable Aws::String token;
     LoggerPtr logger;
 };
@@ -136,7 +134,7 @@ private:
     std::shared_ptr<AWSEC2InstanceProfileConfigLoader> ec2_metadata_config_loader;
     Int64 load_frequency_ms;
     LoggerPtr logger;
-    Silk::FiberMutex get_aws_credentials_mutex;
+    std::mutex get_aws_credentials_mutex;
 };
 
 class AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
@@ -212,7 +210,7 @@ private:
     LoggerPtr logger;
     uint64_t expiration_window_seconds;
     std::atomic<Int64> last_loaded_ms{0};
-    Silk::FiberMutex get_aws_credentials_mutex;
+    std::mutex get_aws_credentials_mutex;
 };
 
 class SSOCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
@@ -250,7 +248,7 @@ private:
     DB::S3::PocoHTTPClientConfiguration aws_client_configuration;
     uint64_t expiration_window_seconds;
     LoggerPtr logger;
-    Silk::FiberMutex get_aws_credentials_mutex;
+    std::mutex get_aws_credentials_mutex;
 
     void Reload() override;
     Aws::String loadAccessTokenFile(const Aws::String & sso_access_token_path);
@@ -308,7 +306,7 @@ public:
     void SetNeedRefresh() override;
 
 private:
-    Silk::FiberMutex mutex;
+    std::mutex mutex;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> cached_provider;
 };
 
@@ -423,7 +421,7 @@ private:
     std::shared_ptr<AWSAssumeRoleClient> client;
     Aws::Auth::AWSCredentials credentials;
     LoggerPtr logger;
-    Silk::FiberMutex get_aws_credentials_mutex;
+    std::mutex get_aws_credentials_mutex;
 };
 
 std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(

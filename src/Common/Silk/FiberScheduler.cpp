@@ -8,6 +8,7 @@
 #include <Common/FiberLocal.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ThreadStatus.h>
+#include <SilkSuspensionBlocker.h>
 
 #include <Poco/Message.h>
 
@@ -66,6 +67,8 @@ void onFiberResume(silk::Fiber * fiber) noexcept
     if (!isClickHouseFiber())
         return;
 
+    SuspensionBlocker suspension_blocker;
+
     auto * context = static_cast<FiberContext *>(silk::FiberScheduler::getFiberParameters(fiber));
     FiberLocalStorage::swap(*context->fiber_local_storage);
 
@@ -78,6 +81,8 @@ void onFiberSuspend(silk::Fiber * fiber) noexcept
 {
     if (!isClickHouseFiber())
         return;
+
+    SuspensionBlocker suspension_blocker;
 
     /// There can be a practically unbounded number of fibers.
     /// Each fiber gets a small buffer of untracked memory which it does not publish

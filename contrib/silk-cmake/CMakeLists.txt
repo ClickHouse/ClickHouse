@@ -1,27 +1,14 @@
-if(NOT OS_LINUX)
-    message(STATUS "Not building silk because it requires io_uring (Linux-only)")
-    return()
-endif()
-
-if(NOT (ARCH_AMD64 OR ARCH_AARCH64))
-    message(STATUS "Not building silk because it supports only x86_64 and aarch64")
-    return()
-endif()
-
-# Silk needs support for 128-bit atomics.
-if(ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_LESS 2)
-    message(STATUS "Not building silk because it requires x86-64-v2 or higher")
+if(NOT ENABLE_SILK)
+    message(STATUS "Not using silk")
     return()
 endif()
 
 if(NOT TARGET ch_contrib::liburing)
-    message(STATUS "Not building silk because liburing is disabled")
-    return()
+    message(FATAL_ERROR "ENABLE_SILK requires liburing, pass -DENABLE_SILK=0 to build without Silk")
 endif()
 
 if(NOT TARGET ch_contrib::librseq)
-    message(STATUS "Not building silk because librseq is disabled")
-    return()
+    message(FATAL_ERROR "ENABLE_SILK requires librseq, pass -DENABLE_SILK=0 to build without Silk")
 endif()
 
 set(SILK_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/silk")
@@ -34,7 +21,7 @@ list(REMOVE_ITEM SILK_UTIL_SOURCES "${SILK_SOURCE_DIR}/src/util/logger.cpp")
 add_library(_silk_util STATIC ${SILK_UTIL_SOURCES})
 target_include_directories(_silk_util SYSTEM
     PUBLIC "${SILK_SOURCE_DIR}/include"
-    PRIVATE "${SILK_SOURCE_DIR}/src"
+    PRIVATE "${SILK_SOURCE_DIR}/src" $<TARGET_PROPERTY:ch_contrib::librseq,INTERFACE_INCLUDE_DIRECTORIES>
 )
 target_link_libraries(_silk_util
     PUBLIC boost::headers_only

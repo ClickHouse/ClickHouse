@@ -121,7 +121,6 @@ std::string makeServiceAccountKey(const std::string & token_uri)
 /// its I/O, the fibers waiting for that mutex would block every scheduler thread, and the rest would never start.
 TEST(GCPOAuthInFibers, ConcurrentFibersWaitForOneTokenRefresh)
 {
-    /// `Silk::FiberMutex` of the client is chosen when the client is constructed.
     initializeFiberSchedulerForTests();
 
     TokenEndpoint endpoint;

@@ -2402,7 +2402,6 @@ void runFibersAndReleaseWhenAllStarted(size_t fiber_count, Poco::Event & release
 /// `SetNeedRefresh` waits for the refresh, so the next lookup asks STS again.
 TEST(IOTestAwsS3Client, WebIdentityInvalidationDuringRefreshIsKept)
 {
-    /// The provider is created after the scheduler, so its `Silk::FiberMutex` is a fiber mutex.
     initializeFiberSchedulerForTests();
 
     Poco::Event sts_entered(/* autoReset = */ false);
@@ -2539,7 +2538,6 @@ namespace DB::ErrorCodes
 /// an unsigned request would be answered with `AccessDenied`, which hides the real cause.
 TEST(IOTestAwsS3Client, WebIdentityRefreshWithoutTokenFileFailsOnlyInFiber)
 {
-    /// `Silk::FiberMutex` of the provider is chosen when it is constructed.
     initializeFiberSchedulerForTests();
 
     static const DB::RemoteHostFilter remote_host_filter;
@@ -2747,7 +2745,6 @@ std::shared_ptr<DB::S3::Client> createAssumeRoleTestClient(
 /// The client gets the first credentials when it is created; a refresh from a fiber is covered by the `ExpiredToken` test.
 TEST(IOTestAwsS3Client, AssumeRoleSignsRequestFromFiber)
 {
-    /// Providers and clients are created after the scheduler, so their `Silk::FiberMutex` is a fiber mutex.
     initializeFiberSchedulerForTests();
 
     /// A server thread writes it and the test reads it, so it is guarded: a fiber does its socket I/O through the
@@ -2921,7 +2918,7 @@ std::unique_ptr<DB::S3::AWSInstanceProfileCredentialsProvider> createInstancePro
 
 }
 
-/// EC2 IMDS in fibers: concurrent callers wait on the provider's `Silk::FiberMutex` while the first one is suspended in
+/// EC2 IMDS in fibers: concurrent callers wait on the provider's mutex while the first one is suspended in
 /// IMDS I/O, which is held until all fibers have started, and all of them get the credentials of one refresh.
 TEST(IOTestAwsS3Client, InstanceProfileCredentialsInConcurrentFibers)
 {

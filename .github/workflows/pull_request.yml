@@ -317,6 +317,120 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Fast test' --workflow "PR" --ci --timestamp
 
+  libcxx_external_threading_tests_release:
+    runs-on: [self-hosted, pr-arm-medium]
+    needs:
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'TGliY3h4IGV4dGVybmFsIHRocmVhZGluZyB0ZXN0cyAocmVsZWFzZSk=') }}
+    name: "Libcxx external threading tests (release)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Libcxx external threading tests (release)' --workflow "PR" --ci --timestamp
+
+  libcxx_external_threading_tests_tsan:
+    runs-on: [self-hosted, pr-amd-medium]
+    needs:
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'TGliY3h4IGV4dGVybmFsIHRocmVhZGluZyB0ZXN0cyAodHNhbik=') }}
+    name: "Libcxx external threading tests (tsan)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Libcxx external threading tests (tsan)' --workflow "PR" --ci --timestamp
+
+  libcxx_external_threading_tests_asan:
+    runs-on: [self-hosted, pr-amd-medium]
+    needs:
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'TGliY3h4IGV4dGVybmFsIHRocmVhZGluZyB0ZXN0cyAoYXNhbik=') }}
+    name: "Libcxx external threading tests (asan)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Libcxx external threading tests (asan)' --workflow "PR" --ci --timestamp
+
   fast_test_arm_darwin:
     runs-on: [self-hosted, pr-macos-m2]
     needs:
@@ -11334,6 +11448,9 @@ jobs:
     - la_casa_del_dolor_amd_msan
     - la_casa_del_dolor_amd_tsan
     - la_casa_del_dolor_arm_asan_ubsan
+    - libcxx_external_threading_tests_asan
+    - libcxx_external_threading_tests_release
+    - libcxx_external_threading_tests_tsan
     - llvm_coverage
     - parser_memory_check
     - performance_comparison_amd_release_master_head_1_6

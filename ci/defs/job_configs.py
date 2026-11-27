@@ -392,6 +392,30 @@ class JobConfigs:
         result_name_for_cidb="Tests",
         needs_submodules=True,
     )
+    libcxx_external_threading_jobs = Job.Config(
+        name=JobNames.LIBCXX_EXTERNAL_THREADING,
+        runs_on=[],
+        command="python3 ./ci/jobs/libcxx_external_threading_job.py {PARAMETER}",
+        run_in_docker="clickhouse/fasttest+--security-opt seccomp=unconfined",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/libcxx_external_threading_job.py",
+                "./ci/jobs/fast_test.py",
+                "./base/libcxx-external-threading",
+                "./contrib/llvm-project",
+                "./contrib/libcxx-cmake",
+                "./contrib/libcxxabi-cmake",
+                "./contrib/silk",
+                "./contrib/silk-cmake",
+                "./cmake/cxx.cmake",
+            ],
+        ),
+        needs_submodules=True,
+    ).parametrize(
+        Job.ParamSet(parameter="release", runs_on=RunnerLabels.ARM_MEDIUM),
+        Job.ParamSet(parameter="tsan", runs_on=RunnerLabels.AMD_MEDIUM),
+        Job.ParamSet(parameter="asan", runs_on=RunnerLabels.AMD_MEDIUM),
+    )
     # The merge queue writes the sccache bucket and needs the EC2 metadata endpoint for credentials
     fast_test_mq = fast_test.copy()
     fast_test_mq.run_in_docker = fast_test.run_in_docker.replace(

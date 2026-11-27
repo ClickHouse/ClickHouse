@@ -220,7 +220,6 @@ TEST(RemoteProxyConfigurationResolver, ConcurrentFibersWaitForOneFetch)
 {
     initializeFiberSchedulerForTests();
 
-    /// Created after the scheduler, so that its `Silk::FiberMutex` is a fiber mutex.
     auto fetcher = std::make_shared<SuspendingFetcher>();
     RemoteProxyConfigurationResolver resolver(
         {Poco::URI("not_important"), "http", 80, std::chrono::seconds{10}},

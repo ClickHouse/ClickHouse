@@ -1110,7 +1110,7 @@ Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_
 namespace
 {
 
-/// A copy of `Aws::Auth::ProfileConfigFileAWSCredentialsProvider` that serializes access with `Silk::FiberMutex` instead
+/// A copy of `Aws::Auth::ProfileConfigFileAWSCredentialsProvider` that serializes access with `std::mutex` instead
 /// of the SDK `ReaderWriterLock` and reads the credentials file inside `Silk::ThreadModeScope`. Overriding `Reload` of
 /// the SDK provider is not enough: the SDK holds its native lock across `Reload`, so a fiber would enter thread mode
 /// with that lock held, and a fiber that waits for it would block its scheduler thread.
@@ -1165,7 +1165,7 @@ private:
 
     const Aws::String profile_to_use;
     Aws::Config::AWSConfigFileProfileConfigLoader credentials_file_loader;
-    Silk::FiberMutex get_aws_credentials_mutex;
+    std::mutex get_aws_credentials_mutex;
 };
 
 }
