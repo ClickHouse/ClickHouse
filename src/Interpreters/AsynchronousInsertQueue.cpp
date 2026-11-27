@@ -1788,7 +1788,8 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
         auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
         executor.setQueryParameters(entry->query_parameters);
-        warnAboutSkippedUnknownFields(*format, insert_context, format_name, entry->query_id);
+        if (auto callback = makeSkippedUnknownFieldWarningCallback(insert_context, format_name, entry->query_id))
+            executor.setSkippedUnknownFieldCallback(std::move(callback));
 
         size_t num_bytes = bytes->size();
         size_t num_rows = executor.execute(*buffer, num_bytes);

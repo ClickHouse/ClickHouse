@@ -75,6 +75,13 @@ void StreamingFormatExecutor::setQueryParameters(const NameToNameMap & parameter
     format->setQueryParameters(parameters);
 }
 
+void StreamingFormatExecutor::setSkippedUnknownFieldCallback(IInputFormat::SkippedUnknownFieldCallback callback)
+{
+    if (!format)
+        createFormat();
+    format->setSkippedUnknownFieldCallback(std::move(callback));
+}
+
 void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const Chunk & chunk)
 {
     if (!try_preallocate)

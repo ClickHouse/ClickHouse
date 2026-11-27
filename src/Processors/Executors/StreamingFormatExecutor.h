@@ -54,6 +54,9 @@ public:
     /// Sets query parameters for input format if applicable.
     void setQueryParameters(const NameToNameMap & parameters);
 
+    /// Sets the callback of the input format for the next input, see `IInputFormat::setSkippedUnknownFieldCallback`.
+    void setSkippedUnknownFieldCallback(IInputFormat::SkippedUnknownFieldCallback callback);
+
 private:
     size_t execute(size_t num_bytes);
     void createFormat();

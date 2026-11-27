@@ -118,7 +118,7 @@ Possible values:
 - 0 - Disabled.
 - 1 - Enabled.
 )", 0, \
-        {"26.11", false, true, "New setting to log a warning for each field of the data of an `INSERT` that `input_format_skip_unknown_fields` skips."}) \
+        {"26.12", false, true, "New setting to log a warning for each field of the data of an `INSERT` that `input_format_skip_unknown_fields` skips."}) \
     DECLARE(Bool, input_format_with_names_use_header, true, R"(
 Enables or disables checking the column order when inserting data.
 
