@@ -65,4 +65,17 @@ echo 'SELECT currentUser()' | curl 'https://host.domain.com:8443' --cert example
 
 Explicit credentials (the `Authorization` header, the `X-ClickHouse-User`/`X-ClickHouse-Key` headers, or the `user`/`password` query parameters) always take precedence over the certificate. The derived user must still be configured with the `ssl_certificate` authentication method listing a matching certificate subject: the setting only substitutes the user name, it does not bypass the subject check.
 
+If the certificate field holds more than the user name, the `ssl_certificate_username_regexp` server setting extracts the user name from it. It is a regular expression in the [re2](https://github.com/google/re2/wiki/Syntax) syntax that must match the whole value of the field and contain exactly one capturing group, which captures the user name. If the value does not match, the authentication fails.
+
+**Example**
+```xml
+<clickhouse>
+    <ssl_certificate_username_field>CN</ssl_certificate_username_field>
+    <!-- The Common Name 'uid=alice,ou=Engineering' authenticates the user 'alice'. -->
+    <ssl_certificate_username_regexp>uid=([^,]+),.*</ssl_certificate_username_regexp>
+</clickhouse>
+```
+
+The user is still configured with the whole subject of the certificate, for example `CREATE USER alice IDENTIFIED WITH ssl_certificate CN 'uid=alice,ou=Engineering'`.
+
 A browser presents the client certificate even with the requests that another site makes it send, such as a cross-site form submission. Therefore, a request that the browser marks as initiated by another origin is never authenticated by the certificate alone and is rejected. A request is treated as cross-origin when its `Sec-Fetch-Site` header is neither `same-origin` nor `none`, or, if that header is absent, when its `Origin` header does not match `https://` followed by the `Host` header. Such a request has to pass credentials explicitly, for example with the `X-ClickHouse-SSL-Certificate-Auth: on` and `X-ClickHouse-User` headers. Clients that send neither `Sec-Fetch-Site` nor `Origin` are not affected.

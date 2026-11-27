@@ -353,6 +353,19 @@ Explicit credentials always take precedence over the certificate: when the reque
 The derived user must still be configured with the `ssl_certificate` authentication method listing a matching certificate subject: the setting only substitutes the user name that was previously taken from the `X-ClickHouse-User` header, it does not bypass the subject check.
 
 A request that a browser marks as initiated by another origin is never authenticated by the certificate alone and is rejected, because a browser presents the client certificate even with the requests that another site makes it send, such as a cross-site form submission. A request is treated as cross-origin when its `Sec-Fetch-Site` header is neither `same-origin` nor `none`, or, if that header is absent, when its `Origin` header does not match `https://` followed by the `Host` header. Clients that send neither header are not affected, and neither are requests with explicit credentials, including the `X-ClickHouse-SSL-Certificate-Auth: on` header.
+
+If the certificate field holds more than the user name, the user name can be extracted from it with the [`ssl_certificate_username_regexp`](#ssl_certificate_username_regexp) server setting.
+)", 0) \
+    DECLARE(String, ssl_certificate_username_regexp, "", R"(
+A regular expression in the [re2](https://github.com/google/re2/wiki/Syntax) syntax that extracts the user name from the value of the certificate field selected by the [`ssl_certificate_username_field`](#ssl_certificate_username_field) server setting. It is for the certificates whose field holds more than the user name, for example the Common Name `uid=alice,ou=Engineering`.
+
+The regular expression must match the whole value of the field and must contain exactly one capturing group: the user name is the text captured by that group. If the value does not match, the authentication fails.
+
+For example, `uid=([^,]+),.*` derives the user name `alice` from the Common Name `uid=alice,ou=Engineering`.
+
+By default (an empty string), the whole value of the field is the user name. The setting has no effect when `ssl_certificate_username_field` is empty.
+
+The derived user must still be configured with the `ssl_certificate` authentication method listing a subject that matches the certificate, for example `CN 'uid=alice,ou=Engineering'`: the regular expression only shortens the user name, it does not bypass the subject check.
 )", 0) \
     DECLARE(String, tmp_policy, "", R"(
 Policy for storage with temporary data. All files with `tmp` prefix will be removed at start.

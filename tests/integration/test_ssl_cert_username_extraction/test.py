@@ -198,10 +198,12 @@ def test_cross_origin_browser_requests_are_rejected():
         node_cn.query("DROP TABLE IF EXISTS csrf")
 
 
-def test_san_uri_extraction():
-    user_name = "spiffe://foo.com/bar"
+def test_san_uri_extraction_with_regexp():
+    # The node extracts the user name from the URI Subject Alternative Name entry with the regular
+    # expression 'spiffe://foo\.com/(.+)'. The user is still configured with the whole entry.
+    user_name = "bar"
     node_san_uri.query(
-        f"CREATE USER '{user_name}' IDENTIFIED WITH ssl_certificate SAN 'URI:{user_name}'"
+        f"CREATE USER {user_name} IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://foo.com/{user_name}'"
     )
     try:
         # 'client4-cert.pem' has the single Subject Alternative Name entry 'URI:spiffe://foo.com/bar'.
@@ -212,12 +214,15 @@ def test_san_uri_extraction():
             == f"{user_name}\n"
         )
 
-        # 'client1-cert.pem' has no Subject Alternative Name entries, so there is no user name to
+        # 'client5-cert.pem' has the single Subject Alternative Name entry
+        # 'URI:spiffe://bar.com/foo/boo/far', which does not match the regular expression, and
+        # 'client1-cert.pem' has no Subject Alternative Name entries: there is no user name to
         # extract and the authentication fails.
-        with pytest.raises(Exception) as err:
-            execute_query_https(
-                node_san_uri, "SELECT currentUser()", cert_name="client1"
-            )
-        assert "403" in str(err.value)
+        for cert_name in ["client5", "client1"]:
+            with pytest.raises(Exception) as err:
+                execute_query_https(
+                    node_san_uri, "SELECT currentUser()", cert_name=cert_name
+                )
+            assert "403" in str(err.value), cert_name
     finally:
-        node_san_uri.query(f"DROP USER IF EXISTS '{user_name}'")
+        node_san_uri.query(f"DROP USER IF EXISTS {user_name}")

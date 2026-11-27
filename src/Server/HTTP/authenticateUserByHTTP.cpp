@@ -18,6 +18,9 @@
 
 #if USE_SSL
 #    include <Common/Crypto/X509Certificate.h>
+#    include <Common/re2.h>
+
+#    include <mutex>
 #endif
 
 
@@ -36,6 +39,7 @@ namespace ServerSetting
 {
     extern const ServerSettingsString default_session_user;
     extern const ServerSettingsString ssl_certificate_username_field;
+    extern const ServerSettingsString ssl_certificate_username_regexp;
 }
 
 
@@ -114,6 +118,43 @@ namespace
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Invalid value '{}' of the `ssl_certificate_username_field` server setting: "
                         "must be 'CN', 'SAN:DNS' or 'SAN:URI'", field);
+    }
+
+    /// Returns the compiled `ssl_certificate_username_regexp` server setting. The setting is the
+    /// same for every request, so the regular expression is compiled once, not on every request.
+    std::shared_ptr<const re2::RE2> getUserNameRegexp(const String & pattern)
+    {
+        static std::mutex mutex;
+        static std::shared_ptr<const re2::RE2> cached_regexp;
+
+        std::lock_guard lock(mutex);
+        if (!cached_regexp || cached_regexp->pattern() != pattern)
+        {
+            auto regexp = std::make_shared<const re2::RE2>(pattern, re2::RE2::Quiet);
+            if (!regexp->ok())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Invalid value '{}' of the `ssl_certificate_username_regexp` server setting: {}",
+                                pattern, regexp->error());
+            if (regexp->NumberOfCapturingGroups() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Invalid value '{}' of the `ssl_certificate_username_regexp` server setting: "
+                                "it must contain exactly one capturing group, which captures the user name", pattern);
+            cached_regexp = std::move(regexp);
+        }
+        return cached_regexp;
+    }
+
+    /// Extracts the user name from the value of a certificate field with the regular expression
+    /// from the `ssl_certificate_username_regexp` server setting: the whole value must match, and
+    /// the user name is the capturing group. It is for the certificates whose field holds more
+    /// than the user name, e.g. the Common Name 'uid=alice,ou=Engineering'. Returns an empty
+    /// string when the value does not match; the caller rejects the empty user name.
+    String extractUserNameWithRegexp(const String & field_value, const String & pattern)
+    {
+        String user_name;
+        if (!re2::RE2::FullMatch(field_value, *getUserNameRegexp(pattern), &user_name))
+            return {};
+        return user_name;
     }
 
     /// Whether the browser marked the request as initiated by another origin.
@@ -375,6 +416,13 @@ bool authenticateUserByHTTP(
 
         certificate_subjects = peer_certificate->extractAllSubjects();
         user = extractUserNameFromCertificateSubjects(certificate_subjects, ssl_certificate_username_field);
+
+        /// The field can hold more than the user name: the `ssl_certificate_username_regexp`
+        /// server setting, if set, extracts the user name from it.
+        const String ssl_certificate_username_regexp = String(global_context->getServerSettings()[ServerSetting::ssl_certificate_username_regexp]);
+        if (!user.empty() && !ssl_certificate_username_regexp.empty())
+            user = extractUserNameWithRegexp(user, ssl_certificate_username_regexp);
+
         checkUserNameNotEmptyAndServerHasEnoughMemory(user, "TLS client certificate", global_context, session, client_address);
     }
 #endif
