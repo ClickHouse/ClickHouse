@@ -83,6 +83,9 @@ struct MongoDBConfiguration
     String collection;
     std::unordered_set<String> oid_fields = {"_id"};
 
+    /// Throws `BAD_ARGUMENTS` for a connection string the driver cannot parse.
+    void setURI(const String & connection_string);
+
     void checkHosts(const ContextPtr & context) const;
     void checkCollection() const;
 

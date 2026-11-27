@@ -338,7 +338,7 @@ BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct#
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(['SEKRIT_AZ3ARR'], 'cont', 'blob'); -- { serverError BAD_GET }
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/visible_04510_acct5',
                  'visible_04510_cont5', 'visible_04510_blob5', 'visible_04510_acctname5',
-                 'SEKRIT_AZ5PLAINKEY'); -- { serverError STD_EXCEPTION }
+                 'SEKRIT_AZ5PLAINKEY'); -- { serverError BAD_ARGUMENTS }
 
 -- The AzureBlobStorage table engine reads its arguments the same way: an override whose value or key
 -- this rule cannot read may hold a credential the engine does read (the parser evaluates both as
@@ -353,14 +353,14 @@ CREATE TABLE t_04510_azte2 (x UInt8) ENGINE = AzureBlobStorage(nc_04510_missing,
                  upper('account_key') = 'SEKRIT_AZTEKEY'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
 CREATE TABLE t_04510_azte3 (x UInt8) ENGINE = AzureBlobStorage(['SEKRIT_AZTEARR'], 'cont', 'blob'); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_04510_azte4 (x UInt8) ENGINE = AzureBlobStorage('http://localhost:11111/acct?sig=SEKRIT_AZTESAS',
-                 'cont', 'blob', 'acct', 'SEKRIT_AZTE5KEY'); -- { serverError STD_EXCEPTION }
+                 'cont', 'blob', 'acct', 'SEKRIT_AZTE5KEY'); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_04510_azte5 (x UInt8) ENGINE = AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=a;AccountKey=SEKRIT_AZTECS==;',
-                 'cont', 'blob', 'acct', 'SEKRIT_AZTEMIXKEY'); -- { serverError STD_EXCEPTION }
+                 'cont', 'blob', 'acct', 'SEKRIT_AZTEMIXKEY'); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_04510_azte6 (x UInt8) ENGINE = AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=a;AccountKey=SEKRIT_AZTECTLCS==;',
-                 'visible_04510_teco', 'visible_04510_teblob'); -- { serverError STD_EXCEPTION }
+                 'visible_04510_teco', 'visible_04510_teblob'); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_04510_azte7 (x UInt8) ENGINE = AzureBlobStorage('http://localhost:11111/visible_04510_teacct',
                  'visible_04510_tec5', 'visible_04510_teb5', 'visible_04510_teacctname',
-                 'SEKRIT_AZTECTLKEY'); -- { serverError STD_EXCEPTION }
+                 'SEKRIT_AZTECTLKEY'); -- { serverError BAD_ARGUMENTS }
 
 -- The two-argument signature takes container and path from the url and a shared access signature
 -- beside it, so its second argument is a credential wherever the same rule serves the engine.

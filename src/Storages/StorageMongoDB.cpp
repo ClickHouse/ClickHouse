@@ -133,6 +133,18 @@ void MongoDBConfiguration::checkCollection() const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MongoDB collection name must be non-empty and must not contain NUL characters");
 }
 
+void MongoDBConfiguration::setURI(const String & connection_string)
+{
+    try
+    {
+        uri = std::make_unique<mongocxx::uri>(connection_string);
+    }
+    catch (const mongocxx::logic_error & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse MongoDB connection string: {}", e.what());
+    }
+}
+
 namespace
 {
 
@@ -252,7 +264,7 @@ MongoDBConfiguration StorageMongoDB::getConfigurationFromCollection(MutableNamed
     if (named_collection->has("uri"))
     {
         validateNamedCollection(*named_collection, {"uri", "collection"}, {"oid_columns"});
-        configuration.uri = std::make_unique<mongocxx::uri>(named_collection->get<String>("uri"));
+        configuration.setURI(named_collection->get<String>("uri"));
     }
     else
     {
@@ -266,7 +278,7 @@ MongoDBConfiguration StorageMongoDB::getConfigurationFromCollection(MutableNamed
             String escaped_password = encodeString(named_collection->get<String>("password"));
             auth_string = fmt::format("{}:{}@", escaped_user, escaped_password);
         }
-        configuration.uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
+        configuration.setURI(fmt::format("mongodb://{}{}:{}/{}?{}",
                                                       auth_string,
                                                       named_collection->get<String>("host"),
                                                       named_collection->get<UInt64>("port"),
@@ -314,10 +326,10 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
         auto parsed_host_port = parseAddress(host_port, 27017);
         try
         {
-            configuration.uri = std::make_unique<mongocxx::uri>(
+            configuration.setURI(
                 fmt::format("mongodb://{}{}:{}/{}?{}", auth_string, parsed_host_port.first, parsed_host_port.second, database_name, options));
         }
-        catch (const mongocxx::logic_error & e)
+        catch (const Exception & e)
         {
             auto pos = host_port.find('/');
             if (!allow_excessive_path_in_host || pos == String::npos)
@@ -328,7 +340,7 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
             host_port = host_port.substr(0, pos);
             parsed_host_port = parseAddress(host_port, 27017);
 
-            configuration.uri = std::make_unique<mongocxx::uri>(
+            configuration.setURI(
                 fmt::format("mongodb://{}{}:{}/{}?{}", auth_string, parsed_host_port.first, parsed_host_port.second, database_name, options));
 
             context->addOrUpdateWarningMessage(
@@ -348,7 +360,7 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
     else if (engine_args.size() == 2 || engine_args.size() == 3)
     {
         configuration.collection = checkAndGetLiteralArgument<String>(engine_args[1], "database");
-        configuration.uri =  std::make_unique<mongocxx::uri>(checkAndGetLiteralArgument<String>(engine_args[0], "host"));
+        configuration.setURI(checkAndGetLiteralArgument<String>(engine_args[0], "host"));
         if (engine_args.size() == 3)
             boost::split(configuration.oid_fields,
                 checkAndGetLiteralArgument<String>(engine_args[2], "oid_columns"), boost::is_any_of(","));

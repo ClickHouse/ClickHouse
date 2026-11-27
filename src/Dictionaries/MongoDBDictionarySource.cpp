@@ -69,7 +69,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
                 if (named_collection->has("options"))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'options' key should not be set when using 'uri', as connection options are already part of the URI");
                 validateNamedCollection(*named_collection, {"uri", "collection"}, {});
-                configuration->uri = std::make_unique<mongocxx::uri>(named_collection->get<String>("uri"));
+                configuration->setURI(named_collection->get<String>("uri"));
             }
             else
             {
@@ -82,7 +82,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
                 Poco::URI::encode(named_collection->get<String>("password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
                 if (!user.empty())
                     auth_string = fmt::format("{}:{}@", escaped_user, escaped_password);
-                configuration->uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
+                configuration->setURI(fmt::format("mongodb://{}{}:{}/{}?{}",
                                                                                  auth_string,
                                                                                  named_collection->get<String>("host"),
                                                                                  named_collection->getOrDefault<UInt64>("port", 27017),
@@ -96,7 +96,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
             configuration->collection = config.getString(config_prefix + ".collection");
             auto uri_str = config.getString(config_prefix + ".uri", "");
             if (!uri_str.empty())
-                configuration->uri = std::make_unique<mongocxx::uri>(uri_str);
+                configuration->setURI(uri_str);
             else
             {
                 String user = config.getString(config_prefix + ".user", "");
@@ -105,7 +105,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
                 Poco::URI::encode(config.getString(config_prefix + ".password", ""), "!?#/'\",;:$&()[]*+=@", escaped_password);
                 if (!user.empty())
                     auth_string = fmt::format("{}:{}@", user, escaped_password);
-                configuration->uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
+                configuration->setURI(fmt::format("mongodb://{}{}:{}/{}?{}",
                                                                                  auth_string,
                                                                                  config.getString(config_prefix + ".host"),
                                                                                  config.getString(config_prefix + ".port", "27017"),

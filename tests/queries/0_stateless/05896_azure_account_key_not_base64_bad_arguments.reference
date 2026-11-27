@@ -1,0 +1,13 @@
+args BAD_ARGUMENTS
+bad_char BAD_ARGUMENTS
+connection_string BAD_ARGUMENTS
+no_account_name BAD_ARGUMENTS
+create_as BAD_ARGUMENTS
+insert_function BAD_ARGUMENTS
+disk BAD_ARGUMENTS
+disk_connection_string_and_key BAD_ARGUMENTS
+on_cluster BAD_ARGUMENTS
+create_valid_key OK
+attach OK
+1
+create_invalid_key BAD_ARGUMENTS

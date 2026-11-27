@@ -8,13 +8,13 @@
 -- A fuzzed variant of the CREATE DICTIONARY below could fail with an error of its own.
 SET ast_fuzzer_any_query = 0;
 
-CREATE TABLE t_conflict (x String) ENGINE = MongoDB('mongodb://127.0.0.1:27017/db?tlsCertificateKeyFilePassword=ERRSECRET1&sslClientCertificateKeyPassword=ERRSECRET2', 'c'); -- { serverError STD_EXCEPTION }
+CREATE TABLE t_conflict (x String) ENGINE = MongoDB('mongodb://127.0.0.1:27017/db?tlsCertificateKeyFilePassword=ERRSECRET1&sslClientCertificateKeyPassword=ERRSECRET2', 'c'); -- { serverError BAD_ARGUMENTS }
 
 -- The source of a dictionary is parsed when the dictionary is loaded, so the error reaches whoever calls dictGet.
 CREATE DICTIONARY d_conflict (_id String, v String) PRIMARY KEY _id
 SOURCE(MONGODB(URI 'mongodb://127.0.0.1:27017/db?tlsCertificateKeyFilePassword=ERRSECRET3&sslClientCertificateKeyPassword=ERRSECRET4' COLLECTION 'c'))
 LAYOUT(COMPLEX_KEY_DIRECT());
-SELECT dictGet('d_conflict', 'v', tuple('k')); -- { serverError DICTIONARIES_WAS_NOT_LOADED }
+SELECT dictGet('d_conflict', 'v', tuple('k')); -- { serverError BAD_ARGUMENTS }
 
 SYSTEM FLUSH LOGS query_log;
 -- Only the two failed statements of this session: a database can be shared by several runs of the test.

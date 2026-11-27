@@ -2,6 +2,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <azure/core/base64.hpp>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
@@ -202,14 +203,9 @@ String ContainerClientWrapper::GetBlobPath(const String & blob_name) const
     return blob_prefix + blob_name;
 }
 
-/// The Azure SDK throws std::logic_error subtypes (std::invalid_argument from
-/// std::stoi for malformed ports, std::out_of_range for port overflow) when a
-/// connection string or blob URL has malformed components. These are user-input
-/// errors but must be translated to DB::Exception, otherwise they propagate to
-/// getCurrentExceptionMessageAndPattern, which catches std::logic_error and calls
-/// abortOnFailedAssertion in debug/sanitizer builds — turning a user typo into a
-/// "Logical error" abort.
-[[noreturn]] static void translateAzureSdkParseError(const std::logic_error & e)
+/// The SDK throws `std::logic_error` (malformed URL components) and `std::runtime_error` (e.g. an account key without an account
+/// name) for invalid connection arguments. A `std::logic_error` must not reach `getCurrentExceptionMessageAndPattern`: debug builds abort.
+[[noreturn]] static void translateAzureSdkParseError(const std::exception & e)
 {
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
         "Failed to parse Azure connection string or blob URL: {}", e.what());
@@ -233,6 +229,10 @@ String ConnectionParams::getConnectionURL() const
             return parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl();
         }
         catch (const std::logic_error & e)
+        {
+            translateAzureSdkParseError(e);
+        }
+        catch (const std::runtime_error & e)
         {
             translateAzureSdkParseError(e);
         }
@@ -313,6 +313,10 @@ String ConnectionParams::getConnectionURLWithoutQuery() const
         {
             translateAzureSdkParseError(e);
         }
+        catch (const std::runtime_error & e)
+        {
+            translateAzureSdkParseError(e);
+        }
     }
 
     return String(stripQueryAndFragment(endpoint.storage_account_url));
@@ -334,6 +338,10 @@ std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
         }, auth_method);
     }
     catch (const std::logic_error & e)
+    {
+        translateAzureSdkParseError(e);
+    }
+    catch (const std::runtime_error & e)
     {
         translateAzureSdkParseError(e);
     }
@@ -371,6 +379,10 @@ std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
         }, auth_method);
     }
     catch (const std::logic_error & e)
+    {
+        translateAzureSdkParseError(e);
+    }
+    catch (const std::runtime_error & e)
     {
         translateAzureSdkParseError(e);
     }
@@ -439,6 +451,38 @@ static bool containerExists(const ContainerClient & client)
     }
 }
 
+/// A request signed with an account key that is not base64 throws `std::runtime_error` from the SDK.
+static void checkAccountKey(const ConnectionParams & params)
+{
+    String account_key;
+    if (std::holds_alternative<std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>>(params.auth_method))
+        account_key = params.endpoint.account_key;
+    else if (const auto * connection_string = std::get_if<ConnectionString>(&params.auth_method))
+    {
+        try
+        {
+            account_key = Azure::Storage::_internal::ParseConnectionString(connection_string->toUnderType()).AccountKey;
+        }
+        catch (const std::logic_error & e)
+        {
+            translateAzureSdkParseError(e);
+        }
+        catch (const std::runtime_error & e)
+        {
+            translateAzureSdkParseError(e);
+        }
+    }
+
+    try
+    {
+        Azure::Core::Convert::Base64Decode(account_key);
+    }
+    catch (const std::runtime_error & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Azure account key is not valid base64: {}", e.what());
+    }
+}
+
 std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & params, bool readonly)
 {
     ProfileEvents::increment(ProfileEvents::AzureClients);
@@ -450,6 +494,8 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
     {
         return params.createForContainer();
     }
+
+    checkAccountKey(params);
 
     if (!params.endpoint.container_already_exists.has_value())
     {
@@ -689,8 +735,6 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
             if (config.has(config_prefix + ".account_name"))
                 account_name = config.getString(config_prefix + ".account_name");
         }
-        if (config.has(config_prefix + ".account_key"))
-                account_key = config.getString(config_prefix + ".account_key");
         if (config.has(config_prefix + ".endpoint_subpath"))
         {
             String endpoint_subpath = config.getString(config_prefix + ".endpoint_subpath");
@@ -719,11 +763,12 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
         /// to false for this path), but is stored for use by external systems such as delta-kernel-rs.
         if (config.has(config_prefix + ".account_name"))
             account_name = config.getString(config_prefix + ".account_name");
-        if (config.has(config_prefix + ".account_key"))
-            account_key = config.getString(config_prefix + ".account_key");
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected either `storage_account_url` or `connection_string` or `endpoint` in config");
+
+    if (config.has(config_prefix + ".account_key"))
+        account_key = config.getString(config_prefix + ".account_key");
 
     if (!container_name.empty())
         validateContainerName(container_name);
