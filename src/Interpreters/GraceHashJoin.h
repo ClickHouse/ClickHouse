@@ -148,7 +148,7 @@ private:
     size_t heldBytes() const;
 
     /// After `block` went into `hash_join`, which stored `rows_before` rows then. Caller holds `hash_join_mutex`.
-    void addResidentRows(const Block & block, size_t rows_before);
+    void addResidentRows(const Block & block, size_t blocks_before);
     void resetResidentRows();
 
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.

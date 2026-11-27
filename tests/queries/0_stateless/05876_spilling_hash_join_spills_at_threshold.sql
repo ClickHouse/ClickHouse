@@ -129,6 +129,13 @@ FROM (SELECT toNullable(number) AS k FROM numbers(2)) AS l
 RIGHT JOIN (SELECT if(number < 65409, NULL, toNullable(toUInt64(0))) AS k, number AS v FROM numbers(1000000)) AS r ON l.k = r.k
 SETTINGS join_algorithm = 'grace_hash', max_threads = 1, max_bytes_before_external_join = 3000000, log_comment = 'spill_at_threshold_nulls_then_one_key';
 
+-- A set map (the join reads no right row) drops the block of NULL keys, so nothing it holds has another hash than the key.
+SELECT 'NULL keys, then one key, left semi', count()
+FROM (SELECT toNullable(toUInt64(0)) AS k) AS l
+LEFT SEMI JOIN (SELECT if(number < 65409, NULL, toNullable(toUInt64(0))) AS k FROM numbers(1000000)) AS r ON l.k = r.k
+SETTINGS join_algorithm = 'grace_hash', max_threads = 1, max_bytes_before_external_join = 3000000, enable_join_key_only_hash_tables = 1,
+    log_comment = 'spill_at_threshold_nulls_then_one_key_semi';
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT

@@ -886,16 +886,19 @@ bool GraceHashJoin::canForceRepartition() const
         && getNumBuckets() * 2 <= max_num_buckets;
 }
 
-/// The right rows the join stores. A block it drops (no row of it went into a mapped-one join) leaves them as they were.
-static size_t storedRows(const HashJoin & join)
+/// The right blocks the join stores. A block it drops leaves the count as it was, while a set map still counts its rows.
+static size_t storedBlocks(const HashJoin & join)
 {
-    return join.getJoinedData()->rows_to_join.load(std::memory_order_relaxed);
+    size_t blocks = 0;
+    for (const auto & build_stream : join.getJoinedData()->build_streams)
+        blocks += build_stream.columns.size();
+    return blocks;
 }
 
-void GraceHashJoin::addResidentRows(const Block & block, size_t rows_before)
+void GraceHashJoin::addResidentRows(const Block & block, size_t blocks_before)
 {
     /// Only the admission against `spill_budget` reads it, and different hashes stay different.
-    if (!spill_budget || (has_resident_rows && !resident_hash) || storedRows(*hash_join) == rows_before)
+    if (!spill_budget || (has_resident_rows && !resident_hash) || storedBlocks(*hash_join) == blocks_before)
         return;
     const auto block_hash = JoinCommon::oneScatterHash(right_key_names, block);
     resident_hash = !has_resident_rows || resident_hash == block_hash ? block_hash : std::nullopt;
@@ -952,9 +955,9 @@ void GraceHashJoin::repartitionCurrentBucket(Block leftover, JoinBuildContext co
     {
         /// After its one split a block goes in whatever its size.
         bool refused = false;
-        const size_t rows_before = storedRows(*hash_join);
+        const size_t blocks_before = storedBlocks(*hash_join);
         hash_join->addBlockToJoin(kept, context.callerChecksLimits(), refused, /*checked=*/false);
-        addResidentRows(kept, rows_before);
+        addResidentRows(kept, blocks_before);
     }
 }
 
@@ -1071,7 +1074,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context, bo
         }
 
         bool refused = false;
-        const size_t rows_before = storedRows(*hash_join);
+        const size_t blocks_before = storedBlocks(*hash_join);
         hash_join->addBlockToJoin(current_block, context.callerChecksLimits(), refused);
         /// A split cannot separate rows of one hash, and the estimate must not fail the query at the bucket limit: the block goes
         /// in then, and its size after the insert decides. The join has one slot, so a refused block left nothing in it.
@@ -1086,7 +1089,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context, bo
             repartitionCurrentBucket(std::move(current_block), context);
             return;
         }
-        addResidentRows(current_block, rows_before);
+        addResidentRows(current_block, blocks_before);
         if (hasMemoryOverflow(hash_join->getTotalRowCount(), hash_join->getTotalByteCount()))
             repartitionCurrentBucket({}, context);
 
