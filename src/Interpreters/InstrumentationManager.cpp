@@ -10,6 +10,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/randomSeed.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/StackTrace.h>
@@ -21,11 +22,9 @@
 #include <pcg_random.hpp>
 
 #include <xray/xray_interface.h>
-#include <llvm/XRay/InstrumentationMap.h>
 
 #include <chrono>
 #include <cmath>
-#include <filesystem>
 #include <limits>
 #include <thread>
 #include <random>
@@ -40,7 +39,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
-extern const int CANNOT_READ_ALL_DATA;
 extern const int INSTRUMENTATION_ERROR;
 extern const int LOGICAL_ERROR;
 }
@@ -173,6 +171,8 @@ void InstrumentationManager::ensureInitialization()
 {
     callOnce(initialized, [this]()
     {
+        /// Lives as long as the process, not the query that first needs it (the map takes about 170 MiB).
+        MemoryTrackerBlockerInThread not_charged_to_the_query;
         __xray_init();
         parseInstrumentationMap();
         if (__xray_set_handler(&InstrumentationManager::dispatchHandler) == 0)
@@ -420,29 +420,20 @@ void InstrumentationManager::dispatchHandlerImpl(Int32 func_id, XRayEntryType en
     }
 }
 
-/// Takes path to the elf-binary file(that should contain xray_instr_map section),
-/// and gets mapping of functionIDs to the addresses, then resolves IDs into human-readable names
+/// Resolves the function ids of the XRay runtime's instrumentation map into demangled names.
 void InstrumentationManager::parseInstrumentationMap()
 {
-    auto binary_path = std::filesystem::canonical(std::filesystem::path("/proc/self/exe")).string();
-
-    auto instr_map_or_error = llvm::xray::loadInstrumentationMap(binary_path);
-    if (!instr_map_or_error)
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to load instrumentation map: {}", toString(instr_map_or_error.takeError()));
-
-    auto & instr_map = *instr_map_or_error;
-
-    const auto function_addresses = instr_map.getFunctionAddresses();
+    const size_t max_function_id = __xray_max_function_id();
 
     LOG_DEBUG(logger, "Starting to parse the XRay instrumentation map. This takes a few seconds...");
 
-    functions_container.reserve(function_addresses.size());
+    functions_container.reserve(max_function_id);
     const SymbolIndex & symbol_index = SymbolIndex::instance();
     size_t errors = 0;
 
-    for (const auto & [func_id, addr] : function_addresses)
+    for (Int32 func_id = 1; static_cast<size_t>(func_id) <= max_function_id; ++func_id)
     {
-        const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(addr));
+        const auto * symbol = symbol_index.findSymbolByAddress(reinterpret_cast<const void *>(__xray_function_address(func_id)));
         if (symbol)
         {
             if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)

@@ -52,6 +52,36 @@ void sipHash128PaddedFixedStrings(const char * chars, size_t n, size_t num_rows,
         hashes[r] = sipHash128Padded(chars + r * n, n);
 }
 
+void sipHash128PaddedStringRows(const char * chars, const UInt64 * offsets, const UInt32 * rows, size_t num_rows, UInt128 * hashes)
+{
+    for (size_t begin = 0; begin < num_rows; begin += chunk_rows)
+    {
+        const size_t count = std::min(num_rows - begin, chunk_rows);
+        uint8_t buckets[chunk_rows + 32];
+        for (size_t i = 0; i < count; ++i)
+        {
+            const ssize_t r = rows[begin + i];
+            buckets[i] = static_cast<uint8_t>(std::min<UInt64>((offsets[r] - offsets[r - 1]) / 8, SipHashStrings::exact_buckets));
+        }
+        /// Row `r` of `hashRows` is [offsets[r - 1], offsets[r]).
+        SipHashStrings::hashRows(chars, offsets - 1, rows + begin, buckets, count, hashes);
+    }
+}
+
+void sipHash128PaddedFixedStringRows(const char * chars, size_t n, const UInt32 * rows, size_t num_rows, UInt128 * hashes)
+{
+    size_t j = 0;
+    for (; j + group_size <= num_rows; j += group_size)
+    {
+        const UInt32 * group_rows = rows + j;
+        SipHashStrings::hashGroup<0>(
+            [&](size_t i) ALWAYS_INLINE { return std::pair{chars + group_rows[i] * n, n}; },
+            [&](size_t i) ALWAYS_INLINE { return hashes + group_rows[i]; });
+    }
+    for (; j < num_rows; ++j)
+        hashes[rows[j]] = sipHash128Padded(chars + rows[j] * n, n);
+}
+
 #else
 
 void sipHash128PaddedStrings(const char * chars, const UInt64 * offsets, size_t num_rows, UInt128 * hashes)
@@ -64,6 +94,21 @@ void sipHash128PaddedFixedStrings(const char * chars, size_t n, size_t num_rows,
 {
     for (size_t i = 0; i < num_rows; ++i)
         hashes[i] = sipHash128Padded(chars + i * n, n);
+}
+
+void sipHash128PaddedStringRows(const char * chars, const UInt64 * offsets, const UInt32 * rows, size_t num_rows, UInt128 * hashes)
+{
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        const ssize_t r = rows[i];
+        hashes[r] = sipHash128Padded(chars + offsets[r - 1], offsets[r] - offsets[r - 1]);
+    }
+}
+
+void sipHash128PaddedFixedStringRows(const char * chars, size_t n, const UInt32 * rows, size_t num_rows, UInt128 * hashes)
+{
+    for (size_t i = 0; i < num_rows; ++i)
+        hashes[rows[i]] = sipHash128Padded(chars + rows[i] * n, n);
 }
 
 #endif

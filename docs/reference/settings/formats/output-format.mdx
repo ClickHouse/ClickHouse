@@ -153,6 +153,25 @@ Always use 64 bit integers for dictionary indexes in Arrow format
 
 Use signed integers for dictionary indexes in Arrow format
 
+## output_format_arrow_uuid_as_fixed_byte_array {#output_format_arrow_uuid_as_fixed_byte_array}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting to write UUID as plain FixedSizeBinary(16) without the `arrow.uuid` extension type."}]}]}/>
+
+Write `UUID` values as plain Arrow `FixedSizeBinary(16)`, without the `arrow.uuid` extension type in the field metadata.
+Use it for Arrow readers that do not support the `arrow.uuid` extension type.
+
+## output_format_arrow_variant_as_json_string {#output_format_arrow_variant_as_json_string}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting to write Variant as a string with its JSON representation in a Utf8 column instead of an Arrow dense union."}]}]}/>
+
+Write `Variant` values as a nullable Arrow `Utf8` column holding the JSON representation of each value (as in the `JSONEachRow`
+format, e.g. a `String` value is quoted), instead of an Arrow dense union. Use it for Arrow readers that do not support unions.
+A `NULL` value is written as an Arrow null, except in a `Map` key, which Arrow does not allow to be null: there it is the JSON `null`.
+
 ## output_format_avro_codec {#output_format_avro_codec}
 
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd', 'bzip2', 'xz'.
@@ -751,6 +770,14 @@ Where in the parquet file to place the bloom filters. Bloom filters will be writ
 
 Compression method for Parquet output format. Supported codecs: snappy, lz4, brotli, zstd, gzip, none (uncompressed)
 
+## output_format_parquet_data_page_row_limit {#output_format_parquet_data_page_row_limit}
+
+<SettingsInfoBlock type="UInt64" default_value="20000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "20000"},{"label": "New setting: end a Parquet data page after 20000 rows, as parquet-mr and Arrow do, so the page index can skip parts of columns that compress well."}]}]}/>
+
+Maximum number of rows in a data page, checked every [output_format_parquet_batch_size](/reference/settings/formats/output-format#output_format_parquet_batch_size) values; a page also ends at [output_format_parquet_data_page_size](/reference/settings/formats/output-format#output_format_parquet_data_page_size). Without it a column that compresses well, such as a sorted one, fits a whole row group in one page, and the page index cannot skip any part of it. 0 means no limit.
+
 ## output_format_parquet_data_page_size {#output_format_parquet_data_page_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
@@ -846,6 +873,14 @@ Use Parquet String type instead of Binary for String columns.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting."}]}]}/>
 
 Encode `Float32` and `Float64` columns (Parquet `FLOAT` and `DOUBLE`) with the `ALP` (Adaptive Lossless floating-Point) encoding. `ALP` is lossless and compresses decimal-like floating-point data (prices, measurements, coordinates) much better than `PLAIN`. Such columns are written without a dictionary, and a page for which `ALP` would be bigger than `PLAIN` is written with `PLAIN`. The encoding was added to the Parquet format recently, so not every Parquet reader supports it yet: enable it only if the files are read by readers that do.
+
+## output_format_parquet_use_data_page_v2 {#output_format_parquet_use_data_page_v2}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "New setting."}]}]}/>
+
+Write Parquet data pages as `DataPageV2` instead of `DataPage` (V1). `DataPageV2` stores the repetition and definition levels uncompressed, so that readers can get nulls and array sizes without decompressing the values, records the numbers of rows and nulls in the page header, and starts pages at row boundaries. Some Parquet readers do not support `DataPageV2`.
 
 ## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
@@ -1148,6 +1183,38 @@ Only takes effect when `output_format_pretty_grid_charset` is `UTF-8`.
 
 When serializing Nullable columns with Google wrappers, serialize default values as empty wrappers. If turned off, default and null values are not serialized
 
+## output_format_puffin_blob_type {#output_format_puffin_blob_type}
+
+<SettingsInfoBlock type="String" default_value="deletion-vector-v1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "deletion-vector-v1"},{"label": "New setting for the `Puffin` output format: the type of the written blobs."}]}]}/>
+
+Type of the blobs written by the `Puffin` output format. Possible values:
+- `deletion-vector-v1` - the input has two columns: the referenced data file and deleted row positions; one deletion vector blob is written per referenced data file.
+- `apache-datasketches-theta-v1` - every input column becomes one Apache DataSketches Theta sketch blob over its non-null values, with the `ndv` property set to the estimated number of distinct values, as Iceberg writes column statistics.
+
+## output_format_puffin_field_ids {#output_format_puffin_field_ids}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "New setting for the `Puffin` output format: Iceberg field ids of the columns for Theta sketch blobs."}]}]}/>
+
+Comma-separated Iceberg field ids of the input columns, written to the `fields` of `apache-datasketches-theta-v1` blobs by the `Puffin` output format. Required to write Theta sketches.
+
+## output_format_puffin_sequence_number {#output_format_puffin_sequence_number}
+
+<SettingsInfoBlock type="Int64" default_value="-1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "-1"},{"label": "New setting for the `Puffin` output format: the sequence number of Theta sketch blobs."}]}]}/>
+
+Iceberg sequence number written to `apache-datasketches-theta-v1` blobs by the `Puffin` output format: the sequence number of the snapshot the statistics were computed from. Required to write Theta sketches.
+
+## output_format_puffin_snapshot_id {#output_format_puffin_snapshot_id}
+
+<SettingsInfoBlock type="Int64" default_value="-1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "-1"},{"label": "New setting for the `Puffin` output format: the snapshot id of Theta sketch blobs."}]}]}/>
+
+Iceberg snapshot id written to `apache-datasketches-theta-v1` blobs by the `Puffin` output format: the snapshot the statistics were computed from. Required to write Theta sketches.
+
 ## output_format_schema {#output_format_schema}
 
 The path to the file where the automatically generated schema will be saved in [Cap'n Proto](/reference/formats/CapnProto) or [Protobuf](/reference/formats/Protobuf/Protobuf) formats.
@@ -1211,6 +1278,14 @@ If it is set true, end of line in TSV format will be \\r\\n instead of \\n.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "If true escape ' with '', otherwise quoted with \\'"}]}]}/>
 
 If true escape ' with '', otherwise quoted with \\'
+
+## output_format_vortex_string_as_string {#output_format_vortex_string_as_string}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to write `String` columns of the `Vortex` format as `Utf8`, which Vortex compresses better than `Binary`."}]}]}/>
+
+Write `String` columns of the `Vortex` format as `Utf8` instead of `Binary`. Vortex compresses `Utf8` better. A `Utf8` value has to be valid UTF-8 and the Vortex writer does not check that, so ClickHouse checks every value and throws an exception if one is not valid UTF-8; disable the setting to write such data as `Binary`. `FixedString` columns are always written as `Binary`. Both types are read back as `String`.
 
 ## output_format_write_statistics {#output_format_write_statistics}
 

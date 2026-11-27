@@ -51,7 +51,7 @@ public:
 
     Error getErrorAndReset();
 
-    const std::string & getPath() const;
+    [[nodiscard]] const std::string & getPath() const;
 
 private:
     friend class DirectoryWatcherBase;

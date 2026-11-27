@@ -13,16 +13,18 @@
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/ThreadProfileEvents.h>
 #include <Common/ErrnoException.h>
 #include <Common/MemoryWorker.h>
 #include <Common/formatReadable.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocCacheArena.h>
 #include <Common/JemallocJITArena.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
-#include <Common/SilkFiberScheduler.h>
+#include <Common/Silk/FiberScheduler.h>
 #include <Common/UntrackedMemoryRegistry.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -167,6 +169,7 @@ AsynchronousMetrics::AsynchronousMetrics(
     /// CGroups v2
     openCgroupv2MetricFile("memory.max", cgroupmem_limit_in_bytes);
     cgroupcpu_max_dir = openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
+    cgroupcpuset_dir = openCgroupv2MetricFile("cpuset.cpus.effective", cgroupcpuset);
     openCgroupv2MetricFile("cpu.stat", cgroupcpu_stat);
 
     /// CGroups v1
@@ -179,6 +182,8 @@ AsynchronousMetrics::AsynchronousMetrics(
     }
     if (!cgroupcpu_stat)
         openFileIfExists("/sys/fs/cgroup/cpuacct/cpuacct.stat", cgroupcpuacct_stat);
+    if (!cgroupcpuset)
+        openFileIfExists("/sys/fs/cgroup/cpuset/cpuset.effective_cpus", cgroupcpuset);
 
     try
     {
@@ -187,7 +192,10 @@ AsynchronousMetrics::AsynchronousMetrics(
             "Will use cgroup reader from '{}' (cgroups version: {})",
             cgroup_path,
             (version == ICgroupsReader::CgroupsVersion::V1) ? "v1" : "v2");
-        cgroupmem_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
+        if (version == ICgroupsReader::CgroupsVersion::V2)
+            openCgroupv2MemoryFiles(cgroup_path);
+        else
+            cgroupmem_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
     }
     catch (...)
     {
@@ -221,6 +229,33 @@ AsynchronousMetrics::AsynchronousMetrics(
 }
 
 #if defined(OS_LINUX)
+void AsynchronousMetrics::openCgroupv2MemoryFiles(const std::optional<std::string> & dir) TSA_REQUIRES(data_mutex)
+{
+    cgroupmem_limit_in_bytes.reset();
+    cgroupmem_reader.reset();
+    cgroupmem_dir.reset();
+    if (!dir)
+        return;
+
+    openFileIfExists((*dir + "/memory.max").c_str(), cgroupmem_limit_in_bytes);
+    try
+    {
+        cgroupmem_reader = ICgroupsReader::createCgroupsReader(ICgroupsReader::CgroupsVersion::V2, *dir);
+    }
+    catch (...)
+    {
+        if (cgroupmem_failed_dir != dir)
+            tryLogCurrentException(log, "cgroups are not available");
+        cgroupmem_failed_dir = dir;
+    }
+
+    if (cgroupmem_limit_in_bytes && cgroupmem_reader)
+    {
+        cgroupmem_dir = dir;
+        cgroupmem_failed_dir.reset();
+    }
+}
+
 void AsynchronousMetrics::openSensors() TSA_REQUIRES(data_mutex)
 {
     LOG_TRACE(log, "Scanning /sys/class/thermal");
@@ -813,20 +848,21 @@ void AsynchronousMetrics::ProcStatValuesCPU::read(ReadBuffer & in)
     skipToNextLineOrEOF(in);
 }
 
+/// Kernel counters can go backwards (iowait in /proc/stat, see proc(5)), or restart when a device is re-created.
 AsynchronousMetrics::ProcStatValuesCPU
 AsynchronousMetrics::ProcStatValuesCPU::operator-(const AsynchronousMetrics::ProcStatValuesCPU & other) const
 {
     ProcStatValuesCPU res{};
-    res.user = user - other.user;
-    res.nice = nice - other.nice;
-    res.system = system - other.system;
-    res.idle = idle - other.idle;
-    res.iowait = iowait - other.iowait;
-    res.irq = irq - other.irq;
-    res.softirq = softirq - other.softirq;
-    res.steal = steal - other.steal;
-    res.guest = guest - other.guest;
-    res.guest_nice = guest_nice - other.guest_nice;
+    res.user = safeDiff(other.user, user);
+    res.nice = safeDiff(other.nice, nice);
+    res.system = safeDiff(other.system, system);
+    res.idle = safeDiff(other.idle, idle);
+    res.iowait = safeDiff(other.iowait, iowait);
+    res.irq = safeDiff(other.irq, irq);
+    res.softirq = safeDiff(other.softirq, softirq);
+    res.steal = safeDiff(other.steal, steal);
+    res.guest = safeDiff(other.guest, guest);
+    res.guest_nice = safeDiff(other.guest_nice, guest_nice);
     return res;
 }
 
@@ -834,9 +870,9 @@ AsynchronousMetrics::ProcStatValuesOther
 AsynchronousMetrics::ProcStatValuesOther::operator-(const AsynchronousMetrics::ProcStatValuesOther & other) const
 {
     ProcStatValuesOther res{};
-    res.interrupts = interrupts - other.interrupts;
-    res.context_switches = context_switches - other.context_switches;
-    res.processes_created = processes_created - other.processes_created;
+    res.interrupts = safeDiff(other.interrupts, interrupts);
+    res.context_switches = safeDiff(other.context_switches, context_switches);
+    res.processes_created = safeDiff(other.processes_created, processes_created);
     return res;
 }
 
@@ -878,21 +914,21 @@ AsynchronousMetrics::BlockDeviceStatValues
 AsynchronousMetrics::BlockDeviceStatValues::operator-(const AsynchronousMetrics::BlockDeviceStatValues & other) const
 {
     BlockDeviceStatValues res{};
-    res.read_ios = read_ios - other.read_ios;
-    res.read_merges = read_merges - other.read_merges;
-    res.read_sectors = read_sectors - other.read_sectors;
-    res.read_ticks = read_ticks - other.read_ticks;
-    res.write_ios = write_ios - other.write_ios;
-    res.write_merges = write_merges - other.write_merges;
-    res.write_sectors = write_sectors - other.write_sectors;
-    res.write_ticks = write_ticks - other.write_ticks;
+    res.read_ios = safeDiff(other.read_ios, read_ios);
+    res.read_merges = safeDiff(other.read_merges, read_merges);
+    res.read_sectors = safeDiff(other.read_sectors, read_sectors);
+    res.read_ticks = safeDiff(other.read_ticks, read_ticks);
+    res.write_ios = safeDiff(other.write_ios, write_ios);
+    res.write_merges = safeDiff(other.write_merges, write_merges);
+    res.write_sectors = safeDiff(other.write_sectors, write_sectors);
+    res.write_ticks = safeDiff(other.write_ticks, write_ticks);
     res.in_flight_ios = in_flight_ios; /// This is current value, not total.
-    res.io_ticks = io_ticks - other.io_ticks;
-    res.time_in_queue = time_in_queue - other.time_in_queue;
-    res.discard_ops = discard_ops - other.discard_ops;
-    res.discard_merges = discard_merges - other.discard_merges;
-    res.discard_sectors = discard_sectors - other.discard_sectors;
-    res.discard_ticks = discard_ticks - other.discard_ticks;
+    res.io_ticks = safeDiff(other.io_ticks, io_ticks);
+    res.time_in_queue = safeDiff(other.time_in_queue, time_in_queue);
+    res.discard_ops = safeDiff(other.discard_ops, discard_ops);
+    res.discard_merges = safeDiff(other.discard_merges, discard_merges);
+    res.discard_sectors = safeDiff(other.discard_sectors, discard_sectors);
+    res.discard_ticks = safeDiff(other.discard_ticks, discard_ticks);
     return res;
 }
 
@@ -900,14 +936,14 @@ AsynchronousMetrics::NetworkInterfaceStatValues
 AsynchronousMetrics::NetworkInterfaceStatValues::operator-(const AsynchronousMetrics::NetworkInterfaceStatValues & other) const
 {
     NetworkInterfaceStatValues res{};
-    res.recv_bytes = recv_bytes - other.recv_bytes;
-    res.recv_packets = recv_packets - other.recv_packets;
-    res.recv_errors = recv_errors - other.recv_errors;
-    res.recv_drop = recv_drop - other.recv_drop;
-    res.send_bytes = send_bytes - other.send_bytes;
-    res.send_packets = send_packets - other.send_packets;
-    res.send_errors = send_errors - other.send_errors;
-    res.send_drop = send_drop - other.send_drop;
+    res.recv_bytes = safeDiff(other.recv_bytes, recv_bytes);
+    res.recv_packets = safeDiff(other.recv_packets, recv_packets);
+    res.recv_errors = safeDiff(other.recv_errors, recv_errors);
+    res.recv_drop = safeDiff(other.recv_drop, recv_drop);
+    res.send_bytes = safeDiff(other.send_bytes, send_bytes);
+    res.send_packets = safeDiff(other.send_packets, send_packets);
+    res.send_errors = safeDiff(other.send_errors, send_errors);
+    res.send_drop = safeDiff(other.send_drop, send_drop);
     return res;
 }
 
@@ -1811,9 +1847,55 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
+    /// With exclusive CPUs (e.g. the static CPU manager of Kubernetes) there is no CFS quota (`cpu.max` is `max`),
+    /// and the limit is only visible in the cpuset.
+    /// As for `cpu.max`, the nearest cgroup v2 `cpuset.cpus.effective` can move at runtime. The cgroup v1 file is opened once.
+    try
+    {
+        if (getCgroupsV2PathContainingFile("cpuset.cpus.effective") != cgroupcpuset_dir)
+            cgroupcpuset_dir = openCgroupv2MetricFile("cpuset.cpus.effective", cgroupcpuset);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        cgroupcpuset.reset();
+        cgroupcpuset_dir.reset();
+    }
+    if (cgroupcpuset)
+    {
+        try
+        {
+            cgroupcpuset->rewind();
+
+            String cpu_list;
+            readString(cpu_list, *cgroupcpuset);
+            if (auto cpuset_cpus = countCPUsInList(cpu_list))
+            {
+                const auto cpuset_cores = static_cast<Float64>(*cpuset_cpus);
+                if (max_cpu_cgroups > 0)
+                    max_cpu_cgroups = std::min(max_cpu_cgroups, cpuset_cores);
+                /// Without a quota, a cpuset with all online CPUs is not a limit.
+                else if (*cpuset_cpus < getNumberOfLogicalCPUCores())
+                    max_cpu_cgroups = cpuset_cores;
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            /// Reopened on the next update for cgroup v2.
+            if (cgroupcpuset_dir)
+            {
+                cgroupcpuset.reset();
+                cgroupcpuset_dir.reset();
+            }
+        }
+    }
+
     if (max_cpu_cgroups > 0)
     {
-        new_values["CGroupMaxCPU"] = { max_cpu_cgroups, "The maximum number of CPU cores according to CGroups."};
+        new_values["CGroupMaxCPU"] = { max_cpu_cgroups,
+            "The maximum number of CPU cores according to CGroups: the minimum of the CPU quota divided by its period "
+            "and the number of CPUs in the effective cpuset."};
     }
 
     if (cgroupcpu_stat || cgroupcpuacct_stat)
@@ -2011,6 +2093,18 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
+    /// The nearest `memory.max` and `memory.stat` move when the parent toggles the `memory` controller; removed ones give ENODEV.
+    try
+    {
+        if (auto dir = getCgroupsV2PathContainingFile("memory.current"); dir != cgroupmem_dir)
+            openCgroupv2MemoryFiles(dir);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        if (cgroupmem_dir)
+            openCgroupv2MemoryFiles({});
+    }
     if (cgroupmem_limit_in_bytes && cgroupmem_reader)
     {
         try
@@ -2062,6 +2156,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            if (cgroupmem_dir)
+                openCgroupv2MemoryFiles({});
         }
     }
     if (meminfo)

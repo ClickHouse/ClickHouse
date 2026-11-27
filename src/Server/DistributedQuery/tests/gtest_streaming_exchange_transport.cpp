@@ -17,6 +17,8 @@
 #include <gtest/gtest.h>
 #include <fmt/format.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentMetrics.h>
@@ -27,7 +29,10 @@
 #include <Compression/CompressionFactory.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
@@ -58,9 +63,11 @@
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
 #include <Server/DistributedQuery/tests/FakeExchangePeer.h>
+#include <base/sanitizer_defs.h>
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace ProfileEvents
 {
@@ -105,7 +112,8 @@ Chunk makeChunk(size_t first_value, size_t rows)
 }
 
 /// Pseudo-random values that do not compress; `state` carries the generator from chunk to chunk.
-Chunk makeIncompressibleChunk(size_t rows, UInt64 & state)
+/// A linear congruential generator; it wraps by design.
+Chunk NO_SANITIZE_UNSIGNED_OVERFLOW makeIncompressibleChunk(size_t rows, UInt64 & state)
 {
     auto column = ColumnUInt64::create();
     for (size_t row = 0; row < rows; ++row)
@@ -161,7 +169,7 @@ private:
 struct LoopbackExchange
 {
     ExchangeConnectionsPtr connections = std::make_shared<ExchangeConnections>();
-    ExchangeServer server{"127.0.0.1", 0, connections};
+    ExchangeServer server{"127.0.0.1", 0, /*listen_backlog=*/ 64, connections};
 
     LoopbackExchange() { server.start(); }
 };
@@ -259,7 +267,8 @@ size_t countRows(const Chunks & chunks)
     return rows;
 }
 
-UInt64 sumOfValues(const Chunks & chunks)
+/// The checksum is a plain modulo-2^64 sum.
+UInt64 NO_SANITIZE_UNSIGNED_OVERFLOW sumOfValues(const Chunks & chunks)
 {
     UInt64 sum = 0;
     for (const auto & chunk : chunks)
@@ -351,6 +360,90 @@ TEST(StreamingExchangeTransport, EveryPacketShapeCrossesTheSocket)
         EXPECT_EQ(sumOfValues(sink->chunks), expected_sum);
         EXPECT_EQ(rowless_with_info, 1u);
         EXPECT_EQ(data_chunks_with_info, 1u);
+    }
+}
+
+/// The sender and the receiver keep the types of the columns for the later packets. The stream has two
+/// `UInt64` columns with one type object, and a column of `uniq` states. Both source modes must give the
+/// values that were sent.
+TEST(StreamingExchangeTransport, ColumnsWithASharedTypeAndStatesCrossTheSocket)
+{
+    MainThreadStatus::getInstance();
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t packets = 4;
+    constexpr size_t rows_per_chunk = 100;
+
+    const DataTypePtr number_type = std::make_shared<DataTypeUInt64>();
+    const DataTypePtr state_type = DataTypeFactory::instance().get("AggregateFunction(uniq, UInt64)");
+    const auto & state_function = assert_cast<const DataTypeAggregateFunction &>(*state_type).getFunction();
+    auto header = std::make_shared<const Block>(Block{
+        ColumnWithTypeAndName(number_type->createColumn(), number_type, "a"),
+        ColumnWithTypeAndName(number_type->createColumn(), number_type, "b"),
+        ColumnWithTypeAndName(state_type->createColumn(), state_type, "s")});
+
+    /// Each row of `s` holds the state of `uniq` over the one value of `a` in that row.
+    auto make_chunk = [&](size_t first_value)
+    {
+        auto numbers = makeChunk(first_value, rows_per_chunk).detachColumns().front();
+        auto states = state_type->createColumn();
+        auto & state_column = assert_cast<ColumnAggregateFunction &>(*states);
+        const IColumn * arguments[] = {numbers.get()};
+        for (size_t row = 0; row < rows_per_chunk; ++row)
+        {
+            state_column.insertDefault();
+            state_function->add(state_column.getData().back(), arguments, row, &state_column.createOrGetArena());
+        }
+        return Chunk(Columns{numbers, numbers, std::move(states)}, rows_per_chunk);
+    };
+
+    for (bool source_hands_packets : {false, true})
+    {
+        SCOPED_TRACE(fmt::format("source_hands_packets={}", source_hands_packets));
+
+        Chunks chunks;
+        for (size_t index = 0; index < packets; ++index)
+            chunks.push_back(make_chunk(index * rows_per_chunk));
+
+        LoopbackExchange exchange;
+        std::vector<Chunks> chunks_per_stream;
+        chunks_per_stream.push_back(std::move(chunks));
+        auto sending = makeSendingPipeline(header, std::move(chunks_per_stream), exchange);
+        auto sink = std::make_shared<CollectingSink>(header);
+        auto receiving = makeReceivingPipeline(header, exchange.server.port(), source_hands_packets, sink);
+
+        std::optional<int> sending_code;
+        std::thread sender([&] { sending_code = run(sending, 1); });
+        const auto receiving_code = run(receiving, 1);
+        sender.join();
+
+        EXPECT_EQ(sending_code, std::nullopt);
+        EXPECT_EQ(receiving_code, std::nullopt);
+
+        size_t rows = 0;
+        UInt64 sum_a = 0;
+        UInt64 sum_b = 0;
+        UInt64 sum_uniq = 0;
+        for (const auto & chunk : sink->chunks)
+        {
+            if (chunk.getNumRows() == 0)
+                continue;
+            rows += chunk.getNumRows();
+            const auto & columns = chunk.getColumns();
+            for (UInt64 value : assert_cast<const ColumnUInt64 &>(*columns[0]).getData())
+                sum_a += value;
+            for (UInt64 value : assert_cast<const ColumnUInt64 &>(*columns[1]).getData())
+                sum_b += value;
+            auto values = ColumnAggregateFunction::convertToValues(IColumn::mutate(columns[2]));
+            for (UInt64 value : assert_cast<const ColumnUInt64 &>(*values).getData())
+                sum_uniq += value;
+        }
+        const size_t total_rows = packets * rows_per_chunk;
+        EXPECT_EQ(rows, total_rows);
+        EXPECT_EQ(sum_a, UInt64(total_rows) * (total_rows - 1) / 2);
+        EXPECT_EQ(sum_b, sum_a);
+        /// Each state saw one value.
+        EXPECT_EQ(sum_uniq, total_rows);
     }
 }
 
@@ -689,8 +782,8 @@ std::function<void(Poco::Net::StreamSocket &)> sendAfterHandshake(std::string by
         ExchangeTest::completeSinkHandshake(socket);
         StreamingExchangeProtocol::sendAll(socket, packet_bytes.data(), packet_bytes.size(), "test packet");
         if (then == ThenPeer::Resets)
-            socket.setLinger(true, 0);
-        if (then != ThenPeer::KeepsOpen)
+            ExchangeTest::resetAfterDelivery(socket);
+        else if (then == ThenPeer::Closes)
             socket.close();
     };
 }
@@ -1296,7 +1389,7 @@ public:
         : bucket(std::move(bucket_))
     {
     }
-    Field getParameter(const String &) const override { return Field(bucket); }
+    [[nodiscard]] Field getParameter(const String &) const override { return Field(bucket); }
 
 private:
     const String bucket;
@@ -1401,7 +1494,7 @@ QueryPipeline makeMergeTaskPipeline(
     ExchangeConnectionsPtr connections,
     LoopbackExchange & child_exchange,
     const ExchangeStreamId & child,
-    std::vector<MergeRuntimeFiltersStep::Output> outputs)
+    VectorWithMemoryTracking<MergeRuntimeFiltersStep::Output> outputs)
 {
     ExchangeStreamSources sources;
     sources.stream_hosts[child.toString()] = StreamSourceAddress{.host = "127.0.0.1", .port = child_exchange.server.port()};
@@ -1428,7 +1521,7 @@ TEST(RuntimeFilterMergeTask, TakesThePartialWhileNoReceiverConnects)
 {
     MainThreadStatus::getInstance();
 
-    const std::vector<std::pair<const char *, std::vector<MergeRuntimeFiltersStep::Output>>> shapes = {
+    const std::vector<std::pair<const char *, VectorWithMemoryTracking<MergeRuntimeFiltersStep::Output>>> shapes = {
         {"a root with one receiver", {{"exchange_2", {"0"}}}},
         {"a root with two receivers", {{"exchange_2", {"0", "1"}}}},
     };

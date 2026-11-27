@@ -1,8 +1,12 @@
 #include <Access/AccessBackup.h>
+#include <Access/AccessControl.h>
 #include <Access/AccessRights.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Access/Role.h>
+#include <Access/SettingsProfile.h>
+#include <Access/SettingsProfileElement.h>
+#include <Access/resolveEffectiveSettings.h>
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupMetadataFinder.h>
 #include <Backups/BackupSettings.h>
@@ -16,6 +20,7 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DatabaseBackup.h>
 #include <Databases/DatabaseFactory.h>
+#include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -119,6 +124,20 @@ namespace
         return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "resources");
     }
 
+    /// Engine name if the database is skipped by the restore, so neither it nor any table under it
+    /// is created; empty otherwise.
+    String getSkippedDatabaseEngine(const ASTPtr & create_database_query, const ContextPtr & context)
+    {
+        if (!context->getSettingsRef()[Setting::restore_replace_external_engines_to_null] || !create_database_query)
+            return {};
+
+        const auto & create = create_database_query->as<const ASTCreateQuery &>();
+        if (create.storage && create.storage->engine
+            && DatabaseFactory::instance().isDatabaseExternal(create.storage->engine->name))
+            return create.storage->engine->name;
+
+        return {};
+    }
  }
 
 
@@ -188,6 +207,7 @@ void RestorerFromBackup::run(Mode mode_)
     setStage(Stage::CHECKING_ACCESS_RIGHTS);
     loadSystemAccessTables();
     checkAccessForObjectsFoundInBackup();
+    checkSettingsOfAccessEntitiesToRestore();
 
     if (mode == Mode::CHECK_ACCESS_ONLY)
         return;
@@ -383,7 +403,11 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 {
                     /// CREATE_FUNCTION privilege is required to restore the "system.functions" table.
                     if (table_info.has_data && restore_settings.shouldRestoreFunctions())
+                    {
                         required_access.emplace_back(AccessType::CREATE_FUNCTION);
+                        if (restore_settings.create_function == RestoreUDFCreationMode::kReplace)
+                            required_access.emplace_back(AccessType::DROP_FUNCTION);
+                    }
                 }
                 else if (isSystemNamedCollectionsTableName(table_name))
                 {
@@ -438,6 +462,23 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 && (is_temporary || !context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]))
                 required_access.append_range(StorageFactory::instance().getExportAccess(create));
 
+            /// A skipped database creates none of its tables, so their targets are never written to.
+            const auto database_it = database_infos.find(table_name.database);
+            const bool database_skipped = (database_it != database_infos.end())
+                && !getSkippedDatabaseEngine(database_it->second.create_database_query, context).empty();
+
+            /// The restored `CREATE` runs as internal, so `getRequiredAccess` imposes nothing; targets are authorized here.
+            if (restore_settings.create_table != RestoreTableCreationMode::kMustExist && create.targets && !database_skipped)
+            {
+                for (const auto & target : create.targets->targets)
+                {
+                    const auto & target_id = target.table_id;
+                    if (target_id)
+                        required_access.emplace_back(
+                            AccessType::SELECT | AccessType::INSERT, target_id.database_name, target_id.table_name);
+                }
+            }
+
             if (is_temporary)
             {
                 if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
@@ -455,6 +496,32 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     flags |= AccessType::CREATE_VIEW;
                 else
                     flags |= AccessType::CREATE_TABLE;
+
+                /// The hosts of `RESTORE ... ON CLUSTER` create the tables without the user, so the engines they will
+                /// create are checked here. Only a value in the query reaches every host: a host may drop a session value.
+                if (mode == Mode::CHECK_ACCESS_ONLY)
+                {
+                    const bool hosts_replace_external_engines_to_null
+                        = context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
+                        && restore_settings.core_settings.tryGet("restore_replace_external_engines_to_null") != nullptr;
+                    auto add_engine = [&](const ASTStorage & storage)
+                    {
+                        if (!storage.engine)
+                            return;
+                        if (hosts_replace_external_engines_to_null
+                            && StorageFactory::instance().getStorageFeatures(storage.engine->name).source_access_type)
+                            required_access.emplace_back(AccessType::TABLE_ENGINE, "Null");
+                        else
+                            required_access.emplace_back(AccessType::TABLE_ENGINE, storage.engine->name);
+                    };
+                    if (create.storage)
+                        add_engine(*create.storage);
+                    if (create.targets)
+                    {
+                        for (const ASTStorage * inner_engine : create.targets->getInnerEngines())
+                            add_engine(*inner_engine);
+                    }
+                }
             }
 
             if (restore_settings.shouldRestoreTableData() && table_info.has_data)
@@ -532,6 +599,71 @@ AccessEntitiesToRestore RestorerFromBackup::getAccessEntitiesToRestore(const Str
     return entities;
 }
 
+void RestorerFromBackup::checkSettingsOfAccessEntitiesToRestore() const
+{
+    std::lock_guard lock{mutex};
+    if (!access_restorer)
+        return;
+
+    auto & access_control = context->getAccessControl();
+
+    /// References must be resolved by name first: the backup's UUIDs are unknown here, and a profile the check cannot read is skipped.
+    auto restorer_copy = access_restorer->makeCopyForChecking();
+    restorer_copy.generateRandomIDsAndResolveDependencies(access_control);
+
+    /// An entity existing here may not exist on another host of `RESTORE ON CLUSTER`, so it is checked too.
+    auto entities = restorer_copy.getEntitiesFromBackup();
+    for (const auto & [id, entity] : entities)
+    {
+        if (const auto * user = typeid_cast<const User *>(entity.get()))
+            context->checkSettingsConstraints(AlterSettingsProfileElements{user->settings}, SettingSource::USER);
+        else if (const auto * role = typeid_cast<const Role *>(entity.get()))
+            context->checkSettingsConstraints(AlterSettingsProfileElements{role->settings}, SettingSource::ROLE);
+        else if (const auto * profile = typeid_cast<const SettingsProfile *>(entity.get()))
+            context->checkSettingsConstraints(AlterSettingsProfileElements{profile->elements}, SettingSource::PROFILE);
+    }
+
+    if (restore_settings.create_access != RestoreAccessCreationMode::kReplace)
+        return;
+
+    /// Profiles restored by this `RESTORE` are not readable yet, so they are substituted by their elements.
+    std::unordered_map<UUID, SettingsProfilePtr> restored_profiles;
+    for (const auto & [id, entity] : entities)
+    {
+        if (auto profile = typeid_cast<SettingsProfilePtr>(entity))
+            restored_profiles.emplace(id, profile);
+    }
+    auto get_profile = [&](const UUID & profile_id) -> SettingsProfilePtr
+    {
+        auto it = restored_profiles.find(profile_id);
+        return (it != restored_profiles.end()) ? it->second : access_control.tryRead<SettingsProfile>(profile_id);
+    };
+    auto substitute = [&](SettingsProfileElements & elements)
+    {
+        std::vector<UUID> profiles;
+        std::vector<UUID> substituted_profiles;
+        std::unordered_map<UUID, String> names_of_substituted_profiles;
+        substituteProfiles(elements, get_profile, profiles, substituted_profiles, names_of_substituted_profiles);
+    };
+
+    std::vector<AccessEntityPtr> new_entities;
+    for (const auto & [id, entity] : entities)
+    {
+        auto new_entity = entity->clone();
+        if (auto * user = typeid_cast<User *>(new_entity.get()))
+            substitute(user->settings);
+        else if (auto * role = typeid_cast<Role *>(new_entity.get()))
+            substitute(role->settings);
+        else if (auto * profile = typeid_cast<SettingsProfile *>(new_entity.get()))
+            substitute(profile->elements);
+        else
+            continue;
+        new_entities.push_back(new_entity);
+    }
+
+    context->checkSettingsConstraintsForOverwrite(new_entities, access_control.getStorageForRestore()->getStorageName());
+}
+
 void RestorerFromBackup::createAndCheckDatabases()
 {
     Strings database_names;
@@ -559,21 +691,15 @@ void RestorerFromBackup::createAndCheckDatabaseImpl(const String & database_name
     /// Skip external database engines (e.g. MySQL, PostgreSQL, S3, DataLakeCatalog) when
     /// restore_replace_external_engines_to_null is set - there is no meaningful way to
     /// replace a database engine with Null, so we skip both creation and verification.
-    if (context->getSettingsRef()[Setting::restore_replace_external_engines_to_null])
     {
         std::lock_guard lock{mutex};
-        const auto & database_info = database_infos.at(database_name);
-        if (database_info.create_database_query)
+        const String skipped_engine = getSkippedDatabaseEngine(database_infos.at(database_name).create_database_query, context);
+        if (!skipped_engine.empty())
         {
-            const auto & create = database_info.create_database_query->as<const ASTCreateQuery &>();
-            if (create.storage && create.storage->engine
-                && DatabaseFactory::instance().isDatabaseExternal(create.storage->engine->name))
-            {
-                LOG_TRACE(log, "Skipping external database {} with engine {} because restore_replace_external_engines_to_null is set",
-                    backQuoteIfNeed(database_name), create.storage->engine->name);
-                skipped_databases.emplace(database_name);
-                return;
-            }
+            LOG_TRACE(log, "Skipping external database {} with engine {} because restore_replace_external_engines_to_null is set",
+                backQuoteIfNeed(database_name), skipped_engine);
+            skipped_databases.emplace(database_name);
+            return;
         }
     }
 
@@ -805,7 +931,14 @@ void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
     constexpr auto setting_name = "storage_policy";
     if (query_ptr && restore_settings.storage_policy.has_value())
     {
-        ASTStorage * storage = query_ptr->as<ASTCreateQuery &>().storage;
+        auto & create_query = query_ptr->as<ASTCreateQuery &>();
+
+        /// A materialized view with an inner table keeps its engine (and thus its `storage_policy` setting)
+        /// in the target definition rather than in `storage`, so we have to look there too.
+        ASTStorage * storage = create_query.storage;
+        if (!storage && create_query.is_materialized_view_with_inner_table())
+            storage = create_query.getTargetInnerEngine(ViewTarget::To);
+
         if (storage && storage->settings)
         {
             if (restore_settings.storage_policy.value().empty())
@@ -827,8 +960,11 @@ void RestorerFromBackup::removeUnresolvedDependencies()
         if (table_infos.contains(table_id.getQualifiedName()))
             return false;
 
-        /// Table exists and it already exists
-        if (!DatabaseCatalog::instance().isTableExist(table_id, context))
+        /// Only a database with its own tables answers from memory. Any other one resolves a name on access, and checking
+        /// it reaches the data (a path, a remote server), which can be unavailable or not allowed.
+        auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name);
+        const auto * database_with_own_tables = dynamic_cast<const DatabaseWithOwnTablesBase *>(database.get());
+        if (!database || (database_with_own_tables && !database_with_own_tables->isTableExist(table_id.table_name, context)))
         {
             LOG_WARNING(
                 log,

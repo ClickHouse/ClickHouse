@@ -225,7 +225,21 @@ void RecordBatchEncoder::encodeValues(
         case TypeIndex::Float32: appendFixedWidth<ColumnFloat32>(*this, column, begin, end); return;
         case TypeIndex::Float64: appendFixedWidth<ColumnFloat64>(*this, column, begin, end); return;
         case TypeIndex::Date32: appendFixedWidth<ColumnInt32>(*this, column, begin, end); return;
-        case TypeIndex::DateTime: appendFixedWidth<ColumnUInt32>(*this, column, begin, end); return;
+        case TypeIndex::DateTime:
+        {
+            if (!settings.arrow.output_datetime_as_timestamp)
+            {
+                appendFixedWidth<ColumnUInt32>(*this, column, begin, end);
+                return;
+            }
+            /// A timestamp in seconds is 64-bit.
+            const auto & data = assert_cast<const ColumnUInt32 &>(column).getData();
+            PODArray<Int64> timestamps(end - begin);
+            for (size_t i = begin; i < end; ++i)
+                timestamps[i - begin] = data[i];
+            appendBuffer(timestamps.data(), timestamps.size() * sizeof(Int64));
+            return;
+        }
         case TypeIndex::Date:
         {
             if (settings.arrow.output_date_as_uint16)
@@ -517,7 +531,7 @@ void RecordBatchEncoder::encodeValues(
             appendOffsets(array_offsets, begin, end);
             const DataTypePtr & element_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
             encodeField(
-                ca.getData(), element_type, array_offsets[static_cast<ssize_t>(begin) - 1], array_offsets[end - 1]);
+                ca.getData(), element_type, array_offsets[static_cast<ssize_t>(begin) - 1], array_offsets[static_cast<ssize_t>(end) - 1]);
             return;
         }
         case TypeIndex::Tuple:
@@ -537,12 +551,16 @@ void RecordBatchEncoder::encodeValues(
 
             const auto & entries = assert_cast<const ColumnTuple &>(arr.getData());
             const size_t entries_begin = array_offsets[static_cast<ssize_t>(begin) - 1];
-            const size_t entries_end = array_offsets[end - 1];
+            const size_t entries_end = array_offsets[static_cast<ssize_t>(end) - 1];
             /// The entries struct node (non-nullable), then its key and value children.
             nodes.emplace_back(static_cast<Int64>(entries_end - entries_begin), 0);
             appendEmptyBuffer();
             const auto & map_type = assert_cast<const DataTypeMap &>(*type);
-            encodeField(entries.getColumn(0), map_type.getKeyType(), entries_begin, entries_end);
+            /// An Arrow map key must not be nullable, so a `Variant` key written as text writes NULL as JSON `null`.
+            if (isVariant(map_type.getKeyType()) && settings.arrow.output_variant_as_json_string)
+                encodeVariantAsJSONText(entries.getColumn(0), map_type.getKeyType(), entries_begin, entries_end, /*nullable=*/ false);
+            else
+                encodeField(entries.getColumn(0), map_type.getKeyType(), entries_begin, entries_end);
             encodeField(entries.getColumn(1), map_type.getValueType(), entries_begin, entries_end);
             return;
         }
@@ -650,6 +668,19 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
         return;
     }
 
+    /// The Arrow `Null` type has no buffers at all: all its values are null.
+    if (settings.arrow.output_nothing_as_null && isNothing(removeNullable(type)))
+    {
+        nodes.emplace_back(static_cast<Int64>(end - begin), static_cast<Int64>(end - begin));
+        return;
+    }
+
+    if (isVariant(type) && settings.arrow.output_variant_as_json_string)
+    {
+        encodeVariantAsJSONText(column, type, begin, end, /*nullable=*/ true);
+        return;
+    }
+
     /// Variant maps to an Arrow dense union, which (unlike every other type) has no validity buffer.
     if (isVariant(type))
     {
@@ -674,6 +705,54 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
     encodeValues(*nested, nested_type, begin, end, null_map_column);
 }
 
+void RecordBatchEncoder::encodeVariantAsJSONText(
+    const IColumn & column, const DataTypePtr & type, size_t begin, size_t end, bool nullable)
+{
+    const auto & variant_column = assert_cast<const ColumnVariant &>(column);
+    const size_t num_rows = end - begin;
+
+    /// In a non-nullable field, a NULL value is written as its JSON text `null`.
+    auto null_map_column = ColumnUInt8::create(num_rows, static_cast<UInt8>(0));
+    auto & null_map = null_map_column->getData();
+    if (nullable)
+    {
+        for (size_t i = 0; i < num_rows; ++i)
+            null_map[i] = variant_column.isNullAt(begin + i);
+    }
+
+    const Int64 null_count = appendValidity(nullable ? null_map_column.get() : nullptr, 0, num_rows);
+    nodes.emplace_back(static_cast<Int64>(num_rows), null_count);
+
+    const auto serialization = type->getDefaultSerialization();
+    PODArray<Int32> arrow_offsets(num_rows + 1);
+    arrow_offsets[0] = 0;
+    PODArray<char> data;
+    {
+        WriteBufferFromVector<PODArray<char>> buffer(data);
+        WriteBufferFromOwnString value;
+        String valid_utf8_scratch;
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            /// A NULL row is a zero-length slot.
+            if (!null_map[i])
+            {
+                value.restart();
+                serialization->serializeTextJSON(column, begin + i, value, settings);
+                /// An Arrow `Utf8` column must hold valid UTF-8, while a `String` alternative can hold arbitrary bytes.
+                const std::string_view valid = makeValidUTF8View(value.stringView(), valid_utf8_scratch);
+                buffer.write(valid.data(), valid.size());
+            }
+            const size_t total = buffer.count();
+            if (total > MAX_ARROW_BUFFER_SIZE)
+                throwValueDoesNotFitArrowBuffer(static_cast<Int64>(total));
+            arrow_offsets[i + 1] = static_cast<Int32>(total);
+        }
+        buffer.finalize();
+    }
+    appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
+    appendBuffer(data.data(), data.size());
+}
+
 void RecordBatchEncoder::encodeVariant(const IColumn & column, const DataTypePtr & type, size_t begin, size_t end)
 {
     const auto & variant_column = assert_cast<const ColumnVariant &>(column);
@@ -693,8 +772,8 @@ void RecordBatchEncoder::encodeVariant(const IColumn & column, const DataTypePtr
     /// `ColumnVariant::updateHashWithValueRange`), so the range maps to one contiguous child range per
     /// alternative, and the union offsets are rebased against that child's start.
     const size_t num_local = variant_column.getNumVariants();
-    std::vector<size_t> nested_begin(num_local, 0);
-    std::vector<size_t> nested_rows(num_local, 0);
+    VectorWithMemoryTracking<size_t> nested_begin(num_local, 0);
+    VectorWithMemoryTracking<size_t> nested_rows(num_local, 0);
     for (size_t row = begin; row != end; ++row)
     {
         const auto local = local_discriminators[row];

@@ -12,28 +12,31 @@ integration:
 
 import ConnectionDetails from '/snippets/ar/_gather_your_details_native.mdx';
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
 [Hashboard](https://hashboard.com) هي أداة تفاعلية لاستكشاف البيانات تتيح لأي شخص في مؤسستك تتبّع المقاييس واستخلاص رؤى قابلة للتنفيذ. ينفّذ Hashboard استعلامات SQL مباشرة على قاعدة بيانات ClickHouse لديك، وهو مفيد بشكل خاص في حالات استخدام استكشاف البيانات المخصّص والخدمة الذاتية.
 
-<Image size="md" img="/images/integrations/data-visualization/hashboard_01.webp" alt="واجهة مستكشف بيانات Hashboard تعرض أداة إنشاء استعلامات تفاعلية وتصورًا" border />
+<div className="ch-image-md">
+  <Frame>
+    ![واجهة مستكشف بيانات Hashboard تعرض أداة إنشاء استعلامات تفاعلية وتصورًا](/images/integrations/data-visualization/hashboard_01.webp)
+  </Frame>
+</div>
 
 <br />
 
 يرشدك هذا الدليل خلال خطوات ربط Hashboard بمثيل ClickHouse لديك. تتوفر هذه المعلومات أيضًا في [وثائق تكامل ClickHouse](https://hashboard.com/docs/database-connections/clickhouse) الخاصة بـ Hashboard.
 
 <div id="pre-requisites">
-  ## المتطلبات الأساسية
+  ## المتطلبات الأساسية {#pre-requisites}
 </div>
 
 * قاعدة بيانات ClickHouse مستضافة إما على البنية التحتية الخاصة بك أو على [ClickHouse Cloud](https://clickhouse.com/).
 * [حساب على Hashboard](https://hashboard.com/getAccess) ومشروع.
 
 <div id="steps-to-connect-hashboard-to-clickhouse">
-  ## خطوات ربط Hashboard بـ ClickHouse
+  ## خطوات ربط Hashboard بـ ClickHouse {#steps-to-connect-hashboard-to-clickhouse}
 </div>
 
 <Steps>
@@ -55,7 +58,7 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 </Steps>
 
 <div id="learn-more">
-  ## مزيد من المعلومات
+  ## مزيد من المعلومات {#learn-more}
 </div>
 
 لمزيد من الميزات المتقدمة ومعلومات استكشاف الأخطاء وإصلاحها، يُرجى زيارة [وثائق Hashboard](https://hashboard.com/docs).

@@ -3,7 +3,7 @@ title: 'configurações de sessão use_statistics_*'
 sidebarTitle: 'use_statistics_*'
 toc_max_heading_level: 2
 description: 'Configurações de sessão do ClickHouse no grupo use_statistics_* gerado.'
-doc_type: 'referência'
+doc_type: 'reference'
 ---
 
 {/*GERADO AUTOMATICAMENTE*/}
@@ -22,14 +22,6 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 /// preferido em vez de &#39;allow&#95;statistics&#95;optimize&#39; por consistência com &#39;use&#95;primary&#95;key&#39; e &#39;use&#95;skip&#95;indexes&#39;
 Permite usar estatísticas para otimizar consultas
 
-## use_statistics_cache {#use_statistics_cache}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "Habilitar cache de estatísticas"}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "Nova configuração"}]}]} />
-
-Use o cache de estatísticas em uma consulta para evitar a sobrecarga do carregamento das estatísticas de todas as partes
-
 ## use_statistics_for_min_max_aggregation {#use_statistics_for_min_max_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -41,6 +33,7 @@ Responde às agregações `min`, `max` e `count` a partir das estatísticas de c
 Quando habilitada, uma consulta no formato `SELECT min(column), max(column), count() FROM table` sem `GROUP BY` e sem filtros
 é respondida a partir das estatísticas de colunas (por exemplo, estatísticas MinMax; veja a configuração de MergeTree `auto_statistics_types`)
 nas partes de dados que as têm materializadas, e apenas as partes restantes são lidas.
+A agregação `count()` também é respondida em conjunto com as agregações de `use_statistics_for_sum_avg_aggregation`.
 
 Valores possíveis:
 
@@ -57,7 +50,24 @@ Usa estatísticas para filtrar partes durante a execução da consulta.
 
 Quando habilitada, a eliminação de partes em consultas SELECT usa estatísticas de colunas (por exemplo, estatísticas MinMax) para descartar partes que não podem conter dados correspondentes antes que qualquer dado seja lido.
 
-Possible values:
+Valores possíveis:
+
+* 0 — Desabilitado.
+* 1 — Habilitado.
+
+## use_statistics_for_sum_avg_aggregation {#use_statistics_for_sum_avg_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nova configuração para responder às agregações `sum`, `avg`, `sumCount` e `count(column)` sem `GROUP BY` e sem filtros a partir das estatísticas de coluna por parte. previous_value=false, de modo que `compatibility` com versões anteriores à 26.11 mantém a otimização desabilitada e restaura o plano anterior."}]}]} />
+
+Responde às agregações `sum`, `avg` e `sumCount` sobre colunas inteiras e `Decimal` que não sejam `Nullable` nem
+`LowCardinality`, sem `GROUP BY` e sem filtros, a partir das estatísticas de coluna por parte (o tipo de estatística `basic`; consulte a
+configuração `auto_statistics_types` do `MergeTree`) para as partes de dados que as tenham materializadas, lendo apenas as
+partes restantes. Nesse caso, `count(column)` de uma coluna que não seja `Nullable` nem `LowCardinality` é respondido a partir do número de linhas.
+O resultado é exatamente o mesmo obtido com a leitura dos dados.
+
+Valores possíveis:
 
 * 0 — Desabilitado.
 * 1 — Habilitado.

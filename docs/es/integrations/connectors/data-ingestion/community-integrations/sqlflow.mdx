@@ -1,0 +1,528 @@
+---
+sidebarTitle: 'SQLFlow'
+keywords: ['clickhouse', 'sqlflow', 'duckdb', 'kafka', 'streaming', 'stream processing', 'sink', 'data ingestion', 'integrate', 'websocket']
+slug: /integrations/sqlflow
+description: 'Transmita en streaming datos de Kafka, WebSocket y webhooks a ClickHouse con SQLFlow, transformándolos con SQL de DuckDB'
+title: 'SQLFlow y ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://turbolytics.io'
+---
+
+import ConnectionDetails from '/snippets/es/_gather_your_details_http.mdx';
+import { CommunityMaintainedBadge } from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<a href="https://github.com/turbolytics/sql-flow" target="_blank">SQLFlow</a> es un motor de procesamiento de flujo de código abierto (MIT). Consume un stream (Kafka, un WebSocket o webhooks), ejecuta SQL de DuckDB sobre cada micro-batch e inserta el resultado en una table de ClickHouse. Cada canalización se define en un único archivo YAML, y SQLFlow se distribuye como un solo binary y una sola imagen de Docker, por lo que no hace falta mantener ningún cluster.
+
+Esta página trata sobre el destino de ClickHouse: cómo conectarse a ClickHouse Cloud y a ClickHouse autoalojado, qué tipos se mapean, un ejemplo de extremo a extremo con el conjunto de datos de muestra de taxis de NYC y los límites, que se han medido en lugar de darse por supuestos.
+
+## Requisitos previos {#prerequisites}
+
+* SQLFlow **[v2026.10.08](https://github.com/turbolytics/sql-flow/releases/tag/v2026.10.08)** o posterior. Todos los resultados de esta página se midieron con esa versión, salvo que se indique otra.
+* ClickHouse Cloud o ClickHouse autoalojado. Las pruebas de esta página se realizaron con ClickHouse autoalojado 26.8.1 y con Cloud 26.6.1. No se ha determinado si funcionan versiones anteriores a estas.
+* Un bróker de Kafka accesible desde la canalización, para la fuente de Kafka que se usa en el ejemplo. Las fuentes de WebSocket y webhook no requieren bróker.
+* Python 3 con el paquete `confluent-kafka` (`pip install confluent-kafka`), solo para el script del ejemplo que publica los datos de muestra en Kafka. SQLFlow en sí no requiere Python.
+* Docker es la forma más sencilla de instalarlo. `turbolytics/sql-flow` se publica como imagen multiarquitectura para `linux/amd64` y `linux/arm64`. SQLFlow también puede compilarse a partir del código fuente; para ello se necesita Go, una cadena de herramientas de C y que `libduckdb` esté disponible en tiempo de ejecución.
+
+## Configuración {#setup}
+
+SQLFlow se conecta mediante un único DSN. El esquema determina el protocolo y si se utiliza TLS; si se omite el puerto, se usa el predeterminado del esquema.
+
+| Esquema                      | Protocolo | TLS | Puerto predeterminado | Uso                                                            |
+| ---------------------------- | --------- | --- | --------------------- | -------------------------------------------------------------- |
+| `clickhouses://`, `https://` | HTTP      | sí  | 8443                  | ClickHouse Cloud o cualquier endpoint HTTP con terminación TLS |
+| `clickhouse://`, `http://`   | HTTP      | no  | 8123                  | ClickHouse autoalojado                                         |
+| `natives://`                 | nativo    | sí  | 9440                  | ClickHouse Cloud mediante el protocolo nativo                  |
+| `tcp://`, `native://`        | nativo    | no  | 9000                  | Autoalojado, protocolo nativo                                  |
+
+La table de destino debe existir previamente. SQLFlow no crea tables ni modifica la evolución de los esquemas: toma los nombres de las columnas de su `INSERT` de los nombres de columnas que genera su SQL, por lo que **las columnas que devuelve el SQL de su handler deben coincidir con los nombres de columnas de la table**. Utilice alias en el SQL para renombrarlas.
+
+### Conectarse a ClickHouse Cloud {#connect-to-clickhouse-cloud}
+
+<ConnectionDetails />
+
+Con estos datos, el DSN es:
+
+```
+clickhouses://default:<password>@<host>.clickhouse.cloud:8443/<database>
+```
+
+Para no incluirlo en el YAML, páselo como variable de entorno; el campo `dsn` de la configuración es una plantilla:
+
+```yaml
+sink:
+  type: clickhouse
+  clickhouse:
+    dsn: {{ SQLFLOW_CLICKHOUSE_DSN }}
+    table: trips_small
+```
+
+```bash
+export SQLFLOW_CLICKHOUSE_DSN='clickhouses://default:<password>@<host>.clickhouse.cloud:8443/nyc_taxi'
+```
+
+<Warning>
+  Use `clickhouses://` (con la `s`) para Cloud. `clickhouse://` envía HTTP sin cifrar al puerto 8443 y la conexión se interrumpe antes de que se realice ninguna solicitud. Consulte [Resolución de problemas](#troubleshooting).
+</Warning>
+
+### Conectarse a ClickHouse autoalojado {#connect-to-self-hosted-clickhouse}
+
+Configure el DSN para que apunte a la interfaz HTTP, que de forma predeterminada usa el puerto 8123:
+
+```bash
+export SQLFLOW_CLICKHOUSE_DSN='clickhouse://default:<password>@clickhouse.internal:8123/nyc_taxi'
+```
+
+Si ha colocado TLS delante de la interfaz HTTP, use `clickhouses://` del mismo modo que con Cloud. Para el protocolo nativo, use `tcp://` (9000) o `natives://` (9440).
+
+Cuando SQLFlow se ejecuta en Docker, `localhost` dentro del contenedor hace referencia al propio contenedor, no a su máquina. Conecte SQLFlow y ClickHouse a la misma red de Docker y use el nombre del contenedor de ClickHouse como host.
+
+## Autenticación {#authentication}
+
+El nombre de usuario y la contraseña se incluyen en el DSN y, con `clickhouses://` o `natives://`, se envían a través de TLS. El certificado del servidor se verifica con el almacén de confianza del sistema; no hay ninguna opción para omitir la verificación.
+
+* **Caracteres especiales en la contraseña.** El DSN se analiza como una URL, por lo que `/`, `#` y `?` deben usar codificación porcentual (`%2F`, `%23`, `%3F`); si se dejan sin procesar, generan el confuso error `invalid port ":p" after host`. `@` y `:` se gestionan correctamente en cualquier caso.
+* **Listas de acceso IP de Cloud.** Si su servicio restringe las IP de origen, la dirección desde la que se conecta SQLFlow debe figurar en la lista.
+* **No compatible:** TLS mutuo / certificados de cliente ni conjuntos de certificados de CA personalizados. Use nombre de usuario y contraseña.
+
+## Ejemplo: streaming del conjunto de datos NYC Taxi desde Kafka {#example-nyc-taxi}
+
+Este ejemplo lleva el [conjunto de datos de muestra NYC Taxi](/es/get-started/sample-datasets/nyc-taxi) a través de Kafka hasta ClickHouse, y SQLFlow lo transforma por el camino. Puede reproducirse tanto en Cloud como en un entorno autoalojado; solo cambia el DSN.
+
+### 1. Crear la table de destino {#example-create-table}
+
+La misma table que se define en la página del conjunto de datos de ejemplo:
+
+```sql
+CREATE DATABASE IF NOT EXISTS nyc_taxi;
+
+CREATE TABLE IF NOT EXISTS nyc_taxi.trips_small (
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = MergeTree
+PRIMARY KEY (pickup_datetime, dropoff_datetime);
+```
+
+### 2. Publicar los datos en Kafka {#example-publish}
+
+El conjunto de datos se distribuye como TSV comprimido con gzip. En este paso se convierte un archivo (aproximadamente un millón de filas) a JSON delimitado por saltos de línea y se publica en un topic llamado `nyc-taxi-trips`.
+
+Instale la dependencia del publicador y descargue el archivo:
+
+```bash
+pip install confluent-kafka
+curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_0.gz
+```
+
+Cree el topic. Un bróker estándar de Apache Kafka lo crea con la primera publicación, pero los clústeres gestionados y de producción suelen configurar `auto.create.topics.enable=false`, en cuyo caso, si el topic no se ha creado, el ejemplo falla antes de que ninguna fila llegue a ClickHouse:
+
+```bash
+kafka-topics.sh --bootstrap-server localhost:9092 \
+  --create --topic nyc-taxi-trips --partitions 1 --replication-factor 1
+```
+
+En las imágenes de Confluent, ese comando se llama `kafka-topics`, sin el `.sh`.
+
+Guarde el script de publicación como `publish.py`. Cambie `bootstrap.servers` si el bróker no está en `localhost:9092`:
+
+```python
+import gzip, json
+from confluent_kafka import Producer
+
+COLUMNS = ["trip_id", "pickup_datetime", "dropoff_datetime", "pickup_longitude",
+           "pickup_latitude", "dropoff_longitude", "dropoff_latitude", "passenger_count",
+           "trip_distance", "fare_amount", "extra", "tip_amount", "tolls_amount",
+           "total_amount", "payment_type", "pickup_ntaname", "dropoff_ntaname"]
+INTS = {"trip_id", "passenger_count"}
+FLOATS = {"pickup_longitude", "pickup_latitude", "dropoff_longitude", "dropoff_latitude",
+          "trip_distance", "fare_amount", "extra", "tip_amount", "tolls_amount", "total_amount"}
+
+producer = Producer({"bootstrap.servers": "localhost:9092"})
+
+def send(topic, value):
+    # The producer's queue holds 100,000 messages by default, and this file
+    # has a million rows; poll() drains it as it fills.
+    while True:
+        try:
+            producer.produce(topic, value)
+            return
+        except BufferError:
+            producer.poll(0.5)
+
+with gzip.open("trips_0.gz", "rb") as f:
+    header = f.readline().decode().rstrip("\n").split("\t")
+    index = {name: i for i, name in enumerate(header)}
+    for raw in f:
+        # Split on the raw bytes and decode only the columns being published.
+        # The file carries columns this example does not use that are not
+        # valid UTF-8, and decoding the whole line would have to corrupt them.
+        parts = raw.rstrip(b"\n").split(b"\t")
+        row = {}
+        for col in COLUMNS:
+            value = parts[index[col]].decode()
+            if value == "":
+                row[col] = None
+            elif col in INTS:
+                row[col] = int(float(value))
+            elif col in FLOATS:
+                row[col] = float(value)
+            else:
+                row[col] = value
+        send("nyc-taxi-trips", json.dumps(row))
+producer.flush()
+```
+
+Ejecútelo. Publicar el millón de filas tarda menos de un minuto:
+
+```bash
+python publish.py
+```
+
+### 3. Escribir la canalización {#example-pipeline}
+
+Guarda esto como `taxi.yml`. El SQL del handler se ejecuta en DuckDB sobre cada batch de mensajes JSON; las conversiones de tipo generan tipos de Arrow que se corresponden con los tipos de ClickHouse de la table (consulta [Mapeo de tipos](#type-mapping)).
+
+```yaml
+pipeline:
+  name: nyc-taxi-clickhouse
+  batch_size: 20000
+
+  source:
+    type: kafka
+    kafka:
+      brokers: [{{ SQLFLOW_KAFKA_BROKERS|default('localhost:9092') }}]
+      group_id: nyc-taxi
+      auto_offset_reset: earliest
+      topics:
+        - nyc-taxi-trips
+
+  handler:
+    type: 'handlers.InferredMemBatch'
+    sql: |
+      SELECT
+        CAST(trip_id AS UINTEGER)            AS trip_id,
+        CAST(pickup_datetime AS TIMESTAMP)   AS pickup_datetime,
+        CAST(dropoff_datetime AS TIMESTAMP)  AS dropoff_datetime,
+        pickup_longitude,
+        pickup_latitude,
+        dropoff_longitude,
+        dropoff_latitude,
+        CAST(passenger_count AS UTINYINT)    AS passenger_count,
+        CAST(trip_distance AS FLOAT)         AS trip_distance,
+        CAST(fare_amount AS FLOAT)           AS fare_amount,
+        CAST(extra AS FLOAT)                 AS extra,
+        CAST(tip_amount AS FLOAT)            AS tip_amount,
+        CAST(tolls_amount AS FLOAT)          AS tolls_amount,
+        CAST(total_amount AS FLOAT)          AS total_amount,
+        payment_type,
+        pickup_ntaname,
+        dropoff_ntaname
+      FROM batch
+
+  sink:
+    type: clickhouse
+    clickhouse:
+      dsn: {{ SQLFLOW_CLICKHOUSE_DSN }}
+      table: trips_small
+```
+
+`batch_size` es el número de mensajes por batch de DuckDB y por cada `INSERT` de ClickHouse. Consulte [Rendimiento](#performance) para saber por qué se eligió 20.000.
+
+### 4. Ejecútelo {#example-run}
+
+```bash
+docker run --rm \
+  --network <the broker's docker network> \
+  -v "$(pwd)":/conf \
+  -e SQLFLOW_CLICKHOUSE_DSN \
+  -e SQLFLOW_KAFKA_BROKERS=<broker address as advertised inside that network> \
+  turbolytics/sql-flow:v2026.10.08 \
+  run /conf/taxi.yml --max-msgs=1000000
+```
+
+<Warning>
+  **La dirección del broker debe ser accesible desde el contenedor.** Un client de Kafka se redirige a la dirección que el bróker *anuncia*, no a la que usted marca. Un bróker que anuncia `127.0.0.1:9092` para clientes externos hace que el contenedor apunte a sí mismo, y cada recuperación falla con `dial tcp 127.0.0.1:9092: connect: connection refused`, aunque esa misma dirección funcione desde su shell. Conecte el contenedor a la red del propio bróker y use la dirección que se anuncia en ella, o bien ejecute el binary directamente en el host:
+
+  ```bash
+  sqlflow run taxi.yml --max-msgs=1000000
+  ```
+</Warning>
+
+`--max-msgs` detiene la ejecución tras procesar ese número de mensajes; omítalo para que se ejecute de forma continua. Los offsets de Kafka se confirman (commit) solo después de que ClickHouse haya confirmado cada `INSERT`, y únicamente hasta el último mensaje realmente procesado.
+
+### 5. Verificación {#example-verify}
+
+```sql
+SELECT payment_type, count() AS trips, round(avg(total_amount), 2) AS avg_total
+FROM nyc_taxi.trips_small
+GROUP BY payment_type
+ORDER BY trips DESC;
+```
+
+```
+┌─payment_type─┬──trips─┬─avg_total─┐
+│ CSH          │ 617237 │     17.82 │
+│ CRE          │ 377897 │     13.91 │
+│ NOC          │   3573 │     13.89 │
+│ DIS          │   1293 │     12.09 │
+└──────────────┴────────┴───────────┘
+```
+
+La misma consulta devuelve el mismo recuento en Cloud y en la versión autoalojada, lo que confirma razonablemente que no se eliminó ni se convirtió nada en ninguna de las dos rutas. En Cloud, si la lectura la atiende una réplica que aún no ha recuperado la parte más reciente, el recuento puede quedarse corto durante unos instantes después de que finalice la ejecución. Si el total resulta inferior al esperado, agregue `SETTINGS select_sequential_consistency = 1` a la consulta.
+
+### Un segundo ejemplo: fuente WebSocket, sin Kafka {#example-websocket}
+
+La fuente WebSocket no requiere ningún bróker, y este ejemplo muestra cómo se escribe y se consulta de forma nativa una columna `Array(String)`. Consume el firehose público de Bluesky.
+
+```sql
+CREATE TABLE bluesky_posts (
+    ts    DateTime,
+    did   String,
+    langs Array(String),
+    text  String
+) ENGINE = MergeTree ORDER BY ts;
+```
+
+```yaml
+pipeline:
+  batch_size: 200
+  source:
+    type: websocket
+    websocket:
+      uri: 'wss://jetstream2.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post'
+  handler:
+    type: 'handlers.InferredMemBatch'
+    sql: |
+      SELECT
+        to_timestamp(time_us / 1000000)          AS ts,
+        did,
+        COALESCE(commit.record.langs, [])       AS langs,
+        COALESCE(commit.record.text, '')        AS text
+      FROM batch
+  sink:
+    type: clickhouse
+    clickhouse:
+      dsn: {{ SQLFLOW_CLICKHOUSE_DSN }}
+      table: bluesky_posts
+```
+
+Guárdelo como `bluesky.yml` y ejecútelo. Aquí no se usa `SQLFLOW_KAFKA_BROKERS`: la fuente es el WebSocket y la única variable que lee la canalización es el DSN.
+
+```bash
+docker run --rm \
+  -v "$(pwd)":/conf \
+  -e SQLFLOW_CLICKHOUSE_DSN \
+  turbolytics/sql-flow:v2026.10.08 \
+  run /conf/bluesky.yml --max-msgs=2000
+```
+
+Si ClickHouse se ejecuta en Docker en la misma máquina, añada `--network` como en el ejemplo de Kafka. Si usa el binary en lugar de la imagen:
+
+```bash
+sqlflow run bluesky.yml --max-msgs=2000
+```
+
+El firehose envía unas 50 publicaciones por segundo, así que 2000 mensajes tardan menos de un minuto. Después:
+
+```sql
+SELECT lang, count() AS posts
+FROM (SELECT arrayJoin(langs) AS lang FROM bluesky_posts)
+GROUP BY lang ORDER BY posts DESC LIMIT 5;
+```
+
+## Mapeo de tipos {#type-mapping}
+
+SQLFlow entrega cada batch a ClickHouse como filas construidas a partir de la table Arrow que genera DuckDB, por lo que lo que importa es el tipo Arrow que acaba teniendo cada columna SQL. Para controlarlo, use CAST en el SQL del handler.
+
+Cada fila de la siguiente table se genera a partir de la matriz de tipos del motor y se valida mediante una prueba de integración que escribe el valor, lo vuelve a leer a través del servidor y compara ambos. La matriz y la prueba se encuentran en el [repositorio de SQLFlow](https://github.com/turbolytics/sql-flow/blob/main/docs/coverage/clickhouse-types.mdx). Toda combinación que figura en la table está validada. Una combinación que no figura en ella no se ha probado, pero eso no significa que se rechace: las rechazadas se enumeran en [No compatible](#unsupported) y hacen fallar el batch con un código de error. Los tipos de columnas parametrizados se muestran con la instancia concreta que escribió la prueba.
+
+| Tipo SQL de DuckDB (conversión a) | Tipos de columnas de ClickHouse que lo aceptan                                                                                                          | Notas                                                                                                                                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BOOLEAN`                         | `Bool`, `UInt8`                                                                                                                                         |                                                                                                                                                                                          |
+| `TINYINT`                         | `Int8`                                                                                                                                                  |                                                                                                                                                                                          |
+| `SMALLINT`                        | `Int16`                                                                                                                                                 |                                                                                                                                                                                          |
+| `INTEGER`                         | `Int32`                                                                                                                                                 |                                                                                                                                                                                          |
+| `BIGINT`                          | `Int64`                                                                                                                                                 |                                                                                                                                                                                          |
+| `UTINYINT`                        | `UInt8`                                                                                                                                                 |                                                                                                                                                                                          |
+| `USMALLINT`                       | `UInt16`                                                                                                                                                |                                                                                                                                                                                          |
+| `UINTEGER`                        | `UInt32`                                                                                                                                                |                                                                                                                                                                                          |
+| `UBIGINT`                         | `UInt64`                                                                                                                                                |                                                                                                                                                                                          |
+| `REAL`                            | `Float32`                                                                                                                                               |                                                                                                                                                                                          |
+| `DOUBLE`                          | `Float64`                                                                                                                                               |                                                                                                                                                                                          |
+| `VARCHAR`                         | `String`, `LowCardinality(String)`, `DateTime64(3)`, `DateTime`, `Enum8('' = 0, 'a' = 1, 'b' = 2)`, `FixedString(36)`, `UUID`, `IPv4`, `Decimal(10, 2)` | la cadena ya debe estar en la representación textual del destino; consulte la nota más abajo. `UUID` y `JSON` llegan al destino como `VARCHAR`                                           |
+| `BLOB`, `BIT`, `VARINT`           | `String`                                                                                                                                                |                                                                                                                                                                                          |
+| `DATE`                            | `Date`, `Date32`                                                                                                                                        |                                                                                                                                                                                          |
+| `TIMESTAMP_S`                     | `DateTime`                                                                                                                                              |                                                                                                                                                                                          |
+| `TIMESTAMP_MS`                    | `DateTime64(3)`                                                                                                                                         |                                                                                                                                                                                          |
+| `TIMESTAMP`                       | `DateTime64(6)`, `DateTime`                                                                                                                             | DateTime solo conserva segundos enteros; DateTime64(6) conserva los seis dígitos                                                                                                         |
+| `TIMESTAMP_NS`                    | `DateTime64(9)`                                                                                                                                         |                                                                                                                                                                                          |
+| `TIMESTAMPTZ`                     | `DateTime64(6)`, `DateTime`                                                                                                                             | se almacena como el mismo instante UTC; la zona horaria se descarta y la representación depende de la zona horaria de la propia columna; DateTime solo conserva segundos enteros         |
+| `BOOLEAN[]`                       | `Array(Bool)`                                                                                                                                           |                                                                                                                                                                                          |
+| `TINYINT[]`                       | `Array(Int8)`                                                                                                                                           |                                                                                                                                                                                          |
+| `SMALLINT[]`                      | `Array(Int16)`                                                                                                                                          |                                                                                                                                                                                          |
+| `INTEGER[]`                       | `Array(Int32)`                                                                                                                                          |                                                                                                                                                                                          |
+| `BIGINT[]`                        | `Array(Int64)`                                                                                                                                          |                                                                                                                                                                                          |
+| `UTINYINT[]`                      | `Array(UInt8)`                                                                                                                                          |                                                                                                                                                                                          |
+| `USMALLINT[]`                     | `Array(UInt16)`                                                                                                                                         |                                                                                                                                                                                          |
+| `UINTEGER[]`                      | `Array(UInt32)`                                                                                                                                         |                                                                                                                                                                                          |
+| `UBIGINT[]`                       | `Array(UInt64)`                                                                                                                                         |                                                                                                                                                                                          |
+| `REAL[]`                          | `Array(Float32)`                                                                                                                                        |                                                                                                                                                                                          |
+| `DOUBLE[]`                        | `Array(Float64)`                                                                                                                                        |                                                                                                                                                                                          |
+| `VARCHAR[]`                       | `Array(String)`                                                                                                                                         |                                                                                                                                                                                          |
+| `BLOB[]`                          | `Array(String)`                                                                                                                                         |                                                                                                                                                                                          |
+| `DATE[]`                          | `Array(Date32)`                                                                                                                                         |                                                                                                                                                                                          |
+| `TIMESTAMP_S[]`                   | `Array(DateTime)`                                                                                                                                       |                                                                                                                                                                                          |
+| `TIMESTAMP_MS[]`                  | `Array(DateTime64(3))`                                                                                                                                  |                                                                                                                                                                                          |
+| `TIMESTAMP[]`                     | `Array(DateTime64(6))`                                                                                                                                  |                                                                                                                                                                                          |
+| `TIMESTAMP_NS[]`                  | `Array(DateTime64(9))`                                                                                                                                  |                                                                                                                                                                                          |
+| `TIMESTAMPTZ[]`                   | `Array(DateTime64(6))`                                                                                                                                  | se almacena como el mismo instante UTC; la zona horaria se descarta y la representación depende de la zona horaria de la propia columna                                                  |
+| `BIGINT[][]`                      | `Array(Array(Int64))`                                                                                                                                   |                                                                                                                                                                                          |
+| `NULL` en cualquier columna       | el tipo de la propia columna                                                                                                                            | el valor cero del tipo de columna; la expresión DEFAULT no se evalúa porque todas las columnas generadas se especifican en el INSERT. `Enum` es la excepción: consulte la nota más abajo |
+| `NULL` dentro de una `LIST`       | el tipo del propio elemento                                                                                                                             | el valor cero del tipo de elemento, ya que Array(T) de ClickHouse no admite valores NULL a menos que T sea Nullable                                                                      |
+
+<Note>
+  **Un `VARCHAR` llega a una columna que no es `String` como texto que la propia columna analiza.** La matriz valida cada destino con un valor ya expresado en la representación textual de ese destino, no con un mismo valor para todos. Una cadena UUID no se convierte en un `DateTime`. Las representaciones probadas son:
+
+  | Destino                            | Texto que escribió la prueba                  |
+  | ---------------------------------- | --------------------------------------------- |
+  | `String`, `LowCardinality(String)` | `L'Œil 👁 "quoted" back\slash` y un tabulador |
+  | `DateTime64(3)`                    | `2026-09-01 12:00:00.123`                     |
+  | `DateTime`                         | `2026-09-01 12:00:00`                         |
+  | `Enum8(...)`                       | el nombre de un miembro, como `a`             |
+  | `FixedString(36)`, `UUID`          | `0b7e2c9a-4d31-4f6e-9a02-7c1de3f10b45`        |
+  | `IPv4`                             | `192.168.1.1`                                 |
+  | `Decimal(10, 2)`                   | `1234.56`                                     |
+</Note>
+
+<Warning>
+  **Insertar un `NULL` en un `Enum` que no es `Nullable` y no tiene un miembro `0` genera una fila ilegible.** El destino almacena el valor cero, `0`. El `INSERT` se completa correctamente, pero cualquier `SELECT` posterior de la columna falla con `UNKNOWN_ELEMENT_OF_ENUM`. Comprobado con `Enum8('a' = 1, 'b' = 2)`. Una columna enum que pueda recibir un `NULL` necesita un miembro `0`, como en `Enum8('' = 0, 'a' = 1, 'b' = 2)`, o bien ser `Nullable(Enum8(...))`. En caso contrario, aplique `coalesce` al valor en el SQL del handler.
+</Warning>
+
+Los valores se asignan a las columnas **por nombre**, no por posición.
+
+<Note>
+  **Es preferible usar `CAST(ts AS TIMESTAMP)` antes que pasar marcas de tiempo como cadenas.** Cuando SQLFlow envía un `VARCHAR` a una columna `DateTime`, quien analiza la cadena es el controlador de Go, no el servidor. Solo acepta dos formas:
+
+  * `'2026-09-01 12:00:00'`, que interpreta como UTC. Ni la zona horaria del servidor ni la de la columna alteran el instante almacenado. Comprobado con un servidor configurado en `Asia/Tokyo`: la fila se guardó como `2026-09-01 12:00:00 UTC`, el mismo instante que recibió una columna `DateTime('UTC')`.
+  * `'2026-09-01 12:00:00 +09:00'`, en la que se aplica el offset. Esa fila almacena `2026-09-01 03:00:00 UTC`.
+
+  Cualquier otro formato hace fallar el batch, incluido ISO 8601 con separador `T` o sufijo `Z`. `'2026-09-01T12:00:00Z'` se rechaza con `parsing time "2026-09-01T12:00:00Z" as "2006-01-02 15:04:05"`.
+
+  Esto difiere de escribir usted mismo el mismo literal en una sentencia `INSERT`: en ese caso, ClickHouse analiza la cadena en la zona horaria de la columna de destino, y una columna `DateTime` sin zona explícita usa la zona horaria del servidor. Hacer el cast en el SQL del handler evita ambos conjuntos de reglas.
+
+  Si el campo puede ser `NULL`, una columna `DateTime` lo almacena como `1970-01-01 00:00:00`. Use `Nullable(DateTime)` o `coalesce(CAST(ts AS TIMESTAMP), now()::TIMESTAMP)` en el SQL del handler.
+</Note>
+
+<Note>
+  Las columnas `Decimal` aceptan el valor como **cadena**, no como `DOUBLE`. `CAST(amount AS VARCHAR)` funciona; `CAST(amount AS DOUBLE)` hace fallar el batch con `converting float64 to Decimal(10, 2) is unsupported`.
+</Note>
+
+### No compatibles {#unsupported}
+
+Estos tipos hacen que el batch falle con `user.sink.type_unsupported` antes de llegar a la table. Conviértalos con CAST o aplánelos en el SQL del handler.
+
+* `DECIMAL(p, s)`, `HUGEINT`, `UHUGEINT`
+* `TIME`, `TIMETZ`
+* `TIME_NS`
+* `INTERVAL`
+* `DECIMAL(p, s)[]`, `HUGEINT[]`
+* `TIME[]`
+* `STRUCT(...)[]`
+* `INTEGER[3]`
+* `STRUCT(...)`
+* `MAP(K, V)`
+* `UNION(...)`
+* `ENUM`
+
+## Límites conocidos {#known-limits}
+
+* **Tipos no compatibles:** se enumeran en [Unsupported](#unsupported). `DECIMAL`, `STRUCT`, `MAP`, `TIME` e `INTERVAL` son los que un handler suele necesitar. Cualquiera de ellos hace fallar el batch con `user.sink.type_unsupported` antes de que se escriba ninguna fila. Aplane un `STRUCT` o un `MAP` en columnas escalares en el SQL del handler, o serialícelo con `to_json()` en una columna `String`. Convierta un `DECIMAL` a `VARCHAR`. Las columnas `Nested` no se han probado.
+* **No se crean tables ni se gestiona la evolución del esquema.** La table debe existir previamente, y si el handler emite una columna que la table no tiene, el batch falla (consulte [Resolución de problemas](#troubleshooting)). Las columnas que el handler omite toman el `DEFAULT` de la table.
+* **Un `NULL` escrito en una columna que no es `Nullable` se almacena como el valor cero del tipo**, no como la expresión `DEFAULT` de la columna, y no se genera ningún error. Consulte [Mapeo de tipos](#type-mapping) para ver la solución alternativa. En un `Enum` sin miembro `0`, ese valor no es un miembro válido y la fila no se puede volver a leer. Consulte la advertencia en [Mapeo de tipos](#type-mapping).
+* **Entrega al menos una vez.** Los offsets de Kafka se confirman (commit) después de que se reconoce el `INSERT`. Si se produce una caída entre ambos pasos, el batch se vuelve a aplicar, por lo que pueden aparecer duplicados.
+
+  Un `ReplacingMergeTree` con una clave que identifique la fila los elimina **con el tiempo**, durante una fusión en segundo plano. Hasta que se produce esa fusión, una lectura normal ve ambas copias: según mediciones en 26.8.1 autoalojado, un bloque vuelto a aplicar devolvió 4 filas, y 2 con `FINAL`. Use `FINAL` en las consultas cuando una lectura deba ser exacta de inmediato.
+
+  La deduplicación de bloques en insert-time solo descarta una segunda copia cuando el bloque es idéntico byte a byte. Las tables replicadas, como lo son todas las tables de Cloud, lo hacen de forma predeterminada, y las no replicadas, mediante `non_replicated_deduplication_window`. Al volver a aplicarse, los batches se dividen de nuevo a partir del offset confirmado, y un batch que el intervalo de vaciado dejó incompleto no vuelve con los mismos límites. Considere la deduplicación en insert-time una medida parcial, no una garantía.
+* **Los fallos transitorios se reintentan.** Si una conexión a ClickHouse se rechaza, se restablece o agota el tiempo de espera, se reintenta con backoff exponencial dentro de un plazo límite, configurado mediante el bloque `retry` del destino (`max_attempts`, `initial_backoff_ms`, `max_backoff_ms`, `deadline_seconds`). Un `INSERT` rechazado no se reintenta una vez que el servidor lo ha recibido. Un valor que el propio controlador no puede codificar, como la marca de tiempo ISO 8601 mencionada antes, no se reintenta: falla de inmediato como `user.sink.encode_failed` y el proceso termina con el código 10. El destino también se conecta a ClickHouse una vez al iniciarse, de modo que, si el host es inaccesible, el fallo se produce antes de consumir ningún mensaje.
+* **Una conexión y un `INSERT` por batch.** No hay escritura en paralelo. El rendimiento depende de `batch_size`; consulte más abajo.
+* **La agregación en streaming** (ventanas tumbling) es compatible. Una ventana se cierra según una marca de agua de tiempo de evento que fija el motor, nunca según la hora del reloj. El tiempo de evento de un registro es el campo del payload que indica el `event_time` de la fuente o, si no indica ninguno, la marca de tiempo de Kafka. El handler calcula el bucket como `time_bucket(INTERVAL '<size>', event_time)`. Por lo tanto, una reaplicación que va por detrás del tiempo real publica cada bucket una sola vez y completo: 1.000 eventos de un bucket pasado de un minuto, leídos en diez batches de 100, se publicaron como una única fila de 1.000. Si establece `allowed_lateness_seconds` en un valor mayor que cero, una fila tardía vuelve a publicar su bucket como un valor completo, por lo que el destino debe reemplazar la fila por clave, con un `ReplacingMergeTree` leído mediante `FINAL`. Consulte [Tumbling windows](https://github.com/turbolytics/sql-flow#tumbling-windows) en el README.
+
+## Rendimiento {#performance}
+
+Medido con el ejemplo anterior: un millón de filas de 17 columnas, un proceso de SQLFlow, Kafka ubicado junto a SQLFlow y dos ejecuciones por cada fila de la tabla.
+
+| Destino                                                                                          | Filas/segundo   |
+| ------------------------------------------------------------------------------------------------ | --------------- |
+| ClickHouse autoalojado, SQLFlow y Kafka en la misma red de Docker, v2026.10.08                   | 57.900 y 55.900 |
+| ClickHouse Cloud (us-east-2), SQLFlow junto al bróker, a través de internet pública, v2026.10.08 | 13.700 y 13.300 |
+
+La cifra de Cloud refleja la red entre la máquina y el servicio, no el rendimiento de SQLFlow. Con el mismo enlace y en la misma hora, la versión anterior, v2026.09.17.1, procesó 12.500 y 12.900 filas por segundo, mientras que la misma canalización contra un servidor autoalojado en una única red de Docker es cuatro veces más rápida. Ejecute SQLFlow cerca del servicio, en la misma región e idealmente en la misma VPC, para obtener cifras más próximas a las del entorno autoalojado.
+
+Con un destino cercano, el parámetro clave es `batch_size`, según las mediciones en la misma red de Docker:
+
+| `batch_size` | Filas/segundo |
+| ------------ | ------------- |
+| 5,000        | 34.000        |
+| 20,000       | 56.900        |
+| 50,000       | 57.600        |
+| 100,000      | 56.900        |
+
+Por debajo de unas 20.000 filas por batch, predomina la sobrecarga de cada `INSERT`; por encima, apenas se gana más y la memoria por batch aumenta. 20.000 es un buen valor predeterminado para filas de este ancho; compruébelo con sus propios datos.
+
+## Resolución de problemas {#troubleshooting}
+
+### `connection reset by peer` de inmediato, con `...:8443?...` en el mensaje {#trouble-reset}
+
+El DSN usa `clickhouse://` (HTTP sin cifrar) para conectarse a un puerto TLS. El error completo tiene este aspecto: `failed to query server hello: … Post "http://…:8443?…": … connection reset by peer`. Cambie el esquema a `clickhouses://`.
+
+### `[HTTP 401] code: 194 … Authentication failed: password is incorrect, or there is no user with such name` {#trouble-auth}
+
+Las credenciales del DSN son incorrectas, o bien un carácter especial de la contraseña no está codificado como URL (URL-encoded). En Cloud, la contraseña del usuario `default` se muestra una única vez al crear el servicio y puede restablecerse desde la consola. Si la contraseña es correcta, revise la lista de acceso IP del servicio.
+
+### `column <name> is not present in the table <table>` {#trouble-column}
+
+El error completo comienza con `[system.sink.write_failed] clickhouse sink: prepare batch:`. El SQL del handler generó una columna que no existe en la table de destino. SQLFlow realiza las inserciones por nombre de columna, así que puede asignar un alias a la columna en el SQL para que coincida con la table, eliminarla del `SELECT` o agregarla a la table.
+
+### `clickhouse sink: column "<name>": unsupported arrow type <type>` {#trouble-type}
+
+El tipo Arrow de la columna no tiene correspondencia en ClickHouse, como sucede con un struct o un valor de tipo mapa. Use CAST o aplane los datos en el SQL del handler; consulte [Mapeo de tipos](#type-mapping).
+
+### `converting float64 to Decimal(10, 2) is unsupported` {#trouble-decimal}
+
+Se envió un valor `DOUBLE` a una columna `Decimal`. En su lugar, conviértalo a cadena: `CAST(amount AS VARCHAR) AS amount`. El controlador analiza el texto decimal de forma exacta, sin redondeo de coma flotante.
+
+### `parsing time "…" as "2006-01-02 15:04:05"` {#trouble-timestamp}
+
+Una marca de tiempo `VARCHAR` llegó a una columna `DateTime` con una forma que el controlador no acepta. Solo admite `'2006-01-02 15:04:05'` y ese mismo formato con un offset final. Los valores ISO 8601 con un separador `T` o un sufijo `Z` fallan. Convierta el valor en el SQL del handler con `CAST(ts AS TIMESTAMP)` o cambie el formato de la cadena. Consulte [Mapeo de tipos](#type-mapping).
+
+El error incluye el código `user.sink.encode_failed` y el proceso termina con el código 10. No se reintenta, ya que el valor fallaría en todos los intentos.
+
+### La canalización se ejecuta, pero las filas nunca aparecen {#trouble-no-rows}
+
+Revise la agrupación por lotes. Un batch se ejecuta y se inserta cuando han llegado `batch_size` mensajes o cuando transcurre `flush_interval_seconds` con un batch parcial pendiente, lo que ocurra primero. El valor predeterminado de `flush_interval_seconds` es `30`, por lo que un batch parcial en un topic de bajo volumen puede esperar hasta 30 segundos. Para agilizar las inserciones en un topic con poca actividad, reduzca `flush_interval_seconds`, que admite cualquier número entero de segundos, o bien reduzca `batch_size`. Con `--max-msgs`, el último batch parcial se inserta al finalizar.
+
+## Lecturas adicionales {#further-reading}
+
+* <a href="https://github.com/turbolytics/sql-flow" target="_blank">SQLFlow en GitHub</a>: referencia de configuración, todas las fuentes y destinos, políticas de gestión de errores y ventanas.
+* <a href="https://turbolytics.io/docs/sqlflow" target="_blank">Documentación de SQLFlow</a>: tutoriales, incluida una <a href="https://turbolytics.io/docs/sqlflow/tutorials/clickhouse-sink" target="_blank">guía más detallada sobre ClickHouse</a>.

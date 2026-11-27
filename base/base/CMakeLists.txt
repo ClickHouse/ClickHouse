@@ -36,6 +36,11 @@ set (SRCS
     wide_integer_to_string.cpp
 )
 
+# The UBSan runtime of a CFI diagnostic build lists modules through `dl_iterate_phdr` with a callback that has no CFI type.
+if (ENABLE_CFI_DIAGNOSTICS)
+    set_source_files_properties (phdr_cache.cpp PROPERTIES COMPILE_OPTIONS "-fno-sanitize=cfi-icall")
+endif ()
+
 add_library (common ${SRCS})
 
 if (WITH_COVERAGE)
@@ -52,6 +57,13 @@ endif ()
 
 if (TARGET ch_contrib::crc32_s390x)
     target_link_libraries(common PUBLIC ch_contrib::crc32_s390x)
+endif()
+
+if (TARGET ch_contrib::silk_fibers)
+    target_link_libraries(common PRIVATE ch_contrib::silk_fibers)
+    target_compile_definitions(common PRIVATE USE_SILK=1)
+else()
+    target_compile_definitions(common PRIVATE USE_SILK=0)
 endif()
 
 target_include_directories(common PUBLIC .. "${CMAKE_CURRENT_BINARY_DIR}/..")

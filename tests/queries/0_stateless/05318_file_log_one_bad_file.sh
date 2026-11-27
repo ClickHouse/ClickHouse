@@ -58,7 +58,9 @@ wait_for_rows 2
 ${CLICKHOUSE_CLIENT} -q "SELECT file, a FROM dst ORDER BY file, a"
 
 # The file becomes readable again without any event in the directory: it is retried and read.
-printf '{"a":100}\n' > "${target}"
+# The target appears complete at once: later writes to a symlink's target raise no event in the directory.
+printf '{"a":100}\n' > "${target}.tmp"
+mv "${target}.tmp" "${target}"
 wait_for_rows 3
 ${CLICKHOUSE_CLIENT} -q "SELECT file, a FROM dst WHERE file = 'broken.jsonl'"
 
@@ -134,7 +136,7 @@ ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_skip TO dst_skip AS SELECT 
 # `system.text_log` can be bigger than the `max_rows_to_read` limit of the test profile.
 skipped="SELECT extract(message, 'of file ([^ ]+) that') AS file, sum(toUInt64OrZero(extract(message, 'Skipped ([0-9]+) records'))) AS n
     FROM system.text_log
-    WHERE event_date >= yesterday() AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log_skip)')
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log_skip)')
         AND message LIKE 'Skipped % records of file %'
     GROUP BY file ORDER BY file"
 for _ in {1..120}; do
@@ -153,11 +155,11 @@ ${CLICKHOUSE_CLIENT} --max_rows_to_read 0 -q "
            countIf(message LIKE 'Skipped % of file bad.jsonl%') BETWEEN 1 AND 49,
            maxIf(toUInt64OrZero(extract(message, 'Skipped ([0-9]+) records')), message LIKE 'Skipped % of file bad.jsonl%') <= 10
     FROM system.text_log
-    WHERE event_date >= yesterday() AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log)')"
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log)')"
 ${CLICKHOUSE_CLIENT} --max_rows_to_read 0 -q "
     SELECT countIf(message LIKE 'Cannot open file %link.jsonl%')
     FROM system.text_log
-    WHERE event_date >= yesterday() AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log_sel)')"
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name LIKE concat('StorageFileLog (%', currentDatabase(), '%.file_log_sel)')"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE mv"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_count"

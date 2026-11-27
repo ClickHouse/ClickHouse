@@ -7,6 +7,7 @@ keywords: ['لغات بديلة للاستعلام', 'لهجات الاستعل�
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 بالإضافة إلى SQL القياسية، يدعم ClickHouse عدة لغات استعلام بديلة للاستعلام عن البيانات.
@@ -36,7 +37,7 @@ SET dialect = 'clickhouse'
 لتمكين PRQL:
 
 ```sql
-SET allow_experimental_prql_dialect = 1; -- this SET statement is required only for ClickHouse versions >= v25.1
+SET enable_prql_dialect = 1; -- before ClickHouse 26.11 the setting is named `allow_experimental_prql_dialect` (since 25.1)
 SET dialect = 'prql'
 ```
 
@@ -54,12 +55,12 @@ aggregate {
 
 ## Kusto Query Language (KQL) {#kusto-query-language-kql}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 لتمكين KQL:
 
 ```sql
-SET allow_experimental_kusto_dialect = 1; -- this SET statement is required only for ClickHouse versions >= 25.1
+SET enable_kusto_dialect = 1; -- before ClickHouse 26.11 the setting is named `allow_experimental_kusto_dialect` (since 25.1)
 SET dialect = 'kusto'
 ```
 
@@ -82,7 +83,7 @@ numbers(10) | project number
 └────────┘
 ```
 
-لاحظ أن استعلامات KQL قد لا تتمكن من الوصول إلى جميع الدوال المعرَّفة في ClickHouse.
+لاحظ أن استعلامات KQL قد لا تتمكن من الوصول إلى جميع الدوال المعرَّفة في ClickHouse.
 
 ## LogsQL {#logsql}
 
@@ -109,7 +110,7 @@ _time:5m error | stats by (level) count() as hits | sort by (hits desc)
 
 ## Trino SQL {#trino-sql}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 لتفعيل لهجة Trino:
 

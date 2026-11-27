@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['AWS', 'Lambda', 'OTEL', 'ClickStack', 'журналы', 'CloudWatch']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -28,13 +26,13 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 </Info>
 
 <div id="existing-lambda">
-  ## Интеграция с существующими функциями AWS Lambda
+  ## Интеграция с существующими функциями AWS Lambda {#existing-lambda}
 </div>
 
 В этом разделе описано, как настроить существующие функции AWS Lambda для отправки журналов и трейсов в ClickStack с помощью расширения Rotel Lambda Extension.
 
 <div id="prerequisites">
-  ### Требования
+  ### Требования {#prerequisites}
 </div>
 
 * Запущенный экземпляр ClickStack
@@ -66,7 +64,7 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
   <Step title="Добавьте слой Rotel в функцию Lambda" id="add-layer">
     *В этих примерах замените `{arch}`, `{region}` и `{version}` на соответствующие значения, указанные выше.*
 
-    ##### Вариант 1: консоль AWS
+##### Вариант 1: консоль AWS {#console}
 
     1. Откройте консоль AWS Lambda
     2. Перейдите к нужной функции Lambda
@@ -78,7 +76,7 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
        ```
     6. Нажмите **Add**
 
-    ##### Вариант 2: AWS CLI
+##### Вариант 2: AWS CLI {#cli}
 
     ```bash
     aws lambda update-function-configuration \
@@ -86,7 +84,7 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
       --layers arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
     ```
 
-    ##### Вариант 3: AWS SAM
+##### Вариант 3: AWS SAM {#sam}
 
     ```yaml
     Resources:
@@ -102,7 +100,7 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
   <Step title="Настройте расширение для экспорта в ClickStack" id="configure-extension">
     Rotel Lambda Extension настраивается с помощью переменных окружения. Вам нужно настроить конечную точку экспортера OTLP так, чтобы она указывала на ваш экземпляр ClickStack. В примерах предполагается, что ваша функция AWS Lambda может обращаться к экземпляру ClickStack.
 
-    ##### Базовая конфигурация (переменные окружения)
+##### Базовая конфигурация (переменные окружения) {#basic-config}
 
     Добавьте эти переменные окружения в функцию Lambda:
 
@@ -117,7 +115,7 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
     ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
     ```
 
-    ##### Расширенная конфигурация (с использованием файла .env)
+##### Расширенная конфигурация (с использованием файла .env) {#advanced-config}
 
     Для более сложных конфигураций создайте файл `rotel.env` в пакете вашей функции Lambda:
 
@@ -135,7 +133,7 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
     ROTEL_ENV_FILE=/var/task/rotel.env
     ```
 
-    ##### Использование AWS Secrets Manager или Parameter Store
+##### Использование AWS Secrets Manager или Parameter Store {#secrets}
 
     Для рабочих развертываний храните конфиденциальные значения, такие как ключи API, в AWS Secrets Manager или Parameter Store:
 
@@ -214,12 +212,20 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
     ```
   </Step>
 
-  <Step title="Проверьте логи в HyperDX" id="verify-logs">
-    После настройки войдите в HyperDX (интерфейс ClickStack) и убедитесь, что логи поступают:
+  <Step title="Проверьте логи в интерфейсе ClickStack" id="verify-logs">
+    После настройки войдите в интерфейс ClickStack и убедитесь, что логи поступают:
 
-    <Image img="/images/clickstack/lambda/lambda-log-view.webp" alt="Представление логов Lambda" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Представление логов Lambda](/images/clickstack/lambda/lambda-log-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/lambda/lambda-log.webp" alt="Подробности лога Lambda" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Подробности лога Lambda](/images/clickstack/lambda/lambda-log.webp)
+      </Frame>
+    </div>
 
     Проверьте наличие следующих ключевых атрибутов в логах:
 
@@ -232,7 +238,7 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 </Steps>
 
 <div id="disable-cloudwatch">
-  ## Отключение CloudWatch Logs (оптимизация затрат)
+  ## Отключение CloudWatch Logs (оптимизация затрат) {#disable-cloudwatch}
 </div>
 
 По умолчанию AWS Lambda отправляет все журналы в CloudWatch Logs, и при большом масштабе это может быть дорого. После того как вы убедитесь, что журналы поступают в ClickStack, можно отключить логирование в CloudWatch, чтобы сократить затраты.
@@ -253,7 +259,7 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
     Снова вызовите функцию и убедитесь, что:
 
     1. Новые потоки журналов в CloudWatch не создаются
-    2. Журналы по-прежнему появляются в ClickStack/HyperDX
+    2. Журналы по-прежнему появляются в ClickStack/интерфейсе ClickStack
 
     ```bash
     # После изменения политики здесь не должно быть новых потоков журналов
@@ -267,7 +273,7 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 </Steps>
 
 <div id="auto-instrumentation">
-  ## Добавление автоинструментирования OpenTelemetry
+  ## Добавление автоинструментирования OpenTelemetry {#auto-instrumentation}
 </div>
 
 Rotel Lambda Extension без проблем работает со слоями автоинструментирования OpenTelemetry, собирая распределённые трейсы и метрики в дополнение к журналам.
@@ -319,32 +325,26 @@ Rotel Lambda Extension без проблем работает со слоями 
     ```
   </Step>
 
-  <Step title="Проверьте трейсы в HyperDX" id="verify-traces">
+  <Step title="Проверьте трейсы в интерфейсе ClickStack" id="verify-traces">
     После вызова функции:
 
-    1. Перейдите в представление **Traces** в HyperDX
+    1. Перейдите в представление **Traces** в интерфейсе ClickStack
     2. Вы должны увидеть трейсы со спанами вашей Lambda-функции
     3. Трейсы будут коррелироваться с журналами по атрибутам `trace_id` и `span_id`
   </Step>
 </Steps>
 
-<div id="examples">
-  ## Примеры приложений
-</div>
+## Примеры приложений {#examples}
 
 Ознакомьтесь с примером приложения на Python, демонстрирующего Rotel Lambda Extension:
 
-* **[Python + ClickHouse](https://github.com/rotel-dev/python-aws-lambda-clickhouse-example)**: Приложение на Python с ручной инструментацией OpenTelemetry, отправляющее трейсы и журналы напрямую в ClickHouse
+* **[Python + ClickHouse](https://github.com/rotel-dev/python-aws-lambda-clickhouse-example)**: Приложение на Python с ручным инструментированием OpenTelemetry, отправляющее трейсы и журналы напрямую в ClickHouse
 
-<div id="join-rotel-community">
-  ## Присоединяйтесь к сообществу Rotel
-</div>
+## Присоединяйтесь к сообществу Rotel {#join-rotel-community}
 
 Если у вас есть вопросы о Rotel, присоединяйтесь к [серверу Rotel в Discord](https://rotel.dev/discord) и делитесь отзывами или задавайте вопросы. Также ознакомьтесь с [Rotel Lambda Extension](https://github.com/rotel-dev/rotel-lambda-extension), чтобы внести улучшения.
 
-<div id="resources">
-  ## Дополнительные ресурсы
-</div>
+## Дополнительные ресурсы {#resources}
 
 * **[Rotel Lambda Extension](https://github.com/rotel-dev/rotel-lambda-extension)**: Исходный код и подробная документация
 * **[Rotel Core](https://github.com/rotel-dev/rotel)**: Лёгкий компонент плоскости данных OTEL, на котором построено расширение

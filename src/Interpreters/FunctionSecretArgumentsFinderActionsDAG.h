@@ -34,13 +34,13 @@ public:
     {
     public:
         explicit ArgumentActionsDAG(const ActionsDAG::Node * argument_) : argument(unwrapAlias(argument_)) {}
-        std::unique_ptr<AbstractFunction> getFunction() const override
+        [[nodiscard]] std::unique_ptr<AbstractFunction> getFunction() const override
         {
             if (argument->type == ActionsDAG::ActionType::FUNCTION)
                 return std::make_unique<FunctionActionsDAG>(*argument);
             return nullptr;
         }
-        bool isIdentifier() const override { return argument->type == ActionsDAG::ActionType::INPUT; }
+        [[nodiscard]] bool isIdentifier() const override { return argument->type == ActionsDAG::ActionType::INPUT; }
         bool tryGetString(String * res, bool allow_identifier) const override
         {
             Field field;
@@ -92,8 +92,8 @@ public:
     {
     public:
         explicit ArgumentsActionsDAG(const ActionsDAG::NodeRawConstPtrs * arguments_) : arguments(arguments_) {}
-        size_t size() const override { return arguments ? arguments->size() : 0; }
-        std::unique_ptr<Argument> at(size_t n) const override
+        [[nodiscard]] size_t size() const override { return arguments ? arguments->size() : 0; }
+        [[nodiscard]] std::unique_ptr<Argument> at(size_t n) const override
         {
             return std::make_unique<ArgumentActionsDAG>(arguments->at(n));
         }
@@ -107,7 +107,7 @@ public:
             arguments = std::make_unique<ArgumentsActionsDAG>(&function->children);
     }
 
-    String name() const override { return function->function_base->getName(); }
+    [[nodiscard]] String name() const override { return function->function_base->getName(); }
 private:
     const ActionsDAG::Node * function = nullptr;
 };

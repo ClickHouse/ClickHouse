@@ -1,10 +1,9 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunction.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -31,23 +30,24 @@ public:
     {
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.peers = true};
+        return WindowFunctionRequirements{.peers_start = true};
     }
 
-    void evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
+    Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
     {
         auto & data = assert_cast<ColumnUInt64 &>(result).getData();
         for (Int64 i = 0; i < bounds.rows; ++i)
             data.push_back(bounds.peers_start[i] + 1);
+        return bounds.row.back() + 1;
     }
 };
 
 }
 
-void registerWindowFunctionRank(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
-void registerWindowFunctionRank(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
+void registerWindowFunctionRank(WindowFunctionFactory & factory);
+void registerWindowFunctionRank(WindowFunctionFactory & factory)
 {
     factory.registerFunction("rank", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings * settings)
@@ -61,7 +61,7 @@ void registerWindowFunctionRank(AggregateFunctionFactory & factory, const Aggreg
                     "Number of arguments for window function {} doesn't match: passed {}, should be 0. "
                     "Set `allow_rank_dense_rank_arguments = 1` to restore the legacy behavior of silently ignoring arguments.",
                     name, argument_types.size());
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionRank>(name, argument_types, parameters));
+            return std::make_shared<WindowFunctionRank>(name, argument_types, parameters);
         }, {.description = R"DOCS_MD(
 Ranks the current row within its partition with gaps. In other words, if the value of any row it encounters is equal to the value of a previous row then it will receive the same rank as that previous row.
 The rank of the next row is then equal to the rank of the previous row plus a gap equal to the number of times the previous rank was given.
@@ -125,7 +125,7 @@ FROM salaries;
 7. │ James Henderson │ 140000 │    7 │
    └─────────────────┴────────┴──────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}}, WindowFunctionFactory::Case::Insensitive);
 }
 
 }

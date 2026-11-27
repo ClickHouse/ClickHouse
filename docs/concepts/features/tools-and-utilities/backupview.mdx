@@ -23,7 +23,7 @@ from clickhouse_backupview import open_backup, S3, FileInfo
 # backup = open_backup("/backups/my_backup_1/")
 backup = open_backup(S3("uri", "access_key_id", "secret_access_key"))
 
-# Get a list of databasess inside the backup.
+# Get a list of databases inside the backup.
 print(backup.get_databases()))
 
 # Get a list of tables inside the backup,

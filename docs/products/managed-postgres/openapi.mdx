@@ -3,13 +3,9 @@ slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
 title: 'ClickHouse Managed Postgres OpenAPI'
 description: 'Control your ClickHouse Managed Postgres services with our OpenAPI'
-keywords: ['managed postgres', 'openapi', 'api', 'curl', 'tutorial', 'command line', 'query insights', 'slow queries', 'server logs', 'logs']
+keywords: ['managed postgres', 'openapi', 'api', 'curl', 'tutorial', 'command line', 'query insights', 'slow queries', 'blocking queries', 'server logs', 'logs']
 doc_type: 'guide'
 ---
-
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.openapi-beta" />
 
 Use the [ClickHouse OpenAPI](/products/cloud/features/admin-features/api/api-overview) to programmatically
 control your ClickHouse Managed Postgres services just like ClickHouse services. The
@@ -298,7 +294,8 @@ list of metrics.
 The per-statement telemetry behind the [Query Insights] tab in the cloud
 console is also available programmatically. Two endpoints expose the slowest
 query patterns on a service: one lists every pattern ranked by impact, the
-other returns a single pattern with its recent executions.
+other returns a single pattern with its recent executions. A third lists the
+queries that waited on locks and the sessions that blocked them.
 
 ### List slow query patterns {#list-slow-query-patterns}
 
@@ -418,6 +415,78 @@ time, parallel workers, JIT, and WAL — the same counters the
 The example trims both objects for brevity; the API returns the complete
 counter set documented under [per-execution counters].
 
+### List blocking queries {#list-blocking-queries}
+
+The [blocking queries API] returns the same groups as the
+[Blocking queries] table in the console: each result pairs one waiting query
+with one direct blocker, most frequently seen first. It has data only for
+periods when blocking query collection was on for the service. Pass
+`from_date` and `to_date` as RFC 3339 timestamps. `to_date` must be after
+`from_date`, and the range must not exceed 31 days:
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/blockingQueries?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+Filter by the waiting sessions' `db_name`, `db_user`, or `app`; an empty
+`app=` matches sessions with no application name. Page through the results
+with `limit` (up to 2000, default 50) and `offset`, and use `totalCount` to
+see how many groups match.
+
+Fields that start with `blocked` describe the waiting sessions, and fields
+that start with `blocking` describe the blocker. `lockType`, `blockedMode`,
+and the `latest*` fields come from the most recent sample:
+
+```json
+{
+  "result": [
+    {
+      "database": "sales",
+      "blockedQueryId": "9184467440737095516",
+      "blockedQuery": "UPDATE orders SET status = $1 WHERE id = $2",
+      "blockedUsers": ["orders_service"],
+      "blockedApps": ["orders-api"],
+      "blockedPids": [8121, 8119],
+      "lockType": "transactionid",
+      "blockedMode": "ShareLock",
+      "blockingDatabase": "sales",
+      "blockingQueryId": "1311768467294899695",
+      "blockingQuery": "SELECT * FROM orders WHERE id = $1 FOR UPDATE",
+      "blockingUsers": ["batch"],
+      "blockingApps": ["nightly-job"],
+      "blockingPids": [7744],
+      "blockingPrepared": false,
+      "blockingInternal": false,
+      "latestBlockingState": "idle in transaction",
+      "latestBlockingXactSeconds": 190.5,
+      "latestBlockingBackendType": "client backend",
+      "blockingSeenWaiting": false,
+      "sessions": 2,
+      "samples": 4,
+      "longestWaitSeconds": 182.25,
+      "lastSeen": "2026-05-25T14:06:00Z"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "totalCount": 1,
+  "requestId": "4f8d2c1e-6a3b-4e9f-9c7d-2b1a0e5f8c36",
+  "status": 200
+}
+```
+
+As in the console, `blockingQuery` is the blocker's current or most recent
+statement, which may not be the one that took the lock. `blockedQuery` and
+`blockingQuery` are empty when Query Insights has no text for the statement,
+and `blockingQuery` is also empty when `blockingInternal` or
+`blockingPrepared` is `true`. A prepared transaction reports `blockingPids`
+as `[0]`.
+
 ## Server logs {#server-logs}
 
 The PostgreSQL server logs behind the logs viewer in the cloud console are also
@@ -498,11 +567,15 @@ count; advance `offset` until a page returns fewer than `limit` entries.
   "Postgres query insights"
 [detail flyout]: /products/managed-postgres/monitoring/query-insights#detail
   "Query insights detail flyout"
+[Blocking queries]: /products/managed-postgres/monitoring/query-insights#blocking-queries
+  "Query insights blocking queries"
 [per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters
   "Query insights per-execution counters"
 [slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list
   "List Postgres slow query patterns"
 [slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get
   "Get a Postgres slow query pattern with recent executions"
+[blocking queries API]: /products/cloud/api-reference/postgres/postgres-blocking-queries-get-list
+  "List Postgres blocking queries"
 [logs API]: /products/cloud/api-reference/postgres/postgres-logs-get-list
   "List Postgres server logs"

@@ -5,6 +5,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `clickhouse-local` caches the schemas given with `format_schema_source` under its working directory.
+WORKDIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+mkdir -p "$WORKDIR"
+cd "$WORKDIR" || exit 1
+
 # A chain of distinct messages, each having a field of the type of the next one, is not limited
 # by the protobuf library, but was processed recursively both by the schema inference and while
 # building the serializer, so a long chain used to exhaust the thread stack.
@@ -70,3 +75,5 @@ DESC format(Protobuf, '')
 SETTINGS format_schema_source = 'string', format_schema = '$SHALLOW_SCHEMA', format_schema_message_name = 'Root',
     input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference = 1
 "
+
+rm -rf "$WORKDIR"

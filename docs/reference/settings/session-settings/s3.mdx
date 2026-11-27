@@ -73,6 +73,18 @@ Possible values:
 
 Maximum number of files that could be returned in batch by ListObject request
 
+## s3_list_object_parallelism {#s3_list_object_parallelism}
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "New setting to list globbed paths on S3-compatible object storage (the `s3` and `s3Cluster` table functions, the `S3` table engine, and their `gcs`, `cosn`, `oss` aliases) with several concurrent `ListObjects` requests by walking the common-prefix tree in parallel."}]}]}/>
+
+Number of concurrent `ListObjects` requests used to list files when the path contains globs, for reads from S3-compatible object storage: the `s3` table function, the `S3` table engine, the `s3Cluster` table function, and the `gcs`, `cosn`, `oss` aliases of them.
+
+When greater than `1`, the matching files are listed by walking the "directory" tree (the common prefixes formed by the `/` delimiter) with this many threads in parallel, instead of paginating the whole prefix in a single serial stream. This can dramatically speed up queries over buckets with millions of objects, especially for hierarchically partitioned layouts (e.g. `year=*/month=*/`), where whole non-matching subtrees are pruned during the walk.
+
+A value of `1` (the default) keeps the previous serial listing behavior. Recursive globs (`**`) always use serial listing.
+
 ## s3_min_upload_part_size {#s3_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />
@@ -87,6 +99,16 @@ The minimum size of part to upload during multipart upload to S3.
 
 Maximum number of `_path` values that can be extracted from query filters to use for file iteration
 instead of glob listing. 0 means disabled.
+
+## s3_request_payer {#s3_request_payer}
+
+<SettingsInfoBlock type="S3RequestPayer" default_value="none" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "none"},{"label": "New setting to access requester-pays S3 buckets."}]}]}/>
+
+Set to `requester` to access a requester-pays `S3` bucket: every request then carries the header `x-amz-request-payer: requester`, so the requester pays for the request and the data transfer. Possible values: `none` (default, the header is not sent), `requester`.
+
+It takes effect when the `S3` client is created, so it applies to query-scoped uses such as the `s3` table function and `BACKUP ... TO S3`; a later per-query `SET` does not reconfigure an already-created long-lived client such as an `S3` disk or an `S3` table with its own credentials. For those, use the `request_payer` key of an endpoint section of the `<s3>` server configuration or of the disk definition, which also takes precedence over this setting.
 
 ## s3_request_timeout_ms {#s3_request_timeout_ms}
 
@@ -105,6 +127,18 @@ Enables or disables skipping empty files in [S3](/reference/engines/table-engine
 Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
+
+## s3_skip_hidden_files {#s3_skip_hidden_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting: skip objects with a path segment starting with `_` or `.` below the non-glob prefix when listing files by glob, like other Hive-ecosystem readers do. Tables with `partition_strategy = 'hive'` always skip such paths."}]}]}/>
+
+Enables or disables skipping hidden paths when listing files by glob in [S3](/reference/engines/table-engines/integrations/s3) engine tables: objects with a path segment starting with `_` or `.` below the non-glob prefix of the path. A segment containing `=` is a partition directory (such as `_p=1` for a partition column `_p`) and is not hidden. Hive-ecosystem writers (Hive, Spark, Trino) stage in-progress output and write marker objects under such paths (`_temporary/`, `.spark-staging-<id>/`, `_SUCCESS`), and reading them races with the writer's commit: the query can return uncommitted data or fail when the writer renames or deletes the staged object mid-read. Segments within the non-glob prefix are not checked. Tables with `partition_strategy = 'hive'` always skip hidden paths regardless of this setting.
+
+Possible values:
+- 0 — every object matched by the glob is read.
+- 1 — objects with a hidden path segment below the non-glob prefix are skipped.
 
 ## s3_slow_all_threads_after_network_error {#s3_slow_all_threads_after_network_error}
 

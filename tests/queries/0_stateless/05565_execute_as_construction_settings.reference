@@ -1,0 +1,14 @@
+-- limit, offset
+2
+-- page
+3
+-- sort
+3
+-- select, filter, order
+30
+20
+-- UNION with query-level SETTINGS
+1
+2
+-- EXPLAIN
+filtered

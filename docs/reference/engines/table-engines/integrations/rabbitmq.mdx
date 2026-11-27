@@ -45,6 +45,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [rabbitmq_password = '',]
     [rabbitmq_commit_on_select = false,]
     [rabbitmq_max_rows_per_message = 1,]
+    [rabbitmq_max_idle_producer_connections = 0,]
     [rabbitmq_handle_error_mode = 'default']
 ```
 
@@ -75,6 +76,7 @@ Optional parameters:
 - `reject_unhandled_messages` - Reject messages (send RabbitMQ negative acknowledgement) in case of errors. This setting is automatically enabled if there is a `x-dead-letter-exchange` defined in `rabbitmq_queue_settings_list`.
 - `rabbitmq_commit_on_select` - Commit messages when select query is made. Default: `false`.
 - `rabbitmq_max_rows_per_message` — The maximum number of rows written in one RabbitMQ message for row-based formats. Default : `1`.
+- `rabbitmq_max_idle_producer_connections` - The maximum number of idle connections, each with an open channel, that the table keeps for subsequent `INSERT` queries. Reusing them avoids the cost of connecting to RabbitMQ (and of the TLS handshake) for every `INSERT`, for example when a materialized view writes to the table on each insert into its source. Idle connections are checked every few seconds: a connection that stayed idle for half of the heartbeat timeout negotiated with the server is closed, because the server closes it once the timeout passes, and so is a connection that was lost. `0` disables the reuse: every `INSERT` opens and closes its own connection. Default: `0`.
 - `rabbitmq_empty_queue_backoff_start_ms` — A start backoff point to reschedule read if the rabbitmq queue is empty.
 - `rabbitmq_empty_queue_backoff_end_ms` — An end backoff point to reschedule read if the rabbitmq queue is empty.
 - `rabbitmq_empty_queue_backoff_step_ms` — A backoff step to reschedule read if the rabbitmq queue is empty.

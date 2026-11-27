@@ -32,7 +32,7 @@ public:
     {
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// `checkArguments(..., is_result_type_date_or_date32=true)` originally disallowed a
         /// timezone arg when the 1st argument was Date or Date32; only DateTime/DateTime64
@@ -54,7 +54,7 @@ public:
             " OR (DateTime | DateTime64, [const tz String]) -> Date";
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// Preserve the legacy rejection of an explicitly provided empty timezone for the
         /// DateTime/DateTime64 inputs that accept the optional 2nd argument.
@@ -68,7 +68,7 @@ public:
         return result;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);

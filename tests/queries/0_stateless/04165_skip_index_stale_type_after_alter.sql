@@ -34,7 +34,7 @@ KILL MUTATION WHERE table = 't_stale_plain' AND database = currentDatabase() FOR
 SELECT count() FROM t_stale_plain WHERE value = 150;
 
 SELECT '-- 3. JSON type hint, no mutation is ever created';
-SET enable_json_lazy_type_hints = 1, enable_json_type = 1;
+SET enable_json_lazy_type_hints = 1;
 DROP TABLE IF EXISTS t_stale_json;
 CREATE TABLE t_stale_json (k UInt64, j JSON, INDEX idx j.a TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;

@@ -19,6 +19,16 @@ if (NOT ENABLE_PARQUET)
     return()
 endif()
 
+# The native Parquet reader and writer (`src/Processors/Formats/Impl/Parquet`) and the native `Arrow`
+# and `ArrowStream` formats (`src/Processors/Formats/Impl/ArrowIPC`) need only the Thrift-generated
+# Parquet structures and the FlatBuffers-generated Arrow IPC bindings defined below. The Apache Arrow
+# C++ library and parquet-cpp are needed for the rest: the `ParquetMetadata` format,
+# Hive, the legacy Delta Lake reader, and delta-kernel-rs.
+option (ENABLE_ARROW_LIBRARY "Enable the Apache Arrow C++ library and parquet-cpp (not needed for the Parquet and Arrow formats)" ${ENABLE_LIBRARIES})
+if (NOT ENABLE_ARROW_LIBRARY)
+    message(STATUS "Not using the Apache Arrow C++ library")
+endif()
+
 # Support C11
 if(NOT DEFINED CMAKE_C_STANDARD)
   set(CMAKE_C_STANDARD 11)
@@ -59,7 +69,7 @@ set(ARROW_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
 # version they were produced with, so regenerate them with our `flatc`. The flags are from Arrow's
 # `cpp/build-support/update-flatbuffers.sh`, minus `--scoped-enums`, which Arrow's code does not use.
 
-if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
+if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
     set(FLATC_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/flatbuffers-cmake/flatc")
 else ()
     set(FLATC_EXECUTABLE $<TARGET_FILE:flatc>)
@@ -110,6 +120,56 @@ target_include_directories(_arrow_ipc_metadata SYSTEM INTERFACE "${ARROW_IPC_GEN
 target_link_libraries(_arrow_ipc_metadata INTERFACE ch_contrib::flatbuffers)
 add_dependencies(_arrow_ipc_metadata _arrow_ipc_generated)
 add_library(ch_contrib::arrow_ipc_metadata ALIAS _arrow_ipc_metadata)
+
+# === Parquet format
+# The structures generated from `parquet.thrift` with the minimal Thrift runtime to (de)serialize them:
+# everything the native Parquet reader and writer need from third-party code. The generated header is
+# exposed from a directory of its own, so that the code using it cannot include Arrow headers by accident.
+#
+# The enums are given the fixed underlying type `int32_t`, the type of a Thrift enum on the wire. Without it, a value
+# outside the range of an enum, which a corrupted file may contain, is undefined behavior as soon as it is loaded, and
+# the generated code loads it before the reader can validate it: e.g. when a vector of `SchemaElement` grows and moves
+# its elements. With a fixed underlying type, every `int32_t` is a valid value of the enum.
+set(PARQUET_FORMAT_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/parquet_format_include")
+foreach (file parquet_types.h parquet_types.tcc parquet_types.cpp)
+    set(source "${ARROW_SRC_DIR}/generated/${file}")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${source}")
+    file(READ "${source}" content)
+    string(REPLACE "  enum type {" "  enum type : int32_t {" content "${content}")
+    set(output "${PARQUET_FORMAT_INCLUDE_DIR}/generated/${file}")
+    set(previous_content "")
+    if (EXISTS "${output}")
+        file(READ "${output}" previous_content)
+    endif()
+    # Rewriting an unchanged file would rebuild everything that includes it after each run of CMake.
+    if (NOT previous_content STREQUAL content)
+        file(WRITE "${output}" "${content}")
+    endif()
+endforeach()
+file(READ "${PARQUET_FORMAT_INCLUDE_DIR}/generated/parquet_types.h" content)
+string(REGEX MATCHALL "enum type {" unfixed_enums "${content}")
+if (unfixed_enums)
+    message(FATAL_ERROR "Not all enums of parquet_types.h got a fixed underlying type")
+endif()
+# The only Arrow header included by the generated code. It does nothing outside Windows.
+file(WRITE "${PARQUET_FORMAT_INCLUDE_DIR}/parquet/windows_compatibility.h" "#pragma once\n")
+
+add_library(_parquet_format "${PARQUET_FORMAT_INCLUDE_DIR}/generated/parquet_types.cpp")
+target_include_directories(_parquet_format SYSTEM PUBLIC "${PARQUET_FORMAT_INCLUDE_DIR}")
+target_link_libraries(_parquet_format PUBLIC ch_contrib::thrift_minimal)
+add_library(ch_contrib::parquet_format ALIAS _parquet_format)
+# `${ARROW_SRC_DIR}` has the original `generated/parquet_types.h`. Every target exposing that directory also puts the
+# rewritten copy first, so that no translation unit sees the other declaration of the enums (that would violate the
+# ODR), whatever the order of the libraries a consumer links.
+target_include_directories(_arrow_ipc_metadata SYSTEM BEFORE INTERFACE "${PARQUET_FORMAT_INCLUDE_DIR}")
+
+# === Arrow Flight protocol
+
+include(flight.cmake)
+
+if (NOT ENABLE_ARROW_LIBRARY)
+    return()
+endif()
 
 
 # ===  hdfs
@@ -426,18 +486,15 @@ target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src")
 # Must come before ${ARROW_SRC_DIR}, so that our generated bindings shadow the ones Arrow ships.
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_IPC_GENERATED_INCLUDE_DIR})
+# Must come before ${ARROW_SRC_DIR}, see `_parquet_format`.
+target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${PARQUET_FORMAT_INCLUDE_DIR}")
 add_dependencies(_arrow _arrow_ipc_generated)
 
 target_include_directories(_arrow SYSTEM PRIVATE ${HDFS_INCLUDE_DIR})
 
-# === arrow flight
-
-include(flight.cmake)
-
 # === parquet
 
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/parquet")
-set(GEN_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/generated")
 # arrow/cpp/src/parquet/CMakeLists.txt
 set(PARQUET_SRCS
         "${LIBRARY_DIR}/arrow/fuzz_internal.cc"
@@ -494,8 +551,6 @@ set(PARQUET_SRCS
         "${LIBRARY_DIR}/stream_writer.cc"
         "${LIBRARY_DIR}/types.cc"
         "${LIBRARY_DIR}/xxhasher.cc"
-
-        "${GEN_LIBRARY_DIR}/parquet_types.cpp"
         )
 #list(TRANSFORM PARQUET_SRCS PREPEND "${LIBRARY_DIR}/") # cmake 3.12
 
@@ -511,6 +566,7 @@ add_library(ch_contrib::parquet ALIAS _parquet)
 target_include_directories(_parquet SYSTEM BEFORE
     PUBLIC
         # Same as for `_arrow`: must come before the Arrow source directory.
+        "${PARQUET_FORMAT_INCLUDE_DIR}"
         "${ARROW_IPC_GENERATED_INCLUDE_DIR}"
         "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/cpp/src")
@@ -518,7 +574,7 @@ add_dependencies(_parquet _arrow_ipc_generated)
 target_link_libraries(_parquet
     PUBLIC
         _arrow
-        ch_contrib::thrift
+        _parquet_format
     PRIVATE
         boost::headers_only
         boost::regex

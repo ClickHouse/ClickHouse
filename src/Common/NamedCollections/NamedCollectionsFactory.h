@@ -25,10 +25,10 @@ struct NamedCollectionDependency
     NamedCollectionDependency(const String & collection_name_, const StorageID & table_id_)
         : collection_name(collection_name_), table_id(table_id_) {}
 
-    const String & getCollectionName() const { return collection_name; }
-    const String & getDatabaseName() const { return table_id.database_name; }
-    const String & getTableName() const { return table_id.table_name; }
-    UUID getUUID() const { return table_id.uuid; }
+    [[nodiscard]] const String & getCollectionName() const { return collection_name; }
+    [[nodiscard]] const String & getDatabaseName() const { return table_id.database_name; }
+    [[nodiscard]] const String & getTableName() const { return table_id.table_name; }
+    [[nodiscard]] UUID getUUID() const { return table_id.uuid; }
 };
 
 struct Collection {};
@@ -95,7 +95,18 @@ public:
         /// Only set when `is_replicated` is true: identifies the shared storage for backup coordination.
         std::string replication_id;
     };
+    /// Never loads the key of an encrypted storage: BACKUP and RESTORE ask for these properties
+    /// before knowing whether they carry any collection, and a backup or restore carrying none
+    /// must not depend on the key being loadable.
     MetadataStorageProperties getMetadataStorageProperties();
+
+#if CLICKHOUSE_CLOUD && USE_SSL
+    /// Describes the key of the metadata storage, which must be encrypted (see
+    /// `MetadataStorageProperties::is_encrypted`), see
+    /// NamedCollectionsMetadataStorage::getEncryptionKeyInfo. Loads the key if it is not loaded
+    /// yet, so this must be asked only when the key is needed anyway.
+    NamedCollectionsEncryptionKeyInfo getEncryptionKeyInfo();
+#endif
 
     /// Stored bytes of the SQL-created collections, exactly as the metadata storage holds them,
     /// keyed by the collection name. Never decrypts anything.
@@ -135,6 +146,19 @@ protected:
     bool exists(
         const std::string & collection_name,
         std::lock_guard<std::mutex> & lock) const;
+
+    /// A collection missing from `loaded_named_collections` may still be in the metadata storage:
+    /// created through another server sharing the storage and not picked up by the background
+    /// update yet, or an entry which cannot be decrypted (see `NamedCollectionsMetadataStorage::getAll`).
+    enum class StoredEntry
+    {
+        none,
+        loaded, /// Readable, and in `loaded_named_collections` now.
+        unreadable,
+    };
+
+    /// Loads a collection missing from `loaded_named_collections` if the storage holds it and it is readable.
+    StoredEntry loadIfInStorage(const std::string & collection_name, std::lock_guard<std::mutex> & lock);
 
     MutableNamedCollectionPtr getMutable(const std::string & collection_name, std::lock_guard<std::mutex> & lock) const;
 

@@ -16,5 +16,23 @@
     <query>SELECT sum(cityHash64(s)) FROM t_string_filter_perf PREWHERE endsWith(s, 'needle') SETTINGS apply_string_filters_during_scan = 1</query>
     <query>SELECT sum(cityHash64(s)) FROM t_string_filter_perf PREWHERE startsWith(s, 'payload 1234') SETTINGS apply_string_filters_during_scan = 1</query>
 
+    <!-- Parquet dictionary columns with short RLE runs, the shape of TPC-DS `customer_demographics`. -->
+    <create_query>
+        CREATE TABLE t_string_filter_parquet (id UInt64, g String, m String, e String) ENGINE = File(Parquet)
+    </create_query>
+
+    <fill_query>
+        INSERT INTO t_string_filter_parquet
+        SELECT
+            number,
+            ['M', 'F'][number % 2 + 1],
+            ['S', 'M', 'D', 'W', 'U'][intDiv(number, 2) % 5 + 1],
+            ['Primary', 'Secondary', 'College', '2 yr Degree', '4 yr Degree', 'Advanced Degree', 'Unknown'][intDiv(number, 10) % 7 + 1]
+        FROM numbers(10000000)
+    </fill_query>
+
+    <query>SELECT count(), sum(id) FROM t_string_filter_parquet PREWHERE g = 'M' AND m = 'S' AND e = 'College'</query>
+
     <drop_query>DROP TABLE IF EXISTS t_string_filter_perf</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_string_filter_parquet</drop_query>
 </test>

@@ -34,7 +34,7 @@ CallsData::CallsData(std::optional<Duration> tickets_lifetime_, std::optional<Du
 {
 }
 
-std::shared_ptr<const TicketInfo> CallsData::createTicket(std::shared_ptr<arrow::Table> arrow_table)
+std::shared_ptr<const TicketInfo> CallsData::createTicket(std::shared_ptr<const ArrowIPC::EncodedStream> table)
 {
     String ticket = generateTicketName();
     LOG_DEBUG(log, "Creating ticket {}", ticket);
@@ -42,7 +42,7 @@ std::shared_ptr<const TicketInfo> CallsData::createTicket(std::shared_ptr<arrow:
     auto info = std::make_shared<TicketInfo>();
     info->ticket = ticket;
     info->expiration_time = expiration_time;
-    info->arrow_table = arrow_table;
+    info->table = std::move(table);
     std::lock_guard lock{mutex};
     bool inserted = tickets.try_emplace(ticket, info).second;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     chassert(inserted); /// Flight tickets are unique.
@@ -55,12 +55,12 @@ std::shared_ptr<const TicketInfo> CallsData::createTicket(std::shared_ptr<arrow:
     return info;
 }
 
-arrow::Result<std::shared_ptr<const TicketInfo>> CallsData::getTicketInfo(const String & ticket) const
+Result<std::shared_ptr<const TicketInfo>> CallsData::getTicketInfo(const String & ticket) const
 {
     std::lock_guard lock{mutex};
     auto it = tickets.find(ticket);
     if (it == tickets.end())
-        return arrow::Status::KeyError("Ticket ", quoteString(ticket), " not found");
+        return Status::KeyError("Ticket ", quoteString(ticket), " not found");
     return it->second;
 }
 
@@ -151,7 +151,7 @@ void CallsData::eraseFlightDescriptorMapEntry(const String & flight_descriptor)
 }
 
 std::shared_ptr<const PollDescriptorInfo>
-CallsData::createPollDescriptorImpl(std::unique_ptr<PollSession> poll_session, std::shared_ptr<const PollDescriptorInfo> previous_info, std::optional<arrow::flight::FlightDescriptor> flight_descriptor, std::optional<String> query_id)
+CallsData::createPollDescriptorImpl(std::unique_ptr<PollSession> poll_session, std::shared_ptr<const PollDescriptorInfo> previous_info, std::optional<arrow::flight::protocol::FlightDescriptor> flight_descriptor, std::optional<String> query_id)
 {
     String poll_descriptor;
     std::lock_guard lock{mutex};
@@ -207,17 +207,17 @@ CallsData::createPollDescriptor(std::unique_ptr<PollSession> poll_session, std::
 }
 
 std::shared_ptr<const PollDescriptorInfo>
-CallsData::createPollDescriptor(std::unique_ptr<PollSession> poll_session, const arrow::flight::FlightDescriptor & flight_descriptor, const String & query_id)
+CallsData::createPollDescriptor(std::unique_ptr<PollSession> poll_session, const arrow::flight::protocol::FlightDescriptor & flight_descriptor, const String & query_id)
 {
     return createPollDescriptorImpl(std::move(poll_session), nullptr, flight_descriptor, query_id);
 }
 
-arrow::Result<std::shared_ptr<const PollDescriptorInfo>> CallsData::getPollDescriptorInfo(const String & poll_descriptor) const
+Result<std::shared_ptr<const PollDescriptorInfo>> CallsData::getPollDescriptorInfo(const String & poll_descriptor) const
 {
     std::lock_guard lock{mutex};
     auto it = poll_descriptors.find(poll_descriptor);
     if (it == poll_descriptors.end())
-        return arrow::Status::KeyError("Poll descriptor ", quoteString(poll_descriptor), " not found");
+        return Status::KeyError("Poll descriptor ", quoteString(poll_descriptor), " not found");
     return it->second;
 }
 
@@ -246,15 +246,15 @@ PollDescriptorWithExpirationTime CallsData::getPollDescriptorWithExpirationTime(
     return *it->second;
 }
 
-arrow::Status CallsData::extendPollDescriptorExpirationTime(const String & poll_descriptor)
+Status CallsData::extendPollDescriptorExpirationTime(const String & poll_descriptor)
 {
     if (!poll_descriptors_lifetime)
-        return arrow::Status::OK();
+        return Status::OK();
     auto current_time = now();
     std::lock_guard lock{mutex};
     auto it = poll_descriptors.find(poll_descriptor);
     if (it == poll_descriptors.end())
-        return arrow::Status::KeyError("Poll descriptor ", quoteString(poll_descriptor), " not found");
+        return Status::KeyError("Poll descriptor ", quoteString(poll_descriptor), " not found");
     auto info = it->second;
     auto old_expiration_time = info->expiration_time;
     auto new_expiration_time = calculatePollDescriptorExpirationTime(current_time);
@@ -264,19 +264,19 @@ arrow::Status CallsData::extendPollDescriptorExpirationTime(const String & poll_
     poll_descriptors_by_expiration_time.erase(std::make_pair(*old_expiration_time, poll_descriptor));
     poll_descriptors_by_expiration_time.emplace(*new_expiration_time, poll_descriptor);
     updateNextExpirationTime();
-    return arrow::Status::OK();
+    return Status::OK();
 }
 
-arrow::Result<std::unique_ptr<PollSession>> CallsData::startEvaluation(const String & poll_descriptor)
+Result<std::unique_ptr<PollSession>> CallsData::startEvaluation(const String & poll_descriptor)
 {
-    arrow::Result<std::unique_ptr<PollSession>> res;
+    Result<std::unique_ptr<PollSession>> res;
     std::unique_lock lock{mutex};
     evaluation_ended.wait(lock, [&]() TSA_REQUIRES(mutex)
     {
         auto it = poll_descriptors.find(poll_descriptor);
         if (it == poll_descriptors.end())
         {
-            res = arrow::Status::KeyError("Poll descriptor ", quoteString(poll_descriptor), " not found");
+            res = Status::KeyError("Poll descriptor ", quoteString(poll_descriptor), " not found");
             return true;
         }
         auto info = it->second;
@@ -325,7 +325,7 @@ void CallsData::endEvaluation(const String & poll_descriptor, const std::optiona
     auto new_info = std::make_shared<PollDescriptorInfo>(*info);
     new_info->evaluating = false;
     new_info->evaluated = true;
-    new_info->status = arrow::Status::OK();
+    new_info->status = Status::OK();
     new_info->ticket = ticket;
     new_info->rows = rows;
     new_info->bytes = bytes;
@@ -343,7 +343,7 @@ void CallsData::endEvaluation(const String & poll_descriptor, const std::optiona
     evaluation_ended.notify_all();
 }
 
-void CallsData::endEvaluationWithError(const String & poll_descriptor, const arrow::Status & error_status)
+void CallsData::endEvaluationWithError(const String & poll_descriptor, const Status & error_status)
 {
     chassert(!error_status.ok());
     std::lock_guard lock{mutex};
@@ -550,7 +550,7 @@ String CallsData::generatePreparedStatementHandle()
     return PREPARED_STATEMENT_HANDLE_PREFIX + toString(UUIDHelpers::generateV4());
 }
 
-arrow::Result<String> CallsData::createPreparedStatement(PreparedStatementInfo info, const String & session_id, std::optional<Duration> session_timeout)
+Result<String> CallsData::createPreparedStatement(PreparedStatementInfo info, const String & session_id, std::optional<Duration> session_timeout)
 {
     String handle = generatePreparedStatementHandle();
     LOG_DEBUG(log, "Creating prepared statement {} for user {}", handle, info.username);
@@ -567,7 +567,7 @@ arrow::Result<String> CallsData::createPreparedStatement(PreparedStatementInfo i
     {
         auto & by_user = prep_statements.get<ByUsername>();
         if (by_user.count(shared_info->username) >= max_prepared_statements_per_user)
-            return arrow::Status::CapacityError(
+            return Status::CapacityError(
                 "Too many prepared statements for user ", shared_info->username,
                 " (limit: ", std::to_string(max_prepared_statements_per_user), ")");
     }
@@ -577,41 +577,38 @@ arrow::Result<String> CallsData::createPreparedStatement(PreparedStatementInfo i
     return handle;
 }
 
-arrow::Result<PreparedStatementInfo> CallsData::getPreparedStatement(const String & handle, const String & username) const
+Result<PreparedStatementInfo> CallsData::getPreparedStatement(const String & handle, const String & username) const
 {
     std::lock_guard lock{mutex};
     const auto & by_handle = prep_statements.get<ByHandle>();
     auto it = by_handle.find(handle);
     if (it == by_handle.end())
-        return arrow::Status::KeyError("Prepared statement handle not found");
+        return Status::KeyError("Prepared statement handle not found");
     if (it->username != username)
-        return arrow::Status::KeyError("Prepared statement handle not found");
+        return Status::KeyError("Prepared statement handle not found");
     return *it->info;
 }
 
-arrow::Status CallsData::bindParameters(const String & handle, const String & username, std::shared_ptr<arrow::RecordBatch> params)
+Status CallsData::bindParameters(const String & handle, const String & username, std::optional<Strings> params)
 {
     std::lock_guard lock{mutex};
     auto & by_handle = prep_statements.get<ByHandle>();
     auto it = by_handle.find(handle);
     if (it == by_handle.end())
-        return arrow::Status::KeyError("Prepared statement handle not found");
+        return Status::KeyError("Prepared statement handle not found");
     if (it->username != username)
-        return arrow::Status::KeyError("Prepared statement handle not found");
+        return Status::KeyError("Prepared statement handle not found");
 
     const auto & ps_info = it->info;
     size_t num_params = ps_info->numParams();
 
-    if (params && params->num_rows() > 1)
-        return arrow::Status::NotImplemented("Multiple parameter sets are not supported (got ", params->num_rows(), " rows)");
-
-    if (params && params->num_rows() > 0 && static_cast<size_t>(params->num_columns()) != num_params)
-        return arrow::Status::Invalid(
+    if (params && params->size() != num_params)
+        return Status::Invalid(
             "Parameter count mismatch: query has ", num_params,
-            " '?' placeholders but ", params->num_columns(), " columns were bound");
+            " '?' placeholders but ", params->size(), " columns were bound");
 
     it->info->bound_parameters = std::move(params);
-    return arrow::Status::OK();
+    return Status::OK();
 }
 
 void CallsData::closePreparedStatement(const String & handle, const String & username)

@@ -133,7 +133,7 @@ ReachableFilesResult collectReachableFiles(
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const String & table_identifier)
 {
-    auto [version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+    auto [version, metadata_path, compression_method, _] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
         table_identifier,

@@ -988,18 +988,15 @@ ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Resp
 
     if (check_session_valid)
     {
-        if (code != Coordination::Error::ZOK && !Coordination::isHardwareError(code)
-            && getFailedOpIndex(code, responses) == requests.size())
+        if (Coordination::isUserError(code) && getFailedOpIndex(code, responses) == requests.size())
         {
             reason = fmt::format("Session was killed: {}", requests_with_check_session.back()->getPath());
             impl->finalize(reason);
             code = Coordination::Error::ZSESSIONMOVED;
         }
         responses.pop_back();
-        /// For some reason, for hardware errors we set ZOK codes for all responses.
-        /// In other cases, if the multi-request status is not ZOK, then the last response status must indicate an error too
-        chassert(
-            code == Coordination::Error::ZOK || Coordination::isHardwareError(code) || responses.back()->error != Coordination::Error::ZOK);
+        /// Only a user error points at a failed operation, the last one is then failed too.
+        chassert(!Coordination::isUserError(code) || responses.back()->error != Coordination::Error::ZOK);
     }
 
     maybeSetSpanStatus(maybe_span, code);
@@ -1420,11 +1417,16 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
         if (!state->event.tryWait(1000))
             continue;
 
-        if (state->code == static_cast<int32_t>(Coordination::Error::ZNONODE))
+        /// Read the code once: every iteration issues a new `get` with the same callback, and a late response
+        /// of an earlier `get` may overwrite the code at any moment, e.g. with `ZNONODE` right after the watch
+        /// reported the deletion. Reading it twice could then pass the `ZNONODE` check and throw on the second read.
+        const auto code = static_cast<Coordination::Error>(state->code.load(std::memory_order_seq_cst));
+
+        if (code == Coordination::Error::ZNONODE)
             return true;
 
-        if (state->code)
-            throw KeeperException::fromPath(static_cast<Coordination::Error>(state->code.load(std::memory_order_seq_cst)), path);
+        if (code != Coordination::Error::ZOK)
+            throw KeeperException::fromPath(code, path);
 
         if (state->event_type == Coordination::DELETED)
             return true;

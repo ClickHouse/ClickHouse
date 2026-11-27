@@ -22,9 +22,9 @@ Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para ativar a agregação adaptativa de `GROUP BY`, que congela a tabela hash local de cada thread quando ela atinge `adaptive_aggregator_freeze_threshold` chaves, permitindo que chaves frequentes continuem sendo agregadas nas pequenas tabelas locais, enquanto chaves raras são direcionadas pelo hash para filas por bucket e agregadas exatamente uma vez durante a mesclagem paralela por bucket; assim, as chaves raras são armazenadas e processadas uma vez, em vez de uma vez por thread."}]}]} />
 
-Ativa o algoritmo adaptativo de `GROUP BY`: cada thread agrega em sua tabela hash local até atingir `adaptive_aggregator_freeze_threshold` chaves (ou `adaptive_aggregator_freeze_threshold_bytes` de memória); então, a tabela é congelada, de modo que as linhas de chaves já vistas (frequentes) continuam sendo atualizadas nela, enquanto chaves novas (raras) são direcionadas pelo hash para filas por bucket e agregadas exatamente uma vez durante a mesclagem paralela por bucket. As chaves frequentes permanecem em pequenas tabelas residentes em cache, e as chaves raras são armazenadas e processadas uma vez, em vez de uma vez por thread.
+Ativa o algoritmo adaptativo de `GROUP BY`: cada thread agrega em sua tabela hash local até atingir `adaptive_aggregator_freeze_threshold` chaves ou até que seu buffer de tabela hash atinja `adaptive_aggregator_freeze_threshold_bytes`; então, a tabela é congelada, de modo que as linhas de chaves já vistas (frequentes) continuam sendo atualizadas nela, enquanto chaves novas (raras) são armazenadas temporariamente pelo hash em buffers per-partition e agregadas exatamente uma vez durante a mesclagem paralela por bucket, que processa algumas partições por vez em tabelas do tamanho do cache. As chaves frequentes permanecem em pequenas tabelas residentes em cache, e as chaves raras são armazenadas e processadas uma vez, em vez de uma vez por thread.
 
-As configurações de agregação externa (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) são respeitadas: depois de ultrapassar o limite, as filas são descarregadas antecipadamente na tabela compartilhada e, se isso não for suficiente para voltar a ficar abaixo do limite, a tabela compartilhada é gravada em disco por meio da agregação externa comum.
+As configurações de agregação externa (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) são respeitadas: depois de ultrapassar o limite, a thread grava seus registros preparados em disco e libera a memória correspondente, e a mesclagem os lê de volta bucket por bucket. Uma tabela ainda não congelada é gravada em disco, como na agregação externa comum, assim que passa a ocupar memória suficiente; já uma tabela congelada é gravada quando seus estados de agregação, como os de `uniqExact` ou `groupArray`, crescem o suficiente. Em seguida, a thread começa a preencher uma nova tabela.
 
 ## enable_adaptive_memory_spill_scheduler {#enable_adaptive_memory_spill_scheduler}
 
@@ -34,7 +34,8 @@ As configurações de agregação externa (`max_bytes_before_external_group_by`,
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "Nova configuração. Habilita o spill adaptativo de dados da memória para armazenamento externo."}]}]} />
 
-Faz o processador realizar spill de dados para o armazenamento externo de forma adaptativa. Atualmente, há suporte para hash joins que podem fazer spill de dados, tanto `grace_hash` quanto o caminho adaptativo `hash` / `parallel_hash`.
+Realiza, de forma adaptativa, o spill para o armazenamento externo de processadores elegíveis de agregação, ordenação, `DISTINCT` e hash join quando a consulta está sob pressão de memória.
+Os hash joins compatíveis incluem `grace_hash` e o caminho adaptativo `hash` / `parallel_hash`.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -44,16 +45,6 @@ Faz o processador realizar spill de dados para o armazenamento externo de forma 
 
 Habilita `DISTINCT` em subconsultas `IN`. Esta configuração envolve um trade-off: ao habilitá-la, é possível reduzir bastante o tamanho das tabelas temporárias transferidas em subconsultas distribuídas com `IN` e acelerar significativamente a transferência de dados entre shards, garantindo que apenas valores únicos sejam enviados.
 No entanto, habilitar essa configuração acrescenta esforço extra de mesclagem em cada nó, já que a desduplicação (`DISTINCT`) precisa ser executada. Use esta configuração quando a transferência pela rede for um gargalo e o custo adicional de mesclagem for aceitável.
-
-## enable_alp_codec {#enable_alp_codec}
-
-<BetaBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para habilitar individualmente o codec de compressão experimental `ALP`, sem usar `allow_experimental_codecs`."}]}]} />
-
-Habilita o codec de compressão `ALP`.
 
 ## enable_automatic_decision_for_merging_across_partitions_for_final {#enable_automatic_decision_for_merging_across_partitions_for_final}
 
@@ -82,11 +73,85 @@ ou `Array(Float64)`.
 Habilita o otimizador de custo Cascades para planos de consultas distribuídas.
 Só tem efeito junto com `make_distributed_plan = 1`: isoladamente, a configuração não altera o planejamento de consultas em um único nó.
 
+## enable_cleanup_old_data_files_compaction {#enable_cleanup_old_data_files_compaction}
+
+<ExperimentalBadge />
+
+**Nomes alternativos**: `allow_experimental_cleanup_old_data_files_compaction`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nova configuração"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_cleanup_old_data_files_compaction`."}]}]} />
+
+Permite limpar arquivos de dados antigos durante a compactação Iceberg.
+
+A limpeza executa `iceberg_compaction_data_cleanup` após uma compactação. Ela expira os snapshots que a compactação tornou obsoletos, da mesma
+forma que `expire_snapshots`: remove-os dos metadados da tabela e exclui os arquivos que não são referenciados por nenhum outro snapshot. Para uma tabela
+na versão do formato 1 ou gerenciada por um catálogo transacional, ela apenas exclui os arquivos, e os snapshots permanecem nos metadados.
+
+## enable_database_hms_catalog {#enable_database_hms_catalog}
+
+<ExperimentalBadge />
+
+**Nomes alternativos**: `allow_experimental_database_hms_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_database_hms_catalog`."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "Permite o uso do mecanismo de banco de dados DataLakeCatalog experimental com catalog_type = 'hive'"}]}]} />
+
+Permite o uso do motor de banco de dados `DataLakeCatalog` com `catalog_type = 'hms'`
+
+## enable_database_materialized_postgresql {#enable_database_materialized_postgresql}
+
+<ExperimentalBadge />
+
+**Nomes alternativos**: `allow_experimental_database_materialized_postgresql`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_database_materialized_postgresql`."}]}]} />
+
+Permite criar bancos de dados com `Engine = MaterializedPostgreSQL(...)`.
+
+## enable_database_paimon_rest_catalog {#enable_database_paimon_rest_catalog}
+
+<ExperimentalBadge />
+
+**Nomes alternativos**: `allow_experimental_database_paimon_rest_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_database_paimon_rest_catalog`."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "Nova configuração"}]}]} />
+
+Permite usar o motor de banco de dados `DataLakeCatalog` com `catalog_type = 'paimon_rest'`
+
 ## enable_early_constant_folding {#enable_early_constant_folding}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Habilita a otimização de consultas em que analisamos os resultados de funções e subconsultas e reescrevemos a consulta se houver constantes nelas.
+
+## enable_elasticsearch {#enable_elasticsearch}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração que controla a habilitação da integração experimental com o Elasticsearch (o motor de tabela `Elasticsearch` e a função de tabela `elasticsearch`)."}]}]} />
+
+Habilita a integração experimental com o Elasticsearch: o motor de tabela `Elasticsearch` e a função de tabela `elasticsearch`.
+
+## enable_eval_table_function {#enable_eval_table_function}
+
+<ExperimentalBadge />
+
+**Nomes alternativos**: `allow_experimental_eval_table_function`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Nova configuração para habilitar a função de tabela experimental `eval`."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_eval_table_function`."}]}]} />
+
+Habilita a função de tabela `eval`.
 
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
@@ -151,6 +216,16 @@ Quando ativados, os ramos inativos qualificados de subconsultas escalares são a
 
 Habilita funções para análise de funil.
 
+## enable_gdeflate_codec {#enable_gdeflate_codec}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração para habilitar o codec de compressão experimental `GDeflate`."}]}]} />
+
+Habilita o codec de compressão `GDeflate`.
+
 ## enable_global_with_statement {#enable_global_with_statement}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -158,6 +233,23 @@ Habilita funções para análise de funil.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.2"},{"label": "1"},{"label": "Propagar instruções WITH para consultas UNION e todas as subconsultas por padrão"}]}]} />
 
 Propagar instruções WITH para consultas UNION e todas as subconsultas
+
+## enable_group_by_top_k_dynamic_filtering {#enable_group_by_top_k_dynamic_filtering}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração: `GROUP BY key [ORDER BY key] LIMIT n` publica a fronteira do heap top-K no passo de leitura do `MergeTree`, que a usa para filtrar linhas e ignorar grânulos. Um valor de `compatibility` abaixo de 26.10 a desabilita."}]}]} />
+
+Para [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/pt-BR/reference/settings/session-settings/enable#enable_group_by_top_k_optimization): quando a primeira chave ranqueada do `GROUP BY` é uma coluna lida de uma tabela `MergeTree`, a agregação publica a fronteira do seu heap top-K no passo de leitura assim que o heap atinge `LIMIT` chaves. Em seguida, o passo de leitura descarta as linhas cuja chave esteja além da fronteira antes de ler as demais colunas (`PREWHERE`) e ignora grânulos inteiros que estejam além dela, usando a chave primária ou um índice de exclusão `minmax` nessa coluna.
+
+Isso se aplica a `GROUP BY key ORDER BY key LIMIT n` e a `GROUP BY key LIMIT n` sem `ORDER BY`, caso em que quaisquer `n` grupos constituem uma resposta válida.
+
+Não se aplica a leituras com `FINAL` ou com réplicas paralelas: `FINAL` precisa ver todas as versões de uma linha, e a fronteira não é repassada às leituras em réplicas remotas.
+
+Valores possíveis:
+
+* 0 — Desabilitado.
+* 1 — Habilitado.
 
 ## enable_group_by_top_k_optimization {#enable_group_by_top_k_optimization}
 
@@ -217,6 +309,16 @@ Valores possíveis:
 
 Ativa o cache de resolução de identificadores no analisador de consultas. O cache compartilha nós de alias já resolvidos para evitar a explosão da AST quando o mesmo alias é referenciado várias vezes. Defina como false para desativar o cache se houver suspeita de resultados incorretos.
 
+## enable_ipcrypt {#enable_ipcrypt}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração para habilitar funções experimentais de criptografia de endereços IP."}]}]} />
+
+Habilita funções experimentais de criptografia de endereços IP (`ipcryptEncrypt`, `ipcryptDecrypt`, `ipcryptPrefixEncrypt`, `ipcryptPrefixDecrypt`).
+
 ## enable_job_stack_trace {#enable_job_stack_trace}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -262,6 +364,30 @@ Habilita os Lazy Type Hints para o tipo [JSON](/pt-BR/reference/data-types/newjs
 Com essa configuração habilitada, `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeName)`, que apenas adiciona ou altera
 type hints, é uma operação somente de metadados: os type hints são aplicados no momento da consulta às partes existentes e
 materializados durante inserções e mesclagens em segundo plano, em vez de regravar os dados históricos.
+
+## enable_kusto_dialect {#enable_kusto_dialect}
+
+<BetaBadge />
+
+**Nomes alternativos**: `allow_experimental_kusto_dialect`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_kusto_dialect`."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "O dialect Kusto Query Language (KQL) passou para Beta."}]}, {"id": "row-3","items": [{"label": "25.1"},{"label": "0"},{"label": "Nova configuração"}]}]} />
+
+Habilita o dialect Kusto Query Language (KQL), uma alternativa ao SQL.
+
+## enable_lateral_join {#enable_lateral_join}
+
+<ExperimentalBadge />
+
+**Nomes alternativos**: `allow_experimental_lateral_join`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_lateral_join`."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração para permitir a sintaxe `LATERAL JOIN`."}]}]} />
+
+Permite a sintaxe LATERAL JOIN. Quando habilitada, subconsultas no lado direito de um JOIN podem referenciar colunas do lado esquerdo, o que possibilita o uso de subconsultas correlacionadas na cláusula FROM (LATERAL JOIN do padrão SQL).
 
 ## enable_lazy_columns_replication {#enable_lazy_columns_replication}
 
@@ -362,6 +488,18 @@ Permite criar colunas [Nullable](/pt-BR/reference/data-types/nullable) [Tuple](/
 Esta configuração não controla se subcolunas de tupla extraídas podem ser `Nullable` (por exemplo, de colunas Dynamic, Variant, JSON ou Tuple).
 Use `allow_nullable_tuple_in_extracted_subcolumns` para controlar se subcolunas de tupla extraídas podem ser `Nullable`.
 
+## enable_object_storage_queue_hive_partitioning {#enable_object_storage_queue_hive_partitioning}
+
+<ExperimentalBadge />
+
+**Nomes alternativos**: `allow_experimental_object_storage_queue_hive_partitioning`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_object_storage_queue_hive_partitioning`."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "Nova configuração."}]}]} />
+
+Permite usar o particionamento no estilo Hive com os motores `S3Queue`/`AzureQueue`
+
 ## enable_order_by_all {#enable_order_by_all}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -409,6 +547,30 @@ Quando desativado, é usado o método legado baseado em `StringHashTable` (o pad
 
 Todos os servidores que participam de uma consulta distribuída devem usar o mesmo valor: com `distributed_aggregation_memory_efficient`, os números dos buckets de dois níveis dependem do hash da chave, que difere entre os dois métodos. Portanto, servidores com configurações divergentes podem dividir a mesma chave em buckets diferentes e produzir um resultado mesclado incorretamente. Para garantir essa consistência, o iniciador sempre envia seu valor efetivo com as consultas secundárias (mesmo quando ele é proveniente apenas dos valores padrão do servidor/perfil), substituindo os próprios valores padrão dos servidores remotos.
 
+## enable_packed_string_keys_in_hash_join {#enable_packed_string_keys_in_hash_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nova configuração que torna os hash joins sobre uma única chave `String` mais rápidos e com menor uso de memória."}]}]} />
+
+Torna as junções `hash`, `parallel_hash` e `grace_hash` sobre uma única chave `String` ou `Nullable(String)` mais rápidas e reduz o uso de memória delas. Uma junção com `OR` é elegível quando cada uma de suas condições tem uma única chave desse tipo.
+
+Como a tabela hash fica menor, a junção demora mais para atingir `max_bytes_in_join` e `max_bytes_before_external_join`.
+
+A configuração não se aplica a chaves `FixedString` ou `LowCardinality(Nullable(String))`, a tabelas com o motor `Join` nem a `joinGet`. Já uma junção sobre uma chave `LowCardinality(String)` pode usar o dicionário da própria chave. Uma junção cujo lado direito tenha estimativa de menos linhas do que `min_rows_for_packed_string_keys_in_hash_join` também não é afetada.
+
+## enable_paimon_storage_engine {#enable_paimon_storage_engine}
+
+<ExperimentalBadge />
+
+**Nomes alternativos**: `allow_experimental_paimon_storage_engine`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nova configuração."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_paimon_storage_engine`."}]}]} />
+
+Permite criar tabelas com os motores de tabela `Paimon*`.
+
 ## enable_parsing_to_custom_serialization {#enable_parsing_to_custom_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -416,6 +578,28 @@ Todos os servidores que participam de uma consulta distribuída devem usar o mes
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "Nova configuração"}]}]} />
 
 Se true, os dados podem ser convertidos diretamente para colunas com serialização personalizada (por exemplo, Sparse), de acordo com as indicações de serialização obtidas da tabela.
+
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração para habilitar o codec de compressão `PCO`, em Beta."}]}]} />
+
+Habilita o codec de compressão `PCO`.
+
+## enable_polyglot_dialect {#enable_polyglot_dialect}
+
+<ExperimentalBadge />
+
+**Nomes alternativos**: `allow_experimental_polyglot_dialect`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Nova configuração para habilitar o dialect do transpilador SQL polyglot."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_polyglot_dialect`."}]}]} />
+
+Habilita o transpilador SQL polyglot, que converte SQL de mais de 30 dialects (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB etc.) para SQL do ClickHouse.
 
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
@@ -426,6 +610,18 @@ Se true, os dados podem ser convertidos diretamente para colunas com serializaç
 Permite que a agregação com uso eficiente de memória (consulte `distributed_aggregation_memory_efficient`) produza buckets fora de ordem.
 Isso pode melhorar o desempenho quando os tamanhos dos buckets de agregação são desiguais, permitindo que uma réplica envie buckets com IDs mais altos ao nó iniciador enquanto ainda processa alguns buckets pesados com IDs mais baixos.
 A desvantagem é um uso de memória potencialmente maior.
+
+## enable_prql_dialect {#enable_prql_dialect}
+
+<ExperimentalBadge />
+
+**Nomes alternativos**: `allow_experimental_prql_dialect`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_prql_dialect`."}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "Nova configuração"}]}]} />
+
+Habilita o PRQL, uma alternativa ao SQL.
 
 ## enable_quantized_codec {#enable_quantized_codec}
 
@@ -470,6 +666,14 @@ Valores possíveis:
 
 * 0 - Desabilitado
 * 1 - Habilitado
+
+## enable_robin_hood_hash_for_joins {#enable_robin_hood_hash_for_joins}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração. Na versão 26.10, as tabelas hash da junção `parallel_hash` usavam o modo Robin Hood quando ficavam grandes, o que economiza memória, mas pode deixar junções grandes mais lentas."}]}]} />
+
+Permite que as tabelas hash de uma junção hash que divide sua tabela hash em partes (consulte `hash_join_layout`) passem a usar o modo Robin Hood quando ficam grandes, assim como ocorre com as tabelas hash da agregação. Com isso, uma right table com mais de cerca de 8 milhões de chaves ocupa até metade da memória para sua tabela hash, mas as consultas da junção podem ficar mais lentas, dependendo das chaves.
 
 ## enable_s3_requests_logging {#enable_s3_requests_logging}
 
@@ -543,6 +747,19 @@ Quando desativado, qualquer expressão de tabela que use o modificador `STREAM` 
 na compilação do plano. Esta é a configuração principal para o recurso de
 consultas de streaming; capacidades adicionais podem ser controladas por suas próprias configurações.
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração para habilitar declarações de codec em subcolunas."}]}]} />
+
+Permite declarar codecs de compressão para subcolunas de uma coluna, como os elementos de uma `Tuple` ou as chaves e valores de um `Map`,
+por meio de entradas `CODEC name (...)` em `CREATE TABLE` e de `ALTER TABLE ... MODIFY COLUMN name CODEC(...)`.
+Tabelas que já possuem essas declarações funcionam independentemente desta configuração, e as declarações podem ser removidas a qualquer momento.
+Uma tabela com codecs de subcoluna não pode ser anexada por um servidor de versão mais antiga.
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />
@@ -592,11 +809,11 @@ Permite a criação dos tipos de dados [Time](/pt-BR/reference/data-types/time) 
 
 ## enable_trino_dialect {#enable_trino_dialect}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova configuração para habilitar o valor `trino` da configuração `dialect`, que traduz a sintaxe SQL do Trino e mapeia nomes de funções do Trino para seus equivalentes no ClickHouse."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nova configuração para habilitar o valor `trino` da configuração `dialect`, que traduz a sintaxe SQL do Trino e mapeia nomes de funções do Trino para seus equivalentes no ClickHouse."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "O dialeto `trino` passou para Beta."}]}]} />
 
 Habilita o valor `trino` da configuração `dialect`.
 
@@ -680,13 +897,59 @@ Valores possíveis:
 * 0 - Desabilitado
 * 1 - Habilitado
 
-## enable_zxc_codec {#enable_zxc_codec}
+## enable_xgboost {#enable_xgboost}
 
 <ExperimentalBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para habilitar individualmente o codec de compressão experimental `ZXC`, sem usar `allow_experimental_codecs`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nova configuração que controla a habilitação da integração experimental com o XGBoost (o layout de dicionário `XGBOOST` e a função `predictXGBoost`)."}]}]} />
+
+Habilita a integração experimental com o XGBoost: o layout de dicionário `XGBOOST` e a função `predictXGBoost`.
+
+## enable_ytsaurus_dictionary_source {#enable_ytsaurus_dictionary_source}
+
+<ExperimentalBadge />
+
+**Nomes alternativos**: `allow_experimental_ytsaurus_dictionary_source`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_ytsaurus_dictionary_source`."}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "Nova configuração."}]}]} />
+
+Habilita a fonte de dicionário `ytsaurus` para integração com YTsaurus.
+
+## enable_ytsaurus_table_engine {#enable_ytsaurus_table_engine}
+
+<ExperimentalBadge />
+
+**Nomes alternativos**: `allow_experimental_ytsaurus_table_engine`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_ytsaurus_table_engine`."}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "Nova configuração."}]}]} />
+
+Habilita o motor de tabela `YTsaurus` para integração com YTsaurus.
+
+## enable_ytsaurus_table_function {#enable_ytsaurus_table_function}
+
+<ExperimentalBadge />
+
+**Nomes alternativos**: `allow_experimental_ytsaurus_table_function`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Adicionado um nome alternativo para a configuração `allow_experimental_ytsaurus_table_function`."}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "Nova configuração."}]}]} />
+
+Habilita a função de tabela `ytsaurus` para integração com YTsaurus.
+
+## enable_zxc_codec {#enable_zxc_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para habilitar individualmente o codec de compressão experimental `ZXC`, sem usar `allow_experimental_codecs`."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "O codec de compressão `ZXC` passou para Beta."}]}]} />
 
 Habilita o codec de compressão `ZXC`.
 

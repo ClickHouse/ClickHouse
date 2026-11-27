@@ -19,6 +19,10 @@ static constexpr size_t COMPRESSION_HEADER_SIZE = 3;
 /// including a chunk that decompresses to more than `dst_capacity` bytes.
 size_t decompressChunk(CompressionKind kind, const char * src, size_t src_size, char * dst, size_t dst_capacity);
 
+/// An upper bound of the decompressed size of a chunk, from the maximum compression ratio of the codec
+/// (and the size stored in the chunk), to avoid allocating the whole compression block for a small chunk.
+size_t maxDecompressedSize(CompressionKind kind, const char * src, size_t src_size);
+
 /// Compresses chunks of an ORC stream.
 class Compressor
 {

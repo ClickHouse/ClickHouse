@@ -1,6 +1,7 @@
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/registerCompressionCodecs.h>
+#include <Common/checkStackSize.h>
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 #include <Compression/CompressionFactory.h>
@@ -9,6 +10,7 @@
 #include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <limits>
@@ -185,6 +187,8 @@ CompressionCodecMultiple::compressBody(size_t completed_stages, const char * inp
 
 UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const
 {
+    checkStackSize();    /// Just in case of recursive Multiple codec
+
     if (source_size < 1 || !source[0])
         throw Exception(decompression_error_code, "Wrong compression methods list");
 
@@ -298,6 +302,11 @@ bool CompressionCodecMultiple::isLossyCompression() const
         if (codec->isLossyCompression())
             return true;
     return false;
+}
+
+bool CompressionCodecMultiple::dependsOnDataType() const
+{
+    return std::ranges::any_of(getCodecs(), [](const auto & codec) { return codec->dependsOnDataType(); });
 }
 
 

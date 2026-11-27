@@ -61,10 +61,12 @@ SETTINGS
 
 必需参数：
 
-* `kafka_broker_list` — 以逗号分隔的 broker 列表 (例如 `localhost:9092`) 。
+* `kafka_broker_list` — 以逗号分隔的消息代理列表 (例如 `localhost:9092`) 。
 * `kafka_topic_list` — topic 列表。
-* `kafka_group_name` — 一组 Kafka 消费者。系统会分别跟踪每个组的读取偏移量。如果不希望消息在集群中重复，请在所有地方使用相同的组名。
+* `kafka_group_name` — 一组 Kafka 消费者。系统会分别跟踪每个组的读取偏移量。如果不希望消息在集群中重复，请在所有地方使用相同的组名。支持宏展开 (例如 `'consumers_{replica}'`) ，从而让每个副本使用各自的消费者组，并读取全部消息。
 * `kafka_format` — 消息格式。使用与 SQL `FORMAT` 函数相同的表示法，例如 `JSONEachRow`。更多信息，请参见 [格式](/zh/reference/formats/index) 部分。
+
+`kafka_broker_list`、`kafka_topic_list`、`kafka_group_name`、`kafka_client_id` 和 `kafka_schema` 的值均支持宏展开：`{database}` 和 `{table}` 会分别替换为该表所在的数据库名和表名，其他宏 (如 `{shard}` 和 `{replica}`) 则取自服务器的 `macros` 配置。
 
 可选参数：
 
@@ -105,18 +107,71 @@ SETTINGS
 * `kafka_partition_shard_num` — 用于静态分区与分片关联的当前分片编号。必须介于 1 和 `kafka_shard_count` 之间 (含两端) 。分区按公式 `partition_id % kafka_shard_count == kafka_partition_shard_num - 1` 分配。支持宏展开 (例如 `'{shard}'`) 。必须与 `kafka_shard_count` 一起使用。仅 StorageKafka2 支持 (需要 `kafka_keeper_path` 和 `kafka_replica_name`) 。默认值：`''` (禁用) 。
 * `kafka_shard_count` — 参与消费的分片总数。与 `kafka_partition_shard_num` 一起使用以静态分配分区。必须与 `kafka_partition_shard_num` 一起使用。仅 StorageKafka2 支持。默认值：`0` (禁用) 。
 
+## 结合命名集合使用 TLS 和 SASL {#kafka-tls-sasl-named-collections}
+
+Kafka 表引擎仅将 [librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) 设置中的一部分公开为表级 `kafka_*` 参数(例如 `kafka_security_protocol`、`kafka_sasl_mechanism`、`kafka_sasl_username` 和 `kafka_sasl_password`)。**TLS 证书路径、私钥以及私钥密码都不属于表设置**;请将它们作为 `librdkafka` 扩展属性进行配置。
+
+对于 `ENGINE = Kafka(named_collection)`:
+
+* 命名集合中的顶层 `kafka_*` 键属于 Kafka 表引擎设置(消息代理、topic、格式,以及上文列出的协议/SASL 设置)。
+* 在 `CREATE NAMED COLLECTION` 中带有 `kafka.` 前缀的键,或在 XML 中嵌套于 `<kafka>` 下的键,会被转发给 `librdkafka`。键名中的下划线会被转换为点号(例如 `kafka.ssl_ca_location` → `ssl.ca.location`,或 `<kafka>` 下的 `<ssl_ca_location>` → `ssl.ca.location`)。
+
+使用命名集合时,**`config.xml` 中服务器全局的 `<kafka>` 块不会被合并**。每个集合都必须包含该表所需的全部扩展属性(包括 TLS 文件;若未通过非空的表 `SETTINGS` 设置 `security.protocol`,则还需包含该属性)。
+
+对于使用客户端证书的 `SASL_SSL`,常见的做法是:将 TLS 路径和 `ssl.key.password` 存储在命名集合中;在表的 `SETTINGS` 子句中设置 `kafka_broker_list`、`kafka_topic_list`、`kafka_group_name`、`kafka_format`,并视需要设置 `kafka_sasl_username` / `kafka_sasl_password`。`kafka.security_protocol` 和 `kafka_security_protocol` 都会设置 `security.protocol`,两者同时存在时以非空的表设置为准。如果集合中已存储该属性,则表设置即构成对命名集合的覆盖:这需要对该集合拥有 `SHOW NAMED COLLECTIONS SECRETS` 权限;若该键被标记为 `NOT OVERRIDABLE`,则会报错 `Override not allowed`。`kafka_sasl_mechanism`、`kafka_sasl_username` 和 `kafka_sasl_password` 同样遵循此规则。
+
+示例(证书路径必须存在于每台为该表运行消费者的 ClickHouse 服务器上):
+
+```sql
+CREATE NAMED COLLECTION kafka_mtls AS
+    kafka.security_protocol = 'SASL_SSL',
+    kafka.sasl_mechanism = 'PLAIN',
+    kafka.ssl_ca_location = '/etc/clickhouse/certs/ca.pem',
+    kafka.ssl_certificate_location = '/etc/clickhouse/certs/client.pem',
+    kafka.ssl_key_location = '/etc/clickhouse/certs/client.key',
+    kafka.ssl_key_password = 'secret';
+
+CREATE TABLE queue (
+    id UInt64,
+    payload String
+) ENGINE = Kafka(kafka_mtls)
+SETTINGS
+    kafka_broker_list = 'broker:9092',
+    kafka_topic_list = 'topic',
+    kafka_group_name = 'group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_username = 'user',
+    kafka_sasl_password = 'password';
+```
+
+在 XML 中定义的命名集合里配置相同的扩展设置：
+
+```xml
+<clickhouse>
+    <named_collections>
+        <kafka_mtls>
+            <kafka>
+                <security_protocol>SASL_SSL</security_protocol>
+                <sasl_mechanism>PLAIN</sasl_mechanism>
+                <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
+                <ssl_certificate_location>/etc/clickhouse/certs/client.pem</ssl_certificate_location>
+                <ssl_key_location>/etc/clickhouse/certs/client.key</ssl_key_location>
+                <ssl_key_password>secret</ssl_key_password>
+            </kafka>
+        </kafka_mtls>
+    </named_collections>
+</clickhouse>
+```
+
+所有与 TLS 相关的属性，请参阅 [librdkafka 配置参考文档](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)。如需在不使用命名集合的情况下设置服务器级默认值，请参阅下文的[配置](#configuration)部分。
+
 ## OAUTHBEARER/OIDC 身份验证 {#oauthbearer-oidc-authentication}
 
 `OAUTHBEARER` 身份验证使用 [librdkafka 配置属性](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)。如需使用 OIDC 客户端凭证流程，请配置 `sasl.oauthbearer.method`、`sasl.oauthbearer.client.id`、`sasl.oauthbearer.client.secret`、`sasl.oauthbearer.token.endpoint.url` 和 `sasl.oauthbearer.scope`。
 
 在 ClickHouse XML 中定义这些属性时，需将属性名中的句点替换为下划线。例如，`sasl.oauthbearer.client.id` 应写作 `<sasl_oauthbearer_client_id>`。
 
-对于 `ENGINE = Kafka(named_collection)`，需要在 named collection 中使用两个命名空间：
-
-* 顶层的 `kafka_*` 键为 Kafka 表引擎设置，例如 `kafka_security_protocol` 和 `kafka_sasl_mechanism`。
-* 嵌套在 `<kafka>` 下的键为扩展的 `librdkafka` 设置，包括上述 OIDC 属性。
-
-使用 named collection 时，服务器的全局 `<kafka>` 配置不会被合并进来，因此每个 collection 都必须包含所有必需的 OIDC 属性。完整示例请参阅 [Kafka named collections](/zh/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication)。
+对于 `ENGINE = Kafka(named_collection)`，扩展的 `librdkafka` 设置 (包括 OIDC) 使用的 `kafka.` / `<kafka>` 命名空间与[通过命名集合配置 TLS 和 SASL](#kafka-tls-sasl-named-collections) 中所述相同。使用命名集合时，服务器的全局 `<kafka>` 配置不会被合并进来，因此每个 collection 都必须包含所有必需的 OIDC 属性。完整示例请参阅 [Kafka 命名集合](/zh/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication)。
 
 示例：
 
@@ -303,7 +358,7 @@ AWS 区域会通过模式匹配从 broker 端点中自动提取：
 
 **AWS 凭证：**
 
-如果存在，凭证始终会从 `~/.aws/credentials` 和 `~/.aws/config` (AWS profile 文件) 中加载。若还要启用 EC2 实例 profile、环境变量 (`AWS_ACCESS_KEY_ID` 等) 、ECS 任务角色以及其他自动凭证来源，请在服务器配置中添加：
+默认情况下，服务器不会为 `AWS_MSK_IAM` 解析任何 AWS 凭证，身份验证将失败并报错 `AWS credentials are empty or expired`。如需让服务器使用由运行环境提供的 AWS 身份进行身份验证，请在服务器配置中添加：
 
 ```xml
 <kafka>
@@ -311,7 +366,15 @@ AWS 区域会通过模式匹配从 broker 端点中自动提取：
 </kafka>
 ```
 
+由运行环境提供的凭证来源包括：环境变量 (`AWS_ACCESS_KEY_ID` 等) 、EC2 实例配置文件 (IMDS) 、服务账号的 IAM 角色 (IRSA) 、ECS 任务角色、SSO，以及 `~/.aws/credentials` 和 `~/.aws/config` profile 文件。
+
 此设置只能由服务器管理员进行配置。默认值：`false`。
+
+<Warning>
+  此设置存在安全风险。启用后，任何拥有 `KAFKA` 数据源授权和 `CREATE TABLE` 权限的用户都可以在表设置中指定 `AWS_MSK_IAM` 机制、broker 列表和 AWS 区域。随后，服务器会使用自身的 AWS 身份对 `kafka-cluster:Connect` 令牌进行签名，并将该令牌发送到用户指定的 broker。该令牌包含 AWS 访问密钥 ID 和完整的 STS 会话令牌，接收方主机可以冒用该服务器的身份，对该区域内的 MSK 集群重放此令牌。
+
+  仅当您信任所有能够创建 Kafka 表的用户、愿意让其使用服务器的 AWS 身份时，才应启用此设置。请使用 [remote&#95;url&#95;allow&#95;hosts](/zh/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) 限制 Kafka 表可连接的主机；该设置默认为空 (即允许所有主机) 。
+</Warning>
 
 **PrivateLink 和自定义 DNS：**
 

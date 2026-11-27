@@ -34,7 +34,6 @@ MAX_EXPECTED_BYTES = 256 * 1024
 # `05359_parquet_testing_corpus`, so there is no point in a reference here.
 PARQUET_TESTING_NO_REFERENCE = {
     "data/concatenated_gzip_members.parquet": "CANNOT_DECOMPRESS: only the first gzip member of a page is decompressed",
-    "data/datapage_v2_empty_datapage.snappy.parquet": "CANNOT_DECOMPRESS: an empty compressed data page v2",
     "data/datapage_v1-corrupt-checksum.parquet": "INCORRECT_DATA: ClickHouse verifies page checksums, pyarrow does not by default",
     "data/rle-dict-uncompressed-corrupt-checksum.parquet": "INCORRECT_DATA: ClickHouse verifies page checksums, pyarrow does not by default",
     "data/floating_orders_nan_count.parquet": "NaN values with different bit patterns, which JSON cannot represent",

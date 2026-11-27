@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/reference/system-tables/merge_tree_settings) et sont auto-générés à partir du code source de ClickHouse.
 
-<div id="map_serialization_version">
-  ## map_serialization_version
-</div>
+## map_serialization_version {#map_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeMapSerializationVersion" default_value="basic" />
 
@@ -23,16 +21,15 @@ Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/r
 
 Contrôle la méthode de sérialisation utilisée pour les colonnes `Map`.
 
-Valeurs possibles :
+Valeurs possibles :
 
 * basic — Utilise la sérialisation standard pour `Map`.
 * with&#95;buckets — Répartit les clés dans des buckets lors de la sérialisation. L’utilisation de buckets améliore la lecture de clés individuelles dans le Map.
 
 Le nombre de buckets dans la sérialisation `with_buckets` est déterminé par [max&#95;buckets&#95;in&#95;map](/fr/reference/settings/merge-tree-settings/max#max_buckets_in_map) et [map&#95;buckets&#95;strategy](/fr/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy).
+Une colonne `Map` dont le type de clé contient `JSON` ou `Dynamic` est toujours écrite dans un seul bucket, quels que soient les autres paramètres relatifs aux buckets.
 
-<div id="map_serialization_version_for_zero_level_parts">
-  ## map_serialization_version_for_zero_level_parts
-</div>
+## map_serialization_version_for_zero_level_parts {#map_serialization_version_for_zero_level_parts}
 
 <SettingsInfoBlock type="MergeTreeMapSerializationVersion" default_value="basic" />
 

@@ -206,6 +206,8 @@ SELECT ascii('234')
 base32Decode(encoded)
 ```
 
+**별칭**: `from_base32`
+
 **인수**
 
 * `encoded` — `String` 컬럼 또는 상수. [`String`](/ko/reference/data-types/string)
@@ -239,6 +241,8 @@ SELECT base32Decode('IVXGG33EMVSA====');
 ```sql
 base32Encode(plaintext)
 ```
+
+**별칭**: `to_base32`
 
 **인수**
 
@@ -415,7 +419,7 @@ SELECT base64Encode('clickhouse')
 
 RFC 4648에 따라 URL 안전 문자 집합을 사용한 [Base64](https://en.wikipedia.org/wiki/Base64) 형식의 문자열을 디코딩합니다.
 표준 문자 집합(`+` 및 `/`)도 디코딩할 때 허용됩니다.
-버전 26.7부터는 입력의 공백 문자 스페이스, tab (`\t`), line feed (`\n`), carriage return (`\r`), form feed (`\f`)를 무시합니다(이전 버전에서는 이러한 문자가 포함된 입력을 거부했습니다). Vertical tab (`\v`) 및 Base64 알파벳에 속하지 않는 그 밖의 모든 문자는 거부됩니다.
+버전 26.7부터는 입력의 공백 문자 스페이스, tab (`\t`), 줄 바꿈 (`\n`), 캐리지 리턴 (`\r`), 폼 피드 (`\f`)를 무시합니다(이전 버전에서는 이러한 문자가 포함된 입력을 거부했습니다). 수직 탭 (`\v`) 및 Base64 알파벳에 속하지 않는 그 밖의 모든 문자는 거부됩니다.
 오류가 발생하면 예외를 발생시킵니다.
 
 **구문**
@@ -423,6 +427,8 @@ RFC 4648에 따라 URL 안전 문자 집합을 사용한 [Base64](https://en.wik
 ```sql
 base64URLDecode(encoded)
 ```
+
+**별칭**: `from_base64url`
 
 **인수**
 
@@ -450,13 +456,15 @@ SELECT base64URLDecode('aHR0cHM6Ly9jbGlja2hvdXNlLmNvbQ')
 
 도입 버전: v18.16.0
 
-URL에 안전한 알파벳을 사용해 문자열을 [Base64](https://datatracker.ietf.org/doc/html/rfc4648#section-4)(RFC 4648) 형식으로 인코딩합니다.
+URL 안전 문자 집합을 사용해 문자열을 [Base64](https://datatracker.ietf.org/doc/html/rfc4648#section-4)(RFC 4648) 형식으로 인코딩합니다.
 
 **구문**
 
 ```sql
 base64URLEncode(plaintext)
 ```
+
+**별칭**: `to_base64url`
 
 **인수**
 
@@ -1085,6 +1093,82 @@ SELECT editDistance('clickhouse', 'mouse')
 └─────────────────────────────────────┘
 ```
 
+## editDistanceRatio {#editDistanceRatio}
+
+도입 버전: v26.11.0
+
+두 바이트 문자열 간의 정규화된 [편집 거리](https://en.wikipedia.org/wiki/Edit_distance) 유사도를 계산합니다:
+`1 - editDistance(s1, s2) / max(length(s1), length(s2))`.
+`0`(`'ab'`와 `'ba'`처럼 편집 거리가 더 긴 문자열의 길이와 같은 경우)에서 `1`(두 문자열이 같은 경우) 사이의 값을 반환합니다. 빈 문자열 두 개는 같은 것으로 간주합니다.
+
+**구문**
+
+```sql
+editDistanceRatio(s1, s2)
+```
+
+**별칭**: `levenshteinRatio`
+
+**인수**
+
+* `s1` — 첫 번째 입력 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `s2` — 두 번째 입력 문자열입니다. [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+두 문자열 간의 정규화된 편집 거리 기반 유사도를 반환합니다. [`Float64`](/ko/reference/data-types/float)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT editDistanceRatio('kitten', 'sitting')
+```
+
+```response title=Response
+┌─editDistanceRatio('kitten', 'sitting')─┐
+│                     0.5714285714285714 │
+└────────────────────────────────────────┘
+```
+
+## editDistanceRatioUTF8 {#editDistanceRatioUTF8}
+
+도입 버전: v26.11.0
+
+[`editDistanceRatio`](#editDistanceRatio)와 동일하지만 UTF8-encoded 문자열을 대상으로 하며, 편집 거리와 길이를 코드 포인트 단위로 계산합니다.
+
+**구문**
+
+```sql
+editDistanceRatioUTF8(s1, s2)
+```
+
+**별칭**: `levenshteinRatioUTF8`
+
+**인수**
+
+* `s1` — 첫 번째 입력 UTF8 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `s2` — 두 번째 입력 UTF8 문자열입니다. [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+두 UTF8 문자열 간의 정규화된 편집 거리 유사도를 반환합니다. [`Float64`](/ko/reference/data-types/float)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT editDistanceRatioUTF8('我是谁', '我是我') AS ratio
+```
+
+```response title=Response
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
+```
+
 ## editDistanceUTF8 {#editDistanceUTF8}
 
 도입 버전: v24.6.0
@@ -1097,7 +1181,7 @@ SELECT editDistance('clickhouse', 'mouse')
 editDistanceUTF8(s1, s2)
 ```
 
-**별칭**: `levenshteinDistanceUTF8`
+**별칭**: `levenshteinDistanceUTF8`, `levenshtein_distance`
 
 **인수**
 
@@ -1169,6 +1253,8 @@ SELECT
 ```sql
 endsWith(s, suffix)
 ```
+
+**별칭**: `ends_with`
 
 **인수**
 
@@ -1311,7 +1397,7 @@ HTML 또는 XHTML의 텍스트 콘텐츠를 추출합니다.
 이 함수는 HTML 태그, 주석, script/style 요소를 제거하고 텍스트 콘텐츠만 남깁니다. 구체적으로 다음을 처리합니다.
 
 * 모든 HTML/XML 태그 제거
-* 주석 제거 (`{/* */}`)
+* 주석 제거 (`<!-- -->`)
 * script 및 style 요소와 해당 콘텐츠 제거
 * CDATA 섹션 처리(원문 그대로 복사)
 * 공백의 적절한 처리 및 정규화
@@ -2683,7 +2769,7 @@ SELECT soundex('aksel')
 
 도입 버전: v23.5.0
 
-공백(` `)을 지정한 횟수만큼 반복해 연결합니다.
+공백(` `)을 지정한 횟수만큼 반복해 이어 붙입니다.
 
 **구문**
 
@@ -2882,6 +2968,8 @@ SELECT sparseGramsUTF8('алиса', 3)
 ```sql
 startsWith(s, prefix)
 ```
+
+**별칭(Aliases)**: `starts_with`
 
 **인수**
 
@@ -3151,6 +3239,92 @@ SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
 ┌─jaccard_index─┐
 │          0.75 │
 └───────────────┘
+```
+
+## stringSimilarityRatio {#stringSimilarityRatio}
+
+도입 버전: v26.11.0
+
+두 바이트 문자열 간의 정규화된 indel 유사도를 계산합니다. 이 값은 Python의 `Levenshtein.ratio`와 동일합니다:
+`2 * LCS / (length(s1) + length(s2))`이며, 여기서 `LCS`는 [최장 공통 부분 수열(longest common subsequence)](https://en.wikipedia.org/wiki/Longest_common_subsequence)의 길이입니다.
+이는 `1 - (insertions + deletions) / (length(s1) + length(s2))`와 동등합니다.
+`0`(공통 부분 없음)에서 `1`(동일한 문자열) 사이의 값을 반환합니다. 빈 문자열 두 개는 서로 같은 것으로 간주됩니다.
+
+**구문**
+
+```sql
+stringSimilarityRatio(s1, s2)
+```
+
+**인수**
+
+* `s1` — 첫 번째 입력 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `s2` — 두 번째 입력 문자열입니다. [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+두 문자열 간의 정규화된 indel 유사도를 반환합니다. [`Float64`](/ko/reference/data-types/float)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT stringSimilarityRatio('kitten', 'sitting')
+```
+
+```response title=Response
+┌─stringSimilarityRatio('kitten', 'sitting')─┐
+│                         0.6153846153846154 │
+└────────────────────────────────────────────┘
+```
+
+**이름 유사 일치**
+
+```sql title=Query
+SELECT name FROM (SELECT arrayJoin(['Equinix', 'Equinix Inc.', 'Digital Realty']) AS name) WHERE stringSimilarityRatio(lower(name), 'equinix inc') > 0.7
+```
+
+```response title=Response
+┌─name─────────┐
+│ Equinix      │
+│ Equinix Inc. │
+└──────────────┘
+```
+
+## stringSimilarityRatioUTF8 {#stringSimilarityRatioUTF8}
+
+도입 버전: v26.11.0
+
+[`stringSimilarityRatio`](#stringSimilarityRatio)와 동일하지만 UTF8-encoded 문자열(strings)에 사용하며, 길이를 코드 포인트 단위로 계산합니다.
+
+**구문**
+
+```sql
+stringSimilarityRatioUTF8(s1, s2)
+```
+
+**인수**
+
+* `s1` — 첫 번째 입력 UTF8 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `s2` — 두 번째 입력 UTF8 문자열입니다. [`String`](/ko/reference/data-types/string)
+
+**반환 값**
+
+두 UTF8 문자열 사이의 정규화된 indel 유사도를 반환합니다. [`Float64`](/ko/reference/data-types/float)
+
+**예시**
+
+**사용 예시**
+
+```sql title=Query
+SELECT stringSimilarityRatioUTF8('我是谁', '我是我') AS ratio
+```
+
+```response title=Response
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
 ```
 
 ## substring {#substring}

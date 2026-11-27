@@ -59,16 +59,4 @@ void SettingFieldDataType::parseFromString(const String & str)
     *this = str;
 }
 
-void SettingFieldDataType::writeBinary(WriteBuffer & out) const
-{
-    writeStringBinary(toString(), out);
-}
-
-void SettingFieldDataType::readBinary(ReadBuffer & in)
-{
-    String str;
-    readStringBinary(str, in);
-    *this = str;
-}
-
 }

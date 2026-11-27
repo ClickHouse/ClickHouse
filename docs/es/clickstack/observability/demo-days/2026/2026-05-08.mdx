@@ -1,0 +1,56 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-05-08
+title: 'Demo days - 2026-05-08'
+sidebarTitle: '2026-05-08'
+description: 'ClickStack demo days del 2026-05-08'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Gestión mejorada de secretos en webhooks {#improved-handling-of-secrets-in-webhooks}
+
+*Demostración a cargo de [@dhable](https://github.com/dhable)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/aD7sT5dc470" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Las URL y los encabezados de los webhooks suelen contener credenciales a la vista. Una URL de webhook de Slack incluye el token secreto en la ruta, y un webhook HTTP normalmente necesita un encabezado Authorization para autenticarse. Hasta esta versión, la API interna de HyperDX para enumerar y editar webhooks devolvía toda esa información en cada solicitud, por lo que cualquier miembro autenticado del equipo podía leer los secretos con solo consultar la API.
+
+Este cambio aplica el mismo patrón de ocultación de información sensible que ya utilizaba la API pública. Las URL de los webhooks se devuelven con la ruta reemplazada por `****`, de modo que el token de Slack (o cualquier otra clave incluida en la ruta) nunca sale del servidor. Los encabezados también se ocultan de forma predeterminada, ya que no hay una forma fiable de saber cuáles contienen secretos; por eso, todos los valores se reemplazan por `****` y solo quedan visibles los nombres de los encabezados.
+
+El formulario de edición interpreta el valor oculto como «sin cambios»: si se deja tal cual, se conserva el valor almacenado; si se modifica, se guarda el nuevo valor; y si se borra, el campo se elimina por completo. Así, el flujo de trabajo resulta intuitivo en el caso más habitual (editar un solo campo) sin que el secreto real tenga que viajar nunca de ida y vuelta a través del navegador.
+
+**PR relacionados:** [#2239](https://github.com/hyperdxio/hyperdx/pull/2239) [HDX-4173] Redact sensitive fields from internal webhook API responses
+
+## Metadatos adicionales en las alertas {#extra-metadata-in-alerts}
+
+*Demostración a cargo de [@dhable](https://github.com/dhable)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/evEd7Cc9e1c" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Esta función surge de una petición de la comunidad en Slack: añadir contexto libre a las alertas, un lugar donde incluir el historial de umbrales, enlaces a manuales de procedimientos operativos o notas para la persona de guardia. También resulta útil como fuente de verdad para los resúmenes generados por IA: cualquier LLM que responda a una alerta activada dispone ahora del propio razonamiento del operador, en lugar de tener que deducir la intención únicamente a partir de la consulta.
+
+El campo de nota admite Markdown, por lo que funcionan las secciones contraíbles, las listas y los enlaces. Se almacena en la configuración de la alerta y aparece allí donde se muestre la alerta. La experiencia de usuario aún no es definitiva: la compatibilidad con Markdown es el punto de partida y se agradecen los comentarios sobre cómo debería mostrarse.
+
+De paso, este PR también pule la experiencia de las alertas activadas en las búsquedas guardadas. El icono de campana del botón Alertas muestra un punto rojo cuando hay alguna alerta activada, el cuadro de diálogo resalta qué alerta está activa en lugar de limitarse a enlazarla, y el lenguaje visual coincide ahora con el que ya usan los paneles del cuadro de mando para ese mismo estado.
+
+**PRs relacionados:** [#2210](https://github.com/hyperdxio/hyperdx/pull/2210) [HDX-3044] Add optional note field to alertas
+
+## Posibles temas {#possible-themes}
+
+*Demostración a cargo de [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/JZYGz6ZOPf4" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Este fue un experimento de hackathon que incorporó a la UI de ClickStack tres temas inspirados en IDE: Nord (azules árticos), Catppuccin (pastel) y One Dark (estilo Atom), cada uno con variantes clara y oscura. Probamos a generar tokens de color a partir de los temas originales correspondientes, lo que resolvió la mayor parte del trabajo, aunque quedaron algunas asperezas en los colores de la barra lateral y en el contraste de las líneas que aún habría que pulir.
+
+El PR acabó cerrándose en lugar de fusionarse. El equipo está migrando a ClickUI, que actualmente admite un único tema, y mantener varios conjuntos paralelos de tokens supondría un trabajo continuo, sobre todo en cuanto se empieza a comprobar a fondo el contraste en cada combinación. Se decidió esperar a que ClickUI admita varios temas.
+
+Aun así, consideramos que había una idea de diseño del experimento que convenía tener presente para cuando se retome. La primera iteración cambiaba el color del logotipo de HyperDX según el tema, con lo que se perdía la identidad de marca. La solución más limpia: un tema claro muestra el logotipo oscuro, un tema oscuro muestra el logotipo claro, y el logotipo verde de HyperDX se mantiene intacto.
+
+**PRs relacionados:** [#2191](https://github.com/hyperdxio/hyperdx/pull/2191) feat: add IDE-inspired themes (Nord, Catppuccin, One Dark)
