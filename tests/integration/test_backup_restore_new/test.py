@@ -1475,6 +1475,65 @@ def test_required_privileges():
     instance.query(f"RESTORE ALL FROM {backup_name}", user="u1")
 
 
+def test_restore_materialized_view_checks_source_rights():
+    create_and_fill_table(n=5)
+    instance.query("CREATE TABLE test.secret (x UInt32, y String) ENGINE = MergeTree ORDER BY y")
+    instance.query("CREATE TABLE test.sink (x UInt32, y String) ENGINE = MergeTree ORDER BY y")
+    instance.query("CREATE MATERIALIZED VIEW test.mv TO test.sink AS SELECT x, y FROM test.table")
+
+    instance.query("CREATE USER u1")
+    instance.query("GRANT READ ON DISK, WRITE ON DISK TO u1")
+    instance.query("GRANT SELECT, INSERT, BACKUP ON test.table TO u1")
+    instance.query("GRANT SELECT, INSERT, CREATE VIEW, BACKUP ON test.mv TO u1")
+    instance.query("GRANT SELECT, INSERT ON test.sink TO u1")
+
+    # The backup names `test.secret` as the table that the view reads.
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE test.mv, TABLE test.table AS test.secret TO {backup_name}", user="u1")
+    definition = open(os.path.join(get_path_to_backup(backup_name), "metadata/test/mv.sql")).read()
+    assert "FROM test.secret" in definition, definition
+    instance.query("DROP TABLE test.mv")
+
+    # As for `CREATE MATERIALIZED VIEW`, the rights for that table are needed.
+    expected_error = "necessary to have the grant SELECT ON test.secret"
+    assert expected_error in instance.query_and_get_error(f"RESTORE TABLE test.mv FROM {backup_name}", user="u1")
+    assert instance.query("EXISTS test.mv") == "0\n"
+
+    # A table that the query of the view names but that does not exist does not hide another table.
+    instance.query("CREATE TABLE test.other (x UInt32) ENGINE = MergeTree ORDER BY x")
+    instance.query(
+        "CREATE MATERIALIZED VIEW test.mv2 TO test.sink AS "
+        "SELECT t.x AS x, t.y AS y FROM test.table AS t INNER JOIN test.other AS o ON t.x = o.x"
+    )
+    instance.query("GRANT SELECT, BACKUP ON test.other TO u1")
+    instance.query("GRANT SELECT, INSERT, CREATE VIEW, BACKUP ON test.mv2 TO u1")
+    instance.query("GRANT SELECT ON test.missing TO u1")
+    backup_name2 = new_backup_name()
+    instance.query(
+        f"BACKUP TABLE test.mv2, TABLE test.table AS test.missing, TABLE test.other AS test.secret TO {backup_name2}",
+        user="u1",
+    )
+    instance.query("DROP TABLE test.mv2")
+    assert expected_error in instance.query_and_get_error(f"RESTORE TABLE test.mv2 FROM {backup_name2}", user="u1")
+    assert instance.query("EXISTS test.mv2") == "0\n"
+
+    # Nor does it hide a table function, the rights for which are checked only when the query can be analyzed.
+    instance.query(
+        "CREATE MATERIALIZED VIEW test.mv3 TO test.sink AS "
+        "SELECT x, y FROM test.table WHERE x IN (SELECT x FROM remote('127.0.0.1', test.other))"
+    )
+    instance.query("GRANT SELECT, INSERT, CREATE VIEW, BACKUP ON test.mv3 TO u1")
+    backup_name3 = new_backup_name()
+    instance.query(f"BACKUP TABLE test.mv3, TABLE test.table AS test.missing TO {backup_name3}", user="u1")
+    instance.query("DROP TABLE test.mv3")
+    assert "UNKNOWN_TABLE" in instance.query_and_get_error(f"RESTORE TABLE test.mv3 FROM {backup_name3}", user="u1")
+    assert instance.query("EXISTS test.mv3") == "0\n"
+
+    instance.query("GRANT SELECT ON test.secret TO u1")
+    instance.query(f"RESTORE TABLE test.mv FROM {backup_name}", user="u1")
+    assert instance.query("EXISTS test.mv") == "1\n"
+
+
 def test_definition_of_another_table():
     create_and_fill_table(n=5)
 
@@ -1551,6 +1610,8 @@ def test_definition_of_another_table():
 
     assert "is of another object" in instance.query_and_get_error(f"RESTORE DATABASE test FROM {backup_name}")
     assert instance.query("SELECT count() FROM system.databases WHERE name IN ('test', 'tes2')") == "0\n"
+
+
 
 
 def test_system_table():
