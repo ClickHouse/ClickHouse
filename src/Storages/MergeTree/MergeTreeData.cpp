@@ -6244,6 +6244,84 @@ Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & col
     return {};
 }
 
+/// A part that does not store a column, as a part written before `ADD COLUMN`, reads the column computed from its `DEFAULT` or
+/// `MATERIALIZED` expression, and a projection built for the part (by `MATERIALIZE PROJECTION` or a merge) stores the values
+/// computed so. A change of the expression creates no mutation, so the projection would keep the values of the old expression,
+/// while a query that reads the parent part computes the new one. Reject such a change for the columns that a projection
+/// computes from, and for the columns that their expressions read in turn, as a change of an `ALIAS` column is rejected.
+void checkAlterKeepsDefaultsOfProjectionColumns(
+    const AlterCommands & commands, const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata)
+{
+    /// `RENAME COLUMN` renames the column and the identifiers of the expressions that read it, which keeps the values:
+    /// compare the new expression with the old one renamed so. The ALTER cannot rename a column twice or transitively.
+    std::vector<RenameColumnData> renames;
+    for (const auto & command : commands)
+        if (command.type == AlterCommand::RENAME_COLUMN)
+            renames.push_back(RenameColumnData{command.column_name, command.rename_to});
+
+    const auto & old_columns = old_metadata.getColumns();
+    const auto & new_columns = new_metadata.getColumns();
+    const auto & new_projections = new_metadata.getProjections();
+
+    for (const auto & projection : old_metadata.getProjections())
+    {
+        /// Dropped in the same ALTER: nothing stays stale.
+        if (!new_projections.has(projection.name))
+            continue;
+
+        NameSet visited;
+        Names to_visit = projection.getRequiredColumns();
+        while (!to_visit.empty())
+        {
+            const String name = std::move(to_visit.back());
+            to_visit.pop_back();
+
+            /// A subcolumn is computed with its column. A name that is not a column, such as a lambda parameter, is skipped.
+            const auto column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+            if (!column)
+                continue;
+            const String column_name = column->getNameInStorage();
+            if (!visited.insert(column_name).second)
+                continue;
+
+            const auto & old_default = old_columns.get(column_name).default_desc;
+            String new_name = column_name;
+            ColumnDefault renamed_default = old_default;
+            if (renamed_default.expression)
+                renamed_default.expression = renamed_default.expression->clone();
+            for (auto & rename : renames)
+            {
+                if (new_name == rename.column_name)
+                    new_name = rename.rename_to;
+                if (renamed_default.expression)
+                {
+                    RenameColumnVisitor rename_visitor(rename);
+                    rename_visitor.visit(renamed_default.expression);
+                }
+            }
+
+            /// A dropped column is checked by the other checks of the ALTER.
+            if (const auto * new_column = new_columns.tryGet(new_name); new_column && !(new_column->default_desc == renamed_default))
+            {
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "ALTER of the default expression of column {} is forbidden because projection '{}' computes from the column: "
+                    "a part that does not store the column computes it from the expression, and the projection would keep the "
+                    "values of the old expression. Drop the projection first to run this change",
+                    backQuoteIfNeed(column_name),
+                    projection.name);
+            }
+
+            if (old_default.expression)
+            {
+                IdentifierNameSet identifiers;
+                old_default.expression->collectIdentifierNames(identifiers);
+                to_visit.insert(to_visit.end(), identifiers.begin(), identifiers.end());
+            }
+        }
+    }
+}
+
 }
 
 void MergeTreeData::checkStoredExpressions(const StorageInMemoryMetadata & metadata, const ContextPtr & local_context)
@@ -6625,6 +6703,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
         is_initial_alter = false;
 #endif
+
+    if (is_initial_alter)
+        checkAlterKeepsDefaultsOfProjectionColumns(commands, old_metadata, new_metadata);
 
     /// `CLEAR COLUMN` of `_block_number` / `_block_offset` changes the values by which patch parts find their rows.
     /// The mutation applies the patches that precede it, but a patch written for a part whose values of these columns

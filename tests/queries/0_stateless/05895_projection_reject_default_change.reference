@@ -1,0 +1,9 @@
+--- the default of a column the projection computes from
+--- the default of a column that the default of such a column reads
+--- the same results with and without the projection
+[0,1,2,3,4]
+[0,1,2,3,4]
+--- other changes are allowed
+d2	dt2
+h	toHour(d2)
+[10,11,12,13,14]

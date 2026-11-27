@@ -548,8 +548,7 @@ DROP TABLE IF EXISTS t_skip_empty_case47;
 CREATE TABLE t_skip_empty_case47
 (
     key UInt64,
-    b UInt64,
-    PROJECTION p (SELECT key, sum(b) GROUP BY key)
+    b UInt64
 )
 ENGINE = MergeTree
 ORDER BY key
@@ -560,7 +559,10 @@ SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 10000000
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_skip_empty_case47 VALUES (1, 0);
+-- The DEFAULT of a column that a projection computes from cannot be changed, so the projection is added after it.
 ALTER TABLE t_skip_empty_case47 MODIFY COLUMN b UInt64 DEFAULT 999;
+ALTER TABLE t_skip_empty_case47 ADD PROJECTION p (SELECT key, sum(b) GROUP BY key);
+ALTER TABLE t_skip_empty_case47 MATERIALIZE PROJECTION p;
 ALTER TABLE t_skip_empty_case47 CLEAR COLUMN b;
 
 SELECT 'case47_table';

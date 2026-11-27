@@ -63,16 +63,16 @@ INSERT INTO t_rewritten SELECT number FROM numbers(4);
 ALTER TABLE t_rewritten ADD COLUMN v UInt32 DEFAULT 7 STATISTICS(basic);
 ALTER TABLE t_rewritten ADD PROJECTION p (SELECT id, v ORDER BY v);
 ALTER TABLE t_rewritten MATERIALIZE PROJECTION p;
-ALTER TABLE t_rewritten MODIFY COLUMN v UInt32 DEFAULT 99;
+-- The DEFAULT of a column that a projection computes from can be changed only with the projection dropped.
+ALTER TABLE t_rewritten DROP PROJECTION p, MODIFY COLUMN v UInt32 DEFAULT 99;
 
 SELECT 'a mutation that rewrites every column';
 SELECT arraySort(groupArray(column)) FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_rewritten' AND active;
--- the projection froze `v` before the DEFAULT changed, so read past it to isolate the statistics
-SELECT count() FROM t_rewritten WHERE v > 50 SETTINGS optimize_use_projections = 0;
-SELECT count() FROM t_rewritten WHERE v < 50 SETTINGS optimize_use_projections = 0;
+SELECT count() FROM t_rewritten WHERE v > 50;
+SELECT count() FROM t_rewritten WHERE v < 50;
 SELECT countIf(explain ILIKE '%Statistics%')
-FROM (EXPLAIN indexes = 1 SELECT count() FROM t_rewritten WHERE v > 50 SETTINGS optimize_use_projections = 0);
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_rewritten WHERE v > 50);
 
 CREATE TABLE t_stored (id UInt64, w UInt32 STATISTICS(basic)) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
