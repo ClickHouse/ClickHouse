@@ -3234,7 +3234,7 @@ protected:
 /// In addition to the usual function arguments, it accepts a `SELECT` query with output options, as `ParserQueryWithOutput`
 /// parses them, either bare or in parentheses: `body(SELECT ... FORMAT f)` and `body((SELECT ... FORMAT f))` are
 /// syntactic sugar for `body((SELECT ...), 'f')`, and `body(SELECT ...)` for `body((SELECT ...))`.
-/// `SETTINGS` after `FORMAT` are moved into the `SETTINGS` clause of the query, because a subquery has no output options.
+/// `SETTINGS` after `FORMAT` are moved into the query, because a subquery has no output options.
 /// `INTO OUTFILE` is not supported.
 class BodyLayer : public FunctionLayer
 {
@@ -3247,16 +3247,37 @@ public:
         {
             tried_query = true;
 
-            auto query_pos = pos;
+            /// The query is parsed at `pos` itself, and not at its copy, so that the backtracks of an unsuccessful
+            /// attempt are counted against `max_parser_backtracks` when the position is restored.
+            const auto begin = pos;
             auto query_expected = expected;
             ASTs arguments;
-            if (parseQueryArgument(query_pos, query_expected, arguments))
+
+            switch (parseQueryArgument(pos, query_expected, arguments))
             {
-                pos = query_pos;
-                expected = query_expected;
-                elements = std::move(arguments);
-                /// Arguments are parsed, create the function.
-                state = 2;
+                case QueryArgument::None:
+                {
+                    pos = begin;
+                    break;
+                }
+                case QueryArgument::Operand:
+                {
+                    /// The subquery is already parsed: continue with the usual parsing right after it instead of
+                    /// parsing it again. Otherwise every level of nested `body((SELECT ...))` doubles the work.
+                    expected = query_expected;
+                    pushOperand(std::move(arguments.front()));
+                    action = Action::OPERATOR;
+                    state = 1;
+                    break;
+                }
+                case QueryArgument::AllArguments:
+                {
+                    expected = query_expected;
+                    elements = std::move(arguments);
+                    /// Arguments are parsed, create the function.
+                    state = 2;
+                    break;
+                }
             }
         }
 
@@ -3264,46 +3285,90 @@ public:
     }
 
 private:
-    /// Parses the query, which must be the only argument, and the closing bracket of the function.
-    static bool parseQueryArgument(IParser::Pos & pos, Expected & expected, ASTs & arguments)
+    enum class QueryArgument : uint8_t
+    {
+        /// It is not a query: use the usual parsing of the function arguments.
+        None,
+        /// A parenthesized query without output options: it is a usual subquery operand,
+        /// and the position is right after its closing bracket.
+        Operand,
+        /// The query is the complete list of arguments, and the closing bracket of the function is parsed.
+        AllArguments,
+    };
+
+    static QueryArgument parseQueryArgument(IParser::Pos & pos, Expected & expected, ASTs & arguments)
     {
         const bool in_parentheses = ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected);
 
-        if (!ParserKeyword(Keyword::SELECT).checkWithoutMoving(pos, expected) && !ParserKeyword(Keyword::WITH).checkWithoutMoving(pos, expected))
-            return false;
+        /// A query in parentheses can itself start with a parenthesized operand of a set operation. This is how a query
+        /// with the settings of the whole query is formatted: `body(((SELECT 1) UNION ALL (SELECT 2 UNION ALL SELECT 3) SETTINGS ...))`.
+        if (!ParserKeyword(Keyword::SELECT).checkWithoutMoving(pos, expected) && !ParserKeyword(Keyword::WITH).checkWithoutMoving(pos, expected)
+            && !(in_parentheses && pos->type == TokenType::OpeningRoundBracket))
+            return QueryArgument::None;
 
         ASTPtr query;
         if (!ParserQueryWithOutput(pos->end).parse(pos, query, expected))
-            return false;
+            return QueryArgument::None;
 
         if (in_parentheses && !ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
-            return false;
-
-        if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
-            return false;
+            return QueryArgument::None;
 
         auto * select = query->as<ASTSelectWithUnionQuery>();
         if (!select || select->out_file)
-            return false;
+            return QueryArgument::None;
 
-        /// Without output options, a parenthesized query is a usual subquery argument, leave it to the usual parsing.
+        /// Without output options, a parenthesized query is a usual subquery argument.
         if (in_parentheses && !select->format_ast && !select->settings_ast)
-            return false;
+        {
+            arguments = {make_intrusive<ASTSubquery>(std::move(query))};
+            return QueryArgument::Operand;
+        }
 
         ASTPtr format;
         if (select->format_ast)
+        {
             format = make_intrusive<ASTLiteral>(getIdentifierName(select->format_ast));
+        }
+        else if (in_parentheses && ParserToken(TokenType::Comma).ignore(pos, expected))
+        {
+            /// `body((SELECT ... SETTINGS ...), 'format')` is how the settings of the whole query are formatted
+            /// when they cannot be moved into its last `SELECT`, see `moveSettingsIntoQuery`.
+            if (!ParserStringLiteral().parse(pos, format, expected))
+                return QueryArgument::None;
+        }
+
+        if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            return QueryArgument::None;
 
         ASTPtr settings = select->settings_ast;
         ASTQueryWithOutput::resetOutputASTIfExist(*select);
 
         if (settings)
-        {
-            /// The query tree applies the `SETTINGS` clause of the last `SELECT` to the whole query, also to a `UNION`.
-            auto * last_select = select->list_of_selects->children.back()->as<ASTSelectQuery>();
-            if (!last_select)
-                return false;
+            moveSettingsIntoQuery(query, std::move(settings));
 
+        arguments = {make_intrusive<ASTSubquery>(std::move(query))};
+        if (format)
+            arguments.push_back(std::move(format));
+        return QueryArgument::AllArguments;
+    }
+
+    /// Makes `settings`, which are the output option of `query`, a part of the query, keeping them at the scope of the whole query.
+    static void moveSettingsIntoQuery(ASTPtr & query, ASTPtr settings)
+    {
+        /// Parentheses around the whole query do not change the scope.
+        while (true)
+        {
+            const auto & selects = query->as<ASTSelectWithUnionQuery &>().list_of_selects->children;
+            if (selects.size() != 1 || !selects.front()->as<ASTSelectWithUnionQuery>())
+                break;
+            query = ASTPtr(selects.front());
+        }
+
+        auto & select_with_union = query->as<ASTSelectWithUnionQuery &>();
+
+        /// The query tree applies the `SETTINGS` clause of the last `SELECT` to the whole query, also to a `UNION`.
+        if (auto * last_select = select_with_union.list_of_selects->children.back()->as<ASTSelectQuery>())
+        {
             if (auto own_settings = last_select->settings())
             {
                 auto & target = own_settings->as<ASTSetQuery &>();
@@ -3316,12 +3381,14 @@ private:
             {
                 last_select->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
             }
+            return;
         }
 
-        arguments = {make_intrusive<ASTSubquery>(std::move(query))};
-        if (format)
-            arguments.push_back(std::move(format));
-        return true;
+        /// The last operand is a set operation in parentheses, e.g. `SELECT 1 UNION ALL (SELECT 2 UNION ALL SELECT 3)`.
+        /// Its own `SETTINGS` clause would apply to that operand only, so the settings stay at the whole query,
+        /// which the query tree applies to every operand.
+        select_with_union.settings_ast = std::move(settings);
+        select_with_union.children.push_back(select_with_union.settings_ast);
     }
 
     bool tried_query = false;

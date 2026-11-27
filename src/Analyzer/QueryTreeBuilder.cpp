@@ -153,7 +153,8 @@ private:
         bool is_subquery,
         const CommonTableExpressionData & cte_data,
         const ASTPtr & aliases,
-        const ContextPtr & context) const;
+        const ContextPtr & context,
+        const ASTPtr & query_level_settings = nullptr) const;
 
     [[nodiscard]] QueryTreeNodePtr buildSelectExpression(
         const ASTPtr & select_query,
@@ -306,7 +307,16 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     auto & select_lists = select_with_union_query_typed.list_of_selects->as<ASTExpressionList &>();
 
     if (select_lists.children.size() == 1)
+    {
+        /// `SelectIntersectExceptQueryVisitor` leaves an `INTERSECT` / `EXCEPT` as the only child. The `SETTINGS` clause
+        /// of the whole query (see below) then belongs to that set operation, e.g. for the query in the `body` argument
+        /// of the `url` table function: `body(SELECT 1 EXCEPT (SELECT 2 UNION ALL SELECT 3) FORMAT CSV SETTINGS ...)`.
+        if (select_with_union_query_typed.settings_ast && select_lists.children[0]->as<ASTSelectIntersectExceptQuery>())
+            return buildSelectIntersectExceptQuery(
+                select_lists.children[0], is_subquery, cte_data, aliases, context, select_with_union_query_typed.settings_ast);
+
         return buildSelectOrUnionExpression(select_lists.children[0], is_subquery, cte_data, aliases, context);
+    }
 
     /// A `SETTINGS` clause of a UNION is query-level: it applies to the whole union, not to a single
     /// arm. The grammar gives it two shapes - `ASTQueryWithOutput::settings_ast` for the top-level
@@ -362,7 +372,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     bool is_subquery,
     const CommonTableExpressionData & cte_data,
     const ASTPtr & aliases,
-    const ContextPtr & context) const
+    const ContextPtr & context,
+    const ASTPtr & query_level_settings) const
 {
     auto & select_intersect_except_query_typed = select_intersect_except_query->as<ASTSelectIntersectExceptQuery &>();
     auto select_lists = select_intersect_except_query_typed.getListOfSelects();
@@ -392,6 +403,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     SettingsChanges settings_changes;
     std::vector<String> default_settings;
     NameToNameVector query_parameters;
+
+    if (auto * set_query = query_level_settings ? query_level_settings->as<ASTSetQuery>() : nullptr)
+        applyQueryLevelSettings(*set_query, updated_context, settings_changes, default_settings, query_parameters);
 
     if (auto trailing_settings = ASTSelectIntersectExceptQuery::getTrailingSettings(select_lists.back()))
     {
