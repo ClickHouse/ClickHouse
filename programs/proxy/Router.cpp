@@ -8,6 +8,8 @@
 #include <Common/ShellCommand.h>
 #include <Common/logger_useful.h>
 
+#include <base/scope_guard.h>
+
 #include <silk/fibers/event.h>
 #include <silk/fibers/fiber.h>
 
@@ -171,11 +173,13 @@ void Router::runFirstSeenHook(const String & command, const char * kind, const S
 
             if (!wait_for)
             {
-                auto [it, inserted] = seen.try_emplace(key);
-                if (inserted)
+                auto it = seen.find(key);
+                if (it == seen.end())
                 {
-                    it->second.finished = std::make_shared<silk::FiberEvent>();
-                    finished = it->second.finished;
+                    /// The entry is published complete, with its event: the other connections wait on it.
+                    auto event = std::make_shared<silk::FiberEvent>();
+                    seen.emplace(key, SeenEntry{.done = false, .finished = event});
+                    finished = std::move(event);
                 }
                 else if (it->second.done)
                 {
@@ -199,17 +203,26 @@ void Router::runFirstSeenHook(const String & command, const char * kind, const S
         }
     }
 
-    const bool success = runHook(command, kind, attributes);
+    /// The entry is published, and other connections may wait for its event. Whatever happens to the hook,
+    /// including an exception before it is started, the entry is completed or removed and the waiters are woken up:
+    /// an unfinished entry left behind would suspend every later connection with this name forever.
+    bool success = false;
+    SCOPE_EXIT({
+        {
+            std::lock_guard lock(first_seen_mutex);
+            /// An entry of a hook in flight is never evicted, so it is still there.
+            if (auto it = seen.find(key); it != seen.end())
+            {
+                if (success)
+                    it->second.done = true;
+                else
+                    seen.erase(it);
+            }
+        }
+        finished->set();
+    });
 
-    {
-        std::lock_guard lock(first_seen_mutex);
-        /// An entry of a hook in flight is never evicted, so it is still there.
-        if (success)
-            seen.at(key).done = true;
-        else
-            seen.erase(key);
-    }
-    finished->set();
+    success = runHook(command, kind, attributes);
 }
 
 BackendPoolPtr Router::poolForDynamicBackend(const BackendConfig & backend_config, const ListenerConfig & listener, String & identity)
