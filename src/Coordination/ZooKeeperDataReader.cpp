@@ -188,6 +188,9 @@ static int64_t deserializeStorageData(KeeperMemoryStorage & storage, ReadBuffer 
         }
     }
 
+    for (const auto & itr : storage.nodes.container)
+        addToDigest(storage.nodes_digest, itr.value.getDigest(itr.key));
+
     return max_zxid;
 }
 
@@ -581,7 +584,8 @@ static bool deserializeTxn(KeeperMemoryStorage & storage, ReadBuffer & in, Logge
         if (request->getOpNum() == Coordination::OpNum::SessionID)
         {
             const Coordination::ZooKeeperSessionIDRequest & session_id_request = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request);
-            storage.getSessionID(session_id_request.session_timeout_ms);
+            storage.addSessionID(session_id, session_id_request.session_timeout_ms);
+            storage.session_id_counter = std::max(storage.session_id_counter, session_id + 1);
         }
         else
         {
