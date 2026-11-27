@@ -1047,7 +1047,7 @@ class JobConfigs:
         runs_on=None,  # set per ParamSet
         command="python3 ./ci/jobs/functional_tests.py --options BugfixValidation",
         # some tests can be flaky due to very slow disks - use tmpfs for temporary ClickHouse files
-        run_in_docker=f"clickhouse/stateless-test{HOST_NETWORK}+--privileged+--cgroupns=host+root+--security-opt seccomp=unconfined+--ulimit nofile=1048576:1048576+--tmpfs /tmp/clickhouse:mode=1777",
+        run_in_docker="clickhouse/stateless-test+--network=host+--privileged+--cgroupns=host+root+--security-opt seccomp=unconfined+--ulimit nofile=1048576:1048576+--tmpfs /tmp/clickhouse:mode=1777",
         # No digest_config: the Bugfix Validation verdict is intentionally NOT
         # cacheable. Its inputs are not captured by any set of repository files -
         # it depends on (1) the PR's source fix and (2) the master-HEAD binary
@@ -2233,7 +2233,7 @@ class JobConfigs:
                 "./tests/config/users.d/ci_logs_sender.yaml",
             ],
         ),
-        run_in_docker=f"clickhouse/stateless-test+--shm-size=16g{HOST_NETWORK}",
+        run_in_docker="clickhouse/stateless-test+--shm-size=16g+--network=host",
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_RELEASE,
@@ -2750,7 +2750,7 @@ class JobConfigs:
         name=JobNames.SIGN_MACOS,
         runs_on=RunnerLabels.RELEASE_RUNNER,
         command="python3 ./ci/jobs/sign_macos_binary.py --build-type {PARAMETER}",
-        run_in_docker=f"clickhouse/utils{HOST_NETWORK}+root",
+        run_in_docker="clickhouse/utils+--network=host+root",
         timeout=3600,
         digest_config=Job.CacheDigestConfig(
             include_paths=build_digest_config.include_paths
