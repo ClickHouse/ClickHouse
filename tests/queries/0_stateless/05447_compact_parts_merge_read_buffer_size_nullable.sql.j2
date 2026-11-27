@@ -24,6 +24,8 @@ SETTINGS
     compact_parts_max_granules_to_buffer = 2,
     compact_parts_max_bytes_to_buffer = '128M',
     compact_parts_merge_max_bytes_to_prefetch_part = 0,
+    -- With columns sharing compressed blocks, every column buffer holds the shared blocks.
+    compress_per_column_in_compact_parts = 1,
     write_marks_for_substreams_in_compact_parts = 1,
     ratio_of_defaults_for_sparse_serialization = 1,
     auto_statistics_types = '';
