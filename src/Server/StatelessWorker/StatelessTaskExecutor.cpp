@@ -33,10 +33,16 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+}
+
 namespace FailPoints
 {
     extern const char distributed_plan_delay_root_cause_report[];
     extern const char distributed_plan_delay_failed_task_release[];
+    extern const char stateless_worker_fail_after_registering_task[];
 }
 
 namespace Setting
@@ -200,11 +206,32 @@ void StatelessTaskExecutor::startTasks(const String & unique_query_id, Distribut
             auto task_state = std::make_shared<TaskState>();
             task_state->completion_future = task_promise->get_future();
             task_state->collectors = collectors;
+            task_state->unique_query_id = unique_query_id;
 
             {
                 std::lock_guard lock(tasks_mutex);
                 if (!tryRegisterTaskLocked(unique_task_id, task_state))
                     continue;
+                try
+                {
+                    auto controller = query_controllers.find(unique_query_id);
+                    if (controller == query_controllers.end())
+                    {
+                        controller = query_controllers.emplace(unique_query_id, std::make_shared<WorkerQueryController>(unique_query_id)).first;
+                        LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Created the query controller of {}", unique_query_id);
+                    }
+                    controller->second->addTask(unique_task_id);
+                    fiu_do_on(FailPoints::stateless_worker_fail_after_registering_task,
+                    {
+                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after registering task {}", unique_task_id);
+                    });
+                }
+                catch (...)
+                {
+                    /// Otherwise the task stays registered with a broken promise, which its status polls rethrow.
+                    eraseTaskLocked(unique_task_id);
+                    throw;
+                }
             }
 
             scheduleTask(unique_task_id, std::move(task_state), std::move(task_promise), std::move(task_description), unique_temp_file_path, trace_context);
@@ -432,7 +459,22 @@ bool StatelessTaskExecutor::tryRegisterTaskLocked(const String & unique_task_id,
 
 bool StatelessTaskExecutor::eraseTaskLocked(const String & unique_task_id)
 {
-    return tasks.erase(unique_task_id) > 0;
+    auto it = tasks.find(unique_task_id);
+    if (it == tasks.end())
+        return false;
+
+    const String & unique_query_id = it->second->unique_query_id;
+    if (!unique_query_id.empty())
+    {
+        auto controller = query_controllers.find(unique_query_id);
+        if (controller != query_controllers.end() && controller->second->removeTask(unique_task_id))
+        {
+            LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Dropped the query controller of {}", unique_query_id);
+            query_controllers.erase(controller);
+        }
+    }
+    tasks.erase(it);
+    return true;
 }
 
 void StatelessTaskExecutor::shutdown()

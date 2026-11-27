@@ -1,6 +1,7 @@
 #pragma once
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Server/StatelessWorker/StatelessWorkerProtocol.h>
+#include <Server/StatelessWorker/WorkerQueryController.h>
 #include <IO/Progress.h>
 #include <Common/ThreadPool.h>
 #include <Common/OpenTelemetryTracingContext.h>
@@ -124,6 +125,8 @@ private:
         std::shared_ptr<LogsQueueSlot> logs_queue = std::make_shared<LogsQueueSlot>();
         /// Lines handed to status replies so far.
         std::shared_ptr<ForwardedLogsCounter> forwarded_logs = std::make_shared<ForwardedLogsCounter>();
+        /// The query of a task started by `startTasks`, which keys its `WorkerQueryController`; empty for `startTask`.
+        String unique_query_id;
     };
 
     using TaskStatePtr = std::shared_ptr<TaskState>;
@@ -150,6 +153,7 @@ private:
     static constexpr size_t MAX_CANCELLED_BEFORE_START = 1000;
     std::unordered_set<String> cancelled_before_start TSA_GUARDED_BY(tasks_mutex);
     std::deque<String> cancelled_before_start_order TSA_GUARDED_BY(tasks_mutex);
+    std::unordered_map<String, WorkerQueryControllerPtr> query_controllers TSA_GUARDED_BY(tasks_mutex);
     std::mutex tasks_mutex;
 };
 
