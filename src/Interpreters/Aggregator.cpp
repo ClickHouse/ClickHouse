@@ -1271,14 +1271,15 @@ void Aggregator::executeImpl(
     AggregateFunctionInstruction * aggregate_instructions,
     bool no_more_keys,
     bool all_keys_are_const,
-    AggregateDataPtr overflow_row) const
+    AggregateDataPtr overflow_row,
+    AdaptiveDistinctKeyCounter * distinct_key_counter) const
 {
     /// A two-level variant keeps the whole-block state, which serves any rows: the in-order path reaches one only
     /// through a size hint, which does not justify a second copy of its aggregation loops.
     #define M(NAME, IS_TWO_LEVEL) \
         else if (result.type == AggregatedDataVariants::Type::NAME) \
             executeImpl<for_sub_range && !(IS_TWO_LEVEL)>(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, \
-                        result.consecutive_keys_cache_stats, no_more_keys, all_keys_are_const, overflow_row);
+                        result.consecutive_keys_cache_stats, no_more_keys, all_keys_are_const, overflow_row, distinct_key_counter);
 
     if (false) {} // NOLINT
     APPLY_FOR_AGGREGATED_VARIANTS(M)
@@ -1296,7 +1297,8 @@ void NO_INLINE Aggregator::executeImpl(
     LastElementCacheStats & consecutive_keys_cache_stats,
     bool no_more_keys,
     bool all_keys_are_const,
-    AggregateDataPtr overflow_row) const
+    AggregateDataPtr overflow_row,
+    AdaptiveDistinctKeyCounter * distinct_key_counter) const
 {
     UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
@@ -1313,13 +1315,17 @@ void NO_INLINE Aggregator::executeImpl(
     if (use_cache)
     {
         State state(key_columns, key_sizes, aggregation_state_cache, rows);
-        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        executeImpl(
+            method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const,
+            overflow_row, distinct_key_counter);
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
         StateNoCache state(key_columns, key_sizes, aggregation_state_cache, rows);
-        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        executeImpl(
+            method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const,
+            overflow_row, distinct_key_counter);
     }
 }
 
@@ -1334,7 +1340,8 @@ void Aggregator::executeImpl(
     AggregateFunctionInstruction * aggregate_instructions,
     bool no_more_keys,
     bool all_keys_are_const,
-    AggregateDataPtr overflow_row) const
+    AggregateDataPtr overflow_row,
+    AdaptiveDistinctKeyCounter * distinct_key_counter) const
 {
     /// The block may be aggregated in parts (e.g. the remainder after an adaptive aggregation split),
     /// the keys of the rows before `row_begin` are not needed. If all keys are const, only row 0 is used.
@@ -1372,7 +1379,7 @@ void Aggregator::executeImpl(
         executeImplBatch<prefetch_v, top_k_v>(
             method, state, key_columns, aggregates_pool, row_begin, row_end,
             aggregate_instructions, no_more_keys_arg, all_keys_are_const,
-            use_compiled_functions, overflow_row);
+            use_compiled_functions, overflow_row, distinct_key_counter);
     };
 
     auto dispatch = [&]<bool top_k_v>()
@@ -1498,7 +1505,8 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
     size_t row_begin,
     size_t row_end,
     ColumnRawPtrs & key_columns,
-    AggregateFunctionInstruction * aggregate_instructions) const
+    AggregateFunctionInstruction * aggregate_instructions,
+    AdaptiveDistinctKeyCounter * distinct_key_counter) const
 {
     const size_t threshold = params.adaptive_aggregator_freeze_threshold;
 
@@ -1532,7 +1540,8 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
                     aggregate_instructions,
                     /*no_more_keys=*/false,
                     /*all_keys_are_const=*/false,
-                    /*overflow_row=*/nullptr);
+                    /*overflow_row=*/nullptr,
+                    distinct_key_counter);
                 after_slice(slice);
                 pos += slice;
             }
@@ -1578,7 +1587,8 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     Arena * aggregates_pool,
     size_t row_begin,
     size_t row_end,
-    bool all_keys_are_const) const
+    bool all_keys_are_const,
+    AdaptiveDistinctKeyCounter * distinct_key_counter) const
 {
     using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
 
@@ -1632,6 +1642,16 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
         {
             if (emplace_result.isInserted())
                 emplace_result.setMapped(place);
+        }
+        /// The counter is tested first, so a batch without one does not branch on whether a key is new.
+        if (distinct_key_counter && emplace_result.isInserted())
+        {
+            if constexpr (State::has_pre_computed_hashes)
+                distinct_key_counter->add(
+                    state.can_precompute_hashes ? state.getPrecomputedHash(method.data, row)
+                                                : method.data.hash(emplace_result.getKey()));
+            else
+                distinct_key_counter->add(method.data.hash(emplace_result.getKey()));
         }
         heap_push(row, emplace_result);
     };
@@ -1711,14 +1731,16 @@ void NO_INLINE Aggregator::executeImplBatch(
     bool no_more_keys,
     bool all_keys_are_const,
     bool,
-    AggregateDataPtr) const
+    AggregateDataPtr,
+    AdaptiveDistinctKeyCounter * distinct_key_counter) const
 {
     chassert(params.aggregates_size == 0);
 
     if (no_more_keys)
         return;
 
-    executeImplBatchNoAggregates<prefetch, top_k>(method, state, key_columns, aggregates_pool, row_begin, row_end, all_keys_are_const);
+    executeImplBatchNoAggregates<prefetch, top_k>(
+        method, state, key_columns, aggregates_pool, row_begin, row_end, all_keys_are_const, distinct_key_counter);
 }
 
 template <bool prefetch, bool top_k, typename Method, typename State>
@@ -1734,7 +1756,8 @@ void NO_INLINE Aggregator::executeImplBatch(
     bool no_more_keys,
     bool all_keys_are_const,
     bool use_compiled_functions [[maybe_unused]],
-    AggregateDataPtr overflow_row) const
+    AggregateDataPtr overflow_row,
+    AdaptiveDistinctKeyCounter * distinct_key_counter) const
 {
     using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
 
@@ -1748,7 +1771,8 @@ void NO_INLINE Aggregator::executeImplBatch(
         if (no_more_keys)
             return;
 
-        executeImplBatchNoAggregates<prefetch, top_k>(method, state, key_columns, aggregates_pool, row_begin, row_end, all_keys_are_const);
+        executeImplBatchNoAggregates<prefetch, top_k>(
+            method, state, key_columns, aggregates_pool, row_begin, row_end, all_keys_are_const, distinct_key_counter);
         return;
     }
 
@@ -1894,7 +1918,18 @@ void NO_INLINE Aggregator::executeImplBatch(
             {
                 auto emplace_result = state.emplaceKey(method.data, 0, *aggregates_pool);
                 if (emplace_result.isInserted())
+                {
+                    if (distinct_key_counter)
+                    {
+                        if constexpr (State::has_pre_computed_hashes)
+                            distinct_key_counter->add(
+                                state.can_precompute_hashes ? state.getPrecomputedHash(method.data, 0)
+                                                            : method.data.hash(emplace_result.getKey()));
+                        else
+                            distinct_key_counter->add(method.data.hash(emplace_result.getKey()));
+                    }
                     getInlineCountState(emplace_result.getMapped()) = row_end - row_begin;
+                }
                 else
                     getInlineCountState(emplace_result.getMapped()) += row_end - row_begin;
             }
@@ -1953,7 +1988,18 @@ void NO_INLINE Aggregator::executeImplBatch(
                 }
 
                 if (emplace_result.isInserted())
+                {
+                    if (distinct_key_counter)
+                    {
+                        if constexpr (State::has_pre_computed_hashes)
+                            distinct_key_counter->add(
+                                state.can_precompute_hashes ? state.getPrecomputedHash(method.data, i)
+                                                            : method.data.hash(emplace_result.getKey()));
+                        else
+                            distinct_key_counter->add(method.data.hash(emplace_result.getKey()));
+                    }
                     getInlineCountState(emplace_result.getMapped()) = 1;
+                }
                 else
                     ++getInlineCountState(emplace_result.getMapped());
 
@@ -2080,6 +2126,16 @@ void NO_INLINE Aggregator::executeImplBatch(
             /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
             if (emplace_result.isInserted())
             {
+                if (distinct_key_counter)
+                {
+                    if constexpr (State::has_pre_computed_hashes)
+                        distinct_key_counter->add(
+                            state.can_precompute_hashes ? state.getPrecomputedHash(method.data, i)
+                                                        : method.data.hash(emplace_result.getKey()));
+                    else
+                        distinct_key_counter->add(method.data.hash(emplace_result.getKey()));
+                }
+
                 /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
                 emplace_result.setMapped(nullptr);
 
@@ -2745,8 +2801,8 @@ bool Aggregator::executeOnBlock(Columns columns,
         /// handles it. The admission gate rules out the dropping overflow modes and the
         /// overflow row, so `no_more_keys` can never become true, which is what entitles the
         /// slices to pass `no_more_keys = false` and no overflow destination.
-        const size_t split
-            = executeImplUntilAdaptiveFreeze(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data());
+        const size_t split = executeImplUntilAdaptiveFreeze(
+            result, row_begin, row_end, key_columns, aggregate_functions_instructions.data(), adaptive->distinct_key_counter.get());
         if (split < row_end)
         {
             std::optional<MemoryTrackerSwitcher> scope;
@@ -2768,7 +2824,9 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         /// This is where data is written that does not fit in `max_rows_to_group_by` with `group_by_overflow_mode = any`.
         AggregateDataPtr overflow_row_ptr = params.overflow_row ? result.without_key : nullptr;
-        executeImpl(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data(), no_more_keys, all_keys_are_const, overflow_row_ptr);
+        executeImpl(
+            result, row_begin, row_end, key_columns, aggregate_functions_instructions.data(), no_more_keys, all_keys_are_const,
+            overflow_row_ptr, adaptive ? adaptive->distinct_key_counter.get() : nullptr);
     }
 
     size_t result_size = result.sizeWithoutOverflowRow();

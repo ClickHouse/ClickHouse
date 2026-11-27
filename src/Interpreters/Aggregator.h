@@ -949,7 +949,13 @@ private:
     void destroyAllAggregateStates(AggregatedDataVariants & result) const;
 
     /// `for_sub_range`: the rows are one run of a block aggregated run by run (`executeOnBlockSmall`), so the
-    /// hashing state is a `ColumnsHashing::SubRangeState` built over those rows only.
+    /// hashing state is a `ColumnsHashing::SubRangeState` built over those rows only. `distinct_key_counter`,
+    /// which an adaptive producer under a throw-mode limit passes, takes every key that the table inserts, by
+    /// the hash of the key in the table: the routing hash of its staged records (see
+    /// `AdaptiveDistinctKeyCounter`). A state that precomputes the hashes of its rows gives the hash without
+    /// hashing the key again: after the emplace of a row, `getPrecomputedHash` returns its hash while
+    /// `can_precompute_hashes` holds. A `PackedStringRef` key stores its hash, so the table hashes it without
+    /// reading the string.
     template <bool for_sub_range = false>
     void executeImpl(
         AggregatedDataVariants & result,
@@ -959,7 +965,8 @@ private:
         AggregateFunctionInstruction * aggregate_instructions,
         bool no_more_keys = false,
         bool all_keys_are_const = false,
-        AggregateDataPtr overflow_row = nullptr) const;
+        AggregateDataPtr overflow_row = nullptr,
+        AdaptiveDistinctKeyCounter * distinct_key_counter = nullptr) const;
 
     /// Process one data block, aggregate the data into a hash table.
     template <bool for_sub_range, typename Method>
@@ -973,7 +980,8 @@ private:
         LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,
         bool all_keys_are_const,
-        AggregateDataPtr overflow_row) const;
+        AggregateDataPtr overflow_row,
+        AdaptiveDistinctKeyCounter * distinct_key_counter) const;
 
     template <typename Method, typename State>
     void executeImpl(
@@ -986,7 +994,8 @@ private:
         AggregateFunctionInstruction * aggregate_instructions,
         bool no_more_keys,
         bool all_keys_are_const,
-        AggregateDataPtr overflow_row) const;
+        AggregateDataPtr overflow_row,
+        AdaptiveDistinctKeyCounter * distinct_key_counter) const;
 
     /// The learning consume path of the adaptive aggregation, taken for a block that can push
     /// the table past the freeze threshold: aggregates like `executeImpl`, but in slices, and
@@ -999,7 +1008,8 @@ private:
         size_t row_begin,
         size_t row_end,
         ColumnRawPtrs & key_columns,
-        AggregateFunctionInstruction * aggregate_instructions) const;
+        AggregateFunctionInstruction * aggregate_instructions,
+        AdaptiveDistinctKeyCounter * distinct_key_counter) const;
 
     /// Specialization for a particular value no_more_keys.
     template <bool prefetch, bool top_k = false, typename Method, typename State>
@@ -1015,7 +1025,8 @@ private:
         bool no_more_keys,
         bool all_keys_are_const,
         bool use_compiled_functions,
-        AggregateDataPtr overflow_row) const;
+        AggregateDataPtr overflow_row,
+        AdaptiveDistinctKeyCounter * distinct_key_counter) const;
 
     struct DestroyedState
     {
@@ -1040,7 +1051,8 @@ private:
         bool no_more_keys,
         bool all_keys_are_const,
         bool use_compiled_functions,
-        AggregateDataPtr overflow_row) const;
+        AggregateDataPtr overflow_row,
+        AdaptiveDistinctKeyCounter * distinct_key_counter) const;
 
     /// Registers keys without building aggregate states; shared by the set methods and by the
     /// no-aggregates fast path of the map methods.
@@ -1052,7 +1064,8 @@ private:
         Arena * aggregates_pool,
         size_t row_begin,
         size_t row_end,
-        bool all_keys_are_const) const;
+        bool all_keys_are_const,
+        AdaptiveDistinctKeyCounter * distinct_key_counter) const;
 
     /// Advances an adaptive producer's phase between blocks, in place of the baseline's conversion: writes its staged
     /// records to disk when the query is `over_external_threshold`, thaws a frozen table whose staged stream repeats,

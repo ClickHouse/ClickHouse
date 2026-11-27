@@ -102,6 +102,12 @@ void Aggregator::accountStagedBatch(
 
     adaptive.total_staged_records += total;
 
+    /// The routing hash of a staged record is the hash of its key in the producer's table (see
+    /// `AdaptiveDistinctKeyCounter`).
+    if (adaptive.distinct_key_counter)
+        for (size_t i = 0; i < total; ++i)
+            adaptive.distinct_key_counter->add(hashes[i]);
+
     /// The thaw evidence of the thread (see `adaptiveStagingRepeats`). A batch updates:
     ///
     /// - `staged_records` grows by the batch's record count.
