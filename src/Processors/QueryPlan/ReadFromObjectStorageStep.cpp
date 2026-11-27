@@ -295,13 +295,34 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimatePlainParq
             if (column.max_dictionary_values)
                 target.max_dictionary_values = std::max(target.max_dictionary_values.value_or(0), *column.max_dictionary_values);
 
-            /// As for Iceberg, a file without the NULL count adds no statistics.
+            /// As for Iceberg, a file without the NULL count adds no statistics; see below for a column without any.
             if (column.nulls)
             {
                 statistics_builder.addStatistics(
                     target.name, ColumnStatistics::createBasicFromSummary(target.type, column.rows, Field(), Field(), *column.nulls));
                 target.has_statistics = true;
             }
+        }
+    }
+
+    /// A dictionary page has the distinct values of its column chunk, a sample of the rows; the files mostly share their
+    /// values, so the largest estimate from a dictionary counts them. Otherwise, the compressed size.
+    VectorWithMemoryTracking<std::optional<UInt64>> distinct_values(targets.size());
+    for (size_t i = 0; i < targets.size(); ++i)
+    {
+        auto & target = targets[i];
+        if (target.fully_dictionary_encoded && target.max_dictionary_values)
+            distinct_values[i] = target.max_dictionary_values;
+        else if (settings[Setting::estimate_distinct_values_from_metadata])
+            distinct_values[i] = estimateDistinctValuesFromCompressedSize(target.rows, target.compressed_bytes);
+
+        /// A column without the NULL counts (the writer may omit them) still has its number of distinct values, so it
+        /// gets the statistics with an unknown NULL count, as an Iceberg column with only the sizes of its files.
+        if (!target.has_statistics && distinct_values[i])
+        {
+            statistics_builder.addStatistics(
+                target.name, ColumnStatistics::createBasicFromSummary(target.type, target.rows, Field(), Field(), std::nullopt));
+            target.has_statistics = true;
         }
     }
 
@@ -312,20 +333,12 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimatePlainParq
     if (!estimator)
         return estimate;
 
-    for (const auto & target : targets)
+    for (size_t i = 0; i < targets.size(); ++i)
     {
-        if (!target.has_statistics)
+        const auto & target = targets[i];
+        if (!target.has_statistics || !distinct_values[i])
             continue;
-        /// A dictionary page has the distinct values of its column chunk, a sample of the rows; the files mostly share their
-        /// values, so the largest estimate from a dictionary counts them. Otherwise, the compressed size.
-        std::optional<UInt64> distinct_values;
-        if (target.fully_dictionary_encoded && target.max_dictionary_values)
-            distinct_values = target.max_dictionary_values;
-        else if (settings[Setting::estimate_distinct_values_from_metadata])
-            distinct_values = estimateDistinctValuesFromCompressedSize(target.rows, target.compressed_bytes);
-        if (!distinct_values)
-            continue;
-        statistics_builder.setCardinality(target.name, std::clamp<UInt64>(*distinct_values, 1, std::max<UInt64>(total_rows, 1)));
+        statistics_builder.setCardinality(target.name, std::clamp<UInt64>(*distinct_values[i], 1, std::max<UInt64>(total_rows, 1)));
         estimate.distinct_values_from_metadata.insert(target.name);
     }
     estimate.estimator = estimator;
