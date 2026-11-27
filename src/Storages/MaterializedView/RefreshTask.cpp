@@ -1536,7 +1536,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
 
         if (!isAppend())
         {
-            refresh_context->setParentTable(view_storage_id.uuid);
+            refresh_context->setParentTable(view_storage_id.hasUUID() ? view_storage_id.uuid : UUIDHelpers::generateV4());
             refresh_context->setDDLQueryCancellation(execution.cancel_ddl_queries.get_token());
             if (root_znode_version != -1)
                 refresh_context->setDDLAdditionalChecksOnEnqueue({zkutil::makeCheckRequest(coordination.path, root_znode_version)});
