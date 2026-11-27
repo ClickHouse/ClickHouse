@@ -142,13 +142,13 @@ def test_renewal_keeps_cluster():
 
 def test_move_to_optimal_node_checks_all_nodes():
     with PartitionManager() as pm:
-        pm.partition_instances(node, keeper1)
+        # heal_all() heals in this order, so node_b is reachable again before keeper1, the target of the move.
         pm.partition_instances(node, node_b)
+        pm.partition_instances(node, keeper1)
         # keeper1 is the optimal node of `first_or_random`, so a session elsewhere moves to it within seconds.
         set_zookeeper_config(
             CLUSTER_A + ["node_b"],
             load_balancing="first_or_random",
-            connect_to_all_nodes_wait_ms=1000,
             fallback_session_lifetime="<min>1</min><max>2</max>",
         )
         assert connected_host() in ["keeper2", "keeper3"]
@@ -238,3 +238,10 @@ def test_lowest_latency():
         CLUSTER_A, connect_to_all_nodes=False, connect_to_all_nodes_policy="lowest_latency"
     )
     assert connected_host() != "keeper1"
+
+
+def test_single_node():
+    # One configured node goes through the same round, so its renewals are checked too.
+    set_zookeeper_config(["keeper2"])
+    assert connected_host() == "keeper2"
+    assert node.contains_in_log("1 of 1 ZooKeeper nodes answered, chose keeper2:9181")
