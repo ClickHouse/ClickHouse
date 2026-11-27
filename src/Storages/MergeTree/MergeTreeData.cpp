@@ -7734,7 +7734,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 /// `KILL MUTATION` of a `RENAME COLUMN`, leaves a part in that state. The condition
                 /// mirrors the one `splitAndModifyMutationCommands` applies, virtual columns included:
                 /// a part written by a lightweight delete keeps its `_row_exists` through the mutation.
+                /// A column that a pending mutation drops does not keep the part alive either.
                 if (!dropped_columns.contains(name_in_table)
+                    && !alter_conversions->isColumnDropped(column.name, share_nested_offsets)
                     && (old_metadata.columns.has(name_in_table) || old_metadata.virtuals.has(name_in_table)))
                 {
                     at_least_one_column_rest = true;

@@ -18,6 +18,7 @@ DROP TABLE IF EXISTS t_pending_update;
 DROP TABLE IF EXISTS t_only_q;
 DROP TABLE IF EXISTS t_only_q_drop_index;
 DROP TABLE IF EXISTS t_only_q_add_index;
+DROP TABLE IF EXISTS t_only_two;
 
 CREATE TABLE t_compact (id UInt64, q UInt32) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
@@ -140,6 +141,20 @@ SELECT 'only q add index', id, q FROM t_only_q_add_index;
 SELECT 'only q index mutations', count() FROM system.mutations
 WHERE database = currentDatabase() AND table IN ('t_only_q_drop_index', 't_only_q_add_index');
 
+-- The same when the conversion of the part's other column is still pending.
+CREATE TABLE t_only_two (q UInt32, r UInt32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_only_two VALUES (42, 52);
+ALTER TABLE t_only_two ADD COLUMN id UInt64;
+SYSTEM STOP MERGES t_only_two;
+ALTER TABLE t_only_two MODIFY COLUMN q UInt32 ALIAS toUInt32(id + 7) SETTINGS alter_sync = 0, mutations_sync = 0;
+ALTER TABLE t_only_two MODIFY COLUMN r UInt32 ALIAS toUInt32(id + 8) SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_only_two DROP COLUMN r SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+SYSTEM START MERGES t_only_two;
+ALTER TABLE t_only_two DELETE WHERE 0 SETTINGS mutations_sync = 2;
+SELECT 'only two', id, q, r FROM t_only_two;
+SELECT 'only two mutations', countIf(NOT is_done), countIf(latest_fail_reason != '') FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_only_two';
+
 DROP TABLE t_compact;
 DROP TABLE t_wide;
 DROP TABLE t_ephemeral;
@@ -155,3 +170,4 @@ DROP TABLE t_pending_update;
 DROP TABLE t_only_q;
 DROP TABLE t_only_q_drop_index;
 DROP TABLE t_only_q_add_index;
+DROP TABLE t_only_two;
