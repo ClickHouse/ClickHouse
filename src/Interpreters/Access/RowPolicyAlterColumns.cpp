@@ -2,6 +2,7 @@
 
 #include <Access/AccessControl.h>
 #include <Access/RowPolicy.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
@@ -66,14 +67,15 @@ Names storageColumns(const String & name, const ColumnsDescription & columns)
     return children;
 }
 
-using Readers = SetWithMemoryTracking<String>;
+/// the CTEs a `SELECT` level sees, by name, and if each reads a checked table, `c AS (SELECT ... FROM t)`
+using Ctes = MapWithMemoryTracking<String, bool>;
 
-/// what a `SELECT` level binds: the qualifiers of its names and the CTEs `c AS (SELECT ... FROM t)` over a checked
-/// table, so that `FROM c` reads t in the level and in the subqueries inside it
+/// what a `SELECT` level binds: the qualifiers of its names and the CTEs, so that `FROM c` reads t in the level and
+/// in the subqueries inside it, and a CTE over another table hides the table of its name
 struct Scope
 {
     Strings qualifiers;
-    Readers readers;
+    Ctes ctes;
 
     auto operator<=>(const Scope &) const = default;
 };
@@ -85,8 +87,8 @@ struct FilterNames
     const ColumnsDescription & columns;
     /// each name as written, then without each qualifier of its level that it starts with
     SetWithMemoryTracking<Strings> names;
-    /// a body is opened once per scope and per subquery that reads a checked table or not
-    SetWithMemoryTracking<std::tuple<String, Scope, bool>> visited_udfs;
+    /// a body is opened once per scope and per recording and reading state of its subquery
+    SetWithMemoryTracking<std::tuple<String, Scope, bool, bool>> visited_udfs;
 
     /// an unqualified table binds in the database of the reader, so it counts in every database
     [[nodiscard]] static bool binds(const ASTTableIdentifier & table, const StorageID & checked)
@@ -95,55 +97,55 @@ struct FilterNames
         return checked.table_name == id.table_name && (id.database_name.empty() || checked.database_name == id.database_name);
     }
 
-    [[nodiscard]] bool reads(const ASTTableIdentifier & table, const Readers & readers) const
+    [[nodiscard]] bool reads(const ASTTableIdentifier & table, const Ctes & ctes) const
     {
-        return (!table.compound() && readers.contains(table.name()))
-            || std::ranges::any_of(tables, [&](const auto & checked) { return binds(table, checked); });
+        if (!table.compound())
+            if (auto cte = ctes.find(table.name()); cte != ctes.end())
+                return cte->second;
+        return std::ranges::any_of(tables, [&](const auto & checked) { return binds(table, checked); });
     }
 
     /// the tables of one subquery level are in its `FROM` and joins, a subquery in its expressions or `WITH` is
     /// a level of its own
-    [[nodiscard]] bool readsCheckedTable(const IAST & ast, const Readers & readers) const
+    [[nodiscard]] bool readsCheckedTable(const IAST & ast, const Ctes & ctes) const
     {
         if (const auto * table = ast.as<ASTTableIdentifier>())
-            return reads(*table, readers);
-        auto children_read = [&](const Readers & level, bool from)
+            return reads(*table, ctes);
+        auto children_read = [&](const Ctes & level, bool from)
         {
             return std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return (from || !child->as<ASTSubquery>()) && readsCheckedTable(*child, level); });
         };
         if (const auto * select = ast.as<ASTSelectQuery>())
-            return children_read(levelReaders(*select, readers), false);
-        return children_read(readers, ast.as<ASTTableExpression>() != nullptr);
+            return children_read(levelCtes(*select, ctes), false);
+        return children_read(ctes, ast.as<ASTTableExpression>() != nullptr);
     }
 
-    /// a CTE of a `SELECT` hides the CTE of the same name around it, except in its own body, and can read a CTE
-    /// that comes after it
-    [[nodiscard]] Readers levelReaders(const ASTSelectQuery & select, const Readers & outer) const
+    /// a CTE of a `SELECT` hides the CTE or the table of the same name around it, except in its own body, and can
+    /// read a CTE that comes after it
+    [[nodiscard]] Ctes levelCtes(const ASTSelectQuery & select, const Ctes & outer) const
     {
         auto with = select.with();
         if (!with)
             return outer;
-        Readers level = outer;
+        Ctes level = outer;
         for (const auto & child : with->children)
             if (const auto * cte = child->as<ASTWithElement>())
-                level.erase(cte->name);
+                level[cte->name] = false;
         for (bool changed = true; changed;)
         {
             changed = false;
             for (const auto & child : with->children)
             {
                 const auto * cte = child->as<ASTWithElement>();
-                if (!cte || level.contains(cte->name))
+                if (!cte || level.at(cte->name))
                     continue;
-                if (outer.contains(cte->name))
-                    level.insert(cte->name);
-                if (readsCheckedTable(*cte->subquery, level))
-                {
-                    level.insert(cte->name);
-                    changed = true;
-                }
+                if (auto own = outer.find(cte->name); own != outer.end())
+                    level[cte->name] = own->second;
                 else
                     level.erase(cte->name);
+                const bool reading = readsCheckedTable(*cte->subquery, level);
+                level[cte->name] = reading;
+                changed = changed || reading;
             }
         }
         return level;
@@ -152,9 +154,9 @@ struct FilterNames
     /// a table expression `... AS q` binds `q.` and a table t binds `t.` in its `SELECT` and in the subqueries inside,
     /// unless one of them binds the name again (see `tryBindIdentifierToTableExpression`), only a binding that reads
     /// a checked table qualifies its names
-    Scope levelScope(const ASTSelectQuery & select, const Scope & outer) const
+    [[nodiscard]] Scope levelScope(const ASTSelectQuery & select, const Scope & outer) const
     {
-        const auto readers = levelReaders(select, outer.readers);
+        const auto ctes = levelCtes(select, outer.ctes);
         Strings level;
         NameSet bound;
         if (auto from = select.tables())
@@ -164,7 +166,7 @@ struct FilterNames
                 const auto & table_expression = element->as<ASTTablesInSelectQueryElement &>().table_expression;
                 if (!table_expression)
                     continue;
-                const bool reading = readsCheckedTable(*table_expression, readers);
+                const bool reading = readsCheckedTable(*table_expression, ctes);
                 const auto & expression = table_expression->as<ASTTableExpression &>();
                 for (const auto & node : {expression.database_and_table_name, expression.table_function, expression.subquery})
                 {
@@ -189,7 +191,7 @@ struct FilterNames
         for (const auto & qualifier : outer.qualifiers)
             if (!bound.contains(qualifier.substr(0, qualifier.find('.'))))
                 level.push_back(qualifier);
-        return {std::move(level), readers};
+        return {std::move(level), ctes};
     }
 
     /// a filter cannot be correlated and cannot read its own table (see `buildFilterInfo`), so the names of a subquery
@@ -204,7 +206,7 @@ struct FilterNames
             return;
         }
         if (ast->as<ASTSubquery>())
-            record = in_reader = in_reader || readsCheckedTable(*ast, scope.readers);
+            record = in_reader = in_reader || readsCheckedTable(*ast, scope.ctes);
         if (ast->as<ASTTableIdentifier>())
             return;
 
@@ -212,16 +214,31 @@ struct FilterNames
         if (const auto * identifier = ast->as<ASTIdentifier>())
         {
             name = identifier->name();
-            if (!record || std::ranges::any_of(bound, [&](const auto & parameter) { return name == parameter || name.starts_with(parameter + "."); }))
+            if (std::ranges::any_of(bound, [&](const auto & parameter) { return name == parameter || name.starts_with(parameter + "."); }))
                 return;
-            Strings candidates{name};
-            for (const auto & qualifier : scope.qualifiers)
-                if (name.starts_with(qualifier))
+            if (record)
+            {
+                Strings candidates{name};
+                Strings stripped_first;
+                for (const auto & qualifier : scope.qualifiers)
+                {
+                    if (!name.starts_with(qualifier))
+                        continue;
                     candidates.push_back(name.substr(qualifier.size()));
-            names.insert(std::move(candidates));
-            /// a column takes priority over a SQL UDF of the same name, which a bare name calls only as a lambda, `arrayExists(udf, arr)`
-            if (!storageColumns(name, columns).empty())
-                return;
+                    /// a reader with `analyzer_compatibility_prefer_alias_over_subcolumn` removes a table name or an alias first
+                    if (std::ranges::count(qualifier, '.') == 1)
+                        stripped_first.push_back(candidates.back());
+                }
+                if (!stripped_first.empty())
+                {
+                    stripped_first.insert(stripped_first.end(), candidates.begin(), candidates.end());
+                    names.insert(std::move(stripped_first));
+                }
+                names.insert(std::move(candidates));
+                /// a column takes priority over a SQL UDF of the same name, which a bare name calls only as a lambda, `arrayExists(udf, arr)`
+                if (!storageColumns(name, columns).empty())
+                    return;
+            }
         }
         else if (const auto * function = ast->as<ASTFunction>())
         {
@@ -235,7 +252,8 @@ struct FilterNames
                 return;
             }
         }
-        if (auto body = UserDefinedSQLFunctionFactory::instance().tryGet(name); record && body && visited_udfs.emplace(name, scope, in_reader).second)
+        /// a body can read a checked table in a subquery also where the caller does not
+        if (auto body = UserDefinedSQLFunctionFactory::instance().tryGet(name); body && visited_udfs.emplace(name, scope, record, in_reader).second)
             collect(body, scope, {}, record, in_reader);
 
         for (const auto & child : ast->children)
@@ -243,9 +261,9 @@ struct FilterNames
     }
 };
 
-/// a name binds as written first and with a qualifier of its level removed only after that (see
-/// `tryResolveIdentifierFromTableExpression`); an alter of a column removes the column itself, or every child of
-/// a nested one when no column has that name (see `getNameRange`)
+/// candidates bind in their order, the name as written first and with a qualifier of its level removed only after
+/// that (see `tryResolveIdentifierFromTableExpression`), a setting of the reader can change the order; an alter of
+/// a column removes the column itself, or every child of a nested one when no column has that name (see `getNameRange`)
 bool mentions(const Strings & candidates, const String & altered, const ColumnsDescription & columns)
 {
     for (const auto & candidate : candidates)
@@ -259,6 +277,12 @@ bool mentions(const Strings & candidates, const String & altered, const ColumnsD
         });
     }
     return false;
+}
+
+/// a new name binds the names of a filter that start with it, `t.tenant` reads the subcolumn after `RENAME COLUMN payload TO t`
+bool takes(const Strings & candidates, const String & new_name)
+{
+    return std::ranges::any_of(candidates, [&](const auto & candidate) { return candidate == new_name || candidate.starts_with(new_name + "."); });
 }
 
 /// a new type of a column also changes the `ALIAS` columns that read it: `a UInt8 ALIAS n = 1` fails after `n String`
@@ -341,6 +365,11 @@ void checkRowPoliciesBeforeAlter(const StoragePtr & table, const ColumnsDescript
             {
                 if (!changes(command))
                     continue;
+                if (command.type == AlterCommand::RENAME_COLUMN
+                    && std::ranges::any_of(filter_names.names, [&](const auto & candidates) { return takes(candidates, command.rename_to); }))
+                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Cannot rename column {} to {}: row policy {} mentions this name. Change or drop the policy first",
+                        backQuote(command.column_name), backQuote(command.rename_to), policy->getFullName().toString());
                 const auto changed = changedColumns(command, columns);
                 if (std::ranges::none_of(filter_names.names, [&](const auto & candidates)
                     {
