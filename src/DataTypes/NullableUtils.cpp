@@ -62,69 +62,60 @@ DataTypePtr makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(const Da
     return makeNullableOrLowCardinalityNullableSafe(type);
 }
 
-ColumnPtr mergeNullMaps(ColumnPtr lhs, const ColumnPtr & rhs)
-{
-    if (!lhs)
-        return rhs;
-    if (!rhs)
-        return lhs;
-
-    if (lhs->size() != rhs->size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot merge null maps with different sizes: {} and {}", lhs->size(), rhs->size());
-
-    MutableColumnPtr result = IColumn::mutate(std::move(lhs));
-    auto & result_null_map = assert_cast<ColumnUInt8 &>(*result).getData();
-    const auto & rhs_null_map = assert_cast<const ColumnUInt8 &>(*rhs).getData();
-
-    for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
-        result_null_map[i] |= rhs_null_map[i];
-
-    return result;
-}
-
-ColumnPtr getOuterNullMap(const IColumn & column)
-{
-    if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&column))
-        return column_nullable->getNullMapColumnPtr();
-    if (const auto * column_dynamic = checkAndGetColumn<ColumnDynamic>(&column))
-        return column_dynamic->getVariantColumn().createNullMap();
-    if (const auto * column_variant = checkAndGetColumn<ColumnVariant>(&column))
-        return column_variant->createNullMap();
-    if (const auto * column_low_cardinality = checkAndGetColumn<ColumnLowCardinality>(&column);
-        column_low_cardinality && column_low_cardinality->nestedIsNullable())
-    {
-        const size_t null_index = column_low_cardinality->getDictionary().getNullValueIndex();
-        auto null_map = ColumnUInt8::create(column_low_cardinality->size());
-        auto & null_map_data = null_map->getData();
-        for (size_t row = 0; row < null_map_data.size(); ++row)
-            null_map_data[row] = column_low_cardinality->getIndexAt(row) == null_index;
-        return null_map;
-    }
-    return nullptr;
-}
-
 ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullMapPtr & null_map)
 {
     ColumnPtr null_map_holder;
+
+    auto addNullMap = [&](const ColumnNullable * column_nullable)
+    {
+        if (!null_map_holder)
+        {
+            /// First nullable column: just take its null map as the base
+            null_map_holder = column_nullable->getNullMapColumnPtr();
+        }
+        else
+        {
+            /// Subsequent nullable columns: OR their null maps into the accumulated one
+            MutableColumnPtr mutable_null_map_holder = IColumn::mutate(std::move(null_map_holder));
+
+            PaddedPODArray<UInt8> & mutable_null_map = assert_cast<ColumnUInt8 &>(*mutable_null_map_holder).getData();
+            const PaddedPODArray<UInt8> & other_null_map = column_nullable->getNullMapData();
+
+            for (size_t i = 0, size = mutable_null_map.size(); i < size; ++i)
+                mutable_null_map[i] |= other_null_map[i];
+
+            null_map_holder = std::move(mutable_null_map_holder);
+        }
+    };
+
     for (auto & column : key_columns)
     {
-        if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(column))
+        if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&*column))
         {
-            null_map_holder = mergeNullMaps(std::move(null_map_holder), column_nullable->getNullMapColumnPtr());
+            /// Top-level Nullable(...) always contributes to the combined null map
+            addNullMap(column_nullable);
 
-            /** Only the top-level null map says whether the key of a row is NULL. Folding in the null
-              * maps of the elements of a `Nullable(Tuple(Nullable(T), ...))` would make a row whose tuple
-              * merely *contains* a NULL a NULL key: the hash-family joins would drop it, while the merge
-              * algorithms - which compare the nested tuples - keep it, so the result of a join would depend
-              * on `join_algorithm`, and `IN` would never match such a row. The NULLs of the elements are
-              * part of the key and are compared as any other value, exactly as they are for a
-              * `Tuple(Nullable(T), ...)` that is not wrapped in `Nullable`.
-              */
-            column = &column_nullable->getNestedColumn();
+            const IColumn * nested_column = &column_nullable->getNestedColumn();
+            column = nested_column;
+
+            /// Special case: Nullable(Tuple(...))
+            /// If the nested column is a tuple, also fold in null maps of nullable tuple elements
+            if (const auto * tuple = checkAndGetColumn<ColumnTuple>(nested_column))
+            {
+                const auto & tuple_columns = tuple->getColumns();
+                for (const auto & element : tuple_columns)
+                {
+                    if (const auto * elem_nullable = checkAndGetColumn<ColumnNullable>(element.get()))
+                    {
+                        addNullMap(elem_nullable);
+                    }
+                }
+            }
         }
     }
 
     null_map = null_map_holder ? &assert_cast<const ColumnUInt8 &>(*null_map_holder).getData() : nullptr;
+
     return null_map_holder;
 }
 

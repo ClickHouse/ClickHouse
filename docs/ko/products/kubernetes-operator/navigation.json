@@ -1,5 +1,6 @@
 {
-  "item": "Kubernetes Operator",
+  "icon": "/images/icons/icon-kubernetes-operator.svg",
+  "item": "Kubernetes 오퍼레이터",
   "pages": [
     "ko/products/kubernetes-operator/overview",
     {

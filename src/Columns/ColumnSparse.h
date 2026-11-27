@@ -32,15 +32,7 @@ public:
     using Base = COWHelper<IColumnHelper<ColumnSparse>, ColumnSparse>;
     static Ptr create(const ColumnPtr & values_, const ColumnPtr & offsets_, size_t size_)
     {
-        /// The underlying columns may be shared with other owners (e.g. the original
-        /// sparse column that supplied `offsets_` via `getOffsetsPtr`). `assumeMutable`
-        /// here would `chassert(use_count() == 1)` and abort. Bypass via `const_cast`
-        /// + `getPtr` — the result is returned as `Ptr` (immutable) and any mutation
-        /// must go through `IColumn::mutate`, which deep-clones shared sub-columns.
-        return Base::create(
-            const_cast<IColumn *>(values_.get())->getPtr(),
-            const_cast<IColumn *>(offsets_.get())->getPtr(),
-            size_);
+        return Base::create(values_->assumeMutable(), offsets_->assumeMutable(), size_);
     }
 
     template <typename TColumnPtr>
@@ -52,9 +44,7 @@ public:
 
     static Ptr create(const ColumnPtr & values_)
     {
-        /// The one-argument constructor appends a default value, so unlike the other immutable
-        /// overloads it must not borrow a potentially shared input column.
-        return Base::create(IColumn::mutate(values_));
+        return Base::create(values_->assumeMutable());
     }
 
     template <typename TColumnPtr>
@@ -71,10 +61,6 @@ public:
     MutableColumnPtr cloneResized(size_t new_size) const override;
     size_t size() const override { return _size; }
     bool isDefaultAt(size_t n) const override;
-
-    /// All values are default iff the offsets array is empty (no non-default
-    /// values have been stored).
-    bool hasOnlyTypeDefaults() const override;
     bool isNullAt(size_t n) const override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
@@ -86,7 +72,6 @@ public:
     Int64 getInt(size_t n) const override;
     UInt64 get64(size_t n) const override;
     std::string_view getDataAt(size_t n) const override;
-    bool supportsGetDataAt() const override { return values->supportsGetDataAt(); }
 
     ColumnPtr convertToFullColumnIfSparse() const override;
 
@@ -95,6 +80,7 @@ public:
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else
@@ -222,10 +208,10 @@ public:
         {
         }
 
-        [[nodiscard]] bool ALWAYS_INLINE isDefault() const { return current_offset == offsets_size || current_row != offsets[current_offset]; }
-        [[nodiscard]] size_t ALWAYS_INLINE getValueIndex() const { return isDefault() ? 0 : current_offset + 1; }
-        [[nodiscard]] size_t ALWAYS_INLINE getCurrentRow() const { return current_row; }
-        [[nodiscard]] size_t ALWAYS_INLINE getCurrentOffset() const { return current_offset; }
+        bool ALWAYS_INLINE isDefault() const { return current_offset == offsets_size || current_row != offsets[current_offset]; }
+        size_t ALWAYS_INLINE getValueIndex() const { return isDefault() ? 0 : current_offset + 1; }
+        size_t ALWAYS_INLINE getCurrentRow() const { return current_row; }
+        size_t ALWAYS_INLINE getCurrentOffset() const { return current_offset; }
         size_t ALWAYS_INLINE increaseCurrentRow() { return ++current_row; }
         size_t ALWAYS_INLINE increaseCurrentOffset() { return ++current_offset; }
 

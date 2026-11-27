@@ -61,8 +61,7 @@ void ASTCreateWorkloadQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSe
                 ostr << ", ";
             else
                 first = false;
-            /// The parser reads the name of a workload setting as one identifier.
-            ostr << backQuoteIfNeed(change.name) << " = " << applyVisitor(FieldVisitorToString(), change.value);
+            ostr << change.name << " = " << applyVisitor(FieldVisitorToString(), change.value);
             if (!change.resource.empty())
             {
                 ostr << ' ' << "FOR" << ' ';

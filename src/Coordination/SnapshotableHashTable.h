@@ -56,7 +56,7 @@ struct ListNode
         return ListNode{key, value.copyFromSnapshotNode()};
     }
 
-    [[nodiscard]] bool isActiveInMap() const
+    bool isActiveInMap() const
     {
         return tombstone.load(std::memory_order_relaxed).invalidated_by == 0;
     }
@@ -71,7 +71,7 @@ struct ListNode
         tombstone.store(cur, std::memory_order_relaxed);
     }
 
-    [[nodiscard]] bool getFreeKey() const
+    bool getFreeKey() const
     {
         return tombstone.load(std::memory_order_relaxed).free_key;
     }
@@ -249,7 +249,7 @@ public:
                     advanceToVisibleOrEnd();
             }
 
-            [[nodiscard]] bool isNodeVisible(const ListElem & node) const
+            bool isNodeVisible(const ListElem & node) const
             {
                 chassert(node.version <= view_version);
                 const auto tombstone = node.tombstone.load(std::memory_order_relaxed);
@@ -281,12 +281,12 @@ public:
 
         ReadView(const ReadView &) = delete;
 
-        [[nodiscard]] Iterator begin() const { return Iterator{first, prefix_size, pinned_version, node_count}; }
-        [[nodiscard]] std::default_sentinel_t end() const { return {}; }
+        Iterator begin() const { return Iterator{first, prefix_size, pinned_version, node_count}; }
+        std::default_sentinel_t end() const { return {}; }
 
-        [[nodiscard]] size_t prefixSize() const { return prefix_size; }
-        [[nodiscard]] size_t nodeCount() const { return node_count; }
-        [[nodiscard]] uint32_t version() const { return pinned_version; }
+        size_t prefixSize() const { return prefix_size; }
+        size_t nodeCount() const { return node_count; }
+        uint32_t version() const { return pinned_version; }
 
     private:
         friend class SnapshotableHashTable;
@@ -402,7 +402,7 @@ public:
         return true;
     }
 
-    bool contains(std::string_view key) const
+    bool contains(const std::string & key) const
     {
         return map.find(key) != map.end();
     }

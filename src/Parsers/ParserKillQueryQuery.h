@@ -10,11 +10,8 @@ namespace DB
   */
 class ParserKillQueryQuery : public IParserBase
 {
-public:
-    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
-
 protected:
-    [[nodiscard]] const char * getName() const override { return "KILL QUERY query"; }
+    const char * getName() const override { return "KILL QUERY query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

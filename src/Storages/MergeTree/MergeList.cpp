@@ -4,7 +4,6 @@
 #include <base/getThreadId.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/ThreadStatus.h>
 #include <Common/MemoryTracker.h>
 
@@ -25,8 +24,7 @@ namespace ErrorCodes
 
 const MergeTreePartInfo MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION = {"all", 0, 0, 0};
 
-MergeListElement::MergeListElement(
-    const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, const ContextPtr & context, ThreadGroupPtr thread_group_)
+MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, const ContextPtr & context)
     : table_id{table_id_}
     , partition_id{future_part->part_info.getPartitionId()}
     , result_part_name{future_part->name}
@@ -70,14 +68,14 @@ MergeListElement::MergeListElement(
         is_mutation = (result_part_info.level == future_part->parts[0]->info.level) && !is_fake_projection_part;
 
         const auto & part = future_part->parts[0];
-        partition = part->partition.serializeToString(*part);
+        partition = part->partition.serializeToString(part->getMetadataSnapshot());
     }
 
     if (!is_fake_projection_part && is_mutation && normal_parts_count != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} source parts for mutation {}: {}", future_part->parts.size(),
                         result_part_info.getPartNameV1(), fmt::join(source_part_names, ", "));
 
-    thread_group = thread_group_ ? std::move(thread_group_) : ThreadGroup::createForMergeMutate(context);
+    thread_group = ThreadGroup::createForMergeMutate(context);
 }
 
 MergeInfo MergeListElement::getInfo() const
@@ -135,9 +133,7 @@ const MemoryTracker & MergeListElement::getMemoryTracker() const
 
 MergeListElement::~MergeListElement()
 {
-    /// The part produced goes to the table; also marks the caller for an `OPTIMIZE` merging inline.
-    thread_group->memory_tracker.setDriftExpected();
-    setCurrentQueryMemoryDriftExpected();
+    background_memory_tracker.adjustOnBackgroundTaskEnd(&getMemoryTracker());
 }
 
 }

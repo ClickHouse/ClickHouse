@@ -6,6 +6,8 @@ description: 'ClickHouse Private 서비스 개요'
 doc_type: 'reference'
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 <div id="overview">
   ## 개요
 </div>
@@ -29,21 +31,15 @@ ClickHouse Private는 ClickHouse Cloud에서 실행되는 것과 동일한 상�
 * ClickHouse Cloud에서 완전히 테스트 및 검증된 ClickHouse 데이터베이스와 operator 버전
 * 백업 및 스케일링 작업을 포함한 프로그래밍 방식 작업용 API
 
-## 아키텍처 {#architecture}
+<div id="architecture">
+  ## 아키텍처
+</div>
 
 ClickHouse Private는 배포 환경 내에서 완전히 독립적으로 실행되며, ClickHouse의 클라우드 네이티브 컴퓨트와 스토리지의 분리 아키텍처를 제공합니다.
 
 <br />
 
-<div className="ch-image-md ch-image-background-black">
-
-<Frame>
-
-![ClickHouse Private 아키텍처](/images/cloud/reference/private-gov-architecture.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/private-gov-architecture.webp" size="md" alt="ClickHouse Private 아키텍처" background="black" />
 
 <br />
 
@@ -51,14 +47,12 @@ ClickHouse Private는 배포 환경 내에서 완전히 독립적으로 실행�
   ## 지원되는 구성
 </div>
 
-ClickHouse Private는 다음 구성에서 사용할 수 있으며, 환경별 지원 상태는 아래와 같습니다.
+현재 ClickHouse Private는 다음 구성에서 지원됩니다.
 
-| 환경          | 오케스트레이션                          | 스토리지                        | 상태  |
-| :---------- | :------------------------------- | :-------------------------- | :-- |
-| AWS         | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | 지원됨 |
-| GCP         | Google Kubernetes Engine (GKE)   | Google Cloud Storage (GCS)  | 지원됨 |
-| On-premises | 자체 호스팅 Kubernetes                | MinIO AIStor                | 지원됨 |
-| Azure       | Azure Kubernetes Service (AKS)   | Azure blob storage          | 프리뷰 |
+| 환경  | 오케스트레이션                          | 스토리지                        | 상태    |
+| :-- | :------------------------------- | :-------------------------- | :---- |
+| AWS | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | 사용 가능 |
+| GCP | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | 미리보기  |
 
 <div id="onboarding-process">
   ## 온보딩 절차

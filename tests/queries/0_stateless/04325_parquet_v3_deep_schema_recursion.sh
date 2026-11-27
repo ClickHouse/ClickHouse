@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the Parquet format is not available in the fast test build.
 
 # Regression test for unbounded recursion in the Parquet V3 native reader's schema converter.
 # A chain of nested REQUIRED groups maps to nested Tuples and recurses through

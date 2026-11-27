@@ -6,11 +6,14 @@ description: 'Разделение вычислительных ресурсов
 doc_type: 'reference'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Разделение вычислительных ресурсов" />
 
-## Что такое разделение вычислительных ресурсов? {#what-is-compute-compute-separation}
+<div id="what-is-compute-compute-separation">
+  ## Что такое разделение вычислительных ресурсов?
+</div>
 
 Прежде чем разбирать, что такое разделение вычислительных ресурсов, полезно понять, что в ClickHouse Cloud означает **сервис**.
 
@@ -20,15 +23,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 * конечную точку (или несколько конечных точек, созданных через консоль ClickHouse Cloud) для подключения к сервису (например, `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`) для локальных подключений и подключений сторонних приложений
 * папку в объектном хранилище, где сервис хранит все данные и часть метаданных:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Один сервис в ClickHouse Cloud](/images/cloud/reference/compute-compute-1.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="Один сервис в ClickHouse Cloud" />
 
 <br />
 
@@ -42,15 +37,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 
 Разделение вычислительных ресурсов также позволяет отделить операции чтения от операций записи, чтобы они не мешали друг другу:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Разделение вычислительных ресурсов в ClickHouse Cloud](/images/cloud/reference/compute-compute-2.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="Разделение вычислительных ресурсов в ClickHouse Cloud" />
 
 <br />
 
@@ -67,15 +54,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 * Основной сервис `DWH Prod`
 * Вторичный сервис `DWH Prod Subservice`
 
-<div className="ch-image-lg ch-image-background-white">
-
-<Frame>
-
-![Пример хранилища с основным и вторичным сервисами](/images/cloud/reference/compute-compute-8.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="Пример хранилища с основным и вторичным сервисами" background="white" />
 
 <br />
 
@@ -88,33 +67,27 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 * версию базы данных ClickHouse
 * ClickHouse Keeper (для управления репликами)
 
-Хранилища объединяют долгоживущие сервисы ClickHouse Cloud, которые работают с общими данными, при этом у каждого сервиса есть выделенные вычислительные ресурсы и своя конечная точка. [On-Demand Compute](/ru/products/cloud/features/infrastructure/on-demand-compute) временно выделяет воркеров из управляемого пула для поддерживаемых рабочих нагрузок через существующий сервис и его конечную точку.
-
 <div id="access-controls">
   ## Управление доступом
 </div>
 
-### Учетные данные базы данных {#database-credentials}
+<div id="database-credentials">
+  ### Учетные данные базы данных
+</div>
 
 Поскольку все сервисы в хранилище используют один и тот же набор таблиц, для них также действует общее управление доступом.
 Это означает, что все пользователи базы данных, созданные в Service 1, смогут использовать и Service 2 с теми же разрешениями (привилегиями для таблиц, представлений и т. д.), и наоборот.
 Для каждого сервиса используется отдельная конечная точка, но одни и те же имя пользователя и пароль действуют во всех сервисах. Иными словами, **пользователи являются общими для сервисов, работающих с одним и тем же хранилищем**, как показано на рисунке ниже:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Доступ пользователей между сервисами, использующими одни и те же данные](/images/cloud/reference/compute-compute-3.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="Доступ пользователей между сервисами, использующими одни и те же данные" />
 
 <br />
 
 *Рис. 4 — пользователь Alice создан в Service 1, но может использовать те же учетные данные для доступа ко всем сервисам, использующим одни и те же данные*
 
-### Управление сетевым доступом {#network-access-control}
+<div id="network-access-control">
+  ### Управление сетевым доступом
+</div>
 
 Чтобы ограничить доступ к определённым сервисам для других приложений или отдельных пользователей, можно применить сетевые ограничения.
 Для этого перейдите в **Настройки** на вкладке нужного сервиса в консоли ClickHouse Cloud.
@@ -124,15 +97,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 
 В примере ниже Alice не имеет доступа к сервису 2 в хранилище:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Параметры управления сетевым доступом](/images/cloud/reference/compute-compute-4.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="Параметры управления сетевым доступом" />
 
 <br />
 
@@ -140,7 +105,9 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 
 Роли и привилегии ClickHouse также можно использовать для управления доступом к данным, когда вы подключаетесь не под пользователем *по умолчанию*, а от своего имени.
 
-### Сервисы только для чтения и с возможностью чтения и записи {#read-vs-read-write}
+<div id="read-vs-read-write">
+  ### Сервисы только для чтения и с возможностью чтения и записи
+</div>
 
 Сервисы могут быть одного из следующих типов:
 
@@ -157,15 +124,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 Иногда требуется изолировать критически важные рабочие нагрузки на чтение от накладных расходов на запись и слияние, сделав сервис доступным только для чтения.
 Это можно сделать для второго сервиса и любых дополнительных сервисов, которые вы создадите; однако первый сервис всегда будет с возможностью чтения и записи, как показано на рисунке ниже:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Сервисы с возможностью чтения и записи и только для чтения в хранилище](/images/cloud/reference/compute-compute-5.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="Сервисы с возможностью чтения и записи и только для чтения в хранилище" />
 
 <br />
 
@@ -177,7 +136,9 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
   3. Тип сервиса (только для чтения или с возможностью чтения и записи) фиксируется при создании и впоследствии не может быть изменён через Cloud Console. Чтобы переключиться между режимами только для чтения и чтения/записи, создайте в хранилище новый сервис нужного типа.
 </Note>
 
-## Масштабирование {#scaling}
+<div id="scaling">
+  ## Масштабирование
+</div>
 
 Каждый сервис в хранилище масштабируется независимо. Можно изменить количество и размер реплик, включить горизонтальное и вертикальное автоматическое масштабирование, а также настроить автоматический переход в состояние простоя при отсутствии активности.
 
@@ -187,7 +148,9 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 
 [Запланированное масштабирование](/ru/products/cloud/features/autoscaling/scheduled-scaling) работает для отдельных сервисов в хранилище. Ограничения хранилища по-прежнему действуют — планируйте расписания так, чтобы суммарное количество реплик во всех сервисах в периоды пиковой нагрузки не превышало лимит хранилища. Подробнее см. в разделе [Автоматическое масштабирование](/ru/products/cloud/features/autoscaling/overview).
 
-## Изменения в поведении `clusterAllReplicas` {#changes-in-behavior}
+<div id="changes-in-behavior">
+  ## Изменения в поведении `clusterAllReplicas`
+</div>
 
 Когда в хранилище появляется несколько сервисов, поведение `clusterAllReplicas()` меняется.
 При использовании имени кластера `default` запрос будет выполняться только для реплик текущего сервиса, а не для всех сервисов в хранилище.
@@ -203,7 +166,9 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
   ## Ограничения
 </div>
 
-### Ограничения изоляции рабочих нагрузок {#workload-isolation-limitations}
+<div id="workload-isolation-limitations">
+  ### Ограничения изоляции рабочих нагрузок
+</div>
 
 Некоторые рабочие нагрузки нельзя изолировать на уровне конкретных сервисов; в отдельных случаях рабочая нагрузка в одном сервисе может влиять на другой сервис в хранилище. К ним относятся:
 
@@ -215,7 +180,9 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 * **Вставки в одном сервисе с возможностью чтения и записи могут мешать другому сервису с возможностью чтения и записи перейти в режим простоя, если включен режим простоя.** Бывают ситуации, когда
   один сервис выполняет фоновые операции слияния для другого сервиса. Эти фоновые операции могут мешать второму сервису перейти в режим простоя. После завершения фоновых операций сервис перейдет в режим простоя. Сервисы только для чтения этому не подвержены.
 
-### Полезные примечания {#callouts}
+<div id="callouts">
+  ### Полезные примечания
+</div>
 
 * **Версии ClickHouse**: [График обновлений](/ru/products/cloud/features/admin-features/upgrades) определяется настройками основного сервиса. У вторичных сервисов не может быть собственного графика релизов, независимого от основного сервиса.
 
@@ -251,19 +218,13 @@ SETTINGS distributed_ddl_task_timeout=0
   ## Как настроить хранилище
 </div>
 
-### Создание хранилища {#creating-a-warehouse}
+<div id="creating-a-warehouse">
+  ### Создание хранилища
+</div>
 
 Чтобы создать хранилище, нужно создать второй сервис, который будет использовать общие данные с существующим сервисом. Для этого нажмите значок плюса на любом из существующих сервисов:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Создание нового сервиса в хранилище](/images/cloud/reference/compute-compute-7.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="Создание нового сервиса в хранилище" />
 
 <br />
 

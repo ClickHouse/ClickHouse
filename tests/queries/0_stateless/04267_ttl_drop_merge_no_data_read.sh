@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-s3-storage, long, no-msan
+# Tags: no-s3-storage, long
 # Tag no-s3-storage -- merge_tree_clear_old_temporary_directories_interval_seconds
 # is not supported for s3 storage.
 
@@ -303,9 +303,6 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_then_insert;"
 # -------------------------------------------------------------------
 # Case 6: Rows TTL + column TTL — not short-circuited
 # hasOnlyRowsTTL is false when column TTL is present, so data IS read.
-# The rows TTL alone covers every row, so `TTLTransform` closes the read side
-# once the merge emits its first block. How many rows the sources pushed before
-# that depends on the granule size, so assert only that they were read at all.
 # -------------------------------------------------------------------
 echo "-- Case 6: Rows TTL + column TTL is not short-circuited"
 
@@ -338,7 +335,7 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT
         merge_reason,
         rows,
-        read_rows > 0
+        read_rows
     FROM system.part_log
     WHERE
         database = currentDatabase()

@@ -319,10 +319,7 @@ static void insertNull(IColumn & column, DataTypePtr type, UInt8 * read, bool nu
         if (!null_as_default)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack null into non-nullable column with type {}.", type->getName());
-        if (type->isDefaultInsertTrivial())
-            column.insertDefault();
-        else
-            type->insertDefaultInto(column);
+        column.insertDefault();
         /// In case of default on null column can have defined DEFAULT expression that should be used.
         if (read)
             *read = false;
@@ -470,12 +467,9 @@ bool MsgPackVisitor::start_map(uint32_t size) // NOLINT
 
 bool MsgPackVisitor::start_map_key() // NOLINT
 {
-    /// Use `getColumn(0)` to obtain a direct `IColumn &` rather than `getColumns()[0]`,
-    /// which returns a `ColumnPtr` by value and bumps `use_count` to 2; the subsequent
-    /// `WrappedPtr::operator*` would then trip `assumeMutableRef`'s `use_count() == 1` check.
-    IColumn & key_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumn(0);
+    auto key_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumns()[0];
     auto key_type = assert_cast<const DataTypeMap &>(*info_stack.top().type).getKeyType();
-    info_stack.push(Info{key_column, key_type, false, std::nullopt, nullptr});
+    info_stack.push(Info{*key_column, key_type, false, std::nullopt, nullptr});
     return true;
 }
 
@@ -487,10 +481,9 @@ bool MsgPackVisitor::end_map_key() // NOLINT
 
 bool MsgPackVisitor::start_map_value() // NOLINT
 {
-    /// Same `getColumn` vs `getColumns()[i]` distinction as in `start_map_key`.
-    IColumn & value_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumn(1);
+    auto value_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumns()[1];
     auto value_type = assert_cast<const DataTypeMap &>(*info_stack.top().type).getValueType();
-    info_stack.push(Info{value_column, value_type, false, std::nullopt, nullptr});
+    info_stack.push(Info{*value_column, value_type, false, std::nullopt, nullptr});
     return true;
 }
 
@@ -531,15 +524,8 @@ bool MsgPackRowInputFormat::readObject(Parser & msgpack_parser)
 
     PeekableReadBufferCheckpoint checkpoint{*buf};
     size_t offset = 0;
-    /// execute() returns parse_return, not bool: both error statuses are negative and so are
-    /// indistinguishable from success under a boolean test.
-    while (true)
+    while (!msgpack_parser.execute(buf->position(), buf->available(), offset))
     {
-        const msgpack::parse_return status = msgpack_parser.execute(buf->position(), buf->available(), offset);
-        if (status == msgpack::PARSE_SUCCESS || status == msgpack::PARSE_EXTRA_BYTES)
-            break;
-        if (status != msgpack::PARSE_CONTINUE)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Error occurred while parsing msgpack data.");
         buf->position() = buf->buffer().end();
         if (buf->eof())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of file while parsing msgpack object.");
@@ -562,15 +548,7 @@ size_t MsgPackRowInputFormat::countRows(size_t max_block_size)
     while (!buf->eof() && num_rows < max_block_size)
     {
         for (size_t i = 0; i < columns; ++i)
-        {
-            /// A row that ends between columns is incomplete.
-            if (!readObject(null_parser))
-            {
-                if (i != 0)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Not enough values to complete the row.");
-                return num_rows;
-            }
-        }
+            readObject(null_parser);
         ++num_rows;
     }
 
@@ -812,7 +790,7 @@ void registerInputFormatMsgPack(FormatFactory & factory)
             const FormatSettings & settings)
     {
         return std::make_shared<MsgPackRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
-    }, /*supports_reset_parser=*/ true);
+    });
     factory.registerFileExtension("messagepack", "MsgPack");
 
     factory.setDocumentation("MsgPack", Documentation{

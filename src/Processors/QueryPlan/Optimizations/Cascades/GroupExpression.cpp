@@ -4,7 +4,6 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <IO/Operators.h>
 #include <boost/functional/hash.hpp>
-#include <algorithm>
 
 namespace DB
 {
@@ -47,28 +46,13 @@ void GroupExpression::dump(WriteBuffer & out, const CostConfig & cost_config) co
     out << " '" << getDescription() << "'";
     if (strategy)
         out << " [" << strategy->getName() << "]";
-    if (isEnforcer())
-    {
-        out << " [enforcer for";
-        for (const auto & enforced_properties : enforced_for)
-            out << " " << enforced_properties.dump();
-        out << "]";
-    }
+    if (enforced_property != EnforcedProperty::None)
+        out << " [enforcer:" << (enforced_property == EnforcedProperty::Sorting ? "Sorting" : "Distribution") << "]";
     out << " inputs:";
     for (const auto & input : inputs)
         out << " #" << input.group_id;
     if (cost.has_value())
         out << " cost: " << cost->subtree_cost.total(cost_config);
-}
-
-bool GroupExpression::answers(const ExpressionProperties & required_properties) const
-{
-    if (!required_properties.isSatisfiedBy(properties))
-        return false;
-
-    return !isEnforcer()
-        || properties == required_properties
-        || std::find(enforced_for.begin(), enforced_for.end(), required_properties) != enforced_for.end();
 }
 
 String GroupExpression::dump(const CostConfig & cost_config) const

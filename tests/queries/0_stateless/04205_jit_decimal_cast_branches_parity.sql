@@ -31,7 +31,6 @@
 --     - factors that exceed 64 bits, fit in 128 bits  (`Decimal128` `to_scale >= 20`)
 --     - factors that exceed 128 bits                  (`Decimal256` `to_scale >= 39`)
 --   * `Decimal` -> `Decimal`, same scale, widen integer storage
---   * `Decimal` -> `Decimal`, larger scale            (`multiIf` only)
 --   * Identity (`from_type == to_type`)
 --   * `Nullable` wrappers                             (`Nullable -> Nullable`, `T -> Nullable`)
 --
@@ -45,10 +44,18 @@
 --     rather than supported: an out-of-range float to integer conversion has no
 --     defined result once compiled.
 --
---   * `Decimal` -> `Decimal` with a smaller scale: the common type of the
---     branches has the largest scale, so no branch is narrowed. `if` rejects
---     `Decimal` branches with different scales (`NOT_IMPLEMENTED`), so only
---     `multiIf` reaches the larger-scale arm.
+--   * `Decimal` -> `Decimal` with different scales (scale increase OR decrease):
+--     `FunctionIf::executeImpl` rejects this with `NOT_IMPLEMENTED:
+--     "Conditional functions with different Decimal scales"` at planning time
+--     (via `executeDryRunImpl` from `ActionsDAG::updateHeader`). Even with
+--     `compile_expressions = 1` the planner runs the interpreter to validate
+--     types, so the JIT path is unreachable from `if`/`multiIf` for any
+--     two-Decimal pair whose scales differ. The Dec->Dec scale-multiplier and
+--     scale-divider paths in `nativeCastWithDecimalScale` are exercised
+--     indirectly through the `Integer -> Decimal` arm above, which produces
+--     the same `pow10_int_const(width, n)` factor on the same arithmetic IR.
+--     The dedicated Dec->Dec scale-conversion case is only reachable through
+--     explicit `cast(...)`, which uses different machinery.
 --
 --   * `Decimal` -> integer (narrowing): unreachable through `if` typing because
 --     the supertype always picks the wider type (Decimal). Same situation as
@@ -169,8 +176,8 @@ SELECT 'dec38_to_dec76_same_scale:no_jit',  toString(if(materialize(toBool(1)), 
 -- Branch: Nullable wrappers.
 -- The reachable arms through `if`/`multiIf` are:
 --   * `T -> Nullable(T)` (the supertype lifts non-Nullable side to Nullable)
---   * `Nullable(T) -> Nullable(T')` where `T'` has the same or (`multiIf` only)
---     a larger scale, or one side is integer (the `Decimal <- Int` arm).
+--   * `Nullable(T) -> Nullable(T')` where `T` and `T'` have identical scales
+--     (or one side is integer, which goes through the `Decimal <- Int` arm).
 -- The pure `Nullable -> non-Nullable` arm is unreachable from `if` typing.
 -- ============================================================================
 -- Nullable Decimal vs non-Nullable Int -> Nullable Decimal supertype.
@@ -276,42 +283,3 @@ FROM jit_decimal_parity_input
 SETTINGS compile_expressions = 0;
 
 DROP TABLE jit_decimal_parity_input;
-
--- ============================================================================
--- `multiIf` with `Decimal` branches of different scales (#103390): each branch
--- is lifted to the largest scale. The second query adds factors wider than
--- 64 bits, a negative and a non-constant value, and a smaller-scale `Nullable` `else` branch.
--- ============================================================================
-SELECT 'multiif_mixed_scales:jit',
-    toString(multiIf(number = 0, toDecimal32(1.5, 2), number = 1, toDecimal32(2.5, 2), toDecimal64(3.5, 4)))
-FROM numbers(3) ORDER BY number
-SETTINGS compile_expressions = 1, log_comment = '04205_mixed_scales';
-SELECT 'multiif_mixed_scales:no_jit',
-    toString(multiIf(number = 0, toDecimal32(1.5, 2), number = 1, toDecimal32(2.5, 2), toDecimal64(3.5, 4)))
-FROM numbers(3) ORDER BY number
-SETTINGS compile_expressions = 0;
-
-SELECT 'multiif_mixed_scales_dec128:jit',
-    toString(multiIf(number = 0, materialize(toDecimal32('-1.5', 2)), number = 1, toDecimal128('3.5', 25), toNullable(toDecimal32('2.5', 4))))
-FROM numbers(3) ORDER BY number
-SETTINGS compile_expressions = 1, log_comment = '04205_mixed_scales_dec128';
-SELECT 'multiif_mixed_scales_dec128:no_jit',
-    toString(multiIf(number = 0, materialize(toDecimal32('-1.5', 2)), number = 1, toDecimal128('3.5', 25), toNullable(toDecimal32('2.5', 4))))
-FROM numbers(3) ORDER BY number
-SETTINGS compile_expressions = 0;
-
--- Both `jit` queries above must run compiled code. The control is compiled whenever the build has a JIT
--- compiler, so comparing with it (not with 1) keeps this check valid in builds without one.
-SELECT materialize(2.0) + materialize(0.0) + materialize(1.0) FROM numbers(2)
-SETTINGS compile_expressions = 1, log_comment = '04205_control' FORMAT Null;
-
-SYSTEM FLUSH LOGS query_log;
-
-SELECT log_comment, argMax(ProfileEvents['CompiledFunctionExecute'] > 0, event_time_microseconds) = (
-    SELECT argMax(ProfileEvents['CompiledFunctionExecute'] > 0, event_time_microseconds)
-    FROM system.query_log
-    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '04205_control')
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('04205_mixed_scales', '04205_mixed_scales_dec128')
-GROUP BY log_comment
-ORDER BY log_comment;

@@ -6,6 +6,8 @@ description: 'Neste guia, discutiremos primeiro como o ClickHouse distribui uma 
 doc_type: 'reference'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 <div id="introduction">
   ## Introdução
 </div>
@@ -17,7 +19,9 @@ são distribuídas e executadas em paralelo em vários servidores?
 > múltiplos shards por meio de tabelas distribuídas e, em seguida, como uma consulta pode aproveitar
 > múltiplas réplicas durante sua execução.
 
-## Arquitetura com shards {#sharded-architecture}
+<div id="sharded-architecture">
+  ## Arquitetura com shards
+</div>
 
 Em uma arquitetura shared-nothing, os clusters normalmente são divididos em
 múltiplos shards, com cada shard contendo um subconjunto do volume total de dados. Uma
@@ -29,15 +33,7 @@ no shard especificado, ou ela pode ser enviada para a tabela distribuída e, nes
 caso, cada shard executará a consulta. O servidor no qual a tabela distribuída
 foi consultada agregará os dados e responderá ao cliente:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![arquitetura com shards](/images/deployment-guides/parallel-replicas-1.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-1.webp" size="md" alt="arquitetura com shards" />
 
 A figura acima mostra o que acontece quando um cliente consulta uma tabela distribuída:
 
@@ -69,7 +65,9 @@ Quando adicionamos réplicas à equação, o processo é bastante semelhante, co
 diferença sendo que apenas uma réplica de cada shard executará a consulta.
 Isso significa que mais consultas podem então ser processadas em paralelo.
 
-## Arquitetura sem sharding {#non-sharded-architecture}
+<div id="non-sharded-architecture">
+  ## Arquitetura sem sharding
+</div>
 
 O ClickHouse Cloud tem uma arquitetura bem diferente da apresentada acima.
 (Consulte [&quot;Arquitetura do ClickHouse Cloud&quot;](/pt-BR/products/cloud/reference/architecture)
@@ -78,15 +76,7 @@ virtualmente infinita de armazenamento, a necessidade de shards se torna menos i
 
 A figura abaixo mostra a arquitetura do ClickHouse Cloud:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![arquitetura sem sharding](/images/deployment-guides/parallel-replicas-2.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-2.webp" size="md" alt="arquitetura sem sharding" />
 
 Essa arquitetura nos permite adicionar e remover réplicas quase
 instantaneamente, garantindo uma escalabilidade muito alta do cluster. O cluster ClickHouse
@@ -99,7 +89,9 @@ Mas como podemos agora distribuir a execução de consultas entre vários servid
 arquitetura com sharding, isso era bastante óbvio, já que cada shard podia de fato
 executar uma consulta sobre um subconjunto dos dados. Como isso funciona quando não há sharding?
 
-## Apresentando réplicas paralelas {#introducing-parallel-replicas}
+<div id="introducing-parallel-replicas">
+  ## Apresentando réplicas paralelas
+</div>
 
 Para paralelizar a execução de consultas em vários servidores, primeiro precisamos
 conseguir designar um dos nossos servidores como coordenador. O coordenador é
@@ -113,15 +105,7 @@ como unidade de trabalho.
 
 Agora, vamos ver como isso funciona na prática com a ajuda da figura abaixo:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Parallel replicas](/images/deployment-guides/parallel-replicas-3.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-3.webp" size="md" alt="Parallel replicas" />
 
 Com réplicas paralelas:
 
@@ -186,15 +170,7 @@ Veremos como esses fatores são contornados nas seções a seguir.
 Para abordar (1) e (2) da lista acima, introduzimos o conceito de
 anúncio. Vamos visualizar como isso funciona usando a figura abaixo:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Anúncios](/images/deployment-guides/parallel-replicas-4.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-4.webp" size="md" alt="Anúncios" />
 
 <ol className="docs-ordered-list">
   <li>
@@ -225,7 +201,9 @@ anúncio. Vamos visualizar como isso funciona usando a figura abaixo:
   </li>
 </ol>
 
-### Coordenação dinâmica {#dynamic-coordination}
+<div id="dynamic-coordination">
+  ### Coordenação dinâmica
+</div>
 
 Para resolver o problema da latência de cauda, adicionamos a coordenação dinâmica. Isso significa
 que nem todos os grânulos são enviados para uma réplica em uma única requisição; em vez disso, cada réplica
@@ -238,15 +216,7 @@ um anúncio com todas as partes.
 
 A figura abaixo mostra como a coordenação dinâmica funciona:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Coordenação dinâmica - parte 1](/images/deployment-guides/parallel-replicas-5.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-5.webp" size="md" alt="Coordenação dinâmica - parte 1" />
 
 <ol className="docs-ordered-list">
   <li>
@@ -259,15 +229,7 @@ A figura abaixo mostra como a coordenação dinâmica funciona:
   </li>
 </ol>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Coordenação dinâmica - parte 2](/images/deployment-guides/parallel-replicas-6.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-6.webp" size="md" alt="Coordenação dinâmica - parte 2" />
 
 <ol className="docs-ordered-list">
   <li>
@@ -280,15 +242,7 @@ A figura abaixo mostra como a coordenação dinâmica funciona:
   </li>
 </ol>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Coordenação dinâmica - parte 3](/images/deployment-guides/parallel-replicas-7.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-7.webp" size="md" alt="Coordenação dinâmica - parte 3" />
 
 <ol className="docs-ordered-list">
   <li>
@@ -368,7 +322,9 @@ se alguma réplica processar tarefas mais lentamente que as outras, as demais r�
 &#39;roubar&#39; tarefas que, em princípio, pertencem a essa réplica com base no hash, para reduzir a
 latência de cauda.
 
-### Limitações
+<div id="limitations">
+  ### Limitações
+</div>
 
 Este recurso tem limitações conhecidas, e as principais estão documentadas
 nesta seção.
@@ -398,8 +354,11 @@ nesta seção.
 | `cluster_for_parallel_replicas`                    | O nome do cluster a ser usado para réplicas paralelas; se você estiver usando ClickHouse Cloud, use `default`.                                                                                                                                                                             |
 | `max_parallel_replicas`                            | Número máximo de réplicas a serem usadas na execução da consulta em várias réplicas; se for especificado um número menor que o número de réplicas no cluster, os nós serão selecionados aleatoriamente. Esse valor também pode sofrer overcommit para acomodar o escalonamento horizontal. |
 | `parallel_replicas_min_number_of_rows_per_replica` | Ajuda a limitar o número de réplicas usadas com base no número de linhas que precisam ser processadas; o número de réplicas usadas é definido por: <br /> `estimated rows to read` / `min_number_of_rows_per_replica`.                                                                     |
+| `enable_analyzer`                                  | A execução de consultas com réplicas paralelas é compatível apenas com o analisador habilitado                                                                                                                                                                                               |
 
-## Investigando problemas com réplicas paralelas
+<div id="investigating-issues-with-parallel-replicas">
+  ## Investigando problemas com réplicas paralelas
+</div>
 
 Você pode verificar quais configurações estão sendo usadas para cada consulta na
 tabela [`system.query_log`](/pt-BR/reference/system-tables/query_log). Você também
@@ -562,15 +521,7 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![EXPLAIN sem parallel_replica](/images/deployment-guides/parallel-replicas-8.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="EXPLAIN sem parallel_replica" />
 
 E agora, com réplica paralela:
 
@@ -585,12 +536,4 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![EXPLAIN com parallel_replica](/images/deployment-guides/parallel-replicas-9.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="EXPLAIN com parallel_replica" />

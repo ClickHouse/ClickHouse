@@ -1,10 +1,7 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel
 -- ^ failpoint
 
 SET explain_query_plan_default = 'legacy';
--- The test describes the query-based parallel replicas: plan-based ships the filter inside the plan
--- and does not reject the combination.
-SET parallel_replicas_plan_based = 0;
 
 DROP TABLE IF EXISTS atf_p;
 -- Pin index_granularity so EXPLAIN ... distributed=1 reports a stable granule count;
@@ -23,6 +20,7 @@ INSERT INTO atf_p SELECT number FROM numbers(10);
 -- silently dropping the filter.
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'},
+    enable_analyzer = 1,
     enable_parallel_replicas = 2,
     automatic_parallel_replicas_mode = 0,
     max_parallel_replicas = 3,
@@ -35,6 +33,7 @@ SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'
 -- disabled and the query runs locally with the filter applied.
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'},
+    enable_analyzer = 1,
     enable_parallel_replicas = 1,
     automatic_parallel_replicas_mode = 0,
     max_parallel_replicas = 3,
@@ -48,6 +47,7 @@ SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'
 -- re-resolves the setting and the combination works.
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'},
+    enable_analyzer = 1,
     enable_parallel_replicas = 2,
     automatic_parallel_replicas_mode = 0,
     max_parallel_replicas = 3,
@@ -57,12 +57,10 @@ SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'
     serialize_query_plan = 1;
 
 -- Verify the additional filter is present in the serialized plan shipped to followers.
--- Pinned to the query-based implementation: this asserts the exact plan text, and
--- `parallel_replicas_plan_based` builds a differently shaped (but equally filtered) fragment. The
--- queries above, which check that the filter is actually applied, run on the default implementation.
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 EXPLAIN PLAN actions = 1, distributed = 1
 SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'},
+    enable_analyzer = 1,
     enable_parallel_replicas = 2,
     automatic_parallel_replicas_mode = 0,
     max_parallel_replicas = 3,
@@ -71,8 +69,7 @@ SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'
     query_plan_remove_unused_columns = 1,
     parallel_replicas_local_plan = 1,
     serialize_query_plan = 1,
-    distributed_aggregation_memory_efficient = 1, -- pin (randomized in CI): `MergingAggregated` prints its mode only when it is set
-    parallel_replicas_plan_based = 0;
+    distributed_aggregation_memory_efficient = 1; -- pin (randomized in CI): `MergingAggregated` prints its mode only when it is set
 
 SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 DROP TABLE atf_p;

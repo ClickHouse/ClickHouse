@@ -22,18 +22,21 @@ public:
     explicit FunctionEmptyArray(const String & element_type_) : element_type(element_type_) {}
 
 private:
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return getNameImpl(element_type);
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] String getSignatureString() const override { return "() -> Array(" + element_type + ")"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    {
+        return std::make_shared<DataTypeArray>(DataTypeFactory::instance().get(element_type));
+    }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return ColumnArray::create(
             DataTypeFactory::instance().get(element_type)->createColumn(),

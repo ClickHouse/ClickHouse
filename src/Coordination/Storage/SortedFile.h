@@ -109,7 +109,7 @@ struct SortedFile
 private:
     static uint32_t generateFileId();
 
-    [[nodiscard]] std::vector<BlockPtr> loadBlockGroup(uint32_t start_block_idx) const;
+    std::vector<BlockPtr> loadBlockGroup(uint32_t start_block_idx) const;
 };
 using SortedFilePtr = std::shared_ptr<SortedFile>;
 

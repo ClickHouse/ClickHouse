@@ -103,22 +103,14 @@ public:
         bool with_tags,
         const std::optional<std::string> & start_after) const override;
 
-    bool supportsPrefixListing() const override { return true; }
-
     /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const StoredObject & object) override;
 
     /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`, otherwise `DeleteObjectRequest`.
     /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
-    void removeObjectsIfExist( /// NOLINT
-        const StoredObjects & objects,
-        StoredObjects * successful_objects = nullptr) override;
+    void removeObjectsIfExist(const StoredObjects & objects) override;
 
-    void tagObjects( /// NOLINT
-        const StoredObjects & objects,
-        const std::string & tag_key,
-        const std::string & tag_value,
-        StoredObjects * successful_objects = nullptr) override;
+    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
@@ -153,13 +145,7 @@ public:
 
     bool isRemote() const override { return true; }
 
-    /// The endpoint and the bucket, so that a `<s3_bucket>` entry allows the storage, as it does for the `s3` table function.
-    void checkRemoteHostFilter(const RemoteHostFilter & filter) const override { uri.checkRemoteHostFilter(filter); }
-
     bool supportParallelWrite() const override { return true; }
-
-    /// An object becomes visible only on the completion of `PutObject` or `CompleteMultipartUpload`.
-    bool supportsAtomicWrite() const override { return true; }
 
     ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
@@ -173,19 +159,9 @@ public:
 
     S3::URI getURI() const { return uri; }
     S3Settings getS3Settings() const { return *s3_settings.get(); }
-
-    ObjectStoragePtr cloneImpl() const override;
-
-    /// Throws `ACCESS_DENIED` if the client was built with `s3_allow_server_credentials_in_user_queries` and the session
-    /// of `context` is restricted. Does not change the client.
-    void checkSessionMayUseServerCredentials(const ContextPtr & context) const;
-
 private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
-    void removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects = nullptr);
-
-    std::pair<std::string, std::string> splitBucketAndKey(const std::string & remote_path) const;
-    std::map<std::string, StoredObjects> groupByBucket(const StoredObjects & objects) const;
+    void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
     const S3::URI uri;
 
@@ -194,8 +170,9 @@ private:
     mutable MultiVersion<S3::Client> client;
     /// The user-query credential restriction mode the current `client` was built under (initialized by the
     /// caller from the policy used to build the initial client -- e.g. a table created with the opt-in starts
-    /// `false`). Only a forced rebuild in `applyNewSettings` changes it. Defaults to restricted
-    /// (the server default) for callers that do not pass an explicit value.
+    /// `false`). `applyNewSettings` rebuilds the client when a session with a different restriction mode accesses
+    /// the storage, so a restricted session never reuses a credentialed client built for an opt-in session (and
+    /// vice versa). Defaults to restricted (the server default) for callers that do not pass an explicit value.
     /// Atomic: `applyNewSettings` can run concurrently on a shared storage.
     mutable std::atomic<bool> client_restricts_server_credentials = true;
     MultiVersion<S3Settings> s3_settings;

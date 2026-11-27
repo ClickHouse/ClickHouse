@@ -29,7 +29,7 @@ while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE que
 done
 
 $CLICKHOUSE_CLIENT -q "DROP WORKLOAD $workload"
-$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null SETTINGS kill_throw_if_noop = false"
+$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null"
 wait
 
 $CLICKHOUSE_CLIENT -q "SELECT 1"

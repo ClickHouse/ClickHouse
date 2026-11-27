@@ -180,8 +180,8 @@ def test_optimize_manifest_files(started_cluster_iceberg_with_spark, storage_typ
 def test_optimize_manifest_files_preserves_stats(started_cluster_iceberg_with_spark):
     """
     OPTIMIZE TABLE ... MANIFEST must preserve the per-column statistics carried by the source
-    manifest entries (column_sizes, value_counts, null_value_counts, nan_value_counts, lower_bounds,
-    upper_bounds). Dropping them would weaken predicate pushdown / file pruning after compaction.
+    manifest entries (column_sizes, value_counts, null_value_counts, lower_bounds, upper_bounds).
+    Dropping them would weaken predicate pushdown / file pruning after compaction.
     """
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
@@ -189,14 +189,13 @@ def test_optimize_manifest_files_preserves_stats(started_cluster_iceberg_with_sp
     TABLE_NAME = "test_optimize_manifest_stats_" + storage_type + "_" + get_uuid_str()
 
     spark.sql(
-        f"CREATE TABLE {TABLE_NAME} (id long, data string, x double) USING iceberg "
+        f"CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg "
         f"TBLPROPERTIES ('format-version' = '2')"
     )
     # Several separate inserts so the current snapshot has several data manifests (> threshold).
     for lo in range(0, 50, 10):
         spark.sql(
-            f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')), "
-            f"IF(id = 25, CAST('NaN' AS DOUBLE), id / 2) FROM range({lo}, {lo + 10})"
+            f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range({lo}, {lo + 10})"
         )
 
     default_upload_directory(
@@ -225,55 +224,7 @@ def test_optimize_manifest_files_preserves_stats(started_cluster_iceberg_with_sp
             .splitlines()
         )
 
-    def data_file_stats(manifest):
-        result = instance.query(
-            f"""
-            SELECT
-                tupleElement(data_file, 'content')                  AS content,
-                length(tupleElement(data_file, 'column_sizes'))     AS n_column_sizes,
-                length(tupleElement(data_file, 'value_counts'))     AS n_value_counts,
-                length(tupleElement(data_file, 'null_value_counts')) AS n_null_value_counts,
-                length(tupleElement(data_file, 'nan_value_counts')) AS n_nan_value_counts,
-                length(tupleElement(data_file, 'lower_bounds'))     AS n_lower_bounds,
-                length(tupleElement(data_file, 'upper_bounds'))     AS n_upper_bounds
-            FROM file('{manifest}', Avro)
-            FORMAT TSV
-            """
-        ).strip()
-        for line in result.splitlines():
-            content, *counts = map(int, line.split("\t"))
-            if content == 0:  # data files only
-                yield counts
-
-    def nan_counts_by_file(manifests):
-        counts = {}
-        for manifest in manifests:
-            result = instance.query(
-                f"""
-                SELECT
-                    tupleElement(data_file, 'file_path'),
-                    arrayStringConcat(arrayMap(t -> concat(toString(t.1), ':', toString(t.2)),
-                        tupleElement(data_file, 'nan_value_counts')), ',')
-                FROM file('{manifest}', Avro)
-                WHERE tupleElement(data_file, 'content') = 0
-                FORMAT TSV
-                """
-            ).strip()
-            for line in result.splitlines():
-                path, pairs = line.split("\t")
-                counts[os.path.basename(path)] = sorted(
-                    tuple(map(int, pair.split(":"))) for pair in pairs.split(",") if pair
-                )
-        return counts
-
     manifests_before = list_data_manifests()
-
-    # Only the double column has a NaN count, and one file holds a NaN, so the rewrite must carry
-    # both a zero and a non-zero count.
-    before = nan_counts_by_file(manifests_before)
-    assert len(before) == 5 and all(len(pairs) == 1 for pairs in before.values()), before
-    nan_counts = sorted(pairs[0][1] for pairs in before.values())
-    assert nan_counts[:4] == [0, 0, 0, 0] and nan_counts[4] >= 1, before
 
     instance.query(
         f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
@@ -290,20 +241,34 @@ def test_optimize_manifest_files_preserves_stats(started_cluster_iceberg_with_sp
 
     entries_checked = 0
     for manifest in new_manifests:
-        for n_col, n_val, n_null, n_nan, n_lower, n_upper in data_file_stats(manifest):
-            # The table has three columns (id, data, x); all carry stats in the source manifests.
-            assert n_col == 3, f"column_sizes dropped: {n_col}"
-            assert n_val == 3, f"value_counts dropped: {n_val}"
-            assert n_null == 3, f"null_value_counts dropped: {n_null}"
-            assert n_nan == 1, f"nan_value_counts dropped: {n_nan}"
-            assert n_lower == 3, f"lower_bounds dropped: {n_lower}"
-            assert n_upper == 3, f"upper_bounds dropped: {n_upper}"
+        result = instance.query(
+            f"""
+            SELECT
+                tupleElement(data_file, 'content')                  AS content,
+                length(tupleElement(data_file, 'column_sizes'))     AS n_column_sizes,
+                length(tupleElement(data_file, 'value_counts'))     AS n_value_counts,
+                length(tupleElement(data_file, 'null_value_counts')) AS n_null_value_counts,
+                length(tupleElement(data_file, 'lower_bounds'))     AS n_lower_bounds,
+                length(tupleElement(data_file, 'upper_bounds'))     AS n_upper_bounds
+            FROM file('{manifest}', Avro)
+            FORMAT TSV
+            """
+        ).strip()
+        if not result:
+            continue
+        for line in result.splitlines():
+            content, n_col, n_val, n_null, n_lower, n_upper = map(int, line.split("\t"))
+            if content != 0:  # data files only
+                continue
+            # The table has two columns (id, data); both carry stats in the source manifests.
+            assert n_col == 2, f"column_sizes dropped: {n_col}"
+            assert n_val == 2, f"value_counts dropped: {n_val}"
+            assert n_null == 2, f"null_value_counts dropped: {n_null}"
+            assert n_lower == 2, f"lower_bounds dropped: {n_lower}"
+            assert n_upper == 2, f"upper_bounds dropped: {n_upper}"
             entries_checked += 1
 
     assert entries_checked > 0, "no data-file entries found in consolidated manifest(s)"
-
-    after = nan_counts_by_file(new_manifests)
-    assert after == before, (before, after)
 
 
 def test_optimize_manifest_files_preserves_sort_order_id(started_cluster_iceberg_with_spark):
@@ -972,182 +937,6 @@ def test_optimize_manifest_files_with_deletes(started_cluster_iceberg_with_spark
     assert len(spark_rows) == 80
     spark_ids = sorted(row["id"] for row in spark_rows)
     assert spark_ids == list(range(20, 100))
-
-
-@pytest.mark.parametrize("format_version", ["2"])
-def test_optimize_manifest_files_all_deleted(started_cluster_iceberg_with_spark, format_version):
-    instance = started_cluster_iceberg_with_spark.instances["node1"]
-    spark = started_cluster_iceberg_with_spark.spark_session
-    storage_type = "local"
-    TABLE_NAME = "test_optimize_manifest_all_deleted_v" + format_version + "_" + get_uuid_str()
-
-    # Copy-on-write delete rewrites/removes data files; a predicate matching every row removes all of
-    # them, leaving the current snapshot's DATA manifest with only DELETED entries and no live files.
-    spark.sql(
-        f"""
-        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES (
-            'format-version' = '{format_version}',
-            'write.delete.mode' = 'copy-on-write'
-        )
-        """
-    )
-
-    # Several inserts so the pre-delete state has more than one data manifest.
-    for lo in range(0, 40, 10):
-        spark.sql(
-            f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range({lo}, {lo + 10})"
-        )
-
-    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 0")
-
-    default_upload_directory(
-        started_cluster_iceberg_with_spark,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
-
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
-
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 0
-
-    # --- Precondition: prove we actually reach the partitions_map.empty() path. ---
-    table_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
-    metadata_dir = f"{table_path}metadata"
-
-    # (1) The current snapshot has zero live data files, so `getFilesWithoutDeleted(DATA)` returns
-    # nothing and `partitions_map` is collected empty. system.iceberg_files resolves inheritance and
-    # lists only live (non-deleted) files of the current snapshot.
-    live_data_files = int(
-        instance.query(
-            f"SELECT count() FROM system.iceberg_files "
-            f"WHERE database = currentDatabase() AND table = '{TABLE_NAME}' AND content = 'DATA'"
-        )
-    )
-    assert live_data_files == 0, f"expected zero live data files, got {live_data_files}"
-
-    # (2) The current snapshot's manifest list still references at least one DATA manifest whose
-    # entries are all DELETED. This makes `num_data_manifests` >= 1 (so the cheap pre-check passes and
-    # we reach the guard) while the collected `partitions_map` is empty.
-    def current_snapshot_data_manifests():
-        """
-        Return (DATA manifests, live data entries, deleted data entries) of the current snapshot.
-
-        Scoped to the current snapshot via its snap-<id>-*.avro manifest list, since older
-        snapshots' manifests hold live entries.
-
-        Everything is read inside the instance, and the current snapshot is resolved the way
-        ClickHouse resolves it - from the `v<N>.metadata.json` with the highest version. The
-        host-side helpers cannot be used here: `default_upload_directory` copies Spark's table
-        *into* the container, so the host only ever sees what Spark wrote, while
-        `OPTIMIZE TABLE ... MANIFEST` commits its new metadata inside the container.
-        """
-        current_snapshot_id = instance.query(
-            f"SELECT JSONExtractInt(json, 'current-snapshot-id') "
-            f"FROM file('{metadata_dir}/v*.metadata.json', JSONAsString) "
-            f"ORDER BY toUInt32(extract(_file, '^v([0-9]+)')) DESC LIMIT 1"
-        ).strip()
-        assert current_snapshot_id, "no v<N>.metadata.json in the table's metadata directory"
-
-        snap_files = (
-            instance.exec_in_container(
-                ["bash", "-c", f"find '{metadata_dir}' -maxdepth 1 -name 'snap-{current_snapshot_id}-*.avro' -type f"]
-            )
-            .strip()
-            .splitlines()
-        )
-        assert len(snap_files) == 1, f"expected one current manifest list, got {snap_files}"
-
-        listed_manifests = (
-            instance.query(f"SELECT manifest_path, content FROM file('{snap_files[0]}', Avro) FORMAT TSV")
-            .strip()
-            .splitlines()
-        )
-        assert listed_manifests, "current snapshot's manifest list has no manifests"
-
-        data_manifests = 0
-        live = 0
-        deleted = 0
-        for listed_manifest in listed_manifests:
-            manifest_path, manifest_content = listed_manifest.split("\t")
-            if int(manifest_content) != 0:  # DATA manifests only
-                continue
-            data_manifests += 1
-            basename = manifest_path.rstrip("/").split("/")[-1]
-            entries = (
-                instance.query(
-                    f"SELECT status, tupleElement(data_file, 'content') AS c "
-                    f"FROM file('{metadata_dir}/{basename}', Avro) FORMAT TSV"
-                )
-                .strip()
-                .splitlines()
-            )
-            for entry in entries:
-                status, content = entry.split("\t")
-                if int(content) != 0:  # data files only
-                    continue
-                if int(status) == 2:  # DELETED
-                    deleted += 1
-                else:
-                    live += 1
-        return data_manifests, live, deleted
-
-    data_manifests, live_data_entries, deleted_data_entries = current_snapshot_data_manifests()
-
-    assert data_manifests > 0, "current snapshot's manifest list has no DATA manifest"
-    assert deleted_data_entries > 0, (
-        "the #111216 shape was not reproduced: current snapshot has no DATA manifest with deleted entries"
-    )
-    assert live_data_entries == 0, f"expected no live data-file entries, found {live_data_entries}"
-
-    # With min_count_to_compact = 0 the cheap pre-check always passes, so compaction reaches the
-    # (previously crashing) rewrite path. It must complete without touching the empty table.
-    instance.query(
-        f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
-        settings={
-            "allow_experimental_iceberg_compaction": 1,
-            "iceberg_manifest_min_count_to_compact": 0,
-        },
-    )
-
-    # The server must still be alive and the table still empty and readable.
-    assert int(instance.query("SELECT 1")) == 1
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 0
-
-    # --- The early exit must not swallow a table that genuinely does need compaction. ---
-    # An empty `partitions_map` means "no live data files", not "unpartitioned": the group key always
-    # carries the source spec-id and schema-id, so this unpartitioned table forms one group again as
-    # soon as it holds live files. Re-fill it and check its DATA manifests really are consolidated.
-    for lo in range(100, 140, 10):
-        spark.sql(
-            f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range({lo}, {lo + 10})"
-        )
-
-    default_upload_directory(
-        started_cluster_iceberg_with_spark,
-        storage_type,
-        f"/iceberg_data/default/{TABLE_NAME}/",
-        f"/iceberg_data/default/{TABLE_NAME}/",
-    )
-
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 40
-
-    data_manifests, live_before, _ = current_snapshot_data_manifests()
-    assert data_manifests > 1, f"expected several DATA manifests to consolidate, got {data_manifests}"
-    assert live_before > 0, "the refilled table has no live data-file entries"
-
-    instance.query(
-        f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
-        settings={
-            "allow_experimental_iceberg_compaction": 1,
-            "iceberg_manifest_min_count_to_compact": 0,
-        },
-    )
-
-    data_manifests, live_after, _ = current_snapshot_data_manifests()
-    assert data_manifests == 1, f"expected the DATA manifests to be consolidated into one, got {data_manifests}"
-    assert live_after == live_before, f"expected {live_before} live data-file entries after the rewrite, got {live_after}"
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 40
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
@@ -1922,7 +1711,7 @@ def test_optimize_manifest_parent_summary_missing_totals(
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 30
 
-    # The newly-written manifest-only snapshot must keep the missing totals absent.
+    # The newly-written manifest-only snapshot must carry the missing totals as "0".
     default_download_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
@@ -1935,8 +1724,8 @@ def test_optimize_manifest_parent_summary_missing_totals(
         f"Expected operation='replace', got: {summary.get('operation')}"
     )
     for stripped in stripped_fields:
-        assert stripped not in summary, (
-            f"Expected {stripped} to stay absent on the new manifest-only snapshot, "
+        assert summary.get(stripped) == "0", (
+            f"Expected {stripped}='0' on the new manifest-only snapshot, "
             f"got: {summary.get(stripped)!r}"
         )
 

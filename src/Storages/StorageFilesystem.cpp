@@ -111,9 +111,9 @@ void fillCheapColumnValue(const String & column_name, IColumn & column, const Qu
 }
 
 /// Names of columns that are cheap to compute (no file I/O beyond what the directory iterator provides).
-[[clang::no_destroy]] const std::vector<String> cheap_column_names = {"path", "name", "depth", "type", "is_symlink"};
+const std::vector<String> cheap_column_names = {"path", "name", "depth", "type", "is_symlink"};
 
-[[clang::no_destroy]] const std::vector<std::pair<String, fs::perms>> permissions_columns = {
+const std::vector<std::pair<String, fs::perms>> permissions_columns = {
     {"owner_read", fs::perms::owner_read},
     {"owner_write", fs::perms::owner_write},
     {"owner_exec", fs::perms::owner_exec},
@@ -378,15 +378,7 @@ private:
             cheap_block.insert(ColumnWithTypeAndName(std::move(column), col_info.type, col_info.name));
         }
 
-        /// `allow_duplicates_in_input`: splitting a filter that contains `indexHint` clones the hint's
-        /// inner DAG, so the same cheap column can appear as two distinct `INPUT` nodes with one name,
-        /// while the block above holds each column exactly once. This is what
-        /// `filterBlockWithExpression` passes for the same reason.
-        /// The row count is passed explicitly: a predicate that reads no cheap column at all, such as
-        /// `indexHint(materialize(1))`, would otherwise be evaluated over an empty block when the table
-        /// exposes no cheap columns, and produce fewer rows than there are entries.
-        size_t num_rows = entries.size();
-        filter_expression->execute(cheap_block, num_rows, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
+        filter_expression->execute(cheap_block);
 
         const auto & result_name = filter_expression->getSampleBlock().getByPosition(
             filter_expression->getSampleBlock().columns() - 1).name;
@@ -524,7 +516,7 @@ private:
 class ReadFromFilesystem final : public SourceStepWithFilter
 {
 public:
-    [[nodiscard]] std::string getName() const override { return "ReadFromFilesystem"; }
+    std::string getName() const override { return "ReadFromFilesystem"; }
 
     ReadFromFilesystem(
         const Names & column_names_,

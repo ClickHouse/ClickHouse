@@ -4,7 +4,9 @@ title: Funcionalidades no compatibles de Cloud
 
 Las siguientes tablas enumeran las funcionalidades y los procedimientos autogestionados que no son compatibles con ClickHouse Cloud. Cada entrada indica la funcionalidad específica no compatible, incluso cuando su página de origen también abarca funcionalidades compatibles.
 
-### Infraestructura y operaciones gestionadas {#unsupported-managed-infrastructure-and-operations}
+<div id="unsupported-managed-infrastructure-and-operations">
+  ### Infraestructura y operaciones gestionadas
+</div>
 
 | Funcionalidad no compatible                                                        | Documentación                                                                                                                                                     |
 | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -14,7 +16,9 @@ Las siguientes tablas enumeran las funcionalidades y los procedimientos autogest
 | Ejecución de pruebas de rendimiento de hardware autogestionado                     | [Guía](/es/concepts/features/performance/troubleshoot/performance-test)                                                                                              |
 | Aplicación de recomendaciones operativas para entornos autogestionados             | [Guía](/es/guides/oss/best-practices/tips)                                                                                                                           |
 
-### Autenticación y seguridad {#unsupported-authentication-and-security}
+<div id="unsupported-authentication-and-security">
+  ### Autenticación y seguridad
+</div>
 
 | Funcionalidad no compatible              | Documentación                                                                                                                                                |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -23,7 +27,9 @@ Las siguientes tablas enumeran las funcionalidades y los procedimientos autogest
 | Autenticación LDAP y asignación de roles | [Configuración](/es/concepts/features/security/configuring-ldap), [Autenticador](/es/concepts/features/security/external-authenticators/ldap)                      |
 | Autenticación mediante certificado X.509 | [Autenticación de usuarios](/es/concepts/features/security/ssl-user-auth), [Autenticador externo](/es/concepts/features/security/external-authenticators/ssl-x509) |
 
-### Interfaces e integraciones {#unsupported-interfaces-and-integrations}
+<div id="unsupported-interfaces-and-integrations">
+  ### Interfaces e integraciones
+</div>
 
 | Funcionalidad no compatible                                          | Documentación                                                                                                                                                                                                                                                                                                                                                                          |
 | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -34,7 +40,9 @@ Las siguientes tablas enumeran las funcionalidades y los procedimientos autogest
 | Integración de almacenamiento de objetos compatible con S3 de MinIO  | [Guía](/es/integrations/connectors/data-ingestion/s3-minio)                                                                                                                                                                                                                                                                                                                               |
 | Integración de almacenamiento de objetos compatible con S3 de Tigris | [Guía](/es/integrations/connectors/data-ingestion/s3-tigris)                                                                                                                                                                                                                                                                                                                              |
 
-### Motores de bases de datos y de tablas {#unsupported-database-and-table-engines}
+<div id="unsupported-database-and-table-engines">
+  ### Motores de bases de datos y de tablas
+</div>
 
 | Funcionalidad no compatible                                           | Documentación                                                                                                                                                                                                                                                                      |
 | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -49,7 +57,9 @@ Las siguientes tablas enumeran las funcionalidades y los procedimientos autogest
 | Motor de tabla `YTsaurus`                                             | [Referencia](/es/reference/engines/table-engines/integrations/ytsaurus)                                                                                                                                                                                                               |
 | Motores de tabla de la familia `Log` (`Log`, `StripeLog` y `TinyLog`) | [Descripción general de la familia](/es/reference/engines/table-engines/log-family), [`Log`](/es/reference/engines/table-engines/log-family/log), [`StripeLog`](/es/reference/engines/table-engines/log-family/stripelog), [`TinyLog`](/es/reference/engines/table-engines/log-family/tinylog) |
 
-### Diccionarios y configuración del servidor {#unsupported-dictionaries-and-server-configuration}
+<div id="unsupported-dictionaries-and-server-configuration">
+  ### Diccionarios y configuración del servidor
+</div>
 
 | Funcionalidad no compatible                                                                  | Documentación                                                                                                                                                                                                                            |
 | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -60,7 +70,9 @@ Las siguientes tablas enumeran las funcionalidades y los procedimientos autogest
 | Fuente de diccionario `YTsaurus`                                                             | [Referencia](/es/reference/statements/create/dictionary/sources/ytsaurus)                                                                                                                                                                   |
 | Diccionarios de tokenizadores japoneses configurados en el servidor                          | [Referencia](/es/reference/engines/table-engines/mergetree-family/textindexes#japanese-tokenizer-dictionary)                                                                                                                                |
 
-### Formatos de datos y códecs {#unsupported-data-formats-and-codecs}
+<div id="unsupported-data-formats-and-codecs">
+  ### Formatos de datos y códecs
+</div>
 
 | Funcionalidad no compatible                                                                          | Documentación                                                                                                                                                                               |
 | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -68,19 +80,24 @@ Las siguientes tablas enumeran las funcionalidades y los procedimientos autogest
 | Formatos `Protobuf`, `ProtobufList` y `ProtobufSingle` con archivos de esquema del lado del servidor | [Guía](/es/guides/clickhouse/data-formats/binary#protocol-buffers), [`ProtobufList`](/es/reference/formats/Protobuf/ProtobufList), [`ProtobufSingle`](/es/reference/formats/Protobuf/ProtobufSingle) |
 | Códecs `ZSTD_QAT` y `DEFLATE_QPL` obsoletos                                                          | [`ZSTD_QAT`](/es/reference/statements/create/table#zstd_qat), [`DEFLATE_QPL`](/es/reference/statements/create/table#deflate_qpl)                                                                  |
 
-### Funciones y características experimentales {#unsupported-functions-and-experimental-features}
+<div id="unsupported-functions-and-experimental-features">
+  ### Funciones y características experimentales
+</div>
 
-| Funcionalidad no compatible                                                | Documentación                                                                                                                                                                                                                                                                                                             |
+| Funcionalidad no compatible                                                  | Documentación                                                                                                                                                                                                                                                                                                             |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Funciones experimentales de procesamiento del lenguaje natural             | [Referencia](/es/reference/functions/regular-functions/nlp-functions)                                                                                                                                                                                                                                                        |
 | Transacciones experimentales de múltiples sentencias con commit y rollback | [Guía](/es/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)                                                                                                                                                                                                                                |
 | Funciones experimentales de introspección de transacciones                 | [`transactionID`](/es/reference/functions/regular-functions/other-functions#transactionID), [`transactionLatestSnapshot`](/es/reference/functions/regular-functions/other-functions#transactionLatestSnapshot), [`transactionOldestSnapshot`](/es/reference/functions/regular-functions/other-functions#transactionOldestSnapshot) |
-| Funciones de ventana temporal                                              | [Referencia](/es/reference/functions/regular-functions/time-window-functions)                                                                                                                                                                                                                                                |
+| Funciones de ventana temporal para `WindowView`                            | [Referencia](/es/reference/functions/regular-functions/time-window-functions)                                                                                                                                                                                                                                                |
+| `WindowView` experimental                                                  | [Referencia](/es/reference/statements/create/view#window-view)                                                                                                                                                                                                                                                               |
 | Funciones definidas por el usuario en WebAssembly                          | [Descripción general](/es/reference/functions/regular-functions/udf#webassembly-user-defined-functions), [Guía](/es/reference/functions/regular-functions/wasm_udf)                                                                                                                                                             |
 | Funciones definidas por el usuario ejecutables basadas en controladores    | [Referencia](/es/reference/functions/regular-functions/udf#driver-based-executable-user-defined-functions)                                                                                                                                                                                                                   |
 | Función de tabla `filesystem` para archivos locales del servidor           | [Referencia](/es/reference/functions/table-functions/filesystem)                                                                                                                                                                                                                                                             |
 
-### Administración y control de acceso {#unsupported-administration-and-access-control}
+<div id="unsupported-administration-and-access-control">
+  ### Administración y control de acceso
+</div>
 
 | Funcionalidad no compatible                                                  | Documentación                                                                                                                                                       |
 | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

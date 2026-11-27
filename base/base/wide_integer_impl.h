@@ -19,8 +19,68 @@
 
 // NOLINTBEGIN(*)
 
+/// Cross-platform conversion from double to wide integers requires consistent rounding behavior.
+/// We target 64-bit mantissa precision (matching x86's 80-bit extended) on all platforms.
+///
+/// Platform-specific handling:
+/// 1. x86/x86_64 (LDBL_MANT_DIG == 64):
+///    - Native 80-bit extended precision with 64-bit mantissa
+///    - Use long double directly, no emulation needed
+///
+/// 2. ARM Linux, RISC-V, PowerPC, etc. (LDBL_MANT_DIG > 64, typically 113):
+///    - 128-bit quad precision with 113-bit mantissa
+///    - Use long double but round intermediate results to 64-bit precision
+///    - Emulation via round_to_64bit_mantissa() ensures identical results to x86
+///
+/// 3. macOS ARM64 (LDBL_MANT_DIG == 53):
+///    - long double == double (no extended precision available)
+///    - Cannot emulate 64-bit from 53-bit, so use boost::multiprecision
+///    - boost::cpp_bin_float_double_extended provides software-emulated 64-bit mantissa
+///
+#if (LDBL_MANT_DIG == 64)
+using FromDoubleIntermediateType = long double;
+#elif (LDBL_MANT_DIG > 64)
+using FromDoubleIntermediateType = long double;
+
+namespace detail
+{
+/// Round a long double to 64-bit mantissa precision to match x86 extended precision behavior.
+/// This extracts the value into 64-bit chunks similar to boost::multiprecision::cpp_bin_float.
+constexpr long double round_to_64bit_mantissa(long double value) noexcept
+{
+    if (!std::isfinite(value) || value == 0.0L)
+        return value;
+
+    // Extract mantissa and exponent
+    int exponent;
+    long double mantissa = std::frexp(value, &exponent);
+
+    // mantissa is now in range [0.5, 1.0) or (-1.0, -0.5]
+    // Scale to extract exactly 64 bits of precision
+    constexpr long double scale = static_cast<long double>(1ULL << 63) * 2.0L; // 2^64
+
+    // N.B. std::round (ties away from zero) is used intentionally, NOT std::rint (ties to even).
+    // On ARM, division by max_int can produce results with an exact .5 fractional part
+    // (e.g., 9223372036854775808.5) because the 113-bit mantissa preserves it. On x86,
+    // the 64-bit mantissa truncates the same division to 9223372036854775809.0 directly.
+    // std::round matches x86's truncation direction for these tie cases; std::rint does not.
+    long double scaled = std::round(mantissa * scale);
+
+    // Convert back to normalized mantissa with 64-bit precision
+    long double rounded_mantissa = scaled / scale;
+
+    // Reconstruct the original value with limited precision
+    return std::ldexp(rounded_mantissa, exponent);
+}
+}
+#else
+// Platforms where long double has insufficient precision (e.g., macOS ARM64 where LDBL_MANT_DIG=53)
+#    include <boost/math/special_functions/fpclassify.hpp>
+#    include <boost/multiprecision/cpp_bin_float.hpp>
+using FromDoubleIntermediateType = boost::multiprecision::cpp_bin_float_double_extended;
+#endif
+
 namespace CityHash_v1_0_2 { struct uint128; }
-class BFloat16;
 
 namespace wide
 {
@@ -247,74 +307,6 @@ constexpr uint64_t divide_128_by_64(uint64_t high, uint64_t low, uint64_t diviso
     return static_cast<uint64_t>(dividend / divisor);
 }
 
-/// A divisor prepared for repeated division: normalized so that its high bit is set, together with the
-/// shift that normalized it and the reciprocal of the result. Building the reciprocal is itself a
-/// 128 / 64 division, so it pays off only when reused; for a compile-time divisor it costs nothing.
-struct invariant_divisor
-{
-    uint64_t divisor;
-    uint64_t normalized;
-    uint64_t reciprocal;
-    unsigned shift;
-};
-
-constexpr invariant_divisor prepare_divisor(uint64_t divisor)
-{
-    const unsigned shift = static_cast<unsigned>(std::countl_zero(divisor));
-    const uint64_t normalized = divisor << shift;
-    const unsigned __int128 reciprocal
-        = ~static_cast<unsigned __int128>(0) / normalized - (static_cast<unsigned __int128>(1) << 64);
-    return {divisor, normalized, static_cast<uint64_t>(reciprocal), shift};
-}
-
-/// Divides `high` : `low` by the divisor `prepared` was built from, using its reciprocal in place of a
-/// division, for a quotient known to fit in a limb; requires `high` below that divisor. Moller and
-/// Granlund, "Improved division by invariant integers", algorithm 4, over the normalized divisor.
-constexpr uint64_t
-divide_128_by_64_preinv(uint64_t high, uint64_t low, const invariant_divisor & prepared, uint64_t & remainder)
-{
-    /// `high < divisor` gives `high << shift <= normalized - 2^shift`, and the bits shifted in from
-    /// `low` are below `2^shift`, so the normalized high word stays below the normalized divisor.
-    uint64_t numerator_high = high << prepared.shift;
-    if (prepared.shift != 0)
-        numerator_high |= low >> (64 - prepared.shift);
-    const uint64_t numerator_low = low << prepared.shift;
-
-    unsigned __int128 estimate = static_cast<unsigned __int128>(prepared.reciprocal) * numerator_high;
-    estimate += (static_cast<unsigned __int128>(numerator_high + 1) << 64) | numerator_low;
-
-    uint64_t quotient = static_cast<uint64_t>(estimate >> 64);
-    const uint64_t estimate_low = static_cast<uint64_t>(estimate);
-    uint64_t rest = numerator_low - quotient * prepared.normalized;
-
-    /// The estimate is at most one too large, and what detects that is a comparison against the low
-    /// product word rather than against the divisor. The second correction is possible but rare.
-    const uint64_t correction = -static_cast<uint64_t>(rest > estimate_low);
-    quotient += correction;
-    rest += correction & prepared.normalized;
-    if (rest >= prepared.normalized)
-    {
-        rest -= prepared.normalized;
-        ++quotient;
-    }
-
-    remainder = rest >> prepared.shift;
-    return quotient;
-}
-
-/// Divides `high` : `low` by the divisor `prepared` was built from, for a quotient known to fit in a
-/// limb; requires `high` below that divisor. Prefer this over the three-argument form wherever the
-/// same divisor serves many divisions, and keep the argument `constexpr` where the divisor is.
-constexpr uint64_t divide_128_by_64(uint64_t high, uint64_t low, const invariant_divisor & prepared, uint64_t & remainder)
-{
-#if defined(__x86_64__)
-    /// A single `divq` outperforms the reciprocal here, so the prepared form is only the portable route.
-    if (!std::is_constant_evaluated())
-        return divide_128_by_64(high, low, prepared.divisor, remainder);
-#endif
-    return divide_128_by_64_preinv(high, low, prepared, remainder);
-}
-
 /// Divides `numerator` (`m` limbs, little-endian) by the single limb `denominator`.
 /// Writes `m` quotient limbs into `quotient` and returns the remainder.
 ///
@@ -322,50 +314,9 @@ constexpr uint64_t divide_128_by_64(uint64_t high, uint64_t low, const invariant
 /// remainder carried in from the previous step is below the divisor.
 constexpr uint64_t divide_by_single_limb(const uint64_t * numerator, unsigned m, uint64_t denominator, uint64_t * quotient)
 {
-#if defined(__x86_64__)
-    /// Keep the `divq` loop: a native first division adds operand-width selection branches.
-    if (!std::is_constant_evaluated())
-    {
-        uint64_t remainder = 0;
-        for (unsigned i = m; i > 0; --i)
-            quotient[i - 1] = divide_128_by_64(remainder, numerator[i - 1], denominator, remainder);
-        return remainder;
-    }
-#endif
-    if (m == 0)
-        return 0;
-
-    if (std::has_single_bit(denominator))
-    {
-        const unsigned shift = static_cast<unsigned>(std::countr_zero(denominator));
-        if (shift == 0)
-        {
-            for (unsigned i = 0; i < m; ++i)
-                quotient[i] = numerator[i];
-            return 0;
-        }
-
-        const uint64_t remainder = numerator[0] & (denominator - 1);
-        uint64_t carry = 0;
-        for (unsigned i = m; i > 0; --i)
-        {
-            const uint64_t limb = numerator[i - 1];
-            quotient[i - 1] = (limb >> shift) | carry;
-            carry = limb << (64 - shift);
-        }
-        return remainder;
-    }
-
-    /// The first step has no carried remainder, so a native 64-bit division suffices.
-    uint64_t remainder = numerator[m - 1] % denominator;
-    quotient[m - 1] = numerator[m - 1] / denominator;
-    if (m == 1)
-        return remainder;
-
-    /// Amortize reciprocal preparation over the remaining limbs on targets without `divq`.
-    const auto prepared = prepare_divisor(denominator);
-    for (unsigned i = m - 1; i > 0; --i)
-        quotient[i - 1] = divide_128_by_64(remainder, numerator[i - 1], prepared, remainder);
+    uint64_t remainder = 0;
+    for (unsigned i = m; i > 0; --i)
+        quotient[i - 1] = divide_128_by_64(remainder, numerator[i - 1], denominator, remainder);
     return remainder;
 }
 
@@ -575,28 +526,16 @@ struct integer<Bits, Signed>::_impl
     {
         static_assert(sizeof(Integral) <= sizeof(base_type));
 
-        if constexpr (std::is_same_v<Integral, BFloat16>)
-        {
-            wide_integer_from_builtin(self, static_cast<double>(static_cast<float>(rhs)));
-        }
-        else if constexpr (std::is_floating_point_v<Integral>)
-        {
-            /// `float`, or an 8-byte `long double` (arm64 macOS).
-            wide_integer_from_builtin(self, static_cast<double>(rhs));
-        }
-        else
-        {
-            self.items[little(0)] = _impl::to_Integral(rhs);
+        self.items[little(0)] = _impl::to_Integral(rhs);
 
-            /// Sign-extend with a value select instead of a branch: a data-dependent branch here
-            /// mispredicts on mixed-sign data and prevents vectorization of columnar conversion loops.
-            base_type extension = 0;
-            if constexpr (std::is_signed_v<Integral>)
-                extension = rhs < 0 ? base_type(-1) : base_type(0);
+        /// Sign-extend with a value select instead of a branch: a data-dependent branch here
+        /// mispredicts on mixed-sign data and prevents vectorization of columnar conversion loops.
+        base_type extension = 0;
+        if constexpr (std::is_signed_v<Integral>)
+            extension = rhs < 0 ? base_type(-1) : base_type(0);
 
-            for (unsigned i = 1; i < item_count; ++i)
-                self.items[little(i)] = extension;
-        }
+        for (unsigned i = 1; i < item_count; ++i)
+            self.items[little(i)] = extension;
     }
 
     template <typename TupleLike, size_t i = 0>
@@ -623,34 +562,113 @@ struct integer<Bits, Signed>::_impl
             wide_integer_from_tuple_like(self, std::make_pair(value.high64, value.low64));
     }
 
-    constexpr static void wide_integer_from_builtin(integer<Bits, Signed> & self, double rhs) noexcept
+    /**
+     * N.B. t is constructed from double, so max(t) = max(double) ~ 2^310
+     * the recursive call happens when t / 2^64 > 2^64, so there won't be more than 5 of them.
+     *
+     * t = a1 * max_int + b1,   a1 > max_int, b1 < max_int
+     * a1 = a2 * max_int + b2,  a2 > max_int, b2 < max_int
+     * a_(n - 1) = a_n * max_int + b2, a_n <= max_int <- base case.
+     */
+    template <class T>
+    constexpr static void set_multiplier(integer<Bits, Signed> & self, T t) noexcept
     {
-        /// Every `double` in (-2^63, 2^63) truncates to a representable `int64_t`; NaN fails both comparisons.
-        if (rhs > -0x1p63 && rhs < 0x1p63) [[likely]]
+        constexpr uint64_t max_int = std::numeric_limits<uint64_t>::max();
+        static_assert(std::is_same_v<T, double> || std::is_same_v<T, FromDoubleIntermediateType>);
+        /// Implementation specific behaviour on overflow (if we don't check here, stack overflow will triggered in bigint_cast).
+#if (LDBL_MANT_DIG >= 64)
+        if (!std::isfinite(t))
+        {
+            self = 0;
+            return;
+        }
+#else
+        if constexpr (std::is_same_v<T, double>)
+        {
+            if (!std::isfinite(t))
+            {
+                self = 0;
+                return;
+            }
+        }
+        else
+        {
+            if (!boost::math::isfinite(t))
+            {
+                self = 0;
+                return;
+            }
+        }
+#endif
+
+        T alpha = t / static_cast<T>(max_int);
+#if (LDBL_MANT_DIG > 64)
+        // Round division result to 64-bit precision on platforms with higher precision (e.g., ARM Linux with 113-bit mantissa)
+        if constexpr (std::is_same_v<T, FromDoubleIntermediateType>)
+        {
+            alpha = detail::round_to_64bit_mantissa(alpha);
+        }
+#endif
+
+        /** Here we have to use strict comparison.
+          * The max_int is 2^64 - 1.
+          * When cast to a floating point type, it will be rounded to the closest representable number,
+          * which is 2^64.
+          * But 2^64 is not representable in uint64_t,
+          * so the maximum representable number will be strictly less.
+          */
+        if (alpha < static_cast<T>(max_int))
+            self = static_cast<uint64_t>(alpha);
+        else // max(double) / 2^64 will surely contain less than 52 precision bits, so speed up computations.
+            set_multiplier<double>(self, static_cast<double>(alpha));
+
+        self *= max_int;
+
+        // Calculate remainder: t - floor(alpha) * max_int
+        // On platforms with >64-bit mantissa, round the multiplication to 64-bit precision
+        // to match x86's 80-bit extended behavior
+        T remainder_subtrahend = floor(alpha) * static_cast<T>(max_int);
+#if (LDBL_MANT_DIG > 64)
+        if constexpr (std::is_same_v<T, FromDoubleIntermediateType>)
+        {
+            remainder_subtrahend = detail::round_to_64bit_mantissa(remainder_subtrahend);
+        }
+#endif
+        self += static_cast<uint64_t>(t - remainder_subtrahend); // += b_i
+    }
+
+    /// Can only be constexpr when not using boost (boost types are not literal types)
+#if (LDBL_MANT_DIG >= 64)
+    constexpr
+#endif
+        static void wide_integer_from_builtin(integer<Bits, Signed> & self, double rhs) noexcept
+    {
+        constexpr int64_t max_int = std::numeric_limits<int64_t>::max();
+        constexpr int64_t min_int = std::numeric_limits<int64_t>::lowest();
+
+        /// There are values in int64 that have more than 53 significant bits (in terms of double
+        /// representation). Such values, being promoted to double, are rounded up or down. If they are rounded up,
+        /// the result may not fit in 64 bits.
+        /// The example of such a number is 9.22337e+18.
+        /// As to_Integral does a static_cast to int64_t, it may result in UB.
+        /// The necessary check here is that FromDoubleIntermediateType has enough significant (mantissa) bits to store the
+        /// int64_t max value precisely.
+
+        if (static_cast<FromDoubleIntermediateType>(rhs) > static_cast<FromDoubleIntermediateType>(min_int)
+            && static_cast<FromDoubleIntermediateType>(rhs) < static_cast<FromDoubleIntermediateType>(max_int))
         {
             self = static_cast<int64_t>(rhs);
             return;
         }
 
-        self = from_double_out_of_line(rhs);
-    }
+        const FromDoubleIntermediateType rhs_long_double = (static_cast<FromDoubleIntermediateType>(rhs) < 0)
+            ? -static_cast<FromDoubleIntermediateType>(rhs)
+            : static_cast<FromDoubleIntermediateType>(rhs);
 
-    /// Out of line and returned by value, so that the inlined caller can keep `self` in registers.
-    /// For |rhs| >= 2^63 the value is `mantissa * 2^shift` with `shift >= 11`, so a shift builds it exactly.
-    /// Values out of range wrap modulo 2^Bits; NaN and infinities give 0.
-    NO_INLINE
-    constexpr static integer<Bits, Signed> from_double_out_of_line(double rhs) noexcept
-    {
-        const uint64_t bits = std::bit_cast<uint64_t>(rhs);
-        const int biased_exponent = static_cast<int>((bits >> 52) & 0x7ff);
-        if (biased_exponent == 0x7ff)
-            return integer<Bits, Signed>(0);
+        set_multiplier(self, rhs_long_double);
 
-        integer<Bits, Signed> res((bits & ((uint64_t(1) << 52) - 1)) | (uint64_t(1) << 52));
-        res <<= biased_exponent - 1075;
         if (rhs < 0)
-            res = -res;
-        return res;
+            self = -self;
     }
 
     template <size_t Bits2, typename Signed2>
@@ -837,36 +855,6 @@ private:
         return res;
     }
 
-    /// 128-bit and 256-bit addition and subtraction use add_sub instead of the generic two-pass loops (plus / minus),
-    /// which branch on the sign of the right-hand side and propagate the carry in a second pass. The right-hand side is
-    /// a wide integer of at most `Bits` bits or a native integer of up to 64 bits, which is sign- or zero-extended first.
-    template <typename T>
-    static constexpr bool use_add_sub = (Bits == 128 || Bits == 256)
-        && (IsWideInteger<T>::value || (std::is_integral_v<T> && sizeof(T) <= sizeof(base_type)));
-
-    /// Two's-complement addition and subtraction are the same for signed and unsigned values, so add_sub needs no
-    /// branch on the sign. It makes one pass over the 64-bit pieces, with the carry (or borrow) running from each
-    /// piece to the next and no branches. This portable method uses the compiler's add/subtract-with-carry builtins,
-    /// which compile to a scalar carry chain, and for 256 bits it is as fast as `_BitInt(256)`.
-    template <bool subtract, typename T>
-    constexpr static integer<Bits, Signed> add_sub(const integer<Bits, Signed> & lhs, const T & rhs) noexcept
-    {
-        static_assert(sizeof(unsigned long long) == sizeof(base_type));
-        const integer<Bits, Signed> r = rhs;
-        integer<Bits, Signed> res;
-        unsigned long long carry = 0;
-        for (unsigned i = 0; i < item_count; ++i)
-        {
-            const unsigned long long a = lhs.items[little(i)];
-            const unsigned long long b = r.items[little(i)];
-            if constexpr (subtract)
-                res.items[little(i)] = static_cast<base_type>(__builtin_subcll(a, b, carry, &carry));
-            else
-                res.items[little(i)] = static_cast<base_type>(__builtin_addcll(a, b, carry, &carry));
-        }
-        return res;
-    }
-
     template <typename T>
     constexpr static integer<Bits, Signed> multiply(const integer<Bits, Signed> & lhs, const T & rhs)
     {
@@ -989,9 +977,15 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (use_add_sub<T>)
+            if constexpr (use_BitInt256)
             {
-                return add_sub<false>(lhs, rhs);
+                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt256(toBitInt256(lhs) + toBitInt256(new_rhs));
+                }
+                else
+                    return fromBitInt256(toBitInt256(lhs) + toBitInt256(rhs));
             }
             else
             {
@@ -1014,9 +1008,15 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (use_add_sub<T>)
+            if constexpr (use_BitInt256)
             {
-                return add_sub<true>(lhs, rhs);
+                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt256(toBitInt256(lhs) - toBitInt256(new_rhs));
+                }
+                else
+                    return fromBitInt256(toBitInt256(lhs) - toBitInt256(rhs));
             }
             else
             {
@@ -1236,25 +1236,6 @@ public:
         {
             using CompilerUInt128 = unsigned __int128;
 
-            /// Both operands in a single limb is a 64-bit division, which the 128 / 128 division
-            /// below cannot become: every target without a double-word divide instruction calls
-            /// __udivti3, whose 128 / 64 kernel tests only the divisor for a zero high word, so a
-            /// 64 / 64 division still runs Knuth's algorithm over 32-bit digits.
-            if ((numerator.items[little(1)] | denominator.items[little(1)]) == 0)
-            {
-                const base_type a_low = numerator.items[little(0)];
-                const base_type b_low = denominator.items[little(0)];
-
-                integer<Bits, Signed> res;
-                res.items[little(0)] = a_low / b_low;
-                res.items[little(1)] = 0;
-
-                numerator.items[little(0)] = a_low % b_low;
-                numerator.items[little(1)] = 0;
-
-                return res;
-            }
-
             CompilerUInt128 a = (CompilerUInt128(numerator.items[little(1)]) << 64) + numerator.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             CompilerUInt128 b = (CompilerUInt128(denominator.items[little(1)]) << 64) + denominator.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             CompilerUInt128 c = a / b; // NOLINT
@@ -1376,17 +1357,12 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            /// Not routed through _BitInt(256), unlike multiplication: for division
+            /// Not routed through _BitInt(256), unlike addition and multiplication: for division
             /// the compiler emits a generic bignum sequence that is an order of magnitude slower
             /// than `divide` below.
             integer<Bits, unsigned> numerator = make_positive(lhs);
             integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-            integer<Bits, unsigned> quotient;
-            /// The signed operators are out of line, so `divide` is inlined into them: a narrow division then stays in registers.
-            if constexpr (std::is_same_v<Signed, signed>)
-                [[clang::always_inline]] quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
-            else
-                quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
+            integer<Bits, unsigned> quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
 
             if (std::is_same_v<Signed, signed> && is_negative(rhs) != is_negative(lhs))
                 quotient = operator_unary_minus(quotient);
@@ -1407,10 +1383,7 @@ public:
             /// See the note in operator_slash about _BitInt(256).
             integer<Bits, unsigned> remainder = make_positive(lhs);
             integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-            if constexpr (std::is_same_v<Signed, signed>)
-                [[clang::always_inline]] integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
-            else
-                integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
+            integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
 
             if (std::is_same_v<Signed, signed> && is_negative(lhs))
                 remainder = operator_unary_minus(remainder);

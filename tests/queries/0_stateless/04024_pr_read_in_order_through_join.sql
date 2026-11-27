@@ -1,4 +1,3 @@
--- Tags: no-parallel, no-fasttest
 -- Regression test: parallel replicas coordination mode mismatch with read_in_order_through_join.
 -- The optimization can produce different results on the initiator and remote replicas
 -- (due to differences in plan construction), leading to "Replica decided to read in Default
@@ -12,13 +11,11 @@ DROP TABLE IF EXISTS payloads;
 CREATE TABLE events (Time DateTime, Id String) ENGINE = MergeTree ORDER BY Time;
 INSERT INTO events SELECT toDateTime('2024-01-01 00:00:00') + INTERVAL number SECOND AS Time, toString(number) AS Id FROM numbers(10000);
 
--- A `Join`-engine table uses `FilledJoinStep`. It must receive the same parallel-replica
--- protection as `JoinStep`, because its probe side may otherwise choose `WithOrder` while a
--- remote replica chooses `Default`.
-CREATE TABLE payloads (Payload String, Id String) ENGINE = Join(ANY, LEFT, Id);
+CREATE TABLE payloads (Payload String, Id String) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO payloads SELECT concat('Payload ', toString(number)) AS Payload, toString(number) AS Id FROM numbers(100);
 
-SET optimize_read_in_order = 1;
+SET enable_analyzer = 1;
+SET query_plan_read_in_order = 1, optimize_read_in_order = 1;
 SET query_plan_read_in_order_through_join = 1;
 SET optimize_aggregation_in_order = 1;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable spilling as it doesn't support read-in-order optimization
@@ -33,7 +30,7 @@ SELECT 'Without parallel replicas:';
 SELECT arraySort(groupArray(trim(explain))) FROM (
     EXPLAIN actions = 1
     SELECT events.Time, events.Id, payloads.Payload
-    FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
+    FROM events LEFT JOIN payloads ON events.Id = payloads.Id
     ORDER BY events.Time
     LIMIT 3
 ) WHERE explain LIKE '%ReadType%';
@@ -48,7 +45,7 @@ SELECT 'With parallel replicas, sorting through JOIN:';
 SELECT arraySort(groupArray(trim(explain))) FROM (
     EXPLAIN actions = 1
     SELECT events.Time, events.Id, payloads.Payload
-    FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
+    FROM events LEFT JOIN payloads ON events.Id = payloads.Id
     ORDER BY events.Time
     LIMIT 3
 ) WHERE explain LIKE '%ReadType%';
@@ -57,7 +54,7 @@ SELECT 'With parallel replicas, aggregation through JOIN:';
 SELECT arraySort(groupArray(trim(explain))) FROM (
     EXPLAIN actions = 1
     SELECT toStartOfHour(events.Time) AS t, count()
-    FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
+    FROM events LEFT JOIN payloads ON events.Id = payloads.Id
     GROUP BY t
     ORDER BY t
     LIMIT 3
@@ -67,7 +64,7 @@ SELECT 'With parallel replicas, distinct through JOIN:';
 SELECT arraySort(groupArray(trim(explain))) FROM (
     EXPLAIN actions = 1
     SELECT DISTINCT events.Time
-    FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
+    FROM events LEFT JOIN payloads ON events.Id = payloads.Id
     ORDER BY events.Time
     LIMIT 3
 ) WHERE explain LIKE '%ReadType%';
@@ -76,25 +73,23 @@ SELECT arraySort(groupArray(trim(explain))) FROM (
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 SELECT events.Time, events.Id, payloads.Payload
-FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
+FROM events LEFT JOIN payloads ON events.Id = payloads.Id
 ORDER BY events.Time LIMIT 3
 FORMAT Null;
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 SELECT toStartOfHour(events.Time) AS t, count()
-FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
+FROM events LEFT JOIN payloads ON events.Id = payloads.Id
 GROUP BY t ORDER BY t LIMIT 3
 FORMAT Null;
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 SELECT DISTINCT events.Time
-FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
+FROM events LEFT JOIN payloads ON events.Id = payloads.Id
 ORDER BY events.Time LIMIT 3
 FORMAT Null;
-
-SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 DROP TABLE events;
 DROP TABLE payloads;

@@ -21,7 +21,7 @@ public:
     BlockIO execute() override;
 
 private:
-    [[nodiscard]] AccessRightsElements getRequiredAccessForDDLOnCluster() const;
+    AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     ASTPtr query_ptr;
 
     BlockIO executeToTable(ASTUndropQuery & query);

@@ -1,5 +1,7 @@
 -- Tags: no-fasttest
 
+SET enable_analyzer = 1;
+
 INSERT INTO FUNCTION file(currentDatabase() || '_04317_data.tsv', 'TSV', 'x UInt8')
 SELECT number FROM numbers(3)
 SETTINGS engine_file_truncate_on_insert = 1;

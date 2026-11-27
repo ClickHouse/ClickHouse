@@ -12,7 +12,7 @@ class VisitorJSONPathRoot : public IVisitor<JSONParser>
 public:
     explicit VisitorJSONPathRoot(ASTPtr) { }
 
-    [[nodiscard]] const char * getName() const override { return "VisitorJSONPathRoot"; }
+    const char * getName() const override { return "VisitorJSONPathRoot"; }
 
     VisitorStatus apply(typename JSONParser::Element & /*element*/) const override
     {

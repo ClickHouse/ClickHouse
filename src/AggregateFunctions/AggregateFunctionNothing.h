@@ -54,9 +54,9 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return Name::name; }
+    String getName() const override { return Name::name; }
 
-    [[nodiscard]] DataTypePtr getNormalizedStateType() const override
+    DataTypePtr getNormalizedStateType() const override
     {
         /// The state of this placeholder is empty and its serialization is a single zero byte,
         /// independent of the parameters. The parameters are only inherited from the aggregate
@@ -70,7 +70,7 @@ public:
         return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), normalized_argument_types, Array{});
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void create(AggregateDataPtr __restrict) const override
     {
@@ -80,17 +80,17 @@ public:
     {
     }
 
-    [[nodiscard]] bool hasTrivialDestructor() const override
+    bool hasTrivialDestructor() const override
     {
         return true;
     }
 
-    [[nodiscard]] size_t sizeOfData() const override
+    size_t sizeOfData() const override
     {
         return 0;
     }
 
-    [[nodiscard]] size_t alignOfData() const override
+    size_t alignOfData() const override
     {
         return 1;
     }

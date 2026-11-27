@@ -8,6 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 このデータセットには、ClickHouse リポジトリのすべてのコミットと変更が含まれています。これは、ClickHouse に付属するネイティブの `git-import` ツールを使用して生成できます。
 
 生成されたデータには、次の各テーブルに対応する `tsv` ファイルが含まれます。
@@ -184,7 +186,7 @@ CREATE TABLE git.line_changes
 
 ```sql
 INSERT INTO git.commits SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/commits.tsv.xz', NOSIGN, 'TSV', 'hash String,author LowCardinality(String), time DateTime, message String, files_added UInt32, files_deleted UInt32, files_renamed UInt32, files_modified UInt32, lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/commits.tsv.xz', 'TSV', 'hash String,author LowCardinality(String), time DateTime, message String, files_added UInt32, files_deleted UInt32, files_renamed UInt32, files_modified UInt32, lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32')
 ```
 
 ```response
@@ -195,7 +197,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 
 ```sql
 INSERT INTO git.file_changes SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/file_changes.tsv.xz', NOSIGN, 'TSV', 'change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6), path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32, commit_hash String, author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/file_changes.tsv.xz', 'TSV', 'change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6), path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), lines_added UInt32, lines_deleted UInt32, hunks_added UInt32, hunks_removed UInt32, hunks_changed UInt32, commit_hash String, author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
 ```
 
 ```response
@@ -206,7 +208,7 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 
 ```sql
 INSERT INTO git.line_changes SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/line_changes.tsv.xz', NOSIGN, 'TSV', '    sign Int8, line_number_old UInt32, line_number_new UInt32, hunk_num UInt32, hunk_start_line_number_old UInt32, hunk_start_line_number_new UInt32, hunk_lines_added UInt32,\n    hunk_lines_deleted UInt32, hunk_context LowCardinality(String), line LowCardinality(String), indent UInt8, line_type Enum(\'Empty\' = 0, \'Comment\' = 1, \'Punct\' = 2, \'Code\' = 3), prev_commit_hash String, prev_author LowCardinality(String), prev_time DateTime, file_change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6),\n    path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), file_lines_added UInt32, file_lines_deleted UInt32, file_hunks_added UInt32, file_hunks_removed UInt32, file_hunks_changed UInt32, commit_hash String,\n    author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
+FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhouse/line_changes.tsv.xz', 'TSV', '    sign Int8, line_number_old UInt32, line_number_new UInt32, hunk_num UInt32, hunk_start_line_number_old UInt32, hunk_start_line_number_new UInt32, hunk_lines_added UInt32,\n    hunk_lines_deleted UInt32, hunk_context LowCardinality(String), line LowCardinality(String), indent UInt8, line_type Enum(\'Empty\' = 0, \'Comment\' = 1, \'Punct\' = 2, \'Code\' = 3), prev_commit_hash String, prev_author LowCardinality(String), prev_time DateTime, file_change_type Enum(\'Add\' = 1, \'Delete\' = 2, \'Modify\' = 3, \'Rename\' = 4, \'Copy\' = 5, \'Type\' = 6),\n    path LowCardinality(String), old_path LowCardinality(String), file_extension LowCardinality(String), file_lines_added UInt32, file_lines_deleted UInt32, file_hunks_added UInt32, file_hunks_removed UInt32, file_hunks_changed UInt32, commit_hash String,\n    author LowCardinality(String), time DateTime, commit_message String, commit_files_added UInt32, commit_files_deleted UInt32, commit_files_renamed UInt32, commit_files_modified UInt32, commit_lines_added UInt32, commit_lines_deleted UInt32, commit_hunks_added UInt32, commit_hunks_removed UInt32, commit_hunks_changed UInt32')
 ```
 
 ```response
@@ -569,27 +571,11 @@ LIMIT 10
 
 **追加・削除された行数:**
 
-<div className="ch-image-md">
-
-<Frame>
-
-![追加・削除された行数](/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp" alt="追加・削除された行数" size="md" />
 
 **コミット数と著者数:**
 
-<div className="ch-image-md">
-
-<Frame>
-
-![コミット数と著者数](/images/getting-started/example-datasets/superset-commits-authors.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/getting-started/example-datasets/superset-commits-authors.webp" alt="コミット数と著者数" size="md" />
 
 <div id="list-files-with-maximum-number-of-authors">
   ### 著者数が最も多いファイルを一覧表示する
@@ -1378,27 +1364,11 @@ LIMIT 100
 
 Sankey chart (SuperSet) を使うと、これを見やすく可視化できます。ビジュアルの幅を広げるため、`LIMIT BY` を 3 に増やし、各著者についてコードを最も多く削除した上位 3 人を取得しています。
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Superset 著者マトリクス](/images/getting-started/example-datasets/superset-authors-matrix.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/getting-started/example-datasets/superset-authors-matrix.webp" alt="Superset 著者マトリクス" size="md" />
 
 Alexey は明らかに他の人のコードを削除するのが好きなようです。コード削除の傾向をよりバランスよく見るため、彼を除外しましょう。
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Superset 著者マトリクス v2](/images/getting-started/example-datasets/superset-authors-matrix_v2.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/getting-started/example-datasets/superset-authors-matrix_v2.webp" alt="Superset 著者マトリクス v2" size="md" />
 
 <div id="who-is-the-highest-percentage-contributor-per-day-of-week">
   ### 各曜日で、コミットに占める割合が最も高いコントリビューターは誰ですか？

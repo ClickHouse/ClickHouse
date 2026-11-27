@@ -200,9 +200,6 @@ class QuantileTDigest
     }
 
 public:
-    /// The memory allocated for the centroids. It counts the memory inside the object when there are few centroids.
-    [[nodiscard]] size_t allocatedBytes() const { return centroids.allocated_bytes(); }
-
     /** Performs compression of accumulated centroids
       * When merging, the invariant is retained to the maximum size of each
       * centroid that does not exceed `4 q (1 - q) \ delta N`.
@@ -353,7 +350,7 @@ public:
         compress(); // Allows reading/writing TDigests with different epsilon/max_centroids params
     }
 
-    [[nodiscard]] Float64 getCountEqual(Float64 value) const
+    Float64 getCountEqual(Float64 value) const
     {
         Float64 result = 0;
         for (const auto & c : centroids)
@@ -365,7 +362,7 @@ public:
         return result;
     }
 
-    [[nodiscard]] Float64 getCountLessThan(Float64 value) const
+    Float64 getCountLessThan(Float64 value) const
     {
         bool first = true;
         Count sum = 0;

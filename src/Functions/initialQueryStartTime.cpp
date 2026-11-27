@@ -19,20 +19,20 @@ public:
 
     explicit FunctionInitialQueryStartTime(const time_t & initial_query_start_time_) : initial_query_start_time(initial_query_start_time_) {}
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> DateTime";
+        return std::make_shared<DataTypeDateTime>();
     }
 
-    [[nodiscard]] bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeDateTime().createColumnConst(
                 input_rows_count,
@@ -58,9 +58,9 @@ INSERT INTO tmp (*) VALUES ('a');
 SELECT count(DISTINCT t) FROM (SELECT initialQueryStartTime() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
         )",
         R"(
-┌─countDistinct(t)─┐
-│                1 │
-└──────────────────┘
+┌─count(DISTINCT t)─┐
+│                 1 │
+└───────────────────┘
         )"
     }
     };

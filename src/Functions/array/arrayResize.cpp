@@ -116,11 +116,7 @@ ColumnPtr FunctionArrayResize::executeImpl(const ColumnsWithTypeAndName & argume
     else
     {
         auto default_column = result_array.getData().cloneEmpty();
-        /// `Nothing` has a trivial default, but its `insertDefaultInto` throws.
-        if (return_nested_type->isDefaultInsertTrivial())
-            default_column->insertDefault();
-        else
-            return_nested_type->insertDefaultInto(*default_column);
+        default_column->insertDefault();
         appended_column = ColumnConst::create(std::move(default_column), size);
     }
 

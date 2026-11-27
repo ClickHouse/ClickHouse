@@ -22,13 +22,6 @@ endif()
 include(grpc.cmake)
 include(protobuf_generate_grpc.cmake)
 
-if (OS_SUNOS)
-  # illumos declares FIONREAD in sys/filio.h rather than sys/ioctl.h.
-  foreach (target grpc grpc_unsecure)
-    target_compile_options(${target} PRIVATE "SHELL:-include sys/filio.h")
-  endforeach()
-endif()
-
 set(gRPC_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/grpc/include")
 if(gRPC_USE_UNSECURE_LIBRARIES)
   set(gRPC_LIBRARIES grpc_unsecure grpc++_unsecure)

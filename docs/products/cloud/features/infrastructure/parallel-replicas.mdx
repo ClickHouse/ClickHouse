@@ -6,6 +6,7 @@ description: 'In this guide, we will first discuss how ClickHouse distributes a 
 doc_type: 'reference'
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
 
 ## Introduction {#introduction}
 ClickHouse processes queries extremely quickly, but how are these queries 
@@ -26,15 +27,7 @@ on the specified shard, or it can be sent to the distributed table, and in that
 case, each shard will execute the given queries. The server where the distributed
 table was queried will aggregate the data and respond to the client:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![sharded architecture](/images/deployment-guides/parallel-replicas-1.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-1.webp" size="md" alt="sharded archtiecture" />
 
 The figure above visualizes what happens when a client queries a distributed table:
 
@@ -71,15 +64,7 @@ infinite amount of storage, the need for shards becomes less important.
 
 The figure below shows the ClickHouse Cloud architecture:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![non sharded architecture](/images/deployment-guides/parallel-replicas-2.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-2.webp" size="md" alt="non sharded architecture" />
 
 This architecture allows us to be able to add and remove replicas nearly
 instantaneously, ensuring a very high cluster scalability. The ClickHouse
@@ -105,15 +90,7 @@ as the unit of work.
 
 Now, let's see how it works in practice with the help of the figure below:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Parallel replicas](/images/deployment-guides/parallel-replicas-3.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-3.webp" size="md" alt="Parallel replicas" />
 
 With parallel replicas:
 
@@ -168,15 +145,7 @@ We explore how these factors are overcome in the following sections.
 To address (1) and (2) from the list above, we introduced the concept of an
 announcement. Let's visualize how it works using the figure below:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Announcements](/images/deployment-guides/parallel-replicas-4.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-4.webp" size="md" alt="Announcements" />
 
 <ol className="docs-ordered-list">
     <li>
@@ -216,15 +185,7 @@ an announcement with all parts.
 
 The figure below visualizes how dynamic coordination works:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Dynamic Coordination - part 1](/images/deployment-guides/parallel-replicas-5.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-5.webp" size="md" alt="Dynamic Coordination - part 1" />
 
 <ol className="docs-ordered-list">
     <li>
@@ -236,15 +197,7 @@ The figure below visualizes how dynamic coordination works:
     </li>
 </ol>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Dynamic Coordination - part 2](/images/deployment-guides/parallel-replicas-6.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-6.webp" size="md" alt="Dynamic Coordination - part 2" />
 
 <ol className="docs-ordered-list">
     <li>
@@ -256,15 +209,7 @@ The figure below visualizes how dynamic coordination works:
     </li>
 </ol>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Dynamic Coordination - part 3](/images/deployment-guides/parallel-replicas-7.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-7.webp" size="md" alt="Dynamic Coordination - part 3" />
 
 <ol className="docs-ordered-list">
     <li>
@@ -358,6 +303,7 @@ the label `comp-parallel-replicas`.
 | `cluster_for_parallel_replicas`                    | The cluster name to use for parallel replication; if you're using ClickHouse Cloud, use `default`.                                                                                                                                                                 |
 | `max_parallel_replicas`                            | Maximum number of replicas to use for the query execution on multiple replicas, if a number lower than the number of replicas in the cluster is specified, nodes will be selected randomly. This value can also be overcommitted to account for horizontal scaling. |
 | `parallel_replicas_min_number_of_rows_per_replica` | Help limiting the number of replicas used based on the number of rows that need to be processed the number of replicas used is defined by: <br/> `estimated rows to read` / `min_number_of_rows_per_replica`.                                                       |
+| `enable_analyzer`                                  | Query execution with parallel replicas is supported only with enabled analyzer                                                                                                                                                                                      |
 
 ## Investigating issues with parallel replicas {#investigating-issues-with-parallel-replicas}
 You can check what settings are being used for each query in the 
@@ -520,15 +466,7 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![EXPLAIN without parallel_replica](/images/deployment-guides/parallel-replicas-8.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="EXPLAIN without parallel_replica" />
 
 And now with parallel replica:
 
@@ -543,12 +481,4 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![EXPLAIN with parallel_replica](/images/deployment-guides/parallel-replicas-9.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="EXPLAIN with parallel_replica"/>

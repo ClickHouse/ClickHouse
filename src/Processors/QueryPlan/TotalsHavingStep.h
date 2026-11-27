@@ -38,17 +38,17 @@ public:
         , final(other.final)
     {}
 
-    [[nodiscard]] String getName() const override { return "TotalsHaving"; }
+    String getName() const override { return "TotalsHaving"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    [[nodiscard]] const ActionsDAG * getActions() const { return actions_dag ? &*actions_dag : nullptr; }
-    [[nodiscard]] const String & getFilterColumnName() const { return filter_column_name; }
+    const ActionsDAG * getActions() const { return actions_dag ? &*actions_dag : nullptr; }
+    const String & getFilterColumnName() const { return filter_column_name; }
 
-    [[nodiscard]] bool hasCorrelatedExpressions() const override
+    bool hasCorrelatedExpressions() const override
     {
         if (actions_dag)
             return actions_dag->hasCorrelatedColumns();
@@ -57,11 +57,11 @@ public:
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
-    [[nodiscard]] bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    [[nodiscard]] QueryPlanStepPtr clone() const override;
+    QueryPlanStepPtr clone() const override;
 
 private:
     void updateOutputHeader() override;

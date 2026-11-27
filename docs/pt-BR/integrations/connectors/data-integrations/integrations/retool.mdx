@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 import { PartnerBadge } from "/snippets/pt-BR/components/PartnerBadge/PartnerBadge.jsx";
 
@@ -24,72 +25,32 @@ import { PartnerBadge } from "/snippets/pt-BR/components/PartnerBadge/PartnerBad
   <Step title="Crie um recurso do ClickHouse" id="2-create-a-clickhouse-resource">
     Faça login na sua conta do Retool e vá para a aba *Resources*. Escolha &quot;Create New&quot; -&gt; &quot;Resource&quot;:
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Criando um novo recurso](/images/integrations/tools/data-integration/retool/retool_01.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/tools/data-integration/retool/retool_01.webp" size="lg" border alt="Criando um novo recurso" />
 
     <br />
 
     Selecione &quot;JDBC&quot; na lista de conectores disponíveis:
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Escolhendo o conector JDBC](/images/integrations/tools/data-integration/retool/retool_02.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/tools/data-integration/retool/retool_02.webp" size="lg" border alt="Escolhendo o conector JDBC" />
 
     <br />
 
     No assistente de configuração, certifique-se de selecionar `com.clickhouse.jdbc.ClickHouseDriver` como &quot;Driver name&quot;:
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Selecionando o driver correto](/images/integrations/tools/data-integration/retool/retool_03.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/tools/data-integration/retool/retool_03.webp" size="lg" border alt="Selecionando o driver correto" />
 
     <br />
 
     Preencha suas credenciais do ClickHouse no seguinte formato: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`.
     Se a sua instância exigir SSL ou se você estiver usando ClickHouse Cloud, adicione `&ssl=true` à string de conexão, para que ela fique assim: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true`
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Especificando suas credenciais](/images/integrations/tools/data-integration/retool/retool_04.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/tools/data-integration/retool/retool_04.webp" size="lg" border alt="Especificando suas credenciais" />
 
     <br />
 
     Depois disso, teste sua conexão:
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Testando sua conexão](/images/integrations/tools/data-integration/retool/retool_05.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/tools/data-integration/retool/retool_05.webp" size="lg" border alt="Testando sua conexão" />
 
     <br />
 

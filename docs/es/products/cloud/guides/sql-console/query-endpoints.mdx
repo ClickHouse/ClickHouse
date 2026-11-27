@@ -1,11 +1,13 @@
 ---
-sidebar_title: 'Configurar endpoint de la API de consultas'
+sidebar_title: 'endpoint de la API de consultas'
 slug: /cloud/get-started/query-endpoints
 description: 'Cree fácilmente endpoints de API REST a partir de sus consultas guardadas'
 keywords: ['api', 'endpoint de la api de consultas', 'endpoints de consulta', 'api rest de consultas']
 title: 'Configuración de endpoint de la API de consultas'
 doc_type: 'guide'
 ---
+
+import { Image } from "/snippets/es/components/Image.jsx";
 
 La función **endpoint de la API de consultas** le permite crear un endpoint de API directamente a partir de cualquier consulta SQL guardada en la consola de ClickHouse Cloud. Podrá acceder a los endpoints de API a través de HTTP para ejecutar sus consultas guardadas sin necesidad de conectarse a su servicio de ClickHouse Cloud mediante un driver nativo.
 
@@ -66,27 +68,11 @@ Puedes seguir esta guía para [crear una clave de API](/es/products/cloud/featur
 
     Vamos a ejecutar rápidamente esta consulta para asegurarnos de que funciona, especificando el año `2010` en el campo de variables de consulta situado a la derecha del editor SQL:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Probar la consulta de ejemplo](/images/cloud/sqlconsole/endpoints-testquery.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="Probar la consulta de ejemplo" />
 
     A continuación, guarda la consulta:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Guardar consulta de ejemplo](/images/cloud/sqlconsole/endpoints-savequery.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="Guardar consulta de ejemplo" />
 
     Puedes encontrar más documentación sobre las consultas guardadas en la sección [&quot;Saving a query&quot;](/es/products/cloud/features/sql-console-features/sql-console#saving-a-query).
   </Step>
@@ -95,15 +81,7 @@ Puedes seguir esta guía para [crear una clave de API](/es/products/cloud/featur
     Los endpoints de la API de consultas se pueden configurar directamente desde la vista de consulta haciendo clic en el botón **Share** y seleccionando `API Endpoint`.
     Se te pedirá que especifiques qué claves de API podrán acceder al endpoint:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Configurar endpoint de consulta](/images/cloud/sqlconsole/endpoints-configure.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="Configurar endpoint de consulta" />
 
     Después de seleccionar una clave de API, se te pedirá que:
 
@@ -114,15 +92,7 @@ Puedes seguir esta guía para [crear una clave de API](/es/products/cloud/featur
 
     Se mostrará un comando `curl` de ejemplo para que puedas enviar una solicitud de prueba:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Comando curl del endpoint](/images/cloud/sqlconsole/endpoints-completed.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="Comando curl del endpoint" />
 
     A continuación se muestra, para mayor comodidad, el comando `curl` que aparece en la interfaz:
 
@@ -138,27 +108,11 @@ Puedes seguir esta guía para [crear una clave de API](/es/products/cloud/featur
   <Step title="Pruebas y monitorización" id="testing-and-monitoring">
     Una vez creado un endpoint de la API de consultas, puedes comprobar que funciona usando `curl` o cualquier otro cliente HTTP:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![prueba curl del endpoint](/images/cloud/sqlconsole/endpoints-curltest.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="prueba curl del endpoint" />
 
     Después de enviar tu primera solicitud, debería aparecer de inmediato un nuevo botón a la derecha del botón **Share**. Al hacer clic en él, se abrirá un panel lateral con datos de monitorización sobre la consulta:
 
-    <div className="ch-image-sm">
-
-    <Frame>
-
-    ![Monitorización del endpoint](/images/cloud/sqlconsole/endpoints-monitoring.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="Monitorización del endpoint" />
   </Step>
 </Steps>
 

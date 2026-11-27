@@ -6,6 +6,8 @@ keywords: ['إلغاء تطبيع البيانات', 'إلغاء التطبيع'
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 يُعد إلغاء تطبيع البيانات في ClickHouse أسلوبًا يعتمد على استخدام الجداول المسطّحة للمساعدة في تقليل زمن استجابة الاستعلام إلى الحد الأدنى من خلال تجنّب عمليات JOIN.
 
 <div id="comparing-normalized-vs-denormalized-schemas">
@@ -16,15 +18,7 @@ doc_type: 'guide'
 
 تقلل هذه العملية الحاجة إلى عمليات ربط معقدة وقت الاستعلام، ويمكن أن تسرّع عمليات القراءة بشكل كبير، مما يجعلها مثالية للتطبيقات ذات متطلبات القراءة العالية والاستعلامات المعقدة. ومع ذلك، قد تزيد من تعقيد عمليات الكتابة والصيانة، إذ يجب تمرير أي تغييرات على البيانات المكررة إلى جميع المواضع التي تظهر فيها للحفاظ على الاتساق.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![إلغاء التطبيع في ClickHouse](/images/data-modeling/denormalization-diagram.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/data-modeling/denormalization-diagram.webp" size="lg" alt="إلغاء التطبيع في ClickHouse" />
 
 <br />
 
@@ -75,7 +69,7 @@ doc_type: 'guide'
 *في كل مثال من الأمثلة التالية، افترض وجود استعلام يتطلب استخدام الجدولين معًا في عملية join.*
 
 <div id="posts-and-votes">
-  ### Posts وVotes
+  ### Posts and Votes
 </div>
 
 تُمثَّل Votes المرتبطة بـ Posts في جداول منفصلة. ويظهر أدناه المخطط المُحسَّن لذلك، إلى جانب أمر insert المستخدم لتحميل البيانات:
@@ -93,7 +87,7 @@ CREATE TABLE votes
 ENGINE = MergeTree
 ORDER BY (VoteTypeId, CreationDate, PostId)
 
-INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
 ```
 
 ```response
@@ -153,15 +147,7 @@ LIMIT 5
 
 لننظر الآن إلى `Users` و`Badges`:
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![مخطط Users وBadges](/images/data-modeling/denormalization-schema.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/data-modeling/denormalization-schema.webp" size="lg" alt="مخطط Users وBadges" />
 
 <p />
 
@@ -202,7 +188,7 @@ CREATE TABLE badges
 ENGINE = MergeTree
 ORDER BY UserId
 
-INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
+INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
 ```
 
 ```response
@@ -210,7 +196,7 @@ INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.
 ```
 
 ```sql
-INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet', NOSIGN)
+INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
 ```
 
 ```response
@@ -241,7 +227,7 @@ SELECT UserId, count() AS c FROM badges GROUP BY UserId ORDER BY c DESC LIMIT 5
   ### Posts وPostLinks
 </div>
 
-يربط `PostLinks` بين عناصر `Posts` التي يعتبرها المستخدمون ذات صلة أو مكررة. يوضّح الاستعلام التالي المخطط وأمر التحميل:
+يربط `PostLinks` بين عناصر `Posts` التي يعتبرها المستخدمون ذات صلة أو مكررة. يوضّح الاستعلام التالي البنية وأمر التحميل:
 
 ```sql
 CREATE TABLE postlinks
@@ -255,7 +241,7 @@ CREATE TABLE postlinks
 ENGINE = MergeTree
 ORDER BY (PostId, RelatedPostId)
 
-INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
+INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet')
 ```
 
 ```response
@@ -304,7 +290,7 @@ FROM
 └──────────────────┴──────────────────┘
 ```
 
-سنستخدم هذا مثالًا لإلغاء التطبيع أدناه.
+سنستخدم هذا مثالًا على إلغاء التطبيع فيما يلي.
 
 <div id="simple-statistic-example">
   ### مثال بسيط على إحصائية

@@ -8,6 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/es/components/Image.jsx";
+
 <div id="inserting-into-clickhouse-vs-oltp-databases">
   ## Inserciones en ClickHouse frente a las bases de datos OLTP
 </div>
@@ -74,15 +76,7 @@ Si no es posible insertar lotes grandes, puede delegar la agrupación por lotes 
 
 Con las inserciones asíncronas, los datos se insertan primero en un búfer y luego se escriben en el almacenamiento de la base de datos en 3 pasos, como se muestra en el siguiente diagrama:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Inserciones de Postgres](/images/guides/postgres-inserts.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/guides/postgres-inserts.webp" size="md" alt="Inserciones de Postgres" />
 
 Con las inserciones asíncronas habilitadas, ClickHouse:
 
@@ -105,9 +99,9 @@ En general, este mecanismo traslada la agrupación por lotes de datos del lado d
 </div>
 
 ClickHouse dispone de clientes para los lenguajes de programación más populares.
-Están optimizados para garantizar que las inserciones se realicen correctamente y admiten de forma nativa inserciones asíncronas, ya sea directamente, como por ejemplo en el [Go client](/es/integrations/language-clients/go/clickhouse-api#async-insert), o indirectamente, al habilitarlas en la configuración a nivel de consulta, usuario o conexión.
+Están optimizados para garantizar que las inserciones se realicen correctamente y admiten de forma nativa inserciones asíncronas, ya sea directamente, como por ejemplo en el [cliente de Go](/es/integrations/language-clients/go/clickhouse-api#async-insert), o indirectamente, al habilitarlas en la configuración a nivel de consulta, usuario o conexión.
 
-Consulta [Clientes e interfaces nativas](/es/concepts/features/interfaces/native-clients-interfaces-index) para ver la lista completa de clientes y drivers de ClickHouse disponibles.
+Consulta [Clientes y drivers](/es/concepts/features/interfaces/cli) para ver la lista completa de clientes y drivers de ClickHouse disponibles.
 
 <div id="prefer-the-native-format">
   ### Prefiera el formato nativo

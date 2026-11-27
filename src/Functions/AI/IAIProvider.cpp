@@ -64,14 +64,13 @@ AIProviderHTTPException::AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPSt
 {
 }
 
-void IAIProvider::embed(
-    const AIEmbeddingRequest & /*ai_embedding_request*/, const ConnectionTimeouts & /*timeouts*/, AIEmbeddingResponse & /*response*/)
+AIEmbeddingResponse IAIProvider::embed(const AIEmbeddingRequest & /*ai_embedding_request*/, const ConnectionTimeouts & /*timeouts*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This AI provider does not support embeddings");
 }
 
 AIProviderPtr createAIProvider(
-    const ContextPtr & context, const String & provider_name, const String & endpoint, std::string_view api_key, const String & api_version)
+    const ContextPtr & context, const String & provider_name, const String & endpoint, const String & api_key, const String & api_version)
 {
     AIProviderPtr provider;
     if (provider_name == "openai" || provider_name == "huggingface" || provider_name == "tei")
@@ -84,7 +83,7 @@ AIProviderPtr createAIProvider(
 
     /// Rejects forbidden headers and CR/LF in values (the key comes from a named collection).
     auto headers = provider->getHeaders();
-    context->getHTTPHeaderFilter().checkHeaders(headers);
+    context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
     return provider;
 }
 

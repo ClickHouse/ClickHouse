@@ -17,14 +17,12 @@
         },
         "fr/resources/changelogs/cloud/release-status",
         {
-          "group": "Historique des versions de la base de données Cloud",
+          "group": "Journal des modifications des versions de la base de données Cloud",
           "pages": [
             "fr/resources/changelogs/cloud/release-notes-index",
             {
               "group": "2026",
               "pages": [
-                "fr/resources/changelogs/cloud/release-notes/26_8",
-                "fr/resources/changelogs/cloud/release-notes/26_6",
                 "fr/resources/changelogs/cloud/release-notes/26_4",
                 "fr/resources/changelogs/cloud/release-notes/26_02"
               ]
@@ -78,5 +76,6 @@
       ]
     }
   ],
-  "item": "Journaux des modifications"
+  "icon": "/images/icons/icon-changelogs.svg",
+  "item": "Historique des modifications"
 }

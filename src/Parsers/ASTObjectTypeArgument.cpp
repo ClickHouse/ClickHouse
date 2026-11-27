@@ -25,11 +25,8 @@ ASTPtr ASTObjectTypedPathArgument::clone() const
 void ASTObjectTypedPathArgument::formatImpl(
     WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    if (shared)
-        ostr << "SHARED ";
-
-    /// A path that reads as a keyword of the Object arguments must be quoted to stay a path.
-    if (equalsCaseInsensitive(path, "SKIP") || equalsCaseInsensitive(path, "SHARED"))
+    /// We must quote path "SKIP" to avoid its confusion with SKIP keyword in Object arguments.
+    if (equalsCaseInsensitive(path, "SKIP"))
         ostr << backQuote(path) << ' ';
     else
         ostr << backQuoteIfNeed(path) << ' ';

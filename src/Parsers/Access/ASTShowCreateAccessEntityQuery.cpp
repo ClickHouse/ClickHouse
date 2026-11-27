@@ -40,12 +40,10 @@ String ASTShowCreateAccessEntityQuery::getID(char) const
 ASTPtr ASTShowCreateAccessEntityQuery::clone() const
 {
     auto res = make_intrusive<ASTShowCreateAccessEntityQuery>(*this);
-    res->children.clear();
 
     if (row_policy_names)
         res->row_policy_names = boost::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
 
-    cloneOutputOptions(*res);
     return res;
 }
 

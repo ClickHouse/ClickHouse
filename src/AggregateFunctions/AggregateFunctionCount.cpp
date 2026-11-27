@@ -105,16 +105,6 @@ public:
         writeVarUInt(data(place).count, buf);
     }
 
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
-    {
-        return VAR_UINT_MAX_SIZE;
-    }
-
-    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> /* version */) const override
-    {
-        return writeVarUInt(data(place).count, dst);
-    }
-
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         readVarUInt(data(place).count, buf);
@@ -125,9 +115,6 @@ public:
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
 
-    /// The merged count of non-nulls is the modular `UInt64` sum of the partial counts, which
-    /// never exceeds their saturating sum - see `MergedValueBound::Subadditive`.
-    MergedValueBound getMergedValueBound() const override { return MergedValueBound::Subadditive; }
 
 #if USE_EMBEDDED_COMPILER
 
@@ -302,14 +289,14 @@ The default is the [uniqExact](/reference/functions/aggregate-functions/uniqExac
 The `SELECT count() FROM table` query is optimized by default using metadata from MergeTree.
 If you need to use row-level security, disable optimization using the [`optimize_trivial_count_query`](/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) setting.
 
-`SELECT count(nullable_column) FROM table` can read only the [`null`](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data, as long as `nullable_column` isn't used anywhere else in the query.
+However `SELECT count(nullable_column) FROM table` query can be optimized by enabling the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting.
+With `optimize_functions_to_subcolumns = 1` the function reads only [`null`](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data.
 The query `SELECT count(n) FROM table` transforms to `SELECT sum(NOT n.null) FROM table`.
-This optimization is controlled by the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting, which is enabled by default.
 
-<Tip title="Improving COUNT(DISTINCT expr) performance">
+:::tip Improving COUNT(DISTINCT expr) performance
 If your `COUNT(DISTINCT expr)` query is slow, consider adding a [`GROUP BY`](/reference/statements/select/group-by) clause as this improves parallelization.
 You can also use a [projection](/reference/statements/alter/projection) to create an index on the target column used with `COUNT(DISTINCT target_col)`.
-</Tip>
+:::
     )";
     FunctionDocumentation::Syntax syntax = "count([expr])";
     FunctionDocumentation::Arguments arguments = {
@@ -321,9 +308,6 @@ You can also use a [projection](/reference/statements/alter/projection) to creat
     {
         "Basic row count",
         R"(
-CREATE TABLE t (num UInt8) ENGINE = Memory;
-INSERT INTO t VALUES (1), (1), (2), (2), (3);
-
 SELECT count() FROM t
         )",
         R"(
@@ -343,9 +327,9 @@ SELECT count(DISTINCT num) FROM t
 ┌─name──────────────────────────┬─value─────┐
 │ count_distinct_implementation │ uniqExact │
 └───────────────────────────────┴───────────┘
-┌─countDistinct(num)─┐
-│                  3 │
-└────────────────────┘
+┌─uniqExact(num)─┐
+│              3 │
+└────────────────┘
         )"
     }
     };

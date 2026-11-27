@@ -50,7 +50,7 @@ protected:
     static size_t getColumnIndex(const std::shared_ptr<IInputFormat> & delete_source, const String & column_name);
 
     /// Drops rows whose `file_path` column does not match the current data file path.
-    /// The WHERE filter on `position_delete_files` only drives row-group/page pruning at the
+    /// The WHERE filter on `delete_sources` only drives row-group/page pruning at the
     /// Parquet reader; rows inside surviving row groups still need to be filtered explicitly.
     /// Returns the number of rows kept (0 if the chunk has no matching rows).
     size_t filterChunkToCurrentDataFile(Chunk & chunk, size_t filename_column_index) const;
@@ -62,9 +62,9 @@ protected:
     ContextPtr context;
     FormatParserSharedResourcesPtr parser_shared_resources;
 
-    /// We need to keep the read buffers alive since the position_delete_files depend on them.
+    /// We need to keep the read buffers alive since the delete_sources depends on them.
     std::vector<std::unique_ptr<ReadBuffer>> delete_read_buffers;
-    std::vector<std::shared_ptr<IInputFormat>> position_delete_files;
+    std::vector<std::shared_ptr<IInputFormat>> delete_sources;
 };
 
 class IcebergBitmapPositionDeleteTransform final : public IcebergPositionDeleteTransform
@@ -123,9 +123,9 @@ private:
         size_t position_index;
     };
 
-    void fetchNewChunkFromSource(size_t position_delete_file_index);
+    void fetchNewChunkFromSource(size_t delete_source_index);
 
-    std::vector<PositionDeleteFileIndexes> position_delete_file_column_indices;
+    std::vector<PositionDeleteFileIndexes> delete_source_column_indices;
     std::vector<Chunk> latest_chunks;
     std::vector<size_t> iterator_at_latest_chunks;
     std::set<std::pair<size_t, size_t>> latest_positions;

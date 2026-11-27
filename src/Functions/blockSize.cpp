@@ -21,37 +21,37 @@ public:
     }
 
     /// Get the function name.
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isDeterministic() const override
+    bool isDeterministic() const override
     {
         return false;
     }
 
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return false;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> UInt64";
+        return std::make_shared<DataTypeUInt64>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return ColumnUInt64::create(input_rows_count, input_rows_count);
     }

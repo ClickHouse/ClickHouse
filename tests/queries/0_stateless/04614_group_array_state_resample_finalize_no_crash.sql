@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel
 -- no-parallel -- enables a process-global failpoint that fires in every -State finalization
 
 -- A combinator that transfers several sub-states in one insertResultInto call aliases them into the

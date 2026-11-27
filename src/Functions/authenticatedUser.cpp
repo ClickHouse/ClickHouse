@@ -26,25 +26,25 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> String";
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeString().createColumnConst(input_rows_count, user_name);
     }
@@ -65,9 +65,8 @@ Alias: authUser()
         .examples{
             {"Usage example",
             R"(
-CREATE USER u1;
-EXECUTE AS u1 SELECT currentUser(), authenticatedUser();
-DROP USER u1;
+            EXECUTE as u1;
+            SELECT currentUser(), authenticatedUser();
             )",
             R"(
 ┌─currentUser()─┬─authenticatedUser()─┐

@@ -109,7 +109,7 @@ public:
 
     explicit ObfuscateQueryFunction(String function_name_, Mode mode_) : function_name(std::move(function_name_)), mode(mode_) {}
 
-    [[nodiscard]] ColumnPtr execute(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
+    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
 
 private:
     String function_name;
@@ -227,7 +227,7 @@ ColumnPtr ObfuscateQueryFunction::execute(const ColumnsWithTypeAndName & argumen
 class ObfuscateQueryFunctionAdaptor final : public IFunction
 {
 private:
-    [[nodiscard]] ObfuscateQueryFunction::Mode getMode(size_t num_args) const
+    ObfuscateQueryFunction::Mode getMode(size_t num_args) const
     {
         if (name == "obfuscateQueryWithSeed")
         {
@@ -246,50 +246,78 @@ private:
 public:
     explicit ObfuscateQueryFunctionAdaptor(String name_) : name(std::move(name_)) {}
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override
+    bool useDefaultImplementationForConstants() const override
     {
         // Only deterministic for obfuscateQueryWithSeed with constant seed
         return name == "obfuscateQueryWithSeed";
     }
 
-    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override
+    bool useDefaultImplementationForLowCardinalityColumns() const override
     {
         return true;
     }
 
-    [[nodiscard]] bool canBeExecutedOnLowCardinalityDictionary() const override
+    bool canBeExecutedOnLowCardinalityDictionary() const override
     {
         // `obfuscateQuery` relies on per-row randomness, so dictionary execution
         // would collapse equal values and produce undesired behavior.
         return name == "obfuscateQueryWithSeed";
     }
 
-    [[nodiscard]] bool isDeterministic() const override
+    bool isDeterministic() const override
     {
         // obfuscateQueryWithSeed is deterministic when provided with constant seed
         return name == "obfuscateQueryWithSeed";
     }
 
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override
+    bool isDeterministicInScopeOfQuery() const override
     {
         // Only obfuscateQueryWithSeed is deterministic in scope of query.
         return name == "obfuscateQueryWithSeed";
     }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (name == "obfuscateQueryWithSeed")
-            return "(String, Integer | String) -> String";
-        return "(String, [Integer | String]) -> String";
+        {
+            if (arguments.size() != 2)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Function {} requires exactly 2 arguments", getName());
+        }
+        else
+        {
+            if (arguments.empty())
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Function {} requires at least 1 argument", getName());
+
+            if (arguments.size() > 2)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Function {} requires at most 2 arguments", getName());
+        }
+
+        // First argument must be string
+        if (!isString(arguments[0].type))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "First argument of function {} must be String", getName());
+
+        // For both `obfuscateQuery` and `obfuscateQueryWithSeed`, second argument must be integer or String.
+        if (arguments.size() == 2)
+        {
+            if (!isInteger(arguments[1].type) && !isString(arguments[1].type))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Second argument of function {} must be an integer type or String", getName());
+        }
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ObfuscateQueryFunction::Mode mode = getMode(arguments.size());
         ObfuscateQueryFunction impl(name, mode);
@@ -325,7 +353,7 @@ REGISTER_FUNCTION(obfuscateQuery)
          "SELECT a FROM b, SELECT c FROM d"},
         {"Different rows produce different results",
          "SELECT obfuscateQuery('SELECT 1') AS a, obfuscateQuery('SELECT 1') AS b",
-         "SELECT 1\tSELECT 1"}
+         "A B"}
     };
 
     FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
@@ -376,13 +404,13 @@ Features:
     FunctionDocumentation::Examples obfuscate_query_with_seed_examples = {
         {"Deterministic obfuscation with integer seed",
          "SELECT obfuscateQueryWithSeed('SELECT name FROM users', 42)",
-         "SELECT name FROM users"},
+         "SELECT fruit FROM table"},
         {"Deterministic obfuscation with string seed",
          "SELECT obfuscateQueryWithSeed('SELECT id, value FROM data', 'myseed')",
-         "SELECT id, value FROM data"},
+         "SELECT a, b FROM c"},
         {"Same seed produces same result",
          "SELECT obfuscateQueryWithSeed('SELECT 1', 100) = obfuscateQueryWithSeed('SELECT 1', 100)",
-         "1"}
+         "true"}
     };
 
     FunctionDocumentation obfuscate_query_with_seed_documentation = {

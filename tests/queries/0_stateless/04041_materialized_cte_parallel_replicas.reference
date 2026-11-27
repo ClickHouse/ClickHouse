@@ -1,10 +1,10 @@
 MaterializingCTEs (Materialize CTEs before main query execution)
   Expression ((Project names + Projection))
     Aggregating
-      Expression ((Before GROUP BY + Post Join Actions))
+      Expression
         Join (JOIN FillRightFirst)
           Expression (Left Pre Join Actions)
-            Filter ((Apply runtime join filter + Change column names to column identifiers))
+            Filter
               ReadFromMemoryStorage
           Expression (Right Pre Join Actions)
             BuildRuntimeFilter (Build runtime join filter on __table4.uid)

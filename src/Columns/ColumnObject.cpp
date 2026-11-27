@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Columns/ColumnObject.h>
@@ -7,7 +6,6 @@
 #include <Columns/ColumnVariant.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
@@ -108,21 +106,12 @@ ColumnObject::ColumnObject(
     }
     std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
 
-    sorted_typed_path_columns.reserve(sorted_typed_paths.size());
-    for (const auto & path : sorted_typed_paths)
-        sorted_typed_path_columns.push_back(typed_paths.find(path)->second.get());
-
     dynamic_paths.reserve(dynamic_paths_.size());
     dynamic_paths_ptrs.reserve(dynamic_paths_.size());
     for (auto & [path, column] : dynamic_paths_)
     {
-        /// Capture the raw pointer from the `MutableColumnPtr` before moving it. Going through
-        /// `it->second.get()` after the move would call `WrappedPtr::get` (non-const), which
-        /// asserts `use_count() == 1`; that breaks when this constructor is reached via
-        /// `create(const ColumnPtr &, ...)` while the caller still holds shared references.
-        auto * raw_ptr = column.get();
         auto it = dynamic_paths.emplace(path, std::move(column)).first;
-        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(raw_ptr);
+        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(it->second.get());
         sorted_dynamic_paths.insert(it->first);
     }
 }
@@ -145,10 +134,6 @@ ColumnObject::ColumnObject(
     }
 
     std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
-
-    sorted_typed_path_columns.reserve(sorted_typed_paths.size());
-    for (const auto & path : sorted_typed_paths)
-        sorted_typed_path_columns.push_back(typed_paths.find(path)->second.get());
 
     MutableColumns paths_and_values;
     paths_and_values.emplace_back(ColumnString::create());
@@ -175,26 +160,9 @@ ColumnObject::ColumnObject(const ColumnObject & other)
         sorted_typed_paths.emplace_back(path);
     std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
 
-    /// This is a shallow copy: the typed paths are still shared with `other`, so the non-const
-    /// `WrappedPtr::get` would trip `chassert(use_count() == 1)`. Like `dynamic_paths_ptrs` above, the raw
-    /// pointer cache aliases the shared children until `IColumn::mutate` replaces them through
-    /// `forEachMutableSubcolumn`, which rebuilds this cache.
-    sorted_typed_path_columns.clear();
-    sorted_typed_path_columns.reserve(sorted_typed_paths.size());
-    for (const auto & path : sorted_typed_paths)
-        sorted_typed_path_columns.push_back(const_cast<IColumn *>(std::as_const(typed_paths).find(path)->second.get()));
-
     sorted_dynamic_paths.clear();
     for (const auto & [path, _] : dynamic_paths)
         sorted_dynamic_paths.emplace(path);
-}
-
-void ColumnObject::rebuildSortedTypedPathColumns()
-{
-    sorted_typed_path_columns.clear();
-    sorted_typed_path_columns.reserve(sorted_typed_paths.size());
-    for (const auto & path : sorted_typed_paths)
-        sorted_typed_path_columns.push_back(typed_paths.find(path)->second.get());
 }
 
 ColumnObject::Ptr ColumnObject::create(
@@ -210,17 +178,17 @@ ColumnObject::Ptr ColumnObject::create(
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> mutable_typed_paths;
     mutable_typed_paths.reserve(typed_paths_.size());
     for (const auto & [path, column] : typed_paths_)
-        mutable_typed_paths[path] = IColumn::mutate(column);
+        mutable_typed_paths[path] = typed_paths_.at(path)->assumeMutable();
 
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> mutable_dynamic_paths;
     mutable_dynamic_paths.reserve(dynamic_paths_.size());
     for (const auto & [path, column] : dynamic_paths_)
-        mutable_dynamic_paths[path] = IColumn::mutate(column);
+        mutable_dynamic_paths[path] = dynamic_paths_.at(path)->assumeMutable();
 
     return ColumnObject::create(
         std::move(mutable_typed_paths),
         std::move(mutable_dynamic_paths),
-        IColumn::mutate(shared_data_),
+        shared_data_->assumeMutable(),
         max_dynamic_paths_,
         max_dynamic_paths_upper_bound_,
         global_max_dynamic_paths_,
@@ -502,23 +470,6 @@ UInt64 ColumnObject::getNumberOfDefaultRows() const
     return num_rows - num_non_default;
 }
 
-bool ColumnObject::hasOnlyTypeDefaults() const
-{
-    for (const auto & [path, column] : typed_paths)
-    {
-        if (!column->hasOnlyTypeDefaults())
-            return false;
-    }
-
-    for (const auto & [path, column] : dynamic_paths_ptrs)
-    {
-        if (!column->hasOnlyTypeDefaults())
-            return false;
-    }
-
-    return shared_data->hasOnlyTypeDefaults();
-}
-
 std::string_view ColumnObject::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
@@ -638,10 +589,7 @@ void ColumnObject::setDynamicPaths(const VectorWithMemoryTracking<std::pair<Stri
 
     for (const auto & [path, column] : paths)
     {
-        /// `column` may still be held by the caller (`use_count > 1`), so detach
-        /// via `IColumn::mutate` before storing to satisfy the COW ownership
-        /// invariant on the `WrappedPtr` in `dynamic_paths`.
-        auto it = dynamic_paths.emplace(path, IColumn::mutate(column)).first;
+        auto it = dynamic_paths.emplace(path, column).first;
         dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(it->second.get());
         sorted_dynamic_paths.insert(it->first);
     }
@@ -1313,6 +1261,28 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
     }
 }
 
+void ColumnObject::skipSerializedInArena(ReadBuffer & in) const
+{
+    /// First, skip all values of typed paths;
+    for (auto path : sorted_typed_paths)
+        typed_paths.find(path)->second->skipSerializedInArena(in);
+
+    /// Second, skip all other paths and values.
+    size_t num_paths = 0;
+    readBinaryLittleEndian<size_t>(num_paths, in);
+
+    for (size_t i = 0; i != num_paths; ++i)
+    {
+        size_t path_size = 0;
+        readBinaryLittleEndian<size_t>(path_size, in);
+        in.ignore(path_size);
+
+        size_t value_size = 0;
+        readBinaryLittleEndian<size_t>(value_size, in);
+        in.ignore(value_size);
+    }
+}
+
 void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
 {
     for (auto path : sorted_typed_paths)
@@ -1325,13 +1295,6 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
     const auto & shared_data_offsets = getSharedDataOffsets();
     size_t start = shared_data_offsets[static_cast<ssize_t>(n) - 1];
     size_t end = shared_data_offsets[static_cast<ssize_t>(n)];
-
-    /// The number of paths and the size of each path delimit the object, as in `serializeDynamicPathsAndSharedDataIntoArena`.
-    size_t num_paths = end - start;
-    for (const auto & [_, column] : dynamic_paths_ptrs)
-        num_paths += !column->isNullAt(n);
-    hash.update(num_paths);
-
     auto dynamic_paths_it = sorted_dynamic_paths.begin();
     for (size_t i = start; i != end; ++i)
     {
@@ -1342,7 +1305,6 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
             const auto * dynamic_column = dynamic_paths_ptrs.find(*dynamic_paths_it)->second;
             if (!dynamic_column->isNullAt(n))
             {
-                hash.update(dynamic_paths_it->size());
                 hash.update(*dynamic_paths_it);
                 dynamic_column->updateHashWithValue(n, hash);
             }
@@ -1353,7 +1315,6 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
         auto value = shared_data_values->getDataAt(i);
         ReadBufferFromMemory buf(value);
         auto value_type = decodeDataType(buf);
-        hash.update(path.size());
         hash.update(path);
 
         /// A shared_data entry can be encoded as Nothing (a serialized NULL). Nothing has no usable
@@ -1368,9 +1329,9 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
         }
 
         auto type_name = value_type->getName();
-        ColumnDynamic::updateHashWithTypeName(hash, type_name);
+        hash.update(type_name);
         auto tmp_column = value_type->createColumn();
-        getDataTypesCache().getSerialization(type_name, value_type)->deserializeBinary(*tmp_column, buf, getFormatSettings());
+        getDataTypesCache().getSerialization(type_name)->deserializeBinary(*tmp_column, buf, getFormatSettings());
         tmp_column->updateHashWithValue(0, hash);
     }
 
@@ -1380,7 +1341,6 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
         const auto * dynamic_column = dynamic_paths_ptrs.find(*dynamic_paths_it)->second;
         if (!dynamic_column->isNullAt(n))
         {
-            hash.update(dynamic_paths_it->size());
             hash.update(*dynamic_paths_it);
             dynamic_column->updateHashWithValue(n, hash);
         }
@@ -1407,71 +1367,44 @@ void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & 
 
 void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    /// A logically equal object must hash the same regardless of how its paths are split between
-    /// dynamic sub-columns and `shared_data` (the split varies across blocks and temp-file round-trips).
-    /// Typed paths can never move between sections, so they are chained in a fixed order. Dynamic paths
-    /// and `shared_data` can hold the same path, so each `(path, value)` is folded commutatively (`+`)
-    /// and a `shared_data` value is decoded to the leaf hash it would have as a typed variant.
-    const size_t n = row_end - row_begin;
-    PaddedPODArray<UInt32> object_hash(n, WEAK_HASH32_INITIAL_VALUE);
-
-    for (const auto & path : sorted_typed_paths)
-        typed_paths.find(path)->second->computeHashInto(row_begin, row_end, object_hash.data(), /*initial=*/false);
-
-    if (global_max_dynamic_paths == 0)
+    /// Like `updateHashWithValueRange`, this hashes the physical path layout: it does NOT guarantee
+    /// equal hashes for a logically equal object whose paths are split differently between dynamic
+    /// columns and `shared_data` across blocks; the in-memory scatter consumers only need fast
+    /// per-query partitioning.
+    ///
+    /// Build the finalized per-row object hash by chaining the sub-objects in the existing
+    /// typed paths → dynamic paths → shared data order. `shared_data` always exists, so the
+    /// buffer is always seeded (no empty-object special case needed).
+    auto computeFinalizedInto = [&](UInt32 * out)
     {
-        /// No path can ever be dynamic, so `shared_data` holds every non-typed path in a canonical
-        /// layout and its bulk hash is already split-invariant (no per-value decode needed).
-        shared_data->computeHashInto(row_begin, row_end, object_hash.data(), /*initial=*/false);
-    }
-    else
-    {
-        PaddedPODArray<UInt32> value_hash(n);
-        for (const auto & [path, column] : dynamic_paths_ptrs)
+        bool first = true;
+        for (const auto & [_, column] : typed_paths)
         {
-            column->computeHashInto(row_begin, row_end, value_hash.data(), /*initial=*/true);
-            const UInt32 path_hash = updateWeakHash32(
-                reinterpret_cast<const UInt8 *>(path.data()), path.size(), WEAK_HASH32_INITIAL_VALUE);
-            for (size_t i = 0; i < n; ++i)
-            {
-                /// An absent/NULL path contributes nothing, so `{"a":1}` and `{"a":1,"b":null}` agree.
-                if (!column->isNullAt(row_begin + i))
-                    object_hash[i] += combineWeakHash32(value_hash[i], path_hash);
-            }
+            column->computeHashInto(row_begin, row_end, out, first);
+            first = false;
         }
-
-        const auto [shared_paths, shared_values] = getSharedDataPathsAndValues();
-        const auto & shared_offsets = getSharedDataOffsets();
-        const size_t entries_begin = shared_offsets[static_cast<ssize_t>(row_begin) - 1];
-        const size_t num_entries = shared_offsets[static_cast<ssize_t>(row_end) - 1] - entries_begin;
-        if (num_entries)
+        for (const auto & [_, column] : dynamic_paths_ptrs)
         {
-            /// The whole range is hashed in one call so the deserialization can be batched by type.
-            PODArray<UInt32> entry_hash(num_entries);
-            ColumnDynamic::hashSharedValues(*shared_values, entries_begin, num_entries, entry_hash.data());
-
-            for (size_t i = 0; i < n; ++i)
-            {
-                for (size_t j = shared_offsets[static_cast<ssize_t>(row_begin + i) - 1]; j < shared_offsets[row_begin + i]; ++j)
-                {
-                    const auto path = shared_paths->getDataAt(j);
-                    const UInt32 path_hash = updateWeakHash32(
-                        reinterpret_cast<const UInt8 *>(path.data()), path.size(), WEAK_HASH32_INITIAL_VALUE);
-                    object_hash[i] += combineWeakHash32(entry_hash[j - entries_begin], path_hash);
-                }
-            }
+            column->computeHashInto(row_begin, row_end, out, first);
+            first = false;
         }
-    }
+        shared_data->computeHashInto(row_begin, row_end, out, first);
+    };
 
     if (initial)
     {
-        memcpy(hash_out, object_hash.data(), n * sizeof(UInt32));
+        computeFinalizedInto(hash_out);
+        return;
     }
-    else
-    {
-        for (size_t i = 0; i < n; ++i)
-            hash_out[i] = combineWeakHash32(object_hash[i], hash_out[i]);
-    }
+
+    /// Non-initial: build the finalized object hash in a scratch buffer, then combine that single
+    /// value into the prior key columns' hash (rather than streaming sub-objects straight into
+    /// `hash_out`) so composition stays representation-independent. See IColumn::computeHashInto.
+    const size_t n = row_end - row_begin;
+    PaddedPODArray<UInt32> object_hash(n);
+    computeFinalizedInto(object_hash.data());
+    for (size_t i = 0; i < n; ++i)
+        hash_out[i] = combineWeakHash32(object_hash[i], hash_out[i]);
 }
 
 void ColumnObject::updateHashFast(SipHash & hash) const
@@ -1485,27 +1418,23 @@ void ColumnObject::updateHashFast(SipHash & hash) const
 
 ColumnPtr ColumnObject::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    /// The columns below are freshly created here and nobody else references them, so
-    /// `IColumn::mutate` on an rvalue only detaches them without copying. Passing them to the
-    /// `const ColumnPtr &` overload of `create` instead would leave the local copies alive and
-    /// force a deep copy of every path.
-    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> filtered_typed_paths;
+    UnorderedMapWithMemoryTracking<String, ColumnPtr> filtered_typed_paths;
     filtered_typed_paths.reserve(typed_paths.size());
     for (const auto & [path, column] : typed_paths)
-        filtered_typed_paths[path] = IColumn::mutate(column->filter(filt, result_size_hint));
+        filtered_typed_paths[path] = column->filter(filt, result_size_hint);
 
-    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> filtered_dynamic_paths;
+    UnorderedMapWithMemoryTracking<String, ColumnPtr> filtered_dynamic_paths;
     filtered_dynamic_paths.reserve(dynamic_paths_ptrs.size());
     for (const auto & [path, column] : dynamic_paths_ptrs)
-        filtered_dynamic_paths[path] = IColumn::mutate(column->filter(filt, result_size_hint));
+        filtered_dynamic_paths[path] = column->filter(filt, result_size_hint);
 
-    auto filtered_shared_data = IColumn::mutate(shared_data->filter(filt, result_size_hint));
-    return ColumnObject::create(std::move(filtered_typed_paths), std::move(filtered_dynamic_paths), std::move(filtered_shared_data), max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics);
+    auto filtered_shared_data = shared_data->filter(filt, result_size_hint);
+    return ColumnObject::create(filtered_typed_paths, filtered_dynamic_paths, filtered_shared_data, max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 void ColumnObject::filter(const Filter & filt)
 {
-    for (auto & [path, column] : typed_paths)
+    for (const auto & [path, column] : typed_paths)
         column->assumeMutable()->filter(filt);
 
     for (const auto & [path, column] : dynamic_paths_ptrs)
@@ -1527,56 +1456,50 @@ void ColumnObject::expand(const Filter & mask, bool inverted)
 
 ColumnPtr ColumnObject::permute(const Permutation & perm, size_t limit) const
 {
-    /// See the comment in `filter`: these columns are exclusively owned here, so `IColumn::mutate`
-    /// on an rvalue is free, while the `const ColumnPtr &` overload of `create` would deep copy them.
-    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> permuted_typed_paths;
+    UnorderedMapWithMemoryTracking<String, ColumnPtr> permuted_typed_paths;
     permuted_typed_paths.reserve(typed_paths.size());
     for (const auto & [path, column] : typed_paths)
-        permuted_typed_paths[path] = IColumn::mutate(column->permute(perm, limit));
+        permuted_typed_paths[path] = column->permute(perm, limit);
 
-    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> permuted_dynamic_paths;
+    UnorderedMapWithMemoryTracking<String, ColumnPtr> permuted_dynamic_paths;
     permuted_dynamic_paths.reserve(dynamic_paths_ptrs.size());
     for (const auto & [path, column] : dynamic_paths_ptrs)
-        permuted_dynamic_paths[path] = IColumn::mutate(column->permute(perm, limit));
+        permuted_dynamic_paths[path] = column->permute(perm, limit);
 
-    auto permuted_shared_data = IColumn::mutate(shared_data->permute(perm, limit));
-    return ColumnObject::create(std::move(permuted_typed_paths), std::move(permuted_dynamic_paths), std::move(permuted_shared_data), max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics);
+    auto permuted_shared_data = shared_data->permute(perm, limit);
+    return ColumnObject::create(permuted_typed_paths, permuted_dynamic_paths, permuted_shared_data, max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
 {
-    /// See the comment in `filter`: these columns are exclusively owned here, so `IColumn::mutate`
-    /// on an rvalue is free, while the `const ColumnPtr &` overload of `create` would deep copy them.
-    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> indexed_typed_paths;
+    UnorderedMapWithMemoryTracking<String, ColumnPtr> indexed_typed_paths;
     indexed_typed_paths.reserve(typed_paths.size());
     for (const auto & [path, column] : typed_paths)
-        indexed_typed_paths[path] = IColumn::mutate(column->index(indexes, limit));
+        indexed_typed_paths[path] = column->index(indexes, limit);
 
-    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> indexed_dynamic_paths;
+    UnorderedMapWithMemoryTracking<String, ColumnPtr> indexed_dynamic_paths;
     indexed_dynamic_paths.reserve(dynamic_paths_ptrs.size());
     for (const auto & [path, column] : dynamic_paths_ptrs)
-        indexed_dynamic_paths[path] = IColumn::mutate(column->index(indexes, limit));
+        indexed_dynamic_paths[path] = column->index(indexes, limit);
 
-    auto indexed_shared_data = IColumn::mutate(shared_data->index(indexes, limit));
-    return ColumnObject::create(std::move(indexed_typed_paths), std::move(indexed_dynamic_paths), std::move(indexed_shared_data), max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics);
+    auto indexed_shared_data = shared_data->index(indexes, limit);
+    return ColumnObject::create(indexed_typed_paths, indexed_dynamic_paths, indexed_shared_data, max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 ColumnPtr ColumnObject::replicate(const Offsets & replicate_offsets) const
 {
-    /// See the comment in `filter`: these columns are exclusively owned here, so `IColumn::mutate`
-    /// on an rvalue is free, while the `const ColumnPtr &` overload of `create` would deep copy them.
-    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> replicated_typed_paths;
+    UnorderedMapWithMemoryTracking<String, ColumnPtr> replicated_typed_paths;
     replicated_typed_paths.reserve(typed_paths.size());
     for (const auto & [path, column] : typed_paths)
-        replicated_typed_paths[path] = IColumn::mutate(column->replicate(replicate_offsets));
+        replicated_typed_paths[path] = column->replicate(replicate_offsets);
 
-    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> replicated_dynamic_paths;
+    UnorderedMapWithMemoryTracking<String, ColumnPtr> replicated_dynamic_paths;
     replicated_dynamic_paths.reserve(dynamic_paths_ptrs.size());
     for (const auto & [path, column] : dynamic_paths_ptrs)
-        replicated_dynamic_paths[path] = IColumn::mutate(column->replicate(replicate_offsets));
+        replicated_dynamic_paths[path] = column->replicate(replicate_offsets);
 
-    auto replicated_shared_data = IColumn::mutate(shared_data->replicate(replicate_offsets));
-    return ColumnObject::create(std::move(replicated_typed_paths), std::move(replicated_dynamic_paths), std::move(replicated_shared_data), max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics);
+    auto replicated_shared_data = shared_data->replicate(replicate_offsets);
+    return ColumnObject::create(replicated_typed_paths, replicated_dynamic_paths, replicated_shared_data, max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::scatter(size_t num_columns, const Selector & selector) const
@@ -1621,7 +1544,7 @@ struct ColumnObject::ComparatorBase
     {
     }
 
-    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = parent.compareAt(lhs, rhs, parent, nan_direction_hint);
 
@@ -1733,16 +1656,8 @@ void ColumnObject::protect()
 
 void ColumnObject::forEachMutableSubcolumn(DB::IColumn::MutableColumnCallback callback)
 {
-    /// The callback may replace a typed path column (e.g. `IColumn::mutate` clones a shared child).
-    /// Refresh its cached pointer right after each replacement, so the cache stays consistent with
-    /// `typed_paths` even if the callback throws for one of the subsequent paths.
-    chassert(sorted_typed_path_columns.size() == sorted_typed_paths.size());
-    for (size_t i = 0; i < sorted_typed_paths.size(); ++i)
-    {
-        auto & column = typed_paths.find(sorted_typed_paths[i])->second;
-        callback(column);
-        sorted_typed_path_columns[i] = column.get();
-    }
+    for (const auto & path : sorted_typed_paths)
+        callback(typed_paths.find(path)->second);
     for (const auto & path : sorted_dynamic_paths)
     {
         auto it = dynamic_paths.find(path);
@@ -1760,9 +1675,6 @@ void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMuta
         callback(*column);
         column->forEachMutableSubcolumnRecursively(callback);
     }
-
-    rebuildSortedTypedPathColumns();
-
     for (const auto & path : sorted_dynamic_paths)
     {
         auto it = dynamic_paths.find(path);
@@ -1853,30 +1765,18 @@ ColumnPtr ColumnObject::compress(bool force_compression) const
          my_max_dynamic_types = max_dynamic_types,
          my_statistics = statistics]() mutable
     {
-        /// See the comment in `filter`: a column that was really compressed is decompressed into a
-        /// fresh, exclusively owned column, so `IColumn::mutate` on the rvalue is free, while the
-        /// `const ColumnPtr &` overload of `create` would deep copy it.
-        ///
-        /// A path whose compression was a no-op is different: `decompress` returns the very child
-        /// that is also captured here, and the captured owners cannot be released because this
-        /// callback runs once per read. `IColumn::mutate` then deep copies that child. This copy is
-        /// accepted on purpose: `ColumnObject` keeps raw mutable pointers to its paths, so it cannot
-        /// borrow a shared child the way `ColumnArray`, `ColumnTuple` and `ColumnMap` do, and
-        /// aliasing it via `assumeMutable` is exactly the pattern the ownership checks in
-        /// `IColumn::mutate` exist to catch. Keeping this path zero-copy would need `ColumnObject`
-        /// to store shared immutable children.
-        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> decompressed_typed_paths;
+        UnorderedMapWithMemoryTracking<String, ColumnPtr> decompressed_typed_paths;
         decompressed_typed_paths.reserve(my_compressed_typed_paths.size());
         for (const auto & [path, column] : my_compressed_typed_paths)
-            decompressed_typed_paths[path] = IColumn::mutate(column->decompress());
+            decompressed_typed_paths[path] = column->decompress();
 
-        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> decompressed_dynamic_paths;
+        UnorderedMapWithMemoryTracking<String, ColumnPtr> decompressed_dynamic_paths;
         decompressed_dynamic_paths.reserve(my_compressed_dynamic_paths.size());
         for (const auto & [path, column] : my_compressed_dynamic_paths)
-            decompressed_dynamic_paths[path] = IColumn::mutate(column->decompress());
+            decompressed_dynamic_paths[path] = column->decompress();
 
-        auto decompressed_shared_data = IColumn::mutate(my_compressed_shared_data->decompress());
-        return ColumnPtr(ColumnObject::create(std::move(decompressed_typed_paths), std::move(decompressed_dynamic_paths), std::move(decompressed_shared_data), my_max_dynamic_paths, my_max_dynamic_paths_upper_bound, my_global_max_dynamic_paths, my_max_dynamic_types, my_statistics));
+        auto decompressed_shared_data = my_compressed_shared_data->decompress();
+        return ColumnObject::create(decompressed_typed_paths, decompressed_dynamic_paths, decompressed_shared_data, my_max_dynamic_paths, my_max_dynamic_paths_upper_bound, my_global_max_dynamic_paths, my_max_dynamic_types, my_statistics);
     };
 
     return ColumnCompressed::create(size(), byte_size, decompress);
@@ -1925,19 +1825,6 @@ void ColumnObject::getExtremes(Field & min, Field & max, size_t start, size_t en
     get(max_idx, max);
 }
 
-namespace
-{
-
-const ColumnObject & getSourceObjectColumn(const IColumn & source, const ColumnObject & column, std::string_view operation)
-{
-    const auto * source_object = typeid_cast<const ColumnObject *>(&source);
-    if (!source_object)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for {} of {} is not Object, but {}", operation, column.getName(), source.getName());
-    return *source_object;
-}
-
-}
-
 void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     if (source_columns.empty())
@@ -1960,9 +1847,8 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
         }
     };
 
-    /// The later loop over `source_columns` relies on this check.
     for (const auto & source_column : source_columns)
-        add_dynamic_paths(getSourceObjectColumn(*source_column, *this, "squashing"));
+        add_dynamic_paths(assert_cast<const ColumnObject &>(*source_column));
 
     /// Add dynamic paths from this object column.
     add_dynamic_paths(*this);
@@ -2029,9 +1915,7 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
     for (const auto & [path, column] : dynamic_paths)
         dynamic_paths_source_columns[path].reserve(source_columns.size());
 
-    /// Include the rows that this column already has: the discriminators and offsets of the dynamic paths are reserved
-    /// exactly, so a smaller reservation makes every dynamic path grow (reallocate and copy) during the squashing.
-    size_t total_size = size();
+    size_t total_size = 0;
     for (const auto & source_column : source_columns)
     {
         const auto & source_object_column = assert_cast<const ColumnObject &>(*source_column);
@@ -2112,8 +1996,7 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
     UnorderedMapWithMemoryTracking<String, size_t> path_to_total_number_of_non_null_values;
     for (const auto & source_column : source_columns)
     {
-        /// The later loops over `source_columns` rely on this check.
-        const auto & source_object = getSourceObjectColumn(*source_column, *this, "merge");
+        const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
         /// During deserialization from MergeTree we will have statistics from the whole
         /// data part with number of non null values for each dynamic path.
         const auto & source_statistics = source_object.getOrCalculateStatistics();
@@ -2219,7 +2102,7 @@ void ColumnObject::takeExactDynamicStructureFrom(const IColumn & source)
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeExactDynamicStructureFrom should be called only on empty Object column");
 
-    const auto & source_object = getSourceObjectColumn(source, *this, "dynamic structure");
+    const auto & source_object = assert_cast<const ColumnObject &>(source);
 
     for (auto & [path, column] : typed_paths)
         column->takeExactDynamicStructureFrom(*source_object.typed_paths.at(path));
@@ -2274,38 +2157,6 @@ ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics() const
 void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
 {
     /// Assumes dynamic structure has already been set by `takeExactDynamicStructureFrom` or `chooseDynamicStructureForMerge`.
-
-    /// The loops over `source_columns` below rely on this check.
-    for (const auto & source_column : source_columns)
-        getSourceObjectColumn(*source_column, *this, "statistics");
-
-    /// The writer of a part takes the statistics from its sample column for every block. When the statistics of the
-    /// only source already match our dynamic paths, the code below would build an exact copy of them, so share them.
-    if (source_columns.size() == 1)
-    {
-        const auto & source_object = assert_cast<const ColumnObject &>(*source_columns.front());
-        auto source_statistics = source_object.getOrCalculateStatistics();
-        bool can_share = source_statistics->shared_data_paths_statistics.size() <= Statistics::MAX_SHARED_DATA_STATISTICS_SIZE;
-        for (const auto & [path, _] : source_statistics->dynamic_paths_statistics)
-            can_share = can_share && dynamic_paths.contains(path);
-        for (const auto & [path, _] : dynamic_paths)
-            can_share = can_share && !source_statistics->shared_data_paths_statistics.contains(path);
-
-        if (can_share)
-        {
-            statistics = std::move(source_statistics);
-            for (auto & [path, column] : dynamic_paths)
-            {
-                auto it = source_object.dynamic_paths.find(path);
-                if (it != source_object.dynamic_paths.end())
-                    column->takeOrCalculateStatisticsFrom({it->second});
-            }
-            for (auto & [path, column] : typed_paths)
-                column->takeOrCalculateStatisticsFrom({source_object.typed_paths.at(path)});
-            return;
-        }
-    }
-
     Statistics new_statistics;
     /// Collect total sizes for paths that are not in our dynamic_paths (candidates for shared data statistics).
     UnorderedMapWithMemoryTracking<String, size_t> shared_data_candidates;
@@ -2583,13 +2434,12 @@ std::string_view ColumnObject::SortedPathsIterator::getCurrentSharedDataValue() 
     return shared_data_values->getDataAt(shared_data_it);
 }
 
-ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::getCurrentPathInfo(bool materialize_shared_data_value) const
+ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::getCurrentPathInfo() const
 {
     PathInfo path_info;
     path_info.type = current_path_type;
     path_info.path = getCurrentPath();
-    if (current_path_type != PathType::SHARED_DATA || materialize_shared_data_value)
-        std::tie(path_info.column, path_info.row) = getCurrentPathColumnAndRow();
+    std::tie(path_info.column, path_info.row) = getCurrentPathColumnAndRow();
     return path_info;
 }
 
@@ -2661,23 +2511,16 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
         return;
 
     /// First, check if all dynamic paths have correct sizes, just in case.
-    /// `shared_data->size()` and `column->size()` go through `WrappedPtr::operator->` —
-    /// access through the `const` view so the non-const path's `assumeMutableRef`
-    /// `chassert(use_count() == 1)` does not fire for entries referenced from a substream cache.
-    size_t expected_size = std::as_const(shared_data)->size();
-    for (const auto & [path, column] : std::as_const(dynamic_paths))
+    size_t expected_size = shared_data->size();
+    for (const auto & [path, column] : dynamic_paths)
     {
         if (column->size() != expected_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
     }
 
     /// Second, iterate over paths in shared data and check if we have any path that is also present in dynamic paths.
-    /// Use the `const` overloads (via `std::as_const`) so that the read-only inspection below does not go through
-    /// `WrappedPtr::operator*`/`operator->` of the non-const path, which calls `assumeMutableRef` and
-    /// `chassert(use_count() == 1)`. `shared_data` may be referenced from a substream cache after
-    /// `deserializeBinaryBulkWithMultipleStreams` and have `use_count() > 1` at this point.
-    const auto & shared_data_offsets = std::as_const(*this).getSharedDataOffsets();
-    const auto [shared_data_paths, shared_data_values] = std::as_const(*this).getSharedDataPathsAndValues();
+    const auto & shared_data_offsets = getSharedDataOffsets();
+    const auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
     /// Remember the first row with duplicates if any. We will start repair from this row.
     std::optional<size_t> first_row_with_duplicates = std::nullopt;
     size_t size = shared_data_offsets.size();
@@ -2706,17 +2549,10 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
 
     /// During repair we create new shared data without duplicated dynamic paths
     /// update corresponding dynamic paths with values from shared data.
-    /// Use the `const` view of `shared_data` for `cloneResized` so the call does not go through
-    /// `WrappedPtr::operator->` -> `assumeMutableRef` when `shared_data` is referenced from a substream cache.
-    auto new_shared_data = std::as_const(shared_data)->cloneResized(*first_row_with_duplicates);
+    auto new_shared_data = shared_data->cloneResized(*first_row_with_duplicates);
     const auto [new_shared_data_paths, new_shared_data_values, new_shared_data_offsets] = getSharedDataPathsValuesAndOffsets(*new_shared_data);
     new_shared_data_offsets->reserve(size);
     PathToColumnMap new_dynamic_paths;
-    /// `dynamic_paths` entries may be referenced from a substream cache (`use_count() > 1`)
-    /// after `deserializeBinaryBulkWithMultipleStreams`. Read them through the `const` view
-    /// so that `WrappedPtr::operator->` does not go through `assumeMutableRef` with
-    /// `chassert(use_count() == 1)`.
-    const auto & const_dynamic_paths = std::as_const(dynamic_paths);
     for (size_t i = *first_row_with_duplicates; i < size; ++i)
     {
         size_t shared_data_start = shared_data_offsets[i - 1];
@@ -2724,8 +2560,8 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
         for (size_t j = shared_data_start; j < shared_data_end; ++j)
         {
             auto path = shared_data_paths->getDataAt(j);
-            auto it = const_dynamic_paths.find(path);
-            if (it == const_dynamic_paths.end())
+            auto it = dynamic_paths.find(path);
+            if (it == dynamic_paths.end())
             {
                 new_shared_data_paths->insertFrom(*shared_data_paths, j);
                 new_shared_data_values->insertFrom(*shared_data_values, j);
@@ -2754,7 +2590,7 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
                     auto type_from_dynamic_path = dynamic_paths_ptrs.find(path)->second->getTypeAt(i);
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Path {} is present both in dynamic paths and shared data and has two non-null values at the row {}. "
+                        "Path {} is present both in dynamic paths and shared data and has two non-null values at the row {}."
                         "Value type in dynamic paths: {}. Value type in shared data: {}",
                         path,
                         i,
@@ -2769,7 +2605,7 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
         for (auto & [path, column] : new_dynamic_paths)
         {
             if (column->size() == i)
-                column->insertFrom(*const_dynamic_paths.at(path), i);
+                column->insertFrom(*dynamic_paths.at(path), i);
         }
     }
 
@@ -2798,43 +2634,32 @@ void ColumnObject::validateDynamicPathsSizes() const
     }
 }
 
-bool ColumnObject::isEmptyAt(size_t n, bool skip_null_typed_paths) const
+bool ColumnObject::isEmptyAt(size_t n) const
 {
+    /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
     if (!typed_paths.empty())
-    {
-        if (!skip_null_typed_paths)
-            /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
-            return false;
+        return false;
 
-        /// When skip_null_typed_paths is true, check each typed path individually:
-        /// only non-NULL values count as present.
-        for (const auto & [path, column] : typed_paths)
-        {
-            if (!column->isNullAt(n))
-                return false;
-        }
-    }
-
-    /// Check if all dynamic paths have NULL at this row.
+    /// Check if all dynamic paths have NULL at this row
     for (const auto & [path, column] : dynamic_paths_ptrs)
     {
         if (!column->isNullAt(n))
             return false;
     }
 
-    /// Check if there are no paths in shared data.
+    /// Check if there is no paths in shared data.
     return shared_data->isDefaultAt(n);
 }
 
-bool ColumnObject::hasNonEmptyRows(bool skip_null_typed_paths) const
+bool ColumnObject::hasNonEmptyRows() const
 {
     /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
-    if (!skip_null_typed_paths && !typed_paths.empty())
+    if (!typed_paths.empty())
         return true;
 
     for (size_t i = 0; i != size(); ++i)
     {
-        if (!isEmptyAt(i, skip_null_typed_paths))
+        if (!isEmptyAt(i))
             return true;
     }
 

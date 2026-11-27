@@ -38,7 +38,7 @@ struct IndexOfBlockForNativeFormat
     void write(WriteBuffer & ostr) const;
 
     /// Returns the index only for the required columns.
-    [[nodiscard]] IndexOfBlockForNativeFormat extractIndexForColumns(const NameSet & required_columns) const;
+    IndexOfBlockForNativeFormat extractIndexForColumns(const NameSet & required_columns) const;
 };
 
 /** The whole index. */
@@ -47,7 +47,7 @@ struct IndexForNativeFormat
     using Blocks = std::vector<IndexOfBlockForNativeFormat>;
     Blocks blocks;
 
-    [[nodiscard]] bool empty() const { return blocks.empty(); }
+    bool empty() const { return blocks.empty(); }
     void clear() { blocks.clear(); }
 
     /// Reads the index.
@@ -57,7 +57,7 @@ struct IndexForNativeFormat
     void write(WriteBuffer & ostr) const;
 
     /// Returns the index only for the required columns.
-    [[nodiscard]] IndexForNativeFormat extractIndexForColumns(const NameSet & required_columns) const;
+    IndexForNativeFormat extractIndexForColumns(const NameSet & required_columns) const;
 };
 
 }

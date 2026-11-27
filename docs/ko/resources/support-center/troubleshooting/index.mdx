@@ -22,12 +22,13 @@ description: '느린 쿼리, 메모리 오류, 연결 문제, 구성 문제 등 
 
 ClickHouse 사용 중 문제가 발생했습니까? 여기에서 자주 발생하는 문제의 해결 방법을 확인할 수 있습니다.
 
-## 성능 및 오류 {#performance-and-errors}
+<div id="performance-and-errors">
+  ## 성능 및 오류
+</div>
 
 쿼리 실행이 느리거나, 시간 초과가 발생하거나, &quot;Memory limit exceeded&quot;, &quot;Connection refused&quot;와 같은 특정 오류 메시지가 표시되는 경우입니다.
 
 <Accordion title="성능 및 오류 해결 방법 보기">
-  <a id="query-performance" />
   ### 쿼리 성능
 
   * [가장 많은 리소스를 사용하는 쿼리 찾기](/ko/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
@@ -37,7 +38,6 @@ ClickHouse 사용 중 문제가 발생했습니까? 여기에서 자주 발생�
 
   <br />
 
-  <a id="data-insertion-performance" />
   ### 데이터 삽입 성능
 
   * [데이터 삽입 속도 높이기](/ko/concepts/features/operations/insert/bulkinserts)
@@ -45,7 +45,6 @@ ClickHouse 사용 중 문제가 발생했습니까? 여기에서 자주 발생�
 
   <br />
 
-  <a id="advanced-analysis-tools" />
   ### 고급 분석 도구
 
   {/* - [Profile with LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
@@ -55,7 +54,6 @@ ClickHouse 사용 중 문제가 발생했습니까? 여기에서 자주 발생�
 
   <br />
 
-  <a id="error-messages" />
   ### 오류 메시지
 
   * **&quot;Memory limit exceeded&quot;** → [메모리 한도 오류 디버깅](/ko/concepts/features/performance/troubleshoot/debugging-memory-issues)
@@ -67,12 +65,13 @@ ClickHouse 사용 중 문제가 발생했습니까? 여기에서 자주 발생�
   * **Other issues** → [cluster 전체의 오류 추적](/ko/reference/system-tables/errors)
 </Accordion>
 
-## 메모리 및 리소스 {#memory-and-resources}
+<div id="memory-and-resources">
+  ## 메모리 및 리소스
+</div>
 
 메모리 사용량이 높거나, 메모리 부족으로 충돌이 발생하거나, ClickHouse 배포 규모 산정에 도움이 필요한 경우
 
 <Accordion title="메모리 해결 방법 보기">
-  <a id="memory-debugging-and-monitoring" />
   ### 메모리 디버깅 및 모니터링:
 
   * [메모리를 사용하는 항목 식별](/ko/concepts/features/performance/troubleshoot/debugging-memory-issues)
@@ -82,7 +81,6 @@ ClickHouse 사용 중 문제가 발생했습니까? 여기에서 자주 발생�
 
   <br />
 
-  <a id="memory-configuration" />
   ### 메모리 구성:
 
   * [메모리 제한 설정](/ko/concepts/features/configuration/settings/memory-overcommit)
@@ -91,19 +89,19 @@ ClickHouse 사용 중 문제가 발생했습니까? 여기에서 자주 발생�
 
   <br />
 
-  <a id="scaling-and-sizing" />
   ### 스케일링 및 크기 산정:
 
   * [서비스 규모를 적절히 조정](/ko/guides/oss/best-practices/tips)
   * [자동 스케일링 설정](/ko/products/cloud/features/autoscaling/overview)
 </Accordion>
 
-## 연결 및 인증 {#connections-and-authentication}
+<div id="connections-and-authentication">
+  ## 연결 및 인증
+</div>
 
 ClickHouse에 연결할 수 없거나 인증에 실패하는 경우, SSL 인증서 오류가 발생하는 경우, 또는 클라이언트 설정에 문제가 있는 경우입니다.
 
 <Accordion title="연결 문제 해결 방법 보기">
-  <a id="basic-connection-issues" />
   ### 기본 연결 문제
 
   * [HTTP 인터페이스 문제 해결](/ko/concepts/features/interfaces/http)
@@ -112,7 +110,6 @@ ClickHouse에 연결할 수 없거나 인증에 실패하는 경우, SSL 인증�
 
   <br />
 
-  <a id="client-interfaces" />
   ### 클라이언트 인터페이스
 
   * [네이티브 ClickHouse 클라이언트](/ko/concepts/features/interfaces/native-clients-interfaces-index)
@@ -123,19 +120,19 @@ ClickHouse에 연결할 수 없거나 인증에 실패하는 경우, SSL 인증�
 
   <br />
 
-  <a id="network-and-data" />
   ### 네트워크 및 데이터
 
   * [네트워크 보안 설정](/ko/reference/settings/server-settings/settings)
   * [데이터 포맷 파싱 문제](/ko/reference/formats/index)
 </Accordion>
 
-## 설치 및 구성 {#setup-and-configuration}
+<div id="setup-and-configuration">
+  ## 설치 및 구성
+</div>
 
 초기 설치, 서버 구성, 데이터베이스 생성, 데이터 수집 문제 또는 복제 설정.
 
 <Accordion title="설치 및 구성 해결 방법 보기">
-  <a id="initial-setup" />
   ### 초기 설정
 
   * [서버 설정 구성하기](/ko/reference/settings/server-settings/settings)
@@ -144,7 +141,6 @@ ClickHouse에 연결할 수 없거나 인증에 실패하는 경우, SSL 인증�
 
   <br />
 
-  <a id="database-management" />
   ### 데이터베이스 관리
 
   * [데이터베이스 생성 및 관리](/ko/reference/statements/create/database)
@@ -154,7 +150,6 @@ ClickHouse에 연결할 수 없거나 인증에 실패하는 경우, SSL 인증�
 
   <br />
 
-  <a id="data-operations" />
   ### 데이터 작업
 
   * [대량 데이터 삽입 최적화](/ko/concepts/features/operations/insert/bulkinserts)
@@ -164,7 +159,6 @@ ClickHouse에 연결할 수 없거나 인증에 실패하는 경우, SSL 인증�
 
   <br />
 
-  <a id="advanced-configuration" />
   ### 고급 구성
 
   * [데이터 복제 설정하기](/ko/reference/engines/table-engines/mergetree-family/replication)
@@ -176,11 +170,13 @@ ClickHouse에 연결할 수 없거나 인증에 실패하는 경우, SSL 인증�
   * [모니터링 설정하기](/ko/reference/system-tables/overview)
 </Accordion>
 
-## 도움이 더 필요하신가요? {#still-need-help}
+<div id="still-need-help">
+  ## 도움이 더 필요하신가요?
+</div>
 
 해결책을 찾지 못한 경우:
 
-1. **AI에 질문** - <button type="button" data-docs-ai-entry="troubleshooting" onClick={() => { if (typeof window !== 'undefined' && window.Kapa && typeof window.Kapa.open === 'function') window.Kapa.open({ mode: 'ai' }); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>AI에 질문</button>하여 즉시 답변을 확인하세요.
+1. **AI에 질문** - <button type="button" onClick={() => { if (typeof window !== 'undefined' && window.Kapa && typeof window.Kapa.open === 'function') window.Kapa.open({ mode: 'ai' }); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>AI에 질문</button>하여 즉시 답변을 확인하세요.
 2. **시스템 테이블(system tables) 확인** - [개요](/ko/reference/system-tables/overview)
 3. **서버 로그 검토** - ClickHouse 서버 로그에서 오류 메시지를 확인하세요
 4. **커뮤니티에 문의** - [커뮤니티 Slack 참여](https://clickhouse.com/slack), [GitHub Discussions](https://github.com/ClickHouse/ClickHouse/discussions)

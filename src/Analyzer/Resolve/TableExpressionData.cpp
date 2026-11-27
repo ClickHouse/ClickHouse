@@ -1,14 +1,7 @@
 #include <Analyzer/Resolve/TableExpressionData.h>
-#include <Common/Exception.h>
-#include <Common/quoteString.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CYCLIC_ALIASES;
-}
 
 void AnalysisTableExpressionData::ensureColumnMembershipSetsArePopulated() const
 {
@@ -29,54 +22,22 @@ const ColumnNameToColumnNodeMap & AnalysisTableExpressionData::getColumnNodeMap(
 {
     if (column_name_to_column_node.has_value())
         return *column_name_to_column_node;
-    /// Emplace the (initially empty) map before invoking the populator, so that a re-entrant
-    /// call finds the map present.
+    /// Emplace the (initially empty) map before invoking the populator. The populator
+    /// first inserts every regular column (and ALIAS placeholders) into the map, then
+    /// resolves ALIAS expressions; that resolution can recursively trigger identifier
+    /// lookups that call this method again. Emplacing up front breaks the recursion:
+    /// re-entrants find the map present and see the placeholders the populator has
+    /// already inserted.
     auto & node_map = column_name_to_column_node.emplace();
     ensureColumnMembershipSetsArePopulated();
     if (populate_column_node_map)
-    {
-        for (auto & alias_column_name : populate_column_node_map(node_map))
-            unresolved_alias_columns.insert(std::move(alias_column_name));
-    }
+        populate_column_node_map(node_map);
     return node_map;
 }
 
-ColumnNodePtr AnalysisTableExpressionData::tryGetColumnNode(std::string_view column_name) const
-{
-    const auto & node_map = getColumnNodeMap();
-    auto it = node_map.find(column_name);
-    if (it == node_map.end())
-        return nullptr;
-
-    /// Checked before `unresolved_alias_columns`: a copy of this data may have started the resolution.
-    auto in_resolution_it = std::ranges::find(alias_columns_in_resolution, column_name);
-    if (in_resolution_it != alias_columns_in_resolution.end())
-    {
-        std::string cycle;
-        for (; in_resolution_it != alias_columns_in_resolution.end(); ++in_resolution_it)
-            cycle += backQuote(*in_resolution_it) + " -> ";
-        cycle += backQuote(column_name);
-        throw Exception(ErrorCodes::CYCLIC_ALIASES, "Cyclic aliases: {}", cycle);
-    }
-
-    auto unresolved_it = unresolved_alias_columns.find(column_name);
-    if (unresolved_it != unresolved_alias_columns.end())
-    {
-        /// A copy of this data shares the nodes of the map, and could have resolved this column already.
-        /// `node_map` is not changed by the resolution (only the nodes in it), so `it` remains valid.
-        if (!it->second->hasExpression())
-            resolve_alias_column(it->second);
-        /// Erased after resolving, so the column stays unresolved when its resolution throws.
-        unresolved_alias_columns.erase(unresolved_it);
-    }
-
-    return it->second;
-}
-
-void AnalysisTableExpressionData::setColumnNodeMapPopulator(ColumnNodeMapPopulator populator, AliasColumnResolver alias_column_resolver)
+void AnalysisTableExpressionData::setColumnNodeMapPopulator(std::function<void(ColumnNameToColumnNodeMap &)> populator)
 {
     populate_column_node_map = std::move(populator);
-    resolve_alias_column = std::move(alias_column_resolver);
 }
 
 ColumnNameToColumnNodeMap & AnalysisTableExpressionData::emplaceColumnNodeMap() const

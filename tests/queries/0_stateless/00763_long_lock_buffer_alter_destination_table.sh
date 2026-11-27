@@ -41,10 +41,8 @@ function thread_query()
         # TODO(ab): Buffer engine cannot safely apply optimize_functions_to_subcolumns
         # after the underlying storage column type has changed with implicit conversion.
         # In this case, subcolumn reads will fall back to default values.
-        # Plan-based parallel replicas ships the plan with the column types at planning time, and a concurrent ALTER
-        # makes the replica fail to deserialize it: https://github.com/ClickHouse/ClickHouse/issues/132667
         $CLICKHOUSE_CLIENT --ignore-error -q "
-            SELECT sum(length(s)) FROM buffer_00763_1 SETTINGS optimize_functions_to_subcolumns = 0, parallel_replicas_plan_based = 0;
+            SELECT sum(length(s)) FROM buffer_00763_1 SETTINGS optimize_functions_to_subcolumns = 0;
         " 2>&1 | grep -vP '(^3$|^Received exception from server|^Code: 473)'
     done
 }

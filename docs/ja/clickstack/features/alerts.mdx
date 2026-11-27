@@ -4,8 +4,10 @@ title: 'ClickStack のアラート'
 sidebarTitle: 'アラート'
 description: 'ClickStack のアラート'
 doc_type: 'guide'
-keywords: ['ClickStack', 'オブザーバビリティ', 'アラート', 'search-alerts', 'anomaly-detection', '通知', 'しきい値', 'Slack', 'Email', 'PagerDuty', 'error-monitoring', 'performance-monitoring', 'user-events']
+keywords: ['ClickStack', 'オブザーバビリティ', 'アラート', 'search-alerts', '通知', 'しきい値', 'Slack', 'Email', 'PagerDuty', 'error-monitoring', 'performance-monitoring', 'user-events']
 ---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
 
 ClickStack にはアラート機能が標準で備わっており、チームはログ、メトリクス、トレース全体にわたって問題をリアルタイムで検知し、対応できます。
 
@@ -19,12 +21,9 @@ ClickStack にはアラート機能が標準で備わっており、チームは
 
 ClickStack では、アラートを作成する方法として、互いを補完する 2 つの方式 **検索アラート** と **ダッシュボードチャートアラート** をサポートしています。アラートを作成すると、そのアラートは検索またはチャートのいずれかに紐付けられます。
 
-各アラートでは、2 つの検出モードのいずれかを使用します。モードはアラートエディターの **Alert type** で選択します。
-
-* **Static threshold**: 値が指定した数値を超えたときに発報します。デフォルトのモードであり、本ページではこのモードについて説明します。
-* **Anomaly detection**(Managed ClickStack のみ): 直近の履歴から学習した想定範囲を値が外れたときに発報します。詳しくは [異常検知アラート](/ja/clickstack/features/anomaly-detection) を参照してください。
-
-### 1. 検索アラート {#search-alerts}
+<div id="search-alerts">
+  ### 1. 検索アラート
+</div>
 
 検索アラートでは、保存済みの検索結果に基づいて通知をトリガーできます。これにより、特定のイベントやパターンの発生頻度が想定より高い場合や低い場合を検知できます。
 
@@ -38,15 +37,7 @@ ClickStack では、アラートを作成する方法として、互いを補完
   <Step title="アラート作成ダイアログを開く" id="open-dialog">
     まず[検索](/ja/clickstack/features/search)を実行し、`Search`ページ右上の`Alerts`ボタンをクリックします。
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![アラート検索ビュー](/images/use-cases/observability/alerts_search_view.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/observability/alerts_search_view.webp" alt="アラート検索ビュー" size="lg" />
   </Step>
 
   <Step title="アラートを作成する" id="create-the-alert">
@@ -59,31 +50,17 @@ ClickStack では、アラートを作成する方法として、互いを補完
 
     保存する前に、ClickStack はしきい値条件を可視化するため、想定どおりに動作するか確認できます。
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![検索アラート](/images/use-cases/observability/search_alert.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/observability/search_alert.webp" alt="検索アラート" size="lg" />
   </Step>
 </Steps>
 
 なお、1 つの検索に複数のアラートを追加できます。上記の手順を繰り返すと、現在のアラートがアラート編集ダイアログ上部にタブとして表示され、各アラートには番号が割り当てられます。
 
-<div className="ch-image-md">
+<Image img="/images/use-cases/observability/multiple_search_alerts.webp" alt="複数のアラート" size="md" />
 
-<Frame>
-
-![複数のアラート](/images/use-cases/observability/multiple_search_alerts.webp)
-
-</Frame>
-
+<div id="dashboard-alerts">
+  ### 2. ダッシュボードチャートアラート
 </div>
-
-### 2. ダッシュボードチャートアラート {#dashboard-alerts}
 
 ダッシュボードアラートは、チャートに対しても設定できます。
 
@@ -103,49 +80,27 @@ ClickStack では、アラートを作成する方法として、互いを補完
   <Step title="チャート編集ダイアログを開く" id="open-chart-dialog">
     チャートの設定メニューを開き、アラートボタンを選択します。チャート編集ダイアログが表示されます。
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![チャートアラートを編集](/images/use-cases/observability/edit_chart_alert.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/observability/edit_chart_alert.webp" alt="チャートアラートを編集" size="lg" />
   </Step>
 
   <Step title="アラートを追加する" id="add-chart-alert">
     **Add Alert** を選択します。
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![チャートにアラートを追加](/images/use-cases/observability/add_chart_alert.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/observability/add_chart_alert.webp" alt="チャートにアラートを追加" size="lg" />
   </Step>
 
   <Step title="アラート条件を定義する" id="define-alert-conditions">
     条件 (`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`)、しきい値、期間、webhook を定義します。ここで設定する期間は、アラートがトリガーされる頻度も決定します。
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![チャートのアラートを作成](/images/use-cases/observability/create_chart_alert.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/observability/create_chart_alert.webp" alt="チャートのアラートを作成" size="lg" />
 
     この画面から新しい webhook を直接追加することもできます。詳しくは [webhook の追加](#add-webhook) を参照してください。
   </Step>
 </Steps>
 
-## webhook の追加 {#add-webhook}
+<div id="add-webhook">
+  ## webhook の追加
+</div>
 
 アラート の作成時には、既存の webhook を使用することも、新しく作成することもできます。作成した webhook は、ほかの アラート でも再利用できます。
 
@@ -153,27 +108,11 @@ webhook は、Slack や PagerDuty などのさまざまなサービス種別に�
 
 たとえば、以下の chart に対する アラート の作成を考えてみましょう。webhook を指定する前に、ユーザーは `Add New Webhook` を選択できます。
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![新しい webhook を追加](/images/use-cases/observability/add_new_webhook.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/add_new_webhook.webp" alt="新しい webhook を追加" size="lg" />
 
 これにより webhook 作成ダイアログが開き、新しい webhook を作成できます。
 
-<div className="ch-image-md">
-
-<Frame>
-
-![webhook の作成](/images/use-cases/observability/add_webhook_dialog.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/add_webhook_dialog.webp" alt="webhook の作成" size="md" />
 
 webhook 名は必須で、説明は任意です。そのほかに必要な設定項目は、サービス種別によって異なります。
 
@@ -215,31 +154,17 @@ ClickStack の alerts は、標準で次のサービス種別と連携できま�
 * Webhook headers (任意)
 * Webhook ボディ (任意) 。現在、ボディではテンプレート変数 `{{title}}`、`{{body}}`、`{{link}}` をサポートしています。
 
-## アラートの管理 {#managing-alerts}
+<div id="managing-alerts">
+  ## アラートの管理
+</div>
 
 アラートは、HyperDX の左側にあるアラートパネルから一元管理できます。
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![アラートの管理](/images/use-cases/observability/manage_alerts.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/manage_alerts.webp" alt="アラートの管理" size="lg" />
 
 この画面では、作成済みで現在 ClickStack で有効になっているすべてのアラートを確認できます。
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![アラートビュー](/images/use-cases/observability/alerts_view.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/alerts_view.webp" alt="アラートビュー" size="lg" />
 
 この画面には、アラートの評価履歴も表示されます。アラートは一定の時間間隔で繰り返し評価されます (アラート作成時に設定した period/duration で定義) 。各評価のたびに、HyperDX はアラート条件が満たされているかどうかを確認するため、データに対してクエリを実行します。
 
@@ -252,20 +177,14 @@ ClickStack の alerts は、標準で次のサービス種別と連携できま�
 
 アラートをクリックすると、そのアラートが紐付けられているチャートまたは検索に移動します。
 
-### アラートの削除 {#deleting-alerts}
+<div id="deleting-alerts">
+  ### アラートの削除
+</div>
 
 アラートを削除するには、関連する Search またはチャートの編集ダイアログを開き、**Remove Alert** を選択します。
 以下の例では、`Remove Alert` ボタンをクリックすると、チャートからアラートが削除されます。
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![チャートのアラートの削除](/images/use-cases/observability/remove_chart_alert.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="チャートのアラートの削除" size="lg" />
 
 <div id="sql-based-alerts">
   ## SQLベースのチャートアラート
@@ -287,7 +206,9 @@ SQL ベースのアラートは、次の 3 つのチャート表示タイプで�
 
 その他の SQL ベースのチャートタイプ (テーブル、円グラフ、ヒートマップなど) はアラートをサポートしていません。
 
-### SQLアラートを作成する {#create-sql-based-alert}
+<div id="create-sql-based-alert">
+  ### SQLアラートを作成する
+</div>
 
 SQLベースのチャートにアラートを作成するには、次の手順を行います。
 
@@ -297,15 +218,7 @@ SQLベースのチャートにアラートを作成するには、次の手順�
 
     表示タイプとして **Line**、**Stacked Bar**、または **Number** を選択します。
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![SQLチャートを作成](/images/use-cases/observability/open_sql_chart_mode.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/observability/open_sql_chart_mode.webp" alt="SQLチャートを作成" size="lg" />
   </Step>
 
   <Step title="アラートを追加する" id="add-sql-alert">
@@ -316,15 +229,7 @@ SQLベースのチャートにアラートを作成するには、次の手順�
     * **インターバル**: アラートを評価する頻度 (1m, 5m, 15m, 30m, 1h, 6h, 12h, または 1d)。これは各評価の time window も定義します。
     * **Webhook**: アラート発報時に使用する通知チャネルです。[Webhook の追加](#add-webhook)を参照してください。
 
-    <div className="ch-image-lg">
-
-    <Frame>
-
-    ![チャートアラートを編集](/images/use-cases/observability/add_raw_sql_alert.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/observability/add_raw_sql_alert.webp" alt="チャートアラートを編集" size="lg" />
 
     <Warning>
       **アラートの時間範囲**
@@ -403,13 +308,11 @@ WHERE request_count > 10
 
 このクエリでは、`ServiceName` は数値カラムでもタイムスタンプのカラムでもないため、各サービスは個別のアラートグループとして扱われます。アラートはサービスごとに個別に発報されます。
 
-#### ラグ付き平均による異常検知 (時系列) {#example-anomaly-detection}
+<div id="example-anomaly-detection">
+  #### ラグ付き平均による異常検知 (時系列)
+</div>
 
 エラー数が移動平均を2標準偏差超えて上回った場合にアラートを発します。これにより、固定のしきい値ではなく、直近のベースライン動作に対するスパイクを検出できます。
-
-<Tip>
-  Managed ClickStack では、[異常検知アラート](/ja/clickstack/features/anomaly-detection) を使えばカスタム SQL を書かずに同じことを実現でき、さらにプレビュー、バックテスト、グループごとのベースラインも利用できます。ベースラインの計算を完全に制御したい場合や、ClickStack Open Source を使用している場合は、以下の SQL によるアプローチを使用してください。
-</Tip>
 
 ```sql
 WITH buckets AS (
@@ -418,7 +321,7 @@ WITH buckets AS (
     count() AS bucket_count
   FROM $__sourceTable
   WHERE TimestampTime >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
-        - toIntervalSecond($__interval_s * 30) -- Fetch 30 intervals back
+        - toIntervalSecond($__interval_s * 30) -- 30インターバル分さかのぼって取得
     AND TimestampTime < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
     AND SeverityText = 'error'
   GROUP BY ts
@@ -472,7 +375,3 @@ HyperDX で活用できる、一般的なアラートのシナリオをいくつ
 
 **ユーザーイベント:** 新規ユーザーの登録時や重要なユーザー操作が実行された際に、
 顧客対応チームへ通知されるようアラートを設定することもできます。
-
-**異常な変化:** サービスごとにエラー件数が異なる場合や、トラフィックが時間帯によって変動する場合など、明確なしきい値を決められないときは、
-`ServiceName` でグループ化した
-[異常検知アラート](/ja/clickstack/features/anomaly-detection)を使用してください。

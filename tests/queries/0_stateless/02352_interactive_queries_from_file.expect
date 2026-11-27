@@ -21,27 +21,26 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-set queries_file "$CLICKHOUSE_TMP/queries_02352"
-exec bash -c "echo 'select 1;\nselect 2;\nselect 3' > $queries_file"
+spawn bash -c "echo 'select 1;\nselect 2;\nselect 3' > queries_02352"
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT --disable_suggestion --enable-progress-table-toggle=0"
 expect ":) "
 
-send -- "\\i $queries_file\r"
+send -- "\\i queries_02352\r"
 expect "1"
 expect "2"
 expect "3"
 expect ":) "
-send -- "\\i $queries_file;\r"
+send -- "\\i queries_02352;\r"
 expect "1"
 expect "2"
 expect "3"
 expect ":) "
-send -- "       \\i $queries_file ;         \r"
+send -- "       \\i queries_02352 ;         \r"
 expect "1"
 expect "2"
 expect "3"
 expect ":) "
-send -- "       \\i         $queries_file ;         \r"
+send -- "       \\i         queries_02352 ;         \r"
 expect "1"
 expect "2"
 expect "3"
@@ -50,4 +49,4 @@ expect ":) "
 send -- "exit\r"
 expect eof
 
-exec rm -f $queries_file
+spawn bash -c "rm queries_02352"

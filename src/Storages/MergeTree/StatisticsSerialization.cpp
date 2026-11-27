@@ -5,28 +5,15 @@
 #include <IO/HashingWriteBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/escapeForFileName.h>
 
 namespace DB
 {
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool serialize_statistics_bounds_with_column_type;
-}
-
-String getStatisticsFilename(const String & column_name)
+static String getStatisticsFilename(const String & column_name)
 {
     /// Note, we cannot use replaceFileNameToHashIfNeeded(), since we do not handle hashes->column names for statistics in getColumnForStatisticsFile()
     return String(STATS_FILE_PREFIX) + escapeForFileName(column_name) + String(STATS_FILE_SUFFIX);
-}
-
-StatisticsFileVersion getStatisticsFileVersion(const MergeTreeSettings & settings)
-{
-    return settings[MergeTreeSetting::serialize_statistics_bounds_with_column_type]
-        ? StatisticsFileVersion::V5
-        : COMPATIBLE_STATISTICS_FILE_VERSION;
 }
 
 std::unique_ptr<WriteBufferFromFileBase> serializeStatisticsPacked(
@@ -34,8 +21,7 @@ std::unique_ptr<WriteBufferFromFileBase> serializeStatisticsPacked(
     MergeTreeDataPartChecksums & out_checksums,
     const ColumnsStatistics & statistics,
     const CompressionCodecPtr & compression_codec,
-    const WriteSettings & write_settings,
-    StatisticsFileVersion version)
+    const WriteSettings & write_settings)
 {
     PackedFilesWriter packed_writer;
 
@@ -45,7 +31,7 @@ std::unique_ptr<WriteBufferFromFileBase> serializeStatisticsPacked(
         auto out = packed_writer.writeFile(filename, write_settings);
 
         CompressedWriteBuffer compressor(*out, compression_codec, 1024 * 1024);
-        stat->serialize(compressor, version);
+        stat->serialize(compressor);
         compressor.finalize();
         out->finalize();
     }
@@ -69,8 +55,7 @@ WrittenFiles serializeStatisticsWide(
     MergeTreeDataPartChecksums & out_checksums,
     const ColumnsStatistics & statistics,
     const CompressionCodecPtr & compression_codec,
-    const WriteSettings & write_settings,
-    StatisticsFileVersion version)
+    const WriteSettings & write_settings)
 {
     WrittenFiles written_files;
 
@@ -84,7 +69,7 @@ WrittenFiles serializeStatisticsWide(
         CompressedWriteBuffer compressor(plain_hashing, compression_codec, 1024 * 1024);
         HashingWriteBuffer compressed_hashing(compressor);
 
-        stat->serialize(compressed_hashing, version);
+        stat->serialize(compressed_hashing);
 
         compressed_hashing.finalize();
         compressor.finalize();

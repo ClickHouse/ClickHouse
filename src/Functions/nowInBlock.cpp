@@ -35,25 +35,29 @@ public:
         : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    [[nodiscard]] bool isVariadic() const override { return true; } /// Optional timezone argument.
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
+    String getName() const override { return name; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isVariadic() const override { return true; } /// Optional timezone argument.
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (allow_nonconst_timezone_arguments)
-            return
-                "(const tz StringOrFixedString) -> DateTime(tz)"
-                " OR ([StringOrFixedString]) -> DateTime";
-        return
-            "(const tz StringOrFixedString) -> DateTime(tz)"
-            " OR () -> DateTime";
+        FunctionArgumentDescriptors mandatory_args{};
+        FunctionArgumentDescriptors optional_args{
+            {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+        if (arguments.size() == 1)
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments));
+
+        return std::make_shared<DataTypeDateTime>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return ColumnDateTime::create(input_rows_count, static_cast<UInt32>(time(nullptr)));
     }

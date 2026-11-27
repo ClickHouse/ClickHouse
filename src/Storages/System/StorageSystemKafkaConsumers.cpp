@@ -1,6 +1,5 @@
 #include <Storages/System/StorageSystemKafkaConsumers.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
-#include <Databases/IDatabase.h>
 
 #if USE_RDKAFKA
 

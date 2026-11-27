@@ -3,7 +3,6 @@
 #include "config.h"
 
 #if USE_SSL
-#include <Common/SecretString.h>
 #include <Core/Types.h>
 #include <openssl/evp.h>
 
@@ -44,14 +43,14 @@ public:
     explicit InitVector(const UInt128 & counter_) { set(counter_); }
 
     void set(const UInt128 & counter_) { counter = counter_; }
-    [[nodiscard]] UInt128 get() const { return counter; }
+    UInt128 get() const { return counter; }
 
     void read(ReadBuffer & in);
     void write(WriteBuffer & out) const;
 
     /// Write 16 bytes of the counter to a string in big endian order.
     /// We need big endian because the used cipher algorithms treat an initialization vector as a counter in big endian.
-    [[nodiscard]] String toString() const;
+    String toString() const;
 
     /// Converts a string of 16 bytes length in big endian order to a counter.
     static InitVector fromString(const String & str_);
@@ -75,14 +74,14 @@ class Encryptor
 {
 public:
     /// The `key` should have size 16 or 24 or 32 bytes depending on which `algorithm` is specified.
-    Encryptor(Algorithm algorithm_, const SecretString & key_, const InitVector & iv_);
+    Encryptor(Algorithm algorithm_, const String & key_, const InitVector & iv_);
 
     /// Sets the current position in the data stream from the very beginning of data.
     /// It affects how the data will be encrypted or decrypted because
     /// the initialization vector is increased by an index of the current block
     /// and the index of the current block is calculated from this offset.
     void setOffset(size_t offset_) { offset = offset_; }
-    [[nodiscard]] size_t getOffset() const { return offset; }
+    size_t getOffset() const { return offset; }
 
     /// Encrypts some data.
     /// Also the function moves `offset` by `size` (for successive encryptions).
@@ -95,7 +94,7 @@ public:
     void decrypt(const char * data, size_t size, char * out);
 
 private:
-    const SecretString key;
+    const String key;
     const InitVector init_vector;
     const EVP_CIPHER * const evp_cipher;
 
@@ -144,10 +143,10 @@ struct Header
 };
 
 /// Calculates the fingerprint of a passed encryption key.
-UInt128 calculateKeyFingerprint(const SecretString & key);
+UInt128 calculateKeyFingerprint(const String & key);
 
 /// Calculates kind of the fingerprint of a passed encryption key & key ID as it was implemented in version 1.
-UInt128 calculateV1KeyFingerprint(const SecretString & key, UInt64 key_id);
+UInt128 calculateV1KeyFingerprint(const String & key, UInt64 key_id);
 
 }
 }

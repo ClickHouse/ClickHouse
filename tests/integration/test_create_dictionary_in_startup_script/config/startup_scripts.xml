@@ -1,0 +1,26 @@
+<clickhouse>
+    <startup_scripts>
+        <drop_dictionary>
+            <query>
+                DROP DICTIONARY IF EXISTS system.custom_metrics;
+            </query>
+        </drop_dictionary>
+        <create_dictionary>
+            <query>
+                CREATE DICTIONARY system.custom_metrics
+                (
+                    `name` String,
+                    `value` Float64,
+                )
+                PRIMARY KEY (name, value)
+                SOURCE(
+                    CLICKHOUSE(
+                        QUERY `select name, toFloat64(is_aggregate) as value FROM system.functions`
+                    )
+                )
+                LIFETIME(30)
+                LAYOUT(COMPLEX_KEY_HASHED);
+            </query>
+        </create_dictionary>
+    </startup_scripts>
+</clickhouse>

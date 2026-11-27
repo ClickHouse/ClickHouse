@@ -5,7 +5,6 @@
 #include <Backups/BackupIO_Default.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
-#include <Common/BlobStorageLogWriter.h>
 
 
 namespace DB
@@ -53,7 +52,7 @@ public:
         const String & destination_path,
         WriteMode write_mode) override;
 
-    [[nodiscard]] std::map<String, String> getSerializedSettings() const override;
+    std::map<String, String> getSerializedSettings() const override;
 
 private:
     const DataSourceDescription data_source_description;
@@ -82,8 +81,6 @@ public:
     UInt64 getFileSize(const String & file_name) override;
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
     std::unique_ptr<WriteBuffer> writeFileIfNotExists(const String & file_name) override;
-    /// `writeFileIfNotExists` writes with `If-None-Match: *`, so it cannot replace an existing blob.
-    [[nodiscard]] bool supportsAtomicCreateIfNotExists() const override { return true; }
 
     void copyDataToFile(
         const String & path_in_backup,
@@ -91,27 +88,16 @@ public:
         UInt64 start_pos,
         UInt64 length) override;
 
-    bool copyFileFromDiskNatively(
+    void copyFileFromDisk(
         const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
         override;
-
-    bool copyFileFromBlobPath(
-        const String & path_in_backup,
-        DiskPtr src_disk,
-        const String & src_blob_key,
-        const String & src_blob_namespace,
-        bool copy_encrypted,
-        UInt64 start_pos,
-        UInt64 length,
-        UInt64 src_object_size,
-        const CreateReadBufferFunction & create_fallback_read_buffer) override;
 
     void copyFile(const String & destination, const String & source, size_t size) override;
 
     void removeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;
 
-    [[nodiscard]] std::map<String, String> getSerializedSettings() const override;
+    std::map<String, String> getSerializedSettings() const override;
 
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
@@ -122,7 +108,6 @@ private:
     String blob_path;
     std::unique_ptr<AzureObjectStorage> object_storage;
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings;
-    BlobStorageLogWriterPtr blob_storage_log;
 };
 
 }

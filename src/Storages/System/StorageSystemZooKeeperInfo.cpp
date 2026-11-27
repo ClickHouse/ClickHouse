@@ -11,20 +11,13 @@
 #include <Poco/NumberParser.h>
 #include <Common/logger_useful.h>
 #include <base/find_symbols.h>
-#include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/ReadHelpers.h>
 #include <Poco/Net/StreamSocket.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_PARSE_NUMBER;
-}
 
 ColumnsDescription StorageSystemZooKeeperInfo::getColumnsDescription()
 {
@@ -318,14 +311,7 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
                 //* 26 */ {"zxid", std::make_shared<DataTypeInt64>(), "The ZooKeeper zxid."},
                 if (const auto it = srvr_responses_map.find("Zxid"); it != srvr_responses_map.end())
-                {
-                    std::string_view zxid = it->second;
-                    if (zxid.size() <= 2 || !zxid.starts_with("0x"))
-                        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
-                            "Cannot parse Zxid '{}' from the srvr response of {}:{}: expected a hexadecimal number with the 0x prefix",
-                            zxid, host, port);
-                    res_columns[26]->insert(parseIntInBase<16, Int64>(zxid.substr(2)));
-                }
+                    res_columns[26]->insert(parseIntInBase<16, Int64>(it->second.substr(2))); /// we skip the 0x prefix
                 else
                     res_columns[26]->insertDefault();
 
@@ -419,12 +405,12 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
 std::expected<String,String> StorageSystemZooKeeperInfo::sendFourLetterCommand(const String & host, UInt16 port, std::string_view command) const
 {
+    Poco::Net::SocketAddress address(host, port);
     Poco::Net::StreamSocket socket;
 
     String response;
     try
     {
-        auto address = DNSResolver::instance().resolveAddress(host, port);
         socket = Poco::Net::StreamSocket();
         socket.connect(address);
         socket.setNoDelay(true);
@@ -444,10 +430,6 @@ std::expected<String,String> StorageSystemZooKeeperInfo::sendFourLetterCommand(c
     }
     catch (...)
     {
-        /// Remove this possibly stale entry from the DNS cache, so that the next read of this table
-        /// resolves the host again instead of retrying a dead address until the cache is refreshed.
-        DNSResolver::instance().removeHostFromCache(host);
-
         LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "Exception  {} ", getCurrentExceptionMessage(true));
         return getCurrentExceptionMessage(true);
     }

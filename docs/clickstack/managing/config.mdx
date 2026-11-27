@@ -2,10 +2,11 @@
 slug: /use-cases/observability/clickstack/config
 title: 'Configuration options'
 description: 'Configuration options for ClickStack - The ClickHouse Observability Stack'
-keywords: ['ClickStack configuration', 'observability configuration', 'ClickStack UI settings', 'collector configuration', 'environment variables']
+keywords: ['ClickStack configuration', 'observability configuration', 'HyperDX settings', 'collector configuration', 'environment variables']
 doc_type: 'reference'
 ---
 
+import { Image } from "/snippets/components/Image.jsx";
 
 The following configuration options are available for each component of ClickStack:
 
@@ -13,17 +14,17 @@ The following configuration options are available for each component of ClickSta
 
 ### Docker {#docker}
 
-If using the [All in One](/clickstack/deployment/all-in-one), [ClickStack UI only](/clickstack/deployment/hyperdx-only) or [Local Mode](/clickstack/deployment/local-mode-only) simply pass the desired setting via an environment variable e.g.
+If using the [All in One](/clickstack/deployment/all-in-one), [HyperDX Only](/clickstack/deployment/hyperdx-only) or [Local Mode](/clickstack/deployment/local-mode-only) simply pass the desired setting via an environment variable e.g.
 
 ```shell
-docker run -e HYPERDX_APP_PORT=8081 -p 8081:8081 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
+docker run  -e HYPERDX_LOG_LEVEL='debug' -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
 ```
 
 ### Docker Compose {#docker-compose}
 
-If using the [Docker Compose](/clickstack/deployment/docker-compose) deployment guide, the [`.env`](https://github.com/ClickHouse/clickstack/blob/main/.env) file can be used to modify settings.
+If using the [Docker Compose](/clickstack/deployment/docker-compose) deployment guide, the [`.env`](https://github.com/hyperdxio/hyperdx/blob/main/.env) file can be used to modify settings.
 
-Alternatively, explicitly overwrite settings in the [`docker-compose.yml`](https://github.com/ClickHouse/clickstack/blob/main/docker-compose.yml) file e.g.
+Alternatively, explicitly overwrite settings in the [`docker-compose.yaml`](https://github.com/hyperdxio/hyperdx/blob/main/docker-compose.yml) file e.g.
 
 Example:
 ```yaml
@@ -37,34 +38,58 @@ services:
 
 ### Helm {#helm}
 
-Use the [Helm deployment guide](/clickstack/deployment/helm) to install the operators and ClickStack chart. Retrieve the current chart's values before customizing a deployment:
+#### Customizing values (optional) {#customizing-values}
+
+You can customize settings by using `--set` flags e.g.
 
 ```shell
-helm show values clickstack/clickstack > values.yaml
+helm install my-hyperdx hyperdx/hdx-oss-v2 \
+  --set replicaCount=2 \
+  --set resources.limits.cpu=500m \
+  --set resources.limits.memory=512Mi \
+  --set resources.requests.cpu=250m \
+  --set resources.requests.memory=256Mi \
+  --set ingress.enabled=true \
+  --set ingress.annotations."kubernetes\.io/ingress\.class"=nginx \
+  --set ingress.hosts[0].host=hyperdx.example.com \
+  --set ingress.hosts[0].paths[0].path=/ \
+  --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific \
+  --set env[0].name=CLICKHOUSE_USER \
+  --set env[0].value=abc
 ```
 
-Set the application and collector environment separately using the chart's values, then apply your configuration:
+Alternatively edit the `values.yaml`. To retrieve the default values:
 
 ```shell
-helm upgrade --install my-clickstack clickstack/clickstack -f values.yaml
+helm show values hyperdx/hdx-oss-v2 > values.yaml
 ```
 
-See [Helm configuration](/clickstack/deployment/helm-configuration) for the supported values, ingress, resources, and secret configuration. The older `hyperdx/hdx-oss-v2` chart has a different values structure.
+Example config:
 
-## ClickStack UI application {#hyperdx}
+```yaml
+replicaCount: 2
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: nginx
+  hosts:
+    - host: hyperdx.example.com
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  env:
+    - name: CLICKHOUSE_USER
+      value: abc
+```
 
-### Connections {#connection-settings}
-
-Configure the database connection used by your sources in Team Settings.
-
-| Setting | Description |
-| --- | --- |
-| `Connection Name` | Name used to identify this connection in source settings. |
-| `Host` | ClickHouse HTTP(S) endpoint, including its port. This is separate from the collector's export endpoint. |
-| `Username` | ClickHouse username; defaults to `default`. |
-| `Password` | ClickHouse password; defaults to empty. |
-| `Query Log Setting Prefix` | Optional prefix for a custom ClickHouse setting that records the current user's email in query logs. Include the same prefix in ClickHouse's `custom_settings_prefixes` configuration or queries will be rejected. |
-| `Prometheus compatible` | When available, treats Host as a Prometheus-compatible API endpoint for proxied PromQL queries. This connection can't be used for ClickHouse-backed logs, traces, or OTel metric sources. |
+## ClickStack UI (HyperDX) application {#hyperdx}
 
 ### Data source settings {#datasource-settings}
 
@@ -77,22 +102,14 @@ The ClickStack UI relies on the user defining a source for each of the Observabi
 
 This configuration can be performed inside the application from `Team Settings -> Sources`, as shown below for logs:
 
-<div className="ch-image-md">
+<Image img="/images/use-cases/observability/hyperdx-25.webp" alt="HyperDX Source configuration" size="md"/>
 
-<Frame>
-
-![ClickStack UI Source configuration](/images/use-cases/observability/hyperdx-25.webp)
-
-</Frame>
-
-</div>
-
-Each source needs table and column mappings so the ClickStack UI can query its data. Metrics sources can use separate tables for different metric types. The `Enabled` toggle appears when editing an existing source; source-level `Query Settings` accept up to ten name/value pairs.
+Each of these sources require at least one table specified on creation and a set of columns which allow HyperDX to query the data.
 
 If using the [default OpenTelemetry (OTel) schema](/guides/use-cases/observability/build-your-own/integrating-opentelemetry#out-of-the-box-schema) distributed with ClickStack, these columns can be automatically inferred for each of the sources. If [modifying the schema](#clickhouse) or using a custom schema, users are required to specify and update these mappings.
 
 <Note>
-The collector creates tables through schema migrations or legacy exporter-managed schema creation, depending on its [schema configuration](#collector-schema-and-retention). Column mappings follow the OpenTelemetry conventions, including the [log data model](https://opentelemetry.io/docs/specs/otel/logs/data-model/).
+The default schema for ClickHouse distributed with ClickStack is the schema created by the [ClickHouse exporter for the OTel collector](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). These column names correlate with the OTel official specification documented [here](https://opentelemetry.io/docs/specs/otel/logs/data-model/).
 </Note>
 
 The following settings are available for each source:
@@ -110,18 +127,17 @@ The following settings are available for each source:
 | `Enabled`                     | A disabled source is retained, but hidden from the source selectors and never chosen automatically. | No       | No                          | Enabled                                             |
 | `Timestamp Column`            | Datetime column or expression that's part of your primary key.                                                        | Yes       | Yes                         | `TimestampTime`                                       |
 | `Default Select`              | Columns shown in default search results.                                                                               | Yes       | Yes                         | `Timestamp`, `ServiceName`, `SeverityText`, `Body`         |
-| `Service Name Expression`     | Expression or column for the service name.                                                                             | No | Yes                         | `ServiceName`                                         |
-| `Service Version Expression`  | Expression or column identifying the running release of a service, used to draw [release markers](/clickstack/features/dashboards/release-markers) on dashboard charts. Defaults to the OpenTelemetry `service.version` resource attribute when left blank. | No        | No                          | `ResourceAttributes['service.version']`               |
-| `Log Level Expression`        | Expression or column for the log level.                                                                                | No | Yes                         | `SeverityText`                                        |
-| `Body Expression`             | Expression or column for the log message.                                                                              | No | Yes                         | `Body`                                                |
-| `Log Attributes Expression`   | Expression or column for custom log attributes.                                                                        | No | Yes                         | `LogAttributes`                                       |
-| `Resource Attributes Expression` | Expression or column for resource-level attributes.                                                                  | No | Yes                         | `ResourceAttributes`                                  |
+| `Service Name Expression`     | Expression or column for the service name.                                                                             | Yes       | Yes                         | `ServiceName`                                         |
+| `Log Level Expression`        | Expression or column for the log level.                                                                                | Yes       | Yes                         | `SeverityText`                                        |
+| `Body Expression`             | Expression or column for the log message.                                                                              | Yes       | Yes                         | `Body`                                                |
+| `Log Attributes Expression`   | Expression or column for custom log attributes.                                                                        | Yes       | Yes                         | `LogAttributes`                                       |
+| `Resource Attributes Expression` | Expression or column for resource-level attributes.                                                                  | Yes       | Yes                         | `ResourceAttributes`                                  |
 | `Displayed Timestamp Column`  | Optional, higher-precision timestamp column used in UI display. Defaults to Timestamp Column when not provided.        | No       | Yes                         | `Timestamp`                                           |
-| `Correlated Metric Source`    | Linked metric source (e.g. ClickStack UI metrics).                                                                           | No       | No                          | –                                                   |
-| `Correlated Trace Source`     | Linked trace source (e.g. ClickStack UI traces).                                                                             | No       | No                          | –                                                   |
-| `Trace Id Expression`         | Expression or column used to extract trace ID.                                                                         | No | Yes                         | `TraceId`                                             |
-| `Span Id Expression`          | Expression or column used to extract span ID.                                                                          | No | Yes                         | `SpanId`                                              |
-| `Implicit Column Expression`  | Column used for full-text search if no field is specified (Lucene-style). Typically the log body.                      | No | Yes                         | `Body`                                                |
+| `Correlated Metric Source`    | Linked metric source (e.g. HyperDX metrics).                                                                           | No       | No                          | –                                                   |
+| `Correlated Trace Source`     | Linked trace source (e.g. HyperDX traces).                                                                             | No       | No                          | –                                                   |
+| `Trace Id Expression`         | Expression or column used to extract trace ID.                                                                         | Yes       | Yes                         | `TraceId`                                             |
+| `Span Id Expression`          | Expression or column used to extract span ID.                                                                          | Yes       | Yes                         | `SpanId`                                              |
+| `Implicit Column Expression`  | Column used for full-text search if no field is specified (Lucene-style). Typically the log body.                      | Yes       | Yes                         | `Body`                                                |
 | `Known Columns List`          | For sources over a [`Distributed`](/reference/engines/table-engines/special/distributed) or [`Merge`](/reference/engines/table-engines/special/merge) table whose target tables have non-matching column sets. A comma-separated list of the columns available across all target tables, used instead of `SELECT *` when fetching full row data (for example, in the row side panel). Leave blank to select all columns. Column names only - no expressions or aliases. | No        | No                          |  –                                                  |
 | `Use Text Index`              | Whether Lucene-based searches emit `hasAllTokens` when searching the implicit column.                | No        | No                          | `Auto (detect from schema)`                          |
 | `Highlighted Attributes`      | Expressions or columns displayed when opening log details. Expressions returning URLs will be shown as links.          | No        | No                          |  –                                                  |
@@ -129,8 +145,6 @@ The following settings are available for each source:
 | `Materialized Views`          | Pre-aggregated [materialized views](/clickstack/managing/materialized-views) registered against this source, used automatically to accelerate eligible queries. See [Materialized views](#materialized-views-settings). | No        | No                          |  –                                                  |
 | `Metadata Materialized Views` | Materialized views used to accelerate field discovery and value autocomplete. See [Metadata materialized views](#metadata-materialized-views-settings). | No        | Yes                         | `<table>_kv_rollup_15m`          |
 | `Default Order By`            | `ORDER BY` expression which overrides the default ordering of search results. Leave empty to use the auto-detected default. This can be customized per search later. | No        | No                          |  –                                                  |
-| `Severity Number Expression` | Numeric OpenTelemetry severity (1–24), when the table contains it. | No | Yes, when present | `SeverityNumber` |
-| `Event Name Expression` | OpenTelemetry event name, when the table contains it. | No | Yes, when present | `EventName` |
 
 #### Traces {#traces}
 
@@ -152,19 +166,18 @@ The following settings are available for each source:
 | `Parent Span Id Expression`     | Expression or column for parent span IDs.                                                                              | Yes      | Yes                         | `ParentSpanId`           |
 | `Span Name Expression`          | Expression or column for span names.                                                                                   | Yes      | Yes                         | `SpanName`               |
 | `Span Kind Expression`          | Expression or column for span kind (e.g. client, server).                                                              | Yes      | Yes                         | `SpanKind`               |
-| `Correlated Log Source`         | Optional. Linked log source (e.g. ClickStack UI logs).                                                                       | No       | No                          | –                      |
+| `Correlated Log Source`         | Optional. Linked log source (e.g. HyperDX logs).                                                                       | No       | No                          | –                      |
 | `Correlated Session Source`     | Optional. Linked session source.                                                                                       | No       | No                          | –                      |
-| `Correlated Metric Source`      | Optional. Linked metric source (e.g. ClickStack UI metrics).                                                                  | No       | No                          | –                      |
-| `Status Code Expression`        | Expression for the span status code.                                                                                   | No | Yes                         | `StatusCode`             |
-| `Status Message Expression`     | Expression for the span status message.                                                                                | No | Yes                         | `StatusMessage`          |
-| `Service Name Expression`       | Expression or column for the service name.                                                                             | No | Yes                         | `ServiceName`            |
-| `Service Version Expression`    | Expression or column identifying the running release of a service, used to draw [release markers](/clickstack/features/dashboards/release-markers) on dashboard charts. Defaults to the OpenTelemetry `service.version` resource attribute when left blank. | No       | No                          | `ResourceAttributes['service.version']` |
-| `Resource Attributes Expression`| Expression or column for resource-level attributes.                                                                    | No | Yes                         | `ResourceAttributes`     |
-| `Event Attributes Expression`   | Expression or column for event attributes.                                                                             | No | Yes                         | `SpanAttributes`         |
+| `Correlated Metric Source`      | Optional. Linked metric source (e.g. HyperDX metrics).                                                                  | No       | No                          | –                      |
+| `Status Code Expression`        | Expression for the span status code.                                                                                   | Yes      | Yes                         | `StatusCode`             |
+| `Status Message Expression`     | Expression for the span status message.                                                                                | Yes      | Yes                         | `StatusMessage`          |
+| `Service Name Expression`       | Expression or column for the service name.                                                                             | Yes      | Yes                         | `ServiceName`            |
+| `Resource Attributes Expression`| Expression or column for resource-level attributes.                                                                    | Yes      | Yes                         | `ResourceAttributes`     |
+| `Event Attributes Expression`   | Expression or column for event attributes.                                                                             | Yes      | Yes                         | `SpanAttributes`         |
 | `Sample Rate Expression`        | Column or expression holding the upstream sampling weight (`1/N`). When set, aggregations (`count`, `avg`, `sum`, `quantile`) are corrected for sampling. Percentiles then use `quantileTDigestWeighted`, which is an approximation, so exact values may differ slightly. Leave empty if spans aren't sampled. | No       | No                          |  –                       |
-| `Span Events Expression`        | Expression to extract span events. Typically a `Nested` type column. This allows rendering of exception stack traces with supported language SDKs.                                                   | No | Yes                         | `Events`                 |
+| `Span Events Expression`        | Expression to extract span events. Typically a `Nested` type column. This allows rendering of exception stack traces with supported language SDKs.                                                   | Yes      | Yes                         | `Events`                 |
 | `Span Links Expression`         | Expression to extract span links, used to capture links from a span to spans in other traces. Expected to be of type `Nested(TraceId String, SpanId String, TraceState String, Attributes Map(LowCardinality(String), String))`. | No       | Yes                         | `Links`                  |
-| `Implicit Column Expression`   | Column used for full-text search if no field is specified (Lucene-style). Typically the log body.  | No | Yes  | `SpanName`|
+| `Implicit Column Expression`   | Column used for full-text search if no field is specified (Lucene-style). Typically the log body.  | Yes  | Yes  | `SpanName`|
 | `Known Columns List`            | For sources over a [`Distributed`](/reference/engines/table-engines/special/distributed) or [`Merge`](/reference/engines/table-engines/special/merge) table whose target tables have non-matching column sets. A comma-separated list of the columns available across all target tables, used instead of `SELECT *` when fetching full row data (for example, in the row side panel). Leave blank to select all columns. Column names only - no expressions or aliases. | No        | No                          |  –                                                  |
 | `Use Text Index`                | Whether Lucene-based searches emit `hasAllTokens` when searching the implicit column.                | No       | No                          | `Auto (detect from schema)` |
 | `Displayed Timestamp Column`    | Optional, higher-precision timestamp column used in UI display. Defaults to Timestamp Column when not provided.          | No       | Yes                         | `Timestamp`                                           |
@@ -188,15 +201,7 @@ The following settings are available for each source:
 | `Histogram Table`      | Table storing histogram-type metrics.                                                          | No       | Yes                         | `otel_metrics_histogram`    |
 | `Sum Table`            | Table storing sum-type (counter) metrics.                                                      | No       | Yes                         | `otel_metrics_sum`          |
 | `Exponential Histogram Table` | Table storing exponential histogram-type metrics.                                       | No | Yes                     | `otel_metrics_exponential_histogram` |
-| `Correlated Log Source`| Optional. Linked log source (e.g. ClickStack UI logs).                                               | No       | No                          | –                           |
-| `Summary Table` | Table storing summary metrics. Summary and exponential histogram support is not yet complete. | No | Yes | `otel_metrics_summary` |
-| `Minimum auto granularity` | Minimum bucket size for automatically selected chart granularity. Does not override explicit chart granularity. | No | No | No minimum |
-
-A metric source also stores its timestamp and resource-attribute mappings (normally `TimeUnix` and `ResourceAttributes`). A unified `series Table` field is shown only for teams with metrics-series-table support enabled.
-
-#### PromQL {#promql-source-settings}
-
-When PromQL is enabled, you can create a PromQL source. In addition to the common name, connection, database, table, query settings, and enabled fields, it has **Minimum auto granularity**. For a ClickHouse connection, select the `TimeSeries` engine table. The timestamp expression is set automatically. Minimum auto granularity also determines the scrape interval used to calculate `$__rate_interval`; when unset, this assumes a 15-second scrape interval.
+| `Correlated Log Source`| Optional. Linked log source (e.g. HyperDX logs).                                               | No       | No                          | –                           |
 
 #### Sessions {#settings}
 
@@ -260,236 +265,228 @@ Each attribute is configured with the following settings:
 
 For example, this trace source has been configured with a Highlighted Attribute and a Highlighted Trace Attribute:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Highlighted Attributes configuration](/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp" alt="Highlighted Attributes configuration" size="md"/>
 
 These attributes are displayed in the side panel after clicking on a log or span:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Highlighted Attributes](/images/use-cases/observability/hyperdx-highlighted-attributes.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes.webp" alt="Highlighted Attributes" size="md"/>
 
 Clicking on an attribute provides options for using the attribute as a search value. If the optional Lucene expression is provided in the attribute configuration, then the Lucene expression will be used for the search instead of the SQL expression.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Highlighted Attributes Search](/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp" alt="Highlighted Attributes Search" size="md"/>
 
 ### Correlated sources {#correlated-sources}
 
-To enable full cross-source correlation in ClickStack, you must configure correlated sources for logs, traces, metrics, and sessions. This allows ClickStack UI to associate related data and provide rich context when rendering events.
+To enable full cross-source correlation in ClickStack, you must configure correlated sources for logs, traces, metrics, and sessions. This allows HyperDX to associate related data and provide rich context when rendering events.
 
 - `Logs`: Can be correlated with traces and metrics.
 - `Traces`: Can be correlated with logs, sessions, and metrics.
 - `Metrics`: Can be correlated with logs.
 - `Sessions`: Can be correlated with traces.
 
-Setting these correlations enables several features. For example, ClickStack UI can render relevant logs alongside a trace or surface metric anomalies linked to a session.
+Setting these correlations enables several features. For example, HyperDX can render relevant logs alongside a trace or surface metric anomalies linked to a session.
 
 For example, below is the Logs source configured with correlated sources:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![ClickStack UI Source correlated](/images/use-cases/observability/hyperdx-26.webp)
-
-</Frame>
-
-</div>
-
-### ClickHouse client settings {#clickhouse-client-settings}
-
-The **ClickHouse Client Settings** section in Team Settings controls query behavior for the team.
-
-| Setting | Default | Description |
-| --- | --- | --- |
-| `Search Row Limit` | `200` | Rows returned per query on the Search page and search dashboard tiles. Range: 1–100,000. |
-| `Query Timeout (seconds)` | `60` | Maximum query execution time; `0` means unlimited. |
-| `Max Rows to Read (METADATA ONLY)` | `3000000` | Row-read limit for metadata queries; `0` means unlimited. |
-| `Filter Keys Fetch Limit` | `100` | Filter keys fetched per map column. Range: 1–1,000. |
-| `Field Metadata Queries` | Enabled | Controls fetching field metadata from ClickHouse. |
-| `Parallelize Queries When Possible` | Disabled | Runs eligible windowed queries in parallel, which can increase peak database load. |
-
-For permissions and security policies, see [Role-based access control](/clickstack/managing/rbac). For notification destinations, see [Alerts](/clickstack/features/alerts).
+<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="HyperDX Source correlated" size="md"/>
 
 ### Application configuration settings {#application-configuration-settings}
 
-These environment variables configure self-hosted ClickStack. They aren't configurable for the hosted ClickStack UI in ClickHouse Cloud. Defaults below refer to the official container entrypoints unless otherwise noted; Docker Compose can override them. Restart the affected service after changing its environment.
+<Info>
+**HyperDX in ClickHouse Cloud**
 
-#### Network and storage {#network-and-storage}
+These settings can't be modified when HyperDX is managed in ClickHouse Cloud.
+</Info>
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `HYPERDX_API_PORT` | `8000` | API server port inside the application container. Update the Docker port mapping when changing it. |
-| `HYPERDX_APP_PORT` | `8080` | Frontend port inside the application container. Update the Docker port mapping when changing it. |
-| `HYPERDX_APP_URL` | `http://localhost` | Public frontend origin without the port. Used with `HYPERDX_APP_PORT` to construct `FRONTEND_URL`. |
-| `FRONTEND_URL` | `HYPERDX_APP_URL:HYPERDX_APP_PORT` | Full public frontend URL, used for redirects. Set explicitly when using a reverse proxy or HTTPS. |
-| `HYPERDX_APP_LISTEN_HOSTNAME` | `0.0.0.0` | Frontend listen address in the UI-only container. |
-| `HYPERDX_OPAMP_PORT` | `4320` | OpAMP server port, used by collectors to retrieve configuration and ingestion keys. The container maps this to `OPAMP_PORT`. |
-| `MONGO_URI` | Deployment-specific | MongoDB connection string. Compose and all-in-one use `mongodb://db:27017/hyperdx`. The all-in-one entrypoint sets this value itself. |
-| `SERVER_URL` | Deployment-specific | Internal API URL used by the frontend server. Compose and all-in-one point it to the local API port. |
+- `HYPERDX_API_KEY`
+  - **Default:** None (required)
+  - **Description:** Authentication key for the HyperDX API.
+  - **Guidance:**
+  - Required for telemetry and logging
+  - In local development, can be any non-empty value
+  - For production, use a secure, unique key
+  - Can be obtained from the team settings page after account creation
 
-If running the API directly rather than using the container entrypoint, set `PORT` and `OPAMP_PORT` for the API and OpAMP listeners. The `HYPERDX_*_PORT` variables are container/deployment conveniences.
+- `HYPERDX_LOG_LEVEL`
+  - **Default:** `info`
+  - **Description:** Sets the logging verbosity level.
+  - **Options:** `debug`, `info`, `warn`, `error`
+  - **Guidance:**
+  - Use `debug` for detailed troubleshooting
+  - Use `info` for normal operation
+  - Use `warn` or `error` in production to reduce log volume
 
-#### Authentication and security {#authentication-and-security}
+- `HYPERDX_API_PORT`
+  - **Default:** `8000`
+  - **Description:** Port for the HyperDX API server.
+  - **Guidance:**
+  - Ensure this port is available on your host
+  - Change if you have port conflicts
+  - Must match the port in your API client configurations
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `EXPRESS_SESSION_SECRET` | Generated per API process when unset | Session-signing secret. Set a strong, persistent value shared by all API replicas so sessions survive restarts. Authenticated deployments reject the old public demo secret and generate a random value instead. |
-| `INGESTION_API_KEY` | Unset | Optional extra ingestion key for the authenticated all-in-one image. This bootstrap override isn't supported by the production UI-only image. Otherwise, use the ingestion key provided by your team. |
-| `WEBHOOK_HOSTNAME_ALLOWLIST` | Empty | Comma-separated exceptions allowing webhooks to private or reserved destinations. Hostname entries also allow subdomains; IP entries match exactly. Leave empty unless those destinations are trusted. |
-| `TOKEN_ENCRYPTION_KEY` | Unset | A 32-byte key encoded as base64 or hex to encrypt stored third-party tokens. If unset, those tokens are stored in plaintext. Keep the key stable and protect it as a secret. |
-| `EXTERNAL_API_RATE_LIMIT_MAX` | `100` | Positive integer limiting external API v2 requests per API key per minute. |
-| `EXTERNAL_API_SEARCH_MAX_RESULTS` | `2000` | Maximum results accepted by the external search API. Must be an integer of at least `100`; invalid values use the default. |
-| `ENABLE_SWAGGER` | `false` | Enables API documentation only when `NODE_ENV` is not `production`. It has no effect in published production images. |
+- `HYPERDX_APP_PORT`
+  - **Default:** `8000`
+  - **Description:** Port for the HyperDX frontend app.
+  - **Guidance:**
+  - Ensure this port is available on your host
+  - Change if you have port conflicts
+  - Must be accessible from your browser
 
-#### Bootstrap and provisioning {#bootstrap-and-provisioning}
+- `HYPERDX_APP_URL`
+  - **Default:** `http://localhost`
+  - **Description:** Base URL for the frontend app.
+  - **Guidance:**
+  - Set to your domain in production
+  - Include protocol (http/https)
+  - Don't include trailing slash
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `DEFAULT_CONNECTIONS` | Deployment-specific | JSON array of connections used when bootstrapping an empty instance. Compose and all-in-one supply a local ClickHouse connection. Not a mechanism for updating existing connections. |
-| `DEFAULT_SOURCES` | Deployment-specific | JSON array of sources used when bootstrapping an empty instance. Compose and all-in-one supply Logs, Traces, Metrics, and Sessions sources. The all-in-one entrypoint sets this value itself. |
-| `DASHBOARD_PROVISIONER_DIR` | Unset | Directory containing provisioned dashboard definitions. Setting it starts the dashboard provisioner in the UI-only container. |
-| `DASHBOARD_PROVISIONER_TEAM_ID` | Unset | Team to receive provisioned dashboards. Required unless `DASHBOARD_PROVISIONER_ALL_TEAMS=true`. Takes precedence if both are set. |
-| `DASHBOARD_PROVISIONER_ALL_TEAMS` | `false` | Provision dashboards to every team instead of selecting one team. |
-| `ALERT_NOTIFICATION_FETCH_TIMEOUT_MS` | `30000` | Timeout in milliseconds for webhook and Slack alert notifications. |
-| `RUN_SCHEDULED_TASKS_EXTERNALLY` | `false` | Run scheduled tasks once instead of scheduling them inside the task process. Use only when an external scheduler is responsible for invoking the tasks. |
+- `MONGO_URI`
+  - **Default:** `mongodb://db:27017/hyperdx`
+  - **Description:** MongoDB connection string.
+  - **Guidance:**
+  - Use default for local development with Docker
+  - For production, use a secure connection string
+  - Include authentication if required
+  - Example: `mongodb://user:pass@host:port/db`
 
-For local-mode deployments, `NEXT_PUBLIC_HDX_LOCAL_DEFAULT_CONNECTIONS` and `NEXT_PUBLIC_HDX_LOCAL_DEFAULT_SOURCES` supply JSON defaults in the browser instead. These values are public: don't place production credentials in them.
+- `MINER_API_URL`
+  - **Default:** `http://miner:5123`
+  - **Description:** URL for the log pattern mining service.
+  - **Guidance:**
+  - Use default for local development with Docker
+  - Set to your miner service URL in production
+  - Must be accessible from the API service
 
-#### AI assistant {#ai-assistant-configuration}
+- `FRONTEND_URL`
+  - **Default:** `http://localhost:3000`
+  - **Description:** URL for the frontend app.
+  - **Guidance:**
+  - Use default for local development
+  - Set to your domain in production
+  - Must be accessible from the API service
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `AI_PROVIDER` | Unset | AI provider: `anthropic` or `openai`. The OpenAI-compatible provider uses the Responses API. |
-| `AI_API_KEY` | Unset | API key for the selected provider. |
-| `AI_BASE_URL` | Provider default | Optional custom provider endpoint. |
-| `AI_MODEL_NAME` | `claude-sonnet-4-5-20250929` for Anthropic | Model identifier. Required for the OpenAI-compatible provider. |
-| `AI_REQUEST_HEADERS` | Unset | JSON object of extra request headers for the OpenAI-compatible provider. |
-| `ANTHROPIC_API_KEY` | Unset | Legacy Anthropic key. Used for backward compatibility when no `AI_PROVIDER` is configured. Prefer `AI_PROVIDER` and `AI_API_KEY`. |
+- `OTEL_SERVICE_NAME`
+  - **Default:** `hdx-oss-api`
+  - **Description:** Service name for OpenTelemetry instrumentation.
+  - **Guidance:**
+  - Use descriptive name for your HyperDX service. Applicable if HyperDX self-instruments.
+  - Helps identify the HyperDX service in telemetry data
 
-#### Logging and self-instrumentation {#logging-and-self-instrumentation}
+- `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT`
+  - **Default:** `http://localhost:4318`
+  - **Description:** OpenTelemetry collector endpoint.
+  - **Guidance:**
+  - Relevant of self-instrumenting HyperDX.
+  - Use default for local development
+  - Set to your collector URL in production
+  - Must be accessible from your HyperDX service
 
-These settings control telemetry emitted by ClickStack itself, not authentication for users or incoming application telemetry.
+- `USAGE_STATS_ENABLED`
+  - **Default:** `true`
+  - **Description:** Toggles usage statistics collection.
+  - **Guidance:**
+  - Set to `false` to disable usage tracking
+  - Useful for privacy-sensitive deployments
+  - Default is `true` for better product improvement
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `HYPERDX_LOG_LEVEL` | `info` in the API; `debug` in the Compose `.env`; forced to `error` by all-in-one | Application log level. |
-| `HYPERDX_API_KEY` | Unset | Optional ingestion key for ClickStack's own telemetry. It isn't the API authentication key for accessing your team's data. When `HDX_EXPORTER_ENABLED=true`, the frontend exposes this self-telemetry key to the browser; don't use a key that grants access to sensitive telemetry. |
-| `OTEL_SERVICE_NAME` | Deployment-specific | Service name for server-side self-instrumentation. Compose sets `hdx-oss-app`. |
-| `NEXT_PUBLIC_OTEL_SERVICE_NAME` | `hdx-oss-dev-app` | Frontend self-instrumentation service name. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Deployment-specific | Server-side OTLP endpoint. Compose sets `http://otel-collector:4318`. |
-| `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT` | Server endpoint, then `http://localhost:4318` | Frontend OTLP endpoint. A browser exporter needs a browser-reachable address. |
-| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | Unset | Per-signal server-side OTLP URLs. |
-| `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | Corresponding server-side URL | Per-signal frontend URLs; take precedence over the corresponding server-side values. |
-| `NEXT_PUBLIC_OTEL_RESOURCE_ATTRIBUTES` | Unset | Comma-separated `key=value` resource attributes for browser self-instrumentation. |
-| `HDX_EXPORTER_ENABLED` | `true` | Enables the frontend application's self-instrumentation exporter. |
-| `USAGE_STATS_ENABLED` | `true` | Set to `false` to disable usage statistics collection. |
+- `IS_OSS`
+  - **Default:** `true`
+  - **Description:** Indicates if running in OSS mode.
+  - **Guidance:**
+  - Keep as `true` for open-source deployments
+  - Set to `false` for enterprise deployments
+  - Affects feature availability
 
-#### Optional features and deployment modes {#optional-features-and-deployment-modes}
+- `IS_LOCAL_MODE`
+  - **Default:** `false`
+  - **Description:** Indicates if running in local mode.
+  - **Guidance:**
+  - Set to `true` for local development
+  - Disables certain production features
+  - Useful for testing and development
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `ENABLE_PROMQL` | `false` | Enables the API's PromQL support. Set the matching frontend flag and configure the collector's Prometheus endpoint and schema as well. |
-| `NEXT_PUBLIC_ENABLE_PROMQL` | `false` | Enables PromQL in the UI. |
-| `NEXT_PUBLIC_ENABLE_ADHOC_FILTERS` | `false` | Enables ad hoc filters in the UI. |
-| `NEXT_PUBLIC_ENABLE_ALERT_DETAILS` | `false` | Enables the alert detail page; currently an opt-in feature. |
-| `NEXT_PUBLIC_IS_LLM_COST_ENABLED` | `false` | Enables LLM cost estimates from the bundled model price catalog. Prices may differ from your provider contract. |
-| `NEXT_PUBLIC_INSTANCE_LABEL` | Empty | Label appended to the browser title and displayed in the sidebar, useful for distinguishing instances. |
-| `ENABLE_DATADOG_RECEIVER` | `false` | Enables the Datadog trace receiver in OpAMP-generated collector configuration. The receiver on port `8126` validates `DD-API-KEY` when team ingestion keys exist and collector authentication is enforced; otherwise it is unauthenticated. |
-| `BETA_CH_OTEL_JSON_SCHEMA_ENABLED` | `false` | Selects JSON-compatible default source mappings in the all-in-one entrypoint. Pair with `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_JSON_ENABLE` on the collector. |
+- `EXPRESS_SESSION_SECRET`
+  - **Default:** `hyperdx is cool 👋`
+  - **Description:** Secret for Express session management.
+  - **Guidance:**
+  - Change in production
+  - Use a strong, random string
+  - Keep secret and secure
 
-`NEXT_PUBLIC_IS_LOCAL_MODE` is the frontend build flag for the [Local Mode distribution](/clickstack/deployment/local-mode-only). It isn't a general-purpose development switch. Use the appropriate distribution rather than disabling authentication on an existing deployment. `IS_LOCAL_MODE` and `IS_OSS` are application constant names, not the environment variables to set. `NEXT_PUBLIC_IS_OSS` is a build setting; it isn't an enterprise-edition switch. `MINER_API_URL` is no longer used by the current application.
+- `ENABLE_SWAGGER`
+  - **Default:** `false`
+  - **Description:** Toggles Swagger API documentation.
+  - **Guidance:**
+  - Set to `true` to enable API documentation
+  - Useful for development and testing
+  - Disable in production
 
-When using the supplied reverse-proxy configuration for a subpath, set `HYPERDX_BASE_PATH` and `NEXT_PUBLIC_HYPERDX_BASE_PATH` to the same prefix (for example `/clickstack`), and include the prefix in `FRONTEND_URL`.
-
-Some frontend settings are read at build time. In particular, changing `NEXT_PUBLIC_HYPERDX_BASE_PATH` (the deployment path prefix), `NEXT_PUBLIC_NOINDEX` (search-engine indexing), or the distribution's mode flags requires building the frontend with those values. Runtime settings read through `next-runtime-env`, such as `NEXT_PUBLIC_INSTANCE_LABEL`, can be supplied to the container at startup.
+- `BETA_CH_OTEL_JSON_SCHEMA_ENABLED`
+  - **Default:** `false`
+  - **Description:** Enables Beta support for the JSON type in HyperDX. See also [`OTEL_AGENT_FEATURE_GATE_ARG`](#otel-collector) to enable JSON support in the OTel collector.
+  - **Guidance:**
+    - Enables a **beta feature**. JSON-typed schemas are **not recommended** for typical observability workloads. See [Map vs JSON type](/clickstack/ingesting-data/schema/map-vs-json) for the comparison and when each is appropriate.
+    - Set to `true` to enable JSON support in the ClickStack UI.
 
 ## OpenTelemetry collector {#otel-collector}
 
-See [ClickStack OpenTelemetry Collector](/clickstack/ingesting-data/collector) for deployment instructions. Set collector variables on the collector container, not just the UI container. In Compose, declaring a value in `.env` only passes it to a container when `docker-compose.yml` references it.
+See ["ClickStack OpenTelemetry Collector"](/clickstack/ingesting-data/collector) for more details.
 
-### Connection and authentication {#collector-connection-and-authentication}
+- `CLICKHOUSE_ENDPOINT`
+  - **Default:** *None (required)* if standalone image. If All-in-one or Docker Compose distribution this is set to the integrated ClickHouse instance.
+  - **Description:** The HTTPS URL of the ClickHouse instance to export telemetry data to.
+  - **Guidance:**
+    - Must be a full HTTPS endpoint including port (e.g., `https://clickhouse.example.com:8443`)
+    - Required for the collector to send data to ClickHouse
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `CLICKHOUSE_ENDPOINT` | Deployment-specific | ClickHouse exporter connection URL. Compose and all-in-one use `tcp://ch-server:9000?dial_timeout=10s`. Use the secure native endpoint, for example `tcp://<host>:9440?secure=true`, for ClickHouse Cloud. It isn't restricted to HTTPS. |
-| `CLICKHOUSE_USER` | `default` in the migration tool | ClickHouse username. Set explicitly for a standalone collector so both migrations and exporters use the intended account. |
-| `CLICKHOUSE_PASSWORD` | Empty | Password for the ClickHouse account. |
-| `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE` | `default` in bundled deployments and migrations | Target database. Set explicitly for a standalone collector. |
-| `OPAMP_SERVER_URL` | Unset in standalone mode | ClickStack UI OpAMP URL, normally `http://<app>:4320`. When set, the collector uses the supervisor to obtain configuration and team ingestion keys. When unset, it uses standalone configuration. |
-| `OTLP_AUTH_TOKEN` | Unset | Static bearer token for standalone OTLP ingestion. Ignored when OIDC authentication is selected. |
-| `OIDC_ISSUER_URL` | Unset | Enables OIDC authentication for standalone OTLP ingestion. Takes precedence over `OTLP_AUTH_TOKEN`. |
-| `OIDC_AUDIENCE` | Unset | Required audience when `OIDC_ISSUER_URL` is set; startup fails if omitted. |
+- `CLICKHOUSE_USER`
+  - **Default:** `default`
+  - **Description:** Username used to authenticate with the ClickHouse instance.
+  - **Guidance:**
+    - Ensure the user has `INSERT` and `CREATE TABLE` permissions
+    - Recommended to create a dedicated user for ingestion
 
-Without OpAMP, OIDC, or `OTLP_AUTH_TOKEN`, the standalone OTLP receiver has no authentication. The ClickHouse account needs permission to insert telemetry and, when schema creation or migrations are enabled, to create or alter the required database objects.
+- `CLICKHOUSE_PASSWORD`
+  - **Default:** *None (required if authentication is enabled)*
+  - **Description:** Password for the specified ClickHouse user.
+  - **Guidance:**
+    - Required if the user account has a password set
+    - Store securely via secrets in production deployments
 
-### Export, batching, and custom configuration {#collector-export-and-batching}
+- `HYPERDX_LOG_LEVEL`
+  - **Default:** `info`
+  - **Description:** Log verbosity level for the collector.
+  - **Guidance:**
+    - Accepts values like `debug`, `info`, `warn`, `error`
+    - Use `debug` during troubleshooting
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `HYPERDX_OTEL_EXPORTER_TIMEOUT` | `5s` | ClickHouse export timeout. |
-| `HYPERDX_OTEL_BATCH_SEND_BATCH_SIZE` | `10000` | Number of items that triggers a batch send. |
-| `HYPERDX_OTEL_BATCH_SEND_BATCH_MAX_SIZE` | `0` | Maximum batch size; `0` means no size limit. |
-| `HYPERDX_OTEL_BATCH_TIMEOUT` | `5s` | Maximum time before sending a batch. |
-| `CUSTOM_OTELCOL_CONFIG_FILE` | Unset | Path to a mounted YAML file merged with the collector configuration in either standalone or OpAMP mode. See [custom collector configuration](/clickstack/ingesting-data/collector). |
-| `HYPERDX_LOG_LEVEL` | Deployment-specific | Collector internal log level. Set explicitly for a standalone collector, for example `info`. Compose supplies `debug`; all-in-one forces `error`. |
-| `OTEL_SUPERVISOR_LOGS` | `false` | Set to `true` to forward collector output through the OpAMP supervisor. Applies only in supervisor mode. |
-| `OTEL_AGENT_FEATURE_GATE_ARG` | Unset | Additional collector feature-gate argument. The old `--feature-gates=clickhouse.json` value is deprecated; use `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_JSON_ENABLE=true` instead. |
+- `OPAMP_SERVER_URL`
+  - **Default:** *None (required)* if standalone image. If All-in-one or Docker Compose distribution this points to the deployed HyperDX instance.
+  - **Description:** URL of the OpAMP server used to manage the collector (e.g., HyperDX instance). This is port `4320` by default.
+  - **Guidance:**
+    - Must point to your HyperDX instance
+    - Enables dynamic configuration and secure ingestion
+    - If omitted, secure ingestion is disabled unless an `OTLP_AUTH_TOKEN` value is specified.
 
-### Schema and retention {#collector-schema-and-retention}
+- `OTLP_AUTH_TOKEN`
+  - **Default:** *None*. Used only for standalone image. 
+  - **Description:** Allows an OTLP authentication token to be specified. If set, all communication requires this bearer token.
+  - **Guidance:**
+    - Recommended if using the standalone collector image in production.
+    
+- `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`
+  - **Default:** `default`
+  - **Description:** ClickHouse database the collector writes telemetry data to.
+  - **Guidance:**
+    - Set if using a custom database name
+    - Ensure the specified user has access to this database
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `HYPERDX_OTEL_EXPORTER_CREATE_LEGACY_SCHEMA` | `false`; Compose overrides to `true` | Use exporter-managed legacy schema creation instead of the migration tool. |
-| `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_JSON_ENABLE` | `false` | Enables JSON exporter mode and selects legacy schema creation. JSON-typed schemas aren't recommended for typical observability workloads; see [Map vs JSON type](/clickstack/ingesting-data/schema/map-vs-json). |
-| `HYPERDX_OTEL_EXPORTER_TABLES_TTL` | `720h` | Default retention (a Go duration such as `720h`, or days such as `30d`) for tables created by migrations and the OpAMP-generated legacy exporters. The standalone legacy exporter configuration uses a fixed `720h`. |
-| `HYPERDX_OTEL_EXPORTER_LOGS_TTL` | `HYPERDX_OTEL_EXPORTER_TABLES_TTL` | Logs retention for migration-managed tables. |
-| `HYPERDX_OTEL_EXPORTER_TRACES_TTL` | `HYPERDX_OTEL_EXPORTER_TABLES_TTL` | Traces retention for migration-managed tables. |
-| `HYPERDX_OTEL_EXPORTER_METRICS_TTL` | `HYPERDX_OTEL_EXPORTER_TABLES_TTL` | Metrics retention for migration-managed tables. |
-| `HYPERDX_OTEL_EXPORTER_SESSIONS_TTL` | `HYPERDX_OTEL_EXPORTER_TABLES_TTL` | Session retention for migration-managed tables. |
-| `HYPERDX_OTEL_EXPORTER_RECONCILE_TABLE_TTL` | `false` | Opt in to applying configured TTLs to existing migration-managed tables. Review retention changes before enabling this: shorter TTLs can remove existing data. |
-
-The per-signal TTLs and reconciliation setting apply to the migration tool, which is skipped when legacy schema creation is enabled.
-
-### Migration TLS {#collector-migration-tls}
-
-These variables configure the migration tool's ClickHouse connection. They don't automatically configure exporter TLS; configure the collector exporters separately when using custom certificates.
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `CLICKHOUSE_TLS_CA_FILE` | Unset | Path to the CA certificate file. |
-| `CLICKHOUSE_TLS_CERT_FILE` | Unset | Client certificate path for mutual TLS. |
-| `CLICKHOUSE_TLS_KEY_FILE` | Unset | Client private key path for mutual TLS. |
-| `CLICKHOUSE_TLS_SERVER_NAME_OVERRIDE` | Unset | Server name used for certificate verification. |
-| `CLICKHOUSE_TLS_INSECURE_SKIP_VERIFY` | `false` | Disables server certificate verification when `true`. Use only for troubleshooting. |
-
-### Prometheus-compatible metrics {#collector-prometheus-metrics}
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `ENABLE_PROMQL` | `false` | Enables PromQL schema creation in the migration tool. For OpAMP mode, also enable PromQL on the API and frontend. |
-| `CLICKHOUSE_PROMETHEUS_METRICS_ENDPOINT` | Unset standalone; `ch-server:9363` all-in-one | Prometheus-compatible endpoint. Accepts `host:port`, `http://host:port`, or `https://host:port`; don't include a path. Setting it enables remote write in standalone mode. The entrypoint derives `HYPERDX_PROMETHEUS_SCHEME` and `HYPERDX_PROMETHEUS_TLS_INSECURE` from the URL. |
+- `OTEL_AGENT_FEATURE_GATE_ARG`
+  - **Default:** `<empty string>`
+  - **Description:** Enables feature flags in the collector. If set to `--feature-gates=clickhouse.json`, enables Beta support for the JSON type in the collector, ensuring schemas are created with that type. See also [`BETA_CH_OTEL_JSON_SCHEMA_ENABLED`](#hyperdx) to enable JSON support in HyperDX.
+  - **Guidance:**
+    - Enables a **beta feature**. JSON-typed schemas are **not recommended** for typical observability workloads. See [Map vs JSON type](/clickstack/ingesting-data/schema/map-vs-json) for the comparison and when each is appropriate.
+    - Set to `--feature-gates=clickhouse.json` to create new tables using the JSON type.
 
 ## ClickHouse {#clickhouse}
 

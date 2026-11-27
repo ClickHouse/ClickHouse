@@ -1,13 +1,13 @@
 #pragma once
 
 #include <Processors/Formats/IRowInputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Columns/IColumn_fwd.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Formats/NumpyDataTypes.h>
 
+#include <vector>
 
 namespace DB
 {
@@ -16,7 +16,7 @@ class ReadBuffer;
 
 struct NumpyHeader
 {
-    VectorWithMemoryTracking<size_t> shape;
+    std::vector<size_t> shape;
     std::shared_ptr<NumpyDataType> numpy_type;
 };
 

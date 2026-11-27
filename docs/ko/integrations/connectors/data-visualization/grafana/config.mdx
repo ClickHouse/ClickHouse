@@ -10,6 +10,8 @@ integration:
   - category: 'data_visualization'
 ---
 
+import { Image } from "/snippets/ko/components/Image.jsx";
+
 import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -20,19 +22,13 @@ import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupp
 
 모든 옵션을 빠르게 살펴보려면 전체 구성 옵션 목록을 [여기](#all-yaml-options)에서 확인할 수 있습니다.
 
-## 공통 설정 {#common-settings}
+<div id="common-settings">
+  ## 공통 설정
+</div>
 
 예시 구성 화면:
 
-<div className="ch-image-sm">
-
-<Frame>
-
-![보안 네이티브 구성 예시](/images/integrations/data-visualization/grafana/config_common.webp)
-
-</Frame>
-
-</div>
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_common.webp" alt="보안 네이티브 구성 예시" border />
 
 공통 설정 예시 YAML:
 
@@ -66,15 +62,7 @@ secureJsonData:
 
 HTTP protocol로 연결을 선택하면 추가 설정이 표시됩니다.
 
-<div className="ch-image-md">
-
-<Frame>
-
-![추가 HTTP 구성 옵션](/images/integrations/data-visualization/grafana/config_http.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="추가 HTTP 구성 옵션" border />
 
 <div id="http-path">
   #### HTTP 경로
@@ -118,19 +106,13 @@ secureJsonData:
   secureHttpHeaders.X-Example-Secure-Header: secure header value
 ```
 
-## 추가 설정 {#additional-settings}
+<div id="additional-settings">
+  ## 추가 설정
+</div>
 
 이 추가 설정은 선택 사항입니다.
 
-<div className="ch-image-sm">
-
-<Frame>
-
-![추가 설정 예시](/images/integrations/data-visualization/grafana/config_additional.webp)
-
-</Frame>
-
-</div>
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_additional.webp" alt="추가 설정 예시" border />
 
 예시 YAML:
 
@@ -154,7 +136,9 @@ OpenTelemetry 데이터는 [exporter plugin](https://github.com/open-telemetry/o
 
 또한 강력한 관측성 워크플로를 지원하는 [데이터 링크](/ko/integrations/connectors/data-visualization/grafana/query-builder#data-links) 기능을 활성화하려면 이러한 기본값도 구성해야 합니다.
 
-### 로그 {#logs}
+<div id="logs">
+  ### 로그
+</div>
 
 [로그용 쿼리 빌드](/ko/integrations/connectors/data-visualization/grafana/query-builder#logs) 속도를 높이기 위해 로그 쿼리에 사용할 기본 데이터베이스/테이블과 컬럼을 설정할 수 있습니다. 이렇게 하면 쿼리 빌더에 실행 가능한 로그 쿼리가 미리 로드되어 관측성 워크플로에서 Explore 페이지를 더 빠르게 탐색할 수 있습니다.
 
@@ -165,15 +149,7 @@ OpenTelemetry를 사용하는 경우 &quot;**Use OTel**&quot; 스위치를 활�
 
 로그 구성 화면 예시:
 
-<div className="ch-image-sm">
-
-<Frame>
-
-![로그 구성](/images/integrations/data-visualization/grafana/config_logs.webp)
-
-</Frame>
-
-</div>
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="로그 구성" border />
 
 로그 구성 YAML 예시:
 
@@ -186,24 +162,17 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
-    showLogLinks: true # set to false to hide the "View logs" data links on trace ID fields.
-
     # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
     timeColumn:       <string> # the primary time column for the log.
     levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
     messageColumn: <string> # the log's message/content.
 ```
 
-#### &quot;View logs&quot; 링크 비활성화 {#disabling-view-logs-links}
+<div id="traces">
+  ### 트레이스
+</div>
 
-로그 구성의 **트레이스 ID 연관 관계** 섹션에는 **&quot;View logs&quot; 링크 표시** 토글이 있습니다.
-이 토글은 플러그인이 쿼리 결과의 트레이스 ID 필드에 &quot;View logs&quot; [데이터 링크](/ko/integrations/connectors/data-visualization/grafana/query-builder#data-links)를 추가할지 여부를 제어합니다.
-이 토글은 기본적으로 활성화되어 있습니다. 동일한 쿼리 유형의 &quot;View logs&quot; 링크에는 로그 기본값을 구성할 필요가 없지만, 트레이스 쿼리 결과에서 교차 신호로 연결되는 &quot;View logs&quot; 링크에는 로그 기본값을 구성해야 합니다.
-링크를 숨기려면 토글을 끄거나 YAML에서 `showLogLinks: false`로 설정하십시오.
-
-### 트레이스 {#traces}
-
-[트레이스용 쿼리 빌드](/ko/integrations/connectors/data-visualization/grafana/query-builder#traces) 속도를 높이기 위해, 트레이스 쿼리에 사용할 기본 데이터베이스/테이블과 컬럼을 설정할 수 있습니다. 이렇게 하면 실행 가능한 트레이스 검색 쿼리가 쿼리 빌더에 미리 로드되어, 관측성 작업 시 Explore 페이지에서 더 빠르게 탐색할 수 있습니다.
+[트레이스용 쿼리 작성](/ko/integrations/connectors/data-visualization/grafana/query-builder#traces) 속도를 높이기 위해, 트레이스 쿼리에 사용할 기본 데이터베이스/테이블과 컬럼을 설정할 수 있습니다. 이렇게 하면 실행 가능한 트레이스 검색 쿼리가 쿼리 빌더에 미리 로드되어, 관측성 작업 시 Explore 페이지에서 더 빠르게 탐색할 수 있습니다.
 
 OpenTelemetry를 사용하는 경우 &quot;**Use OTel**&quot; 스위치를 활성화하고, **기본 트레이스 테이블**을 `otel_traces`로 설정해야 합니다.
 이렇게 하면 선택한 OTel 스키마 버전을 사용하도록 기본 컬럼이 자동으로 재정의됩니다.
@@ -211,15 +180,7 @@ OpenTelemetry가 필수는 아니지만, 트레이스에 OpenTelemetry 스키마
 
 트레이스 구성 화면 예시:
 
-<div className="ch-image-sm">
-
-<Frame>
-
-![트레이스 구성](/images/integrations/data-visualization/grafana/config_traces.webp)
-
-</Frame>
-
-</div>
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="트레이스 구성" border />
 
 트레이스 구성 YAML 예시:
 
@@ -231,8 +192,6 @@ jsonData:
 
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
-
-    showTraceLinks: true # set to false to hide the "View trace" data links on trace ID fields.
 
     # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
     traceIdColumn:       <string>    # trace ID column.
@@ -246,13 +205,6 @@ jsonData:
     tagsColumn:          <string>    # tags column. This is expected to be a map type.
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
-
-#### &quot;View trace&quot; 링크 비활성화 {#disabling-view-trace-links}
-
-트레이스 구성의 **트레이스 ID 연관 관계** 섹션에는 **Show &quot;View trace&quot; links** 토글이 있습니다.
-이 토글은 플러그인이 쿼리 결과의 트레이스 ID 필드에 &quot;View trace&quot; [데이터 링크](/ko/integrations/connectors/data-visualization/grafana/query-builder#data-links)를 추가할지 여부를 제어합니다.
-토글은 기본적으로 활성화되어 있습니다. 동일한 쿼리 유형의 &quot;View trace&quot; 링크에는 트레이스 기본값을 구성할 필요가 없지만, 로그 쿼리 결과의 교차 신호 &quot;View trace&quot; 링크에는 필요합니다.
-링크를 숨기려면 토글을 끄거나 YAML에서 `showTraceLinks: false`로 설정하십시오.
 
 <div id="column-aliases">
   ### 컬럼 별칭
@@ -288,7 +240,9 @@ CREATE TABLE alias_example (
 
 자세한 내용은 [ALIAS](/ko/reference/statements/create/table#alias) 컬럼 유형 문서를 참조하십시오.
 
-#### 컬럼 별칭 테이블 {#column-alias-tables}
+<div id="column-alias-tables">
+  #### 컬럼 별칭 테이블
+</div>
 
 기본적으로 Grafana는 `DESC table`의 응답을 바탕으로 컬럼 추천을 제공합니다.
 경우에 따라 Grafana에 표시되는 컬럼을 완전히 재정의해야 할 수 있습니다.
@@ -322,31 +276,17 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 이제 이 테이블을 Grafana에서 사용하도록 구성할 수 있습니다. 이름은 자유롭게 지정할 수 있으며, 별도의 데이터베이스에 정의해도 됩니다:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![예시 별칭 테이블 구성](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="예시 별칭 테이블 구성" border />
 
 이제 Grafana는 `DESC example_table`의 결과 대신 별칭 테이블의 결과를 확인합니다:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![예시 별칭 테이블 선택](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="예시 별칭 테이블 선택" border />
 
 두 가지 alias 방식 모두 복잡한 타입 변환이나 JSON 필드 추출에 사용할 수 있습니다.
 
-## 모든 YAML 옵션 {#all-yaml-options}
+<div id="all-yaml-options">
+  ## 모든 YAML 옵션
+</div>
 
 다음은 이 플러그인에서 제공하는 모든 YAML 구성 옵션입니다.
 일부 필드에는 예시 값이 포함되어 있고, 다른 필드는 유형만 표시합니다.
@@ -383,7 +323,6 @@ datasources:
         defaultTable: otel_logs
         otelEnabled: false
         otelVersion: latest
-        showLogLinks: <boolean>
         timeColumn: <string>
         levelColumn: <string>
         messageColumn: <string>
@@ -392,7 +331,6 @@ datasources:
         defaultTable: otel_traces
         otelEnabled: false
         otelVersion: latest
-        showTraceLinks: <boolean>
         traceIdColumn: <string>
         spanIdColumn: <string>
         operationNameColumn: <string>

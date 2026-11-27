@@ -21,13 +21,12 @@ INSERT INTO t_r SELECT number % 10, number FROM numbers(100000);
 -- Each left row takes one right row of its key, and every key is matched.
 SELECT count() FROM t_l ANY RIGHT JOIN t_r ON t_l.k = t_r.k SETTINGS enable_parallel_replicas = 0;
 
--- The join is not shipped to the replicas. This and the next check look for the step of the query-based
--- implementation of parallel replicas, so they are pinned to it; the plan-based one is checked below.
+-- The join is not shipped to the replicas.
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') > 0
 FROM (
     EXPLAIN SELECT count() FROM t_l ANY RIGHT JOIN t_r ON t_l.k = t_r.k
     SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-        parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0, parallel_replicas_plan_based = 0
+        parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0
 );
 
 -- Positive control: ANY RIGHT JOIN without the setting still reads with parallel replicas.
@@ -35,8 +34,7 @@ SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') > 0
 FROM (
     EXPLAIN SELECT count() FROM t_l ANY RIGHT JOIN t_r ON t_l.k = t_r.k
     SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-        parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0, any_join_distinct_right_table_keys = 0,
-        parallel_replicas_plan_based = 0
+        parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0, any_join_distinct_right_table_keys = 0
 );
 
 -- Plan-based parallel replicas: the join stays above the distributed read of t_r. The local plan is pinned

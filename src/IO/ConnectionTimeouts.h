@@ -48,7 +48,7 @@ struct ConnectionTimeouts
     ConnectionTimeouts() = default;
 
     static Poco::Timespan saturate(Poco::Timespan timespan, Poco::Timespan limit);
-    [[nodiscard]] ConnectionTimeouts getSaturated(Poco::Timespan limit) const;
+    ConnectionTimeouts getSaturated(Poco::Timespan limit) const;
 
     /// Timeouts for the case when we have just single attempt to connect.
     static ConnectionTimeouts getTCPTimeoutsWithoutFailover(const Settings & settings);
@@ -58,12 +58,13 @@ struct ConnectionTimeouts
     static ConnectionTimeouts getHTTPTimeouts(const Settings & settings, const ServerSettings & server_settings);
 
 #if ENABLE_DISTRIBUTED_CACHE
+    /// Defined in DistributedCache/Utils.cpp, which exists only in the private repo.
     static ConnectionTimeouts getDistributedCacheTimeouts(const Settings & settings);
 #endif
 
     static ConnectionTimeouts getFetchPartHTTPTimeouts(const ServerSettings & server_settings, const Settings & user_settings);
 
-    [[nodiscard]] ConnectionTimeouts getAdaptiveTimeouts(const String & method, bool first_attempt, bool first_byte) const;
+    ConnectionTimeouts getAdaptiveTimeouts(const String & method, bool first_attempt, bool first_byte) const;
 
 #define DECLARE_BUILDER_FOR_MEMBER(member, setter_func) \
     ConnectionTimeouts & setter_func(size_t seconds); \

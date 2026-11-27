@@ -44,7 +44,6 @@ def started_cluster():
 
 
 config = """<clickhouse>
-    <tls-sni-override>{sslHost}</tls-sni-override>
     <openSSL>
         <client>
             <verificationMode>strict</verificationMode>
@@ -63,7 +62,6 @@ def execute_query_native(node, query, user, cert_name, password=None):
         certificateFile=f"{SCRIPT_DIR}/certs/{cert_name}-cert.pem",
         privateKeyFile=f"{SCRIPT_DIR}/certs/{cert_name}-key.pem",
         caConfig=f"{SCRIPT_DIR}/certs/ca-cert.pem",
-        sslHost=SSL_HOST,
     )
 
     file = open(config_path, "w")

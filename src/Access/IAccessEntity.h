@@ -17,19 +17,19 @@ struct IAccessEntity
     IAccessEntity() = default;
     IAccessEntity(const IAccessEntity &) = default;
     virtual ~IAccessEntity() = default;
-    [[nodiscard]] virtual std::shared_ptr<IAccessEntity> clone() const = 0;
+    virtual std::shared_ptr<IAccessEntity> clone() const = 0;
 
-    [[nodiscard]] virtual AccessEntityType getType() const = 0;
+    virtual AccessEntityType getType() const = 0;
 
-    [[nodiscard]] const AccessEntityTypeInfo & getTypeInfo() const { return AccessEntityTypeInfo::get(getType()); }
-    [[nodiscard]] String formatTypeWithName() const { return getTypeInfo().formatEntityNameWithType(getName()); }
+    const AccessEntityTypeInfo & getTypeInfo() const { return AccessEntityTypeInfo::get(getType()); }
+    String formatTypeWithName() const { return getTypeInfo().formatEntityNameWithType(getName()); }
 
     template <typename EntityClassT>
-    [[nodiscard]] bool isTypeOf() const { return isTypeOf(EntityClassT::TYPE); }
-    [[nodiscard]] bool isTypeOf(AccessEntityType type) const { return type == getType(); }
+    bool isTypeOf() const { return isTypeOf(EntityClassT::TYPE); }
+    bool isTypeOf(AccessEntityType type) const { return type == getType(); }
 
     virtual void setName(const String & name_) { name = name_; }
-    [[nodiscard]] const String & getName() const { return name; }
+    const String & getName() const { return name; }
 
     friend bool operator ==(const IAccessEntity & lhs, const IAccessEntity & rhs) { return lhs.equal(rhs); }
     friend bool operator !=(const IAccessEntity & lhs, const IAccessEntity & rhs) { return !(lhs == rhs); }
@@ -47,8 +47,8 @@ struct IAccessEntity
     };
 
     /// Finds all dependencies.
-    [[nodiscard]] virtual std::vector<UUID> findDependencies() const { return {}; }
-    [[nodiscard]] virtual bool hasDependencies(const std::unordered_set<UUID> & /* ids */) const { return false; }
+    virtual std::vector<UUID> findDependencies() const { return {}; }
+    virtual bool hasDependencies(const std::unordered_set<UUID> & /* ids */) const { return false; }
 
     /// Replaces dependencies according to a specified map.
     virtual void replaceDependencies(const std::unordered_map<UUID, UUID> & /* old_to_new_ids */) {}
@@ -57,16 +57,16 @@ struct IAccessEntity
     virtual void clearAllExceptDependencies() {}
 
     /// Whether this access entity should be written to a backup.
-    [[nodiscard]] virtual bool isBackupAllowed() const { return false; }
+    virtual bool isBackupAllowed() const { return false; }
 
 protected:
     String name;
 
-    [[nodiscard]] virtual bool equal(const IAccessEntity & other) const;
+    virtual bool equal(const IAccessEntity & other) const;
 
     /// Helper function to define clone() in the derived classes.
     template <typename EntityClassT>
-    [[nodiscard]] std::shared_ptr<IAccessEntity> cloneImpl() const
+    std::shared_ptr<IAccessEntity> cloneImpl() const
     {
         return std::make_shared<EntityClassT>(typeid_cast<const EntityClassT &>(*this));
     }

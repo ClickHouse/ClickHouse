@@ -9,7 +9,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsHashing.h>
 #include <Functions/IFunction.h>
-#include <Functions/icebergCommon.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -45,19 +44,22 @@ public:
         return std::make_shared<FunctionIcebergHash>(context_);
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    [[nodiscard]] String getSignatureString() const override { return "(Any) -> Int32"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    {
+        return std::make_shared<DataTypeInt32>();
+    }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         if (arguments.size() != 1)
             throw Exception(
@@ -154,7 +156,9 @@ public:
                     DateTime64 value = decimal_column->getElement(i & idx_mask);
                     Int64 value_int = value.convertTo<Int64>();
                     if (scale == 9)
-                        value_int = floorDivide(value_int, 1000);
+                    {
+                        value_int = value_int / 1000;
+                }
                 result_data[i] = hashLong(value_int);
             }
         }
@@ -199,11 +203,11 @@ public:
         return result_column;
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// Disable default Variant implementation for compatibility.
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return false; }
+    bool useDefaultImplementationForVariant() const override { return false; }
 
 private:
     static Int32 hashLong(Int64 value)
@@ -300,27 +304,24 @@ public:
         return std::make_shared<FunctionIcebergBucket>(context_);
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 2;
     }
 
-    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    /// The bucket-count argument is constant, but that is already enforced by
-    /// `getArgumentsThatAreAlwaysConstant` (and validated in `executeImpl`). Do not spell it as
-    /// `const` here: when used as an Iceberg partition / sort-order transform, a non-constant
-    /// argument should surface the dedicated `BAD_ARGUMENTS` "Invalid iceberg sort order" message
-    /// from `parseTransformAndArgument`, not a generic `ILLEGAL_COLUMN` from the signature matcher;
-    /// and return-type inference in `ChunkPartitioner` passes a placeholder (non-const) column here.
-    [[nodiscard]] String getSignatureString() const override { return "(Any, Any) -> UInt32"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    {
+        return std::make_shared<DataTypeUInt32>();
+    }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         if (arguments.size() != 2)
             throw Exception(
@@ -356,13 +357,13 @@ public:
         return modulo_func->execute(modulo_arguments, std::make_shared<DataTypeUInt32>(), input_rows_count, false);
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// Disable default Variant implementation for compatibility.
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return false; }
+    bool useDefaultImplementationForVariant() const override { return false; }
 };
 
 REGISTER_FUNCTION(IcebergBucket)

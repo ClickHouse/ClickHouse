@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 SELECT round(cramersVMerge(s), 4)
 FROM

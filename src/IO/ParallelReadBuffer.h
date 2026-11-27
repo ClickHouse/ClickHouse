@@ -47,10 +47,6 @@ private:
 
     /// First worker in deque have new data or processed all available amount
     bool currentWorkerReady() const;
-
-    /// Expose `worker.segment[offset, offset + size)` as both the internal and working buffer.
-    void setSegmentBuffers(ReadWorker & worker, size_t offset, size_t size);
-
     /// First worker in deque processed and flushed all data
     bool currentWorkerCompleted() const;
 

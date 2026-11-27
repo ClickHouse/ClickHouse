@@ -96,9 +96,6 @@ public:
 
     bool isDefaultAt(size_t index) const override;
 
-    bool hasOnlyTypeDefaults() const override;
-    ColumnPtr createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
-
     void insert(const Field & x) override;
 
     bool tryInsert(const Field & x) override;
@@ -136,6 +133,8 @@ public:
     }
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t index, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;

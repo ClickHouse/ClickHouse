@@ -1,12 +1,14 @@
 set(LIBLLVMLIBC_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libc")
 
 # Only build on supported architectures
-if (NOT (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_S390X))
+if (NOT (ARCH_AMD64 OR ARCH_AARCH64))
     return()
 endif()
 
+# Memory functions: mem_functions.cpp provides the weak memcmp/memcpy/memmove/
+# memset/bcmp; the strong memmem lives in memmem.cpp (added below).
 set(SRCS
-    "${CMAKE_CURRENT_SOURCE_DIR}/big_int_checks.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/string/mem_functions.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/acos.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asin.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asinf.cpp"
@@ -28,11 +30,7 @@ set(SRCS
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/fmodl.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/frexp.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/frexpl.cpp"
-    # hypot deliberately omitted: llvm-libc's is a correctly-rounded
-    # digit-recurrence loop that ignores LIBC_MATH_HAS_SKIP_ACCURATE_PASS and
-    # measures ~22x slower than the platform one (91 ns vs 4.2 ns per call on
-    # Neoverse-V2); the libc hypot (musl, or glibc in dynamic builds) wins the
-    # link instead.
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/hypot.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/ldexp.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/ldexpf.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/ldexpl.cpp"
@@ -52,7 +50,6 @@ set(SRCS
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/scalbn.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/scalbnl.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sin.cpp"
-    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sincos.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sqrt.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sqrtf.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sqrtl.cpp"
@@ -60,35 +57,11 @@ set(SRCS
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/truncl.cpp"
 )
 
-# compiler-rt intercepts `sincos` but not `sin` and `cos`, and in a static musl build the
-# interceptor calls `__real_sincos`. Define it here on top of llvm-libc's `sincos`, so that
-# `sincos(x)` keeps producing the same bits as the uninterceptable `sin(x)` and `cos(x)`:
-# with musl's `sincos` behind the interceptor `h3CellAreaRads2` printed a different last
-# digit in ASan builds. musl's own `sincos` is left out of the `__real_` renaming for this
-# (see contrib/compiler-rt-cmake/CMakeLists.txt). Standalone UBSan has no interceptors.
-if (SANITIZE AND USE_MUSL AND NOT SANITIZE STREQUAL "undefined")
-    list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/math/real_sincos.cpp")
-endif ()
-
-# Memory functions: mem_functions.cpp provides the weak memcmp/memcpy/memmove/
-# memset/bcmp; the strong memmem lives in memmem.cpp.
-#
-# They are not built on s390x: llvm-libc has no s390x specializations of them
-# (e.g. `memcmp` compares byte by byte), while glibc has optimized ones (e.g.
-# `memcmp` uses `clc` on 256-byte blocks). There only the math functions are
-# taken from llvm-libc.
-if (NOT ARCH_S390X)
-    list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/mem_functions.cpp")
-
-    # memmem is exported strong, so under sanitizers it would win the link over
-    # compiler-rt's weak `memmem` interceptor and bypass its range checks. Skip it
-    # there and let the interceptor wrap the system memmem, as before this PR.
-    if (NOT SANITIZE)
-        list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/memmem.cpp")
-        # x86_64-only strong memchr/strlen (the file is empty on other arches, where
-        # the Arm Optimized Routines already provide vectorized versions).
-        list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/str_functions.cpp")
-    endif ()
+# memmem is exported strong, so under sanitizers it would win the link over
+# compiler-rt's weak `memmem` interceptor and bypass its range checks. Skip it
+# there and let the interceptor wrap the system memmem, as before this PR.
+if (NOT SANITIZE)
+    list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/memmem.cpp")
 endif ()
 
 set(LIBC_NAMESPACE "__llvm_libc")
@@ -106,14 +79,6 @@ if (ARCH_AMD64)
     # Without -fno-builtin, clang's loop-idiom pass rewrites the mem* inner loops
     # into calls to the very functions being defined (infinite recursion).
     target_compile_options(libllvmlibc PRIVATE -ffreestanding -fno-builtin)
-
-    # With clang 23 cbrt's fast path is 91 straight-line instructions whose two `bzhi` counts are
-    # materialised with byte-sized moves (`mov dl, 0x3f`) into the register that holds the
-    # previous call's result, so in a loop every call waits for the previous one through a
-    # partial-register merge: 13 ns per call against 4.7 ns with clang 22 on Sapphire Rapids, and
-    # 13.1 ns against 5.9 ns for glibc's generic C cbrt on Zen 5. Without BMI2 the masks become
-    # shifts and the hazard is gone: 3.2 ns per call on Zen 5, identical results.
-    set_source_files_properties("${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/cbrt.cpp" PROPERTIES COMPILE_OPTIONS "-mno-bmi2")
 
     if (X86_ARCH_LEVEL VERSION_LESS 3)
         # Compat build: SSE2 baseline
@@ -193,38 +158,4 @@ elseif (ARCH_AARCH64)
         PRIVATE $<BUILD_INTERFACE:${LIBLLVMLIBC_SOURCE_DIR}>
     )
 
-elseif (ARCH_S390X)
-    # Uses LIBC_COPT_PUBLIC_PACKAGING to emit public C symbols directly
-    add_library(libllvmlibc ${SRCS})
-    set_target_properties(libllvmlibc PROPERTIES FOLDER "contrib/libllvmlibc-cmake")
-    target_compile_definitions(libllvmlibc PRIVATE
-        ${LLVMLIBC_DEFS_COMMON}
-        LIBC_NAMESPACE=${LIBC_NAMESPACE}
-        LIBC_COPT_PUBLIC_PACKAGING=1
-        # `cpu_features.h` of llvm-libc does not detect the s390x FPU, so declare it explicitly.
-        # Without it, `fputil::sqrt` falls back to a software integer algorithm (also inside `asin` and `pow`)
-        # instead of the hardware square root instructions.
-        LIBC_TARGET_CPU_HAS_FPU_FLOAT=1
-        LIBC_TARGET_CPU_HAS_FPU_DOUBLE=1
-        LIBC_TARGET_CPU_HAS_FMA=1
-        LIBC_TARGET_CPU_HAS_FMA_DOUBLE=1
-        LIBC_TARGET_CPU_HAS_FMA_HALF=1
-        LIBC_TARGET_CPU_HAS_FMA_FLOAT=1
-    )
-    target_include_directories(libllvmlibc SYSTEM BEFORE
-        PRIVATE $<BUILD_INTERFACE:${LIBLLVMLIBC_SOURCE_DIR}>
-    )
-
-endif()
-
-# Every x86_64 `memchr` / `strlen` tier of str_functions.cpp under its own name,
-# for the unit tests, which otherwise reach at most the one tier the CPU selects
-# and none at all under sanitizers (where str_functions.cpp is not built).
-# Uninstrumented in every build: the bodies read whole vectors past the end of
-# the object within its page.
-if (ARCH_AMD64)
-    add_library(libllvmlibc_str_test_candidates STATIC EXCLUDE_FROM_ALL
-        "${CMAKE_CURRENT_SOURCE_DIR}/string/str_functions_test_candidates.cpp")
-    set_target_properties(libllvmlibc_str_test_candidates PROPERTIES FOLDER "contrib/libllvmlibc-cmake")
-    target_compile_options(libllvmlibc_str_test_candidates PRIVATE -ffreestanding -fno-builtin -fno-sanitize=all)
 endif()

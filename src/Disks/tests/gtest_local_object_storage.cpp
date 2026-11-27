@@ -464,7 +464,7 @@ TEST(LocalObjectStorage, TryGetObjectMetadataToleratesNonDirectoryPathComponent)
         ASSERT_FALSE(ec) << "Failed to chmod 000 the subdirectory: " << ec.message();
 
         EXPECT_THROW(
-            (void)storage->tryGetObjectMetadata((no_access / "hidden.txt").string(), /*with_tags=*/ false),
+            storage->tryGetObjectMetadata((no_access / "hidden.txt").string(), /*with_tags=*/ false),
             fs::filesystem_error);
 
         fs::permissions(no_access, fs::perms::owner_all, fs::perm_options::replace, ec);

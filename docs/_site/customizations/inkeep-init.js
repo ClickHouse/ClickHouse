@@ -30,11 +30,9 @@
   // the *.mintlify.site source includes a /docs prefix.
   var INKEEP_PREVIEW_URL_RE = /^https?:\/\/private-7c7dfe99\.mintlify\.(?:app|site)\/(?:docs(?:\/|(?=[?#]|$)))?/;
 
-  // cxkit-mintlify CDN bundle, pinned to an exact version with its subresource integrity hash, so a
-  // compromised CDN or package release cannot run its code on the docs site. To update, change the version
-  // and set the hash of the new file: `curl -sS <url> | openssl dgst -sha384 -binary | openssl base64 -A`.
-  var INKEEP_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/@inkeep/cxkit-mintlify@0.5.119/dist/index.js';
-  var INKEEP_SCRIPT_INTEGRITY = 'sha384-OKNhfMZ+h0gW6FG70qh63B4y84W9fnZj2w7OfxSvMJF38jlZOgah0YnAXZ499OnJ';
+  // cxkit-mintlify CDN bundle. @0.5 resolves to the latest 0.5.x; pin a full
+  // version (e.g. @0.5.119) when deploying for reproducible builds.
+  var INKEEP_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/@inkeep/cxkit-mintlify@0.5/dist/index.js';
 
   // ── Search tabs ──────────────────────────────────────────────────────────
   // Row 1 (always visible): the top-level tabs. 'Docs' is first because cxkit
@@ -53,7 +51,7 @@
   var DOCS_SUBAREAS = [
     'Get started', 'Concepts', 'Guides', 'Reference',
     'Cloud', 'ClickHouse Private', 'Managed Postgres', 'ClickStack',
-    'chDB', 'Kubernetes Operator',
+    'Agentic Data Stack', 'chDB', 'Kubernetes Operator',
     'ClickPipes', 'Connectors', 'Language clients', 'Ecosystem',
   ];
   var SEARCH_TABS = ROW1_TABS.concat(DOCS_SUBAREAS);
@@ -69,6 +67,7 @@
     ['products/bring-your-own-cloud', 'Cloud'],
     ['products/clickhouse-private', 'ClickHouse Private'],
     ['products/managed-postgres', 'Managed Postgres'],
+    ['products/agentic-data-stack', 'Agentic Data Stack'],
     ['chdb', 'chDB'],
     ['products/kubernetes-operator', 'Kubernetes Operator'],
     ['clickstack', 'ClickStack'],
@@ -107,24 +106,17 @@
     return [
       // Let the row wrap and stop the single-line horizontal scroll.
       LIST + ' { flex-wrap: wrap !important; overflow-x: visible !important; row-gap: 0.375rem; }',
-      // Categories share a compact tag size; a mild radius keeps their edges
-      // distinct from the fully rounded search controls.
-      TAB + ' { font-size: 0.8125rem !important; min-height: 1.75rem !important; padding-inline: 0.625rem !important; border-radius: 12px !important; }',
       // Force ordering: row-1 tabs, then a break, then the sub-area tabs.
       row1 + ' { order: 0; }',
-      // Sub-areas use an outline and muted inactive state to distinguish them
-      // from their parent categories.
-      SUB + ' { order: 2; display: none !important; box-shadow: inset 0 0 0 1px currentColor !important; }',
-      SUB + ':not([data-state="active"]) { background: transparent !important; opacity: 0.7; }',
+      SUB + ' { order: 2; display: none !important; }',
       // Reveal the sub-area tabs only when Docs (or a sub-area) is active.
       docsActive + ' ' + SUB + ', ' + subActive + ' ' + SUB + ' { display: inline-flex !important; }',
       // A full-width pseudo-element (a flex item of the tab-list) ordered
       // between row-1 and the sub-areas forces the sub-areas onto their own
-      // second line — only while that row is showing. It also supplies a
-      // subtle visual divider. No DOM injection, so it survives Inkeep's
-      // re-renders.
+      // second line — only while that row is showing. No DOM injection, so it
+      // survives Inkeep's re-renders.
       docsActive + '::before, ' + subActive + '::before' +
-        ' { content: ""; order: 1; flex: 0 0 100%; height: 1px; margin-block: 0.125rem; background: currentColor; opacity: 0.18; }',
+        ' { content: ""; order: 1; flex: 0 0 100%; height: 0; }',
     ].join('');
   }
 
@@ -136,8 +128,6 @@
     var script = document.createElement('script');
     script.id = 'inkeep-cxkit-script';
     script.src = url;
-    script.integrity = INKEEP_SCRIPT_INTEGRITY;
-    script.crossOrigin = 'anonymous';
     script.type = 'text/javascript';
     script.onload = callback;
     document.head.appendChild(script);

@@ -8,6 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 > Este guia explica como configurar o [Open WebUI](https://github.com/open-webui/open-webui) com um servidor MCP do ClickHouse
 > e conectá-lo aos conjuntos de dados de exemplo do ClickHouse.
 
@@ -45,127 +47,47 @@ doc_type: 'guide'
 
     Você pode ver uma lista dos endpoints criados acessando [http://localhost:8000/docs](http://localhost:8000/docs)
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Endpoints OpenAPI](/images/use-cases/AI_ML/MCP/0_endpoints.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/0_endpoints.webp" alt="Endpoints OpenAPI" size="md" />
 
     Para usar esses endpoints com o Open WebUI, precisamos ir até as configurações:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Configurações do Open WebUI](/images/use-cases/AI_ML/MCP/1_settings.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/1_settings.webp" alt="Configurações do Open WebUI" size="md" />
 
     Clique em `Tools`:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Ferramentas do Open WebUI](/images/use-cases/AI_ML/MCP/2_tools_page.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/2_tools_page.webp" alt="Ferramentas do Open WebUI" size="md" />
 
     Adicione [http://localhost:8000](http://localhost:8000) como URL da ferramenta:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Ferramenta do Open WebUI](/images/use-cases/AI_ML/MCP/3_add_tool.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/3_add_tool.webp" alt="Ferramenta do Open WebUI" size="md" />
 
     Depois de fazer isso, deveremos ver um `1` ao lado do ícone da ferramenta na barra de chat:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Ferramentas disponíveis no Open WebUI](/images/use-cases/AI_ML/MCP/4_tools_available.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/4_tools_available.webp" alt="Ferramentas disponíveis no Open WebUI" size="md" />
 
     Se clicarmos no ícone da ferramenta, poderemos listar as ferramentas disponíveis:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Lista de ferramentas do Open WebUI](/images/use-cases/AI_ML/MCP/5_list_of_tools.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/5_list_of_tools.webp" alt="Lista de ferramentas do Open WebUI" size="md" />
   </Step>
 
   <Step title="Configurar o OpenAI" id="configure-openai">
     Por padrão, o Open WebUI funciona com modelos do Ollama, mas também podemos adicionar endpoints compatíveis com OpenAI.
     Eles são configurados pelo menu de configurações, mas desta vez precisamos clicar na aba `Connections`:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Conexões do Open WebUI](/images/use-cases/AI_ML/MCP/6_connections.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/6_connections.webp" alt="Conexões do Open WebUI" size="md" />
 
     Vamos adicionar o endpoint e nossa chave da OpenAI:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Open WebUI - Adicionar OpenAI como conexão](/images/use-cases/AI_ML/MCP/7_add_connection.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/7_add_connection.webp" alt="Open WebUI - Adicionar OpenAI como conexão" size="md" />
 
     Os modelos da OpenAI ficarão disponíveis no menu superior:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Open WebUI - Modelos](/images/use-cases/AI_ML/MCP/8_openai_models_more.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/8_openai_models_more.webp" alt="Open WebUI - Modelos" size="md" />
   </Step>
 
   <Step title="Conversar com o servidor MCP do ClickHouse no Open WebUI" id="chat-to-clickhouse-mcp-server">
     Em seguida, podemos iniciar uma conversa, e o Open WebUI acionará o servidor MCP se necessário:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Open WebUI - Conversar com o servidor MCP do ClickHouse](/images/use-cases/AI_ML/MCP/9_conversation.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/9_conversation.webp" alt="Open WebUI - Conversar com o servidor MCP do ClickHouse" size="md" />
   </Step>
 </Steps>

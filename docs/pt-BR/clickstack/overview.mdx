@@ -7,15 +7,9 @@ doc_type: 'guide'
 keywords: ['clickstack', 'observabilidade', 'logs', 'monitoramento', 'plataforma']
 ---
 
-<div className="ch-image-lg">
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-<Frame>
-
-![Página inicial](/images/use-cases/observability/hyperdx-landing.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/use-cases/observability/hyperdx-landing.webp" alt="Página inicial" size="lg" />
 
 **ClickStack** é uma plataforma de observabilidade pronta para produção, construída sobre o ClickHouse, que unifica logs, traces, métricas e sessão em uma única solução de alto desempenho. Projetado para monitoramento e depuração de sistemas complexos, o ClickStack permite que desenvolvedores e SREs rastreiem problemas de ponta a ponta sem alternar entre ferramentas nem correlacionar dados manualmente usando timestamps ou IDs de correlação.
 
@@ -102,21 +96,15 @@ O ClickStack tem integração nativa com o OpenTelemetry e faz a ingestão de to
 
 O ClickStack é totalmente open source e pode ser implantado em qualquer lugar. O esquema é flexível e pode ser modificado pelo usuário, e a UI foi projetada para se adaptar a esquemas personalizados sem exigir alterações. Todos os componentes — incluindo coletores, ClickHouse e a UI — podem ser escalados de forma independente para atender às demandas de ingestão, consulta ou armazenamento.
 
-## Visão geral da arquitetura {#architectural-overview}
+<div id="architectural-overview">
+  ## Visão geral da arquitetura
+</div>
 
 A arquitetura do ClickStack varia conforme a forma como ele é implantado. Há distinções arquiteturais importantes entre o **ClickStack Open Source**, em que todos os componentes são autogerenciados, e o **Managed ClickStack**, em que o ClickHouse e a UI do HyperDX são hospedados e operados no ClickHouse Cloud. Embora os componentes principais permaneçam os mesmos em ambos os modelos, a responsabilidade por hospedar, escalar e proteger cada componente é diferente.
 
 <Tabs>
   <Tab title="Managed ClickStack">
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Arquitetura do Managed ClickStack](/images/use-cases/observability/clickstack-simple-managed-architecture.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/observability/clickstack-simple-managed-architecture.webp" alt="Arquitetura do Managed ClickStack" size="md" />
 
     O Managed ClickStack é executado inteiramente no **ClickHouse Cloud**, fornecendo um backend de observabilidade totalmente gerenciado e preservando o mesmo modelo de dados e a mesma experiência de usuário do ClickStack.
 
@@ -137,7 +125,7 @@ A arquitetura do ClickStack varia conforme a forma como ele é implantado. Há d
 
     * **Escalonamento automático da capacidade computacional, independente do armazenamento**
     * **Retenção de baixo custo e efetivamente ilimitada**, com base em armazenamento de objetos
-    * **[Isolamento independente entre leitura e escrita](/pt-BR/clickstack/managing/isolating-read-write)** usando ClickHouse Cloud Warehouses
+    * **Isolamento independente entre leitura e escrita** usando ClickHouse Cloud Warehouses
     * **Autenticação e controle de acesso integrados**
     * **Backups automatizados**
     * **Recursos de segurança e conformidade**
@@ -151,15 +139,7 @@ A arquitetura do ClickStack varia conforme a forma como ele é implantado. Há d
   </Tab>
 
   <Tab title="Open Source ClickStack">
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Arquitetura simples do OSS](/images/use-cases/observability/clickstack-simple-oss-architecture.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/observability/clickstack-simple-oss-architecture.webp" alt="Arquitetura simples do OSS" size="md" />
 
     O Open Source ClickStack é composto por três componentes principais:
 

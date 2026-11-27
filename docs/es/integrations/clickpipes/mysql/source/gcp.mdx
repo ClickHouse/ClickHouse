@@ -10,7 +10,7 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { CloudSQLIAMAuthentication } from "/snippets/es/clickpipes/_cloudsql_iam_authentication.mdx";
+import { Image } from "/snippets/es/components/Image.jsx";
 
 Esta es una guía paso a paso sobre cómo configurar su instancia de Cloud SQL for MySQL para replicar sus datos mediante la ClickPipe para MySQL.
 
@@ -20,19 +20,13 @@ Esta es una guía paso a paso sobre cómo configurar su instancia de Cloud SQL f
 
 El registro binario es un conjunto de archivos de registro que contienen información sobre las modificaciones de datos realizadas en una instancia del servidor MySQL, y estos archivos son necesarios para la replicación.
 
-### Habilitar el registro binario mediante PITR {#enable-binlog-logging-gcp}
+<div id="enable-binlog-logging-gcp">
+  ### Habilitar el registro binario mediante PITR
+</div>
 
 La funcionalidad PITR determina si el registro binario está activado o desactivado para MySQL en Google Cloud. Puede configurarse en la consola de Cloud editando la instancia de Cloud SQL y desplazándose hasta la siguiente sección.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Habilitación de PITR en Cloud SQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-pitr.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-pitr.webp" alt="Habilitación de PITR en Cloud SQL" size="lg" border />
 
 Se recomienda establecer un valor suficientemente alto según el caso de uso de la replicación.
 
@@ -44,27 +38,11 @@ Si aún no está configurado, asegúrese de establecer estos valores en la secci
 
 Para ello, haga clic en el botón `Edit` en la esquina superior derecha de la página de resumen de la instancia.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Botón Edit en GCP MySQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-edit-button.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-edit-button.webp" alt="Botón Edit en GCP MySQL" size="lg" border />
 
 Luego, desplácese hasta la sección `Flags` y agregue las flags anteriores.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Configuración de las flags de binlog en GCP](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-flags.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-flags.webp" alt="Configuración de las flags de binlog en GCP" size="lg" border />
 
 <div id="configure-database-user-gcp">
   ## Configurar un usuario de base de datos
@@ -91,26 +69,18 @@ Conéctese a su instancia de Cloud SQL para MySQL como usuario root y ejecute lo
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
-## Uso de la autenticación IAM de bases de datos (opcional, Beta) {#iam-database-authentication}
-
-<CloudSQLIAMAuthentication engine="mysql" />
-
-## Configurar el acceso de red {#configure-network-access-gcp-mysql}
+<div id="configure-network-access-gcp-mysql">
+  ## Configurar el acceso de red
+</div>
 
 Si desea restringir el tráfico a su instancia de Cloud SQL, agregue las [IP estáticas de NAT documentadas](/es/integrations/clickpipes/networking/static-ips) a la lista de IP permitidas de su instancia de MySQL de Cloud SQL.
 Puede hacerlo editando la instancia o yendo a la pestaña `Connections` de la barra lateral de la consola de Cloud.
 
-<div className="ch-image-lg">
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-ip.webp" alt="Lista de IP permitidas en GCP MySQL" size="lg" border />
 
-<Frame>
-
-![Lista de IP permitidas en GCP MySQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-ip.webp)
-
-</Frame>
-
+<div id="download-root-ca-certificate-gcp-mysql">
+  ## Descargar y usar el certificado raíz de la CA
 </div>
-
-## Descargar y usar el certificado raíz de la CA {#download-root-ca-certificate-gcp-mysql}
 
 Para conectarte a tu instancia de Cloud SQL, debes descargar el certificado raíz de la CA.
 
@@ -119,24 +89,8 @@ Para conectarte a tu instancia de Cloud SQL, debes descargar el certificado raí
 3. Haz clic en la pestaña `Security`.
 4. En la sección `Manage server CA certificates`, haz clic en el botón `DOWNLOAD CERTIFICATES` que aparece en la parte inferior.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Descarga del certificado de GCP MySQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-cert.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-cert.webp" alt="Descarga del certificado de GCP MySQL" size="lg" border />
 
 5. En la UI de ClickPipes, carga el certificado descargado al crear un nuevo ClickPipe para MySQL.
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Uso del certificado de GCP MySQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/rootca.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/rootca.webp" alt="Uso del certificado de GCP MySQL" size="lg" border />

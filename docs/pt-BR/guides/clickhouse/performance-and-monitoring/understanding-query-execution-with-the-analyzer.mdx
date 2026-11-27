@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['execução de consultas', 'analisador', 'otimização de consultas', 'explain', 'desempenho']
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 O ClickHouse processa consultas com extrema rapidez, mas a execução de uma consulta não é tão simples assim. Vamos tentar entender como uma consulta `SELECT` é executada. Para ilustrar isso, vamos adicionar alguns dados a uma tabela no ClickHouse:
 
 ```sql
@@ -27,24 +29,18 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 
 Agora que temos alguns dados no ClickHouse, queremos executar algumas consultas e entender como elas são executadas. A execução de uma consulta é dividida em várias etapas. Cada etapa da execução da consulta pode ser analisada e ter problemas investigados usando a consulta `EXPLAIN` correspondente. Essas etapas estão resumidas no gráfico abaixo:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Etapas da consulta EXPLAIN](/images/guides/developer/analyzer1.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/guides/developer/analyzer1.webp" alt="Etapas da consulta EXPLAIN" size="md" />
 
 Vamos ver cada elemento em ação durante a execução da consulta. Vamos usar algumas consultas e depois examiná-las com a instrução `EXPLAIN`.
 
-## Parser {#parser}
+<div id="parser">
+  ## Parser
+</div>
 
 O objetivo de um parser é transformar o texto da consulta em uma AST (árvore sintática abstrata). Este passo pode ser visualizado usando `EXPLAIN AST`:
 
 ```sql
-EXPLAIN AST SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
+EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
 ```
 
 ```response
@@ -68,37 +64,24 @@ EXPLAIN AST SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_dat
 
 A saída é uma Árvore Sintática Abstrata que pode ser visualizada como mostrado abaixo:
 
-```mermaid
-graph TD
-    swuq["SelectWithUnionQuery"] --> el_root["ExpressionList"]
-    el_root --> sq["SelectQuery"]
-    sq --> el_select["ExpressionList"]
-    sq --> tisq["TablesInSelectQuery"]
-    el_select --> fmin["Function min (alias minimum_date)"]
-    el_select --> fmax["Function max (alias maximum_date)"]
-    fmin --> el_min["ExpressionList"]
-    el_min --> id_min["Identifier timestamp"]
-    fmax --> el_max["ExpressionList"]
-    el_max --> id_max["Identifier timestamp"]
-    tisq --> tisqe["TablesInSelectQueryElement"]
-    tisqe --> te["TableExpression"]
-    te --> ti["TableIdentifier session_events"]
-```
+<Image img="/images/guides/developer/analyzer2.webp" alt="Saída da AST" size="md" />
 
 Cada nó tem filhos correspondentes, e a árvore como um todo representa a estrutura geral da sua consulta. Trata-se de uma estrutura lógica que ajuda no processamento de uma consulta. Do ponto de vista do usuário final (a menos que haja interesse na execução de consultas), ela não é tão útil; essa ferramenta é usada principalmente por desenvolvedores.
 
-## Analisador {#analyzer}
+<div id="analyzer">
+  ## Analisador
+</div>
 
-O analisador vem habilitado por padrão desde o ClickHouse `24.3` e é a única forma de análise de consultas desde a versão `26.9`, quando `enable_analyzer` se tornou uma configuração obsoleta que não pode mais ser desabilitada.
+Atualmente, o ClickHouse tem duas arquiteturas para o Analisador. Você pode usar a arquitetura antiga definindo: `enable_analyzer=0`. A arquitetura atual vem habilitada por padrão desde o ClickHouse `24.3`. Vamos descrever aqui apenas a arquitetura atual, já que a antiga foi descontinuada e é mantida apenas para compatibilidade retroativa.
 
 <Note>
-  O analisador é um componente fundamental das etapas de processamento de consultas e pode ter um impacto negativo em algumas consultas: consulte as [incompatibilidades conhecidas](/pt-BR/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities) para saber quais consultas precisam ser atualizadas por causa dele.
+  A arquitetura atual deve nos oferecer uma base melhor para aprimorar o desempenho do ClickHouse. No entanto, como é um componente fundamental das etapas de processamento de consultas, ela também pode ter um impacto negativo em algumas consultas, e há [incompatibilidades conhecidas](/pt-BR/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities). Você pode voltar para a arquitetura antiga alterando a configuração `enable_analyzer` no nível da consulta ou do usuário.
 </Note>
 
 O analisador é uma etapa importante da execução da consulta. Ele recebe uma AST e a transforma em uma árvore de consulta. O principal benefício de uma árvore de consulta em relação a uma AST é que muitos componentes passam a ser resolvidos, como o armazenamento, por exemplo. Também sabemos de qual tabela ler, os aliases são resolvidos, e a árvore conhece os diferentes tipos de dados usados. Com todos esses benefícios, o analisador pode aplicar otimizações. Essas otimizações funcionam por meio de &quot;passes&quot;. Cada pass procura otimizações diferentes. Você pode ver todos os passes [aqui](https://github.com/ClickHouse/ClickHouse/blob/76578ebf92af3be917cd2e0e17fea2965716d958/src/Analyzer/QueryTreePassManager.cpp#L249); vamos ver isso na prática com nossa consulta anterior:
 
 ```sql
-EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
+EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
 ```
 
 ```response
@@ -116,11 +99,12 @@ EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp
 │             IDENTIFIER id: 7, identifier: timestamp                                    │
 │   JOIN TREE                                                                            │
 │     IDENTIFIER id: 8, identifier: session_events                                       │
+│   SETTINGS allow_experimental_analyzer=1                                               │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```sql
-EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
+EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
 ```
 
 ```response
@@ -141,6 +125,7 @@ EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestam
 │             COLUMN id: 4, column_name: timestamp, result_type: DateTime, source_id: 5     │
 │   JOIN TREE                                                                               │
 │     TABLE id: 5, alias: __table1, table_name: default.session_events                      │
+│   SETTINGS allow_experimental_analyzer=1                                                  │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -364,15 +349,7 @@ digraph
 
 Em seguida, você pode copiar essa saída e colá-la [aqui](https://dreampuf.github.io/GraphvizOnline) para gerar o seguinte grafo:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Saída do grafo](/images/guides/developer/analyzer3.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/guides/developer/analyzer3.webp" alt="Saída do grafo" size="md" />
 
 Um retângulo branco corresponde a um nó do pipeline, o retângulo cinza corresponde às etapas do plano de consulta, e o `x` seguido de um número corresponde à quantidade de entradas/saídas em uso. Caso não queira visualizá-los no formato compacto, você sempre pode adicionar `compact=0`:
 
@@ -412,15 +389,7 @@ digraph
 }
 ```
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Saída compacta do grafo](/images/guides/developer/analyzer4.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/guides/developer/analyzer4.webp" alt="Saída compacta do grafo" size="md" />
 
 Por que o ClickHouse não lê os dados da tabela usando várias threads? Vamos tentar adicionar mais dados à nossa tabela:
 
@@ -479,15 +448,7 @@ digraph
 }
 ```
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Saída do grafo em paralelo](/images/guides/developer/analyzer5.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/guides/developer/analyzer5.webp" alt="Saída do grafo em paralelo" size="md" />
 
 Assim, o executor decidiu não paralelizar as operações porque o volume de dados não era grande o suficiente. Ao adicionar mais linhas, o executor passou a usar várias threads, como mostrado no grafo.
 

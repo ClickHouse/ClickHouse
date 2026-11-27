@@ -147,7 +147,7 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
     auto disks_map = local_context->getDisksMap();
     for (auto & [_, disk] : disks_map)
     {
-        if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
+        if (disk->isReadOnly() || disk->isWriteOnce())
             continue;
 
         for (const auto & store_path : store_paths)
@@ -211,7 +211,7 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
 
     for (const auto & disk : disks)
     {
-        if (disk->isBroken() || !disk->existsDirectory(table_directory))
+        if (!disk->existsDirectory(table_directory))
             continue;
 
         for (auto it = disk->iterateDirectory(table_directory); it->isValid(); it->next())

@@ -21,8 +21,8 @@ INSERT INTO t_05393_left VALUES ('a', '2026-01-01', 'x', 1);
 INSERT INTO t_05393_right VALUES ('x', 1);
 INSERT INTO t_05393_keys VALUES ('a');
 
--- Only a hash join with the serial layout that builds the right table stops early (the parallel layout, grace_hash and full_sorting_merge read it anyway).
-SET join_algorithm = 'hash', query_plan_join_swap_table = 'false', hash_join_layout = 'serial';
+-- Only a hash join that builds the right table stops early (parallel_hash, grace_hash and full_sorting_merge read it anyway).
+SET join_algorithm = 'hash', query_plan_join_swap_table = 'false';
 
 SELECT * FROM
 (

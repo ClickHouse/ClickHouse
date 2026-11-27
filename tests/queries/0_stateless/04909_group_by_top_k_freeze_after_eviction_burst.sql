@@ -14,11 +14,6 @@ SET max_rows_to_group_by = 0;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET enable_group_by_top_k_optimization = 1;
 SET group_by_top_k_optimization_observation_rows = 65536;
--- CI randomizes `max_bytes_before_external_group_by`; a threshold below the size of an
--- empty two-level hash table spills after every block, and each spill restarts the heap,
--- losing the trim history the freeze assertion below reads. Pin the spill off.
-SET max_bytes_before_external_group_by = 0;
-SET max_bytes_ratio_before_external_group_by = 0;
 -- One stream, so the assertions below describe a single heap.
 SET max_threads = 1;
 SET enable_parallel_replicas = 0;

@@ -1,4 +1,0 @@
-queue_parallel	true
-queue_serial	false
-queue_parallel	1
-queue_serial	4

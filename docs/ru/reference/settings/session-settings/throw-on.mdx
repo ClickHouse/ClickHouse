@@ -14,13 +14,17 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## throw_on_error_from_cache_on_write_operations {#throw_on_error_from_cache_on_write_operations}
+<div id="throw_on_error_from_cache_on_write_operations">
+  ## throw_on_error_from_cache_on_write_operations
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Игнорировать ошибки кэша при кэшировании во время операций записи (INSERT, слияния)
 
-## throw_on_hive_partitioning_resolution_failure {#throw_on_hive_partitioning_resolution_failure}
+<div id="throw_on_hive_partitioning_resolution_failure">
+  ## throw_on_hive_partitioning_resolution_failure
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -28,7 +32,9 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Генерировать исключение вместо записи предупреждения в журнал, если при определении секционирования в стиле Hive для таблицы в объектном хранилище не удаётся получить список объектов хранилища. Если настройка отключена, запрос выполняется без столбцов партиций Hive, что может изменить его результат.
 
-## throw_on_max_partitions_per_insert_block {#throw_on_max_partitions_per_insert_block}
+<div id="throw_on_max_partitions_per_insert_block">
+  ## throw_on_max_partitions_per_insert_block
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -43,7 +49,9 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
   Это может быть полезно, если вы хотите оценить влияние изменения [`max_partitions_per_insert_block`](/ru/reference/settings/session-settings/max-partitions#max_partitions_per_insert_block) на пользователей.
 </Tip>
 
-## throw_on_unsupported_query_inside_transaction {#throw_on_unsupported_query_inside_transaction}
+<div id="throw_on_unsupported_query_inside_transaction">
+  ## throw_on_unsupported_query_inside_transaction
+</div>
 
 <ExperimentalBadge />
 

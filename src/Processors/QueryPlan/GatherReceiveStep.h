@@ -16,18 +16,14 @@ public:
         , num_buckets(num_buckets_)
         , maintain_sort_description(std::move(maintain_sort_description_))
     {
-        /// The exchange name in `EXPLAIN`, to join the step with the exchanges of the query fragments.
-        setStepDescription(exchange_id, exchange_id.size());
     }
 
-    [[nodiscard]] String getName() const override { return "GatherReceive"; }
-
-    [[nodiscard]] const String & getExchangeId() const { return exchange_id; }
+    String getName() const override { return "GatherReceive"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void serialize(Serialization & ctx) const override;
-    [[nodiscard]] bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return true; }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
