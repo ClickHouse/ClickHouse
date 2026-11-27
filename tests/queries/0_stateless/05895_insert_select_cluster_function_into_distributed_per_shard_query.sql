@@ -4,8 +4,9 @@
 -- `INSERT INTO <Distributed table> SELECT ... FROM <cluster table function>` with `parallel_distributed_insert_select`
 -- sends the INSERT to every shard of the destination, and each shard inserts the result of the SELECT over its share of
 -- the files. That is the result of the SELECT only when the SELECT does not combine rows across the shares (aggregation,
--- window functions, LIMIT, OFFSET, ...) and reads nothing but the source (subqueries). Any other SELECT is run by the
--- initiator. Both shards of the cluster are this server, so every row lands in `loc` whichever way the INSERT runs.
+-- window and stateful functions, LIMIT, OFFSET, ...) and reads nothing but the source (subqueries). Any other SELECT is
+-- run by the initiator. Both shards of the cluster are this server, so every row lands in `loc` whichever way the INSERT
+-- runs.
 
 SET parallel_distributed_insert_select = 2, insert_deduplicate = 0, distributed_foreground_insert = 1;
 
@@ -109,6 +110,15 @@ TRUNCATE TABLE loc;
 
 INSERT INTO dist SELECT x FROM fileCluster('test_cluster_two_shards_localhost', {CLICKHOUSE_DATABASE:String} || '_05895_*.tsv', 'TSV', 'x UInt64') WHERE EXISTS (SELECT 1 FROM {CLICKHOUSE_DATABASE:Identifier}.allow WHERE x = 2) SETTINGS log_comment = 'case_20_exists';
 SELECT 'EXISTS', count(), sum(x), min(x), max(x) FROM loc;
+TRUNCATE TABLE loc;
+
+-- A stateful function keeps its state across all rows of the SELECT.
+INSERT INTO dist SELECT rowNumberInAllBlocks() FROM fileCluster('test_cluster_two_shards_localhost', {CLICKHOUSE_DATABASE:String} || '_05895_*.tsv', 'TSV', 'x UInt64') SETTINGS log_comment = 'case_21_row_number_in_all_blocks';
+SELECT 'rowNumberInAllBlocks', count(), uniqExact(x), min(x), max(x) FROM loc;
+TRUNCATE TABLE loc;
+
+INSERT INTO dist SELECT rowNumberInAllBlocks() FROM fileCluster('test_cluster_two_shards_localhost', {CLICKHOUSE_DATABASE:String} || '_05895_*.tsv', 'TSV', 'x UInt64') SETTINGS log_comment = 'case_22_row_number_in_all_blocks_pdis_1', parallel_distributed_insert_select = 1;
+SELECT 'rowNumberInAllBlocks, parallel_distributed_insert_select = 1', count(), uniqExact(x), min(x), max(x) FROM loc;
 TRUNCATE TABLE loc;
 
 -- Which INSERTs were sent to the shards. The INSERTs `Distributed` itself sends to the shards do not name the source.

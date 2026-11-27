@@ -18,6 +18,8 @@ IN table	299	89700	2	598
 folded scalar subquery	12	7134	589	600
 array scalar subquery	2	1194	596	598
 EXISTS	600	180300	1	600
+rowNumberInAllBlocks	600	600	0	599
+rowNumberInAllBlocks, parallel_distributed_insert_select = 1	600	600	0	599
 case_01_plain	1
 case_02_plain_pdis_1	1
 case_03_udf_row_local	1
@@ -38,3 +40,5 @@ case_17_in_table	0
 case_18_folded_scalar	0
 case_19_array_scalar	0
 case_20_exists	0
+case_21_row_number_in_all_blocks	0
+case_22_row_number_in_all_blocks_pdis_1	0

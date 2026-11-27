@@ -1585,6 +1585,17 @@ static bool hasSubqueryAfterAnalysis(const QueryTreeNodePtr & node)
     return false;
 }
 
+static bool hasStatefulFunction(const QueryTreeNodePtr & node)
+{
+    if (const auto * function = node->as<FunctionNode>())
+        if (auto function_base = function->getFunction(); function_base && function_base->isStateful())
+            return true;
+    for (const auto & child : node->getChildren())
+        if (child && hasStatefulFunction(child))
+            return true;
+    return false;
+}
+
 
 std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(
     IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
@@ -1646,7 +1657,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     if (!analyzed_select || !canRunQueryOnEachReplicaShare(*analyzed_select))
         return {};
     for (const auto & child : analyzed_select->getChildren())
-        if (child && hasSubqueryAfterAnalysis(child))
+        if (child && (hasSubqueryAfterAnalysis(child) || hasStatefulFunction(child)))
             return {};
 
     src_storage_cluster.updateExternalDynamicMetadataIfExists(local_context);
