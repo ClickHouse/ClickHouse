@@ -61,9 +61,9 @@ public:
 
     /// Whether the whole `candidate` matches the pattern. Keeps no state between calls,
     /// so one object can be used from many threads.
-    bool matches(std::string_view candidate) const;
+    [[nodiscard]] bool matches(std::string_view candidate) const;
 
-    const std::string & getPattern() const { return pattern; }
+    [[nodiscard]] const std::string & getPattern() const { return pattern; }
 
     /// The number of instructions a pattern may compile to. A literal run, a wildcard, a range and an
     /// enum of literal alternatives take one instruction each whatever their length, so only a pattern
@@ -125,7 +125,7 @@ private:
     void compileText(size_t begin, size_t end);
     /// The body of a group candidate is `pattern[begin, end)`.
     bool tryParseRange(size_t begin, size_t end, Range & range) const;
-    bool isEnum(size_t begin, size_t end) const;
+    [[nodiscard]] bool isEnum(size_t begin, size_t end) const;
     void compileEnum(size_t begin, size_t end);
     void compileLiteralAlternatives(VectorWithMemoryTracking<LiteralAlternative> & alternatives);
     void addOp(OpType type, size_t first = 0, size_t second = 0);

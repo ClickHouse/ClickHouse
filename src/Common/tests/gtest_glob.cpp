@@ -40,9 +40,9 @@ public:
     }
 
     /// False when the pattern is refused, or is turned into a regexp `re2` does not compile.
-    bool exists() const { return matcher != nullptr; }
+    [[nodiscard]] bool exists() const { return matcher != nullptr; }
 
-    bool matches(const std::string & candidate) const { return re2::RE2::FullMatch(candidate, *matcher); }
+    [[nodiscard]] bool matches(const std::string & candidate) const { return re2::RE2::FullMatch(candidate, *matcher); }
 
 private:
     std::unique_ptr<re2::RE2> matcher;
