@@ -26,7 +26,7 @@ class AdaptiveDistinctKeyCounter
 public:
     explicit AdaptiveDistinctKeyCounter(UInt64 precise_count)
         : error_margin(precise_count / 16)
-        , sample_mask((UInt64{1} << std::max(0, static_cast<int>(std::bit_width(precise_count)) - 1 - min_sample_bits)) - 1)
+        , sample_mask((UInt64{1} << std::max(0, std::bit_width(precise_count) - 1 - min_sample_bits)) - 1)
     {
     }
 
