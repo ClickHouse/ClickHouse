@@ -204,20 +204,9 @@ Use these as supporting checks for ClickHouse-specific invariants. They are not 
 SEVERITY MODEL – WHAT DESERVES A COMMENT
 Severity comes from user/system impact and confidence, not from which prompt uncovered the issue.
 
-An unresolved Blocker thread holds the full CI and the merge of the PR, so a Blocker must meet all three conditions below. A finding that misses one is a Major at most.
-1. The PR introduces it, or it is a pre-existing defect that the PR claims to fix (see ATTRIBUTION).
-2. A user can reach it: any query, setting, or input data that a user could send, however unusual or combined with others. A state that the server never creates does not count.
-3. A user or an operator observes an impact from the list below in a release build. Undefined behavior that only a sanitizer reports, on a path that then rejects the input anyway, is a Major.
-
-A defect that needs a step only an administrator can take before a user can reach it is never a Blocker:
-- Files, symlinks, or permissions on the server's disk: a Major only when they are an ordinary setup of a documented feature and do not themselves grant what the finding describes; otherwise not a finding.
-- Server configuration: a Major when it is a configuration that an administrator would normally use; not a finding when the configuration only makes sense to weaken or break the server, such as disabling a protective limit or check.
-
-This does not cover data that the server reads back, such as part files, caches, and metadata: it becomes malformed without anyone choosing it (disk damage, another version, a user's `ATTACH` or `RESTORE`), so "Reading back a binary representation" keeps its severity.
-
-Security outranks these conditions: a finding for which `references/hardening-flags.md`, `references/access-checks.md`, or `references/memory-addresses.md` require a Blocker is a Blocker even without an observed runtime impact.
-
-Findings about tests, documentation, performance evidence, or PR metadata are never Blockers.
+An unresolved Blocker thread holds the full CI and the merge of the PR. A Blocker is a defect from the list below that the PR introduces, or a pre-existing one that the PR claims to fix (see ATTRIBUTION). Two kinds of findings are never Blockers:
+- A defect that can be reached only after an administrator deliberately sets something up on the server: files, symlinks, or permissions on its disk, or its configuration. It is a Major when the setup is an ordinary use of a documented feature, and not a finding when the setup itself grants what the finding describes or only makes sense to weaken the server.
+- Findings about tests, documentation, performance evidence, or PR metadata.
 
 **Blockers** – must be fixed before merge
 - Incorrectness, data loss, or corruption.

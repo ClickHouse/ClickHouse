@@ -198,6 +198,9 @@ Procedure:
    (a) the thread's `resolvedBy.login` is `"clickhouse-gh[bot]"` (whether you resolved it
        prematurely or a later commit reintroduced the issue). Re-open silently, no reply needed.
    (b) case 6(b) fires -- re-open AND post the 6(b) reply in the same run.
+   Also resolve such a thread when the current rules no longer give the finding the severity of its
+   tag, for example a `[Blocker]` that is now pre-existing or a Major, and report the finding in the
+   summary with its current classification.
    Never resolve or unresolve threads whose first comment was authored by anyone else.
 8. For genuinely new issues that do not already have a thread, collect them all into the single
    batched review described under Tools (one inline comment per issue, on the relevant changed line).
@@ -274,11 +277,12 @@ query($owner: String!, $name: String!, $number: Int!, $after: String) {
 
 def _review_approves():
     """True if the last `Final Verdict` section in REVIEW_FILE states `✅ Approve` and no other verdict,
-    see the REQUESTED OUTPUT FORMAT in .claude/skills/review/SKILL.md. The `Status:` line is read if it has
+    see the REQUESTED OUTPUT FORMAT in .claude/skills/review/SKILL.md. The last `Status:` line is read if it has
     a verdict, otherwise the whole section, so a summary that drops the prefix or adds bold still counts.
     No verdict, or more than one (such as the template's list of all statuses), is not an approval."""
     with open(REVIEW_FILE, encoding="utf-8") as f:
-        _, found, section = f.read().rpartition("Final Verdict")
+        text = f.read()
+    _, found, section = text.rpartition("Final Verdict")
     if not found:
         print(f"WARNING: No Final Verdict in {REVIEW_FILE}")
         return False
@@ -287,8 +291,9 @@ def _review_approves():
         text = text.replace("*", "")
         return [verdict for verdict, pattern in _VERDICT_PATTERNS.items() if re.search(pattern, text)]
 
-    status = re.search(rf"{STATUS_PREFIX}(.*)", section)
-    verdicts = find_verdicts(status.group(1)) if status else []
+    # The rationale after the `Status:` line can mention "Final Verdict" again, so look for it in the whole text.
+    statuses = re.findall(rf"{STATUS_PREFIX}(.*)", text)
+    verdicts = find_verdicts(statuses[-1]) if statuses else []
     if not verdicts:
         verdicts = find_verdicts(section)
     if verdicts != [VERDICT_APPROVE]:
