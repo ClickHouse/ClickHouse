@@ -390,34 +390,148 @@ bool isIndexName(const String & name, const AliasScope & scope)
     return false;
 }
 
-/// Collects the free names in the expression: the first parts of the identifiers, the names of the columns and of the called
-/// functions, which are not the parameters of the lambda functions inside the expression (`bound`).
-void collectFreeNames(const IQueryTreeNode & node, std::unordered_set<String> & bound, std::unordered_set<String> & names)
+/// The names bound inside an expression while its free names are collected: the parameters of the lambda functions
+/// and the aliases of the scopes (of the lambda functions and of the subqueries) around the current node.
+struct BoundNames
+{
+    /// The number of bindings of a name, because a name can be bound in several nested scopes.
+    std::unordered_map<String, size_t> values;
+    /// The names that are bound as functions as well: the parameters and the aliases of lambda functions and of identifiers
+    /// (see `isFunctionAliasExpression`). A scalar alias with the name of a function does not hide the function.
+    std::unordered_map<String, size_t> functions;
+    /// The nodes whose aliases are bound now.
+    std::unordered_set<const IQueryTreeNode *> aliased_nodes;
+
+    bool hasValue(const String & name) const
+    {
+        auto it = values.find(name);
+        return it != values.end() && it->second;
+    }
+
+    bool hasFunction(const String & name) const
+    {
+        auto it = functions.find(name);
+        return it != functions.end() && it->second;
+    }
+
+    void bindParameter(const String & name)
+    {
+        ++values[name];
+        ++functions[name];
+    }
+
+    void unbindParameter(const String & name)
+    {
+        --values[name];
+        --functions[name];
+    }
+
+    void bindAlias(const IQueryTreeNode & node)
+    {
+        ++values[node.getAlias()];
+        if (isFunctionAliasExpression(node))
+            ++functions[node.getAlias()];
+    }
+
+    void unbindAlias(const IQueryTreeNode & node)
+    {
+        --values[node.getAlias()];
+        if (isFunctionAliasExpression(node))
+            --functions[node.getAlias()];
+    }
+};
+
+/// Collects the nodes with aliases of a scope, without the insides of the nested lambda functions and subqueries,
+/// which have their own scopes (like `collectScopeAliases`).
+void collectAliasedNodes(const IQueryTreeNode & node, std::vector<const IQueryTreeNode *> & aliased_nodes)
 {
     checkStackSize();
 
-    if (const auto * function = node.as<FunctionNode>(); function && !bound.contains(function->getFunctionName()))
-        names.insert(function->getFunctionName());
-    if (const auto * identifier = node.as<IdentifierNode>(); identifier && !bound.contains(identifier->getIdentifier()[0]))
-        names.insert(identifier->getIdentifier()[0]);
-    if (const auto * column = node.as<ColumnNode>(); column && !bound.contains(column->getColumnName()))
-        names.insert(column->getColumnName());
-
-    if (const auto * lambda = node.as<LambdaNode>())
-    {
-        Names added;
-        for (const auto & name : lambda->getArguments().getNames())
-            if (bound.insert(name).second)
-                added.push_back(name);
-        collectFreeNames(*lambda->getExpression(), bound, names);
-        for (const auto & name : added)
-            bound.erase(name);
+    if (node.hasAlias())
+        aliased_nodes.push_back(&node);
+    if (node.getNodeType() == QueryTreeNodeType::LAMBDA || isSubquery(node))
         return;
-    }
-
     for (const auto & child : node.getChildren())
         if (child)
-            collectFreeNames(*child, bound, names);
+            collectAliasedNodes(*child, aliased_nodes);
+}
+
+/** Collects the free names in the expression: the first parts of the identifiers, the names of the columns and of the called
+  * functions, which are not bound inside the expression (`bound`): neither the parameters of the lambda functions,
+  * nor the aliases defined in the expression. The aliases have the same lexical scopes as in the analyzer:
+  * an alias is visible in the whole lambda function (or subquery) where it is defined, including the lambda functions inside it,
+  * but not outside of it, like `i` in `x -> ((1 AS i) + i)`, which is not a free name.
+  */
+void collectFreeNames(const IQueryTreeNode & node, BoundNames & bound, std::unordered_set<String> & names)
+{
+    checkStackSize();
+
+    /// The alias does not bind its name inside its own expression: `i` in `(i + 1) AS i` is a name from outside.
+    bool is_bound_alias = bound.aliased_nodes.contains(&node);
+    if (is_bound_alias)
+        bound.unbindAlias(node);
+
+    if (const auto * function = node.as<FunctionNode>(); function && !bound.hasFunction(function->getFunctionName()))
+        names.insert(function->getFunctionName());
+    if (const auto * identifier = node.as<IdentifierNode>(); identifier && !bound.hasValue(identifier->getIdentifier()[0]))
+        names.insert(identifier->getIdentifier()[0]);
+    if (const auto * column = node.as<ColumnNode>(); column && !bound.hasValue(column->getColumnName()))
+        names.insert(column->getColumnName());
+
+    const auto * lambda = node.as<LambdaNode>();
+    if (lambda || isSubquery(node))
+    {
+        /// A new scope with its parameters and aliases.
+        Names parameters;
+        std::vector<const IQueryTreeNode *> scope_aliases;
+        if (lambda)
+        {
+            parameters = lambda->getArguments().getNames();
+            collectAliasedNodes(*lambda->getExpression(), scope_aliases);
+        }
+        else
+        {
+            for (const auto & child : node.getChildren())
+                if (child)
+                    collectAliasedNodes(*child, scope_aliases);
+        }
+
+        for (const auto & name : parameters)
+            bound.bindParameter(name);
+        for (const auto * aliased_node : scope_aliases)
+        {
+            bound.bindAlias(*aliased_node);
+            bound.aliased_nodes.insert(aliased_node);
+        }
+
+        if (lambda)
+        {
+            collectFreeNames(*lambda->getExpression(), bound, names);
+        }
+        else
+        {
+            for (const auto & child : node.getChildren())
+                if (child)
+                    collectFreeNames(*child, bound, names);
+        }
+
+        for (const auto * aliased_node : scope_aliases)
+        {
+            bound.aliased_nodes.erase(aliased_node);
+            bound.unbindAlias(*aliased_node);
+        }
+        for (const auto & name : parameters)
+            bound.unbindParameter(name);
+    }
+    else
+    {
+        for (const auto & child : node.getChildren())
+            if (child)
+                collectFreeNames(*child, bound, names);
+    }
+
+    if (is_bound_alias)
+        bound.bindAlias(node);
 }
 
 /** The expression of a lambda function bound in the query outside of the lambda function of einsum, or of a SQL user defined function,
@@ -440,7 +554,7 @@ String findFreeNameInCalledFunction(
     if (!called_lambda)
         return {};
 
-    std::unordered_set<String> bound;
+    BoundNames bound;
     std::unordered_set<String> free_names;
     collectFreeNames(*called_lambda, bound, free_names);
     for (const auto & name : free_names)
