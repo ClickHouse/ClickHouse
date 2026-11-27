@@ -53,10 +53,10 @@ struct BackendConfig
     UInt16 postgresql_port = 0;
     UInt16 ssh_port = 0;
     UInt16 raw_port = 0;                /// For TLS and Stream listeners. Zero means the same port as the listener.
-    UInt16 health_check_port = 0;       /// The port probed by the health monitor. Zero means the first configured
-                                        /// port (native, HTTP, MySQL, PostgreSQL, SSH, raw), or the default native port.
-                                        /// For a backend without ports used by a `tls` or `stream` listener, it is
-                                        /// resolved to the listener's port when the configuration is loaded.
+    UInt16 health_check_port = 0;       /// An additional port probed by the health monitor, which stands for the backend
+                                        /// as a whole: while it does not answer, the backend is down for every protocol.
+                                        /// The ports that the listeners reach the backend on are probed regardless of it,
+                                        /// each for the protocols served on it.
 
     bool secure = false;                /// Encrypt the proxy-to-backend leg.
     UInt32 weight = 1;
@@ -213,8 +213,5 @@ struct ProxyConfiguration
 
 /// The backend port to connect to for a given listener protocol.
 UInt16 backendPortFor(ListenerProtocol protocol, const BackendConfig & backend, UInt16 listener_port);
-
-/// The backend port probed by the health monitor.
-UInt16 healthCheckPort(const BackendConfig & backend);
 
 }

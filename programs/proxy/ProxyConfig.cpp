@@ -127,15 +127,6 @@ UInt16 backendPortFor(ListenerProtocol protocol, const BackendConfig & backend, 
     }
 }
 
-UInt16 healthCheckPort(const BackendConfig & backend)
-{
-    for (UInt16 port : {backend.health_check_port, backend.tcp_port, backend.http_port, backend.mysql_port,
-                        backend.postgresql_port, backend.ssh_port, backend.raw_port})
-        if (port)
-            return port;
-    return backend.secure ? 9440 : 9000;
-}
-
 /// Reads a required listening port and validates it fits in [1, 65535].
 /// Without this check `static_cast<UInt16>` would silently wrap out-of-range
 /// values (e.g. 70000 -> 4464), binding or connecting to the wrong port.
@@ -438,62 +429,6 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
                     "A routing rule for the '{}' protocol has a secure backend template, but this protocol {}; "
                     "the proxy does not support a TLS backend leg for it", toString(protocol), no_tls_reason(protocol));
-        }
-    }
-
-    /// A backend without an explicit port is reached on a port that depends on the listener: the protocol
-    /// default (e.g. `8443` for a secure HTTP backend) or, for `tls` and `stream`, the port of the listener.
-    /// `healthCheckPort` knows neither. Resolve the probed port of such static backends from the listeners
-    /// that can route to their pools; dynamic backends are resolved by the router, as they serve one listener.
-    std::map<String, std::set<size_t>> pool_listeners;
-    for (size_t i = 0; i < res.listeners.size(); ++i)
-    {
-        const auto & listener = res.listeners[i];
-        if (!listener.default_pool.empty())
-            pool_listeners[listener.default_pool].insert(i);
-        for (const auto & rule : res.rules)
-        {
-            if (rule.pool.empty() || !ruleCanMatchListener(rule, listener))
-                continue;
-            pool_listeners[rule.pool].insert(i);
-        }
-    }
-    for (auto & [pool_name, pool] : res.pools)
-    {
-        for (auto & backend : pool.backends)
-        {
-            if (backend.health_check_port || backend.tcp_port || backend.http_port || backend.mysql_port
-                || backend.postgresql_port || backend.ssh_port || backend.raw_port)
-                continue;
-
-            std::map<ListenerProtocol, std::set<UInt16>> ports_by_protocol;
-            std::set<UInt16> ports;
-            for (size_t i : pool_listeners[pool_name])
-            {
-                const auto & listener = res.listeners[i];
-                const UInt16 port = backendPortFor(listener.protocol, backend, listener.port);
-                ports_by_protocol[listener.protocol].insert(port);
-                ports.insert(port);
-            }
-            if (ports.empty())
-                continue;
-            const bool reached_on_listener_port
-                = ports_by_protocol.contains(ListenerProtocol::TLS) || ports_by_protocol.contains(ListenerProtocol::Stream);
-            if (reached_on_listener_port && ports.size() != 1)
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "Backend '{}' of pool '{}' is reached on several ports through different listeners; "
-                    "specify the port to probe for health checks in 'health_check_port'", backend.name, pool_name);
-            /// A backend reached through several protocols on their default ports is probed on the port of the
-            /// first of them, in the same order as the explicitly configured ports (native first).
-            for (const auto protocol : {ListenerProtocol::Native, ListenerProtocol::HTTP, ListenerProtocol::MySQL,
-                                        ListenerProtocol::PostgreSQL, ListenerProtocol::SSH, ListenerProtocol::TLS, ListenerProtocol::Stream})
-            {
-                if (auto it = ports_by_protocol.find(protocol); it != ports_by_protocol.end())
-                {
-                    backend.health_check_port = *it->second.begin();
-                    break;
-                }
-            }
         }
     }
 

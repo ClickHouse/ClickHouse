@@ -13,6 +13,7 @@
 #include <chrono>
 #include <map>
 #include <memory>
+#include <vector>
 
 #if USE_SSL
 #include <Poco/Net/Context.h>
@@ -30,8 +31,10 @@ class Router;
 
 /// Actively monitors backend health and, optionally, resource usage.
 /// A supervisor fiber periodically probes every backend concurrently:
-///   - a TCP connect (with a TLS handshake for a secure backend) to the backend's health check port
-///     (see `healthCheckPort`) measures latency and liveness;
+///   - a TCP connect (with a TLS handshake for a secure backend) measures latency and liveness. The health
+///     of a backend is tracked per port (see `Backend::isAlive`), so every port that a listener reaches
+///     the backend on is probed, and the result applies to the connections of the protocols served on it.
+///     The backend's `health_check_port`, if configured, is probed too and stands for the backend as a whole;
 ///   - if the backend has monitoring credentials, an HTTP(S) query reads its CPU and memory usage.
 /// Backends are discovered from the router (both statically configured and dynamically created ones).
 class HealthMonitor
@@ -52,10 +55,15 @@ public:
     /// Block until the supervisor fiber has finished (call after stop()).
     void join();
 
-    /// Probe one backend once (a liveness connect and, when `poll_resources` is set, a resource poll).
-    /// The supervisor decides whether resources are due so that `resource_poll_interval_ms` is honored
-    /// independently of the liveness `interval_ms`. Public so it can run on a fiber.
-    void checkBackend(Backend & backend, bool poll_resources);
+    /// Probe one port of a backend once with a liveness connect, and record the result under @p health_key:
+    /// the port itself, or `Backend::whole_backend` for the probe of `health_check_port`.
+    /// Public so it can run on a fiber.
+    void probePort(Backend & backend, UInt16 health_key, UInt16 port);
+
+    /// Read the resource usage of a backend. The supervisor decides whether it is due, so that
+    /// `resource_poll_interval_ms` is honored independently of the liveness `interval_ms`.
+    /// Public so it can run on a fiber.
+    void pollResources(Backend & backend);
 
 private:
     const ProxyConfiguration & config;
@@ -77,7 +85,6 @@ private:
 
     void superviseLoop();
     void interruptibleSleep(UInt64 total_ms);
-    void pollResources(Backend & backend);
     std::vector<BackendPtr> collectBackends() const;
 };
 

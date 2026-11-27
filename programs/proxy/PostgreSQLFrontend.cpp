@@ -116,7 +116,10 @@ void broadcastCancelRequest(const String & packet, const FrontendContext & ctx)
     /// is marked down still receives the request: `alive` only gates new routing, and the sessions that
     /// were relayed to it before it was marked down may still be running there.
     std::erase_if(backends, [](const BackendPtr & backend) { return backend->config().secure; });
-    std::stable_partition(backends.begin(), backends.end(), [](const BackendPtr & backend) { return backend->isAlive(); });
+    std::stable_partition(backends.begin(), backends.end(), [&](const BackendPtr & backend)
+    {
+        return backend->isAlive(backendPortFor(ListenerProtocol::PostgreSQL, backend->config(), ctx.listener.port));
+    });
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(ctx.config.handshake_timeout_ms);
     std::atomic<size_t> delivered = 0;

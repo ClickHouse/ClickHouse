@@ -48,7 +48,7 @@ public:
 
     /// Whether the matched rule authorizes the offered SSH key, without side effects: a backend template
     /// is not expanded into a dynamic backend. For a pool, it also requires an alive backend.
-    bool keyIsAcceptable(const RouteAttributes & attributes);
+    bool keyIsAcceptable(const RouteAttributes & attributes, const ListenerConfig & listener);
 
     bool needsCredentials(ListenerProtocol protocol) const { return table->needsCredentials(protocol); }
     bool needsQueryType(ListenerProtocol protocol) const { return table->needsQueryType(protocol); }
@@ -64,7 +64,7 @@ public:
     std::vector<BackendPoolPtr> dynamicPoolsSnapshot() const;
 
     /// Every backend a listener may route to: its default pool, the pools of the applicable rules,
-    /// and the dynamic backends created for its protocol.
+    /// and the dynamic backends created for it.
     std::vector<BackendPtr> reachableBackends(const ListenerConfig & listener) const;
 
 private:
@@ -82,7 +82,9 @@ private:
     struct DynamicPool
     {
         BackendPoolPtr pool;
+        /// A dynamic backend serves the listener it was created for.
         ListenerProtocol protocol;
+        UInt16 listener_port;
     };
     mutable std::mutex dynamic_mutex;
     std::map<String, DynamicPool> dynamic_pools;

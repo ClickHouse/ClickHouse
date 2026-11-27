@@ -20,6 +20,8 @@
 
 #include <chrono>
 #include <deque>
+#include <map>
+#include <set>
 #include <unordered_set>
 #include <vector>
 
@@ -39,23 +41,29 @@ namespace DB::Proxy
 namespace
 {
 
-/// Fiber entry point running a single backend check. The parameters live in the supervisor frame.
+/// Fiber entry point running a single check of a backend: a probe of one port or a resource poll.
+/// The parameters live in the supervisor frame.
 struct CheckTask
 {
     HealthMonitor * monitor;
     Backend * backend;
-    bool poll_resources;
+    bool poll_resources;    /// Otherwise, probe `port` and record the result under `health_key`.
+    UInt16 health_key;
+    UInt16 port;
 };
 
 int runCheck(CheckTask * task) noexcept
 {
     try
     {
-        task->monitor->checkBackend(*task->backend, task->poll_resources);
+        if (task->poll_resources)
+            task->monitor->pollResources(*task->backend);
+        else
+            task->monitor->probePort(*task->backend, task->health_key, task->port);
     }
     catch (...)  // NOLINT(bugprone-empty-catch)
     {
-        /// checkBackend records failures itself; it is Ok to drop anything else, as an exception
+        /// The checks record failures themselves; it is Ok to drop anything else, as an exception
         /// must not escape a fiber entry point.
     }
     return 0;
@@ -116,9 +124,8 @@ std::vector<BackendPtr> HealthMonitor::collectBackends() const
     return result;
 }
 
-void HealthMonitor::checkBackend(Backend & backend, bool poll_resources)
+void HealthMonitor::probePort(Backend & backend, UInt16 health_key, UInt16 port)
 {
-    const UInt16 port = healthCheckPort(backend.config());
     const auto started = std::chrono::steady_clock::now();
     try
     {
@@ -143,18 +150,14 @@ void HealthMonitor::checkBackend(Backend & backend, bool poll_resources)
         const double latency_ms = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - started).count();
         socket.close();
-        backend.reportCheckSuccess(latency_ms);
+        backend.reportCheckSuccess(health_key, latency_ms);
     }
     catch (...)
     {
-        backend.reportCheckFailure(config.health_check.failures_to_mark_down);
-        LOG_DEBUG(log, "Backend {} health check failed: {}", backend.name(),
+        backend.reportCheckFailure(health_key, config.health_check.failures_to_mark_down);
+        LOG_DEBUG(log, "Backend {} health check of port {} failed: {}", backend.name(), port,
             getCurrentExceptionMessage(/*with_stacktrace=*/ false));
-        return;
     }
-
-    if (poll_resources && !backend.config().monitor_user.empty())
-        pollResources(backend);
 }
 
 void HealthMonitor::pollResources(Backend & backend)
@@ -272,21 +275,33 @@ void HealthMonitor::superviseLoop()
         const auto now = std::chrono::steady_clock::now();
         const auto resource_poll_interval = std::chrono::milliseconds(config.health_check.resource_poll_interval_ms);
 
+        /// The ports to probe: for every listener, the port its protocol reaches each of its backends on.
+        /// A backend that no listener can route to has no such ports: nothing depends on its health.
+        std::map<Backend *, std::set<UInt16>> ports_to_probe;
+        for (const auto & listener : config.listeners)
+            for (const auto & backend : router.reachableBackends(listener))
+                ports_to_probe[backend.get()].insert(backendPortFor(listener.protocol, backend->config(), listener.port));
+
         std::vector<CheckTask> tasks;
         tasks.reserve(backends.size());
         for (auto & backend : backends)
         {
-            bool poll_resources = false;
+            if (const auto it = ports_to_probe.find(backend.get()); it != ports_to_probe.end())
+                for (const UInt16 port : it->second)
+                    tasks.push_back(CheckTask{this, backend.get(), /*poll_resources=*/ false, /*health_key=*/ port, port});
+
+            if (const UInt16 port = backend->config().health_check_port)
+                tasks.push_back(CheckTask{this, backend.get(), /*poll_resources=*/ false, Backend::whole_backend, port});
+
             if (!backend->config().monitor_user.empty())
             {
                 auto & last = last_resource_poll[backend.get()];
                 if (last == std::chrono::steady_clock::time_point{} || now - last >= resource_poll_interval)
                 {
-                    poll_resources = true;
+                    tasks.push_back(CheckTask{this, backend.get(), /*poll_resources=*/ true, 0, 0});
                     last = now;
                 }
             }
-            tasks.push_back(CheckTask{this, backend.get(), poll_resources});
         }
 
         /// FiberFuture is neither copyable nor movable (it holds an atomic), so it cannot live in a

@@ -20,12 +20,22 @@ BackendPool::BackendPool(String name_, BackendPtr backend, const StickinessConfi
     all_backends.push_back(std::move(backend));
 }
 
-BackendPtr BackendPool::choose(const RouteAttributes & attributes) const
+namespace
+{
+
+bool isAliveFor(const Backend & backend, const ListenerConfig & listener)
+{
+    return backend.isAlive(backendPortFor(listener.protocol, backend.config(), listener.port));
+}
+
+}
+
+BackendPtr BackendPool::choose(const RouteAttributes & attributes, const ListenerConfig & listener) const
 {
     std::vector<BackendPtr> alive;
     alive.reserve(all_backends.size());
     for (const auto & backend : all_backends)
-        if (backend->isAlive())
+        if (isAliveFor(*backend, listener))
             alive.push_back(backend);
 
     if (alive.empty())
@@ -43,10 +53,10 @@ BackendPtr BackendPool::choose(const RouteAttributes & attributes) const
     return strategy->choose(alive);
 }
 
-bool BackendPool::hasAliveBackends() const
+bool BackendPool::hasAliveBackends(const ListenerConfig & listener) const
 {
     for (const auto & backend : all_backends)
-        if (backend->isAlive())
+        if (isAliveFor(*backend, listener))
             return true;
     return false;
 }

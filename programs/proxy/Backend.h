@@ -3,7 +3,10 @@
 #include <ProxyConfig.h>
 
 #include <atomic>
+#include <map>
 #include <memory>
+#include <mutex>
+#include <vector>
 
 namespace DB::Proxy
 {
@@ -36,12 +39,24 @@ public:
     const String & name() const { return cfg.name; }
 
     /// Health, actively updated by the health checker and passively by connection errors.
+    /// A backend serves each protocol on its own port, and one of them can be down while the others work,
+    /// so the health is tracked per port of the backend: a failure to connect to `http_port` does not take
+    /// the backend out of rotation for the native protocol. The pseudo-port `whole_backend` holds the result
+    /// of probing the explicitly configured `health_check_port`, which stands for the backend as a whole.
 
-    bool isAlive() const { return alive.load(std::memory_order_relaxed); }
-    void reportCheckSuccess(double latency_ms);
-    void reportCheckFailure(UInt32 failures_to_mark_down);
-    void reportConnectSuccess(double latency_ms);
-    void reportConnectFailure(UInt32 failures_to_mark_down);
+    static constexpr UInt16 whole_backend = 0;
+
+    /// Whether connections to this port of the backend can be routed: neither the port nor the whole backend is marked down.
+    [[nodiscard]] bool isAlive(UInt16 port) const;
+    /// Whether nothing of the backend is marked down.
+    [[nodiscard]] bool isAlive() const;
+    /// The ports that are marked down, for the status page. Contains `whole_backend` if the backend as a whole is.
+    [[nodiscard]] std::vector<UInt16> portsMarkedDown() const;
+
+    void reportCheckSuccess(UInt16 port, double latency_ms);
+    void reportCheckFailure(UInt16 port, UInt32 failures_to_mark_down);
+    void reportConnectSuccess(UInt16 port, double latency_ms);
+    void reportConnectFailure(UInt16 port, UInt32 failures_to_mark_down);
     void reportError() { total_errors.fetch_add(1, std::memory_order_relaxed); }
 
     /// Connection accounting. Used by the least_connections strategy and for draining.
@@ -70,8 +85,18 @@ public:
 private:
     const BackendConfig cfg;
 
-    std::atomic<bool> alive {true};
-    std::atomic<UInt32> consecutive_failures {0};
+    struct Health
+    {
+        std::atomic<bool> alive {true};
+        std::atomic<UInt32> consecutive_failures {0};
+    };
+
+    /// Keyed by the port. An entry is created by the first report for the port and is never removed
+    /// (the set of ports is bounded by the configuration), so a reference to it stays valid without the lock.
+    mutable std::mutex health_mutex;
+    std::map<UInt16, Health> health;
+
+    Health & healthOf(UInt16 port);
 
     std::atomic<Int64> active_connections {0};
     std::atomic<UInt64> total_connections {0};

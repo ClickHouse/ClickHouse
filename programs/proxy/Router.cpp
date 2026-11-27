@@ -82,7 +82,7 @@ std::vector<BackendPtr> Router::reachableBackends(const ListenerConfig & listene
 
     std::lock_guard lock(dynamic_mutex);
     for (const auto & [_, entry] : dynamic_pools)
-        if (entry.protocol == listener.protocol)
+        if (entry.protocol == listener.protocol && entry.listener_port == listener.port)
             add(*entry.pool);
     return res;
 }
@@ -269,14 +269,9 @@ BackendPoolPtr Router::poolForDynamicBackend(const BackendConfig & backend_confi
         }
 
         LOG_INFO(log, "Creating a dynamic backend {}", backend_config.name);
-        /// A dynamic backend serves a single listener, so probe the port it is actually reached on:
-        /// for `tls` and `stream` it may be the listener's port, which `healthCheckPort` cannot know.
-        BackendConfig dynamic_config = backend_config;
-        if (!dynamic_config.health_check_port)
-            dynamic_config.health_check_port = backendPortFor(listener.protocol, backend_config, listener.port);
         auto pool = std::make_shared<BackendPool>(
-            "dynamic:" + backend_config.name, std::make_shared<Backend>(dynamic_config), stickiness);
-        it = dynamic_pools.emplace(key, DynamicPool{std::move(pool), listener.protocol}).first;
+            "dynamic:" + backend_config.name, std::make_shared<Backend>(backend_config), stickiness);
+        it = dynamic_pools.emplace(key, DynamicPool{std::move(pool), listener.protocol, listener.port}).first;
     }
     return it->second.pool;
 }
@@ -321,11 +316,11 @@ Router::Decision Router::routeStatic(const RouteAttributes & attributes, const L
 {
     Decision decision = resolvePool(attributes, listener);
     if (decision.pool)
-        decision.backend = decision.pool->choose(attributes);
+        decision.backend = decision.pool->choose(attributes, listener);
     return decision;
 }
 
-bool Router::keyIsAcceptable(const RouteAttributes & attributes)
+bool Router::keyIsAcceptable(const RouteAttributes & attributes, const ListenerConfig & listener)
 {
     if (auto target = table->resolve(attributes))
     {
@@ -335,7 +330,7 @@ bool Router::keyIsAcceptable(const RouteAttributes & attributes)
         if (target->backend)
             return true;
         /// Not `choose`: it advances the load balancing state, so every probe would consume a slot.
-        return pools.at(target->pool_name)->hasAliveBackends();
+        return pools.at(target->pool_name)->hasAliveBackends(listener);
     }
     /// The listener's default pool does not authorize anyone.
     return false;
@@ -355,14 +350,14 @@ Router::Decision Router::route(const RouteAttributes & attributes, const Listene
     }
 
     const BackendPoolPtr & pool = decision.pool;
-    BackendPtr backend = pool->choose(attributes);
+    BackendPtr backend = pool->choose(attributes, listener);
     if (!backend && !hooks.on_no_backends.empty() && runHook(hooks.on_no_backends, "no_backends", attributes))
     {
         /// The hook reported success: wait for the health checker to see the backends up.
         static constexpr UInt64 retry_period_ms = 250;
         for (UInt64 waited_ms = 0; waited_ms < hooks.timeout_ms; waited_ms += retry_period_ms)
         {
-            backend = pool->choose(attributes);
+            backend = pool->choose(attributes, listener);
             if (backend)
                 break;
             silk::FiberScheduler::sleep(retry_period_ms * 1'000'000);

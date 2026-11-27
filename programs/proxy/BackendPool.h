@@ -35,10 +35,12 @@ public:
     [[nodiscard]] const std::vector<BackendPtr> & backends() const { return all_backends; }
     [[nodiscard]] std::string_view loadBalancingName() const { return strategy->name(); }
 
-    /// Choose an alive backend honoring stickiness. Returns nullptr if all backends are down.
-    [[nodiscard]] BackendPtr choose(const RouteAttributes & attributes) const;
+    /// Choose a backend that is alive for the connections of the listener, honoring stickiness.
+    /// Returns nullptr if all backends are down. The health of a backend is tracked per port,
+    /// so a backend is considered on the port where the listener's protocol reaches it.
+    [[nodiscard]] BackendPtr choose(const RouteAttributes & attributes, const ListenerConfig & listener) const;
 
-    [[nodiscard]] bool hasAliveBackends() const;
+    [[nodiscard]] bool hasAliveBackends(const ListenerConfig & listener) const;
 
 private:
     String pool_name;

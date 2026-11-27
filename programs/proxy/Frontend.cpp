@@ -232,13 +232,13 @@ FiberSocket connectToBackend(const FrontendContext & ctx, Backend & backend, boo
 
         const double latency_ms = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - started).count();
-        backend.reportConnectSuccess(latency_ms);
+        backend.reportConnectSuccess(port, latency_ms);
         return socket;
     }
     catch (...)
     {
         if (ctx.router.passiveMarkingDown())
-            backend.reportConnectFailure(ctx.router.failuresToMarkDown());
+            backend.reportConnectFailure(port, ctx.router.failuresToMarkDown());
         else
             backend.reportError();
         throw;

@@ -30,7 +30,8 @@ struct FrontendContext
 /// leg is wrapped in TLS, using the backend's own host name as the server name and for certificate
 /// verification; otherwise bytes are forwarded as-is (used for transparent TLS routing, where the
 /// encrypted stream is passed through untouched).
-/// Records connect latency and marks the backend down on repeated failures. Throws on failure.
+/// Records connect latency and, on repeated failures, marks the backend down on the port of this protocol.
+/// Throws on failure.
 FiberSocket connectToBackend(
     const FrontendContext & ctx,
     Backend & backend,

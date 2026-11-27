@@ -144,7 +144,7 @@ int onAuthPubkey(ssh_session, const char * user, ssh_key key, char signature_sta
         /// so the answer must have no side effects (a backend template is not expanded into a backend).
         if (signature_state == SSH_PUBLICKEY_STATE_NONE)
         {
-            if (bridge->ctx->router.keyIsAcceptable(attributes))
+            if (bridge->ctx->router.keyIsAcceptable(attributes, bridge->ctx->listener))
                 return SSH_AUTH_SUCCESS;    /// The client proceeds to sign with the key.
             LOG_DEBUG(bridge->log, "SSH {} key (user '{}') is not in the allowlist of a routing rule with an available backend",
                 public_key.getType(), attributes.user);
@@ -153,7 +153,7 @@ int onAuthPubkey(ssh_session, const char * user, ssh_key key, char signature_sta
 
         /// A client may send a signed request without asking first, so the allowlist is checked before
         /// the routing, which may expand a backend template into a dynamic backend (and start probing it).
-        if (!bridge->ctx->router.keyIsAcceptable(attributes))
+        if (!bridge->ctx->router.keyIsAcceptable(attributes, bridge->ctx->listener))
         {
             LOG_DEBUG(bridge->log, "SSH {} key (user '{}') is not in the allowlist of a routing rule with an available backend",
                 public_key.getType(), attributes.user);
@@ -439,7 +439,7 @@ bool connectBackend(Bridge * bridge)
     ssh_options_set(bridge->backend_session, SSH_OPTIONS_GLOBAL_KNOWNHOSTS, ssh_config.known_hosts_file.c_str());
 
     /// Feed the same backend-health accounting as `connectToBackend`, so that a dead `ssh_port`
-    /// marks the backend down for passive health checks and its connect latency feeds the
+    /// marks the backend down for SSH sessions for passive health checks and its connect latency feeds the
     /// `lowest_latency` load balancing, consistently with every other protocol. A failure of any
     /// backend-side step up to opening the session channel fails every session on this backend
     /// (an untrusted host key, a rejected proxy key), so all of them count as connect failures,
@@ -447,7 +447,7 @@ bool connectBackend(Bridge * bridge)
     const auto report_failure = [&]
     {
         if (bridge->ctx->router.passiveMarkingDown())
-            backend.reportConnectFailure(bridge->ctx->router.failuresToMarkDown());
+            backend.reportConnectFailure(port, bridge->ctx->router.failuresToMarkDown());
         else
             backend.reportError();
     };
@@ -492,7 +492,7 @@ bool connectBackend(Bridge * bridge)
         report_failure();
         return false;
     }
-    backend.reportConnectSuccess(latency_ms);
+    backend.reportConnectSuccess(port, latency_ms);
 
     bridge->backend_cb.userdata = bridge;
     bridge->backend_cb.channel_data_function = onBackendData;

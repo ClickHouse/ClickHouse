@@ -21,7 +21,16 @@ Poco::JSON::Object::Ptr describeBackend(const Backend & backend)
     auto object = Poco::JSON::Object::Ptr(new Poco::JSON::Object);
     object->set("name", backend.name());
     object->set("host", backend.config().host);
+    /// The health is tracked per port: `alive` tells that nothing of the backend is marked down,
+    /// and `ports_marked_down` lists what is (`0` stands for the probe of `health_check_port`).
     object->set("alive", backend.isAlive());
+    if (const auto ports = backend.portsMarkedDown(); !ports.empty())
+    {
+        Poco::JSON::Array::Ptr array = new Poco::JSON::Array;
+        for (const UInt16 port : ports)
+            array->add(static_cast<UInt32>(port));
+        object->set("ports_marked_down", array);
+    }
     object->set("weight", backend.config().weight);
     object->set("active_connections", backend.activeConnections());
     object->set("total_connections", backend.totalConnections());
