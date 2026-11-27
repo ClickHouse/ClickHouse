@@ -167,6 +167,36 @@ CREATE ROW POLICY pal2 ON $DB.al2 FOR SELECT USING id IN (SELECT id FROM tal2 WH
 refused "ALTER TABLE tal2 DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
 $CLICKHOUSE_CLIENT -q "ALTER TABLE tal2 RENAME COLUMN note TO comment"
 
+echo "-- a name in that subquery can have the qualifier of the target or of its alias"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tal3 (id UInt32, tenant UInt32, note String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE al3 ENGINE = Alias(tal3);
+CREATE ROW POLICY pal3 ON $DB.al3 FOR SELECT USING id IN (SELECT q.id FROM tal3 AS q WHERE q.tenant = 1)
+    AND id IN (SELECT id FROM tal3 WHERE length(tal3.note) > 0) TO CURRENT_USER;
+"
+refused "ALTER TABLE tal3 DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE tal3 RENAME COLUMN note TO comment" ALTER_OF_COLUMN_IS_FORBIDDEN
+
+echo "-- a table qualifier that is also a column name is removed when the subcolumn does not exist"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tc (id UInt32, tc UInt8, tenant UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tc VALUES (1, 0, 1), (2, 0, 2);
+CREATE ROW POLICY pc ON $DB.tc FOR SELECT USING tc.tenant = 1 TO CURRENT_USER;
+"
+refused "ALTER TABLE tc DROP COLUMN tenant" ALTER_OF_COLUMN_IS_FORBIDDEN
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tc DROP COLUMN tc"
+$CLICKHOUSE_CLIENT -q "SELECT 'qualifier column policy after drop', arraySort(groupArray(id)) FROM tc"
+
+echo "-- a flattened Nested group reads all of its children"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tng (id UInt32, n Nested(x UInt32, y UInt32), other UInt8) ENGINE = MergeTree ORDER BY id;
+CREATE ROW POLICY png ON $DB.tng FOR SELECT USING notEmpty(n) TO CURRENT_USER;
+"
+refused "ALTER TABLE tng DROP COLUMN n" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE tng DROP COLUMN n.y" ALTER_OF_COLUMN_IS_FORBIDDEN
+refused "ALTER TABLE tng RENAME COLUMN n.x TO n.z" ALTER_OF_COLUMN_IS_FORBIDDEN
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tng DROP COLUMN other"
+
 echo "-- the policy pins an ALIAS column, the alias pins its base column"
 $CLICKHOUSE_CLIENT --multiquery -q "
 CREATE TABLE ta (id UInt32, tenant UInt32, tenant_alias UInt32 ALIAS tenant) ENGINE = MergeTree ORDER BY id;
@@ -201,6 +231,9 @@ DROP ROW POLICY psame ON $DB.tsame;
 DROP ROW POLICY ptal ON $DB.tal;
 DROP ROW POLICY pal ON $DB.al;
 DROP ROW POLICY pal2 ON $DB.al2;
+DROP ROW POLICY pal3 ON $DB.al3;
+DROP ROW POLICY pc ON $DB.tc;
+DROP ROW POLICY png ON $DB.tng;
 DROP FUNCTION $UDF;
 DROP TABLE t;
 DROP TABLE t2;
@@ -222,4 +255,8 @@ DROP TABLE al;
 DROP TABLE tal;
 DROP TABLE al2;
 DROP TABLE tal2;
+DROP TABLE al3;
+DROP TABLE tal3;
+DROP TABLE tc;
+DROP TABLE tng;
 "

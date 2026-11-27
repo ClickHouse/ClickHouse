@@ -46,6 +46,16 @@ ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
 -- a policy of an Alias can read the target in a subquery, those names count
 ALTER_OF_COLUMN_IS_FORBIDDEN
+-- a name in that subquery can have the qualifier of the target or of its alias
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- a table qualifier that is also a column name is removed when the subcolumn does not exist
+ALTER_OF_COLUMN_IS_FORBIDDEN
+qualifier column policy after drop	[1]
+-- a flattened Nested group reads all of its children
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
 -- the policy pins an ALIAS column, the alias pins its base column
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ILLEGAL_COLUMN
