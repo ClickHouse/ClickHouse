@@ -205,6 +205,48 @@ ATTACH TABLE t_rename_clear_marker;
 SELECT 's10-reload', r, c FROM t_rename_clear_marker;
 DROP TABLE t_rename_clear_marker;
 
+-- The marker `a` is renamed and cleared while `c` takes its name.
+DROP TABLE IF EXISTS t_rename_clear_marker_reuse;
+CREATE TABLE t_rename_clear_marker_reuse (k UInt8, a UInt32, c UInt32, m UInt32 MATERIALIZED a + 1) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+    skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';
+INSERT INTO t_rename_clear_marker_reuse (k, a, c) VALUES (1, 0, 42);
+ALTER TABLE t_rename_clear_marker_reuse MODIFY COLUMN a UInt32 DEFAULT 99;
+ALTER TABLE t_rename_clear_marker_reuse RENAME COLUMN a TO b, RENAME COLUMN c TO a, CLEAR COLUMN b;
+SELECT 's11-values', b, a, m FROM t_rename_clear_marker_reuse;
+CHECK TABLE t_rename_clear_marker_reuse SETTINGS check_query_single_value_result = 1;
+DETACH TABLE t_rename_clear_marker_reuse;
+ATTACH TABLE t_rename_clear_marker_reuse;
+SELECT 's11-reload', b, a, m FROM t_rename_clear_marker_reuse;
+DROP TABLE t_rename_clear_marker_reuse;
+
+-- The same when the column taking the name `a` is another marker (`x`) or is absent from the part (`c`).
+DROP TABLE IF EXISTS t_rename_clear_marker_reuse_marker;
+CREATE TABLE t_rename_clear_marker_reuse_marker (k UInt8, a UInt32, x UInt64, c UInt32) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+    skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';
+INSERT INTO t_rename_clear_marker_reuse_marker VALUES (1, 0, 0, 42);
+ALTER TABLE t_rename_clear_marker_reuse_marker RENAME COLUMN a TO b, RENAME COLUMN x TO a, CLEAR COLUMN b;
+-- The marker of `x` keeps the inserted 0 in `a`; without it `a` would read the new default.
+ALTER TABLE t_rename_clear_marker_reuse_marker MODIFY COLUMN a UInt64 DEFAULT 7;
+SELECT 's12-values', b, a, c FROM t_rename_clear_marker_reuse_marker;
+CHECK TABLE t_rename_clear_marker_reuse_marker SETTINGS check_query_single_value_result = 1;
+DETACH TABLE t_rename_clear_marker_reuse_marker;
+ATTACH TABLE t_rename_clear_marker_reuse_marker;
+SELECT 's12-reload', b, a, c FROM t_rename_clear_marker_reuse_marker;
+DROP TABLE t_rename_clear_marker_reuse_marker;
+
+DROP TABLE IF EXISTS t_rename_clear_marker_reuse_absent;
+CREATE TABLE t_rename_clear_marker_reuse_absent (k UInt8, a UInt32) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+    skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';
+INSERT INTO t_rename_clear_marker_reuse_absent VALUES (1, 0);
+ALTER TABLE t_rename_clear_marker_reuse_absent ADD COLUMN c String DEFAULT 'd';
+ALTER TABLE t_rename_clear_marker_reuse_absent RENAME COLUMN a TO b, RENAME COLUMN c TO a, CLEAR COLUMN b;
+SELECT 's13-values', b, a FROM t_rename_clear_marker_reuse_absent;
+CHECK TABLE t_rename_clear_marker_reuse_absent SETTINGS check_query_single_value_result = 1;
+DROP TABLE t_rename_clear_marker_reuse_absent;
+
 DROP TABLE IF EXISTS t_rename_clear_rmt;
 CREATE TABLE t_rename_clear_rmt (k UInt8, q UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/t_rename_clear_rmt', 'r1') ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;

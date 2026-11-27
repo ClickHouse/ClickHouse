@@ -54,4 +54,12 @@ s9-stored	0	1000
 s10-values	99	100
 1
 s10-reload	99	100
+s11-values	99	42	100
+1
+s11-reload	99	42	100
+s12-values	0	0	42
+1
+s12-reload	0	0	42
+s13-values	0	d
+1
 0

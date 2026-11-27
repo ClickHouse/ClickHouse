@@ -1370,11 +1370,11 @@ static void splitAndModifyMutationCommands(
 
                 for_file_renames.push_back(command);
             }
+            /// Transitive renames are refused, so the source of a RENAME is the name the part stores.
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
-                String marker_name = nameInPart(command.column_name);
-                if (part->getSerializationInfos().isMissingColumn(marker_name))
-                    renamed_markers_in_batch[command.rename_to] = std::move(marker_name);
+                if (part->getSerializationInfos().isMissingColumn(command.column_name))
+                    renamed_markers_in_batch[command.rename_to] = command.column_name;
             }
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
@@ -1566,11 +1566,12 @@ getColumnsForNewDataPart(
             removed_columns.insert(command.column_name);
     }
 
-    /// `removed_columns` has names of the source part. In the new part, a removed name that a column is renamed to is that column.
-    auto is_removed_from_new_part = [&](const String & name)
+    /// In the new part, a name that a column is renamed to is that column, not the source part's column of that name.
+    auto is_rename_target = [&](const String & name)
     {
-        return removed_columns.contains(name) && !renamed_columns_to_from.contains(name) && !renamed_from_absent_columns.contains(name);
+        return renamed_columns_to_from.contains(name) || renamed_from_absent_columns.contains(name);
     };
+    auto is_removed_from_new_part = [&](const String & name) { return removed_columns.contains(name) && !is_rename_target(name); };
 
     for (const auto & [name, type] : persistent_virtuals)
     {
@@ -1705,9 +1706,11 @@ getColumnsForNewDataPart(
         for (const auto & mc : serialization_infos.getMissingColumns())
         {
             auto it = renamed_columns_from_to.find(mc.name);
-            auto new_name = it == renamed_columns_from_to.end() ? mc.name : it->second;
+            bool is_renamed = it != renamed_columns_from_to.end();
+            auto new_name = is_renamed ? it->second : mc.name;
 
-            if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name))
+            if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name)
+                || (!is_renamed && is_rename_target(new_name)))
                 continue;
             if (updated_header.has(new_name))
                 continue;
