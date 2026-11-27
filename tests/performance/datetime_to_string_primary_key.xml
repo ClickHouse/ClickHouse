@@ -1,0 +1,38 @@
+<test>
+    <settings>
+        <max_threads>2</max_threads>
+        <max_insert_threads>2</max_insert_threads>
+        <date_time_output_format>simple</date_time_output_format>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <use_statistics_for_part_pruning>0</use_statistics_for_part_pruning>
+    </settings>
+
+    <create_query>
+        CREATE TABLE datetime_to_string_primary_key
+        (
+            k DateTime('UTC')
+        ) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192
+    </create_query>
+
+    <fill_query>
+        INSERT INTO datetime_to_string_primary_key
+        SELECT toDateTime(number, 'UTC') FROM numbers(250000000)
+    </fill_query>
+    <fill_query>
+        OPTIMIZE TABLE datetime_to_string_primary_key FINAL SETTINGS optimize_throw_if_noop = 1
+    </fill_query>
+
+    <query>
+        SELECT count()
+        FROM datetime_to_string_primary_key
+        WHERE k IN (SELECT toDateTime(12345678, 'UTC'))
+    </query>
+
+    <query>
+        SELECT count()
+        FROM datetime_to_string_primary_key
+        WHERE toString(k) IN (SELECT toDateTime(12345678, 'UTC'))
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS datetime_to_string_primary_key SYNC</drop_query>
+</test>
