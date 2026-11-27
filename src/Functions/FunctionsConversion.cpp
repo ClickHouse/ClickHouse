@@ -3822,6 +3822,14 @@ ColumnPtr convertObjectViaFormatParse(
     return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, parse_settings);
 }
 
+/// Copies a JSON column into a column of the result type, which places the paths by its SHARED REGEXP rules.
+ColumnPtr copyObjectColumnToType(const ColumnPtr & column, const DataTypePtr & result_type, size_t rows)
+{
+    auto result = result_type->createColumn();
+    result->insertRangeFrom(*column, 0, rows);
+    return result;
+}
+
 } /// anonymous namespace
 
 FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
@@ -3849,6 +3857,16 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
         };
     }
 
+    /// Types that differ only in path placement store values alike, so copy the column instead of the text round trip.
+    if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get());
+        from_object && from_object->equalsExceptPathPlacement(*to_object))
+    {
+        return [](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
+        {
+            return copyObjectColumnToType(arguments[0].column, result_type, input_rows_count);
+        };
+    }
+
     /// Optimized Object(JSON) -> Object(JSON) conversion: avoid full serialize+parse when
     /// only a subset of paths are affected by parameter changes (typed paths, skip rules).
     if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get());
@@ -3860,6 +3878,13 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
         /// Identity: only metadata changes (e.g. removing skip rules) — return source column directly.
         if (plan.isIdentity())
         {
+            /// The source column carries the matcher of the source SHARED REGEXP rules, so it is reused only when they are equal.
+            if (from_object->getSharedDataPathRegexps() != to_object->getSharedDataPathRegexps())
+                return [](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
+                {
+                    return copyObjectColumnToType(arguments[0].column, result_type, input_rows_count);
+                };
+
             return [](ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t)
             {
                 return arguments[0].column;
@@ -3892,7 +3917,12 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
                 const auto & dst_type_obj = assert_cast<const DataTypeObject &>(*result_type);
                 if (auto result = convertObjectColumns(
                         arguments[0].column, dst_type_obj, captured_plan, input_rows_count, captured_format_settings, captured_convert_settings))
+                {
+                    /// The optimized conversion places paths without the SHARED REGEXP rules of the result type.
+                    if (dst_type_obj.getSharedDataPathMatcher())
+                        return copyObjectColumnToType(result, result_type, input_rows_count);
                     return result;
+                }
 
                 /// The block needs semantics the optimized path cannot reproduce.
                 return convertObjectViaFormatParse(

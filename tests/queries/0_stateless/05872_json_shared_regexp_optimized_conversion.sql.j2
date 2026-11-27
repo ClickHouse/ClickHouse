@@ -1,0 +1,32 @@
+-- A CAST between JSON types applies the SHARED REGEXP rules of the result type whichever conversion path is taken.
+
+DROP TABLE IF EXISTS src_05872;
+DROP TABLE IF EXISTS dst_05872;
+
+CREATE TABLE src_05872 (id UInt64, j JSON(SKIP x), t JSON(d Int64, SHARED REGEXP '^d')) ENGINE = MergeTree ORDER BY id;
+INSERT INTO src_05872 SELECT number, '{"a":1,"d":2,"d2":"s","k":"v"}', '{"d":3,"d2":4,"k":5}' FROM numbers(3);
+
+{% for optimized in [0, 1] -%}
+
+SELECT '--- json_use_optimized_type_conversion = {{ optimized }} ---';
+SET json_use_optimized_type_conversion = {{ optimized }};
+
+SELECT 'rules only', toTypeName(c), JSONDynamicPaths(c), JSONSharedDataPaths(c), c.d FROM (SELECT CAST(j, 'JSON(SKIP x, SHARED REGEXP \'^d\')') AS c FROM src_05872 WHERE id = 0);
+SELECT 'skip rule removed', toTypeName(c), JSONDynamicPaths(c), JSONSharedDataPaths(c), c.d FROM (SELECT CAST(j, 'JSON(SHARED REGEXP \'^d\')') AS c FROM src_05872 WHERE id = 0);
+SELECT 'typed path added', toTypeName(c), JSONDynamicPaths(c), JSONSharedDataPaths(c), c.a, c.d FROM (SELECT CAST(j, 'JSON(a Int64, SKIP x, SHARED REGEXP \'^d\')') AS c FROM src_05872 WHERE id = 0);
+SELECT 'typed path removed', toTypeName(c), JSONDynamicPaths(c), JSONSharedDataPaths(c), c.d, dynamicType(c.d) FROM (SELECT CAST(t, 'JSON(SHARED REGEXP \'^d\')') AS c FROM src_05872 WHERE id = 0);
+
+CREATE TABLE dst_05872 (id UInt64, j JSON(a Int64, SHARED REGEXP '^d')) ENGINE = MergeTree ORDER BY id;
+INSERT INTO dst_05872 SELECT id, CAST(j, 'JSON(a Int64, SHARED REGEXP \'^d\')') FROM src_05872;
+INSERT INTO dst_05872 SELECT id + 10, CAST(j, 'JSON(a Int64, SHARED REGEXP \'^d\')') FROM src_05872;
+SELECT 'inserted', arrayJoin(JSONDynamicPaths(j)) AS path, count() FROM dst_05872 GROUP BY path ORDER BY path;
+SELECT 'inserted shared', arrayJoin(JSONSharedDataPaths(j)) AS path, count() FROM dst_05872 GROUP BY path ORDER BY path;
+OPTIMIZE TABLE dst_05872 FINAL;
+SELECT 'merged', arrayJoin(JSONDynamicPaths(j)) AS path, count() FROM dst_05872 GROUP BY path ORDER BY path;
+SELECT 'merged shared', arrayJoin(JSONSharedDataPaths(j)) AS path, count() FROM dst_05872 GROUP BY path ORDER BY path;
+SELECT 'merged values', sum(j.a), sum(j.d::Int64), groupUniqArray(j.d2::String), groupUniqArray(j.k::String) FROM dst_05872;
+DROP TABLE dst_05872;
+
+{% endfor -%}
+
+DROP TABLE src_05872;

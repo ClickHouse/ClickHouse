@@ -1,0 +1,3 @@
+common type	Array(JSON(a Nullable(Bool), SHARED REGEXP \'^p\'))
+join	1
+key cast with rules	1	0

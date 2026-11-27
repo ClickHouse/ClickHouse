@@ -335,7 +335,7 @@ public:
                 for (const auto & [path, type] : object_type->getTypedPaths())
                     typed_path_columns[path] = type->createColumn();
 
-                auto column = ColumnObject::create(std::move(typed_path_columns), object_type->getMaxDynamicPaths(), object_type->getMaxDynamicTypes());
+                auto column = ColumnObject::create(std::move(typed_path_columns), object_type->getMaxDynamicPaths(), object_type->getMaxDynamicTypes(), object_type->getSharedDataPathMatcher());
                 removeDynamicSubcolumns(*column);
                 return column;
             }
