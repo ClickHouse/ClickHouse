@@ -363,6 +363,11 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
         for (const auto & variable : header.variables)
             used_column_names.insert(variable.name);
 
+        /// For every dimension, the first candidate for the name of a column that was not found
+        /// taken yet: 0 is the name of the dimension, 1 is the name with the `_index` suffix, and
+        /// a larger one has the number appended as well.
+        UnorderedMapWithMemoryTracking<std::string_view, size_t> next_column_name_attempts;
+
         for (size_t position = 0; position < layout.row_axes.size(); ++position)
         {
             size_t axis_id = layout.row_axes[position];
@@ -384,10 +389,25 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
             if (has_coordinate_variable)
                 continue;
 
-            /// The name of the dimension is taken by a variable that is not a coordinate variable.
-            String column_name = dimension.name;
-            for (size_t attempt = 1; used_column_names.contains(column_name); ++attempt)
-                column_name = dimension.name + "_index" + (attempt == 1 ? "" : "_" + std::to_string(attempt));
+            /// The name of the dimension is taken by a variable that is not a coordinate variable,
+            /// or by the column of another axis of the same dimension. The names are never
+            /// released, so the candidates that were found taken for a dimension stay taken, and
+            /// the search for the next axis of that dimension continues from where the previous
+            /// one stopped. Otherwise a variable that repeats a dimension many times would make
+            /// the number of the probes quadratic.
+            auto make_column_name = [&](size_t attempt) -> String
+            {
+                if (attempt == 0)
+                    return dimension.name;
+                if (attempt == 1)
+                    return dimension.name + "_index";
+                return dimension.name + "_index_" + std::to_string(attempt);
+            };
+
+            size_t & attempt = next_column_name_attempts[dimension.name];
+            String column_name = make_column_name(attempt);
+            while (used_column_names.contains(column_name))
+                column_name = make_column_name(++attempt);
 
             NetCDFTableLayout::Column column;
             column.name = std::move(column_name);

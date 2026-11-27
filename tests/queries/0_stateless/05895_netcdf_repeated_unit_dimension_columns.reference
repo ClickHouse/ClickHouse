@@ -1,0 +1,22 @@
+--- the data
+1000
+1
+--- the number of columns and of distinct names
+65539
+65539
+--- the first and the last names
+d	UInt64
+d_index	UInt64
+d_index_2	UInt64
+d_index_4	UInt64
+d_index_5	UInt64
+d_index_65532	UInt64
+d_index_65533	UInt64
+d_index_65534	UInt64
+d_index_65536	UInt64
+d_index_65537	UInt64
+v	Int32
+d_index_3	Int32
+d_index_65535	Int32
+--- the columns of the axes and the variables that took their names
+0	0	0	3	0	65535	0
