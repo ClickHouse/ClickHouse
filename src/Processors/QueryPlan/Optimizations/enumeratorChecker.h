@@ -138,7 +138,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     auto selectivity = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
     const auto & left_entry = dp_table[lhs_subset];
     const auto & right_entry = dp_table[rhs_subset];
-    /// A join with an input without a row count adds no cost: it is the only join of its graph (see `optimizeJoinLogicalImpl`),
+    /// A join with an input without a row count adds no cost: it is the only join of its graph (see `buildQueryGraph`),
     /// so its plan is not compared with another one.
     double joined_rows = 0;
     double hash_join_work = 0;

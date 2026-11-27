@@ -174,11 +174,12 @@ bool applyRowLimit(RelationStats & stats, UInt64 limit, UInt64 offset, bool with
             return true;
         }
     }
-    if (!stats.estimated_rows || *stats.estimated_rows > limit)
+    /// The limit bounds the rows whatever was assumed about the input, so it replaces an assumed row count, also a smaller one.
+    const bool assumed = stats.source == RowEstimateSource::AssumedSelectivity;
+    if (!stats.estimated_rows || assumed || *stats.estimated_rows > limit)
     {
         stats.estimated_rows = limit;
-        /// The limit bounds the rows whatever was assumed about the input.
-        if (stats.source == RowEstimateSource::AssumedSelectivity)
+        if (assumed)
             stats.source = RowEstimateSource::NoStatistics;
     }
     stats.rows_exact = false;

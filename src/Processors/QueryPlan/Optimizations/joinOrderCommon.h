@@ -214,7 +214,7 @@ inline std::optional<UInt64> estimateJoinCardinality(
     return estimateJoinCardinality(left->estimated_rows, right->estimated_rows, selectivity, join_kind);
 }
 
-/// A join with an input without a row count adds no cost: it is the only join of its graph (see `optimizeJoinLogicalImpl`),
+/// A join with an input without a row count adds no cost: it is the only join of its graph (see `buildQueryGraph`),
 /// so its plan is not compared with another one.
 inline double computeJoinCost(const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, const SelectivityEstimate & selectivity)
 {

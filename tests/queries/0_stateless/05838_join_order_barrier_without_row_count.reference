@@ -3,6 +3,9 @@ Join: orders[no_stats~100000] ⋈ (customer[no_stats~10000] ⋈ nation[guess~1])
 Join: customer[no_stats~10000] ⋈ nation[guess~1]
 two relations: an assumed row count does not swap the written sides
 Join: n[no_stats~?] ⋈ orders[no_stats~100000]
+a limit bounds the rows: it replaces the assumed row count, above it and below it, and the sides are swapped
+Join: orders[no_stats~100000] ⋈ c[no_stats~5000]
+Join: orders[no_stats~100000] ⋈ c[no_stats~100]
 the assumed share is a setting
 Join: orders[guess~50000] ⋈ (customer[guess~5000] ⋈ nation[no_stats~4])
 Join: customer[guess~5000] ⋈ nation[no_stats~4]

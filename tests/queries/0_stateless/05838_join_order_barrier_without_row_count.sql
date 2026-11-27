@@ -25,6 +25,14 @@ SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1
     SELECT count() FROM (SELECT * FROM nation WHERE n_name = 'GERMANY') AS n JOIN orders ON n_nationkey = o_custkey)
 WHERE explain LIKE '%Join: %';
 
+SELECT 'a limit bounds the rows: it replaces the assumed row count, above it and below it, and the sides are swapped';
+SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT count() FROM (SELECT * FROM customer WHERE c_nationkey = 7 LIMIT 5000) AS c JOIN orders ON c_custkey = o_custkey)
+WHERE explain LIKE '%Join: %';
+SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT count() FROM (SELECT * FROM customer WHERE c_nationkey = 7 LIMIT 100) AS c JOIN orders ON c_custkey = o_custkey)
+WHERE explain LIKE '%Join: %';
+
 SELECT 'the assumed share is a setting';
 SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1
     SELECT count() FROM orders JOIN customer ON c_custkey = o_custkey JOIN nation ON c_nationkey = n_nationkey WHERE o_custkey < 15000
