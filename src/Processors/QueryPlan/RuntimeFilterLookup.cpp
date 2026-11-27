@@ -1490,9 +1490,9 @@ static bool isCast(const ActionsDAG::Node & node)
 }
 
 /// The key without the cast to the type of the filter.
-static const ActionsDAG::Node & withoutCast(const ActionsDAG::Node & node)
+static const ActionsDAG::Node * withoutCast(const ActionsDAG::Node * node)
 {
-    return isCast(node) ? *node.children.front() : node;
+    return isCast(*node) ? node->children.front() : node;
 }
 
 bool RuntimeFilterIndexAnalysisDescriptor::readsAnyOf(const Names & columns) const
@@ -1502,14 +1502,14 @@ bool RuntimeFilterIndexAnalysisDescriptor::readsAnyOf(const Names & columns) con
 
 const ActionsDAG::Node * RuntimeFilterIndexAnalysisDescriptor::tryGetKeyColumn() const
 {
-    const auto & node = withoutCast(getKeyNode());
-    return node.type == ActionsDAG::ActionType::INPUT ? &node : nullptr;
+    const auto * node = withoutCast(&getKeyNode());
+    return node->type == ActionsDAG::ActionType::INPUT ? node : nullptr;
 }
 
 bool RuntimeFilterIndexAnalysisDescriptor::isGlobalRowIndex() const
 {
-    const auto & node = withoutCast(getKeyNode());
-    return node.type == ActionsDAG::ActionType::FUNCTION && node.result_name == runtime_filter_global_row_index_node_name;
+    const auto * node = withoutCast(&getKeyNode());
+    return node->type == ActionsDAG::ActionType::FUNCTION && node->result_name == runtime_filter_global_row_index_node_name;
 }
 
 /// Adds the key of a descriptor to the DAG with the same names. The functions are reused, so that a cast converts with the
