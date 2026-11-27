@@ -7,7 +7,7 @@ Nullable fixed-width keys	results match: 1	fewer records: 1
 serialized keys	results match: 1	fewer records: 1
 long serialized keys: results match	1
 staged records on disk	results match: 1	fewer records: 1	written to disk: 1
-constant-key blocks	results match: 1	fewer records: 1
-constant-key blocks without count	results match: 1	fewer records: 1
+blocks of one key	results match: 1	fewer records: 1
+blocks of one key without count	results match: 1	fewer records: 1
 serialization of ts	Sparse
 Sparse ordering column	results match: 1	fewer records: 1

@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # `adaptive_aggregator_combine_arg_min_max` across the key kinds and record formats of the adaptive
-# aggregator, a block whose keys are all one constant, an ordering column in `Sparse` serialization, and
+# aggregator, blocks whose rows all have one key, an ordering column in `Sparse` serialization, and
 # staged records written to disk. Each shape runs with the setting off and then on, and prints whether the
 # results match and whether the setting staged fewer records.
 #
@@ -82,13 +82,13 @@ add_spilled_shape "staged records on disk" "$(grouped k "argMax(x, o), max(o), c
 # stream.
 CONCURRENT_READS="merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 1"
 
-# The keys of a block from one part are the constant `_part_index`. With more parts than producers, some
-# producer reads blocks of a second part after its table froze on the first, so its constant key misses and
-# the block is one run.
-add_shape "constant-key blocks" "SELECT _part_index AS p, argMax(n, o), max(o), count() FROM parts GROUP BY p
+# Every row of a part has the key `_part_index`, which the reader fills as a full column. With more parts than
+# producers, some producer reads the blocks of a second part after its table froze on the first, so every row
+# of such a block misses with one key, as one run of repeats.
+add_shape "blocks of one key" "SELECT _part_index AS p, argMax(n, o), max(o), count() FROM parts GROUP BY p
     SETTINGS adaptive_aggregator_combine_arg_min_max = __VALUE__, adaptive_aggregator_freeze_threshold = 1, max_block_size = 1024,
     ${CONCURRENT_READS}"
-add_shape "constant-key blocks without count" "SELECT _part_index AS p, argMin(n, o), min(o) FROM parts GROUP BY p
+add_shape "blocks of one key without count" "SELECT _part_index AS p, argMin(n, o), min(o) FROM parts GROUP BY p
     SETTINGS adaptive_aggregator_combine_arg_min_max = __VALUE__, adaptive_aggregator_freeze_threshold = 1, max_block_size = 1024,
     ${CONCURRENT_READS}"
 
