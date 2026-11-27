@@ -396,30 +396,35 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
     return res;
 }
 
-StorageID StorageMerge::getTableToWrite(ContextPtr query_context) const
+std::optional<StorageID> StorageMerge::tryGetTableToWrite(ContextPtr query_context) const
 {
     if (table_to_write)
-        return table_to_write.value();
+        return table_to_write;
+
+    if (!table_to_write_auto)
+        return {};
+
+    const auto access = query_context->getAccess();
+    std::optional<StorageID> chosen_table;
+    traverseTablesUntil([&](const StoragePtr & table)
+    {
+        auto table_id = table->getStorageID();
+        if (!chosen_table || table_id.getFullTableName() > chosen_table->getFullTableName())
+            if (access->isGranted(AccessType::SHOW_TABLES, table_id.database_name, table_id.table_name))
+                chosen_table = table_id;
+
+        return false;
+    });
+    return chosen_table;
+}
+
+StorageID StorageMerge::getTableToWrite(ContextPtr query_context) const
+{
+    if (auto table = tryGetTableToWrite(query_context))
+        return *table;
 
     if (table_to_write_auto)
-    {
-        const auto access = query_context->getAccess();
-        std::optional<StorageID> chosen_table;
-        traverseTablesUntil([&](const StoragePtr & table)
-        {
-            auto table_id = table->getStorageID();
-            if (!chosen_table || table_id.getFullTableName() > chosen_table->getFullTableName())
-                if (access->isGranted(AccessType::SHOW_TABLES, table_id.database_name, table_id.table_name))
-                    chosen_table = table_id;
-
-            return false;
-        });
-
-        if (chosen_table)
-            return *chosen_table;
-
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Can't find any table to write for storage {}", getStorageID().getNameForLogs());
-    }
 
     throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Inserts are not configured for Merge table {}", getStorageID().getNameForLogs());
 }
@@ -432,16 +437,34 @@ StoragePtr StorageMerge::tryGetNestedInsertTarget() const
     return DatabaseCatalog::instance().tryGetTable(*table_to_write, getContext());
 }
 
-SinkToStoragePtr StorageMerge::write(
-    const ASTPtr & /*query*/,
-    const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr local_context,
-    bool async_insert)
+StorageMerge::InsertTarget StorageMerge::resolveInsertTarget(const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context) const
 {
     StorageID target_id = getTableToWrite(local_context);
+    auto target = DatabaseCatalog::instance().getTable(target_id, local_context);
+    auto target_metadata = target->getInMemoryMetadataPtr(local_context, false);
+
+    /// The columns of the `Merge` table that the target table does not have are not written, as they are read
+    /// as defaults from it. The target table fills in its other columns with its defaults.
+    const auto target_insertable = target_metadata->getSampleBlockInsertable();
+    Names columns_to_insert;
+    for (const auto & column : metadata_snapshot->getSampleBlockNonMaterialized())
+        if (target_insertable.has(column.name))
+            columns_to_insert.push_back(column.name);
+
+    /// The grants are checked before anything else about the target table is reported. The nested `INSERT` checks
+    /// them again, but it is executed only in a background flush for asynchronous inserts, see `checkInsertIsAllowed`.
+    if (columns_to_insert.empty())
+    {
+        local_context->checkAccess(AccessType::INSERT, target_id.database_name, target_id.table_name);
+        throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+            "The Merge table {} has no columns in common with the table to write {}",
+            getStorageID().getNameForLogs(), target_id.getNameForLogs());
+    }
+    local_context->checkAccess(AccessType::INSERT, target_id.database_name, target_id.table_name, columns_to_insert);
 
     /// The target can forward the inserts further (it can be another `Merge` table). The nested queries would never end
-    /// if the chain returned to a table in it.
+    /// if the chain returned to a table in it. The tables further in the chain are not named in the messages: the grants
+    /// on them are checked only by the nested queries.
     {
         static constexpr size_t max_forwarding_depth = 16;
         auto same_table = [](const StorageID & lhs, const StorageID & rhs)
@@ -456,8 +479,7 @@ SinkToStoragePtr StorageMerge::write(
             for (const auto & id : chain)
                 if (same_table(id, next_id))
                     throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
-                        "Inserts into the Merge table {} are forwarded in a cycle through the table {}",
-                        getStorageID().getNameForLogs(), next_id.getNameForLogs());
+                        "Inserts into the Merge table {} are forwarded in a cycle", getStorageID().getNameForLogs());
 
             if (chain.size() > max_forwarding_depth)
                 throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
@@ -470,7 +492,12 @@ SinkToStoragePtr StorageMerge::write(
 
             chain.push_back(next_id);
             if (const auto * next_merge = dynamic_cast<const StorageMerge *>(next.get()))
-                next_id = next_merge->getTableToWrite(local_context);
+            {
+                auto next_target_id = next_merge->tryGetTableToWrite(local_context);
+                if (!next_target_id)
+                    break;
+                next_id = *next_target_id;
+            }
             else if (auto next_target = next->tryGetNestedInsertTarget())
                 next_id = next_target->getStorageID();
             else
@@ -478,26 +505,27 @@ SinkToStoragePtr StorageMerge::write(
         }
     }
 
-    auto target = DatabaseCatalog::instance().getTable(target_id, local_context);
-    auto target_metadata = target->getInMemoryMetadataPtr(local_context, false);
+    return {std::move(target), std::move(columns_to_insert)};
+}
 
-    /// The columns of the `Merge` table that the target table does not have are not written, as they are read
-    /// as defaults from it. The target table fills in its other columns with its defaults.
-    const auto target_insertable = target_metadata->getSampleBlockInsertable();
-    Names columns_to_insert;
-    for (const auto & column : metadata_snapshot->getSampleBlockNonMaterialized())
-        if (target_insertable.has(column.name))
-            columns_to_insert.push_back(column.name);
+void StorageMerge::checkInsertIsAllowed(ContextPtr local_context) const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto target = resolveInsertTarget(metadata_snapshot, local_context);
+    target.storage->checkInsertIsAllowed(local_context);
+}
 
-    if (columns_to_insert.empty())
-        throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
-            "The Merge table {} has no columns in common with the table to write {}",
-            getStorageID().getNameForLogs(), target_id.getNameForLogs());
-
+SinkToStoragePtr StorageMerge::write(
+    const ASTPtr & /*query*/,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr local_context,
+    bool async_insert)
+{
+    auto target = resolveInsertTarget(metadata_snapshot, local_context);
     return std::make_shared<NestedInsertSink>(
         std::make_shared<const Block>(metadata_snapshot->getSampleBlock()),
-        target->getStorageID(),
-        std::move(columns_to_insert),
+        target.storage->getStorageID(),
+        std::move(target.columns_to_insert),
         /*explicit_column_list=*/ true,
         local_context,
         async_insert);

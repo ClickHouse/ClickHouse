@@ -1,0 +1,25 @@
+--- no grant on the table to write
+(ACCESS_DENIED)
+--- the same for asynchronous inserts, before the data is queued
+(ACCESS_DENIED)
+(ACCESS_DENIED)
+--- the grant is checked before the columns of the table to write are compared
+(ACCESS_DENIED)
+--- a grant on the written columns is enough
+OK
+OK
+--- but not if more columns are written
+(ACCESS_DENIED)
+OK
+--- a chain through an Alias table needs the grants on every table
+(ACCESS_DENIED)
+OK
+--- a materialized view with SQL SECURITY DEFINER writes with the grants of the definer, not of the user
+(ACCESS_DENIED)
+OK
+--- data
+target	5	default	secret
+target	6	default	secret
+target	8	b	secret
+target	10	default	secret
+target_3	214

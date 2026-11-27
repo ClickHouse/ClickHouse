@@ -132,12 +132,17 @@ public:
         ContextPtr local_context,
         bool async_insert) override;
 
+    /// Checks the grants on the table to write. With asynchronous inserts, the sink is created in a background flush.
+    void checkInsertIsAllowed(ContextPtr local_context) const override;
+
     bool insertsThroughNestedQuery() const override { return table_to_write.has_value() || table_to_write_auto; }
     StoragePtr tryGetNestedInsertTarget() const override;
 
     /// The table the inserts are written into. With `auto`, it is the table with the greatest name among the tables
     /// of this `Merge` table that the user of `query_context` can see.
     StorageID getTableToWrite(ContextPtr query_context) const;
+    /// The same, but returns nothing if inserts are not configured, or no table is found for `auto`.
+    std::optional<StorageID> tryGetTableToWrite(ContextPtr query_context) const;
 
 private:
     /// (Database, Table, Lock, TableName, Metadata). The metadata is the snapshot the column-level access check
@@ -220,6 +225,16 @@ private:
 
     template <typename F>
     std::optional<UInt64> totalRowsOrBytes(const ContextPtr & query_context, F && func) const;
+
+    struct InsertTarget
+    {
+        StoragePtr storage;
+        /// The columns of the `Merge` table written into the target table.
+        Names columns_to_insert;
+    };
+
+    /// Resolves the table to write and checks the grants on it, see `write`.
+    InsertTarget resolveInsertTarget(const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context) const;
 
     void setTableToWrite(
         const std::optional<String> & table_to_write_,
