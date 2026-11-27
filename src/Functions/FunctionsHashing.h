@@ -669,13 +669,11 @@ struct ImplCityHash64
     using uint128_t = CityHash_v1_0_2::uint128;
 
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
-    ALWAYS_INLINE static auto apply(const char * s, const size_t len)
-    {
-        /// Values of a fixed size (UUIDs, numbers) are hashed inline, see `CityHash64UpTo16`.
-        if (__builtin_constant_p(len) && len <= 16)
-            return CityHash_v1_0_2::CityHash64UpTo16(s, len);
-        return CityHash_v1_0_2::CityHash64(s, len);
-    }
+    static auto apply(const char * s, const size_t len) { return CityHash_v1_0_2::CityHash64(s, len); }
+    /// Values of a fixed size (UUIDs, numbers) are hashed inline, see `CityHash64UpTo16`.
+    template <size_t size>
+    requires (size <= 16)
+    static auto applyFixedSize(const char * s) { return CityHash_v1_0_2::CityHash64UpTo16(s, size); }
     static constexpr bool use_int_hash_for_pods = true;
     static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
@@ -1029,7 +1027,7 @@ private:
                     {
                         auto value = vec_from[i];
                         transformEndianness<std::endian::little>(value);
-                        hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
+                        hash = applyValue(key, value);
                     }
                 }
 
@@ -1069,7 +1067,7 @@ private:
                 else
                 {
                     transformEndianness<std::endian::little>(value);
-                    hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
+                    hash = applyValue(key, value);
                 }
             }
 
@@ -1121,13 +1119,13 @@ private:
                     if (!key_cols.is_const && i != 0)
                         key = Impl::getKey(key_cols, i);
                 if constexpr (std::endian::native == std::endian::little)
-                    hash = apply(key, reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
+                    hash = applyValue(key, vec_from[i]);
                 else
                 {
                     auto value = vec_from[i];
                     to_little_endian(value);
 
-                    hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
+                    hash = applyValue(key, value);
                 }
                 if constexpr (first)
                     vec_to[i] = hash;
@@ -1148,7 +1146,7 @@ private:
             auto value = col_from_const->template getValue<FromType>();
             to_little_endian(value);
 
-            const auto hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
+            const auto hash = applyValue(key, value);
             const size_t size = vec_to.size();
             if constexpr (first)
                 vec_to.assign(size, hash);
@@ -1739,6 +1737,16 @@ public:
             return Impl::applyKeyed(key, begin, size);
         else
             return Impl::apply(begin, size);
+    }
+
+    /// For a value of a fixed-size type.
+    template <typename T>
+    static ToType applyValue(const KeyType & key, const T & value)
+    {
+        if constexpr (!Keyed && requires { Impl::template applyFixedSize<sizeof(T)>(reinterpret_cast<const char *>(&value)); })
+            return Impl::template applyFixedSize<sizeof(T)>(reinterpret_cast<const char *>(&value));
+        else
+            return apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
     }
 
     /// For data that is followed by at least 7 readable bytes, such as a value of a padded column.
