@@ -451,7 +451,7 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
     /// `Time64(0)` must not change what `accurateCast` accepts.
     can_apply_accurate_cast |= (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
         && which.isTimeOrTime64() && (to.isTime() || to.isDateOrDate32() || to.isDateTimeOrDateTime64());
-    can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
+    can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isInteger();
 
     if (requested_result_is_nullable && (which.isString() || (cast_type == CastType::accurateOrNull && which.isFixedString())))
     {
