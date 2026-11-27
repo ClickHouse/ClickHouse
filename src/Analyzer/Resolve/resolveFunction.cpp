@@ -1536,8 +1536,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         {
             return tryResolveIdentifier({Identifier{name}, IdentifierLookupContext::FUNCTION}, scope).resolved_identifier;
         };
-        /// A lambda function bound to the name `einsum` in the query, like `WITH f -> ... AS einsum`, is called as usual.
-        if (!is_scoped_function(function_name))
+        /// A lambda function bound to the name `einsum` in the query, like `WITH f -> ... AS einsum`, is called as usual,
+        /// and so is a SQL user defined function with this name (it can only be one created before `einsum` became
+        /// a builtin function and loaded at startup): both take precedence over a builtin function in the lookup below.
+        if (!is_scoped_function(function_name) && !UserDefinedSQLFunctionFactory::instance().tryGet(function_name))
         {
             /// The same order of lookup as for a call below: a lambda function in the scope, then a SQL user defined function.
             ScopedFunctionLookup get_called_lambda = [&](const String & name) -> QueryTreeNodePtr
