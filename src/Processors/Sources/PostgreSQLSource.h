@@ -62,9 +62,13 @@ private:
     /// Claimed once by whoever tears the connection down: prepare() on an uncancelled finish, else
     /// the destructor. onCancel()'s interrupt does not claim it - it cannot close the stream.
     std::atomic<bool> finalized{false};
+    /// Claimed by whichever comes first, the clean finish in prepare() or the interrupt in onCancel().
+    std::atomic<bool> teardown_started{false};
 
     /// tx and stream are written only by the pipeline thread; this is for onCancel() to read tx.
     std::mutex tx_mutex;
+    /// Our own duplicate of the connection's socket. The client library may close its own on a failed read.
+    int interrupt_fd = -1;
     /// Serializes the cancel_query() in finalize() between onCancel() and the destructor.
     std::mutex cancel_mutex;
 
