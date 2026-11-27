@@ -1,0 +1,78 @@
+---
+slug: /clickstack/observability/text-to-chart
+title: 'Text-to-Chart'
+sidebarTitle: 'Text-to-Chart'
+description: 'AI 기반 Text-to-Chart 기능을 사용해 ClickHouse Observability에서 자연어 프롬프트로 차트를 생성합니다.'
+doc_type: 'guide'
+keywords: ['clickstack', 'text-to-chart', 'AI', 'visualization', 'Chart Explorer', 'natural language', 'observability']
+---
+
+ClickHouse Observability의 Text-to-Chart 기능을 사용하면 보고 싶은 내용을 일반 텍스트로 설명하는 것만으로 시각화를 생성할 수 있습니다. 메트릭, 필터, group-by 필드를 직접 선택할 필요 없이 &quot;지난 3일간 서비스별 오류 발생 횟수&quot;와 같은 프롬프트를 입력하면 AI 어시스턴트가 해당 차트를 자동으로 생성합니다.
+
+이 기능은 대규모 언어 모델(LLM)을 사용해 텍스트 프롬프트를 쿼리로 변환한 다음, [차트 탐색기](/ko/clickstack/observability/features/dashboards/overview#navigate-chart-explorer)에서 시각화를 구성합니다.
+
+## 사전 요구 사항 {#prerequisites}
+
+팀 관리자가 **팀 설정**의 **Configure Generative AI**에서 생성형 AI를 활성화해야 합니다. 자세한 방법은 [생성형 AI 활성화](/ko/clickstack/observability/notebooks#enabling-generative-ai)를 참조하십시오. AI 모델과 서비스 제공업체는 플랫폼에서 자동으로 관리합니다.
+
+## Text-to-Chart 사용하기 {#using-text-to-chart}
+
+<Steps>
+  <Step title="차트 탐색기로 이동" id="navigate-chart-explorer">
+    왼쪽 사이드바에서 **차트 탐색기**를 선택하십시오.
+  </Step>
+
+  <Step title="데이터 소스 선택" id="select-data-source">
+    차트 탐색기 상단의 **AI 어시스턴트**가 접혀 있으면 펼치십시오. 프롬프트 필드 옆의 셀렉터에서 시각화할 데이터 소스를 선택하십시오(예: **로그** 또는 **trace**).
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![AI 어시스턴트가 펼쳐져 있고 로그가 선택되어 있으며 Generate 버튼이 표시된 차트 탐색기](/images/clickstack/observability-text-to-chart-explorer.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="텍스트 프롬프트 입력" id="enter-text-prompt">
+    **AI 어시스턴트** 프롬프트 필드에 만들려는 차트를 자연어로 설명하여 입력하십시오. 예시는 다음과 같습니다.
+
+    * `Error counts by service over the last 3 days`
+    * `Latency breakdown by endpoint`
+    * `Count of events over time grouped by severity`
+
+    **Generate**를 클릭하여 프롬프트로부터 차트를 생성하십시오. 아래 빌더에서 생성된 구성을 검토하십시오. 차트 유형, 필터, 그룹화를 조정한 후 **실행**을 클릭하면 시각화가 업데이트됩니다.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![AI 어시스턴트 프롬프트가 강조 표시된, 서비스별 오류 발생 횟수 차트 생성 결과](/images/clickstack/observability-text-to-chart-result.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 예시 프롬프트 {#example-prompts}
+
+다음 프롬프트는 관측성 데이터를 다룰 때 흔히 사용하는 활용 사례를 보여 줍니다.
+
+| 프롬프트                                              | 데이터 소스 | 설명                       |
+| ------------------------------------------------- | ------ | ------------------------ |
+| `Error count by service over time`                | 로그     | 서비스별 오류 발생 빈도를 차트로 표시합니다 |
+| `Average request duration grouped by endpoint`    | trace   | 엔드포인트별 지연 시간 패턴을 보여 줍니다  |
+| `P99 latency by service`                          | trace   | 서비스 전반의 테일 지연 시간을 파악합니다  |
+| `Count of 5xx status codes over the last 6 hours` | 로그     | 서버 오류 추이를 추적합니다          |
+
+프롬프트에서는 구성된 데이터 소스(data sources)에 있는 모든 컬럼 또는 속성을 참조할 수 있습니다. AI가 원하는 차트를 정확히 생성할 수 있도록 구체적인 컬럼 이름(Column Names), 필터, 시간 범위를 포함하십시오.
+
+## 제한 사항 {#limitations}
+
+* 데이터 소스로는 로그와 trace만 지원됩니다. Prometheus 메트릭은 아직 지원되지 않습니다.
+* 차트의 정확도는 프롬프트가 얼마나 명확한지, 그리고 기반 데이터의 구조가 어떠한지에 따라 달라집니다. 생성된 차트가 예상과 다르면 프롬프트를 바꿔 표현하거나 컬럼 이름(Column Names)을 명시적으로 지정해 보십시오.
+
+## 추가 자료 {#further-reading}
+
+* [Text-to-Dashboard](/ko/clickstack/observability/text-to-dashboard) — 프롬프트 하나로 여러 타일로 구성된 대시보드를 생성하고 저장합니다
+
+* [From text to charts: a faster way to visualize with ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — 이 기능을 소개하는 블로그 게시물
+
+* [대시보드 및 시각화](/ko/clickstack/observability/features/dashboards/overview) — 차트 탐색기를 사용한 수동 차트 생성
+
+* [검색](/ko/clickstack/observability/features/search) — 전체 텍스트 검색 및 속성 검색 구문

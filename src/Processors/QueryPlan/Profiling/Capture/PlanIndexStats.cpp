@@ -44,7 +44,7 @@ std::string_view toString(MarkRanges::SearchAlgorithm search_algorithm)
     }
 }
 
-JSONBuilder::ItemPtr indexStatsToJSON(const PlanIndexStats & index_stats)
+JSONBuilder::ItemPtr indexStatsToJSON(const PlanIndexStats & index_stats, bool with_addresses)
 {
     if (index_stats.empty())
         return nullptr;
@@ -104,7 +104,8 @@ JSONBuilder::ItemPtr indexStatsToJSON(const PlanIndexStats & index_stats)
             for (const auto & node_stat : stat.distributed)
             {
                 auto node_stat_map = std::make_unique<JSONBuilder::JSONMap>();
-                node_stat_map->add("Address", node_stat.address);
+                if (with_addresses)
+                    node_stat_map->add("Address", node_stat.address);
                 node_stat_map->add("Parts send", node_stat.num_parts_send);
                 node_stat_map->add("Parts received", node_stat.num_parts_received);
                 node_stat_map->add("Granules send", node_stat.num_granules_send);

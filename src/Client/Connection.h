@@ -310,6 +310,8 @@ private:
     /// From where to read query execution result.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
     std::unique_ptr<NativeReader> block_in;
+    /// The result of the query that was sent can have rows that carry no columns: it is an intermediate result.
+    bool rows_without_columns_expected = false;
     std::unique_ptr<NativeReader> block_logs_in;
     std::unique_ptr<NativeReader> block_profile_events_in;
 

@@ -56,6 +56,7 @@ def generate_cluster_def(port):
                 <min_upload_part_size>100000</min_upload_part_size>
                 <max_single_download_retries>10</max_single_download_retries>
                 <max_single_read_retries>10</max_single_read_retries>
+                <persistent_removal_log>true</persistent_removal_log>
             </blob_storage_disk>
             <hdd>
                 <type>local</type>
@@ -103,6 +104,7 @@ def generate_cluster_def_legacy_native_copy(port):
                 <container_name>cont</container_name>
                 <skip_access_check>false</skip_access_check>
                 <use_native_copy>true</use_native_copy>
+                <persistent_removal_log>true</persistent_removal_log>
             </blob_storage_disk_legacy_native_copy>
         </disks>
         <policies>
@@ -145,6 +147,7 @@ def generate_cluster_def_native_copy(port):
                 <container_name>cont</container_name>
                 <skip_access_check>false</skip_access_check>
                 <use_native_copy>true</use_native_copy>
+                <persistent_removal_log>true</persistent_removal_log>
             </blob_storage_disk_native_copy>
         </disks>
         <policies>

@@ -378,7 +378,7 @@ SELECT * FROM search_tree;
 
 Para criar uma ordem de percurso em profundidade, calculamos, para cada linha do resultado, um array de linhas que já visitamos:
 
-**Exemplo:** percurso em profundidade na árvore
+**Exemplo:** percurso em árvore em profundidade
 
 ```sql
 WITH RECURSIVE search_tree AS (
@@ -404,7 +404,7 @@ SELECT * FROM search_tree ORDER BY path;
 
 Para obter uma ordem em largura, a abordagem padrão é adicionar uma coluna que acompanhe a profundidade da busca:
 
-**Exemplo:** Percurso em largura da árvore
+**Exemplo:** Percurso em árvore em largura
 
 ```sql
 WITH RECURSIVE search_tree AS (
@@ -420,12 +420,12 @@ SELECT * FROM search_tree ORDER BY depth;
 ```
 
 ```text
-┌─id─┬─link─┬─data──────┬─path────┬─depth─┐
-│  0 │ ᴺᵁᴸᴸ │ ROOT      │ [0]     │     0 │
-│  1 │    0 │ Child_1   │ [0,1]   │     1 │
-│  2 │    0 │ Child_2   │ [0,2]   │     1 │
-│  3 │    1 │ Child_1_1 │ [0,1,3] │     2 │
-└────┴──────┴───────────┴─────────┴───────┘
+┌─id─┬─parent_id─┬─data──────┬─path────┬─depth─┐
+│  0 │      ᴺᵁᴸᴸ │ ROOT      │ [0]     │     0 │
+│  1 │         0 │ Child_1   │ [0,1]   │     1 │
+│  2 │         0 │ Child_2   │ [0,2]   │     1 │
+│  3 │         1 │ Child_1_1 │ [0,1,3] │     2 │
+└────┴───────────┴───────────┴─────────┴───────┘
 ```
 
 ### Detecção de ciclos {#cycle-detection}

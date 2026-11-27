@@ -80,7 +80,9 @@ std::string_view toString(MarkRanges::SearchAlgorithm search_algorithm);
 
 /// The `Indexes` and `Projections` entries of a plan document. Null when there is nothing to say,
 /// so a caller can skip the key entirely.
-JSONBuilder::ItemPtr indexStatsToJSON(const PlanIndexStats & index_stats);
+/// `with_addresses` is false for the plan stored in `system.query_log.query_plan`, which keeps
+/// what each replica contributed but not which replica it was.
+JSONBuilder::ItemPtr indexStatsToJSON(const PlanIndexStats & index_stats, bool with_addresses = true);
 JSONBuilder::ItemPtr projectionStatsToJSON(const PlanProjectionStats & projection_stats);
 
 }
