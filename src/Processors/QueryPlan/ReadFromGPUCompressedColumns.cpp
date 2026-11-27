@@ -272,7 +272,7 @@ SharedHeader emptyHeader()
 /// Staged blocks of a reader, which go back to its pool once the last chunk that holds them is gone.
 struct StagedBatchHolder
 {
-    StagedBatchHolder(std::unique_ptr<GPU::GPUStagedBatch> batch_, std::shared_ptr<GPU::GPUStagedBatchPool> pool_)
+    StagedBatchHolder(std::unique_ptr<GPU::GPUHostBatch> batch_, std::shared_ptr<GPU::GPUHostBatchPool> pool_)
         : batch(std::move(batch_)), pool(std::move(pool_))
     {
     }
@@ -280,8 +280,8 @@ struct StagedBatchHolder
     StagedBatchHolder(const StagedBatchHolder &) = delete;
     StagedBatchHolder & operator=(const StagedBatchHolder &) = delete;
 
-    std::unique_ptr<GPU::GPUStagedBatch> batch;
-    std::shared_ptr<GPU::GPUStagedBatchPool> pool;
+    std::unique_ptr<GPU::GPUHostBatch> batch;
+    std::shared_ptr<GPU::GPUHostBatchPool> pool;
 
     ~StagedBatchHolder()
     {
@@ -298,8 +298,8 @@ struct StagedBatchInfo : public ChunkInfoCloneable<StagedBatchInfo>
 
 struct DeviceBatchInfo : public ChunkInfoCloneable<DeviceBatchInfo>
 {
-    explicit DeviceBatchInfo(std::shared_ptr<GPU::GPUDeviceBatch> batch_) : batch(std::move(batch_)) { }
-    std::shared_ptr<GPU::GPUDeviceBatch> batch;
+    explicit DeviceBatchInfo(std::shared_ptr<GPU::GPUFuture<GPU::GPUDeviceBatch>> batch_) : batch(std::move(batch_)) { }
+    std::shared_ptr<GPU::GPUFuture<GPU::GPUDeviceBatch>> batch;
 };
 
 struct LaneGroupsInfo : public ChunkInfoCloneable<LaneGroupsInfo>
@@ -326,7 +326,7 @@ public:
         : ISource(emptyHeader(), /*enable_auto_progress=*/false)
         , state(std::move(state_))
         , query_status(std::move(query_status_))
-        , pool(std::make_shared<GPU::GPUStagedBatchPool>())
+        , pool(std::make_shared<GPU::GPUHostBatchPool>())
         , stager(state->column_types, state->batch_bytes, pool)
     {
     }
@@ -435,12 +435,12 @@ private:
 
     /// The rows of the chunk are about the rows staged, at least one, so that the pipeline keeps the chunk that ends a
     /// part: the uploader tells how many rows a batch really has.
-    Chunk chunkOf(std::unique_ptr<GPU::GPUStagedBatch> batch) const
+    Chunk chunkOf(std::unique_ptr<GPU::GPUHostBatch> batch) const
     {
         size_t rows = 0;
         for (size_t c = 0; c < state->column_types.size(); ++c)
         {
-            const GPU::GPUStagedColumn & column = batch->columns[c];
+            const GPU::GPUHostColumn & column = batch->columns[c];
             const GPU::GPUElementType type = state->column_types[c];
             rows = std::max(rows, type == GPU::GPUElementType::String ? column.sizes.kept_bytes / sizeof(UInt64) : column.values.kept_bytes / GPU::sizeOf(type));
         }
@@ -453,7 +453,7 @@ private:
 
     const SharedStatePtr state;
     const QueryStatusPtr query_status;
-    const std::shared_ptr<GPU::GPUStagedBatchPool> pool;
+    const std::shared_ptr<GPU::GPUHostBatchPool> pool;
     GPU::GPUBlockStager stager;
     /// The part being read, and the next one, opened ahead.
     std::optional<OpenPart> current;
@@ -475,15 +475,15 @@ protected:
     void transform(Chunk & chunk) override
     {
         auto info = infoOrThrow<StagedBatchInfo>(chunk, getName());
-        std::optional<GPU::GPUDeviceBatch> batch = uploader.upload(*info->holder->batch);
+        std::optional<GPU::GPUFuture<GPU::GPUDeviceBatch>> batch = uploader.sendHostToDevice(*info->holder->batch);
         info.reset();
 
         chunk.clear();
         if (!batch)
             return;
-        const size_t rows = batch->rows();
-        chunk = Chunk(Columns{}, rows);
-        chunk.getChunkInfos().add(std::make_shared<DeviceBatchInfo>(std::make_shared<GPU::GPUDeviceBatch>(std::move(*batch))));
+        /// A row, so that the pipeline keeps the chunk: the lane tells how many rows the batch has.
+        chunk = Chunk(Columns{}, 1);
+        chunk.getChunkInfos().add(std::make_shared<DeviceBatchInfo>(std::make_shared<GPU::GPUFuture<GPU::GPUDeviceBatch>>(std::move(*batch))));
     }
 
 private:
