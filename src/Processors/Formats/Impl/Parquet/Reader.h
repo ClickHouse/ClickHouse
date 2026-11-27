@@ -245,6 +245,9 @@ struct Reader
         /// Number of condition atoms that probe this column's dictionary filter in one row group evaluation.
         size_t hash_filter_atoms = 0;
 
+        /// Values of this sort column beyond the top-K threshold are decoded as empty strings, see `TopKStringBound`.
+        std::shared_ptr<const TopKStringBound> top_k_string_bound;
+
         PrimitiveColumnInfo() = default;
         PrimitiveColumnInfo(PrimitiveColumnInfo &&) = default;
         ~PrimitiveColumnInfo();
@@ -668,6 +671,9 @@ struct Reader
     /// row-group skipping by min/max statistics (see FormatFilterInfo::top_k_filter).
     std::optional<size_t> top_k_primitive_idx;
     bool top_k_dictionary_bound = false;
+    /// The sort column is a `String` read without conversion, and the filter rejects every row whose value is empty.
+    bool top_k_column_rejects_empty = false;
+    bool top_k_string_bound_active = false;
     /// TopN dynamic filtering: whether this file physically stores the sort column. If it doesn't,
     /// the reader only produces type defaults for it while the threshold comes from the values the
     /// pipeline puts in their place, so the filter must not be applied at all.
@@ -905,7 +911,7 @@ private:
     double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
     void decodeDictionaryPageImpl(
         const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info,
-        bool build_string_value_filter_mask = true);
+        bool build_entry_masks = true);
     /// If row_idx is provided, jump to the start of that row. Otherwise go to the start of next page.
     void skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     /// Returns the size of the header. `header` must be default-constructed.

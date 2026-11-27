@@ -1,0 +1,39 @@
+-- results identical with and without the optimization
+OK
+OK
+-- the values beyond the threshold are not copied
+PLAIN: replaced > 0: True
+PLAIN, PREWHERE: replaced > 0: True
+PLAIN, ties: replaced > 0: True
+dictionary: replaced > 0: True
+dictionary, PREWHERE: replaced > 0: True
+DELTA_LENGTH_BYTE_ARRAY: replaced > 0: True
+DELTA_BYTE_ARRAY: replaced > 0: True
+DEFAULT, PREWHERE moved: replaced > 0: True
+no PREWHERE: replaced == 0: True
+length in PREWHERE: replaced == 0: True
+length in the same PREWHERE: replaced == 0: True
+throwIf: replaced == 0: True
+shared conjunct: replaced == 0: True
+-- a single-column filter is moved to PREWHERE
+1
+0
+0
+-- columns cache
+0
+4000	24000
+1
+4000	24000
+-- query condition cache
+003999
+003998
+003997
+003996
+003995
+4000	24000
+003999
+003997
+003995
+003993
+003991
+2666	15996
