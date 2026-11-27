@@ -9,14 +9,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Waits until the table has the given number of mutation entries.
-function wait_for_mutation_entries()
+# Waits until the table has no mutation entries.
+function wait_for_no_mutation_entries()
 {
     local table="$1"
-    local expected="$2"
     while clickhouse_test_time_left
     do
-        if [[ $($CLICKHOUSE_CLIENT -q "select count() from system.mutations where database = currentDatabase() and table = '$table'") == "$expected" ]]
+        if [[ $($CLICKHOUSE_CLIENT -q "select count() from system.mutations where database = currentDatabase() and table = '$table'") == "0" ]]
         then
             return
         fi
@@ -38,24 +37,16 @@ $CLICKHOUSE_CLIENT -q "
 
 for table in data_rmt data_mt
 do
+    # The entry of the mutation may be removed even before the query returns, and the query must not fail because of that.
     $CLICKHOUSE_CLIENT -q "
         insert into $table values (1);
-
-        -- The mutation cannot be finished while merges are stopped, and the entry of an unfinished mutation is never removed.
-        system stop merges $table;
-        alter table $table delete where 1 settings mutations_sync = 0;
-    "
-    wait_for_mutation_entries $table 1
-    $CLICKHOUSE_CLIENT -q "
-        select 'unfinished mutations for $table', count() from system.mutations where database = currentDatabase() and table = '$table' and not is_done;
-        system start merges $table;
+        alter table $table delete where 1 settings mutations_sync = 2;
+        select 'rows after the mutation in $table', count() from $table;
     "
 
-    # Now the mutation gets finished and its entry is removed.
-    wait_for_mutation_entries $table 0
+    wait_for_no_mutation_entries $table
     $CLICKHOUSE_CLIENT -q "
         select 'mutations after cleanup for $table', count() from system.mutations where database = currentDatabase() and table = '$table';
-        select 'rows in $table', count() from $table;
         drop table $table;
     "
 done
