@@ -55,6 +55,8 @@ struct SchemaConverter
     size_t nullable_tuple_group_depth = 0;
     /// >0 while recursing a requested group whose null map may have to be read from one of its leaves.
     size_t group_null_map_leaves_depth = 0;
+    /// Two requested columns have names that are equal case-insensitively, and there is no column_mapper.
+    bool requested_case_variants = false;
 
     /// The key is the parquet column name, without ColumnMapper.
     UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> geo_columns;
@@ -109,6 +111,8 @@ private:
         bool requested = false;
         /// Index of the key_value tuple element not read, for a requested map read by one side. Not inherited by recursive calls.
         std::optional<size_t> map_element_to_skip;
+        /// Which of the requested columns matching the element it is read for. Not inherited by recursive calls.
+        size_t match = 0;
         bool inside_skipped_map_element = false;
         /// The element or one of its ancestors is not in the data lake schema (see useColumnMapperIfNeeded).
         bool not_in_datalake_schema = false;
@@ -116,6 +120,7 @@ private:
         /// These are assigned by the callee.
         const parq::SchemaElement * element = nullptr;
         std::optional<size_t> output_idx; // index in output_columns
+        size_t matches = 0; // how many requested columns match the element
 
         [[nodiscard]] const String & getParquetName() const
         {
@@ -161,8 +166,10 @@ private:
             res.schema_context = schema_context_;
             res.type_hint = std::move(type_hint_);
             res.map_element_to_skip.reset();
+            res.match = 0;
             res.element = nullptr;
             res.output_idx.reset();
+            res.matches = 0;
             return res;
         }
     };
@@ -193,6 +200,7 @@ private:
     void checkHasColumns();
 
     void processSubtree(TraversalNode & node);
+    void processSubtreeImpl(TraversalNode & node);
 
     /// These functions are used by processSubtree for different kinds of SchemaElement.
     /// Return true if the schema element was recognized as the corresponding kind,

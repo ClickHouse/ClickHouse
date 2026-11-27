@@ -105,6 +105,18 @@ void SchemaConverter::prepareForReading()
     chassert(sample_block);
     checkHasColumns();
 
+    /// With a data lake column mapper, names that differ only by case are different fields.
+    if (options.format.parquet.case_insensitive_column_matching && !column_mapper)
+    {
+        VectorWithMemoryTracking<std::string_view> names;
+        for (const auto & column : *sample_block)
+            names.push_back(column.name);
+        std::sort(names.begin(), names.end(), [](std::string_view a, std::string_view b) { return boost::ilexicographical_compare(a, b); });
+        requested_case_variants
+            = std::adjacent_find(names.begin(), names.end(), [](std::string_view a, std::string_view b) { return boost::iequals(a, b); })
+            != names.end();
+    }
+
     /// DFS the schema tree.
     size_t top_level_columns = size_t(file_metadata.schema.at(0).num_children);
     top_level_field_ids.emplace();
@@ -316,6 +328,40 @@ static void validateFileLogicalTypeGroup(const parq::FileMetaData & file_metadat
 
 void SchemaConverter::processSubtree(TraversalNode & node)
 {
+    if (!requested_case_variants)
+    {
+        processSubtreeImpl(node);
+        return;
+    }
+
+    /// Columns whose names differ only by case can match one element: it is read for each, with its own type.
+    const TraversalNode unbound = node;
+    const size_t schema_idx_before = schema_idx;
+    const size_t primitive_column_idx_before = primitive_column_idx;
+    processSubtreeImpl(node);
+    /// A pass that skips the element can stop inside its subtree, so continue after the furthest pass.
+    size_t schema_idx_after = schema_idx;
+    size_t primitive_column_idx_after = primitive_column_idx;
+    for (size_t match = 1; match < node.matches; ++match)
+    {
+        const size_t leaves_in_arrays_size = leaves_in_arrays.size();
+        const size_t tuples_in_arrays_size = tuples_in_arrays.size();
+        schema_idx = schema_idx_before;
+        primitive_column_idx = primitive_column_idx_before;
+        TraversalNode again = unbound;
+        again.match = match;
+        processSubtreeImpl(again);
+        schema_idx_after = std::max(schema_idx_after, schema_idx);
+        primitive_column_idx_after = std::max(primitive_column_idx_after, primitive_column_idx);
+        leaves_in_arrays.resize(leaves_in_arrays_size);
+        tuples_in_arrays.resize(tuples_in_arrays_size);
+    }
+    schema_idx = schema_idx_after;
+    primitive_column_idx = primitive_column_idx_after;
+}
+
+void SchemaConverter::processSubtreeImpl(TraversalNode & node)
+{
     /// Reject deeply nested schemas before recursing. The def-level guard below (def == UINT8_MAX)
     /// only counts OPTIONAL/REPEATED nodes, so a chain of REQUIRED groups would bypass it and
     /// overflow the native stack. Track the real recursion depth unconditionally and reject early;
@@ -356,7 +402,21 @@ void SchemaConverter::processSubtree(TraversalNode & node)
             /// E.g.:
             ///   insert into function file('t.parquet') select [(10,20,30)] as x;
             ///   select * from file('t.parquet', Parquet, '`x.2` Array(UInt8)'); -- outputs [20]
-            std::optional<size_t> pos = sample_block->findPositionByName(node.name, options.format.parquet.case_insensitive_column_matching);
+            std::optional<size_t> pos;
+            if (!requested_case_variants)
+                pos = sample_block->findPositionByName(node.name, options.format.parquet.case_insensitive_column_matching);
+            else
+            {
+                /// Take the node.match-th of the requested columns matching the element.
+                for (size_t i = 0; i < sample_block->columns(); ++i)
+                {
+                    if (!boost::iequals(sample_block->getByPosition(i).name, node.name))
+                        continue;
+                    if (node.matches == node.match)
+                        pos = i;
+                    ++node.matches;
+                }
+            }
             if (pos.has_value())
             {
                 if (node.requested || node.inside_skipped_map_element)
