@@ -102,6 +102,7 @@ void ISimpleTransform::work()
     catch (DB::Exception &)
     {
         output_data.exception = std::current_exception();
+        setPassedOnException(output_data.exception);
         has_output = true;
         has_input = false;
         return;

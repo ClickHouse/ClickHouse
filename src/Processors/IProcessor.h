@@ -5,9 +5,11 @@
 #include <Common/Stopwatch.h>
 
 #include <atomic>
+#include <exception>
 #include <list>
 #include <memory>
 #include <span>
+#include <utility>
 #include <vector>
 #include <Processors/ProcessorsProfileLogInfo.h>
 #include <Processors/IProcessor_fwd.h>
@@ -337,6 +339,13 @@ public:
     const String & getPlanStepName() const { return plan_step_name; }
     const String & getPlanStepDescription() const { return plan_step_description; }
 
+    /// For a processor whose `work` catches its own exception and sends it downstream through an
+    /// output port instead of throwing it. The exception is then rethrown by a processor further down,
+    /// so the executor takes it from here to know which processor it came from.
+    void setPassedOnException(std::exception_ptr exception) { passed_on_exception = std::move(exception); }
+    bool hasPassedOnException() const { return static_cast<bool>(passed_on_exception); }
+    std::exception_ptr takePassedOnException() { return std::exchange(passed_on_exception, nullptr); }
+
     uint64_t getElapsedNs() const { return elapsed_ns; }
     uint64_t getNumExecutedJobs() const { return num_executed_jobs; }
     uint64_t getInputWaitElapsedNs() const { return input_wait_elapsed_ns; }
@@ -433,6 +442,8 @@ private:
     uint64_t output_wait_elapsed_ns = 0;
 
     size_t stream_number = NO_STREAM;
+
+    std::exception_ptr passed_on_exception;
 
     const IQueryPlanStep * query_plan_step = nullptr;
     String step_uniq_id;

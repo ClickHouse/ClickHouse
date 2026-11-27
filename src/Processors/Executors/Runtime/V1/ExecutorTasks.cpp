@@ -513,6 +513,13 @@ String ExecutorTasks::dump()
     return buffer.str();
 }
 
+void ExecutorTasks::flushWorkIntervals()
+{
+    /// Not `num_threads`: on an exception from `init`, fewer contexts may exist.
+    for (auto & context : executor_contexts)
+        context->flushWorkIntervals();
+}
+
 }
 
 }

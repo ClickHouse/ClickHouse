@@ -3992,6 +3992,11 @@ static BlockIO executeQueryImpl(
                         my_quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
                 }
 
+                /// Before the row is written, so that the logged plan says where the query failed and
+                /// what it had done until then.
+                if (auto plan_log_capture = context->getPlanLogCapture())
+                    plan_log_capture->captureFailure(query_pipeline);
+
                 /// Also charges the quotas over profile events with what the failed query consumed.
                 logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error,
                     /* charge_quota_profile_events = */ (!quota_ignored || chargesExemptQueryProfileEvents(context->getProcessListElementSafe()))

@@ -86,6 +86,9 @@ private:
 
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
+    /// The counterpart of the profiling part of `finalizeExecution` for an execution that threw,
+    /// once no thread of it runs anymore.
+    void finishProfilingOnException() noexcept;
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads, bool concurrency_control);
@@ -93,7 +96,8 @@ private:
     void executeSingleThread(size_t thread_num, WorkloadResources && resources);
     void finish();
     void detachSpillables();
-    void cancelWithException(std::exception_ptr cause);
+    /// `failed_processor` is the processor whose work threw `cause`, if that is known.
+    void cancelWithException(std::exception_ptr cause, const IProcessor * failed_processor = nullptr);
     void logAndRethrowException();
 
     // Methods for CPU scheduling
