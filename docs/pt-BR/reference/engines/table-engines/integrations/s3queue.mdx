@@ -198,13 +198,15 @@ Valor padrão: string vazia.
 
 ### `after_processing_move_uri` {#after_processing_move_uri}
 
-URI do bucket do S3 para o qual os arquivos processados com sucesso serão movidos, se o destino for outro bucket do S3.
+URI do bucket do S3 para onde os arquivos processados com sucesso serão movidos, caso o destino seja outro bucket do S3.
+
+Definir essa configuração equivale ao mesmo fluxo de dados de `INSERT INTO FUNCTION s3('<destination>') SELECT * FROM <table>`, portanto exige a concessão `WRITE` na fonte `S3`. Uma concessão limitada por um filtro de URL não é suficiente, pois a movimentação grava chaves construídas a partir de `after_processing_move_prefix` e das chaves de origem, e não a partir da URI. `ALTER TABLE ... MODIFY SETTING` também exige `SELECT` na tabela. O destino deve ser permitido por `remote_url_allow_hosts`. A movimentação sempre interpreta a URI com detecção automática de estilo, assim como a função de tabela `s3` faz com o `s3_uri_style` padrão; por isso, a configuração do servidor `uri_style` e a configuração de consulta `s3_uri_style` não se aplicam a ela.
 
 Valores possíveis:
 
 * String.
 
-Valor padrão: string vazia.
+Valor default: string vazia.
 
 ### `after_processing_tag_key` {#after_processing_tag_key}
 

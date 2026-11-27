@@ -217,6 +217,9 @@ public:
     void updateNewestSeenTimestamp(time_t timestamp, const StorageID & storage_id);
     /// Update the "newest object committed" watermark, see updateNewestSeenTimestamp().
     void updateNewestCommittedTimestamp(time_t timestamp, const StorageID & storage_id);
+    /// Forget both watermarks of the table and remove their metrics, so that a table which was shut down
+    /// does not leave stale series. A later update starts again from an empty watermark.
+    void removePipelineLagMetrics(const StorageID & storage_id);
 
 private:
     void cleanupThreadFunc();

@@ -1,14 +1,12 @@
 ---
 slug: /parts
 title: 'Partes de tabela'
-description: 'O que são os data parts no ClickHouse'
+description: 'O que são as partes de dados no ClickHouse'
 keywords: ['parte']
 doc_type: 'reference'
 ---
 
-<div id="what-are-table-parts-in-clickhouse">
-  ## O que são partes de tabela no ClickHouse?
-</div>
+## O que são partes de tabela no ClickHouse? {#what-are-table-parts-in-clickhouse}
 
 <br />
 
@@ -33,13 +31,9 @@ Você pode [consultar esta tabela](https://sql.clickhouse.com/?query=U0VMRUNUICo
 Uma parte de dados é criada sempre que um conjunto de linhas é inserido na tabela. O diagrama a seguir mostra isso:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/part.webp)
-
-</Frame>
-
+  <Frame>
+    ![](/images/managing-data/core-concepts/part.webp)
+  </Frame>
 </div>
 
 <br />
@@ -68,28 +62,22 @@ Dependendo do engine específico da tabela, transformações adicionais [podem](
 
 As partes de dados são autocontidas e incluem todos os metadados necessários para interpretar seu conteúdo sem exigir um catálogo central. Além do índice primário esparso, as partes contêm metadados adicionais, como [data skipping indexes](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes) secundários, [estatísticas de coluna](https://clickhouse.com/blog/clickhouse-release-23-11#column-statistics-for-prewhere), checksums, índices min-max (se [particionamento](/pt-BR/concepts/core-concepts/partitions) for usado) e [mais](https://github.com/ClickHouse/ClickHouse/blob/a065b11d591f22b5dd50cb6224fab2ca557b4989/src/Storages/MergeTree/MergeTreeData.h#L104).
 
-<div id="part-merges">
-  ## Mesclagens de partes
-</div>
+## Mesclagens de partes {#part-merges}
 
 Para gerenciar o número de partes por tabela, uma tarefa de [mesclagem em segundo plano](/pt-BR/concepts/core-concepts/merges) combina periodicamente partes menores em partes maiores até que elas atinjam um tamanho [configurável](/pt-BR/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) comprimido (normalmente ~150 GB). As partes mescladas são marcadas como inativas e excluídas após um intervalo de tempo [configurável](/pt-BR/reference/settings/merge-tree-settings/other#old_parts_lifetime). Com o tempo, esse processo cria uma estrutura hierárquica de partes mescladas, por isso ela é chamada de tabela MergeTree:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![](/images/managing-data/core-concepts/merges.webp)
-
-</Frame>
-
+  <Frame>
+    ![](/images/managing-data/core-concepts/merges.webp)
+  </Frame>
 </div>
 
 <br />
 
-Para minimizar o número de partes iniciais e a sobrecarga das mesclagens, os clientes de banco de dados são [incentivados](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance) a inserir tuplas em lote, por exemplo, 20.000 linhas de uma vez, ou a usar o [modo de inserção assíncrona](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse), no qual o ClickHouse armazena em buffer linhas de vários INSERTs recebidos na mesma tabela e cria uma nova parte somente depois que o tamanho do buffer excede um limite configurável ou que um timeout é atingido.
+Para minimizar o número de partes iniciais e a sobrecarga das mesclagens, os clientes de banco de dados são [incentivados](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance) a inserir tuplas em lote, por exemplo, 20,000 linhas de uma vez, ou a usar o [modo de inserção assíncrona](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse), no qual o ClickHouse armazena em buffer linhas de vários INSERTs recebidos na mesma tabela e cria uma nova parte somente depois que o tamanho do buffer excede um limiar configurável ou que um tempo limite é atingido.
 
 <div id="monitoring-table-parts">
-  ## Monitorando partes de tabela
+  ## Monitorando partes de tabela {#monitoring-table-parts}
 </div>
 
 Você pode [consultar](https://sql.clickhouse.com/?query=U0VMRUNUIF9wYXJ0CkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGUKR1JPVVAgQlkgX3BhcnQKT1JERVIgQlkgX3BhcnQgQVNDOw\&run_query=true\&tab=results) a lista de todas as partes ativas que existem atualmente na nossa tabela de exemplo usando a [coluna virtual](/pt-BR/reference/engines/table-engines/index#table_engines-virtual_columns) `_part`:

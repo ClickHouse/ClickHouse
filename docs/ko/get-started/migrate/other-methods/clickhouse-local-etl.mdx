@@ -10,13 +10,9 @@ doc_type: 'guide'
 import AddARemoteSystem from '/snippets/ko/_add_remote_ip_access_list_detail.mdx';
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![자가 관리형 ClickHouse 마이그레이션](/images/integrations/migration/ch-local-01.webp)
-
-</Frame>
-
+  <Frame>
+    ![자체 관리형 ClickHouse 마이그레이션](/images/integrations/migration/ch-local-01.webp)
+  </Frame>
 </div>
 
 현재 사용 중인 데이터베이스 시스템에서 ClickHouse Cloud로 데이터를 마이그레이션하는 ETL 도구로 ClickHouse, 보다 정확히는 [`clickhouse-local`](/ko/concepts/features/tools-and-utilities/clickhouse-local)을 사용할 수 있습니다.
@@ -25,21 +21,15 @@ import AddARemoteSystem from '/snippets/ko/_add_remote_ip_access_list_detail.mdx
 
 이 마이그레이션 방식은 원본 데이터베이스에서 대상 데이터베이스로 데이터를 옮길 때 중간 피벗 지점 또는 경유지를 사용하므로, 때때로 &quot;피벗&quot; 방식이라고 부릅니다. 예를 들어 보안 요구 사항으로 인해 사설 또는 내부 네트워크에서는 아웃바운드 연결만 허용되는 경우, 이 방법이 필요할 수 있습니다. 이 경우 `clickhouse-local`로 원본 데이터베이스에서 데이터를 가져온 다음, `clickhouse-local`를 피벗 지점으로 삼아 대상 ClickHouse 데이터베이스로 데이터를 전송해야 합니다.
 
-ClickHouse는 [MySQL](/ko/reference/engines/table-engines/integrations/mysql), [PostgreSQL](/ko/reference/engines/table-engines/integrations/postgresql), [MongoDB](/ko/reference/engines/table-engines/integrations/mongodb), [SQLite](/ko/reference/engines/table-engines/integrations/sqlite)에 대해 integration 엔진과 테이블 함수(실행 시 즉시 생성됨로 integration 엔진 생성)를 제공합니다.
+ClickHouse는 [MySQL](/ko/reference/engines/table-engines/integrations/mysql), [PostgreSQL](/ko/reference/engines/table-engines/integrations/postgresql), [MongoDB](/ko/reference/engines/table-engines/integrations/mongodb), [SQLite](/ko/reference/engines/table-engines/integrations/sqlite)에 대해 integration 엔진과 테이블 함수(실행 중 동적으로 integration 엔진 생성)를 제공합니다.
 그 밖의 널리 사용되는 다른 데이터베이스 시스템의 경우에는 해당 벤더가 제공하는 JDBC 드라이버 또는 ODBC 드라이버를 사용할 수 있습니다.
 
-<div id="what-is-clickhouse-local">
-  ## `clickhouse-local`이란 무엇인가요?
-</div>
+## `clickhouse-local`이란 무엇인가요? {#what-is-clickhouse-local}
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![자가 관리형 ClickHouse 마이그레이션](/images/integrations/migration/ch-local-02.webp)
-
-</Frame>
-
+  <Frame>
+    ![자체 관리형 ClickHouse 마이그레이션](/images/integrations/migration/ch-local-02.webp)
+  </Frame>
 </div>
 
 일반적으로 ClickHouse는 클러스터 형태로 실행되며, 여러 개의 ClickHouse 데이터베이스 엔진 인스턴스가 서로 다른 서버에서 분산 방식으로 동작합니다.
@@ -49,7 +39,7 @@ ClickHouse는 [MySQL](/ko/reference/engines/table-engines/integrations/mysql), [
 `clickhouse-local` 도구를 사용하면 ClickHouse 서버를 구성하고 시작하지 않아도, ClickHouse 데이터베이스 엔진을 명령줄 유틸리티처럼 독립적으로 사용하여 대량의 입력과 출력을 대상으로 매우 빠르게 SQL 데이터를 처리할 수 있습니다.
 
 <div id="installing-clickhouse-local">
-  ## `clickhouse-local` 설치하기
+  ## `clickhouse-local` 설치하기 {#installing-clickhouse-local}
 </div>
 
 현재 사용 중인 원본 데이터베이스 시스템과 대상 ClickHouse Cloud 서비스 모두에 네트워크로 접근할 수 있는 호스트 머신이 `clickhouse-local`에 필요합니다.
@@ -101,41 +91,31 @@ ClickHouse는 [MySQL](/ko/reference/engines/table-engines/integrations/mysql), [
 
 <AddARemoteSystem />
 
-<div id="example-1-migrating-from-mysql-to-clickhouse-cloud-with-an-integration-engine">
-  ## 예시: integration 엔진을 사용해 MySQL에서 ClickHouse Cloud로 마이그레이션하기
-</div>
+## 예시: integration 엔진을 사용해 MySQL에서 ClickHouse Cloud로 마이그레이션하기 {#example-1-migrating-from-mysql-to-clickhouse-cloud-with-an-integration-engine}
 
-원본 MySQL 데이터베이스에서 데이터를 읽기 위해 [integration 테이블 엔진](/ko/reference/engines/table-engines/integrations/mysql) ([mysql 테이블 함수](/ko/reference/functions/table-functions/mysql)로 즉시 생성됨)을 사용하고, 데이터를 ClickHouse Cloud 서비스의 대상 테이블에 쓰기 위해 [remoteSecure 테이블 함수](/ko/reference/functions/table-functions/remote)
+원본 MySQL 데이터베이스에서 데이터를 읽기 위해 [integration 테이블 엔진](/ko/reference/engines/table-engines/integrations/mysql) ([mysql 테이블 함수](/ko/reference/functions/table-functions/mysql)로 실행 중 동적으로 생성됨)을 사용하고, 데이터를 ClickHouse Cloud 서비스의 대상 테이블에 쓰기 위해 [remoteSecure 테이블 함수](/ko/reference/functions/table-functions/remote)
 를 사용합니다.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![자가 관리형 ClickHouse 마이그레이션](/images/integrations/migration/ch-local-03.webp)
-
-</Frame>
-
+  <Frame>
+    ![자체 관리형 ClickHouse 마이그레이션](/images/integrations/migration/ch-local-03.webp)
+  </Frame>
 </div>
 
 <div id="on-the-destination-clickhouse-cloud-service">
-  ### 대상 ClickHouse Cloud 서비스에서:
+  ### 대상 ClickHouse Cloud 서비스에서: {#on-the-destination-clickhouse-cloud-service}
 </div>
 
-<div id="create-the-destination-database">
-  #### 대상 데이터베이스를 생성하세요:
-</div>
+#### 대상 데이터베이스를 생성하세요: {#create-the-destination-database}
 
 ```sql
-  CREATE DATABASE db
+CREATE DATABASE db
 ```
 
-<div id="create-a-destination-table-that-has-a-schema-equivalent-to-the-mysql-table">
-  #### MySQL 테이블과 동일한 스키마를 가진 대상 테이블을 생성합니다:
-</div>
+#### MySQL 테이블과 동일한 스키마를 가진 대상 테이블을 생성합니다: {#create-a-destination-table-that-has-a-schema-equivalent-to-the-mysql-table}
 
 ```sql
-  CREATE TABLE db.table ...
+CREATE TABLE db.table ...
 ```
 
 <Note>
@@ -143,21 +123,19 @@ ClickHouse는 [MySQL](/ko/reference/engines/table-engines/integrations/mysql), [
 </Note>
 
 <div id="on-the-clickhouse-local-host-machine">
-  ### clickhouse-local이 있는 호스트 머신에서:
+  ### clickhouse-local이 있는 호스트 머신에서: {#on-the-clickhouse-local-host-machine}
 </div>
 
-<div id="run-clickhouse-local-with-the-migration-query">
-  #### 마이그레이션 쿼리로 clickhouse-local을 실행하세요:
-</div>
+#### 마이그레이션 쿼리로 clickhouse-local을 실행하세요: {#run-clickhouse-local-with-the-migration-query}
 
 ```sql
-  ./clickhouse-local --query "
+./clickhouse-local --query "
 INSERT INTO FUNCTION
 remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table', 'default', 'PASS')
 SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password');"
 ```
 
 <Note>
-  `clickhouse-local` 호스트 머신에는 데이터가 로컬에 저장되지 않습니다. 대신 소스 MySQL 테이블에서 데이터를 읽어
+  `clickhouse-local` 호스트 머신에는 데이터가 로컬에 저장되지 않습니다. 대신 원본 MySQL 테이블에서 데이터를 읽어
   즉시 ClickHouse Cloud 서비스의 대상 테이블에 씁니다.
 </Note>

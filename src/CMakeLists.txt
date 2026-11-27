@@ -415,6 +415,7 @@ add_object_library(clickhouse_interpreters_cache Interpreters/Cache)
 add_object_library(clickhouse_interpreters_filecache Interpreters/FileCache)
 add_object_library(clickhouse_interpreters_hash_join Interpreters/HashJoin)
 add_object_library(clickhouse_interpreters_adaptive_aggregation Interpreters/AdaptiveAggregation)
+add_object_library(clickhouse_interpreters_disk_set Interpreters/DiskSet)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_whatif Interpreters/WhatIf)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
@@ -1085,6 +1086,7 @@ if (ENABLE_TESTS)
         clickhouse_aggregate_functions
         clickhouse_parsers
         clickhouse_storages_system
+        clickhouse_wyrd
         dbms
         clickhouse_common_zookeeper_base
         clickhouse_common_config
@@ -1150,6 +1152,21 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::silk_fibers)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::silk_fibers)
     endif()
+endif ()
+
+if (ENABLE_TESTS)
+    macro (grep_wyrd_gtest_sources BASE_DIR DST_VAR)
+        file(GLOB_RECURSE "${DST_VAR}" CONFIGURE_DEPENDS RELATIVE "${BASE_DIR}" "gtest_wyrd*.cpp")
+    endmacro()
+
+    # attach all wyrd gtest sources
+    grep_wyrd_gtest_sources("${ClickHouse_SOURCE_DIR}/src" wyrd_gtest_sources)
+    clickhouse_add_executable(unit_tests_wyrd ${wyrd_gtest_sources})
+
+    target_link_libraries(unit_tests_wyrd PRIVATE
+        clickhouse_wyrd_enabled
+        dbms
+    )
 endif ()
 
 if (TARGET ch_contrib::jwt-cpp)

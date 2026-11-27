@@ -69,17 +69,11 @@ Valor predeterminado: `10485760` (10 MiB).
 
 ## max_iceberg_manifest_decode_thread_pool_free_size {#max_iceberg_manifest_decode_thread_pool_free_size}
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
-
-Número máximo de hilos inactivos en reserva que se mantienen en el grupo de hilos destinado a decodificar los archivos de manifiesto de datos de Iceberg.
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />Número máximo de hilos inactivos en reserva que se mantienen en el grupo de hilos destinado a decodificar los archivos de manifiesto de datos de Iceberg. Este parámetro de configuración está obsoleto y no tiene ningún efecto: los archivos de manifiesto de Iceberg se leen en el grupo de hilos de E/S.
 
 ## max_iceberg_manifest_decode_thread_pool_size {#max_iceberg_manifest_decode_thread_pool_size}
 
-<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="Yes" />
-
-Número total máximo de hilos que se usarán para decodificar los archivos de manifiesto de datos de Iceberg.
-
-El grupo está separado del grupo de IO de forma intencionada: una task de decodificación puede quedarse bloqueada hasta que la consulta consuma las entries que ha producido, mientras que la decodificación del manifest de eliminaciones espera a sus tasks en el grupo de IO antes de que se consuma ninguna entry; compartir un único grupo podría provocar un interbloqueo.
+<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />Número total máximo de hilos que se usarán para decodificar los archivos de manifiesto de datos de Iceberg. Este parámetro de configuración está obsoleto y no tiene ningún efecto: los archivos de manifiesto de Iceberg se leen en el grupo de hilos de E/S.
 
 ## max_keep_alive_requests {#max_keep_alive_requests}
 

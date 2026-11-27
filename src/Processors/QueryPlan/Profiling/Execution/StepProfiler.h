@@ -2,26 +2,29 @@
 
 #include <Processors/QueryPlan/Profiling/Analysis/PlanAnalysisSnapshot.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
-#include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/Profiling/Execution/WorkInterval.h>
 
 #include <Common/Stopwatch.h>
 #include <base/types.h>
 
+#include <boost/container_hash/hash.hpp>
+
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <utility>
 
 namespace DB
 {
 
 
-/// Keyed by the step's uniq id: the clocks are read while the query runs and once it has finished,
-/// and by then the plan the steps belonged to may be long gone. The processors carry the same id,
-/// so they can find their clock without the step.
-using PlanStepGroup = std::pair<String, size_t>;
-using StepWallClocks = MapWithMemoryTracking<PlanStepGroup, std::unique_ptr<StepWallClock>>;
+/// Keyed by the step's index: the clocks are read while the query runs and once it has finished,
+/// and by then the plan the steps belonged to may be long gone. The processors carry the same
+/// index, so they can find their clock without the step.
+using PlanStepGroup = std::pair<UInt64, size_t>;
+using StepWallClocks = UnorderedMapWithMemoryTracking<PlanStepGroup, std::unique_ptr<StepWallClock>, boost::hash<PlanStepGroup>>;
 
 /// Everything the statistics of a query are produced from: the clocks the processors stamp while
 /// it runs, and the analyzer each step handed out for shaping what they measured.
@@ -34,7 +37,7 @@ class StepProfiler
 public:
     StepProfiler(const PlanWalk & walk, bool collect_work_intervals_);
 
-    [[nodiscard]] StepWallClock * findClockForStep(const String & step_id, size_t group) const;
+    [[nodiscard]] StepWallClock * findClockForStep(UInt64 step_id, size_t group) const;
 
     [[nodiscard]] const PlanAnalysisSnapshot & getPlanSnapshot() const { return plan_snapshot; }
 

@@ -15,7 +15,7 @@ keywords: ['ClickStack', 'Chrome 扩展', '会话回放', 'Browser SDK', 'RUM', 
 </Info>
 
 <div id="overview">
-  ## 概览
+  ## 概览 {#overview}
 </div>
 
 [HyperDX Chrome 扩展](https://github.com/kyreddie/hyperdx-chrome-extension)会将 [@hyperdx/browser](https://github.com/hyperdxio/hyperdx-js) SDK 注入到你访问的页面中。当你想在不修改网站代码库的情况下调试会话回放、RUM 或 trace 传播时，它就非常有用——例如，面对第三方应用、生产 build，或实施了严格内容安全策略 (CSP) 的本地开发服务器时。
@@ -27,16 +27,14 @@ keywords: ['ClickStack', 'Chrome 扩展', '会话回放', 'Browser SDK', 'RUM', 
 如需了解会话回放的背景信息及其如何融入 ClickStack，请参阅[会话回放](/zh/clickstack/features/session-replay)功能页面。
 
 <div id="prerequisites">
-  ## 前置条件
+  ## 前置条件 {#prerequisites}
 </div>
 
 * Google Chrome 或基于 Chromium 的浏览器 (如 Edge、Brave 等)
 * 如果在本地运行 ClickStack，需已安装 [Docker](https://docs.docker.com/get-docker/)
 * 端口 4317、4318 和 8080 必须可用 (用于本地 ClickStack)
 
-<div id="running-the-demo">
-  ## 运行演示
-</div>
+## 运行演示 {#running-the-demo}
 
 <Steps>
   <Step title="克隆扩展仓库" id="clone-extension">
@@ -74,15 +72,15 @@ keywords: ['ClickStack', 'Chrome 扩展', '会话回放', 'Browser SDK', 'RUM', 
       clickhouse/clickstack-otel-collector:latest
     ```
 
-    打开 [http://localhost:8080](http://localhost:8080) 上的 HyperDX，确认 UI 已正常运行。
+    打开 [http://localhost:8080](http://localhost:8080) 上的 ClickStack 用户界面，确认 UI 已正常运行。
 
-    如需在本地完整部署 ClickHouse 和 HyperDX UI，请参阅 [ClickStack 入门](/zh/clickstack/getting-started/oss)。
+    如需在本地完整部署 ClickHouse 和 ClickStack 用户界面，请参阅 [ClickStack 入门](/zh/clickstack/getting-started/oss)。
   </Step>
 
-  <Step title="获取你的 API key" id="get-api-key">
-    对于本地 ClickStack，可能不需要 API key——如果将遥测数据发送到 `http://localhost:4318` 上的自托管 collector，请将扩展中的该字段留空。
+  <Step title="获取你的 API 密钥" id="get-api-key">
+    对于本地 ClickStack，可能不需要 API 密钥——如果将遥测数据发送到 `http://localhost:4318` 上的自托管 collector，请将扩展中的该字段留空。
 
-    对于 ClickStack Cloud 或 HyperDX Cloud 摄取，请打开 HyperDX，前往 **Team Settings → API Keys**，然后复制你的**摄取 API key**。
+    对于 ClickStack Cloud 或 HyperDX Cloud 摄取，请打开 ClickStack 用户界面，前往 **Team Settings → API 密钥**，然后复制你的**摄取 API 密钥**。
   </Step>
 
   <Step title="配置扩展" id="configure-extension">
@@ -92,7 +90,7 @@ keywords: ['ClickStack', 'Chrome 扩展', '会话回放', 'Browser SDK', 'RUM', 
     | -------------------------------- | ------------------------------------- | ---------------------------------------------------- |
     | **Enable HyperDX Monitoring**    | On                                    | 控制是否启用注入的总开关                                         |
     | **Service Name**                 | `my-frontend-app`                     | 必填——用于在 ClickStack 中标识该服务                            |
-    | **API Key**                      | *(空)*                                 | Cloud 摄取时必填；某些自托管环境中可选                               |
+    | **API 密钥**                      | *(空)*                                 | Cloud 摄取时必填；某些自托管环境中可选                               |
     | **Collector URL**                | `http://localhost:4318`               | OTLP HTTP 端点；Cloud 默认值为 `https://in-otel.hyperdx.io` |
     | **Environment**                  | `development`                         | 可选——用于设置 `deployment.environment` 资源属性               |
     | **Trace Propagation Targets**    | `/api\.myapp\.domain/i, /localhost/i` | 可选——以逗号分隔的 JavaScript 正则表达式模式，用于控制 trace 请求头传播       |
@@ -100,16 +98,12 @@ keywords: ['ClickStack', 'Chrome 扩展', '会话回放', 'Browser SDK', 'RUM', 
     | **Capture console logs**         | Off                                   | 启用后转发浏览器控制台输出                                        |
     | **Advanced network capture**     | Off                                   | 启用后可捕获更详细的网络请求                                       |
 
-    点击 **Save Configuration**，然后重新加载你想要插桩的任意标签页。
+    点击 **Save Configuration**，然后重新加载你想要插桩的任意选项卡。
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![显示本地 ClickStack 设置的 HyperDX Chrome 扩展配置弹窗](/images/clickstack/chrome-extension/extension-config.png)
-
-    </Frame>
-
+      <Frame>
+        ![显示本地 ClickStack 设置的 HyperDX Chrome 扩展配置弹窗](/images/clickstack/chrome-extension/extension-config.png)
+      </Frame>
     </div>
 
     上面的截图展示了一个典型的本地配置：已启用监控，已设置服务名称，collector 指向 `http://localhost:4318`，并且 trace 传播仅限 API 和 localhost URL。
@@ -122,7 +116,7 @@ keywords: ['ClickStack', 'Chrome 扩展', '会话回放', 'Browser SDK', 'RUM', 
   </Step>
 
   <Step title="查看你的 会话回放" id="view-session-replay">
-    返回 [http://localhost:8080](http://localhost:8080) 上的 HyperDX，并从左侧边栏进入 **Client Sessions**。
+    返回 [http://localhost:8080](http://localhost:8080) 上的 ClickStack 用户界面，并从左侧边栏进入 **Client Sessions**。
 
     你应该能看到自己的会话已显示在列表中，包括其耗时和事件数。点击 ▶️ 按钮即可回放。
 
@@ -131,7 +125,7 @@ keywords: ['ClickStack', 'Chrome 扩展', '会话回放', 'Browser SDK', 'RUM', 
 </Steps>
 
 <div id="url-filtering">
-  ## URL 过滤
+  ## URL 过滤 {#url-filtering}
 </div>
 
 默认情况下，启用监控后，扩展程序会在你访问的每个页面中注入 SDK。若要将注入限制在特定站点，请启用 **Only inject on matching URLs**，并每行添加一个匹配模式 (或用逗号分隔) ：
@@ -146,7 +140,7 @@ keywords: ['ClickStack', 'Chrome 扩展', '会话回放', 'Browser SDK', 'RUM', 
 保存 URL 匹配模式后，重新加载该标签页。
 
 <div id="verify-injection">
-  ## 验证注入
+  ## 验证注入 {#verify-injection}
 </div>
 
 在已监控的页面中打开 DevTools (**控制台**选项卡) ，重新加载页面，并查看是否有以下内容：
@@ -160,10 +154,10 @@ keywords: ['ClickStack', 'Chrome 扩展', '会话回放', 'Browser SDK', 'RUM', 
 如果来自扩展源的脚本被 CSP 阻止，扩展会记录一条降级提示，并改用内联注入重试。
 
 <div id="troubleshooting">
-  ## 故障排查
+  ## 故障排查 {#troubleshooting}
 </div>
 
-<Accordion title="HyperDX 中未显示会话">
+<Accordion title="ClickStack 用户界面中未显示会话">
   1. 检查浏览器控制台中是否有 `[HyperDX Extension]` 日志消息或错误
   2. 确认 **Enable HyperDX Monitoring** 已开启，并且已设置 **Service Name**
   3. 确认 ClickStack 正在运行，且 collector URL 正确 (例如 `http://localhost:4318`)
@@ -172,7 +166,7 @@ keywords: ['ClickStack', 'Chrome 扩展', '会话回放', 'Browser SDK', 'RUM', 
 </Accordion>
 
 <Accordion title="chrome-extension://invalid/ 错误">
-  在 `chrome://extensions` 中重新加载扩展，然后强制刷新该标签页。当扩展更新或重新加载时，如果相关标签页仍处于打开状态，就会出现这种情况。
+  在 `chrome://extensions` 中重新加载扩展，然后强制刷新该选项卡。当扩展更新或重新加载时，如果相关选项卡仍处于打开状态，就会出现这种情况。
 </Accordion>
 
 <Accordion title="某个站点上未发生注入">
@@ -182,22 +176,22 @@ keywords: ['ClickStack', 'Chrome 扩展', '会话回放', 'Browser SDK', 'RUM', 
   4.
 </Accordion>
 
-<Accordion title="HyperDX：控制台中缺少 apiKey">
-  当 API key 字段为空时，这属于预期行为。对于云端端点，请添加 HyperDX 中的摄取 API key；如果你的自托管 collector 接受未经身份验证的本地流量，也可以忽略。
+<Accordion title="ClickStack 用户界面：控制台中缺少 apiKey">
+  当 API key 字段为空时，这属于预期行为。对于云端端点，请添加 ClickStack 用户界面中的摄取 API key；如果你的自托管 collector 接受未经身份验证的本地流量，也可以忽略。
 </Accordion>
 
 <div id="privacy">
-  ## 隐私
+  ## 隐私 {#privacy}
 </div>
 
 该扩展程序会将可观测性代码注入你访问的页面。请仅在获准调试的网站上使用。不要共享 API 密钥，也不要将其提交到版本控制系统中。
 
 <div id="learn-more">
-  ## 了解更多
+  ## 了解更多 {#learn-more}
 </div>
 
 * [会话回放](/zh/clickstack/features/session-replay) — 功能概览、SDK 选项和隐私控制
 * [Browser SDK 参考](/zh/clickstack/ingesting-data/sdks/browser) — 完整的 SDK 选项和高级配置
 * [会话回放演示](/zh/clickstack/example-datasets/session-replay) — 从源代码为演示应用添加插桩
-* [ClickStack 入门](/zh/clickstack/getting-started/index) — 部署 ClickStack 并摄取首批数据
+* [ClickStack 入门](/zh/clickstack/getting-started/oss) — 部署 ClickStack 并摄取首批数据
 * [GitHub 上的 HyperDX Chrome 扩展](https://github.com/kyreddie/hyperdx-chrome-extension) — 源代码和问题追踪器

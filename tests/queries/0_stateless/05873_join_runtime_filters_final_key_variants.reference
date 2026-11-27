@@ -1,0 +1,16 @@
+expr_key_no_final	64	2016
+expr_key	32	1520
+expr_key_lazy	32	1520
+expr_key_same_expr	64	34016
+plain_key_expr	128	86176
+plain_key_cast	64	20160
+non_pk_key	64	20160
+non_pk_key_no_skip_index	64	20160
+05873_expr_key	0	0
+05873_expr_key_lazy	1	1
+05873_expr_key_no_final	1	1
+05873_expr_key_same_expr	0	0
+05873_non_pk_key	1	1
+05873_non_pk_key_no_skip_index	0	0
+05873_plain_key_cast	1	1
+05873_plain_key_expr	0	0

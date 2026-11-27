@@ -12,19 +12,15 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estas opciones de configuración están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_distributed_connections">
-  ## max_distributed_connections
-</div>
+## max_distributed_connections {#max_distributed_connections}
 
-<SettingsInfoBlock type="UInt64" default_value="1024" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1024" />
 
 El número máximo de conexiones simultáneas con servidores remotos para el procesamiento distribuido de una única consulta en una única tabla Distributed. Recomendamos establecer un valor no inferior al número de servidores del clúster.
 
 Los siguientes parámetros solo se utilizan al crear tablas Distributed (y al iniciar un servidor), por lo que no hay motivo para cambiarlos en tiempo de ejecución.
 
-<div id="max_distributed_depth">
-  ## max_distributed_depth
-</div>
+## max_distributed_depth {#max_distributed_depth}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 

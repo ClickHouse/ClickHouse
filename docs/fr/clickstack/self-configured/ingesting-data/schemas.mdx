@@ -1,0 +1,59 @@
+---
+slug: /clickstack/self-configured/ingesting-data/schemas
+description: 'Tables et schémas utilisés par Self-managed ClickHouse Observability'
+sidebarTitle: 'Tables et schémas'
+title: 'Tables et schémas'
+doc_type: 'reference'
+keywords: ['clickstack', 'schéma', 'modèle de données', 'conception de tables', 'log']
+---
+
+import OtelLogsSchema from '/snippets/fr/clickstack/_schema_otel_logs.mdx';
+import OtelTracesSchema from '/snippets/fr/clickstack/_schema_otel_traces.mdx';
+import OtelMetricsGaugeSchema from '/snippets/fr/clickstack/_schema_otel_metrics_gauge.mdx';
+import OtelMetricsSumSchema from '/snippets/fr/clickstack/_schema_otel_metrics_sum.mdx';
+import OtelMetricsHistogramSchema from '/snippets/fr/clickstack/_schema_otel_metrics_histogram.mdx';
+import OtelMetricsExponentialHistogramSchema from '/snippets/fr/clickstack/_schema_otel_metrics_exponential_histogram.mdx';
+import OtelMetricsSummarySchema from '/snippets/fr/clickstack/_schema_otel_metrics_summary.mdx';
+import HyperdxSessionsSchema from '/snippets/fr/clickstack/_schema_hyperdx_sessions.mdx';
+
+<Note>
+  Cette page porte sur **Self-managed ClickHouse Observability**. Pour bénéficier de l’offre entièrement gérée recommandée, consultez la documentation [ici](/fr/clickstack/observability/overview).
+</Note>
+
+Le collecteur ClickHouse Observability utilise l’[exportateur ClickHouse](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md) pour créer des tables dans ClickHouse et y insérer des données.
+
+Les tables suivantes sont créées pour chaque type de données dans la base de données `default`. Vous pouvez modifier cette base de données cible à l’aide de la variable d’environnement `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE` définie pour l’image qui héberge le collecteur.
+
+## Logs {#logs}
+
+<OtelLogsSchema />
+
+## Traces {#traces}
+
+<OtelTracesSchema />
+
+## Métriques {#metrics}
+
+### Métriques de type jauge {#gauge}
+
+<OtelMetricsGaugeSchema />
+
+### Métriques de type somme {#sum}
+
+<OtelMetricsSumSchema />
+
+### Métriques de type histogramme {#histogram}
+
+<OtelMetricsHistogramSchema />
+
+### Histogrammes exponentiels {#exponential-histograms}
+
+<OtelMetricsExponentialHistogramSchema />
+
+### Table Summary {#summary-table}
+
+<OtelMetricsSummarySchema />
+
+## Sessions {#sessions}
+
+<HyperdxSessionsSchema />

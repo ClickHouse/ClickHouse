@@ -258,6 +258,10 @@ class ReleaseInfo:
             Shell.check(f"{GIT_PREFIX} checkout -B master origin/master", strict=True, verbose=True)
             with checkout(commit_ref):
                 commit_sha = Git.get_commit_sha(commit_ref)
+                # The private release branch starts at the private sync of this PR, which only a PR merge has.
+                assert Git.merge_pr_number(commit_sha), (
+                    f"the master tip {commit_sha} is not a pull request merge; run again after the next pull request merges"
+                )
                 git = Git()
                 version = CHVersion.get_current_version()
                 release_branch = f"{version.major}.{version.minor}"
