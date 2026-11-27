@@ -84,6 +84,11 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
             && (parent_actions.hasStatefulFunctions() || dagContainsNonDeterministicFunction(parent_actions)))
             return 0;
 
+        /// `arrayJoin` removes the rows with an empty array.
+        if (child_actions.hasArrayJoin()
+            && ActionsDAG::hasRuntimeFilterWithThrowingKey(&parent_actions.findInOutputs(parent_filter->getFilterColumnName())))
+            return 0;
+
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
         /// merge can drag materialize wrappers from a UNION child into the filter (#78166); folding through
         /// them is left to the `FilterStep` constructor below, which does it after `deduplicateSubtrees` -
@@ -124,6 +129,9 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
         auto & parent_actions = parent_filter->getExpression();
 
         if (child_actions.hasArrayJoin())
+            return 0;
+
+        if (ActionsDAG::hasRuntimeFilterWithThrowingKey(&parent_actions.findInOutputs(parent_filter->getFilterColumnName())))
             return 0;
 
         const auto & child_filter_node = child_actions.findInOutputs(child_filter->getFilterColumnName());

@@ -652,6 +652,9 @@ public:
     /// Returns a list of nodes representing atomic predicates.
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
 
+    /// Whether a join runtime filter reachable from `node` has a key that can throw on a row its join does not receive.
+    static bool hasRuntimeFilterWithThrowingKey(const Node * node);
+
     [[nodiscard]] UInt64 getHash() const;
     /// `build_independent` leaves out anything that differs between two builds of the same query -
     /// column names and prepared-set values - so the result identifies what the DAG computes rather

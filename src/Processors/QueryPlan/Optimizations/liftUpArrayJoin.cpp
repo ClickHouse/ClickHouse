@@ -24,6 +24,11 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (!(expression_step || filter_step) || !array_join_step)
         return 0;
 
+    /// It removes the rows without elements, unless it is `LEFT` without an element filter.
+    if (filter_step && (!array_join_step->isLeft() || array_join_step->hasElementFilter())
+        && ActionsDAG::hasRuntimeFilterWithThrowingKey(&filter_step->getExpression().findInOutputs(filter_step->getFilterColumnName())))
+        return 0;
+
     /// The fused filter reads these too, so treat them like the joined columns.
     Names pinned_columns = array_join_step->getColumns();
     if (const auto & element_filter = array_join_step->getElementFilter())

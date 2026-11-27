@@ -176,6 +176,9 @@ ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameS
         if (only_conditions_safe_on_more_rows && !canBeMovedToTheFrontOfAndChain(&node))
             return ConditionList{};
 
+        if (ActionsDAG::hasRuntimeFilterWithThrowingKey(&node))
+            return ConditionList{};
+
         if (!isUsefulToPreFilterWith(node))
             return ConditionList{}; /// Nothing to pre-filter with, so assume it's True
 
