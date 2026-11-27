@@ -567,8 +567,8 @@ struct RuntimeFilterIndexAnalysisDescriptor
     std::shared_ptr<const ActionsDAG> key;
 
     [[nodiscard]] const ActionsDAG::Node & getKeyNode() const { return *key->getOutputs().front(); }
-    /// The columns of the read that the key is computed from.
-    [[nodiscard]] Names getKeyColumns() const { return key->getRequiredColumnsNames(); }
+    /// The key is computed from at least one of the columns.
+    [[nodiscard]] bool readsAnyOf(const Names & columns) const;
     /// The column, if the key is one column of the read with at most a cast above it; otherwise nullptr.
     [[nodiscard]] const ActionsDAG::Node * tryGetKeyColumn() const;
     /// The key is `_part_offset + _part_starting_offset`, the global row index of the read.

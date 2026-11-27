@@ -3455,15 +3455,9 @@ static bool isRuntimeFilterGlobalRowIndexUsable(const StorageInMemoryMetadata & 
     return !columns.has("_part_offset") && !columns.has("_part_starting_offset");
 }
 
-/// The key of the runtime filter reads one of the columns that a primary key or a skip index is on.
-static bool runtimeFilterKeyReadsAnyOf(const RuntimeFilterIndexAnalysisDescriptor & descriptor, const Names & columns)
-{
-    return std::ranges::any_of(descriptor.getKeyColumns(), [&](const auto & column) { return std::ranges::find(columns, column) != columns.end(); });
-}
-
 void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const RuntimeFilterIndexAnalysisDescriptor & descriptor)
 {
-    const auto & column_name = descriptor.getKeyNode().result_name;
+    const auto & key_name = descriptor.getKeyNode().result_name;
     const auto & filter_id = descriptor.filter_id;
     const auto & metadata = *storage_snapshot->metadata;
     if (descriptor.isGlobalRowIndex())
@@ -3471,20 +3465,20 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const Runtim
         if (!isRuntimeFilterGlobalRowIndexUsable(metadata))
             return;
         join_runtime_filters_for_index_analysis.push_back(descriptor);
-        LOG_DEBUG(log, "Registered join runtime filter {} on {}", filter_id, column_name);
+        LOG_DEBUG(log, "Registered join runtime filter {} on {}", filter_id, key_name);
         return;
     }
 
     /// Prunable only if in the primary key or has a minmax/set/bloom_filter skip index.
     const auto & primary_key_columns = metadata.getPrimaryKey().column_names;
-    const bool is_primary_key_column = runtimeFilterKeyReadsAnyOf(descriptor, primary_key_columns);
+    const bool is_primary_key_column = descriptor.readsAnyOf(primary_key_columns);
 
     bool has_applicable_skip_index = false;
     for (const auto & index : metadata.getSecondaryIndices())
     {
         if (index.type != "minmax" && index.type != "set" && index.type != "bloom_filter")
             continue;
-        if (runtimeFilterKeyReadsAnyOf(descriptor, index.column_names))
+        if (descriptor.readsAnyOf(index.column_names))
         {
             has_applicable_skip_index = true;
             break;
@@ -3496,7 +3490,7 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const Runtim
 
     join_runtime_filters_for_index_analysis.push_back(descriptor);
     LOG_DEBUG(log, "Registered join runtime filter {} on column {} (primary_key={}, skip_index={})",
-        filter_id, column_name, is_primary_key_column, has_applicable_skip_index);
+        filter_id, key_name, is_primary_key_column, has_applicable_skip_index);
 }
 
 void ReadFromMergeTree::copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step)
@@ -6316,7 +6310,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             runtime_filters_for_data_read,
             [&](const auto & descr)
             {
-                return !std::ranges::all_of(descr.getKeyColumns(), [&](const auto & column) { return safe_columns.contains(column); });
+                return std::ranges::any_of(descr.key->getInputs(), [&](const auto * column) { return !safe_columns.contains(column->result_name); });
             });
     }
 
@@ -6392,7 +6386,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 runtime_prune_global_row_index = isRuntimeFilterGlobalRowIndexUsable(metadata);
                 continue;
             }
-            if (runtimeFilterKeyReadsAnyOf(descr, pk_columns))
+            if (descr.readsAnyOf(pk_columns))
             {
                 runtime_prune_primary_key = true;
                 continue;
@@ -6405,7 +6399,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                     continue;
                 if (index.type != "minmax" && index.type != "set" && index.type != "bloom_filter")
                     continue;
-                if (!runtimeFilterKeyReadsAnyOf(descr, index.column_names))
+                if (!descr.readsAnyOf(index.column_names))
                     continue;
                 if (seen_index_names.insert(index.name).second)
                     runtime_skip_indexes.push_back(MergeTreeIndexFactory::instance().get(storage_snapshot->metadata, index, *data_settings));
@@ -6491,7 +6485,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                     return true;
                 for (const auto & descr : descriptors)
                 {
-                    if (!runtimeFilterKeyReadsAnyOf(descr, index.index.column_names))
+                    if (!descr.readsAnyOf(index.index.column_names))
                         continue;
                     auto filter = lookup->find(descr.filter_id);
                     if (!filter)

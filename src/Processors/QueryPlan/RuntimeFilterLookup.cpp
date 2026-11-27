@@ -19,7 +19,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/TypeTree.h>
@@ -35,7 +34,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/PreparedSets.h>
-#include <Planner/PlannerActionsVisitor.h>
 #include <Processors/QueryPlan/RuntimeFilterBloomSizing.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Common/FieldAccurateComparison.h>
@@ -1497,6 +1495,11 @@ static const ActionsDAG::Node & withoutCast(const ActionsDAG::Node & node)
     return isCast(node) ? *node.children.front() : node;
 }
 
+bool RuntimeFilterIndexAnalysisDescriptor::readsAnyOf(const Names & columns) const
+{
+    return std::ranges::any_of(key->getInputs(), [&](const auto * input) { return std::ranges::contains(columns, input->result_name); });
+}
+
 const ActionsDAG::Node * RuntimeFilterIndexAnalysisDescriptor::tryGetKeyColumn() const
 {
     const auto & node = withoutCast(getKeyNode());
@@ -1509,8 +1512,8 @@ bool RuntimeFilterIndexAnalysisDescriptor::isGlobalRowIndex() const
     return node.type == ActionsDAG::ActionType::FUNCTION && node.result_name == runtime_filter_global_row_index_node_name;
 }
 
-/// Adds the key of a descriptor to the DAG. The functions are reused, so that a cast converts with the settings it was
-/// resolved with, e.g. `date_time_overflow_behavior`.
+/// Adds the key of a descriptor to the DAG with the same names. The functions are reused, so that a cast converts with the
+/// settings it was resolved with, e.g. `date_time_overflow_behavior`.
 static const ActionsDAG::Node & addKeyExpression(ActionsDAG & dag, const ActionsDAG::Node & node)
 {
     switch (node.type)
@@ -1524,7 +1527,7 @@ static const ActionsDAG::Node & addKeyExpression(ActionsDAG & dag, const Actions
             ActionsDAG::NodeRawConstPtrs children;
             for (const auto * child : node.children)
                 children.push_back(&addKeyExpression(dag, *child));
-            return dag.addFunction(node.function_base, std::move(children), {});
+            return dag.addFunction(node.function_base, std::move(children), node.result_name);
         }
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected node {} in the key of a runtime filter", node.result_name);
