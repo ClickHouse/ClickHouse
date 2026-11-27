@@ -1,0 +1,25 @@
+-- the search matches the restricted brute force exactly
+0	300
+-- 1 and 7 rows, either side of the 6-row block, also agree
+0	1
+0	7
+-- a probe equal to a leaf returns that leaf
+0	1000
+-- coarse centroids are never returned
+0	37
+-- with at most 16 coarse centroids every leaf is scanned, so the search is exact
+0	300
+-- the search is approximate: the nearest leaf (18) is under the 18th nearest coarse centroid
+1
+-- the same leaves without level and parent are searched exhaustively
+18
+-- the cached structure is rebuilt on reload: leaf 18 moved under coarse centroid 101
+18
+-- coarse centroids without leaves are ignored, so all 16 probes go to coarse centroids with leaves
+100
+-- and with at most 16 coarse centroids with leaves, all of their leaves are scanned
+50	200
+-- coarse ties at the 16th place go to the lower coarse cids, for every row of a block
+[2000]	7
+-- errors
+2
