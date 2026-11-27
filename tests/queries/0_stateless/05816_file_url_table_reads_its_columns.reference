@@ -34,6 +34,10 @@ world	2
 2	world	7
 7
 7
+--- the partition column of a file in a hive-style partition with another stored type than the inferred one
+1	hello	7
+2	world	7
+2
 --- fewer given columns than a format detected from the data, which can read a subset of its columns, has
 1
 --- given columns with defaults that use the given columns

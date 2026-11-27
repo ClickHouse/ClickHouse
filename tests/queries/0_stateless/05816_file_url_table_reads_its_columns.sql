@@ -57,6 +57,12 @@ CREATE TABLE t_hive_key (id UInt32, s String, key UInt32) AS file(currentDatabas
 SELECT * FROM t_hive_key ORDER BY id;
 SELECT key FROM t_hive_key;
 
+SELECT '--- the partition column of a file in a hive-style partition with another stored type than the inferred one';
+INSERT INTO FUNCTION file(currentDatabase() || '_05816_hive_zeros/key=007/data.csv', 'CSV', 'id UInt32, s String') SELECT number + 1, ['hello', 'world'][number + 1] FROM numbers(2);
+CREATE TABLE t_hive_key_string (id UInt32, s String, key String) AS file(currentDatabase() || '_05816_hive_zeros/key=007/data.csv', 'CSV');
+SELECT * FROM t_hive_key_string ORDER BY id;
+SELECT count() FROM t_hive_key_string WHERE key = '7';
+
 SELECT '--- fewer given columns than a format detected from the data, which can read a subset of its columns, has';
 INSERT INTO FUNCTION file(currentDatabase() || '_05816_jsonl_without_extension', 'JSONEachRow', 'a UInt32, b String') VALUES (42, 'hello');
 CREATE TABLE t_detected (renamed String) AS file(currentDatabase() || '_05816_jsonl_without_extension');
@@ -89,6 +95,7 @@ DROP TABLE t_fewer;
 DROP TABLE t_fewer_subset;
 DROP TABLE t_hive;
 DROP TABLE t_hive_key;
+DROP TABLE t_hive_key_string;
 DROP TABLE t_detected;
 DROP TABLE t_defaults;
 DROP TABLE t_default_alias;

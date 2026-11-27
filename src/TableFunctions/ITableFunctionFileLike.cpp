@@ -164,7 +164,15 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
                 continue;
             has_other_column = has_other_column || (!inferred && !partition);
             num_stored_data_columns += !partition;
-            stored_columns.add(column);
+            if (partition)
+            {
+                /// The storage parses a partition column from the path with its type, which is the inferred one in the storage
+                /// of the inferred columns, and the table converts it to the stored type: `key` of `.../key=007/data.csv` is
+                /// `7` for `key String`, not `007`. Keep parsing it with the inferred type, so that the table reads it as before.
+                stored_columns.add(ColumnDescription(column.name, partition_columns->tryGetByName(column.name)->type));
+            }
+            else
+                stored_columns.add(column);
         }
 
         /// The storage could not evaluate a `DEFAULT` expression that uses a column it does not have, as `helper` of
