@@ -7,6 +7,7 @@
 -- The algorithm is set explicitly wherever it is asserted, because the choice among the algorithms
 -- allowed by `join_algorithm` is made at run time and depends on the number of threads.
 
+SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
 SET log_queries = 1;
 -- The reported kind is the executed one, and the optimizer may execute a join with its sides swapped,
 -- which reverses LEFT and RIGHT. Disable that here so the kinds are the ones the queries are written

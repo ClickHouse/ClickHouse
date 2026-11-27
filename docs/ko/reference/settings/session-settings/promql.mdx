@@ -34,6 +34,16 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 
 promql 방언에서 사용할 평가 시간을 초 단위 Unix 타임스탬프(소수부 포함 가능)로 설정합니다. `auto`는 현재 시간을 의미합니다.
 
+## promql_max_points_per_series {#promql_max_points_per_series}
+
+<PrivatePreviewBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="11000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "11000"},{"label": "Prometheus와 마찬가지로 Prometheus HTTP API에서 범위 쿼리의 해상도를 제한하는 새로운 설정입니다."}]}]} />
+
+Prometheus HTTP API(`/api/v1/query_range`)에서 허용되는 범위 쿼리의 최대 해상도입니다. Prometheus와 마찬가지로 `(end - start) / step` 값이 이 값보다 크면 쿼리가 거부됩니다. 0으로 설정하면 제한이 없습니다. [prometheusQueryRange](/ko/reference/functions/table-functions/prometheusQueryRange) 테이블 함수에는 이 제한이 적용되지 않습니다.
+
 ## promql_push_down_label_matchers {#promql_push_down_label_matchers}
 
 <PrivatePreviewBadge />

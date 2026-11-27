@@ -408,18 +408,18 @@ dictGetAll(dict_name, attr_names, id_expr[, limit])
 
 **引数**
 
-* `dict_name` — Dictionary の名前。 [`String`](/ja/reference/data-types/string)
-* `attr_names` — Dictionary のカラム名、またはカラム名のタプル。 [`String`](/ja/reference/data-types/string) または [`Tuple(String)`](/ja/reference/data-types/tuple)
-* `id_expr` — キー値。辞書キー型の値またはタプル値を返す式 (Dictionary の設定に依存) 。 [`Expression`](/ja/reference/data-types/special-data-types/expression) または [`Tuple(T)`](/ja/reference/data-types/tuple)
-* `limit` — 任意。返される各値配列の最大長。切り詰める場合は、親ノードよりも子ノードが優先され、それ以外では regexp tree Dictionary で定義されたリスト順が尊重されます。指定しない場合、配列長は無制限です。 [`UInt*`](/ja/reference/data-types/int-uint)
+* `dict_name` — 辞書 の名前。 [`String`](/ja/reference/data-types/string)
+* `attr_names` — 辞書 のカラム名、またはカラム名のタプル。 [`String`](/ja/reference/data-types/string) または [`Tuple(String)`](/ja/reference/data-types/tuple)
+* `id_expr` — キー値。辞書キー型の値またはタプル値を返す式 (辞書設定に依存) 。 [`Expression`](/ja/reference/data-types/special-data-types/expression) または [`Tuple(T)`](/ja/reference/data-types/tuple)
+* `limit` — 任意。返される各値配列の最大長。切り詰める場合は、親ノードよりも子ノードが優先され、それ以外では regexp tree 辞書 で定義されたリスト順が尊重されます。指定しない場合、配列長は無制限です。 [`UInt*`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
-`attr_names` で指定された各属性について、`id_expr` に対応する Dictionary 属性の値の配列を返します。
-Dictionary に `id_expr` に対応するキーがない場合は、空の配列を返します。
+`attr_names` で指定された各属性について、`id_expr` に対応する 辞書 属性の値の配列を返します。
+辞書 に `id_expr` に対応するキーがない場合は、空の配列を返します。
 
 <Note>
-  ClickHouse は、属性の値をパースできない場合、または値が属性のデータ型と一致しない場合に例外をスローします。
+  ClickHouse は、属性の値を解析できない場合、または値が属性のデータ型と一致しない場合に例外をスローします。
 </Note>
 
 [`Array(T)`](/ja/reference/data-types/array)
@@ -2177,7 +2177,7 @@ SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1)
 
 導入バージョン: v1.1.0
 
-Dictionary の属性値を、Dictionary の設定に関係なく `UInt64` データ型に変換します。キーが見つからない場合は、指定されたデフォルト値を返します。
+Dictionary 属性値を、辞書設定に関係なく `UInt64` データ型に変換します。キーが見つからない場合は、指定されたデフォルト値を返します。
 
 <Note>
   この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
@@ -2191,15 +2191,15 @@ dictGetUInt64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 
 **引数**
 
-* `dict_name` — Dictionary の名前。[`String`](/ja/reference/data-types/string)
-* `attr_name` — Dictionary のカラム名。[`String`](/ja/reference/data-types/string) または [`Tuple(String)`](/ja/reference/data-types/tuple)
-* `id_expr` — 辞書キーの値。辞書キー型の値、またはタプル値 (辞書設定に依存) を返す式。[`Expression`](/ja/reference/data-types/special-data-types/expression) または [`Tuple(T)`](/ja/reference/data-types/tuple)
-* `default_value_expr` — Dictionary に `id_expr` キーを持つ行が存在しない場合に返される値。[`Expression`](/ja/reference/data-types/special-data-types/expression) または [`Tuple(T)`](/ja/reference/data-types/tuple)
+* `dict_name` — 辞書 の名前。[`String`](/ja/reference/data-types/string)
+* `attr_name` — 辞書 のカラム名。[`String`](/ja/reference/data-types/string) または [`Tuple(String)`](/ja/reference/data-types/tuple)
+* `id_expr` — キーの値。辞書のキー型に一致する値、またはタプル値 (辞書設定に依存) を返す式。[`Expression`](/ja/reference/data-types/special-data-types/expression) または [`Tuple(T)`](/ja/reference/data-types/tuple)
+* `default_value_expr` — 辞書 に `id_expr` キーを持つ行が存在しない場合に返される値。[`Expression`](/ja/reference/data-types/special-data-types/expression) または [`Tuple(T)`](/ja/reference/data-types/tuple)
 
 **戻り値**
 
 `id_expr` に対応する Dictionary 属性の値を返します。
-存在しない場合は、`default_value_expr` パラメータとして渡された値を返します。
+存在しない場合は、`default_value_expr` パラメーターとして渡された値を返します。
 
 <Note>
   属性の値を解析できない場合、またはその値が属性のデータ型と一致しない場合、ClickHouse は例外をスローします。
@@ -2216,7 +2216,7 @@ CREATE DICTIONARY all_types_dict (id UInt32, UInt64_value UInt64) PRIMARY KEY id
 -- for key which exists
 SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1);
 
--- for key which does not exist, returns the provideddefault value (0)
+-- for key which does not exist, returns the provided default value (0)
 SELECT dictGetUInt64OrDefault('all_types_dict', 'UInt64_value', 999, 0);
 ```
 

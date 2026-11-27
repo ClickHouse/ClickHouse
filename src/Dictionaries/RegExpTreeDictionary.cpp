@@ -745,24 +745,12 @@ UnorderedMapWithMemoryTracking<String, ColumnPtr> RegExpTreeDictionary::match(
         if (use_vectorscan)
         {
             /// pre-select all the possible matches
-            auto on_match = [](unsigned int id,
-                            unsigned long long /* from */, // NOLINT
-                            unsigned long long /* to */, // NOLINT
-                            unsigned int /* flags */,
-                            void * context) -> int
-            {
-                static_cast<MatchContext *>(context)->insertIdx(id);
-                return 0;
-            };
-
-            hs_error_t err = hs_scan(
+            hs_error_t err = MultiRegexps::scan(
                 origin_db.get(),
                 begin,
                 static_cast<unsigned>(length),
-                0,
                 smart_scratch.get(),
-                on_match,
-                &match_result);
+                [&](unsigned int id) { match_result.insertIdx(id); });
 
             if (err != HS_SUCCESS)
                 throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan data with vectorscan");

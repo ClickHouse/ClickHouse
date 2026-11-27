@@ -2,75 +2,63 @@
 slug: /use-cases/AI_ML/AIChat/semantic-layer
 sidebarTitle: '使用语义层自定义 Assistant 聊天'
 title: '使用语义层优化 Assistant 对话'
-description: '介绍如何使用 AGENTS.md 为 Assistant 聊天 agent 提供自定义业务逻辑和数据专属指令'
-keywords: ['AI', 'ClickHouse Cloud', 'Agent', 'AGENTS.md', '语义层', '自定义指令', '系统提示']
+description: '介绍如何使用 AGENTS.md 为 Assistant 聊天 agent 提供自定义业务逻辑和针对特定数据的指令'
+keywords: ['AI', 'ClickHouse Cloud', 'Agent', 'AGENTS.md', 'Semantic Layer', 'Custom Instructions', 'System Prompt']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-Assistant 聊天 agent 可通过 **AGENTS.md** 进行自定义，从而理解你的特定业务逻辑、数据结构和领域知识。**AGENTS.md** 是一种特殊的已保存查询，可作为叠加在 agent 系统提示之上的语义层。
+借助 **AGENTS.md**，您可以对 Assistant 聊天 agent 进行自定义，使其理解您特有的业务逻辑、数据结构和领域知识。AGENTS.md 是一种特殊的已保存的查询，在 agent 的系统提示之上充当语义层。
 
-通过创建 AGENTS.md 文件，你可以提供自定义指令。这些指令会在每次对话开始时注入，用于根据你的组织特有的需求、计算方式和约定来指导 SQL 查询生成和数据分析。
+创建 AGENTS.md 文件后，您可以提供自定义指令。这些指令会在每次对话开始时注入，根据您组织特有的需求、计算方式和约定，指导 SQL 查询的生成和数据分析。
 
-<div id="how-it-works">
-  ## 工作原理
-</div>
+## 工作原理 {#how-it-works}
 
-当你在 Cloud Console 中保存一个名为 &quot;AGENTS.md&quot; (区分大小写) 的查询后：
+在云控制台中保存一个名为 &quot;AGENTS.md&quot; (区分大小写) 的查询后：
 
-1. 发送消息时，Assistant 聊天 agent 会自动加载此文件
-2. 文件内容会被放入结构化内容标签中，并注入 agent 的系统提示
-3. 这些指令会应用于该服务中的所有 Assistant 聊天对话
+1. 每次发送消息时，Assistant 聊天 agent 都会自动加载该文件
+2. 文件内容会被放入一个结构化内容标签中，并注入 agent 的系统提示
+3. 这些指令将应用于该服务中的所有 Assistant 聊天对话
 
-<div id="creating-agents-md">
-  ## 创建 AGENTS.md
-</div>
+## 创建 AGENTS.md {#creating-agents-md}
 
 <Steps>
-  <Step title="创建已保存查询" id="create-query">
-    1. 在 Cloud Console 中创建一个新查询
-    2. 将名称准确设置为：**&quot;AGENTS.md&quot;** (区分大小写)
-    3. 在查询文本编辑器中编写自定义说明 (不是实际的 SQL)
-    4. 保存查询
+  <Step title="创建已保存的查询" id="create-query">
+    1. 在云控制台中新建一个查询
+    2. 将其命名为 **&quot;AGENTS.md&quot;** (名称须完全一致，区分大小写) 
+    3. 在查询文本编辑器中编写您的自定义指令 (而非实际的 SQL) 
+    4. 保存该查询
   </Step>
 
-  <Step title="添加说明" id="add-instructions">
-    请使用清晰、可执行的语言来组织说明。包括：
+  <Step title="添加您的指令" id="add-instructions">
+    请使用清晰、可执行的语言组织指令，内容应包括：
 
-    * 业务规则和计算逻辑
-    * 数据结构指导
+    * 业务规则与计算逻辑
+    * 数据结构说明
     * 领域专用术语
     * 常见查询模式
     * 性能优化规则
   </Step>
 </Steps>
 
-<div id="best-practices">
-  ## 最佳实践
-</div>
+## 最佳实践 {#best-practices}
 
-<div id="finite-resource">
-  ### 将上下文视为有限资源
-</div>
+### 将上下文视为有限资源 {#finite-resource}
 
-上下文十分宝贵——每一个标记都会消耗智能体的“注意力预算”。就像人类的工作记忆有限一样，随着上下文变长，语言模型的表现也会逐渐下降。这意味着你需要找到**尽可能少但信号最强的一组标记**，以最大限度提高获得预期结果的可能性。
+上下文十分宝贵——每个 token 都会消耗 agent 的“注意力预算”。正如人类的工作记忆有限，语言模型的性能也会随着上下文的增长而下降。因此，关键在于找到**尽可能精简的高信号 token 集合**，最大限度地提高获得预期结果的可能性。
 
-<div id="right-altitude">
-  ### 找到合适的抽象层级
-</div>
+### 找准合适的抽象层次 {#right-altitude}
 
-在两个极端之间把握平衡：
+在两个极端之间取得平衡：
 
-* **过于具体**：硬编码脆弱的 if-else 逻辑，既容易出问题，也会增加维护复杂度
-* **过于模糊**：只给出高层次指导，无法提供明确的信号，或错误地假定存在共享上下文
+* **过于具体**：硬编码脆弱的 if-else 逻辑，导致系统容易出错且难以维护
+* **过于模糊**：只给出高层次的指导，既未提供具体信号，又错误地默认双方拥有共同的上下文
 
-理想的抽象层级应该足够具体，能够有效引导行为；同时也要足够灵活，让模型可以运用有效的启发式方法。先在当前可用的最佳模型上使用一个尽量精简的提示词，再根据观察到的失败模式补充清晰的指令。
+最佳的抽象层次应当足够具体，能够有效引导行为，同时又足够灵活，让模型能够运用可靠的启发式方法。先在现有最强的模型上使用精简的提示词，再根据观察到的失败模式逐步补充清晰的指令。
 
-<div id="structured-sections">
-  ### 用结构化分节组织内容
-</div>
+### 使用结构化分段组织内容 {#structured-sections}
 
-使用 XML 标签或 Markdown 标题创建清晰、便于浏览的分节：
+使用 XML 标签或 Markdown 标题划分出清晰、便于快速浏览的分段：
 
 ```xml
 <background_information>
@@ -86,30 +74,24 @@ How to use specific ClickHouse features
 </tool_guidance>
 ```
 
-<div id="canonical-examples">
-  ### 提供多样且具代表性的示例
-</div>
+### 提供多样化的典型示例 {#canonical-examples}
 
-示例就像“胜过千言万语的图片”。与其把所有边缘情况都塞进 prompt，不如精心挑选一组重点明确、类型多样的示例，清晰展现预期行为。
+示例就像是“一图胜千言”中的那张图。与其把各种边界情况一股脑塞进提示词，不如精心挑选一组聚焦且多样化的示例，有效呈现预期行为。
 
-<div id="minimal-complete">
-  ### 保持精简但完整
-</div>
+### 保持精简而完整 {#minimal-complete}
 
-* 仅包含常用的说明
-* 保持简洁——上下文过大会因“上下文腐化”而导致性能下降
-* 删除过期或很少使用的规则
-* 确保提供足够的信息来引导所需的行为
+* 只纳入常用的指令
+* 力求简洁——由于“上下文衰退” (context rot) ，上下文越长，性能越差
+* 删除过期或很少用到的规则
+* 确保信息充分，足以引导预期行为
 
 <Tip>
-  精简不一定意味着简短。你需要提供足够的细节，确保 agent 按预期行为执行，同时避免不必要的冗长。
+  精简并不等于简短。你需要提供足够的细节，确保 agent 按预期行事，只是要避免不必要的冗长。
 </Tip>
 
-<div id="example-calculated-metrics">
-  ## 示例：基于原始数据计算指标
-</div>
+## 示例：基于原始数据计算指标 {#example-calculated-metrics}
 
-当指标需要经过特定计算，而不能直接访问列时，请指导 agent：
+当指标需要经过特定计算、而非直接读取列值时，可按如下方式引导 agent：
 
 ```xml
 <metric_calculations>
@@ -130,11 +112,9 @@ GROUP BY date;
 </metric_calculations>
 ```
 
-<div id="example-business-logic">
-  ## 示例：业务逻辑规则
-</div>
+## 示例：业务逻辑规则 {#example-business-logic}
 
-定义特定业务领域的计算和分类：
+定义特定领域的计算与分类规则：
 
 ```xml
 <business_rules>
@@ -166,11 +146,9 @@ Always include these categorizations when generating traffic or revenue reports.
 </business_rules>
 ```
 
-<div id="example-data-quirks">
-  ## 示例：数据结构方面的特殊情况
-</div>
+## 示例：数据结构的特殊情况 {#example-data-quirks}
 
-说明非常规的数据格式或历史遗留的 schema 设计决策：
+记录非常规的数据格式或沿袭下来的旧版 schema 设计决策：
 
 ```xml
 <data_structure_notes>
@@ -197,11 +175,9 @@ FROM products;
 </data_structure_notes>
 ```
 
-<div id="example-terminology">
-  ## 示例：领域相关术语
-</div>
+## 示例：领域术语 {#example-terminology}
 
-将业务术语对应到技术实现：
+将业务术语映射到对应的技术实现：
 
 ```xml
 <terminology>

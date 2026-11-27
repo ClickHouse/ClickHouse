@@ -14,7 +14,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 ## query_condition_cache_policy {#query_condition_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />クエリ条件 cache のエビクションポリシー名。設定可能な値: `LRU`、`SLRU`、`SIEVE`。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />クエリ条件キャッシュのキャッシュエビクションポリシー。設定可能な値: `LRU`、`SLRU`、`SIEVE`。キャッシュ容量については [`query_condition_cache_size`](/ja/reference/settings/server-settings/settings/query-condition#query_condition_cache_size) を、SLRUポリシーにおける保護キューのサイズについては [`query_condition_cache_size_ratio`](/ja/reference/settings/server-settings/settings/query-condition#query_condition_cache_size_ratio) を参照してください。
 
 ## query_condition_cache_size {#query_condition_cache_size}
 

@@ -1,0 +1,223 @@
+---
+slug: /clickstack/observability/example-datasets/session-replay
+title: 'Демонстрация воспроизведения сеансов'
+description: 'Интерактивное демо-приложение, демонстрирующее, как инструментировать веб-приложение для воспроизведения сеансов в ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['clickstack', 'session replay', 'browser sdk', 'demo', 'observability', 'instrumentation']
+sidebarTitle: 'Демонстрация воспроизведения сеансов'
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<Note>
+  В приведённых ниже примерах инструментирования используется `@clickhouse/clickstack-browser`. Демонстрационный репозиторий пока содержит устаревший браузерный SDK; [миграция на новый SDK](https://github.com/ClickHouse/clickstack-session-replay-demo/pull/2) ещё не завершена. До обновления репозитория при клонировании и запуске проекта используется этот встроенный SDK.
+</Note>
+
+<Info>
+  **Кратко**
+
+  В этом руководстве описано, как инструментировать веб-приложение для воспроизведения сеансов с помощью браузерного SDK и полностью управляемого либо самоуправляемого ClickHouse Observability. В отличие от других демонстрационных наборов данных, которые загружают заранее сгенерированные данные, здесь используется интерактивное приложение: данные сеансов создаются в ходе вашей собственной работы с ним.
+
+  Необходимое время: 10–15 минут
+</Info>
+
+## Обзор {#overview}
+
+[Демо-приложение для воспроизведения сеанса](https://github.com/ClickHouse/clickstack-session-replay-demo) — это обозреватель документации, написанный на чистом JavaScript. Оно показывает, насколько простым может быть инструментирование для воспроизведения сеанса: достаточно одного тега script и одного вызова инициализации, чтобы действия пользователя фиксировались автоматически.
+
+Репозиторий содержит две ветки:
+
+* **`main`** — полностью инструментированная версия, готовая к работе
+* **`pre-instrumented`** — чистая версия без инструментирования; комментарии в коде указывают, куда его добавить
+
+В этом руководстве сначала используется ветка `main`, чтобы посмотреть воспроизведение сеанса в действии, а затем подробно разбирается код инструментирования, чтобы вы могли применить тот же подход в собственном приложении.
+
+Подробнее о том, что такое воспроизведение сеанса и какое место оно занимает в ClickStack, см. на странице [Воспроизведение сеанса](/ru/clickstack/observability/features/session-replay).
+
+## Предварительные требования {#prerequisites}
+
+* Установленный и запущенный Docker с доступным Docker Compose
+* Свободный порт 3000 для демонстрационного приложения
+* Существующий полностью управляемый или самоуправляемый сервис ClickHouse Observability
+* Сетевой доступ из браузера к конечной точке телеметрии, которая настраивается ниже
+
+## Запуск демонстрации {#running-the-demo}
+
+<Steps>
+  <Step title="Клонируйте репозиторий" id="clone-repository">
+    ```shell
+    git clone https://github.com/ClickHouse/clickstack-session-replay-demo
+    cd clickstack-session-replay-demo
+    ```
+  </Step>
+
+  <Step title="Настройте соединение" id="configure-connection">
+    Выберите режим развёртывания:
+
+    <Tabs>
+      <Tab title="Полностью управляемый">
+        <BetaBadge label="Бета-версия" />
+
+        Вам потребуется существующий [полностью управляемый сервис](/ru/clickstack/observability/getting-started). Коллектор для ингестии предоставляет ClickHouse.
+
+        В сервисе ClickHouse Observability откройте **Team Settings → Data → Managed Telemetry** и скопируйте значения **OTLP HTTP endpoint** и **API key**.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![Раздел Managed Telemetry со скрытыми OTLP HTTP endpoint и ключом API](/images/clickstack/getting-started/observability-managed-telemetry.png)
+          </Frame>
+        </div>
+
+        Укажите в `CLICKSTACK_UI_URL` URL интерфейса вашего управляемого сервиса. Чтобы записи сеансов открывались напрямую, скопируйте URL из адресной строки браузера в разделе **Client Sessions**. Замените плейсхолдеры ниже своими сведениями о подключении, затем выполните следующие команды в терминале:
+
+        ```shell
+        export CLICKSTACK_OTEL_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+        export CLICKSTACK_API_KEY='Bearer YOUR_API_KEY'
+        export CLICKSTACK_UI_URL='YOUR_OBSERVABILITY_UI_URL'
+        ```
+
+        Оставьте префикс `https://` и не указывайте пути сигналов, например `/v1/traces`. Для ингестии в полностью управляемом режиме добавьте префикс `Bearer `, как показано выше.
+
+        `CLICKSTACK_UI_URL` задаёт ссылки **Open Observability** в демонстрации; эта переменная не связана с конечной точкой ингестии телеметрии.
+
+        Сервер передаёт конечную точку телеметрии и ключ API в браузерный SDK. Ключ ингестии виден в браузере, поэтому для этой демонстрации используйте тестовый сервис.
+      </Tab>
+
+      <Tab title="Самоуправляемый">
+        Вам потребуется существующий [самоуправляемый сервис](/ru/clickstack/self-configured/getting-started/managed) и подключённый к нему запущенный коллектор ClickStack OpenTelemetry. Инструкции по подключению см. в разделе [Приём данных с помощью OpenTelemetry](/ru/clickstack/observability/ingesting-data/opentelemetry#installing-otel-collector-managed-self-configured), а запуск коллектора описан в [руководстве по развёртыванию](/ru/clickstack/self-configured/deployment/managed#start-a-collector-existing).
+
+        OTLP HTTP endpoint коллектора должен быть доступен из вашего браузера, а CORS должен разрешать `http://localhost:3000`. Интерфейс должен поддерживать атрибут `session.id` нового SDK в разделе Client Sessions; см. [требования к совместимости SDK](https://github.com/ClickHouse/clickstack-browser#clickstack-versions).
+
+        Укажите в `CLICKSTACK_OTEL_ENDPOINT` OTLP HTTP endpoint вашего коллектора без пути сигнала (например, `/v1/traces`). Укажите в `CLICKSTACK_UI_URL` URL раздела **Client Sessions**, скопированный из интерфейса вашего самоуправляемого сервиса.
+
+        ```shell
+        export CLICKSTACK_OTEL_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+        export CLICKSTACK_API_KEY='YOUR_COLLECTOR_TOKEN'
+        export CLICKSTACK_UI_URL='YOUR_CLIENT_SESSIONS_URL'
+        ```
+
+        Используйте токен аутентификации, настроенный в приёмнике вашего коллектора. Для коллектора ClickStack, защищённого с помощью `OTLP_AUTH_TOKEN`, укажите это значение без префикса `Bearer`. Если приёмник не требует аутентификации, задайте для `CLICKSTACK_API_KEY` пустую строку. Не указывайте здесь пароль базы данных ClickHouse.
+
+        Токен ингестии передаётся в браузерный SDK и виден в браузере. Учётные данные базы данных ClickHouse, используемые коллектором, остаются на коллекторе.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Запустите демо-приложение" id="start-demo-app">
+    Находясь в каталоге репозитория, выполните эту команду в том же терминале, в котором вы экспортировали переменные для подключения:
+
+    ```shell
+    docker compose --profile demo up --build --no-deps demo-app
+    ```
+
+    Флаг `--no-deps` запускает только демонстрационное приложение, которое использует настроенную вами конечную точку телеметрии. Локальный сервис ClickStack, входящий в состав репозитория, при этом не запускается.
+
+    Откройте [http://localhost:3000](http://localhost:3000) в браузере и поработайте с приложением: поищите темы, отфильтруйте их по категории, просмотрите примеры кода и добавьте что-нибудь в закладки.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Демонстрационное приложение для воспроизведения сеансов](/images/clickstack/session-replay/demo-app.webp)
+      </Frame>
+    </div>
+
+    Браузерный SDK записывает сеанс и отправляет его на настроенную вами конечную точку телеметрии.
+  </Step>
+
+  <Step title="Посмотрите воспроизведение своего сеанса" id="view-session-replay">
+    Нажмите **Open Observability** в демо-приложении, затем откройте раздел **Клиентские сеансы** (**Client Sessions**) в своём сервисе и выберите временной диапазон, охватывающий время теста, например **Last 15 minutes**. Найдите анонимный сеанс, соответствующий времени, когда вы работали с демо-приложением. SDK записывает его под именем сервиса `clickhouse-session-replay-demo`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Раздел Client Sessions, выбранный на боковой панели ClickHouse Observability, со списком записанных сеансов](/images/clickstack/session-replay/observability-client-sessions.png)
+      </Frame>
+    </div>
+
+    Откройте свой сеанс и нажмите **Play**, чтобы воспроизвести записанные действия.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Воспроизведение сеанса Documentation Explorer в ClickHouse Observability](/images/clickstack/session-replay/observability-session-replay.png)
+      </Frame>
+    </div>
+
+    Переключайтесь между режимами **Highlighted** и **All Events**, чтобы настроить уровень детализации на временной шкале.
+  </Step>
+</Steps>
+
+## Инструментирование {#instrumentation}
+
+Демо-приложение наглядно показывает, как мало кода нужно, чтобы включить воспроизведение сеанса. Для этого достаточно внести в приложение всего два изменения. В приведённых ниже примерах используется новый ClickStack Browser SDK:
+
+**1. Подключите SDK (`app/public/index.html`):**
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/@clickhouse/clickstack-browser@1.0.0/dist/clickstack.iife.js" integrity="sha384-NW4JhbuY4Thx4fMuqFwKvifcPn7ad9dJ7DU/MTxhkoHeadG27i4F38Yo1Gz6y0WA" crossorigin="anonymous"></script>
+```
+
+**2. Инициализируйте браузерный SDK (`app/public/js/app.js`):**
+
+```javascript
+window.ClickStack.init({
+  endpoint: window.CLICKSTACK_CONFIG.endpoint,
+  apiKey: window.CLICKSTACK_CONFIG.apiKey,
+  serviceName: 'clickhouse-session-replay-demo',
+  console: 'debug',
+});
+```
+
+`app/server.js` формирует `window.CLICKSTACK_CONFIG` на основе переменных окружения `CLICKSTACK_OTEL_ENDPOINT`, `CLICKSTACK_API_KEY` и `CLICKSTACK_UI_URL`. SDK использует конечную точку и ключ API, а демонстрационные ссылки — URL интерфейса. SDK записывает данные для воспроизведения сеанса, журнал консоли, сетевые запросы и ошибки, не затрагивая бизнес-логику приложения.
+
+По умолчанию текст и входные значения маскируются. Прежде чем менять настройки маскирования, ознакомьтесь с разделом [Настройки конфиденциальности браузерного SDK](/ru/clickstack/observability/ingesting-data/sdks/browser#session-replay-and-privacy).
+
+### Попробуйте сами {#try-it-yourself}
+
+Чтобы инструментировать приложение с нуля, остановите запущенное демо-приложение сочетанием `Ctrl+C`, а затем переключитесь на ветку `pre-instrumented`:
+
+```shell
+git checkout pre-instrumented
+```
+
+В этой ветке находится то же приложение, но без включенного браузерного SDK. Комментарии в коде файлов `app/public/index.html` и `app/public/js/app.js` указывают, куда вставить оба приведённых выше фрагмента. Оставьте заданные ранее переменные подключения, затем пересоберите и запустите приложение:
+
+```shell
+docker compose --profile demo up --build --no-deps demo-app
+```
+
+Перезагрузите демонстрационное приложение в браузере и выполните в нём несколько действий, чтобы создать новый сеанс.
+
+## Устранение неполадок {#troubleshooting}
+
+### Сеансы не отображаются {#sessions-not-appearing}
+
+1. Проверьте консоль браузера на наличие ошибок
+2. Убедитесь, что демонстрационное приложение запущено: `docker compose ps demo-app`
+3. Проверьте, что переменные `CLICKSTACK_OTEL_ENDPOINT` и `CLICKSTACK_API_KEY` заданы в терминале, из которого запускается приложение. Если вы изменили их, снова выполните команду запуска и перезагрузите вкладку браузера.
+4. При самоуправляемом развертывании проверьте ошибки экспорта в коллекторе, конфигурацию CORS и соответствие требованиям совместимости SDK, описанным выше
+5. Измените временной диапазон в представлении «Клиентские сеансы» (например, выберите **Last 15 minutes**)
+6. Выполните принудительное обновление страницы в браузере: `Cmd+Shift+R` (Mac) или `Ctrl+Shift+R` (Windows/Linux)
+
+### Ошибки 401 Unauthorized {#401-errors}
+
+Ключ API задан неправильно. Убедитесь, что вы:
+
+1. Экспортировали `CLICKSTACK_API_KEY` в терминале со значением, соответствующим вашему режиму развёртывания
+2. Запустили демонстрационное приложение в **том же терминале**, где выполнили экспорт
+3. Для полностью управляемого варианта использовали ключ API для приёма данных из **Team Settings → Data → Managed Telemetry** с префиксом `Bearer `. Для самоуправляемого варианта использовали токен приёмника вашего коллектора без этого префикса.
+
+## Очистка {#cleanup}
+
+Закройте вкладки браузера с демонстрацией, чтобы остановить отправку телеметрии из браузера, и нажмите `Ctrl+C` в терминале, где запущено приложение. Чтобы остановить приложение из другого терминала, выполните следующую команду в каталоге репозитория:
+
+```bash
+docker compose stop demo-app
+```
+
+Эта команда останавливает локальное приложение; телеметрия, уже загруженная в ваш сервис, в нём и останется.
+
+## Подробнее {#learn-more}
+
+* [Воспроизведение сеанса](/ru/clickstack/observability/features/session-replay) — обзор возможности, параметры SDK и настройки конфиденциальности
+* [Справочник по браузерному SDK](/ru/clickstack/observability/ingesting-data/sdks/browser) — полный список параметров SDK и расширенная конфигурация
+* [Начало работы с полностью управляемой версией](/ru/clickstack/observability/getting-started) — подключите свой первый источник данных
+* [Начало работы с самоуправляемой версией](/ru/clickstack/self-configured/getting-started/managed) — подключите коллектор и отправьте первые данные
+* [Все демонстрационные наборы данных](/ru/clickstack/observability/example-datasets) — другие демонстрационные наборы данных и руководства

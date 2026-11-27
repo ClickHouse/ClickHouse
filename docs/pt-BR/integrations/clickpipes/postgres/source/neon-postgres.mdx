@@ -13,9 +13,7 @@ integration:
 Este é um guia sobre como configurar o Neon Postgres, que você pode usar para replicação no ClickPipes.
 Certifique-se de ter feito login no seu [console do Neon](https://console.neon.tech/app/projects) para essa configuração.
 
-<div id="creating-a-user-with-permissions">
-  ## Criando um usuário com permissões
-</div>
+## Criando um usuário com permissões {#creating-a-user-with-permissions}
 
 Conecte-se à sua instância do Neon como usuário administrador e execute os seguintes comandos:
 
@@ -51,41 +49,31 @@ Conecte-se à sua instância do Neon como usuário administrador e execute os se
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * Para criar uma publication para todas as tabelas em um esquema específico:
+* Para criar uma publication para todas as tabelas em um esquema específico:
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 A publication `clickpipes` define o conjunto de tabelas cujos eventos de alteração serão transmitidos ao ClickPipes. Recomendamos não usar `FOR ALL TABLES`, a menos que você pretenda replicar todas as tabelas, pois incluir tabelas desnecessárias aumenta o tráfego de WAL do Postgres para o ClickPipes e reduz a eficiência geral da replicação.
 
-<div id="enable-logical-replication">
-  ## Ative a replicação lógica
-</div>
+## Ative a replicação lógica {#enable-logical-replication}
 
 No Neon, você pode ativar a replicação lógica pela interface. Isso é necessário para que o CDC do ClickPipes replique os dados.
-Acesse a aba **Settings** e, em seguida, a seção **Logical Replication**.
+Acesse a aba **Settings** e, em seguida, a seção **Replicação lógica**.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Ativar replicação lógica](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enable-replication.webp)
-
-</Frame>
-
+  <Frame>
+    ![Ativar replicação lógica](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enable-replication.webp)
+  </Frame>
 </div>
 
 Clique em **Enable** para concluir esta etapa. Depois de ativá-la, você deverá ver a mensagem de sucesso abaixo.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Replicação lógica ativada](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enabled-replication.webp)
-
-</Frame>
-
+  <Frame>
+    ![Replicação lógica ativada](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enabled-replication.webp)
+  </Frame>
 </div>
 
 Vamos verificar as configurações abaixo na sua instância do Neon Postgres:
@@ -96,43 +84,31 @@ SHOW max_wal_senders; -- should be 10
 SHOW max_replication_slots; -- should be 10
 ```
 
-<div id="ip-whitelisting-for-neon-enterprise-plan">
-  ## Lista de permissões de IP (para o plano Enterprise da Neon)
-</div>
+## Lista de permissões de IP (para o plano Enterprise da Neon) {#ip-whitelisting-for-neon-enterprise-plan}
 
 Se você tem o plano Neon Enterprise, pode adicionar os [ClickPipes IPs](/pt-BR/integrations/clickpipes/networking/static-ips) à lista de permissões para permitir a replicação do ClickPipes para sua instância do Neon Postgres.
 Para fazer isso, clique na aba **Settings** e vá até a seção **IP Allow**.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Tela de permissão de IPs](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp)
-
-</Frame>
-
+  <Frame>
+    ![Tela de permissão de IPs](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp)
+  </Frame>
 </div>
 
-<div id="copy-connection-details">
-  ## Copiar detalhes da conexão
-</div>
+## Copiar detalhes da conexão {#copy-connection-details}
 
 Agora que o usuário está criado, a publication está pronta e a replicação está habilitada, podemos copiar os detalhes da conexão para criar um novo ClickPipe.
 Acesse o **Dashboard** e, na caixa de texto em que a string de conexão é exibida,
 mude a visualização para **Somente parâmetros**. Vamos precisar desses parâmetros na próxima etapa.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![Detalhes da conexão](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-conn-details.webp)
-
-</Frame>
-
+  <Frame>
+    ![Detalhes da conexão](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-conn-details.webp)
+  </Frame>
 </div>
 
 <div id="whats-next">
-  ## O que vem a seguir?
+  ## O que vem a seguir? {#whats-next}
 </div>
 
 Agora você pode [criar seu ClickPipe](/pt-BR/integrations/clickpipes/postgres/index) e começar a ingestão de dados da sua instância do Postgres para o ClickHouse Cloud.

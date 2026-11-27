@@ -42,13 +42,15 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 ### معلمات المحرك {#parameters}
 
 * `path` — عنوان URL لـ حاوية مع مسار الملف. يدعم أحرف البدل التالية في وضع `readonly`: `*`, `**`, `?`, `{abc,def}` و `{N..M}`، حيث إن `N` و `M` — أرقام، و`'abc'` و `'def'` — سلاسل نصية. لمزيد من المعلومات، راجع [أدناه](#wildcards-in-path).
-* `NOSIGN` - إذا جرى توفير هذه الكلمة المفتاحية بدلًا من بيانات الاعتماد، فلن تُوقَّع أي من الطلبات.
+* `NOSIGN` - إذا جرى توفير هذه الكلمة المفتاحية بدلًا من بيانات الاعتماد، فلن تُوقَّع أي من الطلبات.
 * `format` — [تنسيق](/ar/reference/formats/index#formats-overview) الملف.
 * `aws_access_key_id`, `aws_secret_access_key` - بيانات اعتماد طويلة الأجل لمستخدم حساب [AWS](https://aws.amazon.com/). يمكنك استخدامها لمصادقة طلباتك. هذه المعلمة اختيارية. إذا لم يتم تحديد بيانات الاعتماد، فستُستخدم من ملف التهيئة. لمزيد من المعلومات، راجع [استخدام S3 لتخزين البيانات](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
 * `compression` — نوع الضغط. القيم المدعومة: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. هذه المعلمة اختيارية. افتراضيًا، سيُكتشف نوع الضغط تلقائيًا من امتداد الملف. بالنسبة إلى `snappy`، يُختار التنسيق السلكي بواسطة إعداد [snappy&#95;mode](/ar/reference/settings/session-settings/other#snappy_mode) (وتكون قيمته `basic` افتراضيًا).
 * `partition_strategy` – الخيارات: `wildcard` أو `hive`. يتطلب `wildcard` وجود `{_partition_id}` في المسار، ويُستبدل بمفتاح التقسيم. لا يسمح `hive` بأحرف البدل، ويفترض أن المسار هو جذر الجدول، ويُنشئ أدلة تقسيم بنمط Hive مع Snowflake IDs كأسماء ملفات وتنسيق الملف كامتداد. دون استراتيجية صريحة، يستخدم المسار الذي يحتوي على `{_partition_id}` استراتيجية `wildcard`. ولا يستخدم المسار الذي يحتوي على glob آخر أي استراتيجية تقسيم ويتجاهل `PARTITION BY`. ويستخدم المسار الذي لا يحتوي على glob استراتيجية `hive` عندما يكون `file_like_engine_default_partition_strategy` هو `hive`؛ وإلا فلن يستخدم أي استراتيجية تقسيم.
 * `partition_columns_in_data_file` - يُستخدم فقط مع استراتيجية التقسيم `hive`. ويُخبر ClickHouse ما إذا كان ينبغي توقع كتابة أعمدة التقسيم في ملف البيانات. القيمة الافتراضية `false`.
 * `storage_class_name` - الخيارات: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. لا تُدعَم إلا فئات تخزين S3 التي تسمح بالاسترجاع الفوري (أما الفئات الأرشيفية مثل `GLACIER` و `DEEP_ARCHIVE` فغير مدعومة). وتسمح بتحديد [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
+* `upload_checksum_algorithm` - اختياري. خوارزمية قيمة التحقق لعمليات التحميل: `MD5` (تُرسَل بوصفها `Content-MD5`)، أو `CRC32` أو `SHA256` (تُرسَلان بوصفهما `x-amz-checksum-*`). إذا تُركت فارغة، يُستخدم `Content-MD5`، أو `CRC32` لحاويات S3Express. وتُتجاهَل في GCS.
+* `delete_checksum_algorithm` - اختياري. خوارزمية قيمة التحقق لطلبات `DeleteObjects` المجمّعة: `MD5` (تُرسَل بوصفها `Content-MD5`)، أو `CRC32` أو `SHA256`. إذا تُركت فارغة، يُستخدم `MD5`، أو `CRC32` لحاويات S3Express، أو `SHA256` عندما يكون `MD5` غير متاح (وضع FIPS) أو يرفضه الخادم. وتُتجاهَل في GCS.
 * `extra_credentials` - اختياري. يُستخدم لتمرير `role_arn` من أجل التحكم في الوصول المستند إلى الأدوار في ClickHouse Cloud. راجع [تأمين S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) لمعرفة خطوات الإعداد.
 
 ### ذاكرة التخزين المؤقت للبيانات {#data-cache}
@@ -84,17 +86,17 @@ SETTINGS filesystem_cache_name = 'cache_for_s3', enable_filesystem_cache = 1;
 
 ### PARTITION BY {#partition-by}
 
-`PARTITION BY` — اختياري. في معظم الحالات، لا تحتاج إلى مفتاح تقسيم، وحتى إذا احتجت إليه، فعادةً لا تحتاج إلى مفتاح تقسيم أكثر دقة من التقسيم حسب الشهر. لا يؤدي التقسيم إلى تسريع الاستعلامات (على عكس تعبير ORDER BY). يجب ألّا تستخدم تقسيمًا مفرط الدقة إطلاقًا. لا تقسّم بياناتك حسب معرّفات العملاء أو أسمائهم (وبدلًا من ذلك، اجعل معرّف العميل أو اسمه هو العمود الأول في تعبير ORDER BY).
+`PARTITION BY` — اختياري. في معظم الحالات، لا تحتاج إلى مفتاح تقسيم، وحتى إذا احتجت إليه، فعادةً لا تحتاج إلى مفتاح تقسيم أكثر دقة من التقسيم حسب الشهر. التقسيم في جوهره أسلوب لإدارة البيانات، إذ يُكتب كل تقسيم في ملفات منفصلة. ومع استراتيجية التقسيم `hive`، لا يقرأ الاستعلام الذي يطبّق عامل تصفية على عمود التقسيم إلا ملفات التقسيمات المطابقة. يجب ألّا تستخدم تقسيمًا مفرط الدقة إطلاقًا. لا تقسّم بياناتك حسب معرّفات العملاء أو أسمائهم.
 
-للتقسيم حسب الشهر، استخدم التعبير `toYYYYMM(date_column)`، حيث إن `date_column` هو عمود يحتوي على تاريخ من النوع [Date](/ar/reference/data-types/date). تكون أسماء الأقسام هنا بالتنسيق `"YYYYMM"`.
+مع استراتيجية التقسيم `hive`، وهي الاستراتيجية الافتراضية التي يحددها `file_like_engine_default_partition_strategy`، يجب أن يتكوّن مفتاح التقسيم من أعمدة الجدول، مثل `PARTITION BY (year, month)`. أما تعبير مثل `toYYYYMM(date_column)` فيتطلب الاستراتيجية `wildcard`، مع تضمين `{_partition_id}` في المسار. ويمكن الكتابة إلى الجداول التي تستخدم الاستراتيجية `wildcard`، لكن لا يمكن القراءة منها.
 
 #### استراتيجية التقسيم {#partition-strategy}
 
-`حرف بدل`: يستبدل رمز البدل `{_partition_id}` في مسار الملف بمفتاح التقسيم الفعلي. القراءة غير مدعومة. يُحدَّد هذا الخيار افتراضيًا عندما يحتوي المسار على `{_partition_id}`.
+`wildcard`: يستبدل حرف البدل `{_partition_id}` في مسار الملف بمفتاح التقسيم الفعلي. القراءة غير مدعومة. يُحدَّد هذا الخيار افتراضيًا عندما يحتوي المسار على `{_partition_id}`.
 
 عند عدم تعيين `partition_strategy`، لا يستخدم المسار الذي يحتوي على نمط `glob` آخر أي استراتيجية تقسيم ويتجاهل `PARTITION BY`. أما المسار الذي لا يحتوي على نمط `glob` فيستخدم `hive` عندما تكون قيمة `file_like_engine_default_partition_strategy` هي `hive`؛ وإلا فلا يستخدم أي استراتيجية تقسيم.
 
-يطبّق `hive` التقسيم بنمط Hive لعمليات القراءة والكتابة. وتُنفَّذ القراءة باستخدام نمط `glob` تكراري، وهو ما يعادل `SELECT * FROM s3('table_root/**.parquet')`.
+يطبّق `hive` التقسيم بنمط Hive لعمليات القراءة والكتابة. وتُنفَّذ القراءة باستخدام نمط `glob` تكراري، وهو ما يعادل `SELECT * FROM s3('table_root/**.parquet')`، غير أن المسارات المخفية (أي المقاطع الواقعة تحت جذر الجدول والتي تبدأ بـ `_` أو `.`، مثل `_temporary/` و`.spark-staging-<id>/` و`_SUCCESS`) تُتجاهل، وفقًا للعرف المتّبع في منظومة Hive. أما مسارات glob العادية التي لا تستخدم استراتيجية تقسيم، فتتوفر لها التصفية نفسها عبر الإعدادات `s3_skip_hidden_files` / `azure_skip_hidden_files` / `hdfs_skip_hidden_files`.
 أما الكتابة فتُنشئ ملفات بالتنسيق التالي: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
 ملاحظة: عند استخدام استراتيجية التقسيم `hive`، لا يكون للإعداد `use_hive_partitioning` أي تأثير.

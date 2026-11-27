@@ -651,10 +651,11 @@ private:
     void generateNextDrop(RandomGenerator & rg, Drop * dp);
     void generateInsertToTable(RandomGenerator & rg, const SQLTable & t, bool in_parallel, std::optional<uint64_t> rows, Insert * ins);
     void generateNextInsert(RandomGenerator & rg, bool in_parallel, Insert * ins);
-    void generateNextUpdate(RandomGenerator & rg, const SQLTable & t, Update * upt);
+    /// `keep_count` skips special columns such as `is_deleted` or a TTL one, so `count` with `FINAL` does not change
+    void generateNextUpdate(RandomGenerator & rg, const SQLTable & t, Update * upt, bool keep_count = false);
     void generateNextDelete(RandomGenerator & rg, const SQLTable & t, Delete * del);
     template <typename T>
-    void generateNextUpdateOrDeleteOnTable(RandomGenerator & rg, const SQLTable & t, T * st);
+    void generateNextUpdateOrDeleteOnTable(RandomGenerator & rg, const SQLTable & t, T * st, bool keep_count = false);
     template <typename T>
     void generateNextUpdateOrDelete(RandomGenerator & rg, T * st);
     void generateNextTruncate(RandomGenerator & rg, Truncate * trunc);
@@ -667,7 +668,8 @@ private:
     void generateNextExchange(RandomGenerator & rg, Exchange * exc);
     void generateNextKill(RandomGenerator & rg, Kill * kil);
     void generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr);
-    void generateUpdateSets(RandomGenerator & rg, const SQLTable & t, UpdateSet * first, std::function<UpdateSet *()> add_next);
+    void generateUpdateSets(
+        RandomGenerator & rg, const SQLTable & t, UpdateSet * first, std::function<UpdateSet *()> add_next, bool keep_count = false);
     std::optional<String>
     alterSingleTable(RandomGenerator & rg, SQLTable & t, uint32_t nalters, bool no_oracle, bool in_parallel, Alter * at);
     void generateAlter(RandomGenerator & rg, bool in_parallel, Alter * at);

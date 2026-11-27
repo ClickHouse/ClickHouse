@@ -12,11 +12,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 <Info>
   **باختصار**
 
-  راقب مقاييس أداء PostgreSQL في ClickStack باستخدام مستقبِل PostgreSQL في OTel. يتضمن مجموعة بيانات تجريبية ولوحة معلومات مُعدّة مسبقًا.
+  راقب مقاييس أداء PostgreSQL في ClickStack باستخدام مستقبِل PostgreSQL في OTel. يتضمن مجموعة بيانات تجريبية ولوحة معلومات جاهزة مسبقًا.
 </Info>
 
 <div id="existing-postgres">
-  ## التكامل مع PostgreSQL الحالي
+  ## التكامل مع PostgreSQL الحالي {#existing-postgres}
 </div>
 
 يتناول هذا القسم كيفية تهيئة تثبيت PostgreSQL الحالي لديك لإرسال المقاييس إلى ClickStack، وذلك عبر تهيئة ClickStack OTel collector باستخدام مستقبِل PostgreSQL.
@@ -24,7 +24,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 إذا كنت ترغب في اختبار تكامل مقاييس PostgreSQL قبل تهيئة إعدادك الحالي، فيمكنك إجراء الاختبار باستخدام مجموعة البيانات التجريبية المُعدّ مسبقًا في [القسم التالي](#demo-dataset).
 
 <div id="prerequisites">
-  ##### المتطلبات الأساسية
+  ##### المتطلبات الأساسية {#prerequisites}
 </div>
 
 * مثيل ClickStack قيد التشغيل
@@ -41,8 +41,8 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="أنشئ تهيئة مخصصة لـ OTel collector" id="create-custom-config">
-    يتيح لك ClickStack توسيع تهيئة OpenTelemetry collector الأساسية من خلال تركيب ملف تهيئة مخصص وتعيين متغير بيئة.
+  <Step title="أنشئ إعدادات مخصصة لـ OTel collector" id="create-custom-config">
+    يتيح لك ClickStack توسيع إعدادات OpenTelemetry collector الأساسية من خلال ربط ملف إعدادات مخصص وتعيين متغير بيئة.
 
     أنشئ `postgres-metrics.yaml`:
 
@@ -87,8 +87,8 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="انشر ClickStack باستخدام تهيئة مخصصة" id="deploy-clickstack">
-    قم بتركيب ملف التهيئة المخصص:
+  <Step title="انشر ClickStack باستخدام إعدادات مخصصة" id="deploy-clickstack">
+    قم بربط ملف الإعدادات المخصص:
 
     ```bash
     docker run -d \
@@ -104,21 +104,21 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="تحقّق من جمع المقاييس" id="verify-metrics">
-    بعد إكمال التهيئة، سجّل الدخول إلى HyperDX وتأكد من أن المقاييس تتدفق:
+    بعد إكمال الإعدادات، سجّل الدخول إلى واجهة مستخدم ClickStack وتأكد من أن المقاييس تتدفق:
 
     1. انتقل إلى Metrics explorer
     2. ابحث عن المقاييس التي تبدأ بـ postgresql. (على سبيل المثال: postgresql.backends وpostgresql.commits)
     3. ينبغي أن ترى نقاط بيانات المقاييس تظهر وفقًا لفاصل الجمع الذي قمت بتهيئته
 
-    بمجرد بدء تدفق المقاييس، انتقل إلى قسم [لوحات المعلومات والتصور](#dashboards) لاستيراد لوحة المعلومات الجاهزة مسبقًا.
+    بمجرد بدء تدفق المقاييس، انتقل إلى قسم [لوحات المعلومات والتصور المرئي](#dashboards) لاستيراد لوحة المعلومات الجاهزة مسبقًا.
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## مجموعة البيانات التجريبية
+  ## مجموعة البيانات التجريبية {#demo-dataset}
 </div>
 
-للمستخدمين الذين يريدون اختبار تكامل مقاييس PostgreSQL قبل تهيئة أنظمة الإنتاج الخاصة بهم، نوفر مجموعة بيانات مُولَّدة مسبقًا تتضمن أنماطًا واقعية لمقاييس PostgreSQL.
+للمستخدمين الذين يريدون اختبار تكامل مقاييس PostgreSQL قبل تهيئة أنظمة الإنتاج الخاصة بهم، نوفر مجموعة بيانات مُولَّدة مسبقًا تتضمن أنماطًا واقعية لمقاييس PostgreSQL.
 
 <Info>
   **مقاييس على مستوى قاعدة البيانات فقط**
@@ -128,7 +128,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 
 <Steps>
   <Step title="تنزيل مجموعة بيانات المقاييس النموذجية" id="download-sample">
-    نزّل ملفات المقاييس المُولَّدة مسبقًا (24 ساعة من مقاييس PostgreSQL بأنماط واقعية):
+    نزّل ملفات المقاييس المُولَّدة مسبقًا (24 ساعة من مقاييس PostgreSQL بأنماط واقعية):
 
     ```bash
     # تنزيل مقاييس gauge (connections, database size)
@@ -141,7 +141,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     تتضمن مجموعة البيانات أنماطًا واقعية:
 
     * **ارتفاع صباحي في الاتصالات (08:00)** - ذروة تسجيل الدخول
-    * **مشكلة في أداء cache (11:00)** - ارتفاع مفاجئ في Blocks&#95;read
+    * **مشكلة في أداء ذاكرة التخزين المؤقت (11:00)** - ارتفاع مفاجئ في Blocks&#95;read
     * **خلل في التطبيق (14:00-14:30)** - ارتفاع معدل التراجع إلى 15%
     * **حالات deadlocks (14:15, 16:30)** - deadlocks نادرة
   </Step>
@@ -172,54 +172,44 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="تحقّق من المقاييس في HyperDX" id="verify-metrics-demo">
+  <Step title="تحقّق من المقاييس في واجهة مستخدم ClickStack" id="verify-metrics-demo">
     بعد تحميلها، فإن أسرع طريقة لعرض مقاييسك هي من خلال لوحة المعلومات الجاهزة مسبقًا.
 
-    انتقل إلى قسم [لوحات المعلومات والتصورات](#dashboards) لاستيراد لوحة المعلومات وعرض العديد من مقاييس PostgreSQL دفعةً واحدة.
+    انتقل إلى قسم [لوحات المعلومات والتصور المرئي](#dashboards) لاستيراد لوحة المعلومات وعرض العديد من مقاييس PostgreSQL دفعةً واحدة.
 
     <Info>
       **عرض المنطقة الزمنية**
 
-      يعرض HyperDX الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تغطي البيانات التجريبية الفترة **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**. اضبط النطاق الزمني على **2025-11-09 00:00:00 - 2025-11-12 00:00:00** لضمان ظهور المقاييس التجريبية بغض النظر عن موقعك. وبعد أن ترى المقاييس، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
+      تعرض واجهة مستخدم ClickStack الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تغطي البيانات التجريبية الفترة **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**. اضبط النطاق الزمني على **2025-11-09 00:00:00 - 2025-11-12 00:00:00** لضمان ظهور المقاييس التجريبية بغض النظر عن موقعك. وبعد أن ترى المقاييس، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
     </Info>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## لوحات المعلومات والتصورات
-</div>
+## لوحات المعلومات والتصور المرئي {#dashboards}
 
 لمساعدتك على بدء مراقبة PostgreSQL باستخدام ClickStack، نوفر تصورات أساسية لمقاييس PostgreSQL.
 
 <Steps>
-  <Step title="نزّل إعداد لوحة المعلومات" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">نزّل ملف إعداد لوحة المعلومات</TrackedLink>.
+  <Step title="نزّل إعدادات لوحة المعلومات" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">نزّل ملف إعدادات لوحة المعلومات</TrackedLink>.
   </Step>
 
-  <Step title="استورد لوحة المعلومات المُعدّة مسبقًا" id="import-dashboard">
-    1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات
+  <Step title="استورد لوحة المعلومات الجاهزة مسبقًا" id="import-dashboard">
+    1. افتح واجهة مستخدم ClickStack وانتقل إلى قسم لوحات المعلومات
     2. انقر على **استيراد لوحة معلومات** في الزاوية العلوية اليمنى من قائمة النقاط الثلاث
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![زر استيراد لوحة المعلومات](/images/clickstack/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![زر استيراد لوحة المعلومات](/images/clickstack/import-dashboard.webp)
+      </Frame>
     </div>
 
     3. ارفع ملف `postgres-metrics-dashboard.json` وانقر على **إنهاء الاستيراد**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![مربع حوار إنهاء الاستيراد](/images/clickstack/postgres/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![مربع حوار إنهاء الاستيراد](/images/clickstack/postgres/import-dashboard.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -227,13 +217,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ستُنشأ لوحة المعلومات مع إعداد جميع التصورات مسبقًا:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![لوحة معلومات مقاييس PostgreSQL](/images/clickstack/postgres/postgres-metrics-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![لوحة معلومات مقاييس PostgreSQL](/images/clickstack/postgres/postgres-metrics-dashboard.webp)
+      </Frame>
     </div>
 
     <Note>
@@ -243,11 +229,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="troubleshooting">
-  ## استكشاف الأخطاء وإصلاحها
+  ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### تعذّر تحميل التهيئة المخصصة
+  ### تعذّر تحميل التهيئة المخصصة {#troubleshooting-not-loading}
 </div>
 
 تحقّق من ضبط متغير البيئة:
@@ -262,9 +248,7 @@ docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
 docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml
 ```
 
-<div id="no-metrics">
-  ### عدم ظهور أي مقاييس في HyperDX
-</div>
+### عدم ظهور أي مقاييس في واجهة مستخدم ClickStack {#no-metrics}
 
 تحقق من إمكانية الوصول إلى PostgreSQL:
 
@@ -279,7 +263,7 @@ docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i postgr
 ```
 
 <div id="auth-errors">
-  ### أخطاء المصادقة
+  ### أخطاء المصادقة {#auth-errors}
 </div>
 
 تحقّق من ضبط كلمة المرور بشكل صحيح:
@@ -295,15 +279,13 @@ psql -h postgres-host -U otel_monitor -d postgres -c "SELECT version();"
 ```
 
 <div id="next-steps">
-  ## الخطوات التالية
+  ## الخطوات التالية {#next-steps}
 </div>
 
 * أعدّ [التنبيهات](/ar/clickstack/features/alerts) للعتبات الحرجة (حدود الاتصالات، ارتفاع معدلات التراجع، انخفاض نسب الإصابة في ذاكرة التخزين المؤقت)
 * فعّل المراقبة على مستوى الاستعلامات باستخدام امتداد `pg_stat_statements`
 * راقب عدة مثيلات PostgreSQL عبر تكرار إعدادات الـ receiver مع نقاط نهاية وأسماء خدمات مختلفة
 
-<div id="going-to-production">
-  ## الانتقال إلى بيئة الإنتاج
-</div>
+## الانتقال إلى بيئة الإنتاج {#going-to-production}
 
 يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما في عمليات النشر على بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات الإنتاج.

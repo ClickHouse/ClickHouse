@@ -214,7 +214,7 @@ También puedes obtener perfiles de heap globales y por consulta directamente de
     </clickhouse>
     ```
 
-    Una vez habilitada, la UI ofrece las mismas visualizaciones que el servidor — Summary, Allocations, Arenas, Operations, Global Profiler y Raw Output — excepto las pestañas Query Profiler y Fragmentation, que requieren acceso SQL a las system tables.
+    Una vez habilitada, la UI ofrece las mismas visualizaciones que el servidor — Summary, Allocations, Arenas, Operations, Global Profiler y Raw Output — excepto las pestañas Query Profiler y Fragmentation, que requieren acceso SQL a las tablas del sistema.
 
     <Warning>
       **Seguridad**
@@ -228,7 +228,7 @@ También puedes obtener perfiles de heap globales y por consulta directamente de
 
     * `GET /jemalloc/stats` — salida sin procesar de `malloc_stats_print`
     * `GET /jemalloc/status` — estado del perfilado en JSON (`prof_enabled`, `prof_active`, `thread_active_init`, `lg_sample`)
-    * `GET /jemalloc/profile?format={collapsed|raw}` — hace flush de un perfil de heap con simbolización en el servidor; devuelve collapsed stacks aptas para renderizar flame graphs (predeterminado) o el dump sin procesar de jemalloc
+    * `GET /jemalloc/profile?format={collapsed|raw}` — hace flush de un perfil de heap con simbolización en el servidor; devuelve collapsed stacks aptas para renderizar flame graphs (predeterminado) o el perfil de heap en la misma forma que el formato `raw` de `system.jemalloc_profile_text`
   </Tab>
 </Tabs>
 
@@ -254,9 +254,9 @@ SELECT * FROM system.jemalloc_profile_text
 
 ### Formato de salida {#output-format}
 
-El formato de salida se controla mediante la configuración `jemalloc_profile_text_output_format`, que admite tres valores:
+El formato de salida se controla mediante el parámetro de configuración `jemalloc_profile_text_output_format`, que admite tres valores:
 
-* `raw` — perfil de heap en bruto, tal como lo genera jemalloc.
+* `raw` — perfil de heap tal como lo genera jemalloc, salvo que no se publican las direcciones de tiempo de ejecución: las direcciones de la pila dentro del binario de ClickHouse se reemplazan por sus desplazamientos dentro de este, las demás direcciones (bibliotecas compartidas, código JIT) por `0`, y se elimina el mapa de memoria (`MAPPED_LIBRARIES`). `jeprof` lo analiza junto con el binario de ClickHouse: `jeprof /path/to/clickhouse profile.heap`.
 * `symbolized` — formato compatible con jeprof con símbolos de función integrados. Como los símbolos ya están integrados, `jeprof` puede analizar la salida sin necesidad del binario de ClickHouse.
 * `collapsed` (predeterminado) — collapsed stacks compatibles con FlameGraph, una pila por línea con el recuento de bytes.
 
