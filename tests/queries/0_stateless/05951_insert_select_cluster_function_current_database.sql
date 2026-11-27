@@ -67,6 +67,14 @@ INSERT INTO dst WITH ((v, d) -> length(d)) AS assignCentroid SELECT 'shadow_cent
 FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
 SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_2f';
 
+INSERT INTO dst WITH (currentDatabase -> currentDatabase()) AS call_it SELECT 'shadow_param', call_it(() -> 'shadow'), x
+FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
+SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_2g';
+
+INSERT INTO dst WITH ((a, b) -> a + b) AS notIn SELECT 'shadow_in', '', x NOT IN x
+FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
+SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_2h';
+
 INSERT INTO dst SELECT 'renamed', currentDatabase(), x AS database
 FROM fileCluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase() || '_05951_*.tsv', 'TSV', 'x UInt64')
 SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_2d';
@@ -101,7 +109,7 @@ SETTINGS parallel_distributed_insert_select = 2, log_comment = '05951_6';
 
 SELECT 'dst';
 SELECT c, count(), countIf(s = currentDatabase()), sum(x) FROM dst GROUP BY c ORDER BY c;
-SELECT DISTINCT s FROM dst WHERE c IN ('shadow', 'shadow_ident');
+SELECT DISTINCT s FROM dst WHERE c IN ('shadow', 'shadow_ident', 'shadow_param');
 SELECT 'loc';
 SELECT c, count(), countIf(s = currentDatabase()), sum(x) FROM loc GROUP BY c ORDER BY c;
 

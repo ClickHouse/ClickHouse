@@ -133,8 +133,8 @@ public:
     /// arguments it rewrites.
     [[nodiscard]] bool tryBindQuerySentToOtherServers(ASTPtr & ast) const
     {
-        if ((hasCurrentDatabaseCall(*ast) && hasAliasThatMayNameLambda(*ast, isCurrentDatabaseName))
-            || hasAliasThatMayNameLambda(*ast, isFunctionWithBoundArgumentsName))
+        if ((hasCurrentDatabaseCall(*ast) && hasNameThatMayResolveToLambda(*ast, isCurrentDatabaseName))
+            || hasNameThatMayResolveToLambda(*ast, isFunctionWithBoundArgumentsName))
             return false;
 
         visit(ast);
@@ -452,8 +452,9 @@ private:
         return false;
     }
 
-    /// A call of a function named like this alias may resolve to a lambda of the query, given directly or through an identifier.
-    static bool hasAliasThatMayNameLambda(const IAST & ast, bool (*is_name)(const String &))
+    /// A call of a function with such a name may resolve to a lambda of the query: one aliased with it, directly or through
+    /// an identifier, or a parameter of a lambda, which may be given a lambda.
+    static bool hasNameThatMayResolveToLambda(const IAST & ast, bool (*is_name)(const String &))
     {
         const auto * function = ast.as<ASTFunction>();
         const auto * identifier = dynamic_cast<const ASTIdentifier *>(&ast);
@@ -461,9 +462,21 @@ private:
             && is_name(ast.tryGetAlias()))
             return true;
 
+        if (function && function->name == "lambda" && function->arguments && !function->arguments->children.empty())
+        {
+            if (const auto * parameters = function->arguments->children.front()->as<ASTFunction>(); parameters && parameters->arguments)
+            {
+                for (const auto & parameter : parameters->arguments->children)
+                {
+                    if (const auto * parameter_name = parameter->as<ASTIdentifier>(); parameter_name && is_name(parameter_name->name()))
+                        return true;
+                }
+            }
+        }
+
         for (const auto & child : ast.children)
         {
-            if (hasAliasThatMayNameLambda(*child, is_name))
+            if (hasNameThatMayResolveToLambda(*child, is_name))
                 return true;
         }
         return false;

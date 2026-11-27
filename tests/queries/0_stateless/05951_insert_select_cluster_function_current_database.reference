@@ -7,6 +7,8 @@ schema	600	600	180300
 shadow	600	0	180300
 shadow_centroid	600	0	8400
 shadow_ident	600	0	180300
+shadow_in	600	0	360600
+shadow_param	600	0	180300
 shadow
 loc
 centroid	600	0	700
