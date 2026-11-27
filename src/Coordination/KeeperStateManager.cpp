@@ -174,6 +174,7 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
     std::unordered_map<std::string, int> check_duplicated_hostnames;
 
     size_t total_servers = 0;
+    bool has_voting_server = false;
     bool localhost_present = false;
     std::string non_local_hostname;
     size_t local_address_counter = 0;
@@ -228,6 +229,9 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
         if (start_as_follower)
             result.servers_start_as_followers.insert(new_server_id);
 
+        if (can_become_leader)
+            has_voting_server = true;
+
         auto endpoint = hostname + ":" + std::to_string(port);
         if (check_duplicated_hostnames.contains(endpoint))
         {
@@ -273,6 +277,9 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
 
     if (result.servers_start_as_followers.size() == total_servers)
         throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to start as leader (without <start_as_follower>)");
+
+    if (!has_voting_server)
+        throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to become leader (without <can_become_leader>false</can_become_leader>)");
 
     if (hostname_checks_enabled)
     {
