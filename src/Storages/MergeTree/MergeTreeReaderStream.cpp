@@ -491,8 +491,10 @@ void ReadRangesRegistry::registerRanges(ReadRanges * file_ranges, CompressedBloc
 
 void ReadRangesRegistry::ReadRanges::release() noexcept
 {
+    /// Freed after the lock.
+    CompressedBlockRanges freed;
     std::lock_guard lock(mutex);
-    CompressedBlockRanges().swap(united_ranges);
+    freed.swap(united_ranges);
     merged = 0;
 }
 
@@ -500,9 +502,15 @@ void ReadRangesRegistry::releaseAll()
 {
     if (block->read_ranges_released.exchange(true))
         return;
-    std::lock_guard lock(block->read_ranges_registries_mutex);
-    for (auto * registry : block->read_ranges_registries)
-        registry->releaseOwn();
+    {
+        std::lock_guard lock(block->read_ranges_registries_mutex);
+        for (auto * registry : block->read_ranges_registries)
+            registry->releaseOwn();
+    }
+    LOG_DEBUG(
+        getLogger("RuntimeDataflowStatisticsCacheUpdater"),
+        "Counting the compressed blocks read would take more than {} ranges, the input is not measured",
+        block->max_counted_ranges);
 }
 
 void ReadRangesRegistry::releaseOwn()
@@ -526,11 +534,8 @@ bool ReadRangesRegistry::reserve(size_t units)
     if (block->read_ranges.fetch_add(units, std::memory_order_relaxed) + units <= block->max_counted_ranges)
         return true;
     block->read_ranges.fetch_sub(units, std::memory_order_relaxed);
-    if (!block->counted_ranges_limit_exceeded.exchange(true))
-        LOG_DEBUG(
-            getLogger("RuntimeDataflowStatisticsCacheUpdater"),
-            "Counting the compressed blocks read would take more than {} ranges, the input is not measured",
-            block->max_counted_ranges);
+    /// Logged by `releaseAll`, which follows, out of the locks.
+    block->counted_ranges_limit_exceeded.store(true, std::memory_order_relaxed);
     return false;
 }
 
