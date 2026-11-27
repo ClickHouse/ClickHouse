@@ -301,8 +301,6 @@ std::optional<Field> ReadBufferFromWebServer::getMetadata(const String & name) c
         const auto current_offset = offset.load(std::memory_order_relaxed);
         if (read_until_position && read_until_position <= current_offset)
             return std::nullopt;
-        if (urls.size() != 1)
-            return std::nullopt;
 
         /// A cached footer can answer the query without consuming this buffer.
         /// Fetch only the headers of a real data response with a separate bounded

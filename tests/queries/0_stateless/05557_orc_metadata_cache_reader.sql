@@ -1,4 +1,5 @@
--- Tags: no-fasttest, no-parallel-replicas
+-- Tags: no-fasttest, no-parallel, no-parallel-replicas
+-- no-parallel: the test clears the process-wide ORC metadata cache.
 -- ORC support is not built in fast-test images.
 -- Profile events of the ORC cache are recorded on the local server.
 
