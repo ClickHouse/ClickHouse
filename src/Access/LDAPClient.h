@@ -116,6 +116,7 @@ public:
         std::optional<SearchParams> user_dn_detection;
 
         std::chrono::seconds verification_cooldown{0};
+        std::chrono::seconds unreachable_cooldown{0};
 
         std::chrono::seconds operation_timeout{40};
         std::chrono::seconds network_timeout{30};
@@ -130,6 +131,8 @@ public:
     explicit LDAPClient(const Params & params_);
     ~LDAPClient();
 
+    int getLastErrorCode() const { return last_error_code; }
+
     LDAPClient(const LDAPClient &) = delete;
     LDAPClient(LDAPClient &&) = delete;
     LDAPClient & operator= (const LDAPClient &) = delete;
@@ -142,6 +145,10 @@ protected:
     SearchResults search(const SearchParams & search_params);
 
     const Params params;
+
+    /// The result code of the last failed LDAP call, used to distinguish a server that is unreachable
+    /// from an authentication failure or a local misconfiguration.
+    int last_error_code = 0;
 #if USE_LDAP
     LDAP * handle = nullptr;
 #endif
@@ -155,6 +162,7 @@ class LDAPSimpleAuthClient
 {
 public:
     using LDAPClient::LDAPClient;
+    using LDAPClient::getLastErrorCode;
     bool authenticate(const RoleSearchParamsList * role_search_params, SearchResultsList * role_search_results);
 };
 

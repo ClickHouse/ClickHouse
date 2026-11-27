@@ -188,6 +188,8 @@ void LDAPClient::handleError(int result_code, String text)
 
     if (result_code != LDAP_SUCCESS)
     {
+        last_error_code = result_code;
+
         const char * raw_err_str = ldap_err2string(result_code);
         if (raw_err_str && *raw_err_str != '\0')
         {
@@ -594,6 +596,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                         message += matched_msg;
                     }
 
+                    last_error_code = rc;
                     throw Exception(ErrorCodes::LDAP_ERROR, "LDAP search failed{}", message);
                 }
 
@@ -601,7 +604,12 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
             }
 
             case -1:
+            {
+                int rc = LDAP_SUCCESS;
+                ldap_get_option(handle, LDAP_OPT_RESULT_CODE, &rc);
+                last_error_code = rc;
                 throw Exception(ErrorCodes::LDAP_ERROR, "Failed to process LDAP search message");
+            }
         }
     }
 

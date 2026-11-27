@@ -22,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LDAP_ERROR;
 }
 
 namespace
@@ -75,6 +76,46 @@ std::chrono::seconds parseLDAPTimeout(const Poco::Util::AbstractConfiguration & 
     return std::chrono::seconds{seconds};
 }
 
+std::chrono::seconds parseLDAPCooldown(const Poco::Util::AbstractConfiguration & config, const String & server_config, const String & entry_name)
+{
+    const UInt64 seconds = config.getUInt64(server_config + "." + entry_name);
+
+    /// Zero disables the cooldown. The upper bound keeps the value representable by the types used
+    /// for the deadline arithmetic; a huge value would effectively lock the server out forever.
+    if (seconds > static_cast<UInt64>(std::numeric_limits<Int32>::max()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Bad value for '{}' entry, must be between 0 and {}",
+                        entry_name, std::numeric_limits<Int32>::max());
+
+    return std::chrono::seconds{seconds};
+}
+
+String ldapResultCodeToString(int ldap_result_code)
+{
+#if USE_LDAP
+    /// Only the client library's own description of the code, not the diagnostic message that the
+    /// server sent: that message is attacker-controlled and must not be replayed to other clients.
+    const char * text = ldap_err2string(ldap_result_code);
+    return text ? text : String{};
+#else
+    return fmt::format("LDAP result code {}", ldap_result_code);
+#endif
+}
+
+bool isLDAPConnectionError(int ldap_result_code)
+{
+#if USE_LDAP
+    /// Only a connection-level failure means that the server itself is unreachable. Codes such as
+    /// `LDAP_LOCAL_ERROR` (also returned for bad options) or `LDAP_TIMEOUT` (also returned for a slow
+    /// search response) would otherwise open the breaker on a healthy server or a local misconfiguration.
+    /// A TLS handshake failure, for example an untrusted CA, is reported as `LDAP_CONNECT_ERROR` and
+    /// does trip the breaker, which is acceptable because such a server cannot authenticate anyone.
+    return ldap_result_code == LDAP_SERVER_DOWN || ldap_result_code == LDAP_CONNECT_ERROR;
+#else
+    return false;
+#endif
+}
+
 void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConfiguration & config, const String & name)
 {
     if (name.empty())
@@ -99,6 +140,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     const bool has_tls_cipher_suite = config.has(ldap_server_config + ".tls_cipher_suite");
     const bool has_search_limit = config.has(ldap_server_config + ".search_limit");
     const bool has_follow_referrals = config.has(ldap_server_config + ".follow_referrals");
+    const bool has_unreachable_cooldown = config.has(ldap_server_config + ".unreachable_cooldown");
     const bool has_operation_timeout = config.has(ldap_server_config + ".operation_timeout");
     const bool has_network_timeout = config.has(ldap_server_config + ".network_timeout");
     const bool has_search_timeout = config.has(ldap_server_config + ".search_timeout");
@@ -138,6 +180,9 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
 
     if (has_verification_cooldown)
         params.verification_cooldown = std::chrono::seconds{config.getUInt64(ldap_server_config + ".verification_cooldown")};
+
+    if (has_unreachable_cooldown)
+        params.unreachable_cooldown = parseLDAPCooldown(config, ldap_server_config, "unreachable_cooldown");
 
     if (has_operation_timeout)
         params.operation_timeout = parseLDAPTimeout(config, ldap_server_config, "operation_timeout");
@@ -313,6 +358,7 @@ void ExternalAuthenticators::resetImpl()
 {
     ldap_client_params_blueprint.clear();
     ldap_caches.clear();
+    ldap_unreachable_until.clear();
     kerberos_params.reset();
 }
 
@@ -438,6 +484,10 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     ldap_client_params_blueprint = std::move(new_ldap_client_params_blueprint);
     ldap_caches = std::move(new_ldap_caches);
 
+    /// A reload may change the connection identity of a server (host, port, TLS settings), so the
+    /// breaker state from before the reload must not reject logins against the new target.
+    ldap_unreachable_until.clear();
+
     kerberos_params = std::move(new_kerberos_params);
 }
 
@@ -524,10 +574,112 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
                     ldap_caches.erase(cit);
             }
         }
+
+        /// Fail fast only if the LDAP server would actually be contacted. This must stay after the
+        /// cache check above: a user with a valid cached verification must not be rejected because the
+        /// server has become unreachable during the cooldown period.
+        if (params->unreachable_cooldown > std::chrono::seconds{0})
+        {
+            const auto bit = ldap_unreachable_until.find(server);
+            if (bit != ldap_unreachable_until.end())
+            {
+                const auto now = std::chrono::steady_clock::now();
+                if (now < bit->second.until)
+                {
+                    /// Round up: while the breaker is open the reported number must never be zero.
+                    const auto remaining_seconds = std::chrono::ceil<std::chrono::seconds>(bit->second.until - now).count();
+                    throw Exception(ErrorCodes::LDAP_ERROR,
+                                    "LDAP server '{}' is unreachable (last error: {}), authentication attempts are "
+                                    "skipped for {} more second(s) because of 'unreachable_cooldown'",
+                                    server, bit->second.last_error, remaining_seconds);
+                }
+
+                ldap_unreachable_until.erase(bit);
+            }
+        }
     }
 
     LDAPSimpleAuthClient client(params.value());
-    const auto result = client.authenticate(role_search_params, role_search_results);
+
+    bool result = false;
+    try
+    {
+        result = client.authenticate(role_search_params, role_search_results);
+    }
+    catch (const Exception &)
+    {
+        /// The timestamp is taken before any other work, so a failure whose LDAP call returned before
+        /// a concurrent successful contact is still treated as the older evidence.
+        const auto failure_timestamp = std::chrono::steady_clock::now();
+
+        if (params->unreachable_cooldown > std::chrono::seconds{0} && isLDAPConnectionError(client.getLastErrorCode()))
+        {
+            try
+            {
+                const String error_text = ldapResultCodeToString(client.getLastErrorCode());
+
+                std::lock_guard lock(mutex);
+
+                /// An attempt that was already in flight during a reload must not mark the server
+                /// unreachable if the parameters of the server have changed since the attempt started.
+                const auto pit = ldap_client_params_blueprint.find(server);
+                if (pit != ldap_client_params_blueprint.end())
+                {
+                    auto current_params = pit->second;
+                    current_params.user = credentials.getUserName();
+                    current_params.password = credentials.getPassword();
+
+                    if (params_hash == computeParamsHash(current_params, role_search_params))
+                    {
+                        auto & entry = ldap_unreachable_until[server];
+                        if (entry.last_failure < failure_timestamp)
+                        {
+                            entry.last_failure = failure_timestamp;
+                            entry.until = failure_timestamp + params->unreachable_cooldown;
+                            entry.last_error = error_text;
+                        }
+                    }
+                }
+            }
+            catch (...)
+            {
+                /// Recording the failure allocates, and a failure there must not replace the
+                /// authentication error that is being propagated.
+                tryLogCurrentException("ExternalAuthenticators", "Failed to record an unreachable LDAP server");
+            }
+        }
+
+        throw;
+    }
+
+    /// The server responded, either successfully or with invalid credentials, so it is reachable.
+    /// A concurrent failure that completed before this response is overridden by newer evidence.
+    /// A login with an empty password returns without contacting the server, so it says nothing
+    /// about reachability and must not clear the breaker.
+    if (!params->password.empty())
+    {
+        const auto success_timestamp = std::chrono::steady_clock::now();
+
+        std::lock_guard lock(mutex);
+
+        /// An attempt that was already in flight during a reload must not clear a breaker that a
+        /// failure against the new configuration has armed.
+        const auto pit = ldap_client_params_blueprint.find(server);
+        if (pit != ldap_client_params_blueprint.end())
+        {
+            auto current_params = pit->second;
+            current_params.user = credentials.getUserName();
+            current_params.password = credentials.getPassword();
+
+            if (params_hash == computeParamsHash(current_params, role_search_params))
+            {
+                const auto bit = ldap_unreachable_until.find(server);
+                if (bit != ldap_unreachable_until.end() && bit->second.last_failure < success_timestamp)
+                    ldap_unreachable_until.erase(bit);
+            }
+        }
+    }
+
     const auto current_check_timestamp = std::chrono::steady_clock::now();
 
     // Update the cache, but only if this is the latest check and the server is still configured in a compatible way.

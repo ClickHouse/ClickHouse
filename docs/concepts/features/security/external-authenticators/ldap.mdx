@@ -32,6 +32,7 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
             <port>636</port>
             <bind_dn>uid={user_name},ou=users,dc=example,dc=com</bind_dn>
             <verification_cooldown>300</verification_cooldown>
+            <unreachable_cooldown>0</unreachable_cooldown>
             <operation_timeout>40</operation_timeout>
             <network_timeout>30</network_timeout>
             <search_timeout>20</search_timeout>
@@ -67,6 +68,8 @@ When `host` is a DNS name that resolves to several addresses (several `A` or `AA
 
 When `verification_cooldown` is enabled, a cached verification survives a configuration reload: `SYSTEM RELOAD CONFIG` keeps the entries of the servers that remain configured, so a reload does not force users to re-enter their passwords (see issue [#66698](https://github.com/ClickHouse/ClickHouse/issues/66698)). An entry is dropped when it expires or when a change of a parameter that affects the bind, such as `host`, `port`, `bind_dn`, or a TLS setting, makes the cached verification no longer valid. To force re-validation against the directory, restart the server or set `verification_cooldown` to `0`.
 
+The `unreachable_cooldown` breaker trips on a connection-level failure. A local resource problem, such as running out of file descriptors, can also be reported as a connection failure, so a large `unreachable_cooldown` may reject logins to a server that is in fact healthy; keep the value moderate.
+
 **Parameters**
 
 | Parameter | Default | Description |
@@ -77,6 +80,7 @@ When `verification_cooldown` is enabled, a cached verification survives a config
 | `auth_dn_prefix` | — | **Deprecated.** An alternative to `bind_dn`. Cannot be used together with `bind_dn`. When specified, the bind DN is constructed as `auth_dn_prefix + {user_name} + auth_dn_suffix`. For example, setting `auth_dn_prefix` to `uid=` and `auth_dn_suffix` to `,ou=users,dc=example,dc=com` is equivalent to setting `bind_dn` to `uid={user_name},ou=users,dc=example,dc=com`. |
 | `auth_dn_suffix` | — | **Deprecated.** See `auth_dn_prefix`. |
 | `verification_cooldown` | `0` | A period of time, in seconds, after a successful bind attempt, during which the user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server. Specify `0` to disable caching and force contacting the LDAP server for each authentication request. |
+| `unreachable_cooldown` | `0` | A period of time, in seconds, after a connection-level failure to the LDAP server, during which authentication attempts for this server are rejected with an error without contacting it. This bounds the time any login spends on a server that is known to be unreachable. The rejection applies to every user who would contact the server, except users with a still-valid `verification_cooldown` entry, so keep the value moderate. Specify `0` to disable the fail-fast behavior. |
 | `operation_timeout` | `40` | Timeout in seconds for one LDAP operation, in particular the bind request. This is not a total budget for a whole login. Accepted values: from `1` to `2147483647`. |
 | `network_timeout` | `30` | Timeout in seconds for one connection attempt to one resolved address of `host`. When `host` resolves to several addresses, the timeout applies to each address separately, so the worst case is the number of addresses multiplied by this value. Accepted values: from `1` to `2147483647`. |
 | `search_timeout` | `20` | Time limit in seconds for LDAP search queries performed by this server definition (user DN detection and role mapping). Accepted values: from `1` to `2147483647`. |
