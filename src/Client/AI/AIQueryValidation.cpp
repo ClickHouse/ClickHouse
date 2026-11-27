@@ -979,9 +979,13 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
         /// The definitions of the databases: `engine_full` holds the parameters of the engine of a
         /// database (the address and the user of a `MySQL` or `PostgreSQL` one, the path of a
         /// `Filesystem` one), which `SHOW CREATE DATABASE` is refused for unless the engine is a
-        /// plain one of this server, and `data_path` and `metadata_path` the directories of the
-        /// server. The names of the databases are available through the `list_databases` tool
-        /// and `SHOW DATABASES`.
+        /// plain one of this server. The names of the databases are available through the
+        /// `list_databases` tool and `SHOW DATABASES`.
+        ///
+        /// The directories of the server itself are not what this table is denied for, and they
+        /// are not a reason to deny a table: `system.parts` and `system.disks` show them too, and
+        /// those describe the storage the agent is asked about (the sizes, the parts, the free
+        /// space). A path of the server's own storage holds no credentials.
         "databases",
 
         "zookeeper",
