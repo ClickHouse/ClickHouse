@@ -1524,7 +1524,7 @@ KeeperResponsesForSessions KeeperStorage::setWatches(
                 add_watch(path, list_watches, WatchType::LIST_WATCH);
         }
         else
-            add_watch_response(path, Coordination::Event::CHANGED);
+            add_watch_response(path, Coordination::Event::CHILD);
     }
 
     for (const auto & path : exist_watches_paths)

@@ -9,6 +9,9 @@ INSERT INTO t_pr_subquery SELECT number, number % 100 FROM numbers(200000) SETTI
 ALTER TABLE t_pr_subquery ADD PROJECTION agg (SELECT b, sum(x) GROUP BY b), ADD PROJECTION p (SELECT * ORDER BY b);
 INSERT INTO t_pr_subquery SELECT 200000 + number, number % 100 FROM numbers(100000) SETTINGS max_insert_threads = 1;
 
+-- Plan-based parallel replicas takes its settings from the top-level query, like other plan optimizations, so
+-- `enable_parallel_replicas` in the SETTINGS of a subquery does not enable it.
+SET parallel_replicas_plan_based = 0;
 SET enable_parallel_replicas = 0, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1;
 
 SELECT 'minmax', * FROM (SELECT min(x), max(x), count() FROM t_pr_subquery SETTINGS enable_parallel_replicas = 1) SETTINGS log_comment = '05768_minmax';

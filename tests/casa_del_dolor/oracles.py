@@ -223,18 +223,23 @@ class ElOraculoDeTablas:
                 raise ValueError(message)
 
     # Errors caused by the data, not the server, e.g. a mutation stuck on `MODIFY COLUMN` to a non-Nullable type
-    # over NULLs retries forever. `CANNOT_PARSE_*`, `CANNOT_CONVERT_TYPE`, out of range, `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN`
+    # over NULLs retries forever. `CANNOT_PARSE_*`, `CANNOT_CONVERT_TYPE`, out of range, `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN`,
+    # and `NO_COMMON_TYPE`, which a comparison of a number with a non-constant `String` throws only when it runs
     DATA_CONVERSION_ERRORS = (
-        "(6, 25, 26, 27, 38, 41, 70, 72, 321, 349, 376, 407, 441, 467, 675, 676)"
+        "(6, 25, 26, 27, 38, 41, 70, 72, 321, 349, 376, 386, 407, 441, 467, 675, 676)"
     )
     # The same errors in a replicated mutation, which records them in its queue entry too. The code is only in the text.
+    # `FAULT_INJECTED` (710) comes from the fail points BuzzHouse enables, and `MEMORY_LIMIT_EXCEEDED` (241) with
+    # `fault injected` from `memory_tracker_fault_probability`, which the task retries
     UNEXPECTED_QUEUE_ERROR = (
-        "last_exception != '' AND NOT (type = 'MUTATE_PART' AND "
+        "last_exception != '' AND NOT startsWith(last_exception, 'Code: 710.') AND "
+        "NOT (startsWith(last_exception, 'Code: 241.') AND last_exception LIKE '%fault injected%') AND NOT (type = 'MUTATE_PART' AND "
         f"toUInt32OrZero(extract(last_exception, '^Code: ([0-9]+)[.]')) IN {DATA_CONVERSION_ERRORS})"
     )
     # Temporary data only in the distributed cache fails merges while no cache server is registered, e.g. after a restart
     UNEXPECTED_PART_ERROR = (
-        f"exception != '' AND error NOT IN {DATA_CONVERSION_ERRORS} "
+        f"exception != '' AND error != 710 AND error NOT IN {DATA_CONVERSION_ERRORS} "
+        "AND NOT (error = 241 AND exception LIKE '%fault injected%') "
         "AND NOT (error = 900 AND exception LIKE '%no server is available%')"
     )
 
@@ -356,3 +361,58 @@ class ElOraculoDeTablas:
                     )
                     logger.warn(message)
                     raise ValueError(message)
+            if random.randint(1, 8) == 1:
+                self._check_all_tables(client, next_node, logger)
+
+    # A part that fails `CHECK` with one of these is damaged; other failures can be outages of a remote disk.
+    # `ReplicatedMergeTree` reports only `looks broken`, and detaches the part as `broken` too.
+    # A truncated file reports `CANNOT_READ_ALL_DATA`, `ATTEMPT_TO_READ_AFTER_EOF` or, for `columns.txt`,
+    # `CANNOT_PARSE_INPUT_ASSERTION_FAILED`. The CI profile caps `max_execution_time` at 10 seconds
+    CHECK_CORRUPTION_ERRORS = (
+        "CHECKSUM_DOESNT_MATCH",
+        "CANNOT_READ_ALL_DATA",
+        "ATTEMPT_TO_READ_AFTER_EOF",
+        "CANNOT_PARSE_INPUT_ASSERTION_FAILED",
+        "CORRUPTED_DATA",
+        "BAD_SIZE_OF_FILE_IN_DATA_PART",
+        "NO_FILE_IN_DATA_PART",
+        "UNEXPECTED_FILE_IN_DATA_PART",
+        "UNKNOWN_PART_TYPE",
+        "BROKEN_PROJECTION",
+        "CANNOT_DECOMPRESS",
+        "TOO_LARGE_SIZE_COMPRESSED",
+        "UNKNOWN_CODEC",
+        "UNKNOWN_FORMAT",
+        "looks broken",
+    )
+
+    def _check_all_tables(self, client: Client, next_node: ClickHouseInstance, logger):
+        """Verify the parts on disk, e.g. that merges hit by `memory_tracker_fault_probability` left no damage."""
+        try:
+            check_str = client.query(
+                "CHECK ALL TABLES FORMAT TSV SETTINGS check_query_single_value_result = 0, max_execution_time = 10, "
+                "timeout_overflow_mode = 'break';"
+            )
+        except Exception as ex:
+            # Memory and network errors are rethrown by the server instead of reported per part. A timeout stops quietly
+            logger.warn(
+                f"Error occurred while checking tables on node {next_node.name}: {ex}"
+            )
+            return
+        if not isinstance(check_str, str):
+            return
+        broken = [
+            line
+            for line in check_str.split("\n")
+            if (fields := line.split("\t"))
+            and len(fields) >= 5
+            and fields[3] == "0"
+            and any(code in fields[4] for code in self.CHECK_CORRUPTION_ERRORS)
+        ]
+        if broken:
+            message = (
+                f"CHECK ALL TABLES found {len(broken)} broken part(s) on node {next_node.name}:\n  "
+                + "\n  ".join(broken[:3])
+            )
+            logger.warn(message)
+            raise ValueError(message)
