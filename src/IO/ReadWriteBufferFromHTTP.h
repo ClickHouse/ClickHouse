@@ -193,7 +193,9 @@ private:
 
     std::vector<Poco::Net::HTTPCookie> cookies; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-    std::map<String, String> response_headers; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    mutable std::mutex response_headers_mutex;
+    /// Set by `initialize`, or by the first response of `readBigAt`, which runs in other threads.
+    mutable std::map<String, String> response_headers TSA_GUARDED_BY(response_headers_mutex); // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     HTTPHeaderEntries http_header_entries;
     std::function<void(size_t)> next_callback;

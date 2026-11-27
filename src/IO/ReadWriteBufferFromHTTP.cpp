@@ -797,7 +797,10 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
     }
 
     response.getCookies(cookies);
-    response.getHeaders(response_headers);
+    {
+        std::lock_guard lock(response_headers_mutex);
+        response.getHeaders(response_headers);
+    }
     content_encoding = response.get("Content-Encoding", "");
 
     // Remember file size. It'll be used to report eof in next nextImpl() call.
@@ -908,6 +911,12 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
                     response.getReason(),
                     explanation,
                     headerCredentialSecrets(http_header_entries));
+            }
+
+            {
+                std::lock_guard lock(response_headers_mutex);
+                if (response_headers.empty())
+                    response.getHeaders(response_headers);
             }
 
             copyFromReadBufferWithProgressCallback(*result, to, n, progress_callback, &bytes_copied, &is_canceled);
@@ -1040,6 +1049,7 @@ std::string ReadWriteBufferFromHTTP::getResponseCookie(const std::string & name,
 
 Map ReadWriteBufferFromHTTP::getResponseHeaders() const
 {
+    std::lock_guard lock(response_headers_mutex);
     Map map;
     for (const auto & header : response_headers)
     {
