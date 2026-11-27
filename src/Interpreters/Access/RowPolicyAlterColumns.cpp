@@ -5,6 +5,7 @@
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
 #include <Core/Names.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -33,12 +34,13 @@ namespace ErrorCodes
 namespace
 {
 
-/// if exists on a missing column is a no-op (ignore), clear column keeps the column
+/// if exists on a missing column is a no-op (ignore), clear column keeps the column, a new type can lose subcolumns
 bool removesColumn(const AlterCommand & command)
 {
     if (command.ignore)
         return false;
-    return (command.type == AlterCommand::DROP_COLUMN && !command.clear) || command.type == AlterCommand::RENAME_COLUMN;
+    return (command.type == AlterCommand::DROP_COLUMN && !command.clear) || command.type == AlterCommand::RENAME_COLUMN
+        || (command.type == AlterCommand::MODIFY_COLUMN && command.data_type);
 }
 
 /// the storage columns a name reads when it resolves as written, like `tryResolveIdentifierFromStorage`: a column,
@@ -48,7 +50,7 @@ Names storageColumns(const String & name, const ColumnsDescription & columns)
     if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
         return {column->getNameInStorage()};
     Names children;
-    if (name.find('.') == String::npos)
+    if (!name.contains('.'))
         for (const auto & child : columns.getNested(name))
             children.push_back(child.name);
     return children;
@@ -131,8 +133,8 @@ struct FilterNames
 
 /// a name binds as written first and with a `table.` or `db.table.` qualifier removed only after that (see
 /// `tryResolveIdentifierFromTableExpression`); an alter of a column removes the column itself, or every child of
-/// a nested one when no column has that name (see `getNameRange`)
-bool mentions(const String & name, const Strings & qualifiers, const String & column, const ColumnsDescription & columns)
+/// a nested one when no column has that name (see `getNameRange`); a new type removes the subcolumns it does not have
+bool mentions(const String & name, const Strings & qualifiers, const AlterCommand & command, const ColumnsDescription & columns)
 {
     Strings candidates{name};
     for (const auto & qualifier : qualifiers)
@@ -143,9 +145,15 @@ bool mentions(const String & name, const Strings & qualifiers, const String & co
         auto read = storageColumns(candidate, columns);
         if (read.empty())
             continue;
+        if (command.type == AlterCommand::MODIFY_COLUMN)
+        {
+            auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, candidate);
+            return column && column->isSubcolumn() && column->getNameInStorage() == command.column_name
+                && !command.data_type->tryGetSubcolumnType(column->getSubcolumnName());
+        }
         return std::ranges::any_of(read, [&](const auto & storage_column)
         {
-            return columns.has(column) ? storage_column == column : storage_column.starts_with(column + ".");
+            return columns.has(command.column_name) ? storage_column == command.column_name : storage_column.starts_with(command.column_name + ".");
         });
     }
     return false;
@@ -216,11 +224,17 @@ void checkRowPoliciesBeforeAlter(const StoragePtr & table, const ColumnsDescript
                 {
                     Strings qualifiers{table_id.table_name + ".", table_id.database_name + "." + table_id.table_name + "."};
                     qualifiers.insert(qualifiers.end(), filter_names.qualifiers.begin(), filter_names.qualifiers.end());
-                    return std::ranges::any_of(filter_names.names, [&](const auto & name) { return mentions(name, qualifiers, command.column_name, columns); });
+                    return std::ranges::any_of(filter_names.names, [&](const auto & name) { return mentions(name, qualifiers, command, columns); });
                 }))
+            {
+                if (command.type == AlterCommand::MODIFY_COLUMN)
+                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "Cannot modify column {}: row policy {} reads a subcolumn that the new type does not have. Change or drop the policy first",
+                        backQuote(command.column_name), policy->getFullName().toString());
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                     "Cannot {} column {}: row policy {} mentions it. Change or drop the policy first",
                     command.type == AlterCommand::DROP_COLUMN ? "drop" : "rename", backQuote(command.column_name), policy->getFullName().toString());
+            }
         }
     }
 }
