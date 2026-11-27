@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS test;
 CREATE TABLE test (t Tuple(v Nullable(Tuple(w Nullable(UInt32))))) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test VALUES (((1))), (((NULL))), ((NULL));
 
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count(t.v.w) FROM test SETTINGS enable_analyzer = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count(t.v.w) FROM test;
 SELECT count(t.v.w) FROM test;
 DROP TABLE test;
 
@@ -15,7 +15,7 @@ DROP TABLE IF EXISTS test2;
 CREATE TABLE test2 (t Nullable(Tuple(u Nullable(UInt32)))) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test2 VALUES ((1)), ((NULL)), (NULL);
 
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count(t.u) FROM test2 SETTINGS enable_analyzer = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count(t.u) FROM test2;
 SELECT count(t.u) FROM test2;
 DROP TABLE test2;
 

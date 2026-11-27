@@ -1,4 +1,4 @@
--- Tags: no-old-analyzer
+-- Tags: no-old-analyzer, no-msan
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
 
 -- Stress test for the `make_distributed_plan` fallback decision.
@@ -110,9 +110,10 @@ SELECT count() FROM sink_dpc;
 SELECT count() > 0 FROM (EXPLAIN PLAN indexes = 1 SELECT count() FROM t_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000)) SETTINGS log_comment = '05185_dpc_28_explain_plan';
 SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT count() FROM t_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000)) SETTINGS log_comment = '05185_dpc_29_explain_pipeline';
 SELECT count() > 0 FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000)) SETTINGS log_comment = '05185_dpc_30_explain_estimate';
+-- A mutation and its `IN` sets always run locally: the mutation makes no distributed-plan decision, so it logs no
+-- fallback reason.
 ALTER TABLE mut_dpc DELETE WHERE x IN (SELECT x FROM t_dpc2 WHERE x < 60000) SETTINGS mutations_sync = 2, log_comment = '05185_dpc_31_alter_delete';
 SELECT count() FROM mut_dpc;
--- Assert mutations with their in set follow the fallback mechanism
 ALTER TABLE mut_dpc DELETE WHERE x + 1 IN (SELECT x FROM v_dpc) SETTINGS mutations_sync = 2, log_comment = '05185_dpc_31b_alter_delete_set_over_view';
 SELECT count() FROM mut_dpc;
 ALTER TABLE mut_dpc DELETE WHERE x IN (SELECT x FROM t_dpc WHERE x IN (SELECT x FROM t_dpc2 WHERE x >= 60000)) SETTINGS mutations_sync = 2, log_comment = '05185_dpc_31c_alter_delete_nested_set';

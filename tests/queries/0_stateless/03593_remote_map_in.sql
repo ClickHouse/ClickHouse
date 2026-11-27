@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 SELECT
     arrayJoin(arrayMap(tag -> (map('a', 'value1', 'b', 'value2')[tag]), ['a', 'b'])) AS path,

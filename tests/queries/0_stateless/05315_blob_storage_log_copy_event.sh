@@ -4,6 +4,10 @@
 
 # Server-side copies (S3 CopyObject and UploadPartCopy) issued by BACKUP are logged as 'Copy' events.
 
+# The S3 server (SeaweedFS in CI) occasionally answers a request with a transient 500 error, which the S3 client retries,
+# but the `<Error> AWSClient: Response status: 500` log line would still reach stderr.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
@@ -33,13 +37,16 @@ $CLICKHOUSE_CLIENT --format Null --query_id "${CLICKHOUSE_DATABASE}_restore" \
 $CLICKHOUSE_CLIENT -m -q "
     SYSTEM FLUSH LOGS blob_storage_log;
 
+    -- Reading system.remote_data_paths walks every metadata file on the disk, so read it only once.
+    CREATE TEMPORARY TABLE source_objects AS
+        SELECT remote_path, size FROM system.remote_data_paths
+        WHERE disk_name = 's3_disk'
+            AND local_path LIKE '%' || toString((SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 'data')) || '%';
+
     SELECT
         countIf(event_type = 'Copy') > 0,
         countIf(event_type = 'Copy' AND (error_code != 0 OR source_bucket = '' OR source_remote_path = '' OR source_remote_path = remote_path)) = 0,
-        countIf(event_type = 'Copy' AND (source_remote_path, data_size) IN (
-            SELECT remote_path, size FROM system.remote_data_paths
-            WHERE disk_name = 's3_disk'
-                AND local_path LIKE '%' || toString((SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 'data')) || '%')) > 0,
+        countIf(event_type = 'Copy' AND (source_remote_path, data_size) IN (SELECT remote_path, size FROM source_objects)) > 0,
         countIf(event_type = 'MultiPartUploadCreate') = 0
     FROM system.blob_storage_log
     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND remote_path LIKE '$prefix/single/%';
@@ -58,8 +65,7 @@ $CLICKHOUSE_CLIENT -m -q "
             AND event_type = 'MultiPartUploadWrite' AND error_code = 0
         GROUP BY remote_path
         HAVING count() >= 2 AND max(data_size) <= 5242880
-            AND sum(data_size) IN (SELECT size FROM system.remote_data_paths WHERE disk_name = 's3_disk'
-                AND local_path LIKE '%' || toString((SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 'data')) || '%')
+            AND sum(data_size) IN (SELECT size FROM source_objects)
     );
 
     SELECT count() > 0 FROM
@@ -72,9 +78,7 @@ $CLICKHOUSE_CLIENT -m -q "
             AND countIf(event_type = 'MultiPartUploadComplete' AND error_code = 0) = 1
             AND countIf(event_type = 'Copy' AND error_code = 0) >= 2
             AND maxIf(data_size, event_type = 'Copy' AND error_code = 0) <= 5242880
-            AND sumIf(data_size, event_type = 'Copy' AND error_code = 0) IN (SELECT size FROM system.remote_data_paths
-                WHERE disk_name = 's3_disk'
-                    AND local_path LIKE '%' || toString((SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 'data')) || '%')
+            AND sumIf(data_size, event_type = 'Copy' AND error_code = 0) IN (SELECT size FROM source_objects)
             AND countIf(event_type = 'MultiPartUploadWrite') = 0
     );
 

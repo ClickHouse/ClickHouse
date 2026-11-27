@@ -17,7 +17,7 @@ class PullingAsyncPipelineExecutor;
 enum class PrometheusQueryResultType;
 
 /// Helper class to support the query and metadata endpoints of the Prometheus HTTP API.
-/// Implements /api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata
+/// Implements /api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata, /federate
 class PrometheusHTTPProtocolAPI : public WithMutableContext
 {
 public:
@@ -91,6 +91,10 @@ public:
         const String & end_param,
         UInt64 limit,
         QueryFinishCallback query_finish_callback = {});
+
+    /// Federation (/federate): the latest sample of each series matched by the `match[]` selectors within the last 5 minutes,
+    /// in the Prometheus text exposition format.
+    void federate(WriteBuffer & response, const Strings & match_params, QueryFinishCallback query_finish_callback = {});
 
 private:
     /// Parses the `match[]` instant selectors and the optional `start` and `end` bounds of the metadata endpoints

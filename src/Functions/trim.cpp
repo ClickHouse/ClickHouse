@@ -36,18 +36,18 @@ public:
         return std::make_shared<FunctionTrim>(name, trim_left, trim_right);
     }
 
-    String getName() const override { return function_name; }
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] String getName() const override { return function_name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(StringOrFixedString, [const String]) -> String";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         std::optional<TrimCharsTable> custom_trim_characters;
         if (arguments.size() == 2 && input_rows_count > 0)
@@ -156,7 +156,7 @@ private:
             /// i is the start of a run of untrimmed rows; j walks over them with a cheap
             /// boundary-byte check, copying their offsets verbatim (shifted by the bytes
             /// trimmed so far). The whole run is flushed in one memcpy when it ends.
-            const size_t batch_input_begin = i == 0 ? 0 : input_offsets[i - 1];
+            const size_t batch_input_begin = i == 0 ? 0 : input_offsets[static_cast<ssize_t>(i) - 1];
             size_t row_begin = batch_input_begin;
             size_t j = i;
             while (j < input_rows_count)

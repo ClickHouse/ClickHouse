@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include <Common/ZooKeeper/KeeperClientCLI/Commands.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/Names.h>
@@ -13,7 +15,8 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-static const NameSet four_letter_word_commands
+/// `constexpr` so that including this header costs no static initializer.
+constexpr std::array<const char *, 31> four_letter_word_commands
     {
         "ruok", "mntr", "srvr", "stat", "srst", "conf",
         "cons", "crst", "envi", "dirs", "isro", "wchs",

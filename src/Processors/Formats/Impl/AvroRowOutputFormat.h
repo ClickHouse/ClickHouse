@@ -4,6 +4,7 @@
 
 #if USE_AVRO
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Formats/FormatSchemaInfo.h>
@@ -32,7 +33,7 @@ public:
 
     void backup(size_t len) override { out.position() -= len; }
 
-    uint64_t byteCount() const override { return out.count(); }
+    [[nodiscard]] uint64_t byteCount() const override { return out.count(); }
     void flush() override {}
 
 private:
@@ -44,7 +45,7 @@ class AvroSerializer
 {
 public:
     AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits>, const FormatSettings & settings_, ColumnMapperPtr column_mapper_ = nullptr);
-    const avro::ValidSchema & getSchema() const { return valid_schema; }
+    [[nodiscard]] const avro::ValidSchema & getSchema() const { return valid_schema; }
     void serializeRow(const Columns & columns, size_t row_num, avro::Encoder & encoder);
 
     using SerializeFn = std::function<void(const IColumn & column, size_t row_num, avro::Encoder & encoder)>;
@@ -71,7 +72,7 @@ private:
     /// (Nullable/Variant), array and map wrappers so nested records also get ids. No-op without a mapper.
     void setIcebergFieldIds(const avro::NodePtr & node, const String & path);
 
-    std::vector<SerializeFn> serialize_fns;
+    VectorWithMemoryTracking<SerializeFn> serialize_fns;
     avro::ValidSchema valid_schema;
     std::unique_ptr<AvroSerializerTraits> traits;
     const FormatSettings & settings;

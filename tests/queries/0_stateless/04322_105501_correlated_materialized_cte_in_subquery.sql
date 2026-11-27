@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET allow_correlated_subqueries = 1;
 SET enable_materialized_cte = 1;
 

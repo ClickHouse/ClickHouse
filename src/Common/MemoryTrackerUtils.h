@@ -6,18 +6,19 @@
 #include <base/types.h>
 #include <Common/MemoryTracker.h>
 
-/// Return most strict (by hard limit) system (non query-level, i.e. server/user/merges/...) memory limit
-std::optional<UInt64> getMostStrictAvailableSystemMemory();
-
 /// The query memory threshold at which an operator spills to disk, from its absolute setting `max_bytes` and
 /// its ratio setting `max_bytes_ratio`, where 0 disables either. The ratio applies to the memory available
-/// under the strictest server or user limit (see `getMostStrictAvailableSystemMemory`) and has no effect
+/// under the strictest query (`max_memory_usage`), user or server limit, where the userspace page cache above
+/// its minimum size counts as available because the server tracker evicts it on demand, and has no effect
 /// without such a limit. When both apply, the smaller threshold is used. An enabled ratio gives at least one
 /// byte, because 0 disables spilling. `ratio_setting_name` names the ratio setting in the error for a ratio
 /// outside [0, 1) and in the log.
 size_t getMaxBytesBeforeExternalProcessing(size_t max_bytes, double max_bytes_ratio, std::string_view ratio_setting_name);
 
 std::optional<UInt64> getCurrentQueryHardLimit();
+
+/// Memory the current thread can still allocate before the strictest hard limit of its query, user or the server; none if no limit is set.
+std::optional<UInt64> getCurrentQueryAvailableMemory();
 
 /// Return current query tracked memory usage
 Int64 getCurrentQueryMemoryUsage();
@@ -34,8 +35,11 @@ MemoryTracker * getCurrentUserMemoryTracker();
 /// Create a memory tracker under the current query memory tracker.
 std::unique_ptr<MemoryTracker> tryCreateMemoryTrackerUnderCurrentQuery(VariableContext level = VariableContext::Thread);
 
-/// Limit number of threads based on free memory.
-/// If free memory (server limit minus tracked) is less than threads * min_free_per_thread,
+/// The server memory limit minus tracked memory, or `nullopt` if no server memory limit is set.
+std::optional<Int64> getServerFreeMemory();
+
+/// Limit number of threads based on free memory (see `getServerFreeMemory`).
+/// If free memory is less than threads * min_free_per_thread,
 /// returns the number of threads that fit, but at least 1.
-/// Returns max_threads unchanged if min_free_per_thread is 0 or no server memory limit is set.
-size_t getMaxThreadsForAvailableMemory(size_t max_threads, UInt64 min_free_per_thread);
+/// Returns max_threads unchanged if min_free_per_thread is 0 or free_memory is `nullopt`.
+size_t getMaxThreadsForFreeMemory(size_t max_threads, UInt64 min_free_per_thread, std::optional<Int64> free_memory);

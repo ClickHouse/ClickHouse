@@ -19,7 +19,6 @@
 -- prewhere. The minmax index on `v2` is what makes index analysis drop granules, and therefore have
 -- exclusions to record.
 
-SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 -- Turn the gate off: this test covers the contract of the query condition cache being
 -- switched off for TopK reads.

@@ -1,6 +1,5 @@
 -- The right side carries two columns named `c`, and the block nested loop join condition reads `c`.
 
-SET enable_analyzer = 1;
 SET allow_block_nested_loop_join = 1;
 
 SELECT l.a, r.b, r.c

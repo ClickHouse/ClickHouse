@@ -2,7 +2,6 @@
 -- engine samples new rows on every read (`GenerateRandom`, `FuzzQuery`, `FuzzJSON`) are rejected,
 -- like the corresponding table functions.
 
-SET enable_analyzer = 1;
 SET allow_experimental_lateral_join = 1;
 
 DROP TABLE IF EXISTS outer_t;

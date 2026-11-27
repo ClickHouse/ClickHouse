@@ -77,6 +77,58 @@ Si es mayor que cero y `merge_selector_enable_heuristic_to_remove_small_parts_at
 desactiva esa heurística en los rangos en los que todas las partes tienen una antigüedad de al menos este número de segundos. `0` desactiva esta comprobación.
 Funciona con los selectores de merge Simple y StochasticSimple.
 
+## merge_selector_small_parts_max_age {#merge_selector_small_parts_max_age}
+
+<SettingsInfoBlock type="UInt64" default_value="600" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "600"},{"label": "Límite de antigüedad para la restricción de fusión de partes pequeñas"}]}]} />
+
+Límite de antigüedad, en segundos, para la restricción de partes pequeñas: en cuanto alguna parte de un rango
+supera esta antigüedad, se elimina la restricción de `merge_selector_small_parts_min_count`,
+de modo que las partes pequeñas desactualizadas que se hayan acumulado puedan fusionarse aunque el rango sea menor que
+`merge_selector_small_parts_min_count`. Funciona con los selectores de merge Simple y StochasticSimple,
+y solo en la selección de fusión en segundo plano: la selección agresiva (`OPTIMIZE` sin `FINAL`)
+ignora los ajustes `small_parts_*`.
+
+## merge_selector_small_parts_min_count {#merge_selector_small_parts_min_count}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Número mínimo de partes para permitir la fusión de partes pequeñas y recientes (0 = deshabilitado)"}]}]} />
+
+Cuando todas las partes de un rango de fusión son pequeñas (por debajo de `merge_selector_small_parts_threshold`)
+y recientes (por debajo de `merge_selector_small_parts_max_age`), se exige al menos este número de partes
+para permitir la fusión. Reduce el número de operaciones de fusión cuando se insertan partes pequeñas a un ritmo elevado.
+0 significa deshabilitado. Funciona con los selectores de merge Simple y StochasticSimple.
+
+Esta condición de habilitación se aplica únicamente a la selección de fusión en segundo plano. La selección agresiva (`OPTIMIZE`
+sin `FINAL`) es una solicitud explícita del usuario que no tiene en cuenta la antigüedad de las partes, por lo que ignora este
+parámetro de configuración y fusiona las partes pequeñas y recientes sea cual sea su número.
+
+El selector nunca considera candidatos de fusión más amplios que `max_parts_to_merge_at_once`, ni
+candidatos que retrocedan más de `merge_selector_window_size` partes, por lo que establecer
+cualquiera de ellos por debajo de este mínimo da lugar a una configuración contradictoria: en ese caso, las partes pequeñas y recientes
+solo se fusionan una vez transcurrido `merge_selector_small_parts_max_age` (o antes, cuando se aplica la fusión forzada mediante
+`min_age_to_force_merge_seconds` o `min_partition_age_to_force_merge_seconds`). Mantenga ambos valores iguales o
+superiores a este mínimo.
+(Si la heurística de llenado integrada reduce temporalmente su límite efectivo por debajo de este mínimo,
+el selector sigue considerando el primer candidato de este ancho compuesto íntegramente por partes pequeñas y recientes. Los candidatos desactualizados o
+grandes, así como los que ya cumplen los requisitos para la fusión forzada mediante
+`min_age_to_force_merge_seconds` o `min_partition_age_to_force_merge_seconds`, mantienen el
+límite reducido.)
+
+## merge_selector_small_parts_threshold {#merge_selector_small_parts_threshold}
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "10485760"},{"label": "Umbral de tamaño para la heurística de agrupación por lotes de partes pequeñas en el selector de fusiones"}]}]} />
+
+Umbral de tamaño en bytes: un rango de fusión se considera «compuesto solo por partes pequeñas» cuando todas sus partes
+están por debajo de este tamaño. Se utiliza junto con `merge_selector_small_parts_min_count`.
+Se aplica a los selectores de merge Simple y StochasticSimple, y únicamente a la selección de fusiones
+en segundo plano: la selección agresiva (`OPTIMIZE` sin `FINAL`) ignora los ajustes
+`small_parts_*`.
+
 ## merge_selector_window_size {#merge_selector_window_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />

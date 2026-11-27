@@ -97,6 +97,11 @@ struct ArrowType
     /// Children (List/LargeList/FixedSizeList element, Struct/Union fields, Map's key_value struct).
     VectorWithMemoryTracking<ArrowField> children;
 
+    /// Struct: the field names are empty or repeated, which Arrow allows but a named `Tuple` cannot have. Such a
+    /// struct is read as an unnamed `Tuple`, and its fields are matched with the requested type and identified by
+    /// position instead of by name.
+    bool positional_fields = false;
+
     /// The Arrow type name for a `TypeKind::Unsupported` placeholder (used in the error message).
     std::string unsupported_type_name;
 };
@@ -186,6 +191,11 @@ bool isNullableField(const ArrowField & field);
 DataTypePtr fieldToCHType(
     const ArrowField & field, const FormatSettings & settings, bool make_nullable, bool allow_null_type = false);
 
+/// The `Variant` element types of the non-`null` children of an Arrow union, in child order. Children that
+/// infer one type are told apart by name, as the ClickHouse writer names each child after its type family:
+/// it stores, for example, both `IPv6` and `Int128` as `fixed_size_binary(16)`.
+DataTypes unionElementTypes(const ArrowType & type, const FormatSettings & settings, bool allow_null_type);
+
 /// Builds the IPC `Schema` message FlatBuffer for a ClickHouse header into `builder` (left Finished),
 /// mirroring the type choices of the native writer's record-batch encoder.
 void buildSchemaMessage(
@@ -213,7 +223,7 @@ struct DictPlan
     VectorWithMemoryTracking<DictPlan> children;
 
     /// True if this node or any descendant is dictionary-encoded (lets the writer skip untouched columns).
-    bool hasAnyDictionary() const;
+    [[nodiscard]] bool hasAnyDictionary() const;
 };
 
 using DictPlans = VectorWithMemoryTracking<DictPlan>;

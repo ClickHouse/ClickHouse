@@ -2,7 +2,6 @@
 -- stay in the main read, the rest of the row FINAL keeps is read after the LIMIT. Also together with lazy
 -- FINAL, which replaces the same read by a set-based plan.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_lazy_materialization_for_join = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10;

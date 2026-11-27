@@ -12,21 +12,15 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estas opciones configuran el servidor ClickHouse y se generan automáticamente a partir del código fuente de ClickHouse.
 
-<div id="vector_similarity_index_cache_max_entries">
-  ## vector_similarity_index_cache_max_entries
-</div>
+## vector_similarity_index_cache_max_entries {#vector_similarity_index_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" changeable_without_restart="No" />Tamaño de la caché del índice de similitud vectorial, en entradas. Cero significa que está deshabilitada.
 
-<div id="vector_similarity_index_cache_policy">
-  ## vector_similarity_index_cache_policy
-</div>
+## vector_similarity_index_cache_policy {#vector_similarity_index_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nombre de la política de caché del índice de similitud vectorial.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nombre de la política de desalojo de la caché del índice de similitud vectorial. Valores posibles: `LRU`, `SLRU`, `SIEVE`.
 
-<div id="vector_similarity_index_cache_size">
-  ## vector_similarity_index_cache_size
-</div>
+## vector_similarity_index_cache_size {#vector_similarity_index_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Sí" />Tamaño de la caché para los índices de similitud vectorial. Cero significa que está deshabilitado.
 
@@ -34,9 +28,7 @@ Estas opciones configuran el servidor ClickHouse y se generan automáticamente a
   Esta configuración puede modificarse en tiempo de ejecución y se aplicará de inmediato.
 </Note>
 
-<div id="vector_similarity_index_cache_size_ratio">
-  ## vector_similarity_index_cache_size_ratio
-</div>
+## vector_similarity_index_cache_size_ratio {#vector_similarity_index_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />El tamaño de la cola protegida (en el caso de la política SLRU) en la caché del índice de similitud vectorial en relación con el tamaño total de la caché.
 

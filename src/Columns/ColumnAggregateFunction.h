@@ -97,7 +97,7 @@ private:
 
     explicit ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_ = std::nullopt);
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_);
+    ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_, std::optional<size_t> version_ = std::nullopt);
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_);
 
@@ -197,6 +197,9 @@ public:
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
+    /// A state is serialized only by `serializeValueIntoArena`, as its size is known only once it is serialized.
+    std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
+
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
@@ -253,11 +256,6 @@ public:
 #endif
     {
         return 0;
-    }
-
-    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareColumn is not supported for ColumnAggregateFunction");
     }
 
     bool hasEqualValues() const override

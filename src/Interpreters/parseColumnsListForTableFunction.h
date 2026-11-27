@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <Core/Names.h>
 #include <Storages/ColumnsDescription.h>
 
 
@@ -30,5 +31,17 @@ void validateDataType(const DataTypePtr & type, const DataTypeValidationSettings
 [[nodiscard]] ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context);
 
 bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescription & columns, const ContextPtr & context, String & error);
+
+/// Storage columns of `columns` read by the `DEFAULT` of `column`; a subcolumn read is a read of its storage column. The first
+/// argument of `dictGet`/`joinGet` and the right operand of `IN` name a dictionary, table or set unless they are a column.
+NameSet getStorageColumnsReadByDefault(const ColumnsDescription & columns, const ColumnDescription & column);
+
+/// Removes the `DEFAULT` of each column of `structure_hint` that reads a column of `insertion_columns` by a name the hint
+/// gives to other insertion table columns.
+void removeMisboundDefaultsFromStructureHint(
+    ColumnsDescription & structure_hint, const NameToNameSetMap & insertion_columns_by_hint_column, const ColumnsDescription & insertion_columns);
+
+/// Names and types of `columns`, plus each `DEFAULT` without secret arguments that the nodes can evaluate from them.
+String getStructureToSend(const ColumnsDescription & columns, const ColumnsDescription * insertion_columns);
 
 }

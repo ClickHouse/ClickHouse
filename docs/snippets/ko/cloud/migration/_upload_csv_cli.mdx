@@ -2,34 +2,37 @@
 title: CLI로 CSV 업로드
 ---
 
-이 페이지에서는 [ClickHouse CLI](/ko/products/cloud/features/cli)(`clickhousectl`)를 사용해 명령줄에서 로컬 파일(예: CSV)을 ClickHouse Cloud 서비스의 테이블로 업로드하는 방법을 설명합니다. 이 과정은 콘솔의 파일 업로드 마법사와 동일한 방식으로, 파일의 스키마를 확인하고 대상 테이블을 생성한 뒤 Query API를 통해 HTTP로 파일을 삽입합니다. `clickhouse` binary나 서비스 password는 필요하지 않습니다.
+이 페이지에서는 [ClickHouse CLI](/ko/concepts/features/interfaces/cli)(`clickhousectl`)를 사용해 명령줄에서 로컬 파일(예: CSV)을 ClickHouse Cloud 서비스의 테이블로 업로드하는 방법을 설명합니다. 이 과정은 콘솔의 파일 업로드 마법사와 동일한 방식으로, 파일의 스키마를 확인하고 대상 테이블을 생성한 뒤 쿼리 API를 통해 HTTP로 파일을 삽입합니다. `clickhouse` binary나 서비스 비밀번호는 필요하지 않습니다.
 
 ## 사전 요구 사항 {#cli-prerequisites}
 
-ClickHouse CLI를 설치합니다:
+ClickHouse CLI를 설치하세요:
 
 ```bash
-curl https://clickhouse.com/cli | sh
+curl -fsSL https://clickhouse.com/cli | sh
 ```
 
-또한 `jq`도 필요합니다.
+이 스크립트는 `~/.local/bin/clickhousectl`과 `chctl` 별칭을 설치합니다. `~/.local/bin`이 `PATH`에 포함되어 있는지 확인하십시오.
 
-쓰기 작업에는 [API Key 인증](/ko/products/cloud/features/admin-features/api/openapi)이 필요하며, OAuth 로그인은 읽기 전용입니다:
+`jq`도 필요합니다.
+
+쓰기 작업을 하려면 쿼리 API 엔드포인트를 관리할 수 있는 역할(role)이 부여된 [API Key](/ko/products/cloud/features/admin-features/api/openapi)가 필요합니다. 브라우저 로그인(`clickhousectl cloud auth login`)으로는 읽기 전용 권한만 얻을 수 있습니다. 필요한 권한은 `clickhousectl cloud service query --help`에서 확인할 수 있습니다. 키를 사용해 로그인하십시오. `--interactive` 옵션을 사용하면 키와 시크릿을 입력하라는 프롬프트가 표시되므로 시크릿이 셸 이력에 남지 않습니다:
 
 ```bash
-clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+clickhousectl cloud auth login --interactive
 ```
 
-`clickhousectl cloud auth status`로 확인하십시오. `read/write` 범위의 항목이 표시되어야 합니다.
+또는 `--api-key`와 `--api-secret`을 전달하거나 `CLICKHOUSE_CLOUD_API_KEY` 및 `CLICKHOUSE_CLOUD_API_SECRET` 환경 변수를 설정할 수도 있습니다. 코딩 에이전트나 스크립트에서는 환경 변수를 사용해야 합니다. 로그인하면 키를 검증한 후 해당 키의 아이덴티티를 출력합니다. 현재 활성화된 자격 증명은 언제든지 `clickhousectl cloud auth whoami`로 확인할 수 있습니다. 둘 이상의 조직에 속해 있는 경우 이 가이드의 모든 `cloud service` 명령에 `--org-id <org-id>`(또는 `--org-name <name>`)를 추가하세요.
 
 ## 서비스 선택 {#pick-a-service}
 
-이 가이드는 이미 실행 중인 서비스가 있다고 가정합니다. 없다면 CLI로 서비스를 생성하는 방법을 설명하는 [Cloud 빠른 시작](/ko/get-started/setup/cloud)을 참조하십시오. 이름으로 서비스의 ID를 조회합니다:
+이 가이드는 이미 서비스가 있다고 가정합니다. 없다면 CLI로 서비스를 생성하는 방법을 설명하는 [Cloud 빠른 시작](/ko/get-started/setup/cloud)을 참조하십시오. 이름으로 서비스의 ID를 조회합니다:
 
 ```bash
-CH_ID=$(clickhousectl cloud service list --json \
-  | jq -r '.[] | select(.name=="my-service") | .id')
+CH_ID=$(clickhousectl cloud service get --name my-service --json | jq -r .id)
 ```
+
+유휴 상태의 서비스는 첫 번째 쿼리가 들어오면 자동으로 깨어나지만, 중지된 서비스는 그렇지 않습니다. 중지된 서비스는 `clickhousectl cloud service start "$CH_ID"`로 시작한 다음, `clickhousectl cloud service get "$CH_ID" --json | jq -r .state`의 결과가 `running`으로 표시될 때까지 기다리십시오.
 
 ## 파일 준비하기 {#prepare-the-file}
 
@@ -49,14 +52,14 @@ user_id,url,visited_at,duration_ms
 콘솔 마법사가 각 소스 필드의 추론된 유형을 보여주는 것과 같이, CLI에서는 파일 샘플을 인라인으로 포함한 [`format`](/ko/reference/functions/table-functions/format) 테이블 함수에 `DESCRIBE`를 실행하여 동일한 결과를 얻을 수 있습니다:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
+clickhousectl cloud service query "$CH_ID" --format PrettyCompact \
   --query "DESCRIBE format(CSVWithNames, '$(head -n 3 data.csv)')"
 ```
 
-첫 번째 `query` 호출 시 해당 서비스에 대한 Query API 엔드포인트와 서비스 범위의 API Key가 자동으로 프로비저닝됩니다:
+첫 번째 `query` 호출 시 clickhousectl은 사용자의 API Key를 해당 서비스의 쿼리 API 엔드포인트에 추가하며, 엔드포인트가 없으면 새로 생성합니다. 새 키는 생성되지 않습니다. 이렇게 처리하는 대신 오류로 실패하게 하려면 `--no-auto-enable`을 전달하십시오. CLI가 엔드포인트를 변경하면 아래 출력의 첫 번째 줄이 stderr에 표시됩니다:
 
 ```text
-Provisioning Query API endpoint + key for service 'my-service'...
+Binding the authenticated API key to the Query API endpoint for service 'my-service'...
    ┌─name────────┬─type───────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 1. │ user_id     │ Nullable(Int64)    │              │                    │         │                  │                │
 2. │ url         │ Nullable(String)   │              │                    │         │                  │                │
@@ -72,7 +75,7 @@ Provisioning Query API endpoint + key for service 'my-service'...
 마법사의 &quot;Configure table&quot; 단계에서 제공하는 모든 기능, 즉 추론된 유형, nullable 여부, 기본값, 제외할 필드, 테이블 엔진, sorting key, 파티셔닝, primary key 표현식 조정은 여기서 단순한 [`CREATE TABLE`](/ko/reference/statements/create/table) 문에 해당합니다. 예를 들어 추론된 유형을 더 엄격하게 지정하고 sorting key를 선택하려면 다음과 같이 작성합니다:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query "$CH_ID" \
   --query "CREATE TABLE default.website_visits (
     user_id UInt32,
     url String,
@@ -82,7 +85,7 @@ clickhousectl cloud service query --id "$CH_ID" \
   ORDER BY (user_id, visited_at)"
 ```
 
-이 명령은 `OK`를 출력합니다. 대신 기존 테이블에 로드하려면 이 단계를 건너뛰십시오.
+이 명령은 stderr에 `OK`를 출력합니다. 대신 기존 테이블에 로드하려면 이 단계를 건너뛰십시오.
 
 ## 파일 업로드 {#upload-the-file}
 
@@ -90,7 +93,7 @@ clickhousectl cloud service query --id "$CH_ID" \
 
 ```bash
 printf 'INSERT INTO default.website_visits FORMAT CSVWithNames\n' | cat - data.csv \
-  | clickhousectl cloud service query --id "$CH_ID"
+  | clickhousectl cloud service query "$CH_ID"
 ```
 
 이 명령은 `OK`를 출력합니다.
@@ -110,7 +113,7 @@ printf 'INSERT INTO default.website_visits FORMAT CSVWithNames\n' | cat - data.c
 행이 정상적으로 저장되었는지 확인하십시오:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --json \
+clickhousectl cloud service query "$CH_ID" --json \
   --query "SELECT count() FROM default.website_visits"
 ```
 
@@ -119,7 +122,7 @@ clickhousectl cloud service query --id "$CH_ID" --json \
 ```
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
+clickhousectl cloud service query "$CH_ID" --format PrettyCompact \
   --query "SELECT * FROM default.website_visits ORDER BY visited_at"
 ```
 
@@ -133,13 +136,28 @@ clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
    └─────────┴───────────────────────────────────┴─────────────────────┴─────────────┘
 ```
 
+## 대용량 파일 업로드 {#upload-large-files}
+
+쿼리 API는 약 30초가 지나면 대기를 중단합니다. 시간 초과된 `INSERT`도 실제로는 실행되었을 수 있으므로, 재시도하기 전에 행 수(row count)를 확인하십시오. 대용량 파일은 쿼리 API 대신 stdin에서 데이터를 읽는 [`clickhouse client`](/ko/concepts/features/interfaces/client)를 사용하여 native protocol로 삽입하십시오. `clickhousectl local use latest` 명령은 최신 버전의 ClickHouse를 설치하고 `~/.local/bin/clickhouse`에 심볼릭 링크를 생성합니다. `CH_PASSWORD`를 `default` 사용자의 비밀번호로 설정하고(비밀번호를 분실한 경우 `clickhousectl cloud service reset-password "$CH_ID"`로 새 비밀번호를 생성할 수 있습니다), `nativesecure` 호스트를 조회한 다음 데이터를 삽입하십시오:
+
+```bash
+clickhousectl local use latest
+CH_HOST=$(clickhousectl cloud service get "$CH_ID" --json \
+  | jq -r '.endpoints[] | select(.protocol == "nativesecure") | .host')
+clickhouse client --host "$CH_HOST" --secure --port 9440 \
+  --user default --password "$CH_PASSWORD" \
+  --query 'INSERT INTO default.website_visits FORMAT CSVWithNames' < data.csv
+```
+
+직접 연결은 서비스의 IP 액세스 목록에서 허용된 주소에서만 가능합니다.
+
 ## 그 밖의 파일 포맷 {#other-file-formats}
 
 동일한 방식이 ClickHouse가 지원하는 모든 [입력 형식](/ko/reference/formats/index)에 그대로 적용됩니다. 여기에는 `CSV`, `JSONEachRow`, `TabSeparatedWithNames` 등 콘솔의 업로드 마법사가 지원하는 모든 포맷이 포함됩니다. 다른 포맷을 사용하려면 `DESCRIBE format(...)` 스키마 추론 단계와 `INSERT ... FORMAT` 문에서 포맷 이름을 동일하게 바꾸고, 해당 포맷에 맞는 샘플 파일을 사용하십시오(`TabSeparatedWithNames`에는 TSV 샘플, `JSONEachRow`에는 JSON 라인 샘플을 사용하는 식입니다). 예를 들어 TSV 파일의 업로드 단계는 다음과 같습니다.
 
 ```bash
 printf 'INSERT INTO default.website_visits FORMAT TabSeparatedWithNames\n' | cat - data.tsv \
-  | clickhousectl cloud service query --id "$CH_ID"
+  | clickhousectl cloud service query "$CH_ID"
 ```
 
 ## 정리 {#cleanup}
@@ -147,6 +165,6 @@ printf 'INSERT INTO default.website_visits FORMAT TabSeparatedWithNames\n' | cat
 테스트 목적으로 실행한 것이라면, 테이블을 삭제하여 가져온 데이터를 제거하십시오:
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query "$CH_ID" \
   --query "DROP TABLE default.website_visits"
 ```

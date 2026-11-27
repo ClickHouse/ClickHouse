@@ -7,10 +7,6 @@ keywords: ['managed postgres', 'metrics', 'prometheus', 'reference', 'observabil
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-metrics-beta" />
-
 This page lists every metric exposed by the
 [ClickHouse Managed Postgres Prometheus endpoint](/products/managed-postgres/monitoring/prometheus).
 For setup and authentication, see the [Prometheus endpoint] page.
@@ -145,7 +141,7 @@ sum by (postgres_service_name) (PostgresServer_ActiveSessionsByWait{wait=~"Lock:
 
 - [Prometheus endpoint] — setup, authentication, and scraping
 - [Dashboard](/products/managed-postgres/monitoring/dashboard) — built-in cloud console charts
-- [Query insights](/products/managed-postgres/monitoring/query-insights#wait-charts) — wait charts and the Waits table in the cloud console
+- [Query insights](/products/managed-postgres/monitoring/query-insights#wait-charts) — wait charts, the Waits table, and blocking queries in the cloud console
 - [OpenAPI guide](/products/managed-postgres/openapi) — API key creation
   and lookup of organization and service IDs
 

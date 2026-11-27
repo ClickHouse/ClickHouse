@@ -6,7 +6,6 @@
 -- unmatched rows with type defaults inside a column declared `Nullable`, and any expression over
 -- such a column failed.
 
-SET enable_analyzer = 1;
 SET cross_to_inner_join_rewrite = 0;
 
 DROP DICTIONARY IF EXISTS bnl_ps_dict;

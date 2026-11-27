@@ -8,10 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="inserting-into-clickhouse-vs-oltp-databases">
-  ## Вставка в ClickHouse в сравнении с OLTP-базами данных
+  ## Вставка в ClickHouse в сравнении с OLTP-базами данных {#inserting-into-clickhouse-vs-oltp-databases}
 </div>
 
 Как OLAP-база данных (онлайн-аналитическая обработка), ClickHouse оптимизирована для высокой производительности и масштабируемости, что позволяет потенциально вставлять миллионы строк в секунду.
@@ -26,11 +24,11 @@ PostgreSQL использует MVCC (Multi-Version Concurrency Control) для 
 Соблюдение этих правил поможет избежать проблем, с которыми пользователи часто сталкиваются при первом знакомстве с ClickHouse, пытаясь применять стратегию вставки, подходящую для OLTP-баз данных.
 
 <div id="best-practices-for-inserts">
-  ## Рекомендации по вставке данных
+  ## Рекомендации по вставке данных {#best-practices-for-inserts}
 </div>
 
 <div id="insert-in-large-batch-sizes">
-  ### Выполняйте вставку большими батчами
+  ### Выполняйте вставку большими батчами {#insert-in-large-batch-sizes}
 </div>
 
 По умолчанию каждая вставка, отправленная в ClickHouse, приводит к тому, что ClickHouse сразу создает часть хранилища, содержащую данные вставки и другие метаданные, которые необходимо сохранить.
@@ -41,7 +39,7 @@ PostgreSQL использует MVCC (Multi-Version Concurrency Control) для 
 Если большие батчи невозможны, используйте асинхронные вставки, описанные ниже.
 
 <div id="ensure-consistent-batches-for-idempotent-retries">
-  ### Обеспечьте согласованность батчей для идемпотентных повторных попыток
+  ### Обеспечьте согласованность батчей для идемпотентных повторных попыток {#ensure-consistent-batches-for-idempotent-retries}
 </div>
 
 По умолчанию вставки в ClickHouse являются синхронными и идемпотентными (то есть многократное выполнение одной и той же операции вставки дает тот же эффект, что и однократное выполнение).
@@ -56,7 +54,7 @@ PostgreSQL использует MVCC (Multi-Version Concurrency Control) для 
 Если повторный запрос на вставку содержит те же данные и в том же порядке, ClickHouse автоматически проигнорирует повторную вставку, если исходная вставка (без подтверждения) завершилась успешно.
 
 <div id="insert-to-a-mergetree-table-or-a-distributed-table">
-  ### Вставка в таблицу MergeTree или distributed таблицу
+  ### Вставка в таблицу MergeTree или distributed таблицу {#insert-to-a-mergetree-table-or-a-distributed-table}
 </div>
 
 Мы рекомендуем выполнять вставку напрямую в таблицу MergeTree (или таблицу Replicated), балансируя запросы между узлами, если данные разбиты на сегменты, и устанавливая `internal_replication=true`.
@@ -65,9 +63,7 @@ PostgreSQL использует MVCC (Multi-Version Concurrency Control) для 
 Если такая балансировка нагрузки на стороне клиента неудобна, то можно выполнять вставку через [distributed таблицу](/ru/reference/engines/table-engines/special/distributed), которая затем распределит записи по узлам. В этом случае также рекомендуется установить `internal_replication=true`.
 Однако стоит отметить, что этот подход немного менее производителен, поскольку записи сначала выполняются локально на узле с distributed таблицей, а затем отправляются в сегменты.
 
-<div id="use-asynchronous-inserts-for-small-batches">
-  ### Используйте асинхронные вставки для небольших батчей
-</div>
+### Используйте асинхронные вставки для небольших батчей {#use-asynchronous-inserts-for-small-batches}
 
 Есть сценарии, в которых батчинг на стороне клиента нецелесообразен, например в задачах обсервабилити, где сотни или тысячи специализированных агентов отправляют журналы, метрики, трейсы и т. д.
 В таких сценариях критически важна передача данных в реальном времени, чтобы как можно быстрее обнаруживать проблемы и аномалии.
@@ -76,7 +72,11 @@ PostgreSQL использует MVCC (Multi-Version Concurrency Control) для 
 
 При асинхронных вставках данные сначала попадают в буфер, а затем позже записываются в хранилище базы данных в 3 этапа, как показано на схеме ниже:
 
-<Image img="/images/guides/postgres-inserts.webp" size="md" alt="Вставки Postgres" />
+<div className="ch-image-md">
+  <Frame>
+    ![Вставки Postgres](/images/guides/postgres-inserts.webp)
+  </Frame>
+</div>
 
 Когда асинхронные вставки включены, ClickHouse:
 
@@ -95,7 +95,7 @@ PostgreSQL использует MVCC (Multi-Version Concurrency Control) для 
 </Note>
 
 <div id="use-official-clickhouse-clients">
-  ### Используйте официальные клиенты ClickHouse
+  ### Используйте официальные клиенты ClickHouse {#use-official-clickhouse-clients}
 </div>
 
 У ClickHouse есть клиенты для самых популярных языков программирования.
@@ -104,7 +104,7 @@ PostgreSQL использует MVCC (Multi-Version Concurrency Control) для 
 Полный список доступных клиентов и драйверов ClickHouse см. в разделе [Native Clients and Interfaces](/ru/concepts/features/interfaces/native-clients-interfaces-index).
 
 <div id="prefer-the-native-format">
-  ### Предпочитайте формат Native
+  ### Предпочитайте формат Native {#prefer-the-native-format}
 </div>
 
 ClickHouse поддерживает множество [форматов ввода](/ru/reference/formats/index) при вставке данных (и выполнении запросов).
@@ -120,7 +120,7 @@ ClickHouse поддерживает множество [форматов вво�
 Формат [JSONEachRow](/ru/reference/formats/JSON/JSONEachRow) можно рассмотреть, если у вас невысокая пропускная способность записи и нужно быстро выполнить интеграцию. Однако учитывайте, что из-за парсинга этот формат создает дополнительную нагрузку на CPU в ClickHouse.
 
 <div id="use-the-http-interface">
-  ### Использование HTTP-интерфейса
+  ### Использование HTTP-интерфейса {#use-the-http-interface}
 </div>
 
 В отличие от многих традиционных баз данных, ClickHouse поддерживает HTTP-интерфейс.
@@ -133,7 +133,7 @@ ClickHouse поддерживает множество [форматов вво�
 См. [HTTP-интерфейс](/ru/concepts/features/interfaces/http), чтобы узнать подробности.
 
 <div id="basic-example">
-  ## Базовый пример
+  ## Базовый пример {#basic-example}
 </div>
 
 Вы можете использовать в ClickHouse привычную команду `INSERT INTO TABLE`. Давайте вставим данные в таблицу, которую мы создали в руководстве быстрого старта [&quot;Создание таблиц в ClickHouse&quot;](/ru/get-started/quickstarts/creating-tables).
@@ -163,7 +163,7 @@ user_id message                                             timestamp           
 ```
 
 <div id="loading-data-from-postgres">
-  ## Загрузка данных из Postgres
+  ## Загрузка данных из Postgres {#loading-data-from-postgres}
 </div>
 
 Для загрузки данных из Postgres можно использовать:
@@ -181,7 +181,7 @@ user_id message                                             timestamp           
 </Info>
 
 <div id="inserting-data-from-command-line">
-  ## Вставка данных из командной строки
+  ## Вставка данных из командной строки {#inserting-data-from-command-line}
 </div>
 
 **Предварительные требования**

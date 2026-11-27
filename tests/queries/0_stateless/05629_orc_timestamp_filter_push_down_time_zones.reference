@@ -1,0 +1,12 @@
+GMT	GMT	1	1	1	1	1	1	1	1	1
+GMT	Europe/Berlin	1	1	1	1	1	1	1	1	1
+GMT	America/Los_Angeles	1	1	1	1	1	1	1	1	1
+GMT	Asia/Kolkata	1	1	1	1	1	1	1	1	1
+Europe/Berlin	GMT	1	1	1	1	1	1	1	1	1
+Europe/Berlin	Europe/Berlin	1	1	1	1	1	1	1	1	1
+Europe/Berlin	America/Los_Angeles	1	1	1	1	1	1	1	1	1
+Europe/Berlin	Asia/Kolkata	1	1	1	1	1	1	1	1	1
+America/Los_Angeles	GMT	1	1	1	1	1	1	1	1	1
+America/Los_Angeles	Europe/Berlin	1	1	1	1	1	1	1	1	1
+America/Los_Angeles	America/Los_Angeles	1	1	1	1	1	1	1	1	1
+America/Los_Angeles	Asia/Kolkata	1	1	1	1	1	1	1	1	1

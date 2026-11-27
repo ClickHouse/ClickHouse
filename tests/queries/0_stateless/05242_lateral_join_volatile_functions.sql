@@ -2,7 +2,6 @@
 -- left row, so functions that are non-deterministic within a query are rejected: two left rows with
 -- the same correlated value would otherwise share one result.
 
-SET enable_analyzer = 1;
 SET allow_experimental_lateral_join = 1;
 
 DROP TABLE IF EXISTS outer_t;

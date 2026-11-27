@@ -3,7 +3,7 @@
 -- name (the old implementation used `String`) breaks every downstream construct that expects
 -- an array (`a[0]`, `mv-expand a`, `array_length(a)`).
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 datatable (a: dynamic) [dynamic([1, 2])] | count; -- { clientError SYNTAX_ERROR }

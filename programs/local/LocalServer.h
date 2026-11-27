@@ -126,6 +126,17 @@ private:
     /// against the config's own directory.
     String loaded_config_path;
 
+    /// Whether the storage path was given with the `--path` command-line option. It takes precedence
+    /// over `--tmp`, while a `path` from a config file does not: `--tmp` has to restore the per-process
+    /// temporary directory regardless of the config files found in the home or current directory.
+    bool path_from_command_line = false;
+
+    /// Whether `tryInitPath` chose a unique temporary directory (`--tmp`) rather than a durable one
+    /// (`--path`, `path` from a config file, or the default designated directory in the home).
+    /// A `path` from a config file stays in the configuration in this mode, so the code after
+    /// `tryInitPath` must check this flag instead of the presence of `path` in the configuration.
+    bool use_temporary_path = false;
+
     std::optional<StatusFile> status;
     std::optional<std::filesystem::path> temporary_directory_to_delete;
 

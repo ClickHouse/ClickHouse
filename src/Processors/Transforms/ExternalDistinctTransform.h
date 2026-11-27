@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/SpillableAdapter.h>
@@ -87,7 +88,7 @@ private:
         /// Memory charged to the global `max_bytes_in_distinct` check. A set without keys counts as empty,
         /// like in a serial `DISTINCT` that checks limits only after inserting keys: otherwise the
         /// preallocated hash table of a transform that spills before hashing would exceed tiny limits.
-        size_t getRetainedSetBytes() const { return set.getTotalRowCount() ? set.getTotalByteCount() : 0; }
+        [[nodiscard]] size_t getRetainedSetBytes() const { return set.getTotalRowCount() ? set.getTotalByteCount() : 0; }
 
         DistinctSetFilter set;
         /// EOF is observed in `prepare`, but releasing the set belongs to `work`.
@@ -275,7 +276,7 @@ private:
     /// Tracks connected merge inputs until tail attachment or early termination closes registration.
     std::optional<MergeRegistration> merge_registration;
     /// Scheduler-driven spilling releases memory before returning; completed readers are connected later.
-    std::vector<PreparedRun> spilled_runs;
+    VectorWithMemoryTracking<PreparedRun> spilled_runs;
     size_t temporary_files_num = 0;
     /// Run output sizes estimate the memory needed to read all files concurrently during merging.
     size_t estimated_file_read_memory = 0;

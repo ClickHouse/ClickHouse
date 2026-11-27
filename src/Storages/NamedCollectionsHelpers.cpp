@@ -425,7 +425,7 @@ SecretArgumentsSpec mysqlPostgreSQLSecretArguments(size_t password_slot)
 {
     return {
         .positional_secret_slots = {password_slot},
-        .secret_keys = {"password", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"},
+        .secret_keys = {"password", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem", "ssl_key_passphrase", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"},
         /// A first identifier is a named collection or an identifier host (`mysql(localhost, ...)`). Too few
         /// arguments to reach the password slot make it no valid explicit form, so the extra positionals are
         /// invalid overrides of a collection (`MySQL(creds, 'password')`), logged before validation: hide them.

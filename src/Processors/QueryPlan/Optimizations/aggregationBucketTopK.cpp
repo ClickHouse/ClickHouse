@@ -13,10 +13,6 @@ namespace DB::QueryPlanOptimizations
 namespace
 {
 
-/// The per-bucket selection scans every cell anyway; past this many candidate rows per bucket
-/// the saved materialization no longer pays for the selection scan.
-constexpr size_t max_bucket_top_k = 65536;
-
 /// Traces an output column of a pass-through expression to the input column it forwards:
 /// aliases are unwrapped, anything computed disqualifies.
 const String * traceThroughExpression(const ExpressionStep & expression, const String & name)
@@ -52,14 +48,15 @@ bool isThresholdTopKValueType(MergedValueBound bound, const DataTypePtr & type)
 
 }
 
-size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &)
+size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
     /// The shape: Limit over Sorting (with a pushed-down limit, by one plain column) over zero
     /// or more pass-through expressions over a final aggregation, and the sort column is one of
     /// the aggregation's outputs. Serves two optimizations: the top-K threshold merge, for any
     /// aggregate with a declared merged-value bound, and the bucket-local Top-K conversion, for
-    /// the lone-`count()` output. `HAVING`, `WITH TOTALS`, `LIMIT BY` and windows sit between
-    /// the aggregation and the sorting as their own steps and break the adjacency.
+    /// the output of the aggregation's lone `count`, `uniqExact` or `uniqExactIf`. `HAVING`,
+    /// `WITH TOTALS`, `LIMIT BY` and windows sit between the aggregation and the sorting as their
+    /// own steps and break the adjacency.
     const auto * limit = typeid_cast<LimitStep *>(parent_node->step.get());
     if (!limit || parent_node->children.size() != 1)
         return 0;
@@ -77,7 +74,7 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         return 0;
 
     const size_t n = sorting->getLimit();
-    if (n == 0 || n > max_bucket_top_k)
+    if (n == 0 || n > Aggregator::Params::max_bucket_top_k)
         return 0;
 
     const auto & description = sorting->getSortDescription();
@@ -110,18 +107,21 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         return 0;
 
     const auto & params = aggregating->getParams();
-    if (!aggregating->isFinal() || aggregating->isGroupingSets() || params.overflow_row || params.keys_size == 0)
+    /// An in-order aggregation has no two-level conversion to run the selection in.
+    if (!aggregating->isFinal() || aggregating->inOrder() || aggregating->isGroupingSets() || params.overflow_row
+        || params.keys_size == 0)
         return 0;
 
-    /// The selection reads the count straight from the aggregate state and handles no
-    /// null-key cell, so nullable and low-cardinality keys stay on the ordinary conversion.
+    /// `Nullable` keys take both optimizations. A method of several keys stores the NULL flags in its keys.
+    /// The method of one key keeps the NULL key in a slot of its own, which both optimizations rank like a
+    /// cell (see `Aggregator::convertOneBucketToChunkTopKImpl` and
+    /// `Aggregator::mergeAndConvertOneBucketToChunkThresholdTopKImpl`). `LowCardinality` keys get the
+    /// selection only: the threshold merge below does not serve them.
     const auto & header = node->step->getOutputHeader();
+    bool has_low_cardinality_key = false;
     for (const auto & key : params.keys)
-    {
-        const auto & type = header->getByName(key).type;
-        if (type->isNullable() || type->isLowCardinalityNullable() || typeid_cast<const DataTypeLowCardinality *>(type.get()))
-            return 0;
-    }
+        if (typeid_cast<const DataTypeLowCardinality *>(header->getByName(key).type.get()))
+            has_low_cardinality_key = true;
 
     for (size_t i = 0; i < params.aggregates.size(); ++i)
     {
@@ -136,7 +136,7 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         /// collection).
         /// The in-order aggregation never runs the threshold merge (see `AggregatingStep::applyOrder`,
         /// which also drops it when the order is applied after this pass).
-        if (!description.front().collator && !aggregating->inOrder())
+        if (!description.front().collator && !aggregating->inOrder() && !has_low_cardinality_key)
         {
             const auto bound = aggregate.function->getMergedValueBound();
             /// The `Subadditive` bound serves only the descending order. It is one-sided (see
@@ -163,12 +163,20 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
             }
         }
 
-        /// Any lone `count`: `count()`, and `count(x)` in both of its forms (the plain one for a
-        /// non-nullable argument, `AggregateFunctionCountNotNullUnary` for a nullable one). All three
-        /// keep the count in the leading `UInt64` of `AggregateFunctionCountData`, which is what the
-        /// conversion-stage selection reads (`Aggregator::convertOneBucketToChunkTopK`), so the
-        /// argument makes no difference to it. No parameters: a parametric `count` is another function.
-        if (aggregate.function->getName() != "count" || !aggregate.parameters.empty())
+        /// The conversion-stage selection ranks by a count it reads without converting the group: any
+        /// lone `count` - `count()`, and `count(x)` in both of its forms (the plain one for a non-nullable
+        /// argument, `AggregateFunctionCountNotNullUnary` for a nullable one) - or the exact distinct
+        /// count `uniqExact` finalizes from its set, also as `uniqExactIf` over the rows its condition
+        /// admits (the analyzer makes it of `uniqExact(if(...))`). No parameters: a parametric `count` is
+        /// another function. The adaptive aggregation also bounds these counts by the rows of a group to
+        /// skip groups (see `AdaptiveTopKPruning`), which an approximate `uniq` estimate could exceed,
+        /// and so could a combinator that takes several values from a row, like `-Array`.
+        const auto & function = *aggregate.function;
+        const String name = function.getName();
+        const bool lone_count = name == "count" && aggregate.parameters.empty();
+        const bool distinct_count = (name == "uniqExact" || name == "uniqExactIf") && aggregate.parameters.empty()
+            && WhichDataType(function.getResultType()).isUInt64();
+        if (!lone_count && !distinct_count)
             return 0;
 
         /// The conversion-stage selection by the count (`bucket_top_k`) is enabled alongside the
@@ -178,6 +186,15 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         /// skips merging the losers' other states - and when it declines (e.g. the groups are
         /// split across the per-thread tables), the bucket is merged as usual and the selection
         /// still trims its conversion.
+        ///
+        /// The distributed planner ships fragments of the optimized plan, and `AggregatingStep::serialize`
+        /// does not write the bucket top-K fields, so a worker would run without the selection that the
+        /// initiator's plan shows. `serialize_query_plan` is fine: a shard or a replica receives the plan
+        /// before the optimization and optimizes it itself in `executeQuery`, which derives the selection,
+        /// like the threshold merge above.
+        if (settings.make_distributed_plan)
+            return 0;
+
         aggregating->enableBucketTopK(n, ascending, i);
         return 0;
     }

@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "はじめる",
+      "group": "Get started",
       "pages": [
         "ja/products/managed-postgres/overview",
         "ja/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "機能",
+      "group": "Features",
       "pages": [
         "ja/products/managed-postgres/connection",
         "ja/products/managed-postgres/settings",
@@ -43,7 +43,7 @@
       ]
     },
     {
-      "group": "ガイド",
+      "group": "Guides",
       "pages": [
         "ja/products/managed-postgres/guides/bun",
         "ja/products/managed-postgres/guides/cloudflare-workers",
@@ -63,20 +63,20 @@
       ]
     },
     {
-      "group": "料金",
+      "group": "Pricing",
       "pages": [
         "ja/products/managed-postgres/pricing"
       ]
     },
     {
-      "group": "ClickHouse 連携",
+      "group": "ClickHouse Integration",
       "pages": [
         "ja/products/managed-postgres/sync-to-clickhouse/clickpipes",
         "ja/products/managed-postgres/sync-to-clickhouse/walshadow"
       ]
     },
     {
-      "group": "移行",
+      "group": "Migrations",
       "pages": [
         "ja/products/managed-postgres/migrations/overview",
         "ja/products/managed-postgres/migrations/clickpipes",
@@ -89,7 +89,7 @@
       ]
     },
     {
-      "group": "監視",
+      "group": "Monitoring",
       "pages": [
         "ja/products/managed-postgres/monitoring/overview",
         "ja/products/managed-postgres/monitoring/dashboard",
@@ -100,7 +100,7 @@
       ]
     },
     {
-      "group": "よくある質問",
+      "group": "FAQ",
       "pages": [
         "ja/products/managed-postgres/faq"
       ]

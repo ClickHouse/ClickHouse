@@ -29,6 +29,11 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+#include "config.h"
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedSystemDatabase.h>
+#endif
+
 
 namespace DB
 {
@@ -99,6 +104,9 @@ BlockIO InterpreterDeleteQuery::execute()
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
 
     if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
+#if CLICKHOUSE_CLOUD
+        && !SharedSystemDatabase::isLocalDatabase(table_id.database_name)
+#endif
         && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
 
@@ -108,6 +116,12 @@ BlockIO InterpreterDeleteQuery::execute()
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
+        /// TODO(unique-key): support DELETE in a Replicated database.
+        /// Resolved: a lazily loaded table reports no keys until it is loaded.
+        if (resolveStorageProxyLoading(table)->hasUniqueKey())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "DELETE on UNIQUE KEY tables is not supported inside a Replicated database");
+
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = true}, std::move(guard));
@@ -122,6 +136,19 @@ BlockIO InterpreterDeleteQuery::execute()
     /// and validate the mutation against metadata that has no keys.
     auto resolved_table = resolveStorageProxyLoading(table);
     auto metadata_snapshot = resolved_table->getInMemoryMetadataPtr(getContext(), false);
+
+    /// Dispatched to the storage's synchronous marker-part path, bypassing both the
+    /// `supportsDelete` mutation route and the default `_row_exists = 0` lightweight path.
+    if (table->hasUniqueKey())
+    {
+        if (!delete_query.cluster.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE ... ON CLUSTER is not supported on UNIQUE KEY tables");
+
+        /// A lazy stand-in neither forwards `deleteByUniqueKey` nor shares its lock with the loaded table.
+        auto resolved_table_lock = resolved_table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+        resolved_table->deleteByUniqueKey(query_ptr, getContext());
+        return {};
+    }
 
     if (table->supportsDelete())
     {
@@ -153,7 +180,9 @@ BlockIO InterpreterDeleteQuery::execute()
         /// to analyze.
         MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, mutation_commands, getContext());
         MutationsInterpreter::Settings mutation_settings(false);
-        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
+        auto validation_context = Context::createCopy(getContext());
+        validation_context->setAnalyzingBackgroundExpressions(true);
+        MutationsInterpreter(table, metadata_snapshot, mutation_commands, validation_context, mutation_settings).validate();
         getContext()->onQueryExecutionStarted();
         table->mutate(mutation_commands, getContext());
         return {};
@@ -171,11 +200,13 @@ BlockIO InterpreterDeleteQuery::execute()
             if (const auto * merge_tree_data = castStorage<MergeTreeData>(resolved_table, DeferredTable::Load).get())
                 if ((*merge_tree_data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::THROW)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "DELETE query is not allowed for table {} because as it has projections and setting "
-                        "lightweight_mutation_projection_mode is set to THROW. "
-                        "User should change lightweight_mutation_projection_mode OR "
-                        "drop all the projections manually before running the query",
-                        table_id.getFullTableName());
+                        "DELETE query is not allowed for table {} because it has projections and its table-level "
+                        "MergeTree setting 'lightweight_mutation_projection_mode' is set to 'throw'. "
+                        "Change this table setting with "
+                        "ALTER TABLE {} MODIFY SETTING lightweight_mutation_projection_mode = 'rebuild' (or 'drop'), "
+                        "or drop all the projections manually before running the query. "
+                        "Note that a query-level or session-level setting with this name has no effect",
+                        table_id.getFullTableName(), table_id.getFullTableName());
         }
 
         /// The cluster case ships the DELETE itself rather than a rewritten ALTER, so that every host

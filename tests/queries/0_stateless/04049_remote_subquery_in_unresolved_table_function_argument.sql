@@ -7,7 +7,6 @@ SELECT * FROM remote('localhost', view(SELECT 2 AS x), cityHash64(assumeNotNull(
 
 -- Re-analyzing an already resolved table function node (here because the USING key is resolved from
 -- the SELECT list alias) must keep its `view` argument marked unresolved.
-SET enable_analyzer = 1;
 SET analyzer_compatibility_join_using_top_level_identifier = 1;
 SELECT 2 AS c0
 FROM remote('localhost', view((SELECT 1 AS c1) INTERSECT DISTINCT SELECT 1 AS c1)) AS t0

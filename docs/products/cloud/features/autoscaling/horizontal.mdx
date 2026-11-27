@@ -7,8 +7,6 @@ title: 'Horizontal scaling'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 ## Manual horizontal scaling {#manual-horizontal-scaling}
@@ -27,11 +25,27 @@ For the replica limits that apply to your service, see [Usage limits](/cloud/bes
 
 To horizontally scale a cluster, issue a `PATCH` request via the API to adjust the number of replicas. The screenshots below show an API call to scale out a `3` replica cluster to `6` replicas, and the corresponding response.
 
-<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="Scaling PATCH request" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Scaling PATCH request](/images/cloud/manage/scaling-patch-request.webp)
+
+</Frame>
+
+</div>
 
 *`PATCH` request to update `numReplicas`*
 
-<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="Scaling PATCH response" border/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Scaling PATCH response](/images/cloud/manage/scaling-patch-response.webp)
+
+</Frame>
+
+</div>
 
 *Response from `PATCH` request*
 
@@ -41,10 +55,26 @@ If you issue a new scaling request or multiple requests in succession, while one
 
 To scale a service horizontally from the UI, you can adjust the number of replicas for the service on the **Settings** page.
 
-<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="Scaling configuration settings" border/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Scaling configuration settings](/images/cloud/manage/scaling-configure.webp)
+
+</Frame>
+
+</div>
 
 *Service scaling settings from the ClickHouse Cloud console*
 
 Once the service has scaled, the metrics dashboard in the cloud console should show the correct allocation to the service. The screenshot below shows the cluster having scaled to total memory of `96 GiB`, which is `6` replicas, each with `16 GiB` memory allocation.
 
-<Image img="/images/cloud/manage/scaling-memory-allocation.webp" size="md" alt="Scaling memory allocation" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Scaling memory allocation](/images/cloud/manage/scaling-memory-allocation.webp)
+
+</Frame>
+
+</div>

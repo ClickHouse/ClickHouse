@@ -1,0 +1,105 @@
+{
+	"meta":
+	[
+		{
+			"name": "k",
+			"type": "UInt8"
+		},
+		{
+			"name": "c",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"totals": [0, 0],
+
+	"rows": 0
+}
+{
+	"meta":
+	[
+		{
+			"name": "k",
+			"type": "UInt8"
+		},
+		{
+			"name": "c",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	{
+
+	},
+
+	"totals":
+	{
+		"k": 0,
+		"c": 0
+	},
+
+	"rows": 0
+}
+k	c
+
+0	0
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"extremes":
+	{
+		"min": [0],
+		"max": [2]
+	},
+
+	"rows": 0
+}
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	{
+
+	},
+
+	"extremes":
+	{
+		"min":
+		{
+			"number": 0
+		},
+		"max":
+		{
+			"number": 2
+		}
+	},
+
+	"rows": 0
+}
+number
+
+0
+2

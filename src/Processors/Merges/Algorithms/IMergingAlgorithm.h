@@ -109,7 +109,7 @@ public:
             removeReplicatedFromSortingColumns(input, description);
     }
 
-    virtual const char * getName() const = 0;
+    [[nodiscard]] virtual const char * getName() const = 0;
     virtual void initialize(Inputs inputs) = 0;
     virtual void consume(Input & input, size_t source_num) = 0;
     virtual Status merge() = 0;
@@ -131,7 +131,7 @@ public:
         UInt64 blocks = 0;
     };
 
-    virtual MergedStats getMergedStats() const = 0;
+    [[nodiscard]] virtual MergedStats getMergedStats() const = 0;
 };
 
 // TODO: use when compile with clang which could support it

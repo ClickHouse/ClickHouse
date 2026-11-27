@@ -1,0 +1,35 @@
+uint	1600	1600	1600
+plan	1
+plan off	0
+not sorted	100	0
+where	600
+expression	229
+nullable	1380	1380
+string	999	999
+low cardinality	999	999
+float	103	103
+float nullable	6	6
+empty	0
+empty result for empty set
+memory	1000000
+Int128	1700	1700	1
+Decimal	1700	1700	1
+UUID	1700	1700	1
+IPv6	1700	1700	1
+FixedString	1700	1700	1
+LowCardinality(Nullable)	1700	1700	1
+Tuple	1850	1850	1
+Array	20	20	1
+BFloat16	101	101	1
+Tuple with a float	6	6	0
+Array of floats	2	2	0
+float array join	2
+float low cardinality	2	2
+layers	20011	20011
+layers used	1
+layers function	2859	0
+layers prefix	700	1
+layers final	15000	0
+projection	1
+projection plan	0
+no layers	40000	0
