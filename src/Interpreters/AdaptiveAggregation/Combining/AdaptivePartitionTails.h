@@ -1,10 +1,13 @@
 #pragma once
 
+#include <algorithm>
 #include <memory>
 
 #include <base/defines.h>
 #include <base/types.h>
 #include <Common/PODArray.h>
+#include <Interpreters/AdaptiveAggregation/AdaptivePartitionLayout.h>
+#include <Interpreters/AdaptiveAggregation/Combining/AdaptiveTailsGate.h>
 #include <Interpreters/AdaptiveAggregation/StagedRecords.h>
 
 namespace DB
@@ -37,10 +40,14 @@ public:
 /// one fill of the producer's records: the producer drops them when it freezes and when it spills its
 /// records.
 ///
-/// Every miss of a kernel whose records combine looks its partition's tail up, while the probes of the frozen
-/// table keep evicting the cache. The hashes and the states of the tails are therefore kept apart from the
-/// rest, so the lookup of a miss that matches no tail reads an array of 8 bytes per partition, 8 KiB for 1024
-/// partitions, which stays in the cache. The rest of a tail is read only when the hashes match.
+/// The misses look the tails up only while that pays (see `AdaptiveTailsGate`): the tails are open or
+/// closed, and closed tails are empty, because the records staged past them are no tails.
+///
+/// While the tails are open, every miss of a kernel whose records combine looks its partition's tail up,
+/// while the probes of the frozen table keep evicting the cache. The hashes and the states of the tails are
+/// therefore kept apart from the rest, so the lookup of a miss that matches no tail reads an array of 8
+/// bytes per partition, 8 KiB for 1024 partitions, which stays in the cache. The rest of a tail is read only
+/// when the hashes match.
 template <typename RecordKey>
 class AdaptivePartitionTails final : public IAdaptivePartitionTails
 {
@@ -55,24 +62,33 @@ public:
             UInt32 descriptor;
             /// Where the record of a written tail keeps the number of rows it stands for, or null for a
             /// record without one: the start of a count record, whose format grows its count (see
-            /// `addToCount`), or the `UInt32` multiplicity of the record of a row selection that counts rows.
+            /// `addToCount`), or the multiplicity of the record of a row selection that counts rows (see
+            /// `StagedRecordMultiplicity`).
             char * counter = nullptr;
         };
         /// The rank of the record's row under a row selection (see `fillRowSelectionRanks`).
         Int64 rank = 0;
-        /// The size of the record of a written tail and of the key it stores, which its rollback gives back to
-        /// the buffer and to the accounting of the staged bytes (see `AdaptiveStagedBytes`).
+        /// The size of the record of a written tail and of the key it stores, which its rollback gives back
+        /// to the buffer and to the accounting of the staged bytes (see `AdaptiveStagedBytes`).
         UInt32 record_bytes = 0;
         UInt32 key_bytes = 0;
     };
 
-    explicit AdaptivePartitionTails(size_t num_partitions_)
-        : num_partitions(num_partitions_)
-        , hashes(std::make_unique<UInt64[]>(num_partitions_))
-        , states(std::make_unique<State[]>(num_partitions_))
-        , tails(std::make_unique<Tail[]>(num_partitions_))
+    /// `layout` is the layout of the producer's partitions.
+    explicit AdaptivePartitionTails(const AdaptivePartitionLayout & layout)
+        : gate(layout)
+        , num_partitions(layout.numPartitions())
+        , hashes(std::make_unique<UInt64[]>(num_partitions))
+        , states(std::make_unique<State[]>(num_partitions))
+        , tails(std::make_unique<Tail[]>(num_partitions))
     {
     }
+
+    /// Whether the misses look the tails up (see `AdaptiveTailsGate`).
+    AdaptiveTailsGate gate;
+
+    /// Empties every tail, when the tails close: the records staged past them are no tails.
+    void clear() { std::fill_n(states.get(), num_partitions, State::empty); }
 
     /// The tail of the partition when it is a record of `key` with `hash`, or null. The key of a pending tail
     /// is compared only when `pending_keys_comparable`: a kernel whose key views do not outlive their row
@@ -112,22 +128,28 @@ public:
         tail.rank = rank;
     }
 
-    /// The positions where the writer puts the records of a batch of `records` descriptors, which
-    /// `recordsWritten` reads.
-    char ** recordPositions(size_t records)
+    /// Starts the writing of a batch of `records` descriptors with `batch_hashes`, in staging order. Open
+    /// tails follow their records: the result is where the writer puts the positions of the batch's records,
+    /// which `recordsWritten` then reads. Closed tails hold no record, so they follow none: the gate watches
+    /// the batch instead (see `AdaptiveTailsGate::watchClosedBatch`), and the result is null.
+    [[nodiscard]] char ** startBatch(const UInt64 * batch_hashes, size_t records)
     {
+        if (!gate.isOpen())
+        {
+            gate.watchClosedBatch(batch_hashes, records);
+            return nullptr;
+        }
         positions.resize(records);
         return positions.data();
     }
 
     /// Turns every pending tail into the record that the writer appended for its descriptor in `format`, at
-    /// the position it put into `recordPositions`. A count record keeps its rows in its count, which the
+    /// the position it put where `startBatch` told it. A count record keeps its rows in its count, which the
     /// format grows (see `addToCount`), and the record of a row selection that counts rows in its
-    /// multiplicity (see `AdaptiveArgumentLayout::multiplicity_offset`). The states take a byte per
-    /// partition, so a pass over all of them costs less than keeping a list of the pending ones in the
-    /// kernel.
+    /// multiplicity (see `StagedRecordMultiplicity`). The states take a byte per partition, so a pass over
+    /// all of them costs less than keeping a list of the pending ones in the kernel.
     template <typename Format>
-    void recordsWritten(const Format & format, const AdaptiveArgumentLayout * layout)
+    void recordsWritten(const Format & format)
     {
         if constexpr (Format::with_count)
             add_to_count = &Format::addToCount;
@@ -145,8 +167,8 @@ public:
                 tail.counter = record;
             else if constexpr (Format::with_arguments)
             {
-                if (layout->multiplicity_offset)
-                    tail.counter = layout->multiplicityPosition(record);
+                if constexpr (Format::with_multiplicity)
+                    tail.counter = format.multiplicityPosition(record);
             }
             tail.record_bytes = static_cast<UInt32>(format.bytes(record));
             tail.key_bytes = static_cast<UInt32>(format.key(record).second);

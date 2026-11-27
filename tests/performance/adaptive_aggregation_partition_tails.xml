@@ -1,0 +1,11 @@
+<test>
+    <!-- Keys that repeat close together but not in a row: every 256 rows hold 64 keys, 4 rows each, which take
+         turns. There are 20 million keys, far more than a frozen table of the adaptive aggregator holds, so
+         nearly every row misses it. A missed row combines into the last record staged into its partition, the
+         partition's tail, when that record has its key, so most rows of a key end up in one record, which the
+         merge aggregates once. The queries cover a key alone, `count`, and `argMax`, whose record keeps the
+         best row. -->
+    <query>SELECT intHash64((number % 64) + 64 * intDiv(number, 256)) AS k FROM numbers_mt(80000000) GROUP BY k FORMAT Null</query>
+    <query>SELECT intHash64((number % 64) + 64 * intDiv(number, 256)) AS k, count() FROM numbers_mt(80000000) GROUP BY k FORMAT Null</query>
+    <query>SELECT intHash64((number % 64) + 64 * intDiv(number, 256)) AS k, argMax(intHash32(number), number) FROM numbers_mt(80000000) GROUP BY k FORMAT Null</query>
+</test>

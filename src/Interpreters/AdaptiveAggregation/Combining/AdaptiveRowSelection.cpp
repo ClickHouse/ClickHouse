@@ -135,7 +135,7 @@ std::unique_ptr<const AdaptiveRowSelection> adaptiveRowSelectionOf(const Aggrega
 void fillRowSelectionRanks(
     const AdaptiveRowSelection & selection, const IColumn & column, size_t row_begin, size_t row_end, PaddedPODArray<Int64> & ranks)
 {
-    ranks.resize(row_end);
+    chassert(ranks.size() >= row_end);
     /// The complement, `x ^ -1`, reverses the order of the images exactly, so the best row has the largest
     /// rank.
     const Int64 complement = selection.largest ? 0 : -1;

@@ -1241,8 +1241,9 @@ private:
     /// `aggregate_instructions`, with the multiplicity of the combined rows when the layout has one (see
     /// `AdaptiveRowSelection`). The records of byte-staged keys also carry a hash and lengths; those of
     /// fixed-width keys recover the hash from the key when drained. The tails of the producer's partitions
-    /// learn where the records went (see `AdaptivePartitionTails`). Returns what it staged for the accounting
-    /// of the batch (see `accountStagedBatch`).
+    /// learn where the records went while they are open, and their gate watches the batch while they are
+    /// closed (see `AdaptivePartitionTails::startBatch`). Returns what it staged for the accounting of the
+    /// batch (see `accountStagedBatch`).
     template <typename Method, typename State>
     AdaptiveStagedBytes appendDelayedRecords(
         const AggregateFunctionInstruction * aggregate_instructions,

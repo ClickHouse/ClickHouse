@@ -357,9 +357,10 @@ struct AdaptiveStagedBytes
 /// misses of its key that combined into it as the tail of its partition (see `AdaptivePartitionTails`): a
 /// count record counts them, and the record of a row selection takes the best of their rows (see
 /// `AdaptiveRowSelection`), so its source row moves forward to a later row. The source rows are therefore
-/// distinct, but they ascend only until a source row moves. A batch is filled either by `add` or by
-/// `addCount`, so it has a multiplicity for every record or for none. A string-like key is kept as its size,
-/// and the writer reads its bytes from the key state, which holds them for the whole block. When the state
+/// distinct, but they ascend only until a source row moves. A batch has a multiplicity for every record or
+/// for none: it is filled by `add` while it has none and by `addCount` once it has them, from its first
+/// record or from `materializeMultiplicities` on. A string-like key is kept as its size, and the writer
+/// reads its bytes from the key state, which holds them for the whole block. When the state
 /// does not, as with the serialized methods that serialize row by row, the kernel keeps the bytes as well,
 /// one key after another, and once for all the records of a constant key: building the key again would
 /// serialize it a second time. The kernel stages such a batch whenever the kept bytes reach
@@ -377,6 +378,7 @@ public:
     ALWAYS_INLINE void add(UInt32 row, UInt64 hash, const Key & key, bool keep_key_bytes)
     {
         chassert(source_rows.empty() || source_rows.back() < row);
+        chassert(multiplicities.empty());
         source_rows.push_back(row);
         hashes.push_back(hash);
         addKey<RecordKey>(key, keep_key_bytes);
@@ -390,15 +392,29 @@ public:
     ALWAYS_INLINE void addCount(UInt32 row, UInt64 hash, const Key & key, UInt32 multiplicity, bool keep_key_bytes)
     {
         chassert(source_rows.empty() || source_rows.back() < row);
+        chassert(multiplicities.size() == source_rows.size());
         hashes.push_back(hash);
         multiplicities.push_back(multiplicity);
         addKey<RecordKey>(key, keep_key_bytes);
         source_rows.push_back(row);
     }
 
-    /// The multiplicity of record `i` of those added by `addCount`, which grows by the rows that combine into
-    /// the record. The reference is valid until the next `addCount`.
+    /// The multiplicity of record `i` of a batch that has multiplicities, which grows by the rows that
+    /// combine into the record. The reference is valid until the next `addCount`.
     ALWAYS_INLINE UInt32 & multiplicityOf(size_t i) { return multiplicities[i]; }
+
+    /// Whether the records of the batch carry multiplicities. The records of a row selection that counts
+    /// rows may go without while each stands for one row (see `AdaptiveRunCombiner`), and the writer then
+    /// gives each the multiplicity 1.
+    [[nodiscard]] bool hasMultiplicities() const { return !multiplicities.empty(); }
+
+    /// Gives the records of the batch, all added by `add`, the multiplicity 1, before the first of them
+    /// takes another row.
+    void materializeMultiplicities()
+    {
+        chassert(multiplicities.empty());
+        multiplicities.resize_fill(size(), 1);
+    }
 
     /// Moves the arguments of record `i` to `row`, a better row of its key under a row selection (see
     /// `AdaptiveRowSelection`). The row is the kernel's current one, so it follows every row that the batch
@@ -649,9 +665,9 @@ struct AdaptiveAggregationProducer
     /// aggregation combine (see `AdaptivePartitionTails`). The first frozen block of a phase creates them,
     /// and they are dropped with the records they point into.
     std::unique_ptr<IAdaptivePartitionTails> tails;
-    /// The ranks of the current block's rows under the aggregation's row selection (see
-    /// `fillRowSelectionRanks`).
-    PaddedPODArray<Int64> row_selection_ranks;
+    /// The ranks of the current block's rows under the aggregation's row selection, filled as far as the
+    /// kernel asks for them (see `AdaptiveRowSelectionRanks`).
+    AdaptiveRowSelectionRanks row_selection_ranks;
 
     /// The producer's count bins when the aggregation prunes by the top-K, allocated by the first freeze and handed
     /// over at the finish.

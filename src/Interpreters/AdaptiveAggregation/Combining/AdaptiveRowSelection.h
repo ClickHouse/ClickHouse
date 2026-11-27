@@ -4,7 +4,7 @@
 #include <vector>
 
 #include <base/types.h>
-#include <Common/PODArray_fwd.h>
+#include <Common/PODArray.h>
 #include <Core/TypeId.h>
 #include <Interpreters/AggregateDescription.h>
 
@@ -52,7 +52,52 @@ std::unique_ptr<const AdaptiveRowSelection> adaptiveRowSelectionOf(const Aggrega
 /// the values 5, 9, 9 of `max` rank as 5, 9, 9, so the best row is the second; of `min`, as -6, -10, -10, so
 /// the best row is the first. The column may be `Sparse`, because an aggregate of one argument, such as
 /// `max(ts)`, keeps a sparse argument as it is.
+/// The caller guarantees that `ranks` has `row_end` elements or more.
 void fillRowSelectionRanks(
     const AdaptiveRowSelection & selection, const IColumn & column, size_t row_begin, size_t row_end, PaddedPODArray<Int64> & ranks);
+
+/// The ranks of a block's rows under a row selection, filled as far as a kernel asks for them: a block
+/// whose misses neither look the tails of their partitions up nor repeat the previous miss compares no
+/// rows, so it needs no ranks (see `AdaptiveRunCombiner`), and a block that goes through the tails only for
+/// its first rows needs only theirs.
+class AdaptiveRowSelectionRanks
+{
+public:
+    /// Starts a block: the ranks are those of the rows from `row_begin_` to `row_end_` of `column_`, the
+    /// ordering argument of `selection_`. The caller guarantees that both outlive the block.
+    void startBlock(const AdaptiveRowSelection & selection_, const IColumn & column_, size_t row_begin_, size_t row_end_)
+    {
+        selection = &selection_;
+        column = &column_;
+        filled_end = row_begin_;
+        row_end = row_end_;
+        /// The ranks take their final place now, so that the pointer to them stays valid through the block.
+        ranks.resize(row_end);
+    }
+
+    /// Ranks the rows of the block before `end` that are not ranked yet.
+    void rankUpTo(size_t end)
+    {
+        if (filled_end < end)
+        {
+            fillRowSelectionRanks(*selection, *column, filled_end, end, ranks);
+            filled_end = end;
+        }
+    }
+
+    /// Ranks all the rows of the block that are not ranked yet.
+    void rankAll() { rankUpTo(row_end); }
+
+    /// The ranks, indexed by row, which hold the ranks of the rows that are ranked. The pointer stays the
+    /// same through the block.
+    [[nodiscard]] const Int64 * data() const { return ranks.data(); }
+
+private:
+    const AdaptiveRowSelection * selection = nullptr;
+    const IColumn * column = nullptr;
+    size_t filled_end = 0;
+    size_t row_end = 0;
+    PaddedPODArray<Int64> ranks;
+};
 
 }
