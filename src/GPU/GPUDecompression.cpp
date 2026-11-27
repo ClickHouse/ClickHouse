@@ -131,7 +131,7 @@ void addCompressedBlocksOf(
 {
     if (codec != GPUCodec::GDEFLATE)
     {
-        blocks.push_back({.offset = offset, .compressed_bytes = payload.size(), .decompressed_bytes = decompressed_bytes});
+        blocks.push_back({.codec = codec, .offset = offset, .compressed_bytes = payload.size(), .decompressed_bytes = decompressed_bytes});
         return;
     }
 
@@ -159,6 +159,7 @@ void addCompressedBlocksOf(
             throw Exception(
                 ErrorCodes::CANNOT_DECOMPRESS, "Chunk {} of a GDeflate block of {} bytes ends at {}", i, payload.size(), at + compressed_bytes);
         blocks.push_back({
+            .codec = codec,
             .offset = offset + at,
             .compressed_bytes = compressed_bytes,
             .decompressed_bytes = std::min(chunk_bytes, decompressed_bytes - i * chunk_bytes),
@@ -192,8 +193,7 @@ std::vector<DecompressionBatch::Piece> & DecompressionBatch::piecesOf(GPUCodec c
 
 void DecompressionBatch::add(const CompressedHostColumn & column, char * destination)
 {
-    const size_t expanded_bytes = column.expandedBytes();
-    if (expanded_bytes == 0)
+    if (column.blocks.empty())
         return;
 
     char * const at = uploaded.emplace_back(stream).grow(column.bytes.size());
@@ -201,13 +201,27 @@ void DecompressionBatch::add(const CompressedHostColumn & column, char * destina
         cudaMemcpyAsync(at, column.bytes.data(), column.bytes.size(), cudaMemcpyHostToDevice, stream.get()),
         "Cannot send compressed blocks to the device");
 
-    char * expand_to = destination;
-    if (reinterpret_cast<uintptr_t>(destination) % expand_alignment != 0)
+    /// A piece of each run of blocks of one codec, expanded after the run before.
+    const std::span<const CompressedBlock> blocks = column.blocks;
+    for (size_t first = 0; first < blocks.size();)
     {
-        expand_to = expanded_elsewhere.emplace_back(stream).grow(expanded_bytes);
-        moves.push_back({expand_to, destination, expanded_bytes});
+        size_t last = first + 1;
+        while (last < blocks.size() && blocks[last].codec == blocks[first].codec)
+            ++last;
+        const std::span<const CompressedBlock> run = blocks.subspan(first, last - first);
+        const size_t run_bytes = decompressedBytesOf(run);
+
+        char * expand_to = destination;
+        if (reinterpret_cast<uintptr_t>(destination) % expand_alignment != 0)
+        {
+            expand_to = expanded_elsewhere.emplace_back(stream).grow(run_bytes);
+            moves.push_back({expand_to, destination, run_bytes});
+        }
+        piecesOf(run.front().codec).push_back({.device_compressed = at, .compressed_bytes = column.bytes.size(), .blocks = run, .destination = expand_to});
+
+        destination += run_bytes;
+        first = last;
     }
-    piecesOf(*column.codec).push_back({.device_compressed = at, .compressed_bytes = column.bytes.size(), .blocks = column.blocks, .destination = expand_to});
 }
 
 GPUFuture<void> DecompressionBatch::expand()

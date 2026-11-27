@@ -17,8 +17,10 @@
 namespace DB::GPU
 {
 
+/// What one call of nvcomp expands: a block, or a chunk of a `GDeflate` one, of its codec.
 struct CompressedBlock
 {
+    GPUCodec codec = GPUCodec::LZ4;
     size_t offset = 0;
     size_t compressed_bytes = 0;
     size_t decompressed_bytes = 0;
@@ -40,7 +42,8 @@ class DecompressionBatch
 public:
     explicit DecompressionBatch(cuda::stream_ref stream_);
 
-    /// Sends the blocks of `column`, from pinned memory, to be expanded to `destination`, which is of this stream.
+    /// Sends the blocks of `column`, from pinned memory, to be expanded one after another to `destination`, which is of
+    /// this stream. They may be of several codecs, each expanded by a call of its own.
     void add(const CompressedHostColumn & column, char * destination);
 
     /// Expands what was added and checks what each block expanded to, which waits for the device; the host memory of

@@ -21,8 +21,6 @@ struct CompressedHostColumn
     /// Each block from a multiple of 8 bytes, as nvcomp reads them.
     PinnedBuffer bytes;
     std::vector<CompressedBlock> blocks;
-    /// Of the blocks, all of one codec; nothing while there are none.
-    std::optional<GPUCodec> codec;
     size_t skipped_bytes = 0;
     size_t kept_bytes = 0;
 
@@ -37,7 +35,6 @@ struct CompressedHostColumn
     {
         bytes.clear();
         blocks.clear();
-        codec.reset();
         skipped_bytes = 0;
         kept_bytes = 0;
     }

@@ -27,9 +27,11 @@ enum class GPUStream : uint8_t
     Sizes,
 };
 
-/// A column of a batch of a reader on the host: a run of each of its streams.
+/// A column of a batch of a reader on the host: a run of each of its streams, of exactly the rows of the batch, as the
+/// marks of the streams delimit them. The bytes of a `String` are as long as its sizes say, and may go past its rows.
 struct GPUHostColumn
 {
+    GPUElementType type = GPUElementType::UInt8;
     CompressedHostColumn values;
     /// Of a `String` only.
     CompressedHostColumn sizes;
@@ -37,12 +39,11 @@ struct GPUHostColumn
     void clear();
 };
 
-/// A batch of a reader on the host: a run of each column the reader reads.
+/// A batch of a reader on the host: a run of each column the reader reads, of exactly `rows` rows.
 struct GPUHostBatch
 {
     std::vector<GPUHostColumn> columns;
-    /// Set on the last batch of a part: the rows of the part. The uploader then sends every row it holds.
-    std::optional<size_t> part_rows;
+    size_t rows = 0;
 
     void clear();
 };
@@ -59,16 +60,16 @@ private:
     std::vector<std::unique_ptr<GPUHostBatch>> free_batches;
 };
 
-/// Stages the blocks a reader reads of columns of `column_types` into batches. A batch is finished when every column has
-/// about `batch_bytes` of rows, a stream fills its pinned memory, a block cannot follow the staged ones, or a part ends.
+/// Stages the blocks a reader reads of columns of `column_types` into batches, each of the rows of a range of marks that
+/// the reader reads: of each stream, a run of blocks from the one the first row is in, which skips the bytes before it,
+/// to the one the last row is in, which is cut after it.
 class GPUBlockStager
 {
 public:
-    static constexpr size_t max_column_bytes = 32UL << 20;
+    GPUBlockStager(std::vector<GPUElementType> column_types_, std::shared_ptr<GPUHostBatchPool> pool_);
 
-    GPUBlockStager(std::vector<GPUElementType> column_types_, size_t batch_bytes, std::shared_ptr<GPUHostBatchPool> pool_);
-
-    /// The stream takes `kept_bytes` of what the block expands to, after `skipped_bytes`.
+    /// The stream takes `kept_bytes` of what the block expands to, after `skipped_bytes`; only the first block of a run
+    /// skips bytes, and only the last is cut.
     void addCompressedBlock(
         size_t column,
         GPUStream stream,
@@ -79,20 +80,17 @@ public:
         size_t skipped_bytes,
         size_t kept_bytes);
 
-    /// The part ends, of `num_rows` rows: finishes the batch being staged, even an empty one.
-    void finishPart(size_t num_rows);
+    /// The range ends: the blocks staged since the last batch make the batch of its `rows` rows.
+    void finishBatch(size_t rows);
 
     /// The next finished batch, the oldest first, if there is one.
     std::unique_ptr<GPUHostBatch> takeFinished();
 
 private:
     CompressedHostColumn & streamOrThrow(size_t column, GPUStream stream);
-    bool isFull() const;
-    /// Queues the batch being staged as finished, and starts a new one.
-    void finishBatch(std::optional<size_t> part_rows = {});
+    void startBatch();
 
     const std::vector<GPUElementType> column_types;
-    const size_t batch_rows;
     const std::shared_ptr<GPUHostBatchPool> pool;
     std::unique_ptr<GPUHostBatch> current;
     std::deque<std::unique_ptr<GPUHostBatch>> finished;

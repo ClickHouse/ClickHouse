@@ -17,30 +17,47 @@
 namespace DB::GPU
 {
 
-/// A column of a batch on the device: the memory of its rows and the view of them, the bytes and the offsets of the rows
-/// of a `String`.
+class GPUDeviceBatch;
+
+/// The rows of `host` on the device, expanded on `stream`, ready once the work queued there now is done. The host
+/// memory of `host` is read until it returns; the memory of the batch is freed in the order of `stream`.
+GPUFuture<GPUDeviceBatch> copyHostToDevice(const GPUHostBatch & host, std::shared_ptr<StreamPtr> stream);
+
+/// A column of a batch on the device: the memory of its values, or of the bytes and the offsets of the rows of a
+/// `String`, and the view of its rows.
 class GPUDeviceColumn
 {
 public:
-    GPUDeviceColumn(DeviceBuffer values_, DeviceBuffer offsets_, DeviceColumnView view_)
-        : values(std::move(values_))
-        , offsets(std::move(offsets_))
-        , column_view(view_)
-    {
-    }
-
-    const DeviceColumnView & view() const { return column_view; }
+    const DeviceColumnView & view() const;
 
 private:
-    DeviceBuffer values;
-    /// Of a `String` only.
-    DeviceBuffer offsets;
-    DeviceColumnView column_view;
+    friend GPUFuture<GPUDeviceBatch> copyHostToDevice(const GPUHostBatch & host, std::shared_ptr<StreamPtr> stream);
+
+    /// Places the column in memory of its own, and adds its blocks to `decompression` to expand there.
+    GPUDeviceColumn(const GPUHostColumn & host, DecompressionBatch & decompression, cuda::stream_ref stream);
+
+    /// Once its blocks are expanded: of `rows` rows, of a `String` its offsets from its sizes.
+    void finish(size_t rows, cuda::stream_ref stream);
+
+    bool isVariable() const;
+
+    GPUElementType type;
+    DeviceBuffer values_memory;
+    /// Of a `String`: a zero, then the sizes of its rows, which become their offsets.
+    DeviceBuffer offsets_memory;
+
+    /// The values, or the bytes of a `String`, from its first row, in `values_memory`, and how many there are.
+    char * values = nullptr;
+    size_t values_bytes = 0;
+    /// Of a `String`: its offsets in `offsets_memory`, one more than its rows, and the bytes of its sizes after the first.
+    uint64_t * offsets = nullptr;
+    size_t sizes_bytes = 0;
+
+    std::optional<DeviceColumnView> column_view;
 };
 
-/// The columns of a batch on the device, as the reader reads them, as `GPUHostBatch` is on the host: the future of
-/// `GPUBatchUploader::sendHostToDevice`, see `takeOn`. Freed in the order of the uploader's stream, after the stream it was
-/// taken on is done with it.
+/// The columns of a batch on the device, as `GPUHostBatch` is on the host: the future of `copyHostToDevice`, see `takeOn`.
+/// Freed in the order of the stream it was copied on, after the stream it was taken on is done with it.
 class GPUDeviceBatch
 {
 public:
@@ -54,58 +71,20 @@ public:
     const std::vector<GPUDeviceColumn> & columns() const { return device_columns; }
 
 private:
-    friend class GPUBatchUploader;
+    friend GPUFuture<GPUDeviceBatch> copyHostToDevice(const GPUHostBatch & host, std::shared_ptr<StreamPtr> stream);
     friend GPUDeviceBatch takeOn(GPUFuture<GPUDeviceBatch> future, cuda::stream_ref stream);
 
-    /// The stream that reads it, whose promise the uploader's stream waits for before it frees the memory.
+    explicit GPUDeviceBatch(std::shared_ptr<StreamPtr> copy_stream_);
+
+    /// The stream that reads it, whose promise the stream it was copied on waits for before it frees the memory.
     void useOn(cuda::stream_ref stream);
 
-    explicit GPUDeviceBatch(std::shared_ptr<StreamPtr> upload_stream_);
-
-    /// Shared, so the memory is freed in the uploader's stream order even after the uploader is gone.
-    std::shared_ptr<StreamPtr> upload_stream;
+    /// Shared, so the memory is freed in the order of the stream after the one who made it is gone.
+    std::shared_ptr<StreamPtr> copy_stream;
     std::vector<GPUDeviceColumn> device_columns;
     size_t num_rows = 0;
     /// That the stream it was taken on is done with it.
     std::optional<GPUPromise<void>> released;
-};
-
-/// Sends the staged batches of one reader to the device and expands them, on a stream of its own. A batch has the rows
-/// that every column has; the rest of each column waits on the device for the next one.
-class GPUBatchUploader
-{
-public:
-    explicit GPUBatchUploader(std::vector<GPUElementType> column_types_);
-
-    GPUBatchUploader(const GPUBatchUploader &) = delete;
-    GPUBatchUploader & operator=(const GPUBatchUploader &) = delete;
-
-    /// The batch on the device, ready once the work queued on the uploader's stream is done; nothing where no row is
-    /// complete in every column. The host batch is free once it returns, on an exception too, after which the uploader
-    /// takes no more batches.
-    std::optional<GPUFuture<GPUDeviceBatch>> sendHostToDevice(const GPUHostBatch & staged);
-
-private:
-    /// What the batches so far did not take of a column: its bytes, and of a `String` the offsets of its rows left,
-    /// from 0, and the bytes of a size that a block cut, fewer than 8.
-    struct Carried
-    {
-        DeviceBuffer values;
-        DeviceBuffer offsets;
-        DeviceBuffer size_tail;
-    };
-
-    class ExpandingColumn;
-
-    std::optional<GPUFuture<GPUDeviceBatch>> expand(const GPUHostBatch & staged);
-
-    /// Declared first, so that the buffers below are freed in its order before it goes.
-    const std::shared_ptr<StreamPtr> stream;
-    const std::vector<GPUElementType> column_types;
-    std::vector<Carried> carried;
-    DecompressionBatch decompression;
-    size_t part_rows_sent = 0;
-    bool failed = false;
 };
 
 /// The batch, for the work queued on `stream` from now on, which waits on the device until the batch is ready.

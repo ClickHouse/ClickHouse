@@ -20,9 +20,9 @@
 #include <optional>
 #include <vector>
 
-/// reader -> GPUBlockStager -> GPUHostBatch -> GPUBatchUploader::sendHostToDevice -> GPUFuture<GPUDeviceBatch>
+/// reader by ranges of marks -> GPUBlockStager -> GPUHostBatch -> copyHostToDevice -> GPUFuture<GPUDeviceBatch>
 ///     -> GPUGroupingLane ×L -> merge by parts.
-/// Uploaders and lanes have streams of their own, which wait for each other by events, see `GPUFuture` and `takeOn`.
+/// A reader copies on a stream of its own, and a lane works on its own, which wait for each other by `GPUFuture` and `takeOn`.
 
 namespace DB::GPU
 {
