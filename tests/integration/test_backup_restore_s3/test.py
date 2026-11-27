@@ -1,5 +1,8 @@
 import io
 import os
+import re
+import struct
+import tarfile
 import uuid
 from typing import Dict
 
@@ -755,6 +758,183 @@ def test_backup_to_s3_packed_format(cluster):
     assert (
         objects == num_entries + 1 and num_entries < num_files
     ), f"packing did not reduce backup object count: objects={objects} entries={num_entries} files={num_files}"
+
+
+def _small_packed_table(node, table):
+    # Wide, full-storage parts of a small table are several small files, which the packed format bundles into packs_0000.
+    node.query(
+        f"CREATE TABLE {table} (a UInt64, s String) ENGINE=MergeTree ORDER BY a "
+        "SETTINGS min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0"
+    )
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(50)")
+
+
+def test_restore_from_s3_archive_with_packs(cluster):
+    # num_packs > 0 in an archive backup is corruption (archives are never packed on write): RESTORE must report
+    # BACKUP_DAMAGED. A tar archive, because zip backups on S3 are rejected up front.
+    node = cluster.instances["node"]
+    name = f"tamper_archive_{uuid.uuid4().hex}"
+    archive_key = f"data/backups/{name}.tar"
+    backup_destination = f"S3('http://minio1:9001/root/{archive_key}', 'minio', '{minio_secret_key}')"
+    try:
+        _small_packed_table(node, name)
+        node.query(f"BACKUP TABLE {name} TO {backup_destination}")
+
+        response = cluster.minio_client.get_object("root", archive_key)
+        try:
+            archive = response.read()
+        finally:
+            response.close()
+            response.release_conn()
+        out = io.BytesIO()
+        tampered = False
+        with tarfile.open(fileobj=io.BytesIO(archive)) as tin, tarfile.open(fileobj=out, mode="w") as tout:
+            for item in tin.getmembers():
+                data = tin.extractfile(item).read() if item.isfile() else None
+                if item.name == ".backup":
+                    original = data
+                    data = data.decode("utf-8").replace("<contents>", "<num_packs>1</num_packs><contents>", 1).encode("utf-8")
+                    assert data != original, original
+                    item.size = len(data)
+                    tampered = True
+                tout.addfile(item, io.BytesIO(data) if data is not None else None)
+        assert tampered, [item.name for item in tarfile.open(fileobj=io.BytesIO(archive)).getmembers()]
+        cluster.minio_client.put_object("root", archive_key, io.BytesIO(out.getvalue()), len(out.getvalue()))
+
+        error = node.query_and_get_error(f"RESTORE TABLE {name} AS {name}_restored FROM {backup_destination}")
+        assert "Archive backup cannot contain packed objects" in error, error
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+        node.query(f"DROP TABLE IF EXISTS {name}_restored SYNC")
+
+
+def _tamper_packed_backup(objects, mode):
+    """Applies `mode` to the `{relative key: bytes}` objects of a packed directory backup, in place."""
+    if mode not in ("drop_index_member", "shrink_index_member"):
+        manifest = objects[".backup"].decode("utf-8")
+        if mode == "drop_num_packs":
+            manifest, replaced = re.subn(r"<num_packs>\d+</num_packs>", "", manifest, count=1)
+            assert replaced == 1, manifest
+        elif mode == "downgrade_version":
+            manifest, replaced = re.subn(r"<version>\d+</version>", "<version>1</version>", manifest, count=1)
+            assert replaced == 1, manifest
+        elif mode == "drop_markers":
+            assert "<packed>true</packed>" in manifest, manifest
+            manifest = manifest.replace("<packed>true</packed>", "")
+        else:
+            raise ValueError(mode)
+        objects[".backup"] = manifest.encode("utf-8")
+        return
+
+    pack_key = sorted(key for key in objects if key.startswith("packs_"))[0]
+    pack = objects[pack_key]
+
+    def read_varint(pos):
+        value = shift = 0
+        while True:
+            byte = pack[pos]
+            pos += 1
+            value |= (byte & 0x7F) << shift
+            if not byte & 0x80:
+                return value, pos
+            shift += 7
+
+    def write_varint(value):
+        out = bytearray()
+        while True:
+            byte = value & 0x7F
+            value >>= 7
+            out.append(byte | 0x80 if value else byte)
+            if not value:
+                return bytes(out)
+
+    version = pack[0]
+    entry_format = "<QQQ" if version >= 1 else "<QQ"
+    entry_size = struct.calcsize(entry_format)
+    (count,) = struct.unpack_from("<Q", pack, 1)
+    pos = 9
+    members = []
+    for _ in range(count):
+        length, pos = read_varint(pos)
+        name = pack[pos:pos + length]
+        pos += length
+        members.append((name, struct.unpack_from(entry_format, pack, pos)))
+        pos += entry_size
+
+    if mode == "drop_index_member":
+        # Drop the first member. Bodies keep their absolute offsets, and the shortened index is zero-padded back to
+        # its original length, so every surviving member still resolves -- only the dropped one goes missing.
+        members = members[1:]
+    else:
+        # Understate the first member's recorded size by one byte. Every field keeps its width, so the index still
+        # parses and every member still resolves -- the only damage is the disagreement with the manifest.
+        name, entry = members[0]
+        members[0] = (name, entry[:1] + (entry[1] - 1,) + entry[2:])
+
+    index = bytearray(pack[:1]) + struct.pack("<Q", len(members))
+    for name, entry in members:
+        index += write_varint(len(name)) + name + struct.pack(entry_format, *entry)
+    index += b"\0" * (pos - len(index))
+    objects[pack_key] = bytes(index) + pack[pos:]
+    assert objects[pack_key] != pack, mode
+
+
+@pytest.fixture(scope="module")
+def packed_backup_to_tamper(cluster):
+    # One good packed backup; each tamper case damages its own copy.
+    node = cluster.instances["node"]
+    name = f"tamper_{uuid.uuid4().hex}"
+    try:
+        _small_packed_table(node, name)
+        node.query(
+            f"BACKUP TABLE {name} TO S3('http://minio1:9001/root/data/backups/{name}', 'minio', '{minio_secret_key}') "
+            "SETTINGS backup_use_packed_format=1"
+        )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+    prefix = f"data/backups/{name}/"
+    objects = {}
+    for item in _list_backup_objects(cluster, name):
+        response = cluster.minio_client.get_object("root", item.object_name)
+        try:
+            objects[item.object_name[len(prefix):]] = response.read()
+        finally:
+            response.close()
+            response.release_conn()
+    assert any(key.startswith("packs_") for key in objects), sorted(objects)
+    return name, objects
+
+
+# Restore must reject any disagreement between the manifest's <packed> markers and the pack indexes (membership or
+# byte ranges): a dropped member would read as an own object of the same data_file_name.
+@pytest.mark.parametrize(
+    "mode, expected_error",
+    [
+        ("drop_index_member", "marked as packed in the metadata but no pack contains it"),
+        ("shrink_index_member", "in the pack index but the metadata declares"),
+        # Without <num_packs> no pack index is loaded, so only the manifest's <packed> markers can catch it.
+        ("drop_num_packs", "marked as packed in the metadata but no pack contains it"),
+        ("drop_markers", "is not marked as packed in the metadata"),
+        ("downgrade_version", "predates the packed format"),
+    ],
+)
+def test_restore_from_s3_tampered_packed_format(cluster, packed_backup_to_tamper, mode, expected_error):
+    node = cluster.instances["node"]
+    name, objects = packed_backup_to_tamper
+    tampered = dict(objects)
+    _tamper_packed_backup(tampered, mode)
+    copy_name = f"{name}_{mode}_{uuid.uuid4().hex}"
+    for key, data in tampered.items():
+        cluster.minio_client.put_object("root", f"data/backups/{copy_name}/{key}", io.BytesIO(data), len(data))
+
+    try:
+        error = node.query_and_get_error(
+            f"RESTORE TABLE {name} AS {copy_name} "
+            f"FROM S3('http://minio1:9001/root/data/backups/{copy_name}', 'minio', '{minio_secret_key}')"
+        )
+        assert expected_error in error, error
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {copy_name} SYNC")
 
 
 @pytest.fixture(scope="module")

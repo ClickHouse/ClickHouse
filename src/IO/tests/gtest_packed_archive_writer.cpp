@@ -44,7 +44,7 @@ private:
     void nextImpl() override {}
     void cancelImpl() noexcept override { cancel_called = true; }
 
-    char memory[16];
+    char memory[16] = {};
     bool & cancel_called;
 };
 
