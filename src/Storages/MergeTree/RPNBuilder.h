@@ -101,6 +101,8 @@ public:
 bool isLosslessConversionFunction(const ActionsDAG::Node & node, bool allow_drop_nullable = true);
 
 /// Strips lossless conversions (see above) from the node. Indexes are analyzed on the expression under them.
+/// Also strips `CAST(CAST(x, 'Dynamic'), T)` when `x` converts to `T` without dropping `Nullable` and is not
+/// a top-level `String` or `FixedString`, which `Dynamic` may parse into another type.
 RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node, bool allow_drop_nullable = true);
 const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node, bool allow_drop_nullable = true);
 

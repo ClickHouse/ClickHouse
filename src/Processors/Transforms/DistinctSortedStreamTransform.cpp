@@ -4,6 +4,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/SortCursor.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
+#include <Columns/replaceNegativeZeros.h>
 
 namespace DB
 {
@@ -74,6 +75,10 @@ void DistinctSortedStreamTransform::initChunkProcessing(const Columns & input_co
     other_columns.clear();
     for (size_t pos : other_columns_pos)
         other_columns.emplace_back(input_columns[pos].get());
+
+    /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+    other_columns_holder.clear();
+    replaceNegativeZeros(other_columns, other_columns_holder);
 
     if (!other_columns.empty() && data.type == ClearableSetVariants::Type::EMPTY)
         data.init(ClearableSetVariants::chooseMethod(other_columns, other_columns_sizes));

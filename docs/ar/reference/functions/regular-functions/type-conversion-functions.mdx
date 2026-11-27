@@ -19,31 +19,41 @@ doc_type: 'reference'
 
 مثال:
 
-```sql
+```sql title="Query"
 SELECT
     toTypeName(toLowCardinality('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
+```
 
+```text title="Response"
 ┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
 │ LowCardinality(String) │ LowCardinality(String) │ String           │
 └────────────────────────┴────────────────────────┴──────────────────┘
+```
 
+```sql title="Query"
 SELECT
     toTypeName(toNullable('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
+```
 
+```text title="Response"
 ┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
 │ Nullable(String) │ Nullable(String)    │ String           │
 └──────────────────┴─────────────────────┴──────────────────┘
+```
 
+```sql title="Query"
 SELECT
     toTypeName(toNullable('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
 SETTINGS cast_keep_nullable = 1
+```
 
+```text title="Response"
 ┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
 │ Nullable(String) │ Nullable(String)    │ Nullable(String) │
 └──────────────────┴─────────────────────┴──────────────────┘
@@ -119,6 +129,50 @@ LIMIT 10
 يحوّل قيمة إلى نوع البيانات المحدد.
 وعلى خلاف الدالة reinterpret، تحاول CAST إنتاج القيمة نفسها في النوع الهدف.
 إذا لم يكن ذلك ممكنًا، يُرفَع استثناء.
+
+تُزيل `CAST` الغلاف `LowCardinality`. وفي المقابل، تحتفظ به الدوال `to<Type>`.
+كما تحتفظ الدوال `to<Type>` بالغلاف `Nullable`. أما `CAST` فتُزيل `Nullable` افتراضيًا، لكنها
+تحتفظ به عند تفعيل الإعداد [`cast_keep_nullable`](/ar/reference/settings/session-settings/cast#cast_keep_nullable).
+
+```sql title="Query"
+SELECT
+    toTypeName(toLowCardinality('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
+│ LowCardinality(String) │ LowCardinality(String) │ String           │
+└────────────────────────┴────────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ String           │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+SETTINGS cast_keep_nullable = 1
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ Nullable(String) │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
 
 عندما تُكتب `x` في صورة عدد وتكون `T` من نوع `Decimal` أو نوع عدد صحيح يزيد عرضه على 64 بت، تُقرأ أرقام
 العدد مباشرةً باستخدام `T`، فلا تُفقد الدقة أثناء التحويل. ولولا ذلك، لقرأت
@@ -2726,17 +2780,17 @@ toBFloat16('42.7'):            42.5
 
 أُضيفت في: v1.1.0
 
-تحوِّل قيمة إدخال من نوع String إلى قيمة من النوع BFloat16.
-إذا كانت السلسلة النصية لا تمثِّل قيمة عددية بفاصلة عائمة، فتعيد الدالة NULL.
+تحوِّل قيمة إدخال من نوع String إلى قيمة من النوع BFloat16.
+إذا كانت السلسلة النصية لا تمثِّل قيمة عددية بفاصلة عائمة، فتعيد الدالة NULL.
 
 الوسيطات المدعومة:
 
-* التمثيلات النصية للقيم الرقمية.
+* التمثيلات النصية للقيم العددية.
 
 الوسيطات غير المدعومة (تعيد `NULL`):
 
 * التمثيلات النصية للقيم الثنائية والسداسية العشرية.
-* القيم الرقمية.
+* القيم العددية.
 
 <Note>
   تسمح الدالة بفقدان الدقة بصمت أثناء التحويل من التمثيل النصي.
@@ -2747,7 +2801,7 @@ toBFloat16('42.7'):            42.5
 * [`toBFloat16`](#toBFloat16).
 * [`toBFloat16OrZero`](#toBFloat16OrZero).
 
-**البنية**
+**الصيغة**
 
 ```sql
 toBFloat16OrNull(x)
@@ -2755,7 +2809,7 @@ toBFloat16OrNull(x)
 
 **الوسيطات**
 
-* `x` — تمثيل نصي لرقم. [`String`](/ar/reference/data-types/string)
+* `x` — التمثيل النصي لعدد. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 

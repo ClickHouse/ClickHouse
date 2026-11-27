@@ -61,7 +61,8 @@ SELECT p, id, v FROM t_update_in_partition_pinned_r2 ORDER BY id SETTINGS apply_
 
 SYSTEM START MERGES t_update_in_partition_pinned_r1;
 SYSTEM START MERGES t_update_in_partition_pinned_r2;
-ALTER TABLE t_update_in_partition_pinned_r1 UPDATE v = v WHERE 0 SETTINGS mutations_sync = 2;
+-- Not `WHERE 0`: on a replicated table that mutation is pruned to no partition and would not wait for the scoped one.
+ALTER TABLE t_update_in_partition_pinned_r1 UPDATE v = v WHERE 1 SETTINGS mutations_sync = 2;
 SYSTEM SYNC REPLICA t_update_in_partition_pinned_r2;
 
 SELECT 'replicated: after it materialized';

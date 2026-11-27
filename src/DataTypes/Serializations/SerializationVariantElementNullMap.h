@@ -102,7 +102,7 @@ public:
             size_t num_variants_ = 0);
 
         [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override;
-        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
+        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev, const DataTypePtr &) const override;
         [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
     };
 private:

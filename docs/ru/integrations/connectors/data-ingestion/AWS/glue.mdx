@@ -16,13 +16,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 [Amazon Glue](https://aws.amazon.com/glue/) — это полностью управляемый бессерверный сервис интеграции данных от Amazon Web Services (AWS). Он упрощает поиск, подготовку и преобразование данных для аналитики, машинного обучения и разработки приложений.
 
-<div id="installation">
-  ## Установка
-</div>
+## Установка {#installation}
 
 Чтобы интегрировать код для Glue с ClickHouse, вы можете использовать наш официальный Spark-коннектор в Glue одним из следующих способов:
 
-* Установить коннектор ClickHouse Glue из AWS Marketplace (рекомендуется).
+* Установить коннектор ClickHouse для Glue из AWS Marketplace (рекомендуется).
 * Вручную добавить JAR-файлы Spark-коннектора в задачу Glue.
 
 <Tabs>
@@ -40,13 +38,9 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
         После оформления подписки выберите версию Glue, соответствующую требованиям вашей задачи. В разделе **Additional details**, в подразделе **Usage instructions** нажмите ссылку **Open Glue Studio - Add ClickHouse connector**. Откроется страница создания подключения Glue с уже заполненными ключевыми полями. Задайте имя подключения и нажмите Create (на этом этапе указывать сведения о подключении к ClickHouse не нужно).
 
         <div className="ch-image-md">
-
-        <Frame>
-
-        ![AWS Marketplace usage instructions for ClickHouse Glue connector](/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png)
-
-        </Frame>
-
+          <Frame>
+            ![AWS Marketplace usage instructions for коннектор ClickHouse для Glue](/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png)
+          </Frame>
         </div>
       </Step>
 
@@ -54,13 +48,9 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
         В задаче Glue выберите вкладку `Job details` и раскройте раздел `Advanced properties`. В разделе `Connections` выберите только что созданное подключение. Коннектор автоматически добавит необходимые JAR-файлы в среду выполнения задачи.
 
         <div className="ch-image-md">
-
-        <Frame>
-
-        ![Glue Notebook connections config](/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp)
-
-        </Frame>
-
+          <Frame>
+            ![Glue Notebook connections config](/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp)
+          </Frame>
         </div>
 
         <Note>
@@ -89,13 +79,9 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
         На вкладке `Job details` прокрутите страницу вниз, раскройте список `Advanced properties` и укажите путь к JAR-файлам в поле `Dependent JARs path`:
 
         <div className="ch-image-md">
-
-        <Frame>
-
-        ![Glue Notebook JAR path options](/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp)
-
-        </Frame>
-
+          <Frame>
+            ![Glue Notebook JAR path options](/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp)
+          </Frame>
         </div>
       </Step>
     </Steps>
@@ -103,13 +89,13 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 </Tabs>
 
 <div id="secrets-manager">
-  ## Использование AWS Secrets Manager для учетных данных
+  ## Использование AWS Secrets Manager для учетных данных {#secrets-manager}
 </div>
 
 Вместо того чтобы явно указывать пользователя и пароль ClickHouse в задаче, сохраните их в [AWS Secrets Manager](https://docs.aws.amazon.com/secretsmanager/) и используйте секрет в подключении Glue или в скрипте задачи. Во время выполнения Glue извлекает секрет и добавляет его пары ключ-значение в параметры подключения коннектора.
 
 <div id="create-secret">
-  ### Создайте секрет
+  ### Создайте секрет {#create-secret}
 </div>
 
 В AWS Secrets Manager создайте секрет типа **Другой тип секрета** с парами ключ-значение, где ключи совпадают с именами параметров коннектора:
@@ -122,7 +108,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 Любой ключ, добавленный в секрет, будет передан коннектору, поэтому там также можно хранить `host`, `database` или любой другой параметр, если вы не хотите хранить их в коде.
 
 <div id="reference-secret">
-  ### Укажите секрет
+  ### Укажите секрет {#reference-secret}
 </div>
 
 Есть два способа передать секрет в задачу.
@@ -165,26 +151,20 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 Ключи `user` и `password` из секрета добавляются к параметрам коннектора во время выполнения, поэтому читать их в скрипте не нужно.
 
-<div id="example">
-  ## Примеры
-</div>
+## Примеры {#example}
 
-В примерах ниже используется `marketplace.spark`, а для ссылки на коннектор — `connectionName`. Если вы установили коннектор вручную (вкладка Установка вручную), используйте `connection_type="custom.spark"` и вместо него передавайте `className`, `host`, `http_port`, `user` и `password` напрямую в параметре options.
+В примерах ниже используется `marketplace.spark`, а для ссылки на коннектор — `connectionName`. Если вы установили коннектор вручную (вкладка Установка вручную), используйте `connection_type="custom.spark"` и вместо него передавайте `className`, `host`, `http_port`, `user` и `password` напрямую в параметрах.
 
-Если вы привязали секрет AWS к самому подключению (вариант 1 в разделе [Использование AWS Secrets Manager для учетных данных](#secrets-manager)), уберите `secretId` из options — Glue автоматически получит учетные данные из подключения.
+Если вы привязали секрет AWS к самому подключению (вариант 1 в разделе [Использование AWS Secrets Manager для учетных данных](#secrets-manager)), уберите `secretId` из параметров — Glue автоматически получит учетные данные из подключения.
 
 <Tabs>
   <Tab title="Визуальный редактор">
     Вы можете использовать коннектор ClickHouse как источник или целевое назначение в визуальном редакторе Glue Studio. Просто перетащите компонент Spark-коннектора ClickHouse на холст и подключите его к своему конвейеру данных.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Визуальный редактор Glue Studio с коннектором ClickHouse](/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png)
-
-    </Frame>
-
+      <Frame>
+        ![Визуальный редактор Glue Studio с коннектором ClickHouse](/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png)
+      </Frame>
     </div>
   </Tab>
 

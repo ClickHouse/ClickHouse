@@ -10,6 +10,7 @@
 #include <utility>
 #include <filesystem>
 #include <IO/ByteRangeSet.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 namespace fs = std::filesystem;
 
@@ -80,6 +81,10 @@ void MergeTreeReaderStream::init()
     if (!read_settings.local_fs_settings.buffer_size || !read_settings.remote_fs_settings.buffer_size)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
+    /// The reader bounds its reads at the right offset of its last mark, see `adjustRightMark`. Knowing it up front
+    /// lets a pipeline stage that reads before the bound is set, such as the encryption header, already use it.
+    const size_t right_offset = getRightOffset(getLastMark(all_mark_ranges));
+
     auto build_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
     {
         ReadPipeline pipeline;
@@ -88,6 +93,8 @@ void MergeTreeReaderStream::init()
             read_settings,
             estimated_sum_mark_range_bytes,
             pipeline);
+        if (right_offset)
+            pipeline.setInitialReadUntilPosition(right_offset);
 
         return pipeline.build();
     };
@@ -111,7 +118,7 @@ void MergeTreeReaderStream::init()
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
-            [this, estimated_sum_mark_range_bytes, read_settings]()
+            [this, estimated_sum_mark_range_bytes, read_settings, right_offset]()
                 -> std::unique_ptr<ReadBufferFromFileBase>
             {
                 auto local_component_guard = Coordination::setCurrentComponent("MergeTreeReaderStream::create_buffer");
@@ -121,6 +128,8 @@ void MergeTreeReaderStream::init()
                     read_settings,
                     estimated_sum_mark_range_bytes,
                     pipeline);
+                if (right_offset)
+                    pipeline.setInitialReadUntilPosition(right_offset);
 
                 return pipeline.build();
             },
@@ -154,6 +163,9 @@ void MergeTreeReaderStream::init()
         data_buffer = read_buffer_holder.get();
         compressed_data_buffer = static_cast<CompressedReadBufferFromFile *>(read_buffer_holder.get());
     }
+
+    if (compressed_data_buffer)
+        compressed_data_buffer->setRangesReadSink(ranges_read);
 
     announceReadRequestMap();
 
@@ -326,6 +338,81 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
 {
     init();
     return data_buffer;
+}
+
+ReadRangesRegistry::ReadRangesRegistry(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_)
+    : block(std::move(block_))
+    , duplicated(duplicated_)
+{
+}
+
+ReadRangesRegistry::ReadRanges & ReadRangesRegistry::getReadRanges(const String & path)
+{
+    std::lock_guard lock(mutex);
+    /// References to the elements of an unordered map stay valid when it grows.
+    return read_ranges_by_path[path];
+}
+
+size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges)
+{
+    std::lock_guard lock(mutex);
+    size_t bytes = 0;
+    for (const auto & [begin, end] : ranges)
+    {
+        chassert(begin <= end);
+        /// The first counted range that overlaps or touches the range.
+        auto it = united_ranges.upper_bound(begin);
+        if (it != united_ranges.begin() && std::prev(it)->second >= begin)
+            --it;
+        if (it == united_ranges.end() || it->first > end)
+        {
+            bytes += end - begin;
+            united_ranges.emplace_hint(it, begin, end);
+            continue;
+        }
+
+        /// Merge the range and the counted ranges it overlaps or touches into the first of them, which is extended in place,
+        /// as reading goes on from where the previous block ended.
+        const auto first = it;
+        size_t covered = 0;
+        size_t merged_end = end;
+        for (; it != united_ranges.end() && it->first <= end; ++it)
+        {
+            if (it->second > begin && it->first < end)
+                covered += std::min(end, it->second) - std::max(begin, it->first);
+            merged_end = std::max(merged_end, it->second);
+        }
+        bytes += end - begin - covered;
+        first->second = merged_end;
+        united_ranges.erase(std::next(first), it);
+        if (begin < first->first)
+        {
+            auto node = united_ranges.extract(first);
+            node.key() = begin;
+            united_ranges.insert(std::move(node));
+        }
+    }
+    ranges.clear();
+    return bytes;
+}
+
+void ReadRangesRegistry::registerRanges(ReadRanges & file_ranges, CompressedBlockRanges & ranges)
+{
+    if (ranges.empty())
+        return;
+
+    const size_t bytes = file_ranges.add(ranges);
+    (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(bytes, std::memory_order_relaxed);
+}
+
+void MergeTreeReaderStream::setRangesReadSink(CompressedBlockRanges * ranges_read_)
+{
+    if (!settings.is_compressed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot count the compressed blocks read from a stream of uncompressed data");
+    /// The buffer is created on the first read, see `init`.
+    ranges_read = ranges_read_;
+    if (compressed_data_buffer)
+        compressed_data_buffer->setRangesReadSink(ranges_read);
 }
 
 size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
