@@ -9456,6 +9456,24 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
         std::set<CommittingBlock::Op> ops{CommittingBlock::Op::NewPart, CommittingBlock::Op::Mutation};
         waitForCommittingOpsToFinish(zookeeper, context_copy->getPartitionIdToMaxBlock(getStorageID().uuid), ops, backoff_ms, sync_timeout);
     }
+    else
+    {
+        /// The wait above pulls the mutations into the queue. Without it, a mutation that has a block number but is not
+        /// created in Keeper yet is not seen below, like the other committing operations this setting does not wait for.
+        queue.updateMutations(zookeeper);
+    }
+
+    /// The patch of the update would store the values of `_block_number` and `_block_offset` of the parts the mutation has
+    /// not rewritten yet, and it would be applied to the rewritten parts, which have other values: to other rows or to none.
+    auto metadata_snapshot_handle = getInMemoryMetadataPtr(context_copy, false);
+    StorageMetadataPtr metadata_snapshot = metadata_snapshot_handle;
+    if (auto mutations = queue.getUnfinishedClearsOfBlockColumns(*context_copy->getPartitionIdToMaxBlock(getStorageID().uuid), *metadata_snapshot);
+        !mutations.empty())
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot execute a lightweight update, because mutation {} that clears columns `_block_number` and `_block_offset` "
+            "is not finished. Wait until it finishes, or kill it", fmt::join(mutations, ", "));
+    }
 
     /// With `enable_shared_storage_snapshot_in_query` the update reads with the snapshot of this table
     /// cached for the whole query. Anything analyzed before this point may have cached one: the pruning
