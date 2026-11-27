@@ -1563,27 +1563,71 @@ ColumnPtr FunctionArrayElement<mode>::executeConst(
     const IColumn & array_elements = col_array->getData();
     size_t array_size = array_elements.size();
 
-    for (size_t i = 0; i < rows; ++i)
+    auto execute = [&](auto && insert_value, auto && insert_default)
     {
-        IndexType index = indices[i];
-        if (index > 0 && static_cast<size_t>(index) <= array_size)
+        for (size_t i = 0; i < rows; ++i)
         {
-            size_t j = index - 1;
-            res->insertFrom(array_elements, j);
-            builder.update(j);
+            IndexType index = indices[i];
+            if (index > 0 && static_cast<size_t>(index) <= array_size)
+            {
+                size_t j = index - 1;
+                insert_value(j);
+                builder.update(j);
+            }
+            else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
+            {
+                size_t j = array_size - common::negateIgnoreOverflow(static_cast<size_t>(index));
+                insert_value(j);
+                builder.update(j);
+            }
+            else
+            {
+                insert_default();
+                builder.update();
+            }
         }
-        else if (index < 0 && common::negateIgnoreOverflow(static_cast<size_t>(index)) <= array_size)
+    };
+
+    const auto * nested_arrays = typeid_cast<const ColumnArray *>(&array_elements);
+    auto * result_arrays = typeid_cast<ColumnArray *>(res.get());
+    if (nested_arrays && result_arrays)
+    {
+        const auto & source_values = nested_arrays->getData();
+        const IColumn * leaf = &source_values;
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(leaf))
+            leaf = &nullable->getNestedColumn();
+
+        /// Inspect the constant input once, rather than classifying every inserted row.
+        /// Composite and dictionary values keep their original range-insertion semantics.
+        if (leaf->isFixedAndContiguous() || typeid_cast<const ColumnString *>(leaf))
         {
-            size_t j = array_size + index;
-            res->insertFrom(array_elements, j);
-            builder.update(j);
-        }
-        else
-        {
-            res->insertDefault();
-            builder.update();
+            const auto & source_offsets = nested_arrays->getOffsets();
+            auto & result_values = result_arrays->getData();
+            auto & result_offsets = result_arrays->getOffsets();
+            /// Keep range insertion for the first nonempty copy and its initial allocation.
+            bool copied_data = false;
+            execute(
+                [&](size_t j)
+                {
+                    const size_t offset = source_offsets[static_cast<ssize_t>(j) - 1];
+                    const size_t length = source_offsets[j] - offset;
+                    if (length == 1 && copied_data)
+                        result_values.insertFrom(source_values, offset);
+                    else if (length)
+                        result_values.insertRangeFrom(source_values, offset, length);
+                    result_offsets.push_back(result_offsets.back() + length);
+                    copied_data |= length != 0;
+                },
+                [&]
+                {
+                    const auto offset = result_offsets.back();
+                    result_offsets.push_back(offset);
+                });
+            return res;
         }
     }
+
+    execute([&](size_t j) { res->insertFrom(array_elements, j); }, [&] { res->insertDefault(); });
 
     return res;
 }

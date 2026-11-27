@@ -1,0 +1,38 @@
+<test iceberg="0">
+    <!-- Requires `LowCardinality` dictionaries, which the Iceberg rewrite removes. -->
+    <create_query>
+        CREATE TABLE lc_sort_singleton (a Array(LowCardinality(String)), k UInt64)
+        ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0
+    </create_query>
+    <create_query>
+        INSERT INTO lc_sort_singleton
+        SELECT [if(number % 2 = 0, repeat('x', 8192), repeat('y', 8192))], cityHash64(number)
+        FROM numbers(1000000)
+        SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 8192
+    </create_query>
+    <create_query>
+        CREATE TABLE lc_sort_pair (a Array(LowCardinality(String)), k UInt64)
+        ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0
+    </create_query>
+    <create_query>
+        INSERT INTO lc_sort_pair
+        SELECT arrayResize(a, 2, a[1]), k FROM lc_sort_singleton
+        SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 8192
+    </create_query>
+    <create_query>
+        CREATE TABLE lc_sort_tuple (a Array(Tuple(LowCardinality(String))), k UInt64)
+        ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0
+    </create_query>
+    <create_query>
+        INSERT INTO lc_sort_tuple SELECT [tuple(a[1])], k FROM lc_sort_singleton
+        SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 8192
+    </create_query>
+
+    <query>SELECT a FROM lc_sort_singleton ORDER BY k SETTINGS max_threads = 1, max_block_size = 8192, optimize_read_in_order = 0 FORMAT Null</query>
+    <query>SELECT a FROM lc_sort_pair ORDER BY k SETTINGS max_threads = 1, max_block_size = 8192, optimize_read_in_order = 0 FORMAT Null</query>
+    <query>SELECT a FROM lc_sort_tuple ORDER BY k SETTINGS max_threads = 1, max_block_size = 8192, optimize_read_in_order = 0 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS lc_sort_singleton</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lc_sort_pair</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lc_sort_tuple</drop_query>
+</test>

@@ -578,3 +578,26 @@ TEST(ColumnArrayDeathTest, ConstNestedColumnIsRejected)
 }
 
 #endif
+
+TEST(ColumnArray, InsertSingletonFromSelfAcrossNestedCapacity)
+{
+    auto data = ColumnUInt64::create();
+    data->insertValue(42);
+    const size_t capacity = data->getData().capacity();
+    while (data->size() < capacity)
+        data->insertValue(data->size());
+
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    for (size_t i = 0; i < data->size(); ++i)
+        offsets->insertValue(i + 1);
+    auto column = ColumnArray::create(std::move(data), std::move(offsets));
+
+    column->insertFrom(*column, 0);
+
+    EXPECT_EQ(column->size(), capacity + 1);
+    EXPECT_EQ(column->getData().size(), capacity + 1);
+    EXPECT_EQ(column->getOffsets().back(), capacity + 1);
+    EXPECT_EQ(column->getData().getUInt(capacity), 42);
+    for (size_t i = 1; i < capacity; ++i)
+        EXPECT_EQ(column->getData().getUInt(i), i);
+}
