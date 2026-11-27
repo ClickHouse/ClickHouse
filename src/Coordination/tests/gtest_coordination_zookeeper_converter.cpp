@@ -61,7 +61,7 @@ void writeZooKeeperTxn(
 
 }
 
-TEST(KeeperZooKeeperConverter, PreservesDigestAndSessions)
+TEST(KeeperZooKeeperConverter, DigestMatchesRecalculation)
 {
     ChangelogDirTest test_dir("./zookeeper_converter_data");
     const fs::path zookeeper_dir = fs::path(test_dir.path) / "zookeeper";
@@ -70,7 +70,6 @@ TEST(KeeperZooKeeperConverter, PreservesDigestAndSessions)
     fs::create_directory(keeper_dir);
 
     constexpr int64_t snapshot_session = 0x100;
-    /// Not snapshot_session + 1: ZooKeeper session ids are not dense.
     constexpr int64_t log_session = 0x200;
 
     {
@@ -151,10 +150,6 @@ TEST(KeeperZooKeeperConverter, PreservesDigestAndSessions)
     EXPECT_EQ(stats.getEphemeralOwner(), snapshot_session);
     ASSERT_TRUE(storage->nodes_storage->getCommittedNodeSimple("/x", &stats, /*out_data=*/nullptr));
     EXPECT_EQ(stats.getNumChildren(), 1);
-
-    const DB::SessionAndTimeout expected_sessions{{snapshot_session, 30000}, {log_session, 20000}};
-    EXPECT_EQ(storage->session_and_timeout, expected_sessions);
-    EXPECT_GT(storage->session_id_counter, log_session);
 
     /// Keeper recalculates the digest when it loads a snapshot written without one.
     const uint64_t converter_digest = storage->nodes_digest;

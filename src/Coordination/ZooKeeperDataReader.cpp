@@ -584,8 +584,7 @@ static bool deserializeTxn(KeeperMemoryStorage & storage, ReadBuffer & in, Logge
         if (request->getOpNum() == Coordination::OpNum::SessionID)
         {
             const Coordination::ZooKeeperSessionIDRequest & session_id_request = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request);
-            storage.addSessionID(session_id, session_id_request.session_timeout_ms);
-            storage.session_id_counter = std::max(storage.session_id_counter, session_id + 1);
+            storage.getSessionID(session_id_request.session_timeout_ms);
         }
         else
         {
