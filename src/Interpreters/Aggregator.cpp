@@ -36,6 +36,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/Combining/AdaptiveRowSelection.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -461,6 +462,7 @@ Aggregator::Params::Params(
     UInt64 adaptive_aggregator_freeze_threshold_,
     UInt64 adaptive_aggregator_freeze_threshold_bytes_,
     bool adaptive_aggregator_disable_thaw_,
+    bool adaptive_aggregator_combine_arg_min_max_,
     bool use_aggregation_memory_tracker_)
     : keys(keys_)
     , keys_size(keys.size())
@@ -489,6 +491,7 @@ Aggregator::Params::Params(
     , adaptive_aggregator_freeze_threshold(adaptive_aggregator_freeze_threshold_)
     , adaptive_aggregator_freeze_threshold_bytes(adaptive_aggregator_freeze_threshold_bytes_)
     , adaptive_aggregator_disable_thaw(adaptive_aggregator_disable_thaw_)
+    , adaptive_aggregator_combine_arg_min_max(adaptive_aggregator_combine_arg_min_max_)
     , use_aggregation_memory_tracker(use_aggregation_memory_tracker_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , enable_parallel_single_level_merge(enable_parallel_single_level_merge_)
@@ -1026,7 +1029,17 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     if (params.enable_adaptive_aggregator && params.aggregates_size)
     {
-        adaptive_argument_layout = AdaptiveArgumentLayout::build(header_, keys_positions, aggregates_positions);
+        if (params.adaptive_aggregator_combine_arg_min_max)
+            adaptive_row_selection = adaptiveRowSelectionOf(params.aggregates);
+        /// A row selection under the bucket top-K counts rows, because its rank is then a `count` of rows:
+        /// the other ranks, `uniqExact`, `uniqExactIf` and `count` of a `Nullable` argument, depend on every
+        /// row. The count bins and the count-first units add the rows that each record carries.
+        chassert(!adaptive_row_selection || !params.bucket_top_k || adaptive_row_selection->countsRows());
+        adaptive_argument_layout = AdaptiveArgumentLayout::build(
+            header_,
+            keys_positions,
+            aggregates_positions,
+            /*with_multiplicity=*/adaptive_row_selection && adaptive_row_selection->countsRows());
         /// Distinct tuples of the arguments describe one set-valued aggregate. Multiple independent sets
         /// can have different reduction factors, so they cannot share this estimate. The fixed states of
         /// the other aggregates are covered by the per-key state cost.

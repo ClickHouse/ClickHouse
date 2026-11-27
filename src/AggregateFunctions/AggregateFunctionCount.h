@@ -143,6 +143,11 @@ public:
     /// their saturating sum - see `MergedValueBound::Subadditive`.
     MergedValueBound getMergedValueBound() const override { return MergedValueBound::Subadditive; }
 
+    [[nodiscard]] AggregateFunctionRowSelection getRowSelection() const override
+    {
+        return {.kind = AggregateFunctionRowSelection::Kind::RowCount};
+    }
+
     /// Reset the state to specified value. This function is not the part of common interface.
     static void set(AggregateDataPtr __restrict place, UInt64 new_count)
     {

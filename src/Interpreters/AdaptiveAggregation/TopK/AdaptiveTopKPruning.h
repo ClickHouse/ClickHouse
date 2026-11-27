@@ -74,6 +74,18 @@ public:
         bin = static_cast<UInt16>(std::min<UInt64>(UInt64{bin} + contribution, std::numeric_limits<UInt16>::max()));
     }
 
+    /// Takes `rows` rows out of the bin of `hash`. The caller guarantees that `add` put them there. A
+    /// saturated bin holds an unknown number of rows, so it stays saturated. Any other bin never saturated,
+    /// so it holds every row added to it, and the rows come out exactly.
+    ALWAYS_INLINE void remove(UInt64 hash, UInt64 rows)
+    {
+        UInt16 & bin = bins[adaptiveCountBin(hash)];
+        if (bin == std::numeric_limits<UInt16>::max())
+            return;
+        chassert(bin >= rows);
+        bin = static_cast<UInt16>(bin - rows);
+    }
+
 private:
     friend class AdaptiveTopKPruning;
 

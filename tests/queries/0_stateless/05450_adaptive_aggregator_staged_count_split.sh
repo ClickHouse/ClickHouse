@@ -4,16 +4,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A count record of the adaptive aggregator holds the number of rows of its key within a block. A key whose bytes are
-# staged takes one record whatever the count: a count from 255 on takes the escape byte 255 and four more bytes. A
-# fixed-width key's record holds up to 255 rows, and the staging splits a larger count into several records, which the
-# merge adds up. The keys come in runs of equal rows, which stay together within the blocks of `numbers_mt`, and the
-# frozen tables hold only the first keys, so nearly every run is staged as one count. The `String` keys' runs of
-# exactly 255 rows need the long form of the count, since their count equals the escape byte: the merge drains as many
-# records as the staging counted misses. The `UInt64` keys' runs of 300 rows are split, so the merge drains more
-# records than the staging counted misses. Each check compares the result with the one of the feature off and requires
-# staged records, so it cannot pass without the staging; it runs in a clickhouse-local process of its own, so the
-# counters in `system.events` belong to it alone.
+# A count record of the adaptive aggregator holds the rows of its key that one producer combined into it. A
+# key whose bytes are staged takes one record whatever the count: a count from 255 on takes the escape byte
+# 255 and four more bytes. A fixed-width key's record holds up to 255 rows, and the staging splits a larger
+# count into several records, which the merge adds up. The keys come in runs of equal rows, which stay
+# together within the blocks of `numbers_mt`, and the frozen tables hold only the first keys, so nearly every
+# run is staged as one count. The `String` keys' runs of exactly 255 rows need the long form of the count,
+# since their count equals the escape byte: the merge drains as many records as the staging counted misses.
+# The `UInt64` keys' runs of 300 rows are split, so the merge drains more records than the staging counted
+# misses. Each check compares the result with the one of the feature off and requires staged records, so it
+# cannot pass without the staging; it runs in a clickhouse-local process of its own, so the counters in
+# `system.events` belong to it alone.
 function check()
 {
     local label=$1 query=$2 drained_vs_staged=$3

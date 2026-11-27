@@ -491,6 +491,11 @@ void generateSingleValueFromType(const DataTypePtr & type, SingleValueDataBaseMe
 
 bool singleValueTypeAllocatesMemoryInArena(TypeIndex idx);
 
+/// Whether the comparisons of the single-value states order the values of `type` totally, so that the extreme
+/// of several values does not depend on their order. Floating point is excluded, because a `NaN` compares as
+/// neither larger nor smaller, and so are compound types, which may contain floating-point elements.
+bool singleValueTypeIsTotallyOrdered(const DataTypePtr & type);
+
 /// Bridges the single-value Data classes to IAggregateFunction's bulk serialization hooks: only the
 /// fixed-width ones declare a bound, the string and generic ones keep the per-state path.
 template <typename Data>

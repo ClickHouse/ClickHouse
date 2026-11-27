@@ -1,4 +1,4 @@
-#include <Interpreters/AdaptiveAggregation/AdaptiveTopKPruning.h>
+#include <Interpreters/AdaptiveAggregation/TopK/AdaptiveTopKPruning.h>
 
 #include <algorithm>
 #include <limits>

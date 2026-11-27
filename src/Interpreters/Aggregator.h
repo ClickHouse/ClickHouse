@@ -171,6 +171,9 @@ public:
         UInt64 adaptive_aggregator_freeze_threshold = 0;
         UInt64 adaptive_aggregator_freeze_threshold_bytes = 0;
         bool adaptive_aggregator_disable_thaw = false;
+        /// Whether a frozen producer combines the misses of a key into one record, of their best row, when
+        /// every aggregate selects one row by the same ordering column (see `AdaptiveRowSelection`).
+        bool adaptive_aggregator_combine_arg_min_max = false;
 
         bool use_aggregation_memory_tracker = true;
 
@@ -398,6 +401,7 @@ public:
             UInt64 adaptive_aggregator_freeze_threshold_,
             UInt64 adaptive_aggregator_freeze_threshold_bytes_,
             bool adaptive_aggregator_disable_thaw_,
+            bool adaptive_aggregator_combine_arg_min_max_,
             bool use_aggregation_memory_tracker_);
 
         /// Only parameters that matter during merge.
@@ -805,6 +809,9 @@ private:
     /// The record layout of the staged aggregate arguments; set when the adaptive aggregation is engaged and the
     /// query has aggregate functions.
     std::unique_ptr<const AdaptiveArgumentLayout> adaptive_argument_layout;
+    /// Set with the layout when every aggregate selects one row of its group by one ordering column, so the
+    /// misses of a key combine into one record (see `AdaptiveRowSelection`).
+    std::unique_ptr<const AdaptiveRowSelection> adaptive_row_selection;
     /// The sum of `key_sizes`, from which the staged records take the stored width of a packed key (see
     /// `stagedFixedKeyBytes`).
     size_t adaptive_packed_key_bytes = 0;
@@ -1191,13 +1198,12 @@ private:
     /// those of an aggregation by a lone `count` (`with_count`) and those of one without aggregate functions.
     /// A row whose key the local table holds is a hit, which with `with_count` adds one to the key's inline
     /// count. A row of the NULL key that the method keeps in a slot of its own takes no lookup and is only
-    /// counted (see `AdaptiveAggregationProducer::FrozenState`). The other rows become records, and the
-    /// repeats of a missed key combine into its record, which with `with_count` counts the rows it combines.
-    /// A run of one key goes into one record, and while a trial shows that it pays, so do the later rows of
-    /// the key found through a per-partition cache. A batch whose kept key bytes reach their bound is staged
-    /// by `stage_misses` in the middle of the block (see `adaptive_miss_batch_max_key_bytes`); the rest of
-    /// the misses, the rows of the NULL key and the recording of the probe results are left to the caller.
-    /// Returns the hits and the rows of the NULL key.
+    /// counted (see `AdaptiveAggregationProducer::FrozenState`). The other rows become records, and a miss of
+    /// the key of its partition's tail combines into the tail (see `AdaptivePartitionTails`), whose record
+    /// with `with_count` counts the rows it combines. A batch whose kept key bytes reach their bound is
+    /// staged by `stage_misses` in the middle of the block (see `adaptive_miss_batch_max_key_bytes`); the
+    /// rest of the misses, the rows of the NULL key and the recording of the probe results are left to the
+    /// caller. Returns the hits and the rows of the NULL key.
     template <bool with_count, typename RecordKey, typename LocalMethod, typename State, typename StageMisses>
     AdaptiveLocalProbes collectCombinedMisses(
         LocalMethod & local_method,
@@ -1209,9 +1215,12 @@ private:
         bool bypass_local_probe,
         const StageMisses & stage_misses) const;
 
-    /// The probe/staging loop of a block whose records carry aggregate arguments, the counterpart of `collectCombinedMisses`.
-    /// With `record_places` it stores the place of every row in `places_data`, null for a miss. A NULL key goes to its slot
-    /// (`emplace_null_key`) without a lookup and needs a place, so without `record_places` the block has no such rows.
+    /// The probe/staging loop of a block whose records carry aggregate arguments, the counterpart of
+    /// `collectCombinedMisses`. With `record_places` it stores the place of every row in `places_data`, null
+    /// for a miss. A NULL key goes to its slot (`emplace_null_key`) without a lookup and needs a place, so
+    /// without `record_places` the block has no such rows. Under a row selection (`adaptive_row_selection`) a
+    /// miss of the key of its partition's tail combines into the tail, whose record keeps the best of their
+    /// rows (see `AdaptiveMissCombiner`); otherwise every miss is a record.
     template <bool record_places, typename RecordKey, typename LocalMethod, typename State, typename EmplaceNullKey, typename StageMisses>
     AdaptiveLocalProbes collectArgumentMisses(
         LocalMethod & local_method,
@@ -1225,12 +1234,16 @@ private:
         const EmplaceNullKey & emplace_null_key,
         const StageMisses & stage_misses) const;
 
-    /// Appends the producer's batch of misses to its partitions in the format that `visitStagedRecordFormat` selects
-    /// for `Method`, the two-level twin of the producer's table. Each record carries a key and either a multiplicity
-    /// (an aggregation by a lone `count`), no payload (no aggregates), or the row's aggregate arguments laid out by
-    /// `adaptive_argument_layout`, read from the argument columns of the block's `aggregate_instructions`. The records
-    /// of byte-staged keys also carry a hash and lengths; those of fixed-width keys recover the hash from the key when
-    /// drained. Returns what it staged for the accounting of the batch (see `accountStagedBatch`).
+    /// Appends the producer's batch of misses to its partitions in the format that `visitStagedRecordFormat`
+    /// selects for `Method`, the two-level twin of the producer's table. Each record carries a key and either
+    /// a multiplicity (an aggregation by a lone `count`), no payload (no aggregates), or the row's aggregate
+    /// arguments laid out by `adaptive_argument_layout`, read from the argument columns of the block's
+    /// `aggregate_instructions`, with the multiplicity of the combined rows when the layout has one (see
+    /// `AdaptiveRowSelection`). The records of byte-staged keys also carry a hash and lengths; those of
+    /// fixed-width keys recover the hash from the key when drained. The tails of the producer's partitions
+    /// learn where the records went while they are open, and their gate watches the batch while they are
+    /// closed (see `AdaptivePartitionTails::startBatch`). Returns what it staged for the accounting of the
+    /// batch (see `accountStagedBatch`).
     template <typename Method, typename State>
     AdaptiveStagedBytes appendDelayedRecords(
         const AggregateFunctionInstruction * aggregate_instructions,
@@ -1261,8 +1274,9 @@ private:
     /// whose count bin the top-K pruning keeps alive (see `AdaptiveTopKPruning`), or those of the best groups of a
     /// count-first unit. New groups get their states in `arena`, the arena of the unit. String-like keys are emplaced
     /// pointing into the records, which are freed only after the table is converted or written, unless `copy_keys`:
-    /// records read back from a spill go before, so their new keys are copied into `arena` too. Returns how many
-    /// records it skipped.
+    /// records read back from a spill go before, so their new keys are copied into `arena` too. The rows
+    /// that an argument record stands for beyond its own go to the `count` states here (see
+    /// `AdaptiveArgumentLayout::multiplicity_offset`). Returns how many records it skipped.
     template <typename Method, bool copy_keys, typename Table, typename Filter>
     size_t drainAdaptivePartition(
         Table & table,
@@ -1272,13 +1286,15 @@ private:
         PaddedPODArray<AggregateDataPtr> & places,
         RowPointers & records) const;
 
-    /// Counts the groups of one partition's argument records into `counting_table`, only those whose routing hash
-    /// `filter` takes: a record adds one row to the count its group keeps in the mapped value, as a lone `count()`
-    /// keeps it, and builds no state. `update_candidates(count, key, hash, copy_key)` then takes the grown count by
-    /// reference, so a tracker of the best groups can keep its metadata in the count's high bits. String-like keys
-    /// point into the records, unless `copy_keys`: records read back from a spill go before the counting ends, so the
-    /// counting table copies its new keys into `arena`, and the tracker keeps copies of its own, which `copy_key`
-    /// asks for. Returns how many records it skipped.
+    /// Counts the groups of one partition's argument records into `counting_table`, only those whose routing
+    /// hash `filter` takes: a record adds the rows it stands for to the count its group keeps in the mapped
+    /// value, as a lone `count()` keeps it, and builds no state. A record stands for one row, or for the rows
+    /// that a row selection combined into it (see `AdaptiveRowSelection`).
+    /// `update_candidates(count, key, hash, copy_key)` then takes the grown count by reference, so a tracker
+    /// of the best groups can keep its metadata in the count's high bits. String-like keys point into the
+    /// records, unless `copy_keys`: records read back from a spill go before the counting ends, so the
+    /// counting table copies its new keys into `arena`, and the tracker keeps copies of its own, which
+    /// `copy_key` asks for. Returns how many records it skipped.
     template <typename Method, bool copy_keys, typename Table, typename Filter, typename UpdateCandidates>
     requires MapAggregationMethod<Method>
     size_t countPartitionGroups(
@@ -1406,11 +1422,15 @@ private:
         std::span<UInt64> bounds,
         Arena * arena) const;
 
-    /// Writes the staged records of `partitions`, a producer's or a finished producer's handed over to `shared`, to the
-    /// session's spill streams, a block per partition, and frees them; a producer then keeps appending into new chunks.
-    /// Called over the external-aggregation threshold and on request of the memory scheduler (see
-    /// `spillAdaptiveProducer` and `spillHandedOverStagedRecords`).
+    /// Writes the staged records of `partitions`, a producer's or a finished producer's handed over to
+    /// `shared`, to the session's spill streams, a block per partition, and frees them; a producer then keeps
+    /// appending into new chunks. Called over the external-aggregation threshold and on request of the memory
+    /// scheduler (see `spillAdaptiveStagedRecords` and `spillHandedOverStagedRecords`).
     void spillAdaptivePartitions(AdaptiveAggregationSession & shared, PartitionedRecordBuffer & partitions) const;
+
+    /// Writes the staged records of a running producer to disk (see `spillAdaptivePartitions`) and drops the
+    /// tails of its partitions, which point into those records (see `AdaptivePartitionTails`).
+    void spillAdaptiveStagedRecords(AdaptiveAggregationProducer & adaptive) const;
 
     /// Writes the producer's learning or frozen table to disk as a part of the ordinary external aggregation, then lets
     /// the producer learn its keys again in an empty single-level table. Called for a table over the

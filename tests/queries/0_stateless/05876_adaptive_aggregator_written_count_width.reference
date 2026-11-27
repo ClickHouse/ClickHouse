@@ -1,0 +1,4 @@
+fixed-width key	results match: 1	combined: 1
+string key	results match: 1	combined: 1
+fixed-width values and a string	results match: 1	combined: 1
+fixed-width values and an empty string	results match: 1	combined: 1

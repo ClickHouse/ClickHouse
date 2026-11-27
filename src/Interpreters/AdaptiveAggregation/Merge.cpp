@@ -17,7 +17,8 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
-#include <Interpreters/AdaptiveAggregation/GrowingCountTopK.h>
+#include <Interpreters/AdaptiveAggregation/Combining/AdaptiveRowSelection.h>
+#include <Interpreters/AdaptiveAggregation/TopK/GrowingCountTopK.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/RowDataStore.h>
 #include <Interpreters/Squashing.h>
@@ -718,7 +719,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
     };
 
     StagedRecordWalk walk;
-    visitStagedRecordFormat<Method>(
+    visitStagedRecordFormat<Method, /*multiplicity_from_layout=*/true>(
         adaptive_argument_layout.get(), is_simple_count, adaptive_packed_key_bytes, [&]<typename Record>(const Record & format) ALWAYS_INLINE
     {
         if constexpr (Record::with_count)
@@ -779,6 +780,7 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
 
             places.clear();
             records.clear();
+
             walk = walkStagedRecords<Key>(
                 format,
                 table,
@@ -800,6 +802,22 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                     }
                     places.push_back(it->getMapped());
                     records.push_back(record);
+
+                    /// A record that combined several misses of its key stands for their rows (see
+                    /// `AdaptiveMissCombiner`): each `count` takes one of them with the record's arguments
+                    /// (see `executeStagedArgumentRecords`), and the others here, from the record's
+                    /// multiplicity. The walk has just read the record's key, which follows the multiplicity,
+                    /// so the multiplicity costs no wait on memory here, while a pass over the records
+                    /// afterwards would wait on each of them once more.
+                    if constexpr (Record::with_multiplicity)
+                    {
+                        const UInt32 further_rows = format.multiplicity(record) - 1;
+                        if (further_rows)
+                        {
+                            for (const size_t aggregate : adaptive_row_selection->count_aggregates)
+                                getCountState(it->getMapped() + offsets_of_aggregate_states[aggregate]) += further_rows;
+                        }
+                    }
                 });
 
             if (!places.empty())
@@ -825,7 +843,7 @@ size_t NO_INLINE Aggregator::countPartitionGroups(
     using Key = AdaptiveRecordKey<Method>;
     const bool prefetch = prefetchesStagedKeys<Key>(counting_table);
     size_t skipped = 0;
-    visitStagedRecordFormat<Method>(
+    visitStagedRecordFormat<Method, /*multiplicity_from_layout=*/true>(
         adaptive_argument_layout.get(), is_simple_count, adaptive_packed_key_bytes, [&]<typename Record>(const Record & format) ALWAYS_INLINE
     {
         if constexpr (Record::with_arguments)
@@ -843,10 +861,13 @@ size_t NO_INLINE Aggregator::countPartitionGroups(
                     const Key key = format.readKey(record, hash);
                     emplaceStagedKey<copy_keys>(counting_table, arena, key, hash, it, inserted);
                     UInt64 & group_count = getInlineCountState(it->getMapped());
+                    UInt64 rows = 1;
+                    if constexpr (Record::with_multiplicity)
+                        rows = format.multiplicity(record);
                     if (inserted)
-                        group_count = 1;
+                        group_count = rows;
                     else
-                        ++group_count;
+                        group_count += rows;
                     update_candidates(group_count, key, hash, std::bool_constant<copy_keys>{});
                 }).skipped;
         }
@@ -934,9 +955,9 @@ Aggregator::CountFirstSelection Aggregator::selectCountFirstBestGroups(
     const size_t rank_offset = offsets_of_aggregate_states[params.bucket_top_k_rank_index];
     CountFirstSelection selection;
 
-    /// The groups are counted in the table, each count kept in the mapped value as a lone `count()` keeps it: a source
-    /// cell adds its count state, a record one row. With a descending order, the top takes every grown count and keeps
-    /// its indices in the high bits of the counts.
+    /// The groups are counted in the table, each count kept in the mapped value as a lone `count()` keeps it:
+    /// a source cell adds its count state, a record the rows it stands for. With a descending order, the top
+    /// takes every grown count and keeps its indices in the high bits of the counts.
     if (top_k)
         top_k->clear();
     for_each_cell([&](const auto & key, AggregateDataPtr * mapped, size_t hash)

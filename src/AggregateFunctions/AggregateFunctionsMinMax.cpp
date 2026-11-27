@@ -172,11 +172,18 @@ public:
     /// contain floating-point elements.
     [[nodiscard]] MergedValueBound getMergedValueBound() const override
     {
-        const auto type = removeLowCardinality(this->result_type);
-        const WhichDataType which(type);
-        if (which.isFloat() || !(type->isValueRepresentedByNumber() || which.isStringOrFixedString()))
+        if (!singleValueTypeIsTotallyOrdered(this->result_type))
             return MergedValueBound::Unknown;
         return isMin ? MergedValueBound::Minimum : MergedValueBound::Maximum;
+    }
+
+    /// The result is the value of the row with the extreme value, which needs a total order of the values as
+    /// the merge does.
+    [[nodiscard]] AggregateFunctionRowSelection getRowSelection() const override
+    {
+        if (!singleValueTypeIsTotallyOrdered(this->result_type))
+            return {};
+        return {.kind = AggregateFunctionRowSelection::Kind::BestRow, .ordering_argument = 0, .largest = !isMin};
     }
 
     /// Floating point is excluded: a repeated `NaN` replaces another `NaN` kept as the result.

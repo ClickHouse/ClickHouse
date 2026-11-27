@@ -16,16 +16,18 @@ inline constexpr size_t ADAPTIVE_AGGREGATION_NUM_BUCKETS = 256;
 /// One instance per aggregation, created by `AggregatingStep` through `Aggregator::createAdaptiveSession`
 /// when the query qualifies, owned by `ManyAggregatedData` and shared by all its transforms.
 ///
-/// Production phase: every thread aggregates into its own local hash table as usual, until the
-/// table holds `adaptive_aggregator_freeze_threshold` keys and freezes. From that point a row
-/// whose key the table already holds (a frequent key, learned for free from the first rows)
-/// keeps aggregating in place with zero coordination, while a miss (a rare key) is not inserted
-/// anywhere: it becomes a delayed record, appended to the thread's own buffer of the partition its
-/// key's hash falls in. A partition is a slice of a two-level bucket. A record carries the key's bytes,
-/// plus the key's multiplicity in the block when the only aggregate is `count`, or the row's aggregate-argument values
-/// otherwise. Variable-length records also carry the hash; fixed-stride records omit it because rehashing
-/// a fixed-width key costs less than storing and reading the extra bytes. Records never point into the
-/// source block, so the block is released.
+/// Production phase: every thread aggregates into its own local hash table as usual, until the table holds
+/// `adaptive_aggregator_freeze_threshold` keys and freezes. From that point a row whose key the table already
+/// holds (a frequent key, learned for free from the first rows) keeps aggregating in place with zero
+/// coordination, while a miss (a rare key) is not inserted anywhere: it becomes a delayed record, appended to
+/// the thread's own buffer of the partition its key's hash falls in. A partition is a slice of a two-level
+/// bucket. A record carries the key's bytes, plus the number of its rows when the only aggregate is `count`,
+/// or the row's aggregate-argument values otherwise. A miss of the key of the last record in its partition
+/// combines into that record (see `AdaptivePartitionTails`): a count record counts it, a key-only record
+/// takes it for free, and when every aggregate selects one row by one ordering column, the record keeps the
+/// best row and the number of rows for a `count` (see `AdaptiveRowSelection`). Variable-length records also
+/// carry the hash; fixed-stride records omit it because rehashing a fixed-width key costs less than storing
+/// and reading the extra bytes. Records never point into the source block, so the block is released.
 ///
 /// The byte bound of the freeze measures the table's hash-table buffer, the cells that every probe
 /// walks, so wide cells freeze the table before its key count would. The memory of the states is no
@@ -67,6 +69,10 @@ struct AdaptiveAggregationProducer;
 
 /// The record layout of the aggregate arguments that general payloads stage.
 struct AdaptiveArgumentLayout;
+
+/// The aggregates that select one row of their group by one ordering column, whose misses of a key combine
+/// into one record.
+struct AdaptiveRowSelection;
 
 /// What the record writer staged beyond the fixed parts of a batch's records, for the accounting of the batch.
 struct AdaptiveStagedBytes;

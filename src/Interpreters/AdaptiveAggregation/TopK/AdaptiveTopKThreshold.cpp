@@ -1,4 +1,4 @@
-#include <Interpreters/AdaptiveAggregation/AdaptiveTopKThreshold.h>
+#include <Interpreters/AdaptiveAggregation/TopK/AdaptiveTopKThreshold.h>
 
 #include <algorithm>
 #include <functional>

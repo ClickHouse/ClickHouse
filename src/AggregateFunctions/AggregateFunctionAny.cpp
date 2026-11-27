@@ -49,6 +49,11 @@ public:
 
     [[nodiscard]] String getName() const override { return "any"; }
 
+    [[nodiscard]] AggregateFunctionRowSelection getRowSelection() const override
+    {
+        return {.kind = AggregateFunctionRowSelection::Kind::AnyRow};
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if (!this->data(place).has())

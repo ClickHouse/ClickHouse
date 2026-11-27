@@ -171,6 +171,7 @@ std::unique_ptr<AggregatingStep> makeAggregationStepWithGroupLimit(
         /*adaptive_aggregator_freeze_threshold_=*/0,
         /*adaptive_aggregator_freeze_threshold_bytes_=*/0,
         /*adaptive_aggregator_disable_thaw_=*/false,
+        /*adaptive_aggregator_combine_arg_min_max_=*/false,
         /*use_aggregation_memory_tracker_=*/true);
 
     return makeAggregatingStep(header, std::move(params));

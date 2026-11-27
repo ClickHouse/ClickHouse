@@ -36,4 +36,28 @@ enum class MergedValueBound : unsigned char
     /// merged == min(values).
     Minimum,
 };
+
+/// Which rows of a group the result of an aggregate function depends on, so that a caller may add fewer rows
+/// than the group has without changing the result. The adaptive aggregator stages one record for the misses
+/// of a key when every aggregate allows it (see `AdaptiveRowSelection`). See
+/// `IAggregateFunction::getRowSelection`.
+struct AggregateFunctionRowSelection
+{
+    enum class Kind : unsigned char
+    {
+        /// Every row (the safe default).
+        AllRows,
+        /// Only the number of rows, as for `count`.
+        RowCount,
+        /// Any one row of the group, as for `any`, whose result does not say which.
+        AnyRow,
+        /// The row with the largest value of argument `ordering_argument`, or the smallest unless `largest`,
+        /// and of several rows with that value the first, as for `argMax`, `argMin`, `max` and `min`.
+        BestRow,
+    };
+
+    Kind kind = Kind::AllRows;
+    size_t ordering_argument = 0;
+    bool largest = false;
+};
 }

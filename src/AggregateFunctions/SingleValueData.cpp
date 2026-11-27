@@ -7,6 +7,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/TypeTree.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -1888,6 +1889,13 @@ void generateSingleValueFromType(const DataTypePtr & type, SingleValueDataBaseMe
     static_assert(sizeof(SingleValueDataGenericWithColumn) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
     static_assert(alignof(SingleValueDataGenericWithColumn) <= alignof(SingleValueDataBaseMemoryBlock));
     new (&data.memory) SingleValueDataGenericWithColumn;
+}
+
+bool singleValueTypeIsTotallyOrdered(const DataTypePtr & type)
+{
+    const auto value_type = removeLowCardinality(type);
+    const WhichDataType which(value_type);
+    return !which.isFloat() && (value_type->isValueRepresentedByNumber() || which.isStringOrFixedString());
 }
 
 bool singleValueTypeAllocatesMemoryInArena(TypeIndex idx)

@@ -295,6 +295,11 @@ public:
     /// so that a caller may skip repeated values.
     virtual bool ignoresRepeatedValues() const { return false; }
 
+    /// Which rows of a group the result depends on, so that a caller may add fewer rows than the group has
+    /// (see `AggregateFunctionRowSelection`). Combinators keep the default, every row: they change which rows
+    /// reach the nested function, as `-If` and the `NULL` skipping of `-Null` do.
+    [[nodiscard]] virtual AggregateFunctionRowSelection getRowSelection() const { return {}; }
+
     /// Should be used only if isAbleToParallelizeMerge() returned true.
     /// Non-virtual public entry point that asserts the source and destination states do not alias.
     /// All overrides must be done on `mergeImpl` below.
