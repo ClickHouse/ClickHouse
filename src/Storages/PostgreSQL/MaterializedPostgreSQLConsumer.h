@@ -99,10 +99,16 @@ public:
             const String & start_lsn,
             size_t max_block_size_,
             bool schema_as_a_part_of_table_name_,
+            bool coordinated_,
             StorageInfos storages_,
-            const String & name_for_logger);
+            const String & name_for_logger,
+            std::function<void(const String &)> verify_source_ = {});
 
     bool consume();
+
+    /// In coordinated mode a table that would have to be skipped from replication breaks the consumer
+    /// for good: see `markTableAsSkipped`. Once broken, `consume` throws and never advances the slot.
+    bool isBroken() const { return broken; }
 
     /// Called from reloadFromSnapshot by replication handler. This method is needed to move a table back into synchronization
     /// process if it was skipped due to schema changes.
@@ -121,9 +127,17 @@ private:
 
     String advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx);
 
+    /// The connection to read and advance the slot through. When `verify_source` is set, every newly opened
+    /// connection is checked with it before it is used, and a failed check breaks the consumer.
+    pqxx::connection & getVerifiedConnection();
+
     void processReplicationMessage(const char * replication_message, size_t size);
 
     bool isSyncAllowed(Int32 relation_id, const String & relation_name);
+
+    /// The storage to apply a change (`Insert`, `Update`, `Delete`) of the given table to, or nullptr if the
+    /// change must not be applied (see `isSyncAllowed`).
+    StorageData * getStorageDataForChange(Int32 relation_id, const String & relation_name);
 
     static void insertDefaultValue(StorageData & storage_data, size_t column_idx);
     /// Returns true if a source-value conversion failure was replaced with the column default.
@@ -181,9 +195,24 @@ private:
     /// current_lsn converted from String to Int64 via getLSNValue().
     UInt64 lsn_value;
 
+    /// The final LSN (the position of the commit record) of the transaction being decoded, from its `Begin` message.
+    Int64 transaction_final_lsn_value = 0;
+
     size_t max_block_size;
 
     bool schema_as_a_part_of_table_name;
+    const bool coordinated;
+
+    /// Set by `markTableAsSkipped` in coordinated mode, or when `verify_source` fails.
+    bool broken = false;
+
+    /// In coordinated mode, throws unless the given `system_identifier`, read through the connection itself,
+    /// is the one of the PostgreSQL cluster recorded for the setup. A reconnection resolves the endpoint again,
+    /// so after a repointed hostname or proxy it could reach another cluster with the same slot, publication
+    /// and table names, and consuming there would write that cluster's changes into the shared nested tables.
+    std::function<void(const String &)> verify_source;
+    /// The generation of `connection` that `verify_source` last accepted (see `postgres::Connection::getGeneration`).
+    UInt64 verified_connection_generation = 0;
 
     String table_to_insert;
 
@@ -202,18 +231,33 @@ private:
     /// After it is finished, a temporary replication slot is created with 'export snapshot' option, and start_lsn is returned.
     /// Skipped tables are reloaded from snapshot (nested tables are also updated). Afterwards, if a replication message is
     /// related to a table in a skip_list, we compare current lsn with start_lsn, which was returned with according snapshot.
-    /// If current_lsn >= table_start_lsn, we can safely remove table from skip list and continue its synchronization.
+    /// If the transaction is committed at or after table_start_lsn, we can safely remove table from skip list and continue
+    /// its synchronization.
     /// No needed message, related to reloaded table will be missed, because messages are not consumed in the meantime,
     /// i.e. we will not miss the first start_lsn position for reloaded table.
     std::unordered_map<Int32, String> skip_list;
 
+    struct WaitingTable
+    {
+        String start_lsn;
+        /// A transaction committed at or after `start_lsn` was already seen (only to log it once).
+        bool started = false;
+    };
+
     /// `postgres_table_name` -> `start_lsn`
     /// For dynamically added tables. A new table is loaded via snapshot and we get a start lsn position.
-    /// Once consumer reaches this position, it starts applying replication messages to this table.
+    /// The consumer applies replication messages to this table only from transactions committed at or after
+    /// this position. An entry stays until the slot is advanced past `start_lsn`: before that, a batch that
+    /// failed is read again from the same position, including the changes that must be rejected.
     /// Inside replication handler we have to ensure that replication consumer does not read data from wal
     /// while the process of adding a table to replication is not finished,
     /// because we might go beyond this start lsn position before consumer knows that a new table was added.
-    std::unordered_map<String, String> waiting_list;
+    std::unordered_map<String, WaitingTable> waiting_list;
+
+    /// `postgres_relation_id` -> the last `Relation` message received while the table was not allowed to
+    /// synchronize yet (it has a storage but waits for its snapshot LSN). It is processed when the first
+    /// change of the table is allowed. Valid within one decoding call only.
+    std::unordered_map<Int32, String> pending_relation_messages;
 
     /// Since replication may be some time behind, we need to ensure that replication messages for deleted tables are ignored.
     std::unordered_set<String> deleted_tables;

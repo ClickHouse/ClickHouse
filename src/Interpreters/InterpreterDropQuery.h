@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Databases/IDatabase.h>
+#include <Interpreters/DDLGuard.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/IAST_fwd.h>
@@ -52,7 +53,7 @@ private:
 
     BlockIO executeSingleDropQuery(const ASTPtr & drop_query_ptr);
     BlockIO executeToDatabase(const ASTDropQuery & query);
-    BlockIO executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait);
+    BlockIO executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait, DDLGuardPtr & ddl_guard);
 
     BlockIO executeToTable(ASTDropQuery & query);
     BlockIO executeToTableImpl(const ContextPtr& context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait);
