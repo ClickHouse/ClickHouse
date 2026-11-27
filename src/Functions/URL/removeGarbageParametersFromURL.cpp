@@ -45,8 +45,7 @@ constexpr std::array<Int8, 256> base64_symbols = []
 constexpr std::array<size_t, 2> hex_classes = {10, 16};
 constexpr std::array<size_t, 4> base64_classes = {26, 52, 62, 64};
 
-/// The class shares are tested with a G-test, the symbols with a chi-squared test. Both allow a deviation that is
-/// either within sampling noise or small per symbol, because base64 of structured data (as in JWT) is not exactly uniform.
+/// G-test on the class shares, chi-squared on the symbols. Both tolerate a small per-symbol bias, as in base64 of JSON (JWT).
 template <size_t alphabet_size, size_t num_classes>
 bool isCloseToUniform(
     const std::array<UInt64, alphabet_size> & counts, const std::array<size_t, num_classes> & class_ends, double class_threshold)
