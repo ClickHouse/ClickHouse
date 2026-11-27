@@ -23,7 +23,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Storages/RabbitMQ/RabbitMQProducer.h>
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
 #include <Storages/RabbitMQ/RabbitMQSource.h>
@@ -89,7 +88,6 @@ namespace RabbitMQSetting
     extern const RabbitMQSettingsBool reject_unhandled_messages;
 }
 
-static const uint32_t QUEUE_SIZE = 100000;
 static const auto MAX_FAILED_READ_ATTEMPTS = 10;
 static const auto RESCHEDULE_MS = 500;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
@@ -147,7 +145,6 @@ StorageRabbitMQ::StorageRabbitMQ(
         , hash_exchange(num_consumers > 1 || num_queues > 1)
         , semaphore(0, static_cast<int>(num_consumers))
         , unique_strbase(getRandomName())
-        , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
         , milliseconds_to_wait((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_empty_queue_backoff_start_ms])
 {
     reject_unhandled_messages = (*rabbitmq_settings)[RabbitMQSetting::reject_unhandled_messages]
@@ -162,7 +159,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         routing_keys.emplace_back();
 
     /// For the `headers` exchange every routing key is a `key=value` pair.
-    if (exchange_type == AMQP::ExchangeType::headers)
+    if (exchange_type == AMQP::ExchangeType::Headers)
     {
         for (const auto & header : routing_keys)
         {
@@ -191,27 +188,27 @@ StorageRabbitMQ::StorageRabbitMQ(
         std::optional<AMQP::Address> address;
         try
         {
-            address.emplace(address_string);
+            address.emplace(AMQP::Address::parse(address_string));
         }
-        catch (const std::exception & e)
+        catch (const Exception & e)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid `rabbitmq_address`: {}", e.what());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid `rabbitmq_address`: {}", e.message());
         }
 
-        context_->getRemoteHostFilter().checkHostAndPort(address->hostname(), toString(address->port()));
+        context_->getRemoteHostFilter().checkHostAndPort(address->host, toString(address->port));
 
         /// connectImpl takes the transport (amqp/amqps) from the URI scheme and ignores the
         /// `rabbitmq_secure` setting for the address form, so reject a contradictory
         /// `rabbitmq_secure = 1` rather than silently connecting in plaintext. Only for a fresh
         /// CREATE though: an existing table must still attach on restart (it stays plaintext, as
         /// it did before), so this validation does not brick upgrades.
-        if (mode <= LoadingStrictnessLevel::CREATE && secure_connection && !address->secure())
+        if (mode <= LoadingStrictnessLevel::CREATE && secure_connection && !address->secure)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "`rabbitmq_secure = 1` conflicts with the plaintext `amqp://` scheme in "
                 "`rabbitmq_address`; use an `amqps://` address for a secure connection");
 
-        secure_connection = address->secure();
+        secure_connection = address->secure;
     }
     else if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_host_port].changed)
     {
@@ -246,9 +243,6 @@ StorageRabbitMQ::StorageRabbitMQ(
         .secure = secure_connection,
         .connection_string = SecretString(address_string)
     };
-
-    if (secure_connection)
-        SSL_library_init();
 
     publisher_pool = std::make_shared<RabbitMQPublisherPool>(
         configuration, routing_keys, exchange_name, exchange_type, persistent,
@@ -296,14 +290,8 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     try
     {
-        connection = std::make_unique<RabbitMQConnection>(configuration, log);
         if (!getContext()->getMessageQueueDisableInsertion())
-        {
-            if (connection->connect())
-                initRabbitMQ();
-            else if (mode <= LoadingStrictnessLevel::CREATE)
-                throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "Cannot connect to {}", connection->connectionInfoForLog());
-        }
+            initRabbitMQ();
     }
     catch (...)
     {
@@ -311,10 +299,6 @@ StorageRabbitMQ::StorageRabbitMQ(
         if (mode <= LoadingStrictnessLevel::CREATE)
             throw;
     }
-
-    /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
-    looping_task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "RabbitMQLoopingTask", [this]{ loopingFunc(); });
-    looping_task->deactivate();
 
     streaming_task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "RabbitMQStreamingTask", [this]{ threadFunc(); });
     streaming_task->deactivate();
@@ -368,16 +352,16 @@ AMQP::ExchangeType StorageRabbitMQ::defineExchangeType(String exchange_type_)
     AMQP::ExchangeType type = {};
     if (exchange_type_ != ExchangeType::DEFAULT)
     {
-        if (exchange_type_ == ExchangeType::FANOUT)              type = AMQP::ExchangeType::fanout;
-        else if (exchange_type_ == ExchangeType::DIRECT)         type = AMQP::ExchangeType::direct;
-        else if (exchange_type_ == ExchangeType::TOPIC)          type = AMQP::ExchangeType::topic;
-        else if (exchange_type_ == ExchangeType::HASH)           type = AMQP::ExchangeType::consistent_hash;
-        else if (exchange_type_ == ExchangeType::HEADERS)        type = AMQP::ExchangeType::headers;
+        if (exchange_type_ == ExchangeType::FANOUT)              type = AMQP::ExchangeType::Fanout;
+        else if (exchange_type_ == ExchangeType::DIRECT)         type = AMQP::ExchangeType::Direct;
+        else if (exchange_type_ == ExchangeType::TOPIC)          type = AMQP::ExchangeType::Topic;
+        else if (exchange_type_ == ExchangeType::HASH)           type = AMQP::ExchangeType::ConsistentHash;
+        else if (exchange_type_ == ExchangeType::HEADERS)        type = AMQP::ExchangeType::Headers;
         else throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid exchange type");
     }
     else
     {
-        type = AMQP::ExchangeType::fanout;
+        type = AMQP::ExchangeType::Fanout;
     }
 
     return type;
@@ -422,51 +406,6 @@ ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
 }
 
 
-void StorageRabbitMQ::loopingFunc()
-{
-    connection->getHandler().startLoop();
-}
-
-
-void StorageRabbitMQ::stopLoop()
-{
-    connection->getHandler().stopLoop();
-}
-
-void StorageRabbitMQ::stopLoopIfNoReaders()
-{
-    /// Stop the loop if no select was started.
-    /// There can be a case that selects are finished
-    /// but not all sources decremented the counter, then
-    /// it is ok that the loop is not stopped, because
-    /// there is a background task (streaming_task), which
-    /// also checks whether there is an idle loop.
-    std::lock_guard lock(loop_mutex);
-    if (readers_count)
-        return;
-    connection->getHandler().stopLoop();
-}
-
-void StorageRabbitMQ::startLoop()
-{
-    chassert(initialized);
-    connection->getHandler().updateLoopState(Loop::RUN);
-    looping_task->activateAndSchedule();
-}
-
-
-void StorageRabbitMQ::incrementReader()
-{
-    ++readers_count;
-}
-
-
-void StorageRabbitMQ::decrementReader()
-{
-    --readers_count;
-}
-
-
 void StorageRabbitMQ::connectionFunc()
 {
     if (initialized)
@@ -474,12 +413,9 @@ void StorageRabbitMQ::connectionFunc()
 
     try
     {
-        if (connection->reconnect())
-        {
-            initRabbitMQ();
-            streaming_task->scheduleAfter(RESCHEDULE_MS);
-            return;
-        }
+        initRabbitMQ();
+        streaming_task->scheduleAfter(RESCHEDULE_MS);
+        return;
     }
     catch (...)
     {
@@ -493,11 +429,8 @@ void StorageRabbitMQ::connectionFunc()
 /* Need to deactivate this way because otherwise might get a deadlock when first deactivate streaming task in shutdown and then
  * inside streaming task try to deactivate any other task
  */
-void StorageRabbitMQ::deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop)
+void StorageRabbitMQ::deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait)
 {
-    if (stop_loop)
-        stopLoop();
-
     std::unique_lock<std::mutex> lock(task_mutex, std::defer_lock);
     if (lock.try_lock())
     {
@@ -531,24 +464,16 @@ void StorageRabbitMQ::initRabbitMQ()
     }
     else
     {
-        auto rabbit_channel = connection->createChannel();
+        RabbitMQConnection setup_connection(configuration, log);
+        setup_connection.connect();
 
         /// Main exchange -> Bridge exchange -> ( Sharding exchange ) -> Queues -> Consumers
 
-        bindExchange(*rabbit_channel);
+        bindExchange(setup_connection.get());
         for (const auto i : collections::range(0, num_queues))
-            bindQueue(i + 1, *rabbit_channel);
-
-        if (queues.size() != num_queues)
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Expected all queues to be initialized (but having {}/{})",
-                queues.size(), num_queues);
-        }
+            bindQueue(i + 1, setup_connection.get());
 
         LOG_TRACE(log, "RabbitMQ setup completed");
-        rabbit_channel->close();
     }
 
     LOG_TRACE(log, "Registering {} conumers", num_consumers);
@@ -556,7 +481,8 @@ void StorageRabbitMQ::initRabbitMQ()
     for (size_t i = 0; i < num_consumers; ++i)
     {
         auto consumer = createConsumer();
-        consumer->updateChannel(*connection);
+        /// If it fails, the consumer connects again when it is used.
+        consumer->updateChannel();
         {
             std::lock_guard lock(consumers_mutex);
             consumers_ref.push_back(consumer);
@@ -570,23 +496,7 @@ void StorageRabbitMQ::initRabbitMQ()
 }
 
 
-namespace
-{
-/// Shared state for AMQP setup/teardown callbacks that may be dispatched after the blocking
-/// loop has already returned (e.g. on the timeout path, when a slow broker responds late).
-/// AMQP-CPP keeps deferred callbacks alive in the connection after the local channel wrapper is
-/// destroyed, so the callbacks must not capture stack locals by reference. They capture this
-/// object by value (shared_ptr) instead; once `abandoned` is set, any late callback is a no-op.
-struct AMQPSetupState
-{
-    std::string error;
-    int error_code = 0;
-    size_t bound_keys = 0;
-    bool abandoned = false;
-};
-}
-
-void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
+void StorageRabbitMQ::bindExchange(AMQP::Connection & rabbit_channel)
 {
     /// Exchange hierarchy:
     /// 1. Main exchange (defined with table settings - rabbitmq_exchange_name, rabbitmq_exchange_type).
@@ -599,79 +509,63 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
     /// 1. `durable` (survive RabbitMQ server restart)
     /// 2. `autodelete` (auto delete in case of queue bindings are dropped).
 
-    /// State is shared by value into every callback (see AMQPSetupState) so that a late dispatch
-    /// after a timeout cannot touch freed stack memory.
-    auto state = std::make_shared<AMQPSetupState>();
-    rabbit_channel.declareExchange(exchange_name, exchange_type, AMQP::durable)
-    .onError([this, state](const char * message)
+    try
     {
-        if (state->abandoned)
-            return;
-        connection->getHandler().stopBlockingLoop();
+        rabbit_channel.declareExchange(exchange_name, exchange_type, /* durable */ true, /* auto_delete */ false);
+    }
+    catch (const Exception & e)
+    {
         /// This error can be a result of attempt to declare exchange if it was already declared but
         /// 1) with different exchange type.
         /// 2) with different exchange settings.
-        state->error = "Unable to declare exchange. "
-            "Make sure specified exchange is not already declared. Error: " + std::string(message);
-        state->error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
-    });
+        throw Exception(ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE,
+            "Unable to declare exchange. Make sure specified exchange is not already declared. Error: {}", e.message());
+    }
 
-    rabbit_channel.declareExchange(bridge_exchange, AMQP::fanout, AMQP::durable | AMQP::autodelete)
-    .onError([this, state](const char * message)
+    try
     {
-        if (state->abandoned)
-            return;
-        connection->getHandler().stopBlockingLoop();
+        rabbit_channel.declareExchange(bridge_exchange, AMQP::ExchangeType::Fanout, /* durable */ true, /* auto_delete */ true);
+    }
+    catch (const Exception & e)
+    {
         /// This error is not supposed to happen as this exchange name is always unique to type and its settings.
-        if (state->error.empty())
-        {
-            state->error = fmt::format("Unable to declare bridge exchange ({}). Reason: {}",
-                                bridge_exchange, std::string(message));
-            state->error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
-        }
-    });
+        throw Exception(ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE,
+            "Unable to declare bridge exchange ({}). Reason: {}", bridge_exchange, e.message());
+    }
 
     if (hash_exchange)
     {
-        AMQP::Table binding_arguments;
+        AMQP::FieldTable binding_arguments;
 
         /// Default routing key property in case of hash exchange is a routing key, which is required to be an integer.
         /// Support for arbitrary exchange type (i.e. arbitrary pattern of routing keys) requires to eliminate this dependency.
         /// This settings changes hash property to message_id.
-        binding_arguments["hash-property"] = "message_id";
+        binding_arguments.addString("hash-property", "message_id");
 
-        /// Declare hash exchange for sharding.
-        rabbit_channel.declareExchange(sharding_exchange, AMQP::consistent_hash, AMQP::durable | AMQP::autodelete, binding_arguments)
-        .onError([this, state](const char * message)
+        try
         {
-            if (state->abandoned)
-                return;
-            connection->getHandler().stopBlockingLoop();
+            /// Declare hash exchange for sharding.
+            rabbit_channel.declareExchange(
+                sharding_exchange, AMQP::ExchangeType::ConsistentHash, /* durable */ true, /* auto_delete */ true, binding_arguments);
+        }
+        catch (const Exception & e)
+        {
             /// This error can be a result of same reasons as above for exchange_name, i.e. it will mean that sharding exchange name appeared
             /// to be the same as some other exchange (which purpose is not for sharding). So probably actual error reason: queue_base parameter
             /// is bad.
-            if (state->error.empty())
-            {
-                state->error = fmt::format("Unable to declare sharding exchange ({}). Reason: {}",
-                                    sharding_exchange, std::string(message));
-                state->error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
-            }
-        });
+            throw Exception(ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE,
+                "Unable to declare sharding exchange ({}). Reason: {}", sharding_exchange, e.message());
+        }
 
-        rabbit_channel.bindExchange(bridge_exchange, sharding_exchange, routing_keys[0])
-        .onError([this, state](const char * message)
+        try
         {
-            if (state->abandoned)
-                return;
-            connection->getHandler().stopBlockingLoop();
-            if (state->error.empty())
-            {
-                state->error = fmt::format(
-                    "Unable to bind bridge exchange ({}) to sharding exchange ({}). Reason: {}",
-                    bridge_exchange, sharding_exchange, std::string(message));
-                state->error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
-            }
-        });
+            rabbit_channel.bindExchange(bridge_exchange, sharding_exchange, routing_keys[0]);
+        }
+        catch (const Exception & e)
+        {
+            throw Exception(ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE,
+                "Unable to bind bridge exchange ({}) to sharding exchange ({}). Reason: {}", bridge_exchange, sharding_exchange, e.message());
+        }
 
         consumer_exchange = sharding_exchange;
     }
@@ -680,134 +574,41 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
         consumer_exchange = bridge_exchange;
     }
 
-    if (exchange_type == AMQP::ExchangeType::headers)
+    try
     {
-        AMQP::Table bind_headers;
-        for (const auto & header : routing_keys)
+        if (exchange_type == AMQP::ExchangeType::Headers)
         {
-            std::vector<String> matching;
-            boost::split(matching, header, [](char c){ return c == '='; });
-            bind_headers[matching[0]] = matching[1];
-        }
-
-        rabbit_channel.bindExchange(exchange_name, bridge_exchange, routing_keys[0], bind_headers)
-        .onSuccess([this, state]() { if (!state->abandoned) connection->getHandler().stopBlockingLoop(); })
-        .onError([this, state](const char * message)
-        {
-            if (state->abandoned)
-                return;
-            connection->getHandler().stopBlockingLoop();
-            state->error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
-                                exchange_name, bridge_exchange, std::string(message));
-            state->error_code = ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE;
-        });
-    }
-    else if (exchange_type == AMQP::ExchangeType::fanout || exchange_type == AMQP::ExchangeType::consistent_hash)
-    {
-        rabbit_channel.bindExchange(exchange_name, bridge_exchange, routing_keys[0])
-        .onSuccess([this, state]() { if (!state->abandoned) connection->getHandler().stopBlockingLoop(); })
-        .onError([this, state](const char * message)
-        {
-            if (state->abandoned)
-                return;
-            connection->getHandler().stopBlockingLoop();
-            if (state->error.empty())
+            AMQP::FieldTable bind_headers;
+            for (const auto & header : routing_keys)
             {
-                state->error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
-                                    exchange_name, bridge_exchange, std::string(message));
-                state->error_code = ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE;
+                std::vector<String> matching;
+                boost::split(matching, header, [](char c){ return c == '='; });
+                bind_headers.addString(matching[0], matching[1]);
             }
-        });
-    }
-    else
-    {
-        for (const auto & routing_key : routing_keys)
+
+            rabbit_channel.bindExchange(exchange_name, bridge_exchange, routing_keys[0], bind_headers);
+        }
+        else if (exchange_type == AMQP::ExchangeType::Fanout || exchange_type == AMQP::ExchangeType::ConsistentHash)
         {
-            rabbit_channel.bindExchange(exchange_name, bridge_exchange, routing_key)
-            .onSuccess([this, state]()
-            {
-                if (state->abandoned)
-                    return;
-                ++state->bound_keys;
-                if (state->bound_keys == routing_keys.size())
-                    connection->getHandler().stopBlockingLoop();
-            })
-            .onError([this, state](const char * message)
-            {
-                if (state->abandoned)
-                    return;
-                connection->getHandler().stopBlockingLoop();
-                if (state->error.empty())
-                {
-                    state->error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
-                                        exchange_name, bridge_exchange, std::string(message));
-                    state->error_code = ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE;
-                }
-            });
+            rabbit_channel.bindExchange(exchange_name, bridge_exchange, routing_keys[0]);
+        }
+        else
+        {
+            for (const auto & routing_key : routing_keys)
+                rabbit_channel.bindExchange(exchange_name, bridge_exchange, routing_key);
         }
     }
-
-    if (!connection->getHandler().startBlockingLoopWithTimeout(BLOCKING_LOOP_TIMEOUT_MS))
+    catch (const Exception & e)
     {
-        /// Make any late-dispatched callback above a no-op before the captured stack frame unwinds.
-        state->abandoned = true;
-        throw Exception(ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE, "Timed out waiting for exchange setup - RabbitMQ may be unreachable");
+        throw Exception(ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE,
+            "Unable to bind exchange {} to bridge exchange ({}). Reason: {}", exchange_name, bridge_exchange, e.message());
     }
-    if (!state->error.empty())
-        throw Exception(state->error_code, "{}", state->error);
 }
 
 
-void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel)
+void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::Connection & rabbit_channel)
 {
-    /// State is shared by value into every callback (see AMQPSetupState) so that a late dispatch
-    /// after a timeout cannot touch freed stack memory or the destroyed channel.
-    auto state = std::make_shared<AMQPSetupState>();
-    auto success_callback = [this, state, &rabbit_channel, queue_id](const std::string &  queue_name, int msgcount, int /* consumercount */)
-    {
-        if (state->abandoned)
-            return;
-        queues.emplace_back(queue_name);
-        LOG_DEBUG(log, "Queue {} is declared", queue_name);
-
-        if (msgcount)
-            LOG_INFO(log, "Queue {} is non-empty. Non-consumed messaged will also be delivered", queue_name);
-
-       /* Here we bind either to sharding exchange (consistent-hash) or to bridge exchange (fanout). All bindings to routing keys are
-        * done between client's exchange and local bridge exchange. Binding key must be a string integer in case of hash exchange, for
-        * fanout exchange it can be arbitrary
-        */
-        rabbit_channel.bindQueue(consumer_exchange, queue_name, std::to_string(queue_id))
-        .onSuccess([this, state] { if (!state->abandoned) connection->getHandler().stopBlockingLoop(); })
-        .onError([this, state](const char * message)
-        {
-            if (state->abandoned)
-                return;
-            connection->getHandler().stopBlockingLoop();
-            state->error = fmt::format("Failed to create queue binding for exchange {}. Reason: {}",
-                                exchange_name, std::string(message));
-        });
-    };
-
-    auto error_callback([this, state](const char * message)
-    {
-        if (state->abandoned)
-            return;
-        connection->getHandler().stopBlockingLoop();
-        /* This error is most likely a result of an attempt to declare queue with different settings if it was declared before. So for a
-         * given queue name either deadletter_exchange parameter changed or queue_size changed, i.e. table was declared with different
-         * max_block_size parameter. Solution: client should specify a different queue_base parameter or manually delete previously
-         * declared queues via any of the various cli tools.
-         */
-         if (state->error.empty())
-             state->error = fmt::format(
-                 "Failed to declare queue. Probably queue settings are conflicting: "
-                 "max_block_size, deadletter_exchange. Attempt specifying differently those settings "
-                 "or use a different queue_base or manually delete previously declared queues, "
-                 "which were declared with the same names. ERROR reason: {}", std::string(message));
-    });
-
-    AMQP::Table queue_settings;
+    AMQP::FieldTable queue_settings;
 
     std::unordered_set<String> integer_settings = {"x-max-length", "x-max-length-bytes", "x-message-ttl", "x-expires", "x-priority", "x-max-priority"};
     std::unordered_set<String> string_settings = {"x-overflow", "x-dead-letter-exchange", "x-queue-type"};
@@ -826,9 +627,9 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
             String value = setting_values[1];
 
             if (integer_settings.contains(key))
-                queue_settings[key] = parse<uint64_t>(value);
+                queue_settings.addInteger(key, static_cast<Int64>(parse<uint64_t>(value)));
             else if (string_settings.contains(key))
-                queue_settings[key] = value;
+                queue_settings.addString(key, value);
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported queue setting: {}", value);
         }
@@ -839,77 +640,45 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
     /// maximize performance - via setting `rabbitmq_num_queues`.
     const String queue_name = !hash_exchange ? queue_base : std::to_string(queue_id) + "_" + queue_base;
 
-    /// AMQP::autodelete setting is not allowed, because in case of server restart there will be no consumers
-    /// and deleting queues should not take place.
-    rabbit_channel.declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
-    if (!connection->getHandler().startBlockingLoopWithTimeout(BLOCKING_LOOP_TIMEOUT_MS))
+    AMQP::Connection::QueueInfo queue;
+    try
     {
-        /// Make any late-dispatched callback above a no-op before the captured stack frame unwinds.
-        state->abandoned = true;
-        throw Exception(ErrorCodes::CANNOT_CREATE_RABBITMQ_QUEUE_BINDING, "Timed out waiting for queue setup - RabbitMQ may be unreachable");
+        /// AMQP::autodelete setting is not allowed, because in case of server restart there will be no consumers
+        /// and deleting queues should not take place.
+        queue = rabbit_channel.declareQueue(queue_name, /* durable */ true, queue_settings);
     }
-    if (!state->error.empty())
-        throw Exception(ErrorCodes::CANNOT_CREATE_RABBITMQ_QUEUE_BINDING, "{}", state->error);
-}
-
-
-void StorageRabbitMQ::unbindExchange()
-{
-    /* This is needed because with RabbitMQ (without special adjustments) can't, for example, properly make mv if there was insert query
-     * on the same table before, and in another direction it will make redundant copies, but most likely nobody will do that.
-     * As publishing is done to exchange, publisher never knows to which queues the message will go, every application interested in
-     * consuming from certain exchange - declares its owns exchange-bound queues, messages go to all such exchange-bound queues, and as
-     * input streams are always created at startup, then they will also declare its own exchange bound queues, but they will not be visible
-     * externally - client declares its own exchange-bound queues, from which to consume, so this means that if not disconnecting this local
-     * queues, then messages will go both ways and in one of them they will remain not consumed. So need to disconnect local exchange
-     * bindings to remove redunadant message copies, but after that mv cannot work unless those bindings are recreated. Recreating them is
-     * not difficult but very ugly and as probably nobody will do such thing - bindings will not be recreated.
-     */
-    if (!exchange_removed.exchange(true))
+    catch (const Exception & e)
     {
-        try
-        {
-            streaming_task->deactivate();
+        /* This error is most likely a result of an attempt to declare queue with different settings if it was declared before. So for a
+         * given queue name either deadletter_exchange parameter changed or queue_size changed, i.e. table was declared with different
+         * max_block_size parameter. Solution: client should specify a different queue_base parameter or manually delete previously
+         * declared queues via any of the various cli tools.
+         */
+        throw Exception(ErrorCodes::CANNOT_CREATE_RABBITMQ_QUEUE_BINDING,
+            "Failed to declare queue. Probably queue settings are conflicting: "
+            "max_block_size, deadletter_exchange. Attempt specifying differently those settings "
+            "or use a different queue_base or manually delete previously declared queues, "
+            "which were declared with the same names. ERROR reason: {}", e.message());
+    }
 
-            stopLoop();
-            looping_task->deactivate();
-            /// State is shared by value into the callbacks (see AMQPSetupState) so that a late
-            /// dispatch after a timeout cannot touch freed stack memory or the destroyed channel.
-            auto state = std::make_shared<AMQPSetupState>();
-            auto rabbit_channel = connection->createChannel();
-            rabbit_channel->removeExchange(bridge_exchange)
-            .onSuccess([this, state]()
-            {
-                if (!state->abandoned)
-                    connection->getHandler().stopBlockingLoop();
-            })
-            .onError([this, state](const char * message)
-            {
-                if (state->abandoned)
-                    return;
-                connection->getHandler().stopBlockingLoop();
-                state->error = fmt::format("Unable to remove exchange. Reason: {}", std::string(message));
-            });
+    queues.emplace_back(queue.name);
+    LOG_DEBUG(log, "Queue {} is declared", queue.name);
 
-            /// If the connection is dead the removeExchange callbacks never fire. Bound the wait so
-            /// MV detach / shutdown cannot block forever. The bridge exchange is declared autodelete,
-            /// so the broker reaps it once the dead connection drops - log and continue on timeout.
-            if (!connection->getHandler().startBlockingLoopWithTimeout(BLOCKING_LOOP_TIMEOUT_MS))
-            {
-                /// Make any late-dispatched callback above a no-op before the channel/state go out of scope.
-                state->abandoned = true;
-                LOG_WARNING(log, "Timed out waiting for exchange unbind - RabbitMQ connection may be dead. "
-                                 "The bridge exchange will be auto-deleted by the broker.");
-            }
-            rabbit_channel->close();
-            if (!state->error.empty())
-                throw Exception(ErrorCodes::CANNOT_REMOVE_RABBITMQ_EXCHANGE, "{}", state->error);
-        }
-        catch (...)
-        {
-            exchange_removed = false;
-            throw;
-        }
+    if (queue.message_count)
+        LOG_INFO(log, "Queue {} is non-empty. Non-consumed messaged will also be delivered", queue.name);
+
+    /* Here we bind either to sharding exchange (consistent-hash) or to bridge exchange (fanout). All bindings to routing keys are
+     * done between client's exchange and local bridge exchange. Binding key must be a string integer in case of hash exchange, for
+     * fanout exchange it can be arbitrary
+     */
+    try
+    {
+        rabbit_channel.bindQueue(queue.name, consumer_exchange, std::to_string(queue_id));
+    }
+    catch (const Exception & e)
+    {
+        throw Exception(ErrorCodes::CANNOT_CREATE_RABBITMQ_QUEUE_BINDING,
+            "Failed to create queue binding for exchange {}. Reason: {}", exchange_name, e.message());
     }
 }
 
@@ -941,18 +710,8 @@ void StorageRabbitMQ::read(
     if (!DatabaseCatalog::instance().getDependentViews(getStorageID()).empty())
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageRabbitMQ with attached materialized views");
 
-    std::lock_guard lock(loop_mutex);
-
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
     auto modified_context = addSettings(local_context);
-
-    if (!connection->isConnected())
-    {
-        if (connection->getHandler().loopRunning())
-            deactivateTask(looping_task, false, true);
-        if (!connection->reconnect())
-            throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "No connection to {}", connection->connectionInfoForLog());
-    }
 
     Pipes pipes;
     pipes.reserve(num_created_consumers);
@@ -980,9 +739,6 @@ void StorageRabbitMQ::read(
         pipes.emplace_back(std::move(rabbit_source));
         pipes.back().addTransform(std::move(converting_transform));
     }
-
-    if (!connection->getHandler().loopRunning() && connection->isConnected())
-        startLoop();
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -1073,7 +829,7 @@ void StorageRabbitMQ::shutdown(bool is_drop)
         return;
 
     LOG_TRACE(log, "Deactivating init task");
-    deactivateTask(init_task, true, false);
+    deactivateTask(init_task, true);
 
     std::vector<std::weak_ptr<RabbitMQConsumer>> consumers_snapshot;
     {
@@ -1081,6 +837,7 @@ void StorageRabbitMQ::shutdown(bool is_drop)
         consumers_snapshot = consumers_ref;
     }
 
+    /// Sources that read from the consumers return as soon as they notice it.
     for (auto & consumer_weak : consumers_snapshot)
     {
         auto consumer = consumer_weak.lock();
@@ -1089,12 +846,8 @@ void StorageRabbitMQ::shutdown(bool is_drop)
         consumer->stop();
     }
 
-    /// The order of deactivating tasks is important: wait for streamingToViews() func to finish and
-    /// then wait for background event loop to finish.
     LOG_TRACE(log, "Deactivating streaming task");
-    deactivateTask(streaming_task, true, false);
-    LOG_TRACE(log, "Deactivating looping task");
-    deactivateTask(looping_task, true, true);
+    deactivateTask(streaming_task, true);
 
     /// Inserts are possible even if streaming to views is disabled, so close their idle connections in any case.
     publisher_cleanup_task->deactivate();
@@ -1112,29 +865,21 @@ void StorageRabbitMQ::shutdown(bool is_drop)
     /// Just a paranoid try catch, it is not actually needed.
     try
     {
-        for (auto & consumer_weak : consumers_snapshot)
-        {
-            auto consumer = consumer_weak.lock();
-            if (!consumer)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "RabbitMQ consumer has been unexpectedly destroyed");
+        /// Wait until the sources of direct SELECT queries give the consumers back: they are stopped, so it does not take long.
+        std::vector<RabbitMQConsumerPtr> idle_consumers;
+        for (size_t i = 0; i < num_created_consumers; ++i)
+            idle_consumers.push_back(popConsumer());
+
+        /// Closing a connection cancels its subscriptions: the broker removes the consumers before it confirms the closing.
+        /// Only then the queues can be deleted, because a queue with consumers is not deleted (`if-unused`).
+        for (auto & consumer : idle_consumers)
             consumer->closeConnections();
-        }
 
         /// checkTableCanBeDropped() latches drop_table before the statement it guards can fail, and
         /// nothing ever clears it, so the flag alone also marks a still-alive table whose TRUNCATE
         /// or dependency check threw. Deleting the queues needs the shutdown to be a drop as well.
         if (is_drop && drop_table)
-        {
-            waitForConsumerChannelsToClose(consumers_snapshot);
             cleanupRabbitMQ();
-        }
-
-        /// It is important to close connection here - before removing consumers, because
-        /// it will finish and clean callbacks, which might use those consumers data.
-        connection->disconnect();
-
-        for (size_t i = 0; i < num_created_consumers; ++i)
-            popConsumer();
 
         {
             std::lock_guard lock(consumers_mutex);
@@ -1158,51 +903,6 @@ void StorageRabbitMQ::renameInMemory(const StorageID & new_table_id)
 }
 
 
-/// AMQP orders method completion per channel only, so a queue.delete issued on a fresh channel can
-/// be evaluated by the broker while the consumer is still registered on its own channel, and a
-/// classic queue then refuses AMQP::ifunused with PRECONDITION_FAILED. The broker deregisters a
-/// channel's consumers while handling its channel.close, before answering it, so waiting for that
-/// answer establishes the ordering the delete needs.
-void StorageRabbitMQ::waitForConsumerChannelsToClose(
-    const std::vector<std::weak_ptr<RabbitMQConsumer>> & consumers_snapshot) const
-{
-    if (use_user_setup || consumers_snapshot.empty() || !connection->isConnected())
-        return;
-
-    auto outstanding = [&consumers_snapshot]
-    {
-        for (const auto & consumer_weak : consumers_snapshot)
-            if (auto consumer = consumer_weak.lock(); consumer && !consumer->isChannelCloseCompleted())
-                return true;
-        return false;
-    };
-
-    /// Each close that completes stops the loop, so re-enter it while any consumer is outstanding.
-    /// The remaining time is read once per iteration, because computing it from a second reading
-    /// of the clock could underflow past the bound into an effectively unbounded wait.
-    Stopwatch watch;
-    while (outstanding())
-    {
-        const auto elapsed = watch.elapsedMilliseconds();
-        if (elapsed >= CONSUMER_CHANNEL_CLOSE_TIMEOUT_MS)
-            break;
-        if (!connection->getHandler().startBlockingLoopWithTimeout(CONSUMER_CHANNEL_CLOSE_TIMEOUT_MS - elapsed))
-            break;
-    }
-
-    if (outstanding())
-    {
-        for (const auto & consumer_weak : consumers_snapshot)
-            if (auto consumer = consumer_weak.lock())
-                consumer->abandonChannelClose();
-
-        LOG_WARNING(log, "Timed out waiting for consumer channels to close after {} ms. "
-                         "Queue deletion may be refused while the consumers are still registered",
-                    watch.elapsedMilliseconds());
-    }
-}
-
-
 /// The only thing publishers are supposed to be aware of is _exchanges_ and queues are a responsibility of a consumer.
 /// Therefore, if a table is dropped, a clean up is needed.
 void StorageRabbitMQ::cleanupRabbitMQ() const
@@ -1210,77 +910,60 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
     if (use_user_setup)
         return;
 
-    connection->heartbeat();
-    /// Run the event loop briefly so that any I/O error triggered by the heartbeat write on a
-    /// dead socket is processed before we check isConnected(). Without this, the error event
-    /// only surfaces inside startBlockingLoop() — after the guard has already passed.
-    connection->getHandler().iterateLoop();
-    if (!connection->isConnected())
+    RabbitMQConnection cleanup_connection(configuration, log);
+    try
     {
-        String queue_names;
-        for (const auto & queue : queues)
-        {
-            if (!queue_names.empty())
-                queue_names += ", ";
-            queue_names += queue;
-        }
+        cleanup_connection.connect();
+    }
+    catch (...)
+    {
         LOG_WARNING(log,
-                    "RabbitMQ clean up not done, because there is no connection in table's shutdown. "
+                    "RabbitMQ clean up not done, because there is no connection in table's shutdown: {}. "
                     "There are {} queues ({}), which might need to be deleted manually. Exchanges will be auto-deleted",
-                    queues.size(), queue_names);
+                    getCurrentExceptionMessage(false), queues.size(), fmt::join(queues, ", "));
         return;
     }
 
-    /// State is shared by value into the callbacks (see AMQPSetupState) so that a late dispatch
-    /// after a timeout cannot touch freed stack memory or the destroyed channel. The queue name
-    /// is captured by value for the same reason.
-    auto state = std::make_shared<AMQPSetupState>();
-    auto rabbit_channel = connection->createChannel();
     for (const auto & queue : queues)
     {
         /// AMQP::ifunused is needed, because it is possible to share queues between multiple tables and dropping
         /// one of them should not affect others.
         /// AMQP::ifempty is not used on purpose.
-
-        rabbit_channel->removeQueue(queue, AMQP::ifunused)
-        .onSuccess([this, state, queue](uint32_t num_messages)
+        try
         {
-            if (state->abandoned)
-                return;
+            /// The broker closes the channel when it refuses to delete a queue.
+            if (!cleanup_connection.isConnected())
+                cleanup_connection.connect();
+            const UInt32 num_messages = cleanup_connection.get().deleteQueue(queue, /* if_unused */ true);
             LOG_TRACE(log, "Successfully deleted queue {}, messages contained {}", queue, num_messages);
-            connection->getHandler().stopBlockingLoop();
-        })
-        .onError([this, state, queue](const char * message)
+        }
+        catch (...)
         {
-            if (state->abandoned)
-                return;
-            LOG_ERROR(log, "Failed to delete queue {}. Error message: {}", queue, message);
-            connection->getHandler().stopBlockingLoop();
-        });
+            LOG_ERROR(log, "Failed to delete queue {}. Error message: {}", queue, getCurrentExceptionMessage(false));
+        }
     }
-    if (!connection->getHandler().startBlockingLoopWithTimeout(BLOCKING_LOOP_TIMEOUT_MS))
-    {
-        /// Make any late-dispatched callback above a no-op before the channel/state go out of scope.
-        state->abandoned = true;
-        LOG_WARNING(log, "Timed out waiting for queue cleanup - RabbitMQ connection may be dead. "
-                         "Queues may need to be deleted manually.");
-    }
-    rabbit_channel->close();
 
     /// Also there is no need to cleanup exchanges as they were created with AMQP::autodelete option. Once queues
     /// are removed, exchanges will also be cleaned.
 }
 
 
-void StorageRabbitMQ::cancelBackgroundActivity()
+void StorageRabbitMQ::sendHeartbeatsOfIdleConsumers()
 {
-    IStreamingStorage::cancelBackgroundActivity();
-
-    std::lock_guard lock(consumers_mutex);
-    for (auto & consumer_weak : consumers_ref)
+    /// The consumers that sources are using at the moment send heartbeats while they read.
+    std::vector<RabbitMQConsumerPtr> idle_consumers;
+    while (idle_consumers.size() < num_created_consumers)
     {
-        if (auto consumer = consumer_weak.lock())
-            consumer->wakeUp();
+        auto consumer = popConsumer(std::chrono::milliseconds(1));
+        if (!consumer)
+            break;
+        idle_consumers.push_back(std::move(consumer));
+    }
+
+    for (auto & consumer : idle_consumers)
+    {
+        consumer->heartbeat();
+        pushConsumer(std::move(consumer));
     }
 }
 
@@ -1321,8 +1004,7 @@ RabbitMQConsumerPtr StorageRabbitMQ::popConsumer(std::chrono::milliseconds timeo
 
 RabbitMQConsumerPtr StorageRabbitMQ::createConsumer()
 {
-    return std::make_shared<RabbitMQConsumer>(
-        connection->getHandler(), queues, ++consumer_id, unique_strbase, log, queue_size);
+    return std::make_shared<RabbitMQConsumer>(configuration, queues, ++consumer_id, unique_strbase, log);
 }
 
 bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
@@ -1339,7 +1021,6 @@ void StorageRabbitMQ::threadFunc()
             auto table_id = getStorageID();
 
             const size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-            const bool rabbit_connected = connection->isConnected() || connection->reconnect();
             const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
             const bool deps_ready = num_views == 0 || hasDependencies(table_id);
             /// True only when this cycle is the one out-of-order cycle a `SYSTEM REFRESH` grants to a
@@ -1347,8 +1028,7 @@ void StorageRabbitMQ::threadFunc()
             /// is decided from, so neither a `STOP` racing in right after an ordinary cycle was admitted nor
             /// a `START` racing in right after the permit was consumed can misreport it.
             bool claimed_blocked_refresh = false;
-            const bool run_cycle
-                = rabbit_connected && deps_ready && stream_control.claimCycle(last_seen_refresh_epoch, &claimed_blocked_refresh);
+            const bool run_cycle = deps_ready && stream_control.claimCycle(last_seen_refresh_epoch, &claimed_blocked_refresh);
 
             if (num_views && run_cycle)
             {
@@ -1362,12 +1042,12 @@ void StorageRabbitMQ::threadFunc()
 
                     LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
-                    /// The claimed blocked-REFRESH permit is spent on this cycle: have the source drive the
-                    /// AMQP loop itself so the permit is not wasted (see RabbitMQSource). Every following
-                    /// iteration is an ordinary cycle (the loop below breaks while blocked) and keeps the
-                    /// fast empty return, letting the looping task deliver.
-                    const bool drive_loop_on_worker = std::exchange(claimed_blocked_refresh, false);
-                    bool continue_reading = streamToViews(cycle_epoch, drive_loop_on_worker);
+                    /// The claimed blocked-REFRESH permit is spent on this cycle: have the source wait for
+                    /// messages on an empty first poll, so the permit is not wasted (see RabbitMQSource).
+                    /// Every following iteration is an ordinary cycle (the loop below breaks while blocked)
+                    /// and keeps the fast empty return.
+                    const bool wait_on_worker = std::exchange(claimed_blocked_refresh, false);
+                    bool continue_reading = streamToViews(cycle_epoch, wait_on_worker);
                     if (!continue_reading)
                         break;
 
@@ -1398,20 +1078,7 @@ void StorageRabbitMQ::threadFunc()
         LOG_ERROR(log, "Error while streaming to views: {}", getCurrentExceptionMessage(true));
     }
 
-    try
-    {
-        /// If there is no running select, stop the loop which was activated by previous select.
-        /// Also stop it when armed (loop_state == RUN) but not yet spinning while blocked: otherwise
-        /// a queued looping task can take the sole message-broker worker and spin forever, starving
-        /// later REFRESH/START. stopLoopIfNoReaders() keeps the direct-SELECT readers_count guard.
-        auto & handler = connection->getHandler();
-        if (handler.loopRunning() || (handler.getLoopState() == Loop::RUN && stream_control.isBlocked()))
-            stopLoopIfNoReaders();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    sendHeartbeatsOfIdleConsumers();
 
     if (shutdown_called)
     {
@@ -1428,7 +1095,7 @@ void StorageRabbitMQ::threadFunc()
     }
 }
 
-bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker)
+bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool wait_on_worker)
 {
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -1461,7 +1128,7 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
             *this, storage_snapshot, new_context, Names{}, block_size,
             max_execution_time_ms, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode],
             reject_unhandled_messages, /* ack_in_suffix */false, log, cycle_epoch,
-            /* drive_loop_on_worker */drive_loop_on_worker);
+            /* wait_on_worker */wait_on_worker);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
@@ -1497,12 +1164,6 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
     std::atomic_size_t rows = 0;
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
 
-    /// Pump deliveries via the background looping task. On the self-driving path the source also
-    /// drives the loop itself as a fallback for when a message-broker worker is starved; startup_mutex
-    /// serializes the two, so uv_run is never driven concurrently and the loop always makes progress.
-    if (!connection->getHandler().loopRunning())
-        startLoop();
-
     bool write_failed = false;
     try
     {
@@ -1517,77 +1178,42 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
 
     LOG_TRACE(log, "Processed {} rows", rows.load());
 
-    /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
-     * error occurs or connection is lost while ack is being sent
-     */
-    deactivateTask(looping_task, false, true);
     size_t queue_empty = 0;
     bool any_aborted = false;
 
-    if (!connection->isConnected())
-    {
-        if (shutdown_called)
-        {
-            LOG_DEBUG(log, "Shutdown called, quitting");
-            return false;
-        }
+    LOG_TEST(log, "Committing messages for {} channels", sources.size());
 
-        if (connection->reconnect())
+    /// Commit
+    for (auto & source : sources)
+    {
+        if (!source->hasPendingMessages())
+            ++queue_empty;
+
+        if (source->needChannelUpdate())
         {
-            LOG_DEBUG(log, "Connection restored, updating channels");
-            for (auto & source : sources)
-                source->updateChannel();
+            /// The messages of a failed connection can not be acknowledged anymore: the broker delivers them again.
+            LOG_TEST(log, "Channel {} is in error state, will update", source->getChannelID());
+            source->updateChannel();
         }
         else
         {
-            LOG_TRACE(log, "Reschedule streaming. Unable to restore connection.");
-            return false;
-        }
-    }
-    else
-    {
-        LOG_TEST(log, "Committing messages for {} channels", sources.size());
-
-        /// Commit
-        for (auto & source : sources)
-        {
-            if (!source->hasPendingMessages())
-                ++queue_empty;
-
-            if (source->needChannelUpdate())
-            {
-                LOG_TEST(log, "Channel {} is in error state, will update", source->getChannelID());
-                source->updateChannel(*connection);
-            }
+            /* false is returned by the sendAck function in only two cases:
+            * 1) if connection failed. In this case the channel is closed and will be unable to send ack. Also ack is made based on
+            *    delivery tags, which are unique to channels, so if channels fail, those delivery tags will become invalid and there is
+            *    no way to send specific ack from a different channel. Actually once the server realises that it has messages in a queue
+            *    waiting for confirm from a channel which suddenly closed, it will immediately make those messages accessible to other
+            *    consumers. So in this case duplicates are inevitable.
+            * 2) nothing was read, or all read messages were already acknowledged.
+            */
+            const bool source_aborted = source->wasConsumptionAborted();
+            any_aborted |= source_aborted;
+            LOG_TEST(log, "Will {} messages for channel {}", (source_aborted ? "requeue" : (write_failed ? "nack" : "ack")), source->getChannelID());
+            if (source_aborted)
+                source->sendNack(/*requeue=*/true);
+            else if (write_failed)
+                source->sendNack(/*requeue=*/false);
             else
-            {
-                /* false is returned by the sendAck function in only two cases:
-                * 1) if connection failed. In this case all channels will be closed and will be unable to send ack. Also ack is made based on
-                *    delivery tags, which are unique to channels, so if channels fail, those delivery tags will become invalid and there is
-                *    no way to send specific ack from a different channel. Actually once the server realises that it has messages in a queue
-                *    waiting for confirm from a channel which suddenly closed, it will immediately make those messages accessible to other
-                *    consumers. So in this case duplicates are inevitable.
-                * 2) size of the sent frame (libraries's internal request interface) exceeds max frame - internal library error. This is more
-                *    common for message frames, but not likely to happen to ack frame I suppose. So I do not believe it is likely to happen.
-                *    Also in this case if channel didn't get closed - it is ok if failed to send ack, because the next attempt to send ack on
-                *    the same channel will also commit all previously not-committed messages. Anyway I do not think that for ack frame this
-                *    will ever happen.
-                */
-                const bool source_aborted = source->wasConsumptionAborted();
-                any_aborted |= source_aborted;
-                LOG_TEST(log, "Will {} messages for channel {}", (source_aborted ? "requeue" : (write_failed ? "nack" : "ack")), source->getChannelID());
-                bool send_result = source_aborted ? source->sendNack(/*requeue=*/true)
-                                                  : (write_failed ? source->sendNack(/*requeue=*/false) : source->sendAck());
-                if (send_result)
-                {
-                    /// Iterate loop to activate error callbacks if they happened
-                    connection->getHandler().iterateLoop();
-                    if (!connection->isConnected())
-                        break;
-                }
-
-                connection->getHandler().iterateLoop();
-            }
+                source->sendAck();
         }
     }
 
@@ -1612,19 +1238,9 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
 
     if ((queue_empty == num_created_consumers) && (++read_attempts == MAX_FAILED_READ_ATTEMPTS))
     {
-        connection->heartbeat();
         read_attempts = 0;
         LOG_TRACE(log, "Reschedule streaming. Queues are empty.");
         return false;
-    }
-
-    /// A self-driving blocked REFRESH cycle drove the loop itself and must not leave the background
-    /// looping task running: the table is stopped (no continuous streaming follows), and with a single
-    /// message-broker worker a lingering loop would monopolize it and block later REFRESH/START cycles.
-    if (!drive_loop_on_worker)
-    {
-        LOG_TEST(log, "Will start background loop to let messages be pushed to channel");
-        startLoop();
     }
 
 
@@ -1771,7 +1387,7 @@ Optional parameters:
 
 With the `rabbitmq_host_port` form, set `rabbitmq_secure = 1` to use TLS.
 With the `rabbitmq_address` form the transport comes from the URI scheme, so use `amqps`: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`. `rabbitmq_secure` is ignored for the address form, and `rabbitmq_secure = 1` together with a plaintext `amqp://` address is rejected rather than silently connecting in cleartext.
-The default behaviour of the used library is not to check if the created TLS connection is sufficiently secure. Whether the certificate is expired, self-signed, missing or invalid: the connection is simply permitted. More strict checking of certificates can possibly be implemented in the future.
+The certificate of the server is not verified. Whether the certificate is expired, self-signed, missing or invalid: the connection is simply permitted. More strict checking of certificates can possibly be implemented in the future.
 
 Also format settings can be added along with rabbitmq-related settings.
 

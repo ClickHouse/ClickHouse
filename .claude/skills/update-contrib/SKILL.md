@@ -334,8 +334,6 @@ Some libraries require co-bumping dependencies. `contrib/CMakeLists.txt` documen
 
 - `arrow` requires: `snappy`, `thrift`, `double-conversion`, `xsimd` (and regenerates its flatbuffers bindings)
 - `avro` requires: `snappy`
-- `AMQP-CPP` requires: `libuv`
-- `cassandra` requires: `libuv`
 - `librdkafka` requires: `libgsasl`
 - `libhdfs3` requires: `google-protobuf`, `krb5`, `isa-l`
 - `hive-metastore` requires: `thrift`, `avro`, `arrow`, `libhdfs3`

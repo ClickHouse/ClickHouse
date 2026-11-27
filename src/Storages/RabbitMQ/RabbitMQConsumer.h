@@ -3,43 +3,30 @@
 #include <Core/Names.h>
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
-#include <Common/ConcurrentBoundedQueue.h>
-#include <Common/saturatedDuration.h>
+#include <Storages/RabbitMQ/RabbitMQConnection.h>
 
-#include <condition_variable>
+#include <atomic>
 #include <functional>
-#include <mutex>
+#include <optional>
 
-namespace Poco
-{
-class Logger;
-}
-
-namespace AMQP
-{
-class TcpChannel;
-}
 
 namespace DB
 {
 
-class RabbitMQHandler;
-class RabbitMQConnection;
-using ChannelPtr = std::unique_ptr<AMQP::TcpChannel>;
 static constexpr auto SANITY_TIMEOUT = 1000 * 60 * 10; /// 10min.
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
+/// A consumer of the table's queues with its own connection and channel. Deliveries are read from the socket
+/// only while the consumer is used: by a source, which owns the consumer while it reads, or to send heartbeats.
+/// Only `stop` can be called concurrently with the other methods.
 class RabbitMQConsumer
 {
-
 public:
     RabbitMQConsumer(
-        RabbitMQHandler & event_handler_,
-        std::vector<String> & queues_,
+        const RabbitMQConfiguration & configuration_,
+        const std::vector<String> & queues_,
         size_t channel_id_base_,
         const String & channel_base_,
-        LoggerPtr log_,
-        uint32_t queue_size_);
+        LoggerPtr log_);
 
     struct CommitInfo
     {
@@ -65,8 +52,12 @@ public:
     /// or nullptr if there are no messages to process.
     ReadBufferPtr consume();
 
-    bool needChannelUpdate();
-    void updateChannel(RabbitMQConnection & connection);
+    /// Whether the connection or the channel failed, so `updateChannel` is needed to read and commit messages.
+    bool needChannelUpdate() const { return state != State::OK; }
+
+    /// Connects again and subscribes to the queues. Does not throw: if it fails, the consumer stays in the error state.
+    /// Deliveries of the previous channel can not be acknowledged anymore, and the broker delivers them again.
+    void updateChannel();
 
     void stop();
     bool isConsumerStopped() const { return stopped.load(); }
@@ -74,85 +65,48 @@ public:
     bool ackMessages(const CommitInfo & commit_info);
     bool nackMessages(const CommitInfo & commit_info, bool requeue = false);
 
-    bool hasPendingMessages() { return !received.empty(); }
+    /// Whether a message is available without waiting: received before or already in the socket.
+    bool hasPendingMessages();
 
-    void waitForMessages(std::optional<uint64_t> timeout_ms = std::nullopt, std::function<bool()> is_cancelled = {})
-    {
-        std::unique_lock lock(mutex);
-        if (!timeout_ms)
-            timeout_ms = SANITY_TIMEOUT;
-        cv.wait_for(lock, saturatedMilliseconds(*timeout_ms),
-            [&]{ return !received.empty() || isConsumerStopped() || (is_cancelled && is_cancelled()); });
-    }
+    /// Waits until a message is available, the timeout passes, the consumer is stopped, or `is_cancelled` returns true.
+    void waitForMessages(std::optional<uint64_t> timeout_ms = std::nullopt, std::function<bool()> is_cancelled = {});
 
-    /// Wake a source parked in `waitForMessages` so it can re-check its cancellation state.
-    void wakeUp();
+    /// Sends a heartbeat if it is due, so that the broker does not close the connection of an idle consumer.
+    void heartbeat();
 
+    /// Closes the connection, which cancels the subscriptions and returns unacknowledged messages to the queues.
     void closeConnections();
 
-    /// True once the broker has answered the channel.close sent by closeConnections(). A consumer
-    /// that never had a channel reports true, as there is nothing to wait for.
-    bool isChannelCloseCompleted() const { return !close_state || close_state->completed; }
-
-    /// Stop expecting that answer, so a callback dispatched later becomes a no-op.
-    void abandonChannelClose() { if (close_state) close_state->abandoned = true; }
-
 private:
-    void subscribe(UInt64 generation);
-    bool isCurrentChannel(UInt64 generation) const { return generation == channel_generation; }
-    bool isChannelUsable();
-    void notifyReceivedSpace();
-    void updateCommitInfo(CommitInfo record);
+    /// Reads the next delivery into `pending`, waiting at most `timeout_ms`. Returns whether there is one.
+    bool receive(UInt64 timeout_ms);
 
-    /// Shared by value into the close() callbacks, mirroring RabbitMQProducer::finish, so that a
-    /// late dispatch after the wait was abandoned cannot touch a destroyed consumer.
-    struct ChannelCloseState
-    {
-        std::atomic<bool> completed = false;
-        std::atomic<bool> abandoned = false;
-    };
-    std::shared_ptr<ChannelCloseState> close_state;
+    void setError(const String & what);
 
-    ChannelPtr consumer_channel;
-    RabbitMQHandler & event_handler; /// Used concurrently, but is thread safe.
+    RabbitMQConnection connection;
 
     const std::vector<String> queues;
     const String channel_base;
     const size_t channel_id_base;
 
     LoggerPtr log;
-    std::atomic<bool> stopped;
+    std::atomic<bool> stopped = false;
 
     String channel_id;
     UInt64 channel_id_counter = 0;
-    /// Incremented on every channel update and captured by value in the channel callbacks.
-    /// AMQP-CPP can dispatch callbacks of a replaced channel later, they must not touch the consumer state.
-    std::atomic<UInt64> channel_generation = 0;
 
     enum class State : uint8_t
     {
         NONE,
-        INITIALIZING,
         OK,
         ERROR,
     };
-    std::atomic<State> state = State::NONE;
-    size_t subscriptions_num = 0;
+    State state = State::NONE;
 
-    ConcurrentBoundedQueue<MessageData> received;
+    std::optional<AMQP::Delivery> pending;
     MessageData current;
 
     UInt64 last_commited_delivery_tag = 0;
-
-    std::condition_variable cv;
-    std::mutex mutex;
-
-    /// Held by the channel callbacks while they touch the consumer state and by `updateChannel`
-    /// while it replaces the generation and clears `received`. Recursive because AMQP-CPP calls the error
-    /// callback of a failed `consume` right away, from `subscribe` inside the `onReady` callback.
-    std::recursive_mutex channel_mutex;
-    /// Notified when `received` gets space, the channel is replaced, or the consumer is stopped.
-    std::condition_variable_any received_space_cv;
 };
 
 }

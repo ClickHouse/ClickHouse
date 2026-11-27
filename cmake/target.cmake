@@ -80,7 +80,7 @@ if (OS_WASM)
     set (ENABLE_LIBPQXX OFF CACHE INTERNAL "")
     set (ENABLE_NURAFT OFF CACHE INTERNAL "")
     set (ENABLE_KAFKA OFF CACHE INTERNAL "")
-    set (ENABLE_AMQPCPP OFF CACHE INTERNAL "")
+    set (ENABLE_RABBITMQ OFF CACHE INTERNAL "")
     set (ENABLE_NATS OFF CACHE INTERNAL "")
     set (ENABLE_CASSANDRA OFF CACHE INTERNAL "")
     # Raw sockets like the rest, and its `mlib` has an explicit #error for platforms

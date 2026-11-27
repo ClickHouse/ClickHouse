@@ -87,7 +87,7 @@ void registerStorageBigQuery(StorageFactory & factory);
 void registerStorageKafka(StorageFactory & factory);
 #endif
 
-#if USE_AMQPCPP
+#if USE_RABBITMQ
 void registerStorageRabbitMQ(StorageFactory & factory);
 #endif
 
@@ -201,7 +201,7 @@ void registerStorages()
     registerStorageFileLog(factory);
 #endif
 
-#if USE_AMQPCPP
+#if USE_RABBITMQ
     registerStorageRabbitMQ(factory);
 #endif
 

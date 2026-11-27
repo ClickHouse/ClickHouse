@@ -1,12 +1,21 @@
 #pragma once
 
+#include <Common/Logger.h>
 #include <Common/SecretString.h>
-#include <Storages/UVLoop.h>
-#include <Storages/RabbitMQ/RabbitMQHandler.h>
+#include <Storages/RabbitMQ/AMQPClient.h>
+
+#include <memory>
 
 
 namespace DB
 {
+
+/// Bounds waiting for any reply of the broker and every read or write on the socket. Also bounds how long
+/// DROP TABLE, the shutdown of an INSERT, or the server shutdown can block when the broker connection is dead.
+static constexpr UInt64 RABBITMQ_REQUEST_TIMEOUT_MS = 30000;
+
+/// Bounds the closing handshake of a connection. Short, because nothing is lost if it does not complete.
+static constexpr UInt64 RABBITMQ_CLOSE_TIMEOUT_MS = 1000;
 
 struct RabbitMQConfiguration
 {
@@ -17,51 +26,42 @@ struct RabbitMQConfiguration
     String vhost;
 
     bool secure{};
+    /// `rabbitmq_address`: if set, it is used instead of the fields above.
     SecretString connection_string;
+
+    AMQP::ConnectionSettings getConnectionSettings() const;
+    String getAddressForLog() const;
 };
 
+/// A connection to RabbitMQ with one channel, which `connect` establishes again once it is lost.
+/// Not thread-safe: a connection is used by one thread at a time.
 class RabbitMQConnection
 {
 public:
     RabbitMQConnection(const RabbitMQConfiguration & configuration_, LoggerPtr log_);
+    ~RabbitMQConnection();
 
+    /// Whether there is a connection, and it has not failed and was not closed by the broker.
     bool isConnected();
 
-    bool connect();
+    /// Connects, closing the previous connection first. Throws `CANNOT_CONNECT_RABBITMQ`.
+    void connect();
 
-    bool reconnect();
+    /// Closes the connection gracefully if it is usable, otherwise just closes the socket.
+    void disconnect();
 
-    void disconnect(bool immediately = false);
+    /// The current connection. Requires a successful `connect` before.
+    AMQP::Connection & get();
 
-    void heartbeat();
+    /// The heartbeat interval in seconds negotiated with the server, 0 if heartbeats are disabled or there is no connection.
+    UInt16 getHeartbeatInterval() const { return connection ? connection->getHeartbeatInterval() : 0; }
 
-    bool closed();
-
-    ChannelPtr createChannel();
-
-    /// RabbitMQHandler is thread safe. Any public methods can be called concurrently.
-    RabbitMQHandler & getHandler() { return event_handler; }
-    const RabbitMQHandler & getHandler() const { return event_handler; }
-
-    String connectionInfoForLog() const;
+    String connectionInfoForLog() const { return configuration.getAddressForLog(); }
 
 private:
-    bool isConnectedImpl() const;
-
-    void connectImpl();
-
-    void disconnectImpl(bool immediately = false);
-
-    RabbitMQConfiguration configuration;
+    const RabbitMQConfiguration configuration;
     LoggerPtr log;
-
-    UVLoop loop;
-    /// Preserve order of destruction here:
-    /// destruct connection and handler before the loop above.
-    RabbitMQHandler event_handler;
-    std::unique_ptr<AMQP::TcpConnection> connection;
-
-    std::mutex mutex;
+    std::unique_ptr<AMQP::Connection> connection;
 };
 
 using RabbitMQConnectionPtr = std::unique_ptr<RabbitMQConnection>;

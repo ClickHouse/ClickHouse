@@ -9,8 +9,6 @@
 namespace DB
 {
 
-static const auto FINISH_PRODUCER_NUM_TRIES = 50;
-
 namespace ErrorCodes
 {
     extern const int ABORTED;
@@ -113,20 +111,9 @@ void RabbitMQProducer::startProducingTaskLoop()
         return;
     }
 
-    size_t try_num = 0;
-    while (++try_num <= FINISH_PRODUCER_NUM_TRIES)
-    {
-        int res = publisher->iterateEventLoop();
-        if (!res)
-            break;
-        LOG_TEST(log, "Waiting for pending callbacks to finish (count: {}, try: {})", res, try_num);
-    }
-
     /// All messages are confirmed, so the next insert can continue on the same channel.
     if (!shutdown_called.load() && publisher->isReusable())
         can_reuse_publisher = true;
-    else
-        publisher->closeChannel();
 }
 
 }

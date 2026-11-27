@@ -1,131 +1,85 @@
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
 
-#include <amqpcpp.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
 {
 
-static const auto CONNECT_SLEEP = 200;
-static const auto RETRIES_MAX = 20;
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+AMQP::ConnectionSettings RabbitMQConfiguration::getConnectionSettings() const
+{
+    AMQP::ConnectionSettings settings;
+    if (!connection_string.empty())
+    {
+        settings.address = AMQP::Address::parse(std::string_view(connection_string));
+    }
+    else
+    {
+        settings.address.host = host;
+        settings.address.port = port;
+        settings.address.user = username;
+        settings.address.password = password;
+        settings.address.vhost = vhost;
+        settings.address.secure = secure;
+    }
+    settings.request_timeout = Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(RABBITMQ_REQUEST_TIMEOUT_MS) * 1000);
+    return settings;
+}
+
+String RabbitMQConfiguration::getAddressForLog() const
+{
+    if (!connection_string.empty())
+    {
+        const auto address = AMQP::Address::parse(std::string_view(connection_string));
+        return fmt::format("{}:{}", address.host, address.port);
+    }
+    return fmt::format("{}:{}", host, port);
+}
 
 
 RabbitMQConnection::RabbitMQConnection(const RabbitMQConfiguration & configuration_, LoggerPtr log_)
     : configuration(configuration_)
-    , log(log_)
-    , event_handler(loop.getLoop(), log)
+    , log(std::move(log_))
 {
 }
 
-String RabbitMQConnection::connectionInfoForLog() const
+RabbitMQConnection::~RabbitMQConnection()
 {
-    if (!configuration.connection_string.empty())
-    {
-        AMQP::Address address(String(configuration.connection_string));
-        return address.hostname() + ":" + toString(address.port());
-    }
-    return configuration.host + ':' + toString(configuration.port);
+    disconnect();
 }
 
 bool RabbitMQConnection::isConnected()
 {
-    std::lock_guard lock(mutex);
-    return isConnectedImpl();
+    return connection && connection->isUsable();
 }
 
-bool RabbitMQConnection::connect()
+void RabbitMQConnection::connect()
 {
-    std::lock_guard lock(mutex);
-    connectImpl();
-    return isConnectedImpl();
+    disconnect();
+    const auto settings = configuration.getConnectionSettings();
+    LOG_DEBUG(log, "Connecting to RabbitMQ {} (user: {}, vhost: {})", connectionInfoForLog(), settings.address.user, settings.address.vhost);
+    connection = std::make_unique<AMQP::Connection>(settings, log);
 }
 
-bool RabbitMQConnection::reconnect()
+void RabbitMQConnection::disconnect()
 {
-    std::lock_guard lock(mutex);
-    if (isConnectedImpl())
-        return true;
-
-    disconnectImpl();
-
-    /// This will force immediate closure if not yet closed
-    if (!connection->closed())
-        connection->close(true);
-
-    LOG_DEBUG(log, "Trying to restore connection to {}", connectionInfoForLog());
-    connectImpl();
-
-    return isConnectedImpl();
+    if (!connection)
+        return;
+    connection->close(Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(RABBITMQ_CLOSE_TIMEOUT_MS) * 1000));
+    connection.reset();
 }
 
-ChannelPtr RabbitMQConnection::createChannel()
+AMQP::Connection & RabbitMQConnection::get()
 {
-    std::lock_guard lock(mutex);
-    return std::make_unique<AMQP::TcpChannel>(connection.get());
-}
-
-void RabbitMQConnection::disconnect(bool immediately)
-{
-    std::lock_guard lock(mutex);
-    disconnectImpl(immediately);
-}
-
-void RabbitMQConnection::heartbeat()
-{
-    std::lock_guard lock(mutex);
-    connection->heartbeat();
-}
-
-bool RabbitMQConnection::closed()
-{
-    std::lock_guard lock(mutex);
-    return connection->closed();
-}
-
-bool RabbitMQConnection::isConnectedImpl() const
-{
-    return event_handler.connectionRunning() && connection->usable();
-}
-
-void RabbitMQConnection::connectImpl()
-{
-    if (configuration.connection_string.empty())
-    {
-        LOG_DEBUG(log, "Connecting to: {}:{} (user: {})", configuration.host, configuration.port, configuration.username);
-        AMQP::Login login(configuration.username, String(configuration.password));
-        AMQP::Address address(configuration.host, configuration.port, login, configuration.vhost, configuration.secure);
-        connection = std::make_unique<AMQP::TcpConnection>(&event_handler, address);
-    }
-    else
-    {
-        AMQP::Address address(String(configuration.connection_string));
-        connection = std::make_unique<AMQP::TcpConnection>(&event_handler, address);
-    }
-
-    auto cnt_retries = 0;
-    while (true)
-    {
-        event_handler.iterateLoop();
-
-        if (connection->ready() || cnt_retries++ == RETRIES_MAX)
-            break;
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
-    }
-}
-
-void RabbitMQConnection::disconnectImpl(bool immediately)
-{
-    connection->close(immediately);
-
-    /** Connection is not closed immediately (firstly, all pending operations are completed, and then
-     *  an AMQP closing-handshake is  performed). But cannot open a new connection until previous one is properly closed
-     */
-    size_t cnt_retries = 0;
-    while (!connection->closed() && cnt_retries++ != RETRIES_MAX)
-        event_handler.iterateLoop();
+    if (!connection)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no connection to RabbitMQ {}", connectionInfoForLog());
+    return *connection;
 }
 
 }

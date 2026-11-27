@@ -38,7 +38,7 @@ RabbitMQPublisherPtr RabbitMQPublisherPool::acquire()
         }
 
         LOG_DEBUG(log, "Discarding an idle producer connection, which is expired or no longer usable");
-        idle->publisher->disconnect(/* immediately */ true);
+        idle->publisher->disconnect();
     }
 
     auto publisher = std::make_unique<RabbitMQPublisher>(
@@ -58,7 +58,6 @@ void RabbitMQPublisherPool::release(RabbitMQPublisherPtr publisher)
         }
     }
 
-    publisher->closeChannel();
     publisher->disconnect();
 }
 
@@ -90,7 +89,7 @@ void RabbitMQPublisherPool::cleanupIdlePublishers()
     {
         if (isExpired(idle) || !idle.publisher->isReusable())
         {
-            idle.publisher->disconnect(/* immediately */ true);
+            idle.publisher->disconnect();
             ++num_discarded;
         }
         else

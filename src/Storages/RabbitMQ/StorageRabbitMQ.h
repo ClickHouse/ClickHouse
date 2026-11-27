@@ -12,8 +12,6 @@
 #include <Storages/RabbitMQ/RabbitMQ_fwd.h>
 #include <Storages/IStreamingStorage.h>
 #include <Common/thread_local_rng.h>
-#include <amqpcpp/libuv.h>
-#include <uv.h>
 #include <random>
 
 
@@ -43,8 +41,6 @@ public:
 
     void startup() override;
     void shutdown(bool is_drop) override;
-
-    void cancelBackgroundActivity() override;
 
     void renameInMemory(const StorageID & new_table_id) override;
 
@@ -82,12 +78,6 @@ public:
     const String & getFormatName() const { return format_name; }
 
     String getExchange() const { return exchange_name; }
-    void unbindExchange();
-
-    RabbitMQConnection & getConnection() { return *connection; }
-
-    void incrementReader();
-    void decrementReader();
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
@@ -120,7 +110,6 @@ private:
 
     bool hash_exchange;
 
-    RabbitMQConnectionPtr connection; /// Connection for all consumers
     RabbitMQConfiguration configuration;
 
     /// Connections with an open channel for insert queries, reused across them.
@@ -134,43 +123,20 @@ private:
 
     String unique_strbase; /// to make unique consumer channel id
 
-    /// maximum number of messages in RabbitMQ queue (x-max-length). Also used
-    /// to setup size of inner consumer for received messages
-    uint32_t queue_size;
-
     String sharding_exchange, bridge_exchange, consumer_exchange;
     size_t consumer_id = 0; /// counter for consumer, needed for channel id
 
     std::vector<String> queues;
 
-    std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
     BackgroundSchedulePoolTaskHolder streaming_task;
-    BackgroundSchedulePoolTaskHolder looping_task;
     BackgroundSchedulePoolTaskHolder init_task;
     /// Closes idle producer connections of `publisher_pool`, which are expired or lost.
     BackgroundSchedulePoolTaskHolder publisher_cleanup_task;
 
     uint64_t milliseconds_to_wait;
 
-    /**
-     * ╰( ͡° ͜ʖ ͡° )つ──☆* Evil atomics:
-     */
-    /// Allow to remove exchange only once.
-    std::atomic<bool> exchange_removed = false;
-    /// For select query we must be aware of the end of streaming
-    /// to be able to turn off the loop.
-    std::atomic<size_t> readers_count = 0;
-
     void scheduleStreamingTasksImpl() override;
-
-    /// In select query we start event loop, but do not stop it
-    /// after that select is finished. Then in a thread, which
-    /// checks for MV we also check if we have select readers.
-    /// If not - we turn off the loop. The checks are done under
-    /// mutex to avoid having a turned off loop when select was
-    /// started.
-    std::mutex loop_mutex;
 
     size_t read_attempts = 0;
     mutable bool drop_table = false;
@@ -182,13 +148,11 @@ private:
 
     /// Functions working in the background
     void threadFunc();
-    void loopingFunc();
     void connectionFunc();
     void publisherCleanupFunc();
 
-    void startLoop();
-    void stopLoop();
-    void stopLoopIfNoReaders();
+    /// Sends heartbeats on the connections of the consumers that are not used by a source at the moment.
+    void sendHeartbeatsOfIdleConsumers();
 
     static Names parseSettings(String settings_list);
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
@@ -196,17 +160,17 @@ private:
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
-    void deactivateTask(BackgroundSchedulePoolTaskHolder & task, bool wait, bool stop_loop);
+    void deactivateTask(BackgroundSchedulePoolTaskHolder & task, bool wait);
 
+    /// Declares the exchanges and the queues using a new connection, then creates the consumers.
     void initRabbitMQ();
     void cleanupRabbitMQ() const;
-    void waitForConsumerChannelsToClose(const std::vector<std::weak_ptr<RabbitMQConsumer>> & consumers_snapshot) const;
 
-    void bindExchange(AMQP::TcpChannel & rabbit_channel);
-    void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
+    void bindExchange(AMQP::Connection & rabbit_channel);
+    void bindQueue(size_t queue_id, AMQP::Connection & rabbit_channel);
 
     /// Return true on successful stream attempt.
-    bool streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker);
+    bool streamToViews(UInt64 cycle_epoch, bool wait_on_worker);
     bool hasDependencies(const StorageID & table_id);
 
     static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
