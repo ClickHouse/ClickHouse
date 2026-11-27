@@ -72,8 +72,10 @@ struct FilterNames
     NameSet names;
     /// a body is opened once in a subquery that reads a checked table and once elsewhere
     SetWithMemoryTracking<std::pair<String, bool>> visited_udfs;
-    /// `t.`, `db.t.` and `q.` of the checked tables that a subquery reads as `db.t AS q`
+    /// `t.`, `db.t.` and `q.` of the checked tables that a subquery reads as `db.t AS q`, `(SELECT ... FROM t) AS q` or `q AS (SELECT ... FROM t)`
     Strings qualifiers;
+    /// the CTEs `c AS (SELECT ... FROM t)` over a checked table, `FROM c` reads it too
+    NameSet readers;
 
     /// an unqualified table binds in the database of the reader, so it counts in every database
     [[nodiscard]] static bool binds(const ASTTableIdentifier & table, const StorageID & checked)
@@ -82,12 +84,18 @@ struct FilterNames
         return checked.table_name == id.table_name && (id.database_name.empty() || checked.database_name == id.database_name);
     }
 
+    [[nodiscard]] bool reads(const ASTTableIdentifier & table) const
+    {
+        return (!table.compound() && readers.contains(table.name()))
+            || std::ranges::any_of(tables, [&](const auto & checked) { return binds(table, checked); });
+    }
+
     /// the tables of one subquery level are in its `FROM`, joins and `FROM` or `WITH` subqueries, a subquery
     /// in its expressions is a level of its own
     [[nodiscard]] bool readsCheckedTable(const IAST & ast) const
     {
         if (const auto * table = ast.as<ASTTableIdentifier>())
-            return std::ranges::any_of(tables, [&](const auto & checked) { return binds(*table, checked); });
+            return reads(*table);
         const bool from = ast.as<ASTTableExpression>() || ast.as<ASTWithElement>();
         return std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return (from || !child->as<ASTSubquery>()) && readsCheckedTable(*child); });
     }
@@ -97,20 +105,26 @@ struct FilterNames
     void collect(const ASTPtr & ast, NameSet bound = {}, bool record = true, bool in_reader = false)
     {
         if (ast->as<ASTSubquery>())
-            record = in_reader = in_reader || readsCheckedTable(*ast);
+        {
+            const bool reader = readsCheckedTable(*ast);
+            record = in_reader = in_reader || reader;
+            if (auto alias = ast->tryGetAlias(); reader && !alias.empty())
+                qualifiers.push_back(alias + ".");
+        }
+        else if (const auto * cte = ast->as<ASTWithElement>(); cte && readsCheckedTable(*ast))
+        {
+            readers.insert(cte->name);
+            qualifiers.push_back(cte->name + ".");
+        }
 
         String name;
         if (const auto * table = ast->as<ASTTableIdentifier>())
         {
             for (const auto & checked : tables)
-            {
-                if (!binds(*table, checked))
-                    continue;
-                qualifiers.push_back(checked.table_name + ".");
-                qualifiers.push_back(checked.database_name + "." + checked.table_name + ".");
-                if (auto alias = table->tryGetAlias(); !alias.empty())
-                    qualifiers.push_back(alias + ".");
-            }
+                if (binds(*table, checked))
+                    qualifiers.insert(qualifiers.end(), {checked.table_name + ".", checked.database_name + "." + checked.table_name + "."});
+            if (auto alias = table->tryGetAlias(); !alias.empty() && reads(*table))
+                qualifiers.push_back(alias + ".");
             return;
         }
         if (const auto * identifier = ast->as<ASTIdentifier>())
@@ -176,7 +190,7 @@ Names changedColumns(const AlterCommand & command, const ColumnsDescription & co
         {
             if (column.default_desc.kind != ColumnDefaultKind::Alias || std::ranges::contains(changed, column.name))
                 continue;
-            FilterNames sources{no_tables, columns, {}, {}, {}};
+            FilterNames sources{no_tables, columns, {}, {}, {}, {}};
             sources.collect(column.default_desc.expression);
             if (std::ranges::any_of(sources.names, [&](const auto & name) { return mentions(name, {}, changed[i], columns); }))
                 changed.push_back(column.name);
@@ -234,7 +248,7 @@ void checkRowPoliciesBeforeAlter(const StoragePtr & table, const ColumnsDescript
         if (policy_tables.empty())
             continue;
 
-        FilterNames filter_names{tables, columns, {}, {}, {}};
+        FilterNames filter_names{tables, columns, {}, {}, {}, {}};
         for (const auto & filter : policy->filters)
         {
             if (filter.empty())
