@@ -1,3 +1,5 @@
+-- Tags: no-encrypted-storage
+
 DROP TABLE IF EXISTS mv_table;
 DROP TABLE IF EXISTS null_table;
 

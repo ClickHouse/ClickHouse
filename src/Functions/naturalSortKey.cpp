@@ -1,5 +1,4 @@
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
@@ -8,10 +7,11 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_LARGE_STRING_SIZE;
 }
 
-class FunctionNaturalSortKey final : public IFunction
+class FunctionNaturalSortKey : public IFunction
 {
 public:
     static constexpr auto name = "naturalSortKey";
@@ -21,25 +21,29 @@ public:
         return std::make_shared<FunctionNaturalSortKey>();
     }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(T : String) -> T";
+        if (!isString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
+
+        return arguments[0];
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] ColumnPtr executeImpl(
+    ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & /*result_type*/,
         size_t input_rows_count) const override
@@ -222,21 +226,16 @@ REGISTER_FUNCTION(NaturalSortKey)
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
-        R"(
-CREATE TABLE t (s String) ENGINE = Memory;
-INSERT INTO t VALUES ('a1'), ('a02');
-
-SELECT s FROM t ORDER BY naturalSortKey(s);
-        )",
+        "SELECT s FROM t ORDER BY naturalSortKey(s)",
         R"(
 ┌─s───┐
 │ a1  │
-│ a02 │
+| a02 │
 └─────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 3};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

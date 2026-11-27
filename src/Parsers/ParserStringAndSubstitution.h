@@ -8,7 +8,7 @@ namespace DB
 class ParserStringAndSubstitution : public IParserBase
 {
 private:
-    [[nodiscard]] const char * getName() const override { return "ParserStringAndSubstitution"; }
+    const char * getName() const override { return "ParserStringAndSubstitution"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:

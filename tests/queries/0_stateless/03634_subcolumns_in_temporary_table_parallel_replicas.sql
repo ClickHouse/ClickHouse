@@ -1,3 +1,4 @@
+SET enable_analyzer=1;
 DROP TABLE IF EXISTS t0;
 CREATE TABLE t0 (c0 Nullable(Int)) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_03634_{database}/t0', 'r1') ORDER BY tuple();
 INSERT INTO TABLE t0 (c0) VALUES (1);

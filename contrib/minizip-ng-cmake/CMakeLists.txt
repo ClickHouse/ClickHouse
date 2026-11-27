@@ -28,12 +28,9 @@ set(MINIZIP_HDR
     ${_MINIZIP_SOURCE_DIR}/mz_strm_split.h
     ${_MINIZIP_SOURCE_DIR}/mz_strm_os.h
     ${_MINIZIP_SOURCE_DIR}/mz_zip.h
-    ${_MINIZIP_SOURCE_DIR}/mz_zip_rw.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/mz_config.h)
+    ${_MINIZIP_SOURCE_DIR}/mz_zip_rw.h)
 
-# `mz.h`, `mz_os.h` and `mz_strm_os_posix.c` include `mz_config.h`, which upstream generates with
-# CMake feature checks. ClickHouse ships a hardcoded copy of it in this directory instead.
-set(MINIZIP_INC ${_MINIZIP_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
+set(MINIZIP_INC ${_MINIZIP_SOURCE_DIR})
 
 set(MINIZIP_DEF)
 set(MINIZIP_PUBLIC_DEF)

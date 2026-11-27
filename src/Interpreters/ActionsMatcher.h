@@ -60,16 +60,16 @@ struct ScopeStack : WithContext
 
     size_t getColumnLevel(const std::string & name);
 
-    void addColumn(ColumnConstPtr column, DataTypePtr type, std::string name);
+    void addColumn(ColumnWithTypeAndName column);
     void addAlias(const std::string & name, std::string alias);
     void addArrayJoin(const std::string & source_name, std::string result_name);
     void addFunction(const FunctionOverloadResolverPtr & function, const Names & argument_names, std::string result_name);
 
     ActionsDAG popLevel();
 
-    [[nodiscard]] const ActionsDAG & getLastActions() const;
-    [[nodiscard]] const Index & getLastActionsIndex() const;
-    [[nodiscard]] std::string dumpNames() const;
+    const ActionsDAG & getLastActions() const;
+    const Index & getLastActionsIndex() const;
+    std::string dumpNames() const;
 };
 
 class ASTIdentifier;
@@ -153,12 +153,12 @@ public:
             bool is_create_parameterized_view_ = false);
 
         /// Does result of the calculation already exists in the block.
-        [[nodiscard]] bool hasColumn(const String & column_name) const;
-        [[nodiscard]] std::vector<std::string_view> getAllColumnNames() const;
+        bool hasColumn(const String & column_name) const;
+        std::vector<std::string_view> getAllColumnNames() const;
 
-        void addColumn(ColumnConstPtr column, DataTypePtr type, std::string name)
+        void addColumn(ColumnWithTypeAndName column)
         {
-            actions_stack.addColumn(std::move(column), std::move(type), std::move(name));
+            actions_stack.addColumn(std::move(column));
         }
 
         void addAlias(const std::string & name, std::string alias)

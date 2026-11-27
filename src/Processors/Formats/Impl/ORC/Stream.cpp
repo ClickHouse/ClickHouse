@@ -191,7 +191,7 @@ void OutputByteStream::write(const char * data, size_t size)
     }
 }
 
-void OutputByteStream::recordPosition(VectorWithMemoryTracking<UInt64> & positions) const
+void OutputByteStream::recordPosition(std::vector<UInt64> & positions) const
 {
     if (compressor)
     {

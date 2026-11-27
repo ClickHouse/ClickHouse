@@ -13,7 +13,7 @@ namespace ErrorCodes
 namespace DB
 {
 
-class SelectByIndicesTransform final : public ISimpleTransform
+class SelectByIndicesTransform : public ISimpleTransform
 {
 public:
     explicit SelectByIndicesTransform(SharedHeader header)

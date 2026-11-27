@@ -1,12 +1,10 @@
 #pragma once
 
 #include <Backups/BackupIO_Default.h>
+#include <Common/Logger.h>
 #include <Disks/DiskType.h>
 
 #include <filesystem>
-#include <mutex>
-#include <optional>
-#include <set>
 
 
 namespace DB
@@ -45,7 +43,7 @@ public:
 
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
 
-    void copyFileFromDiskWithFallback(
+    void copyFileFromDisk(
         const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
         override;
 
@@ -53,33 +51,14 @@ public:
 
     void removeFile(const String & file_name) override;
     void removeEmptyDirectories() override;
-    void removeEmptyRootDirectory() override;
-
-    void syncFileToDisk(const String & file_name) override;
-    void syncDirectoriesToDisk() override;
 
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
     void removeEmptyDirectoriesImpl(const std::filesystem::path & current_dir);
-    [[nodiscard]] std::optional<std::filesystem::path> getLocalPathToSync(const std::filesystem::path & path) const;
 
     const DiskPtr disk;
     const std::filesystem::path root_path;
     const DataSourceDescription data_source_description;
-
-    /// Whether this disk keeps the backup as plain files in the local filesystem, so that fsyncing
-    /// those files and their directories makes the backup durable. See `syncFileToDisk`.
-    const bool destination_is_plain_local_files;
-
-    /// For an object-storage disk keeping its metadata in local files, the directory those files
-    /// live in: the backup is reached through them, so they are what has to be fsynced there.
-    const std::optional<std::filesystem::path> local_metadata_root;
-
-    /// Absolute local directories that received a file synced via `syncFileToDisk`, collected so
-    /// they can be fsynced (deepest-first) in `syncDirectoriesToDisk`. Written from the concurrent
-    /// backup write path, hence guarded. Only used for local disks.
-    std::mutex dirs_to_sync_mutex;
-    std::set<std::filesystem::path> dirs_to_sync TSA_GUARDED_BY(dirs_to_sync_mutex);
 };
 
 }

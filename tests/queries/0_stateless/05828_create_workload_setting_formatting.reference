@@ -1,4 +1,0 @@
-CREATE WORKLOAD w SETTINGS `e f` = 1	1
-CREATE WORKLOAD w SETTINGS `e.f` = 1	1
-CREATE WORKLOAD w IN `p q` SETTINGS `e.f` = 1 FOR `r s`, weight = 2 FOR `a.b`, max_io_requests = 3	1
-CREATE WORKLOAD w IN p SETTINGS weight = 2, priority = 1 FOR r	1

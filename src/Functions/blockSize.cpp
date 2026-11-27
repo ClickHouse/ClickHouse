@@ -11,7 +11,7 @@ namespace
 
 /** columnsSize() - get the columns size in number of rows.
   */
-class FunctionBlockSize final : public IFunction
+class FunctionBlockSize : public IFunction
 {
 public:
     static constexpr auto name = "blockSize";
@@ -21,37 +21,37 @@ public:
     }
 
     /// Get the function name.
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isDeterministic() const override
+    bool isDeterministic() const override
     {
         return false;
     }
 
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return false;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> UInt64";
+        return std::make_shared<DataTypeUInt64>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return ColumnUInt64::create(input_rows_count, input_rows_count);
     }
@@ -62,7 +62,7 @@ public:
 REGISTER_FUNCTION(BlockSize)
 {
     FunctionDocumentation::Description description = R"(
-In ClickHouse, queries are processed in [blocks](/resources/develop-contribute/introduction/architecture#block) (chunks).
+In ClickHouse, queries are processed in [blocks](/development/architecture#block) (chunks).
 This function returns the size (row count) of the block the function is called on.
     )";
     FunctionDocumentation::Syntax syntax = "blockSize()";

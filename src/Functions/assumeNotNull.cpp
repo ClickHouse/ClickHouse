@@ -25,7 +25,7 @@ namespace
 /// - if the argument is a nullable column, return its embedded column;
 /// - otherwise return the original argument.
 /// NOTE: assumeNotNull may not be called with the NULL value.
-class FunctionAssumeNotNull final : public IFunction
+class FunctionAssumeNotNull : public IFunction
 {
 public:
     static constexpr auto name = "assumeNotNull";
@@ -35,21 +35,21 @@ public:
         return std::make_shared<FunctionAssumeNotNull>();
     }
 
-    [[nodiscard]] std::string getName() const override
+    std::string getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    [[nodiscard]] bool hasInformationAboutMonotonicity() const override { return true; }
+    bool hasInformationAboutMonotonicity() const override { return true; }
 
-    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType & type, const Field & /*left*/, const Field & right) const override
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & /*left*/, const Field & right) const override
     {
         /// assumeNotNull() is identity for non-Nullable values, so it preserves ordering and thus monotonic.
         /// For Nullable, treat it as monotonic only when the analyzed range is guaranteed to not contain
@@ -62,9 +62,12 @@ public:
         return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };
     }
 
-    [[nodiscard]] String getSignatureString() const override { return "(MaybeNullable(U)) -> U"; }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return removeNullable(arguments[0].type);
+    }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         const ColumnPtr & col = arguments[0].column;
 
@@ -77,7 +80,7 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
-    [[nodiscard]] bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
 
     llvm::Value *
     compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override
@@ -98,7 +101,7 @@ public:
 REGISTER_FUNCTION(AssumeNotNull)
 {
     FunctionDocumentation::Description description = R"(
-Returns the corresponding non-`Nullable` value for a value of type [`Nullable`](/reference/data-types/nullable).
+Returns the corresponding non-`Nullable` value for a value of type [`Nullable`](../data-types/nullable.md).
 If the original value is `NULL`, an arbitrary result can be returned.
 
 See also: functions [`ifNull`](#ifNull) and [`coalesce`](#coalesce).
@@ -117,7 +120,7 @@ ORDER BY x;
 
 INSERT INTO t_null VALUES (1, NULL), (2, 3);
 
-SELECT assumeNotNull(y) FROM t_null;
+SELECT assumeNotNull(y) FROM table;
 SELECT toTypeName(assumeNotNull(y)) FROM t_null;
         )",
          R"(

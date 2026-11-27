@@ -15,18 +15,11 @@ class RollupStep : public ITransformingStep
 public:
     RollupStep(const SharedHeader & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_);
 
-    [[nodiscard]] String getName() const override { return "Rollup"; }
+    String getName() const override { return "Rollup"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    [[nodiscard]] const Aggregator::Params & getParams() const { return params; }
-
-    [[nodiscard]] QueryPlanStepPtr clone() const override;
-
-    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
-    void serialize(Serialization & ctx) const override;
-    static QueryPlanStepPtr deserialize(Deserialization & ctx);
-    [[nodiscard]] bool isSerializable() const override { return true; }
+    const Aggregator::Params & getParams() const { return params; }
 
 private:
     void updateOutputHeader() override;

@@ -11,9 +11,6 @@
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/ActionsDAG.h>
-
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace llvm
 {
@@ -45,11 +42,11 @@ public:
 
     struct Node
     {
-        CompileType type{};
+        CompileType type;
         DataTypePtr result_type;
 
         /// For CONSTANT
-        ColumnConstPtr column;
+        ColumnPtr column;
         bool skip_compile
             = false; // Some constant node should be skipped during compilation. e.g. in CAST(input, type), the second argument should be skipped during compilation.
 
@@ -60,9 +57,9 @@ public:
 
     ValueWithType compile(llvm::IRBuilderBase & builder, const ValuesWithType & input_nodes_values_with_type) const;
 
-    [[nodiscard]] std::string dump() const;
+    std::string dump() const;
 
-    [[nodiscard]] UInt128 hash() const;
+    UInt128 hash() const;
 
     void addNode(Node node)
     {
@@ -70,30 +67,22 @@ public:
         nodes.emplace_back(std::move(node));
     }
 
-    [[nodiscard]] size_t getNodesCount() const { return nodes.size(); }
-    [[nodiscard]] size_t getInputNodesCount() const { return input_nodes_count; }
+    size_t getNodesCount() const { return nodes.size(); }
+    size_t getInputNodesCount() const { return input_nodes_count; }
 
     Node & operator[](size_t index) { return nodes[index]; }
     const Node & operator[](size_t index) const { return nodes[index]; }
 
     Node & front() { return nodes.front(); }
-    [[nodiscard]] const Node & front() const { return nodes.front(); }
+    const Node & front() const { return nodes.front(); }
 
     Node & back() { return nodes.back(); }
-    [[nodiscard]] const Node & back() const { return nodes.back(); }
+    const Node & back() const { return nodes.back(); }
 
 private:
     std::vector<Node> nodes;
     size_t input_nodes_count = 0;
 };
-
-/// The part of the expression of `root` that compiles, as `ActionsDAG::compileFunctions` takes it: a node that does not
-/// compile is an input of the result, which is appended to `children`, in the order of the inputs. A function that is
-/// executed lazily, of `lazy_executed_nodes`, does not compile.
-CompileDAG getCompilableDAG(
-    const ActionsDAG::Node * root,
-    ActionsDAG::NodeRawConstPtrs & children,
-    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes);
 
 }
 

@@ -9,35 +9,43 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
 
 /** partitionId(x, y, ...) is a function that computes partition ids of arguments.
   * The function is slow and should not be called for large amount of rows.
   */
-class FunctionPartitionId final : public IFunction
+class FunctionPartitionId : public IFunction
 {
 public:
     static constexpr auto name = "partitionId";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPartitionId>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool isVariadic() const override { return true; }
+    bool isVariadic() const override { return true; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const override { return true; }
+    bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const override { return true; }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(Any, ...) -> String";
+        if (arguments.empty())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         Block sample_block(arguments);
         size_t size = arguments.size();
@@ -58,11 +66,11 @@ public:
 REGISTER_FUNCTION(PartitionId)
 {
     FunctionDocumentation::Description description = R"(
-Computes the [partition ID](/reference/engines/table-engines/mergetree-family/custom-partitioning-key).
+Computes the [partition ID](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
 
-<Note>
+:::note
 This function is slow and should not be called for large numbers of rows.
-</Note>
+:::
 )";
     FunctionDocumentation::Syntax syntax = "partitionId(column1[, column2, ...])";
     FunctionDocumentation::Arguments arguments = {

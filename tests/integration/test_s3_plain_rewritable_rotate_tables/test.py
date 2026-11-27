@@ -1,9 +1,12 @@
+import logging
 import random
 import string
+import uuid
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
 
 cluster = ClickHouseCluster(__file__)
 

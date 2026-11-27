@@ -56,7 +56,7 @@ Range createRangeFromParquetStatistics(std::shared_ptr<StatisticsType> stats)
     return Range(FieldType(stats->min()), true, FieldType(stats->max()), true);
 }
 
-static Range createRangeFromParquetStatistics(std::shared_ptr<parquet::ByteArrayStatistics> stats)
+Range createRangeFromParquetStatistics(std::shared_ptr<parquet::ByteArrayStatistics> stats)
 {
     if (!stats->HasMinMax())
         return Range::createWholeUniverseWithoutNull();
@@ -112,7 +112,7 @@ Range HiveORCFile::buildRange(const ORC::Proto::ColumnStatistics * col_stats)
     if (const auto & double_stats = col_stats->double_statistics)
         return createRangeFromOrcStatistics<Float64>(double_stats->minimum, double_stats->maximum);
     if (const auto & string_stats = col_stats->string_statistics)
-        return createRangeFromOrcStatistics<String>(string_stats->getLowerBound(), string_stats->getUpperBound());
+        return createRangeFromOrcStatistics<String>(string_stats->minimum, string_stats->maximum);
     if (const auto & bool_stats = col_stats->bucket_statistics)
     {
         if (bool_stats->count.empty())
@@ -165,7 +165,7 @@ bool HiveORCFile::useFileMinMaxIndex() const
 }
 
 
-std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(const VectorWithMemoryTracking<ORC::Proto::ColumnStatistics> * statistics)
+std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(const std::vector<ORC::Proto::ColumnStatistics> * statistics)
 {
     if (!statistics)
         return nullptr;
@@ -261,7 +261,7 @@ void HiveParquetFile::prepareReader()
     std::atomic<int> is_stopped{0};
     auto open_file_res = parquet::arrow::OpenFile(asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance());
     if (!open_file_res.ok())
-        throwFromArrowStatus(open_file_res.status(), ErrorCodes::BAD_ARGUMENTS, "Failed to open Parquet file");
+        throw Exception::createDeprecated(open_file_res.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
     reader = *std::move(open_file_res);
 }
 

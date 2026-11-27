@@ -109,7 +109,7 @@ struct string_view
     {
     }
 
-    [[nodiscard]] inline size_t find(string_view other) const
+    inline size_t find(string_view other) const
     {
         for (size_t offset = 0; offset + other.size <= size; ++offset)
         {

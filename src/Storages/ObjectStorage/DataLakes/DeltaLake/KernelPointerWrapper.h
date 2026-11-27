@@ -45,7 +45,7 @@ struct KernelPointerWrapper : boost::noncopyable
         return *this;
     }
 
-    [[nodiscard]] KernelType * get() const { return ptr; }
+    KernelType * get() const { return ptr; }
 
     KernelType * release()
     {

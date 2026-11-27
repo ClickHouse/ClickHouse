@@ -2,7 +2,6 @@
 
 #include <DataTypes/IDataType.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <IO/ReadBuffer.h>
 
 #include <vector>
@@ -13,18 +12,18 @@ namespace DB
 class Block;
 struct FormatSettings;
 class NamesAndTypesList;
-using NamesAndTypesLists = VectorWithMemoryTracking<NamesAndTypesList>;
+using NamesAndTypesLists = std::vector<NamesAndTypesList>;
 
 /// Struct with some additional information about inferred types for JSON formats.
 struct JSONInferenceInfo
 {
-    /// Int64 inferred from a negative number and numbers parsed from JSON strings are marked by being one of
-    /// the instances owned below.
-    DataTypePtr getNegativeInt64();
-    /// number_type is Int64, UInt64 or Float64.
-    DataTypePtr getNumberParsedFromString(const DataTypePtr & number_type);
-    [[nodiscard]] bool isNegativeInteger(const IDataType & type) const;
-    [[nodiscard]] bool isNumberParsedFromString(const IDataType & type) const;
+    /// We store numbers that were parsed from strings.
+    /// It's used in types transformation to change such numbers back to string if needed.
+    std::unordered_set<const IDataType *> numbers_parsed_from_json_strings;
+    /// Store integer types that were inferred from negative numbers.
+    /// It's used to determine common type for Int64 and UInt64
+    /// TODO: check it not only in JSON formats.
+    std::unordered_set<const IDataType *> negative_integers;
 
     /// Indicates if currently we are inferring type for Map/Object key.
     bool is_object_key = false;
@@ -33,13 +32,6 @@ struct JSONInferenceInfo
     /// because DataTypeJSONPaths was already finalized to named tuple. IN this case
     /// we can only merge named tuples from different files together.
     bool allow_merging_named_tuples = false;
-
-private:
-    DataTypePtr negative_int64;
-    DataTypePtr int64_from_string;
-    DataTypePtr negative_int64_from_string;
-    DataTypePtr uint64_from_string;
-    DataTypePtr float64_from_string;
 };
 
 /// Check whether a type can be wrapped into Nullable according to schema inference settings.
@@ -68,12 +60,7 @@ DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const Forma
 
 bool tryInferDateFromString(std::string_view field, DayNum & date);
 bool tryInferDateTimeFromString(std::string_view field, time_t & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone);
-bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt32 scale = 9);
-
-/// Infer DateTime or DateTime64 from a string, running the invalid-datetime fast check only once (unlike calling
-/// tryInferDateTimeFromString and tryInferDateTime64FromString in turn). On success writes the parsed value into
-/// date_time or date_time64 and sets is_datetime64 accordingly.
-bool tryInferDateTimeOrDateTime64FromString(std::string_view field, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, bool & is_datetime64, time_t & date_time, DateTime64 & date_time64);
+bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone);
 
 /// Try to parse a number value from a string. By default, it tries to parse Float64,
 /// but if setting try_infer_integers is enabled, it also tries to parse Int64.

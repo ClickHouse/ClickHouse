@@ -24,11 +24,6 @@ public:
     /// Constructs from a string like "SELECT".
     AccessFlags(std::string_view keyword); /// NOLINT
 
-    /// The same, but for callers that are only asking whether the keyword names an access type -
-    /// the parser checking which alternative it is looking at, for instance. Returns false rather
-    /// than throwing when it does not.
-    static bool tryFromKeyword(std::string_view keyword, AccessFlags & result);
-
     /// Constructs from a list of strings like "SELECT, UPDATE, INSERT".
     AccessFlags(const std::vector<std::string_view> & keywords); /// NOLINT
     AccessFlags(const Strings & keywords); /// NOLINT
@@ -53,11 +48,11 @@ public:
 
     AccessFlags operator ~() const { AccessFlags res; res.flags = ~flags; return res; }
 
-    [[nodiscard]] bool isEmpty() const { return flags.none(); }
-    [[nodiscard]] bool isAll() const { return flags.all(); }
+    bool isEmpty() const { return flags.none(); }
+    bool isAll() const { return flags.all(); }
     explicit operator bool() const { return !isEmpty(); }
-    [[nodiscard]] bool contains(const AccessFlags & other) const { return (flags & other.flags) == other.flags; }
-    [[nodiscard]] bool isGlobalWithParameter() const;
+    bool contains(const AccessFlags & other) const { return (flags & other.flags) == other.flags; }
+    bool isGlobalWithParameter() const;
     bool validateParameter(String & parameter, std::function<void(const char *)> add_to_expected) const;
     enum ParameterType
     {
@@ -68,8 +63,8 @@ public:
         USER_NAME,
         DEFINER,
     };
-    [[nodiscard]] ParameterType getParameterType() const;
-    [[nodiscard]] std::unordered_map<ParameterType, AccessFlags> splitIntoParameterTypes() const;
+    ParameterType getParameterType() const;
+    std::unordered_map<ParameterType, AccessFlags> splitIntoParameterTypes() const;
 
     friend bool operator ==(const AccessFlags & left, const AccessFlags & right) { return left.flags == right.flags; }
     friend bool operator !=(const AccessFlags & left, const AccessFlags & right) { return !(left == right); }
@@ -81,13 +76,13 @@ public:
     void clear() { flags.reset(); }
 
     /// Returns a comma-separated list of keywords, like "SELECT, CREATE USER, UPDATE".
-    [[nodiscard]] String toString() const;
+    String toString() const;
 
     /// Returns a list of access types.
-    [[nodiscard]] std::vector<AccessType> toAccessTypes() const;
+    std::vector<AccessType> toAccessTypes() const;
 
     /// Returns a list of keywords.
-    [[nodiscard]] std::vector<std::string_view> toKeywords() const;
+    std::vector<std::string_view> toKeywords() const;
 
     /// Returns all the flags.
     /// These are the same as (allGlobalFlags() | allDatabaseFlags() | allTableFlags() | allColumnsFlags() | allDictionaryFlags()).

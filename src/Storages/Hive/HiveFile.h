@@ -3,9 +3,9 @@
 
 #if USE_HIVE
 
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <vector>
 #include <memory>
+#include <unordered_set>
 
 #include <boost/algorithm/string/join.hpp>
 #include <Processors/Formats/Impl/ORC/Reader.h>
@@ -48,16 +48,15 @@ public:
         ORC,
     };
 
-    static constexpr std::string_view RCFILE_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.RCFileInputFormat";
-    static constexpr std::string_view TEXT_INPUT_FORMAT = "org.apache.hadoop.mapred.TextInputFormat";
-    static constexpr std::string_view LZO_TEXT_INPUT_FORMAT = "com.hadoop.mapred.DeprecatedLzoTextInputFormat";
-    static constexpr std::string_view SEQUENCE_INPUT_FORMAT = "org.apache.hadoop.mapred.SequenceFileInputFormat";
-    static constexpr std::string_view PARQUET_INPUT_FORMAT = "com.cloudera.impala.hive.serde.ParquetInputFormat";
-    static constexpr std::string_view MR_PARQUET_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat";
-    static constexpr std::string_view AVRO_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.avro.AvroContainerInputFormat";
-    static constexpr std::string_view ORC_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.orc.OrcInputFormat";
-    static constexpr std::array<std::pair<std::string_view, FileFormat>, 8> VALID_HDFS_FORMATS
-    {{
+    inline static const String RCFILE_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.RCFileInputFormat";
+    inline static const String TEXT_INPUT_FORMAT = "org.apache.hadoop.mapred.TextInputFormat";
+    inline static const String LZO_TEXT_INPUT_FORMAT = "com.hadoop.mapred.DeprecatedLzoTextInputFormat";
+    inline static const String SEQUENCE_INPUT_FORMAT = "org.apache.hadoop.mapred.SequenceFileInputFormat";
+    inline static const String PARQUET_INPUT_FORMAT = "com.cloudera.impala.hive.serde.ParquetInputFormat";
+    inline static const String MR_PARQUET_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat";
+    inline static const String AVRO_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.avro.AvroContainerInputFormat";
+    inline static const String ORC_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.orc.OrcInputFormat";
+    inline static const std::map<String, FileFormat> VALID_HDFS_FORMATS = {
         {RCFILE_INPUT_FORMAT, FileFormat::RC_FILE},
         {TEXT_INPUT_FORMAT, FileFormat::TEXT},
         {LZO_TEXT_INPUT_FORMAT, FileFormat::LZO_TEXT},
@@ -66,21 +65,15 @@ public:
         {MR_PARQUET_INPUT_FORMAT, FileFormat::PARQUET},
         {AVRO_INPUT_FORMAT, FileFormat::AVRO},
         {ORC_INPUT_FORMAT, FileFormat::ORC},
-    }};
+    };
 
-    static std::optional<FileFormat> tryGetFileFormat(std::string_view format_class)
-    {
-        for (const auto & [name, format] : VALID_HDFS_FORMATS)
-            if (name == format_class)
-                return format;
-        return std::nullopt;
-    }
-
-    static bool isFormatClass(const String & format_class) { return tryGetFileFormat(format_class).has_value(); }
+    static bool isFormatClass(const String & format_class) { return VALID_HDFS_FORMATS.contains(format_class); }
     static FileFormat toFileFormat(const String & format_class)
     {
-        if (auto format = tryGetFileFormat(format_class))
-            return *format;
+        if (isFormatClass(format_class))
+        {
+            return VALID_HDFS_FORMATS.find(format_class)->second;
+        }
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported hdfs file format {}", format_class);
     }
 
@@ -114,6 +107,9 @@ public:
     const String & getNamenodeUrl() { return namenode_url; }
     MinMaxIndexPtr getMinMaxIndex() const { return file_minmax_idx; }
     const std::vector<MinMaxIndexPtr> & getSubMinMaxIndexes() const { return split_minmax_idxes; }
+
+    const std::unordered_set<int> & getSkipSplits() const { return skip_splits; }
+    void setSkipSplits(const std::unordered_set<int> & skip_splits_) { skip_splits = skip_splits_; }
 
     String describeMinMaxIndex(const MinMaxIndexPtr & idx) const
     {
@@ -166,6 +162,8 @@ protected:
     std::vector<MinMaxIndexPtr> split_minmax_idxes;
     std::atomic<bool> split_minmax_idxes_loaded{false};
 
+    /// Skip splits for this file after applying minmax index (if any)
+    std::unordered_set<int> skip_splits;
     std::shared_ptr<HiveSettings> storage_settings;
 
     /// IHiveFile would be shared among multi threads, need lock's protection to update min/max indexes.
@@ -174,18 +172,6 @@ protected:
 
 using HiveFilePtr = std::shared_ptr<IHiveFile>;
 using HiveFiles = std::vector<HiveFilePtr>;
-
-/// A hive file paired with the set of splits (Parquet row groups / ORC stripes) to skip when reading
-/// it for the current query. The skip set depends on the query filter, so - unlike the `IHiveFile`
-/// objects, which are shared between concurrent queries through `HiveFilesCache` - it must be kept
-/// per query instead of being stored on the cached file.
-struct HiveFileWithSkipSplits
-{
-    HiveFilePtr file;
-    UnorderedSetWithMemoryTracking<int> skip_splits;
-};
-using HiveFilesWithSkipSplits = std::vector<HiveFileWithSkipSplits>;
-
 using HiveFilesCache = CacheBase<String, IHiveFile>;
 using HiveFilesCachePtr = std::shared_ptr<HiveFilesCache>;
 
@@ -236,7 +222,7 @@ private:
 
     void loadFileMinMaxIndexImpl() override;
     void loadSplitMinMaxIndexesImpl() override;
-    std::unique_ptr<MinMaxIndex> buildMinMaxIndex(const VectorWithMemoryTracking<ORC::Proto::ColumnStatistics> * statistics);
+    std::unique_ptr<MinMaxIndex> buildMinMaxIndex(const std::vector<ORC::Proto::ColumnStatistics> * statistics);
     void prepareReader();
     void prepareColumnMapping();
 

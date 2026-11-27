@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <random>
 #include <vector>
 
 #include <base/types.h>
@@ -37,13 +36,12 @@ public:
 
     explicit ProbabilityGenerator(ProbabilityStrategy ps, uint64_t in_seed, const std::vector<ProbabilityBounds> & b, const String & desc);
 
-    [[nodiscard]] uint64_t getSeed() const;
-    [[nodiscard]] ProbabilityStrategy getStrategy() const;
-    [[nodiscard]] const std::vector<double> & getProbs() const;
-    [[nodiscard]] const std::vector<bool> & getEnabledMask() const;
+    uint64_t getSeed() const;
+    ProbabilityStrategy getStrategy() const;
+    const std::vector<double> & getProbs() const;
+    const std::vector<bool> & getEnabledMask() const;
 
-    /// Change enable mask at runtime. Probabilities are re-derived from the unmasked base
-    /// distribution, so a re-enabled op gets its share back.
+    /// Change enable mask at runtime. Preserves current distribution shape as much as possible.
     void setEnabled(const std::vector<bool> & mask);
     void setEnabled(size_t i, bool on);
 
@@ -52,33 +50,18 @@ public:
     void tick();
 
 private:
-    /// Numerical tolerance for sum-to-one and feasibility checks. Equality at the level of
-    /// double-precision rounding is what we care about; tighter tolerances would falsely
-    /// reject legitimate distributions after a normalize-and-renormalize cycle.
-    static constexpr double kEpsilon = 1e-12;
-    /// Maximum iterations of the water-filling clamp loop. The loop converges in a handful
-    /// of passes in practice; the cap is a safety net so a pathological bounds set cannot
-    /// spin forever.
-    static constexpr int kClampMaxIterations = 10;
-
     uint64_t seed;
     pcg64_fast generator;
-    /// Reused across nextOp() calls so we don't reconstruct the distribution object every sample.
-    std::uniform_real_distribution<double> uniform_unit{0.0, 1.0};
 
     std::vector<double> cdf;
-    const std::vector<bool> all_enabled;
     std::vector<bool> enabled_values;
-    /// Unmasked distribution over all ops; initialization, drift and bounds act on it.
-    std::vector<double> base_probabilities;
-    /// Derived from `base_probabilities` and `enabled_values`; this is what `nextOp` samples.
     std::vector<double> probabilities;
     uint64_t ops_emitted = 0;
     const String description;
 
     static void ensureAtLeastOneEnabled(const std::vector<bool> & mask);
 
-    [[nodiscard]] size_t lastEnabledIndex() const;
+    size_t lastEnabledEnum() const;
 
     std::vector<double> generateInitial();
 
@@ -90,11 +73,11 @@ private:
 
     void buildCdf();
 
-    std::vector<double> deriveProbabilities(const std::vector<bool> & mask);
+    void applyEnabledMaskAndRenorm(std::vector<double> & p) const;
 
     void normalizeEnabledInPlace(std::vector<double> & v, const std::vector<bool> & enabled_values) const;
 
-    [[nodiscard]] std::pair<double, double> minmaxEnabled(const std::vector<double> & v, const std::vector<bool> & enabled_values) const;
+    std::pair<double, double> minmaxEnabled(const std::vector<double> & v, const std::vector<bool> & enabled_values) const;
 
     void clampToBoundsAndRenormEnabled(std::vector<double> & p, const std::vector<bool> & enabled_values);
 };

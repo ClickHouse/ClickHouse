@@ -3,11 +3,6 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-ORIGINAL_CONFIG = """<clickhouse>
-    <aggregate_function_group_array_max_element_size>10</aggregate_function_group_array_max_element_size>
-    <aggregate_function_group_array_action_when_limit_is_reached>throw</aggregate_function_group_array_action_when_limit_is_reached>
-</clickhouse>"""
-
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
@@ -34,13 +29,6 @@ def started_cluster():
 
 
 def test_max_exement_size(started_cluster):
-    # Restore original config in case a previous run left it modified.
-    node1.replace_config(
-        "/etc/clickhouse-server/config.d/group_array_max_element_size.xml",
-        ORIGINAL_CONFIG,
-    )
-    node1.restart_clickhouse()
-    node1.query("DROP TABLE IF EXISTS tab3")
     node1.query(
         "CREATE TABLE tab3 (x AggregateFunction(groupArray, Array(UInt8))) ENGINE = MergeTree ORDER BY tuple()"
     )
@@ -85,13 +73,6 @@ def test_max_exement_size(started_cluster):
 
 
 def test_limit_size(started_cluster):
-    # Restore original config in case a previous run left it modified.
-    node2.replace_config(
-        "/etc/clickhouse-server/config.d/group_array_max_element_size.xml",
-        ORIGINAL_CONFIG,
-    )
-    node2.restart_clickhouse()
-    node2.query("DROP TABLE IF EXISTS tab4")
     node2.query(
         "CREATE TABLE tab4 (x AggregateFunction(groupArray, Array(UInt8))) ENGINE = MergeTree ORDER BY tuple()"
     )
@@ -108,19 +89,6 @@ def test_limit_size(started_cluster):
 
     node2.query("insert into tab4 select groupArrayState([zero]) from zeros(100)")
     assert node2.query("select length(groupArrayMerge(x)) from tab4") == "10\n"
-
-    node2.query("DROP TABLE IF EXISTS tab_json")
-    node2.query("CREATE TABLE tab_json (j JSON) ENGINE = MergeTree ORDER BY tuple()")
-    node2.query(
-        "INSERT INTO tab_json SELECT toJSONString(map('p' || toString(number), number)) FROM numbers(11)"
-    )
-    for optimize in (0, 1):
-        assert (
-            node2.query(
-                f"SELECT length(distinctJSONPaths(j)) FROM tab_json SETTINGS optimize_functions_to_subcolumns = {optimize}"
-            )
-            == "11\n"
-        )
 
     node2.replace_in_config(
         "/etc/clickhouse-server/config.d/group_array_max_element_size.xml",

@@ -62,17 +62,6 @@ NOT_LOADED
 CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(d)
 ACCESS_DENIED
 NOT_LOADED
---- no grants, naiveBayesClassifier
-NOT_LOADED
-SELECT naiveBayesClassifier('nb', 'good')
-ACCESS_DENIED
-NOT_LOADED
-SELECT naiveBayesClassifierWithProb('nb', 'good')
-ACCESS_DENIED
-NOT_LOADED
-SELECT naiveBayesClassifierWithAllProbs('nb', 'good')
-ACCESS_DENIED
-NOT_LOADED
 --- SELECT is enough for the dictionary table function, but not for dictGet
 SELECT dictGet('d', 'value', toUInt64(1))
 ACCESS_DENIED
@@ -127,8 +116,4 @@ CREATE TABLE w_unqualified_by_user (id UInt64, value String) ENGINE = Dictionary
 
 LOADED
 1	a
-LOADED
---- dictGet, naiveBayesClassifier
-SELECT naiveBayesClassifier('nb', 'good')
-0
 LOADED

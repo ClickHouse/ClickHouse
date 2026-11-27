@@ -1,7 +1,6 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/FormatFactorySettings.h>
-#include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -25,8 +24,22 @@ namespace ErrorCodes
     SET_RELATED_SETTINGS(M, ALIAS) \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
-DECLARE_SETTINGS_TRAITS(SetSettingsTraits, LIST_OF_SET_SETTINGS, SET_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(SetSettingsTraits, LIST_OF_SET_SETTINGS, SetSettings, SetSetting)
+DECLARE_SETTINGS_TRAITS(SetSettingsTraits, LIST_OF_SET_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(SetSettingsTraits, LIST_OF_SET_SETTINGS)
+
+
+struct SetSettingsImpl : public BaseSettings<SetSettingsTraits>
+{
+};
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) SetSettings##TYPE NAME = &SetSettingsImpl ::NAME;
+
+namespace SetSetting
+{
+LIST_OF_SET_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+}
+
+#undef INITIALIZE_SETTING_EXTERN
 
 SetSettings::SetSettings() : impl(std::make_unique<SetSettingsImpl>())
 {
@@ -36,7 +49,9 @@ SetSettings::SetSettings(const SetSettings & settings) : impl(std::make_unique<S
 {
 }
 
-SetSettings::SetSettings(SetSettings && settings) noexcept = default;
+SetSettings::SetSettings(SetSettings && settings) noexcept : impl(std::make_unique<SetSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 SetSettings::~SetSettings() = default;
 
@@ -46,10 +61,6 @@ void SetSettings::loadFromQuery(ASTStorage & storage_def)
 {
     if (storage_def.settings)
     {
-        for (const auto & change : storage_def.settings->changes)
-            if (change.name == "disk")
-                DiskFromAST::ensureDiskIsNotInline(change.value);
-
         try
         {
             impl->applyChanges(storage_def.settings->changes);

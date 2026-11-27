@@ -37,9 +37,6 @@ namespace LZ4
   */
 static constexpr size_t ADDITIONAL_BYTES_AT_END_OF_BUFFER = 64;
 
-/// Smaller blocks always use variant 0 and do not update the statistics.
-static constexpr size_t MIN_BLOCK_SIZE_TO_CHOOSE_VARIANT = 32768;
-
 
 /** When decompressing uniform sequence of blocks (for example, blocks from one file),
   *  you can pass single PerformanceStatistics object to subsequent invocations of 'decompress' method.
@@ -53,12 +50,12 @@ struct PerformanceStatistics
         double count = 0;
         double sum = 0;
 
-        [[nodiscard]] double adjustedCount() const
+        double adjustedCount() const
         {
             return count - NUM_INVOCATIONS_TO_THROW_OFF;
         }
 
-        [[nodiscard]] double mean() const
+        double mean() const
         {
             return sum / adjustedCount();
         }
@@ -66,7 +63,7 @@ struct PerformanceStatistics
         /// For better convergence, we don't use proper estimate of stddev.
         /// We want to eventually separate between two algorithms even in case
         ///  when there is no statistical significant difference between them.
-        [[nodiscard]] double sigma() const
+        double sigma() const
         {
             return mean() / adjustedCount();
         }
@@ -91,7 +88,6 @@ struct PerformanceStatistics
     };
 
     /// Number of different algorithms to select from.
-    /// 0: 8-byte copies; 1: 16-byte copies with branchless small-offset match copy; 2: 32-byte copies.
     static constexpr size_t NUM_ELEMENTS = 3;
 
     /// Cold invocations may be affected by additional memory latencies. Don't take first invocations into account.

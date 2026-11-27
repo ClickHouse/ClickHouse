@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
@@ -9,7 +8,17 @@
 namespace DB
 {
 
-class FunctionMonthName final : public IFunction
+namespace
+{
+
+bool isDateOrDateTime(const IDataType & type)
+{
+    return isDate(type) || isDateTime(type) || isDateTime64(type);
+}
+
+}
+
+class FunctionMonthName : public IFunction
 {
 public:
     static constexpr auto name = "monthName";
@@ -22,31 +31,35 @@ public:
         : function_resolver(FunctionFactory::instance().get("dateName", std::move(context_)))
         {}
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// Legacy `isDateOrDateTime` matched only Date / DateTime / DateTime64 — not Date32.
-        return "(Date | DateTime | DateTime64) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"datetime", isDateOrDateTime, nullptr, "Date or DateTime"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(
+    ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count) const override
     {
-        ColumnPtr month_column = DataTypeString().createColumnConst(arguments[0].column->size(), month_str);
+        auto month_column = DataTypeString().createColumnConst(arguments[0].column->size(), month_str);
         ColumnsWithTypeAndName temporary_columns
         {
             ColumnWithTypeAndName(month_column, std::make_shared<DataTypeString>(), ""),

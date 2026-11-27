@@ -16,9 +16,6 @@ namespace DB
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 
-/// The metadata storage below the `encrypted` and `cache` layers of `disk`, or nullptr if `disk` is not over an object storage disk.
-MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk);
-
 /// Parse .xml configuration and store information about disks
 /// Mostly used for introspection.
 class DiskSelector
@@ -32,18 +29,18 @@ public:
     using DiskValidator = std::function<bool(const Poco::Util::AbstractConfiguration & config, const String & disk_config_prefix, const String & disk_name)>;
     void initialize(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, DiskValidator disk_validator = {});
 
-    [[nodiscard]] DiskSelectorPtr updateFromConfig(
+    DiskSelectorPtr updateFromConfig(
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         ContextPtr context) const;
 
     /// Get disk by name
-    [[nodiscard]] DiskPtr get(const String & name) const;
+    DiskPtr get(const String & name) const;
 
-    [[nodiscard]] DiskPtr tryGet(const String & name) const;
+    DiskPtr tryGet(const String & name) const;
 
     /// Get all disks with names
-    [[nodiscard]] const DisksMap & getDisksMap() const;
+    const DisksMap & getDisksMap() const;
 
     void addToDiskMap(const String & name, DiskPtr disk);
 

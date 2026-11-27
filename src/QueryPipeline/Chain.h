@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Processors/IProcessor_fwd.h>
+#include <Processors/IProcessor.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Core/Block_fwd.h>
 
@@ -24,19 +24,18 @@ public:
     Chain(Chain &&) = default;
     Chain(const Chain &) = delete;
 
-    /// Not noexcept: the QueryPlanResourceHolder it owns appends on move-assignment, which can throw.
-    Chain & operator=(Chain &&) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+    Chain & operator=(Chain &&) = default;
     Chain & operator=(const Chain &) = delete;
 
     explicit Chain(ProcessorPtr processor);
-    explicit Chain(Processors processors);
+    explicit Chain(std::list<ProcessorPtr> processors);
 
-    [[nodiscard]] bool empty() const { return processors.empty(); }
+    bool empty() const { return processors.empty(); }
 
-    [[nodiscard]] size_t getNumThreads() const { return num_threads; }
+    size_t getNumThreads() const { return num_threads; }
     void setNumThreads(size_t num_threads_) { num_threads = num_threads_; }
 
-    [[nodiscard]] bool getConcurrencyControl() const { return concurrency_control; }
+    bool getConcurrencyControl() const { return concurrency_control; }
     void setConcurrencyControl(bool concurrency_control_) { concurrency_control = concurrency_control_; }
 
     void addSource(ProcessorPtr processor);
@@ -47,16 +46,16 @@ public:
     IProcessor & getSource();
     IProcessor & getSink();
 
-    [[nodiscard]] InputPort & getInputPort() const;
-    [[nodiscard]] OutputPort & getOutputPort() const;
+    InputPort & getInputPort() const;
+    OutputPort & getOutputPort() const;
 
-    [[nodiscard]] const Block & getInputHeader() const;
-    [[nodiscard]] const SharedHeader & getInputSharedHeader() const;
-    [[nodiscard]] const Block & getOutputHeader() const;
-    [[nodiscard]] const SharedHeader & getOutputSharedHeader() const;
+    const Block & getInputHeader() const;
+    const SharedHeader & getInputSharedHeader() const;
+    const Block & getOutputHeader() const;
+    const SharedHeader & getOutputSharedHeader() const;
 
-    [[nodiscard]] const Processors & getProcessors() const { return processors; }
-    Processors & getProcessors() { return processors; }
+    const std::list<ProcessorPtr> & getProcessors() const { return processors; }
+    std::list<ProcessorPtr> & getProcessors() { return processors; }
 
     void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
@@ -82,7 +81,7 @@ private:
     /// -> source -> transform -> ... -> transform -> sink ->
     ///  ^        ->           ->     ->           ->       ^
     ///  input port                               output port
-    Processors processors;
+    std::list<ProcessorPtr> processors;
     size_t num_threads = 0;
     bool concurrency_control = false;
 };

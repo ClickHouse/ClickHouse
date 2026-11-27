@@ -41,9 +41,7 @@ auto PoolWithFailover::connectionReestablisher(std::weak_ptr<PoolHolder> pool, s
 
             if (!connection_available)
             {
-                /// `tryBorrowObject` leaves `connection` null on timeout, so the pool's own metadata
-                /// is the only thing there is to name the replica with here.
-                LOG_WARNING(logger, "Reestablishing connection to {} has failed: unable to fetch connection within the timeout.", shared_pool->connection_info.host_port);
+                LOG_WARNING(logger, "Reestablishing connection to {} has failed: unable to fetch connection within the timeout.", connection->getInfoForLog());
                 return true;
             }
 
@@ -59,18 +57,8 @@ auto PoolWithFailover::connectionReestablisher(std::weak_ptr<PoolHolder> pool, s
             }
             catch (const pqxx::broken_connection & pqxx_error)
             {
-                /// A permanent failure stays visible during background reconnect by keeping error level,
-                /// but it is rate-limited like every other branch here: `ReplicasReconnector` re-enters this
-                /// callback once per `dictionary_background_reconnect_interval`, so an unthrottled line would
-                /// turn one bad password into a log entry per cycle. At the default interval of 1000 ms the
-                /// guard passes and the error is still reported.
                 if (interval_milliseconds >= 1000)
-                {
-                    if (isTransientConnectionError(pqxx_error.what()))
-                        LOG_WARNING(logger, "Reestablishing connection to {} has failed: {}", connection->getInfoForLog(), pqxx_error.what());
-                    else
-                        LOG_ERROR(logger, "Reestablishing connection to {} has failed: {}", connection->getInfoForLog(), pqxx_error.what());
-                }
+                    LOG_WARNING(logger, "Reestablishing connection to {} has failed: {}", connection->getInfoForLog(), pqxx_error.what());
                 shared_pool->online = false;
                 shared_pool->pool->returnObject(std::move(connection));
             }
@@ -120,8 +108,7 @@ PoolWithFailover::PoolWithFailover(
                 replica_configuration.port,
                 replica_configuration.username,
                 replica_configuration.password,
-                connection_attempt_timeout_,
-                replica_configuration.ssl);
+                connection_attempt_timeout_);
             replicas_with_priority[priority].emplace_back(std::make_shared<PoolHolder>(connection_info, pool_size));
             if (bg_reconnect)
                 DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_with_priority[priority].back()), pool_wait_timeout));
@@ -155,8 +142,7 @@ PoolWithFailover::PoolWithFailover(
             port,
             configuration.username,
             configuration.password,
-            connection_attempt_timeout_,
-            configuration.ssl);
+            connection_attempt_timeout_);
         replicas_with_priority[0].emplace_back(std::make_shared<PoolHolder>(connection_string, pool_size));
         if (bg_reconnect)
             DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_with_priority[0].back()), pool_wait_timeout));
@@ -206,11 +192,7 @@ ConnectionHolderPtr PoolWithFailover::get()
                 }
                 catch (const pqxx::broken_connection & pqxx_error)
                 {
-                    /// A transient failure is left for the caller to tolerate, so it is not an error yet.
-                    if (isTransientConnectionError(pqxx_error.what()))
-                        LOG_WARNING(log, "Connection error: {}", pqxx_error.what());
-                    else
-                        LOG_ERROR(log, "Connection error: {}", pqxx_error.what());
+                    LOG_ERROR(log, "Connection error: {}", pqxx_error.what());
                     error_message = PreformattedMessage::create(
                         "Try {}. Connection to {} failed with error: {}\n",
                         try_idx + 1, DB::backQuote(replica->connection_info.host_port), pqxx_error.what());

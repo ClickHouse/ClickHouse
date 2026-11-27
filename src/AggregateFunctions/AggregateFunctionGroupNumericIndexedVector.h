@@ -32,11 +32,11 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return AggregateFunctionGroupNumericIndexedVectorData<VectorImpl>::name(); }
+    String getName() const override { return AggregateFunctionGroupNumericIndexedVectorData<VectorImpl>::name(); }
 
     static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<Float64>>(); }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -56,7 +56,7 @@ public:
         data_lhs.vector.addValue(index, value);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & data_lhs = this->data(place);
         const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & data_rhs = this->data(rhs);

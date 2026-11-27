@@ -1,7 +1,0 @@
-<clickhouse>
-    <access_control_improvements>
-        <forbid_sql_access_entities_targeting_users_config>true</forbid_sql_access_entities_targeting_users_config>
-        <!-- Makes test_row_policy_to_all_does_not_affect_xml_user exercise the restrictive-default code path. -->
-        <users_without_row_policies_can_read_rows>false</users_without_row_policies_can_read_rows>
-    </access_control_improvements>
-</clickhouse>

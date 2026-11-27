@@ -15,10 +15,6 @@ set (CLICKHOUSE_KEEPER_LINK
         clickhouse_functions
 )
 
-# Track dependencies for #embed directives so that changes to embedded files trigger recompilation.
-set_source_files_properties(Keeper.cpp PROPERTIES OBJECT_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/keeper_embedded.xml")
-
 clickhouse_program_add(keeper)
 
 install(FILES keeper_config.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-keeper" COMPONENT clickhouse-keeper)
@@ -27,8 +23,6 @@ if (BUILD_STANDALONE_KEEPER)
     # Straight list of all required sources
     clickhouse_add_executable(clickhouse-keeper ${CLICKHOUSE_KEEPER_SOURCES})
     target_include_directories(clickhouse-keeper PRIVATE .)
-    # The keeper never calls registerFunctions(), and every linked function object keeps all its functions alive.
-    list (REMOVE_ITEM CLICKHOUSE_KEEPER_LINK clickhouse_functions)
     target_link_libraries(clickhouse-keeper PUBLIC ${CLICKHOUSE_KEEPER_LINK})
 
     set_target_properties(clickhouse-keeper PROPERTIES RUNTIME_OUTPUT_DIRECTORY ../)

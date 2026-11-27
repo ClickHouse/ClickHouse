@@ -1,9 +1,0 @@
-full	t_slowdown_system_parts_projections	8
-full	t_slowdown_system_parts_snap_projections	8
-TIMEOUT_EXCEEDED
-TIMEOUT_EXCEEDED
-names	QueryFinish	1
-snapshot_break	QueryFinish	1
-snapshot_throw	ExceptionWhileProcessing	1
-sum_break	QueryFinish	1
-sum_throw	ExceptionWhileProcessing	1

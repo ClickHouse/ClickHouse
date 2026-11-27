@@ -1,6 +1,6 @@
 -- Tags: long
 
-SET explain_query_plan_default = 'legacy';
+SET enable_analyzer = 1;
 
 -- Too slow
 SET max_bytes_before_external_sort = 0;

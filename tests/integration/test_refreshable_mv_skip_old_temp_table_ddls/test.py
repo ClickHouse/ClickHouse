@@ -1,11 +1,15 @@
 import datetime
+import logging
 import random
 import string
+import time
+from random import randint
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster, QueryRuntimeException
-from helpers.test_tools import TSV
+from helpers.network import PartitionManager
+from helpers.test_tools import TSV, assert_eq_with_retry, assert_logs_contain
 
 cluster = ClickHouseCluster(__file__)
 
@@ -136,16 +140,6 @@ def test_refreshable_mv_skip_old_temp_tables_ddls(
         assert table_info1 == node2.query_with_retry(
             f"SELECT uuid, name FROM system.tables WHERE database='{db_name}'",
             check_callback=lambda x: x == table_info1,
-        )
-        # Pull both replicas' parts before comparing -- an APPEND refresh replicates rows
-        # via ReplicatedMergeTree, which SYSTEM WAIT VIEW does not wait for.
-        sync = f"SYSTEM SYNC REPLICA {db_name}.mv"
-        sync_settings = {"receive_timeout": 30}
-        node1.query_with_retry(
-            sync, retry_count=6, sleep_time=1, settings=sync_settings
-        )
-        node2.query_with_retry(
-            sync, retry_count=6, sleep_time=1, settings=sync_settings
         )
         data1 = TSV(node1.query(f"SELECT x FROM {db_name}.mv ORDER BY x"))
         data2 = TSV(node2.query(f"SELECT x FROM {db_name}.mv ORDER BY x"))

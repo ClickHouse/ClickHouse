@@ -26,6 +26,5 @@
     </substitutions>
 
     <query>select number from numbers({size}) group by number format Null</query>
-    <!-- 4 threads: from 300000 rows on, numbers_mt opens one stream per thread. -->
-    <query>select number from numbers_mt({size}) group by number settings max_threads = 4 format Null</query>
+    <query>select number from numbers_mt({size}) group by number format Null</query>
 </test>

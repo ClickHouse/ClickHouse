@@ -22,7 +22,7 @@ CREATE TABLE tab
 (
     id UInt64,
     val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val IN set_source, val, ''))
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = if(val IN set_source, val, ''))
 )
 ENGINE = MergeTree ORDER BY id; -- { serverError INCORRECT_QUERY }
 
@@ -51,14 +51,14 @@ SELECT '4. The same via ALTER ADD INDEX.';
 
 CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
 
-ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val IN set_source, val, '')); -- { serverError INCORRECT_QUERY }
-ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val IN (SELECT x FROM set_source), val, '')); -- { serverError INCORRECT_QUERY }
+ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = if(val IN set_source, val, '')); -- { serverError INCORRECT_QUERY }
+ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = if(val IN (SELECT x FROM set_source), val, '')); -- { serverError INCORRECT_QUERY }
 ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha',
     preprocessor = concat(val, toString(toUInt64(dictGetString(currentDatabase() || '.dict', 'value', toUInt64(1)))))); -- { serverError INCORRECT_QUERY }
 
 SELECT '5. A literal set is still accepted.';
 
-ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val IN ('hello', 'world'), val, ''));
+ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = if(val IN ('hello', 'world'), val, val));
 INSERT INTO tab VALUES (1, 'hello there');
 SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']);
 

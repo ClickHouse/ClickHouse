@@ -5,7 +5,6 @@
 #include <Common/Exception.h>
 
 #include <algorithm>
-#include <iterator>
 #include <memory>
 #include <typeindex>
 #include <vector>
@@ -33,7 +32,7 @@ public:
     using ItemPtr = std::shared_ptr<ItemBase>;
 
 private:
-    struct Rec // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    struct Rec
     {
         std::type_index type_idx;
         ItemPtr ptr;
@@ -66,17 +65,17 @@ public:
         records.clear();
     }
 
-    [[nodiscard]] bool empty() const
+    bool empty() const
     {
         return records.empty();
     }
 
-    [[nodiscard]] size_t size() const
+    size_t size() const
     {
         return records.size();
     }
 
-    [[nodiscard]] Self clone() const
+    Self clone() const
     {
         Self result;
         result.records.reserve(records.size());
@@ -95,8 +94,8 @@ public:
         // remove duplicates
         records.erase(std::unique(records.begin(), records.end()), records.end());
 
-        chassert(std::is_sorted(records.begin(), records.end()));
-        chassert(isUniqTypes());
+        assert(std::is_sorted(records.begin(), records.end()));
+        assert(isUniqTypes());
     }
 
     void mergeWith(Self && other)
@@ -119,8 +118,8 @@ public:
         // remove duplicates
         records.erase(std::unique(records.begin(), records.end()), records.end());
 
-        chassert(std::is_sorted(records.begin(), records.end()));
-        chassert(isUniqTypes());
+        assert(std::is_sorted(records.begin(), records.end()));
+        assert(isUniqTypes());
     }
 
     template <class T>
@@ -131,7 +130,7 @@ public:
     }
 
     template <class T>
-    [[nodiscard]] bool has() const
+    bool has() const
     {
         static_assert(std::is_base_of_v<ItemBase, T>, "Template parameter must inherit items base class");
         auto it = getImpl(std::type_index(typeid(T)));
@@ -139,7 +138,7 @@ public:
     }
 
     template <class T>
-    [[nodiscard]] std::shared_ptr<T> get() const
+    std::shared_ptr<T> get() const
     {
         static_assert(std::is_base_of_v<ItemBase, T>, "Template parameter must inherit items base class");
         auto it = getImpl(std::type_index(typeid(T)));
@@ -151,7 +150,7 @@ public:
     }
 
     template <class T>
-    [[nodiscard]] std::shared_ptr<T> getSafe() const
+    std::shared_ptr<T> getSafe() const
     {
         static_assert(std::is_base_of_v<ItemBase, T>, "Template parameter must inherit items base class");
         auto it = getImpl(std::type_index(typeid(T)));
@@ -176,7 +175,7 @@ public:
         return cast;
     }
 
-    [[nodiscard]] std::string debug() const
+    std::string debug() const
     {
         std::string result;
 
@@ -190,7 +189,7 @@ public:
     }
 
 private:
-    [[nodiscard]] bool isUniqTypes() const
+    bool isUniqTypes() const
     {
         auto uniq_it = std::adjacent_find(records.begin(), records.end());
         return uniq_it == records.end();
@@ -213,7 +212,7 @@ private:
         records.emplace(it, type_idx, item);
     }
 
-    [[nodiscard]] typename Records::const_iterator getImpl(std::type_index type_idx) const
+    typename Records::const_iterator getImpl(std::type_index type_idx) const
     {
         auto it = std::lower_bound(records.cbegin(), records.cend(), type_idx);
 

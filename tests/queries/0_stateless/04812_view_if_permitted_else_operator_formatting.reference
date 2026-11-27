@@ -1,6 +1,0 @@
-SELECT * FROM viewIfPermitted(SELECT 1 ELSE not(isNull(1)))
-SELECT * FROM viewIfPermitted(SELECT 1 ELSE not(isNull(1)))
-SELECT *\nFROM viewIfPermitted(\n        SELECT 1\n    ELSE \n        not(isNull(1))\n)
-SELECT * FROM viewIfPermitted(SELECT 1 AS x ELSE `null`(\'x UInt8\'))
-SELECT viewIfPermitted(1, 2)
-SELECT viewIfPermitted(1, NOT (2))

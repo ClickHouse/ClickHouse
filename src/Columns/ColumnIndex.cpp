@@ -1,9 +1,8 @@
 #include <Columns/ColumnIndex.h>
 #include <Common/Exception.h>
-#include <Common/assert_cast.h>
 #include <DataTypes/NumberTraits.h>
 #include <base/demangle.h>
-#include <Common/HashTable/Hash.h>
+#include <Common/WeakHash.h>
 
 namespace DB
 {
@@ -12,7 +11,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
-    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 
@@ -151,16 +149,14 @@ void ColumnIndex::expandType()
 
 size_t ColumnIndex::getMaxIndexForCurrentType() const
 {
-    chassert(size_of_type == 1 || size_of_type == 2 || size_of_type == 4 || size_of_type == 8);
-    /// Shifting by 64 is undefined, and this is called per inserted value, so no `callForType` here.
-    if (size_of_type == sizeof(UInt64))
-        return std::numeric_limits<UInt64>::max();
-    return (1ULL << (8 * size_of_type)) - 1;
+    size_t value = 0;
+    callForType([&](auto type) { value = std::numeric_limits<decltype(type)>::max(); }, size_of_type);
+    return value;
 }
 
 size_t ColumnIndex::getIndexAt(size_t row) const
 {
-    size_t index = 0;
+    size_t index;
     auto get_index = [&](auto type)
     {
         using CurIndexType = decltype(type);
@@ -171,29 +167,6 @@ size_t ColumnIndex::getIndexAt(size_t row) const
     return index;
 }
 
-void ColumnIndex::setIndexesWhereMaskZero(const IColumn::Filter & mask, UInt64 value, size_t offset)
-{
-    if (offset + mask.size() != size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Mask of size {} at offset {} does not match ColumnIndex of size {}",
-            mask.size(), offset, size());
-    chassert(value <= getMaxIndexForCurrentType());
-
-    auto set_value = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
-    {
-        auto & data = getIndexesData<CurIndexType>();
-        const auto typed_value = static_cast<CurIndexType>(value);
-        for (size_t row = 0, rows = mask.size(); row < rows; ++row)
-        {
-            if (!mask[row])
-                data[offset + row] = typed_value;
-        }
-    };
-
-    callForType(std::move(set_value), size_of_type);
-}
-
 
 void ColumnIndex::insertIndex(size_t index)
 {
@@ -202,16 +175,12 @@ void ColumnIndex::insertIndex(size_t index)
 
     auto insert = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
     {
-        /// `size_of_type` tracks the type of `indexes` and `expandType` keeps the two in sync, so
-        /// this is `static_cast` in release. `getIndexesData` would run a `typeid_cast` instead, and
-        /// this is the per-value path.
-        assert_cast<ColumnVector<CurIndexType> *>(indexes.get())->getData().push_back(static_cast<CurIndexType>(index));
+        getIndexesData<CurIndexType>().push_back(static_cast<CurIndexType>(index));
     };
 
     callForType(std::move(insert), size_of_type);
 
-    /// Same invariant, so re-deriving it from `indexes` is a debug-only check here.
-    chassert(size_of_type == getSizeOfIndexType(*indexes, size_of_type));
+    checkSizeOfType();
 }
 
 void ColumnIndex::insertManyIndexes(size_t index, size_t length)
@@ -247,16 +216,6 @@ void ColumnIndex::insertIndexesRange(const IColumn & column, size_t offset, size
             indexes->insertRangeFrom(column, offset, limit);
         else
         {
-            const size_t column_size = column_ptr->size();
-            if (offset > column_size || limit > column_size - offset)
-                throw Exception(
-                    ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                    "Parameters offset = {}, limit = {} are out of bound in ColumnIndex::insertIndexesRange method "
-                    "(column.size() = {})",
-                    offset,
-                    limit,
-                    column_size);
-
             auto copy = [&](auto cur_type)
             {
                 using CurIndexType = decltype(cur_type);
@@ -338,36 +297,24 @@ void ColumnIndex::callForIndexes(std::function<void(size_t, size_t)> && callback
     callForType(std::move(callback_for_type), size_of_type);
 }
 
-std::optional<IColumn::Filter> ColumnIndex::buildUsedRowsFilter(size_t indexed_data_size) const
+ColumnPtr ColumnIndex::removeUnusedRowsInIndexedData(const ColumnPtr & indexed_data)
 {
-    size_t used_rows = 0;
-    IColumn::Filter filter(indexed_data_size, 0);
+    /// First, create a filter for indexed data to filter out all unused rows.
+    IColumn::Filter filter(indexed_data->size(), 0);
     auto create_filter = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
     {
         const auto & data = getIndexesData<CurIndexType>();
         for (size_t i = 0; i != data.size(); ++i)
-            if (!filter[data[i]])
-            {
-                filter[data[i]] = 1;
-                if (++used_rows == indexed_data_size)
-                    return;
-            }
+            filter[data[i]] = 1;
     };
 
     callForType(std::move(create_filter), size_of_type);
 
-    if (used_rows == indexed_data_size)
-        return std::nullopt;
-
-    return filter;
-}
-
-size_t ColumnIndex::compactIndexes(const IColumn::Filter & filter, size_t indexed_data_size)
-{
-    size_t result_size = 0;
+    /// Second, adjust indexes.
+    size_t result_size_hint = 0;
     auto adjust_indexes = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
     {
-        PaddedPODArray<CurIndexType> indexes_remapping(indexed_data_size);
+        PaddedPODArray<CurIndexType> indexes_remapping(indexed_data->size());
         size_t new_index = 0;
         for (size_t i = 0; i != filter.size(); ++i)
         {
@@ -378,72 +325,47 @@ size_t ColumnIndex::compactIndexes(const IColumn::Filter & filter, size_t indexe
         for (size_t i = 0; i != data.size(); ++i)
             data[i] = indexes_remapping[data[i]];
 
-        result_size = new_index;
+        result_size_hint = new_index;
     };
 
     callForType(std::move(adjust_indexes), size_of_type);
-
-    return result_size;
-}
-
-ColumnPtr ColumnIndex::removeUnusedRowsInIndexedData(const ColumnPtr & indexed_data)
-{
-    /// First, create a filter for indexed data to filter out all unused rows.
-    size_t indexed_data_size = indexed_data->size();
-    auto filter_opt = buildUsedRowsFilter(indexed_data_size);
-    if (!filter_opt.has_value())
-        return indexed_data;
-
-    IColumn::Filter & filter = filter_opt.value();
-
-    /// Second, adjust indexes.
-    size_t result_size_hint = compactIndexes(filter, indexed_data_size);
-
     return indexed_data->filter(filter, result_size_hint);
 }
 
 void ColumnIndex::removeUnusedRowsInIndexedData(MutableColumnPtr & indexed_data)
 {
     /// First, create a filter for indexed data to filter out all unused rows.
-    size_t indexed_data_size = indexed_data->size();
-    auto filter_opt = buildUsedRowsFilter(indexed_data_size);
-    if (!filter_opt.has_value())
-        return;
+    IColumn::Filter filter(indexed_data->size(), 0);
+    auto create_filter = [&](auto cur_type)
+    {
+        using CurIndexType = decltype(cur_type);
+        const auto & data = getIndexesData<CurIndexType>();
+        for (size_t i = 0; i != data.size(); ++i)
+            filter[data[i]] = 1;
+    };
 
-    IColumn::Filter & filter = filter_opt.value();
+    callForType(std::move(create_filter), size_of_type);
 
     /// Second, adjust indexes.
-    compactIndexes(filter, indexed_data_size);
+    auto adjust_indexes = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
+    {
+        PaddedPODArray<CurIndexType> indexes_remapping(indexed_data->size());
+        size_t new_index = 0;
+        for (size_t i = 0; i != filter.size(); ++i)
+        {
+            if (filter[i])
+            {
+                indexes_remapping[i] = static_cast<CurIndexType>(new_index);
+                ++new_index;
+            }
+        }
+        auto & data = getIndexesData<CurIndexType>();
+        for (size_t i = 0; i != data.size(); ++i)
+            data[i] = indexes_remapping[data[i]];
+    };
 
+    callForType(std::move(adjust_indexes), size_of_type);
     indexed_data->filter(filter);
-}
-
-ColumnIndex::CompactIndexedColumnsResult ColumnIndex::buildCompactIndexedColumns(const Columns & indexed_columns) const
-{
-    if (indexed_columns.empty())
-        return {getIndexes(), indexed_columns};
-
-    size_t indexed_data_size = indexed_columns[0]->size();
-    for (size_t i = 1; i < indexed_columns.size(); ++i)
-        chassert(indexed_columns[i]->size() == indexed_data_size);
-
-    /// First, create a filter for indexed data to filter out all unused rows.
-    auto filter_opt = buildUsedRowsFilter(indexed_data_size);
-    if (!filter_opt.has_value())
-        return {getIndexes(), indexed_columns};
-
-    IColumn::Filter & filter = filter_opt.value();
-
-    /// Second, adjust indexes.
-    ColumnIndex compact_column_index(IColumn::mutate(getIndexes()));
-    size_t result_size_hint = compact_column_index.compactIndexes(filter, indexed_data_size);
-
-    Columns filtered_columns;
-    filtered_columns.reserve(indexed_columns.size());
-    for (const auto & column : indexed_columns)
-        filtered_columns.push_back(column->filter(filter, result_size_hint));
-
-    return {compact_column_index.getIndexes(), filtered_columns};
 }
 
 void ColumnIndex::getIndexesByMask(IColumn::Offsets & result_indexes, const PaddedPODArray<UInt8> & mask, size_t start, size_t end) const
@@ -534,25 +456,24 @@ bool ColumnIndex::containsDefault() const
     return contains;
 }
 
-void ColumnIndex::computeHashInto(
-    const PaddedPODArray<UInt32> & dict_hash, size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+WeakHash32 ColumnIndex::getWeakHash(const WeakHash32 & dict_hash) const
 {
-    const UInt32 * dict_hash_data = dict_hash.data();
+    WeakHash32 hash(indexes->size());
+    auto & hash_data = hash.getData();
+    const auto & dict_hash_data = dict_hash.getData();
 
-    auto gather = [&](auto x)
+    auto update_weak_hash = [&](auto x)
     {
         using CurIndexType = decltype(x);
-        const auto & data = getIndexesData<CurIndexType>();
+        auto & data = getIndexesData<CurIndexType>();
+        auto size = data.size();
 
-        for (size_t i = row_begin; i < row_end; ++i)
-        {
-            const UInt32 value = dict_hash_data[data[i]];
-            UInt32 & out = hash_out[i - row_begin];
-            out = initial ? value : combineWeakHash32(value, out);
-        }
+        for (size_t i = 0; i < size; ++i)
+            hash_data[i] = dict_hash_data[data[i]];
     };
 
-    callForType(std::move(gather), size_of_type);
+    callForType(std::move(update_weak_hash), size_of_type);
+    return hash;
 }
 
 void ColumnIndex::collectSerializedValueSizes(

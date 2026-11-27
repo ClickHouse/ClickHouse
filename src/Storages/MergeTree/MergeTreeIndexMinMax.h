@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Formats/FormatSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
@@ -15,21 +14,21 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
     MergeTreeIndexGranuleMinMax(
         const String & index_name_,
         const Block & index_sample_block_,
-        Ranges && hyperrectangle_);
+        std::vector<Range> && hyperrectangle_);
 
     ~MergeTreeIndexGranuleMinMax() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    [[nodiscard]] bool empty() const override { return hyperrectangle.empty(); }
+    bool empty() const override { return hyperrectangle.empty(); }
 
-    [[nodiscard]] size_t memoryUsageBytes() const override { return hyperrectangle.capacity() * sizeof(Range); }
+    size_t memoryUsageBytes() const override { return hyperrectangle.capacity() * sizeof(Range); }
 
     const String & index_name;
     const Block & index_sample_block;
 
-    Ranges hyperrectangle;
+    std::vector<Range> hyperrectangle;
     Serializations serializations;
     DataTypes datatypes;
     FormatSettings format_settings;
@@ -41,13 +40,13 @@ struct MergeTreeIndexAggregatorMinMax final : IMergeTreeIndexAggregator
     MergeTreeIndexAggregatorMinMax(const String & index_name_, const Block & index_sample_block);
     ~MergeTreeIndexAggregatorMinMax() override = default;
 
-    [[nodiscard]] bool empty() const override { return hyperrectangle.empty(); }
+    bool empty() const override { return hyperrectangle.empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
 
     String index_name;
     Block index_sample_block;
-    Ranges hyperrectangle;
+    std::vector<Range> hyperrectangle;
 };
 
 
@@ -59,11 +58,11 @@ public:
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context);
 
-    [[nodiscard]] bool alwaysUnknownOrTrue() const override;
+    bool alwaysUnknownOrTrue() const override;
 
-    [[nodiscard]] bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
 
-    [[nodiscard]] std::string getDescription() const override;
+    std::string getDescription() const override;
 
     ~MergeTreeIndexConditionMinMax() override = default;
 private:
@@ -75,29 +74,20 @@ private:
 class MergeTreeIndexMinMax : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexMinMax(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_)
-        : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
+    explicit MergeTreeIndexMinMax(const IndexDescription & index_)
+        : IMergeTreeIndex(index_)
     {}
 
     ~MergeTreeIndexMinMax() override = default;
 
-    [[nodiscard]] MergeTreeIndexGranulePtr createIndexGranule() const override;
-    [[nodiscard]] MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    MergeTreeIndexGranulePtr createIndexGranule() const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
-    [[nodiscard]] MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
-    /// Format changed `.idx` (v1) -> `.idx2` (v2); a part may hold either.
-    [[nodiscard]] MergeTreeIndexSubstreams getPotentialSubstreams() const override
-    {
-        return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}, {MergeTreeIndexSubstream::Type::Regular, "", ".idx"}};
-    }
-    using IMergeTreeIndex::getPhysicalFormat;
-    [[nodiscard]] MergeTreeIndexFormat getPhysicalFormat(
-        const MergeTreeDataPartChecksums & checksums,
-        const IDataPartStorage & storage,
-        const std::string & relative_path_prefix) const override;
+    MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
+    MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override; /// NOLINT
 };
 
 struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranules

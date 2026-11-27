@@ -27,7 +27,7 @@ namespace DB
 class ParserSnapshotQuery : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "SNAPSHOT"; }
+    const char * getName() const override { return "SNAPSHOT"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

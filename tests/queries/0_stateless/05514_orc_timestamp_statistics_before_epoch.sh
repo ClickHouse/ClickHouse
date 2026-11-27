@@ -21,20 +21,20 @@ function check()
             SETTINGS input_format_orc_filter_push_down = 0"
 }
 
-# The timestamps before -1 second with a negative sub-millisecond part, from -2.000000001 to -1.001000001 seconds,
+# The timestamps before the epoch with a negative sub-millisecond part, from -1.000000001 to -0.001000001 seconds,
 # in row groups of 100 rows. Their statistics must allow the pruning.
 $CLICKHOUSE_LOCAL -q "
-    SELECT number, fromUnixTimestamp64Nano(toInt64(number) * 1000000 - 2000000001, 'UTC') AS t FROM numbers(1000)
+    SELECT number, fromUnixTimestamp64Nano(toInt64(number) * 1000000 - 1000000001, 'UTC') AS t FROM numbers(1000)
     INTO OUTFILE '$FILE' TRUNCATE FORMAT ORC SETTINGS output_format_orc_row_index_stride = 100"
-check "t < fromUnixTimestamp64Nano(-1500000001, 'UTC')"
-check "t <= fromUnixTimestamp64Nano(-1500000001, 'UTC')"
-check "t = fromUnixTimestamp64Nano(-1950000001, 'UTC')"
+check "t < fromUnixTimestamp64Nano(-500000001, 'UTC')"
+check "t <= fromUnixTimestamp64Nano(-500000001, 'UTC')"
+check "t = fromUnixTimestamp64Nano(-950000001, 'UTC')"
 
-# A timestamp in the millisecond after -2 seconds, in its own row group: the pruning must keep it.
+# A timestamp in the millisecond after -1 second, in its own row group: the pruning must keep it.
 $CLICKHOUSE_LOCAL -q "
-    SELECT number, fromUnixTimestamp64Nano([-2000000000, -1999500000, -1500000000][number + 1], 'UTC') AS t FROM numbers(3)
+    SELECT number, fromUnixTimestamp64Nano([-2000000000, -999500000, -500000000][number + 1], 'UTC') AS t FROM numbers(3)
     INTO OUTFILE '$FILE' TRUNCATE FORMAT ORC SETTINGS output_format_orc_row_index_stride = 1"
-check "t = fromUnixTimestamp64Nano(-1999500000, 'UTC')"
+check "t = fromUnixTimestamp64Nano(-999500000, 'UTC')"
 
 # A file from PyArrow (the C++ writer of ORC) with a bloom filter, which rounds the negative milliseconds toward zero,
 # and one row in each row group: the bloom filter must keep the matching rows.

@@ -27,16 +27,16 @@ struct QualifiedTableName
         return std::forward_as_tuple(database, table) < std::forward_as_tuple(other.database, other.table);
     }
 
-    [[nodiscard]] UInt64 hash() const;
+    UInt64 hash() const;
 
-    [[nodiscard]] std::vector<std::string> getParts() const
+    std::vector<std::string> getParts() const
     {
         if (database.empty())
             return {table};
         return {database, table};
     }
 
-    [[nodiscard]] std::string getFullName() const;
+    std::string getFullName() const;
 
     /// NOTE: It's different from compound identifier parsing and does not support escaping and dots in name.
     /// Usually it's better to use ParserIdentifier instead,

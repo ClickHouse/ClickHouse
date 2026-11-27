@@ -91,12 +91,6 @@ open(f'{out}/binary_json_huge_length.arrow', 'wb').write(
 open(f'{out}/largebinary_json_huge_length.arrow', 'wb').write(
     forge_one_row_to_huge(write_json_binary(pa.large_binary()), 1 << 30))
 
-# FixedSizeBinary(1) read with a UUID hint: the UUID reader reserves sizeof(UUID)=16 bytes per
-# row, so it would allocate 16x the row count before the per-chunk byte_width check rejects the
-# type. 1,000,000 one-byte rows (1 MB buffer) -> a 16 MB reserve; the width check must reject it
-# as INCORRECT_DATA before reserving (the read below uses a memory limit below that reserve).
-open(f'{out}/fixedbinary1_as_uuid.arrow', 'wb').write(
-    write_arrow(pa.array([b'\x01'] * 1_000_000, type=pa.binary(1)), name='x'))
 PYEOF
 
 check_incorrect_data() {
@@ -136,9 +130,3 @@ check_incorrect_data binary_json_huge_length \
 
 check_incorrect_data largebinary_json_huge_length \
     $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/largebinary_json_huge_length.arrow', Arrow) FORMAT Null SETTINGS allow_experimental_json_type=1"
-
-# The 8 MB memory limit is below the 16 MB UUID-column reserve but above the 1 MB input, so an
-# implementation that reserves before checking byte_width fails with MEMORY_LIMIT_EXCEEDED; the
-# fixed reader rejects the type with INCORRECT_DATA before reserving.
-check_incorrect_data fixedbinary1_as_uuid \
-    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/fixedbinary1_as_uuid.arrow', Arrow, 'x UUID') FORMAT Null SETTINGS max_memory_usage=8000000"

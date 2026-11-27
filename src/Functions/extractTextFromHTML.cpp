@@ -64,6 +64,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -290,23 +291,26 @@ size_t extract(const char * __restrict src, size_t size, char * __restrict dst)
 }
 
 
-class FunctionExtractTextFromHTML final : public IFunction
+class FunctionExtractTextFromHTML : public IFunction
 {
 public:
     static constexpr auto name = "extractTextFromHTML";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionExtractTextFromHTML>(); }
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(String) -> String";
+        if (!isString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
+        return arguments[0];
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t rows) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t rows) const override
     {
         const ColumnString * src = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         if (!src)
@@ -379,9 +383,9 @@ SELECT extractTextFromHTML('
 ');
         )",
         R"(
-┌─extractTextFromHTML('\n<html>\n    <head><title>Page Title</title></head>\n    <body>\n        <p>Hello <b>World</b>!</p>\n        <script>alert("test");</script>\n        <!-- comment -->\n    </body>\n</html>\n')─┐
-│ Page Title Hello World !                                                                                                                                                                                               │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─extractTextFromHTML('<html><head>...')─┐
+│ Page Title Hello World!                │
+└────────────────────────────────────────┘
         )"
     }
     };

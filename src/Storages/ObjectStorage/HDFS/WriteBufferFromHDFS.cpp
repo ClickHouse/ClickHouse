@@ -10,7 +10,6 @@
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
 #include <Common/ErrnoException.h>
-#include <Common/logger_useful.h>
 #include <Interpreters/BlobStorageLog.h>
 #include <hdfs/hdfs.h>
 
@@ -32,7 +31,6 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
     hdfsFile fout;
     HDFSFSPtr fs;
     WriteSettings write_settings;
-    bool created_file;
 
     WriteBufferFromHDFSImpl(
             const std::string & hdfs_uri_,
@@ -45,7 +43,6 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
         , hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
         , write_settings(write_settings_)
-        , created_file(!(flags & O_APPEND))
     {
         fs = createHDFSFS(builder.get());
 
@@ -61,30 +58,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
 
     ~WriteBufferFromHDFSImpl()
     {
-        if (fout != nullptr)
-            hdfsCloseFile(fs.get(), fout);
-    }
-
-    void removeFileOnCancel() noexcept
-    {
-        if (fout != nullptr)
-        {
-            hdfsCloseFile(fs.get(), fout);
-            fout = nullptr;
-        }
-
-        /// Unlike blob storages, which create the object only at finalize, HDFS creates
-        /// the file already at open, so a canceled write has to remove it explicitly.
-        /// Appends do not create the file, and removing it would lose the previous content.
-        if (!created_file)
-            return;
-
-        if (hdfsDelete(fs.get(), hdfs_file_path.c_str(), 0) == -1)
-        {
-            LOG_WARNING(getLogger("WriteBufferFromHDFS"),
-                "Cannot remove the file of a canceled write: {} ({}) error: {}",
-                hdfs_file_path, hdfs_uri, std::string(hdfsGetLastError()));
-        }
+        hdfsCloseFile(fs.get(), fout);
     }
 
     int write(const char * start, size_t size)
@@ -168,12 +142,6 @@ void WriteBufferFromHDFS::finalizeImpl()
             /* error_code */ 0,
             /* error_message */ {});
     }
-}
-
-void WriteBufferFromHDFS::cancelImpl() noexcept
-{
-    WriteBufferFromFileBase::cancelImpl();
-    impl->removeFileOnCancel();
 }
 
 WriteBufferFromHDFS::~WriteBufferFromHDFS()

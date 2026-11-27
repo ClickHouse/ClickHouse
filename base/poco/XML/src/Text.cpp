@@ -21,7 +21,7 @@ namespace Poco {
 namespace XML {
 
 
-[[clang::no_destroy]] const XMLString Text::NODE_NAME = toXMLString("#text");
+const XMLString Text::NODE_NAME = toXMLString("#text");
 
 
 Text::Text(Document* pOwnerDocument, const XMLString& data): 

@@ -3,6 +3,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <functional>
+#include <iostream>
 #include <mutex>
 #include <queue>
 #include <thread>
@@ -17,10 +18,10 @@ class BackgroundWorker
 public:
     using BackgroundWorkerTask = std::function<void()>;
 
-    explicit BackgroundWorker(LoggerPtr log_)
+    BackgroundWorker()
         : stop_(false)
-        , log(std::move(log_))
         , worker_thread_(&BackgroundWorker::worker_loop, this)
+        , log(getLogger("BackgroundWorker"))
     {
     }
 
@@ -31,15 +32,19 @@ public:
 
     void stop();
 
+    bool is_empty() const;
+
+    size_t queue_size() const;
+
 private:
     void worker_loop();
 
     std::queue<BackgroundWorkerTask> task_queue_;
-    std::mutex queue_mutex_;
+    mutable std::mutex queue_mutex_;
     std::condition_variable cv_;
     std::atomic<bool> stop_;
-    LoggerPtr log;
     std::thread worker_thread_;
+    LoggerPtr log;
 };
 
 }

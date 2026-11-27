@@ -216,9 +216,10 @@ def buildQueryPlanPacket(plan_version, step_name, payload, num_children, childre
     if plan_version >= WITH_EXECUTION_LIMITS:
         writeVarUInt(0, body)      # max_threads
         body.append(0)             # concurrency_control
-    # Node tree: a root step with the given children, or with the given number of `ReadNothing` children.
+    # Node tree: a root step with the given children, or with the given number of `ReadFromTable` children.
+    # `ReadFromTable` payload: table name and no flags; the table is only resolved after deserialization.
     if children is None:
-        children = [("ReadNothing", b"", [])] * num_children
+        children = [("ReadFromTable", strbin("t") + b"\x00", [])] * num_children
     body += buildTree(plan_version, (step_name, payload, children))
 
     packet = bytearray()
@@ -237,7 +238,7 @@ def readException(s):
 
 
 def sendPlan(step_name, payload, num_children=0, children=None):
-    """Sends a `QueryPlan` packet with a step having `children` (or `num_children` `ReadNothing` children) and returns the exception code, or None if the query is not rejected."""
+    """Sends a `QueryPlan` packet with a step having `children` (or `num_children` `ReadFromTable` children) and returns the exception code, or None if the query is not rejected."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(60)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
@@ -257,14 +258,10 @@ def sendPlan(step_name, payload, num_children=0, children=None):
 
 def main():
     # 117 == INCORRECT_DATA
-    for step_name, payload in [("Extremes", b""), ("Limit", b"\x00\x01\x00"), ("Union", b"\x00"), ("BlocksMarshalling", b"")]:
+    for step_name, payload in [("Extremes", b""), ("Limit", b"\x00\x01\x00"), ("Union", b"")]:
         print(step_name, sendPlan(step_name, payload))
     # A step with more children than it has inputs.
     print("Extremes with two children", sendPlan("Extremes", b"", num_children=2))
-    # A sink has no output stream, so it cannot be a child of another step.
-    # `GatherSend` payload: exchange ID and no sort description.
-    gather_send = ("GatherSend", strbin("x") + b"\x00", [("ReadNothing", b"", [])])
-    print("Extremes over GatherSend", sendPlan("Extremes", b"", children=[gather_send]))
 
 
 main()

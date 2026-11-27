@@ -1,21 +1,14 @@
-SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS t_read_in_order_1;
 
 CREATE TABLE t_read_in_order_1 (id UInt64, v UInt64)
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 1024, index_granularity_bytes = '10M';
 
--- Use multiple parts so that PrefetchingConcatProcessor is not used
--- (it requires a single part). This test is about BufferChunks behavior.
-SYSTEM STOP MERGES t_read_in_order_1;
-INSERT INTO t_read_in_order_1 SELECT number, number FROM numbers(500000);
-INSERT INTO t_read_in_order_1 SELECT number + 500000, number FROM numbers(500000);
+INSERT INTO t_read_in_order_1 SELECT number, number FROM numbers(1000000);
 
 SET max_threads = 8;
 SET optimize_read_in_order = 1;
 SET read_in_order_use_buffering = 1;
-SET use_skip_indexes_for_top_k = 0;
-SET use_top_k_dynamic_filtering = 0;
 
 SELECT count() FROM
 (

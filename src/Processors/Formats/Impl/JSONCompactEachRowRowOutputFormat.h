@@ -4,8 +4,6 @@
 #include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
 #include <Formats/FormatSettings.h>
 
-#include <span>
-
 
 namespace DB
 {
@@ -32,13 +30,6 @@ public:
 protected:
     void writePrefix() override;
 
-    /// The plain output cannot represent totals and extremes: they would be indistinguishable
-    /// from ordinary rows, so they are dropped. Under a framing format the packet boundaries
-    /// tell them apart, so they are emitted - as rows of the compact format, into the `totals`
-    /// and `extremes` packets.
-    bool supportTotals() const override { return getFraming() != nullptr; }
-    bool supportExtremes() const override { return getFraming() != nullptr; }
-
     void writeTotals(const Columns & columns, size_t row_num) override;
 
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
@@ -49,7 +40,7 @@ protected:
 
     void resetFormatterImpl() override;
 
-    void writeLine(std::span<const String> values);
+    void writeLine(const std::vector<String> & values);
 
     FormatSettings settings;
     bool with_names;

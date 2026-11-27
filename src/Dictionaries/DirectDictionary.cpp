@@ -57,7 +57,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     DefaultsOrFilter defaults_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
-    chassert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
+    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
     if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
@@ -218,7 +218,7 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
     DefaultOrFilter default_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     if (is_short_circuit)
     {
@@ -284,7 +284,7 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
                 auto block_key = block_keys_extractor.extractCurrentKey();
 
                 const auto * it = requested_key_to_index.find(block_key);
-                chassert(it);
+                assert(it);
 
                 auto & result_data_found_indexes = it->getMapped();
                 for (size_t result_data_found_index : result_data_found_indexes)
@@ -315,7 +315,7 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getHierarchy(
 {
     if (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        size_t keys_found = 0;
+        size_t keys_found;
         auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type, keys_found);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -346,16 +346,16 @@ class SourceFromQueryPipeline : public ISource
 {
 public:
     explicit SourceFromQueryPipeline(QueryPipeline & pipeline_)
-        : ISource(std::make_shared<const Block>(pipeline_.getSharedHeader()->cloneEmpty()))
-        , executor(std::in_place, pipeline_)
+        : ISource(pipeline_.getSharedHeader())
+        , executor(pipeline_)
     {
         pipeline_.setConcurrencyControl(false);
     }
 
     explicit SourceFromQueryPipeline(BlockIO io)
-        : ISource(std::make_shared<const Block>(io.pipeline.getSharedHeader()->cloneEmpty()))
+        : ISource(io.pipeline.getSharedHeader())
         , io_holder(std::move(io))
-        , executor(std::in_place, io_holder->pipeline)
+        , executor(io_holder->pipeline)
     {
         io_holder->pipeline.setConcurrencyControl(false);
     }
@@ -370,7 +370,7 @@ public:
         try
         {
             Chunk chunk;
-            while (executor->pull(chunk))
+            while (executor.pull(chunk))
             {
                 if (chunk)
                     return chunk;
@@ -380,7 +380,6 @@ public:
         {
             if (io_holder)
             {
-                executor.reset();
                 io_holder->onException();
             }
             throw;
@@ -388,7 +387,6 @@ public:
 
         if (io_holder)
         {
-            executor.reset();
             io_holder->onFinish();
         }
         return {};
@@ -402,9 +400,7 @@ private:
     /// * We need to run BlockIO::onFinish or BlockIO::onException.
     std::optional<BlockIO> io_holder;
 
-    /// Reset before `io_holder` tears its pipeline down: the executor shares the pipeline's processors,
-    /// and they must not outlive the table locks that `onFinish` / `onException` release.
-    std::optional<TExecutor> executor;
+    TExecutor executor;
 };
 
 Pipe getSourcePipe(QueryPipeline & pipeline, const bool use_async_executor)
@@ -502,56 +498,10 @@ namespace
 template class DirectDictionary<DictionaryKeyType::Simple>;
 template class DirectDictionary<DictionaryKeyType::Complex>;
 
-void registerDictionaryDirect(DictionaryFactory & factory);
 void registerDictionaryDirect(DictionaryFactory & factory)
 {
-    factory.registerLayout("direct", createDirectDictionary<DictionaryKeyType::Simple>, false, true, Documentation{
-        .description = R"DOCS_MD(
-# direct dictionary layout
-
-## direct {#direct}
-
-The dictionary is not stored in memory and directly goes to the source during the processing of a request.
-
-The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
-
-Only a lookup is selective. `dictGet` and the other dictionary functions query the source for the requested keys, but reading the dictionary **as a table** is not a keyed fetch: `SELECT ... FROM <dictionary> WHERE key IN (...)` reads the whole source and filters the result afterwards, because the key filter is not pushed down into the dictionary. Use the dictionary functions when you want the source to be queried for particular keys.
-
-All types of [sources](/reference/statements/create/dictionary/sources/overview#dictionary-sources), except local files, are supported.
-
-Configuration example:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-LAYOUT(DIRECT())
-```
-
-</Tab>
-<Tab title="Configuration file">
-
-```xml
-<layout>
-  <direct />
-</layout>
-```
-
-</Tab>
-</Tabs>
-<br/>
-
-## complex_key_direct {#complex_key_direct}
-
-This type of storage is for use with composite [keys](/reference/statements/create/dictionary/attributes#composite-key). Similar to `direct`.
-)DOCS_MD",
-        .syntax = "LAYOUT(DIRECT())",
-        .related = {"cache"}});
-    factory.registerLayout("complex_key_direct", createDirectDictionary<DictionaryKeyType::Complex>, true, true, Documentation{
-        .description = "Like `direct`, but supports composite keys. As with `direct`, a table read of the dictionary "
-                       "reads the whole source and filters afterwards; only the dictionary functions query the source for particular keys.",
-        .syntax = "LAYOUT(COMPLEX_KEY_DIRECT())",
-        .related = {"direct"}});
+    factory.registerLayout("direct", createDirectDictionary<DictionaryKeyType::Simple>, false);
+    factory.registerLayout("complex_key_direct", createDirectDictionary<DictionaryKeyType::Complex>, true);
 }
 
 

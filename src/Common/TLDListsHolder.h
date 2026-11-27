@@ -1,9 +1,8 @@
 #pragma once
 
-#include <base/PackedStringRef.h>
 #include <base/defines.h>
+#include <Common/HashTable/StringHashMap.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/HashTable/HashMap.h>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -26,17 +25,17 @@ enum TLDType
 
 /// Custom TLD List
 ///
-/// Unlike tldLookup (which uses gperf) this one uses plain HashMap<PackedStringRef, TLDType>.
+/// Unlike tldLookup (which uses gperf) this one uses plain StringHashMap.
 class TLDList
 {
 public:
-    using Container = HashMap<PackedStringRef, TLDType>;
+    using Container = StringHashMap<TLDType>;
 
     explicit TLDList(size_t size);
 
     void insert(const String & host, TLDType type);
-    [[nodiscard]] TLDType lookup(std::string_view host) const;
-    [[nodiscard]] size_t size() const { return tld_container.size(); }
+    TLDType lookup(std::string_view host) const;
+    size_t size() const { return tld_container.size(); }
 
 private:
     Container tld_container;

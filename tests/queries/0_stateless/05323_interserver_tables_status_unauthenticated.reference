@@ -1,0 +1,5 @@
+authenticated
+t_present	1
+interserver, unauthenticated
+t_absent	0
+t_present	0

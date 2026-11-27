@@ -9,12 +9,12 @@ namespace DB
 {
 
 template <typename Type>
-class SerializationEnum final : public SerializationNumber<Type>
+class SerializationEnum : public SerializationNumber<Type>
 {
-private:
+public:
     using typename SerializationNumber<Type>::FieldType;
     using typename SerializationNumber<Type>::ColumnType;
-    using Values = typename EnumValues<Type>::Values;
+    using Values = EnumValues<Type>::Values;
 
     // SerializationEnum can be constructed in two ways:
     /// - Make a copy of the Enum name-to-type mapping.
@@ -31,14 +31,6 @@ private:
     {
     }
 
-public:
-    static UInt128 getHash(const Values & values);
-
-    static SerializationPtr create(const std::shared_ptr<const DataTypeEnum<Type>> & enum_type);
-    static SerializationPtr create(const Values & values_);
-
-    [[nodiscard]] size_t allocatedBytes() const override;
-
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
@@ -48,8 +40,6 @@ public:
     bool tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     bool tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-    bool tryDeserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
@@ -61,16 +51,11 @@ public:
 
     void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
-    /// Hive has no Enum type, so the HiveText output format does not support it (throws NOT_IMPLEMENTED).
-    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-
     FieldType readValue(ReadBuffer & istr) const
     {
         FieldType x;
         readText(x, istr);
-        /// Validate that value exists (throws if not found)
-        (void)ref_enum_values.getNameForValue(x);
-        return x;
+        return ref_enum_values.findByValue(x)->first;
     }
 
     bool tryReadValue(ReadBuffer & istr, FieldType & x) const

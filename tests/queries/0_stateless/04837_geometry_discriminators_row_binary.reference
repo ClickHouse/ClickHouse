@@ -1,8 +1,0 @@
-[(1,2),(3,4)]	LineString
-[[(1,2),(3,4)]]	MultiLineString
-[[[(1,2),(3,4)]]]	MultiPolygon
-(1,2)	Point
-[[(1,2),(3,4)]]	Polygon
-[(1,2),(3,4)]	Ring
-[(1,2),(3,4)]	MultiPoint
-\N	None

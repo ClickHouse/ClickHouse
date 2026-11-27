@@ -25,17 +25,10 @@ namespace DB
 /// null map is not written but can be restored from offsets.
 class SerializationSparse final : public ISerialization
 {
-private:
+public:
     explicit SerializationSparse(const SerializationPtr & nested_);
 
-public:
-    static UInt128 getHash(const SerializationPtr & nested_);
-    static SerializationPtr create(const SerializationPtr & nested_);
-    size_t allocatedBytes() const override;
-    bool supportsPooling() const override { return nested->supportsPooling(); }
-
     KindStack getKindStack() const override;
-    MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -66,7 +59,8 @@ public:
 
     /// Allows to read only ColumnSparse.
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -95,9 +89,6 @@ public:
 
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
-    void serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
-    void deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-
 private:
     struct SubcolumnCreator : public ISubcolumnCreator
     {
@@ -107,9 +98,9 @@ private:
         SubcolumnCreator(const ColumnPtr & offsets_, size_t size_)
             : offsets(offsets_), size(size_) {}
 
-        [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
-        [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
-        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
+        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
+        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
+        ColumnPtr create(const ColumnPtr & prev) const override;
     };
 
     struct NullMapSubcolumnCreator : public ISubcolumnCreator
@@ -120,9 +111,9 @@ private:
         NullMapSubcolumnCreator(const ColumnPtr & offsets_, size_t size_)
             : offsets(offsets_), size(size_) {}
 
-        [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
-        [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override { return prev; }
-        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
+        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
+        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override { return prev; }
+        ColumnPtr create(const ColumnPtr & prev) const override;
     };
 
     template <typename Reader>
@@ -142,15 +133,8 @@ private:
 /// methods and builds a null map in full serialization from offset of Sparse column.
 class SerializationSparseNullMap final : public SerializationNumber<UInt8>
 {
-private:
-    SerializationSparseNullMap() = default;
-
 public:
     using Base = SerializationNumber<UInt8>;
-
-    static UInt128 getHash();
-    static SerializationPtr create();
-    size_t allocatedBytes() const override;
 
     void serializeBinaryBulkStatePrefix(
         const IColumn & column,
@@ -179,7 +163,8 @@ public:
         SubstreamsDeserializeStatesCache * cache) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -194,16 +179,19 @@ struct SubstreamsCacheSparseOffsetsElement : public ISerialization::ISubstreamsC
     explicit SubstreamsCacheSparseOffsetsElement(
         ColumnPtr offsets_,
         size_t old_size_,
-        size_t read_rows_)
+        size_t read_rows_,
+        size_t skipped_values_rows_)
         : offsets(std::move(offsets_))
         , old_size(old_size_)
         , read_rows(read_rows_)
+        , skipped_values_rows(skipped_values_rows_)
     {
     }
 
     ColumnPtr offsets;
     size_t old_size = 0;
     size_t read_rows = 0;
+    size_t skipped_values_rows = 0;
 };
 
 }

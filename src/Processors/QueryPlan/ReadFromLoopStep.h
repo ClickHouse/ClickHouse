@@ -22,7 +22,7 @@ namespace DB
                 size_t max_block_size_,
                 size_t num_streams_);
 
-        [[nodiscard]] String getName() const override { return "ReadFromLoop"; }
+        String getName() const override { return "ReadFromLoop"; }
 
         void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

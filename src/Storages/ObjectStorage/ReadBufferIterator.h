@@ -1,15 +1,11 @@
 #pragma once
-
 #include <Interpreters/Context_fwd.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+
 
 namespace DB
 {
-
-class StorageObjectStorageConfiguration;
-using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
 
 class ReadBufferIterator : public IReadBufferIterator, WithContext
 {
@@ -29,17 +25,17 @@ public:
 
     void setSchemaToLastFile(const ColumnsDescription & columns) override;
 
-    [[nodiscard]] String getLastFilePath() const override;
+    String getLastFilePath() const override;
 
     void setFormatName(const String & format_name) override;
 
-    [[nodiscard]] bool supportsLastReadBufferRecreation() const override { return true; }
+    bool supportsLastReadBufferRecreation() const override { return true; }
 
     std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override;
 
 private:
-    [[nodiscard]] SchemaCache::Key getKeyForSchemaCache(const ObjectInfo & object_info, const String & format_name) const;
-    [[nodiscard]] SchemaCache::Keys getKeysForSchemaCache() const;
+    SchemaCache::Key getKeyForSchemaCache(const ObjectInfo & object_info, const String & format_name) const;
+    SchemaCache::Keys getKeysForSchemaCache() const;
     std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const ObjectInfos::iterator & begin, const ObjectInfos::iterator & end);
 
