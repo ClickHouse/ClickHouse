@@ -129,6 +129,12 @@ bool parseKeeperPath(IParser::Pos & pos, Expected & expected, String & path)
     return parseKeeperArg(pos, expected, path);
 }
 
+bool parseKeeperValue(IParser::Pos & pos, Expected & expected, String & value)
+{
+    expected.add(pos, "value");
+    return parseKeeperArg(pos, expected, value);
+}
+
 bool KeeperParser::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto query = make_intrusive<ASTKeeperQuery>();

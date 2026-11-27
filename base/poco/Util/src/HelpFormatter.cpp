@@ -69,7 +69,7 @@ void HelpFormatter::setFooter(const std::string& footer)
 
 void HelpFormatter::format(std::ostream& ostr) const
 {
-	ostr << "usage: " << _command;
+	ostr << "Usage: " << _command;
 	if (!_usage.empty())
 	{
 		ostr << ' ';

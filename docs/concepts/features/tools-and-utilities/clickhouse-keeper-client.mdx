@@ -77,6 +77,16 @@ keeper foo bar
 2
 ```
 
+## Keeping an ephemeral node alive {#clickhouse-keeper-client-ephemeral-node}
+
+An ephemeral node exists only while the session that created it is alive. To keep one alive from a shell script, end the query with `watch`, which blocks until the watch fires. The node is removed after the process exits and the session expires:
+
+```bash
+clickhouse-keeper-client -h localhost -p 9181 --query "create /my_lock 'owner' EPHEMERAL; exists /my_lock w; watch w"
+```
+
+The watch fires if another client changes or removes the node, which also ends the command.
+
 ## Commands {#clickhouse-keeper-client-commands}
 
 -   `ls '[path]' [watch_id]` -- Lists the nodes for the given path (default: cwd). Optionally sets a children watch identified by `watch_id`
@@ -94,7 +104,7 @@ keeper foo bar
 -   `rm '<path>' [version]` -- Removes the node only if version matches (default: -1)
 -   `rmr '<path>' [limit]` -- Recursively deletes path if the subtree size is smaller than the limit. Confirmation required (default limit = 100)
 -   `flwc <command>` -- Executes four-letter-word command
--   `help` -- Prints this message
+-   `help [command]` -- Prints this message, or the help for the given command
 -   `get_direct_children_number '[path]'` -- Get numbers of direct children nodes under a specific path
 -   `get_all_children_number '[path]'` -- Get all numbers of children nodes under a specific path
 -   `get_stat '[path]'` -- Returns the node's stat (default `.`)

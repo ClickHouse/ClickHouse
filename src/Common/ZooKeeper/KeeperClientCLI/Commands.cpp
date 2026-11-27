@@ -193,7 +193,7 @@ bool SetCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> 
     node->args.push_back(std::move(path));
 
     String arg;
-    if (!parseKeeperArg(pos, expected, arg))
+    if (!parseKeeperValue(pos, expected, arg))
         return false;
     node->args.push_back(std::move(arg));
 
@@ -223,7 +223,7 @@ bool CreateCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuer
     node->args.push_back(std::move(path));
 
     String arg;
-    if (!parseKeeperArg(pos, expected, arg))
+    if (!parseKeeperValue(pos, expected, arg))
         return false;
     node->args.push_back(std::move(arg));
 
@@ -370,6 +370,7 @@ String watchEventTypeToString(int32_t type)
 bool WaitWatchCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String watch_id;
+    expected.add(pos, "watch_id");
     if (!parseKeeperArg(pos, expected, watch_id))
         return false;
     node->args.push_back(std::move(watch_id));
@@ -784,7 +785,7 @@ bool ReconfigCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQu
     ParserToken{TokenType::Whitespace}.ignore(pos);
 
     String arg;
-    if (!parseKeeperArg(pos, expected, arg))
+    if (!parseKeeperValue(pos, expected, arg))
         return false;
     node->args.push_back(std::move(arg));
 
@@ -832,15 +833,38 @@ void SyncCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClientBase
     client->cout << client->zookeeper->sync(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
 }
 
-bool HelpCommand::parse(IParser::Pos & /* pos */, boost::intrusive_ptr<ASTKeeperQuery> & /* node */, Expected & /* expected */) const
+bool HelpCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
+    String command_name;
+    if (parseKeeperArg(pos, expected, command_name))
+        node->args.push_back(std::move(command_name));
+
     return true;
 }
 
-void HelpCommand::execute(const ASTKeeperQuery * /* query */, KeeperClientBase * client) const
+void HelpCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
-    for (const auto & pair : KeeperClientBase::commands)
-        client->cout << pair.second->generateHelpString() << "\n";
+    if (query->args.empty())
+    {
+        for (const auto & pair : KeeperClientBase::commands)
+            client->cout << pair.second->generateHelpString() << "\n";
+        return;
+    }
+
+    const auto & command_name = query->args[0].safeGet<String>();
+    auto it = KeeperClientBase::commands.find(command_name);
+    if (it == KeeperClientBase::commands.end())
+    {
+        /// Any other word of four letters is sent to Keeper as a four-letter-word command, see `KeeperParser`.
+        if (command_name.size() == 4)
+            client->cout << "`" << command_name << "` is sent to Keeper as a four-letter-word command, the same as `flwc "
+                << command_name << "`\n";
+        else
+            client->cerr << "The command `" << command_name << "` is unknown\n";
+        return;
+    }
+
+    client->cout << it->second->generateHelpString() << "\n";
 }
 
 bool FourLetterWordCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
