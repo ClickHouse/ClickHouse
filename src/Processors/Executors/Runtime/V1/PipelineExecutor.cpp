@@ -731,8 +731,15 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// The eager path spawns a thread for every granted slot, as many as the pipeline width allows.
     tasks.requestThreads(lazy_allocation ? std::max<size_t>(initial_parallel, 1) : num_threads);
 
+    /// A thread runs one job until the execution ends or it is downscaled, so no thread is kept for reuse.
     if (num_threads > 1)
-        pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, num_threads);
+        pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::QueryPipelineExecutorThreads,
+            CurrentMetrics::QueryPipelineExecutorThreadsActive,
+            CurrentMetrics::QueryPipelineExecutorThreadsScheduled,
+            num_threads,
+            /*max_free_threads=*/ 0,
+            /*queue_size=*/ num_threads);
 }
 
 void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
