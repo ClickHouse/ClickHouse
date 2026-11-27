@@ -5143,8 +5143,22 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
                     const Field value = session_settings.get(name);
                     is_set = value.getType() == Field::Types::Map ? !value.safeGet<Map>().empty() : !value.safeGet<String>().empty();
                 }
-                else if (const std::optional<String> value = serverEffectiveSettingValue(name))
+                else
                 {
+                    /// The question is a query of the session, so the filters apply to it as well,
+                    /// and a filter can hide the row with the answer: `additional_result_filter = '0'`
+                    /// leaves the result empty, and so does a filter on `system.settings` in
+                    /// `additional_table_filters`. An empty result therefore does not mean that the
+                    /// session has no filter. Every server that has these settings reports them, so
+                    /// the absence of the answer is refused like a filter.
+                    const std::optional<String> value = serverEffectiveSettingValue(name);
+                    if (!value)
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "The read-only tool cannot find out whether the session has the setting `{}`, which the "
+                            "server turns into a part of every query after the tool has validated it: the server did "
+                            "not report it. Use the run_query tool for this query",
+                            name);
                     is_set = !value->empty() && *value != "{}";
                 }
                 if (is_set)

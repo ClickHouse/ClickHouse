@@ -93,9 +93,22 @@ constexpr std::string_view CONVERSATION_CUT
 /// read by the model as an earlier turn of the conversation, and the contents of a table would
 /// steer the next `aiGenerate` call instead of the conversation itself.
 /// A carriage return is a line break as well (models and tokenizers treat it as one), so `\r\n`
-/// and a lone `\r` are both written as `\n` and the line after them is indented too.
+/// and a lone `\r` are both written as `\n` and the line after them is indented too. So is every
+/// other character a text can break a line with: the vertical tab, the form feed, the information
+/// separators (U+001C - U+001E), the next line (U+0085) and the line and paragraph separators
+/// (U+2028, U+2029). Whatever is read as the beginning of a line begins with the indentation.
 void writeQuotedPayload(std::string_view text, WriteBufferFromOwnString & out)
 {
+    /// The length of the line separator that is not a single ASCII character at `i`, or 0.
+    const auto multibyte_line_separator_length = [&](size_t i) -> size_t
+    {
+        if (text[i] == '\xC2' && i + 1 < text.size() && text[i + 1] == '\x85')
+            return 2;
+        if (text[i] == '\xE2' && i + 2 < text.size() && text[i + 1] == '\x80' && (text[i + 2] == '\xA8' || text[i + 2] == '\xA9'))
+            return 3;
+        return 0;
+    };
+
     bool at_line_start = true;
     for (size_t i = 0; i < text.size(); ++i)
     {
@@ -117,8 +130,25 @@ void writeQuotedPayload(std::string_view text, WriteBufferFromOwnString & out)
                 writeChar('\n', out);
                 at_line_start = true;
                 break;
-            case '\n': writeChar('\n', out); at_line_start = true; break;
-            default: writeChar(c, out); break;
+            case '\n':
+            case '\v':
+            case '\f':
+            case '\x1C':
+            case '\x1D':
+            case '\x1E':
+                writeChar('\n', out);
+                at_line_start = true;
+                break;
+            default:
+                if (const size_t length = multibyte_line_separator_length(i))
+                {
+                    i += length - 1;
+                    writeChar('\n', out);
+                    at_line_start = true;
+                }
+                else
+                    writeChar(c, out);
+                break;
         }
     }
 }

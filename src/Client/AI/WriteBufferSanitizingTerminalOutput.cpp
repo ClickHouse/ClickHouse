@@ -97,13 +97,27 @@ void WriteBufferSanitizingTerminalOutput::process(const char * begin, const char
         }
 
         const bool is_c1_control = byte == 0xC2 && actual == 2 && static_cast<unsigned char>(pos[1]) <= 0x9F;
-        if (length == 0 || actual < length || is_c1_control)
+
+        /// A complete sequence of the right shape is still not UTF-8 when it is not the encoding of
+        /// a code point: an overlong form (which can spell a C1 control in three or four bytes), a
+        /// surrogate, or a value above U+10FFFF. The second byte tells: the two-byte overlong forms
+        /// are excluded by `sequenceLength` already.
+        bool is_not_code_point = false;
+        if (length >= 3 && actual == length)
+        {
+            const auto second = static_cast<unsigned char>(pos[1]);
+            is_not_code_point = (byte == 0xE0 && second < 0xA0) || (byte == 0xED && second > 0x9F)
+                || (byte == 0xF0 && second < 0x90) || (byte == 0xF4 && second > 0x8F);
+        }
+
+        if (length == 0 || actual < length || is_c1_control || is_not_code_point)
         {
             /// A C1 control, a byte that cannot start a sequence (a stray continuation byte among
-            /// them), or a sequence cut short by a byte that does not continue it.
+            /// them), a sequence cut short by a byte that does not continue it, or a sequence that
+            /// does not encode a code point.
             flush_run(pos);
             out.write(replacement_character.data(), replacement_character.size());
-            pos += is_c1_control ? 2 : actual;
+            pos += actual;
             run_begin = pos;
             continue;
         }

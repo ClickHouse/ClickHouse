@@ -49,6 +49,22 @@ TEST(WriteBufferSanitizingTerminalOutput, ReplacesControls)
     EXPECT_EQ(sanitize("plain € text \U0001F600  "), "plain € text \U0001F600  ");
 }
 
+TEST(WriteBufferSanitizingTerminalOutput, ReplacesSequencesThatEncodeNoCodePoint)
+{
+    /// A sequence of the right shape that is not UTF-8: a decoder that is not strict reads the
+    /// overlong forms below as the C1 controls CSI and OSC.
+    EXPECT_EQ(sanitize("\xe0\x82\x9b" "31m"), "\xEF\xBF\xBD" "31m");
+    EXPECT_EQ(sanitize("\xf0\x80\x82\x9d" "52;c"), "\xEF\xBF\xBD" "52;c");
+    /// A surrogate and a value above U+10FFFF.
+    EXPECT_EQ(sanitize("a\xed\xa0\x80z"), "a\xEF\xBF\xBDz");
+    EXPECT_EQ(sanitize("a\xf4\x90\x80\x80z"), "a\xEF\xBF\xBDz");
+    /// The first and the last code points of the same lead bytes are kept.
+    EXPECT_EQ(sanitize("\xe0\xa0\x80\xed\x9f\xbf\xf0\x90\x80\x80\xf4\x8f\xbf\xbf"), "\xe0\xa0\x80\xed\x9f\xbf\xf0\x90\x80\x80\xf4\x8f\xbf\xbf");
+    /// The same when the sequence is cut between two chunks.
+    EXPECT_EQ(sanitize("\xe0\x82\x9b" "31m", {1}), "\xEF\xBF\xBD" "31m");
+    EXPECT_EQ(sanitize("\xe0\x82\x9b" "31m", {2}), "\xEF\xBF\xBD" "31m");
+}
+
 TEST(WriteBufferSanitizingTerminalOutput, SequenceSplitBetweenChunks)
 {
     /// Every split of the input gives the same output as the input written at once.
