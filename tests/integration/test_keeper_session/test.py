@@ -265,6 +265,52 @@ def test_close_after_client_shutdown_answers_earlier_requests(started_cluster):
         client.close()
 
 
+def test_shutdown_after_client_shutdown_with_pending_request(started_cluster):
+    wait_nodes()
+    client = get_keeper_socket(node1.name)
+    try:
+        req = int_long_int_long_struct.pack(0, 0, 10000, 0)
+        req += write_buffer(b"\x00" * 16) + bytes([0])
+        client.sendall(int_struct.pack(45) + req)
+        session_id = int_int_long_struct.unpack_from(client.recv(1_000), 4)[2]
+        assert session_id > 0
+
+        # Without the other Keepers the Create is never committed, so the handler keeps waiting for its reply.
+        node2.stop_clickhouse(kill=True)
+        node3.stop_clickhouse(kill=True)
+
+        create_xid, create_op = 1, 1
+        create = int_int_struct.pack(create_xid, create_op)
+        create += write_buffer(f"/test_shutdown_{uuid.uuid4().hex}".encode())
+        create += write_buffer(b"")
+        create += int_struct.pack(1) + int_struct.pack(31)
+        create += write_buffer(b"world") + write_buffer(b"anyone") + int_struct.pack(0)
+        close_xid, close_op = 0x7FFFFFFF, -11
+        client.sendall(
+            write_buffer(create)
+            + int_struct.pack(8)
+            + int_int_struct.pack(close_xid, close_op)
+        )
+        client.shutdown(socket.SHUT_WR)
+        node1.wait_for_log_line(
+            f"Client closed connection after close request, session id #{session_id}",
+            timeout=10,
+        )
+
+        node1.exec_in_container(["bash", "-c", "pkill -15 clickhouse"], user="root")
+        # Without the fix, the handler wakes up only when its poll times out after the session timeout.
+        node1.wait_for_log_line(
+            f"Keeper TCP drain started, closing session #{session_id}", timeout=5
+        )
+    finally:
+        client.close()
+        node1.stop_clickhouse()
+        node1.start_clickhouse()
+        node2.start_clickhouse()
+        node3.start_clickhouse()
+        wait_nodes()
+
+
 def test_session_close_shutdown(started_cluster):
     wait_nodes()
 

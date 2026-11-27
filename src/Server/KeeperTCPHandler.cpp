@@ -1097,6 +1097,11 @@ void KeeperTCPHandler::closeAllConnections()
     {
         conn->closing_for_shutdown.store(true, std::memory_order_release);
         shutdownSocketDescriptor(conn->socket());
+
+        /// A handler that stopped polling its socket after `Close` waits only on the response pipe, so wake it there.
+        /// The drain flag is already set, and the handler checks it right after `poll`, before it reads any response.
+        UInt8 single_byte = 1;
+        [[maybe_unused]] ssize_t result = write(conn->poll_wrapper->getResponseFD(), &single_byte, sizeof(single_byte));
     }
 }
 
