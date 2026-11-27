@@ -2941,7 +2941,7 @@ These codecs are designed to make compression more effective by exploiting speci
 
 ### Delta {#delta}
 
-`Delta(delta_bytes)` — Compression approach in which raw values are replaced by the difference of two neighboring values, except for the first value that stays unchanged. `delta_bytes` is the maximum size of raw values, the default value is `sizeof(type)`. Specifying `delta_bytes` as an argument is deprecated and support will be removed in a future release. Delta is a data preparation codec, i.e. it cannot be used stand-alone.
+`Delta(delta_bytes)` — Compression approach in which raw values are replaced by the difference of two neighboring values, except for the first value that stays unchanged. `delta_bytes` is the maximum size of raw values, the default value is `sizeof(type)`. Specifying `delta_bytes` as an argument is deprecated and support will be removed in a future release. Applicable to any fixed-size data type of 1, 2, 4, 8, 16 or 32 bytes. This includes the wide types such as `UInt128`, `Int256` and `Decimal256`, and also `UUID`, `IPv6` and `FixedString` of such a size. Data written with a size of 16 or 32 bytes cannot be read by ClickHouse versions that do not support these sizes. Delta is a data preparation codec, i.e. it cannot be used stand-alone.
 
 ### DoubleDelta {#doubledelta}
 
