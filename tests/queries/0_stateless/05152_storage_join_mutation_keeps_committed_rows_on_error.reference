@@ -1,0 +1,32 @@
+FAULT_INJECTED
+rows after the mutation that did not commit:
+1	one
+2	two
+3	three
+4	four
+rows after reattach:
+1	one
+2	two
+3	three
+4	four
+rows after the committed mutation:
+1	one
+2	two
+4	four
+rows after reattach:
+1	one
+2	two
+4	four
+rows after another mutation and reattach:
+2	two
+4	four
+5	five
+FAULT_INJECTED
+single backup, rows after the mutation that did not commit:
+1	one
+1	uno
+2	two
+single backup, rows after reattach:
+1	one
+1	uno
+2	two

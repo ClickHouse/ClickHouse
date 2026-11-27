@@ -183,6 +183,14 @@ public:
         return metadata_absolute_path;
     }
 
+    /// The path above is derived from the delegate's path, so its locality is the delegate's call.
+    [[nodiscard]] bool isPathOnLocalFilesystem() const override { return delegate->isPathOnLocalFilesystem(); }
+
+    /// Same reasoning as above: the delegate owns the directory namespace.
+    [[nodiscard]] bool hasLocalFilesystemDirectoryNamespace() const override { return delegate->hasLocalFilesystemDirectoryNamespace(); }
+
+    [[nodiscard]] bool keepsMetadataAcrossRestarts() const override { return delegate->keepsMetadataAcrossRestarts(); }
+
     [[nodiscard]] MetadataStorageType getType() const override { return delegate->getType(); }
 
     /// Metadata on disk for an empty file can store empty list of blobs and size=0

@@ -9,6 +9,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
+#include <Storages/StorageJoin.h>
 
 #include <Common/SipHash.h>
 
@@ -464,6 +465,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     collect_hash_table_stats_during_aggregation = from[Setting::collect_hash_table_stats_during_aggregation];
     optimize_uniq_exact_radix_partitioning = from[Setting::optimize_uniq_exact_radix_partitioning];
     initial_query_id = initial_query_id_;
+    join_lock_query_id = initial_query_id;
     lock_acquire_timeout = std::chrono::milliseconds(from[Setting::lock_acquire_timeout].totalMilliseconds());
     actions_settings = std::move(actions_settings_);
 
@@ -511,6 +513,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
         ExpressionActionsSettings(from),
         from->getPreparedSetsCache())
 {
+    join_lock_query_id = StorageJoin::getLockQueryId(*from);
     skip_forced_projection_check = from->skipsForcedProjectionCheck();
     if (from->canUseParallelReplicasOnFollower())
         distributed_group_by_top_k = from->getSettingsRef()[Setting::distributed_group_by_top_k];

@@ -1,8 +1,25 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h>
 
+#include <algorithm>
+
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/logger_useful.h>
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char cache_metadata_storage_fail_after_commit[];
+}
 
 MetadataStorageFromCacheObjectStorage::MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_, ObjectStoragePtr object_storage_)
     : underlying(std::move(underlying_))
@@ -23,6 +40,25 @@ MetadataTransactionPtr MetadataStorageFromCacheObjectStorage::createTransaction(
 const std::string & MetadataStorageFromCacheObjectStorage::getPath() const
 {
     return underlying->getPath();
+}
+
+bool MetadataStorageFromCacheObjectStorage::isPathOnLocalFilesystem() const
+{
+    /// `getPath` is forwarded to the underlying metadata storage, so whether it names a real
+    /// local directory is the underlying storage's call (e.g. `false` for a cached `web` disk).
+    return underlying->isPathOnLocalFilesystem();
+}
+
+bool MetadataStorageFromCacheObjectStorage::hasLocalFilesystemDirectoryNamespace() const
+{
+    /// The directory structure is the underlying metadata storage's; caching does not change it.
+    return underlying->hasLocalFilesystemDirectoryNamespace();
+}
+
+bool MetadataStorageFromCacheObjectStorage::keepsMetadataAcrossRestarts() const
+{
+    /// The metadata is the underlying storage's; caching the data does not make it persistent.
+    return underlying->keepsMetadataAcrossRestarts();
 }
 
 MetadataStorageType MetadataStorageFromCacheObjectStorage::getType() const
@@ -213,6 +249,9 @@ IMetadataStorage::BlobsToRemove MetadataStorageFromCacheObjectStorage::getBlobsT
 {
     std::lock_guard guard(removed_objects_mutex);
 
+    /// The blob killer asks for the blobs on every round, so this is where a failed bookkeeping is retried.
+    queueBlobsOfRetainedTransactions();
+
     BlobsToRemove blobs_to_remove;
     for (const auto & blob : objects_to_remove.takeFirst(max_count))
         blobs_to_remove[blob] = {cluster->getLocalLocation()};
@@ -232,7 +271,19 @@ bool MetadataStorageFromCacheObjectStorage::hasPendingRemovalBlobs(const StoredO
         return true;
 
     std::lock_guard guard(removed_objects_mutex);
-    return objects_to_remove.containsAny(blobs);
+    if (objects_to_remove.containsAny(blobs))
+        return true;
+
+    /// The blobs of a retained transaction are removed already, but their cache entries are not dropped yet.
+    for (const auto & transaction : transactions_with_unqueued_blobs)
+    {
+        const auto unqueued_blobs = transaction->getSubmittedForRemovalBlobs();
+        for (const auto & blob : blobs)
+            if (std::find(unqueued_blobs.begin(), unqueued_blobs.end(), blob) != unqueued_blobs.end())
+                return true;
+    }
+
+    return false;
 }
 
 bool MetadataStorageFromCacheObjectStorage::hasPendingRemovalBatches(const BatchIds & batch_ids) const
@@ -243,7 +294,7 @@ bool MetadataStorageFromCacheObjectStorage::hasPendingRemovalBatches(const Batch
 int64_t MetadataStorageFromCacheObjectStorage::getDeadBlobsQueueEstimate()
 {
     std::lock_guard guard(removed_objects_mutex);
-    return std::ssize(objects_to_remove);
+    return std::ssize(objects_to_remove) + std::ssize(transactions_with_unqueued_blobs);
 }
 
 bool MetadataStorageFromCacheObjectStorage::hasDeadBlobsQueue() const
@@ -257,7 +308,7 @@ bool MetadataStorageFromCacheObjectStorage::hasDeadBlobsQueue() const
     /// so as long as it is not empty, it has to be drained, otherwise the stale cache entries would survive.
     {
         std::lock_guard guard(removed_objects_mutex);
-        if (objects_to_remove.size() > 0)
+        if (objects_to_remove.size() > 0 || !transactions_with_unqueued_blobs.empty())
             return true;
     }
 
@@ -295,10 +346,32 @@ void MetadataStorageFromCacheObjectStorage::submitForRemoval(const StoredObjects
     }
 
     /// Called after the blobs are queued, so `hasDeadBlobsQueue` already answers `true` in the woken up round.
+    notifyDeadBlobsQueued();
+}
+
+void MetadataStorageFromCacheObjectStorage::notifyDeadBlobsQueued()
+{
     /// The mutex is held during the call, so that the callback is not unregistered while it is running.
     std::lock_guard guard(dead_blobs_queued_callback_mutex);
     if (dead_blobs_queued_callback)
         dead_blobs_queued_callback();
+}
+
+void MetadataStorageFromCacheObjectStorage::retainTransactionWithUnqueuedBlobs(UnqueuedTransactions & node) noexcept
+{
+    /// `splice` relinks the node, it neither allocates nor throws.
+    std::lock_guard guard(removed_objects_mutex);
+    transactions_with_unqueued_blobs.splice(transactions_with_unqueued_blobs.end(), node);
+}
+
+void MetadataStorageFromCacheObjectStorage::queueBlobsOfRetainedTransactions()
+{
+    while (!transactions_with_unqueued_blobs.empty())
+    {
+        /// If this throws, the transaction stays retained for the next attempt. Queueing is idempotent.
+        objects_to_remove.submitForRemoval(transactions_with_unqueued_blobs.front()->getSubmittedForRemovalBlobs());
+        transactions_with_unqueued_blobs.pop_front();
+    }
 }
 
 IMetadataStorage::BlobsToReplicate MetadataStorageFromCacheObjectStorage::getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count)
@@ -349,13 +422,14 @@ void MetadataStorageFromCacheObjectStorage::applyNewSettings(const Poco::Util::A
 MetadataStorageFromCacheObjectStorageTransaction::MetadataStorageFromCacheObjectStorageTransaction(MetadataTransactionPtr underlying_, MetadataStorageFromCacheObjectStorage & metadata_storage_)
     : underlying(std::move(underlying_))
     , metadata_storage(metadata_storage_)
+    , retry_node(1)
 {
 }
 
 void MetadataStorageFromCacheObjectStorageTransaction::commit(const TransactionCommitOptionsVariant & options)
 {
     underlying->commit(options);
-    metadata_storage.submitForRemoval(underlying->getSubmittedForRemovalBlobs());
+    submitRemovedBlobsAfterCommit();
 }
 
 TransactionCommitOutcomeVariant MetadataStorageFromCacheObjectStorageTransaction::tryCommit(const TransactionCommitOptionsVariant & options)
@@ -363,9 +437,60 @@ TransactionCommitOutcomeVariant MetadataStorageFromCacheObjectStorageTransaction
     auto result = underlying->tryCommit(options);
 
     if (isSuccessfulOutcome(result))
-        metadata_storage.submitForRemoval(underlying->getSubmittedForRemovalBlobs());
+        submitRemovedBlobsAfterCommit();
 
     return result;
+}
+
+void MetadataStorageFromCacheObjectStorageTransaction::submitRemovedBlobsAfterCommit() noexcept
+{
+    /// The metadata is already committed. If an exception escaped from here, the caller would take the
+    /// commit as failed and roll back the blobs written by the transaction (`DiskObjectStorageTransaction::undo`),
+    /// removing them from the wrapped object storage as well, while the committed metadata references them.
+    /// That would lose committed data.
+    ///
+    /// Losing the bookkeeping is not acceptable either: on a `plain` or `plain_rewritable` disk a later file can
+    /// reuse the path of a removed blob, and a stale cache entry for that path would return the old bytes.
+    /// So if the blobs cannot be queued now, the underlying transaction, which knows them, is retained in the
+    /// metadata storage, and the blob killer queues them on its next round. Retaining uses the list node
+    /// allocated before the commit, so it cannot fail. Until the blobs are queued, `hasPendingRemovalBlobs`
+    /// reports them as pending, exactly as it does for queued blobs.
+    ///
+    /// The bookkeeping only allocates a few small nodes, so the memory limits of the query and the user must not
+    /// make it fail: they are lifted here.
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+    try
+    {
+        fiu_do_on(FailPoints::cache_metadata_storage_fail_after_commit,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the commit of the metadata of a cached disk");
+        });
+
+        metadata_storage.submitForRemoval(underlying->getSubmittedForRemovalBlobs());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("MetadataStorageFromCacheObjectStorage"),
+            "Cannot queue the blobs removed by a committed transaction to drop their cache entries; "
+            "it will be retried by the next round of the blob killer");
+
+        /// A transaction is committed at most once, but do not rely on that here.
+        if (!retry_node.empty())
+        {
+            retry_node.front() = underlying;
+            metadata_storage.retainTransactionWithUnqueuedBlobs(retry_node);
+        }
+
+        try
+        {
+            /// The blob killer may have stopped polling a storage that had nothing queued.
+            metadata_storage.notifyDeadBlobsQueued();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLogger("MetadataStorageFromCacheObjectStorage"), "Cannot wake up the blob killer");
+        }
+    }
 }
 
 void MetadataStorageFromCacheObjectStorageTransaction::writeStringToFile(const std::string & path, const std::string & data)

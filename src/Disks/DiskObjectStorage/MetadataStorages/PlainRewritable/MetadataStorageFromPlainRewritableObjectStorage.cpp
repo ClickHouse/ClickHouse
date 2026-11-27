@@ -1341,6 +1341,13 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
     load(LoadMode::Initial);
 }
 
+bool MetadataStorageFromPlainRewritableObjectStorage::isPathOnLocalFilesystem() const
+{
+    /// `storage_path_full` is an object key prefix inside the object storage, so it names a real
+    /// local directory only when the object storage itself is backed by the local filesystem.
+    return !object_storage->isRemote();
+}
+
 MetadataTransactionPtr MetadataStorageFromPlainRewritableObjectStorage::createTransaction()
 {
     return std::make_shared<MetadataStorageFromPlainRewritableObjectStorageTransaction>(*this);
