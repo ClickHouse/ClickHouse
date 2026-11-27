@@ -1,6 +1,8 @@
 <clickhouse>
-    <!-- The Kafka-compatible interface, see `src/Server/Kafka`. -->
-    <kafka_port>9092</kafka_port>
+    <!-- The Kafka-compatible interface, see `src/Server/Kafka`.
+         Not the default port 9092 of Kafka: it is taken by the real broker (Redpanda),
+         which the tests of the `Kafka` table engine use, see `setup_kafka.sh`. -->
+    <kafka_port>9192</kafka_port>
     <!-- The Kafka protocol over TLS, `kafka_port_secure`, is in `secure_ports.xml`. -->
     <kafka_protocol>
         <!-- Do not wait for more members before the first rebalance of a consumer group. -->
