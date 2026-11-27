@@ -12,12 +12,12 @@ node = cluster.add_instance(
     stay_alive=True,
     with_installed_binary=True,
 )
-# Stays on the older version.
+# Stays on an older version, one that accepts `NULL` after the type in `ALTER`.
 old = cluster.add_instance(
     "old",
     with_zookeeper=True,
     image="clickhouse/clickhouse-server",
-    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
+    tag="26.8",
     stay_alive=True,
     with_installed_binary=True,
 )
@@ -97,7 +97,7 @@ def test_stored_nullable_simple_aggregate_function(start_cluster):
 
     for replica in [old, node]:
         replica.query(f"CREATE DATABASE rdb ENGINE = Replicated('/clickhouse/databases/rdb', 's', '{replica.name}')")
-    old.query("CREATE TABLE rdb.t (k UInt32, m SimpleAggregateFunction(sum, UInt64)) ENGINE = MergeTree ORDER BY k")
+    node.query("CREATE TABLE rdb.t (k UInt32, m SimpleAggregateFunction(sum, UInt64)) ENGINE = MergeTree ORDER BY k")
     node.query("INSERT INTO rdb.t VALUES (1, 10)")
 
     old.query(
@@ -110,6 +110,8 @@ def test_stored_nullable_simple_aggregate_function(start_cluster):
     def alter_while_stopped(_):
         no_wait = {"distributed_ddl_task_timeout": 0}
         old.query("ALTER TABLE rdb.t MODIFY COLUMN m Nullable(SimpleAggregateFunction(sum, UInt64))", settings=no_wait)
+        old.query("ALTER TABLE rdb.t ADD COLUMN x SimpleAggregateFunction(sum, UInt64) NULL", settings=no_wait)
+        old.query("ALTER TABLE rdb.t MODIFY COLUMN x SimpleAggregateFunction(sum, UInt64) NULL COMMENT 'x'", settings=no_wait)
         old.query("ALTER TABLE rdb.t MODIFY COMMENT 'later'", settings=no_wait)
 
     node.restart_with_latest_version(callback_onstop=alter_while_stopped)
@@ -162,7 +164,11 @@ def test_stored_nullable_simple_aggregate_function(start_cluster):
     )
 
     assert_eq_with_retry(node, "SELECT comment FROM system.tables WHERE database = 'rdb' AND name = 't'", "later")
-    assert node.query("SELECT m, toTypeName(m) FROM rdb.t") == "10\tSimpleAggregateFunction(sum, Nullable(UInt64))\n"
+    assert (
+        node.query("SELECT m, toTypeName(m), x, toTypeName(x) FROM rdb.t")
+        == "10\tSimpleAggregateFunction(sum, Nullable(UInt64))\t\\N\tSimpleAggregateFunction(sum, Nullable(UInt64))\n"
+    )
+    assert node.query("SELECT comment FROM system.columns WHERE database = 'rdb' AND table = 't' AND name = 'x'") == "x\n"
 
     # An unchanged part fetched from the older version is fetched back by a replica of the older version.
     node.query(

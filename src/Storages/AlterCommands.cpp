@@ -38,6 +38,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -230,13 +231,19 @@ DataTypePtr tryCreateAddToEnumType(const ASTPtr & type_ast, bool is_enum16)
 
 /// Apply the trailing `NULL` / `NOT NULL` column modifier, mirroring the logic in
 /// InterpreterCreateQuery so that ALTER ADD/MODIFY COLUMN behaves like CREATE TABLE.
-void applyNullModifier(DataTypePtr & data_type, const std::optional<bool> & null_modifier)
+void applyNullModifier(DataTypePtr & data_type, const ASTColumnDeclaration & ast_col_decl, bool stored_definition)
 {
+    const auto & null_modifier = ast_col_decl.null_modifier;
     if (!null_modifier)
         return;
     if (data_type->isNullable())
         throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE, "Can't use [NOT] NULL modifier with Nullable type");
-    if (*null_modifier)
+    if (!*null_modifier)
+        return;
+    /// A stored `T NULL` is read like a stored `Nullable(T)`.
+    if (stored_definition)
+        data_type = getStoredDataType(makeASTDataType("Nullable", ast_col_decl.getType()));
+    else
         data_type = makeNullable(data_type);
 }
 
@@ -274,7 +281,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getType())
         {
             command.data_type = get_data_type(ast_col_decl.getType());
-            applyNullModifier(command.data_type, ast_col_decl.null_modifier);
+            applyNullModifier(command.data_type, ast_col_decl, stored_definition);
             /// A stored column has to spell its state version out in the metadata the same way
             /// `CREATE TABLE` does (see `InterpreterCreateQuery::getColumnType`): an unversioned
             /// name in stored metadata denotes the layout from before the function became versioned.
@@ -344,7 +351,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getType())
         {
             command.data_type = get_data_type(ast_col_decl.getType());
-            applyNullModifier(command.data_type, ast_col_decl.null_modifier);
+            applyNullModifier(command.data_type, ast_col_decl, stored_definition);
             /// Deliberately NOT pinning the current state version here, unlike ADD COLUMN above.
             /// `DataTypeAggregateFunction::equals` ignores the state version, so a version change is
             /// a metadata-only conversion (`isMetadataOnlyConversion`) and the existing parts keep
