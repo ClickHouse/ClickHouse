@@ -1142,10 +1142,12 @@ bool RangeReader::next(VectorWithMemoryTracking<Cell> & cells)
     has_pending_row = false;
     seen_non_empty_row = true;
 
+    /// The cells of a row are not necessarily ordered by column: the cells of `XLSX` with explicit references
+    /// are in the order of the file. So the width is determined by the maximum column, not by the last cell.
     size_t width = 0;
     for (const auto & [column, cell] : row.cells)
         if (column >= range.first_column && (!range.last_column || column <= *range.last_column))
-            width = column - range.first_column + 1;
+            width = std::max<size_t>(width, column - range.first_column + 1);
 
     cells.resize(width);
     for (auto & [column, cell] : row.cells)

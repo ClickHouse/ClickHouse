@@ -1,0 +1,22 @@
+--- cells with explicit references that are not ordered by column
+b	c2	d	c4	f
+2	\N	4	\N	6
+20	\N	40	\N	60
+200	\N	\N	\N	600
+c1	d	c3	f
+\N	4	\N	6
+\N	40	\N	60
+\N	\N	\N	600
+c1	b	c3	d
+\N	2	\N	4
+\N	20	\N	40
+\N	200	\N	\N
+--- control bytes in a string cell are written as escape sequences
+<t>a_x0000_b_x0001_c_x000B_d_x000C_e_x001F_f</t>
+61006201630B640C651F66
+--- control bytes in a sheet name are written as escape sequences
+<sheet name="A_x0001_B_x000B_C_x000C_D_x001F_E"
+1
+--- no part of the written workbook has a raw control byte other than TAB, LF and CR
+0
+0
