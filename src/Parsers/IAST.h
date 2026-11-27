@@ -165,6 +165,7 @@ public:
      *  hash as an identity of the expression treat them as the same expression.
      */
     IASTHash getTreeHash(bool ignore_aliases) const;
+    IASTHash getCurrentNodeHash(bool ignore_aliases) const;
     void updateTreeHash(SipHash & hash_state, bool ignore_aliases) const;
     virtual void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const;
 

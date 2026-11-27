@@ -8,6 +8,7 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Poco/String.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Interpreters/InstrumentationManager.h>
@@ -43,6 +44,135 @@ namespace
 
         return type_index_to_type_name;
     }
+}
+
+void ASTSystemQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// Fold every semantic field kept outside `children` into the hash. The `ASTPtr` members
+    /// (`database`, `table`, `query_settings`, `backup_source`, `scheduled_merge_parts`) are part of
+    /// `children` and are hashed through the child recursion, so they are not repeated here. See the
+    /// header comment for why the rewrite-rule matcher needs this.
+    /// `SipHash::update` appends only the bytes of a string, so strings are prefixed with their
+    /// length: otherwise adjacent fields could exchange characters and still hash the same
+    /// (e.g. `replica = 'ab', shard = 'c'` vs `replica = 'a', shard = 'bc'`).
+    auto fold = [&](const auto & value)
+    {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_convertible_v<const T &, std::string_view>)
+        {
+            const std::string_view str = value;
+            hash_state.update(str.size());
+            hash_state.update(str);
+        }
+        else
+            hash_state.update(value);
+    };
+
+    fold(type);
+    fold(if_exists);
+    fold(target_function);
+    fold(replica);
+    fold(shard);
+    fold(zk_name);
+    fold(full_replica_zk_path);
+    fold(replica_zk_path);
+    fold(is_drop_whole_replica);
+    fold(with_tables);
+    fold(storage_policy);
+    fold(volume);
+    fold(disk);
+    fold(seconds);
+    fold(untracked_memory_size);
+
+    fold(query_result_cache_tag.has_value());
+    if (query_result_cache_tag)
+        fold(*query_result_cache_tag);
+
+    fold(filesystem_cache_name);
+    fold(distributed_cache_server_id);
+    fold(distributed_cache_drop_connections);
+    fold(key_to_drop);
+
+    fold(offset_to_drop.has_value());
+    if (offset_to_drop)
+        fold(*offset_to_drop);
+
+    fold(backup_name);
+    fold(schema_cache_storage);
+    fold(schema_cache_format);
+    fold(queue_path);
+    fold(fail_point_name);
+    fold(fail_point_action);
+    fold(delta_kernel_tracing_level);
+    fold(coverage_test_name);
+    fold(sync_replica_mode);
+
+    fold(src_replicas.size());
+    for (const auto & src_replica : src_replicas)
+        fold(src_replica);
+
+    fold(tables.size());
+    for (const auto & [table_database, table_name] : tables)
+    {
+        fold(table_database);
+        fold(table_name);
+    }
+
+    /// `ServerType` (SYSTEM START/STOP LISTEN): fold its type, custom name and exclusion sets.
+    fold(server_type.type);
+    fold(server_type.custom_name);
+    fold(server_type.exclude_types.size());
+    for (auto excluded_type : server_type.exclude_types)
+        fold(excluded_type);
+    fold(server_type.exclude_custom_names.size());
+    for (const auto & excluded_name : server_type.exclude_custom_names)
+        fold(excluded_name);
+
+#if USE_XRAY
+    /// Fields set only for SYSTEM INSTRUMENT ADD / REMOVE.
+    fold(instrumentation_function_name);
+    /// The formatter emits the handler name upper-cased (`Poco::toUpper`), so fold the same
+    /// normalized form: otherwise `... ADD 'f' log ...` and its formatted `... ADD 'f' LOG ...`
+    /// re-parse to different handler-name cases and break the tree-hash consistency check.
+    fold(Poco::toUpper(instrumentation_handler_name));
+    fold(instrumentation_entry_type);
+    fold(instrumentation_point.has_value());
+    if (instrumentation_point)
+    {
+        fold(instrumentation_point->index());
+        std::visit(
+            [&](const auto & value)
+            {
+                using T = std::decay_t<decltype(value)>;
+                if constexpr (!std::is_same_v<T, Instrumentation::All>)
+                    fold(value);
+            },
+            *instrumentation_point);
+    }
+    fold(instrumentation_arguments.size());
+    for (const auto & argument : instrumentation_arguments)
+    {
+        fold(argument.index());
+        std::visit([&](const auto & value) { fold(value); }, argument);
+    }
+    fold(instrumentation_subquery);
+#endif
+
+    fold(filelog_to_end);
+    fold(filelog_file.has_value());
+    if (filelog_file)
+        fold(*filelog_file);
+    fold(filelog_offset.has_value());
+    if (filelog_offset)
+        fold(*filelog_offset);
+
+    fold(fake_time_for_view.has_value());
+    if (fake_time_for_view)
+        fold(*fake_time_for_view);
+
+    /// The `ON CLUSTER` name (inherited from `ASTQueryWithOnCluster`) is a plain member too.
+    fold(cluster);
 }
 
 const char * ASTSystemQuery::typeToString(Type type)
@@ -140,18 +270,33 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_keyword(" FROM TABLE ");
             print_database_table();
         }
-        else if (!full_replica_zk_path.empty())
-        {
-            print_keyword(" FROM ZKPATH ") << quoteString(full_replica_zk_path);
-        }
         else if (database)
         {
             print_keyword(" FROM DATABASE ");
             print_identifier(getDatabase());
-
-            if (with_tables)
-                print_keyword(" WITH TABLES");
         }
+        else if ((type == Type::DROP_REPLICA || type == Type::DROP_DATABASE_REPLICA) && !is_drop_whole_replica)
+        {
+            /// A `FROM ZKPATH` clause was parsed, so `is_drop_whole_replica` stayed false. Its path
+            /// may be empty — e.g. the invalid `SYSTEM DROP REPLICA 'r1' FROM ZKPATH ''`, which parses
+            /// successfully and is only rejected later by the interpreter with `BAD_ARGUMENTS`. Emit
+            /// the clause unconditionally: without it the formatted query loses `FROM`, re-parses with
+            /// `is_drop_whole_replica = true`, and — now that the flag is folded into the tree hash —
+            /// the original and re-parsed AST hashes differ, breaking the debug-build tree-hash
+            /// consistency check. `DROP CATALOG REPLICA` never has a `FROM` clause, so it is excluded
+            /// (its `is_drop_whole_replica` is always the default false).
+            print_keyword(" FROM ZKPATH ") << quoteString(full_replica_zk_path);
+        }
+
+        /// `WITH TABLES` (only parsed for `DROP DATABASE REPLICA`) must be emitted, otherwise it is
+        /// lost on a format -> parse round-trip: the folded `with_tables` flag would then differ
+        /// between the original and the re-parsed AST and break the tree-hash consistency check.
+        /// It is emitted here rather than inside the `FROM DATABASE` branch above because
+        /// `parseDropReplica` gates the clause on its `database` *mode* argument, not on a parsed
+        /// database name — so `SYSTEM DROP DATABASE REPLICA 'r' FROM ZKPATH '/p' WITH TABLES` also
+        /// sets the flag while leaving `database` unset.
+        if (with_tables)
+            print_keyword(" WITH TABLES");
     };
 
     auto print_on_volume = [&]

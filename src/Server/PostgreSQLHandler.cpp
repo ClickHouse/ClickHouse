@@ -22,6 +22,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/RewriteRulesASTTraversal.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/String.h>
@@ -1506,6 +1507,28 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         copy_query_parsed.reset();
     }
 
+    /// The `COPY` statement itself is SQL the client submitted, so it is subject to the session's
+    /// `query_rules` gate like any other user query. Only the `INSERT` / `SELECT` this handler
+    /// synthesizes below to implement the wire protocol is exempt (that is what the
+    /// `setSetting("query_rules", String{})` calls in the branches below are for). Without this
+    /// call the gate would be skipped entirely for `COPY`, because `processCopyQuery` returns
+    /// before the parsed statement ever reaches `executeQuery` / `astTraversal`: even
+    /// `SET query_rules = 'no_such_rule'; COPY t TO STDOUT;` would succeed, while every other
+    /// user-submitted statement fails with `REWRITE_RULE_DOESNT_EXIST`.
+    ///
+    /// `ASTCopyQuery` is not an allowed rule-template source (`findUnauditedTemplateNode` rejects
+    /// it at `CREATE RULE` time), so no rule can ever match a `COPY` and the traversal cannot
+    /// rewrite it — `gated_copy_query` is a separate `ASTPtr` so that even a future matching rule
+    /// could not silently swap the statement this handler goes on to execute. What the call does
+    /// enforce is the rest of the `query_rules` contract, in particular that every listed rule
+    /// must exist.
+    if (copy_query_parsed)
+    {
+        ASTPtr gated_copy_query = copy_query_parsed;
+        std::vector<String> applied_rules;
+        astTraversal(gated_copy_query, session->sessionContext(), applied_rules);
+    }
+
 
     /// PostgreSQL binary `COPY` uses its own wire format (a `PGCOPY\n\377\r\n\0` header, per-tuple field
     /// counts and per-field length framing). We do not implement it, and `CopyInResponse` / `CopyOutResponse`
@@ -1596,6 +1619,10 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         else if (table_name.starts_with("`pg_catalog`."))
             table_name.erase(0, sizeof("`pg_catalog`.") - 1);
 
+        /// The `INSERT` text is synthesized by the server to implement the wire-protocol
+        /// `COPY ... FROM STDIN`; the user never submitted that SQL, so the session's
+        /// `query_rules` must not rewrite or reject it. The context is private to this statement.
+        query_context->setSetting("query_rules", String{});
         auto [ast, io] = executeQuery(fmt::format("INSERT INTO {} {} FROM INFILE 'psql_copy'", table_name, columns_to_insert), query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pushing());
 
@@ -1974,7 +2001,13 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         auto select_query = copy_query->subquery.empty()
             ? fmt::format("SELECT {} FROM {};", columns_to_select, table_name)
             : rewritePgTableIsVisible(removePgCatalogQualifier(copy_query->subquery));
-        auto [ast, io] = executeQuery(select_query, query_context, {}, QueryProcessingStage::Enum::Complete);
+        /// The `SELECT ... FROM table` text is synthesized by the server to implement the wire-protocol
+        /// `COPY table TO STDOUT`; the user never submitted that SQL, so the session's `query_rules`
+        /// must not rewrite or reject it. The context is private to this statement. The query of
+        /// `COPY (query) TO STDOUT` is SQL the user submitted, so it stays subject to `query_rules`.
+        if (copy_query->subquery.empty())
+            query_context->setSetting("query_rules", String{});
+        auto [ast, io] = executeQuery(select_query, query_context, QueryFlags{ .rewritten_query_must_return_rows = true }, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pulling());
 
         /// `Array(...)` columns must be streamed in PostgreSQL array-literal form (`{...}`) rather than
@@ -2257,8 +2290,15 @@ void PostgreSQLHandler::processQuery()
 
             /// PostgreSQL simple-query messages may contain several statements. Apply the same
             /// PostgreSQL-specific dispatch to each fragment as to a one-statement message.
+            /// Several statements below are answered without ever reaching `executeQuery` (and so
+            /// `astTraversal`): transaction control, the driver no-ops (`RESET`, `UNLISTEN`, `DISCARD`,
+            /// the JDBC handshake's `SET`s), `PREPARE` and `DEALLOCATE` (`COPY` runs `astTraversal`
+            /// itself). Each of them checks that every rule listed in `query_rules` exists, as ordinary
+            /// SQL does. Ordinary SQL is left to `executeQuery`, which does the same check with a query
+            /// id and logs the failure to `system.query_log`.
             if (isTransactionControlQuery(sql_query))
             {
+                validateQueryRulesExist(session->sessionContext());
                 message_transport->send(
                     PostgreSQLProtocol::Messaging::CommandComplete(
                         PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(sql_query), 0),
@@ -2271,6 +2311,7 @@ void PostgreSQLHandler::processQuery()
             /// failing them with a syntax error.
             if (auto noop_command_tag = classifyNoOpDriverCommand(sql_query))
             {
+                validateQueryRulesExist(session->sessionContext());
                 message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(std::move(*noop_command_tag)), true);
                 continue;
             }
@@ -2388,6 +2429,7 @@ bool PostgreSQLHandler::processPrepareStatement(const String & query)
     ParserQuery statement_parser(prepared_statement->function_body.data() + prepared_statement->function_body.size());
     parseQuery(statement_parser, prepared_statement->function_body, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
+    validateQueryRulesExist(session->sessionContext());
     prepared_statements_manager.addStatement(prepared_statement);
 
     PostgreSQLProtocol::Messaging::CommandComplete::Command command =
@@ -2440,6 +2482,7 @@ bool PostgreSQLHandler::processDeallocate(const String & query)
         return false;
     }
 
+    validateQueryRulesExist(session->sessionContext());
     prepared_statements_manager.deleteStatement(deallocate->as<ASTDeallocate>()->function_name);
 
     PostgreSQLProtocol::Messaging::CommandComplete::Command command =

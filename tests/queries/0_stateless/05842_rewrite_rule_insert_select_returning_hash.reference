@@ -1,0 +1,4 @@
+INSERT INTO t FROM INFILE 'nonexistent_file' SELECT 1: rejected
+INSERT INTO t RETURNING (SELECT 1) FROM INFILE 'nonexistent_file': not rejected
+INSERT INTO t RETURNING (SELECT 1) FROM INFILE 'nonexistent_file': rejected
+INSERT INTO t FROM INFILE 'nonexistent_file' SELECT 1: not rejected

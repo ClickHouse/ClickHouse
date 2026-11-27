@@ -32,6 +32,17 @@ struct SQLSet
     std::string sql;
     SchemaModifier schema_modifier;
     BlockModifier block_modifier;
+
+    /// Whether `sql` was synthesized by the server from a non-SQL Arrow Flight command (e.g. the
+    /// `SELECT` behind `CommandGetTables`) instead of being submitted by the client. Query rewrite
+    /// rules must apply only to SQL the client submitted, so such SQL is executed with the
+    /// `query_rules` setting cleared. The default is the safe one: a new command is treated as
+    /// synthesized until it is known to carry the client's own SQL.
+    bool sql_is_synthesized = true;
+
+    /// Whether `sql` runs with `use_query_cache` disabled: set for the catalog queries, which read system
+    /// tables and must work in a session with `use_query_cache = 1`. Initializers that set it also have
+    /// to set `sql_is_synthesized`, which precedes it.
     bool skip_query_cache = false;
 };
 

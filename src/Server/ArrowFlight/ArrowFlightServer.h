@@ -59,7 +59,10 @@ private:
     Status doAction(const AuthMiddleware & auth, const arrow::flight::protocol::Action & action,
         grpc::ServerWriter<arrow::flight::protocol::Result> & writer);
 
-    using DecodeResult = std::tuple<std::string, ArrowFlight::SchemaModifier, ArrowFlight::BlockModifier, ArrowFlight::TablePtr, bool>;
+    /// The last two elements are `ArrowFlight::SQLSet::sql_is_synthesized` (whether the SQL was synthesized
+    /// by the server from a non-SQL command) and `ArrowFlight::SQLSet::skip_query_cache`.
+    using DecodeResult
+        = std::tuple<std::string, ArrowFlight::SchemaModifier, ArrowFlight::BlockModifier, ArrowFlight::TablePtr, bool, bool>;
 
     [[nodiscard]] ArrowFlight::Result<DecodeResult> decodeDescriptor(
         const FlightDescriptor & descriptor,

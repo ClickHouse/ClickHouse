@@ -229,6 +229,7 @@ enum class AccessType : uint16_t
     M(ALTER_DATABASE_SETTINGS, "ALTER DATABASE SETTING, ALTER MODIFY DATABASE SETTING, MODIFY DATABASE SETTING", DATABASE, ALTER_DATABASE) /* allows to execute ALTER MODIFY SETTING */\
     M(ALTER_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute ALTER NAMED COLLECTION */\
     M(ALTER_HANDLER, "", GLOBAL, HANDLER_ADMIN) /* allows to execute ALTER HANDLER */\
+    M(ALTER_RULE, "", GLOBAL, RULE_ADMIN) /* allows to execute ALTER RULE */\
     \
     M(ALTER_TABLE, "", GROUP, ALTER) \
     M(ALTER_DATABASE, "", GROUP, ALTER) \
@@ -257,6 +258,7 @@ enum class AccessType : uint16_t
     M(CREATE_RESOURCE, "", GLOBAL, ALL) /* allows to execute CREATE RESOURCE */ \
     M(CREATE_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute CREATE NAMED COLLECTION */ \
     M(CREATE_HANDLER, "", GLOBAL, HANDLER_ADMIN) /* allows to execute CREATE HANDLER */ \
+    M(CREATE_RULE, "", GLOBAL, RULE_ADMIN) /* allows to execute CREATE RULE */\
     M(CREATE, "", GROUP, ALL) /* allows to execute {CREATE|ATTACH} */ \
     \
     M(DROP_DATABASE, "", DATABASE, DROP) /* allows to execute {DROP|DETACH|TRUNCATE} DATABASE */\
@@ -269,6 +271,7 @@ enum class AccessType : uint16_t
     M(DROP_RESOURCE, "", GLOBAL, ALL) /* allows to execute DROP RESOURCE */\
     M(DROP_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute DROP NAMED COLLECTION */\
     M(DROP_HANDLER, "", GLOBAL, HANDLER_ADMIN) /* allows to execute DROP HANDLER */\
+    M(DROP_RULE, "", GLOBAL, RULE_ADMIN) /* allows to execute DROP RULE */\
     M(DROP, "", GROUP, ALL) /* allows to execute {DROP|DETACH} */\
     \
     M(UNDROP_TABLE, "", TABLE, ALL) /* allows to execute {UNDROP} TABLE */\
@@ -321,6 +324,7 @@ enum class AccessType : uint16_t
     M(NAMED_COLLECTION_ADMIN, "NAMED COLLECTION CONTROL", NAMED_COLLECTION, ALL) \
     M(SHOW_HANDLERS, "SHOW HANDLER", GLOBAL, HANDLER_ADMIN) /* allows to see SQL-defined HTTP handlers in system.handlers */\
     M(HANDLER_ADMIN, "", GROUP, ALL) /* allows to create, alter, drop and see SQL-defined HTTP handlers */\
+    M(RULE_ADMIN, "", GROUP, ALL) /* allows to create, alter and drop query rewrite rules; not a part of the `CREATE` / `ALTER` / `DROP` groups, because a rule changes the queries of other users */\
     M(SHOW_CONNECTIONS, "SHOW CONNECTION", GLOBAL, ALL) /* lets a user see the connections of all users in system.connections */\
     M(SET_DEFINER, "", DEFINER, ALL) \
     \

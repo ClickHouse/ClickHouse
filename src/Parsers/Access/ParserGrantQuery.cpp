@@ -468,6 +468,10 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SHOW NAMED COLLECTIONS`
     - `SHOW NAMED COLLECTIONS SECRETS`
   - [`OPTIMIZE`](#optimize)
+  - `RULE ADMIN`
+    - `ALTER RULE`
+    - `CREATE RULE`
+    - `DROP RULE`
   - [`SELECT`](#select)
   - [`SET DEFINER`](/reference/statements/create/view#sql_security)
   - [`SHOW`](#show)

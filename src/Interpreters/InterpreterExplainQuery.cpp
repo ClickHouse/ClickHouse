@@ -1464,6 +1464,13 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only SELECT is currently supported for EXPLAIN ANALYZE query");
 
+            /// The inner query is run below, to completion, before the result of `EXPLAIN ANALYZE` is returned.
+            /// This is the place to refuse it for a query that is only described, see `Context::isRewrittenQueryOnlyDescribed`.
+            if (query_context->isRewrittenQueryOnlyDescribed())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The query was rewritten by a query rule into a statement with `EXPLAIN ANALYZE`, "
+                    "which is not allowed when only the result structure of the query is requested");
+
             /// Plan the inner SELECT. This is cached when ignoreQuota / ignoreLimits already triggered
             /// it during quota charging in executeQuery, so the inner query is never planned twice.
             /// getAnalyzedInnerQuery also validates the EXPLAIN ANALYZE settings (the same check that was

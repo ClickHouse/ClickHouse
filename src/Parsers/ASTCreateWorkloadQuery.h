@@ -39,6 +39,13 @@ public:
 
     ASTPtr clone() const override;
 
+    /// `workload_name` / `workload_parent` live in `children`, but `changes` / `or_replace` /
+    /// `if_not_exists` / the `ON CLUSTER` name are plain members. Without folding them into the
+    /// hash, `CREATE WORKLOAD w SETTINGS max_io_requests = 100` and `CREATE WORKLOAD w` would
+    /// share one tree hash. The rewrite-rule matcher treats an equal tree hash as semantic
+    /// equality, so a rule template for one `CREATE WORKLOAD` would over-match another.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateWorkloadQuery>(clone()); }
 
     String getWorkloadName() const;

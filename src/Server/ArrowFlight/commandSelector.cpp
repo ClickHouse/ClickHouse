@@ -305,7 +305,7 @@ static Result<TablePtr> commandGetSqlInfo(const arrow::flight::protocol::sql::Co
 
 static SQLSet commandGetCatalogs()
 {
-    return {"SELECT '' AS catalog_name FROM numbers(0)", {}, {}, /* skip_query_cache = */ true};
+    return {"SELECT '' AS catalog_name FROM numbers(0)", {}, {}, /* sql_is_synthesized= */ true, /* skip_query_cache= */ true};
 }
 
 static SQLSet commandGetDbSchemas(const arrow::flight::protocol::sql::CommandGetDbSchemas & command)
@@ -314,7 +314,7 @@ static SQLSet commandGetDbSchemas(const arrow::flight::protocol::sql::CommandGet
     if (command.has_db_schema_filter_pattern())
         where_expression = " WHERE database LIKE " + quoteString(command.db_schema_filter_pattern());
 
-    return {"SELECT NULL::Nullable(String) AS catalog_name, name AS db_schema_name FROM system.databases" + where_expression, {}, {}, /* skip_query_cache = */ true};
+    return {"SELECT NULL::Nullable(String) AS catalog_name, name AS db_schema_name FROM system.databases" + where_expression, {}, {}, /* sql_is_synthesized= */ true, /* skip_query_cache= */ true};
 }
 
 /// Splits a formatted expression list (e.g. from `system.tables.primary_key`) into
@@ -442,7 +442,7 @@ static SQLSet commandGetPrimaryKeys(const arrow::flight::protocol::sql::CommandG
         block.setColumns(std::move(new_columns));
     };
 
-    return {sql, {}, block_modifier, /* skip_query_cache = */ true};
+    return {sql, {}, block_modifier, /* sql_is_synthesized= */ true, /* skip_query_cache= */ true};
 }
 
 [[clang::no_destroy]] const static std::vector<std::pair<std::string, std::string>> engine_to_type =
@@ -621,7 +621,7 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
             + where_expression,
             {},
             {},
-            /* skip_query_cache = */ true
+            /* sql_is_synthesized= */ true, /* skip_query_cache= */ true
         };
     }
 
@@ -696,12 +696,12 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
             table_schema_column.name);
     };
 
-    return {sql, schema_modifier, block_modifier, /* skip_query_cache = */ true};
+    return {sql, schema_modifier, block_modifier, /* sql_is_synthesized= */ true, /* skip_query_cache= */ true};
 }
 
 static SQLSet commandGetTableTypes()
 {
-    return {"SELECT DISTINCT transform(name, " + getTableTypeMap() + ", 'UNKNOWN TABLE TYPE') AS table_type FROM system.table_engines", {}, {}, /* skip_query_cache = */ true};
+    return {"SELECT DISTINCT transform(name, " + getTableTypeMap() + ", 'UNKNOWN TABLE TYPE') AS table_type FROM system.table_engines", {}, {}, /* sql_is_synthesized= */ true, /* skip_query_cache= */ true};
 }
 
 static CommandSelectorResult commandStatementQuery(const arrow::flight::protocol::sql::CommandStatementQuery & command)
@@ -710,7 +710,8 @@ static CommandSelectorResult commandStatementQuery(const arrow::flight::protocol
         return Status::NotImplemented("CommandStatementQuery: transaction_id is not supported");
     if (command.query().empty())
         return Status::Invalid("CommandStatementQuery: query must not be empty");
-    return SQLSet{command.query(), {}, {}};
+    /// The client submitted this SQL itself, so query rewrite rules apply to it.
+    return SQLSet{command.query(), {}, {}, /* sql_is_synthesized= */ false};
 }
 
 static CommandSelectorResult commandStatementUpdate(const arrow::flight::protocol::sql::CommandStatementUpdate & command)
@@ -719,7 +720,8 @@ static CommandSelectorResult commandStatementUpdate(const arrow::flight::protoco
         return Status::NotImplemented("CommandStatementUpdate: transaction_id is not supported");
     if (command.query().empty())
         return Status::Invalid("CommandStatementUpdate: query must not be empty");
-    return SQLSet{command.query(), {}, {}};
+    /// The client submitted this SQL itself, so query rewrite rules apply to it.
+    return SQLSet{command.query(), {}, {}, /* sql_is_synthesized= */ false};
 }
 
 static CommandSelectorResult commandStatementIngest(const arrow::flight::protocol::sql::CommandStatementIngest & command)
@@ -838,7 +840,9 @@ static std::optional<CommandSelectorResult> commandSelectorImpl(const google::pr
             return Status::SerializationError("Deserialization of sql::CommandPreparedStatementQuery failed.");
         if (command.prepared_statement_handle().empty())
             return Status::Invalid("CommandPreparedStatementQuery: prepared_statement_handle must not be empty");
-        return SQLSet{command.prepared_statement_handle(), {}, {}};
+        /// A handle, not SQL — it is resolved to the query text the client passed to
+        /// `CreatePreparedStatement`, which is the client's own SQL.
+        return SQLSet{command.prepared_statement_handle(), {}, {}, /* sql_is_synthesized= */ false};
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandPreparedStatementUpdate>())
     {
@@ -847,7 +851,8 @@ static std::optional<CommandSelectorResult> commandSelectorImpl(const google::pr
             return Status::SerializationError("Deserialization of sql::CommandPreparedStatementUpdate failed.");
         if (command.prepared_statement_handle().empty())
             return Status::Invalid("CommandPreparedStatementUpdate: prepared_statement_handle must not be empty");
-        return SQLSet{command.prepared_statement_handle(), {}, {}};
+        /// A handle, not SQL — see `CommandPreparedStatementQuery` above.
+        return SQLSet{command.prepared_statement_handle(), {}, {}, /* sql_is_synthesized= */ false};
     }
     else
     {
@@ -867,7 +872,8 @@ CommandSelectorResult commandSelector(const std::string & cmd, bool schema_only)
     if (google::protobuf::Any any_msg; any_msg.ParseFromArray(cmd.data(), static_cast<int>(cmd.size())))
         if (auto result = commandSelectorImpl(any_msg, schema_only))
             return *result;
-    return SQLSet{cmd, {}, {}};
+    /// A descriptor that is not an Arrow Flight SQL command is the plain SQL text of the client.
+    return SQLSet{cmd, {}, {}, /* sql_is_synthesized= */ false};
 }
 
 }

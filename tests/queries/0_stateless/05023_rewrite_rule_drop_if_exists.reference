@@ -1,0 +1,12 @@
+missing, IF EXISTS:
+ok
+existing, IF EXISTS:
+ok
+0
+missing, without IF EXISTS:
+REWRITE_RULE_DOESNT_EXIST
+formatting:
+DROP RULE IF EXISTS some_rule
+matching:
+REWRITE_RULE_REJECTION
+REWRITE_RULE_DOESNT_EXIST
