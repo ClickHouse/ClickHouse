@@ -727,7 +727,7 @@ Float64 estimatePredicateSelectivity(const ActionsDAG::Node * node, const Expres
 ExpressionStatistics StatisticsDerivation::deriveFilterStatistics(const FilterStep & filter_step, const ExpressionStatistics & input_statistics)
 {
     ExpressionStatistics result_statistics = input_statistics;
-    QueryPlanOptimizations::remapColumnStatsOfStep(
+    remapColumnStatsOfStep(
         result_statistics.column_statistics, filter_step.getExpression(), *filter_step.getOutputHeader());
     result_statistics.equivalences = remapEquivalences(input_statistics.equivalences, filter_step.getExpression());
     /// The filter can drop and add columns, as an expression can.
@@ -762,7 +762,7 @@ ExpressionStatistics StatisticsDerivation::deriveFilterStatistics(const FilterSt
 ExpressionStatistics StatisticsDerivation::deriveExpressionStatistics(const ExpressionStep & expression_step, const ExpressionStatistics & input_statistics)
 {
     ExpressionStatistics result_statistics = input_statistics;
-    QueryPlanOptimizations::remapColumnStatsOfStep(
+    remapColumnStatsOfStep(
         result_statistics.column_statistics, expression_step.getExpression(), *expression_step.getOutputHeader());
     result_statistics.equivalences = remapEquivalences(input_statistics.equivalences, expression_step.getExpression());
     /// The expression can drop and add columns, so the row width is that of its output columns. A column that

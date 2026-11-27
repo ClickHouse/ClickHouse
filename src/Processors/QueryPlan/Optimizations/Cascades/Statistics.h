@@ -75,6 +75,7 @@ using OptimizerStatisticsPtr = std::unique_ptr<IOptimizerStatistics>;
 OptimizerStatisticsPtr createEmptyStatistics();
 
 class ReadFromMergeTree;
+class ActionsDAG;
 
 /// Average bytes per value of each column a read produces: real per-column storage sizes when the
 /// parts carry them (scaled up to the table-level uncompressed total when compact parts hide part
@@ -105,6 +106,12 @@ Float64 estimateRowWidth(const Block & header, const UnorderedMapWithMemoryTrack
 /// the input row.
 Float64 estimateOutputRowWidth(
     const Block & header, const UnorderedMapWithMemoryTracking<String, ColumnStats> & column_statistics, Float64 input_row_width);
+
+/// Changes the column statistics of the input of a step that runs `actions` into those of its output, which has
+/// `output_header`. The outputs of `actions` get their statistics as in `remapColumnStats`. The step also emits
+/// the input columns that `actions` do not read; these keep their statistics.
+void remapColumnStatsOfStep(
+    UnorderedMapWithMemoryTracking<String, ColumnStats> & mapped, const ActionsDAG & actions, const Block & output_header);
 
 std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node);
 
