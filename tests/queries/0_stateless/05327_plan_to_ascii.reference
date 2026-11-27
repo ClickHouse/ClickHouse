@@ -80,9 +80,3 @@ unquoted: T
    Time: step 1.00 us (50.00%) · branch 2.00 us (100.00%)
      time 2.00 us · parallelism 1.00/2
 same:     1
-1	1	1	1
-1	1	1
-Row 1:
-──────
-has_lines: 1
-same:      1
