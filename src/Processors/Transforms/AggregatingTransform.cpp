@@ -1330,15 +1330,23 @@ private:
             params->aggregator.mergeWithoutKeyDataImpl(*data, shared_data->is_cancelled);
             if (updater)
                 updater->recordAggregationStateSizes(*first, /*bucket=*/-1);
-            auto agg_chunk = params->aggregator.prepareChunkAndFillWithoutKey(
-                *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
-            if (updater)
-                updater->recordAggregationKeySizes(
-                    agg_chunk.chunk, params->aggregator.getKeysPositions(), params->aggregator.getKeyTypes());
-
-            if (agg_chunk.chunk.getNumRows() > 0)
-                single_level_chunks.emplace_back(convertToChunk(std::move(agg_chunk)));
+            /// The single-level merge puts the groups it does not add into the overflow row, so that row is emitted after it.
+            if (first->type == AggregatedDataVariants::Type::without_key || first->isTwoLevel())
+                emitWithoutKeyChunk();
         }
+    }
+
+    void emitWithoutKeyChunk()
+    {
+        AggregatedDataVariantsPtr & first = data->at(0);
+        auto agg_chunk = params->aggregator.prepareChunkAndFillWithoutKey(
+            *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
+        if (updater)
+            updater->recordAggregationKeySizes(
+                agg_chunk.chunk, params->aggregator.getKeysPositions(), params->aggregator.getKeyTypes());
+
+        if (agg_chunk.chunk.getNumRows() > 0)
+            single_level_chunks.emplace_back(convertToChunk(std::move(agg_chunk)));
     }
 
     void mergeSingleLevel()
@@ -1399,6 +1407,10 @@ private:
                 single_level_chunks.emplace_back(convertToChunk(std::move(agg_chunk)));
             }
         }
+
+        /// Appended last: `single_level_chunks` is emitted from the back, so the overflow row still goes out first.
+        if (params->params.overflow_row)
+            emitWithoutKeyChunk();
 
         finished = true;
         data.reset();
