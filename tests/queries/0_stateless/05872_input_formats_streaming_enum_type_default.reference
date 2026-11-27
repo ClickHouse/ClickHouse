@@ -16,10 +16,14 @@ zero	1
 \N	1
 1970-01-01	1
 00000000-0000-0000-0000-000000000000	1
+	1
 neg	1
 zero	2
 pos	3
 \N	4
+	1
+zero	2
+\N	3
 FileLog, handle_error_mode = stream
 0	a	('','x')	\N	1
 1	b	('p','y')	b	0

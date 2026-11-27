@@ -151,8 +151,9 @@ namespace
     /// of a composite column would reach sub-columns that are also held by the serializers
     /// of its nested fields through the non-const `WrappedPtr` dereference.
     /// Exception-safe: on failure, the already appended sub-columns are rolled back.
-    /// With `type`, a scalar gets the default of its type (e.g. the first element of an `Enum` without 0), not the column's.
-    void insertDefaultBorrowed(IColumn & column, const IDataType * type = nullptr)
+    /// With `type`, a scalar gets the default of its type (e.g. the first element of an `Enum`), not the column's.
+    /// With `enum_zero`, an `Enum` with 0 gets 0, the value of an empty numeric wrapper.
+    void insertDefaultBorrowed(IColumn & column, const IDataType * type = nullptr, bool enum_zero = false)
     {
         if (auto * column_array = typeid_cast<ColumnArray *>(&column))
         {
@@ -175,7 +176,7 @@ namespace
             try
             {
                 for (; i < elements.size(); ++i)
-                    insertDefaultBorrowed(borrowColumnRef(elements[i]), tuple_type ? tuple_type->getElement(i).get() : nullptr);
+                    insertDefaultBorrowed(borrowColumnRef(elements[i]), tuple_type ? tuple_type->getElement(i).get() : nullptr, enum_zero);
             }
             catch (...)
             {
@@ -203,11 +204,11 @@ namespace
                 throw;
             }
         }
-        else if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(type); enum8 && enum8->hasValue(0))
+        else if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(type); enum_zero && enum8 && enum8->hasValue(0))
         {
             column.insertDefault();
         }
-        else if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(type); enum16 && enum16->hasValue(0))
+        else if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(type); enum_zero && enum16 && enum16->hasValue(0))
         {
             column.insertDefault();
         }
@@ -2362,13 +2363,13 @@ namespace
             }
         }
 
-        void insertNestedDefaults(size_t row_num)
+        void insertNestedDefaults(size_t row_num, bool enum_zero)
         {
             auto & column_nullable = assert_cast<ColumnNullable &>(borrowColumnRef(column));
             if (row_num < column_nullable.size())
                 return;
             auto & nested_column = borrowColumnRef(column_nullable.getNestedColumnPtr());
-            insertDefaultBorrowed(nested_column, nested_type.get());
+            insertDefaultBorrowed(nested_column, nested_type.get(), enum_zero);
             /// Same rollback contract as in `insertDefaults` above.
             try
             {
@@ -2931,7 +2932,7 @@ namespace
                             if (google_wrappers_special_treatment && isNullableGoogleWrapper())
                             {
                                 auto * nullable_ser = dynamic_cast<ProtobufSerializerNullable*>(info.field_serializer.get());
-                                nullable_ser->insertNestedDefaults(row_num);
+                                nullable_ser->insertNestedDefaults(row_num, info.field_descriptor->type() != FieldTypeId::TYPE_STRING && info.field_descriptor->type() != FieldTypeId::TYPE_BYTES);
                             }
                             else
                             {
