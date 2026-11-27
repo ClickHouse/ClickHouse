@@ -159,6 +159,20 @@ SELECT groupUniqArray(assignCentroid([toFloat32(number * 0)], 'tie_dict')), coun
 DROP DICTIONARY tie_dict;
 DROP TABLE tie_src;
 
+SELECT '-- coarse centroids are ranked by their distance even when it is far below their norms';
+-- Coarse centroid 100 + n sits at 1 + (16 - n) * 0.00001, so 116 and its leaf 1 are at the probe 1.
+-- Each other coarse centroid 100 + n holds one leaf, 200 + n at 2 + n.
+DROP DICTIONARY IF EXISTS near_dict;
+DROP TABLE IF EXISTS near_src;
+CREATE TABLE near_src (cid UInt64, vec Array(Float32), level UInt8, parent UInt64) ENGINE = MergeTree ORDER BY cid;
+INSERT INTO near_src SELECT 100 + number, [toFloat32(1 + (16 - number) * 0.00001)], 1, 0 FROM numbers(17);
+INSERT INTO near_src SELECT if(number = 16, 1, 200 + number), [toFloat32(if(number = 16, 1, 2 + number))], 0, 100 + number FROM numbers(17);
+CREATE DICTIONARY near_dict (cid UInt64, vec Array(Float32), level UInt8, parent UInt64)
+PRIMARY KEY cid SOURCE(CLICKHOUSE(TABLE 'near_src')) LAYOUT(HASHED()) LIFETIME(0);
+SELECT assignCentroid([1]::Array(Float32), 'near_dict');
+DROP DICTIONARY near_dict;
+DROP TABLE near_src;
+
 SELECT '-- distance ties between leaves of different clusters go to the lower leaf cid, as in the exhaustive search';
 DROP DICTIONARY IF EXISTS cross_tie_dict;
 DROP TABLE IF EXISTS cross_tie_src;

@@ -21,6 +21,8 @@
 50	200
 -- coarse ties at the 16th place go to the lower coarse cids, for every row of a block
 [2000]	7
+-- coarse centroids are ranked by their distance even when it is far below their norms
+1
 -- distance ties between leaves of different clusters go to the lower leaf cid, as in the exhaustive search
 1
 1

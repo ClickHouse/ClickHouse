@@ -70,13 +70,14 @@ constexpr size_t COL_BLOCK = 16;
 
 DECLARE_X86_64_MULTITARGET_CODE(
 
-/// Pass the dot products of each row with each block of COL_BLOCK centroids of one tile to `on_block(row, dots, block_start)`.
+/// Pass the dot products of each row with each block of COL_BLOCK centroids of one tile, or the squared L2 distances
+/// with `squared_distances`, to `on_block(row, sums, block_start)`.
 ///
 /// Rows are handled ROW_BLOCK at a time rather than one at a time: scoring a single row re-reads the whole
 /// tile, which is bandwidth-bound at realistic sizes, while a block of rows reuses each tile value
 /// ROW_BLOCK times. Measured 3.5x at 32768 centroids of dimension 768. The blocking shape follows
 /// Goto & van de Geijn, "Anatomy of High-Performance Matrix Multiplication", ACM TOMS 34(3), 2008.
-template <typename OnBlock>
+template <bool squared_distances, typename OnBlock>
 void scoreTileBlocks(
     const Float32 * __restrict vec_data, size_t num_rows, size_t dim,
     const Float32 * __restrict tile_centroids, size_t width, OnBlock && on_block)
@@ -86,7 +87,7 @@ void scoreTileBlocks(
     {
         for (size_t block_start = 0; block_start < width; block_start += COL_BLOCK) /// COL_BLOCK centroids at a time
         {
-            Float32 dots[ROW_BLOCK][COL_BLOCK] = {};
+            Float32 sums[ROW_BLOCK][COL_BLOCK] = {};
 
             for (size_t coord = 0; coord < dim; ++coord) /// one per dimension
             {
@@ -95,12 +96,17 @@ void scoreTileBlocks(
                 {
                     const Float32 coord_value = vec_data[(row + block_row) * dim + coord];
                     for (size_t col = 0; col < COL_BLOCK; ++col)
-                        dots[block_row][col] += coord_value * column[col];
+                    {
+                        if constexpr (squared_distances)
+                            sums[block_row][col] += (coord_value - column[col]) * (coord_value - column[col]);
+                        else
+                            sums[block_row][col] += coord_value * column[col];
+                    }
                 }
             }
 
             for (size_t block_row = 0; block_row < ROW_BLOCK; ++block_row)
-                on_block(row + block_row, dots[block_row], block_start);
+                on_block(row + block_row, sums[block_row], block_start);
         }
     }
 
@@ -109,17 +115,22 @@ void scoreTileBlocks(
     {
         for (size_t block_start = 0; block_start < width; block_start += COL_BLOCK)
         {
-            Float32 dots[COL_BLOCK] = {};
+            Float32 sums[COL_BLOCK] = {};
 
             for (size_t coord = 0; coord < dim; ++coord)
             {
                 const Float32 coord_value = vec_data[row * dim + coord];
                 const Float32 * __restrict column = tile_centroids + coord * width + block_start;
                 for (size_t col = 0; col < COL_BLOCK; ++col)
-                    dots[col] += coord_value * column[col];
+                {
+                    if constexpr (squared_distances)
+                        sums[col] += (coord_value - column[col]) * (coord_value - column[col]);
+                    else
+                        sums[col] += coord_value * column[col];
+                }
             }
 
-            on_block(row, dots, block_start);
+            on_block(row, sums, block_start);
         }
     }
 }
@@ -130,7 +141,7 @@ void scoreTile(
     const Float32 * __restrict tile_centroids, const Float32 * __restrict tile_sq_norms, const UInt32 * __restrict tile_ids,
     size_t width, Float32 * __restrict best_score, UInt32 * __restrict result_ids)
 {
-    scoreTileBlocks(vec_data, num_rows, dim, tile_centroids, width,
+    scoreTileBlocks</*squared_distances=*/false>(vec_data, num_rows, dim, tile_centroids, width,
         [&](size_t row, const Float32 * __restrict dots, size_t block_start)
         {
             Float32 best = best_score[row];
@@ -150,18 +161,16 @@ void scoreTile(
         });
 }
 
-/// Score every row against one tile, storing row `r` against centroid `c` of the tile in `scores[r * stride + c]`.
+/// Store the squared L2 distance of row `r` to centroid `c` of the tile in `scores[r * stride + c]`, summed from
+/// squared differences: `||c||^2 - 2 x.c` cancels when the distances are small next to the norms.
 void scoreTileAll(
     const Float32 * __restrict vec_data, size_t num_rows, size_t dim,
-    const Float32 * __restrict tile_centroids, const Float32 * __restrict tile_sq_norms,
-    size_t width, Float32 * __restrict scores, size_t stride)
+    const Float32 * __restrict tile_centroids, size_t width, Float32 * __restrict scores, size_t stride)
 {
-    scoreTileBlocks(vec_data, num_rows, dim, tile_centroids, width,
-        [&](size_t row, const Float32 * __restrict dots, size_t block_start)
+    scoreTileBlocks</*squared_distances=*/true>(vec_data, num_rows, dim, tile_centroids, width,
+        [&](size_t row, const Float32 * __restrict distances, size_t block_start)
         {
-            Float32 * __restrict row_scores = scores + row * stride + block_start;
-            for (size_t col = 0; col < COL_BLOCK; ++col)
-                row_scores[col] = tile_sq_norms[block_start + col] - 2.0f * dots[col];
+            std::copy_n(distances, COL_BLOCK, scores + row * stride + block_start);
         });
 }
 
@@ -193,22 +202,21 @@ void scoreTile(
 
 void scoreTileAll(
     const Float32 * vec_data, size_t num_rows, size_t dim,
-    const Float32 * tile_centroids, const Float32 * tile_sq_norms,
-    size_t width, Float32 * scores, size_t stride)
+    const Float32 * tile_centroids, size_t width, Float32 * scores, size_t stride)
 {
 #if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
-        TargetSpecific::x86_64_v4::scoreTileAll(vec_data, num_rows, dim, tile_centroids, tile_sq_norms, width, scores, stride);
+        TargetSpecific::x86_64_v4::scoreTileAll(vec_data, num_rows, dim, tile_centroids, width, scores, stride);
         return;
     }
     if (isArchSupported(TargetArch::x86_64_v3))
     {
-        TargetSpecific::x86_64_v3::scoreTileAll(vec_data, num_rows, dim, tile_centroids, tile_sq_norms, width, scores, stride);
+        TargetSpecific::x86_64_v3::scoreTileAll(vec_data, num_rows, dim, tile_centroids, width, scores, stride);
         return;
     }
 #endif
-    TargetSpecific::Default::scoreTileAll(vec_data, num_rows, dim, tile_centroids, tile_sq_norms, width, scores, stride);
+    TargetSpecific::Default::scoreTileAll(vec_data, num_rows, dim, tile_centroids, width, scores, stride);
 }
 
 }
@@ -350,13 +358,12 @@ struct CentroidMatrix
                 ids.data() + tile_start, tilePaddedWidth(tile_start), best_score, result_ids);
     }
 
-    /// Store the score of row `r` against centroid `c` in `scores[r * stride + c]`, for every `c` < `paddedSize()`.
+    /// Store the squared distance of row `r` to centroid `c` in `scores[r * stride + c]`, for every `c` < `paddedSize()`.
     void scoreAll(const Float32 * vec_data, size_t num_rows, Float32 * scores, size_t stride) const
     {
         for (size_t tile_start = 0; tile_start < num_centroids; tile_start += tile_width)
             AssignCentroidImpl::scoreTileAll(
-                vec_data, num_rows, dim, tiles.data() + tile_start * dim, centroid_sq_norms.data() + tile_start,
-                tilePaddedWidth(tile_start), scores + tile_start, stride);
+                vec_data, num_rows, dim, tiles.data() + tile_start * dim, tilePaddedWidth(tile_start), scores + tile_start, stride);
     }
 
     /// Assign every vector in a block to its nearest centroid id, writing into `result_ids` (already sized).
