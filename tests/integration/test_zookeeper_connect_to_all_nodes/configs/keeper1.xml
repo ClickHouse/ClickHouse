@@ -14,6 +14,9 @@
             <operation_timeout_ms>5000</operation_timeout_ms>
             <session_timeout_ms>10000</session_timeout_ms>
             <raft_logs_level>trace</raft_logs_level>
+            <!-- The tests delay the packets of keeper1, and so the heartbeats it receives: that must not start an election. -->
+            <election_timeout_lower_bound_ms>5000</election_timeout_lower_bound_ms>
+            <election_timeout_upper_bound_ms>10000</election_timeout_upper_bound_ms>
         </coordination_settings>
 
         <!-- keeper3 leads, so that delaying keeper1 does not slow down the quorum. -->
