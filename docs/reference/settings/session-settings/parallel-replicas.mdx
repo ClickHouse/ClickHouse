@@ -29,7 +29,9 @@ If true, subquery for IN will be executed on every follower replica.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Allow usage of materialized views with parallel replicas"}]}]}/>
 
-Allow usage of materialized views with parallel replicas
+Allows queries that read from a materialized view to use parallel replicas. The query is then executed over the target table of the materialized view.
+
+Refreshable materialized views do not use parallel replicas regardless of this setting.
 
 ## parallel_replicas_allow_merge_tables {#parallel_replicas_allow_merge_tables}
 
@@ -171,7 +173,9 @@ This concerns the index analysis that selects the mark ranges a read announces, 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "Use local plan for local replica in a query with parallel replicas"}]}, {"id": "row-2","items": [{"label": "24.11"},{"label": "1"},{"label": "Use local plan for local replica in a query with parallel replicas"}]}, {"id": "row-3","items": [{"label": "24.10"},{"label": "1"},{"label": "Use local plan for local replica in a query with parallel replicas"}]}]}/>
 
-Build local plan for local replica
+In a query with parallel replicas, the initiator executes its own part of the reading through a locally built query plan instead of sending a query to itself over the network, which avoids the overhead of the network round trip. Used only if `parallel_replicas_prefer_local_replica` is enabled.
+
+The automatic decision on whether to use parallel replicas (see `automatic_parallel_replicas_mode`) is made only if this setting is enabled.
 
 ## parallel_replicas_mark_segment_size {#parallel_replicas_mark_segment_size}
 

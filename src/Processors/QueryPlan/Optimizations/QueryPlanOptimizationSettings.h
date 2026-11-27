@@ -113,6 +113,7 @@ struct QueryPlanOptimizationSettings
     bool convert_outer_join_to_inner_join;
     bool convert_outer_join_to_inner_join_transitively;
     bool short_circuit_constant_false_join;
+    bool remove_unused_joins;
     bool execute_functions_after_sorting;
     bool reuse_storage_ordering_for_window_functions;
     bool lift_up_union;
@@ -196,6 +197,7 @@ struct QueryPlanOptimizationSettings
     bool build_sets = true; /// this one doesn't have a corresponding setting
     bool materialize_ctes = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
+    bool query_plan_join_multiway_merge;
     bool join_seal_gated_reading;
 
     bool enable_cascades_optimizer = false;

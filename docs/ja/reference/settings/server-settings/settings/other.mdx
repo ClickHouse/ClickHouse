@@ -155,7 +155,7 @@ cgroup オブザーバーを無効にするには、この値を `0` に設定�
 * `min_part_size` – data part の最小サイズ。
 * `min_part_size_ratio` – data part のサイズとテーブルサイズの比率。
 * `method` – 圧縮方式。有効な値: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`。
-* `level` – 圧縮レベル。[Codecs](/ja/reference/statements/create/table/codec#general-purpose-codecs) を参照してください。
+* `level` – 圧縮レベル。[コーデック](/ja/reference/statements/create/table/codec#general-purpose-codecs) を参照してください。
 
 <Note>
   `<case>` セクションは複数設定できます。
@@ -167,7 +167,7 @@ cgroup オブザーバーを無効にするには、この値を `0` に設定�
 * data part が複数の条件セットに一致した場合、ClickHouse は最後に一致した条件セットを使用します (`<case>` セクションは順に評価され、一致するたびに前の選択が上書きされます) 。
 
 <Note>
-  data part がどの条件にも一致しない場合、ClickHouse はサイズに応じた組み込みのデフォルトを使用します。100 MB 未満では `LZ4`、それ以上では `ZSTD(3)` です。上記の `min_part_size` の条件と同様に、ここでのサイズはコーデックを選択する時点、つまりデータが書き込まれる前に判明しているサイズです。挿入直後のパーツでは `0`、マージやミューテーションではソースパーツのサイズになります。したがって、`TTL DELETE` や折りたたみマージのように入力より小さくなる書き換えは入力サイズに基づいて分類され、しきい値を下回るサイズでありながら `ZSTD(3)` となるパーツが生成されることがあります。
+  data part がどの条件にも一致しない場合、ClickHouse はサイズに応じた組み込みのデフォルトを使用します。100 MB 未満では `LZ4`、それ以上では `ZSTD(3)` です。上記の `min_part_size` の条件と同様に、ここでのサイズはコーデックを選択する時点、つまりデータが書き込まれる前に判明しているサイズです。挿入直後のパーツでは挿入されるブロックの非圧縮サイズ、マージやミューテーションではソースパーツのサイズになります。そのため、小さな挿入処理は `LZ4` で書き込まれ、大きな挿入処理は最初から `ZSTD(3)` で書き込まれます。したがって、`TTL DELETE` や折りたたみマージのように入力より小さくなる書き換えは入力サイズに基づいて分類され、しきい値を下回るサイズでありながら `ZSTD(3)` となるパーツが生成されることがあります。
 </Note>
 
 **例**
@@ -488,6 +488,63 @@ config から読み込む場合:
 <filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>
 ```
 
+## filesystem_isolation {#filesystem_isolation}
+
+<SettingsInfoBlock type="FilesystemIsolationMode" default_value="disabled" changeable_without_restart="No" />
+
+サーバーが起動時にホストのファイルシステムから自身を分離し、コンテナと同様に必要なパスのみを可視にするかどうかを指定します。これにより、攻撃者がサーバープロセス内でコードを実行できたとしても、実行可能なシェルやその他のプログラムは見つからず、サーバーのディレクトリ以外にあるホストのファイルを読み取ったり変更したりすることもできません。
+
+サーバーは起動時、スレッドを 1 つも開始しないうちに、ルートが空の読み取り専用 `tmpfs` である新しい [マウント名前空間](https://man7.org/linux/man-pages/man7/mount_namespaces.7.html) に自身を移動し、必要なパスのみを通常の場所にバインドマウントしたうえで、`pivot_root` によって元のルートを削除します。可視のまま残るものは次のとおりです。
+
+* サーバーが書き込みを行う、設定内のパス: `path`、`tmp_path`、`user_files_path`、`format_schema_path`、`filesystem_caches_path`、`storage_configuration` 内のローカルディスクのディレクトリおよびその他のディスクのメタデータのディレクトリ、ログファイル、pid ファイル、`core_path` の各ディレクトリ、組み込み Keeper のストレージディレクトリ、`access_control_path`、`user_directories` 内のすべての `local_directory` エントリのパス、`user_defined_path`、`workload_path`、`named_collections_storage.path`、`backups.allowed_path`。これらは読み書き可能な状態でマウントされますが、`noexec` が付与されるため、そこに書き込まれたものは実行できません。
+* サーバーが読み取りのみを行う、設定内のパス (読み取り専用でマウント): 設定ファイルのディレクトリ、インクルードされるファイルのディレクトリおよび設定ファイル間のシンボリックリンクのリンク先ディレクトリ、`users_config`、`user_scripts_path` (内部のプログラムは実行可能)、`top_level_domains_path`、`google_protos_path`、`openSSL`、`grpc`、`ldap_servers` 内の TLS証明書および秘密鍵のディレクトリ、Kerberos keytab、さらにサーバーの実行ファイルと同じ場所にある `clickhouse-odbc-bridge` プログラムと、その動的ローダー、および動的ローダーが検出する必要な共有ライブラリ。ブリッジのログの出力先 (`logger.odbc_bridge_log`、`logger.odbc_bridge_errlog`、`logger.odbc_bridge_stdout`、`logger.odbc_bridge_stderr`) は書き込み可能です。
+* サーバーの実行ファイルとリンクされている共有ライブラリ、およびそれらと同じ場所にあってそれらを指すシンボリックリンク (`libc.so.6` など)、さらに jemalloc の `prof_prefix` オプションが設定されている場合はそのヒーププロファイルのディレクトリ。
+* Linux 上のプログラムに必要なもの: `/proc` (Docker のコンテナと同様に、`/proc/sys`、`/proc/sysrq-trigger`、`/proc/bus`、`/proc/fs`、`/proc/irq` およびその内部のマウントは読み取り専用)、`/sys` (読み取り専用)、`/dev/null`、`/dev/zero`、`/dev/full`、`/dev/random`、`/dev/urandom`、Web ターミナルおよび SSH サーバーの擬似端末用の、`/dev/pts` 上のプライベートな `devpts` インスタンスと `/dev/ptmx`、`/etc` 内のネットワーク設定 (`hosts`、`resolv.conf`、`nsswitch.conf`、`host.conf`、`gai.conf`、`services`、`protocols`)、`/etc/passwd`、`/etc/group`、`/etc/localtime`、タイムゾーンデータベース、CA 証明書 (`/etc/ssl`、`/etc/pki`、`/etc/ca-certificates`、`/usr/share/ca-certificates`、`/usr/local/share/ca-certificates`) とその内部のリンクのリンク先 (`caConfig` で指定された CA ディレクトリも同様)、スタックトレースのシンボル用の `/usr/lib/debug`、`NOTIFY_SOCKET` 環境変数で指定されたサービスマネージャーの socket、そして `logger.use_syslog` が有効な場合は `/dev/log`。systemd 環境での `/dev/log -> /run/systemd/journal/dev-log` のように `/dev/log` がシンボリックリンクである場合は、リンク先のディレクトリが可視となるため、再起動したサービスがそこに再作成した socket も認識されます。一方、syslog デーモンが再起動時に `/dev` 直下に再作成する socket は、ホストの `/dev` が可視でないため、サーバーを再起動するまで認識されません。
+* プライベートな空の `/tmp`。
+* 設定の `filesystem_isolation_paths` セクションに `<read_only>` および `<read_write>` 要素で列挙したパス。
+
+パスに至るまでの経路上にあるシンボリックリンクは内部で再作成され、そのリンク先も参照可能になります。証明書など、設定内でファイルの格納場所として指定されているディレクトリはディレクトリごとマウントされるため、ファイルが更新されて新しいファイルに置き換えられても参照できます。Let&#39;s Encrypt の証明書のように、そうしたファイルがシンボリックリンクである場合は、リンク先のディレクトリもマウントされます。存在しない書き込み可能なディレクトリは、分離の前に作成されます(これはサーバーが本来行う処理と同じです)。
+
+それ以外のものは一切参照できず、シェルも例外ではありません。[実行可能ユーザー定義関数](/ja/sql-reference/functions/udf)、実行可能Dictionary、`executable` テーブル関数、`Executable` テーブルエンジンで実行できるのは、参照可能なパスの外にあるものを必要としないプログラムに限られます。スクリプトを実行するには、そのインタープリターと、インタープリターがリンクしているライブラリを参照可能にしてください。例:
+
+```xml
+<filesystem_isolation_paths>
+<read_only>/bin</read_only>
+<read_only>/usr/bin</read_only>
+<read_only>/lib</read_only>
+<read_only>/lib64</read_only>
+<read_only>/usr/lib</read_only>
+</filesystem_isolation_paths>
+```
+
+か、分離性を無効化する必要があります。テーブルエンジン、テーブル関数、またはDictionaryが、可視パスの外にある絶対パスで参照するファイルについても同様です。実行可能ユーザー定義関数のドライバー (`allow_experimental_executable_udf_drivers`) はサポートされていません。ドライバーを指定した `CREATE FUNCTION` は拒否されます。ドライバーが生成するプログラムは `dynamic_user_defined_executable_functions_path` に配置されますが、このパスは書き込み可能であるため、実行可能にはならないからです。`clickhouse-odbc-bridge` も分離された環境内で実行されるため、`odbc` テーブル関数およびDictionaryを使用するには、ODBC ドライバとその設定 (`/etc/odbc.ini`、`/etc/odbcinst.ini`) を可視にする必要があります。
+
+プロセスが `CAP_SYS_ADMIN` を持っている場合は、マウント名前空間のみを作成します。その際、`CAP_NET_BIND_SERVICE`、`CAP_IPC_LOCK`、`CAP_SYS_NICE`、`CAP_NET_ADMIN` など、自身が使用するケーパビリティは保持し、分離を解除できてしまうケーパビリティ (`CAP_SYS_ADMIN`、`CAP_SYS_CHROOT`、`CAP_SYS_PTRACE`、`CAP_DAC_READ_SEARCH`、`CAP_SETUID`、`CAP_SETGID`、`CAP_MKNOD`、`CAP_SYS_MODULE`、`CAP_SYS_RAWIO` など) は破棄します。それ以外の場合は、ユーザー名前空間も作成して自身のユーザーとグループのみをそれ自身にマッピングし、すべてのケーパビリティを失います。これらのケーパビリティは新しいユーザー名前空間の外では有効でないためです。その結果、1024 未満のポートでのリッスン、実行ファイルのメモリへのロック、スレッドの優先度の引き上げ、`taskstats` によるスレッドごとのメトリクスの収集ができなくなります。失われたケーパビリティは起動時に警告として出力されます。いずれの場合も、サーバーは `PR_SET_NO_NEW_PRIVS` を設定し、すべてのマウントは `nosuid` になります。
+
+特権なしでのユーザー名前空間の作成は、常に許可されているとは限りません。一部のシステムでは `kernel.unprivileged_userns_clone` および `user.max_user_namespaces` の sysctl によって無効化されています。また Ubuntu 24.04 以降では、これを許可する AppArmor プロファイルを持つプログラムにしか許可されていません (`kernel.apparmor_restrict_unprivileged_userns` sysctl を参照) 。Docker などのコンテナランタイムも、コンテナが `CAP_SYS_ADMIN` を持っていない限りこれを拒否します。サーバーは分離を行う前に、分離が可能かどうかを子プロセスで確認するため、失敗してもケーパビリティを失ったまま名前空間に取り残されることはありません。
+
+新しい `/proc` を用意するには新しい PID 名前空間が必要となるため、内部からはホストの `/proc` が見えます。watchdog プロセス (`clickhouse-watchdog`) は分離後に fork され、同じく分離された環境内で実行されます。ただし、`/proc/<pid>/root`、`/proc/<pid>/cwd`、`/proc/<pid>/fd` を経由すると、サーバーは、分離の外で動作している同一ユーザーの他のプロセスから見えるホストのファイルシステムにアクセスできてしまいます。そのため、サーバーの実行ユーザーでは他のプロセスを一切実行しないでください。パッケージが作成するような専用ユーザーを使えば十分です。
+
+分離は起動時、サーバーがスレッドを開始する前に一度だけ適用され、その後は変更できません。再読み込みされた設定で値や `filesystem_isolation_paths` を変更した場合、その変更は再起動後に反映されます。また、`from_zk` を通じて ZooKeeper から取得したパスは分離に反映されません。分離は [`seccomp`](/ja/reference/settings/server-settings/settings/other#seccomp) フィルタより前に適用され、このフィルタによって分離を解除し得るシステムコールが拒否されます。
+
+設定可能な値:
+
+* `disabled` - サーバーはファイルシステムを分離しません。
+* `best_effort` - サーバーは、名前空間の作成およびその中でのファイルシステムのマウントが許可されている場合はファイルシステムを分離します。許可されていない場合は、理由を含む警告をログに出力し、分離なしで動作します。
+* `enforce` - サーバーはファイルシステムを分離します。分離できない場合は起動しません。
+
+サーバーが新しい名前空間に入った後に障害 (マウントできないパスなど) が発生した場合は、`best_effort` モードと `enforce` モードのどちらでも起動が中止されます。
+
+`system.server_settings` には実際に適用されているモードが表示されます。サーバーが分離なしで動作している場合は `disabled` になります。
+
+この分離は Linux カーネルの機能です。その他のオペレーティングシステムでは、`best_effort` の場合は警告がログに出力され、`enforce` の場合はサーバーが起動しません。
+
+**例**
+
+```xml
+<filesystem_isolation>best_effort</filesystem_isolation>
+```
+
 ## google_protos_path {#google_protos_path}
 
 <SettingsInfoBlock type="String" default_value="/usr/share/clickhouse/protos/" changeable_without_restart="No" />
@@ -528,9 +585,7 @@ HSTS の有効期間 (秒) 。
 
 ## iceberg_manifest_decode_thread_pool_queue_size {#iceberg_manifest_decode_thread_pool_queue_size}
 
-<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
-
-Iceberg のデータマニフェストファイルをデコードするスレッドプールにスケジュールできるジョブの最大数です。
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />Iceberg のデータマニフェストファイルをデコードするスレッドプールにスケジュールできるジョブの最大数です。この設定は非推奨であり、指定しても効果はありません。Iceberg のマニフェストファイルは IOスレッドプール上で読み取られます。
 
 ## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
 
@@ -662,26 +717,26 @@ ClickHouse が接続を閉じるまでに、HTTPプロトコルで到着する�
 
 **キー**:
 
-| Key                          | Description                                                                                                                                                                                 |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `async`                      | `true` (デフォルト) の場合、ログは非同期で記録されます (出力チャネルごとに 1 つのバックグラウンドスレッド) 。それ以外の場合は、`LOG` を呼び出したスレッド内でログが記録されます                                                                                         |
-| `async_queue_max_size`       | 非同期ログを使用する場合、フラッシュ待ちキューに保持されるメッセージの最大数です。これを超えたメッセージは破棄されます                                                                                                                                 |
-| `console`                    | コンソールへのログ出力を有効にします。有効にするには `1` または `true` に設定します。ClickHouse がデーモンモードで動作していない場合のデフォルトは `1`、それ以外は `0` です。                                                                                     |
-| `console_log_level`          | コンソール出力のログレベルです。デフォルトは `level` です。                                                                                                                                                          |
-| `console_shutdown_log_level` | Shutdown level は、server の Shutdown 時のコンソールログレベルを設定するために使用されます。                                                                                                                              |
-| `console_startup_log_level`  | Startup level は、server の起動時のコンソールログレベルを設定するために使用されます。起動後、ログレベルは `console_log_level` 設定に戻ります                                                                                                 |
+| Key                          | Description                                                                                                                                                                             |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `async`                      | `true` (デフォルト) の場合、ログは非同期で記録されます (出力チャネルごとに 1 つのバックグラウンドスレッド) 。それ以外の場合は、`LOG` を呼び出したスレッド内でログが記録されます                                                                                     |
+| `async_queue_max_size`       | 非同期ログを使用する場合、フラッシュ待ちキューに保持されるメッセージの最大数です。これを超えたメッセージは破棄されます                                                                                                                             |
+| `console`                    | コンソールへのログ出力を有効にします。有効にするには `1` または `true` に設定します。ClickHouse がデーモンモードで動作していない場合のデフォルトは `1`、それ以外は `0` です。                                                                                 |
+| `console_log_level`          | コンソール出力のログレベルです。デフォルトは `level` です。                                                                                                                                                      |
+| `console_shutdown_log_level` | Shutdown level は、サーバーのシャットダウン時のコンソールログレベルを設定するために使用されます。                                                                                                                          |
+| `console_startup_log_level`  | Startup level は、サーバーの起動時のコンソールログレベルを設定するために使用されます。起動後、ログレベルは `console_log_level` 設定に戻ります                                                                                             |
 | `count`                      | ローテーションポリシー: ClickHouse が保持する履歴ログファイルの最大数です。                                                                                                                                            |
-| `errorlog`                   | error log file のパスです。                                                                                                                                                                       |
-| `formatting.type`            | コンソール出力のログフォーマットです。現在サポートされているのは `json` のみです                                                                                                                                                |
-| `level`                      | ログレベルです。有効な値: `none` (ログを無効化) , `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                                                                   |
-| `log`                        | log file のパスです。                                                                                                                                                                             |
-| `rotation`                   | ローテーションポリシー: log files をいつローテーションするかを制御します。rotation はサイズ、時間、またはその両方の組み合わせに基づけます。例: 100M, daily, 100M,daily。log file が指定サイズを超えるか、指定した時間間隔に達すると、ファイルはリネームされてアーカイブされ、新しい log file が作成されます。 |
-| `shutdown_level`             | Shutdown level は、server の Shutdown 時にルートロガーのレベルを設定するために使用されます。                                                                                                                              |
-| `size`                       | ローテーションポリシー: log files の最大サイズ (バイト単位) です。log file のサイズがこのしきい値を超えると、ファイルはリネームされてアーカイブされ、新しい log file が作成されます。                                                                            |
-| `startup_level`              | Startup level は、server の起動時にルートロガーのレベルを設定するために使用されます。起動後、ログレベルは `level` 設定に戻ります                                                                                                             |
-| `stream_compress`            | LZ4 を使用してログメッセージを圧縮します。有効にするには `1` または `true` に設定します。                                                                                                                                       |
-| `syslog_level`               | syslog へ出力する際のログレベルです。                                                                                                                                                                      |
-| `use_syslog`                 | ログ出力を syslog にも転送します。                                                                                                                                                                       |
+| `errorlog`                   | エラーログファイルのパスです。                                                                                                                                                                   |
+| `formatting.type`            | コンソール出力のログフォーマットです。現在サポートされているのは `json` のみです                                                                                                                                            |
+| `level`                      | ログレベルです。有効な値: `none` (ログを無効化) , `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                                                               |
+| `log`                        | ログファイルのパスです。                                                                                                                                                                         |
+| `rotation`                   | ローテーションポリシー: ログファイルをいつローテーションするかを制御します。rotation はサイズ、時間、またはその両方の組み合わせに基づけます。例: 100M, daily, 100M,daily。ログファイルが指定サイズを超えるか、指定した時間間隔に達すると、ファイルはリネームされてアーカイブされ、新しいログファイルが作成されます。 |
+| `shutdown_level`             | Shutdown level は、サーバーのシャットダウン時にルートロガーのレベルを設定するために使用されます。                                                                                                                          |
+| `size`                       | ローテーションポリシー: ログファイルの最大サイズ (バイト単位) です。ログファイルのサイズがこのしきい値を超えると、ファイルはリネームされてアーカイブされ、新しいログファイルが作成されます。                                                                            |
+| `startup_level`              | Startup level は、サーバーの起動時にルートロガーのレベルを設定するために使用されます。起動後、ログレベルは `level` 設定に戻ります                                                                                                         |
+| `stream_compress`            | LZ4 を使用してログメッセージを圧縮します。有効にするには `1` または `true` に設定します。                                                                                                                                   |
+| `syslog_level`               | syslog へ出力する際のログレベルです。                                                                                                                                                                  |
+| `use_syslog`                 | ログ出力を syslog にも転送します。                                                                                                                                                                   |
 
 **ログフォーマット指定子**
 
@@ -1529,6 +1584,27 @@ ClickHouse は、リクエストのプロトコルに対して最も優先度の
 環境リゾルバに達するまで、次に優先度の高い種類のリゾルバを順に確認します。
 これにより、複数の種類のリゾルバを組み合わせて使用することもできます。
 
+## quick_startup {#quick_startup}
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
+
+サーバーが起動時に行う任意の処理をスキップし、可能な限り高速に起動します。スキップされる処理は次のとおりです。
+
+* 実行可能ファイルの `<mlock>` (`mlock_executable` = `false` と同等)
+* 実行可能ファイルのヒュージページへの再マッピング (`remap_executable` = `false` と同等)
+* 実行可能ファイルの整合性チェック (`skip_binary_checksum_checks` = `true` と同等)
+* 環境のチェック (クロックソース、透過的ヒュージページ、メモリオーバーコミット、カーネル制限、遅延アカウンティング、ディスクの先読みなど) 。これらのチェックは `system.warnings` に警告を出力するだけです。
+
+設定の検証はスキップされません。
+
+実行可能コードは約 500 MiB あり、`<mlock>` と整合性チェックはいずれもその全体を読み込みます。ページキャッシュがコールドな状態でネットワークディスクを使用している場合、この処理には数秒かかり、起動時間の大半を占めます。この設定は、テスト、ベンチマーク、短時間しか稼働しないインスタンスなど、サーバーが頻繁に再起動される環境で有用です。ただしその代償として、メモリ逼迫時にコードがページアウトされる可能性があるほか、破損した実行可能ファイルを起動時に検出できなくなります。
+
+**例**
+
+```xml
+<quick_startup>true</quick_startup>
+```
+
 ## remap_executable {#remap_executable}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
@@ -1661,6 +1737,10 @@ ClickHouse コア開発チームにクラッシュレポートを送信するた
 </ssh_server>
 ```
 
+## stream_kafka_locks_refresh_polls {#stream_kafka_locks_refresh_polls}
+
+<SettingsInfoBlock type="UInt64" default_value="15" changeable_without_restart="Yes" />Keeper にオフセットを保存する Kafka コンシューマーが、自身の担当するパーティションを再確認するまでのポーリング回数
+
 ## table_engines_require_grant {#table_engines_require_grant}
 
 <CloudNotSupportedBadge />
@@ -1697,9 +1777,9 @@ true に設定すると、特定のエンジンを使用するテーブルを作
 
 さらに:
 
-| 設定      | 説明                                         | デフォルト値  |
-| ------- | ------------------------------------------ | ------- |
-| `level` | テーブルに保存される最大のメッセージレベル (デフォルトは `Trace`) です。 | `Trace` |
+| 設定      | 説明                                                                                                                                                                                                                                                 | デフォルト値                               |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `level` | テーブルに保存される最大のメッセージレベルです。明示的に設定した場合、ルートロガーのログレベルが少なくともこの値まで引き上げられるため、`text_log` にはサーバーのログファイル (`logger.level`) よりも詳細なログを記録できます。設定しない場合は、設定済みの各ログ出力 (`logger.level`、`console_log_level`、`errorlog_level`、`syslog_level`) のうち最も詳細なレベルまでのメッセージが保存されます。 | `Trace` (未設定の場合は他のログ出力の設定によって制限されます) |
 
 **例**
 

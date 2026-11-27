@@ -48,6 +48,9 @@ public:
 
     bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 
+    /// Unknown for a prepared pipe: its rows are not materialized until it is read.
+    std::optional<UInt64> totalRows(ContextPtr) const override;
+
     /// Returns the prepared pipe if it was not read.
     std::optional<Pipe> extractPreparedPipe();
 

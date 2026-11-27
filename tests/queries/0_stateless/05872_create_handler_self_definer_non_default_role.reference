@@ -1,0 +1,12 @@
+--- the session reads the table only with the role enabled
+(ACCESS_DENIED)
+OK
+--- the role of the session does not let the handler pass
+(ACCESS_DENIED)
+OK
+(ACCESS_DENIED)
+hd_DB
+8
+--- with the role as a default role the handler is stored and runs
+OK
+7
