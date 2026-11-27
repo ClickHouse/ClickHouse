@@ -6712,6 +6712,7 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
                 CurrentMetrics::AggregatorThreadsScheduled,
                 params.max_threads - 1);
             ThreadPoolCallbackRunnerLocal<void> runner(merge_bucket_pool, ThreadName::AGGREGATOR_POOL);
+            runner.reserve(params.max_threads - 1);
             try
             {
                 for (size_t i = 0; i < params.max_threads - 1; ++i)
