@@ -44,8 +44,6 @@ ClusterUpdateActions leavingToClusterUpdates(const ClusterConfigPtr & cfg, std::
 {
     std::vector<std::string_view> leaving_arr;
     splitInto<','>(leaving_arr, leaving);
-    if (leaving_arr.size() >= cfg->get_servers().size())
-        return {};
 
     std::unordered_set<int32_t> remove_ids;
     ClusterUpdateActions out;
@@ -68,6 +66,29 @@ ClusterUpdateActions leavingToClusterUpdates(const ClusterConfigPtr & cfg, std::
     }
 
     return out;
+}
+
+bool isValidClusterUpdate(const ClusterConfigPtr & cfg, const ClusterUpdateActions & updates)
+{
+    std::unordered_set<int32_t> removed_ids;
+    for (const auto & update : updates)
+        if (const auto * remove = std::get_if<RemoveRaftServer>(&update))
+            removed_ids.insert(remove->id);
+
+    size_t participants = 0;
+    for (const auto & update : updates)
+    {
+        if (const auto * add = std::get_if<AddRaftServer>(&update); add && !add->learner)
+            ++participants;
+        if (const auto * priority = std::get_if<UpdateRaftServerPriority>(&update); priority && removed_ids.contains(priority->id))
+            return false;
+    }
+
+    for (const auto & server : cfg->get_servers())
+        if (!server->is_learner() && !removed_ids.contains(server->get_id()))
+            ++participants;
+
+    return participants > 0;
 }
 
 String serializeClusterConfig(const ClusterConfigPtr & cfg, const ClusterUpdateActions & updates)
