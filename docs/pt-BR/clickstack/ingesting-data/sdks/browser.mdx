@@ -1,0 +1,159 @@
+---
+slug: /use-cases/observability/clickstack/sdks/browser
+description: 'Colete logs, rastros e reproduções de sessão do navegador com o SDK do ClickStack para navegador.'
+title: 'JS para navegador'
+doc_type: 'guide'
+keywords: ['ClickStack', 'SDK', 'browser', 'session replay']
+sidebarTitle: 'JS para navegador'
+---
+
+import { ClickStackIntegrates } from '/snippets/pt-BR/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+O SDK do ClickStack para navegador é baseado no OpenTelemetry e coleta requisições do navegador, erros e dados de reprodução de sessão. Use-o para investigar eventos de frontend junto com a telemetria do seu backend no ClickStack.
+
+<ClickStackIntegrates signals={['logs', 'traces']} />
+
+## Instalação {#install}
+
+Instale o pacote na sua aplicação frontend:
+
+```shell
+npm install @clickhouse/clickstack-browser
+```
+
+O pacote usa ES modules. O npm instala automaticamente as peer dependencies do OpenTelemetry. Se a sua aplicação também instalar `@opentelemetry/api` diretamente, use a versão `~1.9.1` e mantenha uma única cópia, pois a versão 1.10 está fora do intervalo de versões compatíveis com este SDK.
+
+## Configure o destino {#configure-destination}
+
+Use o endpoint OTLP HTTP do seu coletor e a chave de ingestão configurada nele. O endpoint deve estar acessível a partir dos navegadores dos seus usuários. Para configurar o coletor, consulte [Ingestão com OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry).
+
+```javascript
+import { init } from '@clickhouse/clickstack-browser';
+
+init({
+  endpoint: 'https://YOUR_COLLECTOR_HOST:4318',
+  apiKey: 'YOUR_INGESTION_API_KEY',
+  serviceName: 'my-frontend-app',
+});
+```
+
+Use a chave configurada para o receptor OTLP do seu coletor. O coletor deve permitir a origem da sua aplicação na configuração de CORS do receptor HTTP.
+
+Chame `init` uma vez por carregamento de página, no nível superior do seu módulo de entrada, como `src/main.ts` no Vite ou `instrumentation-client.ts` no Next.js. A inicialização é executada de forma assíncrona; requisições feitas imediatamente no mesmo tick podem não ser capturadas. Não faça a inicialização dentro de um effect do React: uma rotina de limpeza que chame `shutdown` interrompe permanentemente a telemetria naquele carregamento de página.
+
+<Note>
+  A configuração do navegador, incluindo a chave de ingestão, fica visível para qualquer pessoa que carregue a página. Para manter a chave no seu servidor, use um endpoint de mesma origem, como `/otel`, omita `apiKey` e configure o servidor para encaminhar as requisições OTLP com o cabeçalho de autorização apropriado.
+</Note>
+
+## Verificar a ingestão {#verify-ingestion}
+
+Carregue sua aplicação, interaja com a página, faça uma requisição e gere um erro no console. No ClickStack, selecione um intervalo de tempo recente e pesquise por `my-frontend-app` em Logs ou Rastros. Abra a Reaplicação de sessão para inspecionar a sessão gravada.
+
+Se os dados não aparecerem, inspecione o console do navegador e as requisições de rede para `/v1/traces` e `/v1/logs`. Verifique o endpoint, o cabeçalho de autorização, o CORS e a Content Security Policy. Confirme se a sua versão do ClickStack oferece suporte à reaplicação de sessão e ao atributo padrão `session.id` do SDK; o simples recebimento de registros não garante que as sessões apareçam na UI.
+
+## Opções de inicialização {#initialization-options}
+
+Passe estas opções para `init`. Use `endpoint` para um coletor compartilhado ou informe os dois endpoints de sinal quando rastros e logs tiverem destinos diferentes.
+
+| Opção                | Padrão                                                                | Finalidade                                                                                                                                         |
+| -------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `endpoint`           | Obrigatório, a menos que os dois endpoints de sinal estejam definidos | URL base OTLP HTTP ou caminho de proxy de mesma origem; o SDK acrescenta os caminhos de cada sinal                                                 |
+| `tracesEndpoint`     | Não definido                                                          | URL completa de rastros, usada exatamente como informada no lugar da URL derivada de `endpoint`                                                    |
+| `logsEndpoint`       | Não definido                                                          | URL completa de logs e reaplicação, usada exatamente como informada no lugar da URL derivada de `endpoint`                                              |
+| `serviceName`        | Obrigatório                                                           | Define `service.name` em toda a telemetria                                                                                                         |
+| `apiKey`             | Não definido                                                          | Valor do cabeçalho `authorization`; use o formato correspondente ao seu destino, descrito acima                                                    |
+| `traceOrigins`       | Não definido                                                          | Origens de backend ou expressões regulares que recebem o contexto de rastreamento                                                                  |
+| `replay`             | `true`                                                                | Grava a reaplicação de sessão; `false` mantém a telemetria do navegador, mas desativa a reaplicação                                                      |
+| `resourceAttributes` | Não definido                                                          | Atributos de recurso adicionais, inclusive na reaplicação; `serviceName`, `serviceVersion` e `environment` têm precedência sobre chaves correspondentes |
+| `maskAllText`        | `true`                                                                | Mascara o texto na reaplicação                                                                                                                          |
+| `maskAllInputs`      | `true`                                                                | Mascara os valores de input, textarea e select                                                                                                     |
+| `console`            | `'error'`                                                             | Captura `'error'`, `'warn'`, `'info'` (incluindo `console.log`) ou `'debug'` e níveis mais severos; use `false` para desativar                     |
+| `serviceVersion`     | Não definido                                                          | Identifica a versão da sua aplicação                                                                                                               |
+| `environment`        | Não definido                                                          | Define `deployment.environment.name`                                                                                                               |
+| `sanitizeUrl`        | Não definido                                                          | Reescreve as URLs gravadas, por exemplo, para remover parâmetros de consulta                                                                       |
+
+Para conhecer a API completa, consulte a [Referência do SDK para Navegador](https://github.com/ClickHouse/clickstack-browser#quick-start).
+
+## Reaplicação de sessão e privacidade {#session-replay-and-privacy}
+
+A reaplicação de sessão vem habilitada por padrão. Textos e valores de entrada são mascarados por padrão.
+
+O mascaramento não oculta o estado de caixas de seleção e botões de opção, nem atributos como URLs de links e marcadores de posição. Use a classe `rr-block` para excluir elementos sensíveis. A sanitização de URLs não abrange URLs presentes no conteúdo da página reaplicada, em rastreamentos de pilha ou em mensagens do console. Colete apenas as informações de usuário permitidas pela sua política de privacidade.
+
+Para pausar a reaplicação sem interromper a telemetria do navegador:
+
+```javascript
+import { pauseReplay } from '@clickhouse/clickstack-browser';
+
+pauseReplay();
+```
+
+Quando quiser retomar a gravação:
+
+```javascript
+import { resumeReplay } from '@clickhouse/clickstack-browser';
+
+resumeReplay();
+```
+
+## Vincular traces de frontend e de backend {#trace-propagation}
+
+Para associar as requisições do navegador aos traces de backend, adicione `traceOrigins` às opções de `init`, substituindo o exemplo pela origem do seu backend:
+
+```javascript
+traceOrigins: ['https://api.example.com'],
+```
+
+As requisições para a própria origem da página e para os backends correspondentes incluem `traceparent`, `tracestate` e `baggage`. Seu backend precisa estar instrumentado para dar continuidade a esse contexto.
+
+Backends de outra origem devem permitir esses cabeçalhos via CORS. O coletor de telemetria também deve aceitar a origem do frontend. Se a sua aplicação usar Content Security Policy (CSP), permita o endpoint do coletor em `connect-src`.
+
+## Identificar usuários e registrar erros {#users-and-errors}
+
+Ao fazer login, use `setUser` para anexar informações do usuário aos spans e logs subsequentes:
+
+```javascript
+import { setUser } from '@clickhouse/clickstack-browser';
+
+setUser({ id: 'user-123', email: 'user@example.com' });
+```
+
+No logout, limpe as informações do usuário e inicie uma nova sessão:
+
+```javascript
+import { setUser, startNewSession } from '@clickhouse/clickstack-browser';
+
+setUser(null);
+startNewSession();
+```
+
+Para anexar metadados da aplicação aos spans e logs subsequentes, use `setAttributes`. Cada chamada substitui o conjunto anterior; passe `null` para removê-lo:
+
+```javascript
+import { setAttributes } from '@clickhouse/clickstack-browser';
+
+setAttributes({ 'app.team.name': 'checkout' });
+```
+
+Erros não capturados e rejeições não tratadas são capturados automaticamente. Error boundaries do React que reportam por meio de `console.error` também são capturados por padrão. Use `recordException` para erros tratados que ainda não foram registrados em log; registrar com `recordException` e também em log o mesmo erro gera eventos duplicados:
+
+```javascript
+import { recordException } from '@clickhouse/clickstack-browser';
+
+try {
+  await submitCheckout();
+} catch (error) {
+  recordException(error, { 'app.operation': 'checkout' });
+  // Handle the error in your application.
+}
+```
+
+Substitua `submitCheckout` pela operação da aplicação que você deseja monitorar.
+
+## Migração a partir do SDK do HyperDX para navegador {#migration}
+
+Esta não é uma atualização que se limita a trocar o nome do pacote. `url` passa a ser `endpoint`, `service` passa a ser `serviceName` e `tracePropagationTargets` passa a ser `traceOrigins`. O mascaramento de texto e de campos de entrada agora tem `true` como padrão. Substitua `setGlobalAttributes` por `setUser` para a identidade do usuário e por `setAttributes` para os metadados da aplicação. Error boundaries do React que reportam erros por meio de `console.error` não precisam de nenhum hook adicional; use `recordException` quando um erro ainda não tiver sido registrado.
+
+Consulte o [guia de migração do SDK](https://github.com/ClickHouse/clickstack-browser/blob/main/docs/migration.md) para ver as opções removidas e as mudanças nos atributos. Para uma instalação via tag script ou para uma aplicação que já inicializa o OpenTelemetry, consulte o [README do SDK](https://github.com/ClickHouse/clickstack-browser#readme).
+
+Se o SDK do ClickStack para navegador causar um problema de compatibilidade na sua aplicação, você pode usar o [SDK legado do HyperDX para navegador](https://github.com/hyperdxio/hyperdx-js/tree/main/packages/browser) enquanto investiga a causa. Restaure a configuração e as chamadas de API correspondentes seguindo o guia de migração acima; os dois SDKs não são intercambiáveis e não devem ser executados simultaneamente.

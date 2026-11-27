@@ -1,0 +1,67 @@
+---
+sidebarTitle: 'مفاتيح الترتيب'
+description: 'كيفية تعريف مفاتيح ترتيب مخصصة.'
+slug: /integrations/clickpipes/postgres/ordering_keys
+title: 'مفاتيح الترتيب'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'إدخال البيانات', 'مزامنة في الوقت الفعلي']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+تُحدِّد مفاتيح الترتيب (المعروفة أيضًا باسم مفاتيح الفرز) كيفية فرز البيانات على القرص وفهرستها لجدول في ClickHouse. عند النسخ من Postgres، يستخدم ClickPipes افتراضيًا المفتاح الأساسي لجدول Postgres كمفتاح ترتيب للجدول المقابل في ClickHouse. وفي معظم الحالات، يكون المفتاح الأساسي في Postgres كافيًا كمفتاح ترتيب، لأن ClickHouse مُحسَّن بالفعل لعمليات المسح السريعة، وغالبًا لا تكون مفاتيح الترتيب المخصصة مطلوبة.
+
+كما هو موضح في [دليل الترحيل](/ar/get-started/migrate/postgres/migration-guide/migration-guide-part3)، ينبغي في حالات الاستخدام واسعة النطاق تضمين أعمدة إضافية إلى جانب المفتاح الأساسي في Postgres ضمن مفتاح الترتيب في ClickHouse لتحسين الاستعلامات.
+
+عند استخدام CDC افتراضيًا، قد يؤدي اختيار مفتاح ترتيب مختلف عن المفتاح الأساسي في Postgres إلى مشكلات في إزالة تكرار البيانات في ClickHouse. ويحدث ذلك لأن مفتاح الترتيب في ClickHouse يؤدي دورًا مزدوجًا: فهو يتحكم في فهرسة البيانات وفرزها، وفي الوقت نفسه يعمل كمفتاح لإزالة التكرار. وأسهل طريقة لمعالجة هذه المشكلة هي تعريف العروض المادية القابلة للتحديث.
+
+<div id="use-refreshable-materialized-views">
+  ## استخدم العروض المادية القابلة للتحديث
+</div>
+
+تتمثل إحدى الطرق البسيطة لتعريف مفاتيح ترتيب مخصصة (`ORDER BY`) في استخدام [العروض المادية القابلة للتحديث](/ar/concepts/features/materialized-views/refreshable-materialized-view) (MVs). تتيح لك هذه العروض نسخ الجدول بالكامل بشكل دوري (على سبيل المثال، كل 5 أو 10 دقائق) بمفتاح الترتيب المطلوب.
+
+فيما يلي مثال على MV قابلة للتحديث مع `ORDER BY` مخصص وإزالة التكرار المطلوبة:
+
+```sql
+CREATE MATERIALIZED VIEW posts_final
+REFRESH EVERY 10 second ENGINE = ReplacingMergeTree(_peerdb_version)
+ORDER BY (owneruserid,id) -- different ordering key but with suffixed postgres pkey
+AS
+SELECT * FROM posts FINAL 
+WHERE _peerdb_is_deleted = 0; -- this does the deduplication
+```
+
+<div id="custom-ordering-keys-without-refreshable-materialized-views">
+  ## مفاتيح ترتيب مخصّصة من دون العروض المادية القابلة للتحديث
+</div>
+
+إذا لم تكن العروض المادية القابلة للتحديث مناسبة بسبب حجم البيانات، فإليك بعض التوصيات التي يمكنك اتباعها لتحديد مفاتيح ترتيب مخصّصة للجداول الأكبر حجمًا وتجاوز المشكلات المرتبطة بإزالة التكرار.
+
+<div id="choose-ordering-key-columns-that-dont-change-for-a-given-row">
+  ### اختر أعمدة مفتاح الترتيب التي لا تتغير لصف معيّن
+</div>
+
+عند تضمين أعمدة إضافية في مفتاح الترتيب في ClickHouse (إلى جانب المفتاح الأساسي من Postgres)، نوصي باختيار أعمدة لا تتغير لكل صف. يساعد ذلك على تجنب مشكلات اتساق البيانات وإزالة التكرار مع ReplacingMergeTree.
+
+على سبيل المثال، في تطبيق SaaS متعدد المستأجرين، يُعد استخدام (`tenant_id`, `id`) كمفتاح ترتيب خيارًا جيدًا. فهذه الأعمدة تحدد كل صف بشكل فريد، ويظل `tenant_id` ثابتًا بالنسبة إلى `id` حتى إذا تغيرت أعمدة أخرى. وبما أن إزالة التكرار حسب `id` تتوافق مع إزالة التكرار حسب (`tenant_id`, `id`)، فإن ذلك يساعد على تجنب [مشكلات إزالة التكرار](https://docs.peerdb.io/mirror/ordering-key-different) التي قد تنشأ إذا تغير `tenant_id`.
+
+<div id="set-replica-identity-on-postgres-tables-to-custom-ordering-key">
+  ### تعيين `REPLICA IDENTITY` في جداول Postgres إلى مفتاح ترتيب مخصص
+</div>
+
+لكي يعمل Postgres CDC كما هو متوقع، من المهم تعديل `REPLICA IDENTITY` في الجداول ليشمل أعمدة مفتاح الترتيب. وهذا ضروري للتعامل بدقة مع عمليات DELETE.
+
+إذا لم يتضمن `REPLICA IDENTITY` أعمدة مفتاح الترتيب، فلن يلتقط Postgres CDC قيم الأعمدة الأخرى غير المفتاح الأساسي — وهذا قيد في logical decoding في Postgres. وستكون جميع أعمدة مفتاح الترتيب في Postgres، باستثناء المفتاح الأساسي، بقيم NULL. ويؤثر ذلك في إزالة التكرار، ما يعني أن الإصدار السابق من الصف قد لا يُزال تكراره مع أحدث إصدار محذوف (حيث يتم تعيين `_peerdb_is_deleted` إلى 1).
+
+في المثال أعلاه الذي يتضمن `owneruserid` و`id`، إذا لم يكن المفتاح الأساسي يتضمن `owneruserid` بالفعل، فيجب أن يكون لديك `UNIQUE INDEX` على (`owneruserid`, `id`) وأن تعيّنه باعتباره `REPLICA IDENTITY` للجدول. وهذا يضمن أن Postgres CDC يلتقط قيم الأعمدة اللازمة لتحقيق النسخ المتماثل وإزالة التكرار بدقة.
+
+فيما يلي مثال على كيفية تنفيذ ذلك في جدول events. احرص على تطبيق ذلك على جميع الجداول التي عُدِّلت فيها مفاتيح الترتيب.
+
+```sql
+-- Create a UNIQUE INDEX on (owneruserid, id)
+CREATE UNIQUE INDEX posts_unique_owneruserid_idx ON posts(owneruserid, id);
+-- Set REPLICA IDENTITY to use this index
+ALTER TABLE posts REPLICA IDENTITY USING INDEX posts_unique_owneruserid_idx;
+```

@@ -1,0 +1,8 @@
+300
+Condition: (mode: All; tokens: ["12", "23"])
+580
+Condition: (mode: Any; tokens: ["12", "23", "34"])
+20
+Condition: (mode: All; tokens: ["12", "23", "34"])
+280
+Condition: (mode: All; tokens: ["12", "23"])

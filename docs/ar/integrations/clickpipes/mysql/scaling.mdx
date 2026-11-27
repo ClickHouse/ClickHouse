@@ -1,0 +1,105 @@
+---
+title: 'تحجيم MySQL ClickPipes عبر OpenAPI'
+description: 'كيفية تحجيم MySQL ClickPipes عبر OpenAPI'
+slug: /integrations/clickpipes/mysql/scaling
+sidebarTitle: 'التحجيم'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', 'استيعاب البيانات', 'مزامنة في الوقت الفعلي', 'التحجيم']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<Warning>
+  **لن يحتاج معظم المستخدمين إلى واجهة برمجة التطبيقات هذه**
+
+  صُمم التكوين الافتراضي لـ DB ClickPipes للتعامل مع معظم أحمال العمل دون إعداد إضافي. إذا كنت تعتقد أن حمل العمل لديك يتطلب تحجيمًا، فافتح [حالة دعم](https://clickhouse.com/support/program) وسنرشدك إلى الإعدادات المثلى لحالة الاستخدام.
+</Warning>
+
+قد تكون واجهة برمجة تطبيقات التحجيم مفيدة في الحالات التالية:
+
+* أحمال أولية كبيرة (أكثر من 4 تيرابايت)
+* ترحيل كمية متوسطة من البيانات بأسرع وقت ممكن
+* دعم أكثر من 8 ClickPipes معتمدة على CDC ضمن الخدمة نفسها
+
+قبل محاولة التوسيع، ضع في اعتبارك ما يلي:
+
+* التأكد من أن قاعدة البيانات المصدر لديها سعة متاحة كافية
+* ضبط [توازي الحمل الأولي والتقسيم](/ar/integrations/clickpipes/mysql/parallel-initial-load) أولًا عند إنشاء ClickPipe
+* التحقق من وجود [معاملات طويلة التشغيل](/ar/integrations/clickpipes/mysql/controlling-sync#transactions) على المصدر قد تتسبب في تأخير CDC
+
+**ستؤدي زيادة مستوى التحجيم إلى زيادة تكاليف compute الخاصة بـ ClickPipes بشكل متناسب.** إذا كنت تزيد التحجيم فقط من أجل الأحمال الأولية، فمن المهم خفضه بعد اكتمال اللقطة لتجنب الرسوم غير المتوقعة. لمزيد من التفاصيل حول التسعير، راجع [تسعير ClickPipes](/ar/products/cloud/reference/billing/clickpipes/index).
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية لهذه العملية
+</div>
+
+قبل البدء، ستحتاج إلى:
+
+1. [مفتاح واجهة برمجة تطبيقات لـ ClickHouse](/ar/products/cloud/features/admin-features/api/openapi) مع أذونات Admin على خدمة ClickHouse Cloud المستهدفة.
+2. أن يكون قد تم، في وقتٍ ما، توفير DB ClickPipe ‏(Postgres أو MySQL أو MongoDB) في الخدمة. تُنشأ البنية التحتية لـ CDC مع أول ClickPipe، وتصبح نقاط النهاية الخاصة بالتحجيم متاحة اعتبارًا من ذلك الوقت.
+
+<div id="cdc-scaling-steps">
+  ## خطوات تحجيم DB ClickPipes
+</div>
+
+اضبط متغيرات البيئة التالية قبل تشغيل أي أوامر:
+
+```bash
+ORG_ID=<Your ClickHouse organization ID>
+SERVICE_ID=<Your ClickHouse service ID>
+KEY_ID=<Your ClickHouse key ID>
+KEY_SECRET=<Your ClickHouse key secret>
+```
+
+استرجع تكوين التحجيم الحالي (اختياري):
+
+```bash
+curl --silent --user $KEY_ID:$KEY_SECRET \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+| jq
+
+# example result:
+{
+  "result": {
+    "replicaCpuMillicores": 2000,
+    "replicaMemoryGb": 8
+  },
+  "requestId": "04310d9e-1126-4c03-9b05-2aa884dbecb7",
+  "status": 200
+}
+```
+
+حدّد مستوى التحجيم المطلوب. تشمل التهيئات المدعومة من 1 إلى 24 نواة CPU، مع ضبط الذاكرة (GB) على 4× عدد الأنوية:
+
+```bash
+cat <<EOF | tee cdc_scaling.json
+{
+  "replicaCpuMillicores": 24000,
+  "replicaMemoryGb": 96
+}
+EOF
+
+curl --silent --user $KEY_ID:$KEY_SECRET \
+-X PATCH -H "Content-Type: application/json" \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+-d @cdc_scaling.json | jq
+```
+
+انتظر حتى تسري التهيئة (عادةً من 3 إلى 5 دقائق). بعد اكتمال التحجيم، ستُظهر نقطة نهاية GET القيم الجديدة:
+
+```bash
+curl --silent --user $KEY_ID:$KEY_SECRET \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+| jq
+
+# example result:
+{
+  "result": {
+    "replicaCpuMillicores": 24000,
+    "replicaMemoryGb": 96
+  },
+  "requestId": "5a76d642-d29f-45af-a857-8c4d4b947bf0",
+  "status": 200
+}
+```

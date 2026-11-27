@@ -29,7 +29,7 @@ ResultSetRow::ResultSetRow(const Serializations & serializations_, const DataTyp
     FormatSettings format_settings;
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        ColumnPtr col = columns[i]->convertToFullIfNeeded();
+        ColumnPtr col = columns[i]->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
         if (col->isNullable())
         {
             if (columns[i]->isNullAt(row_num))
@@ -145,7 +145,7 @@ void ResultSetRow::writePayloadImpl(WriteBuffer & buffer) const
     buffer.write(null_bitmap.data(), null_bitmap_size);
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        ColumnPtr col = columns[i]->convertToFullIfNeeded();
+        ColumnPtr col = columns[i]->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
         if (col->isNullable())
         {
             if (columns[i]->isNullAt(row_num))

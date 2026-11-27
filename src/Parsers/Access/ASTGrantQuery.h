@@ -22,13 +22,13 @@ public:
     bool attach_mode = false;
     bool is_revoke = false;
     AccessRightsElements access_rights_elements;
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
     bool admin_option = false;
     bool replace_access = false;
     bool replace_granted_roles = false;
     bool current_grants = false;
 
-    std::shared_ptr<ASTRolesOrUsersSet> grantees;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> grantees;
 
     String getID(char) const override;
     ASTPtr clone() const override;

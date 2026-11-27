@@ -1,0 +1,111 @@
+---
+slug: /cloud/billing/marketplace/aws-marketplace-committed-contract
+title: 'Контракт с обязательствами в AWS Marketplace'
+description: 'Подпишитесь на ClickHouse Cloud через AWS Marketplace (контракт с обязательствами)'
+keywords: ['aws', 'amazon', 'маркетплейс', 'биллинг', 'обязательства', 'контракт с обязательствами']
+doc_type: 'guide'
+---
+
+Начните работу с ClickHouse Cloud в [AWS Marketplace](https://aws.amazon.com/marketplace), оформив контракт с обязательствами.
+Такой контракт, также известный как Private Offer, позволяет клиентам взять на себя обязательство потратить определенную сумму на ClickHouse Cloud в течение определенного периода времени.
+
+<div id="prerequisites">
+  ## Предварительные требования {#prerequisites}
+</div>
+
+* Private Offer от ClickHouse на основе конкретных условий договора.
+* Чтобы привязать организацию ClickHouse к вашему предложению с фиксированными обязательствами по расходам, вы должны быть администратором этой организации.
+
+Необходимые разрешения для просмотра и принятия вашего контракта с обязательствами в AWS:
+
+* Если вы используете управляемые политики AWS, требуются следующие разрешения:
+  * `AWSMarketplaceRead-only`, `AWSMarketplaceManageSubscriptions`
+  * или `AWSMarketplaceFullAccess`
+* Если вы не используете управляемые политики AWS, требуются следующие разрешения:
+  * действие IAM `aws-marketplace:ListPrivateListings` и `aws-marketplace:ViewSubscriptions`
+
+## Порядок регистрации {#steps-to-sign-up}
+
+<Steps>
+  <Step title="Примите индивидуальное предложение" id="private-offer-accept">
+    Вы должны были получить электронное письмо со ссылкой для просмотра и принятия индивидуального предложения.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Письмо с индивидуальным предложением AWS Marketplace](/images/cloud/reference/mp_committed_spend_1.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Перейдите по ссылке на предложение" id="review-offer-link">
+    Нажмите ссылку Review Offer в письме.
+    Откроется страница AWS Marketplace с подробностями индивидуального предложения.
+  </Step>
+
+  <Step title="Настройте свою учетную запись" id="setup-your-account">
+    Выполните шаги по оформлению подписки на портале AWS и нажмите **«Настройте свою учетную запись»**.
+    На этом этапе крайне важно перейти в ClickHouse Cloud и либо зарегистрировать новый аккаунт, либо войти в существующий.
+    Без этого шага мы не сможем связать ваш контракт AWS Marketplace с ClickHouse Cloud.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Письмо с индивидуальным предложением AWS Marketplace](/images/cloud/reference/mp_committed_spend_2.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Войдите в Cloud" id="login-cloud">
+    После перехода в ClickHouse Cloud войдите в существующий аккаунт или зарегистрируйте новый.
+    Этот шаг необходим, чтобы мы могли привязать вашу организацию ClickHouse Cloud к биллингу через AWS Marketplace.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Письмо с индивидуальным предложением AWS Marketplace](/images/cloud/reference/mp_committed_spend_3.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Зарегистрируйтесь, если вы новый пользователь" id="register">
+    Если вы новый пользователь ClickHouse Cloud, нажмите «Register» внизу страницы.
+    Вам будет предложено создать нового пользователя и подтвердить адрес электронной почты.
+    После подтверждения адреса можно закрыть страницу входа ClickHouse Cloud и войти под новым именем пользователя на [https://console.clickhouse.cloud](https://console.clickhouse.cloud).
+
+    Обратите внимание: новому пользователю также потребуется указать основные сведения о своей компании.
+    См. снимки экрана ниже.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Укажите сведения о компании](/images/cloud/reference/mp_committed_spend_4.png)
+      </Frame>
+    </div>
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Укажите сведения о компании](/images/cloud/reference/mp_committed_spend_5.png)
+      </Frame>
+    </div>
+
+    Если вы уже пользуетесь ClickHouse Cloud, просто войдите со своими учётными данными.
+  </Step>
+
+  <Step title="Создайте или выберите организацию для выставления счетов" id="create-select-org-to-bill">
+    После входа вы можете создать новую организацию, счета которой будут выставляться по этому контракту маркетплейса, или выбрать для этого существующую.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Создайте или выберите организацию для выставления счетов по этой подписке](/images/cloud/reference/mp_committed_spend_6.webp)
+      </Frame>
+    </div>
+
+    После этого ваша организация будет подключена к договору с обязательством по расходам AWS, и всё использование будет оплачиваться через вашу учетную запись AWS.
+    Убедиться, что биллинг теперь связан с AWS Marketplace, можно на странице оплаты организации в интерфейсе ClickHouse.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Подтверждение завершения настройки](/images/cloud/reference/mp_committed_spend_7.webp)
+      </Frame>
+    </div>
+
+    Если у вас возникнут проблемы, обращайтесь в нашу [службу поддержки](https://clickhouse.com/support/program).
+  </Step>
+</Steps>

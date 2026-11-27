@@ -56,6 +56,16 @@ std::string toString(const ColumnDefaultKind kind)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid ColumnDefaultKind");
 }
 
+static bool columnIsPhysical(ColumnDefaultKind kind)
+{
+    return kind == ColumnDefaultKind::Default || kind == ColumnDefaultKind::Materialized;
+}
+
+bool columnDefaultKindHasSameType(ColumnDefaultKind lhs, ColumnDefaultKind rhs)
+{
+    return lhs == rhs || columnIsPhysical(lhs) == columnIsPhysical(rhs);
+}
+
 ColumnDefault & ColumnDefault::operator=(const ColumnDefault & other)
 {
     if (this == &other)

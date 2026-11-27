@@ -1,0 +1,62 @@
+---
+sidebarTitle: 'arcodash'
+slug: /integrations/arcodash
+keywords: ['clickhouse', 'arcodash', 'connect', 'integrate', 'visualization', 'dashboard', 'alerts']
+description: 'Conecte o arcodash ao ClickHouse pela interface HTTP para criar dashboards em SQL e verificações de dados agendadas.'
+title: 'Conectando o arcodash ao ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[arcodash](https://www.arcodash.com/connectors/clickhouse/?utm_source=clickhouse-docs\&utm_medium=docs\&utm_campaign=growth-v2\&utm_content=clickhouse-docs-integration) é uma ferramenta de BI hospedada com verificações de dados integradas: dashboards SQL, um assistente de consultas com IA e verificações agendadas que enviam alertas por e-mail, Slack, Teams, webhook ou PagerDuty. Ela se conecta ao ClickHouse pela interface HTTP(S).
+
+<Steps>
+  <Step title="Reúna seus detalhes de conexão" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+
+    O arcodash precisa do host, da porta HTTP (`8123`, ou `8443` para o ClickHouse Cloud com HTTPS), do usuário, da senha e do banco de dados.
+  </Step>
+
+  <Step title="Crie um usuário somente leitura" id="2-create-a-read-only-user">
+    ```sql
+    CREATE USER arcodash_ro IDENTIFIED BY 'change-me' SETTINGS readonly = 1;
+    GRANT SELECT ON analytics.* TO arcodash_ro;
+    GRANT SELECT ON system.columns TO arcodash_ro;
+    ```
+
+    O navegador de esquemas lê `system.columns`.
+  </Step>
+
+  <Step title="Adicione o conector" id="3-add-the-connector">
+    No arcodash, escolha **Conectar** &gt; **ClickHouse** e informe o host, a porta, o usuário, a senha e o banco de dados. Ative o HTTPS para o ClickHouse Cloud e, em seguida, execute o teste de conexão.
+
+    <Image size="lg" img="/images/integrations/data-visualization/arcodash_01.png" alt="Formulário do conector ClickHouse no arcodash" border />
+  </Step>
+
+  <Step title="Execute uma consulta e uma verificação" id="4-run-a-query-and-a-check">
+    ```sql
+    SELECT dateDiff('second', max(loaded_at), now()) AS seconds_since_last_row
+    FROM analytics.events
+    ```
+
+    Salve a consulta como um monitor sobre `seconds_since_last_row` com a condição `>` `3600` para disparar um alerta quando uma tabela parar de receber dados.
+
+    <Image size="lg" img="/images/integrations/data-visualization/arcodash_02.png" alt="Monitor do arcodash sobre uma consulta do ClickHouse" border />
+  </Step>
+</Steps>
+
+## Limitações {#limitations}
+
+* O arcodash usa apenas a interface HTTP, e não a porta nativa `9000`.
+* O próprio arcodash acrescenta uma cláusula `FORMAT`, portanto as consultas não devem terminar com uma cláusula `FORMAT` própria.
+* Os resultados são limitados a 10,000 linhas por consulta.
+* O arcodash não divulga endereços IP de saída fixos, portanto o servidor do ClickHouse precisa estar acessível pela internet.

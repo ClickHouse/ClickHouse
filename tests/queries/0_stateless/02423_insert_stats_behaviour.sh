@@ -24,7 +24,16 @@ $CLICKHOUSE_CLIENT -q "INSERT into floats FORMAT CSV 1.0"
 $CLICKHOUSE_LOCAL -q "SELECT number::Float64 AS v FROM numbers(10)" --format Native | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+floats+FORMAT+Native" --data-binary @-
 $CLICKHOUSE_LOCAL -q "SELECT number::Float64 AS v FROM numbers(10)" --format RowBinary | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+floats+FORMAT+RowBinary" --data-binary @-
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, query_views_log"
+# Wait for all 6 insert queries to appear in query_log.
+# There is a race between HTTP response being sent and the query_log entry being written,
+# which can cause flakiness under TSan.
+for _ in $(seq 1 60); do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, query_views_log"
+    count=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE event_date >= yesterday() AND event_time > now() - INTERVAL 600 SECOND AND type = 'QueryFinish' AND query_kind = 'Insert' AND current_database = currentDatabase()")
+    [ "$count" -ge 6 ] && break
+    sleep 0.5
+done
+
 $CLICKHOUSE_CLIENT -q \
   "SELECT
     read_rows,

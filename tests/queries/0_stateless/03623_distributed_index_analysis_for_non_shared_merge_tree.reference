@@ -1,0 +1,2 @@
+distributed_index_analysis_for_non_shared_merge_tree=0, DistributedIndexAnalysisMicroseconds>0=0
+distributed_index_analysis_for_non_shared_merge_tree=1, DistributedIndexAnalysisMicroseconds>0=1

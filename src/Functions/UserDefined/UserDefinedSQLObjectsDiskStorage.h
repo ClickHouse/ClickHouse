@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <Functions/UserDefined/UserDefinedSQLObjectsStorageBase.h>
+#include <Common/Logger_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 

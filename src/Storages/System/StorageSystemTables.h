@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Storages/IStorage.h>
+#include <Databases/IDatabase.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Interpreters/ActionsDAG.h>
 
 
@@ -13,22 +14,32 @@ namespace detail
 {
 
 ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr context);
-ColumnPtr
-getFilteredTables(const ActionsDAG::Node * predicate, const ColumnPtr & filtered_databases_column, ContextPtr context, bool is_detached);
+
+/// The table names of `filtered_databases_column` that can pass `predicate`. `tables_filter` is
+/// what the query asks of the table name column (`name` here, `table` for the detached tables),
+/// and lets each database enumerate less than everything it holds.
+ColumnPtr getFilteredTables(
+    const ActionsDAG::Node * predicate,
+    const ColumnPtr & filtered_databases_column,
+    ContextPtr context,
+    bool is_detached,
+    const TablesFilter & tables_filter);
 
 }
 
 
 /** Implements the system table `tables`, which allows you to get information about all tables.
   */
-class StorageSystemTables final : public IStorage
+class StorageSystemTables final : public StorageWithCommonVirtualColumns
 {
 public:
     explicit StorageSystemTables(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemTables"; }
 
-    void read(
+    static VirtualColumnsDescription createVirtuals();
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

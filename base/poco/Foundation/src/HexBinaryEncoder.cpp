@@ -18,7 +18,7 @@
 namespace Poco {
 
 
-HexBinaryEncoderBuf::HexBinaryEncoderBuf(std::ostream& ostr): 
+HexBinaryEncoderBuf::HexBinaryEncoderBuf(std::ostream& ostr):
 	_pos(0),
 	_lineLength(72),
 	_uppercase(0),
@@ -61,11 +61,11 @@ int HexBinaryEncoderBuf::writeToDevice(char c)
 {
 	static const int eof = std::char_traits<char>::eof();
 	static const char digits[] = "0123456789abcdef0123456789ABCDEF";
-	
+
 	if (_buf.sputc(digits[_uppercase + ((c >> 4) & 0xF)]) == eof) return eof;
 	++_pos;
 	if (_buf.sputc(digits[_uppercase + (c & 0xF)]) == eof) return eof;
-	if (++_pos >= _lineLength && _lineLength > 0) 
+	if (++_pos >= _lineLength && _lineLength > 0)
 	{
 		if (_buf.sputc('\n') == eof) return eof;
 		_pos = 0;
@@ -106,6 +106,7 @@ HexBinaryEncoderBuf* HexBinaryEncoderIOS::rdbuf()
 
 HexBinaryEncoder::HexBinaryEncoder(std::ostream& ostr): HexBinaryEncoderIOS(ostr), std::ostream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 

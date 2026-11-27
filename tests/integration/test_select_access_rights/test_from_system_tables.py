@@ -1,9 +1,7 @@
-import os
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -47,14 +45,14 @@ def test_system_db():
     assert node.query("SELECT count()>0 FROM system.settings", user="another") == "1\n"
 
     expected_error = (
-        "necessary to have the grant SELECT for at least one column on system.users"
+        "necessary to have the grant SELECT ON system.users"
     )
     assert expected_error in node.query_and_get_error(
         "SELECT count()>0 FROM system.users", user="another"
     )
 
     expected_error = (
-        "necessary to have the grant SELECT for at least one column on system.clusters"
+        "necessary to have the grant SELECT ON system.clusters"
     )
     assert expected_error in node.query_and_get_error(
         "SELECT count()>0 FROM system.clusters", user="another"
@@ -75,14 +73,14 @@ def test_system_db():
     assert node.query("SELECT count()>0 FROM system.settings", user="sqluser") == "1\n"
 
     expected_error = (
-        "necessary to have the grant SELECT for at least one column on system.users"
+        "necessary to have the grant SELECT ON system.users"
     )
     assert expected_error in node.query_and_get_error(
         "SELECT count()>0 FROM system.users", user="sqluser"
     )
 
     expected_error = (
-        "necessary to have the grant SELECT for at least one column on system.clusters"
+        "necessary to have the grant SELECT ON system.clusters"
     )
     assert node.query_and_get_error(
         "SELECT count()>0 FROM system.clusters", user="sqluser"
@@ -140,9 +138,7 @@ def test_information_schema():
         == "1\n"
     )
 
-    expected_error = (
-        "necessary to have the grant SELECT(table_name) ON information_schema.tables"
-    )
+    expected_error = "necessary to have the grant SELECT ON information_schema.tables"
     assert expected_error in node.query_and_get_error(
         "SELECT count() FROM information_schema.tables WHERE table_name='table1'",
         user="another",
@@ -162,9 +158,7 @@ def test_information_schema():
     )
 
     node.query("GRANT SELECT ON information_schema.* TO sqluser")
-    expected_error = (
-        "necessary to have the grant SELECT(database, `table`) ON system.parts"
-    )
+    expected_error = "necessary to have the grant SELECT ON system.parts"
     assert expected_error in node.query_and_get_error(
         "SELECT count() FROM information_schema.tables WHERE table_name='table1'",
         user="sqluser",

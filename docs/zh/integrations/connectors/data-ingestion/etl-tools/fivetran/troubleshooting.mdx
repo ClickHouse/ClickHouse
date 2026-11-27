@@ -1,0 +1,338 @@
+---
+sidebarTitle: '故障排查与最佳实践'
+slug: /integrations/fivetran/troubleshooting
+description: 'Fivetran ClickHouse 目标端的常见错误、调试技巧和最佳实践。'
+title: '故障排查与最佳实践'
+doc_type: 'guide'
+keywords: ['fivetran', 'ClickHouse 目标端', '故障排查', '最佳实践', '调试']
+---
+
+<div id="common-errors">
+  ## 常见错误
+</div>
+
+<div id="grants-test-failed">
+  ### 授权测试失败，或与权限相关的操作失败
+</div>
+
+**错误消息：**
+
+```sh
+Test grants failed, cause: user is missing the required grants on *.*: ALTER, CREATE DATABASE, CREATE TABLE, INSERT, SELECT
+```
+
+**原因：**Fivetran 用户没有所需的权限。该连接器需要在 `*.*` (所有数据库和表) 上拥有 `ALTER`、`CREATE DATABASE`、`CREATE TABLE`、`INSERT` 和 `SELECT` 授权。
+
+<Note>
+  授权检查会查询 `system.grants`，且只匹配直接授予用户的授权。通过 ClickHouse 角色分配的权限无法被检测到。更多详情，请参阅[基于角色的授权](/zh/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#role-based-grants)部分。
+</Note>
+
+**解决方案：**
+
+直接向 Fivetran 用户授予所需权限：
+
+```sql
+GRANT CURRENT GRANTS ON *.* TO fivetran_user;
+```
+
+<div id="mutations-not-completed">
+  ### 等待所有变更完成时出错
+</div>
+
+**错误消息：**
+
+```sh
+error while waiting for all mutations to be completed: ... initial cause: ...
+```
+
+**原因：**已提交 `ALTER TABLE ... UPDATE` 或 `ALTER TABLE ... DELETE` 变更，但连接器在等待该变更在所有副本上完成时超时。错误中的“initial cause”部分通常会包含原始的 ClickHouse 错误 (常见为代码 341，即“Unfinished”) 。
+
+这通常发生在以下情况下：
+
+* ClickHouse Cloud 集群负载过重。
+* 在变更执行期间，一个或多个节点发生故障。
+
+**解决方案：**
+
+1. **检查变更进度**：运行以下查询，检查是否存在待处理的 mutation：
+   ```sql
+   SELECT database, table, mutation_id, command, create_time, is_done
+   FROM system.mutations
+   WHERE NOT is_done
+   ORDER BY create_time DESC;
+   ```
+2. **检查集群健康状态**：确保所有节点都处于健康状态。
+3. **等待并重试**：集群恢复健康后，变更最终会完成。Fivetran 会自动重试同步。
+
+<div id="column-mismatch-error">
+  ### 列不匹配错误
+</div>
+
+**错误信息：**
+
+如果列不匹配是由 source 中的 schema 变更引起的，可能会出现不同的错误。例如：
+
+```sh
+columns count in ClickHouse table (8) does not match the input file (6). Expected columns: id, name, ..., got: id, name, ...
+```
+
+或者：
+
+```sh
+column user_email was not found in the table definition. Table columns: ...; input file columns: ...
+```
+
+**原因：** ClickHouse 目标端表中的列与正在同步的数据中的列不一致。出现这种情况的原因可能是：
+
+* 手动在 ClickHouse 表中添加或删除了列。
+* 来源端的 schema 变更未正确同步过来。
+
+**解决方案：**
+
+1. **切勿手动修改由 Fivetran 管理的表。** 请参见[最佳实践](/zh/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#dont-modify-tables)。
+2. **将列改回原来的类型**：如果你知道该列应是什么类型，请参考[type transformation mapping](/zh/integrations/connectors/data-ingestion/etl-tools/fivetran/reference#type-mapping)，将该列改回预期类型。
+3. **重新同步该表**：在 Fivetran 仪表板中，为受影响的表触发一次历史重新同步。
+4. **删除并重新创建**：作为最后的手段，删除目标端表，并让 Fivetran 在下一次同步时重新创建它。
+
+<div id="ast-too-big">
+  ### AST 过大 (代码 168)
+</div>
+
+**错误信息：**
+
+```sh
+code: 168, message: AST is too big. Maximum: 50000
+```
+
+或
+
+```sh
+code: 62, message: Max query size exceeded
+```
+
+**原因：** 大批量的 UPDATE 或 DELETE 批次会生成抽象语法树非常复杂的 SQL 语句。这在宽表或启用历史模式时很常见。
+
+**解决方案：**
+
+在[高级配置](/zh/integrations/connectors/data-ingestion/etl-tools/fivetran/reference#advanced-configuration)文件中调低 `mutation_batch_size` 和 `hard_delete_batch_size`。两者的默认值均为 `1500`，可接受的取值范围为 `200` 到 `1500`。
+
+***
+
+<div id="memory-limit-exceeded">
+  ### 内存超限 / OOM (代码 241)
+</div>
+
+**错误信息：**
+
+```sh
+code: 241, message: (total) memory limit exceeded: would use 14.01 GiB
+```
+
+**原因：** INSERT 操作所需内存超过可用内存。通常发生在大规模初始同步、宽表场景或并发批次操作期间。
+
+**解决方案：**
+
+1. **减小 `write_batch_size`**：对于大表，尝试将其调低到 50,000。
+2. **降低数据库负载**：检查 ClickHouse Cloud 服务的负载情况，确认是否过载。
+3. **扩容 ClickHouse Cloud 服务** 以提供更多内存。
+
+***
+
+<div id="unexpected-eof">
+  ### 意外 EOF / 连接错误
+</div>
+
+**错误消息：**
+
+```sh
+ClickHouse connection error: unexpected EOF
+```
+
+或者在 Fivetran 日志中出现 `FAILURE_WITH_TASK`，且没有堆栈跟踪信息。
+
+**原因：**
+
+* IP 访问列表未配置为允许 Fivetran 流量。
+* Fivetran 与 ClickHouse Cloud 之间存在暂时性的网络问题。
+* 损坏或无效的源数据导致目标端连接器崩溃。
+
+**解决方案：**
+
+1. **检查 IP 访问列表**：在 ClickHouse Cloud 中，前往 **Settings &gt; Security**，添加 [Fivetran IP addresses](https://fivetran.com/docs/using-fivetran/ips)，或允许来自任意位置的访问。
+2. **重试**：较新的连接器版本会自动重试 EOF 错误。零星出现的错误 (每天 1–2 次) 很可能只是暂时性问题。
+3. **如果问题仍然存在**：向 ClickHouse 提交支持工单，并提供错误发生的时间范围。同时请 Fivetran 支持团队协助调查源数据质量问题。
+
+***
+
+<div id="uint64-type-error">
+  ### 无法映射 UInt64 类型
+</div>
+
+**错误信息：**
+
+```sh
+cause: can't map type UInt64 to Fivetran types
+```
+
+**原因：** 该 连接器 会将 `LONG` 映射为 `Int64`，不会映射为 `UInt64`。当在由 Fivetran 管理的表中手动修改列类型时，就会出现此错误。
+
+**解决方案：**
+
+1. **不要在 Fivetran 管理的表中手动修改列类型**。
+2. **如需恢复**：将该列改回预期的类型 (例如 `Int64`) ，或者删除该表并重新同步。
+3. **对于自定义类型**：可在由 Fivetran 管理的表上创建 [materialized view](/zh/reference/statements/create/view#materialized-view)。
+
+***
+
+<div id="no-primary-keys">
+  ### 表没有主键
+</div>
+
+**错误信息：**
+
+```sh
+Failed to alter table ... cause: no primary keys for table
+```
+
+**原因：** 每个 ClickHouse 表都必须指定 `ORDER BY`。当源端没有主键时，Fivetran 会自动添加 `_fivetran_id`。如果源端定义了 PK，但数据中并不包含该 PK，就可能在某些边缘情况下触发此错误。
+
+**解决方案：**
+
+1. **联系 Fivetran 支持团队**，排查源管道。
+2. **检查源 schema**：确保数据中包含主键列。
+
+***
+
+<div id="role-based-grants">
+  ### 基于角色的授权失败
+</div>
+
+**错误信息：**
+
+```sh
+user is missing the required grants on *.*: ALTER, CREATE DATABASE, CREATE TABLE, INSERT, SELECT
+```
+
+**原因：** 该连接器使用以下语句检查授权：
+
+```sql
+SELECT access_type, database, table, column FROM system.grants WHERE user_name = 'my_user'
+```
+
+这只会返回直接授权。通过 ClickHouse 角色分配的权限会显示为 `user_name = NULL` 和 `role_name = 'my_role'`，因此此检查无法识别这些权限。
+
+**解决方案：**
+
+**直接向** Fivetran 用户**授予权限**：
+
+```sql
+GRANT CURRENT GRANTS ON *.* TO fivetran_user;
+```
+
+***
+
+<div id="best-practices">
+  ## 最佳实践
+</div>
+
+<div id="dedicated-service">
+  ### Fivetran 专用 ClickHouse 服务
+</div>
+
+在摄取负载较高时，建议使用 ClickHouse Cloud 的[计算-计算分离](/zh/products/cloud/features/infrastructure/warehouses)，为 Fivetran 写入工作负载创建专用服务。这样可将摄取与分析查询隔离开来，避免资源争用。
+
+例如，可采用以下架构：
+
+* **服务 A (写入端)&#x20;**：Fivetran 目标端 + 其他摄取工具 (ClickPipes、Kafka 连接器)
+* **服务 B (读取端)&#x20;**：BI 工具、仪表盘、临时查询
+
+<div id="optimizing-reading-queries">
+  ### 优化读取查询
+</div>
+
+ClickHouse 对 Fivetran 目标端表使用 `SharedReplacingMergeTree`，它是 ClickHouse Cloud 中 [`ReplacingMergeTree` 表引擎](/zh/concepts/features/operations/update/replacing-merge-tree) 的一个版本。具有相同主键的重复行属于正常现象——去重会在后台合并过程中异步进行。读取时，你需要注意避免返回重复行，因为有些行可能尚未完成去重。
+
+使用 `FINAL` 关键字是避免重复行的最简单方法，因为它会在读取时强制合并所有尚未去重的行：
+
+```sql
+SELECT * FROM schema.table FINAL WHERE ...
+```
+
+有一些方法可以优化这个 `FINAL` 操作——例如，通过 `WHERE` 条件对键列进行过滤。更多详情，请参阅 ReplacingMergeTree 指南中的 [FINAL performance](/zh/concepts/features/operations/update/replacing-merge-tree#final-performance) 部分。
+
+如果这些优化还不够，你还有其他方法可以在不使用 `FINAL` 的情况下正确处理重复项：
+
+* 如果你想查询一个持续递增的数值列，[可以使用 `max(the_column)`](/zh/concepts/features/operations/insert/deduplication#avoiding-final)。
+* 如果你需要为某个特定键获取某些列的最新值，可以使用 [`argMax(the_column, _fivetran_id)`](https://clickhouse.com/blog/10-best-practice-tips#perfecting_replacingmergetree)。
+
+<div id="primary-key-optimization">
+  ### 主键与 ORDER BY 优化
+</div>
+
+Fivetran 会将源表的主键复制为 ClickHouse 的 `ORDER BY` 子句。当源表没有主键时，`_fivetran_id` (一个 UUID) 会成为排序键。由于 ClickHouse 会基于 `ORDER BY` 列构建其[稀疏主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)，这可能会导致查询性能较差。
+
+**如果其他优化手段仍无法满足需求，建议采取以下做法：**
+
+1. **将 Fivetran 表视为原始暂存表。** 不要直接对其进行分析查询。
+2. **如果查询性能仍然不够理想**，可使用[可刷新materialized view](/zh/concepts/features/materialized-views/refreshable-materialized-view)创建该表的副本，并根据你的查询模式优化其 `ORDER BY`。与增量materialized view不同，可刷新materialized view会按计划重新运行完整查询，因此能够正确处理 Fivetran 在同步期间发出的 `UPDATE` 和 `DELETE` 操作：
+   ```sql
+   CREATE MATERIALIZED VIEW schema.table_optimized
+   REFRESH EVERY 1 HOUR
+   ENGINE = ReplacingMergeTree()
+   ORDER BY (user_id, event_date)
+   AS SELECT * FROM schema.table_raw FINAL;
+   ```
+
+<Note>
+  对于由 Fivetran 管理的表，应避免使用增量 (不可刷新) materialized view。由于 Fivetran 会发出 `UPDATE` 和 `DELETE` 操作来保持数据同步，增量materialized view无法反映这些变更，因此会包含过时或错误的数据。
+</Note>
+
+<div id="dont-modify-tables">
+  ### 不要手动修改由 Fivetran 管理的表
+</div>
+
+避免对由 Fivetran 管理的表手动执行 DDL 更改 (例如 `ALTER TABLE ... MODIFY COLUMN`) 。连接器 依赖其创建的 schema。手动更改可能会导致[type mapping 错误](#uint64-type-error)以及 schema 不匹配问题。
+
+使用 materialized views 进行自定义转换。
+
+<div id="debugging">
+  ## 调试操作
+</div>
+
+排查故障时：
+
+* 检查 ClickHouse `system.query_log`，查看服务端是否存在问题。
+* 如属客户端问题，请向 Fivetran 寻求帮助。
+
+如果是 连接器 的缺陷，请[创建 GitHub issue](https://github.com/ClickHouse/clickhouse-fivetran-destination/issues)或联系 [ClickHouse 支持团队](/zh/resources/about/support)。
+
+<div id="debugging-fivetran-syncs">
+  ### 调试 Fivetran 同步
+</div>
+
+使用以下查询来诊断 ClickHouse 侧的同步失败问题。
+
+<div id="check-errors">
+  #### 查看近期与 Fivetran 相关的 ClickHouse 错误
+</div>
+
+```sql
+SELECT event_time, query, exception_code, exception
+FROM system.query_log
+WHERE client_name LIKE 'fivetran-destination%'
+  AND exception_code > 0
+ORDER BY event_time DESC
+LIMIT 50;
+```
+
+<div id="check-activity">
+  #### 查看最近的 Fivetran 用户活动
+</div>
+
+```sql
+SELECT event_time, query_kind, query, exception_code, exception
+FROM system.query_log
+WHERE user = '{fivetran_user}'
+ORDER BY event_time DESC
+LIMIT 100;
+```

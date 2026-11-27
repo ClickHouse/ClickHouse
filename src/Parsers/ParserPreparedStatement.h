@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/IParserBase.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -13,6 +14,8 @@ public:
 
     String function_name;
     String function_body;
+    /// Ordered parameter OIDs for the extended `Bind` path.
+    VectorWithMemoryTracking<Int32> parameter_types;
 
     String getID(char) const override { return "PreparedStatement"; }
 
@@ -25,7 +28,7 @@ public:
     ASTExecute() = default;
 
     String function_name;
-    std::vector<String> arguments;
+    VectorWithMemoryTracking<String> arguments;
 
     String getID(char) const override { return "Execute"; }
 
@@ -50,7 +53,7 @@ public:
     ParserPrepare() = default;
 
 protected:
-    const char * getName() const override { return "PREPARE query"; }
+    [[nodiscard]] const char * getName() const override { return "PREPARE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -60,7 +63,7 @@ public:
     ParserExecute() = default;
 
 protected:
-    const char * getName() const override { return "EXECUTE query"; }
+    [[nodiscard]] const char * getName() const override { return "EXECUTE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -70,7 +73,7 @@ public:
     ParserDeallocate() = default;
 
 protected:
-    const char * getName() const override { return "DEALLOCATE query"; }
+    [[nodiscard]] const char * getName() const override { return "DEALLOCATE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

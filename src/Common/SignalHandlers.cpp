@@ -4,8 +4,13 @@
 #include <Common/ShellCommandsHolder.h>
 #include <Common/CurrentThread.h>
 #include <Common/SymbolIndex.h>
+#include <Common/FramePointers.h>
+#include <Common/ErrnoException.h>
+#include <Common/setThreadName.h>
+#include <Common/StackTraceServiceSignal.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
+#include <Common/CoverageCollection.h>
 #include <base/sleep.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -16,9 +21,13 @@
 #include <Core/Settings.h>
 #include <Poco/Environment.h>
 
+#include <algorithm>
 #include <thread>
+#include <unistd.h>
 
+#pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -35,16 +44,52 @@ extern const char * GIT_HASH;
 
 static const std::vector<FramePointers> empty_stack;
 
+/// Current exception stack trace captured in terminate_handler.
+thread_local FramePointers terminate_current_exception_trace;
+thread_local size_t terminate_current_exception_trace_size = 0;
+
 using namespace DB;
 
 
-void call_default_signal_handler(int sig)
+static std::atomic_bool is_crashed = false;
+static_assert(std::atomic_bool::is_always_lock_free, "is_crashed must be lock-free for use in signal handlers");
+bool isCrashed() { return is_crashed.load(std::memory_order_relaxed); }
+
+/// Set once the deadly signal handlers are reset to their previous actions; makes resetHandledSignals() a no-op afterwards.
+static std::atomic_flag handled_signals_were_reset;
+
+/// After re-raising the signal, the siginfo recorded in the core dump shows SI_TKILL with no si_addr,
+/// so we need to preserve the address for core dump analysis.
+static std::atomic<uintptr_t> saved_fault_address{0};
+static_assert(std::atomic<uintptr_t>::is_always_lock_free, "saved_fault_address must be lock-free for use in signal handlers");
+static std::atomic<const char *> saved_fault_access_type{nullptr};
+static_assert(std::atomic<const char *>::is_always_lock_free, "saved_fault_access_type must be lock-free for use in signal handlers");
+
+/// The signals a fault of the stack unwinder raises: SIGBUS from the frame-pointer walk on Darwin,
+/// SIGILL from a failed return address authentication on AArch64 cores with FEAT_FPAC.
+static constexpr int unwind_fault_signals[] = {
+    SIGSEGV,
+#if defined(OS_DARWIN)
+    SIGBUS,
+#endif
+#if defined(OS_LINUX) && defined(__aarch64__)
+    SIGILL,
+#endif
+};
+
+
+void call_default_signal_handler([[maybe_unused]] int sig)
 {
+#if !defined(OS_HAS_SIGNAL_HANDLERS)
+    /// Nothing to restore, and nothing to raise it with.
+    return;
+#else
     if (SIG_ERR == signal(sig, SIG_DFL))
         throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
 
     if (0 != raise(sig))
         throw ErrnoException(ErrorCodes::CANNOT_SEND_SIGNAL, "Cannot send signal");
+#endif
 }
 
 
@@ -91,18 +136,47 @@ void childSignalHandler(int sig, siginfo_t * info, void *)
 /// Handler for "fault" or diagnostic signals. Send data about fault to separate thread to write into log.
 static void signalHandler(int sig, siginfo_t * info, void * context)
 {
-    if (asynchronous_stack_unwinding && sig == SIGSEGV)
+    /// A fault while asynchronously unwinding another thread's stack (the query profiler and
+    /// system.stack_trace) must be recovered by discarding the capture, not crash the server. Walking a
+    /// bad frame pointer dereferences an invalid address and raises SIGSEGV. On macOS the frame-pointer
+    /// walk in backtrace() can additionally land on a misaligned address (e.g. when the profiler
+    /// interrupts a thread parked in frame-pointer-less libsystem code), which raises SIGBUS, so recover
+    /// from that too there. We siglongjmp back to asynchronous_stack_unwinding_signal_jump_buffer, where
+    /// the handler drops the capture (the profiler also increments ProfileEvents::QueryProfilerErrors).
+    if (asynchronous_stack_unwinding && std::ranges::contains(unwind_fault_signals, sig))
         siglongjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1);
 
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+
+    if (sig == SIGSEGV || sig == SIGBUS || sig == SIGILL || sig == SIGFPE)
+    {
+        saved_fault_address.store(reinterpret_cast<uintptr_t>(info->si_addr), std::memory_order_relaxed);
+        saved_fault_access_type.store(getFaultMemoryAccessType(sig, *info, *reinterpret_cast<const ucontext_t *>(context)).data(), std::memory_order_relaxed); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    }
+
+    if (sig != SIGTSTP)
+        is_crashed.store(true, std::memory_order_relaxed);
 
     char buf[signal_pipe_buf_size];
     auto & signal_pipe = HandledSignals::instance().signal_pipe;
     WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
 
     const ucontext_t * signal_context = reinterpret_cast<ucontext_t *>(context);
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    /// The deadly and SIGTSTP registrations block these signals, and a blocked fault kills the process
+    /// instead of reaching the recovery above.
+    sigset_t unwind_fault_set;
+    sigemptyset(&unwind_fault_set);
+    for (int fault_sig : unwind_fault_signals)
+        sigaddset(&unwind_fault_set, fault_sig);
+    sigset_t previous_mask;
+    pthread_sigmask(SIG_UNBLOCK, &unwind_fault_set, &previous_mask);
+#endif
     const StackTrace stack_trace(*signal_context);
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    pthread_sigmask(SIG_SETMASK, &previous_mask, nullptr);
+#endif
 
     writeBinary(sig, out);
     writePODBinary(*info, out);
@@ -110,7 +184,12 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     writePODBinary(stack_trace, out);
     writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : empty_stack, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
-    writePODBinary(current_thread, out);
+    writePODBinary(current_thread.get(), out);
+#if defined(OS_LINUX)
+    writeBinary(static_cast<UInt8>(terminate_current_exception_trace_size), out);
+    for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
+        writePODBinary(terminate_current_exception_trace[i], out);
+#endif
     out.finalize();
 
     if (sig != SIGTSTP) /// This signal is used for debugging.
@@ -147,9 +226,27 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     std::string log_message;
 
     if (std::current_exception())
-        log_message = "Terminate called for uncaught exception:\n" + getCurrentExceptionMessage(true);
+    {
+        std::string exception_message = getCurrentExceptionMessage(true);
+        log_message = "Terminate called for uncaught exception:\n" + exception_message;
+
+        try
+        {
+            throw;
+        }
+        catch (const std::exception & e)
+        {
+            const auto trace = getStackTraceOfThrow(e);
+            terminate_current_exception_trace_size = std::min(trace.size(), FRAMEPOINTER_CAPACITY);
+            for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
+                terminate_current_exception_trace[i] = trace[i];
+        }
+        catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort in terminate handler
+    }
     else
+    {
         log_message = "Terminate called without an active exception";
+    }
 
     /// POSIX.1 says that write(2)s of less than PIPE_BUF bytes must be atomic - man 7 pipe
     /// And the buffer should not be too small because our exception messages can be large.
@@ -172,6 +269,45 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
 #if defined(SANITIZER)
 extern "C" void __sanitizer_set_death_callback(void (*)());
+extern "C" void __sanitizer_on_print(const char * str);
+
+/// Captures sanitizer runtime output into a preallocated global buffer,
+/// so that the core dump analyzer can read it.
+extern "C"
+{
+char sanitizer_report[1 << 20];
+unsigned long sanitizer_report_size = 0;
+}
+
+static char sanitizer_report_lock;
+
+static DISABLE_SANITIZER_INSTRUMENTATION void appendToSanitizerReport(const char * str)
+{
+    unsigned long i = sanitizer_report_size;
+    while (*str != '\0' && i < sizeof(sanitizer_report) - 1)
+        sanitizer_report[i++] = *str++;
+    sanitizer_report_size = i;
+}
+
+extern "C" DISABLE_SANITIZER_INSTRUMENTATION void __sanitizer_on_print(const char * str)
+{
+    /// Writing to sanitizer_report_size by previous thread must happen-before reading from sanitizer_report_size by this thread.
+    /// Hence, we need acquire-release.
+    while (__atomic_test_and_set(&sanitizer_report_lock, __ATOMIC_ACQUIRE))
+        ;
+
+    /// The preamble makes the buffer discoverable by scanning the core dump.
+    /// It is assembled from parts so its only full copy is in this buffer.
+    if (sanitizer_report_size == 0)
+    {
+        appendToSanitizerReport("CLICKHOUSE");
+        appendToSanitizerReport(" SANITIZER");
+        appendToSanitizerReport(" REPORT\n");
+    }
+    appendToSanitizerReport(str);
+
+    __atomic_clear(&sanitizer_report_lock, __ATOMIC_RELEASE);
+}
 
 /// You should be very careful on which functions is called from the death callback, in some cases sanitizers will deadlock.
 /// So let's disable instrumentation to avoid possible issues, but note:
@@ -189,20 +325,35 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
     /// Sanitizer errors cannot be handled properly with our signal handlers, because it leads to deadlock.
     /// So we need to reset the signal handlers (this does not lead to deadlock),
     /// but closing the pipe leads to deadlock from death callback, so we will not close it.
-    HandledSignals::instance().reset(/* close_pipe= */ false);
+    /// Use resetHandledSignals() (idempotent, does not construct the singleton) instead of
+    /// HandledSignals::instance().reset() to stay safe when called at process exit.
+    resetHandledSignals();
 }
 #endif
 
-void HandledSignals::addSignalHandler(const std::vector<int> & signals, signal_function handler, bool register_signal)
+void HandledSignals::addSignalHandler(
+    [[maybe_unused]] const std::vector<int> & signals,
+    [[maybe_unused]] signal_function handler,
+    [[maybe_unused]] bool register_signal,
+    [[maybe_unused]] const std::vector<int> & additional_masked_signals,
+    [[maybe_unused]] bool use_alt_stack)
 {
-    struct sigaction sa;
+#if !defined(OS_HAS_SIGNAL_HANDLERS)
+    return;
+#else
+    struct sigaction sa{};
     memset(&sa, 0, sizeof(sa));
     sa.sa_sigaction = handler;
     sa.sa_flags = SA_SIGINFO;
 
+    if (use_alt_stack)
+        sa.sa_flags |= SA_ONSTACK;
+
 #if defined(OS_DARWIN)
     sigemptyset(&sa.sa_mask);
     for (auto signal : signals)
+        sigaddset(&sa.sa_mask, signal);
+    for (auto signal : additional_masked_signals)
         sigaddset(&sa.sa_mask, signal);
 #else
     if (sigemptyset(&sa.sa_mask))
@@ -211,18 +362,39 @@ void HandledSignals::addSignalHandler(const std::vector<int> & signals, signal_f
     for (auto signal : signals)
         if (sigaddset(&sa.sa_mask, signal))
             throw Poco::Exception("Cannot set signal handler.");
+
+    for (auto signal : additional_masked_signals)
+        if (sigaddset(&sa.sa_mask, signal))
+            throw Poco::Exception("Cannot set signal handler.");
 #endif
 
+    const auto & asynchronous_signals = asynchronousHandledSignals();
+    handled_signals.reserve(handled_signals.size() + signals.size());
     for (auto signal : signals)
-        if (sigaction(signal, &sa, nullptr))
+    {
+        struct sigaction previous{};
+        if (sigaction(signal, &sa, &previous))
             throw Poco::Exception("Cannot set signal handler.");
 
-    if (register_signal)
-        std::copy(signals.begin(), signals.end(), std::back_inserter(handled_signals));
+        /// An asynchronous signal goes back to SIG_DFL: in a restarted watchdog child,
+        /// its previous action is the watchdog's forwarding handler.
+        if (std::ranges::contains(asynchronous_signals, signal))
+        {
+            previous = {};
+            previous.sa_handler = SIG_DFL;
+        }
+
+        if (register_signal)
+            handled_signals.emplace_back(signal, previous);
+    }
+#endif
 }
 
-void blockSignals(const std::vector<int> & signals)
+void blockSignals([[maybe_unused]] const std::vector<int> & signals)
 {
+#if !defined(OS_HAS_SIGNAL_HANDLERS)
+    return;
+#else
     sigset_t sig_set;
 
 #if defined(OS_DARWIN)
@@ -240,37 +412,120 @@ void blockSignals(const std::vector<int> & signals)
 
     if (pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
         throw Poco::Exception("Cannot block signal.");
+#endif
+}
+
+const std::vector<int> & asynchronousHandledSignals()
+{
+    /// Keep in sync with the handlers installed by `BaseDaemon::initializeTerminationAndSignalProcessing`:
+    /// `SIGTSTP` from `setupCommonDeadlySignalHandlers` (it is the only asynchronous one there),
+    /// `SIGINT`/`SIGQUIT`/`SIGTERM` from `setupCommonTerminateRequestSignalHandlers`, plus `SIGHUP` and `SIGCHLD`.
+    static const std::vector<int> signals{SIGINT, SIGQUIT, SIGTERM, SIGHUP, SIGCHLD, SIGTSTP};
+    return signals;
+}
+
+BlockSignalsScope::BlockSignalsScope(const std::vector<int> & signals)
+{
+    sigset_t sig_set;
+
+#if defined(OS_DARWIN)
+    sigemptyset(&sig_set);
+    for (auto signal : signals)
+        sigaddset(&sig_set, signal);
+#else
+    if (sigemptyset(&sig_set))
+        throw Poco::Exception("Cannot block signal.");
+
+    for (auto signal : signals)
+        if (sigaddset(&sig_set, signal))
+            throw Poco::Exception("Cannot block signal.");
+#endif
+
+    if (pthread_sigmask(SIG_BLOCK, &sig_set, &saved_mask))
+        throw Poco::Exception("Cannot block signal.");
+}
+
+BlockSignalsScope::~BlockSignalsScope()
+{
+    /// Nothing sensible can be done if restoring the mask fails, and throwing from a destructor is worse.
+    pthread_sigmask(SIG_SETMASK, &saved_mask, nullptr);
 }
 
 
-SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_)
-    : daemon(daemon_), log(log_)
+SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRequestCallback terminate_request_callback_)
+    : daemon(daemon_), log(log_), terminate_request_callback(std::move(terminate_request_callback_))
 {
 }
 
 void SignalListener::run()
 {
+    setThreadName(ThreadName::SIGNAL_LISTENER);
+    /// Pre-warm the symbol index and this thread's compact-name workspace so symbolizing a fatal signal
+    /// performs no allocations on the signal path. Mach-O binaries never carry the compact section, so on Darwin
+    /// this only builds the index.
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+    if (daemon)
+    {
+        /// The daemon does not build the index at initialization, so this is the first time it is built,
+        /// and it can fail (for example, on a corrupted `clickhouse.debug` next to the executable).
+        /// The exception must not leave this thread: it would reach the Poco error handler, and the server
+        /// would be left without signal processing or hang in `std::terminate`. Instead, it is handed to the
+        /// main thread, which rethrows it from `waitForTerminationRequest` and exits with this error.
+        try
+        {
+            SymbolIndex::instance().warmUp();
+        }
+        catch (...)
+        {
+            /// Without the stack trace: symbolizing it would try to build the index again.
+            LOG_FATAL(log, "Cannot build the symbol index, the server will be terminated: {}", getCurrentExceptionMessage(false));
+            {
+                std::lock_guard lock(terminate_request_mutex);
+                symbol_index_exception = std::current_exception();
+            }
+            terminate_request_cv.notify_all();
+        }
+    }
+#endif
+
     if (daemon)
     {
         build_id = [this]{ return daemon->build_id; };
+        /// A daemon has read its build id during initialization (without the symbol index), so this is
+        /// a plain string that neither builds anything nor waits for anything.
+        build_id_if_already_known = build_id;
     }
     else
     {
         /// This is the case of clickhouse-client and clickhouse-local.
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
         /// This operation is heavy (0.5 sec under TSan) - we don't do it in constructor to not slow-down clickhouse-client,
         /// Do it lazily to not slow-down the termination of clickhouse-client.
         build_id = []{ return SymbolIndex::instance().getBuildIDHex(); };
+        /// Everything printed before the bare stack trace has to come out even when the symbol index
+        /// is unusable, so the short fault info must not be the thing that builds it: `SymbolIndex::instance`
+        /// blocks on the function-local static's guard while another thread is inside the constructor,
+        /// and a thread that faulted in there will never release that guard. The real build id is still
+        /// printed in the full fault info, which comes after the bare dump.
+        build_id_if_already_known = []
+        {
+            const SymbolIndex * symbol_index = SymbolIndex::instanceIfInitialized();
+            return symbol_index ? symbol_index->getBuildIDHex() : String("<not yet known>");
+        };
 #else
         build_id = [] { return String("<unknown>"); };
+        build_id_if_already_known = build_id;
 #endif
     }
 
     static_assert(PIPE_BUF >= 512);
     static_assert(signal_pipe_buf_size <= PIPE_BUF, "Only write of PIPE_BUF to pipe is atomic and the minimal known PIPE_BUF across supported platforms is 512");
-    char buf[signal_pipe_buf_size];
+    /// Do not read past one signal ID. In particular, `StopThread` is only a request
+    /// to stop this listener: a handled signal written after it must remain in the
+    /// pipe for a listener started later.
+    char buf[sizeof(int)];
     auto & signal_pipe = HandledSignals::instance().signal_pipe;
-    ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], signal_pipe_buf_size, buf);
+    ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], sizeof(buf), buf);
 
     while (!in.eof())
     {
@@ -295,7 +550,7 @@ void SignalListener::run()
         }
         else if (sig == StdTerminate)
         {
-            UInt32 thread_num;
+            UInt32 thread_num = 0;
             std::string message;
 
             readBinary(thread_num, in);
@@ -305,8 +560,31 @@ void SignalListener::run()
         }
         else if (sig == SIGINT || sig == SIGQUIT || sig == SIGTERM)
         {
-            if (daemon)
-                daemon->handleSignal(sig);
+            bool crashing = false;
+            {
+                std::lock_guard lock(terminate_request_mutex);
+                ++terminate_requested;
+
+                crashing = terminate_requested > 1;
+                if (crashing)
+                    LOG_INFO(log, "Received second termination signal ({}). Immediately terminate.", strsignal(sig)); // NOLINT(concurrency-mt-unsafe)
+                else
+                    LOG_INFO(log, "Received termination signal ({})", strsignal(sig)); // NOLINT(concurrency-mt-unsafe)
+
+                if (terminate_request_callback)
+                    terminate_request_callback(sig, crashing);
+            }
+
+            if (crashing)
+            {
+                call_default_signal_handler(sig);
+                /// If the above did not help.
+                _exit(128 + sig);
+            }
+            else
+            {
+                terminate_request_cv.notify_all();
+            }
         }
         else if (sig == SIGCHLD)
         {
@@ -322,6 +600,8 @@ void SignalListener::run()
             std::vector<FramePointers> thread_frame_pointers;
             UInt32 thread_num{};
             ThreadStatus * thread_ptr{};
+            FramePointers exception_trace{};
+            UInt8 exception_trace_size{};
 
             readPODBinary(info, in);
             readPODBinary(context, in);
@@ -330,10 +610,33 @@ void SignalListener::run()
             readVectorBinary(thread_frame_pointers, in);
             readBinary(thread_num, in);
             readPODBinary(thread_ptr, in);
+#if defined(OS_LINUX)
+            readBinary(exception_trace_size, in);
+            for (size_t i = 0; i < exception_trace_size; ++i)
+                readPODBinary(exception_trace[i], in);
+#endif
 
-            onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr);
+            onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr, exception_trace, exception_trace_size);
         }
     }
+}
+
+bool SignalListener::waitForTerminationRequest(std::chrono::milliseconds timeout)
+{
+    std::unique_lock lock(terminate_request_mutex);
+    auto condition = [&] { return terminate_requested > 0 || symbol_index_exception; };
+    bool res = true;
+
+    /// condition_variable::wait_for probably doesn't check for overflow, so we can't just pass max() to it.
+    if (timeout == std::chrono::milliseconds::max())
+        terminate_request_cv.wait(lock, condition);
+    else
+        res = terminate_request_cv.wait_for(lock, timeout, condition);
+
+    if (symbol_index_exception)
+        std::rethrow_exception(symbol_index_exception);
+
+    return res;
 }
 
 void SignalListener::onTerminate(std::string_view message, UInt32 thread_num) const
@@ -357,6 +660,30 @@ void SignalListener::onTerminate(std::string_view message, UInt32 thread_num) co
     }
 }
 
+/// Prints an instruction address in the same representation as the symbolized lines below it, so that
+/// the two are comparable and the printed value survives ASLR of a position-independent executable.
+///
+/// This is the raw fallback that has to come out even when symbolization later fails, so it must not
+/// depend on the symbol index being buildable. Without the index (a fault at startup, in the thread that
+/// was building it, or in a program that is not a daemon) only addresses in the main executable resolve.
+/// An address that does not resolve to a loaded object has no such form and is not printed.
+static void writeResolvedAddress(const void * addr, WriteBuffer & out)
+{
+    const auto resolved = StackTrace::tryResolveAddress(addr);
+    if (!resolved.address)
+    {
+        writeString("<unknown>", out);
+        return;
+    }
+
+    writePointerHex(resolved.address, out);
+    if (resolved.kind == StackTrace::AddressKind::OtherObject)
+    {
+        writeString(" in ", out);
+        writeString(resolved.object, out);
+    }
+}
+
 void SignalListener::onFault(
     int sig,
     const siginfo_t & info,
@@ -364,7 +691,9 @@ void SignalListener::onFault(
     const StackTrace & stack_trace,
     const std::vector<FramePointers> & thread_frame_pointers,
     UInt32 thread_num,
-    DB::ThreadStatus * thread_ptr) const
+    DB::ThreadStatus * thread_ptr,
+    const FramePointers & exception_trace,
+    size_t exception_trace_size) const
 try
 {
     ThreadStatus thread_status;
@@ -374,9 +703,11 @@ try
     /// in case of double fault.
 
     LOG_FATAL(log, "########## Short fault info ############");
-    LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {}",
-              VERSION_STRING, VERSION_OFFICIAL, build_id(), GIT_HASH, Poco::Environment::osArchitecture(),
-              thread_num, sig);
+    LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {} ({})",
+              VERSION_STRING, VERSION_OFFICIAL, build_id_if_already_known(), GIT_HASH, Poco::Environment::osArchitecture(),
+              thread_num, sig,
+              /// `si_pid` and `si_uid` are set only for signals sent by a process; for a fault they overlap `si_addr`.
+              info.si_code > 0 || info.si_pid == getpid() ? "internal" : fmt::format("signal sent by pid {} from user {}", info.si_pid, info.si_uid));
 
     std::string signal_description = "Unknown signal";
 
@@ -388,8 +719,7 @@ try
 
     LOG_FATAL(log, "Signal description: {}", signal_description);
 
-    String error_message;
-    error_message = signalToErrorMessage(sig, info, *context);
+    String error_message = signalToErrorMessage(sig, info, *context);
     LOG_FATAL(log, fmt::runtime(error_message));
 
     String bare_stacktrace_str;
@@ -404,7 +734,7 @@ try
         for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
         {
             writeChar(' ', bare_stacktrace);
-            writePointerHex(stack_trace.getFramePointers()[i], bare_stacktrace);
+            writeResolvedAddress(stack_trace.getFramePointers()[i], bare_stacktrace);
         }
 
         LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
@@ -467,7 +797,7 @@ try
                                 [&bare_stacktrace](const void * ptr)
                                 {
                                     writeChar(' ', bare_stacktrace);
-                                    writePointerHex(ptr, bare_stacktrace);
+                                    writeResolvedAddress(ptr, bare_stacktrace);
                                 }
                 );
 
@@ -513,9 +843,22 @@ try
 
     /// Write crash to system.crash_log table if available.
     if (collectCrashLog)
-        collectCrashLog(sig, thread_num, query_id, stack_trace);
+    {
+        const std::optional<UInt64> fault_address = getFaultAddress(sig, info);
+        const String fault_access_type{getFaultMemoryAccessType(sig, info, *context)};
+        const String si_code_description = getSignalCodeDescription(sig, info.si_code);
 
-    Context::getGlobalContextInstance()->handleCrash();
+        collectCrashLog(
+            sig, info.si_code, thread_num, query_id, query,
+            stack_trace, fault_address, fault_access_type, si_code_description,
+            exception_trace, exception_trace_size);
+    }
+
+    if (daemon)
+         daemon->flushTextLogs();
+    /// These handlers are installed before the global context is created, so it can still be absent during startup.
+    if (auto global_context = Context::getGlobalContextInstance())
+        global_context->handleCrash();
 
     /// Send crash report to developers (if configured)
     if (daemon)
@@ -527,7 +870,7 @@ try
     if (std::string_view(VERSION_OFFICIAL).contains("official build"))
     {
         /// Approximate support period, upper bound.
-        if (time(nullptr) - makeDate(DateLUT::instance(), 2000 + VERSION_MAJOR, VERSION_MINOR, 1) < (365 + 30) * 86400)
+        if (time(nullptr) - makeDate(DateLUT::instance(), static_cast<UInt8>(2000 + VERSION_MAJOR), static_cast<UInt8>(VERSION_MINOR), 1) < (365 + 30) * 86400)
         {
             LOG_FATAL(log, "Report this error to https://github.com/ClickHouse/ClickHouse/issues");
         }
@@ -540,10 +883,10 @@ try
     /// List changed settings.
     if (!query_id.empty())
     {
-        ContextPtr query_context = thread_ptr->getQueryContext();
+        ContextPtr query_context = thread_ptr->tryGetQueryContext();
         if (query_context)
         {
-            String changed_settings = query_context->getSettingsRef().toString();
+            String changed_settings = query_context->getSettingsRef().toString(/* show_secrets */ false);
 
             if (changed_settings.empty())
                 LOG_FATAL(log, "No settings were changed");
@@ -555,6 +898,11 @@ try
     /// When everything is done, we will try to send these error messages to the client.
     if (thread_ptr)
         thread_ptr->onFatalError();
+
+#if defined(__ELF__) && !defined(OS_FREEBSD) && WITH_COVERAGE_DEPTH
+    /// The process dies right after this, which loses the coverage since the last flush.
+    flushCoverageToFilesOnExit();
+#endif
 
     HandledSignals::instance().fatal_error_printed.test_and_set();
 }
@@ -573,10 +921,14 @@ HandledSignals::HandledSignals()
 
 void HandledSignals::reset(bool close_pipe)
 {
-    /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
-    for (int sig : handled_signals)
+    handled_signals_were_reset.test_and_set();
+
+    /// Restore the recorded actions, to avoid trying to write to the signal_pipe that will be closed after.
+    /// Nothing was ever installed where there are no signals, so this loop is compiled out there.
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    for (auto it = handled_signals.rbegin(); it != handled_signals.rend(); ++it)
     {
-        if (SIG_ERR == signal(sig, SIG_DFL))
+        if (0 != sigaction(it->first, &it->second, nullptr))
         {
             try
             {
@@ -588,9 +940,19 @@ void HandledSignals::reset(bool close_pipe)
             }
         }
     }
+#endif
 
     if (close_pipe)
         signal_pipe.close();
+}
+
+void resetHandledSignals()
+{
+    /// Already reset: do nothing, and in particular do not touch (or construct) HandledSignals.
+    if (handled_signals_were_reset.test())
+        return;
+
+    HandledSignals::instance().reset(/* close_pipe= */ false);
 }
 
 HandledSignals::~HandledSignals()
@@ -620,7 +982,28 @@ void HandledSignals::setupCommonDeadlySignalHandlers()
 {
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
     /// NOTE: that it is also used by clickhouse-test wrapper
-    addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGTSTP, SIGTRAP}, signalHandler, true);
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// The deadly handler captures the crashed thread's stack via StackTrace(ucontext_t), which uses the
+    /// shared thread-local unwind-fault recovery (asynchronous_stack_unwinding + sigjmp_buf). The query
+    /// profiler (SIGUSR1/SIGUSR2) and system.stack_trace (STACK_TRACE_SERVICE_SIGNAL) handlers use the
+    /// same recovery state and already mask each other; block them here too so they cannot interrupt the
+    /// deadly handler mid-unwind, clobber that buffer, and turn the next unwind fault into an invalid
+    /// siglongjmp or a second fatal signal.
+    const std::vector<int> unwind_recovery_signals{SIGUSR1, SIGUSR2, STACK_TRACE_SERVICE_SIGNAL};
+#else
+    const std::vector<int> unwind_recovery_signals;
+#endif
+    const std::vector<int> fault_signals{SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGTRAP};
+    /// Each call masks the other's signals, so both keep the `sa_mask` of the single registration that
+    /// once covered all eight.
+    std::vector<int> fault_masked_signals = unwind_recovery_signals;
+    fault_masked_signals.push_back(SIGTSTP);
+    std::vector<int> tstp_masked_signals = unwind_recovery_signals;
+    tstp_masked_signals.insert(tstp_masked_signals.end(), fault_signals.begin(), fault_signals.end());
+
+    /// Not SIGTSTP: it is never raised by stack exhaustion, and its handler returns.
+    addSignalHandler(fault_signals, signalHandler, true, fault_masked_signals, /*use_alt_stack=*/true);
+    addSignalHandler({SIGTSTP}, signalHandler, true, tstp_masked_signals);
 
 #if defined(SANITIZER)
     __sanitizer_set_death_callback(sanitizerDeathCallback);
@@ -631,3 +1014,5 @@ void HandledSignals::setupCommonTerminateRequestSignalHandlers()
 {
     addSignalHandler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler, true);
 }
+
+#pragma clang diagnostic pop

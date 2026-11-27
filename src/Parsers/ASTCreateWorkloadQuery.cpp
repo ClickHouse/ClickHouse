@@ -10,11 +10,14 @@ namespace DB
 
 ASTPtr ASTCreateWorkloadQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateWorkloadQuery>(*this);
+    auto res = make_intrusive<ASTCreateWorkloadQuery>(*this);
     res->children.clear();
 
-    res->workload_name = workload_name->clone();
-    res->children.push_back(res->workload_name);
+    if (workload_name)
+    {
+        res->workload_name = workload_name->clone();
+        res->children.push_back(res->workload_name);
+    }
 
     if (workload_parent)
     {
@@ -61,7 +64,8 @@ void ASTCreateWorkloadQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSe
                 ostr << ", ";
             else
                 first = false;
-            ostr << change.name << " = " << applyVisitor(FieldVisitorToString(), change.value);
+            /// The parser reads the name of a workload setting as one identifier.
+            ostr << backQuoteIfNeed(change.name) << " = " << applyVisitor(FieldVisitorToString(), change.value);
             if (!change.resource.empty())
             {
                 ostr << ' ' << "FOR" << ' ';

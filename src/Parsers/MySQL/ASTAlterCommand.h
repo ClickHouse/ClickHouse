@@ -81,20 +81,20 @@ protected:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported by MySQLParser::ASTAlterCommand.");
     }
 
-    void forEachPointerToChild(std::function<void(void**)> f) override
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
-        f(reinterpret_cast<void **>(&index_decl));
-        f(reinterpret_cast<void **>(&default_expression));
-        f(reinterpret_cast<void **>(&additional_columns));
-        f(reinterpret_cast<void **>(&order_by_columns));
-        f(reinterpret_cast<void **>(&properties));
+        f(reinterpret_cast<IAST **>(&index_decl), nullptr);
+        f(&default_expression, nullptr);
+        f(reinterpret_cast<IAST **>(&additional_columns), nullptr);
+        f(reinterpret_cast<IAST **>(&order_by_columns), nullptr);
+        f(&properties, nullptr);
     }
 };
 
 class ParserAlterCommand : public IParserBase
 {
 protected:
-    const char * getName() const override { return "alter command"; }
+    [[nodiscard]] const char * getName() const override { return "alter command"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

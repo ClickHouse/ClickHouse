@@ -151,9 +151,28 @@ static IAggregateFunction * createWithNumericBasedType(const IDataType & argumen
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<UInt16>(args...);
     if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<UInt32>(args...);
+    if (which.idx == TypeIndex::Time) return new AggregateFunctionTemplate<Int32>(args...);
     if (which.idx == TypeIndex::UUID) return new AggregateFunctionTemplate<UUID>(args...);
     if (which.idx == TypeIndex::IPv4) return new AggregateFunctionTemplate<IPv4>(args...);
     if (which.idx == TypeIndex::IPv6) return new AggregateFunctionTemplate<IPv6>(args...);
+    return nullptr;
+}
+
+template <template <typename, bool> class AggregateFunctionTemplate, bool bool_param, typename... TArgs>
+static IAggregateFunction * createWithNumericBasedType(const IDataType & argument_type, TArgs && ... args)
+{
+    IAggregateFunction * f = createWithNumericType<AggregateFunctionTemplate, bool_param>(argument_type, args...);
+    if (f)
+        return f;
+
+    /// expects that DataTypeDate based on UInt16, DataTypeDateTime based on UInt32
+    WhichDataType which(argument_type);
+    if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<UInt16, bool_param>(args...);
+    if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<UInt32, bool_param>(args...);
+    if (which.idx == TypeIndex::Time) return new AggregateFunctionTemplate<Int32, bool_param>(args...);
+    if (which.idx == TypeIndex::UUID) return new AggregateFunctionTemplate<UUID, bool_param>(args...);
+    if (which.idx == TypeIndex::IPv4) return new AggregateFunctionTemplate<IPv4, bool_param>(args...);
+    if (which.idx == TypeIndex::IPv6) return new AggregateFunctionTemplate<IPv6, bool_param>(args...);
     return nullptr;
 }
 
@@ -166,7 +185,26 @@ static IAggregateFunction * createWithDecimalType(const IDataType & argument_typ
     if (which.idx == TypeIndex::Decimal128) return new AggregateFunctionTemplate<Decimal128>(args...);
     if (which.idx == TypeIndex::Decimal256) return new AggregateFunctionTemplate<Decimal256>(args...);
     if constexpr (AggregateFunctionTemplate<DateTime64>::DateTime64Supported)
+    {
         if (which.idx == TypeIndex::DateTime64) return new AggregateFunctionTemplate<DateTime64>(args...);
+        if (which.idx == TypeIndex::Time64) return new AggregateFunctionTemplate<Time64>(args...);
+    }
+    return nullptr;
+}
+
+template <template <typename, bool> class AggregateFunctionTemplate, bool bool_param, typename... TArgs>
+static IAggregateFunction * createWithDecimalType(const IDataType & argument_type, TArgs && ... args)
+{
+    WhichDataType which(argument_type);
+    if (which.idx == TypeIndex::Decimal32) return new AggregateFunctionTemplate<Decimal32, bool_param>(args...);
+    if (which.idx == TypeIndex::Decimal64) return new AggregateFunctionTemplate<Decimal64, bool_param>(args...);
+    if (which.idx == TypeIndex::Decimal128) return new AggregateFunctionTemplate<Decimal128, bool_param>(args...);
+    if (which.idx == TypeIndex::Decimal256) return new AggregateFunctionTemplate<Decimal256, bool_param>(args...);
+    if constexpr (AggregateFunctionTemplate<DateTime64, bool_param>::DateTime64Supported)
+    {
+        if (which.idx == TypeIndex::DateTime64) return new AggregateFunctionTemplate<DateTime64, bool_param>(args...);
+        if (which.idx == TypeIndex::Time64) return new AggregateFunctionTemplate<Time64, bool_param>(args...);
+    }
     return nullptr;
 }
 
@@ -179,7 +217,10 @@ static IAggregateFunction * createWithDecimalType(const IDataType & argument_typ
     if (which.idx == TypeIndex::Decimal128) return new AggregateFunctionTemplate<Decimal128, Data>(args...);
     if (which.idx == TypeIndex::Decimal256) return new AggregateFunctionTemplate<Decimal256, Data>(args...);
     if constexpr (AggregateFunctionTemplate<DateTime64, Data>::DateTime64Supported)
+    {
         if (which.idx == TypeIndex::DateTime64) return new AggregateFunctionTemplate<DateTime64, Data>(args...);
+        if (which.idx == TypeIndex::Time64) return new AggregateFunctionTemplate<Time64, Data>(args...);
+    }
     return nullptr;
 }
 

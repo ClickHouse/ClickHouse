@@ -1,0 +1,23 @@
+---
+description: 'Nothing データ型のドキュメント'
+sidebarTitle: 'Nothing'
+slug: /sql-reference/data-types/special-data-types/nothing
+title: 'Nothing'
+doc_type: 'reference'
+---
+
+このデータ型の唯一の目的は、値が想定されないケースを表すことです。したがって、`Nothing` 型の値は作成できません。
+
+たとえば、リテラル [NULL](/ja/reference/syntax#null) の型は `Nullable(Nothing)` です。[Nullable](/ja/reference/data-types/nullable) も参照してください。
+
+`Nothing` 型は、空の配列を表すためにも使用できます。
+
+```sql
+SELECT toTypeName(array())
+```
+
+```text
+┌─toTypeName(array())─┐
+│ Array(Nothing)      │
+└─────────────────────┘
+```

@@ -2,7 +2,7 @@
 
 #include <atomic>
 #include <variant>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 
 #include <Common/HashTable/HashSet.h>
@@ -49,14 +49,14 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
     }
 
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return element_count; }
 
-    double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
+    double getLoadFactor() const override { return static_cast<double>(element_count) / static_cast<double>(bucket_count); }
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
@@ -107,14 +107,69 @@ public:
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
+    /// A key may be loaded several times; each load appends a row and repoints the key.
     template <typename Value>
-    using ContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
+    struct ColumnAttributeKeyToRow
+    {
+        explicit ColumnAttributeKeyToRow(const DictionaryAttribute & dictionary_attribute) : values(dictionary_attribute) {}
 
-    using NullableSet = HashSet<UInt64, DefaultHash<UInt64>>;
+        [[nodiscard]] size_t size() const { return key_to_row.size(); }
+        [[nodiscard]] size_t capacity() const { return key_to_row.capacity(); }
+        ColumnAttributeValue<Value> operator[](size_t key) const { return values[key_to_row[key]]; }
+
+        void insert(UInt64 key, const Field & value)
+        {
+            UInt64 row = key_to_row[key];
+            if (row < row_to_key.size() && row_to_key[row] == key)
+                ++replaced_rows;
+
+            values.insert(value);
+            key_to_row[key] = row_to_key.size();
+            row_to_key.push_back(key);
+        }
+
+        /// Removes the rows of replaced values once they are the majority, so loading keeps at most twice the live rows.
+        /// When loading is finished, removes all of them and drops `row_to_key`, which is only needed for loading.
+        void removeReplacedRows(bool loading_finished)
+        {
+            if (replaced_rows != 0 && (loading_finished || replaced_rows * 2 > row_to_key.size()))
+            {
+                IColumn::Filter mask(row_to_key.size());
+                size_t kept_rows = 0;
+                for (size_t row = 0; row < row_to_key.size(); ++row)
+                {
+                    UInt64 key = row_to_key[row];
+                    mask[row] = key_to_row[key] == row;
+                    if (mask[row])
+                    {
+                        key_to_row[key] = kept_rows;
+                        row_to_key[kept_rows] = key;
+                        ++kept_rows;
+                    }
+                }
+
+                row_to_key.resize(kept_rows);
+                values.filter(mask, kept_rows);
+                replaced_rows = 0;
+            }
+
+            if (loading_finished)
+                row_to_key = {};
+        }
+
+        ColumnAttributeContainer<Value> values;
+        PaddedPODArray<UInt64> key_to_row;
+        PaddedPODArray<UInt64> row_to_key;
+        size_t replaced_rows = 0;
+    };
+
+    template <typename Value>
+    using ContainerType = std::conditional_t<is_column_attribute_value<Value>, ColumnAttributeKeyToRow<Value>, PaddedPODArray<Value>>;
+
+    using NullableSet = HashSet<UInt64, DefaultHash<UInt64>, HashTableGrower<>>;
 
     struct Attribute final
     {
-        AttributeUnderlyingType type;
         std::optional<NullableSet> is_nullable_set;
 
         std::variant<
@@ -141,13 +196,19 @@ private:
             ContainerType<IPv4>,
             ContainerType<IPv6>,
             ContainerType<std::string_view>,
-            ContainerType<Array>>
+            ContainerType<Array>,
+            ContainerType<Map>,
+            ContainerType<Object>>
             container;
+
+        AttributeUnderlyingType type;
     };
 
     void createAttributes();
 
     void blockToAttributes(const Block & block);
+
+    void removeReplacedRows(bool loading_finished);
 
     void updateData();
 
@@ -179,8 +240,8 @@ private:
     const DictionarySourcePtr source_ptr;
     const Configuration configuration;
 
-    std::vector<Attribute> attributes;
-    std::vector<bool> loaded_keys;
+    VectorWithMemoryTracking<Attribute> attributes;
+    VectorWithMemoryTracking<bool> loaded_keys;
 
     size_t bytes_allocated = 0;
     size_t hierarchical_index_bytes_allocated = 0;

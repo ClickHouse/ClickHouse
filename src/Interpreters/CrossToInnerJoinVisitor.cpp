@@ -58,7 +58,7 @@ struct JoinedElement
             join->kind = JoinKind::Cross;
     }
 
-    JoinKind getOriginalKind() const { return original_kind; }
+    [[nodiscard]] JoinKind getOriginalKind() const { return original_kind; }
 
     bool rewriteCrossToInner(ASTPtr on_expression)
     {
@@ -73,11 +73,11 @@ struct JoinedElement
         return true;
     }
 
-    ASTPtr arrayJoin() const { return element.array_join; }
-    const ASTTableJoin * tableJoin() const { return join; }
+    [[nodiscard]] ASTPtr arrayJoin() const { return element.array_join; }
+    [[nodiscard]] const ASTTableJoin * tableJoin() const { return join; }
 
-    bool canAttachOnExpression() const { return join && !join->on_expression; }
-    bool hasUsing() const { return join && join->using_expression_list; }
+    [[nodiscard]] bool canAttachOnExpression() const { return join && !join->on_expression; }
+    [[nodiscard]] bool hasUsing() const { return join && join->using_expression_list; }
 
 private:
     const ASTTablesInSelectQueryElement & element;
@@ -204,7 +204,17 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
 
 bool CrossToInnerJoinMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
 {
-    return !node->as<ASTSubquery>();
+    if (node->as<ASTSubquery>())
+        return false;
+
+    /// Do not descend into table expressions — they may contain
+    /// table functions like view(SELECT ... JOIN ...) whose inner
+    /// ASTSelectQuery has a different set of tables and must not be
+    /// processed by this visitor.
+    if (node->as<ASTTableExpression>())
+        return false;
+
+    return true;
 }
 
 void CrossToInnerJoinMatcher::visit(ASTPtr & ast, Data & data)

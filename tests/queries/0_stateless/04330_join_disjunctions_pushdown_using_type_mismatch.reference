@@ -1,0 +1,11 @@
+--- plan (enabled) ---
+Filter column: or(and(equals(__table1.x, \'FRANCE\'_String), equals(__table2.y, \'GERMANY\'_String)), and(equals(__table1.x, \'GERMANY\'_String), equals(__table2.y, \'FRANCE\'_String))) (removed)
+Filter column: or(equals(__table1.x, \'FRANCE\'_String), equals(__table1.x, \'GERMANY\'_String)) (removed)
+Filter column: or(equals(__table2.y, \'GERMANY\'_String), equals(__table2.y, \'FRANCE\'_String)) (removed)
+--- plan (disabled) ---
+Filter column: or(and(equals(__table1.x, \'FRANCE\'_String), equals(__table2.y, \'GERMANY\'_String)), and(equals(__table1.x, \'GERMANY\'_String), equals(__table2.y, \'FRANCE\'_String))) (removed)
+--- result (enabled) ---
+FRANCE	GERMANY
+GERMANY	FRANCE
+--- analyzer no crash ---
+1

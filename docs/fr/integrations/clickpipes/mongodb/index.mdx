@@ -1,0 +1,215 @@
+---
+sidebarTitle: 'Ingestion de données de MongoDB vers ClickHouse'
+description: 'Décrit comment connecter facilement MongoDB à ClickHouse Cloud.'
+slug: /integrations/clickpipes/mongodb
+title: 'Ingestion de données de MongoDB vers ClickHouse (avec CDC)'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import ChangingTLSSettings from '/snippets/fr/clickpipes/_changing_tls_settings.mdx';
+
+<Note>
+  Dans la console de ClickHouse Cloud et la documentation, &quot;table&quot; et &quot;collection&quot; sont employés indifféremment pour MongoDB.
+</Note>
+
+Vous pouvez utiliser ClickPipes pour ingérer des données depuis votre base de données MongoDB dans ClickHouse Cloud. La base de données MongoDB source peut être hébergée sur site ou dans le cloud à l’aide de services comme MongoDB Atlas.
+
+Les ClickPipes MongoDB peuvent être déployés et gérés manuellement à l’aide de l’interface utilisateur de ClickPipes, ainsi que par programmation à l’aide d’[OpenAPI](/fr/integrations/clickpipes/programmatic-access/openapi) et de [Terraform](/fr/integrations/clickpipes/programmatic-access/terraform).
+
+## Prérequis {#prerequisites}
+
+Pour commencer, vous devez d’abord vous assurer que votre base de données MongoDB est correctement configurée pour la réplication. Les étapes de configuration dépendent de la manière dont vous déployez MongoDB ; veuillez donc suivre le guide correspondant ci-dessous :
+
+1. [MongoDB Atlas](/fr/integrations/clickpipes/mongodb/source/atlas)
+
+2. [Generic MongoDB](/fr/integrations/clickpipes/mongodb/source/generic)
+
+3. [Amazon DocumentDB](/fr/integrations/clickpipes/mongodb/source/documentdb)
+
+Une fois votre base de données MongoDB source configurée, vous pouvez poursuivre la création de votre ClickPipe.
+
+## Créez votre ClickPipe {#create-your-clickpipe}
+
+Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’avez pas encore de compte, vous pouvez vous inscrire [ici](https://clickhouse.cloud/signUp?loc=docs-integrations-clickpipes-mongodb).
+
+1. Dans la console de ClickHouse Cloud, accédez à votre service ClickHouse Cloud.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![service ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+  </Frame>
+</div>
+
+2. Sélectionnez le bouton `Data Sources` dans le menu de gauche, puis cliquez sur « Set up a ClickPipe ».
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Sélectionner les importations](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+  </Frame>
+</div>
+
+3. Sélectionnez la tuile `MongoDB CDC`.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Sélectionner MongoDB](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp)
+  </Frame>
+</div>
+
+### Ajoutez la connexion à votre base de données MongoDB source {#add-your-source-mongodb-database-connection}
+
+4. Renseignez les informations de connexion de votre base de données MongoDB source, que vous avez configurée à l’étape des prérequis.
+
+<Info>
+  Avant de commencer à ajouter vos informations de connexion, assurez-vous d’avoir autorisé les adresses IP de ClickPipes dans vos règles de pare-feu. Sur la page suivante, vous trouverez une [liste des adresses IP de ClickPipes](/fr/integrations/clickpipes/networking/static-ips).
+  Pour plus d’informations, consultez les guides de configuration de la source MongoDB liés [en haut de cette page](#prerequisites).
+</Info>
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Renseigner les informations de connexion](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp)
+  </Frame>
+</div>
+
+#### (Facultatif) Modification des paramètres TLS {#optional-changing-tls-settings}
+
+<ChangingTLSSettings />
+
+#### (Facultatif) Configurer le tunnel SSH {#optional-set-up-ssh-tunneling}
+
+Vous pouvez spécifier les informations du tunnel SSH si votre base de données MongoDB source n&#39;est pas accessible publiquement.
+
+1. Activez le bouton bascule « Utiliser le tunnel SSH ».
+
+2. Renseignez les informations de connexion SSH.
+
+   <div className="ch-image-lg">
+     <Frame>
+       ![Tunnel SSH](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+     </Frame>
+   </div>
+
+3. Pour utiliser l&#39;authentification par clé, cliquez sur « Révoquer et générer une paire de clés » pour générer une nouvelle paire de clés, puis copiez la clé publique générée sur votre serveur SSH dans `~/.ssh/authorized_keys`.
+
+4. Cliquez sur « Vérifier la connexion » pour valider la connexion.
+
+<Note>
+  Assurez-vous d&#39;autoriser les [adresse IP de ClickPipes](/fr/integrations/clickpipes/networking/static-ips) dans vos règles de pare-feu pour l&#39;hôte bastion SSH afin que ClickPipes puisse établir le tunnel SSH.
+</Note>
+
+Une fois les informations de connexion renseignées, cliquez sur `Next`.
+
+#### Configurer les paramètres avancés {#advanced-settings}
+
+Vous pouvez configurer les paramètres avancés si nécessaire. Une brève description de chaque paramètre est fournie ci-dessous :
+
+* **Sync interval** : il s&#39;agit de l&#39;intervalle auquel ClickPipes interroge la base de données source pour détecter des changements. Cela a un impact sur le service ClickHouse de destination ; pour les utilisateurs attentifs aux coûts, nous recommandons de conserver une valeur plus élevée (supérieure à `3600`).
+* **Pull batch size** : le nombre de lignes à récupérer en une seule fois. Il s&#39;agit d&#39;un paramètre appliqué au mieux, qui peut ne pas être respecté dans tous les cas.
+* **Snapshot number of tables in parallel** : il s&#39;agit du nombre de tables qui seront récupérées en parallèle pendant le snapshot initial. Cela est utile si vous avez un grand nombre de tables et souhaitez contrôler le nombre de tables récupérées en parallèle.
+
+### Configurer les tables {#configure-the-tables}
+
+5. Vous pouvez ici sélectionner la base de données de destination de votre ClickPipe. Vous pouvez soit sélectionner une base de données existante, soit en créer une nouvelle.
+
+   <div className="ch-image-lg">
+     <Frame>
+       ![Sélectionner la base de données de destination](/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp)
+     </Frame>
+   </div>
+
+6. Vous pouvez sélectionner les tables à répliquer depuis la base de données MongoDB source. Lors de cette sélection, vous pouvez également renommer les tables dans la base de données ClickHouse de destination.
+
+Les collections peuvent être répliquées selon deux modes :
+
+* **Ingestion par défaut** : les documents sont ingérés tels quels dans ClickHouse avec le Type JSON. Dans ce cas, la table de destination comporte une colonne dédiée pour `id` et une autre, `doc`, contenant le document complet.
+* **Ingestion structurée** : les documents sont ingérés sous forme de lignes dans une table suivant un schéma commun à la collection. Ce schéma est inféré à partir d&#39;un échantillon lors de la création du pipeline d’ingestion. Pour activer ce mode, activez l&#39;option **Map document to columns** pour la collection.
+
+Lorsque l&#39;ingestion structurée est activée, la section **Column settings** répertorie les champs trouvés dans l&#39;échantillon avec leurs types ClickHouse inférés. Vous pouvez sélectionner les champs à répliquer en tant que colonnes ; la clé de document `_id` est toujours incluse, avec le type `String`.
+
+<div className="ch-image-md">
+  <Frame>
+    ![Paramètres d'ingestion structurée pour une collection](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-structured-ingestion.webp)
+  </Frame>
+</div>
+
+Les collections MongoDB étant polymorphes (c&#39;est-à-dire que les documents d&#39;une même collection peuvent avoir des schémas différents), l&#39;ingestion structurée doit gérer les enregistrements atypiques :
+
+* **Champs manquants :** toutes les colonnes structurées sont ingérées en tant que `Nullable` ; ainsi, si un champ est absent d&#39;un document, la colonne correspondante prend la valeur `NULL`.
+
+* **Champs supplémentaires :** les champs qui ne font pas partie du schéma inféré sont stockés au format JSON dans la colonne `_peerdb_malformed_data`, avec une clé par champ. Chaque clé contient `"unexpected_field": true` et la valeur d’origine sous `value` :
+
+  ```json
+  {
+    "rating": {
+      "unexpected_field": true,
+      "value": 4.5
+    }
+  }
+  ```
+
+  Ces données sont faciles à interroger et à analyser. Par exemple, pour lister les champs inattendus présents dans une table :
+
+  ```sql
+  SELECT DISTINCT arrayJoin(JSONAllPaths(_peerdb_malformed_data)) AS malformed
+  FROM movies
+  WHERE malformed LIKE '%.unexpected_field';
+  ```
+
+  📝 Remarque : si vous ne souhaitez pas que les valeurs des champs supplémentaires figurent dans la colonne `_peerdb_malformed_data`, vous pouvez activer l&#39;option **Hide unexpected values** pour la collection.
+
+* **Incompatibilité de type de champ :** les valeurs dont le type ne correspond pas à celui de la colonne sont également stockées dans la colonne `_peerdb_malformed_data`, avec une clé par champ. Chaque clé contient `"type_mismatch": true` et la valeur d’origine sous `value`. La colonne correspondante prend la valeur `NULL` :
+
+  ```json
+  {
+    "year": {
+      "type_mismatch": true,
+      "value": "two thousand nineteen"
+    }
+  }
+  ```
+
+  Pour lire un champ, que sa valeur corresponde ou non au type attendu, combinez la colonne avec sa valeur de repli :
+
+  ```sql
+  SELECT name, coalesce(year, _peerdb_malformed_data.year.value)
+  FROM movies;
+  ```
+
+📝 Remarque : les champs inclus dans `_peerdb_malformed_data` peuvent être considérés comme des valeurs aberrantes, pour lesquelles l&#39;ingestion se rabat sur une colonne JSON.
+
+Comme l&#39;ingestion structurée infère le schéma avant la création de la table, son activation permet de définir des expressions de partitionnement et des clés de tri personnalisées à partir des colonnes structurées.
+Toutes les colonnes structurées sont ingérées en tant que `Nullable`. Tenez-en compte lorsque vous écrivez une expression de clé de partitionnement ou que vous les utilisez dans une clé de tri. Dans ces cas, la table de destination est créée avec le paramètre `allow_nullable_key`.
+
+📝 Dans les deux modes d&#39;ingestion, vous pouvez activer l&#39;option **Persist deleted documents** si vous souhaitez que les événements de suppression conservent les valeurs supprimées dans le ClickHouse de destination. Notez que cela nécessite que `changeStreamPreAndPostImage` soit activé sur la collection source.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Option Persist deleted documents](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-persist-deleted-documents.webp)
+  </Frame>
+</div>
+
+### Vérifiez les autorisations et démarrez le ClickPipe {#review-permissions-and-start-the-clickpipe}
+
+7. Sélectionnez le rôle « Full access » dans le menu déroulant des autorisations, puis cliquez sur « Complete Setup ».
+
+   <div className="ch-image-lg">
+     <Frame>
+       ![Vérifier les autorisations](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+     </Frame>
+   </div>
+
+## Et ensuite ? {#whats-next}
+
+Une fois votre ClickPipe configuré pour répliquer les données de MongoDB vers ClickHouse Cloud, vous pouvez vous concentrer sur la façon d&#39;interroger et de modéliser vos données afin d&#39;obtenir des performances optimales.
+
+## Points à noter {#caveats}
+
+Voici quelques points à noter lors de l&#39;utilisation de ce connecteur :
+
+* MongoDB version 5.1.0 ou ultérieure est requise.
+* Nous utilisons l&#39;API native Change Streams de MongoDB pour le CDC, qui s&#39;appuie sur l&#39;oplog de MongoDB pour capturer les changements en temps réel.
+* Les documents MongoDB sont répliqués dans ClickHouse au format JSON type par défaut. Cela permet une gestion flexible du schéma et l&#39;utilisation du riche ensemble d&#39;opérateurs JSON de ClickHouse pour les requêtes et l&#39;analytics. Vous pouvez en savoir plus sur l&#39;interrogation des données JSON [ici](/fr/reference/data-types/newjson).

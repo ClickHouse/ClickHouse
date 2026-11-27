@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Formats/FormatSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
@@ -14,21 +15,21 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
     MergeTreeIndexGranuleMinMax(
         const String & index_name_,
         const Block & index_sample_block_,
-        std::vector<Range> && hyperrectangle_);
+        Ranges && hyperrectangle_);
 
     ~MergeTreeIndexGranuleMinMax() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return hyperrectangle.empty(); }
+    [[nodiscard]] bool empty() const override { return hyperrectangle.empty(); }
 
-    size_t memoryUsageBytes() const override { return hyperrectangle.capacity() * sizeof(Range); }
+    [[nodiscard]] size_t memoryUsageBytes() const override { return hyperrectangle.capacity() * sizeof(Range); }
 
     const String & index_name;
     const Block & index_sample_block;
 
-    std::vector<Range> hyperrectangle;
+    Ranges hyperrectangle;
     Serializations serializations;
     DataTypes datatypes;
     FormatSettings format_settings;
@@ -40,13 +41,13 @@ struct MergeTreeIndexAggregatorMinMax final : IMergeTreeIndexAggregator
     MergeTreeIndexAggregatorMinMax(const String & index_name_, const Block & index_sample_block);
     ~MergeTreeIndexAggregatorMinMax() override = default;
 
-    bool empty() const override { return hyperrectangle.empty(); }
+    [[nodiscard]] bool empty() const override { return hyperrectangle.empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
 
     String index_name;
     Block index_sample_block;
-    std::vector<Range> hyperrectangle;
+    Ranges hyperrectangle;
 };
 
 
@@ -58,9 +59,11 @@ public:
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context);
 
-    bool alwaysUnknownOrTrue() const override;
+    [[nodiscard]] bool alwaysUnknownOrTrue() const override;
 
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
+    [[nodiscard]] bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
+
+    [[nodiscard]] std::string getDescription() const override;
 
     ~MergeTreeIndexConditionMinMax() override = default;
 private:
@@ -72,20 +75,29 @@ private:
 class MergeTreeIndexMinMax : public IMergeTreeIndex
 {
 public:
-    explicit MergeTreeIndexMinMax(const IndexDescription & index_)
-        : IMergeTreeIndex(index_)
+    MergeTreeIndexMinMax(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_)
+        : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
     {}
 
     ~MergeTreeIndexMinMax() override = default;
 
-    MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    [[nodiscard]] MergeTreeIndexGranulePtr createIndexGranule() const override;
+    [[nodiscard]] MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
-    MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
-    MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override; /// NOLINT
+    [[nodiscard]] MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
+    /// Format changed `.idx` (v1) -> `.idx2` (v2); a part may hold either.
+    [[nodiscard]] MergeTreeIndexSubstreams getPotentialSubstreams() const override
+    {
+        return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}, {MergeTreeIndexSubstream::Type::Regular, "", ".idx"}};
+    }
+    using IMergeTreeIndex::getPhysicalFormat;
+    [[nodiscard]] MergeTreeIndexFormat getPhysicalFormat(
+        const MergeTreeDataPartChecksums & checksums,
+        const IDataPartStorage & storage,
+        const std::string & relative_path_prefix) const override;
 };
 
 struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranules
@@ -110,21 +122,31 @@ struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranul
     };
 
     explicit MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_,
-                                              int direction_, size_t size_hint_, bool store_map_ = false);
+                                              size_t index_granularity_, int direction_, size_t size_hint_, size_t last_part_granule_, bool store_map_ = false);
     void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    [[nodiscard]] size_t numValues() const override { return granules.size(); }
 
-    void getTopKMarks(size_t n, std::vector<MinMaxGranule> & result);
-    static void getTopKMarks(int direction, size_t n, const std::vector<std::vector<MinMaxGranule>> & parts, std::vector<MarkRanges> & result);
+    void getTopKMarks(size_t n, bool handle_ties, std::vector<MinMaxGranule> & result);
+    static void getTopKMarks(int direction, size_t n, size_t index_granularity, bool handle_ties,
+                                const std::vector<std::vector<MinMaxGranule>> & parts, std::vector<MarkRanges> & result);
 
     std::vector<MinMaxGranule> granules;
     std::unordered_map<size_t, size_t> granules_map;
 
 private:
+    template<bool handle_ties>
+    void getTopKMarks(size_t n, std::vector<MinMaxGranule> & result);
+
+    template<bool handle_ties>
+    static void getTopKMarks(int direction, size_t n, size_t index_granularity, const std::vector<std::vector<MinMaxGranule>> & parts, std::vector<MarkRanges> & result);
+
     SerializationPtr serialization;
     [[maybe_unused]] const String & index_name;
     const Block & index_sample_block;
     FormatSettings format_settings;
+    size_t index_granularity;
     int direction;
+    size_t last_part_granule;
     bool empty = true;
     bool store_map = false;
 };

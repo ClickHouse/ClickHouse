@@ -1,0 +1,19 @@
+0	3	18
+1	3	13
+1	4	19
+2	4	14
+Expression (Project names)
+  GatherExchange (sorted by (__table1.dst_ip ASC, __table1.src_ip ASC, __table1.bytes ASC))
+    Sorting (Sorting for ORDER BY)
+      ScatterExchange (any scatter)
+        Expression ((Before ORDER BY + Projection))
+          Expression ((WHERE + Change column names to column identifiers))
+            ReadFromMergeTree (default.test)
+------------------
+Expression (Project names)
+  GatherExchange (sorted by (__table1.dst_ip ASC, __table1.src_ip ASC, __table1.bytes ASC))
+    Sorting (Sorting for ORDER BY)
+      ScatterExchange (any scatter)
+        Expression ((Before ORDER BY + Projection))
+          Expression ((WHERE + Change column names to column identifiers))
+            ReadFromMergeTree (default.test)

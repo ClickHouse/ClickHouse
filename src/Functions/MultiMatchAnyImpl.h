@@ -3,7 +3,6 @@
 #include <base/types.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/checkHyperscanRegexp.h>
 #include <Functions/Regexps.h>
 
@@ -85,23 +84,12 @@ struct MultiMatchAnyImpl
 #if !USE_VECTORSCAN
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse has been built without Hyperscan functions");
 #else
-        if (!allow_hyperscan)
-            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0");
-
-        std::vector<std::string_view> needles;
+        VectorWithMemoryTracking<std::string_view> needles;
         needles.reserve(needles_arr.size());
         for (const auto & needle : needles_arr)
             needles.emplace_back(needle.safeGet<String>());
 
-        checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
-
-        if (reject_expensive_hyperscan_regexps)
-        {
-            SlowWithHyperscanChecker checker;
-            for (auto needle : needles)
-                if (checker.isSlow(needle))
-                    throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Regular expression evaluation in vectorscan will be too slow. To ignore this error, disable setting 'reject_expensive_hyperscan_regexps'.");
-        }
+        checkHyperscanFunctionArguments(needles, allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps);
 
         res.resize(input_rows_count);
 
@@ -202,7 +190,8 @@ struct MultiMatchAnyImpl
 
         const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
 
-        std::vector<std::string_view> needles;
+        VectorWithMemoryTracking<std::string_view> needles;
+        MultiRegexps::GlobalCacheCounters cache_counters;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -229,7 +218,7 @@ struct MultiMatchAnyImpl
                         throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Regular expression evaluation in vectorscan will be too slow. To ignore this error, disable setting 'reject_expensive_hyperscan_regexps'.");
             }
 
-            MultiRegexps::DeferredConstructedRegexpsPtr deferred_constructed_regexps = MultiRegexps::getOrSet</*SaveIndices*/ FindAnyIndex, WithEditDistance>(needles, edit_distance);
+            MultiRegexps::DeferredConstructedRegexpsPtr deferred_constructed_regexps = MultiRegexps::getOrSet</*SaveIndices*/ FindAnyIndex, WithEditDistance>(needles, edit_distance, cache_counters);
             MultiRegexps::Regexps * regexps = deferred_constructed_regexps->get();
             hs_scratch_t * scratch = nullptr;
             hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);

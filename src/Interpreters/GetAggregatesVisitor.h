@@ -15,6 +15,14 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+/** Suggested when an aggregate function is rejected in WHERE or PREWHERE. Shared by both analyzers so
+  * that the two paths give the same advice; the analyzer's copy of the check is in
+  * `Analyzer/ValidationUtils.cpp`.
+  */
+inline constexpr const char * AGGREGATE_IN_WHERE_HINT
+    = ". Aggregate functions are not allowed in WHERE and PREWHERE, because they are computed after "
+      "filtering; use HAVING to filter by the result of an aggregation";
+
 class GetAggregatesMatcher
 {
 public:
@@ -23,6 +31,8 @@ public:
     struct Data
     {
         const char * assert_no_aggregates = nullptr;
+        /// Appended to the message of `assert_no_aggregates`; use it to say what to write instead.
+        const char * assert_no_aggregates_hint = "";
         const char * assert_no_windows = nullptr;
         std::unordered_set<String> uniq_names {};
         ASTs aggregates{};
@@ -65,8 +75,9 @@ private:
         if (isAggregateFunction(node))
         {
             if (data.assert_no_aggregates)
-                throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Aggregate function {} is found {} in query",
-                                node.getColumnName(), String(data.assert_no_aggregates));
+                throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Aggregate function {} is found {} in query{}",
+                                node.getColumnName(), String(data.assert_no_aggregates),
+                                String(data.assert_no_aggregates_hint));
 
             String column_name = node.getColumnName();
             if (data.uniq_names.contains(column_name))
@@ -75,7 +86,7 @@ private:
             data.uniq_names.insert(column_name);
             data.aggregates.push_back(ast);
         }
-        else if (node.is_window_function)
+        else if (node.isWindowFunction())
         {
             if (data.assert_no_windows)
                 throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Window function {} is found {} in query",
@@ -101,7 +112,7 @@ private:
     {
         // Aggregate functions can also be calculated as window functions, but
         // here we are interested in aggregate functions calculated in GROUP BY.
-        return !node.is_window_function && AggregateUtils::isAggregateFunction(node);
+        return !node.isWindowFunction() && AggregateUtils::isAggregateFunction(node);
     }
 };
 
@@ -114,9 +125,9 @@ inline void assertNoWindows(const ASTPtr & ast, const char * description)
     GetAggregatesVisitor(data).visit(ast);
 }
 
-inline void assertNoAggregates(const ASTPtr & ast, const char * description)
+inline void assertNoAggregates(const ASTPtr & ast, const char * description, const char * hint = "")
 {
-    GetAggregatesVisitor::Data data{.assert_no_aggregates = description};
+    GetAggregatesVisitor::Data data{.assert_no_aggregates = description, .assert_no_aggregates_hint = hint};
     GetAggregatesVisitor(data).visit(ast);
 }
 

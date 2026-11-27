@@ -1,0 +1,5 @@
+Tuple(AggregateFunction(any, Nullable(UInt8)))
+1
+Tuple(AggregateFunction(any_respect_nulls, Nullable(UInt8)))
+Tuple(AggregateFunction(any_respect_nulls, Nullable(UInt8)))
+Tuple(Array(UInt8), Array(UInt64))

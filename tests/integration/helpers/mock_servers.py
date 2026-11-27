@@ -7,7 +7,7 @@ import time
 # Starts simple HTTP servers written in Python.
 # Parameters:
 # `script_dir` contains a path to the directory containing server scripts.
-# `mocks` is a list of tuples (server_script, container_name, port), where
+# `mocks` is a list of tuples (server_script, container_name, port[, args]), where
 #     `server_script` is a name of a python file inside `script_dir`,
 #     `container_name` is usually "resolver" (see docker/test/integration/resolver)
 def start_mock_servers(cluster, script_dir, mocks, timeout=100):
@@ -32,11 +32,9 @@ def start_mock_servers(cluster, script_dir, mocks, timeout=100):
         container_id = cluster.get_container_id(container)
         mocks_to_check[server_name] = (container_id, port)
 
-        cluster.copy_file_to_container(
-            container_id,
-            filepath,
-            server_name,
-        )
+        # The working directory is `/`, which a non-root test runner cannot write to.
+        dest_path = f"/tmp/{server_name}"
+        cluster.copy_file_to_container(container_id, filepath, dest_path)
 
         logs_dir = (
             "/var/log/resolver"
@@ -53,7 +51,7 @@ def start_mock_servers(cluster, script_dir, mocks, timeout=100):
             [
                 "bash",
                 "-c",
-                f"python3 {server_name} {port} {' '.join(args)} >{log_file} 2>{err_log_file}",
+                f"python3 {dest_path} {port} {' '.join(args)} >{log_file} 2>{err_log_file}",
             ],
             detach=True,
         )

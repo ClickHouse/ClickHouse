@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <limits>
 #include <memory> // for std::unique_ptr
 #include <base/types.h>
@@ -8,9 +9,7 @@
 #include <AggregateFunctions/DDSketch/Mapping.h>
 #include <AggregateFunctions/DDSketch/Store.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -70,7 +69,7 @@ public:
         count += weight;
     }
 
-    Float64 get(Float64 quantile) const
+    [[nodiscard]] Float64 get(Float64 quantile) const
     {
         if (quantile < 0 || quantile > 1 || count == 0)
         {
@@ -78,7 +77,7 @@ public:
         }
 
         Float64 rank = quantile * (count - 1);
-        Float64 quantile_value;
+        Float64 quantile_value = 0;
         if (rank < negative_store->count)
         {
             Float64 reversed_rank = negative_store->count - rank - 1;
@@ -97,9 +96,9 @@ public:
         return quantile_value;
     }
 
-    Float64 getGamma() const { return mapping->getGamma(); }
+    [[nodiscard]] Float64 getGamma() const { return mapping->getGamma(); }
 
-    Float64 getCount() const { return count; }
+    [[nodiscard]] Float64 getCount() const { return count; }
 
     void copy(const DDSketchDenseLogarithmic & other)
     {
@@ -180,20 +179,23 @@ public:
         }
         mapping->deserialize(buf);
 
+        /// reject bins with impossible keys now, otherwise they only blow up later during a merge
+        const auto [min_valid_key, max_valid_key] = mapping->validKeyRange();
+
         // Read the positive and negative stores
         readBinary(flag, buf);
         if (flag != enc.FlagTypePositiveStore)
         {
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid flag for positive store");
         }
-        store->deserialize(buf);
+        store->deserialize(buf, min_valid_key, max_valid_key);
 
         readBinary(flag, buf);
         if (flag != enc.FlagTypeNegativeStore)
         {
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid flag for negative store");
         }
-        negative_store->deserialize(buf);
+        negative_store->deserialize(buf, min_valid_key, max_valid_key);
 
         // Read the zero count
         readBinary(flag, buf);
@@ -202,7 +204,12 @@ public:
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid flag for zero count");
         }
         readBinary(zero_count, buf);
+        if (!std::isfinite(zero_count) || zero_count < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid zero_count in DDSketch: {}", zero_count);
+
         count = negative_store->count + zero_count + store->count;
+        if (!std::isfinite(count))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid total count in DDSketch: {}", count);
     }
 
     /// NOLINTEND(readability-static-accessed-through-instance)
@@ -216,7 +223,7 @@ private:
     DDSketchEncoding enc;
 
 
-    DDSketchDenseLogarithmic changeMapping(Float64 new_gamma) const
+    [[nodiscard]] DDSketchDenseLogarithmic changeMapping(Float64 new_gamma) const
     {
         auto new_mapping = std::make_unique<DDSketchLogarithmicMapping>((new_gamma - 1) / (new_gamma + 1));
 
@@ -230,14 +237,25 @@ private:
                 int old_index = i + old_store.offset;
                 Float64 old_bin_count = old_store.bins[i];
 
+                if (old_bin_count == 0)
+                    continue;
+
                 Float64 in_lower_bound = this->mapping->lowerBound(old_index);
                 Float64 in_upper_bound = this->mapping->lowerBound(old_index + 1);
                 Float64 in_size = in_upper_bound - in_lower_bound;
 
+                if (!std::isfinite(in_lower_bound) || !std::isfinite(in_upper_bound) || in_size <= 0)
+                    continue;
+
                 int new_index = new_mapping->key(in_lower_bound);
                 // Distribute counts to new bins
+                static constexpr int max_remap_iterations = 100000;
+                int iterations = 0;
                 for (; new_mapping->lowerBound(new_index) < in_upper_bound; ++new_index)
                 {
+                    if (++iterations > max_remap_iterations)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many iterations in DDSketch changeMapping");
+
                     Float64 out_lower_bound = new_mapping->lowerBound(new_index);
                     Float64 out_upper_bound = new_mapping->lowerBound(new_index + 1);
                     Float64 lower_intersection_bound = std::max(out_lower_bound, in_lower_bound);

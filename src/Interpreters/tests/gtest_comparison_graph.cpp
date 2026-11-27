@@ -20,7 +20,7 @@ TEST(ComparisonGraph, Bounds)
     String query = "x <= 1, 1 < c, 3 < c, c < d, d < e, e < 7, e < 10, 10 <= y";
     auto graph = getGraph(query);
 
-    auto d = std::make_shared<ASTIdentifier>("d");
+    auto d = make_intrusive<ASTIdentifier>("d");
 
     {
         auto res = graph.getConstLowerBound(d);
@@ -43,8 +43,8 @@ TEST(ComparisonGraph, Bounds)
     }
 
     {
-        auto x = std::make_shared<ASTIdentifier>("x");
-        auto y = std::make_shared<ASTIdentifier>("y");
+        auto x = make_intrusive<ASTIdentifier>("x");
+        auto y = make_intrusive<ASTIdentifier>("y");
 
         ASSERT_EQ(graph.compare(x, y), ComparisonGraphCompareResult::LESS);
         ASSERT_EQ(graph.compare(y, x), ComparisonGraphCompareResult::GREATER);
@@ -98,8 +98,8 @@ TEST(ComparisonGraph, Compare)
         String query = "a >= b, c >= b";
         auto graph = getGraph(query);
 
-        auto a = std::make_shared<ASTIdentifier>("a");
-        auto c = std::make_shared<ASTIdentifier>("c");
+        auto a = make_intrusive<ASTIdentifier>("a");
+        auto c = make_intrusive<ASTIdentifier>("c");
 
         ASSERT_EQ(graph.compare(a, c), UNKNOWN);
     }
@@ -108,9 +108,9 @@ TEST(ComparisonGraph, Compare)
         String query = "a >= b, b > c";
         auto graph = getGraph(query);
 
-        auto a = std::make_shared<ASTIdentifier>("a");
-        auto b = std::make_shared<ASTIdentifier>("b");
-        auto c = std::make_shared<ASTIdentifier>("c");
+        auto a = make_intrusive<ASTIdentifier>("a");
+        auto b = make_intrusive<ASTIdentifier>("b");
+        auto c = make_intrusive<ASTIdentifier>("c");
 
         ASSERT_EQ(graph.compare(a, c), GREATER);
         ASSERT_EQ(graph.compare(a, b), GREATER_OR_EQUAL);
@@ -121,9 +121,9 @@ TEST(ComparisonGraph, Compare)
         String query = "a != b, c < a";
         auto graph = getGraph(query);
 
-        auto a = std::make_shared<ASTIdentifier>("a");
-        auto b = std::make_shared<ASTIdentifier>("b");
-        auto c = std::make_shared<ASTIdentifier>("c");
+        auto a = make_intrusive<ASTIdentifier>("a");
+        auto b = make_intrusive<ASTIdentifier>("b");
+        auto c = make_intrusive<ASTIdentifier>("c");
 
         ASSERT_EQ(graph.compare(a, b), NOT_EQUAL);
         ASSERT_EQ(graph.compare(a, c), GREATER);
@@ -146,12 +146,12 @@ TEST(ComparisonGraph, Compare)
         String query = "a >= 3, b > a, c >= 3, d >= c";
         auto graph = getGraph(query);
 
-        auto a = std::make_shared<ASTIdentifier>("a");
-        auto b = std::make_shared<ASTIdentifier>("b");
-        auto d = std::make_shared<ASTIdentifier>("d");
-        auto lit_2 = std::make_shared<ASTLiteral>(2u);
-        auto lit_3 = std::make_shared<ASTLiteral>(3u);
-        auto lit_4 = std::make_shared<ASTLiteral>(4u);
+        auto a = make_intrusive<ASTIdentifier>("a");
+        auto b = make_intrusive<ASTIdentifier>("b");
+        auto d = make_intrusive<ASTIdentifier>("d");
+        auto lit_2 = make_intrusive<ASTLiteral>(2u);
+        auto lit_3 = make_intrusive<ASTLiteral>(3u);
+        auto lit_4 = make_intrusive<ASTLiteral>(4u);
 
         ASSERT_EQ(graph.compare(lit_3, a), LESS_OR_EQUAL);
         ASSERT_FALSE(graph.isAlwaysCompare(LESS, lit_3, a));
@@ -170,10 +170,10 @@ TEST(ComparisonGraph, Compare)
         String query = "a >= 5, a <= 10";
         auto graph = getGraph(query);
 
-        auto a = std::make_shared<ASTIdentifier>("a");
-        auto lit_8 = std::make_shared<ASTLiteral>(8);
-        auto lit_3 = std::make_shared<ASTLiteral>(3);
-        auto lit_15 = std::make_shared<ASTLiteral>(15);
+        auto a = make_intrusive<ASTIdentifier>("a");
+        auto lit_8 = make_intrusive<ASTLiteral>(8);
+        auto lit_3 = make_intrusive<ASTLiteral>(3);
+        auto lit_15 = make_intrusive<ASTLiteral>(15);
 
         ASSERT_EQ(graph.compare(a, lit_8), UNKNOWN);
         ASSERT_EQ(graph.compare(a, lit_3), GREATER);

@@ -14,11 +14,11 @@ namespace DB
 class ParserShowProcesslistQuery : public IParserBase
 {
 protected:
-    const char * getName() const override { return "SHOW PROCESSLIST query"; }
+    [[nodiscard]] const char * getName() const override { return "SHOW PROCESSLIST query"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
-        auto query = std::make_shared<ASTShowProcesslistQuery>();
+        auto query = make_intrusive<ASTShowProcesslistQuery>();
 
         if (!ParserKeyword(Keyword::SHOW_PROCESSLIST).ignore(pos, expected))
             return false;

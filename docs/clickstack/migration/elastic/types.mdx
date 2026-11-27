@@ -1,0 +1,70 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/types
+title: 'Mapping types'
+sidebarTitle: 'Types'
+description: 'Mapping types in ClickHouse and Elasticsearch'
+show_related_blogs: true
+keywords: ['JSON', 'Codecs']
+doc_type: 'reference'
+---
+
+Elasticsearch and ClickHouse support a wide variety of data types, but their underlying storage and query models are fundamentally different. This section maps commonly used Elasticsearch field types to their ClickHouse equivalents, where available, and provides context to help guide migrations. Where no equivalent exists, alternatives or notes are provided in the comments.
+
+| **Elasticsearch Type**        | **ClickHouse Equivalent**   | **Comments** |
+|-------------------------------|------------------------------|--------------|
+| `boolean`                     | [`UInt8`](/reference/data-types/int-uint)  or [`Bool`](/reference/data-types/boolean)        | ClickHouse supports `Boolean` as an alias for `UInt8` in newer versions. |
+| `keyword`                     | [`String`](/reference/data-types/string)                    | Used for exact-match filtering, grouping, and sorting. |
+| `text`                        | [`String`](/reference/data-types/string)                    | Full-text search is limited in ClickHouse; tokenization requires custom logic using functions such as `tokens` combined with array functions. |
+| `long`                        | [`Int64`](/reference/data-types/int-uint)                     | 64-bit signed integer. |
+| `integer`                    | [`Int32`](/reference/data-types/int-uint)                      | 32-bit signed integer. |
+| `short`                       | [`Int16`](/reference/data-types/int-uint)                      | 16-bit signed integer. |
+| `byte`                        | [`Int8`](/reference/data-types/int-uint)                       | 8-bit signed integer. |
+| `unsigned_long`              | [`UInt64`](/reference/data-types/int-uint)                    | Unsigned 64-bit integer. |
+| `double`                      | [`Float64`](/reference/data-types/float)                   | 64-bit floating-point. |
+| `float`                       | [`Float32`](/reference/data-types/float)                   | 32-bit floating-point. |
+| `half_float`                 | [`Float32`](/reference/data-types/float) or [`BFloat16`](/reference/data-types/float)      | Closest equivalent. ClickHouse doesn't have a 16-bit float. ClickHouse has a `BFloat16`- this is different from Half-float IEE-754: half-float offers higher precision with a smaller range, while bfloat16 sacrifices precision for a wider range, making it better suited for machine learning workloads. |
+| `scaled_float`              | [`Decimal(x, y)`](/reference/data-types/decimal)             | Store fixed-point numeric values. |
+| `date`         | [`DateTime`](/reference/data-types/datetime)    | Equivalent date types with second precision. |
+| `date_nanos`         | [`DateTime64`](/reference/data-types/datetime64)    | ClickHouse supports nanosecond precision with `DateTime64(9)`. |
+| `binary`                      | [`String`](/reference/data-types/string), [`FixedString(N)`](/reference/data-types/fixedstring)  | Needs base64 decoding for binary fields. |
+| `ip`                          | [`IPv4`](/reference/data-types/ipv4), [`IPv6`](/reference/data-types/ipv6)    | Native `IPv4` and `IPv6` types available. |
+| `object`                      | [`Nested`](/reference/data-types/nested-data-structures/index), [`Map`](/reference/data-types/map), [`Tuple`](/reference/data-types/tuple), [`JSON`](/reference/data-types/newjson) | ClickHouse can model JSON-like objects using [`Nested`](/reference/data-types/nested-data-structures/index) or [`JSON`](/reference/data-types/newjson). |
+| `flattened`                  | [`String`](/reference/data-types/string)                      | The flattened type in Elasticsearch stores entire JSON objects as single fields, enabling flexible, schemaless access to nested keys without full mapping. In ClickHouse, similar functionality can be achieved using the String type, but requires processing to be done in materialized views. |
+| `nested`                      | [`Nested`](/reference/data-types/nested-data-structures/index)                    | ClickHouse `Nested` columns provide similar semantics for grouped sub fields assuming users use `flatten_nested=0`. |
+| `join`                        | NA                           | No direct concept of parent-child relationships. Not required in ClickHouse as joins across tables are supported. |
+| `alias`                       | [`Alias`](/reference/statements/create/table#alias) column modifier      | Aliases [are supported](/reference/statements/create/table#alias) through a field modifier. Functions can be applied to these alias e.g. `size String ALIAS formatReadableSize(size_bytes)`|
+| `range` types (`*_range`)     | [`Tuple(start, end)`](/reference/data-types/tuple) or [`Array(T)`](/reference/data-types/array) | ClickHouse has no native range type, but numerical and date ranges can be represented using [`Tuple(start, end)`](/reference/data-types/tuple) or [`Array`](/reference/data-types/array) structures. For IP ranges (`ip_range`), store CIDR values as `String` and evaluate with functions like `isIPAddressInRange()`. Alternatively, consider `ip_trie` based lookup dictionaries for efficient filtering. |
+| `aggregate_metric_double`     | [`AggregateFunction(...)`](/reference/data-types/aggregatefunction) and [`SimpleAggregateFunction(...)`](/reference/data-types/simpleaggregatefunction)    | Use aggregate function states and materialized views to model pre-aggregated metrics. All aggregation functions support aggregate states.|
+| `histogram`                   | [`Tuple(Array(Float64), Array(UInt64))`](/reference/data-types/tuple) | Manually represent buckets and counts using arrays or custom schemas. |
+| `annotated-text`              | [`String`](/reference/data-types/string)                    | No built-in support for entity-aware search or annotations. |
+| `completion`, `search_as_you_type` | NA                    | No native autocomplete or suggester engine. Can be reproduced with `String` and [search functions](/reference/functions/regular-functions/string-search-functions). |
+| `semantic_text`               | NA                           | No native semantic search - generate embeddings and use vector search. |
+| `token_count`                 | [`Int32`](/reference/data-types/int-uint)                    | Use during ingestion to compute token count manually e.g. `length(tokens())` function e.g. with a Materialized column |
+| `dense_vector`                | [`Array(Float32)`](/reference/data-types/array)            | Use arrays for embedding storage |
+| `sparse_vector`               | [`Map(UInt32, Float32)`](/reference/data-types/map)      | Simulate sparse vectors with maps. No native sparse vector support. |
+| `rank_feature` / `rank_features` | [`Float32`](/reference/data-types/float), [`Array(Float32)`](/reference/data-types/array) | No native query-time boosting, but can be modeled manually in scoring logic. |
+| `geo_point`                   | [`Tuple(Float64, Float64)`](/reference/data-types/tuple) or [`Point`](/reference/data-types/geo#point) | Use tuple of (latitude, longitude). [`Point`](/reference/data-types/geo#point) is available as a ClickHouse type. |
+| `geo_shape`, `shape`          | [`Ring`](/reference/data-types/geo#ring), [`LineString`](/reference/data-types/geo#linestring), [`MultiLineString`](/reference/data-types/geo#multilinestring), [`Polygon`](/reference/data-types/geo#polygon), [`MultiPolygon`](/reference/data-types/geo#multipolygon)                          | Native support for geo shapes and spatial indexing. |
+| `percolator`                  | NA                           | No concept of indexing queries. Use standard SQL + Incremental Materialized Views instead. |
+| `version`                     | [`String`](/reference/data-types/string)                    | ClickHouse doesn't have a native version type. Store versions as strings and use custom UDFs functions to perform semantic comparisons if needed. Consider normalizing to numeric formats if range queries are required. |
+
+### Notes {#notes}
+
+- **Arrays**: In Elasticsearch, all fields support arrays natively. In ClickHouse, arrays must be explicitly defined (e.g., `Array(String)`), with the advantage specific positions can be accessed and queried e.g. `an_array[1]`.
+- **Multi-fields**: Elasticsearch allows indexing the [same field multiple ways](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/multi-fields#_multi_fields_with_multiple_analyzers) (e.g., both `text` and `keyword`). In ClickHouse, this pattern must be modeled using separate columns or views.
+- **Map and JSON Types** - In ClickHouse, the [`Map`](/reference/data-types/map) type is commonly used to model dynamic key-value structures such as `resourceAttributes` and `logAttributes`. This type enables flexible schema-less ingestion by allowing arbitrary keys to be added at runtime — similar in spirit to JSON objects in Elasticsearch. However, there are important limitations to consider:
+
+  - **Uniform value types**: ClickHouse [`Map`](/reference/data-types/map) columns must have a consistent value type (e.g., `Map(String, String)`). Mixed-type values aren't supported without coercion.
+  - **Performance cost**: accessing any key in a [`Map`](/reference/data-types/map) requires loading the entire map into memory, which can be suboptimal for performance.
+  - **No subcolumns**: unlike JSON, keys in a [`Map`](/reference/data-types/map) aren't represented as true subcolumns, which limits ClickHouse’s ability to index, compress, and query efficiently.
+
+  Because of these limitations, ClickStack is migrating away from [`Map`](/reference/data-types/map) in favor of ClickHouse's enhanced [`JSON`](/reference/data-types/newjson) type. The [`JSON`](/reference/data-types/newjson) type addresses many of the shortcomings of `Map`:
+
+  - **True columnar storage**: each JSON path is stored as a subcolumn, allowing efficient compression, filtering, and vectorized query execution.
+  - **Mixed-type support**: different data types (e.g., integers, strings, arrays) can coexist under the same path without coercion or type unification.
+  - **File system scalability**: internal limits on dynamic keys (`max_dynamic_paths`) and types (`max_dynamic_types`) prevent an explosion of column files on disk, even with high cardinality key sets.
+  - **Dense storage**: nulls and missing values are stored sparsely to avoid unnecessary overhead.
+
+    The [`JSON`](/reference/data-types/newjson) type is especially well-suited for observability workloads, offering the flexibility of schemaless ingestion with the performance and scalability of native ClickHouse types — making it an ideal replacement for [`Map`](/reference/data-types/map) in dynamic attribute fields.
+
+    For further details on the JSON type we recommend the [JSON guide](/guides/clickhouse/data-formats/json/intro) and ["How we built a new powerful JSON data type for ClickHouse"](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse).

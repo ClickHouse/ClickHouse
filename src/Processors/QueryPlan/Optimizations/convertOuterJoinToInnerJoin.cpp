@@ -4,8 +4,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -14,7 +12,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryConvertOuterJoinToInnerJoinLegacy(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
+static size_t tryConvertOuterJoinToInnerJoinLegacy(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 {
     auto & parent = parent_node->step;
     auto * filter = typeid_cast<FilterStep *>(parent.get());
@@ -92,64 +90,17 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
         filter->getExpression(),
         filter->getFilterColumnName(),
         *interesting_side_header,
-        /*allow_unknown_function_arguments=*/true);
+        /*allow_unknown_function_arguments=*/true,
+        interesting_side_plan_node);
 
     /// If not matched rows are not always filtered out, then we cannot convert ANY OUTER JOIN to INNER JOIN
     /// See discussion in https://github.com/ClickHouse/ClickHouse/issues/66447
     if (result_for_not_matched_rows != FilterResult::FALSE)
         return 0;
 
-    auto key_dags = join_step->preCalculateKeys(join_node->children.front()->step->getOutputHeader(), join_node->children.back()->step->getOutputHeader());
-    if (!key_dags)
+    /// With at most one match for every row of the other side, `ALL` gives the rows `ANY` does.
+    if (!matchesAtMostOneRow(*join_step, *interesting_side_plan_node, check_left_stream ? JoinTableSide::Left : JoinTableSide::Right))
         return 0;
-
-    const auto & key_dags_interesting_side = check_left_stream ? key_dags->first : key_dags->second;
-    NameSet join_keys_interesting_side = std::ranges::to<NameSet>(key_dags_interesting_side.keys | std::views::transform(
-        [](const auto * e) { return e->result_name; }
-    ));
-
-    /// During scalar subquery decorrelation process, at the end there added renamings of useful columns.
-    /// This is done to avoid name conflicts. Instead of JOIN condition like 'a = a' it becomes 'a = <subquery name>.a'.
-    /// So, we need to revert such renaming to be able to compare columns with the aggregating step keys.
-    if (auto * expr_step = typeid_cast<ExpressionStep *>(interesting_side_plan_node->step.get()))
-    {
-        for (const auto & output : expr_step->getExpression().getOutputs())
-        {
-            if (output->type == ActionsDAG::ActionType::ALIAS)
-            {
-                if (join_keys_interesting_side.contains(output->result_name))
-                {
-                    const auto * current_node = output->children.front();
-                    /// Revert through possible chain of aliases.
-                    while (current_node->type == ActionsDAG::ActionType::ALIAS)
-                        current_node = current_node->children.front();
-
-                    /// Found an alias for join key. Will revert it to original name.
-                    join_keys_interesting_side.erase(output->result_name);
-                    join_keys_interesting_side.insert(current_node->result_name);
-                }
-            }
-        }
-        interesting_side_plan_node = interesting_side_plan_node->children.front();
-    }
-
-    /// If there is no aggregating step on the "interesting" side, then we cannot guarantee that
-    /// there are only unique rows.
-    auto * aggregating_step = typeid_cast<AggregatingStep *>(interesting_side_plan_node->step.get());
-    if (!aggregating_step)
-        return 0;
-
-    /// GROUPING SETS does not guarantee unique rows.
-    if (aggregating_step->isGroupingSets())
-        return 0;
-
-    /// If JOIN condition uses all aggregation keys, then there always only one row to match for each row from the other side.
-    /// This means that we can safely convert ANY OUTER JOIN to INNER JOIN.
-    for (const auto & aggregation_key : aggregating_step->getParams().keys)
-    {
-        if (!join_keys_interesting_side.contains(aggregation_key))
-            return 0;
-    }
 
     join_operator.kind = JoinKind::Inner;
     join_operator.strictness = JoinStrictness::All;
@@ -172,9 +123,14 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     QueryPlan::Node * child_node = parent_node->children.front();
     auto & child = child_node->step;
     auto * join = typeid_cast<JoinStepLogical *>(child.get());
-    if (!join)
+    if (!join || child_node->children.size() != 2)
         return 0;
-    if (!join->typeChangingSides().empty())
+
+    /// Storage Join expects a particular join kind and cannot build not-matched rows for
+    /// composite keys, so converting its outer join to inner is unsound (issue #106949).
+    /// A prepared key-value storage can fill a missing key with the type default on a direct lookup but
+    /// with the column default when read as an ordinary stream, and which applies is decided after this pass.
+    if (isPreparedJoinStorage(*child_node->children.back()))
         return 0;
 
     auto & join_operator = join->getJoinOperator();
@@ -196,10 +152,14 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     bool right_stream_safe = true;
 
     if (check_left_stream)
-        left_stream_safe = filter_dag.isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, *left_stream_input_header);
+        left_stream_safe = filterResultForNotMatchedRows(
+            filter_dag, filter_column_name, *left_stream_input_header,
+            /*allow_unknown_function_arguments=*/true, child_node->children.front()) == FilterResult::FALSE;
 
     if (check_right_stream)
-        right_stream_safe = filter_dag.isFilterAlwaysFalseForDefaultValueInputs(filter_column_name, *right_stream_input_header);
+        right_stream_safe = filterResultForNotMatchedRows(
+            filter_dag, filter_column_name, *right_stream_input_header,
+            /*allow_unknown_function_arguments=*/true, child_node->children.back()) == FilterResult::FALSE;
 
     if (!left_stream_safe || !right_stream_safe)
     {

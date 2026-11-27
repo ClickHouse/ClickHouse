@@ -84,7 +84,7 @@ def test_log_max_size(start_cluster):
         [
             "bash",
             "-c",
-            f"""echo "
+            """echo "
         <clickhouse>
             <query_log>
                 <flush_interval_milliseconds replace=\\"replace\\">1000000</flush_interval_milliseconds>
@@ -99,7 +99,7 @@ def test_log_max_size(start_cluster):
     )
 
     node.query("SYSTEM FLUSH LOGS")
-    node.query(f"TRUNCATE TABLE IF EXISTS system.query_log")
+    node.query("TRUNCATE TABLE IF EXISTS system.query_log")
     node.restart_clickhouse()
 
     # all logs records above max_size_rows are lost
@@ -111,12 +111,21 @@ def test_log_max_size(start_cluster):
     assert_logs_contain_with_retry(
         node, "Queue had been full at 0, accepted 10 logs, ignored 34 logs."
     )
+    # The same batch is added to the counter. Later flushes can drop more rows.
+    assert_eq_with_retry(
+        node,
+        "SELECT sum(value) >= 34 FROM system.dimensional_metrics "
+        "WHERE metric = 'system_log_dropped_rows_total' "
+        "AND labels['database'] = 'system' AND labels['table'] = 'query_log' "
+        "AND labels['reason'] = 'queue_full'",
+        "1",
+    )
     assert node.query(
         "select count() >= 10, count() < 20 from system.query_log"
     ) == TSV([[1, 1]])
 
     node.exec_in_container(
-        ["rm", f"/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
+        ["rm", "/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
     )
 
 
@@ -125,7 +134,7 @@ def test_log_buffer_size_rows_flush_threshold(start_cluster):
         [
             "bash",
             "-c",
-            f"""echo "
+            """echo "
         <clickhouse>
             <query_log>
                 <flush_interval_milliseconds replace=\\"replace\\">1000000</flush_interval_milliseconds>
@@ -138,24 +147,24 @@ def test_log_buffer_size_rows_flush_threshold(start_cluster):
         ]
     )
     node.restart_clickhouse()
-    node.query(f"TRUNCATE TABLE IF EXISTS system.query_log")
+    node.query("TRUNCATE TABLE IF EXISTS system.query_log")
     for i in range(10):
         node.query(f"select {i}")
 
     assert_eq_with_retry(
         node,
-        f"select count() >= 11 from system.query_log",
+        "select count() >= 11 from system.query_log",
         "1",
         sleep_time=0.2,
         retry_count=100,
     )
 
-    node.query(f"TRUNCATE TABLE IF EXISTS system.query_log")
+    node.query("TRUNCATE TABLE IF EXISTS system.query_log")
     node.exec_in_container(
         [
             "bash",
             "-c",
-            f"""echo "
+            """echo "
         <clickhouse>
             <query_log>
                 <flush_interval_milliseconds replace=\\"replace\\">1000000</flush_interval_milliseconds>
@@ -174,14 +183,14 @@ def test_log_buffer_size_rows_flush_threshold(start_cluster):
     # Logs aren't flushed
     assert_eq_with_retry(
         node,
-        f"select count() < 10 from system.query_log",
+        "select count() < 10 from system.query_log",
         "1",
         sleep_time=0.2,
         retry_count=100,
     )
 
     node.exec_in_container(
-        ["rm", f"/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
+        ["rm", "/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
     )
 
 
@@ -191,3 +200,51 @@ def test_system_warnings(start_cluster):
 
     node.query("TRUNCATE TABLE system.warnings")
     assert node.query("SELECT count() FROM system.warnings") == "0\n"
+
+
+def get_query_log_flush_counters():
+    def get(metric, label_filter=""):
+        return float(
+            node.query(
+                f"SELECT sum(value) FROM system.dimensional_metrics WHERE metric = '{metric}' "
+                f"AND labels['database'] = 'system' AND labels['table'] = 'query_log' {label_filter}"
+            )
+        )
+
+    return (
+        get("system_log_flushes_total", "AND labels['result'] = 'success'"),
+        get("system_log_flushes_total", "AND labels['result'] = 'failure'"),
+        get("system_log_flushed_rows_total"),
+        get("system_log_dropped_rows_total", "AND labels['reason'] = 'flush_failed'"),
+    )
+
+
+def test_flush_error_is_counted(start_cluster):
+    node.query("SYSTEM ENABLE FAILPOINT system_log_flush_throw")
+    try:
+        # A flush that started before the failpoint was enabled ends before this one.
+        node.query("SELECT 1")
+        node.query_and_get_answer_with_error("SYSTEM FLUSH LOGS query_log")
+        success_before, failure_before, rows_before, dropped_before = (
+            get_query_log_flush_counters()
+        )
+
+        node.query("SELECT 1")
+        # The failed flush is only logged by the server, but an error here is fine too.
+        node.query_and_get_answer_with_error("SYSTEM FLUSH LOGS query_log")
+        success_after, failure_after, rows_after, dropped_after = (
+            get_query_log_flush_counters()
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT system_log_flush_throw")
+
+    assert failure_after >= failure_before + 1
+    assert success_after == success_before
+    assert rows_after == rows_before
+    # The rows of the failed flush are counted as dropped.
+    assert dropped_after >= dropped_before + 1
+
+    # The flush works again without the failpoint.
+    node.query("SELECT 1")
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert get_query_log_flush_counters()[0] > success_after

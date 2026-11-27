@@ -1,0 +1,5 @@
+<clickhouse>
+    <!-- `undeclared_user` is deliberately absent from `configs/users.xml`: the missing
+         user is the fixture. -->
+    <default_session_user>undeclared_user</default_session_user>
+</clickhouse>

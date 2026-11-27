@@ -1,1 +1,1 @@
-SELECT * FROM system.table_engines WHERE name in ('MergeTree', 'ReplicatedCollapsingMergeTree') ORDER BY name FORMAT PrettyCompactNoEscapes;
+SELECT name, supports_settings, supports_skipping_indices, supports_projections, supports_sort_order, supports_ttl, supports_replication, supports_deduplication, supports_parallel_insert FROM system.table_engines WHERE name in ('MergeTree', 'ReplicatedCollapsingMergeTree') ORDER BY name FORMAT PrettyCompactNoEscapes;

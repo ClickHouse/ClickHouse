@@ -1,0 +1,29 @@
+-- TSV exponent, exp=1 first
+Nullable(Float64)
+Nullable(String)
+-- TSV exponent, exp=0 first
+Nullable(String)
+Nullable(Float64)
+-- CSV exponent, exp=1 first
+Nullable(Float64)
+Nullable(String)
+-- CSV exponent, exp=0 first
+Nullable(String)
+Nullable(Float64)
+-- Form exponent, exp=1 first
+Nullable(Float64)
+Nullable(String)
+-- Form exponent, exp=0 first
+Nullable(String)
+Nullable(Float64)
+-- TSV exponent value, exp=1 first
+100000
+1e5
+-- Values (Quoted) exponent, exp=1 first, second query must fail
+Nullable(Float64)
+ONLY_NULLS_WHILE_READING_SCHEMA
+-- JSON exponent control, type must be identical at both values
+Nullable(Float64)
+Nullable(Float64)
+-- JSON exponent control, both values must share one cache entry
+1	1

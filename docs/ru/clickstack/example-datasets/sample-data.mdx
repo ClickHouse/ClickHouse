@@ -1,0 +1,189 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/sample-data
+title: 'Примеры журналов, трассировок и метрик'
+description: 'Начало работы с ClickStack и демонстрационным набором данных с журналами, сеансами, трассировками и метриками'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'демонстрационные данные', 'демонстрационный набор данных', 'журналы', 'обсервабилити']
+---
+
+В этом руководстве демонстрируется ClickStack с открытым исходным кодом на примере набора данных.
+
+В следующем примере предполагается, что вы запустили ClickStack с открытым исходным кодом с помощью [образа «всё в одном»](/ru/clickstack/getting-started/oss) и скопировали [ключ API для приёма данных](/ru/clickstack/getting-started/oss#copy-ingestion-api-key).
+
+<Steps>
+  <Step title="Перейдите в интерфейс ClickStack" id="navigate-to-the-hyperdx-ui">
+    Чтобы открыть интерфейс ClickStack, перейдите по адресу [http://localhost:8080](http://localhost:8080).
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Интерфейс ClickStack](/images/use-cases/observability/hyperdx.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Скопировать ключ API для приёма данных API key" id="copy-ingestion-api-key">
+    Перейдите в [`Team Settings`](http://localhost:8080/team) и скопируйте `Ingestion API Key` из раздела `API Keys`. Этот ключ API защищает ингестию данных через коллектор OpenTelemetry.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Копирование ключа API](/images/use-cases/observability/copy_api_key.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Скачать выборку данных" id="download-sample-data">
+    Чтобы заполнить интерфейс выборкой данных, скачайте следующий файл:
+
+    [Выборка данных](https://storage.googleapis.com/hyperdx/sample.tar.gz)
+
+    ```shell
+    # curl
+    curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
+    # or
+    # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
+    ```
+
+    Этот файл содержит примеры журналов, метрик и трассировок из нашего общедоступного приложения [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo) — простого интернет-магазина на микросервисах. Скопируйте этот файл в любой удобный для вас каталог.
+  </Step>
+
+  <Step title="Загрузить выборку данных" id="load-sample-data">
+    Чтобы загрузить эти данные, достаточно отправить их на HTTP-конечную точку развернутого коллектора OpenTelemetry (OTel).
+
+    Сначала экспортируйте скопированный ранее ключ API.
+
+    ```shell
+    # export API key
+    export CLICKSTACK_API_KEY=<YOUR_INGESTION_API_KEY>
+    ```
+
+    Выполните следующую команду, чтобы отправить данные в OTel collector:
+
+    ```shell
+    for filename in $(tar -tf sample.tar.gz); do
+      endpoint="http://localhost:4318/v1/${filename%.json}"
+      echo "loading ${filename%.json}"
+      tar -xOf sample.tar.gz "$filename" | while read -r line; do
+        printf '%s\n' "$line" | curl -s -o /dev/null -X POST "$endpoint" \
+        -H "Content-Type: application/json" \
+        -H "authorization: ${CLICKSTACK_API_KEY}" \
+        --data-binary @-
+      done
+    done
+    ```
+
+    Так имитируется отправка данных в OTel collector из источников логов, трасс и метрик по протоколу OTLP. В продакшн-среде такими источниками могут быть клиентские библиотеки для различных языков программирования или даже другие экземпляры OTel collector.
+
+    Вернитесь в представление `Search` — вы увидите, что данные начали поступать (если данные не отображаются, выберите временной интервал `Last 1 hour`):
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Поиск в интерфейсе ClickStack](/images/use-cases/observability/hyperdx-10.webp)
+      </Frame>
+    </div>
+
+    Загрузка данных займёт несколько минут. Дождитесь её завершения, прежде чем переходить к следующим шагам.
+  </Step>
+
+  <Step title="Просмотр сеансов" id="explore-sessions">
+    Предположим, поступают сообщения о том, что у пользователей возникают проблемы с оплатой товаров. Мы можем увидеть происходившее их глазами с помощью функции воспроизведения сеанса в интерфейсе ClickStack.
+
+    Выберите [`Client Sessions`](http://localhost:8080/sessions?from=1747312320000\&to=1747312920000\&sessionSource=l1324572572) в левом меню.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Сеансы](/images/use-cases/observability/hyperdx-11.webp)
+      </Frame>
+    </div>
+
+    В этом представлении отображаются фронтенд-сеансы нашего интернет-магазина. Сеансы остаются анонимными, пока пользователи не перейдут к оформлению заказа и не попытаются завершить покупку.
+
+    Обратите внимание, что у некоторых сеансов с адресами электронной почты есть связанная ошибка, — это может подтверждать сообщения о неудачных транзакциях.
+
+    Выберите трассу со сбоем и связанным адресом электронной почты. В открывшемся представлении можно воспроизвести сеанс пользователя и разобраться в его проблеме. Нажмите play, чтобы просмотреть сеанс.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Воспроизведение сеанса](/images/use-cases/observability/hyperdx-12.webp)
+      </Frame>
+    </div>
+
+    На записи видно, как пользователь перемещается по сайту и добавляет товары в корзину. Можно сразу перейти к более позднему моменту сеанса, где он пытается завершить оплату.
+
+    <Tip>
+      Все ошибки отмечены на временной шкале красным цветом.
+    </Tip>
+
+    Пользователю не удалось оформить заказ, хотя явной ошибки не было. Прокрутите вниз левую панель, где отображаются сетевые и консольные события из браузера пользователя. Вы увидите, что при вызове `/api/checkout` была выброшена ошибка 500.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Ошибка в сеансе](/images/use-cases/observability/hyperdx-13.webp)
+      </Frame>
+    </div>
+
+    Выберите эту ошибку `500`. Ни `Overview`, ни `Column Values` не указывают на источник проблемы — видно лишь, что ошибка неожиданная и приводит к `Internal Error`.
+  </Step>
+
+  <Step title="Просмотреть трассировки" id="explore-traces">
+    Перейдите на вкладку `Trace`, чтобы увидеть полную распределённую трассу.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Трасса сеанса](/images/use-cases/observability/hyperdx-14.webp)
+      </Frame>
+    </div>
+
+    Прокрутите трассу вниз, чтобы найти источник ошибки — спан сервиса `checkout`. Выберите спан сервиса `Payment`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Спан](/images/use-cases/observability/hyperdx-15.webp)
+      </Frame>
+    </div>
+
+    Откройте вкладку `Column Values` и прокрутите вниз. Видно, что проблема связана с переполнением кэша.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Значения столбцов](/images/use-cases/observability/hyperdx-16.webp)
+      </Frame>
+    </div>
+
+    Если прокрутить страницу вверх и вернуться к трассе, видно, что благодаря выполненной ранее настройке журналы связаны со спаном. Они дают дополнительный контекст.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Связанный журнал](/images/use-cases/observability/hyperdx-17.webp)
+      </Frame>
+    </div>
+
+    Итак, мы выяснили, что в платёжном сервисе переполняется кэш, из-за чего платежи не проходят.
+  </Step>
+
+  <Step title="Просмотр журналов" id="explore-logs">
+    Чтобы получить более подробные сведения, вернёмся к [представлению `Search`](http://localhost:8080/search):
+
+    Выберите `Logs` в списке источников и примените фильтр по сервису `payment`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Журналы](/images/use-cases/observability/hyperdx-18.webp)
+      </Frame>
+    </div>
+
+    Видно, что, хотя проблема возникла недавно, затронуто уже большое количество платежей. Кроме того, судя по всему, проблемы вызывает кэш, связанный с платежами Visa.
+  </Step>
+
+  <Step title="Метрики чарта" id="chart-metrics">
+    Хотя ошибка в коде очевидна, с помощью метрик можно проверить размер кэша. Перейдите в раздел `Chart Explorer`.
+
+    Выберите `Metrics` в качестве источника данных. Заполните поля конструктора графиков, чтобы построить график `Maximum` для `visa_validation_cache.size (Gauge)`, и нажмите кнопку play. Хорошо видно, что кэш рос, пока не достиг максимального размера, после чего начали возникать ошибки.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Метрики](/images/use-cases/observability/hyperdx-19.webp)
+      </Frame>
+    </div>
+  </Step>
+</Steps>

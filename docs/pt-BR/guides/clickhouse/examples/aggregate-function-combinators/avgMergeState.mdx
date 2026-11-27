@@ -1,0 +1,223 @@
+---
+slug: '/examples/aggregate-function-combinators/avgMergeState'
+title: 'avgMergeState'
+description: 'Exemplo de uso do combinador avgMergeState'
+keywords: ['avg', 'MergeState', 'combinador', 'exemplos', 'avgMergeState']
+sidebarTitle: 'avgMergeState'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descrição
+</div>
+
+O combinador [`MergeState`](/pt-BR/reference/functions/aggregate-functions/combinators#-state)
+pode ser aplicado à função [`avg`](/pt-BR/reference/functions/aggregate-functions/avg)
+para mesclar estados parciais de agregação do tipo `AverageFunction(avg, T)` e
+retornar um novo estado intermediário de agregação.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+O combinador `MergeState` é particularmente útil em cenários de agregação em
+múltiplos níveis, nos quais você deseja combinar estados pré-agregados e mantê-los
+como estados (em vez de finalizá-los) para processamento posterior. Para ilustrar, vamos
+ver um exemplo em que transformamos métricas de desempenho de servidores individuais
+em agregações hierárquicas em vários níveis: nível de servidor → nível de região
+→ nível de datacenter.
+
+Primeiro, criamos uma tabela para armazenar os dados brutos:
+
+```sql
+CREATE TABLE raw_server_metrics
+(
+    timestamp DateTime DEFAULT now(),
+    server_id UInt32,
+    region String,
+    datacenter String,
+    response_time_ms UInt32
+)
+ENGINE = MergeTree()
+ORDER BY (region, server_id, timestamp);
+```
+
+Vamos criar uma tabela de destino da agregação no nível do servidor e definir uma
+visão materializada incremental que atua como um gatilho de inserção para ela:
+
+```sql
+CREATE TABLE server_performance
+(
+    server_id UInt32,
+    region String,
+    datacenter String,
+    avg_response_time AggregateFunction(avg, UInt32)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY (region, server_id);
+
+CREATE MATERIALIZED VIEW server_performance_mv
+TO server_performance
+AS SELECT
+    server_id,
+    region,
+    datacenter,
+    avgState(response_time_ms) AS avg_response_time
+FROM raw_server_metrics
+GROUP BY server_id, region, datacenter;
+```
+
+Faremos o mesmo para os níveis regional e de datacenter:
+
+```sql
+CREATE TABLE region_performance
+(
+    region String,
+    datacenter String,
+    avg_response_time AggregateFunction(avg, UInt32)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY (datacenter, region);
+
+CREATE MATERIALIZED VIEW region_performance_mv
+TO region_performance
+AS SELECT
+    region,
+    datacenter,
+    avgMergeState(avg_response_time) AS avg_response_time
+FROM server_performance
+GROUP BY region, datacenter;
+
+-- tabela e visão materializada no nível do datacenter
+
+CREATE TABLE datacenter_performance
+(
+    datacenter String,
+    avg_response_time AggregateFunction(avg, UInt32)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY datacenter;
+
+CREATE MATERIALIZED VIEW datacenter_performance_mv
+TO datacenter_performance
+AS SELECT
+      datacenter,
+      avgMergeState(avg_response_time) AS avg_response_time
+FROM region_performance
+GROUP BY datacenter;
+```
+
+Em seguida, vamos inserir dados brutos de exemplo na tabela de origem:
+
+```sql
+INSERT INTO raw_server_metrics (timestamp, server_id, region, datacenter, response_time_ms) VALUES
+    (now(), 101, 'us-east', 'dc1', 120),
+    (now(), 101, 'us-east', 'dc1', 130),
+    (now(), 102, 'us-east', 'dc1', 115),
+    (now(), 201, 'us-west', 'dc1', 95),
+    (now(), 202, 'us-west', 'dc1', 105),
+    (now(), 301, 'eu-central', 'dc2', 145),
+    (now(), 302, 'eu-central', 'dc2', 155);
+```
+
+Vamos escrever três consultas para cada nível:
+
+<Tabs>
+  <Tab title="Nível de serviço">
+    ```sql
+    SELECT
+        server_id,
+        region,
+        avgMerge(avg_response_time) AS avg_response_ms
+    FROM server_performance
+    GROUP BY server_id, region
+    ORDER BY region, server_id;
+    ```
+
+    ```response
+    ┌─server_id─┬─region─────┬─avg_response_ms─┐
+    │       301 │ eu-central │             145 │
+    │       302 │ eu-central │             155 │
+    │       101 │ us-east    │             125 │
+    │       102 │ us-east    │             115 │
+    │       201 │ us-west    │              95 │
+    │       202 │ us-west    │             105 │
+    └───────────┴────────────┴─────────────────┘
+    ```
+  </Tab>
+
+  <Tab title="Nível regional">
+    ```sql
+    SELECT
+        region,
+        datacenter,
+        avgMerge(avg_response_time) AS avg_response_ms
+    FROM region_performance
+    GROUP BY region, datacenter
+    ORDER BY datacenter, region;
+    ```
+
+    ```response
+    ┌─region─────┬─datacenter─┬────avg_response_ms─┐
+    │ us-east    │ dc1        │ 121.66666666666667 │
+    │ us-west    │ dc1        │                100 │
+    │ eu-central │ dc2        │                150 │
+    └────────────┴────────────┴────────────────────┘
+    ```
+  </Tab>
+
+  <Tab title="Nível do datacenter">
+    ```sql
+    SELECT
+        datacenter,
+        avgMerge(avg_response_time) AS avg_response_ms
+    FROM datacenter_performance
+    GROUP BY datacenter
+    ORDER BY datacenter;
+    ```
+
+    ```response
+    ┌─datacenter─┬─avg_response_ms─┐
+    │ dc1        │             113 │
+    │ dc2        │             150 │
+    └────────────┴─────────────────┘
+    ```
+  </Tab>
+</Tabs>
+
+Podemos inserir mais dados:
+
+```sql
+INSERT INTO raw_server_metrics (timestamp, server_id, region, datacenter, response_time_ms) VALUES
+    (now(), 101, 'us-east', 'dc1', 140),
+    (now(), 201, 'us-west', 'dc1', 85),
+    (now(), 301, 'eu-central', 'dc2', 135);
+```
+
+Vamos verificar novamente o desempenho em nível de datacenter. Veja como toda a
+cadeia de agregação foi atualizada automaticamente:
+
+```sql
+SELECT
+    datacenter,
+    avgMerge(avg_response_time) AS avg_response_ms
+FROM datacenter_performance
+GROUP BY datacenter
+ORDER BY datacenter;
+```
+
+```response
+┌─datacenter─┬────avg_response_ms─┐
+│ dc1        │ 112.85714285714286 │
+│ dc2        │                145 │
+└────────────┴────────────────────┘
+```
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [`avg`](/pt-BR/reference/functions/aggregate-functions/avg)
+* [`AggregateFunction`](/pt-BR/reference/data-types/aggregatefunction)
+* [`Merge`](/pt-BR/reference/functions/aggregate-functions/combinators#-merge)
+* [`MergeState`](/pt-BR/reference/functions/aggregate-functions/combinators#-mergestate)

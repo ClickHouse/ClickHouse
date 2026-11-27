@@ -1,0 +1,56 @@
+---
+slug: /cloud/get-started/cloud/resource-tour
+title: '関連リソースの紹介'
+description: 'クエリ最適化、スケーリング戦略、監視、ベストプラクティスに関するClickHouse Cloudドキュメントの概要'
+keywords: ['clickhouse cloud']
+hide_title: true
+doc_type: 'guide'
+---
+
+import TableOfContentsBestPractices from '/snippets/ja/_table_of_contents.mdx';
+import TableOfContentsOptimizationAndPerformance from '/snippets/ja/_performance_optimizations_table_of_contents.mdx';
+import TableOfContentsSecurity from '/snippets/ja/_security_table_of_contents.mdx';
+
+この記事では、ClickHouse Cloud のデプロイメントを最大限に活用する方法を学ぶために、ドキュメント内で利用できるリソースの概要を紹介します。
+以下のトピックごとに整理されたリソースをご覧ください。
+
+* [クエリ最適化の手法とパフォーマンスチューニング](#query-optimization)
+* [監視](#monitoring)
+* [セキュリティのベストプラクティスとコンプライアンス機能](#security)
+* [コスト最適化と課金](#cost-optimization)
+
+より具体的なトピックに進む前に、まずは ClickHouse の利用時に役立つ一般的なベストプラクティスをまとめた
+ClickHouse のベストプラクティスガイドから読み始めることをおすすめします。
+
+<TableOfContentsBestPractices />
+
+<div id="query-optimization">
+  ## クエリ最適化手法とパフォーマンスチューニング
+</div>
+
+<TableOfContentsOptimizationAndPerformance />
+
+<div id="monitoring">
+  ## 監視
+</div>
+
+| Page                                                                   | Description                                 |
+| ---------------------------------------------------------------------- | ------------------------------------------- |
+| [高度なダッシュボード](/ja/products/cloud/features/monitoring/advanced-dashboard)   | 組み込みの高度なダッシュボードを使用して、サービスの健全性とパフォーマンスを監視します |
+| [Prometheus インテグレーション](/ja/products/cloud/features/monitoring/prometheus) | Prometheus を使用して Cloud サービスを監視します           |
+| [Cloud の監視機能](/ja/guides/use-cases/observability/cloud-monitoring)        | 組み込みの監視機能とインテグレーション オプションの概要を確認します          |
+
+<div id="security">
+  ## セキュリティ
+</div>
+
+<TableOfContentsSecurity />
+
+<div id="cost-optimization">
+  ## コスト最適化と請求
+</div>
+
+| ページ                                                              | 説明                                                      |
+| ---------------------------------------------------------------- | ------------------------------------------------------- |
+| [データ転送](/ja/products/cloud/reference/billing/network-data-transfer) | ClickHouse Cloud が受信および送信されるデータ転送量をどのように計測するかを理解します     |
+| [通知](/ja/products/cloud/features/monitoring/notifications)          | ClickHouse Cloud サービスの通知を設定します。たとえば、クレジット使用量が閾値を超えた場合です |

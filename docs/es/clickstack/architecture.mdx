@@ -1,0 +1,63 @@
+---
+slug: /use-cases/observability/clickstack/architecture
+description: 'Arquitectura de ClickStack - la pila de observabilidad de ClickHouse'
+title: 'Arquitectura'
+toc_max_heading_level: 2
+doc_type: 'reference'
+keywords: ['arquitectura de ClickStack', 'arquitectura de observabilidad', 'UI de ClickStack', 'recolector de OpenTelemetry', 'MongoDB', 'diseño de sistemas']
+---
+
+La arquitectura de ClickStack Open Source se basa en tres componentes principales: **ClickHouse**, la **UI de ClickStack** y un **recolector de OpenTelemetry (OTel)**. Una instancia de **MongoDB** se encarga de almacenar el estado de la aplicación. En conjunto, conforman una pila de observabilidad de código abierto y alto rendimiento, optimizada para logs, métricas y trazas.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Arquitectura](/images/use-cases/observability/clickstack-oss-architecture.svg)
+  </Frame>
+</div>
+
+### ClickHouse: el motor de base de datos {#clickhouse}
+
+En el corazón de ClickStack está ClickHouse, una base de datos orientada a columnas diseñada para analítica en tiempo real a escala. Impulsa la ingestión y consulta de datos de observabilidad, lo que permite:
+
+* Búsquedas en menos de un segundo sobre terabytes de eventos
+* Ingestión de miles de millones de registros de alta cardinalidad al día
+* Altas tasas de compresión, de al menos 10x, en datos de observabilidad
+* Soporte nativo para datos JSON semiestructurados, lo que permite una evolución dinámica del esquema
+* Un potente motor SQL con cientos de funciones analíticas integradas
+
+ClickHouse maneja los datos de observabilidad como eventos amplios, lo que permite una correlación profunda entre logs, métricas y trazas en una única estructura unificada.
+
+### Recolector de OpenTelemetry: ingestión de datos {#open-telemetry-collector}
+
+ClickStack incluye un recolector de OpenTelemetry (OTel) preconfigurado para ingestar telemetría de una forma abierta y estandarizada. Puede enviar datos mediante el protocolo OTLP a través de:
+
+* gRPC (puerto `4317`)
+* HTTP (puerto `4318`)
+
+El recolector exporta telemetría a ClickHouse en lotes eficientes. Admite esquemas de tabla optimizados por fuente de datos, lo que garantiza un rendimiento escalable en todos los tipos de señal.
+
+### UI de ClickStack: la interfaz {#hyperdx-ui}
+
+La UI de ClickStack es la interfaz de usuario de ClickStack. Ofrece:
+
+* Búsqueda en lenguaje natural y estilo Lucene
+* Seguimiento en vivo para depuración en tiempo real
+* Vistas unificadas de logs, métricas y trazas
+* Reproducción de sesiones para observabilidad de frontend
+* Creación de dashboards y configuración de alertas
+* Interfaz de consulta SQL para análisis avanzados
+
+Diseñada específicamente para ClickHouse, la UI de ClickStack combina una potente capacidad de búsqueda con flujos de trabajo intuitivos, lo que le permite detectar anomalías, investigar problemas y obtener información rápidamente.
+
+### MongoDB: estado de la aplicación {#mongo}
+
+ClickStack utiliza MongoDB para almacenar el estado de la aplicación, que incluye:
+
+* Dashboards
+* Alertas
+* Perfiles de usuario
+* Visualizaciones guardadas
+
+Esta separación entre el estado y los datos de eventos garantiza el rendimiento y la escalabilidad, y a la vez simplifica las copias de seguridad y la configuración.
+
+Gracias a esta arquitectura modular, ClickStack ofrece una plataforma de observabilidad lista para usar, rápida, flexible y de código abierto.

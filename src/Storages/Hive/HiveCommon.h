@@ -53,8 +53,8 @@ public:
     struct FileInfo
     {
         String path;
-        UInt64 last_modify_time; /// In ms
-        size_t size;
+        UInt64 last_modify_time{}; /// In ms
+        size_t size{};
 
         explicit FileInfo() = default;
         FileInfo & operator = (const FileInfo &) = default;
@@ -74,7 +74,7 @@ public:
         explicit PartitionInfo(const Apache::Hadoop::Hive::Partition & partition_): partition(partition_) {}
         PartitionInfo(PartitionInfo &&) = default;
 
-        bool haveSameParameters(const Apache::Hadoop::Hive::Partition & other) const;
+        [[nodiscard]] bool haveSameParameters(const Apache::Hadoop::Hive::Partition & other) const;
     };
 
     class HiveTableMetadata;

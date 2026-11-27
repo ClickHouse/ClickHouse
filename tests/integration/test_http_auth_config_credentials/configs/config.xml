@@ -1,0 +1,16 @@
+<clickhouse>
+    <!-- An HTTP handler with its own configured credentials (<user>). Requests served by
+         this handler authenticate as the configured user via AlwaysAllowCredentials. -->
+    <http_handlers>
+        <rule>
+            <url>/auth_config</url>
+            <methods>GET,POST</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT currentUser()</query>
+                <user>default</user>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long
 
 set -e
 
@@ -37,7 +38,7 @@ function insert_thread() {
         # trigger 50 concurrent inserts at a time
         for _ in {0..50}; do
             # ignore `Possible deadlock avoided. Client should retry`
-            $CLICKHOUSE_CLIENT -q "${INSERT[$RANDOM % 2]}" 2>/dev/null &
+            ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "${INSERT[$RANDOM % 2]}" &>/dev/null &
         done
         wait
 
@@ -65,7 +66,7 @@ function alter_thread() {
     local TIMELIMIT=$((SECONDS+120))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        $CLICKHOUSE_CLIENT --allow_experimental_alter_materialized_view_structure=1 -q "${ALTER[$i % 6]}"
+        $CLICKHOUSE_CLIENT -q "${ALTER[$i % 6]}"
         ((i=i+1))
 
         sleep "0.0$RANDOM"

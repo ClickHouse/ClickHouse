@@ -46,7 +46,7 @@ $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
 
   SELECT sum(elapsed_us) > 0
   FROM system.processors_profile_log
-  WHERE event_date >= yesterday() AND query_id = '$query_id' AND name = 'CreatingSetsTransform';
+  WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id' AND name = 'CreatingSetsTransform';
 "
 
 #####################################################################
@@ -91,6 +91,6 @@ $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
 
   SELECT sum(elapsed_us) > 0
   FROM system.processors_profile_log
-  WHERE event_date >= yesterday() AND query_id = '$query_id' AND name = 'MergingSortedTransform';
+  WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id' AND name = 'MergingSortedTransform';
 "
 

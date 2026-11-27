@@ -48,6 +48,16 @@ const char * toString(JoinLocality locality)
     }
 }
 
+const char * toString(JoinSetOperation set_operation)
+{
+    switch (set_operation)
+    {
+        case JoinSetOperation::None: return "NONE";
+        case JoinSetOperation::IntersectDistinct: return "INTERSECT DISTINCT";
+        case JoinSetOperation::ExceptDistinct: return "EXCEPT DISTINCT";
+    }
+}
+
 const char * toString(ASOFJoinInequality asof_join_inequality)
 {
     switch (asof_join_inequality)
@@ -69,10 +79,11 @@ const char * toString(JoinAlgorithm join_algorithm)
         case JoinAlgorithm::HASH: return "HASH";
         case JoinAlgorithm::PARTIAL_MERGE: return "PARTIAL_MERGE";
         case JoinAlgorithm::PREFER_PARTIAL_MERGE: return "PREFER_PARTIAL_MERGE";
-        case JoinAlgorithm::PARALLEL_HASH: return "PARALLEL_HASH";
         case JoinAlgorithm::DIRECT: return "DIRECT";
         case JoinAlgorithm::FULL_SORTING_MERGE: return "FULL_SORTING_MERGE";
+        case JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE: return "PARALLEL_FULL_SORTING_MERGE";
         case JoinAlgorithm::GRACE_HASH: return "GRACE_HASH";
+        case JoinAlgorithm::INEQUALITY: return "INEQUALITY";
     }
 }
 
@@ -82,6 +93,18 @@ const char * toString(JoinOrderAlgorithm join_order_algorithm)
     {
         case JoinOrderAlgorithm::GREEDY: return "GREEDY";
         case JoinOrderAlgorithm::DPSIZE: return "DPSIZE";
+        case JoinOrderAlgorithm::DPSUB: return "DPSUB";
+        case JoinOrderAlgorithm::DPHYP:  return "DPHYP";
+    }
+}
+
+const char * toString(JoinOrderConflictDetector join_order_conflict_detector)
+{
+    switch (join_order_conflict_detector)
+    {
+        case JoinOrderConflictDetector::NONE: return "NONE";
+        case JoinOrderConflictDetector::CD_A: return "CD-A";
+        case JoinOrderConflictDetector::CD_C: return "CD-C";
     }
 }
 
@@ -112,7 +135,7 @@ void serializeJoinKind(JoinKind kind, WriteBuffer & out)
 
 JoinKind deserializeJoinKind(ReadBuffer & in)
 {
-    uint8_t val;
+    uint8_t val = 0;
     readIntBinary(val, in);
 
     if (val > JoinKindMax)
@@ -130,7 +153,7 @@ void serializeJoinStrictness(JoinStrictness strictness, WriteBuffer & out)
 
 JoinStrictness deserializeJoinStrictness(ReadBuffer & in)
 {
-    uint8_t val;
+    uint8_t val = 0;
     readIntBinary(val, in);
 
     if (val > JoinStrictnessMax)
@@ -147,13 +170,31 @@ void serializeJoinLocality(JoinLocality locality, WriteBuffer & out)
 }
 JoinLocality deserializeJoinLocality(ReadBuffer & in)
 {
-    uint8_t val;
+    uint8_t val = 0;
     readIntBinary(val, in);
 
     if (val > JoinLocalityMax)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinLocality", UInt16(val));
 
     return static_cast<JoinLocality>(val);
+}
+
+void serializeJoinSetOperation(JoinSetOperation set_operation, WriteBuffer & out)
+{
+    uint8_t val = uint8_t(set_operation);
+    chassert(val <= JoinSetOperationMax);
+    writeIntBinary(val, out);
+}
+
+JoinSetOperation deserializeJoinSetOperation(ReadBuffer & in)
+{
+    uint8_t val = 0;
+    readIntBinary(val, in);
+
+    if (val > JoinSetOperationMax)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinSetOperation", UInt16(val));
+
+    return static_cast<JoinSetOperation>(val);
 }
 
 }

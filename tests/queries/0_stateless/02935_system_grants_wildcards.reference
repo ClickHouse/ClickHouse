@@ -1,0 +1,3 @@
+test_elan	SELECT	db	\N	1
+test_elan	SELECT	foo	bar	0
+test_elan	SELECT	foo	bar	1

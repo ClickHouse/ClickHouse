@@ -16,7 +16,7 @@ namespace MySQLParser
 
 ASTPtr ASTDeclareColumn::clone() const
 {
-    auto res = std::make_shared<ASTDeclareColumn>(*this);
+    auto res = make_intrusive<ASTDeclareColumn>(*this);
     res->children.clear();
 
     if (data_type)
@@ -86,7 +86,7 @@ bool ParserDeclareColumn::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
     parseColumnDeclareOptions(pos, column_options, expected);
 
-    auto declare_column = std::make_shared<ASTDeclareColumn>();
+    auto declare_column = make_intrusive<ASTDeclareColumn>();
     declare_column->name = getIdentifierName(column_name);
     declare_column->data_type = column_data_type;
     declare_column->column_options = column_options;

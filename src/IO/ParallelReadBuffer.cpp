@@ -97,8 +97,8 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
     if (!working_buffer.empty() && static_cast<size_t>(offset) >= current_position - working_buffer.size() && offset < current_position)
     {
         pos = working_buffer.end() - (current_position - offset);
-        assert(pos >= working_buffer.begin());
-        assert(pos <= working_buffer.end());
+        chassert(pos >= working_buffer.begin());
+        chassert(pos <= working_buffer.end());
 
         return offset;
     }
@@ -125,8 +125,7 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
 
             if (w->bytes_produced > diff)
             {
-                working_buffer = internal_buffer = Buffer(
-                    w->segment.data(), w->segment.data() + w->bytes_produced);
+                setSegmentBuffers(*w, 0, w->bytes_produced);
                 pos = working_buffer.begin() + diff;
                 w->bytes_consumed = w->bytes_produced;
                 current_position = w->start_offset + w->bytes_consumed;
@@ -162,10 +161,24 @@ off_t ParallelReadBuffer::getPosition()
     return current_position - available();
 }
 
+void ParallelReadBuffer::setSegmentBuffers(ReadWorker & worker, size_t offset, size_t size)
+{
+    /// The worker keeps writing the bytes after a partially produced range, so only a complete segment is padded.
+    if (worker.hasBytesToProduce())
+    {
+        setInternalBuffer(Buffer(worker.segment.data() + offset, worker.segment.data() + offset + size));
+        setWorkingBufferFromInternal();
+        return;
+    }
+
+    setPaddedInternalBuffer(worker.segment, offset, size);
+    setWorkingBufferFromInternal();
+}
+
 void ParallelReadBuffer::handleEmergencyStop()
 {
     // this can only be called from the main thread when there is an exception
-    assert(background_exception);
+    chassert(background_exception);
     std::rethrow_exception(background_exception);
 }
 
@@ -192,8 +205,7 @@ bool ParallelReadBuffer::nextImpl()
         {
             chassert(w->start_offset + w->bytes_consumed == static_cast<size_t>(current_position));
 
-            working_buffer = internal_buffer = Buffer(
-                w->segment.data() + w->bytes_consumed, w->segment.data() + w->bytes_produced);
+            setSegmentBuffers(*w, w->bytes_consumed, w->bytes_produced - w->bytes_consumed);
             current_position += working_buffer.size();
             w->bytes_consumed = w->bytes_produced;
 

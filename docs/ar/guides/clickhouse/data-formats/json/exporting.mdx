@@ -1,0 +1,189 @@
+---
+title: 'تصدير JSON'
+slug: /integrations/data-formats/json/exporting
+description: 'كيفية تصدير بيانات JSON من ClickHouse'
+keywords: ['json', 'clickhouse', 'التنسيقات', 'التصدير']
+doc_type: 'guide'
+---
+
+يمكن استخدام معظم تنسيقات JSON المستخدمة للاستيراد في التصدير أيضًا. والأكثر شيوعًا هو [`JSONEachRow`](/ar/reference/formats/JSON/JSONEachRow):
+
+```sql
+SELECT * FROM sometable FORMAT JSONEachRow
+```
+
+```response
+{"path":"Bob_Dolman","month":"2016-11-01","hits":245}
+{"path":"1-krona","month":"2017-01-01","hits":4}
+{"path":"Ahmadabad-e_Kalij-e_Sofla","month":"2017-01-01","hits":3}
+```
+
+أو يمكننا استخدام [`JSONCompactEachRow`](/ar/reference/formats/JSON/JSONCompactEachRow) لتوفير مساحة على القرص من خلال حذف أسماء الأعمدة:
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompactEachRow
+```
+
+```response
+["Bob_Dolman", "2016-11-01", 245]
+["1-krona", "2017-01-01", 4]
+["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", 3]
+```
+
+<div id="overriding-data-types-as-strings">
+  ## تجاوز أنواع البيانات وجعلها سلاسل نصية
+</div>
+
+يلتزم ClickHouse بأنواع البيانات ويُصدّر JSON وفقًا للمعايير. لكن في الحالات التي نحتاج فيها إلى ترميز جميع القيم على هيئة سلاسل نصية، يمكننا استخدام تنسيق [JSONStringsEachRow](/ar/reference/formats/JSON/JSONStringsEachRow):
+
+```sql
+SELECT * FROM sometable FORMAT JSONStringsEachRow
+```
+
+```response
+{"path":"Bob_Dolman","month":"2016-11-01","hits":"245"}
+{"path":"1-krona","month":"2017-01-01","hits":"4"}
+{"path":"Ahmadabad-e_Kalij-e_Sofla","month":"2017-01-01","hits":"3"}
+```
+
+الآن، يُشفَّر العمود الرقمي `hits` كسلسلة نصية. ويُدعَم التصدير كسلاسل نصية في جميع تنسيقات JSON*؛ ما عليك سوى الاطّلاع على التنسيقين `JSONStrings\*` و`JSONCompactStrings\*`:
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompactStringsEachRow
+```
+
+```response
+["Bob_Dolman", "2016-11-01", "245"]
+["1-krona", "2017-01-01", "4"]
+["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", "3"]
+```
+
+<div id="exporting-metadata-together-with-data">
+  ## تصدير البيانات الوصفية مع البيانات
+</div>
+
+يُصدِّر تنسيق [JSON](/ar/reference/formats/JSON/JSON) العام، الشائع في التطبيقات، ليس فقط البيانات الناتجة، بل أيضًا أنواع الأعمدة وإحصاءات الاستعلام:
+
+```sql
+SELECT * FROM sometable FORMAT JSON
+```
+
+```response
+{
+        "meta":
+        [
+                {
+                        "name": "path",
+                        "type": "String"
+                },
+                ...
+        ],
+
+        "data":
+        [
+                {
+                        "path": "Bob_Dolman",
+                        "month": "2016-11-01",
+                        "hits": 245
+                },
+                ...
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000497457,
+                "rows_read": 3,
+                "bytes_read": 87
+        }
+}
+```
+
+سيطبع تنسيق [JSONCompact](/ar/reference/formats/JSON/JSONCompact) البيانات الوصفية نفسها، لكنه سيستخدم شكلاً مضغوطًا للبيانات نفسها:
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompact
+```
+
+```response
+{
+        "meta":
+        [
+                {
+                        "name": "path",
+                        "type": "String"
+                },
+                ...
+        ],
+
+        "data":
+        [
+                ["Bob_Dolman", "2016-11-01", 245],
+                ["1-krona", "2017-01-01", 4],
+                ["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", 3]
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.00074981,
+                "rows_read": 3,
+                "bytes_read": 87
+        }
+}
+```
+
+ضع في اعتبارك استخدام الإصدارين [`JSONStrings`](/ar/reference/formats/JSON/JSONStrings) أو [`JSONCompactStrings`](/ar/reference/formats/JSON/JSONCompactStrings) لترميز جميع القيم على هيئة سلاسل نصية.
+
+<div id="compact-way-to-export-json-data-and-structure">
+  ## طريقة مضغوطة لتصدير بيانات JSON وبنيتها
+</div>
+
+تتمثل إحدى الطرق الأكثر كفاءة لعرض البيانات وبنيتها في استخدام تنسيق [`JSONCompactEachRowWithNamesAndTypes`](/ar/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes):
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompactEachRowWithNamesAndTypes
+```
+
+```response
+["path", "month", "hits"]
+["String", "Date", "UInt32"]
+["Bob_Dolman", "2016-11-01", 245]
+["1-krona", "2017-01-01", 4]
+["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", 3]
+```
+
+سيستخدم هذا تنسيق JSON مضغوطًا يسبقه صفّا ترويسة يتضمنان أسماء الأعمدة وأنواعها. ويمكن بعد ذلك استخدام هذا التنسيق لإدخال البيانات إلى مثيل ClickHouse آخر (أو تطبيقات أخرى).
+
+<div id="exporting-json-to-a-file">
+  ## تصدير JSON إلى ملف
+</div>
+
+لحفظ بيانات JSON المُصدَّرة في ملف، يمكن استخدام عبارة [INTO OUTFILE](/ar/reference/statements/select/into-outfile):
+
+```sql
+SELECT * FROM sometable INTO OUTFILE 'out.json' FORMAT JSONEachRow
+```
+
+```response
+36838935 rows in set. Elapsed: 2.220 sec. Processed 36.84 million rows, 1.27 GB (16.60 million rows/s., 572.47 MB/s.)
+```
+
+استغرق ClickHouse ثانيتين فقط لتصدير ما يقرب من 37 مليون سجل إلى ملف JSON. ويمكننا أيضًا التصدير باستخدام عبارة `COMPRESSION` لتفعيل الضغط مباشرةً أثناء التصدير:
+
+```sql
+SELECT * FROM sometable INTO OUTFILE 'out.json.gz' FORMAT JSONEachRow
+```
+
+```response
+36838935 rows in set. Elapsed: 22.680 sec. Processed 36.84 million rows, 1.27 GB (1.62 million rows/s., 56.02 MB/s.)
+```
+
+يتطلب إنجازه وقتًا أطول، لكنه يُنتج ملفًا مضغوطًا أصغر بكثير:
+
+```bash
+2.2G    out.json
+576M    out.json.gz
+```

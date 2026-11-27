@@ -1,5 +1,3 @@
-SET allow_suspicious_variant_types = 1;
-
 DROP TABLE IF EXISTS geom1;
 CREATE TABLE IF NOT EXISTS geom1 (geom Geometry) ENGINE = Memory();
 INSERT INTO geom1 VALUES((10, 20));

@@ -3,7 +3,6 @@
 #include <Disks/DiskType.h>
 #include <Disks/IDisk.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageTransactionState.h>
 
@@ -45,12 +44,15 @@ public:
     MetadataStorageType getType() const override { return MetadataStorageType::Plain; }
     const std::string & getPath() const override { return storage_path_full; }
     uint32_t getHardlinkCount(const std::string & /* path */) const override { return 0; }
-    bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
     bool isReadOnly() const override { return false; }
+    bool isRemote() const override { return object_storage->isRemote(); }
     bool areBlobPathsRandom() const override { return false; }
     bool isPlain() const override { return true; }
     bool isWriteOnce() const override { return true; }
+    /// Blobs are removed right in the transaction, and there is nothing to replicate.
+    bool hasDeadBlobsQueue() const override { return false; }
+    bool hasMissingBlobsQueue() const override { return false; }
 
     MetadataTransactionPtr createTransaction() override;
 
@@ -83,26 +85,24 @@ class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransac
 public:
     explicit MetadataStorageFromPlainObjectStorageTransaction(MetadataStorageFromPlainObjectStorage & metadata_storage_, ObjectStoragePtr object_storage_);
 
-    const IMetadataStorage & getStorageForNonTransactionalReads() const override;
-    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
+    void commit(const TransactionCommitOptionsVariant & options) override;
+    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
 
     void createMetadataFile(const std::string & /*path*/, const StoredObjects & /* objects */) override {}
     void createDirectory(const std::string & /*path*/) override {}
     void createDirectoryRecursive(const std::string & /*path*/) override {}
-    void commit(const TransactionCommitOptionsVariant & /*options*/) override {}
-    bool supportsChmod() const override { return false; }
 
-    void unlinkFile(const std::string & path) override;
-    UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
-
+    void unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects) override;
     void removeDirectory(const std::string & path) override;
-    void removeRecursive(const std::string &) override;
+    void removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects) override;
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) override;
+    StoredObjects getSubmittedForRemovalBlobs() override;
 
 private:
     MetadataStorageFromPlainObjectStorage & metadata_storage;
     ObjectStoragePtr object_storage;
+    StoredObjects objects_to_remove;
 };
 
 }

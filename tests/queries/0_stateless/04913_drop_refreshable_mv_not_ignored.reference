@@ -1,0 +1,4 @@
+-- a refreshable view must be dropped: a skipped DROP leaves it refreshing forever
+0	0
+-- a plain materialized view is a user DROP and is still skipped
+1

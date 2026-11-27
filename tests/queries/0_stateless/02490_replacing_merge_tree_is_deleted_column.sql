@@ -2,6 +2,7 @@
 
 -- Settings allow_deprecated_syntax_for_merge_tree prevent to enable the is_deleted column
 set allow_deprecated_syntax_for_merge_tree=0;
+set optimize_on_insert = 1;
 
 -- Test the bahaviour without the is_deleted column
 DROP TABLE IF EXISTS test;

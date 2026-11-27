@@ -36,11 +36,11 @@ def start_cluster():
         cluster.start()
 
         # We are making tmp table here to force creation of metadata symlink
-        node_25_4.query(f"CREATE TABLE tmp (version String) ENGINE = MergeTree ORDER BY ()")
-        node_25_6.query(f"CREATE TABLE tmp (version String) ENGINE = MergeTree ORDER BY ()")
-        node_25_8.query(f"CREATE TABLE tmp (version String) ENGINE = MergeTree ORDER BY ()")
-        node_25_10.query(f"CREATE TABLE tmp (version String) ENGINE = MergeTree ORDER BY ()")
-        node_master.query(f"CREATE TABLE tmp (version String) ENGINE = MergeTree ORDER BY ()")
+        node_25_4.query("CREATE TABLE tmp (version String) ENGINE = MergeTree ORDER BY ()")
+        node_25_6.query("CREATE TABLE tmp (version String) ENGINE = MergeTree ORDER BY ()")
+        node_25_8.query("CREATE TABLE tmp (version String) ENGINE = MergeTree ORDER BY ()")
+        node_25_10.query("CREATE TABLE tmp (version String) ENGINE = MergeTree ORDER BY ()")
+        node_master.query("CREATE TABLE tmp (version String) ENGINE = MergeTree ORDER BY ()")
 
         node_25_4.stop_clickhouse()
         node_25_6.stop_clickhouse()
@@ -164,7 +164,7 @@ def test_backward_compatibility_readonly_tables(start_cluster):
 
 # https://github.com/ClickHouse/ClickHouse/pull/80393
 def test_backward_compatibility_bug_80393(start_cluster):
-    create_table_query = f"CREATE TABLE mt (version String, PROJECTION prj (SELECT version ORDER BY version)) ENGINE = MergeTree ORDER BY () SETTINGS disk = 's3_plain_rewritable', merge_tree_clear_old_temporary_directories_interval_seconds=0"
+    create_table_query = "CREATE TABLE mt (version String, PROJECTION prj (SELECT version ORDER BY version)) ENGINE = MergeTree ORDER BY () SETTINGS disk = 's3_plain_rewritable', merge_tree_clear_old_temporary_directories_interval_seconds=0"
 
     node_25_4.start_clickhouse()
     node_25_4.query(create_table_query)

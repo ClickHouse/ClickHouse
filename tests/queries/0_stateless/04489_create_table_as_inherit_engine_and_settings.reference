@@ -1,0 +1,61 @@
+CREATE TABLE default.t_47240_settings
+(
+    `a` UInt64,
+    `b` String,
+    `ver` UInt64
+)
+ENGINE = ReplacingMergeTree(ver)
+PARTITION BY b
+ORDER BY a
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 123
+CREATE TABLE default.t_47240_order_by
+(
+    `a` UInt64,
+    `b` String,
+    `ver` UInt64
+)
+ENGINE = ReplacingMergeTree(ver)
+PARTITION BY b
+ORDER BY b
+SETTINGS index_granularity = 4096, min_bytes_for_wide_part = 123
+CREATE TABLE default.t_47240_from_ttl
+(
+    `a` UInt64,
+    `d` Date
+)
+ENGINE = MergeTree
+ORDER BY a
+TTL d + toIntervalDay(1)
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 123
+CREATE TABLE default.t_47240_from_mv
+(
+    `a` UInt64,
+    `b` String
+)
+ENGINE = ReplacingMergeTree
+PARTITION BY b
+ORDER BY a
+SETTINGS index_granularity = 8192
+CREATE TABLE default.t_47240_from_join
+(
+    `k` UInt64,
+    `v` UInt64
+)
+ENGINE = Join(ANY, LEFT, k)
+SETTINGS join_use_nulls = 1
+CREATE TEMPORARY TABLE t_47240_temp_from_join
+(
+    `k` UInt64,
+    `v` UInt64
+)
+ENGINE = Memory
+CREATE TABLE default.t_47240_from_ext
+(
+    `x` UInt64
+)
+ENGINE = `Null`
+CREATE TABLE default.t_47240_from_ext_plain
+(
+    `x` UInt64
+)
+ENGINE = `Null`

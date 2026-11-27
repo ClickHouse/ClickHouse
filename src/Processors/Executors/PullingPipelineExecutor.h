@@ -10,11 +10,11 @@ namespace DB
 class Block;
 class Chunk;
 class QueryPipeline;
-class PipelineExecutor;
 class PullingOutputFormat;
 struct ProfileInfo;
 
-using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
+class IExecutor;
+using ExecutorPtr = std::shared_ptr<IExecutor>;
 
 /// Pulling executor for QueryPipeline. Always execute pipeline in single thread.
 /// Typical usage is:
@@ -55,7 +55,7 @@ private:
     std::atomic_bool has_data_flag = false;
     QueryPipeline & pipeline;
     std::shared_ptr<PullingOutputFormat> pulling_format;
-    PipelineExecutorPtr executor;
+    ExecutorPtr executor;
 };
 
 }

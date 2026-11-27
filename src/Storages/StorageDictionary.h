@@ -2,7 +2,7 @@
 
 #include <atomic>
 
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <base/scope_guard.h>
 
@@ -14,7 +14,7 @@ struct DictionaryStructure;
 class TableFunctionDictionary;
 class IDictionary;
 
-class StorageDictionary final : public IStorage, public WithContext
+class StorageDictionary final : public StorageWithCommonVirtualColumns, public WithContext
 {
 friend class TableFunctionDictionary;
 
@@ -60,10 +60,14 @@ public:
 
     std::string getName() const override { return "Dictionary"; }
 
+    static VirtualColumnsDescription createVirtuals();
+
     ~StorageDictionary() override;
 
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
     void checkTableCanBeDetached() const override;
+
+    using StorageWithCommonVirtualColumns::read;
 
     Pipe read(
         const Names & column_names,
@@ -78,11 +82,18 @@ public:
     /// count() can return wrong result, see test_dictionaries_redis/test_long.py::test_redis_dict_long
     bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 
-    std::shared_ptr<const IDictionary> getDictionary() const;
+    /// Loads the dictionary after checking that the user of `query_context` may read it, see `checkDictionaryAccess`.
+    [[nodiscard]] std::shared_ptr<const IDictionary> getDictionary(const ContextPtr & query_context) const;
 
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure, bool validate_id_type);
 
+    /// Checks the access needed to read the dictionary with the given ID as a table.
+    /// Must be called before the dictionary is loaded or its definition is read.
+    static void checkDictionaryAccess(const StorageID & dictionary_id, const ContextPtr & local_context);
+
     bool isDictionary() const override { return true; }
+    bool supportsTruncate() const override { return false; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
     void shutdown(bool is_drop) override;
     void startup() override;
 
@@ -90,7 +101,7 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
 
-    void alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder &) override;
+    void alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder &, DDLGuardPtr &) override;
 
     LoadablesConfigurationPtr getConfiguration() const;
 

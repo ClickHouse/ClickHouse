@@ -1,8 +1,11 @@
 #include <Disks/DiskLocal.h>
+#include <Disks/DiskRoot.h>
 #include <Disks/DiskSelector.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/getUnderlyingDisk.h>
 
 #include <IO/WriteHelpers.h>
+#include <Common/StringUtils.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
@@ -28,33 +31,19 @@ void DiskSelector::assertInitialized() const
 
 void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
 {
-    if (disk->isPlain() && !disk->isReadOnly() && !disk->isWriteOnce())
+    const auto root = getDiskRoot(disk);
+    if (root && !disk->isReadOnly() && !disk->isWriteOnce())
     {
+        const auto underlying_disk = getUnderlyingDisk(disk);
         for (const auto & [saved_disk_name, saved_disk] : disks)
         {
-            if (!saved_disk->isPlain() || saved_disk->isReadOnly() || saved_disk->isWriteOnce())
+            if (saved_disk->isReadOnly() || saved_disk->isWriteOnce())
                 continue;
 
-            /// Same endpoint
-            if (disk->getObjectStorage()->getDescription() != saved_disk->getObjectStorage()->getDescription())
-                continue;
-
-            /// Same bucket
-            if (disk->getObjectStorage()->getObjectsNamespace() != saved_disk->getObjectStorage()->getObjectsNamespace())
-                continue;
-
-            LOG_TEST(getLogger("recordDisk"), "Validating plain disk: {}-{}-{}-{}-{} vs {}-{}-{}-{}-{}",
-                disk_name, disk->isReadOnly(), disk->isWriteOnce(), disk->getObjectStorage()->getDescription(), disk->getObjectStorage()->getObjectsNamespace(),
-                saved_disk_name, saved_disk->isReadOnly(), saved_disk->isWriteOnce(), saved_disk->getObjectStorage()->getDescription(), saved_disk->getObjectStorage()->getObjectsNamespace());
-
-            /// Nested common keys
-            const auto new_prefix = disk->getObjectStorage()->getCommonKeyPrefix();
-            const auto saved_prefix = saved_disk->getObjectStorage()->getCommonKeyPrefix();
-            if (new_prefix.starts_with(saved_prefix) || saved_prefix.starts_with(new_prefix))
-                if (disk->getMetadataStorage().get() != saved_disk->getMetadataStorage().get())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "It is not possible to register multiple plain-rewritable disks with the same object storage prefix. Disks '{}' and '{}'",
-                        disk_name, saved_disk_name);
+            if (getDiskRoot(saved_disk) == root && getUnderlyingDisk(saved_disk) != underlying_disk)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Disks {} and {} store data in the same place ({})",
+                    backQuote(saved_disk_name), backQuote(disk_name), root->path);
         }
     }
 
@@ -65,7 +54,9 @@ void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
 
 void DiskSelector::initialize(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, DiskValidator disk_validator)
+try
 {
+    auto component_guard = Coordination::setCurrentComponent("DiskSelector::initialize");
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
 
@@ -97,7 +88,10 @@ void DiskSelector::initialize(
     }
     if (!has_default_disk)
     {
-        recordDisk(DEFAULT_DISK_NAME, std::make_shared<DiskLocal>(DEFAULT_DISK_NAME, context->getPath(), 0, context, config, config_prefix));
+        auto tracked_config = DiskFactory::trackImplicitLocalDisk(DEFAULT_DISK_NAME, config, config_prefix + "." + DEFAULT_DISK_NAME, context);
+        auto default_disk = std::make_shared<DiskLocal>(DEFAULT_DISK_NAME, context->getPath(), 0, context, config, config_prefix);
+        default_disk->keepConfigurationAlive(tracked_config);
+        recordDisk(DEFAULT_DISK_NAME, std::move(default_disk));
     }
 
     if (!has_local_disk && (context->getApplicationType() == Context::ApplicationType::DISKS))
@@ -106,6 +100,12 @@ void DiskSelector::initialize(
         recordDisk(LOCAL_DISK_NAME, std::make_shared<DiskLocal>(LOCAL_DISK_NAME, "/", 0, context, config, config_prefix));
     }
     is_initialized = true;
+}
+catch (...)
+{
+    for (const auto & [name, disk] : disks)
+        disk->shutdown();
+    throw;
 }
 
 DiskSelectorPtr DiskSelector::updateFromConfig(
@@ -143,7 +143,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         {
             auto disk = old_disks_minus_new_disks[disk_name];
 
-            disk->applyNewSettings(config, context, disk_config_prefix, result->getDisksMap());
+            factory.applyNewSettings(disk, disk_name, config, disk_config_prefix, context, result->getDisksMap());
 
             old_disks_minus_new_disks.erase(disk_name);
         }

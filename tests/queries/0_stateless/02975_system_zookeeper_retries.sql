@@ -17,6 +17,6 @@ SYSTEM FLUSH LOGS query_log;
 -- Check that there where zk session failures
 SELECT ProfileEvents['ZooKeeperHardwareExceptions'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='02975_system_zookeeper_retries'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='02975_system_zookeeper_retries'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;

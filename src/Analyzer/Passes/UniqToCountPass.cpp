@@ -1,20 +1,25 @@
 #include <Analyzer/Passes/UniqToCountPass.h>
 
+#include <DataTypes/DataTypeNullable.h>
+
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool optimize_uniq_to_count;
 }
 
@@ -42,7 +47,7 @@ NamesAndTypes extractProjectionColumnsForGroupBy(const QueryNode * query_node)
         const auto & projection_columns = query_node->getProjectionColumns();
         const auto & projection_nodes = query_node->getProjection().getNodes();
 
-        assert(projection_columns.size() == projection_nodes.size());
+        chassert(projection_columns.size() == projection_nodes.size());
 
         for (size_t i = 0; i < projection_columns.size(); i++)
         {
@@ -135,7 +140,7 @@ public:
             return;
 
         /// Check that query has only single table expression which is subquery
-        auto * subquery_node = query_node->getJoinTree()->as<QueryNode>();
+        auto * subquery_node = query_node->getJoinTreeNode()->as<QueryNode>();
         if (!subquery_node)
             return;
 
@@ -154,7 +159,43 @@ public:
         if (!matchFnUniq(function_node->getFunctionName()))
             return;
 
+        /// The rows of different shards are not merged, so they can be equal.
+        if (subquery_node->getContext()->getSettingsRef()[Setting::distributed_group_by_no_merge])
+            return;
+
+        /// A window function also processes subtotals, and totals of the subquery, which can be equal.
+        if (function_node->isWindowCall() && (query_node->hasGroupBy() || subquery_node->isGroupByWithTotals()))
+            return;
+
+        /// `count` has no parameters, and does not return NULL as some variants do if all arguments are NULL, or if there are none.
+        if (!function_node->getParameters().getNodes().empty() || canContainNull(*function_node->getResultType()))
+            return;
+
         auto & uniq_arguments_nodes = function_node->getArguments().getNodes();
+
+        /// The arguments must be different columns of the subquery, and not correlated columns with the same names.
+        QueryTreeNodePtrWithHashSet unique_arguments;
+        for (const auto & uniq_argument_node : uniq_arguments_nodes)
+        {
+            const auto * column_node = uniq_argument_node->as<ColumnNode>();
+            if (!column_node || column_node->getColumnSourceOrNull().get() != subquery_node
+                || !unique_arguments.emplace(uniq_argument_node).second)
+                return;
+        }
+
+        /// `uniq` does not count a NULL, but an argument-less `count()` counts the row that
+        /// `SELECT DISTINCT` or `GROUP BY` emits for it, so replacing `uniq(x)` with `count()`
+        /// would report one distinct value too many. A single argument that can carry a NULL is
+        /// rewritten to `count(x)` instead, which skips a NULL exactly like `uniq` does. A
+        /// multi-argument `uniq(x, y)` has no such counterpart - it skips a row where any of the
+        /// arguments is NULL - so there the rewrite is declined. `canContainNull` rather than
+        /// `isNullable`, because `Variant` and `Dynamic` carry a NULL through a discriminator.
+        bool any_argument_can_contain_null = false;
+        for (const auto & uniq_argument_node : uniq_arguments_nodes)
+            any_argument_can_contain_null |= canContainNull(*uniq_argument_node->getResultType());
+
+        if (any_argument_can_contain_null && uniq_arguments_nodes.size() != 1)
+            return;
 
         /// Whether query matches 'SELECT uniq(x ...) FROM (SELECT DISTINCT x ...)'
         auto match_subquery_with_distinct = [&]() -> bool
@@ -175,6 +216,12 @@ public:
             if (!subquery_node->hasGroupBy())
                 return false;
 
+            /// These modifiers emit rows beyond one per group - the super-aggregate "total" rows -
+            /// which `count()` would count as additional distinct values.
+            if (subquery_node->isGroupByWithRollup() || subquery_node->isGroupByWithCube()
+                || subquery_node->isGroupByWithTotals() || subquery_node->isGroupByWithGroupingSets())
+                return false;
+
             /// uniq argument node list == subquery group by node list
             auto group_by_columns = extractProjectionColumnsForGroupBy(subquery_node);
 
@@ -191,7 +238,9 @@ public:
         /// Replace uniq of initial query to count
         if (match_subquery_with_distinct() || match_subquery_with_group_by())
         {
-            function_node->getArguments().getNodes().clear();
+            /// A NULL-able argument is kept, so that `count(x)` skips a NULL like `uniq` does.
+            if (!any_argument_can_contain_null)
+                function_node->getArguments().getNodes().clear();
             resolveAggregateFunctionNodeByName(*function_node, "count");
         }
     }

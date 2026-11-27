@@ -1,16 +1,30 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <memory>
 #include <Columns/IColumn_fwd.h>
 #include <Core/Names.h>
+#include <Core/Types.h>
 #include <Dictionaries/IDictionary.h>
+#include <Processors/Chunk.h>
+#include <boost/noncopyable.hpp>
 
 
 namespace DB
 {
 
 class DictionarySource;
+
+/// Attached to every chunk produced by `DictionarySource` so that consumers can recover the
+/// original sequential read order of the dictionary even when it is read with several streams.
+/// Block `n` always covers the key range `[n * max_block_size, (n + 1) * max_block_size)`,
+/// so ordering chunks by `number` reproduces the single-stream scan order.
+struct DictionaryBlockNumber : public ChunkInfoCloneable<DictionaryBlockNumber>
+{
+    explicit DictionaryBlockNumber(size_t number_) : number(number_) {}
+    DictionaryBlockNumber(const DictionaryBlockNumber &) = default;
+
+    size_t number = 0;
+};
 
 class DictionarySourceCoordinator final : public std::enable_shared_from_this<DictionarySourceCoordinator>
                                         , private boost::noncopyable
@@ -19,6 +33,10 @@ public:
     using ReadColumnsFunc = std::function<Columns (const Strings &, const DataTypes &, const Columns &, const DataTypes &, const Columns &)>;
 
     Pipe read(size_t num_streams);
+
+    /// Complex keys in the dictionary's arenas, kept alive by `dictionary`. Each block deserializes its own
+    /// range of them and puts the result before its `key_columns_with_type`. Call before `read`.
+    void setSerializedKeys(PaddedPODArray<std::string_view> && serialized_keys_);
 
     explicit DictionarySourceCoordinator(
         std::shared_ptr<const IDictionary> dictionary_,
@@ -84,21 +102,23 @@ private:
 
     friend class DictionarySource;
 
-    bool getKeyColumnsNextRangeToRead(ColumnsWithTypeAndName & key_columns, ColumnsWithTypeAndName & data_columns);
+    bool getKeyColumnsNextRangeToRead(ColumnsWithTypeAndName & key_columns, ColumnsWithTypeAndName & data_columns, size_t & block_number);
 
     const SharedHeader & getHeader() const { return header; }
 
-    const std::vector<std::string> & getAttributesNamesToRead() const { return attributes_names_to_read; }
+    const Strings & getAttributesNamesToRead() const { return attributes_names_to_read; }
 
-    const std::vector<DataTypePtr> & getAttributesTypesToRead() const { return attributes_types_to_read; }
+    const DataTypes & getAttributesTypesToRead() const { return attributes_types_to_read; }
 
-    const std::vector<ColumnPtr> & getAttributesDefaultValuesColumns() const { return attributes_default_values_columns; }
+    const Columns & getAttributesDefaultValuesColumns() const { return attributes_default_values_columns; }
 
     const ReadColumnsFunc & getReadColumnsFunc() const { return read_columns_func; }
 
     const std::shared_ptr<const IDictionary> & getDictionary() const { return dictionary; }
 
     void initialize(const Names & column_names);
+
+    size_t getKeysSize() const;
 
     static ColumnsWithTypeAndName cutColumns(const ColumnsWithTypeAndName & columns_with_type, size_t start, size_t length);
 
@@ -107,11 +127,14 @@ private:
     ColumnsWithTypeAndName key_columns_with_type;
     ColumnsWithTypeAndName data_columns_with_type;
 
+    PaddedPODArray<std::string_view> serialized_keys;
+    bool has_serialized_keys = false;
+
     SharedHeader header;
 
-    std::vector<std::string> attributes_names_to_read;
-    std::vector<DataTypePtr> attributes_types_to_read;
-    std::vector<ColumnPtr> attributes_default_values_columns;
+    Strings attributes_names_to_read;
+    DataTypes attributes_types_to_read;
+    Columns attributes_default_values_columns;
 
     const size_t max_block_size;
     ReadColumnsFunc read_columns_func;

@@ -1,0 +1,567 @@
+---
+title: 'ClickHouse에서 배열 사용하기'
+description: 'ClickHouse에서 배열을 사용하는 방법을 소개하는 입문 가이드'
+keywords: ['배열']
+sidebarTitle: 'ClickHouse에서 배열 사용하기'
+slug: /guides/working-with-arrays
+doc_type: 'guide'
+---
+
+import { RunnableCode } from "/snippets/ko/components/RunnableCode/RunnableCode.jsx";
+
+> 이 가이드에서는 ClickHouse에서 배열을 사용하는 방법과 가장 자주 사용되는 [배열 함수](/ko/reference/functions/regular-functions/array-functions) 몇 가지를 알아봅니다.
+
+<div id="array-basics">
+  ## 배열 소개
+</div>
+
+배열은 여러 값을 함께 묶어 저장하는 메모리 내 데이터 구조입니다.
+이 값들을 배열의 *요소*라고 하며, 각 요소는 이 묶음에서의 위치를 나타내는 인덱스로 참조할 수 있습니다.
+
+ClickHouse에서 배열은 [`array`](/ko/reference/data-types/array) 함수를 사용해 만들 수 있습니다:
+
+```sql
+array(T)
+```
+
+또는 `[]`를 사용하여:
+
+```sql
+[]
+```
+
+예를 들어, 숫자 배열을 만들 수 있습니다:
+
+```sql
+SELECT array(1, 2, 3) AS numeric_array
+```
+
+```response
+┌─numeric_array─┐
+│ [1,2,3]       │
+└───────────────┘
+```
+
+또는 문자열 배열:
+
+```sql
+SELECT array('hello', 'world') AS string_array
+```
+
+```response
+┌─string_array──────┐
+│ ['hello','world'] │
+└───────────────────┘
+```
+
+또는 [튜플](/ko/reference/data-types/tuple)과 같은 중첩 타입으로 이루어진 배열:
+
+```sql
+SELECT array(tuple(1, 2), tuple(3, 4))
+```
+
+```response
+┌─[(1, 2), (3, 4)]─┐
+│ [(1,2),(3,4)]    │
+└──────────────────┘
+```
+
+다음과 같이 서로 다른 타입을 하나의 배열로 만들고 싶을 수 있습니다:
+
+```sql
+SELECT array('Hello', 'world', 1, 2, 3)
+```
+
+하지만 배열 요소는 항상 공통 상위 타입을 가져야 합니다. 공통 상위 타입이란 서로 다른 2개 이상의 타입 값을 손실 없이 표현할 수 있는 가장 작은 데이터 타입으로, 이 타입이 있어야 요소를 함께 사용할 수 있습니다.
+공통 상위 타입이 없으면 배열을 만들려고 할 때 예외가 발생합니다:
+
+```sql
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types String, String, UInt8, UInt8, UInt8 because some of them are String/FixedString/Enum and some of them are not: In scope SELECT ['Hello', 'world', 1, 2, 3]. (NO_COMMON_TYPE)
+```
+
+배열을 즉석에서 생성할 때 ClickHouse는 모든 요소를 수용할 수 있는 가장 좁은 타입을 선택합니다.
+예를 들어, 정수와 부동소수점 수로 배열을 생성하면 float의 상위 타입이 선택됩니다:
+
+```sql
+SELECT [1::UInt8, 2.5::Float32, 3::UInt8] AS mixed_array, toTypeName([1, 2.5, 3]) AS array_type;
+```
+
+```response
+┌─mixed_array─┬─array_type─────┐
+│ [1,2.5,3]   │ Array(Float64) │
+└─────────────┴────────────────┘
+```
+
+<Accordion title="서로 다른 타입의 배열 만들기">
+  위에서 설명한 기본 동작을 변경하려면 `use_variant_as_common_type` 설정을 사용할 수 있습니다.
+  이 설정을 사용하면 인수 타입들에 공통 타입이 없을 때 `if`/`multiIf`/`array`/`map` 함수의 결과 타입으로 [Variant](/ko/reference/data-types/variant) 타입을 사용할 수 있습니다.
+
+  예시:
+
+  ```sql
+  SELECT
+      [1, 'ClickHouse', ['Another', 'Array']] AS array,
+      toTypeName(array)
+  SETTINGS use_variant_as_common_type = 1;
+  ```
+
+  ```response
+  ┌─array────────────────────────────────┬─toTypeName(array)────────────────────────────┐
+  │ [1,'ClickHouse',['Another','Array']] │ Array(Variant(Array(String), String, UInt8)) │
+  └──────────────────────────────────────┴──────────────────────────────────────────────┘
+  ```
+
+  그런 다음 타입 이름을 사용해 배열에서 각 타입의 값을 읽을 수도 있습니다:
+
+  ```sql
+  SELECT
+      [1, 'ClickHouse', ['Another', 'Array']] AS array,
+      array.UInt8,
+      array.String,
+      array.`Array(String)`
+  SETTINGS use_variant_as_common_type = 1;
+  ```
+
+  ```response
+  ┌─array────────────────────────────────┬─array.UInt8───┬─array.String─────────────┬─array.Array(String)─────────┐
+  │ [1,'ClickHouse',['Another','Array']] │ [1,NULL,NULL] │ [NULL,'ClickHouse',NULL] │ [[],[],['Another','Array']] │
+  └──────────────────────────────────────┴───────────────┴──────────────────────────┴─────────────────────────────┘
+  ```
+</Accordion>
+
+`[]` 인덱스를 사용하면 배열 요소에 편리하게 접근할 수 있습니다.
+ClickHouse에서는 배열 인덱스가 항상 **1**부터 시작한다는 점을 알아두는 것이 중요합니다.
+이 점은 배열 인덱스가 0부터 시작하는 다른 프로그래밍 언어와 다를 수 있습니다.
+
+예를 들어, 배열이 주어지면 다음과 같이 작성하여 첫 번째 요소를 선택할 수 있습니다:
+
+```sql
+WITH array('hello', 'world') AS string_array
+SELECT string_array[1];
+```
+
+```response
+┌─arrayElement⋯g_array, 1)─┐
+│ hello                    │
+└──────────────────────────┘
+```
+
+음수 인덱스도 사용할 수 있습니다.
+이 경우 마지막 요소를 기준으로 요소를 선택할 수 있습니다:
+
+```sql
+WITH array('hello', 'world') AS string_array
+SELECT string_array[-1];
+```
+
+```response
+┌─arrayElement⋯g_array, -1)─┐
+│ world                     │
+└───────────────────────────┘
+```
+
+배열의 인덱스는 1부터 시작하지만, 0 위치의 요소에도 접근할 수 있습니다.
+반환 값은 배열 데이터 타입의 *기본값*입니다.
+아래 예시에서는 String 데이터 타입의 기본값이므로 빈 문자열이 반환됩니다.
+
+```sql
+WITH ['hello', 'world', 'arrays are great aren\'t they?'] AS string_array
+SELECT string_array[0]
+```
+
+```response
+┌─arrayElement⋯g_array, 0)─┐
+│                          │
+└──────────────────────────┘
+```
+
+<div id="array-functions">
+  ## 배열 함수
+</div>
+
+ClickHouse는 배열을 처리하는 유용한 함수를 다양하게 제공합니다.
+이 절에서는 가장 단순한 함수부터 시작해 점차 더 복잡한 함수로 넘어가며, 그중 특히 유용한 몇 가지를 살펴보겠습니다.
+
+<div id="length-arrayEnumerate-indexOf-has-functions">
+  ### length, arrayEnumerate, indexOf, has* 함수
+</div>
+
+`length` 함수는 배열의 요소 개수를 반환합니다:
+
+```sql
+WITH array('learning', 'ClickHouse', 'arrays') AS string_array
+SELECT length(string_array);
+```
+
+```response
+┌─length(string_array)─┐
+│                    3 │
+└──────────────────────┘
+```
+
+[`arrayEnumerate`](/ko/reference/functions/regular-functions/array-functions#arrayEnumerate) 함수를 사용해 요소들의 인덱스 배열을 반환할 수도 있습니다:
+
+```sql
+WITH array('learning', 'ClickHouse', 'arrays') AS string_array
+SELECT arrayEnumerate(string_array);
+```
+
+```response
+┌─arrayEnumerate(string_array)─┐
+│ [1,2,3]                      │
+└──────────────────────────────┘
+```
+
+특정 값의 위치를 찾으려면 `indexOf` 함수를 사용할 수 있습니다:
+
+```sql
+SELECT indexOf([4, 2, 8, 8, 9], 8);
+```
+
+```response
+┌─indexOf([4, 2, 8, 8, 9], 8)─┐
+│                           3 │
+└─────────────────────────────┘
+```
+
+이 함수는 배열에 동일한 값이 여러 개 있으면 가장 먼저 발견한 인덱스를 반환합니다.
+배열 요소가 오름차순으로 정렬되어 있으면 [`indexOfAssumeSorted`](/ko/reference/functions/regular-functions/array-functions#indexOfAssumeSorted) 함수를 사용할 수 있습니다.
+
+`has`, `hasAll`, `hasAny` 함수는 배열에 지정한 값이 포함되어 있는지 확인할 때 유용합니다.
+다음 예시를 살펴보십시오:
+
+```sql
+WITH ['Airbus A380', 'Airbus A350', 'Airbus A220', 'Boeing 737', 'Boeing 747-400'] AS airplanes
+SELECT
+    has(airplanes, 'Airbus A350') AS has_true,
+    has(airplanes, 'Lockheed Martin F-22 Raptor') AS has_false,
+    hasAny(airplanes, ['Boeing 737', 'Eurofighter Typhoon']) AS hasAny_true,
+    hasAny(airplanes, ['Lockheed Martin F-22 Raptor', 'Eurofighter Typhoon']) AS hasAny_false,
+    hasAll(airplanes, ['Boeing 737', 'Boeing 747-400']) AS hasAll_true,
+    hasAll(airplanes, ['Boeing 737', 'Eurofighter Typhoon']) AS hasAll_false
+FORMAT Vertical;
+```
+
+```response
+has_true:     1
+has_false:    0
+hasAny_true:  1
+hasAny_false: 0
+hasAll_true:  1
+hasAll_false: 0
+```
+
+<div id="exploring-flight-data-with-array-functions">
+  ## 배열 함수로 항공편 데이터 살펴보기
+</div>
+
+지금까지 살펴본 예시는 비교적 단순했습니다.
+배열의 유용성은 실제 데이터셋에서 사용할 때 더욱 분명하게 드러납니다.
+
+이제 미국 교통통계국(Bureau of Transportation Statistics)의 항공편 데이터가 포함된 [ontime dataset](/ko/get-started/sample-datasets/ontime)을 사용하겠습니다.
+이 데이터셋은 [SQL playground](https://sql.clickhouse.com/?query_id=M4FSVBVMSHY98NKCQP8N4K)에서 확인할 수 있습니다.
+
+배열은 시계열 데이터 처리에 특히 적합하며,
+복잡해지기 쉬운 쿼리를 단순화하는 데도 도움이 되기 때문에 이 데이터셋을 선택했습니다.
+
+<Tip>
+  아래의 &quot;실행&quot; 버튼을 클릭하면 문서에서 직접 쿼리를 실행하고 결과를 실시간으로 확인할 수 있습니다.
+</Tip>
+
+<div id="grouparray">
+  ### groupArray
+</div>
+
+이 데이터셋에는 컬럼이 많지만, 여기서는 그중 일부만 살펴보겠습니다.
+아래 쿼리를 실행해 데이터 형태를 확인해 보십시오:
+
+<RunnableCode>
+  ```sql
+  -- SELECT
+  -- *
+  -- FROM ontime.ontime LIMIT 100
+
+  SELECT
+      FlightDate,
+      Origin,
+      OriginCityName,
+      Dest,
+      DestCityName,
+      DepTime,
+      DepDelayMinutes,
+      ArrTime,
+      ArrDelayMinutes
+  FROM ontime.ontime LIMIT 5
+  ```
+</RunnableCode>
+
+무작위로 고른 특정 날짜(예: &#39;2024-01-01&#39;)를 기준으로 미국에서 가장 붐비는 공항 상위 10곳을 살펴보겠습니다.
+관심 있는 것은 각 공항에서 출발하는 항공편 수입니다.
+이 데이터는 항공편당 1개의 행으로 구성되어 있지만, 출발 공항별로 데이터를 그룹화하고 목적지를 배열로 묶을 수 있다면 더 편리합니다.
+
+이를 위해 [`groupArray`](/ko/reference/functions/aggregate-functions/groupArray) 집계 함수를 사용할 수 있습니다. 이 함수는 각 행에서 지정한 컬럼 값을 가져와 하나의 배열로 그룹화합니다.
+
+동작 방식을 확인하려면 아래 쿼리를 실행해 보십시오:
+
+<RunnableCode>
+  ```sql
+  SELECT
+      FlightDate,
+      Origin,
+      groupArray(toStringCutToZero(Dest)) AS Destinations
+  FROM ontime.ontime
+  WHERE Origin IN ('ATL', 'ORD', 'DFW', 'DEN', 'LAX', 'JFK', 'LAS', 'CLT', 'SFO', 'SEA') AND FlightDate='2024-01-01'
+  GROUP BY FlightDate, Origin
+  ORDER BY length(Destinations)
+  ```
+</RunnableCode>
+
+위 쿼리의 [`toStringCutToZero`](/ko/reference/functions/regular-functions/type-conversion-functions#toStringCutToZero)는 일부 공항의 3자리 코드 뒤에 붙는 null 문자를 제거하는 데 사용됩니다.
+
+데이터가 이 포맷이면, 묶어 놓은 &quot;Destinations&quot; 배열의 길이를 확인해 가장 붐비는 공항의 순서를 쉽게 찾을 수 있습니다:
+
+<RunnableCode>
+  ```sql highlight={7}
+  WITH
+      '2024-01-01' AS date,
+      busy_airports AS (
+      SELECT
+      FlightDate,
+      Origin,
+      groupArray(toStringCutToZero(Dest)) AS Destinations
+      FROM ontime.ontime
+      WHERE Origin IN ('ATL', 'ORD', 'DFW', 'DEN', 'LAX', 'JFK', 'LAS', 'CLT', 'SFO', 'SEA')
+      AND FlightDate = date
+      GROUP BY FlightDate, Origin
+      ORDER BY length(Destinations)
+      )
+  SELECT
+      Origin,
+      length(Destinations) AS outward_flights
+  FROM busy_airports
+  ORDER BY outward_flights DESC
+  ```
+</RunnableCode>
+
+<div id="arraymap">
+  ### arrayMap and arrayZip
+</div>
+
+이전 쿼리에서 선택한 날짜에 출발 항공편이 가장 많았던 공항은 Denver International Airport였습니다.
+이제 해당 항공편 가운데 정시 출발한 항공편, 15~30분 지연된 항공편, 30분 초과 지연된 항공편이 각각 얼마나 되는지 살펴보겠습니다.
+
+ClickHouse의 많은 배열 함수는 소위 [&quot;고차 함수&quot;](/ko/reference/functions/regular-functions/overview#higher-order-functions)이며, 첫 번째 매개변수로 람다 함수를 받습니다.
+[`arrayMap`](/ko/reference/functions/regular-functions/array-functions#arrayMap) 함수는 이러한 고차 함수의 한 예시로, 원본 배열의 각 요소에 람다 함수를 적용하여 주어진 배열로부터 새 배열을 반환합니다.
+
+아래 쿼리를 실행해 `arrayMap` 함수를 사용하여 어떤 항공편이 지연되었고 어떤 항공편이 정시였는지 확인하세요.
+출발지/도착지 쌍별로 각 항공편의 기체 번호와 상태를 보여줍니다.
+
+<RunnableCode>
+  ```sql
+  WITH arrayMap(
+                d -> if(d >= 30, 'DELAYED', if(d >= 15, 'WARNING', 'ON-TIME')),
+                groupArray(DepDelayMinutes)
+      ) AS statuses
+
+  SELECT
+      Origin,
+      toStringCutToZero(Dest) AS Destination,
+      arrayZip(groupArray(Tail_Number), statuses) as tailNumberStatuses
+  FROM ontime.ontime
+  WHERE Origin = 'DEN'
+    AND FlightDate = '2024-01-01'
+    AND DepTime IS NOT NULL
+    AND DepDelayMinutes IS NOT NULL
+  GROUP BY ALL
+  ```
+</RunnableCode>
+
+위 쿼리에서 `arrayMap` 함수는 단일 요소 배열 `[DepDelayMinutes]`를 받아, 이를 분류하기 위해 람다 함수 `d -> if(d >= 30, 'DELAYED', if(d >= 15, 'WARNING', 'ON-TIME'`를 적용합니다.
+그런 다음 결과 배열의 첫 번째 요소를 `[DepDelayMinutes][1]`로 추출합니다.
+[`arrayZip`](/ko/reference/functions/regular-functions/array-functions#arrayZip) 함수는 `Tail_Number` 배열과 `statuses` 배열을 하나의 배열로 묶습니다.
+
+<div id="arrayfilter">
+  ### arrayFilter
+</div>
+
+다음으로 `DEN`, `ATL`, `DFW` 공항에서 30분 이상 지연된 항공편 수만 살펴보겠습니다.
+
+<RunnableCode>
+  ```sql highlight={4}
+  SELECT
+      Origin,
+      OriginCityName,
+      length(arrayFilter(d -> d >= 30, groupArray(ArrDelayMinutes))) AS num_delays_30_min_or_more
+  FROM ontime.ontime
+  WHERE Origin IN ('DEN', 'ATL', 'DFW')
+      AND FlightDate = '2024-01-01'
+  GROUP BY Origin, OriginCityName
+  ORDER BY num_delays_30_min_or_more DESC
+  ```
+</RunnableCode>
+
+위 쿼리에서는 [`arrayFilter`](/ko/reference/functions/regular-functions/array-functions#arrayFilter) 함수의 첫 번째 인수로 람다 함수를 전달합니다.
+이 람다 함수는 지연 시간(분)을 나타내는 `d`를 받아, 조건을 만족하면 `1`, 그렇지 않으면 `0`을 반환합니다.
+
+```sql
+d -> d >= 30
+```
+
+<div id="arraysort-and-arrayintersect">
+  ### arraySort 및 arrayIntersect
+</div>
+
+다음으로, [`arraySort`](/ko/reference/functions/regular-functions/array-functions#arraySort) 및 [`arrayIntersect`](/ko/reference/functions/regular-functions/array-functions#arrayIntersect) 함수를 사용해 미국의 주요 공항 쌍 중 공통 목적지가 가장 많은 쌍을 살펴보겠습니다.
+`arraySort`는 배열을 받아 기본적으로 요소를 오름차순으로 정렬하며, 정렬 순서를 지정하기 위해 람다 함수를 전달할 수도 있습니다.
+`arrayIntersect`는 여러 배열을 받아, 모든 배열에 공통으로 포함된 요소들로 이루어진 배열을 반환합니다.
+
+아래 쿼리를 실행하여 이 두 배열 함수가 실제로 어떻게 동작하는지 확인해 보십시오.
+
+<RunnableCode>
+  ```sql highlight={4,12}
+  WITH airport_routes AS (
+      SELECT 
+          Origin,
+          arraySort(groupArray(DISTINCT toStringCutToZero(Dest))) AS destinations
+      FROM ontime.ontime
+      WHERE FlightDate = '2024-01-01'
+      GROUP BY Origin
+  )
+  SELECT 
+      a1.Origin AS airport1,
+      a2.Origin AS airport2,
+      length(arrayIntersect(a1.destinations, a2.destinations)) AS common_destinations
+  FROM airport_routes a1
+  CROSS JOIN airport_routes a2
+  WHERE a1.Origin < a2.Origin
+      AND a1.Origin IN ('DEN', 'ATL', 'DFW', 'ORD', 'LAS')
+      AND a2.Origin IN ('DEN', 'ATL', 'DFW', 'ORD', 'LAS')
+  ORDER BY common_destinations DESC
+  LIMIT 10
+  ```
+</RunnableCode>
+
+이 쿼리는 크게 두 단계로 작동합니다.
+첫 번째 단계에서는 Common Table Expression(CTE)을 사용해 `airport_routes`라는 임시 데이터셋을 만들고, 2024년 1월 1일의 모든 항공편을 기준으로 각 출발 공항이 운항하는 고유 목적지의 정렬된 목록을 구성합니다.
+예를 들어 `airport_routes` 결과 집합에서 DEN에는 `['ATL', 'BOS', 'LAX', 'MIA', ...]`처럼 해당 공항이 운항하는 모든 도시가 담긴 배열이 있을 수 있습니다.
+
+두 번째 단계에서는 미국의 주요 허브 공항 5곳(`DEN`, `ATL`, `DFW`, `ORD`, `LAS`)을 대상으로 가능한 모든 공항 쌍을 비교합니다.
+이는 교차 조인(cross join)을 사용해 이 공항들의 모든 조합을 생성하는 방식으로 수행됩니다.
+그런 다음 각 쌍에 대해 `arrayIntersect` 함수를 사용하여 두 공항의 목록에 모두 포함된 목적지를 찾습니다.
+length 함수는 이렇게 구한 공통 목적지의 개수를 계산합니다.
+
+조건 `a1.Origin < a2.Origin`은 각 쌍이 한 번만 나타나도록 보장합니다.
+이 조건이 없으면 JFK-LAX와 LAX-JFK가 각각 별도의 결과로 반환되는데, 이는 같은 비교이므로 중복입니다.
+마지막으로 쿼리는 결과를 정렬해 공통 목적지 수가 가장 많은 공항 쌍을 보여 주고, 상위 10개만 반환합니다.
+이를 통해 노선망이 가장 많이 겹치는 주요 허브를 파악할 수 있습니다. 이는 여러 항공사가 동일한 도시 쌍에 취항하는 경쟁 시장이 존재하거나, 비슷한 지리적 권역을 운항하여 여행자에게 대체 경유 지점으로 활용될 수 있는 허브임을 시사할 수 있습니다.
+
+<div id="arrayReduce">
+  ### arrayReduce
+</div>
+
+지연을 살펴보는 김에, 또 다른 고차 배열 함수인 `arrayReduce`를 사용해 Denver International Airport에서 출발하는 각 노선의 평균 지연과 최대 지연을 구해보겠습니다:
+
+<RunnableCode>
+  ```sql highlight={5-6}
+  SELECT
+      Origin,
+      toStringCutToZero(Dest) AS Destination,
+      groupArray(DepDelayMinutes) AS delays,
+      round(arrayReduce('avg', groupArray(DepDelayMinutes)), 2) AS avg_delay,
+      round(arrayReduce('max', groupArray(DepDelayMinutes)), 2) AS worst_delay
+  FROM ontime.ontime
+  WHERE Origin = 'DEN'
+      AND FlightDate = '2024-01-01'
+      AND DepDelayMinutes IS NOT NULL
+  GROUP BY Origin, Destination
+  ORDER BY avg_delay DESC
+  ```
+</RunnableCode>
+
+위 예시에서는 `arrayReduce`를 사용해 `DEN`에서 출발하는 여러 노선의 평균 지연과 최대 지연을 구했습니다.
+`arrayReduce`는 함수의 첫 번째 매개변수로 지정한 집계 함수를 두 번째 매개변수로 전달한 배열의 요소에 적용합니다.
+
+<div id="arrayJoin">
+  ### arrayJoin
+</div>
+
+ClickHouse의 일반 함수는 입력받은 행 수와 동일한 수의 행을 반환하는 특성이 있습니다.
+하지만 이 규칙을 깨는 흥미롭고 고유한 함수가 하나 있는데, 알아둘 만한 가치가 있습니다. 바로 `arrayJoin` 함수입니다.
+
+`arrayJoin`은 배열을 &quot;펼쳐&quot; 각 요소마다 별도의 행을 생성합니다.
+이는 다른 데이터베이스의 `UNNEST` 또는 `EXPLODE` SQL 함수와 비슷합니다.
+
+배열이나 스칼라 값을 반환하는 대부분의 배열 함수와 달리, `arrayJoin`은 행 수를 늘려 결과 집합을 근본적으로 바꿉니다.
+
+아래 쿼리는 0부터 100까지 10 간격으로 값을 갖는 배열을 반환합니다.
+이 배열은 0분, 10분, 20분 등과 같은 서로 다른 지연 시간이라고 볼 수 있습니다.
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay
+  SELECT delay
+  ```
+</RunnableCode>
+
+`arrayJoin`을 사용하면 두 공항 사이에서 특정 분 수까지의 지연이 몇 건 있었는지 계산하는 쿼리를 작성할 수 있습니다.
+아래 쿼리는 누적 지연 버킷을 사용해 2024년 1월 1일 Denver(DEN)에서 Miami(MIA)로 향하는 항공편 지연 분포를 보여주는 히스토그램을 생성합니다.
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay,
+      toStringCutToZero(Dest) AS Destination
+
+  SELECT
+      'Up to ' || arrayJoin(delay) || ' minutes' AS delayTime,
+      countIf(DepDelayMinutes >= arrayJoin(delay)) AS flightsDelayed
+  FROM ontime.ontime
+  WHERE Origin = 'DEN' AND Destination = 'MIA' AND FlightDate = '2024-01-01'
+  GROUP BY delayTime
+  ORDER BY flightsDelayed DESC
+  ```
+</RunnableCode>
+
+위 쿼리에서는 CTE 절(`WITH` 절)을 사용해 지연값 배열을 반환합니다.
+`Destination`은 목적지 코드를 문자열로 변환합니다.
+
+`arrayJoin`을 사용해 지연 배열을 개별 행으로 펼칩니다.
+`delay` 배열의 각 값은 별칭 `del`이 지정된 개별 행이 되며,
+`del=0`인 행 1개, `del=10`인 행 1개, `del=20`인 행 1개 등 총 10개의 행이 생성됩니다.
+각 지연 임계값(`del`)에 대해 쿼리는 `countIf(DepDelayMinutes >= del)`을 사용하여
+해당 임계값 이상으로 지연된 항공편 수를 계산합니다.
+
+`arrayJoin`에는 이에 대응하는 SQL 구문 `ARRAY JOIN`도 있습니다.
+비교를 위해 위 쿼리를 동일한 SQL 구문으로 다시 작성하면 아래와 같습니다.
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay, 
+       toStringCutToZero(Dest) AS Destination
+
+  SELECT    
+      'Up to ' || del || ' minutes' AS delayTime,
+      countIf(DepDelayMinutes >= del) flightsDelayed
+  FROM ontime.ontime
+  ARRAY JOIN delay AS del
+  WHERE Origin = 'DEN' AND Destination = 'MIA' AND FlightDate = '2024-01-01'
+  GROUP BY ALL
+  ORDER BY flightsDelayed DESC
+  ```
+</RunnableCode>
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+축하합니다! ClickHouse에서 배열을 다루는 방법을 익혔습니다. 기본적인 배열 생성과 인덱싱부터 `groupArray`, `arrayFilter`, `arrayMap`, `arrayReduce`, `arrayJoin` 같은 강력한 함수까지 배웠습니다.
+계속 학습하려면 전체 배열 함수 참고 문서를 살펴보고 `arrayFlatten`, `arrayReverse`, `arrayDistinct` 같은 추가 함수도 확인해 보십시오.
+배열과 함께 활용하기 좋은 관련 데이터 구조인 [`튜플`](/ko/reference/data-types/tuple#creating-tuples), [JSON](/ko/reference/data-types/newjson), [맵](/ko/reference/data-types/map) 타입도 함께 알아보시기 바랍니다.
+이 개념들을 자신의 데이터셋에 적용해 보고, SQL playground 또는 다른 예시 데이터셋에서 다양한 쿼리를 실험해 보십시오.
+
+배열은 ClickHouse에서 효율적인 분석 쿼리를 가능하게 하는 핵심 기능입니다. 배열 함수에 점점 익숙해질수록 복잡한 집계와 시계열 분석을 크게 단순화할 수 있다는 점을 알게 될 것입니다.
+배열을 더 흥미롭게 살펴보고 싶다면, ClickHouse의 데이터 전문가 Mark가 진행하는 아래 YouTube 동영상을 추천합니다.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7jaw3J6U_h8?si=6NiEJ7S1odU-VVqX" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

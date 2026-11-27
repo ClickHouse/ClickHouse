@@ -28,17 +28,17 @@ struct StudentTTestData : public TTestMoments<Float64>
 {
     static constexpr auto name = "studentTTest";
 
-    bool hasEnoughObservations() const
+    [[nodiscard]] bool hasEnoughObservations() const
     {
         return nx > 0 && ny > 0 && nx + ny > 2;
     }
 
-    Float64 getDegreesOfFreedom() const
+    [[nodiscard]] Float64 getDegreesOfFreedom() const
     {
         return nx + ny - 2;
     }
 
-    std::tuple<Float64, Float64> getResult() const
+    [[nodiscard]] Float64 getStandardError() const
     {
         Float64 mean_x = getMeanX();
         Float64 mean_y = getMeanY();
@@ -59,8 +59,16 @@ struct StudentTTestData : public TTestMoments<Float64>
         Float64 s2 = (all_x + all_y) / degrees_of_freedom;
         Float64 std_err2 = s2 * (1. / nx + 1. / ny);
 
+        return sqrt(std_err2);
+    }
+
+    [[nodiscard]] std::tuple<Float64, Float64> getResult() const
+    {
+        Float64 mean_x = getMeanX();
+        Float64 mean_y = getMeanY();
+
         /// t-statistic
-        Float64 t_stat = (mean_x - mean_y) / sqrt(std_err2);
+        Float64 t_stat = (mean_x - mean_y) / getStandardError();
 
         if (unlikely(!std::isfinite(t_stat)))
             return {std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};
@@ -92,9 +100,53 @@ AggregateFunctionPtr createAggregateFunctionStudentTTest(
 
 }
 
+void registerAggregateFunctionStudentTTest(AggregateFunctionFactory & factory);
 void registerAggregateFunctionStudentTTest(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("studentTTest", createAggregateFunctionStudentTTest);
+    FunctionDocumentation::Description description_studentTTest = R"(
+Applies Student's t-test to samples from two populations.
+
+Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population. Otherwise it belongs to the sample from the second population.
+The null hypothesis is that means of populations are equal. Normal distribution with equal variances is assumed.
+
+**See Also**
+
+- [Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test)
+- [welchTTest function](/reference/functions/aggregate-functions/welchTTest)
+    )";
+    FunctionDocumentation::Syntax syntax_studentTTest = R"(
+studentTTest([confidence_level])(sample_data, sample_index)
+    )";
+    FunctionDocumentation::Parameters parameters_studentTTest = {
+        {"confidence_level", "Optional. Confidence level in order to calculate confidence intervals.", {"Float"}}
+    };
+    FunctionDocumentation::Arguments arguments_studentTTest = {
+        {"sample_data", "Sample data.", {"Integer", "Float", "Decimal"}},
+        {"sample_index", "Sample index.", {"Integer"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_studentTTest = {"Returns a tuple with two or four elements (if the optional `confidence_level` is specified): calculated t-statistic, calculated p-value, [calculated confidence-interval-low], [calculated confidence-interval-high].", {"Tuple(Float64, Float64)", "Tuple(Float64, Float64, Float64, Float64)"}};
+    FunctionDocumentation::Examples examples_studentTTest = {
+    {
+        "Basic usage",
+        R"(
+CREATE TABLE student_ttest (sample_data Float64, sample_index UInt8) ENGINE = Memory;
+INSERT INTO student_ttest VALUES (20.3, 0), (21.1, 0), (21.9, 1), (21.7, 0), (19.9, 1), (21.8, 1);
+
+SELECT studentTTest(sample_data, sample_index) FROM student_ttest;
+        )",
+        R"(
+┌─studentTTest(sample_data, sample_index)───┐
+├──────────t_statistic─┬────────────p_value─┤
+│ -0.21739130434783777 │ 0.8385421208415735 │
+└──────────────────────┴────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_studentTTest = {21, 1};
+    FunctionDocumentation::Category category_studentTTest = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_studentTTest = {description_studentTTest, syntax_studentTTest, arguments_studentTTest, parameters_studentTTest, returned_value_studentTTest, examples_studentTTest, introduced_in_studentTTest, category_studentTTest};
+
+    factory.registerFunction("studentTTest", {createAggregateFunctionStudentTTest, documentation_studentTTest});
 }
 
 }

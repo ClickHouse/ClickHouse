@@ -25,9 +25,9 @@ Checks whether a string begins with the provided string.
         "Usage example",
         "SELECT startsWith('ClickHouse', 'Click');",
         R"(
-┌─startsWith('⋯', 'Click')─┐
-│                        1 │
-└──────────────────────────┘
+┌─startsWith('ClickHouse', 'Click')─┐
+│                                 1 │
+└───────────────────────────────────┘
         )"
     }
     };
@@ -36,6 +36,7 @@ Checks whether a string begins with the provided string.
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionStartsWith>(documentation);
+    factory.registerAlias("starts_with", NameStartsWith::name, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(StartsWithCaseInsensitive)
@@ -54,13 +55,13 @@ Checks whether a string begins with the provided case-insensitive string.
         "Usage example",
         "SELECT startsWithCaseInsensitive('ClickHouse', 'CLICK');",
         R"(
-┌─startsWithCaseInsensitive('⋯', 'CLICK')─┐
-│                                       1 │
-└─────────────────────────────────────────┘
+┌─startsWithCaseInsensitive('ClickHouse', 'CLICK')─┐
+│                                                1 │
+└──────────────────────────────────────────────────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

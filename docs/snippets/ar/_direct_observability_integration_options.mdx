@@ -1,0 +1,47 @@
+---
+title: خيارات التكامل المباشر مع Observability
+---
+
+<div id="direct-grafana">
+  ### تكامل مباشر مع المكوّن الإضافي لـ Grafana
+</div>
+
+يتيح المكوّن الإضافي لمصدر بيانات ClickHouse في Grafana عرض البيانات واستكشافها مباشرةً من ClickHouse باستخدام جداول النظام. ويُعد هذا النهج مناسبًا لمراقبة الأداء وإنشاء لوحات معلومات مخصصة لتحليل النظام بشكل مفصل.
+للاطلاع على تفاصيل تثبيت المكوّن الإضافي وإعداده، راجع [المكوّن الإضافي لمصدر البيانات](/ar/integrations/connectors/data-visualization/grafana/index) الخاص بـ ClickHouse. وللحصول على إعداد مراقبة متكامل باستخدام Prometheus-Grafana mix-in مع لوحات معلومات مُعدّة مسبقًا وقواعد تنبيه، راجع [Monitor ClickHouse with the new Prometheus-Grafana mix-in](https://clickhouse.com/blog/monitor-with-new-prometheus-grafana-mix-in).
+
+<div id="direct-datadog">
+  ### تكامل Datadog المباشر
+</div>
+
+يوفّر Datadog مكوّنًا إضافيًا ClickHouse Monitoring لوكيله، والتي تستعلم جداول النظام مباشرةً. يوفّر هذا التكامل مراقبة شاملة لقاعدة البيانات على مستوى العُنقود بفضل وظيفة clusterAllReplicas.
+
+<Note>
+  لا نوصي بهذا التكامل في عمليات نشر ClickHouse Cloud، بسبب عدم توافقه مع آلية الخمول المستخدَمة لتحسين التكلفة والقيود التشغيلية في طبقة الوكيل السحابي.
+</Note>
+
+<div id="system-tables">
+  ### استخدام جداول النظام مباشرةً
+</div>
+
+يمكنك إجراء تحليل متعمّق لأداء الاستعلامات عبر الاتصال بجداول نظام ClickHouse، ولا سيّما `system.query_log`، والاستعلام منها مباشرةً. وباستخدام SQL Console أو clickhouse client، يمكن للفرق تحديد الاستعلامات البطيئة، وتحليل استخدام الموارد، وتتبع أنماط الاستخدام على مستوى المؤسسة.
+
+**تحليل أداء الاستعلامات**
+
+يمكنك استخدام query logs في جدول النظام لإجراء تحليل أداء الاستعلامات.
+
+**مثال على استعلام**: اعثر على أهم 5 استعلامات طويلة التشغيل عبر جميع النُسخ المتماثلة في الـعنقود:
+
+```sql
+SELECT
+    type,
+    event_time, 
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE event_time >= (now() - toIntervalMinute(60)) AND type='QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```

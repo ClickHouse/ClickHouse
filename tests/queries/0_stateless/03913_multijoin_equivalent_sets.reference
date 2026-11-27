@@ -1,0 +1,14 @@
+Prewhere filter column: less(__table1.id, 10000_UInt16) (removed)
+Prewhere filter column: less(__table2.id, 10000_UInt16) (removed)
+Prewhere filter column: less(__table3.id, 10000_UInt16) (removed)
+Prewhere filter column: less(__table4.id, 10000_UInt16) (removed)
+Prewhere filter column: less(__table5.id, 10000_UInt16) (removed)
+--
+Prewhere filter column: less(__table1.id, 10000_UInt16) (removed)
+Prewhere filter column: less(__table2.id, 10000_UInt16) (removed)
+Prewhere filter column: less(__table3.id, 10000_UInt16) (removed)
+Prewhere filter column: less(__table4.id, 10000_UInt16) (removed)
+Prewhere filter column: less(__table5.id, 10000_UInt16) (removed)
+--
+Prewhere filter column: less(__table1.id, 10000_UInt16) (removed)
+Prewhere filter column: less(__table2.id, 10000_UInt16) (removed)

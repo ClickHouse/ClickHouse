@@ -1,7 +1,5 @@
 -- Tags: no-fasttest
 
-set allow_experimental_dynamic_type = 1;
-
 drop table if exists test;
 create table test (x UInt64, d Dynamic) engine=Memory;
 insert into test select number, number from numbers(4);
@@ -50,9 +48,9 @@ select sipHash64(d) as res, toTypeName(res) from test;
 select sipHash128(d) as res, toTypeName(res) from test;
 select intHash32(d) as res, toTypeName(res) from test;
 select intHash64(d) as res, toTypeName(res) from test;
-select h3CellAreaM2(d) as res, toTypeName(res) from test;
-select h3CellAreaRads2(d) as res, toTypeName(res) from test;
-select h3Distance(d, d) as res, toTypeName(res) from test;
+select h3CellAreaM2(585763170430222335 + d * 549755813888) as res, toTypeName(res) from test;
+select h3CellAreaRads2(585763170430222335 + d * 549755813888) as res, toTypeName(res) from test;
+select h3Distance(585763170430222335 + d * 549755813888, 585763170430222335 + (d + 1) * 549755813888) as res, toTypeName(res) from test;
 select sqid(d) as res, toTypeName(res) from test;
 
 select sipHash64(d, x) as res, toTypeName(res) from test;

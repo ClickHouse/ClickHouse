@@ -1,0 +1,6 @@
+<clickhouse>
+    <arrowflight>
+        <max_prepared_statements_per_user>3</max_prepared_statements_per_user>
+        <prepared_statements_lifetime_seconds>2</prepared_statements_lifetime_seconds>
+    </arrowflight>
+</clickhouse>

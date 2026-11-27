@@ -12,6 +12,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/Concepts.h>
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
@@ -22,18 +23,19 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <limits>
+#include <type_traits>
 #include <string>
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
-class FunctionWidthBucket : public IFunction
+class FunctionWidthBucket final : public IFunction
 {
     template <typename TDataType>
     void throwIfInvalid(
@@ -79,7 +81,7 @@ class FunctionWidthBucket : public IFunction
     }
 
     template <typename TResultType, typename TCountType>
-    std::optional<TResultType> checkArguments(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
+    [[nodiscard]] std::optional<TResultType> checkArguments(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
     {
         if (count == 0)
         {
@@ -101,13 +103,25 @@ class FunctionWidthBucket : public IFunction
         }
         if (operand >= high)
         {
-            return count + 1;
+            /// The result type is deliberately one step wider than the count type so that this fits.
+            /// `UInt64` is the exception - nothing is wider - so reject the one count that would wrap
+            /// to zero, which is the bucket meaning "below the range".
+            if constexpr (std::is_same_v<TCountType, TResultType>)
+            {
+                if (count == std::numeric_limits<TCountType>::max())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Last argument (count) for function {} is too large: the bucket for an operand above the range "
+                        "would be count + 1, which does not fit the result type",
+                        getName());
+            }
+            return static_cast<TResultType>(static_cast<TResultType>(count) + 1);
         }
         return std::nullopt;
     }
 
     template <typename TResultType, typename TCountType>
-    TResultType NO_SANITIZE_UNDEFINED calculate(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
+    [[nodiscard]] TResultType NO_SANITIZE_UNDEFINED calculate(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
     {
         if (const auto maybe_early_return = checkArguments<TResultType>(operand, low, high, count); maybe_early_return.has_value())
         {
@@ -121,16 +135,16 @@ class FunctionWidthBucket : public IFunction
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "The calculation resulted in NaN or Inf which is unexpected in function {}.", getName());
         }
-        return static_cast<TResultType>(count * relative_bucket + 1);
+        return static_cast<TResultType>(static_cast<Float64>(count) * relative_bucket + 1);
     }
 
     template <is_any_of<UInt8, UInt16, UInt32, UInt64> TCountType>
-    ColumnPtr executeForResultType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeForResultType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         using ResultType = typename NumberTraits::Construct<false, false, NumberTraits::nextSize(sizeof(TCountType))>::Type;
         auto common_type = std::make_shared<DataTypeNumber<Float64>>();
 
-        std::vector<ColumnPtr> cast_columns;
+        VectorWithMemoryTracking<ColumnPtr> cast_columns;
         cast_columns.reserve(3);
         for (const auto argument_index : collections::range(0, 3))
         {
@@ -185,51 +199,21 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionWidthBucket>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 4; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 4; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        for (const auto argument_index : collections::range(0, 3))
-        {
-            if (!isNativeNumber(arguments[argument_index]))
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The first three arguments of function {} must be a Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32 "
-                    "or Float64.",
-                    getName());
-            }
-        }
-        if (!WhichDataType(arguments[3]).isNativeUInt())
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The last argument of function {} must be UInt8, UInt16, UInt32 or UInt64, found {}.",
-                getName(),
-                arguments[3]->getName());
-        }
-        switch (arguments[3]->getTypeId())
-        {
-            case TypeIndex::UInt8:
-                return std::make_shared<DataTypeUInt16>();
-            case TypeIndex::UInt16:
-                return std::make_shared<DataTypeUInt32>();
-            case TypeIndex::UInt32:
-                [[fallthrough]];
-            case TypeIndex::UInt64:
-                return std::make_shared<DataTypeUInt64>();
-            default:
-                break;
-        }
-
-        UNREACHABLE();
+        return
+            "(NativeNumber, NativeNumber, NativeNumber, UInt8) -> UInt16"
+            " OR (NativeNumber, NativeNumber, NativeNumber, UInt16) -> UInt32"
+            " OR (NativeNumber, NativeNumber, NativeNumber, UInt32 | UInt64) -> UInt64";
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    ColumnPtr
+    [[nodiscard]] ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         switch (arguments[3].type->getTypeId())
@@ -249,7 +233,9 @@ public:
         UNREACHABLE();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// A zero bucket count is not valid.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 };
 
 REGISTER_FUNCTION(WidthBucket)
@@ -267,7 +253,7 @@ FunctionDocumentation::Arguments arguments = {
 };
 FunctionDocumentation::ReturnedValue returned_value = {"Returns the bucket number as an integer. Returns 0 if operand < low, returns count+1 if operand >= high.", {"UInt8/16/32/64"}};
 FunctionDocumentation::Examples examples = {
-    {"Usage example", "widthBucket(10.15, -8.6, 23, 18)", "11"}
+    {"Usage example", "SELECT widthBucket(10.15, -8.6, 23, 18)", "11"}
 };
 FunctionDocumentation::IntroducedIn introduced_in = {23, 3};
 FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;

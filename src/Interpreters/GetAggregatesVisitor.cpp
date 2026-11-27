@@ -59,20 +59,23 @@ struct WindowExpressionsCollectorMatcher
 
         if (auto * func = ast->as<ASTFunction>())
         {
-            if (func->is_window_function)
+            if (func->isWindowFunction())
                 return { .window_function_in_subtree = true };
 
             WindowExpressionsCollectorChildInfo result;
-            for (auto & arg : func->arguments->children)
+            if (func->arguments)
             {
-                auto subtree_result = visitNode(arg, ast);
-                result.update(subtree_result);
+                for (auto & arg : func->arguments->children)
+                {
+                    auto subtree_result = visitNode(arg, ast);
+                    result.update(subtree_result);
+                }
             }
 
             // We mark functions if they should be computed after WindowStep
             if (result.window_function_in_subtree)
             {
-                func->compute_after_window_functions = true;
+                func->setComputeAfterWindowFunctions(true);
                 if ((!parent || !parent->as<ASTFunction>()))
                     expressions_with_window_functions.push_back(ast);
             }

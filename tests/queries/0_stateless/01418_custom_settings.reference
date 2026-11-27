@@ -17,8 +17,10 @@ custom_b	NULL
 custom_c	UInt64_50000
 custom_d	Float64_1.11
 --- undefined setting ---
+UNKNOWN_SETTING
 404	UInt16
 --- wrong prefix ---
+UNKNOWN_SETTING
 --- using query context ---
 -0.333	Float64
 custom_e	Float64_-0.333
@@ -26,6 +28,7 @@ custom_e	Float64_-0.333
 custom_e	UInt64_404
 word	String
 custom_f	\'word\'
+UNKNOWN_SETTING
 0
 --- compound identifier ---
 test	String

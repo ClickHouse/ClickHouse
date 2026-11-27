@@ -1,12 +1,13 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
+#include <base/defines.h>
 #include <base/sort.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -15,6 +16,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
 }
@@ -62,7 +64,7 @@ namespace detail
             if (unlikely(x > BIG_THRESHOLD))
                 x = BIG_THRESHOLD;
 
-            elems[count] = x;
+            elems[count] = static_cast<UInt16>(x);
             ++count;
         }
 
@@ -154,7 +156,7 @@ namespace detail
             if (unlikely(x > BIG_THRESHOLD))
                 x = BIG_THRESHOLD;
 
-            elems.emplace_back(x);
+            elems.emplace_back(static_cast<UInt16>(x));
         }
 
         void merge(const QuantileTimingMedium & rhs)
@@ -174,6 +176,9 @@ namespace detail
             readBinaryLittleEndian(size, buf);
             if (size > 10'000)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "The number of elements {} for the 'medium' kind of quantileTiming is too large", size);
+            /// The 'medium' kind is created only when the 'tiny' one is full, and the state is then treated as nonempty.
+            if (size == 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "The 'medium' kind of quantileTiming is empty");
 
             elems.resize(size);
             buf.readStrict(reinterpret_cast<char *>(elems.data()), size * sizeof(elems[0]));
@@ -186,7 +191,7 @@ namespace detail
             if (!elems.empty())
             {
                 size_t n = level < 1
-                    ? static_cast<size_t>(level * elems.size())
+                    ? static_cast<size_t>(level * static_cast<double>(elems.size()))
                     : (elems.size() - 1);
 
                 /// Sorting an array will not be considered a violation of constancy.
@@ -209,7 +214,7 @@ namespace detail
                 auto level = levels[level_index];
 
                 size_t n = level < 1
-                    ? static_cast<size_t>(level * elems.size())
+                    ? static_cast<size_t>(level * static_cast<double>(elems.size()))
                     : (elems.size() - 1);
 
                 ::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
@@ -247,7 +252,7 @@ namespace detail
 
     /** For a large number of values. The size is about 22 680 bytes.
       */
-    class QuantileTimingLarge
+    class QuantileTimingLarge /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - zeroed by memset in the constructor
     {
     private:
         /// Total number of values.
@@ -264,8 +269,9 @@ namespace detail
         /// Get value of quantile by index in array `count_big`.
         static UInt16 indexInBigToValue(size_t i)
         {
-            return (i * BIG_PRECISION) + SMALL_THRESHOLD
-                + (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2));    /// A small randomization so that it is not noticeable that all the values are even.
+            return static_cast<UInt16>(
+                (i * BIG_PRECISION) + SMALL_THRESHOLD
+                + common::subIgnoreOverflow(intHash32<0>(i) % BIG_PRECISION, BIG_PRECISION / 2));    /// A small randomization so that it is not noticeable that all the values are even.
         }
 
         /// Lets you scroll through the histogram values, skipping zeros.
@@ -289,7 +295,7 @@ namespace detail
                 adjust();
             }
 
-            bool isValid() const { return pos < end; }
+            [[nodiscard]] bool isValid() const { return pos < end; }
 
             void next()
             {
@@ -297,53 +303,98 @@ namespace detail
                 adjust();
             }
 
-            UInt64 count() const { return *pos; }
+            [[nodiscard]] UInt64 count() const { return *pos; }
 
-            UInt16 key() const
+            [[nodiscard]] UInt16 key() const
             {
                 return pos - begin < SMALL_THRESHOLD
-                    ? pos - begin
+                    ? static_cast<UInt16>(pos - begin)
                     : indexInBigToValue(pos - begin - SMALL_THRESHOLD);
             }
         };
 
     public:
-        QuantileTimingLarge()
+        QuantileTimingLarge() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - zeroed by memset
         {
             memset(this, 0, sizeof(*this));
         }
 
+        /// A weight is a number of occurrences: a sum that does not fit is rejected instead of wrapping around, which
+        /// would make the state forget the dominant value.
+        static void addWeight(UInt64 & sum, UInt64 weight)
+        {
+            if (common::addOverflow(sum, weight, sum))
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in `quantileTimingWeighted` does not fit UInt64");
+        }
+
+        /// For a state that is filled only by this function, such as the one just created from a smaller kind: a count
+        /// that grows by one from zero cannot reach the maximum of `UInt64`.
         void insert(UInt64 x) noexcept
         {
-            insertWeighted(x, 1);
-        }
-
-        void insertWeighted(UInt64 x, size_t weight) noexcept
-        {
-            count += weight;
+            ++count;
 
             if (x < SMALL_THRESHOLD)
-                count_small[x] += weight;
+                ++count_small[x];
             else if (x < BIG_THRESHOLD)
-                count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION] += weight;
+                ++count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION];
         }
 
-        void merge(const QuantileTimingLarge & rhs) noexcept
+        /// For a state that may hold the sums of weights of another state or a deserialized one, whose counters may
+        /// already be the maximum of `UInt64`: a count that does not fit is rejected as in `insertWeighted`.
+        void insertChecked(UInt64 x)
         {
-            count += rhs.count;
+            UInt64 * bin = nullptr;
+            if (x < SMALL_THRESHOLD)
+                bin = &count_small[x];
+            else if (x < BIG_THRESHOLD)
+                bin = &count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION];
+
+            if (count == std::numeric_limits<UInt64>::max() || (bin && *bin == std::numeric_limits<UInt64>::max())) [[unlikely]]
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in `quantileTimingWeighted` does not fit UInt64");
+
+            ++count;
+            if (bin)
+                ++*bin;
+        }
+
+        void insertWeighted(UInt64 x, size_t weight)
+        {
+            addWeight(count, weight);
+
+            if (x < SMALL_THRESHOLD)
+                addWeight(count_small[x], weight);
+            else if (x < BIG_THRESHOLD)
+                addWeight(count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION], weight);
+        }
+
+        /// The overflow is checked once after the loops, so that they are still vectorized.
+        void merge(const QuantileTimingLarge & rhs)
+        {
+            addWeight(count, rhs.count);
+
+            bool overflow = false;
 
             for (size_t i = 0; i < SMALL_THRESHOLD; ++i)
-                count_small[i] += rhs.count_small[i];
+            {
+                count_small[i] = common::addIgnoreOverflow(count_small[i], rhs.count_small[i]);
+                overflow |= count_small[i] < rhs.count_small[i];
+            }
 
             for (size_t i = 0; i < BIG_SIZE; ++i)
-                count_big[i] += rhs.count_big[i];
+            {
+                count_big[i] = common::addIgnoreOverflow(count_big[i], rhs.count_big[i]);
+                overflow |= count_big[i] < rhs.count_big[i];
+            }
+
+            if (overflow)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in `quantileTimingWeighted` does not fit UInt64");
         }
 
         void serialize(WriteBuffer & buf) const
         {
             writeBinaryLittleEndian(count, buf);
 
-            if (count * 2 > SMALL_THRESHOLD + BIG_SIZE)
+            if (common::mulIgnoreOverflow(count, 2) > SMALL_THRESHOLD + BIG_SIZE)
             {
                 /// Simple serialization for a heavily dense case.
                 buf.write(reinterpret_cast<const char *>(this) + sizeof(count), SIZE_OF_LARGE_WITHOUT_COUNT);
@@ -379,7 +430,7 @@ namespace detail
         {
             readBinaryLittleEndian(count, buf);
 
-            if (count * 2 > SMALL_THRESHOLD + BIG_SIZE)
+            if (common::mulIgnoreOverflow(count, 2) > SMALL_THRESHOLD + BIG_SIZE)
             {
                 buf.readStrict(reinterpret_cast<char *>(this) + sizeof(count), SIZE_OF_LARGE_WITHOUT_COUNT);
             }
@@ -391,6 +442,8 @@ namespace detail
                     readBinaryLittleEndian(index, buf);
                     if (index == BIG_THRESHOLD)
                         break;
+                    if (index - SMALL_THRESHOLD >= BIG_SIZE)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect index {} in 'large' kind of quantileTiming deserialization", index);
 
                     UInt64 elem_count = 0;
                     readBinaryLittleEndian(elem_count, buf);
@@ -405,16 +458,16 @@ namespace detail
 
 
         /// Get the value of the `level` quantile. The level must be between 0 and 1.
-        UInt16 get(double level) const
+        [[nodiscard]] UInt16 get(double level) const
         {
-            double pos = std::ceil(count * level);
+            double pos = std::ceil(static_cast<double>(count) * level);
 
             double accumulated = 0;
             Iterator it(*this);
 
             while (it.isValid())
             {
-                accumulated += it.count();
+                accumulated += static_cast<double>(it.count());
 
                 if (accumulated >= pos)
                     break;
@@ -433,14 +486,14 @@ namespace detail
             const auto * indices_end = indices + size;
             const auto * index = indices;
 
-            double pos = std::ceil(count * levels[*index]);
+            double pos = std::ceil(static_cast<double>(count) * levels[*index]);
 
             double accumulated = 0;
             Iterator it(*this);
 
             while (it.isValid())
             {
-                accumulated += it.count();
+                accumulated += static_cast<double>(it.count());
 
                 while (accumulated >= pos)
                 {
@@ -450,7 +503,7 @@ namespace detail
                     if (index == indices_end)
                         return;
 
-                    pos = std::ceil(count * levels[*index]);
+                    pos = std::ceil(static_cast<double>(count) * levels[*index]);
                 }
 
                 it.next();
@@ -465,7 +518,7 @@ namespace detail
         }
 
         /// The same, but in the case of an empty state, NaN is returned.
-        float getFloat(double level) const
+        [[nodiscard]] float getFloat(double level) const
         {
             return count
                 ? get(level)
@@ -491,7 +544,7 @@ template <typename>     /// Unused template parameter is for AggregateFunctionQu
 class QuantileTiming : private boost::noncopyable
 {
 private:
-    union
+    union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `tiny.count` is initialized in `QuantileTiming` ctor
     {
         detail::QuantileTimingTiny tiny;
         detail::QuantileTimingMedium medium;
@@ -552,7 +605,7 @@ private:
     }
 
 public:
-    QuantileTiming()
+    QuantileTiming() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - union members are mutually exclusive; only `tiny.count` needs initialization
     {
         tiny.count = 0;
     }
@@ -596,6 +649,8 @@ public:
                     medium.insert(x);
             }
             else
+                /// A state that rows are added to one by one is built from such rows, and its count grows by one, so the
+                /// unchecked insertion is enough and keeps this loop fast.
                 large->insert(x);
         }
     }
@@ -620,72 +675,74 @@ public:
         }
     }
 
-    /// NOTE Too complicated.
+    /// On x86-64-v3, keep the cold transition path out-of-line so the hot tiny-merge body doesn't drag in YMM histogram
+    /// copies that force `vzeroupper` around every call.
     void merge(const QuantileTiming & rhs)
     {
         if (tiny.count + rhs.tiny.count <= TINY_MAX_ELEMS)
-        {
             tiny.merge(rhs.tiny);
+        else
+            mergeSlow(rhs);
+    }
+
+    NO_INLINE void mergeSlow(const QuantileTiming & rhs)
+    {
+        auto kind = which();
+        auto rhs_kind = rhs.which();
+
+        /// If one with which we merge has a larger data structure, then we bring the current structure to the same one.
+        if (kind == Kind::Tiny && rhs_kind == Kind::Medium)
+        {
+            tinyToMedium();
+            kind = Kind::Medium;
+        }
+        else if (kind == Kind::Tiny && rhs_kind == Kind::Large)
+        {
+            tinyToLarge();
+            kind = Kind::Large;
+        }
+        else if (kind == Kind::Medium && rhs_kind == Kind::Large)
+        {
+            mediumToLarge();
+            kind = Kind::Large;
+        }
+        /// Case when two states are small, but when merged, they will turn into average.
+        else if (kind == Kind::Tiny && rhs_kind == Kind::Tiny)
+        {
+            tinyToMedium();
+            kind = Kind::Medium;
+        }
+
+        if (kind == Kind::Medium && rhs_kind == Kind::Medium)
+        {
+            medium.merge(rhs.medium);
+        }
+        else if (kind == Kind::Large && rhs_kind == Kind::Large)
+        {
+            large->merge(*rhs.large);
+        }
+        else if (kind == Kind::Medium && rhs_kind == Kind::Tiny)
+        {
+            medium.elems.insert(rhs.tiny.elems, rhs.tiny.elems + rhs.tiny.count);
+        }
+        else if (kind == Kind::Large && rhs_kind == Kind::Tiny)
+        {
+            for (size_t i = 0; i < rhs.tiny.count; ++i)
+                large->insertChecked(rhs.tiny.elems[i]);
+        }
+        else if (kind == Kind::Large && rhs_kind == Kind::Medium)
+        {
+            for (const auto & elem : rhs.medium.elems)
+                large->insertChecked(elem);
         }
         else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in QuantileTiming::merge function: not all cases are covered");
+
+        /// For determinism, we should always convert to `large` when size condition is reached
+        ///  - regardless of merge order.
+        if (kind == Kind::Medium && unlikely(mediumIsWorthToConvertToLarge()))
         {
-            auto kind = which();
-            auto rhs_kind = rhs.which();
-
-            /// If one with which we merge has a larger data structure, then we bring the current structure to the same one.
-            if (kind == Kind::Tiny && rhs_kind == Kind::Medium)
-            {
-                tinyToMedium();
-                kind = Kind::Medium;
-            }
-            else if (kind == Kind::Tiny && rhs_kind == Kind::Large)
-            {
-                tinyToLarge();
-                kind = Kind::Large;
-            }
-            else if (kind == Kind::Medium && rhs_kind == Kind::Large)
-            {
-                mediumToLarge();
-                kind = Kind::Large;
-            }
-            /// Case when two states are small, but when merged, they will turn into average.
-            else if (kind == Kind::Tiny && rhs_kind == Kind::Tiny)
-            {
-                tinyToMedium();
-                kind = Kind::Medium;
-            }
-
-            if (kind == Kind::Medium && rhs_kind == Kind::Medium)
-            {
-                medium.merge(rhs.medium);
-            }
-            else if (kind == Kind::Large && rhs_kind == Kind::Large)
-            {
-                large->merge(*rhs.large);
-            }
-            else if (kind == Kind::Medium && rhs_kind == Kind::Tiny)
-            {
-                medium.elems.insert(rhs.tiny.elems, rhs.tiny.elems + rhs.tiny.count);
-            }
-            else if (kind == Kind::Large && rhs_kind == Kind::Tiny)
-            {
-                for (size_t i = 0; i < rhs.tiny.count; ++i)
-                    large->insert(rhs.tiny.elems[i]);
-            }
-            else if (kind == Kind::Large && rhs_kind == Kind::Medium)
-            {
-                for (const auto & elem : rhs.medium.elems)
-                    large->insert(elem);
-            }
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in QuantileTiming::merge function: not all cases are covered");
-
-            /// For determinism, we should always convert to `large` when size condition is reached
-            ///  - regardless of merge order.
-            if (kind == Kind::Medium && unlikely(mediumIsWorthToConvertToLarge()))
-            {
-                mediumToLarge();
-            }
+            mediumToLarge();
         }
     }
 
@@ -705,7 +762,7 @@ public:
     /// Called for an empty object.
     void deserialize(ReadBuffer & buf)
     {
-        Kind kind;
+        Kind kind = {};
         readBinaryLittleEndian(kind, buf);
 
         if (kind == Kind::Tiny)

@@ -32,8 +32,8 @@
 namespace Poco {
 
 
-EnvironmentImpl::StringMap EnvironmentImpl::_map;
-FastMutex EnvironmentImpl::_mutex;
+[[clang::no_destroy]] EnvironmentImpl::StringMap EnvironmentImpl::_map;
+[[clang::no_destroy]] FastMutex EnvironmentImpl::_mutex;
 
 
 std::string EnvironmentImpl::getImpl(const std::string& name)
@@ -299,6 +299,10 @@ namespace Poco {
 void EnvironmentImpl::nodeIdImpl(NodeId& id)
 {
 	std::memset(&id, 0, sizeof(id));
+#if defined(__EMSCRIPTEN__)
+	// No networking and no ARP in a WebAssembly sandbox; leave the node id zeroed.
+	return;
+#else
 	char name[MAXHOSTNAMELEN];
 	if (gethostname(name, sizeof(name)))
 		return;
@@ -318,6 +322,7 @@ void EnvironmentImpl::nodeIdImpl(NodeId& id)
 	close(s);
 	if (rc < 0) return;
 	std::memcpy(&id, ar.arp_ha.sa_data, sizeof(id));
+#endif
 }
 
 

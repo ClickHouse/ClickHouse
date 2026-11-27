@@ -28,6 +28,8 @@ SELECT tokens('a', 'splitByString', toFixedString('c', 1)); -- { serverError ILL
 SELECT tokens('a', 'splitByString', materialize(['c'])); -- { serverError ILLEGAL_COLUMN }
 SELECT tokens('a', 'splitByString', [1, 2]); -- { serverError BAD_ARGUMENTS }
 SELECT tokens('  a  bc d', 'splitByString', []); -- { serverError BAD_ARGUMENTS }
+SELECT tokens('  a  bc d', 'splitByString', ['']); -- { serverError BAD_ARGUMENTS }
+SELECT tokens('  a  bc d', 'splitByString', [' ', '']); -- { serverError BAD_ARGUMENTS }
 
 
 SELECT 'Default tokenizer';
@@ -36,7 +38,7 @@ SELECT tokens('') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 SELECT tokens('abc+ def- foo! bar? baz= code; hello: world/ xäöüx') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 SELECT tokens('abc+ def- foo! bar? baz= code; hello: world/ xäöüx', 'splitByNonAlpha') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 
-SELECT 'Ngram tokenizer';
+SELECT 'Ngrams tokenizer';
 
 SELECT tokens('', 'ngrams') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 SELECT tokens('abc def', 'ngrams') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
@@ -51,7 +53,7 @@ SELECT tokens('()()a()bc()d', 'splitByString', ['()']) AS tokenized, toTypeName(
 SELECT tokens(',()a(),bc,(),d,', 'splitByString', ['()', ',']) AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 SELECT tokens('\\a\n\\bc\\d\n', 'splitByString', ['\n', '\\']) AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 
-SELECT 'No-op tokenizer';
+SELECT 'Array tokenizer';
 
 SELECT tokens('', 'array') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 SELECT tokens('abc def', 'array') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
@@ -76,7 +78,7 @@ SELECT tokens(str, 'splitByNonAlpha') AS tokenized, toTypeName(tokenized), isCon
 
 DROP TABLE tab;
 
-SELECT 'Ngram tokenizer';
+SELECT 'Ngrams tokenizer';
 
 CREATE TABLE tab (
     id Int64,
@@ -102,7 +104,7 @@ SELECT tokens(str, 'splitByString', ['()', ',']) AS tokenized, toTypeName(tokeni
 
 DROP TABLE tab;
 
-SELECT 'No-op tokenizer';
+SELECT 'Array tokenizer';
 
 CREATE TABLE tab (
     id Int64,
@@ -116,9 +118,22 @@ SELECT tokens(str, 'array') AS tokenized, toTypeName(tokenized), isConstant(toke
 DROP TABLE tab;
 SELECT tokens(materialize('abc+ def- foo! bar? baz= code; hello: world/'));
 
-SELECT 'Sparse tokenizer';
+SELECT 'Sparse grams tokenizer';
 
 SELECT tokens('', 'sparseGrams') AS tokenized;
 SELECT tokens('abc def cba', 'sparseGrams') AS tokenized;
 SELECT tokens('abc def cba', 'sparseGrams', 4, 10) AS tokenized;
 SELECT tokens('abc def cba', 'sparseGrams', 4, 10, 6) AS tokenized;
+
+SELECT arrayAll(t -> length(t) >= 5, tokens('hello world', 'sparseGrams', 5, 5));
+SELECT arrayAll(t -> length(t) <= 5, tokens('hello world', 'sparseGrams', 5, 5));
+SELECT tokens('abcde', 'sparseGrams', 5, 5) AS tokenized;
+
+SELECT 'asciiCJK tokenizer';
+
+SELECT tokens('', 'asciiCJK') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
+SELECT tokens('hello world', 'asciiCJK') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
+SELECT tokens('hello_world', 'asciiCJK') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
+SELECT tokens('你好世界', 'asciiCJK') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
+SELECT tokens('错误503', 'asciiCJK') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
+SELECT tokens('hello，world', 'asciiCJK') AS tokenized, toTypeName(tokenized), isConstant(tokenized);

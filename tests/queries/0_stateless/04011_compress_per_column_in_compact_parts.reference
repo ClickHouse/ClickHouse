@@ -1,0 +1,15 @@
+true_part_type	Compact
+false_part_type	Compact
+true_hash	11377769166229922673
+false_hash	11377769166229922673
+true_partial	12497500	12522500
+false_partial	12497500	12522500
+true_single	12547500
+false_single	12547500
+after_alter_count	10000
+after_alter_partial	49995000	50025000
+after_alter_count2	10000
+after_alter_partial2	49995000	50025000
+merged_hash_true	636886203863719726
+merged_hash_false	636886203863719726
+merged_match	1

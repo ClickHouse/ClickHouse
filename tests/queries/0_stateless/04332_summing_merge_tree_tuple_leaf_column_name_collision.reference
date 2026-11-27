@@ -1,0 +1,1 @@
+tuple leaf vs physical column name collision is rejected at CREATE

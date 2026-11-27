@@ -1,0 +1,10 @@
+--- distance is non-zero while weights sum to zero ---
+-100
+-100
+-8
+--- arraySimilarity returns 1.0 via the weights_sum==0 branch (no division by zero) ---
+1
+1
+1
+--- result stays finite ---
+1

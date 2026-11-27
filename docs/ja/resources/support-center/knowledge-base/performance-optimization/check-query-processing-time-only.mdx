@@ -1,0 +1,38 @@
+---
+title: 行を返さずに処理時間を測定する方法
+description: ClickHouse で `FORMAT Null` オプションを使用して、クライアントに行を返すことなく処理時間を測定する方法を学びます。
+date: 2023-06-07
+tags: ['パフォーマンスと最適化']
+keywords: ['処理時間']
+---
+
+<div id="question">
+  ## 質問
+</div>
+
+クエリは多数の行を返しますが、知りたいのは処理時間だけです。クエリ結果の出力を省略して、処理時間を確認するにはどうすればよいですか？
+
+<div id="answer">
+  ## 回答
+</div>
+
+クエリに `FORMAT Null` を追加して、出力フォーマットを `Null` に設定します。これにより、データはクライアントに送信されなくなります。
+
+たとえば:
+
+```sql
+SELECT
+    customer_id,
+    count() AS total,
+    any(review_headline)
+FROM amazon_reviews
+GROUP BY customer_id
+ORDER BY total DESC
+FORMAT Null
+```
+
+レスポンスには、処理された行数と経過時間が返されますが、返される行数は 0 行です。
+
+```response
+0 rows in set. Elapsed: 25.288 sec. Processed 222.04 million rows, 13.50 GB (8.78 million rows/s., 533.77 MB/s.)
+```

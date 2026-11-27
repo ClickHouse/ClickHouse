@@ -3,6 +3,7 @@
 /// This code was based on the code by Fedor Korotkiy https://www.linkedin.com/in/fedor-korotkiy-659a1838/
 
 #include <base/defines.h>
+#include <base/phdr_cache.h>
 
 #if defined(OS_LINUX) && !defined(THREAD_SANITIZER) && !defined(USE_MUSL)
     #define USE_PHDR_CACHE 1
@@ -22,30 +23,29 @@
 #    endif
 #endif
 
+#include <base/glibc_symver.h>
+
 #include <link.h>
-#include <dlfcn.h>
 #include <vector>
 #include <atomic>
 #include <cstddef>
-#include <stdexcept>
 
 
 namespace
 {
 
 // This is adapted from
-// https://github.com/scylladb/seastar/blob/master/core/exception_hacks.hh
-// https://github.com/scylladb/seastar/blob/master/core/exception_hacks.cc
+// https://github.com/scylladb/seastar/blob/master/include/seastar/core/exception_hacks.hh
+// https://github.com/scylladb/seastar/blob/master/src/core/exception_hacks.cc
 
-using DLIterateFunction = int (*) (int (*callback) (dl_phdr_info * info, size_t size, void * data), void * data);
-
-DLIterateFunction getOriginalDLIteratePHDR()
-{
-    void * func = dlsym(RTLD_NEXT, "dl_iterate_phdr");
-    if (!func)
-        throw std::runtime_error("Cannot find dl_iterate_phdr function with dlsym");
-    return reinterpret_cast<DLIterateFunction>(func);
-}
+/// libc's own `dl_iterate_phdr`: a direct call that CFI can check, unlike a pointer from `dlsym`.
+extern "C" int libc_dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * data), void * data);
+#if defined(__s390x__)
+/// Added to s390x glibc after its oldest symbol version.
+__asm__(".symver libc_dl_iterate_phdr, dl_iterate_phdr@GLIBC_2.2.4");
+#else
+__asm__(".symver libc_dl_iterate_phdr, dl_iterate_phdr@" GLIBC_SYMVER);
+#endif
 
 
 using PHDRCache = std::vector<dl_phdr_info>;
@@ -54,14 +54,16 @@ std::atomic<PHDRCache *> phdr_cache {};
 }
 
 
-extern "C"
+/// Not exported: an exported unversioned definition would satisfy the `dl_iterate_phdr@GLIBC` reference above too,
+/// so the call to libc would come back here.
+extern "C" __attribute__((visibility("hidden")))
 int dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * data), void * data)
 {
     auto * current_phdr_cache = phdr_cache.load();
     if (!current_phdr_cache)
     {
         // Cache is not yet populated, pass through to the original function.
-        return getOriginalDLIteratePHDR()(callback, data);
+        return libc_dl_iterate_phdr(callback, data);
     }
 
     int result = 0;
@@ -77,12 +79,12 @@ int dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * da
 
 extern "C"
 {
-#ifdef ADDRESS_SANITIZER
-void __lsan_ignore_object(const void *);
-#else
-void __lsan_ignore_object(const void *) {} // NOLINT
-#endif
+void __lsan_ignore_object(const void *); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 }
+
+#ifndef ADDRESS_SANITIZER
+extern "C" void __lsan_ignore_object(const void *) {} // NOLINT
+#endif
 
 
 void updatePHDRCache()
@@ -91,7 +93,7 @@ void updatePHDRCache()
     // This assumes no dynamic object loading/unloading after this point
 
     PHDRCache * new_phdr_cache = new PHDRCache;
-    getOriginalDLIteratePHDR()([] (dl_phdr_info * info, size_t /*size*/, void * data)
+    libc_dl_iterate_phdr([] (dl_phdr_info * info, size_t /*size*/, void * data)
     {
         // `info` is created by dl_iterate_phdr, which is a non-instrumented
         // libc function, so we have to unpoison it manually.
@@ -107,20 +109,27 @@ void updatePHDRCache()
 }
 
 
-bool hasPHDRCache()
+namespace
 {
-    return phdr_cache.load() != nullptr;
+    /// The lock-free dl_iterate_phdr override above is active once the cache is populated.
+    bool hasPHDRCache() { return phdr_cache.load() != nullptr; }
+}
+
+bool hasAsyncSignalSafeUnwind()
+{
+    return hasPHDRCache();
 }
 
 #else
 
 void updatePHDRCache() {}
 
-#if defined(USE_MUSL)
-    /// With statically linked with musl, dl_iterate_phdr is immutable.
-    bool hasPHDRCache() { return true; }
+#if defined(USE_MUSL) || defined(OS_DARWIN)
+    /// musl: dl_iterate_phdr is inherently lock-free.
+    /// macOS: unwinding uses frame-pointer backtrace() which never calls dl_iterate_phdr.
+    bool hasAsyncSignalSafeUnwind() { return true; }
 #else
-    bool hasPHDRCache() { return false; }
+    bool hasAsyncSignalSafeUnwind() { return false; }
 #endif
 
 #endif

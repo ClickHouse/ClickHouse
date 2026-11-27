@@ -1,7 +1,5 @@
 #pragma once
 
-#if defined(OS_LINUX)
-
 #include <iostream>
 
 namespace DB
@@ -31,7 +29,7 @@ public:
 
     virtual StreamSet getStreamsForClient() = 0;
 
-    virtual bool isPty() const = 0;
+    [[nodiscard]] virtual bool isPty() const = 0;
 
     virtual void closeServerDescriptors() = 0;
 
@@ -41,5 +39,3 @@ public:
 };
 
 }
-
-#endif

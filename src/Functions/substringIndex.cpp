@@ -1,5 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -17,63 +18,50 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
 
 namespace
 {
 
-    template <bool is_utf8>
-    class FunctionSubstringIndex : public IFunction
+    class FunctionSubstringIndex final : public IFunction
     {
     public:
-        static constexpr auto name = is_utf8 ? "substringIndexUTF8" : "substringIndex";
+        FunctionSubstringIndex(const char * name_, bool is_utf8_)
+            : function_name(name_), is_utf8(is_utf8_) {}
 
-
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSubstringIndex>(); }
-
-        String getName() const override { return name; }
-
-        size_t getNumberOfArguments() const override { return 3; }
-
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-        bool useDefaultImplementationForConstants() const override { return true; }
-        ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        static FunctionPtr create(const char * name, bool is_utf8)
         {
-            if (!isString(arguments[0]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {}, String expected",
-                    arguments[0]->getName(),
-                    getName());
-
-            if (!isString(arguments[1]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of second argument of function {}, String expected",
-                    arguments[1]->getName(),
-                    getName());
-
-            if (!isNativeInteger(arguments[2]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of third argument of function {}, Integer expected",
-                    arguments[2]->getName(),
-                    getName());
-
-            return std::make_shared<DataTypeString>();
+            return std::make_shared<FunctionSubstringIndex>(name, is_utf8);
         }
 
-        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        [[nodiscard]] String getName() const override { return function_name; }
+
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
+
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+        [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
+        /// A row whose result is NULL, or an unused dictionary entry of a `LowCardinality` argument, may hold a UInt64 that
+        /// does not fit Int64, and `executeImpl` would throw for it
+        [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+        {
+            return !uint64ArgumentMayHoldUnusedValues(arguments);
+        }
+
+        [[nodiscard]] String getSignatureString() const override
+        {
+            return "(String, const String, NativeInteger) -> String";
+        }
+
+        [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {
             return std::make_shared<DataTypeString>();
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             ColumnPtr column_string = arguments[0].column;
             ColumnPtr column_delim = arguments[1].column;
@@ -84,7 +72,7 @@ namespace
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument to {} must be a constant String", getName());
 
             String delim = column_delim_const->getValue<String>();
-            if constexpr (!is_utf8)
+            if (!is_utf8)
             {
                 if (delim.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument to {} must be a single character", getName());
@@ -94,6 +82,10 @@ namespace
                 if (UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(delim.data()), delim.size()) != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument to {} must be a single UTF-8 character", getName());
             }
+
+            /// The count is read with IColumn::getInt() below, so a UInt64 value that does not fit
+            /// Int64 must be rejected here rather than read as a negative count.
+            checkIntegerArgumentFitsInt64(*column_count, getName(), "count");
 
             auto column_res = ColumnString::create();
             ColumnString::Chars & vec_res = column_res->getChars();
@@ -124,21 +116,22 @@ namespace
         }
 
     protected:
-        static void vectorVector(
+        void vectorVector(
             const ColumnString * str_column,
             const String & delim,
             const IColumn * count_column,
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets,
-            size_t input_rows_count)
+            size_t input_rows_count) const
         {
             res_data.reserve(str_column->getChars().size() / 2);
             res_offsets.reserve(input_rows_count);
 
-            bool all_ascii = isAllASCII(str_column->getChars().data(), str_column->getChars().size())
-                && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size());
+            bool is_actually_utf8 = is_utf8
+                && !(isAllASCII(str_column->getChars().data(), str_column->getChars().size())
+                    && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size()));
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
-                = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
+                = is_actually_utf8 ? std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size()) : nullptr;
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -146,64 +139,62 @@ namespace
                 Int64 count = count_column->getInt(i);
 
                 std::string_view res_ref;
-                if constexpr (!is_utf8)
-                    res_ref = substringIndex(str_ref, delim[0], count);
-                else if (all_ascii)
-                    res_ref = substringIndex(str_ref, delim[0], count);
-                else
+                if (is_actually_utf8)
                     res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
+                else
+                    res_ref = substringIndex(str_ref, delim[0], count);
 
                 appendToResultColumn<true>(res_ref, res_data, res_offsets);
             }
         }
 
-        static void vectorConstant(
+        void vectorConstant(
             const ColumnString * str_column,
             const String & delim,
             Int64 count,
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets,
-            size_t input_rows_count)
+            size_t input_rows_count) const
         {
             res_data.reserve(str_column->getChars().size() / 2);
             res_offsets.reserve(input_rows_count);
 
-            bool all_ascii = isAllASCII(str_column->getChars().data(), str_column->getChars().size())
-                && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size());
+            bool is_actually_utf8 = is_utf8
+                && !(isAllASCII(str_column->getChars().data(), str_column->getChars().size())
+                    && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size()));
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
-                = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
+                = is_actually_utf8 ? std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size()) : nullptr;
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 std::string_view str_ref = str_column->getDataAt(i);
 
                 std::string_view res_ref;
-                if constexpr (!is_utf8)
-                    res_ref = substringIndex(str_ref, delim[0], count);
-                else if (all_ascii)
-                    res_ref = substringIndex(str_ref, delim[0], count);
-                else
+                if (is_actually_utf8)
                     res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
+                else
+                    res_ref = substringIndex(str_ref, delim[0], count);
 
                 appendToResultColumn<true>(res_ref, res_data, res_offsets);
             }
         }
 
-        static void constantVector(
+        void constantVector(
             const String & str,
             const String & delim,
             const IColumn * count_column,
             ColumnString::Chars & res_data,
-            ColumnString::Offsets & res_offsets)
+            ColumnString::Offsets & res_offsets) const
         {
             size_t rows = count_column->size();
             res_data.reserve(str.size() * rows / 2);
             res_offsets.reserve(rows);
 
-            bool all_ascii = isAllASCII(reinterpret_cast<const UInt8 *>(str.data()), str.size())
-                && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size());
+            bool is_actually_utf8 = is_utf8
+                && !(isAllASCII(reinterpret_cast<const UInt8 *>(str.data()), str.size())
+                    && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size()));
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
-                = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
+                = is_actually_utf8 ? std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size()) : nullptr;
 
             std::string_view str_ref{str};
             for (size_t i = 0; i < rows; ++i)
@@ -211,12 +202,10 @@ namespace
                 Int64 count = count_column->getInt(i);
 
                 std::string_view res_ref;
-                if constexpr (!is_utf8)
-                    res_ref = substringIndex(str_ref, delim[0], count);
-                else if (all_ascii)
-                    res_ref = substringIndex(str_ref, delim[0], count);
-                else
+                if (is_actually_utf8)
                     res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
+                else
+                    res_ref = substringIndex(str_ref, delim[0], count);
 
                 appendToResultColumn<false>(res_ref, res_data, res_offsets);
             }
@@ -308,6 +297,10 @@ namespace
             return {
                 d > 0 ? str_ref.data() : pos + 1, static_cast<size_t>(d > 0 ? pos - str_ref.data() : str_ref.data() + str_ref.size() - pos - 1)};
         }
+
+    private:
+        const char * function_name;
+        bool is_utf8;
     };
 }
 
@@ -359,8 +352,8 @@ If this assumption is violated, no exception is thrown and the result is undefin
     };
     FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, {}, returned_value_utf8, examples_utf8, introduced_in, category};
 
-    factory.registerFunction<FunctionSubstringIndex<false>>(documentation); /// substringIndex
-    factory.registerFunction<FunctionSubstringIndex<true>>(documentation_utf8); /// substringIndexUTF8
+    factory.registerFunction("substringIndex", [](ContextPtr){ return FunctionSubstringIndex::create("substringIndex", false); }, documentation);
+    factory.registerFunction("substringIndexUTF8", [](ContextPtr){ return FunctionSubstringIndex::create("substringIndexUTF8", true); }, documentation_utf8);
 
     factory.registerAlias("SUBSTRING_INDEX", "substringIndex", FunctionFactory::Case::Insensitive);
 }

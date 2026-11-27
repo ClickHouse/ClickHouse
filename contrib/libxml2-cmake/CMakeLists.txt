@@ -30,7 +30,6 @@ set(SRCS
     "${LIBXML2_SOURCE_DIR}/xmlschemas.c"
     "${LIBXML2_SOURCE_DIR}/xmlschemastypes.c"
     "${LIBXML2_SOURCE_DIR}/xmlregexp.c"
-    "${LIBXML2_SOURCE_DIR}/xmlunicode.c"
     "${LIBXML2_SOURCE_DIR}/relaxng.c"
     "${LIBXML2_SOURCE_DIR}/catalog.c"
     "${LIBXML2_SOURCE_DIR}/HTMLparser.c"

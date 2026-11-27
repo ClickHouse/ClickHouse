@@ -86,9 +86,10 @@ class ASTExistsDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTExistsDa
 public:
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTExistsDatabaseQuery>(*this);
+        auto res = make_intrusive<ASTExistsDatabaseQuery>(*this);
         res->children.clear();
         cloneTableOptions(*res);
+        cloneOutputOptions(*res);
         return res;
     }
 
@@ -108,9 +109,10 @@ class ASTShowCreateDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTShow
 public:
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTShowCreateDatabaseQuery>(*this);
+        auto res = make_intrusive<ASTShowCreateDatabaseQuery>(*this);
         res->children.clear();
         cloneTableOptions(*res);
+        cloneOutputOptions(*res);
         return res;
     }
 
@@ -127,12 +129,13 @@ class ASTDescribeQuery : public ASTQueryWithOutput
 {
 public:
     ASTPtr table_expression;
+    bool temporary = false;
 
     String getID(char) const override { return "DescribeQuery"; }
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTDescribeQuery>(*this);
+        auto res = make_intrusive<ASTDescribeQuery>(*this);
         res->children.clear();
         if (table_expression)
         {
@@ -148,8 +151,7 @@ public:
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        ostr
-                      << "DESCRIBE TABLE";
+        ostr << (temporary ? "DESCRIBE TEMPORARY TABLE" : "DESCRIBE TABLE");
         table_expression->format(ostr, settings, state, frame);
     }
 

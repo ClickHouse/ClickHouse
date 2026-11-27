@@ -1,0 +1,6 @@
+t_no_skip_idx	[]
+t_not_mergetree	[]
+t_skip_idx_types	['bloom_filter','minmax','set']
+t_tmp_skip_idx	['minmax','set']
+t_implicit_and_explicit	['set']
+t_implicit_minmax	[]

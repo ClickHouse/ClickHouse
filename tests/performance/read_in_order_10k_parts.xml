@@ -1,0 +1,15 @@
+<test>
+    <settings>
+        <optimize_read_in_order>1</optimize_read_in_order>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <create_query>CREATE TABLE read_in_order_10k_parts (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS parts_to_throw_insert = 100000, parts_to_delay_insert = 100000, max_parts_in_total = 200000, index_granularity = 64</create_query>
+    <fill_query>SYSTEM STOP MERGES read_in_order_10k_parts</fill_query>
+    <fill_query>INSERT INTO read_in_order_10k_parts SELECT number, number FROM numbers(2000000) SETTINGS max_insert_block_size = 200, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_block_size = 200, max_insert_threads = 16</fill_query>
+
+    <query>SELECT k FROM read_in_order_10k_parts ORDER BY k FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT k FROM read_in_order_10k_parts ORDER BY k FORMAT Null SETTINGS max_threads = 4</query>
+
+    <drop_query>DROP TABLE IF EXISTS read_in_order_10k_parts</drop_query>
+</test>

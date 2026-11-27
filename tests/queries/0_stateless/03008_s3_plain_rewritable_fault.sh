@@ -65,7 +65,7 @@ SETTINGS
         endpoint = 'http://localhost:11111/test/03008_test_s3_mt_fault/',
         access_key_id = clickhouse,
         secret_access_key = clickhouse),
-    old_parts_lifetime = 1;
+    old_parts_lifetime = 1, merge_tree_clear_old_parts_interval_seconds = 1, cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration = 0;
 "
 
 ${CLICKHOUSE_CLIENT} --query "
@@ -141,16 +141,9 @@ fi
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT storage_merge_tree_background_clear_old_parts_pause;"
 
+# Every cleanup pass rewrites `removal_state`, e.g. to 'Part ownership is not unique' while a
+# `system.parts` query holds the part, so it can only be polled for.
 wait_for_part_remove_rolled_back test_s3_mt_fault
-
-inactive_count=$(${CLICKHOUSE_CLIENT} --query "
-select count() from system.parts
-where database = '${CLICKHOUSE_DATABASE}' and table = 'test_s3_mt_fault' and $STATE_CONDITION and $REMOVAL_STATE_CONDITION")
-if [[ $inactive_count -eq 0 ]]
-then
-    echo "At least one inactive part which has been rolled back from remove is expected"
-    exit 2
-fi
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;"
 

@@ -41,7 +41,7 @@ def test_user_zero_database_access(start_cluster):
             ],
             user="root",
         )
-    except Exception as ex:
+    except Exception:
         assert False, "user with access rights can't drop database test"
 
     try:
@@ -53,7 +53,7 @@ def test_user_zero_database_access(start_cluster):
             ],
             user="root",
         )
-    except Exception as ex:
+    except Exception:
         assert False, "user with access rights can't create database test"
 
     try:
@@ -97,7 +97,7 @@ def test_user_zero_database_access(start_cluster):
             ],
             user="root",
         )
-    except Exception as ex:
+    except Exception:
         assert False, "user with full access rights can't create database test2"
 
     try:
@@ -109,7 +109,7 @@ def test_user_zero_database_access(start_cluster):
             ],
             user="root",
         )
-    except Exception as ex:
+    except Exception:
         assert False, "user with full access rights can't drop database test2"
 
     try:
@@ -122,7 +122,7 @@ def test_user_zero_database_access(start_cluster):
             user="root",
         )
         assert name.strip() == "env_user_not_with_password"
-    except Exception as ex:
+    except Exception:
         assert False, "set env CLICKHOUSE_USER can not connect server"
 
     try:
@@ -135,7 +135,7 @@ def test_user_zero_database_access(start_cluster):
             user="root",
         )
         assert name.strip() == "env_user_with_password"
-    except Exception as ex:
+    except Exception:
         assert (
             False
         ), "set env CLICKHOUSE_USER CLICKHOUSE_PASSWORD can not connect server"

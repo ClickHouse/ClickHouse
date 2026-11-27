@@ -1,0 +1,23 @@
+---
+description: 'Документация по специальному типу данных Nothing'
+sidebarTitle: 'Nothing'
+slug: /sql-reference/data-types/special-data-types/nothing
+title: 'Nothing'
+doc_type: 'reference'
+---
+
+Единственное назначение этого типа данных — представлять случаи, когда значение не ожидается. Поэтому создать значение типа `Nothing` нельзя.
+
+Например, литерал [NULL](/ru/reference/syntax#null) имеет тип `Nullable(Nothing)`. Подробнее см. в разделе [Nullable](/ru/reference/data-types/nullable).
+
+Тип `Nothing` также можно использовать для обозначения пустых массивов:
+
+```sql
+SELECT toTypeName(array())
+```
+
+```text
+┌─toTypeName(array())─┐
+│ Array(Nothing)      │
+└─────────────────────┘
+```

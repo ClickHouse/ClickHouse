@@ -1,0 +1,360 @@
+---
+description: 'كيفية بناء ClickHouse وتشغيل اختبار أداء باستخدام Codec DEFLATE_QPL'
+sidebarTitle: 'بناء DEFLATE_QPL واختبار أدائه'
+slug: /development/building_and_benchmarking_deflate_qpl
+title: 'تشغيل اختبار أداء باستخدام DEFLATE_QPL'
+doc_type: 'guide'
+---
+
+* تأكد من أن جهازك المضيف يستوفي [المتطلبات المسبقة](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#prerequisites) اللازمة لـ QPL
+
+* يكون deflate&#95;qpl ممكّنًا افتراضيًا أثناء البناء باستخدام cmake. إذا غيّرته عن طريق الخطأ، فيُرجى التحقق مجددًا من علامة البناء: ENABLE&#95;QPL=1
+
+* للاطلاع على المتطلبات العامة، يُرجى الرجوع إلى [إرشادات البناء](/ar/resources/develop-contribute/build/build) العامة الخاصة بـ ClickHouse
+
+<div id="files-list">
+  ## قائمة الملفات
+</div>
+
+تقدّم المجلدات `benchmark_sample` ضمن [qpl-cmake](https://github.com/ClickHouse/ClickHouse/tree/master/contrib/qpl-cmake) مثالًا على تشغيل اختبار الأداء باستخدام نصوص بايثون البرمجية:
+
+يحتوي `client_scripts` على نصوص بايثون البرمجية لتشغيل اختبار أداء نموذجي، على سبيل المثال:
+
+* `client_stressing_test.py`: نص بايثون برمجي لاختبار الضغط على الاستعلامات مع [1~4] مثيلات خادم.
+* `queries_ssb.sql`: يسرد هذا الملف جميع الاستعلامات الخاصة بـ [Star Schema Benchmark](/ar/get-started/sample-datasets/star-schema)
+* `allin1_ssb.sh`: ينفّذ نص shell البرمجي هذا سير عمل اختبار الأداء الكل في واحد تلقائيًا.
+
+يعني `database_files` أنه سيخزّن ملفات قاعدة البيانات وفقًا لـ codec ‏lz4/deflate/zstd.
+
+<div id="run-benchmark-automatically-for-star-schema">
+  ## شغّل الاختبار المعياري تلقائيًا على مخطط النجمة:
+</div>
+
+```bash
+$ cd ./benchmark_sample/client_scripts
+$ sh run_ssb.sh
+```
+
+بعد اكتمال العملية، يُرجى التحقق من جميع النتائج في هذا المجلد:`./output/`
+
+في حال حدوث أي إخفاق، يُرجى تشغيل الاختبار المعياري يدويًا كما هو موضح في الأقسام أدناه.
+
+<div id="definition">
+  ## التعريف
+</div>
+
+[CLICKHOUSE&#95;EXE] يشير إلى مسار الملف التنفيذي لـ ClickHouse.
+
+<div id="environment">
+  ## البيئة
+</div>
+
+* CPU: Sapphire Rapid
+* راجع [متطلبات النظام لـ QPL](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#system-requirements) لمعرفة متطلبات نظام التشغيل
+* راجع [إعداد المسرّع](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#accelerator-configuration) لمعرفة إعداد IAA
+* ثبّت وحدات بايثون:
+
+```bash
+pip3 install clickhouse_driver numpy
+```
+
+[فحص ذاتي لـ IAA]
+
+```bash
+$ accel-config list | grep -P 'iax|state'
+```
+
+المخرجات المتوقعة ستكون على النحو التالي:
+
+```bash
+    "dev":"iax1",
+    "state":"enabled",
+            "state":"enabled",
+```
+
+إذا لم يظهر أي ناتج، فهذا يعني أن IAA ليس جاهزًا للعمل. يُرجى التحقق من إعداد IAA مرة أخرى.
+
+<div id="generate-raw-data">
+  ## توليد البيانات الخام
+</div>
+
+```bash
+$ cd ./benchmark_sample
+$ mkdir rawdata_dir && cd rawdata_dir
+```
+
+استخدم [`dbgen`](/ar/get-started/sample-datasets/star-schema) لإنشاء بيانات تضم 100 مليون صف باستخدام المعلمة التالية:
+-s 20
+
+يُتوقع إنشاء ملفات مثل `*.tbl` ضمن `./benchmark_sample/rawdata_dir/ssb-dbgen`:
+
+<div id="database-setup">
+  ## إعداد قاعدة البيانات
+</div>
+
+هيّئ قاعدة البيانات باستخدام خوارزمية الضغط LZ4
+
+```bash
+$ cd ./database_dir/lz4
+$ [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
+$ [CLICKHOUSE_EXE] client
+```
+
+هنا ينبغي أن ترى الرسالة `Connected to ClickHouse server` في وحدة التحكّم، ما يعني أن العميل نجح في إعداد اتصال مع الخادم.
+
+أكمل الخطوات الثلاث أدناه المذكورة في [Star Schema Benchmark](/ar/get-started/sample-datasets/star-schema)
+
+* إنشاء الجداول في ClickHouse
+* إدراج البيانات. ينبغي هنا استخدام `./benchmark_sample/rawdata_dir/ssb-dbgen/*.tbl` كبيانات إدخال.
+* تحويل &quot;star schema&quot; إلى مخطط &quot;flat schema&quot; غير مُطبَّع
+
+أعِد إعداد قاعدة البيانات باستخدام codec ‏IAA Deflate
+
+```bash
+$ cd ./database_dir/deflate
+$ [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
+$ [CLICKHOUSE_EXE] client
+```
+
+أكمل الخطوات الثلاث نفسها كما في lz4 أعلاه
+
+أعِدّ قاعدة البيانات باستخدام ترميز ZSTD
+
+```bash
+$ cd ./database_dir/zstd
+$ [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
+$ [CLICKHOUSE_EXE] client
+```
+
+أكمل ثلاث خطوات كما هو موضح لـ `lz4` أعلاه
+
+[self-check]
+لكل codec‏ (`lz4`/`zstd`/`deflate`)، يُرجى تنفيذ الاستعلام أدناه للتأكد من إنشاء قواعد البيانات بنجاح:
+
+```sql
+SELECT count() FROM lineorder_flat
+```
+
+يُفترض أن تظهر لك المخرجات التالية:
+
+```sql
+┌───count()─┐
+│ 119994608 │
+└───────────┘
+```
+
+[فحص ذاتي لترميز IAA Deflate]
+
+عند تنفيذ أول عملية إدراج أو استعلام من العميل، من المتوقع أن يطبع خادم ClickHouse هذا السجل في وحدة التحكم:
+
+```text
+Hardware-assisted DeflateQpl codec is ready!
+```
+
+إذا لم تعثر على هذا مطلقًا، لكن ظهر لك سجل آخر كما يلي:
+
+```text
+Initialization of hardware-assisted DeflateQpl codec failed
+```
+
+هذا يعني أن أجهزة IAA غير جاهزة، ويجب عليك التحقق من إعدادات IAA مرة أخرى.
+
+<div id="benchmark-with-single-instance">
+  ### اختبار الأداء باستخدام مثيل واحد
+</div>
+
+* قبل بدء اختبار الأداء، يُرجى تعطيل C6 وضبط حاكم تردد CPU على `performance`
+
+```bash
+$ cpupower idle-set -d 3
+$ cpupower frequency-set -g performance
+```
+
+* لإزالة تأثير ربط الذاكرة عبر المقابس، نستخدم `numactl` لربط الخادم بمقبس واحد والعميل بمقبس آخر.
+* يعني المثيل الواحد خادمًا واحدًا متصلًا بعميل واحد
+
+شغّل الآن الاختبار المعياري لـ LZ4/Deflate/ZSTD على التوالي:
+
+LZ4:
+
+```bash
+$ cd ./database_dir/lz4 
+$ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 1 > lz4.log
+```
+
+ضغط IAA:
+
+```bash
+$ cd ./database_dir/deflate
+$ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 1 > deflate.log
+```
+
+ZSTD:
+
+```bash
+$ cd ./database_dir/zstd
+$ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 1 > zstd.log
+```
+
+الآن يجب أن تظهر ثلاثة سجلات كما هو متوقع:
+
+```text
+lz4.log
+deflate.log
+zstd.log
+```
+
+كيفية التحقق من مقاييس الأداء:
+
+نركّز على QPS، يُرجى البحث عن الكلمة المفتاحية: `QPS_Final` ثم جمع الإحصاءات
+
+<div id="benchmark-with-multi-instances">
+  ## القياس المعياري باستخدام مثيلات متعددة
+</div>
+
+* لتقليل أثر القيود المرتبطة بالذاكرة عند استخدام عدد كبير جدًا من الخيوط، نوصي بإجراء القياس المعياري باستخدام مثيلات متعددة.
+* تعني المثيلات المتعددة وجود عدة خوادم (2 أو 4) يتصل كلٌّ منها بالعميل المقابل له.
+* يجب تقسيم الأنوية في socket واحد بالتساوي وتخصيصها للخوادم كلٌّ على حدة.
+* عند استخدام مثيلات متعددة، يجب إنشاء مجلد جديد لكل codec وإدراج مجموعة البيانات باتباع خطوات مشابهة لخطوات المثيل الواحد.
+
+يوجد اختلافان:
+
+* من جهة العميل، تحتاج إلى تشغيل ClickHouse باستخدام المنفذ المخصص أثناء إنشاء الجدول وإدراج البيانات.
+* من جهة الخادم، تحتاج إلى تشغيل ClickHouse باستخدام ملف xml config المحدد الذي جرى تعيين المنفذ فيه. وقد جرى توفير جميع ملفات xml config المخصصة للمثيلات المتعددة ضمن ./server&#95;config.
+
+نفترض هنا وجود 60 نواة لكل socket، ونأخذ مثيلين على سبيل المثال.
+شغّل الخادم للمثيل الأول
+LZ4:
+
+```bash
+$ cd ./database_dir/lz4
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
+```
+
+ZSTD:
+
+```bash
+$ cd ./database_dir/zstd
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
+```
+
+IAA Deflate:
+
+```bash
+$ cd ./database_dir/deflate
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
+```
+
+[شغّل الخادم للمثيل الثاني]
+
+LZ4:
+
+```bash
+$ cd ./database_dir && mkdir lz4_s2 && cd lz4_s2
+$ cp ../../server_config/config_lz4_s2.xml ./
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_lz4_s2.xml >&/dev/null&
+```
+
+ZSTD:
+
+```bash
+$ cd ./database_dir && mkdir zstd_s2 && cd zstd_s2
+$ cp ../../server_config/config_zstd_s2.xml ./
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_zstd_s2.xml >&/dev/null&
+```
+
+IAA Deflate:
+
+```bash
+$ cd ./database_dir && mkdir deflate_s2 && cd deflate_s2
+$ cp ../../server_config/config_deflate_s2.xml ./
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_deflate_s2.xml >&/dev/null&
+```
+
+إنشاء الجداول &amp;&amp; إدراج البيانات في المثيل الثاني
+
+إنشاء الجداول:
+
+```bash
+$ [CLICKHOUSE_EXE] client -m --port=9001 
+```
+
+إدخال البيانات:
+
+```bash
+$ [CLICKHOUSE_EXE] client --query "INSERT INTO [TBL_FILE_NAME] FORMAT CSV" < [TBL_FILE_NAME].tbl  --port=9001
+```
+
+* يمثّل [TBL&#95;FILE&#95;NAME] اسم ملف مُسمّى وفقًا للتعبير النمطي: *. tbl ضمن `./benchmark_sample/rawdata_dir/ssb-dbgen`.
+* يشير `--port=9001` إلى المنفذ المخصّص لمثيل الخادم، وهو معرّف أيضًا في config&#95;lz4&#95;s2.xml/config&#95;zstd&#95;s2.xml/config&#95;deflate&#95;s2.xml. ولإضافة المزيد من المثيلات، يجب استبداله بالقيمة 9002/9003، التي تشير إلى المثيلين s3/s4 على التوالي. وإذا لم تُعيّنه، فسيكون المنفذ 9000 افتراضيًا، وهو مستخدم بالفعل من قِبل المثيل الأول.
+
+قياس الأداء باستخدام مثيلين
+
+LZ4:
+
+```bash
+$ cd ./database_dir/lz4
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
+$ cd ./database_dir/lz4_s2
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_lz4_s2.xml >&/dev/null&
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 2  > lz4_2insts.log
+```
+
+ZSTD:
+
+```bash
+$ cd ./database_dir/zstd
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
+$ cd ./database_dir/zstd_s2
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_zstd_s2.xml >&/dev/null& 
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 2 > zstd_2insts.log
+```
+
+ضغط deflate باستخدام IAA
+
+```bash
+$ cd ./database_dir/deflate
+$ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
+$ cd ./database_dir/deflate_s2
+$ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_deflate_s2.xml >&/dev/null&
+$ cd ./client_scripts
+$ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 2 > deflate_2insts.log
+```
+
+هنا تشير الوسيطة الأخيرة: `2` في client&#95;stressing&#95;test.py إلى عدد المثيلات. ولزيادة عدد المثيلات، عليك استبدالها بالقيمة 3 أو 4. يدعم هذا البرنامج النصي ما يصل إلى 4 مثيلات/
+
+الآن ينبغي أن تظهر ثلاثة سجلات كما هو متوقع:
+
+```text
+lz4_2insts.log
+deflate_2insts.log
+zstd_2insts.log
+```
+
+كيفية التحقق من مقاييس الأداء:
+
+نركّز على QPS، يُرجى البحث عن الكلمة المفتاحية: `QPS_Final` وجمع الإحصاءات
+
+إعداد اختبار الأداء لأربعة مثيلات مماثل لإعداد المثيلين المذكورين أعلاه.
+نوصي باستخدام بيانات اختبار الأداء الخاصة بمثيلين بوصفها التقرير النهائي للمراجعة.
+
+<div id="tips">
+  ## نصائح
+</div>
+
+في كل مرة قبل تشغيل ClickHouse server جديد، يُرجى التأكد من عدم وجود أي عملية ClickHouse تعمل في الخلفية، ثم التحقق منها وإنهاء العملية القديمة:
+
+```bash
+$ ps -aux| grep clickhouse
+$ kill -9 [PID]
+```
+
+بمقارنة قائمة الاستعلامات في ./client&#95;scripts/queries&#95;ssb.sql مع [Star Schema Benchmark](/ar/get-started/sample-datasets/star-schema) الرسمي، ستجد أن 3 استعلامات غير مشمولة: Q1.2/Q1.3/Q3.4 . ويرجع ذلك إلى أن نسبة استخدام CPU في هذه الاستعلامات منخفضة جدًا (&lt; 10%)، ما يعني أنها لا تُبرز فروق الأداء.

@@ -147,7 +147,7 @@ def test_number_of_marks_read(
             node.query(f"SYSTEM SYNC REPLICA {table_name} STRICT")
 
     query = _create_query(query_tmpl, table_name)
-    query_id = f"{table_name}_{randint(0, 1e9)}"
+    query_id = f"{table_name}_{randint(0, 10**9)}"
 
     assert _get_result_with_parallel_replicas(
         query, query_id, cluster_name, parallel_replicas_mark_segment_size
@@ -156,3 +156,83 @@ def test_number_of_marks_read(
     assert _get_number_of_marks_read_by_replicas(
         query_id
     ) == _get_expected_amount_of_marks_to_read(query)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        # The follower skips its own index analysis.
+        "skip_analysis",
+        # The follower runs its own index analysis.
+        "own_analysis",
+        # A projection read takes its ranges from the analysis of the projection candidate.
+        "projection",
+        # Reading in order uses its own read pool and coordinator.
+        "in_order",
+    ],
+)
+def test_query_condition_cache_of_each_replica(start_cluster, case):
+    # Each replica has its own query condition cache, but the coordinator assigns ranges from its own analysis,
+    # where only its own cache is consulted. A follower has to apply its cache to the ranges it is assigned,
+    # or it reads its share of the table again on every run.
+    use_projection = case == "projection"
+    table_name = f"tbl_query_condition_cache_{randint(0, 10**9)}"
+    _create_tables(table_name, 0, 8192)
+    if use_projection:
+        nodes[0].query(
+            f"ALTER TABLE {table_name} ADD PROJECTION by_value (SELECT * ORDER BY value)",
+            settings={"alter_sync": 2},
+        )
+    nodes[0].query(
+        f"""
+        INSERT INTO {table_name}
+        SELECT number, if(number % 1000000 = 7, 'needle', toString(number)) FROM numbers_mt(10000000)
+        """
+    )
+    nodes[0].query(f"OPTIMIZE TABLE {table_name} FINAL", settings={"alter_sync": 2})
+    for node in nodes:
+        node.query(f"SYSTEM SYNC REPLICA {table_name} STRICT")
+        node.query("SYSTEM DROP QUERY CONDITION CACHE")
+
+    if case == "in_order":
+        query = f"SELECT key FROM {table_name} WHERE value LIKE '%needle%' ORDER BY key"
+        expected = "".join(f"{key}\n" for key in range(7, 10000000, 1000000))
+    else:
+        query = f"SELECT count() FROM {table_name} WHERE value LIKE '%needle%'"
+        expected = "10\n"
+    settings = {
+        "enable_parallel_replicas": 1,
+        # Otherwise the second run may be switched to a single node.
+        "automatic_parallel_replicas_mode": 0,
+        "max_parallel_replicas": 2,
+        "cluster_for_parallel_replicas": "parallel_replicas_two_nodes",
+        "parallel_replicas_min_number_of_rows_per_replica": 0,
+        "use_query_condition_cache": 1,
+        "max_threads": 4,
+        "parallel_replicas_index_analysis_only_on_coordinator": int(case != "own_analysis"),
+    }
+    if use_projection:
+        settings["preferred_optimize_projection_name"] = "by_value"
+        settings["force_optimize_projection"] = 1
+
+    query_ids = [f"{table_name}_{run}" for run in range(2)]
+    for query_id in query_ids:
+        assert nodes[0].query(query, settings={**settings, "query_id": query_id}) == expected
+
+    for node in nodes[:2]:
+        node.query("SYSTEM FLUSH LOGS query_log")
+
+    def rows_read_by_follower(query_id):
+        return int(
+            nodes[1].query(
+                f"""
+                SELECT sum(read_rows) FROM system.query_log
+                WHERE initial_query_id = '{query_id}' AND NOT is_initial_query AND type = 'QueryFinish'
+                """
+            )
+        )
+
+    # The first run reads everything, so after it each granule is in the cache of the replica that read it.
+    assert rows_read_by_follower(query_ids[0]) > 0
+    # The second run reads only the granules with matches: at most the 10 granules of 8192 rows.
+    assert rows_read_by_follower(query_ids[1]) <= 10 * 8192

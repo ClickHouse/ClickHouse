@@ -5,3 +5,4 @@ services:
         restart: always
         entrypoint: bash /start.sh
         stop_grace_period: 5s
+        cpus: 3

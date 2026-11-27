@@ -1,0 +1,79 @@
+---
+description: 'ClickHouse
+  とZooKeeper間のセキュアなSSL/TLS通信を設定するためのガイド'
+sidebarTitle: 'ZooKeeperとのセキュアな通信'
+slug: /operations/ssl-zookeeper
+title: 'ClickHouseとZooKeeper間のオプションのセキュアな通信'
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/ja/_self_managed_only_automated.mdx';
+
+<SelfManaged />
+
+SSL 経由で ClickHouse client と通信するには、`ssl.keyStore.location`、`ssl.keyStore.password`、`ssl.trustStore.location`、`ssl.trustStore.password` を指定する必要があります。これらのオプションは ZooKeeper バージョン 3.5.2 以降で利用できます。
+
+`zookeeper.crt` を信頼済み証明書に追加できます。
+
+```bash
+sudo cp zookeeper.crt /usr/local/share/ca-certificates/zookeeper.crt
+sudo update-ca-certificates
+```
+
+`config.xml` のクライアントセクションは次のようになります。
+
+```xml
+<client>
+    <certificateFile>/etc/clickhouse-server/client.crt</certificateFile>
+    <privateKeyFile>/etc/clickhouse-server/client.key</privateKeyFile>
+    <loadDefaultCAFile>true</loadDefaultCAFile>
+    <cacheSessions>true</cacheSessions>
+    <disableProtocols>sslv2,sslv3</disableProtocols>
+    <preferServerCiphers>true</preferServerCiphers>
+    <invalidCertificateHandler>
+        <name>RejectCertificateHandler</name>
+    </invalidCertificateHandler>
+</client>
+```
+
+いくつかのクラスター設定とマクロを含めて、ZooKeeper を ClickHouse の設定に追加します:
+
+```xml
+<clickhouse>
+    <zookeeper>
+        <node>
+            <host>localhost</host>
+            <port>2281</port>
+            <secure>1</secure>
+        </node>
+    </zookeeper>
+</clickhouse>
+```
+
+`clickhouse-server` を起動します。ログに次のように表示されます。
+
+```text
+<Trace> ZooKeeper: initialized, hosts: secure://localhost:2281
+```
+
+プレフィックス `secure://` は、接続が SSL で保護されていることを示します。
+
+トラフィックが暗号化されているか確認するには、保護されたポートで `tcpdump` を実行します:
+
+```bash
+tcpdump -i any dst port 2281 -nnXS
+```
+
+`clickhouse-client` でクエリを実行します:
+
+```sql
+SELECT * FROM system.zookeeper WHERE path = '/';
+```
+
+暗号化されていない接続では、`tcpdump` の出力に次のような内容が表示されます。
+
+```text
+..../zookeeper/quota.
+```
+
+暗号化接続では、これは表示されないはずです。

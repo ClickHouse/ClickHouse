@@ -1,0 +1,90 @@
+type	UInt8
+unmerged	1	1	0	0
+unmerged	2	\N	1	1
+unmerged	3	\N	1	1
+merged	1	1	0	0
+merged	2	\N	1	1
+merged	3	\N	1	1
+count rewritten	2
+count direct	2
+count not null rewritten	1
+count not null direct	1
+rewrite fires	1
+rewrite off	0
+prewhere	2
+prewhere	3
+pooling mismatches	0
+wide	1	0
+wide	2	1
+wide	3	1
+variant	1	0
+variant	2	1
+variant	3	1
+memory	1	0
+memory	2	1
+memory	3	1
+granule absent	1	0
+granule absent	2	1
+granule absent	3	1
+granule absent	4	1
+missing stream	1	1
+missing stream	2	0
+variant added column	1	1
+variant added column	2	0
+variant added column wide	1	1
+variant added column wide	2	0
+added column	1	1
+added column	2	0
+control absent part	1	1
+control absent part	2	1
+control absent part	3	0
+control shared variant	1	0
+control shared variant	2	1
+control shared variant	3	1
+memory shared variant	1	1	0	0
+memory shared variant	2	\N	1	1
+memory shared variant	3	\N	1	1
+memory absent type	1	\N	1	1
+memory absent type	2	\N	1	1
+json typed path	1	0
+json typed path	2	1
+json typed path	3	1
+json dynamic path absent type	1	1
+json dynamic path absent type	2	1
+dynamic descendant	1	0
+dynamic descendant	2	1
+nested variant	1	0
+nested variant	2	1
+nested variant	3	1
+nested tuple	1	1
+nested tuple	2	0
+nested tuple	3	1
+control uint8	1	UInt8	1
+control uint8	2	UInt8	0
+control uint8	3	UInt8	0
+control uint8	4	UInt8	0
+control uint8	5	UInt8	0
+control array	1	Array(UInt8)	[]
+control array	2	Array(UInt8)	[1]
+control array	3	Array(UInt8)	[]
+control array	4	Array(UInt8)	[]
+control array	5	Array(UInt8)	[]
+control map	1	Array(UInt8)	[]
+control map	2	Array(UInt8)	[]
+control map	3	Array(UInt8)	[1]
+control map	4	Array(UInt8)	[]
+control map	5	Array(UInt8)	[]
+element null map	1	1
+element null map	2	1
+element null map	3	1
+element null map	4	1
+element null map	5	0
+setting on type	Nullable(UInt8)
+setting on	1	0
+setting on	2	1
+setting on	3	\N
+setting on variant	1	0
+setting on variant	2	1
+setting on variant	3	\N
+setting on shared	1	0
+setting on shared	2	\N

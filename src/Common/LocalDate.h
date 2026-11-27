@@ -19,9 +19,9 @@
 class LocalDate
 {
 private:
-    unsigned short m_year; /// NOLINT
-    unsigned char m_month;
-    unsigned char m_day;
+    unsigned short m_year{}; /// NOLINT
+    unsigned char m_month{};
+    unsigned char m_day{};
 
     void init(time_t time, const DateLUTImpl & date_lut);
     void init(const char * s, size_t length);
@@ -58,9 +58,9 @@ public:
     LocalDate(const LocalDate &) noexcept = default;
     LocalDate & operator= (const LocalDate &) noexcept = default;
 
-    DayNum getDayNum(const DateLUTImpl & lut = DateLUT::instance()) const;
+    [[nodiscard]] DayNum getDayNum(const DateLUTImpl & lut = DateLUT::instance()) const;
 
-    ExtendedDayNum getExtenedDayNum(const DateLUTImpl & lut = DateLUT::instance()) const;
+    [[nodiscard]] ExtendedDayNum getExtenedDayNum(const DateLUTImpl & lut = DateLUT::instance()) const;
 
     operator DayNum() const /// NOLINT
     {
@@ -68,8 +68,8 @@ public:
     }
 
     unsigned short year() const { return m_year; } /// NOLINT
-    unsigned char month() const { return m_month; }
-    unsigned char day() const { return m_day; }
+    [[nodiscard]] unsigned char month() const { return m_month; }
+    [[nodiscard]] unsigned char day() const { return m_day; }
 
     void year(unsigned short x) { m_year = x; } /// NOLINT
     void month(unsigned char x) { m_month = x; }

@@ -1,0 +1,20 @@
+<test>
+    <!--
+        Guards against two-level aggregation conversion being driven by whole-query
+        memory instead of the aggregation's own state size. The conversion should only
+        happen when the aggregation state is large.
+        A low-cardinality GROUP BY should not depend on the state of large hash join
+        below it, and should stay single level.
+    -->
+    <create_query>CREATE TABLE right (id Int64, k  FixedString(16)) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE left ( id Int64, v Nullable(Decimal(7, 2)) ) ENGINE = MergeTree ORDER BY id</create_query>
+
+    <fill_query>INSERT INTO right SELECT number AS id, toFixedString(toString(intDiv(number, 200)), 16) AS k FROM numbers(2000000)</fill_query>
+    <fill_query>INSERT INTO left SELECT number % 2222222 AS id, rand() % 10000 FROM numbers(3000000)</fill_query>
+
+    <query>SELECT r.k AS g, avg(l.v) FROM left AS l JOIN right AS r ON l.id = r.id GROUP BY g FORMAT Null SETTINGS max_threads = 16</query>
+    <query>SELECT r.k AS g, avg(l.v) FROM left AS l JOIN right AS r ON l.id = r.id GROUP BY g FORMAT Null SETTINGS max_threads = 32</query>
+
+    <drop_query>DROP TABLE IF EXISTS right</drop_query>
+    <drop_query>DROP TABLE IF EXISTS left</drop_query>
+</test>

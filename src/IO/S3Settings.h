@@ -6,6 +6,7 @@
 #include <base/types.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/IThrottler.h>
+#include <Common/MapWithMemoryTracking.h>
 
 #include <IO/S3Common.h>
 #include <IO/S3AuthSettings.h>
@@ -47,6 +48,10 @@ struct S3Settings
 
     void updateIfChanged(const S3Settings & settings);
 
+    /// Returns true if applying `settings` via `updateIfChanged` changes anything the S3 client is built from
+    /// (see `getClient`): any auth setting or a request setting marked with `AFFECTS_CLIENT`.
+    [[nodiscard]] bool hasChangesAffectingClient(const S3Settings & settings) const;
+
     void serialize(WriteBuffer & os, ContextPtr) const;
     static S3Settings deserialize(ReadBuffer & is, ContextPtr context);
 };
@@ -66,7 +71,7 @@ public:
 
 private:
     mutable std::mutex mutex;
-    std::map<const String, const S3Settings> s3_settings;
+    MapWithMemoryTracking<const String, const S3Settings> s3_settings;
 };
 
 

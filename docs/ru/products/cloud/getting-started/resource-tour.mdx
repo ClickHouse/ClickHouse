@@ -1,0 +1,58 @@
+---
+slug: /cloud/get-started/cloud/resource-tour
+title: 'Обзор материалов'
+description: 'Обзор материалов документации ClickHouse Cloud по оптимизации запросов, стратегиям масштабирования, мониторингу и рекомендациям'
+keywords: ['clickhouse cloud']
+hide_title: true
+doc_type: 'guide'
+---
+
+import TableOfContentsBestPractices from '/snippets/ru/_table_of_contents.mdx';
+import TableOfContentsOptimizationAndPerformance from '/snippets/ru/_performance_optimizations_table_of_contents.mdx';
+import TableOfContentsSecurity from '/snippets/ru/_security_table_of_contents.mdx';
+
+Эта статья поможет вам получить обзор материалов, доступных
+в документации, и понять, как максимально эффективно использовать ClickHouse Cloud.
+Изучите материалы по следующим темам:
+
+* [Методы оптимизации запросов и настройка производительности](#query-optimization)
+* [Мониторинг](#monitoring)
+* [Рекомендации по безопасности и возможности для соблюдения требований](#security)
+* [Оптимизация затрат и биллинг](#cost-optimization)
+
+Прежде чем переходить к более конкретным темам, рекомендуем начать с наших общих
+руководств по лучшим практикам ClickHouse, в которых рассматриваются основные рекомендации по
+использованию ClickHouse:
+
+<TableOfContentsBestPractices />
+
+<div id="query-optimization">
+  ## Методы оптимизации запросов и настройка производительности
+</div>
+
+<TableOfContentsOptimizationAndPerformance />
+
+<div id="monitoring">
+  ## Мониторинг
+</div>
+
+| Страница                                                                          | Описание                                                                                                |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| [Advanced dashboard](/ru/products/cloud/features/monitoring/advanced-dashboard)      | Используйте встроенную панель Advanced dashboard для мониторинга состояния и производительности сервиса |
+| [Интеграция с Prometheus](/ru/products/cloud/features/monitoring/prometheus)         | Используйте Prometheus для мониторинга сервисов Cloud                                                   |
+| [Возможности мониторинга Cloud](/ru/guides/use-cases/observability/cloud-monitoring) | Ознакомьтесь со встроенными возможностями мониторинга и вариантами интеграции                           |
+
+<div id="security">
+  ## Безопасность
+</div>
+
+<TableOfContentsSecurity />
+
+<div id="cost-optimization">
+  ## Оптимизация затрат и биллинг
+</div>
+
+| Страница                                                                   | Описание                                                                                                          |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [Передача данных](/ru/products/cloud/reference/billing/network-data-transfer) | Узнайте, как в ClickHouse Cloud учитывается объем входящего и исходящего трафика                                  |
+| [Уведомления](/ru/products/cloud/features/monitoring/notifications)           | Настройте уведомления для вашего сервиса ClickHouse Cloud. Например, когда использование кредитов превышает порог |

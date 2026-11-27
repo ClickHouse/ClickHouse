@@ -9,6 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsHashing.h>
 #include <Functions/IFunction.h>
+#include <Functions/icebergCommon.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -29,7 +30,7 @@ namespace ErrorCodes
     }
 
 /// This function specification https://iceberg.apache.org/spec/#truncate-transform-details
-class FunctionIcebergHash : public IFunction
+class FunctionIcebergHash final : public IFunction
 {
 
 public:
@@ -44,22 +45,19 @@ public:
         return std::make_shared<FunctionIcebergHash>(context_);
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
-    {
-        return std::make_shared<DataTypeInt32>();
-    }
+    [[nodiscard]] String getSignatureString() const override { return "(Any) -> Int32"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         if (arguments.size() != 1)
             throw Exception(
@@ -75,7 +73,16 @@ public:
 
         WhichDataType which(type);
 
-        if (isBool(type) || which.isInteger() || which.isDate())
+        if ((which.isInteger() && !which.isNativeInteger()) || which.isDecimal256())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Type `{}` is not supported by icebergHash: the Iceberg specification only defines hashing "
+                "for `int` (32-bit), `long` (64-bit), and `decimal(P,S)` with P <= 38 "
+                "(see https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements). "
+                "Cast the value to a supported type (e.g. Int64 or Decimal128) if it fits.",
+                type->getName());
+
+        if (isBool(type) || which.isNativeInteger() || which.isDate32() || which.isDate())
         {
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -99,7 +106,7 @@ public:
                                      ->execute(arguments, std::make_shared<DataTypeUInt32>(), input_rows_count, false);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                result_data[i] = murmur_result->getUInt(i);
+                result_data[i] = static_cast<Int32>(murmur_result->getUInt(i));
             }
         }
         else if (which.isUUID())
@@ -109,22 +116,32 @@ public:
                                                         .get("toUInt128", context)
                                                         ->build(arguments)
                                                         ->execute(arguments, std::make_shared<DataTypeUInt128>(), input_rows_count, false);
-            const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(intermediate_representation.get());
-            const IColumn & wrapper_column = const_column ? const_column->getDataColumn() : *intermediate_representation.get();
-            const ColumnVector<UInt128> & uuid_column = checkAndGetColumn<const ColumnVector<UInt128> &>(wrapper_column);
+            const IColumn * wrapper_column = intermediate_representation.get();
+            size_t idx_mask = ~size_t(0);
+            if (const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(intermediate_representation.get()))
+            {
+                wrapper_column = &const_column->getDataColumn();
+                idx_mask = 0;
+            }
+            const ColumnVector<UInt128> & uuid_column = checkAndGetColumn<const ColumnVector<UInt128> &>(*wrapper_column);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                UInt128 value = uuid_column.getData()[i];
+                UInt128 value = uuid_column.getData()[i & idx_mask];
                 result_data[i] = hashUnderlyingIntBigEndian(value, /*reduce_two_complement*/ false);
             }
         }
         else if (which.isDateTime64())
         {
-            const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
-            const IColumn & wrapper_column = const_column ? const_column->getDataColumn() : *arguments[0].column.get();
-            const auto & source_col = checkAndGetColumn<DataTypeDateTime64::ColumnType>(wrapper_column);
+            const IColumn * wrapper_column = arguments[0].column.get();
+            size_t idx_mask = ~size_t(0);
+            if (const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(arguments[0].column.get()))
+            {
+                wrapper_column = &const_column->getDataColumn();
+                idx_mask = 0;
+            }
+            const auto & source_col = checkAndGetColumn<DataTypeDateTime64::ColumnType>(*wrapper_column);
             const ColumnDateTime64 * decimal_column = &source_col;
-            assert(decimal_column != nullptr);
+            chassert(decimal_column != nullptr);
             UInt32 scale = decimal_column->getScale();
             if ((scale != 6) && (scale != 9))
             {
@@ -134,41 +151,39 @@ public:
             }
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                    DateTime64 value = decimal_column->getElement(i);
+                    DateTime64 value = decimal_column->getElement(i & idx_mask);
                     Int64 value_int = value.convertTo<Int64>();
                     if (scale == 9)
-                    {
-                        value_int = value_int / 1000;
-                }
+                        value_int = floorDivide(value_int, 1000);
                 result_data[i] = hashLong(value_int);
             }
         }
         else if (which.isDecimal())
         {
-            const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
-            const IColumn & wrapper_column = const_column ? const_column->getDataColumn() : *arguments[0].column.get();
+            const IColumn * wrapper_column = arguments[0].column.get();
+            size_t idx_mask = ~size_t(0);
+            if (const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(arguments[0].column.get()))
+            {
+                wrapper_column = &const_column->getDataColumn();
+                idx_mask = 0;
+            }
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 UInt128 value;
                 if (which.isDecimal32())
                 {
-                    const ColumnDecimal<Decimal32> * decimal_column = typeid_cast<const ColumnDecimal<Decimal32> *>(&wrapper_column);
-                    value = decimal_column->getElement(i).value;
+                    const ColumnDecimal<Decimal32> * decimal_column = typeid_cast<const ColumnDecimal<Decimal32> *>(wrapper_column);
+                    value = decimal_column->getElement(i & idx_mask).value;
                 }
                 else if (which.isDecimal64())
                 {
-                    const ColumnDecimal<Decimal64> * decimal_column = typeid_cast<const ColumnDecimal<Decimal64> *>(&wrapper_column);
-                    value = decimal_column->getElement(i).value;
+                    const ColumnDecimal<Decimal64> * decimal_column = typeid_cast<const ColumnDecimal<Decimal64> *>(wrapper_column);
+                    value = decimal_column->getElement(i & idx_mask).value;
                 }
                 else if (which.isDecimal128())
                 {
-                    const ColumnDecimal<Decimal128> * decimal_column = typeid_cast<const ColumnDecimal<Decimal128> *>(&wrapper_column);
-                    value = decimal_column->getElement(i).value;
-                }
-                else if (which.isDecimal256())
-                {
-                    const ColumnDecimal<Decimal256> * decimal_column = typeid_cast<const ColumnDecimal<Decimal256> *>(&wrapper_column);
-                    value = decimal_column->getElement(i).value;
+                    const ColumnDecimal<Decimal128> * decimal_column = typeid_cast<const ColumnDecimal<Decimal128> *>(wrapper_column);
+                    value = decimal_column->getElement(i & idx_mask).value;
                 }
                 else
                 {
@@ -184,12 +199,16 @@ public:
         return result_column;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Disable default Variant implementation for compatibility.
+    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
+    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return false; }
 
 private:
     static Int32 hashLong(Int64 value)
     {
-        std::array<char, 8> little_endian_representation;
+        std::array<char, 8> little_endian_representation{};
         for (char & i : little_endian_representation)
         {
             i = static_cast<unsigned char>(value & 0xFF);
@@ -200,7 +219,7 @@ private:
 
     static Int32 hashUnderlyingIntBigEndian(UInt128 value, bool reduce_two_complement)
     {
-        std::array<char, 16> big_endian_representation;
+        std::array<char, 16> big_endian_representation{};
         size_t taken = 1;
         signed char prev = 0;
         for (size_t i = 0; i < 16; ++i)
@@ -237,7 +256,7 @@ private:
         {
             Float64 d;
             UInt64 bits;
-        } converter;
+        } converter{};
 
         converter.d = value;
         if (converter.bits == 0x8000000000000000ULL)
@@ -266,7 +285,7 @@ REGISTER_FUNCTION(IcebergHash)
     factory.registerFunction<FunctionIcebergHash>(documentation);
 }
 
-class FunctionIcebergBucket : public IFunction
+class FunctionIcebergBucket final : public IFunction
 {
 
 public:
@@ -281,24 +300,27 @@ public:
         return std::make_shared<FunctionIcebergBucket>(context_);
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 2;
     }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
-    {
-        return std::make_shared<DataTypeUInt32>();
-    }
+    /// The bucket-count argument is constant, but that is already enforced by
+    /// `getArgumentsThatAreAlwaysConstant` (and validated in `executeImpl`). Do not spell it as
+    /// `const` here: when used as an Iceberg partition / sort-order transform, a non-constant
+    /// argument should surface the dedicated `BAD_ARGUMENTS` "Invalid iceberg sort order" message
+    /// from `parseTransformAndArgument`, not a generic `ILLEGAL_COLUMN` from the signature matcher;
+    /// and return-type inference in `ChunkPartitioner` passes a placeholder (non-const) column here.
+    [[nodiscard]] String getSignatureString() const override { return "(Any, Any) -> UInt32"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         if (arguments.size() != 2)
             throw Exception(
@@ -334,9 +356,13 @@ public:
         return modulo_func->execute(modulo_arguments, std::make_shared<DataTypeUInt32>(), input_rows_count, false);
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Disable default Variant implementation for compatibility.
+    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
+    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return false; }
 };
 
 REGISTER_FUNCTION(IcebergBucket)

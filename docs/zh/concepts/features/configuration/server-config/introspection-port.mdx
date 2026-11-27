@@ -1,0 +1,60 @@
+---
+description: '一种原生协议端口：当服务器正在启动或关闭、常规端口不接受连接时，可通过该端口执行查询。'
+sidebarTitle: '内部信息端口'
+slug: /operations/introspection-port
+title: '内部信息端口'
+doc_type: 'reference'
+---
+
+当 `clickhouse-server` 卡在启动或关闭过程中时，常规端口不接受连接，因此无法询问服务器正在执行什么操作。
+
+内部信息端口是一个原生协议 TCP 监听器，在服务器开始附加表之前启动，且仅在表分离完成后才停止。在这些时间段内，运维人员可以使用标准 `clickhouse-client` 连接到该端口，并运行 `SHOW PROCESSLIST`、`SELECT * FROM system.stack_trace` 或 `SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0.5` 等查询。
+
+<div id="configuration">
+  ## 配置
+</div>
+
+内部信息端口是标记为 `<introspection>true</introspection>` 的[可组合协议](/zh/concepts/features/configuration/server-config/composable-protocols)端点。默认情况下，不配置任何内部信息端口：
+
+```xml
+<protocols>
+    <introspection_native>
+        <type>tcp</type>
+        <introspection>true</introspection>
+        <description>introspection native protocol (tcp)</description>
+        <host>127.0.0.1</host>
+        <port>9010</port>
+    </introspection_native>
+
+    <introspection_native_secure>
+        <type>tls</type>
+        <impl>introspection_native</impl>
+        <introspection>true</introspection>
+        <description>secure introspection native protocol (tcp_secure)</description>
+        <host>127.0.0.1</host>
+        <port>9011</port>
+    </introspection_native_secure>
+</protocols>
+```
+
+由于它是常规的可组合协议端点，因此支持端点支持的所有配置：`host`、`port`、`description`、`networks` 允许列表、`default_database`，以及封装到 `tls` 和 `proxy1` layer 中。
+
+`introspection` 标志是端点本身的属性，即包含 `port` 的 entry；它不会通过 `impl` 引用继承。因此，一个 layer 可以同时由内部信息端点和常规端点共享。
+
+技术栈必须以 `tcp` layer 结尾，因为下述语义由原生协议 handler 实现。若将技术栈中包含 `http`、`mysql`、`postgres`、`prometheus` 或 `interserver` layer 的端点标记为内部信息端口，启动时会因 `INVALID_CONFIG_PARAMETER` 被拒绝，而不会生成一个恰好在需要时停止响应的端口。
+
+| Key             | 描述                             |
+| --------------- | ------------------------------ |
+| `introspection` | 将可组合协议端点标记为内部信息端口。默认值：`false`。 |
+
+<div id="behavior">
+  ## 行为
+</div>
+
+* 允许执行的查询包括 `SELECT`、`SHOW`、`DESCRIBE`、`EXPLAIN`、`EXISTS`、`KILL QUERY`、`SYSTEM`、`SET` 和 `USE`。其他所有查询 (包括 DDL 和修改数据的查询) 均会被拒绝，并返回 `QUERY_IS_PROHIBITED`，因为在服务器状态尚未完全建立或正在关闭时，这些端口仍处于开放状态。
+* 在服务器完全启动前，`SYSTEM RELOAD CONFIG` 和 `SYSTEM RELOAD USERS` 会被拒绝，并返回 `QUERY_IS_PROHIBITED`，因为在启动期间重新加载配置可能会破坏初始化顺序。
+* 这些端口上的查询与 `SHOW PROCESSLIST` 一样，会绕过 `max_concurrent_queries` 和工作负载调度器。
+* 连接由专用线程池处理，因此常规连接池耗尽不会影响这些端口。该线程池的大小由 `max_connections` 决定。
+* 即使服务器因 CPU 过载而拒绝常规连接，仍会接受这些连接。
+* 完整的常规身份验证和授权仍然适用：连接到此端口不会获得额外的访问权限。但它会解除上述并发限制，因此请将其绑定到只有运维人员能够访问的地址。
+* 这些端口不受 `SYSTEM START LISTEN` / `SYSTEM STOP LISTEN` (包括 `ALL` 和 `CUSTOM`) 影响，也不会在重新加载配置时重新配置。

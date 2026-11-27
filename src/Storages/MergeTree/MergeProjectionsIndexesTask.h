@@ -12,18 +12,24 @@ namespace ErrorCodes
 
 struct IDiskTransaction;
 using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;
+
+class IMergeTreeDataPart;
 struct MergeTreeDataPartChecksums;
 
-/// Base task for merging projections and text indexes.
+using MutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
+using MutableDataPartsVector = std::vector<MutableDataPartPtr>;
+
 class MergeProjectionsIndexesTask : public IExecutableTask
 {
 public:
+    virtual MutableDataPartsVector extractTemporaryParts() = 0;
     virtual void addToChecksums(MergeTreeDataPartChecksums & checksums) = 0;
+    [[nodiscard]] virtual String getProjectionName() const { return {}; }
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    [[nodiscard]] StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    [[nodiscard]] Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    [[nodiscard]] String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 };
 
 }

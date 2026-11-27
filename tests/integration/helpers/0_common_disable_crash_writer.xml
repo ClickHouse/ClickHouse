@@ -1,0 +1,5 @@
+<clickhouse>
+    <send_crash_reports>
+        <enabled>false</enabled>
+    </send_crash_reports>
+</clickhouse>

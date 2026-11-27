@@ -1,0 +1,171 @@
+#include <IO/ReadBufferFromFileView.h>
+#include <cstddef>
+#include <IO/ByteRangeSet.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int SEEK_POSITION_OUT_OF_BOUND;
+}
+
+ReadBufferFromFileView::ReadBufferFromFileView(
+    std::unique_ptr<ReadBufferFromFileBase> impl_, const String & file_name_, off_t left_bound_, off_t right_bound_)
+    : impl(std::move(impl_))
+    , file_name(file_name_)
+    , left_bound(left_bound_)
+    , right_bound(right_bound_)
+    , file_offset_of_buffer_end(left_bound_)
+    , original_working_buffer(working_buffer)
+{
+    /// Bound the underlying buffer to the slice of the archive that belongs to this file. Otherwise a read of a
+    /// file inside an archive on object storage becomes an open-ended range request: it transfers the rest of the
+    /// archive instead of the file, and the HTTP connection cannot be returned to the pool.
+    if (right_bound > left_bound)
+    {
+        impl->setReadUntilPosition(right_bound);
+        ByteRangeSet slice;
+        slice.add({left_bound, right_bound - left_bound});
+        impl->setRequestMap(std::move(slice));
+    }
+
+    /// Seek to the begin of file.
+    impl->seek(left_bound, SEEK_SET);
+    swap(*impl);
+
+    file_offset_of_buffer_end += available();
+    original_working_buffer = working_buffer;
+    resizeWorkingBuffer();
+}
+
+void ReadBufferFromFileView::prefetch(Priority priority)
+{
+    executeWithOriginalBuffer([&]{ impl->prefetch(priority); });
+}
+
+void ReadBufferFromFileView::setReadUntilPosition(size_t position)
+{
+    if (position > right_bound - left_bound)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "Cannot read until position: {}. File size is {}", position, getFileSize());
+    read_until_position = left_bound + position;
+
+    executeWithOriginalBuffer([&]{ impl->setReadUntilPosition(*read_until_position); });
+}
+
+void ReadBufferFromFileView::setReadUntilEnd()
+{
+    read_until_position.reset();
+    executeWithOriginalBuffer([&]{ impl->setReadUntilPosition(right_bound); });
+}
+
+void ReadBufferFromFileView::setRequestMap(ByteRangeSet ranges)
+{
+    if (right_bound == left_bound)
+        return;
+    executeWithOriginalBuffer([&]{ impl->setRequestMap(toArchiveRanges(ranges)); });
+}
+
+ByteRangeSet ReadBufferFromFileView::toArchiveRanges(const ByteRangeSet & ranges) const
+{
+    auto result = ranges.intersect({0, right_bound - left_bound});
+    result.shift(left_bound);
+    return result;
+}
+
+off_t ReadBufferFromFileView::getPosition()
+{
+    return static_cast<off_t>(file_offset_of_buffer_end - left_bound) - (working_buffer.end() - pos);
+}
+
+bool ReadBufferFromFileView::nextImpl()
+{
+    size_t current_position
+        = static_cast<size_t>(static_cast<off_t>(file_offset_of_buffer_end) - (working_buffer.end() - pos));
+    if (current_position == getRightBound())
+        return false;
+
+    bool result = false;
+    executeWithOriginalBuffer([&] { result = impl->next(); });
+
+    /// After `next`, `impl` may leave `pos` past the start of its working buffer.
+    if (result)
+        nextimpl_working_buffer_offset = offset();
+
+    return result;
+}
+
+off_t ReadBufferFromFileView::seek(off_t off, int whence)
+{
+    size_t current_position
+        = static_cast<size_t>(static_cast<off_t>(file_offset_of_buffer_end) - (working_buffer.end() - pos));
+
+    /// The target position relative to the start of the view, checked against the view before it is
+    /// made absolute, so that a backward seek beyond the start cannot wrap around.
+    off_t base = 0;
+    if (whence == SEEK_CUR)
+        base = static_cast<off_t>(current_position - left_bound);
+    else if (whence != SEEK_SET)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "ReadBufferFromFileView::seek expects SEEK_SET or SEEK_CUR as whence");
+
+    const off_t view_size = static_cast<off_t>(right_bound - left_bound);
+    if (off < -base || off > view_size - base)
+        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
+            "Seek offset ({}) from position ({}) is out of bound. Available range: [0, {}]", off, base, view_size);
+
+    size_t new_pos = left_bound + static_cast<size_t>(base + off);
+
+    off_t result = 0;
+    executeWithOriginalBuffer([&] { result = impl->seek(new_pos, SEEK_SET); });
+
+    if (result < 0)
+        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position ({}) underflow", result);
+
+    if (static_cast<size_t>(result) < left_bound || static_cast<size_t>(result) > right_bound)
+        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
+            "Seek position ({}) is out of bound. Available range: [{}, {}]", result, left_bound, right_bound);
+
+    return result - left_bound;
+}
+
+template <typename Op>
+void ReadBufferFromFileView::executeWithOriginalBuffer(Op && op)
+{
+    /// Set original buffer as working buffer.
+    working_buffer.swap(original_working_buffer);
+
+    /// Set working buffer and other internal into impl.
+    swap(*impl);
+    op();
+    /// `impl` is the only source of truth for the end of its buffer: the offset kept here may have
+    /// been clamped by `resizeWorkingBuffer` to a bound that has changed since.
+    const size_t impl_buffer_end = impl->getPosition() + impl->available();
+    swap(*impl);
+
+    original_working_buffer = working_buffer;
+
+    /// The unclamped buffer of `impl` is exposed again, so clamp it to the right bound.
+    file_offset_of_buffer_end = impl_buffer_end;
+    resizeWorkingBuffer();
+}
+
+size_t ReadBufferFromFileView::getRightBound() const
+{
+    return read_until_position ? *read_until_position : right_bound;
+}
+
+void ReadBufferFromFileView::resizeWorkingBuffer()
+{
+    if (file_offset_of_buffer_end > getRightBound())
+    {
+        size_t extra_bytes = file_offset_of_buffer_end - getRightBound();
+        size_t new_size = working_buffer.size() > extra_bytes ? working_buffer.size() - extra_bytes : 0;
+
+        working_buffer.resize(new_size);
+        file_offset_of_buffer_end = getRightBound();
+    }
+}
+
+}

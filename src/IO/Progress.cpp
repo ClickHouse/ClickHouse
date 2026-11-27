@@ -17,7 +17,7 @@ namespace
         if (!read_rows || !read_bytes)
             return 0;
 
-        auto bytes_per_row = std::ceil(static_cast<double>(read_bytes) / read_rows);
+        auto bytes_per_row = std::ceil(static_cast<double>(read_bytes) / static_cast<double>(read_rows));
         return static_cast<UInt64>(std::ceil(static_cast<double>(total_bytes_to_read) / bytes_per_row));
     }
 }

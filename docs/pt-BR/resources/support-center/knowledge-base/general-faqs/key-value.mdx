@@ -1,0 +1,19 @@
+---
+slug: /faq/use-cases/key-value
+title: 'Posso usar o ClickHouse como armazenamento key-value?'
+toc_hidden: true
+toc_priority: 101
+description: 'Responde à pergunta frequente sobre se o ClickHouse pode ser usado ou não como armazenamento key-value?'
+doc_type: 'reference'
+keywords: ['key-value', 'modelo de dados', 'caso de uso', 'modelagem de esquema', 'padrão de armazenamento']
+---
+
+A resposta curta é **&quot;não&quot;**. A carga de trabalho de key-value está entre os principais casos em que <span class="text-danger">**NÃO**</span> se deve usar o ClickHouse. Afinal, ele é um sistema [OLAP](/pt-BR/resources/support-center/knowledge-base/general-faqs/olap), enquanto há muitos sistemas excelentes de armazenamento key-value no mercado.
+
+No entanto, pode haver situações em que ainda faça sentido usar o ClickHouse para consultas no estilo key-value. Normalmente, isso acontece em produtos com orçamento limitado, nos quais a carga de trabalho principal é analítica por natureza e se encaixa bem no ClickHouse, mas também existe algum processo secundário que precisa de um padrão key-value, com throughput de requisições não tão alto e sem requisitos rígidos de latência. Se você tivesse orçamento ilimitado, teria instalado um banco de dados key-value secundário para essa carga de trabalho secundária, mas, na prática, há um custo adicional para manter mais um sistema de armazenamento (monitoramento, backups etc.), algo que pode ser desejável evitar.
+
+Se você decidir ir contra as recomendações e executar algumas consultas no estilo key-value no ClickHouse, aqui vão algumas dicas:
+
+* O principal motivo pelo qual consultas pontuais são custosas no ClickHouse é seu índice primário esparso da principal [família de motores de tabela MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree). Esse índice não consegue apontar para cada linha específica de dados; em vez disso, aponta para cada N-ésima linha, e o sistema precisa varrer da N-ésima linha vizinha até a linha desejada, lendo dados em excesso no caminho. Em um cenário key-value, pode ser útil reduzir o valor de N com a configuração `index_granularity`.
+* O ClickHouse mantém cada coluna em um conjunto separado de arquivos, então, para montar uma linha completa, ele precisa percorrer cada um desses arquivos. A quantidade deles aumenta linearmente com o número de colunas, portanto, em um cenário key-value, pode valer a pena evitar muitas colunas e colocar todo o payload em uma única coluna `String`, codificada em algum formato de serialização, como JSON, Protobuf ou qualquer outro que faça sentido.
+* Há uma abordagem alternativa que usa o motor de tabela [Join](/pt-BR/reference/engines/table-engines/special/join) em vez de tabelas `MergeTree` normais e a função [joinGet](/pt-BR/reference/functions/regular-functions/other-functions#joinGet) para recuperar os dados. Ela pode oferecer melhor desempenho de consulta, mas pode trazer alguns problemas de usabilidade e confiabilidade. Aqui está um [exemplo de uso](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00800_versatile_storage_join.sql#L49-L51).

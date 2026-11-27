@@ -1,0 +1,30 @@
+---
+title: Explication de la configuration
+---
+
+* Le répertoire `config.d` contient le fichier de configuration du serveur ClickHouse `config.xml`,
+  dans lequel est définie la configuration personnalisée de chaque nœud ClickHouse. Cette
+  configuration est fusionnée avec le fichier de configuration ClickHouse `config.xml`
+  par défaut fourni avec chaque installation de ClickHouse.
+* Le répertoire `users.d` contient le fichier de configuration utilisateur `users.xml`, dans lequel
+  est définie la configuration personnalisée des utilisateurs. Cette configuration est fusionnée avec
+  le fichier de configuration ClickHouse `users.xml` par défaut fourni avec chaque
+  installation de ClickHouse.
+
+<Tip>
+  **Répertoires de configuration personnalisés**
+
+  Il est recommandé d&#39;utiliser les répertoires `config.d` et `users.d` lors de la
+  rédaction de votre propre configuration, plutôt que de modifier directement la configuration par défaut
+  dans `/etc/clickhouse-server/config.xml` et `etc/clickhouse-server/users.xml`.
+
+  La ligne
+
+  ```xml
+  <clickhouse replace="true">
+  ```
+
+  garantit que les sections de configuration définies dans les répertoires `config.d` et `users.d`
+  remplacent les sections de configuration par défaut définies dans les fichiers
+  `config.xml` et `users.xml`.
+</Tip>

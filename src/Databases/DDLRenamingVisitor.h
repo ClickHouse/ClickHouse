@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Parsers/IAST_fwd.h>
 #include <Core/QualifiedTableName.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <memory>
@@ -9,8 +10,6 @@
 
 namespace DB
 {
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 class DDLRenamingMap;
@@ -26,8 +25,8 @@ public:
     void setNewTableName(const QualifiedTableName & old_table_name, const QualifiedTableName & new_table_name);
     void setNewDatabaseName(const String & old_database_name, const String & new_database_name);
 
-    QualifiedTableName getNewTableName(const QualifiedTableName & old_table_name) const;
-    String getNewDatabaseName(const String & old_database_name) const;
+    [[nodiscard]] QualifiedTableName getNewTableName(const QualifiedTableName & old_table_name) const;
+    [[nodiscard]] String getNewDatabaseName(const String & old_database_name) const;
 
 private:
     std::unordered_map<QualifiedTableName, QualifiedTableName> old_to_new_table_names;

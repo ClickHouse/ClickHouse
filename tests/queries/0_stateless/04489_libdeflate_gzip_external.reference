@@ -1,0 +1,8 @@
+== HTTP Content-Encoding: gzip, decoded by external gunzip ==
+level 1: OK
+level 6: OK
+level 9: OK
+== INTO OUTFILE *.gz, decoded by external gunzip ==
+level 1: OK
+level 6: OK
+level 9: OK

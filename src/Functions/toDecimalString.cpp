@@ -11,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 
-
 namespace DB
 {
 
@@ -24,36 +23,29 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionToDecimalString : public IFunction
+class FunctionToDecimalString final : public IFunction
 {
 public:
     static constexpr auto name = "toDecimalString";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToDecimalString>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args = {
-            {"Value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
-            {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), &isColumnConst, "const Integer"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, {});
-
-        return std::make_shared<DataTypeString>();
+        return "(Number, const NativeInteger) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
     /// For operations with Integer/Float
@@ -157,7 +149,7 @@ private:
         DB::DoubleConverter<false>::BufferType buffer;
         double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
 
-        const auto result = DB::DoubleConverter<false>::instance().ToFixed(value, precision, &builder);
+        const auto result = DB::DoubleConverter<false>::instance().ToFixed(static_cast<double>(value), precision, &builder);
 
         if (!result)
             throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Error processing number: {}", value);
@@ -183,7 +175,7 @@ private:
     }
 
 public:
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         switch (arguments[0].type->getTypeId())
         {
@@ -213,7 +205,7 @@ public:
 
 private:
     template <typename T>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const auto * precision_col = checkAndGetColumn<ColumnVector<UInt8>>(arguments[1].column.get());
         const auto * precision_col_const = checkAndGetColumnConst<ColumnVector<UInt8>>(arguments[1].column.get());
@@ -229,7 +221,7 @@ private:
 
             if (from_col)
             {
-                UInt8 from_scale = from_col->getScale();
+                UInt8 from_scale = static_cast<UInt8>(from_col->getScale());
                 if (precision_col_const)
                     vectorConstant(from_col->getData(), precision_col_const->template getValue<UInt8>(), result_chars, result_offsets, from_scale, input_rows_count);
                 else if (precision_col)
@@ -265,21 +257,21 @@ private:
 
 REGISTER_FUNCTION(ToDecimalString)
 {
-    FunctionDocumentation::Description description_toDecimalString = R"(
+    FunctionDocumentation::Description description = R"(
 Converts a numeric value to a String with specified number of fractional digits.
 
 The function rounds the input value to the specified number of decimal places. If the input value has fewer fractional
 digits than requested, the result is padded with zeros to achieve the exact number of fractional digits specified.
     )";
-    FunctionDocumentation::Syntax syntax_toDecimalString = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 toDecimalString(number, scale)
     )";
-    FunctionDocumentation::Arguments arguments_toDecimalString = {
+    FunctionDocumentation::Arguments arguments = {
         {"number", "The numeric value to convert to a string. Can be any numeric type (Int, UInt, Float, Decimal).", {"Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64", "Float32", "Float64", "Decimal"}},
         {"scale", "The number of digits to display in the fractional part. The result will be rounded if necessary.", {"UInt8"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toDecimalString = {"Returns a String representation of the number with exactly the specified number of fractional digits.", {"String"}};
-    FunctionDocumentation::Examples examples_toDecimalString = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a String representation of the number with exactly the specified number of fractional digits.", {"String"}};
+    FunctionDocumentation::Examples examples = {
         {"Round and format a number", R"(
 SELECT toDecimalString(2.1456, 2)
         )",
@@ -306,11 +298,11 @@ SELECT toDecimalString(CAST(123.456 AS Decimal(10,3)), 2) AS decimal_val,
 └─────────────┴───────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toDecimalString = {23, 3};
-    FunctionDocumentation::Category category_toDecimalString = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimalString = {description_toDecimalString, syntax_toDecimalString, arguments_toDecimalString, {}, returned_value_toDecimalString, examples_toDecimalString, introduced_in_toDecimalString, category_toDecimalString};
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToDecimalString>(documentation_toDecimalString, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionToDecimalString>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

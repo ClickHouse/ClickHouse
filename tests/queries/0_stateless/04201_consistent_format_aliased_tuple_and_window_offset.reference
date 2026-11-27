@@ -1,0 +1,4 @@
+SELECT ((1, 0.648)) AS a7
+SELECT ((1, 2)) AS x
+SELECT 1 IN ((1, 2) AS x) FROM numbers(1)
+SELECT count() OVER (ORDER BY 1 ASC ROWS BETWEEN (1 + 1 AS frame_offset_begin) PRECEDING AND (2 + 2 AS frame_offset_end) FOLLOWING) FROM numbers(10)

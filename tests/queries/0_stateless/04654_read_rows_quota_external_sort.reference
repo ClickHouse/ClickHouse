@@ -1,0 +1,4 @@
+memory 100000
+spill 100000
+memory status=QueryFinish parts=0
+spill status=QueryFinish parts=2

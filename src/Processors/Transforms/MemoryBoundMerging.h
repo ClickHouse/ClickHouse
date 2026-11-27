@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Core/SortDescription.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -18,7 +20,7 @@ namespace ErrorCodes
 /// Has several inputs and single output.
 /// Read from inputs merged buckets with aggregated data, sort them by bucket number and block number.
 /// Presumption: inputs return chunks with increasing bucket and block number, there is at most one chunk with the given bucket and block number.
-class SortingAggregatedForMemoryBoundMergingTransform : public IProcessor
+class SortingAggregatedForMemoryBoundMergingTransform final : public IProcessor
 {
 public:
     explicit SortingAggregatedForMemoryBoundMergingTransform(const Block & header_, size_t num_inputs_)
@@ -190,9 +192,9 @@ private:
     Block header;
     size_t num_inputs;
 
-    std::vector<ChunkId> last_chunk_id;
-    std::vector<bool> is_input_finished;
-    std::map<ChunkId, Chunk> chunks;
+    VectorWithMemoryTracking<ChunkId> last_chunk_id;
+    VectorWithMemoryTracking<bool> is_input_finished;
+    MapWithMemoryTracking<ChunkId, Chunk> chunks;
     Chunk overflow_chunk;
 };
 

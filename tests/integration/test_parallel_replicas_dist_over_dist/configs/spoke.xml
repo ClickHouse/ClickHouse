@@ -1,0 +1,12 @@
+<clickhouse>
+    <remote_servers>
+        <!-- The spoke's own nodes, under the same `default` name the hub uses for its own. -->
+        <default>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica><host>n4</host><port>9000</port></replica>
+                <replica><host>n5</host><port>9000</port></replica>
+            </shard>
+        </default>
+    </remote_servers>
+</clickhouse>

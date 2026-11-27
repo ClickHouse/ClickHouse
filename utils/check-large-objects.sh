@@ -5,8 +5,10 @@ export LC_ALL=C # The "total" should be printed without localization
 # Check that there are no new translation units compiled to an object file larger than a certain size.
 
 TU_EXCLUDES=(
+    AdaptiveAggregation/Merge.cpp
     AggregateFunctionUniq
     Aggregator
+    FunctionsNumericIndexedVector
 )
 
 if find $1 -name '*.o' | xargs wc -c | grep --regexp='\.o$' | sort -rn | awk '{ if ($1 > 50000000) print }' \

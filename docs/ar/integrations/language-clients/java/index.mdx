@@ -1,0 +1,204 @@
+---
+title: 'نظرة عامة على عملاء Java'
+keywords: ['clickhouse', 'java', 'jdbc', 'عميل', 'تكامل', 'r2dbc']
+description: 'خيارات الاتصال بـ ClickHouse من تطبيقات Java'
+slug: /integrations/java
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+---
+
+* [Client 0.8+](/ar/integrations/language-clients/java/client)
+* [JDBC 0.8+](/ar/integrations/language-clients/java/jdbc)
+* [R2DBC Driver](/ar/integrations/language-clients/java/r2dbc)
+
+<div id="clickhouse-client">
+  ## عميل ClickHouse
+</div>
+
+Java عميل هي مكتبة توفّر واجهة برمجة تطبيقات خاصة بها، وتعزل تفاصيل اتصالات الشبكة مع خادم ClickHouse. وفي الوقت الحالي، لا تدعم سوى واجهة HTTP. كما توفّر المكتبة أدوات مساعدة للعمل مع تنسيقات ClickHouse المختلفة ووظائف أخرى ذات صلة.
+
+طُوِّر Java عميل في وقت مبكر يعود إلى عام 2015. ومع مرور الوقت، أصبحت شيفرته المصدرية صعبة الصيانة جدًا، وأصبحت واجهة برمجة التطبيقات فيه مُربِكة، كما صار من الصعب تحسينه أكثر. لذلك أعدنا تصميمه في عام 2024 في صورة مكوّن جديد `client-v2`. وهو يوفّر واجهة برمجة تطبيقات أوضح، وشيفرة مصدرية أخف، وتحسينات أكبر في الأداء، ودعمًا أفضل لتنسيقات ClickHouse (وخاصة RowBinary وNative). وسيستخدم JDBC هذا العميل في المستقبل القريب.
+
+<div id="supported-data-types">
+  ### أنواع البيانات المدعومة
+</div>
+
+| **نوع البيانات**        | **دعم عميل V2** | **دعم عميل V1** |
+| ----------------------- | ----------------- | ----------------- |
+| Int8                    | ✔                 | ✔                 |
+| Int16                   | ✔                 | ✔                 |
+| Int32                   | ✔                 | ✔                 |
+| Int64                   | ✔                 | ✔                 |
+| Int128                  | ✔                 | ✔                 |
+| Int256                  | ✔                 | ✔                 |
+| UInt8                   | ✔                 | ✔                 |
+| UInt16                  | ✔                 | ✔                 |
+| UInt32                  | ✔                 | ✔                 |
+| UInt64                  | ✔                 | ✔                 |
+| UInt128                 | ✔                 | ✔                 |
+| UInt256                 | ✔                 | ✔                 |
+| Float32                 | ✔                 | ✔                 |
+| Float64                 | ✔                 | ✔                 |
+| Decimal                 | ✔                 | ✔                 |
+| Decimal32               | ✔                 | ✔                 |
+| Decimal64               | ✔                 | ✔                 |
+| Decimal128              | ✔                 | ✔                 |
+| Decimal256              | ✔                 | ✔                 |
+| Bool                    | ✔                 | ✔                 |
+| String                  | ✔                 | ✔                 |
+| FixedString             | ✔                 | ✔                 |
+| Nullable                | ✔                 | ✔                 |
+| Date                    | ✔                 | ✔                 |
+| Date32                  | ✔                 | ✔                 |
+| DateTime                | ✔                 | ✔                 |
+| DateTime32              | ✔                 | ✔                 |
+| DateTime64              | ✔                 | ✔                 |
+| Interval                | ✗                 | ✗                 |
+| Enum                    | ✔                 | ✔                 |
+| Enum8                   | ✔                 | ✔                 |
+| Enum16                  | ✔                 | ✔                 |
+| Array                   | ✔                 | ✔                 |
+| Map                     | ✔                 | ✔                 |
+| Nested                  | ✔                 | ✔                 |
+| Tuple                   | ✔                 | ✔                 |
+| UUID                    | ✔                 | ✔                 |
+| IPv4                    | ✔                 | ✔                 |
+| IPv6                    | ✔                 | ✔                 |
+| Object                  | ✗                 | ✔                 |
+| Point                   | ✔                 | ✔                 |
+| Nothing                 | ✔                 | ✔                 |
+| MultiPolygon            | ✔                 | ✔                 |
+| Ring                    | ✔                 | ✔                 |
+| Polygon                 | ✔                 | ✔                 |
+| SimpleAggregateFunction | ✔                 | ✔                 |
+| AggregateFunction*      | ✔                 | ✔                 |
+| Variant                 | ✔                 | ✗                 |
+| Dynamic                 | ✔                 | ✗                 |
+| JSON                    | ✔                 | ✗                 |
+
+[أنواع بيانات ClickHouse](/ar/reference/data-types/index)
+
+<Info>
+  **دعم جزئي**
+
+  * **AggregateFunction** — لا يُدعم سوى `groupBitmap` لعمليات القراءة الثنائية المباشرة. بالنسبة إلى دوال التجميع الأخرى (`min` و`max` و`avg` وغيرها)، استخدم combinators من نوع `-Merge` في الاستعلام (مثل `minMerge()` و`avgMerge()`) لاستخراج الحالة النهائية على جانب الخادم. لا يدعم `SELECT * FROM table ...` الأعمدة من النوع `AggregateFunction`.
+</Info>
+
+<Info>
+  **ملاحظات حول أنواع البيانات**
+
+  * **Decimal** — استخدم `SET output_format_decimal_trailing_zeros=1` في 21.9+ للحفاظ على الاتساق.
+  * **Enum** — يمكن التعامل معه كسلسلة نصية أو كعدد صحيح.
+  * **UInt64** — يُعيَّن إلى `long` في عميل-v1.
+</Info>
+
+<div id="features">
+  ### الميزات
+</div>
+
+جدول ميزات العملاء:
+
+| Name                       | Client V2 | Client V1 |            Comments            |
+| -------------------------- | :-------: | :-------: | :----------------------------: |
+| اتصال HTTP                 |     ✔     |     ✔     |                                |
+| ضغط HTTP (LZ4)             |     ✔     |     ✔     |                                |
+| ضغط يتحكم فيه التطبيق      |     ✔     |     ✗     |                                |
+| ضغط استجابة الخادم - LZ4   |     ✔     |     ✔     |                                |
+| ضغط طلب العميل - LZ4       |     ✔     |     ✔     |                                |
+| HTTPS                      |     ✔     |     ✔     |                                |
+| شهادة SSL للعميل (mTLS)    |     ✔     |     ✔     |                                |
+| وكيل HTTP                  |     ✔     |     ✔     |                                |
+| POJO SerDe                 |     ✔     |     ✗     |                                |
+| مجمّع الاتصالات            |     ✔     |     ✔     | عند استخدام Apache HTTP Client |
+| المعلمات المسماة           |     ✔     |     ✔     |                                |
+| إعادة المحاولة عند الفشل   |     ✔     |     ✔     |                                |
+| التبديل الاحتياطي          |     ✗     |     ✔     |                                |
+| موازنة التحميل             |     ✗     |     ✔     |                                |
+| الاكتشاف التلقائي للخادم   |     ✗     |     ✔     |                                |
+| تعليق السجل                |     ✔     |     ✔     |                                |
+| أدوار الجلسة               |     ✔     |     ✔     |                                |
+| مصادقة العميل باستخدام SSL |     ✔     |     ✔     |                                |
+| إعداد SNI                  |     ✔     |     ✗     |                                |
+| المنطقة الزمنية للجلسة     |     ✔     |     ✔     |                                |
+
+يرث مشغّل JDBC الميزات نفسها من تنفيذ العميل الأساسي. وتُدرج ميزات JDBC الأخرى في [صفحته](/ar/integrations/language-clients/java/jdbc).
+
+<div id="compatibility">
+  ### التوافق
+</div>
+
+* تُختبَر جميع المشاريع في هذا المستودع مع جميع [إصدارات LTS النشطة](https://github.com/ClickHouse/ClickHouse/pulls?q=is%3Aopen+is%3Apr+label%3Arelease) من ClickHouse.
+* [سياسة الدعم](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md#security-change-log-and-support)
+* نوصي بترقية العميل بانتظام حتى لا تفوتك الإصلاحات الأمنية والتحسينات الجديدة.
+* إذا واجهت مشكلة في الترحيل إلى واجهة برمجة التطبيقات v2، [فأنشئ issue](https://github.com/ClickHouse/clickhouse-java/issues/new?assignees=\&labels=v2-feedback\&projects=\&template=v2-feedback.md\&title=) وسنرد عليك!
+
+<div id="logging">
+  ### التسجيل
+</div>
+
+تستخدم مكتبة عملاء Java لدينا [SLF4J](https://www.slf4j.org/) للتسجيل. يمكنك استخدام أي إطار عمل للتسجيل متوافق مع SLF4J، مثل `Logback` أو `Log4j`.
+على سبيل المثال، إذا كنت تستخدم Maven، يمكنك إضافة التبعية التالية إلى ملف `pom.xml`:
+
+```xml title="pom.xml"
+<dependencies>
+    <!-- SLF4J API -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version> <!-- Use the latest version -->
+    </dependency>
+
+    <!-- Logback Core -->
+    <dependency>
+        <groupId>ch.qos.logback</groupId>
+        <artifactId>logback-core</artifactId>
+        <version>1.5.16</version> <!-- Use the latest version -->
+    </dependency>
+
+    <!-- Logback Classic (bridges SLF4J to Logback) -->
+    <dependency>
+        <groupId>ch.qos.logback</groupId>
+        <artifactId>logback-classic</artifactId>
+        <version>1.5.16</version> <!-- Use the latest version -->
+    </dependency>
+</dependencies>
+```
+
+<div id="configuring-logging">
+  #### تهيئة التسجيل
+</div>
+
+يعتمد ذلك على إطار عمل التسجيل الذي تستخدمه. على سبيل المثال، إذا كنت تستخدم `Logback`، فيمكنك تهيئة التسجيل في ملف يُسمى `logback.xml`:
+
+```xml title="logback.xml"
+<configuration>
+    <!-- Console Appender -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>[%d{yyyy-MM-dd HH:mm:ss}] [%level] [%thread] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- File Appender -->
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>logs/app.log</file>
+        <append>true</append>
+        <encoder>
+            <pattern>[%d{yyyy-MM-dd HH:mm:ss}] [%level] [%thread] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Root Logger -->
+    <root level="info">
+        <appender-ref ref="STDOUT" />
+        <appender-ref ref="FILE" />
+    </root>
+
+    <!-- Custom Log Levels for Specific Packages -->
+    <logger name="com.clickhouse" level="info" />
+</configuration>
+```
+
+[سجل التغييرات](https://github.com/ClickHouse/clickhouse-java/blob/main/CHANGELOG.md)

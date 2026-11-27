@@ -1,0 +1,60 @@
+---
+description: 'O motor `ExternalDistributed` permite executar consultas `SELECT`
+  em dados armazenados em servidores MySQL ou PostgreSQL remotos. Aceita motores MySQL ou
+  PostgreSQL como argumento, o que possibilita o sharding.'
+sidebarTitle: 'ExternalDistributed'
+slug: /engines/table-engines/integrations/ExternalDistributed
+title: 'Motor de tabela ExternalDistributed'
+doc_type: 'reference'
+---
+
+O motor `ExternalDistributed` permite executar consultas `SELECT` em dados armazenados em servidores MySQL ou PostgreSQL remotos. Aceita os motores [MySQL](/pt-BR/reference/engines/table-engines/integrations/mysql) ou [PostgreSQL](/pt-BR/reference/engines/table-engines/integrations/postgresql) como argumento, o que possibilita o sharding.
+
+<div id="creating-a-table">
+  ## Criando uma tabela
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    ...
+) ENGINE = ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password');
+```
+
+Consulte uma descrição detalhada da consulta [CREATE TABLE](/pt-BR/reference/statements/create/table).
+
+A estrutura da tabela pode ser diferente da estrutura da tabela original:
+
+* Os nomes das colunas devem ser os mesmos da tabela original, mas você pode usar apenas algumas dessas colunas, em qualquer ordem.
+* Os tipos das colunas podem ser diferentes dos da tabela original. O ClickHouse tenta [converter](/pt-BR/reference/functions/regular-functions/type-conversion-functions#CAST) os valores para os tipos de dados do ClickHouse.
+
+**Parâmetros do motor**
+
+* `engine` — O motor de tabela, `MySQL` ou `PostgreSQL`.
+* `host:port` — Endereço do servidor MySQL ou PostgreSQL.
+* `database` — Nome do banco de dados remoto.
+* `table` — Nome da tabela remota.
+* `user` — Nome do usuário.
+* `password` — Senha do usuário.
+
+<div id="implementation-details">
+  ## Detalhes da implementação
+</div>
+
+Oferece suporte a múltiplas réplicas, que devem ser listadas com `|`, e os shards devem ser listados com `,`. Por exemplo:
+
+```sql
+CREATE TABLE test_shards (id UInt32, name String, age UInt32, money UInt32) ENGINE = ExternalDistributed('MySQL', `mysql{1|2}:3306,mysql{3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
+```
+
+Ao especificar réplicas, uma das réplicas disponíveis é selecionada para cada shard durante a leitura. Se a conexão falhar, a próxima réplica será selecionada, e assim sucessivamente para todas as réplicas. Se a tentativa de conexão falhar para todas as réplicas, a tentativa será repetida da mesma forma várias vezes.
+
+Você pode especificar qualquer número de shards e qualquer número de réplicas para cada shard.
+
+**Veja também**
+
+* [motor de tabela MySQL](/pt-BR/reference/engines/table-engines/integrations/mysql)
+* [motor de tabela PostgreSQL](/pt-BR/reference/engines/table-engines/integrations/postgresql)
+* [motor de tabela Distributed](/pt-BR/reference/engines/table-engines/special/distributed)

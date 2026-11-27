@@ -1,0 +1,102 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-05-29
+title: 'Демо-дни — 2026-05-29'
+sidebarTitle: '2026-05-29'
+description: 'Дни демонстраций ClickStack: 2026-05-29'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Демо-дни']
+---
+
+## Улучшенная фильтрация по схеме с учётом версии {#version-aware-improved-schema-filtering}
+
+*Демо от [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/bAVaBnfJ82Y" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Теперь ClickStack применяет оптимизацию direct&#95;read только в ClickHouse версии 26.2 и выше, где индекс полнотекстового поиска корректно поддерживает столбцы-псевдонимы, добавленные в схемы с открытым исходным кодом. Раньше оптимизация могла применяться и в более старых версиях, где она работала некорректно. Версия проверяется во время выполнения запроса путём анализа схемы, а сами столбцы-псевдонимы теперь по умолчанию включены в схемы с открытым исходным кодом.
+
+Также показана текущая работа по замене materialized view для автодополнения прямыми запросами к текстовому индексу. Сейчас оба механизма частично дублируют друг друга, что увеличивает нагрузку при приёме данных. Если тесты производительности подтвердят, что запросы к текстовому индексу работают достаточно быстро, materialized view можно будет упростить или удалить. Кроме того, Aaron ответил на вопросы команды о том, как позиционное кодирование в будущих версиях текстового индекса ClickHouse позволит сделать поиск по фильтрам ключ-значение ещё точнее.
+
+**Связанные запросы на слияние:** [#2341](https://github.com/hyperdxio/hyperdx/pull/2341) feat: adds direct&#95;read optimization by default for logs and traces, [#2405](https://github.com/hyperdxio/hyperdx/pull/2405) feat(common-utils): apply direct&#95;read KV items optimization to SQL filters, [#2376](https://github.com/hyperdxio/hyperdx/pull/2376) feat: use text index to power filters and autocomplete
+
+## Улучшенный разбор логов {#better-log-parsing}
+
+*Демо от [@dhable](https://github.com/dhable)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vhkMlddahu4" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+У одного из клиентов были логи, в которых тело события представляло собой объект JSON с полем `level`. Логика автоматического определения уровня важности делала две вещи: разбирала тело как JSON для извлечения атрибутов, а затем, если уровень важности не был задан на уровне OTel, переходила к резервному варианту — поиску по строке. Этот поиск находил слово «alert» в имени менеджера оповещений внутри тела, из-за чего уровень лога определялся неверно.
+
+Исправление добавляет защитное условие: если тело успешно разбирается как JSON и уже содержит поле уровня, этап определения по строке полностью пропускается. Набор smoke-тестов, созданный около года назад, позволил легко проверить исправление и выявить связанные граничные случаи — достаточно было добавить новые тестовые сценарии. Именно для этого он и создавался.
+
+**Связанные запросы на слияние:** [#2363](https://github.com/hyperdxio/hyperdx/pull/2363) fix(log-parser): skip string inference when body parses as JSON with a level field
+
+## Улучшения MCP-сервера {#mcp-server-improvements}
+
+*Демо от [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/aIy1zfmlz3Y" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+На этой неделе вышло несколько улучшений MCP: более точная группировка шаблонов событий и их ранжирование, более информативные подсказки при ошибках, а также рефакторинг общих вспомогательных функций. Кроме того, префиксы инструментов переименованы с `hyperdx_` на `clickstack_` в соответствии с названием продукта.
+
+**Связанные запросы на слияние:** [#2337](https://github.com/hyperdxio/hyperdx/pull/2337) feat(mcp): improve MCP tool quality — error hints, shared helpers, better messages, [#2396](https://github.com/hyperdxio/hyperdx/pull/2396) refactor(mcp): rename tool prefixes from hyperdx&#95; to clickstack&#95;, [#2343](https://github.com/hyperdxio/hyperdx/pull/2343) feat(mcp): add patch&#95;dashboard, get&#95;dashboard&#95;tile, search&#95;dashboards tools, [#2418](https://github.com/hyperdxio/hyperdx/pull/2418) fix(mcp): improve alias descriptions and examples for readable chart legends, [#2412](https://github.com/hyperdxio/hyperdx/pull/2412) refactor: simplify MCP ObjectId validation with shared helpers and schema-level checks
+
+## Новая цветовая палитра серий {#new-series-color-palette}
+
+*Демо от [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/YzECP3diWvg" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Елизавета занималась унификацией цветовой палитры для визуализации данных в темах HyperDX и ClickStack — это часть работы Алекса над выбором цвета. У двух тем были отдельные палитры, каждая со своими правилами-исключениями, из-за чего разобраться в цветах было излишне сложно. Задача состояла в том, чтобы создать единую палитру, подходящую для обеих тем.
+
+Она сравнила её с отраслевыми стандартными палитрами (Tableau, Observable, IBM), проверив контраст и доступность с помощью инструмента симуляции цветового зрения. Палитра ClickHouse показала плохие результаты: зелёный цвет недостаточно контрастен на белом фоне. Палитры Tableau и Observable не проходят как минимум одну проверку каждая; палитра IBM проходит все проверки, но в ней всего пять цветов, а этого недостаточно. В целом лучше всего подошла палитра Observable с небольшой корректировкой синего — теперь она будет общей для обеих тем.
+
+**Связанные запросы на слияние:** [#2362](https://github.com/hyperdxio/hyperdx/pull/2362) refactor(theme): rename chart palette tokens to hue names + unify across themes
+
+## Новый макет страниц с закреплённым заголовком {#new-page-layout-with-sticky-header}
+
+*Демо от [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/e7d3ocqi4Ac" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Новая пара компонентов PageHeader и PageLayout внедрена на всех основных страницах: панелях мониторинга, карте сервисов, клиентских сеансах, Kubernetes и панели мониторинга ClickHouse. Теперь у всех страниц одинаковые отступы, разделительная линия под заголовком и единая структура заголовка. Раньше страницы были оформлены по-разному: на одних заголовок располагался слева, а элементы управления — справа, на других заголовка не было вовсе.
+
+Закрепление включается отдельным prop. Всё, что передано в слот sticky, остаётся зафиксированным под заголовком при прокрутке, а остальное содержимое прокручивается как обычно. Если в слот ничего не передано и есть только навигационная цепочка или параметры страницы, закрепляются автоматически они.
+
+**Связанные запросы на слияние:** [#2282](https://github.com/hyperdxio/hyperdx/pull/2282) Add PageHeader/PageLayout and migrate Sessions, [#2345](https://github.com/hyperdxio/hyperdx/pull/2345) Use PageHeader title on list pages, [#2346](https://github.com/hyperdxio/hyperdx/pull/2346) Migrate Service Map to PageLayout, [#2347](https://github.com/hyperdxio/hyperdx/pull/2347) Migrate Kubernetes dashboard to PageLayout, [#2348](https://github.com/hyperdxio/hyperdx/pull/2348) Migrate ClickHouse dashboard to PageLayout, [#2364](https://github.com/hyperdxio/hyperdx/pull/2364) feat(dashboard): migrate to PageLayout with sticky query toolbar, [#2394](https://github.com/hyperdxio/hyperdx/pull/2394) fix(PageHeader): keep sticky header below drawer overlays
+
+## Новый селектор источников данных и выбор цвета для серий {#new-datasource-selector-and-color-picking-for-series}
+
+*Демо от [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/DKfJs9onl50" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Два улучшения интерфейса от Alex. Селектор источников данных стал проще: при нажатии на него теперь отображается только список источников данных для выбора. Действия по управлению, например просмотр схемы или создание нового источника, перенесены в отдельное меню «kebab». Таким образом, выбор отделён от конфигурации: эта задача давно стояла в планах, а её решение учитывает отзывы команды.
+
+Для плиток Number также появился статический выбор цвета, позволяющий назначить метрике определённый цвет. Кроме того, в разработке находятся условные правила окрашивания (смена цвета на красный, зелёный или жёлтый в зависимости от порогового значения или столбца). Когда появится единая палитра от Elizabet, в обоих случаях будут использоваться цвета с понятными названиями вместо нынешних меток «color 1, 2, 3». Это станет заметным улучшением для пользователей, перешедших с таких инструментов, как Grafana.
+
+**Связанные запросы на слияние:** [#2365](https://github.com/hyperdxio/hyperdx/pull/2365) feat(source-picker): chip + kebab menu UX, [#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): number tile static color picker
+
+## Улучшенные подсказки для действий на панели мониторинга {#better-hints-for-dashboard-actions}
+
+*Демо от [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yQaKMSXp8YA" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Строки табличной плитки на панели мониторинга теперь более наглядно реагируют на наведение. Указатель мыши и значок меняются, подсказывая, что произойдёт при щелчке: откроется связанная панель мониторинга или выполнится переход к детализации в источнике данных. Раньше было неочевидно, что по строкам вообще можно щёлкнуть, не говоря уже о том, к чему это приведёт.
+
+**Связанные запросы на слияние:** [#2321](https://github.com/hyperdxio/hyperdx/pull/2321) feat(app): hover hint and native link affordance for dashboard table tile row click

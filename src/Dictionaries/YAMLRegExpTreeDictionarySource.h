@@ -37,25 +37,25 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for YAMLRegExpTreeDictionarySource");
     }
 
-    BlockIO loadIds(const std::vector<UInt64> &) override
+    BlockIO loadIds(const VectorWithMemoryTracking<UInt64> &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadIds is unsupported for YAMLRegExpTreeDictionarySource");
     }
 
-    BlockIO loadKeys(const Columns &, const std::vector<size_t> &) override
+    BlockIO loadKeys(const Columns &, const VectorWithMemoryTracking<size_t> &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadKeys is unsupported for YAMLRegExpTreeDictionarySource");
     }
 
-    bool supportsSelectiveLoad() const override { return false; }
+    [[nodiscard]] bool supportsSelectiveLoad() const override { return false; }
 
-    bool hasUpdateField() const override { return false; }
+    [[nodiscard]] bool hasUpdateField() const override { return false; }
 
-    DictionarySourcePtr clone() const override { return std::make_shared<YAMLRegExpTreeDictionarySource>(*this); }
+    [[nodiscard]] DictionarySourcePtr clone() const override { return std::make_shared<YAMLRegExpTreeDictionarySource>(*this); }
 
-    bool isModified() const override;
+    [[nodiscard]] bool isModified() const override;
 
-    String toString() const override;
+    [[nodiscard]] String toString() const override;
 
 private:
     const String filepath;
@@ -67,7 +67,7 @@ private:
     LoggerPtr logger;
     Poco::Timestamp last_modification;
 
-    Poco::Timestamp getLastModification() const;
+    [[nodiscard]] Poco::Timestamp getLastModification() const;
 #endif
 };
 

@@ -1,0 +1,21 @@
+-- empty string
+
+0
+-- single char
+<em>a</em>
+1
+-- adjacent rows
+a
+<em>b</em>
+c
+-- FixedString all-zero padding
+
+0
+-- FixedString normal
+<em>a</em>b
+-- multiple empties
+
+
+
+-- short string no false match
+a

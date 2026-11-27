@@ -4,10 +4,10 @@
 #if USE_DELTA_KERNEL_RS
 
 #include <Analyzer/FunctionNode.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -27,6 +27,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/LocalDate.h>
 #include <Common/logger_useful.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 
 #include <Parsers/ASTLiteral.h>
@@ -34,6 +35,7 @@
 #include <Parsers/ASTExpressionList.h>
 
 #include <fmt/ranges.h>
+#include <unordered_set>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include "delta_kernel_ffi.hpp"
 
@@ -101,6 +103,8 @@ private:
     std::shared_ptr<DB::ActionsDAG> dag;
     /// Intermediate parsing result.
     std::map<size_t, DB::ActionsDAG::NodeRawConstPtrs> node_lists;
+    /// Input nodes of the columns of the read schema, see `isReadSchemaNode`.
+    std::unordered_set<const DB::ActionsDAG::Node *> read_schema_nodes;
     /// First exception thrown from visitor functions.
     std::exception_ptr visitor_exception;
 
@@ -118,9 +122,9 @@ public:
     {
     }
 
-    bool enableLogging() const { return enable_logging; }
+    [[nodiscard]] bool enableLogging() const { return enable_logging; }
 
-    DB::ContextPtr getContext() const { return context; }
+    [[nodiscard]] DB::ContextPtr getContext() const { return context; }
 
     /// Get result of a parsed scanCallback expression.
     /// Its result is always a Tuple.
@@ -220,10 +224,10 @@ public:
         return result_dag;
     }
 
-    const LoggerPtr & logger() const { return log; }
+    [[nodiscard]] const LoggerPtr & logger() const { return log; }
 
     /// Get (the first) exception, which happened during parsing.
-    std::exception_ptr getException() const { return visitor_exception; }
+    [[nodiscard]] std::exception_ptr getException() const { return visitor_exception; }
 
     /// Set parsing expression.
     void setException(std::exception_ptr exception)
@@ -247,13 +251,10 @@ public:
     void addLiteral(size_t list_id, DB::Field value, DB::DataTypePtr type)
     {
         chassert(type);
-        auto col = type->createColumnConst(1, value);
-        auto column = DB::ColumnWithTypeAndName(
-            col,
-            type,
-            /* name */"const_" + DB::toString(literal_counter++));
+        auto col = assert_cast<const DB::ColumnConst &>(*type->createColumnConst(0, value)).getPtr();
+        auto name = "const_" + DB::toString(literal_counter++);
 
-        const auto & node = dag->addColumn(std::move(column));
+        const auto & node = dag->addColumn(std::move(col), std::move(type), std::move(name));
 
         node_lists[list_id].push_back(&node);
 
@@ -367,6 +368,61 @@ public:
 
     /// Move a list from `from_list_id` to `to_list_id`.
     /// If prepend = false, moves one list in the end of another.
+    /// A transform expression starts from the columns of the read schema.
+    void fillWithReadSchemaIfEmpty(size_t list_id)
+    {
+        /// `read_schema` is empty when every column of the table is a partition column.
+        if (node_lists[list_id].empty())
+        {
+            for (const auto & elem : read_schema)
+            {
+                addIdentifier(list_id, elem.name);
+                read_schema_nodes.insert(node_lists[list_id].back());
+            }
+        }
+    }
+
+    /// The input columns of the read schema. Field transforms refer to them by name, and an expression of the transform
+    /// can be a column with the same name (e.g. `_change_type`, which is dropped and inserted at another position).
+    [[nodiscard]] bool isReadSchemaNode(const DB::ActionsDAG::Node * node, const std::string & name) const
+    {
+        return node->type == DB::ActionsDAG::ActionType::INPUT && node->result_name == name && read_schema_nodes.contains(node);
+    }
+
+    /// Replaces the input column `field_name` in the list `to_list_id` with the list `from_list_id`,
+    /// or drops it if `from_list_id` is not specified.
+    void replaceField(size_t to_list_id, const std::string & field_name, std::optional<size_t> from_list_id)
+    {
+        auto to_it = node_lists.find(to_list_id);
+        if (to_it == node_lists.end())
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot find list id {}", to_list_id);
+
+        fillWithReadSchemaIfEmpty(to_list_id);
+        auto & to_list = to_it->second;
+
+        auto field_it = std::find_if(to_list.begin(), to_list.end(), [&](const auto * node) { return isReadSchemaNode(node, field_name); });
+        if (field_it == to_list.end())
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Did not find {} in list by id {}", field_name, to_list_id);
+
+        auto insert_pos = to_list.erase(field_it);
+
+        if (from_list_id)
+        {
+            auto from_it = node_lists.find(*from_list_id);
+            if (from_it == node_lists.end())
+                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot find list id {}", *from_list_id);
+
+            auto & from_list = from_it->second;
+            to_list.insert(insert_pos, std::make_move_iterator(from_list.begin()), std::make_move_iterator(from_list.end()));
+            node_lists.erase(from_it);
+        }
+
+        if (enable_logging)
+            LOG_TEST(
+                log, "Replaced field {} in list id {} with list id {}",
+                field_name, to_list_id, from_list_id ? DB::toString(*from_list_id) : "None");
+    }
+
     /// If prepend = true, moves one list in the beginning of another.
     /// If after field name is specified, moves one list after specified field in another list.
     /// If such field does not exists, throws an exception.
@@ -393,13 +449,7 @@ public:
         auto & to_list = to_it->second;
         auto & from_list = from_it->second;
 
-        if (to_list.empty())
-        {
-            for (const auto & elem : read_schema)
-                addIdentifier(to_list_id, elem.name);
-
-            chassert(!to_list.empty());
-        }
+        fillWithReadSchemaIfEmpty(to_list_id);
 
         if (after_field_name)
         {
@@ -409,7 +459,7 @@ public:
             {
                 ++pos;
                 const auto * node = *elem_it;
-                if (node->type == DB::ActionsDAG::ActionType::INPUT && node->result_name == *after_field_name)
+                if (isReadSchemaNode(node, *after_field_name))
                 {
                     result_pos = pos;
                     to_list.insert(
@@ -453,20 +503,30 @@ public:
 class ExpressionVisitor
 {
 public:
-    static void visit(const ffi::Expression * expression, ExpressionVisitorData & data)
+    static void visit(const ::Expression * expression, ExpressionVisitorData & data)
     {
         auto visitor = createVisitor(data);
-        [[maybe_unused]] uintptr_t result = ffi::visit_expression_ref(expression, &visitor);
+        [[maybe_unused]] uintptr_t result = ::visit_expression_ref(expression, &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
 
         if (auto e = data.getException())
             std::rethrow_exception(e);
     }
 
-    static void visit(ffi::SharedPredicate * predicate, ExpressionVisitorData & data)
+    static void visit(::SharedExpression * expression, ExpressionVisitorData & data)
     {
         auto visitor = createVisitor(data);
-        [[maybe_unused]] uintptr_t result = ffi::visit_predicate(&predicate, &visitor);
+        [[maybe_unused]] uintptr_t result = ::visit_expression(&expression, &visitor);
+        chassert(result == 0, "Unexpected result: " + DB::toString(result));
+
+        if (auto e = data.getException())
+            std::rethrow_exception(e);
+    }
+
+    static void visit(::SharedPredicate * predicate, ExpressionVisitorData & data)
+    {
+        auto visitor = createVisitor(data);
+        [[maybe_unused]] uintptr_t result = ::visit_predicate(&predicate, &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
 
         if (auto e = data.getException())
@@ -491,11 +551,13 @@ private:
         MULTIPLY,
         DIVIDE,
         TO_JSON,
+        PARSE_JSON,
+        MAP_TO_STRUCT,
         COALESCE,
     };
-    static ffi::EngineExpressionVisitor createVisitor(ExpressionVisitorData & data)
+    static ::EngineExpressionVisitor createVisitor(ExpressionVisitorData & data)
     {
-        return ffi::EngineExpressionVisitor{
+        return ::EngineExpressionVisitor{
             .data = &data,
             .make_field_list = &makeFieldList,
             .visit_literal_int = &visitSimpleLiteral<int32_t, DB::DataTypeInt32>,
@@ -505,7 +567,7 @@ private:
             .visit_literal_float = &visitSimpleLiteral<float, DB::DataTypeFloat32>,
             .visit_literal_double = &visitSimpleLiteral<double, DB::DataTypeFloat64>,
             .visit_literal_string = &visitStringLiteral,
-            .visit_literal_bool = &visitSimpleLiteral<bool, DB::DataTypeUInt8>,
+            .visit_literal_bool = &visitBoolLiteral,
             .visit_literal_timestamp = &visitTimestampLiteral,
             .visit_literal_timestamp_ntz = &visitTimestampNtzLiteral,
             .visit_literal_date = &visitDateLiteral,
@@ -520,6 +582,8 @@ private:
             .visit_not = &visitFunction<DB::FunctionNot>,
             .visit_is_null = &visitFunction<DB::FunctionIsNull>,
             .visit_to_json = &throwNotImplemented<TO_JSON>,
+            .visit_parse_json = &throwNotImplementedParseJSON,
+            .visit_map_to_struct = &throwNotImplemented<MAP_TO_STRUCT>,
             .visit_lt = &throwNotImplemented<LT>,
             .visit_gt = &throwNotImplemented<GT>,
             .visit_eq = &throwNotImplemented<EQ>,
@@ -580,15 +644,34 @@ private:
         });
     }
 
+    static void throwNotImplementedParseJSON(
+        void * data,
+        uintptr_t sibling_list_id,
+        uintptr_t child_list_id,
+        ::SharedSchema * output_schema)
+    {
+        UNUSED(sibling_list_id);
+        UNUSED(child_list_id);
+        ::free_schema(output_schema);
+
+        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
+        visitorImpl(*state, [&]()
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Method ParseJSON not implemented");
+        });
+    }
+
     static void throwNotImplementedOpaqueExpression(
         void * data,
         uintptr_t sibling_list_id,
-        ffi::SharedOpaqueExpressionOp * op,
+        ::SharedOpaqueExpressionOp * op,
         uintptr_t child_list_id)
     {
         UNUSED(sibling_list_id);
         UNUSED(child_list_id);
-        ffi::free_kernel_opaque_expression_op(op);
+        ::free_kernel_opaque_expression_op(op);
 
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
@@ -602,12 +685,12 @@ private:
     static void throwNotImplementedOpaquePredicate(
         void * data,
         uintptr_t sibling_list_id,
-        ffi::SharedOpaquePredicateOp * op,
+        ::SharedOpaquePredicateOp * op,
         uintptr_t child_list_id)
     {
         UNUSED(sibling_list_id);
         UNUSED(child_list_id);
-        ffi::free_kernel_opaque_predicate_op(op);
+        ::free_kernel_opaque_predicate_op(op);
 
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
@@ -621,7 +704,7 @@ private:
     static void throwNotImplementedUnknown(
         void * data,
         uintptr_t sibling_list_id,
-        ffi::KernelStringSlice name)
+        ::KernelStringSlice name)
     {
         UNUSED(data);
         UNUSED(sibling_list_id);
@@ -656,7 +739,7 @@ private:
         });
     }
 
-    static void visitColumnExpression(void * data, uintptr_t sibling_list_id, ffi::KernelStringSlice name)
+    static void visitColumnExpression(void * data, uintptr_t sibling_list_id, ::KernelStringSlice name)
     {
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
@@ -706,13 +789,27 @@ private:
         });
     }
 
-    static void visitStringLiteral(void * data, uintptr_t sibling_list_id, ffi::KernelStringSlice value)
+    static void visitStringLiteral(void * data, uintptr_t sibling_list_id, ::KernelStringSlice value)
     {
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
             auto value_str = KernelUtils::fromDeltaString(value);
             visitSimpleLiteral<std::string, DB::DataTypeString>(data, sibling_list_id, value_str);
+        });
+    }
+
+    /// `boolean` maps to ClickHouse `Bool` in the schema, so the literal must carry `Bool` too;
+    /// a plain `DataTypeUInt8` would mismatch a `Nullable(Bool)` partition column's advertised type.
+    static void visitBoolLiteral(void * data, uintptr_t sibling_list_id, bool value)
+    {
+        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
+        visitorImpl(*state, [&]()
+        {
+            if (state->enableLogging())
+                LOG_TEST(state->logger(), "List id: {}, type: Bool", sibling_list_id);
+
+            state->addLiteral(sibling_list_id, static_cast<UInt8>(value), DB::DataTypeFactory::instance().get("Bool"));
         });
     }
 
@@ -731,12 +828,12 @@ private:
             /// "The 128bit integer
             /// is split into the most significant 64 bits in `value_ms`, and the least significant 64
             /// bits in `value_ls`"
-            /// Also in clickhouse decimal is in little endian, so we switch the order for Decimal128.
+            /// The halves are the numerical high and low parts of the value, independent of the byte order of the machine.
 
             DB::Field value;
             if (precision <= DB::DecimalUtils::max_precision<DB::Decimal32>)
             {
-                value = DB::DecimalField<DB::Decimal32>(value_ls, scale);
+                value = DB::DecimalField<DB::Decimal32>(static_cast<Int32>(value_ls), scale);
                 state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeDecimal32>(precision, scale));
             }
             else if (precision <= DB::DecimalUtils::max_precision<DB::Decimal64>)
@@ -746,7 +843,8 @@ private:
             }
             else if (precision <= DB::DecimalUtils::max_precision<DB::Decimal128>)
             {
-                Int128 combined_value = (static_cast<DB::Int128>(value_ls) << 64) | value_ms;
+                const auto combined_value = static_cast<DB::Int128>(
+                    (static_cast<DB::UInt128>(static_cast<UInt64>(value_ms)) << 64) | static_cast<DB::UInt128>(value_ls));
                 value = DB::DecimalField<DB::Decimal128>(combined_value, scale);
                 state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeDecimal128>(precision, scale));
             }
@@ -805,22 +903,62 @@ private:
                 LOG_TEST(state->logger(), "List id: {}, type: Binary", sibling_list_id);
 
             std::string value(reinterpret_cast<const char *>(buffer), len);
-            state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeFixedString>(len));
+            state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeString>());
         });
     }
 
-    static void visitNullLiteral(void * data, uintptr_t sibling_list_id)
+    /// Maps a null `type_tag` (see `NullTypeTag` in `ffi/src/expressions/kernel_visitor.rs`) to the
+    /// matching ClickHouse type for `Nullable(T)`; tag 12 carries precision/scale, 255/unknown can't.
+    static DB::DataTypePtr nullInnerTypeForTag(uint8_t type_tag, uint8_t precision, uint8_t scale)
+    {
+        switch (type_tag)
+        {
+            case 0: return DB::DataTypeFactory::instance().get("Bool");  /// boolean (schema maps boolean -> Bool)
+            case 1: return std::make_shared<DB::DataTypeInt8>();         /// byte
+            case 2: return std::make_shared<DB::DataTypeInt16>();        /// short
+            case 3: return std::make_shared<DB::DataTypeInt32>();        /// integer
+            case 4: return std::make_shared<DB::DataTypeInt64>();        /// long
+            case 5: return std::make_shared<DB::DataTypeFloat32>();      /// float
+            case 6: return std::make_shared<DB::DataTypeFloat64>();      /// double
+            case 7: return std::make_shared<DB::DataTypeString>();       /// string
+            case 8: return std::make_shared<DB::DataTypeString>();       /// binary (schema maps binary -> String)
+            case 9: return std::make_shared<DB::DataTypeDate32>();       /// date
+            case 10: return std::make_shared<DB::DataTypeDateTime64>(6); /// timestamp
+            case 11: return std::make_shared<DB::DataTypeDateTime64>(6); /// timestamp_ntz
+            case 12:                                                     /// decimal
+                if (precision <= DB::DecimalUtils::max_precision<DB::Decimal32>)
+                    return std::make_shared<DB::DataTypeDecimal32>(precision, scale);
+                if (precision <= DB::DecimalUtils::max_precision<DB::Decimal64>)
+                    return std::make_shared<DB::DataTypeDecimal64>(precision, scale);
+                if (precision <= DB::DecimalUtils::max_precision<DB::Decimal128>)
+                    return std::make_shared<DB::DataTypeDecimal128>(precision, scale);
+                throw DB::Exception(
+                    DB::ErrorCodes::NOT_IMPLEMENTED,
+                    "Unsupported decimal precision {} for null literal", precision);
+            default:
+                throw DB::Exception(
+                    DB::ErrorCodes::NOT_IMPLEMENTED,
+                    "Unsupported null literal type tag {}", type_tag);
+        }
+    }
+
+    static void visitNullLiteral(
+        void * data,
+        uintptr_t sibling_list_id,
+        uint8_t type_tag,
+        uint8_t precision,
+        uint8_t scale)
     {
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
             if (state->enableLogging())
-                LOG_TEST(state->logger(), "List id: {}, type: Null", sibling_list_id);
+                LOG_TEST(state->logger(), "List id: {}, type: Null (tag {})", sibling_list_id, type_tag);
 
             state->addLiteral(
                 sibling_list_id,
                 DB::Null(),
-                std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeNothing>()));
+                std::make_shared<DB::DataTypeNullable>(nullInnerTypeForTag(type_tag, precision, scale)));
         });
     }
 
@@ -935,7 +1073,7 @@ private:
     static void visitFieldTransform(
         void * data,
         uintptr_t sibling_list_id,
-        const ffi::KernelStringSlice * field_name,
+        const ::KernelStringSlice * field_name,
         uintptr_t expr_list_id,
         bool is_replace)
     {
@@ -962,13 +1100,16 @@ private:
             /// | YES | YES | NO  | Insert a list of expressions after the named input field
             /// | YES | YES | YES | Replace the named input field with a list of expressions
 
-            if (is_replace)
+            /// A list id is never 0 here, because 0 is the id of the root list.
+            if (is_replace && field_name)
             {
-                /// Will be implemented with CDF support.
-                throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Replace action is not implemented");
+                /// E.g. the `_change_type` column of the change data feed, which is taken from CDC files physically.
+                state->replaceField(
+                    sibling_list_id,
+                    field_name_str,
+                    expr_list_id ? std::optional<size_t>(expr_list_id) : std::nullopt);
             }
-
-            if (expr_list_id)
+            else if (expr_list_id)
             {
                 state->moveList(
                     sibling_list_id,
@@ -976,11 +1117,7 @@ private:
                     field_name ? &field_name_str : nullptr,
                     /* prepend */!field_name);
             }
-            else
-            {
-                /// Will be implemented with CDF support.
-                throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Drop action is not implemented");
-            }
+            /// Otherwise it is a no-op: an empty list of expressions is inserted.
         });
     }
 
@@ -992,8 +1129,7 @@ std::vector<DB::Field> getConstValuesFromExpression(const DB::Names & columns, c
     std::vector<DB::Field> values;
     for (const auto & node : nodes)
     {
-        if (node->type != DB::ActionsDAG::ActionType::COLUMN
-            || !DB::isColumnConst(*node->column))
+        if (node->type != DB::ActionsDAG::ActionType::COLUMN)
         {
             throw DB::Exception(
                 DB::ErrorCodes::LOGICAL_ERROR,
@@ -1001,15 +1137,14 @@ std::vector<DB::Field> getConstValuesFromExpression(const DB::Names & columns, c
                 magic_enum::enum_name(node->type), node->column->getDataType());
         }
 
-        DB::Field value;
-        node->column->get(0, value);
+        DB::Field value = node->column->getField();
         values.push_back(std::move(value));
     }
     return values;
 }
 
 std::shared_ptr<DB::ActionsDAG> visitScanCallbackExpression(
-    const ffi::Expression * expression,
+    ::SharedExpression * expression,
     const DB::NamesAndTypesList & read_schema,
     const DB::NamesAndTypesList & expression_schema,
     bool enable_logging)
@@ -1020,7 +1155,7 @@ std::shared_ptr<DB::ActionsDAG> visitScanCallbackExpression(
 }
 
 std::shared_ptr<DB::ActionsDAG> visitExpression(
-    ffi::SharedPredicate * expression,
+    ::SharedPredicate * expression,
     const DB::NamesAndTypesList & read_schema,
     const DB::NamesAndTypesList & expression_schema)
 {

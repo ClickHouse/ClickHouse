@@ -1,0 +1,17 @@
+---
+slug: /faq/integration/oracle-odbc
+title: '¿Qué ocurre si tengo problemas de codificación al usar Oracle a través de ODBC?'
+toc_hidden: true
+toc_priority: 20
+description: 'Esta página ofrece orientación sobre qué hacer si tiene problemas de codificación al usar Oracle a través de ODBC'
+doc_type: 'guide'
+keywords: ['oracle', 'odbc', 'codificación', 'integración', 'diccionario externo']
+---
+
+Si usa Oracle como origen de los diccionarios externos de ClickHouse mediante el controlador ODBC de Oracle, debe establecer el valor correcto para la variable de entorno `NLS_LANG` en `/etc/default/clickhouse`. Para obtener más información, consulte la [FAQ de Oracle sobre NLS&#95;LANG](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
+
+**Ejemplo**
+
+```sql
+NLS_LANG=RUSSIAN_RUSSIA.UTF8
+```

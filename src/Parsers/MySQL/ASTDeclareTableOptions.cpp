@@ -17,7 +17,7 @@ template <bool allow_default = false>
 struct ParserBoolOption : public IParserBase
 {
 protected:
-    const char * getName() const override { return "bool option with default"; }
+    [[nodiscard]] const char * getName() const override { return "bool option with default"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
@@ -25,7 +25,7 @@ protected:
         {
             if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
             {
-                node = std::make_shared<ASTIdentifier>("DEFAULT");
+                node = make_intrusive<ASTIdentifier>("DEFAULT");
                 return true;
             }
         }
@@ -40,7 +40,7 @@ protected:
 struct ParserTablespaceName : public IParserBase
 {
 protected:
-    const char * getName() const override { return "table space name"; }
+    [[nodiscard]] const char * getName() const override { return "table space name"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {

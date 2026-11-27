@@ -7,7 +7,7 @@ namespace DB
 {
 bool ParserDatabaseOrNone::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto result = std::make_shared<ASTDatabaseOrNone>();
+    auto result = make_intrusive<ASTDatabaseOrNone>();
     node = result;
 
     if (ParserKeyword(Keyword::NONE).ignore(pos, expected))

@@ -1,20 +1,19 @@
 #pragma once
 
 #include <Processors/Formats/IOutputFormat.h>
+#include <Common/DequeWithMemoryTracking.h>
 
 #include <Common/ThreadPool.h>
-#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
 
-#include <deque>
 #include <atomic>
 
 
@@ -65,7 +64,7 @@ namespace ErrorCodes
  * To stop the execution, a fake Chunk is added (ProcessingUnitType = FINALIZE) and finalize()
  * function is blocked until the Collector thread is done.
 */
-class ParallelFormattingOutputFormat : public IOutputFormat
+class ParallelFormattingOutputFormat final : public IOutputFormat
 {
 public:
     /// Used to recreate formatter on every new data piece.
@@ -97,14 +96,14 @@ public:
         buf.finalize();
 
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
-        /// and n threads for formatting.
-        processing_units.resize(std::min(params.max_threads_for_parallel_formatting + 2, size_t{1024}));
+        /// and n threads for formatting. Cap before adding, because the number of threads comes from a setting.
+        processing_units.resize(std::min(params.max_threads_for_parallel_formatting, size_t{1022}) + 2);
 
         /// Do not put any code that could throw an exception under this line.
         /// Because otherwise the destructor of this class won't be called and this thread won't be joined.
         /// Also some race condition is possible, because collector_thread runs in parallel with
         /// the destruction of the objects already created in this scope.
-        collector_thread = ThreadFromGlobalPool([thread_group = CurrentThread::getGroup(), this]
+        collector_thread = ThreadFromGlobalPool([thread_group = getCurrentThreadGroup(), this]
         {
             collectorThreadFunction(thread_group);
         });
@@ -222,7 +221,7 @@ private:
         Memory<> segment;
         size_t actual_memory_size{0};
         Statistics statistics;
-        size_t rows_num;
+        size_t rows_num{};
     };
 
     Poco::Event collector_finished{};
@@ -238,7 +237,7 @@ private:
     std::exception_ptr background_exception = nullptr;
 
     /// We use deque, because ProcessingUnit doesn't have move or copy constructor.
-    std::deque<ProcessingUnit> processing_units;
+    DequeWithMemoryTracking<ProcessingUnit> processing_units;
 
     std::mutex mutex;
     std::atomic_bool emergency_stop{false};
@@ -293,7 +292,7 @@ private:
 
     void scheduleFormatterThreadForUnitWithNumber(size_t ticket_number, size_t first_row_num)
     {
-        pool.scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup(), ticket_number, first_row_num]
+        pool.scheduleOrThrowOnError([this, thread_group = getCurrentThreadGroup(), ticket_number, first_row_num]
         {
             formatterThreadFunction(ticket_number, first_row_num, thread_group);
         });

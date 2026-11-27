@@ -1,0 +1,485 @@
+---
+title: 'DataStore 집계 함수'
+sidebarTitle: '집계'
+slug: /chdb/datastore/aggregation
+description: 'DataStore의 집계 함수, 윈도우 함수 및 F 네임스페이스'
+keywords: ['chdb', 'datastore', 'aggregation', 'window', 'groupby', 'sum', 'mean', 'avg']
+doc_type: 'reference'
+---
+
+DataStore는 ClickHouse의 강력한 SQL 집계 기능을 기반으로 포괄적인 집계 및 윈도우 함수 기능을 지원합니다.
+
+<div id="basic">
+  ## 기본 집계
+</div>
+
+<div id="builtin">
+  ### 내장 메서드
+</div>
+
+| 메서드         | SQL 대응식           | 설명             |
+| ----------- | ----------------- | -------------- |
+| `sum()`     | `SUM()`           | 값의 합계          |
+| `mean()`    | `AVG()`           | 평균             |
+| `count()`   | `COUNT()`         | NULL이 아닌 값의 개수 |
+| `min()`     | `MIN()`           | 최솟값            |
+| `max()`     | `MAX()`           | 최댓값            |
+| `median()`  | `MEDIAN()`        | 중앙값            |
+| `std()`     | `stddevPop()`     | 표준 편차          |
+| `var()`     | `varPop()`        | 분산             |
+| `nunique()` | `COUNT(DISTINCT)` | 고유한 값의 개수      |
+
+**예시:**
+
+```python
+from pathlib import Path
+Path("sales.csv").write_text("""\
+region,product,category,amount,quantity,price,date,order_id
+East,Widget,Electronics,5200,10,120,2024-01-15,1001
+West,Gadget,Electronics,800,5,160,2024-02-20,1002
+East,Gizmo,Home,6500,3,100,2024-03-10,1003
+North,Widget,Electronics,4500,6,150,2024-06-18,1004
+West,Gadget,Electronics,2000,8,250,2024-09-14,1005
+""")
+
+from chdb import datastore as pd
+
+ds = pd.read_csv("sales.csv")
+
+# 단일 컬럼 집계
+total = ds['amount'].sum()
+average = ds['amount'].mean()
+count = ds['amount'].count()
+
+# 모든 집계
+print(ds['amount'].sum())    # 합계
+print(ds['amount'].mean())   # 평균
+print(ds['amount'].std())    # 표준 편차
+print(ds['amount'].median()) # 중앙값
+print(ds['amount'].nunique()) # 고유값 개수
+```
+
+***
+
+<div id="groupby">
+  ## GroupBy 집계
+</div>
+
+<div id="single-agg">
+  ### 단일 집계
+</div>
+
+```python
+# 그룹화 및 집계
+result = ds.groupby('category')['amount'].sum()
+result = ds.groupby('region')['sales'].mean()
+```
+
+<div id="multi-agg">
+  ### 다중 집계
+</div>
+
+```python
+# 딕셔너리 구문
+result = ds.groupby('category').agg({
+    'amount': 'sum',
+    'quantity': 'mean',
+    'order_id': 'count'
+})
+
+# 컬럼별 집계 목록
+result = ds.groupby('category').agg({
+    'amount': ['sum', 'mean', 'max'],
+    'quantity': ['sum', 'count']
+})
+```
+
+<div id="named-agg">
+  ### 명명된 집계
+</div>
+
+```python
+# 이름 지정 집계(pandas 스타일)
+result = ds.groupby('region').agg(
+    total_amount=('amount', 'sum'),
+    avg_quantity=('quantity', 'mean'),
+    order_count=('order_id', 'count'),
+    max_price=('price', 'max')
+)
+```
+
+<div id="multi-groupby">
+  ### 여러 개의 GroupBy 키
+</div>
+
+```python
+# 여러 컬럼으로 그룹화
+result = ds.groupby(['region', 'category']).agg({
+    'amount': 'sum',
+    'quantity': 'sum'
+})
+```
+
+***
+
+<div id="statistical">
+  ## 통계 집계
+</div>
+
+| 메서드           | SQL 대응식     | 설명            |
+| ------------- | ------------- | ------------- |
+| `quantile(q)` | `quantile(q)` | q번째 분위수 (0-1) |
+| `skew()`      | `skewPop()`   | 왜도            |
+| `kurt()`      | `kurtPop()`   | 첨도            |
+| `corr()`      | `corr()`      | 상관관계          |
+| `cov()`       | `covar()`     | 공분산           |
+| `sem()`       | -             | 평균의 표준 오차     |
+
+**예시:**
+
+```python
+# 분위수
+q50 = ds['amount'].quantile(0.5)  # 중앙값
+q95 = ds['amount'].quantile(0.95) # 95번째 백분위수
+
+# 다중 분위수
+quantiles = ds['amount'].quantile([0.25, 0.5, 0.75])
+
+# 컬럼 간 상관관계
+correlation = ds[['sales', 'marketing_spend']].corr()
+```
+
+***
+
+<div id="conditional">
+  ## 조건부 집계
+</div>
+
+ClickHouse 전용 조건부 집계 함수입니다.
+
+| Function         | ClickHouse  | Description    |
+| ---------------- | ----------- | -------------- |
+| `sum_if(cond)`   | `sumIf()`   | 조건을 만족하는 값의 합계 |
+| `count_if(cond)` | `countIf()` | 조건을 만족하는 개수    |
+| `avg_if(cond)`   | `avgIf()`   | 조건을 만족하는 평균값   |
+| `min_if(cond)`   | `minIf()`   | 조건을 만족하는 최솟값   |
+| `max_if(cond)`   | `maxIf()`   | 조건을 만족하는 최댓값   |
+
+**예시:**
+
+```python
+from chdb.datastore import F, Field
+
+# 고액 주문만 합산
+high_value_sum = F.sum_if(Field('amount'), Field('amount') > 1000)
+
+# 활성 사용자 수 집계
+active_count = F.count_if(Field('status') == 'active')
+
+# groupby 컨텍스트에서 사용
+result = ds.groupby('region').agg({
+    'total': ('amount', 'sum'),
+    'high_value': ('amount', F.sum_if(Field('amount') > 1000)),
+})
+```
+
+***
+
+<div id="collection">
+  ## 수집 집계
+</div>
+
+값을 수집하는 ClickHouse 전용 함수입니다.
+
+| 함수                   | ClickHouse         | 설명                 |
+| -------------------- | ------------------ | ------------------ |
+| `group_array()`      | `groupArray()`     | 배열로 수집             |
+| `group_uniq_array()` | `groupUniqArray()` | 고유 값을 배열로 수집       |
+| `group_concat(sep)`  | `groupConcat()`    | 문자열 연결             |
+| `top_k(n)`           | `topK(n)`          | 가장 자주 나타나는 상위 K개 값 |
+| `any()`              | `any()`            | 임의의 값              |
+| `any_last()`         | `anyLast()`        | 마지막 값              |
+| `first_value()`      | `first_value()`    | 순서상 첫 번째 값         |
+| `last_value()`       | `last_value()`     | 순서상 마지막 값          |
+
+**예시:**
+
+```python
+from chdb.datastore import F, Field
+
+# 범주별 모든 태그 수집
+result = ds.groupby('category').agg({
+    'all_tags': ('tag', F.group_array()),
+    'unique_tags': ('tag', F.group_uniq_array())
+})
+
+# 지역별 상위 5개 제품 조회
+result = ds.groupby('region').agg({
+    'top_products': ('product_id', F.top_k(5))
+})
+```
+
+***
+
+<div id="window">
+  ## 윈도우 함수
+</div>
+
+<div id="ranking">
+  ### 순위 함수
+</div>
+
+| 함수               | SQL              | 설명                |
+| ---------------- | ---------------- | ----------------- |
+| `row_number()`   | `ROW_NUMBER()`   | 순차적 행 번호          |
+| `rank()`         | `RANK()`         | 중간 순위를 건너뛰는 순위    |
+| `dense_rank()`   | `DENSE_RANK()`   | 중간 순위를 건너뛰지 않는 순위 |
+| `ntile(n)`       | `NTILE(n)`       | n개 버킷으로 분할        |
+| `percent_rank()` | `PERCENT_RANK()` | 백분위 순위 (0-1)      |
+| `cume_dist()`    | `CUME_DIST()`    | 누적 분포             |
+
+**예시:**
+
+```python
+from chdb.datastore import F, Field
+
+# 행 번호 추가
+ds['row_num'] = F.row_number().over(order_by='date')
+
+# 그룹 내 순위
+ds['rank'] = F.rank().over(
+    partition_by='category',
+    order_by='sales'
+)
+
+# 밀집 순위 (gaps 없음)
+ds['dense_rank'] = F.dense_rank().over(
+    partition_by='region',
+    order_by=('revenue', 'desc')
+)
+
+# 사분위수로 분할
+ds['quartile'] = F.ntile(4).over(order_by='score')
+```
+
+<div id="value-functions">
+  ### 값 함수
+</div>
+
+| Function        | SQL                 | Description  |
+| --------------- | ------------------- | ------------ |
+| `lag(n)`        | `LAG(col, n)`       | 이전 행의 값      |
+| `lead(n)`       | `LEAD(col, n)`      | 다음 행의 값      |
+| `first_value()` | `FIRST_VALUE()`     | 윈도우 내 첫 번째 값 |
+| `last_value()`  | `LAST_VALUE()`      | 윈도우 내 마지막 값  |
+| `nth_value(n)`  | `NTH_VALUE(col, n)` | 윈도우 내 N번째 값  |
+
+**예시:**
+
+```python
+# 이전 값과 다음 값
+ds['prev_price'] = F.lag('price', 1).over(order_by='date')
+ds['next_price'] = F.lead('price', 1).over(order_by='date')
+
+# 파티션 내 첫 번째 값과 마지막 값
+ds['first_order'] = F.first_value('amount').over(
+    partition_by='customer_id',
+    order_by='date'
+)
+```
+
+<div id="cumulative">
+  ### 누적 함수
+</div>
+
+| 메서드             | 설명                |
+| --------------- | ----------------- |
+| `cumsum()`      | 누적 합계             |
+| `cummax()`      | 누적 최댓값            |
+| `cummin()`      | 누적 최솟값            |
+| `cumprod()`     | 누적 곱              |
+| `diff(n)`       | n개 이전 행과의 차이      |
+| `pct_change(n)` | n개 이전 행 대비 백분율 변화 |
+
+**예시:**
+
+```python
+# 누적 계산
+ds['running_total'] = ds['amount'].cumsum()
+ds['running_max'] = ds['amount'].cummax()
+
+# 그룹화 적용
+ds['group_cumsum'] = ds.groupby('category')['amount'].cumsum()
+
+# 기간 대비 변화
+ds['daily_diff'] = ds['sales'].diff(1)
+ds['pct_change'] = ds['sales'].pct_change(1)
+```
+
+<div id="rolling">
+  ### 롤링 윈도우
+</div>
+
+```python
+# 롤링 윈도우 집계
+ds['rolling_avg'] = ds['price'].rolling(window=7).mean()
+ds['rolling_sum'] = ds['amount'].rolling(window=30).sum()
+ds['rolling_std'] = ds['value'].rolling(window=10).std()
+
+# 확장 윈도우
+ds['expanding_max'] = ds['price'].expanding().max()
+ds['expanding_sum'] = ds['amount'].expanding().sum()
+```
+
+***
+
+<div id="f-namespace">
+  ## F 네임스페이스
+</div>
+
+`F` 네임스페이스는 ClickHouse 함수에 접근할 수 있게 해줍니다.
+
+<div id="f-import">
+  ### Import
+</div>
+
+```python
+from chdb.datastore import F, Field
+```
+
+<div id="f-usage">
+  ### F 함수 사용하기
+</div>
+
+```python
+# 집계
+F.sum(Field('amount'))
+F.avg(Field('price'))
+F.count(Field('id'))
+
+# 통계
+F.quantile(Field('value'), 0.95)
+F.stddev_pop(Field('score'))
+F.corr(Field('x'), Field('y'))
+
+# 조건부
+F.sum_if(Field('amount'), Field('status') == 'completed')
+F.count_if(Field('is_active'))
+
+# 문자열
+F.length(Field('name'))
+F.upper(Field('text'))
+
+# 날짜/시간
+F.to_year(Field('date'))
+F.date_diff('day', Field('start'), Field('end'))
+
+# 배열
+F.array_sum(Field('values'))
+F.array_avg(Field('scores'))
+
+# 수학
+F.abs(Field('delta'))
+F.round(Field('price'), 2)
+F.floor(Field('value'))
+F.ceil(Field('value'))
+```
+
+<div id="f-window">
+  ### 윈도우 함수와 함께 쓰는 F
+</div>
+
+```python
+# 윈도우 프레임 정의
+window = F.window(
+    partition_by='category',
+    order_by='date',
+    rows_between=(-7, 0)  # 현재 행과 이전 7개 행
+)
+
+ds['rolling_avg'] = F.avg(Field('price')).over(window)
+```
+
+***
+
+<div id="patterns">
+  ## 자주 사용되는 집계 패턴
+</div>
+
+<div id="top-n">
+  ### 그룹별 상위 N개
+</div>
+
+```python
+# 카테고리별 판매량 상위 3개 제품
+result = (ds
+    .assign(rank=F.row_number().over(
+        partition_by='category',
+        order_by=('sales', 'desc')
+    ))
+    .filter(ds['rank'] <= 3)
+)
+```
+
+<div id="running-total">
+  ### 누적합
+</div>
+
+```python
+# 판매 누적 합계
+ds['running_total'] = F.sum('amount').over(
+    order_by='date',
+    rows_between=(None, 0)  # 현재 행까지의 모든 행
+)
+```
+
+<div id="moving-avg">
+  ### 이동 평균
+</div>
+
+```python
+# 7일 이동 평균
+ds['ma_7'] = F.avg('price').over(
+    order_by='date',
+    rows_between=(-6, 0)
+)
+```
+
+<div id="yoy">
+  ### 전년 동기 대비 비교
+</div>
+
+```python
+# 전년 대비 비교
+ds['prev_year_sales'] = F.lag('sales', 12).over(
+    partition_by='product_id',
+    order_by='month'
+)
+ds['yoy_growth'] = (ds['sales'] - ds['prev_year_sales']) / ds['prev_year_sales']
+```
+
+<div id="percentile">
+  ### 백분위 순위
+</div>
+
+```python
+# 총 지출액 기준으로 고객 순위 산정
+ds['spend_percentile'] = F.percent_rank().over(order_by='total_spend')
+```
+
+***
+
+<div id="summary">
+  ## 집계 메서드 요약
+</div>
+
+| 범주      | 메서드                                                           |
+| ------- | ------------------------------------------------------------- |
+| **기본**  | `sum`, `mean`, `count`, `min`, `max`, `median`                |
+| **통계**  | `std`, `var`, `quantile`, `skew`, `kurt`, `corr`, `cov`       |
+| **조건부** | `sum_if`, `count_if`, `avg_if`, `min_if`, `max_if`            |
+| **수집** | `group_array`, `group_uniq_array`, `group_concat`, `top_k`    |
+| **순위**  | `row_number`, `rank`, `dense_rank`, `ntile`, `percent_rank`   |
+| **값**   | `lag`, `lead`, `first_value`, `last_value`, `nth_value`       |
+| **누적**  | `cumsum`, `cummax`, `cummin`, `cumprod`, `diff`, `pct_change` |
+| **롤링**  | `rolling().mean/sum/std/...`, `expanding().mean/sum/...`      |

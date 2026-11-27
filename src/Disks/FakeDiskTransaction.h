@@ -25,7 +25,7 @@ public:
         LOG_DEBUG(getLogger("FakeDiskTransaction"), "Creating FakeDiskTransaction for disk {}", disk.getName());
     }
 
-    void commit(const TransactionCommitOptionsVariant &) override {}
+    void commit() override {}
     void undo() noexcept override {}
 
     void createDirectory(const std::string & path) override
@@ -129,11 +129,6 @@ public:
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override
     {
         disk.setLastModified(path, timestamp);
-    }
-
-    void chmod(const String & path, mode_t mode) override
-    {
-        disk.chmod(path, mode);
     }
 
     void setReadOnly(const std::string & path) override

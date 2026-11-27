@@ -1,0 +1,160 @@
+---
+title: 'Téléverser des fichiers dans Cloud'
+slug: /cloud/migrate/upload-a-csv-file
+description: 'Apprenez à téléverser des fichiers dans Cloud'
+doc_type: 'guide'
+---
+
+import UploadCsvCLI from "/snippets/fr/cloud/migration/_upload_csv_cli.mdx";
+
+<Visibility for="agents">
+  <UploadCsvCLI />
+</Visibility>
+
+<Visibility for="humans">
+  <View title="UI Cloud">
+    ClickHouse Cloud offre un moyen simple d’importer vos fichiers et prend en charge les
+    formats suivants :
+
+    | Format                          |
+    | ------------------------------- |
+    | `CSV`                           |
+    | `CSVWithNamesAndTypes`          |
+    | `CSVWithNames`                  |
+    | `JSONEachRow`                   |
+    | `TabSeparated`                  |
+    | `TabSeparatedWithNames`         |
+    | `TabSeparatedWithNamesAndTypes` |
+
+    <Steps>
+      <Step title="Téléverser un fichier" id="upload-file">
+        Depuis la page d’accueil de Cloud, sélectionnez votre service comme illustré ci-dessous :
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_02](/images/cloud/migrate/csv_01.webp)
+          </Frame>
+        </div>
+
+        Si votre service est en veille, vous devrez le réactiver.
+
+        Sélectionnez `Data sources` dans l’onglet de gauche, comme illustré ci-dessous :
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_03](/images/cloud/migrate/csv_02.webp)
+          </Frame>
+        </div>
+
+        Sélectionnez ensuite `Upload a file` à droite de la page des Sources de données :
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_04](/images/cloud/migrate/csv_03.webp)
+          </Frame>
+        </div>
+
+        Une boîte de dialogue s’ouvre et vous permet de sélectionner le fichier à
+        utiliser pour insérer des données dans une table de votre Service Cloud.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_05](/images/cloud/migrate/csv_04.webp)
+          </Frame>
+        </div>
+      </Step>
+
+      <Step title="Configurer la table" id="configure-table">
+        Une fois le fichier téléversé, vous pourrez configurer la table dans laquelle vous souhaitez
+        insérer les données. Un aperçu de la table avec les trois premières lignes s’affiche.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_08](/images/cloud/migrate/csv_08.webp)
+          </Frame>
+        </div>
+
+        Vous pouvez maintenant sélectionner une table de destination. Deux options s’offrent à vous :
+
+        * une nouvelle table
+        * une table existante
+
+        <br />
+
+        Vous pouvez indiquer la base de données dans laquelle téléverser les données et, dans le cas
+        d’une nouvelle table, le nom de la table à créer. Vous pourrez également sélectionner la clé de tri :
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_05](/images/cloud/migrate/csv_05.webp)
+          </Frame>
+        </div>
+
+        Les colonnes lues dans le fichier apparaissent sous la forme de `Source field` et, pour chaque champ, vous
+        pouvez modifier :
+
+        * le type inféré
+        * la valeur par défaut
+        * si la colonne doit être [Nullable](/fr/reference/data-types/nullable) ou non
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_06](/images/cloud/migrate/csv_06.webp)
+          </Frame>
+        </div>
+
+        <Info>
+          **Exclusion de champs**
+
+          Vous pouvez également supprimer un champ si vous ne souhaitez pas l’inclure dans l’import
+        </Info>
+
+        Vous pouvez spécifier le type de table engine à utiliser :
+
+        * `MergeTree`
+        * `ReplacingMergeTree`
+        * `SummingMergeTree`
+        * `Null`
+
+        <br />
+
+        Vous pouvez spécifier une expression de clé de partitionnement et une expression de clé
+        primaire.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_07](/images/cloud/migrate/csv_07.webp)
+          </Frame>
+        </div>
+
+        Cliquez sur `Import to ClickHouse` (illustré ci-dessus) pour importer les données. L’import est alors placé en file d’attente, comme
+        l’indique le badge de statut `queued` dans la colonne `Status` (illustré ci-dessous). Vous pouvez également cliquer sur
+        `Open as query` (illustré ci-dessus) pour ouvrir la requête d’insertion dans la console SQL. Cette requête insère
+        le fichier, préalablement téléversé dans un bucket S3, à l’aide de la fonction de table `URL`.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_09](/images/cloud/migrate/csv_09.webp)
+          </Frame>
+        </div>
+
+        Si la tâche échoue, un badge de statut `failed` apparaît dans la colonne `Status` de
+        l’onglet `Data upload history`. Cliquez sur `View Details` pour en savoir plus
+        sur la cause de l’échec du téléversement. Selon le message d’erreur de l’insertion en échec, vous devrez peut-être modifier la configuration de la table ou nettoyer
+        les données.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![upload_file_11](/images/cloud/migrate/csv_10.webp)
+          </Frame>
+        </div>
+      </Step>
+    </Steps>
+  </View>
+
+  <View title="CLI">
+    Vous pouvez suivre cette procédure vous-même, l’automatiser à l’aide d’un script ou la confier à un agent IA. Pour la version console, passez à la vue **UI Cloud**.
+
+    <UploadCsvCLI />
+  </View>
+</Visibility>

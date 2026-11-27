@@ -1,0 +1,301 @@
+---
+title: '函数级别配置'
+sidebarTitle: '函数配置'
+slug: /chdb/configuration/function-config
+description: '在函数级别配置执行引擎和 Dtype 修正'
+keywords: ['chdb', 'DataStore', '函数', '配置', 'Dtype', '校正']
+doc_type: 'reference'
+---
+
+DataStore 允许在函数级别对执行过程进行细粒度控制，包括执行引擎选择和 Dtype 修正。
+
+<div id="function-engine">
+  ## 函数引擎配置
+</div>
+
+为特定函数覆盖执行引擎。
+
+<div id="setting-engines">
+  ### 配置 函数引擎
+</div>
+
+```python
+from chdb.datastore.config import function_config
+
+# 强制特定函数使用 chdb
+function_config.use_chdb('length', 'substring', 'concat')
+
+# 强制特定函数使用 pandas
+function_config.use_pandas('upper', 'lower', 'capitalize')
+
+# 设置默认偏好
+function_config.prefer_chdb()    # 默认使用 chdb
+function_config.prefer_pandas()  # 默认使用 pandas
+
+# 重置为自动模式
+function_config.reset()
+```
+
+<div id="when-to-use">
+  ### 何时使用
+</div>
+
+**以下情况应强制使用 chdb：**
+
+* 在 ClickHouse 中性能更优的函数
+* 能从 SQL 优化中受益的函数
+* 大规模字符串/日期时间操作
+
+**以下情况应强制使用 pandas：**
+
+* 具有 pandas 特有行为的函数
+* 需要严格兼容 pandas 时
+* 自定义字符串操作
+
+<div id="function-example">
+  ### 示例
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import function_config
+
+# 配置函数引擎
+function_config.use_chdb('length', 'substring')
+function_config.use_pandas('upper')
+
+ds = pd.read_csv("data.csv")
+
+# length() 将使用 chdb
+ds['name_len'] = ds['name'].str.len()
+
+# substring() 将使用 chdb  
+ds['prefix'] = ds['name'].str.slice(0, 3)
+
+# upper() 将使用 pandas
+ds['name_upper'] = ds['name'].str.upper()
+```
+
+***
+
+<div id="overlapping">
+  ## 重合函数
+</div>
+
+chdb 和 pandas 引擎中都提供了 159+ 个函数：
+
+| 类别         | 函数                                                                                                                                      |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **String** | `length`, `upper`, `lower`, `trim`, `ltrim`, `rtrim`, `concat`, `substring`, `replace`, `reverse`, `contains`, `startswith`, `endswith` |
+| **数学**     | `abs`, `round`, `floor`, `ceil`, `exp`, `log`, `log10`, `sqrt`, `pow`, `sin`, `cos`, `tan`                                              |
+| **日期时间**   | `year`, `month`, `day`, `hour`, `minute`, `second`, `dayofweek`, `dayofyear`, `quarter`                                                 |
+| **聚合**     | `sum`, `avg`, `min`, `max`, `count`, `std`, `var`, `median`                                                                             |
+
+对于这些重合函数，引擎会按以下顺序选择：
+
+1. 显式的函数配置 (如果已设置) 
+2. 全局 `execution_engine` 设置
+3. 根据上下文自动选择
+
+***
+
+<div id="chdb-only">
+  ## 仅 chdb 可用的函数
+</div>
+
+某些函数仅能通过 ClickHouse 使用：
+
+| 类别       | 函数                                                                                 |
+| -------- | ---------------------------------------------------------------------------------- |
+| **数组**   | `arraySum`, `arrayAvg`, `arraySort`, `arrayDistinct`, `groupArray`, `arrayElement` |
+| **JSON** | `JSONExtractString`, `JSONExtractInt`, `JSONExtractFloat`, `JSONHas`               |
+| **URL**  | `domain`, `path`, `protocol`, `extractURLParameter`                                |
+| **IP**   | `IPv4StringToNum`, `IPv4NumToString`, `isIPv4String`                               |
+| **Geo**  | `greatCircleDistance`, `geoDistance`, `geoToH3`                                    |
+| **哈希**   | `cityHash64`, `xxHash64`, `sipHash64`, `MD5`, `SHA256`                             |
+| **条件**   | `sumIf`, `countIf`, `avgIf`, `minIf`, `maxIf`                                      |
+
+这些函数会自动使用 chdb 引擎，与配置无关。
+
+***
+
+<div id="pandas-only">
+  ## 仅支持 pandas 的函数
+</div>
+
+有些函数只能通过 pandas 使用：
+
+| 类别          | 函数                    |
+| ----------- | --------------------- |
+| **Apply**   | 自定义 lambda 函数、用户自定义函数 |
+| **复杂透视**    | 带自定义聚合的透视表            |
+| **堆叠/取消堆叠** | 复杂的重构操作               |
+| **插值**      | 时间序列插值方法              |
+
+无论配置如何，这些函数都会自动使用 pandas 引擎。
+
+***
+
+<div id="dtype-correction">
+  ## Dtype 修正
+</div>
+
+配置 DataStore 在不同引擎之间如何修正数据类型。
+
+<div id="correction-levels">
+  ### 校正级别
+</div>
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+from chdb.datastore.config import config
+
+# 不进行修正
+config.set_correction_level(CorrectionLevel.NONE)
+
+# 仅关键类型（NULL 处理、布尔值）
+config.set_correction_level(CorrectionLevel.CRITICAL)
+
+# 高优先级（默认）- 常见类型不匹配
+config.set_correction_level(CorrectionLevel.HIGH)
+
+# 中等 - 更积极的修正
+config.set_correction_level(CorrectionLevel.MEDIUM)
+
+# 全部 - 修正所有可能的类型
+config.set_correction_level(CorrectionLevel.ALL)
+```
+
+<div id="level-details">
+  ### 修正级别详情
+</div>
+
+| 级别          | 描述      | 已修正的类型             |
+| ----------- | ------- | ------------------ |
+| `NONE`      | 不进行自动修正 | 无                  |
+| `CRITICAL`  | 关键修正    | NULL 处理、布尔值转换      |
+| `HIGH` (默认) | 常见修正    | 整数/浮点精度、日期时间、字符串编码 |
+| `MEDIUM`    | 进一步修正   | Decimal 精度、时区处理    |
+| `ALL`       | 最大程度修正  | 所有类型差异             |
+
+<div id="when-correction">
+  ### 何时需要修正类型
+</div>
+
+以下情况可能会导致类型差异：
+
+1. **ClickHouse → pandas**：整数位宽不同 (Int64 vs int64) 
+2. **pandas → ClickHouse**：Python 对象映射到 SQL 类型
+3. **NULL 处理**：pandas NA vs ClickHouse NULL
+4. **布尔值**：布尔值表示形式不同
+5. **日期时间**：时区差异
+
+<div id="function-example">
+  ### 示例
+</div>
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+from chdb.datastore.config import config
+
+# 严格模式 - 要求精确的类型映射
+config.set_correction_level(CorrectionLevel.NONE)
+
+# 宽松模式 - 自动修复类型问题
+config.set_correction_level(CorrectionLevel.ALL)
+```
+
+***
+
+<div id="api">
+  ## 函数配置 API
+</div>
+
+<div id="function-config-object">
+  ### function_config 对象
+</div>
+
+```python
+from chdb.datastore.config import function_config
+
+# 强制为函数指定引擎
+function_config.use_chdb(*function_names)
+function_config.use_pandas(*function_names)
+
+# 设置默认偏好
+function_config.prefer_chdb()
+function_config.prefer_pandas()
+
+# 重置为默认值（自动）
+function_config.reset()
+
+# 检查配置
+function_config.get_engine('length')  # 返回 'chdb'、'pandas' 或 'auto'
+```
+
+<div id="per-call">
+  ### 单次调用覆盖
+</div>
+
+某些方法支持在单次调用时覆盖 engine：
+
+```python
+# 使用 engine 参数（在支持的情况下）
+ds['result'] = ds['col'].str.upper(engine='pandas')
+```
+
+***
+
+<div id="best-practices">
+  ## 最佳实践
+</div>
+
+<div id="start-with-defaults">
+  ### 1. 从默认配置开始
+</div>
+
+```python
+# 使用自动模式，让 DataStore 自行决定
+config.use_auto()
+```
+
+<div id="configure-for-specific-workloads">
+  ### 2. 为特定工作负载进行配置
+</div>
+
+```python
+# 用于 ClickHouse 优化的字符串处理
+function_config.use_chdb('length', 'substring', 'concat')
+
+# 用于兼容 pandas 的字符串行为
+function_config.use_pandas('upper', 'lower')
+```
+
+<div id="use-appropriate-correction-level">
+  ### 3. 使用合适的校正级别
+</div>
+
+```python
+# 开发环境：更宽松
+config.set_correction_level(CorrectionLevel.ALL)
+
+# 生产环境：更严格
+config.set_correction_level(CorrectionLevel.HIGH)
+```
+
+<div id="test-both-engines">
+  ### 4. 测试两种引擎
+</div>
+
+```python
+# 使用 chdb 测试
+config.use_chdb()
+result_chdb = process_data()
+
+# 使用 pandas 测试
+config.use_pandas()
+result_pandas = process_data()
+
+# 比较结果
+assert result_chdb.equals(result_pandas)
+```

@@ -1,7 +1,9 @@
 #pragma once
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
+#include <atomic>
 #include <functional>
+#include <limits>
 #include <queue>
 #include <optional>
 
@@ -95,6 +97,10 @@ public:
 
     void sendQueryPlan(const QueryPlan & query_plan) override;
 
+    bool supportsQueryPlanSerializationVersion(UInt64 version) const override;
+
+    UInt64 getServerRevisionOfLastPacket() const override { return server_revision_of_last_packet; }
+
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");
@@ -103,6 +109,11 @@ public:
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse &) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendMergeTreeReadTaskResponse in not supported with HedgedConnections");
+    }
+
+    void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse &) override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "sendMergeTreeAllRangesAnnouncementResponse is not supported with HedgedConnections");
     }
 
     Packet receivePacket() override;
@@ -115,8 +126,6 @@ public:
 
     void sendCancel() override;
 
-    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids) override;
-
     Packet drain() override;
 
     std::string dumpAddresses() const override;
@@ -126,6 +135,8 @@ public:
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
     void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
+
+    void setDistributedFanout(size_t total_connections) override { distributed_fanout = total_connections; }
 
     void setAsyncCallback(AsyncCallback async_callback) override;
 
@@ -153,6 +164,10 @@ private:
     bool resumePacketReceiver(const ReplicaLocation & replica_location);
 
     void disableChangingReplica(const ReplicaLocation & replica_location);
+
+    /// Stops the factory and retracts pending replica replacements: after the factory is
+    /// stopped no replacement can arrive, so a pending flag would never be cleared.
+    void stopChoosingReplicasAndRetractPending();
 
     void startNewReplica();
 
@@ -183,7 +198,8 @@ private:
     std::queue<int> offsets_queue;
 
     /// The current number of valid connections to the replicas of this shard.
-    size_t active_connection_count = 0;
+    /// Atomic: `hasActiveConnections` reads it without `cancel_mutex` while `receivePacket` runs on another thread.
+    std::atomic<size_t> active_connection_count = 0;
 
     /// We count offsets in which we can't change replica anymore,
     /// it's needed to cancel choosing new replicas when we
@@ -196,6 +212,9 @@ private:
     /// If we didn't disabled it, we need to skip this replica.
     bool disable_two_level_aggregation = false;
 
+    /// Total number of remote connections across all shards in the distributed query.
+    size_t distributed_fanout = 0;
+
     /// We will save replica with last received packet
     /// (except cases when packet type is EndOfStream or Exception)
     /// to resume it's packet receiver when new packet is needed.
@@ -203,12 +222,13 @@ private:
 
     Packet last_received_packet;
 
-    Epoll epoll;
+    Epoll epoll{EpollNesting::HedgedConnections};
     ContextPtr context;
     const Settings & settings;
     ThrottlerPtr throttler;
     bool sent_query = false;
     bool cancelled = false;
+    UInt64 server_revision_of_last_packet = std::numeric_limits<UInt64>::max();
 
     ReplicaInfo replica_info;
 

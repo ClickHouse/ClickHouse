@@ -6,4 +6,4 @@ SELECT
     ProfileEvents['LogDebug'] + ProfileEvents['LogTrace'] > 0,
     ProfileEvents['LoggerElapsedNanoseconds'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment = '03277_logging_elapsed_ns' AND type = 'QueryFinish';
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND log_comment = '03277_logging_elapsed_ns' AND type = 'QueryFinish';

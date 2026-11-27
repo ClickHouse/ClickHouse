@@ -1,0 +1,7 @@
+extends: existence
+message: "Spell out all ordinal numbers ('%s') in text."
+link: 'https://developers.google.com/style/numbers'
+level: warning
+nonword: true
+tokens:
+  - (?<!(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+)\d+(?:st|nd|rd|th)(?!,?\s*\d{4})

@@ -1,66 +1,85 @@
 #pragma once
 
-#include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context_fwd.h>
-
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
 }
-
 
 /** formatReadableSize - prints the transferred size in bytes in form `123.45 GiB`.
   * formatReadableQuantity - prints the quantity in form of 123 million.
   */
 
-template <typename Impl>
-class FunctionFormatReadable : public IFunction
+class FunctionFormatReadable final : public IFunction
 {
 public:
-    static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatReadable<Impl>>(); }
+    static constexpr UInt8 DEFAULT_PRECISION = 2;
 
-    String getName() const override
+    using FormatFunc = void (*)(double, WriteBuffer &, int);
+
+    FunctionFormatReadable(const char * name_, FormatFunc format_func_)
+        : function_name(name_)
+        , format_func(format_func_)
+    {}
+
+    static FunctionPtr create(const char * name, FormatFunc format_func) { return std::make_shared<FunctionFormatReadable>(name, format_func); }
+
+    [[nodiscard]] String getName() const override { return function_name; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
+    [[nodiscard]] String getSignatureString() const override
     {
-        return name;
+        return "(Number, [const UInt8]) -> String";
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return true;
-    }
+        FunctionArgumentDescriptors mandatory_arguments{
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+        };
 
-    size_t getNumberOfArguments() const override { return 1; }
+        FunctionArgumentDescriptors optional_arguments{
+            {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), &isColumnConst, "const UInt8"},
+        };
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const IDataType & type = *arguments[0];
-
-        if (!isNumber(type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} because it's not a numeric type", type.getName());
+        validateFunctionArguments(getName(), arguments, mandatory_arguments, optional_arguments);
 
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        UInt8 precision = DEFAULT_PRECISION;
+        if (arguments.size() == 2 && !arguments[1].column->empty())
+        {
+            precision = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<UInt8>();
+
+            /// 'ToFixed' in 'double-conversion' fails when requested_digits > 'kMaxFixedDigitsAfterPoint' (100);
+            /// the formatter then silently falls back to 'ToShortest', ignoring the requested precision.
+            if (precision > double_conversion::DoubleToStringConverter::kMaxFixedDigitsAfterPoint)
+                throw Exception(
+                    DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
+                    "Too high precision requested, must not be more than {}, got {}",
+                     static_cast<int>(double_conversion::DoubleToStringConverter::kMaxFixedDigitsAfterPoint),
+                     static_cast<uint8_t>(precision));
+        }
+
         auto col_to = ColumnString::create();
 
         ColumnString::Chars & data_to = col_to->getChars();
@@ -73,13 +92,17 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             /// The cost of the virtual call for getFloat64 is negligible compared with the format calls
-            Impl::format(arguments[0].column->getFloat64(i), buf_to);
+            format_func(arguments[0].column->getFloat64(i), buf_to, precision);
             offsets_to[i] = buf_to.count();
         }
 
         buf_to.finalize();
         return col_to;
     }
+
+private:
+    const char * function_name;
+    FormatFunc format_func;
 };
 
 }

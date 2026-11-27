@@ -1,0 +1,32 @@
+---
+slug: support
+title: Centro de soporte
+description: 'Consulta y busca en la base de conocimientos de ClickHouse'
+keywords: ['soporte', 'base de conocimientos', 'kb', 'artículos', 'FAQ']
+mode: 'custom'
+hideNext: true
+---
+
+import { KBExplorer } from '/snippets/es/components/KBExplorer/KBExplorer.jsx'
+import { kbIndex } from '/snippets/es/components/KBExplorer/kb-data.jsx'
+
+{/* Artículos destacados: cada uno tiene un ID de artículo (ruta relativa dentro de knowledge-base, sin extensión)
+    y una imagen de banner (el título del artículo aparece en la imagen) */}
+
+export const featuredArticles = [
+  { id: 'cloud-services/aws-privatelink-setup-for-clickpipes' },
+  { id: 'tables-schema/schema-migration-tools' },
+  { id: 'data-management/read-consistency' }
+];
+
+<div className="relative overflow-hidden">
+  <div className="absolute top-0 left-0 right-0 opacity-80">
+    <img src="/images/background-light.svg" className="block dark:hidden pointer-events-none w-full h-auto" alt="Imagen de fondo decorativa." />
+
+    <img src="/images/background-dark.svg" className="hidden dark:block pointer-events-none w-full h-auto" alt="Imagen de fondo decorativa." />
+  </div>
+
+  {/* kbIndex se importa desde el kb-data.jsx generado; featuredArticles se mantiene manualmente */}
+
+  <KBExplorer index={kbIndex} featured={featuredArticles} />
+</div>

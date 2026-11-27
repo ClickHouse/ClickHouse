@@ -10,7 +10,7 @@ bool SQLColumn::canBeInserted() const
 
 String SQLColumn::getColumnName() const
 {
-    return "c" + std::to_string(cname);
+    return cname;
 }
 
 void SQLDatabase::setRandomDatabase(RandomGenerator & rg, SQLDatabase & d)
@@ -18,19 +18,9 @@ void SQLDatabase::setRandomDatabase(RandomGenerator & rg, SQLDatabase & d)
     d.random_engine = rg.nextMediumNumber() < 4;
 }
 
-void SQLDatabase::setName(Database * db, const uint32_t name)
+void SQLDatabase::setName(SQLIdentifier * db, const String & n)
 {
-    db->set_database("d" + std::to_string(name));
-}
-
-bool SQLDatabase::isAtomicDatabase() const
-{
-    return deng == DatabaseEngineValues::DAtomic;
-}
-
-bool SQLDatabase::isMemoryDatabase() const
-{
-    return deng == DatabaseEngineValues::DMemory;
+    db->set_value(n);
 }
 
 bool SQLDatabase::isReplicatedDatabase() const
@@ -43,9 +33,9 @@ bool SQLDatabase::isSharedDatabase() const
     return deng == DatabaseEngineValues::DShared;
 }
 
-bool SQLDatabase::isLazyDatabase() const
+bool SQLDatabase::isBackupDatabase() const
 {
-    return deng == DatabaseEngineValues::DLazy;
+    return deng == DatabaseEngineValues::DBackup;
 }
 
 bool SQLDatabase::isOrdinaryDatabase() const
@@ -58,14 +48,29 @@ bool SQLDatabase::isDataLakeCatalogDatabase() const
     return deng == DatabaseEngineValues::DDataLakeCatalog;
 }
 
+bool SQLDatabase::isClusterDatabase() const
+{
+    return deng == DatabaseEngineValues::DCluster;
+}
+
+bool SQLDatabase::isRemoteDatabase() const
+{
+    return deng == DatabaseEngineValues::DRemote || deng == DatabaseEngineValues::DRemoteSecure;
+}
+
+bool SQLDatabase::isOverlayDatabase() const
+{
+    return deng == DatabaseEngineValues::DOverlay;
+}
+
+bool SQLDatabase::isProxyDatabase() const
+{
+    return isClusterDatabase() || isRemoteDatabase() || isOverlayDatabase();
+}
+
 bool SQLDatabase::isReplicatedOrSharedDatabase() const
 {
     return isReplicatedDatabase() || isSharedDatabase();
-}
-
-const std::optional<String> & SQLDatabase::getCluster() const
-{
-    return cluster;
 }
 
 bool SQLDatabase::isAttached() const
@@ -78,14 +83,14 @@ bool SQLDatabase::isDettached() const
     return attached != DetachStatus::ATTACHED;
 }
 
-void SQLDatabase::setName(Database * db) const
+void SQLDatabase::setName(SQLIdentifier * db) const
 {
-    SQLDatabase::setName(db, dname);
+    db->set_value(getName());
 }
 
 String SQLDatabase::getName() const
 {
-    return "d" + std::to_string(dname);
+    return name;
 }
 
 void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de)
@@ -100,33 +105,19 @@ void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de)
 
 void SQLDatabase::setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc)
 {
-    if (isDataLakeCatalogDatabase() && fc.dolor_server.has_value())
+    if (!random_engine && isDataLakeCatalogDatabase() && fc.dolor_server.has_value())
     {
         const uint32_t glue_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().glue_catalog.has_value());
         const uint32_t hive_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().hive_catalog.has_value());
         const uint32_t rest_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().rest_catalog.has_value());
         const uint32_t unit_cat = 5 * static_cast<uint32_t>(fc.dolor_server.value().unity_catalog.has_value());
-        const uint32_t prob_space = glue_cat + hive_cat + rest_cat + unit_cat;
-        chassert(prob_space > 0);
-        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-        const uint32_t nopt = next_dist(rg.generator);
 
-        if (glue_cat && (nopt < glue_cat + 1))
-        {
-            catalog = LakeCatalog::Glue;
-        }
-        else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
-        {
-            catalog = LakeCatalog::Hive;
-        }
-        else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
-        {
-            catalog = LakeCatalog::REST;
-        }
-        else if (unit_cat && (nopt < glue_cat + hive_cat + rest_cat + unit_cat + 1))
-        {
-            catalog = LakeCatalog::Unity;
-        }
+        chassert(glue_cat + hive_cat + rest_cat + unit_cat > 0);
+        rg.pickWeighted(
+            {{glue_cat, [&] { catalog = LakeCatalog::Glue; }},
+             {hive_cat, [&] { catalog = LakeCatalog::Hive; }},
+             {rest_cat, [&] { catalog = LakeCatalog::REST; }},
+             {unit_cat, [&] { catalog = LakeCatalog::Unity; }}});
 
         integration = IntegrationCall::Dolor; /// Has to use La Casa Del Dolor
         format = (catalog == LakeCatalog::REST || catalog == LakeCatalog::Hive || catalog == LakeCatalog::Glue) ? LakeFormat::Iceberg
@@ -142,275 +133,240 @@ String SQLDatabase::getSparkCatalogName() const
     return (catalog == LakeCatalog::None && format == LakeFormat::DeltaLake) ? "spark_catalog" : getName();
 }
 
+bool TableEngineDescriptor::isMergeTreeFamily() const
+{
+    return value >= TableEngineValues::MergeTree && value <= TableEngineValues::GraphiteMergeTree;
+}
+
+bool TableEngineDescriptor::isLogFamily() const
+{
+    return value >= TableEngineValues::StripeLog && value <= TableEngineValues::TinyLog;
+}
+
+bool TableEngineDescriptor::isShared() const
+{
+    return option.has_value() && option.value() == TableEngineOption::TShared;
+}
+
+bool TableEngineDescriptor::isReplicated() const
+{
+    return option.has_value() && option.value() == TableEngineOption::TReplicated;
+}
+
+bool TableEngineDescriptor::supportsFinal() const
+{
+    return value >= TableEngineValues::ReplacingMergeTree && value <= TableEngineValues::GraphiteMergeTree;
+}
+
+bool TableEngineDescriptor::hasSignColumn() const
+{
+    return value >= TableEngineValues::CollapsingMergeTree && value <= TableEngineValues::VersionedCollapsingMergeTree;
+}
+
+bool TableEngineDescriptor::hasVersionColumn() const
+{
+    return value == TableEngineValues::VersionedCollapsingMergeTree;
+}
+
+bool TableEngineDescriptor::areInsertsAppends() const
+{
+    /// Not Redis: its sink writes with MSET, which overwrites an existing key.
+    /// Not Hudi, Dictionary or MaterializedPostgreSQL: they are read-only, so the insert always fails
+    return (value == TableEngineValues::MergeTree && !has_unique_key) || isLogFamily() || value == TableEngineValues::Memory || value == TableEngineValues::MySQL
+        || value == TableEngineValues::PostgreSQL || value == TableEngineValues::SQLite || value == TableEngineValues::MongoDB
+        || (value >= TableEngineValues::DeltaLakeS3 && value <= TableEngineValues::DeltaLakeLocal)
+        || (value >= TableEngineValues::IcebergS3 && value <= TableEngineValues::IcebergLocal)
+        || (value >= TableEngineValues::PaimonS3 && value <= TableEngineValues::PaimonLocal);
+}
+
 void SQLBase::setDeterministic(const FuzzConfig & fc, RandomGenerator & rg, SQLBase & b)
 {
-    b.is_deterministic = rg.nextMediumNumber() <= fc.deterministic_prob;
-    b.random_engine = !b.is_deterministic && rg.nextMediumNumber() < 6;
+    b.engine.is_deterministic = rg.nextMediumNumber() <= fc.deterministic_prob;
+    b.random_engine = !b.engine.is_deterministic && rg.nextMediumNumber() < 6;
 }
 
-bool SQLBase::supportsFinal(const TableEngineValues teng)
+bool SQLBase::isDeterministic() const
 {
-    return teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::GraphiteMergeTree;
+    return engine.isDeterministic() && (!subengine.has_value() || subengine->isDeterministic());
 }
 
-bool SQLBase::isMergeTreeFamily() const
+bool SQLBase::isMergeTreeFamily(const bool as_alias) const
 {
-    return teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::GraphiteMergeTree;
+    return engine.isMergeTreeFamily() || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isMergeTreeFamily());
 }
 
-bool SQLBase::isLogFamily() const
+bool SQLBase::isLogFamily(const bool as_alias) const
 {
-    return teng >= TableEngineValues::StripeLog && teng <= TableEngineValues::TinyLog;
+    return engine.isLogFamily() || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isLogFamily());
 }
 
-bool SQLBase::isSharedMergeTree() const
+bool SQLBase::isSharedMergeTree(const bool as_alias) const
 {
-    return isMergeTreeFamily() && toption.has_value() && toption.value() == TableEngineOption::TShared;
+    return (isMergeTreeFamily() && engine.isShared())
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isMergeTreeFamily() && subengine->isShared());
 }
 
-bool SQLBase::isReplicatedMergeTree() const
+bool SQLBase::isReplicatedMergeTree(const bool as_alias) const
 {
-    return isMergeTreeFamily() && toption.has_value() && toption.value() == TableEngineOption::TReplicated;
+    return (isMergeTreeFamily() && engine.isReplicated())
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isMergeTreeFamily() && subengine->isReplicated());
 }
 
-bool SQLBase::isReplicatedOrSharedMergeTree() const
+bool SQLBase::isReplicatedOrSharedMergeTree(const bool as_alias) const
 {
-    return isReplicatedMergeTree() || isSharedMergeTree();
+    return isReplicatedMergeTree(as_alias) || isSharedMergeTree(as_alias);
 }
 
-bool SQLBase::isShared() const
+bool SQLBase::isShared(const bool as_alias) const
 {
-    return toption.has_value() && toption.value() == TableEngineOption::TShared;
+    return engine.isShared() || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isShared());
 }
 
-bool SQLBase::isFileEngine() const
+bool SQLBase::isMySQLEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::File;
+    return hasEngine(TableEngineValues::MySQL, as_alias)
+        || (isExternalDistributedEngine() && subengine.has_value() && subengine->value == TableEngineValues::MySQL);
 }
 
-bool SQLBase::isJoinEngine() const
+bool SQLBase::isPostgreSQLEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Join;
+    return hasEngine(TableEngineValues::PostgreSQL, as_alias) || hasEngine(TableEngineValues::MaterializedPostgreSQL, as_alias)
+        || (isExternalDistributedEngine() && subengine.has_value()
+            && (subengine->value == TableEngineValues::PostgreSQL || subengine->value == TableEngineValues::MaterializedPostgreSQL));
 }
 
-bool SQLBase::isNullEngine() const
+bool SQLBase::isAnyS3Engine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Null;
+    return isS3Engine(as_alias) || isS3QueueEngine(as_alias);
 }
 
-bool SQLBase::isSetEngine() const
+bool SQLBase::isAnyAzureEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Set;
+    return isAzureEngine(as_alias) || isAzureQueueEngine(as_alias);
 }
 
-bool SQLBase::isBufferEngine() const
+bool SQLBase::isAnyQueueEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Buffer;
+    return isS3QueueEngine(as_alias) || isAzureQueueEngine(as_alias);
 }
 
-bool SQLBase::isRocksEngine() const
+bool SQLBase::isAnyDeltaLakeEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::EmbeddedRocksDB;
+    return isDeltaLakeS3Engine(as_alias) || isDeltaLakeAzureEngine(as_alias) || isDeltaLakeLocalEngine(as_alias);
 }
 
-bool SQLBase::isMemoryEngine() const
+bool SQLBase::isAnyIcebergEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Memory;
+    return isIcebergS3Engine(as_alias) || isIcebergAzureEngine(as_alias) || isIcebergLocalEngine(as_alias);
 }
 
-bool SQLBase::isMySQLEngine() const
+bool SQLBase::isAnyPaimonEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::MySQL || (isExternalDistributedEngine() && sub == TableEngineValues::MySQL);
+    return isPaimonS3Engine(as_alias) || isPaimonAzureEngine(as_alias) || isPaimonLocalEngine(as_alias);
 }
 
-bool SQLBase::isPostgreSQLEngine() const
+bool SQLBase::isAnyLakeEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::PostgreSQL || teng == TableEngineValues::MaterializedPostgreSQL
-        || (isExternalDistributedEngine() && (sub == TableEngineValues::PostgreSQL || sub == TableEngineValues::MaterializedPostgreSQL));
-}
-
-bool SQLBase::isSQLiteEngine() const
-{
-    return teng == TableEngineValues::SQLite;
-}
-
-bool SQLBase::isMongoDBEngine() const
-{
-    return teng == TableEngineValues::MongoDB;
-}
-
-bool SQLBase::isRedisEngine() const
-{
-    return teng == TableEngineValues::Redis;
-}
-
-bool SQLBase::isS3Engine() const
-{
-    return teng == TableEngineValues::S3;
-}
-
-bool SQLBase::isS3QueueEngine() const
-{
-    return teng == TableEngineValues::S3Queue;
-}
-
-bool SQLBase::isAnyS3Engine() const
-{
-    return isS3Engine() || isS3QueueEngine();
-}
-
-bool SQLBase::isAzureEngine() const
-{
-    return teng == TableEngineValues::AzureBlobStorage;
-}
-
-bool SQLBase::isAzureQueueEngine() const
-{
-    return teng == TableEngineValues::AzureQueue;
-}
-
-bool SQLBase::isAnyAzureEngine() const
-{
-    return isAzureEngine() || isAzureQueueEngine();
-}
-
-bool SQLBase::isAnyQueueEngine() const
-{
-    return isS3QueueEngine() || isAzureQueueEngine();
-}
-
-bool SQLBase::isHudiEngine() const
-{
-    return teng == TableEngineValues::Hudi;
-}
-
-bool SQLBase::isDeltaLakeS3Engine() const
-{
-    return teng == TableEngineValues::DeltaLakeS3;
-}
-
-bool SQLBase::isDeltaLakeAzureEngine() const
-{
-    return teng == TableEngineValues::DeltaLakeAzure;
-}
-
-bool SQLBase::isDeltaLakeLocalEngine() const
-{
-    return teng == TableEngineValues::DeltaLakeLocal;
-}
-
-bool SQLBase::isAnyDeltaLakeEngine() const
-{
-    return teng >= TableEngineValues::DeltaLakeS3 && teng <= TableEngineValues::DeltaLakeLocal;
-}
-
-bool SQLBase::isIcebergS3Engine() const
-{
-    return teng == TableEngineValues::IcebergS3;
-}
-
-bool SQLBase::isIcebergAzureEngine() const
-{
-    return teng == TableEngineValues::IcebergAzure;
-}
-
-bool SQLBase::isIcebergLocalEngine() const
-{
-    return teng == TableEngineValues::IcebergLocal;
-}
-
-bool SQLBase::isAnyIcebergEngine() const
-{
-    return teng >= TableEngineValues::IcebergS3 && teng <= TableEngineValues::IcebergLocal;
+    return isAnyIcebergEngine(as_alias) || isAnyDeltaLakeEngine(as_alias) || isAnyPaimonEngine(as_alias);
 }
 
 bool SQLBase::isOnS3() const
 {
-    return isIcebergS3Engine() || isDeltaLakeS3Engine() || isAnyS3Engine();
+    return isIcebergS3Engine() || isDeltaLakeS3Engine() || isPaimonS3Engine() || isAnyS3Engine();
 }
 
 bool SQLBase::isOnAzure() const
 {
-    return isIcebergAzureEngine() || isDeltaLakeAzureEngine() || isAnyAzureEngine();
+    return isIcebergAzureEngine() || isDeltaLakeAzureEngine() || isPaimonAzureEngine() || isAnyAzureEngine();
 }
 
 bool SQLBase::isOnLocal() const
 {
-    return isIcebergLocalEngine() || isDeltaLakeLocalEngine();
+    return isIcebergLocalEngine() || isDeltaLakeLocalEngine() || isPaimonLocalEngine();
 }
 
-bool SQLBase::isMergeEngine() const
+bool SQLBase::isAnyRemoteEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Merge;
+    return hasEngine(TableEngineValues::Remote, as_alias) || hasEngine(TableEngineValues::RemoteSecure, as_alias);
 }
 
-bool SQLBase::isDistributedEngine() const
+bool SQLBase::isAnyStreamingEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Distributed;
+    return isKafkaEngine(as_alias) || isNATSEngine(as_alias) || isRabbitMQEngine(as_alias);
 }
 
-bool SQLBase::isDictionaryEngine() const
+bool SQLBase::isDataFileEngine() const
 {
-    return teng == TableEngineValues::Dictionary;
+    return isFileEngine() || isS3Engine() || isAzureEngine() || isURLEngine();
 }
 
-bool SQLBase::isGenerateRandomEngine() const
+String SQLBase::getDolorEngineName() const
 {
-    return teng == TableEngineValues::GenerateRandom;
-}
-
-bool SQLBase::isURLEngine() const
-{
-    return teng == TableEngineValues::URL;
-}
-
-bool SQLBase::isKeeperMapEngine() const
-{
-    return teng == TableEngineValues::KeeperMap;
-}
-
-bool SQLBase::isExternalDistributedEngine() const
-{
-    return teng == TableEngineValues::ExternalDistributed;
-}
-
-bool SQLBase::isMaterializedPostgreSQLEngine() const
-{
-    return teng == TableEngineValues::MaterializedPostgreSQL;
-}
-
-bool SQLBase::isArrowFlightEngine() const
-{
-    return teng == TableEngineValues::ArrowFlight;
-}
-
-bool SQLBase::isAliasEngine() const
-{
-    return teng == TableEngineValues::Alias;
+    if (isAnyIcebergEngine())
+    {
+        return "iceberg";
+    }
+    if (isAnyDeltaLakeEngine())
+    {
+        return "deltalake";
+    }
+    if (isAnyPaimonEngine())
+    {
+        return "paimon";
+    }
+    if (isDataFileEngine())
+    {
+        return "file";
+    }
+    if (isKafkaEngine())
+    {
+        return "kafka";
+    }
+    if (isNATSEngine())
+    {
+        return "nats";
+    }
+    if (isRabbitMQEngine())
+    {
+        return "rabbitmq";
+    }
+    if (isS3QueueEngine())
+    {
+        return "s3queue";
+    }
+    if (isAzureQueueEngine())
+    {
+        return "azurequeue";
+    }
+    if (isFileLogEngine())
+    {
+        return "filelog";
+    }
+    UNREACHABLE();
 }
 
 bool SQLBase::isNotTruncableEngine() const
 {
     return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
-        || isMongoDBEngine() || isHudiEngine() || isMergeEngine() || isDistributedEngine() || isDictionaryEngine()
-        || isGenerateRandomEngine() || isMaterializedPostgreSQLEngine() || isExternalDistributedEngine();
+        || isMongoDBEngine() || isHudiEngine() || isMergeEngine() || isDistributedEngine() || isAnyRemoteEngine() || isDictionaryEngine()
+        || isGenerateRandomEngine() || isMaterializedPostgreSQLEngine() || isFileLogEngine();
 }
 
 bool SQLBase::isEngineReplaceable() const
 {
-    return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine()
-        || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isRedisEngine() || isMongoDBEngine() || isDictionaryEngine()
-        || isNullEngine() || isGenerateRandomEngine() || isArrowFlightEngine();
+    return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine()
+        || isFileEngine() || isURLEngine() || isRedisEngine() || isMongoDBEngine() || isDictionaryEngine() || isNullEngine()
+        || isGenerateRandomEngine() || isArrowFlightEngine();
 }
 
 bool SQLBase::isAnotherRelationalDatabaseEngine() const
 {
-    return isMySQLEngine() || isPostgreSQLEngine() || isMaterializedPostgreSQLEngine() || isSQLiteEngine() || isExternalDistributedEngine();
+    return isMySQLEngine() || isPostgreSQLEngine() || isMaterializedPostgreSQLEngine() || isSQLiteEngine();
 }
 
 bool SQLBase::hasDatabasePeer() const
 {
-    chassert(is_deterministic || peer_table == PeerTableDatabase::None);
+    chassert(isDeterministic() || peer_table == PeerTableDatabase::None);
     return peer_table != PeerTableDatabase::None;
 }
 
@@ -434,11 +390,6 @@ bool SQLBase::hasClickHousePeer() const
     return peer_table == PeerTableDatabase::ClickHouse;
 }
 
-const std::optional<String> & SQLBase::getCluster() const
-{
-    return cluster;
-}
-
 bool SQLBase::isAttached() const
 {
     return (!db || db->isAttached()) && attached == DetachStatus::ATTACHED;
@@ -451,10 +402,10 @@ bool SQLBase::isDettached() const
 
 String SQLBase::getDatabaseName() const
 {
-    return "d" + (db ? std::to_string(db->dname) : "efault");
+    return db ? db->getName() : "default";
 }
 
-String SQLBase::getTableName(const bool full) const
+String SQLBase::getBaseName(const bool full) const
 {
     String res;
 
@@ -462,7 +413,7 @@ String SQLBase::getTableName(const bool full) const
     {
         res += "test.";
     }
-    res += this->prefix + std::to_string(tname);
+    res += name;
     return res;
 }
 
@@ -474,22 +425,35 @@ String SQLBase::getFullName(const bool setdbname) const
     {
         res += getDatabaseName() + ".";
     }
-    res += getTableName();
+    res += getBaseName();
     return res;
 }
 
 String SQLBase::getSparkCatalogName() const
 {
-    chassert(isAnyIcebergEngine() || isAnyDeltaLakeEngine());
+    chassert(isAnyLakeEngine());
     if (getLakeCatalog() == LakeCatalog::None)
     {
         /// DeltaLake tables on Spark must be on the `spark_catalog` :(
-        return isAnyIcebergEngine() ? getTableName(false) : "spark_catalog";
+        return isAnyDeltaLakeEngine() ? "spark_catalog" : getBaseName(false);
     }
     return db->getSparkCatalogName();
 }
 
-static const constexpr String PARTITION_STR = "{_partition_id}";
+static const constexpr String SCHEMA_HASH_STR = "{_schema_hash}";
+
+/// Returns the placeholder suffix to append to an S3/Azure path component.
+/// Both placeholders may appear in either order, chosen randomly.
+static String placeholders(RandomGenerator & rg, bool want_partition, bool want_hash)
+{
+    if (want_partition && want_hash)
+        return rg.nextBool() ? PARTITION_STR + SCHEMA_HASH_STR : SCHEMA_HASH_STR + PARTITION_STR;
+    if (want_partition)
+        return PARTITION_STR;
+    if (want_hash)
+        return SCHEMA_HASH_STR;
+    return {};
+}
 
 void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool has_dolor)
 {
@@ -498,15 +462,23 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         && !partition_columns_in_data_file.has_value() && !storage_class_name.has_value());
     has_partition_by = (isRedisEngine() || isKeeperMapEngine() || isMaterializedPostgreSQLEngine() || isAnyIcebergEngine()
                         || isAzureEngine() || isS3Engine())
-        && rg.nextSmallNumber() < 4;
+        && rg.nextSmallNumber() < 3;
     has_order_by = isAnyIcebergEngine() && rg.nextSmallNumber() < 4;
-    if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
+    /// Whole-file wrappers the dolor side can write with Python codecs (no lz4/brotli packages there)
+    static const DB::Strings dolorFileCompressions = {"none", "gz", "gzip", "deflate", "xz", "lzma", "zst", "zstd", "bz2", "snappy"};
+    /// Sometimes dolor writes the data file of a File, S3, AzureBlobStorage or URL table, so ClickHouse only reads it.
+    /// It writes one object, so no partitions, globs or placeholders in its path
+    const bool dolor_file = has_dolor && fc.dolor_spark_tables && isDataFileEngine() && (!isURLEngine() || fc.http_server.has_value())
+        && rg.nextBool();
+    has_partition_by &= !dolor_file;
+    if (isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
         /// Set bucket path first if possible
         String next_bucket_path;
+        const String bname = rg.nextSmallNumber() < 4 ? name : ("t" + std::to_string(counter));
 
         /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
-        if (has_dolor && (isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool())
+        if (dolor_file || (has_dolor && fc.dolor_spark_tables && isAnyLakeEngine() && rg.nextBool()))
         {
             integration = IntegrationCall::Dolor;
         }
@@ -519,20 +491,22 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             integration = IntegrationCall::Azurite;
         }
 
-        if (isAnyIcebergEngine() || isAnyDeltaLakeEngine())
+        if (isAnyLakeEngine())
         {
             const LakeCatalog catalog = getLakeCatalog();
 
             if (catalog == LakeCatalog::None)
             {
                 /// DeltaLake tables on Spark must be on the `spark_catalog` :(
+                /// Paimon uses `.db` suffix for database directories (e.g. test.db/)
                 next_bucket_path = fmt::format(
-                    "{}{}{}{}t{}",
+                    "{}{}{}{}{}{}",
                     isOnLocal() ? fc.lakes_path.generic_string() : "",
                     isOnLocal() ? "/" : "",
                     (integration == IntegrationCall::Dolor) ? getSparkCatalogName() : "",
-                    (integration == IntegrationCall::Dolor) ? "/test/" : "",
-                    tname);
+                    (integration == IntegrationCall::Dolor) ? (!isAnyIcebergEngine() ? "/test.db/" : "/test/") : "",
+                    bname,
+                    rg.nextBool() ? "/" : "");
             }
             else if (fc.dolor_server.has_value() && fc.minio_server.has_value())
             {
@@ -542,23 +516,19 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                 chassert(isOnS3()); /// What is supported at the moment
                 switch (catalog)
                 {
-                    case LakeCatalog::Glue:
-                        cat = &sc.glue_catalog.value();
-                        break;
-                    case LakeCatalog::Hive:
-                        cat = &sc.hive_catalog.value();
-                        break;
-                    case LakeCatalog::REST:
-                        cat = &sc.rest_catalog.value();
-                        break;
-                    case LakeCatalog::Unity:
-                        cat = &sc.unity_catalog.value();
-                        break;
-                    default:
-                        UNREACHABLE();
+                    case LakeCatalog::Glue: cat = &sc.glue_catalog.value(); break;
+                    case LakeCatalog::Hive: cat = &sc.hive_catalog.value(); break;
+                    case LakeCatalog::REST: cat = &sc.rest_catalog.value(); break;
+                    case LakeCatalog::Unity: cat = &sc.unity_catalog.value(); break;
+                    default: UNREACHABLE();
                 }
                 next_bucket_path = fmt::format(
-                    "http://{}:{}/{}/t{}/", fc.minio_server.value().server_hostname, fc.minio_server.value().port, cat->warehouse, tname);
+                    "http://{}:{}/{}/{}{}",
+                    fc.minio_server.value().server_hostname,
+                    fc.minio_server.value().port,
+                    cat->warehouse,
+                    bname,
+                    rg.nextBool() ? "/" : "");
             }
         }
         else
@@ -567,72 +537,166 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             bool used_partition = false;
 
             chassert(isAnyS3Engine() || isAnyAzureEngine());
+            bool used_schema_hash = false;
+
             if (rg.nextBool())
             {
                 /// Use a subdirectory
                 next_bucket_path += "subdir";
-                next_bucket_path += rg.nextBool() ? std::to_string(tname) : "";
-                if (has_partition_by && rg.nextBool())
-                {
-                    next_bucket_path += PARTITION_STR;
-                    used_partition = true;
-                }
+                next_bucket_path += rg.nextBool() ? bname : "";
+                const bool want_partition = has_partition_by && rg.nextBool();
+                const bool want_hash = !dolor_file && rg.nextBool();
+                next_bucket_path += placeholders(rg, want_partition, want_hash);
+                used_partition |= want_partition;
+                used_schema_hash |= want_hash;
                 next_bucket_path += "/";
             }
-            if (rg.nextBool())
+            if (dolor_file || rg.nextBool())
             {
                 const bool add_before = rg.nextBool();
 
                 next_bucket_path += "file";
-                next_bucket_path += add_before ? std::to_string(tname) : "";
-                if (has_partition_by && !used_partition && rg.nextBool())
-                {
-                    next_bucket_path += PARTITION_STR;
-                }
-                next_bucket_path += !add_before ? std::to_string(tname) : "";
+                next_bucket_path += add_before ? bname : "";
+                next_bucket_path += placeholders(
+                    rg, has_partition_by && !used_partition && rg.nextBool(), !used_schema_hash && !dolor_file && rg.nextBool());
+                next_bucket_path += !add_before ? bname : "";
                 if ((isS3QueueEngine() || isAzureQueueEngine()) && rg.nextMediumNumber() < 81)
                 {
                     next_bucket_path += "/";
                 }
             }
-            if (rg.nextBool())
+            if (!dolor_file && rg.nextBool())
             {
                 next_bucket_path += "*";
             }
             if (rg.nextBool())
             {
-                next_bucket_path += ".data";
+                /// Either a generic .data extension or a compression-recognized extension
+                /// (exercises ClickHouse's extension-based compression auto-detection). Dolor follows the extension too
+                static const DB::Strings comp_extensions
+                    = {"gz", "gzip", "bz2", "lz4", "xz", "zst", "zstd", "lzma", "br", "brotli", "deflate", "snappy", "7z"};
+                const DB::Strings & extensions = dolor_file ? dolorFileCompressions : comp_extensions;
+
+                next_bucket_path += rg.nextSmallNumber() < 4 ? ".data" : ("." + rg.pickRandomly(extensions));
             }
         }
         bucket_path = std::move(next_bucket_path);
+        /// Sometimes dolor writes objects to the path of a queue, broken ones too. It names them from the path,
+        /// so not with a placeholder ClickHouse expands
+        if (has_dolor && isAnyQueueEngine() && integration != IntegrationCall::None && !bucket_path->contains('{')
+            && rg.nextBool())
+        {
+            integration = IntegrationCall::Dolor;
+        }
     }
+    else if (isKeeperMapEngine() || isArrowFlightEngine() || isFileEngine() || (isURLEngine() && fc.http_server.has_value()))
+    {
+        /// Nasty strings give bad URLs, so use table counter
+        const String bname = rg.nextSmallNumber() < 4 ? name : ("t" + std::to_string(counter));
+
+        if (isKeeperMapEngine() || isArrowFlightEngine())
+        {
+            bucket_path = fmt::format("/{}", bname);
+        }
+        else if (isFileEngine())
+        {
+            if (dolor_file)
+            {
+                integration = IntegrationCall::Dolor;
+            }
+            bucket_path = fmt::format("{}/{}", fc.server_file_path.generic_string(), bname);
+        }
+        else if (isURLEngine() && fc.http_server.has_value())
+        {
+            const ServerCredentials & sc = fc.http_server.value();
+
+            bucket_path = fmt::format("http://{}:{}/{}", sc.server_hostname, sc.port, bname);
+        }
+    }
+    else if (isFileLogEngine())
+    {
+        if (has_dolor && rg.nextBool())
+        {
+            /// Dolor creates a directory shared by some tables, or the file, before CREATE, and writes the files there.
+            /// A directory ends with `/`, a glob has `*`, otherwise it is one file
+            const String fname = "f" + std::to_string(rg.randomInt<uint32_t>(0, 9));
+            const DB::Strings suffixes = {"/", "/*", "/*.log", "/" + fname + "*", "/" + fname + ".log"};
+
+            integration = IntegrationCall::Dolor;
+            bucket_path = fmt::format(
+                "{}/filelog{}{}", fc.server_file_path.generic_string(), rg.randomInt<uint32_t>(0, 3), rg.pickRandomly(suffixes));
+        }
+        else
+        {
+            /// The directory must exist at CREATE, so glob over the files `File` tables write there
+            bucket_path = fmt::format(
+                "{}/{}",
+                fc.server_file_path.generic_string(),
+                rg.nextBool() ? "*" : ("t" + std::to_string(rg.randomInt<uint32_t>(0, 20)) + "*"));
+        }
+    }
+
     if (isAnyIcebergEngine() && rg.nextMediumNumber() < 91)
     {
         /// Iceberg supports 3 formats
-        static const std::vector<InOutFormat> & formats = {InOutFormat::INOUT_ORC, InOutFormat::INOUT_Avro, InOutFormat::INOUT_Parquet};
+        static const DB::Strings formats = {"ORC", "Avro", "Parquet"};
 
-        file_format = rg.pickRandomly(formats);
+        file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(fc.in_out_formats);
     }
     else if (isAnyDeltaLakeEngine() && rg.nextMediumNumber() < 91)
     {
         /// What Delta Lake supports
-        file_format = INOUT_Parquet;
+        file_format = rg.nextMediumNumber() < 91 ? "Parquet" : rg.pickRandomly(fc.in_out_formats);
     }
-    else if (isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine())
+    else if (isAnyPaimonEngine() && rg.nextMediumNumber() < 91)
     {
-        /// Set other parameters
-        if (isFileEngine() || rg.nextMediumNumber() < 91)
-        {
-            std::uniform_int_distribution<uint32_t> inout_range(1, static_cast<uint32_t>(InOutFormat_MAX));
+        static const DB::Strings formats = {"ORC", "Parquet"};
+        file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(fc.in_out_formats);
+    }
+    else if (dolor_file)
+    {
+        /// Spark/pyarrow-written data files: mostly the Arrow formats, sometimes Parquet, Avro or ORC
+        const uint32_t nopt = rg.nextMediumNumber();
 
-            file_format = static_cast<InOutFormat>(inout_range(rg.generator));
+        if (nopt < 31)
+        {
+            file_format = "Arrow";
         }
-        if (rg.nextMediumNumber() < 51)
+        else if (nopt < 61)
+        {
+            file_format = "ArrowStream";
+        }
+        else if (nopt < 81)
+        {
+            file_format = "Parquet";
+        }
+        else if (nopt < 91)
+        {
+            file_format = "Avro";
+        }
+        else
+        {
+            file_format = "ORC";
+        }
+    }
+    else if (
+        isFileEngine() || isFileLogEngine()
+        || ((isAnyS3Engine() || isAnyAzureEngine() || isURLEngine() || isAnyStreamingEngine()) && rg.nextMediumNumber() < 91))
+    {
+        file_format = fc.pickFormat(rg, fc.in_out_formats);
+    }
+    if ((isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine()) && rg.nextMediumNumber() < 41)
+    {
+        if (dolor_file)
+        {
+            file_comp = rg.pickRandomly(dolorFileCompressions);
+        }
+        else
         {
             file_comp = rg.pickRandomly(compressionMethods);
         }
     }
-    if ((isS3Engine() || isAzureEngine()) && rg.nextMediumNumber() < 21)
+    if ((isS3Engine() || isAzureEngine()) && !dolor_file && rg.nextMediumNumber() < 21)
     {
         partition_strategy = rg.nextBool() ? "wildcard" : "hive";
     }
@@ -644,11 +708,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     {
         storage_class_name = rg.nextBool() ? "STANDARD" : "INTELLIGENT_TIERING";
     }
-    if (isExternalDistributedEngine())
-    {
-        integration = (sub == PostgreSQL) ? IntegrationCall::PostgreSQL : IntegrationCall::MySQL;
-    }
-    else if (isMySQLEngine())
+    if (isMySQLEngine())
     {
         integration = IntegrationCall::MySQL;
     }
@@ -670,44 +730,112 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     }
     else if (isURLEngine())
     {
-        integration = IntegrationCall::HTTP;
+        integration = dolor_file ? IntegrationCall::Dolor : IntegrationCall::HTTP;
     }
-}
-
-String SQLBase::getTablePath(const FuzzConfig & fc) const
-{
-    if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
+    else if (has_dolor && isAnyStreamingEngine())
     {
-        return bucket_path.has_value() ? bucket_path.value() : "test";
-    }
-    if (isFileEngine())
-    {
-        return fmt::format("{}/file{}", fc.server_file_path.generic_string(), tname);
-    }
-    if (isURLEngine())
-    {
-        if (fc.http_server.has_value())
+        /// The topic is a NATS subject or a RabbitMQ exchange, and the group a RabbitMQ queue base.
+        /// A NATS table has a group only to read from the JetStream stream of that name
+        integration = IntegrationCall::Dolor;
+        topic = "t" + std::to_string(rg.randomInt<uint32_t>(0, 19));
+        if (!isNATSEngine() || rg.nextSmallNumber() < 4)
         {
-            const ServerCredentials & sc = fc.http_server.value();
-
-            return fmt::format("http://{}:{}/file{}", sc.server_hostname, sc.port, tname);
+            group = (isNATSEngine() ? "s" : "g") + std::to_string(rg.randomInt<uint32_t>(0, 19));
         }
-        return "test";
     }
-    if (isKeeperMapEngine())
-    {
-        return fmt::format("/kfile{}", tname);
-    }
-    if (isArrowFlightEngine())
-    {
-        return fmt::format("/aflight{}", tname);
-    }
-
-    UNREACHABLE();
 }
 
-String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool allow_not_deterministic) const
+String SQLBase::getTablePath() const
 {
+    /// Only engines that own a `bucket_path` should be calling this. Object-storage queues
+    /// (S3Queue, AzureQueue) are covered by isAnyS3Engine()/isAnyAzureEngine().
+    chassert(
+        isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isKeeperMapEngine() || isArrowFlightEngine() || isFileEngine()
+        || isURLEngine() || isFileLogEngine());
+    return bucket_path.has_value() ? bucket_path.value() : "test";
+}
+
+String SQLBase::getTablePath(RandomGenerator & rg, const bool allow_not_deterministic) const
+{
+    if (allow_not_deterministic && (isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine()) && rg.nextMediumNumber() < 16)
+    {
+        /// A hive-style path `{table path}_hive/k0=v/k1=v/...`, with stable keys per level so writes and reads meet,
+        /// and extreme or random values, duplicated keys, column-like keys and levels that are not `key=value`.
+        /// Reads end with a glob or a file name, writes with a file name, both keeping the table path extension.
+        static const DB::Strings odd_keys = {"", "k=", "a b", "k%3D", "K0", "c0", "c1", "_path", "_file"};
+        String base = getTablePath();
+        String ext;
+        std::vector<String> keys;
+
+        for (const auto & placeholder : {PARTITION_STR, SCHEMA_HASH_STR})
+        {
+            for (size_t pos = base.find(placeholder); pos != String::npos; pos = base.find(placeholder))
+                base.erase(pos, placeholder.length());
+        }
+        std::erase(base, '*');
+        if (const size_t dot = base.rfind('.'); dot != String::npos && dot > base.rfind('/'))
+        {
+            ext = base.substr(dot);
+            base.erase(dot);
+        }
+        while (!base.empty() && base.back() == '/')
+            base.pop_back();
+
+        String res = base + "_hive";
+        const uint32_t nlevels = rg.randomInt<uint32_t>(0, 3);
+        for (uint32_t i = 0; i < nlevels; i++)
+        {
+            const uint32_t next = rg.nextMediumNumber();
+            String key = "k" + std::to_string(i);
+            String value;
+
+            if (next < 6 && !keys.empty())
+            {
+                /// Duplicated key, usually with another value, which the server rejects
+                key = rg.pickRandomly(keys);
+            }
+            else if (next < 16)
+            {
+                key = rg.pickRandomly(odd_keys);
+            }
+            if (rg.nextBool())
+            {
+                /// One of the extreme values, string ones print as quoted SQL literals
+                Expr expr;
+                std::uniform_int_distribution<uint32_t> special_range(1, static_cast<uint32_t>(SpecialVal::SpecialValEnum_MAX));
+
+                expr.mutable_lit_val()->mutable_special_val()->set_val(static_cast<SpecialVal_SpecialValEnum>(special_range(rg.generator)));
+                SQLExprToString(value, expr);
+                if (value.size() >= 2 && value.front() == '\'' && value.back() == '\'')
+                    value = value.substr(1, value.size() - 2);
+            }
+            else
+            {
+                value = rg.nextString("", true, rg.nextStrlen());
+            }
+            res += "/" + key + "=" + value;
+            keys.emplace_back(key);
+        }
+        if (rg.nextMediumNumber() < 6)
+        {
+            /// A level that is not `key=value`
+            res += "/plain";
+        }
+        if (rg.nextMediumNumber() < 31)
+        {
+            static const DB::Strings globs = {"/**", "/**", "/*", "/*/*", "/f*", "/{f0,f1}", "/f0"};
+            const String & glob = rg.pickRandomly(globs);
+
+            res += glob;
+            if (!glob.ends_with('*'))
+                res += ext;
+        }
+        else
+        {
+            res += "/f" + std::to_string(rg.randomInt<uint32_t>(0, 2)) + ext;
+        }
+        return res;
+    }
     if ((isAnyS3Engine() || isAnyAzureEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 8)
     {
         String res = bucket_path.has_value() ? bucket_path.value() : "test";
@@ -718,6 +846,15 @@ String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const 
             res.replace(
                 partition_pos,
                 PARTITION_STR.length(),
+                rg.nextBool() ? std::to_string(rg.randomInt<uint32_t>(0, 100)) : rg.nextString("", true, rg.nextStrlen()));
+        }
+        /// Replace schema hash str
+        const size_t schema_hash_pos = res.find(SCHEMA_HASH_STR);
+        if (schema_hash_pos != std::string::npos && rg.nextMediumNumber() < 81)
+        {
+            res.replace(
+                schema_hash_pos,
+                SCHEMA_HASH_STR.length(),
                 rg.nextBool() ? std::to_string(rg.randomInt<uint32_t>(0, 100)) : rg.nextString("", true, rg.nextStrlen()));
         }
         /// Replace glob for number
@@ -734,12 +871,25 @@ String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const 
         }
         return res;
     }
-    return getTablePath(fc);
-}
+    if (isAnyLakeEngine() && allow_not_deterministic && rg.nextSmallNumber() < 4)
+    {
+        /// Add or remove '/'
+        String res = bucket_path.has_value() ? bucket_path.value() : "test";
 
-String SQLBase::getMetadataPath(const FuzzConfig & fc) const
-{
-    return has_metadata ? fmt::format("{}/metadatat{}", fc.server_file_path.generic_string(), tname) : "";
+        if (endsWith(res, "/"))
+        {
+            while (endsWith(res, "/"))
+            {
+                res.pop_back();
+            }
+        }
+        else
+        {
+            res += "/";
+        }
+        return res;
+    }
+    return getTablePath();
 }
 
 LakeCatalog SQLBase::getLakeCatalog() const
@@ -757,32 +907,35 @@ LakeFormat SQLBase::getPossibleLakeFormat() const
     return db ? db->format : LakeFormat::All;
 }
 
-void SQLBase::setName(
-    ExprSchemaTable * est, const String & prefix, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
+void SQLBase::setName(ExprSchemaTable * est, const String & n, const bool setdbname, std::shared_ptr<SQLDatabase> database)
 {
     String res;
 
     if (database || setdbname)
     {
-        est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
+        est->mutable_database()->set_value(database ? database->getName() : "default");
     }
     if (database && database->catalog != LakeCatalog::None)
     {
         res += "test.";
     }
-    res += prefix + std::to_string(name);
-    est->mutable_table()->set_table(std::move(res));
+    res += n;
+    est->mutable_table()->set_value(std::move(res));
 }
 
 void SQLBase::setName(ExprSchemaTable * est, const bool setdbname) const
 {
-    SQLBase::setName(est, this->prefix, setdbname, db, tname);
+    if (db || setdbname)
+    {
+        est->mutable_database()->set_value(getDatabaseName());
+    }
+    est->mutable_table()->set_value(getBaseName(true));
 }
 
 void SQLBase::setName(TableEngine * te) const
 {
-    te->add_params()->mutable_database()->set_database(getDatabaseName());
-    te->add_params()->mutable_table()->set_table(getTableName());
+    te->add_params()->mutable_database()->set_value(getDatabaseName());
+    te->add_params()->mutable_table()->set_value(getBaseName());
 }
 
 size_t SQLTable::numberOfInsertableColumns(const bool all) const
@@ -796,26 +949,27 @@ size_t SQLTable::numberOfInsertableColumns(const bool all) const
     return res;
 }
 
-bool SQLTable::supportsFinal() const
+bool SQLTable::supportsFinal(const bool as_alias) const
 {
-    return SQLBase::supportsFinal(teng) || isBufferEngine() || (isDistributedEngine() && SQLBase::supportsFinal(sub));
+    return engine.supportsFinal() || isBufferEngine()
+        || ((isDistributedEngine() || isAnyRemoteEngine()) && subengine.has_value() && subengine->supportsFinal())
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->supportsFinal());
 }
 
-bool SQLTable::hasSignColumn() const
+bool SQLTable::hasSignColumn(const bool as_alias) const
 {
-    return teng >= TableEngineValues::CollapsingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
+    return engine.hasSignColumn() || (as_alias && isAliasEngine() && subengine.has_value() && subengine->hasSignColumn());
 }
 
-bool SQLTable::hasVersionColumn() const
+bool SQLTable::hasVersionColumn(const bool as_alias) const
 {
-    return teng == TableEngineValues::VersionedCollapsingMergeTree;
+    return engine.hasVersionColumn() || (as_alias && isAliasEngine() && subengine.has_value() && subengine->hasVersionColumn());
 }
 
-bool SQLTable::areInsertsAppends() const
+bool SQLTable::areInsertsAppends(const bool as_alias) const
 {
-    return teng == TableEngineValues::MergeTree || isLogFamily() || isMemoryEngine() || isMySQLEngine() || isPostgreSQLEngine()
-        || isSQLiteEngine() || isMongoDBEngine() || isRedisEngine() || isHudiEngine() || isAnyDeltaLakeEngine() || isAnyIcebergEngine()
-        || isDictionaryEngine();
+    return engine.areInsertsAppends() || isMySQLEngine() || isPostgreSQLEngine()
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->areInsertsAppends());
 }
 
 bool SQLView::supportsFinal() const
@@ -828,23 +982,25 @@ bool SQLDictionary::supportsFinal() const
     return false;
 }
 
-const std::optional<String> & SQLFunction::getCluster() const
+void WithCluster::setName(SQLIdentifier * f) const
 {
-    return cluster;
-}
-
-void SQLFunction::setName(Function * f) const
-{
-    f->set_function("f" + std::to_string(fname));
+    f->set_value(name);
 }
 
 const String & ColumnPathChain::getBottomName() const
 {
+    chassert(!path.empty());
     return path[path.size() - 1].cname;
+}
+
+String ColumnPathChain::getBottomNameSQL() const
+{
+    return "`" + escapeSQLString(getBottomName(), '`') + "`";
 }
 
 SQLType * ColumnPathChain::getBottomType() const
 {
+    chassert(!path.empty());
     return path[path.size() - 1].tp;
 }
 
@@ -858,7 +1014,7 @@ String ColumnPathChain::columnPathRef(const String & quote) const
         {
             res += ".";
         }
-        res += path[i].cname;
+        res += quote.empty() ? path[i].cname : escapeSQLString(path[i].cname, quote[0]);
     }
     res += quote;
     return res;

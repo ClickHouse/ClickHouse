@@ -1,0 +1,45 @@
+---
+description: 'As funções `median*` são aliases das respectivas funções `quantile*`.
+  Elas calculam a mediana de uma amostra de dados numéricos.'
+slug: /sql-reference/aggregate-functions/reference/median
+title: 'median'
+doc_type: 'reference'
+---
+
+As funções `median*` são aliases das respectivas funções `quantile*`. Elas calculam a mediana de uma amostra de dados numéricos.
+
+Funções:
+
+* `median` — Alias de [quantile](/pt-BR/reference/functions/aggregate-functions/quantile).
+* `medianDeterministic` — Alias de [quantileDeterministic](/pt-BR/reference/functions/aggregate-functions/quantileDeterministic).
+* `medianExact` — Alias de [quantileExact](/pt-BR/reference/functions/aggregate-functions/quantileExact).
+* `medianExactWeighted` — Alias de [quantileExactWeighted](/pt-BR/reference/functions/aggregate-functions/quantileExactWeighted).
+* `medianTiming` — Alias de [quantileTiming](/pt-BR/reference/functions/aggregate-functions/quantileTiming).
+* `medianTimingWeighted` — Alias de [quantileTimingWeighted](/pt-BR/reference/functions/aggregate-functions/quantileTimingWeighted).
+* `medianTDigest` — Alias de [quantileTDigest](/pt-BR/reference/functions/aggregate-functions/quantileTDigest).
+* `medianTDigestWeighted` — Alias de [quantileTDigestWeighted](/pt-BR/reference/functions/aggregate-functions/quantileTDigestWeighted).
+* `medianBFloat16` — Alias de [quantileBFloat16](/pt-BR/reference/functions/aggregate-functions/quantileBFloat16).
+* `medianDD` — Alias de [quantileDD](/pt-BR/reference/functions/aggregate-functions/quantileddsketch).
+
+**Exemplo**
+
+Tabela de entrada:
+
+```text
+┌─val─┐
+│   1 │
+│   1 │
+│   2 │
+│   3 │
+└─────┘
+```
+
+```sql title="Query"
+SELECT medianDeterministic(val, 1) FROM t;
+```
+
+```text title="Response"
+┌─medianDeterministic(val, 1)─┐
+│                         1.5 │
+└─────────────────────────────┘
+```

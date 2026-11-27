@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -32,6 +31,6 @@ ${CLICKHOUSE_CLIENT} -nq "
 
   SELECT ProfileEvents['ParquetReadRowGroups'], ProfileEvents['ParquetPrunedRowGroups']
     FROM system.query_log
-	WHERE event_date >= yesterday() AND query_id = '$query_id' AND type = 'QueryFinish' and current_database = currentDatabase();
+	WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id' AND type = 'QueryFinish' and current_database = currentDatabase();
 "
 

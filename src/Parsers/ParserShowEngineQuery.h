@@ -14,11 +14,11 @@ namespace DB
 class ParserShowEnginesQuery : public IParserBase
 {
 protected:
-    const char * getName() const override { return "SHOW ENGINES query"; }
+    [[nodiscard]] const char * getName() const override { return "SHOW ENGINES query"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
-        auto query = std::make_shared<ASTShowEnginesQuery>();
+        auto query = make_intrusive<ASTShowEnginesQuery>();
 
         if (!ParserKeyword(Keyword::SHOW_ENGINES).ignore(pos, expected))
             return false;

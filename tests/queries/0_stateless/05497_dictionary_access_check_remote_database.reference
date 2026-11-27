@@ -1,0 +1,10 @@
+SELECT dictHas('remote_db.t', toUInt64(1))
+ACCESS_DENIED
+SELECT dictGet('remote_db.t', 'value', toUInt64(1))
+ACCESS_DENIED
+SELECT dictGet(remote_db.t, 'value', toUInt64(1))
+ACCESS_DENIED
+SELECT naiveBayesClassifier('remote_db.t', 'good')
+ACCESS_DENIED
+SELECT * FROM dictionary('remote_db.t')
+ACCESS_DENIED

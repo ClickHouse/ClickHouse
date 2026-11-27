@@ -13,7 +13,6 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -24,6 +23,8 @@
 #include <Common/thread_local_rng.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+
+#include <base/arithmeticOverflow.h>
 
 #include <type_traits>
 
@@ -45,6 +46,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -89,6 +91,17 @@ struct GroupArraySamplerData
     Array value;
     size_t total_values = 0;
     pcg32_fast rng;
+
+    /// The counter may come from a deserialized state, so it can be arbitrarily large,
+    /// and wrapping it around would make `genRandom` divide by zero.
+    void addTotalValues(UInt64 count)
+    {
+        UInt64 new_total_values = 0;
+        if (common::addOverflow(static_cast<UInt64>(total_values), count, new_total_values))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The number of values in groupArraySample state overflows: {} + {}", total_values, count);
+        total_values = new_total_values;
+    }
 
     UInt64 genRandom(size_t lim)
     {
@@ -156,11 +169,15 @@ public:
     {
     }
 
-    String getName() const override { return getNameByTrait<Trait>(); }
+    [[nodiscard]] String getName() const override { return getNameByTrait<Trait>(); }
+
+    /// The sampler seeds itself from `thread_local_rng` unless the query names a seed, and then every
+    /// evaluation of the same expression draws differently.
+    [[nodiscard]] bool isDeterministic() const override { return Trait::sampler != Sampler::RNG || seed.has_value(); }
 
     void insertWithSampler(Data & a, const T & v, Arena * arena) const
     {
-        ++a.total_values;
+        a.addTotalValues(1);
         if (a.value.size() < max_elems)
             a.value.push_back(v, arena);
         else
@@ -183,7 +200,10 @@ public:
         const auto & row_value = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
         auto & cur_elems = this->data(place);
 
-        ++cur_elems.total_values;
+        if constexpr (Trait::sampler == Sampler::NONE)
+            ++cur_elems.total_values;
+        else
+            cur_elems.addTotalValues(1);
 
         if constexpr (Trait::sampler == Sampler::NONE)
         {
@@ -213,7 +233,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_elems = this->data(place);
         auto & rhs_elems = this->data(rhs);
@@ -275,8 +295,8 @@ public:
         }
         else
         {
+            cur_elems.addTotalValues(rhs_elems.total_values);
             cur_elems.randomShuffle();
-            cur_elems.total_values += rhs_elems.total_values;
             for (size_t i = 0; i < max_elems; ++i)
             {
                 UInt64 rnd = cur_elems.genRandom(cur_elems.total_values);
@@ -343,12 +363,17 @@ public:
                 readBinaryLittleEndian(element, buf);
         }
 
-        if constexpr (Trait::last)
+        if constexpr (Trait::last || Trait::sampler == Sampler::RNG)
+        {
             readBinaryLittleEndian(this->data(place).total_values, buf);
+            if (static_cast<UInt64>(this->data(place).value.size()) != std::min<UInt64>(max_elems, this->data(place).total_values))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Malformed {} state: {} stored elements, but total_values = {} with max_elems = {}",
+                    getName(), this->data(place).value.size(), this->data(place).total_values, max_elems);
+        }
 
         if constexpr (Trait::sampler == Sampler::RNG)
         {
-            readBinaryLittleEndian(this->data(place).total_values, buf);
             std::string rng_string;
             readStringBinary(rng_string, buf);
             ReadBufferFromString rng_buf(rng_string);
@@ -373,7 +398,7 @@ public:
         }
     }
 
-    bool allocatesMemoryInArena() const override { return true; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
 };
 
 
@@ -390,7 +415,7 @@ struct GroupArrayNodeBase
     /// Returns pointer to actual payload
     char * data() { return reinterpret_cast<char *>(this) + sizeof(Node); }
 
-    const char * data() const { return reinterpret_cast<const char *>(this) + sizeof(Node); }
+    [[nodiscard]] const char * data() const { return reinterpret_cast<const char *>(this) + sizeof(Node); }
 
     /// Clones existing node (does not modify next field)
     Node * clone(Arena * arena) const
@@ -417,7 +442,7 @@ struct GroupArrayNodeBase
     /// Reads and allocates node from ReadBuffer's data (doesn't set next)
     static Node * read(ReadBuffer & buf, Arena * arena)
     {
-        UInt64 size;
+        UInt64 size = 0;
         readVarUInt(size, buf);
         checkElementSize(size, AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE);
 
@@ -516,11 +541,15 @@ public:
     {
     }
 
-    String getName() const override { return getNameByTrait<Trait>(); }
+    [[nodiscard]] String getName() const override { return getNameByTrait<Trait>(); }
+
+    /// The sampler seeds itself from `thread_local_rng` unless the query names a seed, and then every
+    /// evaluation of the same expression draws differently.
+    [[nodiscard]] bool isDeterministic() const override { return Trait::sampler != Sampler::RNG || seed.has_value(); }
 
     void insertWithSampler(Data & a, const Node * v, Arena * arena) const
     {
-        ++a.total_values;
+        a.addTotalValues(1);
         if (a.value.size() < max_elems)
             a.value.push_back(v->clone(arena), arena);
         else
@@ -542,7 +571,10 @@ public:
     {
         auto & cur_elems = data(place);
 
-        ++cur_elems.total_values;
+        if constexpr (Trait::sampler == Sampler::NONE)
+            ++cur_elems.total_values;
+        else
+            cur_elems.addTotalValues(1);
 
         if constexpr (Trait::sampler == Sampler::NONE)
         {
@@ -573,7 +605,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_elems = data(place);
         auto & rhs_elems = data(rhs);
@@ -604,7 +636,7 @@ public:
 
     void ALWAYS_INLINE mergeNoSampler(Data & cur_elems, const Data & rhs_elems, Arena * arena) const
     {
-        UInt64 new_elems;
+        UInt64 new_elems = 0;
         if (limit_num_elems)
         {
             if (cur_elems.value.size() >= max_elems)
@@ -637,8 +669,8 @@ public:
         }
         else
         {
+            cur_elems.addTotalValues(rhs_elems.total_values);
             cur_elems.randomShuffle();
-            cur_elems.total_values += rhs_elems.total_values;
             for (size_t i = 0; i < max_elems; ++i)
             {
                 UInt64 rnd = cur_elems.genRandom(cur_elems.total_values);
@@ -679,7 +711,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        UInt64 elems;
+        UInt64 elems = 0;
         readVarUInt(elems, buf);
         checkArraySize(elems, max_elems);
 
@@ -692,12 +724,17 @@ public:
                 value[i] = Node::read(buf, arena);
         }
 
-        if constexpr (Trait::last)
+        if constexpr (Trait::last || Trait::sampler == Sampler::RNG)
+        {
             readBinaryLittleEndian(data(place).total_values, buf);
+            if (static_cast<UInt64>(data(place).value.size()) != std::min<UInt64>(max_elems, data(place).total_values))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Malformed {} state: {} stored elements, but total_values = {} with max_elems = {}",
+                    getName(), data(place).value.size(), data(place).total_values, max_elems);
+        }
 
         if constexpr (Trait::sampler == Sampler::RNG)
         {
-            readBinaryLittleEndian(data(place).total_values, buf);
             std::string rng_string;
             readStringBinary(rng_string, buf);
             ReadBufferFromString rng_buf(rng_string);
@@ -725,7 +762,7 @@ public:
             node->insertInto(column_data);
     }
 
-    bool allocatesMemoryInArena() const override { return true; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
 };
 
 
@@ -844,11 +881,55 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
 }
 
 
+void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("groupArray", { createAggregateFunctionGroupArray<false>, properties });
+    /// groupArray
+    FunctionDocumentation::Description description_groupArray = R"(
+Creates an array of argument values.
+Values can be added to the array in any (indeterminate) order.
+
+The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements. For example, `groupArray(1)(x)` is equivalent to `[any(x)]`.
+
+In some cases, you can still rely on the order of execution. This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY` if the subquery result is small enough.
+
+The `groupArray` function will remove `NULL` values from the result.
+    )";
+    FunctionDocumentation::Syntax syntax_groupArray = R"(
+groupArray(x)
+groupArray(max_size)(x)
+    )";
+    FunctionDocumentation::Parameters parameters_groupArray = {
+        {"max_size", "Optional. Limits the size of the resulting array to `max_size` elements.", {"UInt64"}}
+    };
+    FunctionDocumentation::Arguments arguments_groupArray = {
+        {"x", "Argument values to collect into an array.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_groupArray = {"Returns an array of argument values.", {"Array"}};
+    FunctionDocumentation::Examples examples_groupArray = {
+    {
+        "Basic usage",
+        R"(
+CREATE TABLE ck (id UInt8, name String) ENGINE = Memory;
+INSERT INTO ck VALUES (1, 'zhangsan'), (1, 'lisi'), (2, 'wangwu');
+
+SELECT id, groupArray(10)(name) FROM ck GROUP BY id ORDER BY id;
+        )",
+        R"(
+┌─id─┬─groupArray(10)(name)─┐
+│  1 │ ['zhangsan','lisi']  │
+│  2 │ ['wangwu']           │
+└────┴──────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_groupArray = {1, 1};
+    FunctionDocumentation::Category category_groupArray = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_groupArray = {description_groupArray, syntax_groupArray, arguments_groupArray, parameters_groupArray, returned_value_groupArray, examples_groupArray, introduced_in_groupArray, category_groupArray};
+
+    factory.registerFunction("groupArray", { createAggregateFunctionGroupArray<false>, documentation_groupArray, properties });
     factory.registerAlias("array_agg", "groupArray", AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerAliasUnchecked("array_concat_agg", "groupArrayArray", AggregateFunctionFactory::Case::Insensitive);
@@ -867,7 +948,7 @@ groupArraySample(max_size[, seed])(x)
     };
     FunctionDocumentation::Parameters parameters_groupArraySample = {
         {"max_size", "Maximum size of the resulting array.", {"UInt64"}},
-        {"seed", "Optional. Seed for the random number generator. Default value: 123456.", {"UInt64"}},
+        {"seed", "Optional. Seed for the random number generator. When omitted, every aggregation state seeds itself from a thread-local generator, so the sample is different for every evaluation and the function is non-deterministic. Pass a seed for a reproducible sample.", {"UInt64"}},
         {"x", "Argument (column name or expression).", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_groupArraySample = {
@@ -878,19 +959,19 @@ groupArraySample(max_size[, seed])(x)
     {
          "Usage example",
          R"(
-CREATE TABLE default.colors (
+CREATE TABLE colors (
     id Int32,
     color String
 ) ENGINE = Memory;
 
-INSERT INTO default.colors VALUES
+INSERT INTO colors VALUES
 (1, 'red'),
 (2, 'blue'),
 (3, 'green'),
 (4, 'white'),
 (5, 'orange');
 
-SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
+SELECT groupArraySample(3)(color) as newcolors FROM colors;
          )",
          R"(
 ┌─newcolors──────────────────┐
@@ -902,19 +983,19 @@ SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
          "Example using a seed",
          R"(
 -- Query with column name and different seed
-SELECT groupArraySample(3, 987654321)(color) as newcolors FROM default.colors;
+SELECT groupArraySample(3, 987654321)(color) as newcolors FROM colors;
         )",
         R"(
-┌─newcolors──────────────────┐
-│ ['red','orange','green']   │
-└────────────────────────────┘
+┌─newcolors────────────────┐
+│ ['red','orange','green'] │
+└──────────────────────────┘
         )"
     },
     {
          "Using an expression as an argument",
          R"(
 -- Query with expression as argument
-SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM default.colors;
+SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM colors;
         )",
         R"(
 ┌─newcolors───────────────────────────────────┐
@@ -927,7 +1008,7 @@ SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM default.co
     FunctionDocumentation::Category category_groupArraySample = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_groupArraySample = {description_groupArraySample, syntax_groupArraySample, arguments_groupArraySample, parameters_groupArraySample, returned_value_groupArraySample, examples_groupArraySample, introduced_in_groupArraySample, category_groupArraySample};
 
-factory.registerFunction("groupArraySample", {createAggregateFunctionGroupArraySample, properties, documentation_groupArraySample});
+factory.registerFunction("groupArraySample", {createAggregateFunctionGroupArraySample, documentation_groupArraySample, properties});
 
     /// groupArrayLast
     FunctionDocumentation::Description description_groupArrayLast = R"(
@@ -978,7 +1059,7 @@ SELECT groupArray(2)(number+1) numbers FROM numbers(10);)",
     FunctionDocumentation::Category category_groupArrayLast = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_groupArrayLast = {description_groupArrayLast, syntax_groupArrayLast, arguments_groupArrayLast, parameters_groupArrayLast, returned_value_groupArrayLast, examples_groupArrayLast, introduced_in_groupArrayLast, category_groupArrayLast};
 
-    factory.registerFunction("groupArrayLast", {createAggregateFunctionGroupArray<true>, properties, documentation_groupArrayLast});
+    factory.registerFunction("groupArrayLast", {createAggregateFunctionGroupArray<true>, documentation_groupArrayLast, properties});
 }
 
 }

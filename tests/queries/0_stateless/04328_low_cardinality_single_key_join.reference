@@ -1,0 +1,12 @@
+all_inner	1
+any_inner	1
+all_left	1
+any_left	1
+all_right	1
+all_full	1
+semi_left	1
+anti_left	1
+fixedstring	1
+uint32	1
+nullable_inner	1
+nullable_anti	1

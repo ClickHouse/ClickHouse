@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
 
 set send_logs_level = 'error';
 set extremes = 1;

@@ -1,0 +1,85 @@
+---
+sidebarTitle: 'Cycle de vie d’un MySQL ClickPipe'
+description: 'Les différents statuts d’un pipe et leur signification'
+slug: /integrations/clickpipes/mysql/lifecycle
+title: 'Cycle de vie d’un MySQL ClickPipe'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+Ce document présente les différentes phases d’un MySQL ClickPipe, les différents statuts qu’il peut avoir et leur signification. Notez que cela s’applique également à MariaDB.
+
+<div id="provisioning">
+  ## Provisioning
+</div>
+
+Lorsque vous cliquez sur le bouton Create ClickPipe, le ClickPipe est créé à l’état `Provisioning`. Le processus de provisionnement consiste à déployer l’infrastructure sous-jacente nécessaire au fonctionnement de ClickPipes pour le service, ainsi qu’à enregistrer les métadonnées initiales du pipe. Comme la capacité de calcul de ClickPipes au sein d’un service est partagée, votre deuxième ClickPipe sera créé bien plus rapidement que le premier -- l’infrastructure étant déjà en place.
+
+<div id="setup">
+  ## Setup
+</div>
+
+Après le provisionnement d’un pipe, il passe à l’état `Setup`. C’est dans cet état que nous créons les tables de destination dans ClickHouse. Nous y récupérons et enregistrons également les définitions des tables sources.
+
+<div id="snapshot">
+  ## Snapshot
+</div>
+
+Une fois la configuration terminée, le pipe passe à l’état `Snapshot` (sauf s’il s’agit d’un pipe CDC uniquement, auquel cas il passe à l’état `Running`). `Snapshot`, `Initial Snapshot` et `Initial Load` (le terme le plus courant) sont interchangeables. Dans cet état, un snapshot des tables MySQL sources est effectué puis chargé dans ClickHouse. Le paramètre de rétention des logs binaires doit être défini de manière à couvrir la durée du chargement initial. Pour en savoir plus sur le chargement initial, consultez la [documentation sur le chargement initial en parallèle](/fr/integrations/clickpipes/mysql/parallel-initial-load). Le pipe passe également à l’état `Snapshot` lorsqu’une resynchronisation est déclenchée ou lorsque de nouvelles tables sont ajoutées à un pipe existant.
+
+<div id="running">
+  ## Running
+</div>
+
+Une fois le chargement initial terminé, le pipe passe à l’état `Running` (sauf s’il s’agit d’un pipe limité à un snapshot, auquel cas il passe à l’état `Completed`). C’est à ce moment-là que le pipe commence la capture des changements de données (CDC). Dans cet état, nous commençons à lire les logs binaires de la base de données source et à synchroniser les données vers ClickHouse par lots. Pour savoir comment contrôler le CDC, consultez [la documentation sur le contrôle du CDC](/fr/integrations/clickpipes/mysql/controlling-sync).
+
+<div id="paused">
+  ## En pause
+</div>
+
+Une fois le pipe à l’état `Running`, vous pouvez le mettre en pause. Cela arrête le processus CDC et le pipe passe à l’état `Paused`. Dans cet état, aucune nouvelle donnée n’est extraite de la base de données source, mais les données déjà présentes dans ClickHouse restent intactes. Vous pouvez reprendre le pipe à partir de cet état.
+
+<div id="pausing">
+  ## Mise en pause
+</div>
+
+<Note>
+  Cet état sera bientôt disponible. Si vous utilisez notre [OpenAPI](/fr/products/cloud/features/admin-features/api/openapi), pensez à ajouter sa prise en charge dès maintenant afin de garantir que votre intégration continue de fonctionner lors de sa publication.
+</Note>
+
+Lorsque vous cliquez sur le bouton Pause, le pipe passe à l&#39;état `Pausing`. Il s&#39;agit d&#39;un état transitoire pendant lequel le processus CDC est en cours d&#39;arrêt. Une fois le processus CDC complètement arrêté, le pipe passe à l&#39;état `Paused`.
+
+<div id="modifying">
+  ## Modification
+</div>
+
+<Note>
+  Cet état sera bientôt disponible. Si vous utilisez notre [OpenAPI](/fr/products/cloud/features/admin-features/api/openapi), envisagez d&#39;ajouter sa prise en charge dès maintenant afin de garantir que votre intégration continuera de fonctionner lorsqu&#39;il sera disponible.
+</Note>
+
+Actuellement, cela indique que le pipe est en cours de suppression de tables.
+
+<div id="resync">
+  ## Resync
+</div>
+
+<Note>
+  Cet état sera bientôt disponible. Si vous utilisez notre [OpenAPI](/fr/products/cloud/features/admin-features/api/openapi), envisagez d&#39;ajouter dès maintenant sa prise en charge afin de garantir que votre intégration continue de fonctionner lorsqu&#39;il sera déployé.
+</Note>
+
+Cet état indique que le pipe se trouve dans la phase de resynchronisation au cours de laquelle il effectue un échange atomique des tables &#95;resync avec les tables d&#39;origine. Pour en savoir plus sur la resynchronisation, consultez la [documentation sur la resynchronisation](/fr/integrations/clickpipes/mysql/resync).
+
+<div id="completed">
+  ## Terminé
+</div>
+
+Cet état s&#39;applique aux pipes limités au snapshot et indique que le snapshot est terminé et qu&#39;il n&#39;y a plus rien à faire.
+
+<div id="failed">
+  ## Failed
+</div>
+
+En cas d&#39;erreur irrécupérable dans le pipe, celui-ci passe à l&#39;état `Failed`. Vous pouvez contacter le support ou [resynchroniser](/fr/integrations/clickpipes/mysql/resync) votre pipe pour sortir de cet état.

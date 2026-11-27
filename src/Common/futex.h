@@ -23,7 +23,7 @@ inline Int64 futexTimedWait(void * address, UInt32 value, UInt64 nanos)
 {
     const UInt64 nanos_per_sec = 1'000'000'000;
     UInt64 sec = nanos / nanos_per_sec;
-    struct timespec timeout;
+    struct timespec timeout{};
     timeout.tv_sec = time_t(std::min(sec, UInt64(std::numeric_limits<time_t>::max())));
     timeout.tv_nsec = int64_t(nanos % nanos_per_sec);
     return syscall(SYS_futex, address, FUTEX_WAIT_PRIVATE, value, &timeout, nullptr, 0);
@@ -100,6 +100,33 @@ inline void futexWakeUpperOne(std::atomic<UInt64> & address)
 inline void futexWakeUpperAll(std::atomic<UInt64> & address)
 {
     futexWake(upperHalfAddress(&address), INT_MAX);
+}
+
+}
+
+#else
+
+#include <base/types.h>
+
+#include <atomic>
+
+namespace DB
+{
+
+inline void futexWaitFetch(std::atomic<UInt32> & address, UInt32 & value)
+{
+    address.wait(value);
+    value = address.load();
+}
+
+inline void futexWakeOne(std::atomic<UInt32> & address)
+{
+    address.notify_one();
+}
+
+inline void futexWakeAll(std::atomic<UInt32> & address)
+{
+    address.notify_all();
 }
 
 }

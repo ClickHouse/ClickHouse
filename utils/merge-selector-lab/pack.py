@@ -25,7 +25,7 @@ def inline_js_imports(file_path, included_files=None):
 
     # Remove multiline comments (/* */) but be careful not to remove content within string literals
     def remove_multiline_comments(text):
-        pattern = re.compile(r'/\*.*?\*/', re.DOTALL)
+        re.compile(r'/\*.*?\*/', re.DOTALL)
         result = []
         in_string = False
         current_quote = ''

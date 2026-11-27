@@ -1,0 +1,189 @@
+---
+title: '导出 JSON'
+slug: /integrations/data-formats/json/exporting
+description: '如何从 ClickHouse 导出 JSON 数据'
+keywords: ['json', 'clickhouse', '格式', '导出']
+doc_type: 'guide'
+---
+
+几乎所有可用于导入的 JSON 格式同样也可用于导出。最常用的是 [`JSONEachRow`](/zh/reference/formats/JSON/JSONEachRow)：
+
+```sql
+SELECT * FROM sometable FORMAT JSONEachRow
+```
+
+```response
+{"path":"Bob_Dolman","month":"2016-11-01","hits":245}
+{"path":"1-krona","month":"2017-01-01","hits":4}
+{"path":"Ahmadabad-e_Kalij-e_Sofla","month":"2017-01-01","hits":3}
+```
+
+或者，我们也可以使用 [`JSONCompactEachRow`](/zh/reference/formats/JSON/JSONCompactEachRow)，通过省略列名来节省磁盘空间：
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompactEachRow
+```
+
+```response
+["Bob_Dolman", "2016-11-01", 245]
+["1-krona", "2017-01-01", 4]
+["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", 3]
+```
+
+<div id="overriding-data-types-as-strings">
+  ## 将数据类型统一转为字符串
+</div>
+
+ClickHouse 会遵循数据类型，并按标准导出 JSON。但如果需要将所有值都编码为字符串，可以使用 [JSONStringsEachRow](/zh/reference/formats/JSON/JSONStringsEachRow) 格式：
+
+```sql
+SELECT * FROM sometable FORMAT JSONStringsEachRow
+```
+
+```response
+{"path":"Bob_Dolman","month":"2016-11-01","hits":"245"}
+{"path":"1-krona","month":"2017-01-01","hits":"4"}
+{"path":"Ahmadabad-e_Kalij-e_Sofla","month":"2017-01-01","hits":"3"}
+```
+
+现在，`hits` 数值列会被编码为字符串。所有 JSON* 格式都支持以字符串形式导出；只需查看 `JSONStrings\*` 和 `JSONCompactStrings\*` 格式：
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompactStringsEachRow
+```
+
+```response
+["Bob_Dolman", "2016-11-01", "245"]
+["1-krona", "2017-01-01", "4"]
+["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", "3"]
+```
+
+<div id="exporting-metadata-together-with-data">
+  ## 连同数据一起导出元数据
+</div>
+
+应用中常见的通用 [JSON](/zh/reference/formats/JSON/JSON) 格式不仅会导出结果数据，还会导出列类型和查询统计信息：
+
+```sql
+SELECT * FROM sometable FORMAT JSON
+```
+
+```response
+{
+        "meta":
+        [
+                {
+                        "name": "path",
+                        "type": "String"
+                },
+                ...
+        ],
+
+        "data":
+        [
+                {
+                        "path": "Bob_Dolman",
+                        "month": "2016-11-01",
+                        "hits": 245
+                },
+                ...
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000497457,
+                "rows_read": 3,
+                "bytes_read": 87
+        }
+}
+```
+
+[JSONCompact](/zh/reference/formats/JSON/JSONCompact) 格式会输出相同的元数据，但数据本身会采用更紧凑的形式：
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompact
+```
+
+```response
+{
+        "meta":
+        [
+                {
+                        "name": "path",
+                        "type": "String"
+                },
+                ...
+        ],
+
+        "data":
+        [
+                ["Bob_Dolman", "2016-11-01", 245],
+                ["1-krona", "2017-01-01", 4],
+                ["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", 3]
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.00074981,
+                "rows_read": 3,
+                "bytes_read": 87
+        }
+}
+```
+
+可以考虑使用 [`JSONStrings`](/zh/reference/formats/JSON/JSONStrings) 或 [`JSONCompactStrings`](/zh/reference/formats/JSON/JSONCompactStrings) 格式变体，将所有值都编码为字符串。
+
+<div id="compact-way-to-export-json-data-and-structure">
+  ## 以紧凑方式导出 JSON 数据及其结构
+</div>
+
+一种更高效的方式是使用 [`JSONCompactEachRowWithNamesAndTypes`](/zh/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes) 格式，同时包含数据及其结构：
+
+```sql
+SELECT * FROM sometable FORMAT JSONCompactEachRowWithNamesAndTypes
+```
+
+```response
+["path", "month", "hits"]
+["String", "Date", "UInt32"]
+["Bob_Dolman", "2016-11-01", 245]
+["1-krona", "2017-01-01", 4]
+["Ahmadabad-e_Kalij-e_Sofla", "2017-01-01", 3]
+```
+
+这将使用一种紧凑的 JSON 格式，并在开头添加两行表头，分别包含列名和类型。随后即可使用这种格式将数据摄取到另一个 ClickHouse 实例 (或其他应用) 中。
+
+<div id="exporting-json-to-a-file">
+  ## 将 JSON 导出到文件
+</div>
+
+若要将导出的 JSON 数据保存到文件中，可使用 [INTO OUTFILE](/zh/reference/statements/select/into-outfile) 子句：
+
+```sql
+SELECT * FROM sometable INTO OUTFILE 'out.json' FORMAT JSONEachRow
+```
+
+```response
+36838935 rows in set. Elapsed: 2.220 sec. Processed 36.84 million rows, 1.27 GB (16.60 million rows/s., 572.47 MB/s.)
+```
+
+ClickHouse 仅用 2 秒就将近 3700 万条记录导出到一个 JSON 文件中。我们也可以使用 `COMPRESSION` 子句，在导出时即时启用压缩：
+
+```sql
+SELECT * FROM sometable INTO OUTFILE 'out.json.gz' FORMAT JSONEachRow
+```
+
+```response
+36838935 rows in set. Elapsed: 22.680 sec. Processed 36.84 million rows, 1.27 GB (1.62 million rows/s., 56.02 MB/s.)
+```
+
+完成此操作耗时更长，但生成的压缩文件会小得多：
+
+```bash
+2.2G    out.json
+576M    out.json.gz
+```

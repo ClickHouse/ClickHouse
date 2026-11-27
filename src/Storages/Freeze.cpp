@@ -62,7 +62,7 @@ void FreezeMetaData::save(DiskPtr data_disk, const String & path) const
     buffer.write("\n", 1);
 
     tx->writeStringToFile(file_path, buffer.str());
-    tx->commit();
+    tx->commit(NoCommitOptions{});
 }
 
 bool FreezeMetaData::load(DiskPtr data_disk, const String & path)
@@ -84,10 +84,10 @@ bool FreezeMetaData::load(DiskPtr data_disk, const String & path)
     if (version == 1)
     {
         /// is_replicated and is_remote are not used
-        bool is_replicated;
+        bool is_replicated = false;
         readBoolText(is_replicated, buffer);
         DB::assertChar('\n', buffer);
-        bool is_remote;
+        bool is_remote = false;
         readBoolText(is_remote, buffer);
         DB::assertChar('\n', buffer);
     }
@@ -109,8 +109,8 @@ void FreezeMetaData::clean(DiskPtr data_disk, const String & path)
     if (metadata_storage->existsFile(fname))
     {
         auto tx = metadata_storage->createTransaction();
-        tx->unlinkFile(fname);
-        tx->commit();
+        tx->unlinkFile(fname, /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(NoCommitOptions{});
     }
 }
 
@@ -127,6 +127,7 @@ Unfreezer::Unfreezer(ContextPtr context) : local_context(context)
 
 BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
 {
+    auto component_guard = Coordination::setCurrentComponent("Unfreezer::systemUnfreeze");
     LOG_DEBUG(log, "Unfreezing backup {}", escapeForFileName(backup_name));
 
     const auto & config = local_context->getConfigRef();
@@ -146,7 +147,7 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
     auto disks_map = local_context->getDisksMap();
     for (auto & [_, disk] : disks_map)
     {
-        if (disk->isReadOnly() || disk->isWriteOnce())
+        if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
             continue;
 
         for (const auto & store_path : store_paths)
@@ -210,7 +211,7 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
 
     for (const auto & disk : disks)
     {
-        if (!disk->existsDirectory(table_directory))
+        if (disk->isBroken() || !disk->existsDirectory(table_directory))
             continue;
 
         for (auto it = disk->iterateDirectory(table_directory); it->isValid(); it->next())

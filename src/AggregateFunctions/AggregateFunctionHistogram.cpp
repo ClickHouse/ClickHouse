@@ -2,12 +2,13 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/NaNUtils.h>
 
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -25,6 +26,7 @@
 #include <queue>
 #include <cmath>
 #include <cstddef>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -102,10 +104,10 @@ private:
 
         void pop_back() { --size; } /// NOLINT
         T * begin() { return data_ptr; }
-        T * end() const { return data_ptr + size; }
-        bool empty() const { return size == 0; }
+        [[nodiscard]] T * end() const { return data_ptr + size; }
+        [[nodiscard]] bool empty() const { return size == 0; }
         T & front() { return *data_ptr; }
-        const T & front() const { return *data_ptr; }
+        [[nodiscard]] const T & front() const { return *data_ptr; }
 
         using value_type = T;
         using reference = T&;
@@ -116,11 +118,9 @@ private:
     /**
      * Repeatedly fuse most close values until max_bins bins left
      */
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void compress(UInt32 max_bins)
     {
-        if (size <= max_bins)
-            return;
-
         auto cmp = [](const WeightedValue & a, const WeightedValue & b){ return a.mean < b.mean; };
         if (sorted_prefix == 0)
         {
@@ -132,13 +132,19 @@ private:
             ::sort(points + sorted_prefix, points + size, cmp);
             std::inplace_merge(points, points + sorted_prefix, points + size, cmp);
         }
+        sorted_prefix = size;
+        last_inserted = (size ? points[size - 1].mean : std::numeric_limits<Mean>::lowest());
+
+        if (size <= max_bins)
+            return;
+
         auto new_size = size;
 
         // Maintain doubly-linked list of "active" points
         // and store neighbour pairs in priority queue by distance
-        std::vector<UInt32> previous(size + 1);
-        std::vector<UInt32> next(size + 1);
-        std::vector<bool> active(size + 1, true);
+        VectorWithMemoryTracking<UInt32> previous(size + 1);
+        VectorWithMemoryTracking<UInt32> next(size + 1);
+        VectorWithMemoryTracking<bool> active(size + 1, true);
         active[size] = false;
 
         auto delete_node = [&](UInt32 i)
@@ -159,7 +165,7 @@ private:
 
         using QueueItem = std::pair<Mean, UInt32>;
 
-        std::vector<QueueItem> storage(2 * size - max_bins);
+        VectorWithMemoryTracking<QueueItem> storage(2 * size - max_bins);
 
         std::priority_queue<QueueItem, PriorityQueueStorage<QueueItem>, std::greater<>> queue{
             std::greater<>(), PriorityQueueStorage<QueueItem>(storage.data())};
@@ -336,7 +342,7 @@ public:
     {
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return Data::structSize(max_bins);
     }
@@ -357,7 +363,7 @@ public:
         return std::make_shared<DataTypeArray>(tuple);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -365,7 +371,7 @@ public:
         this->data(place).add(static_cast<Data::Mean>(val), 1, max_bins);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs), max_bins);
     }
@@ -396,7 +402,7 @@ public:
         offsets_to.push_back(to_tuple.size());
     }
 
-    String getName() const override { return "histogram"; }
+    [[nodiscard]] String getName() const override { return "histogram"; }
 };
 
 
@@ -429,9 +435,10 @@ AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, 
 
 }
 
+void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory);
 void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("histogram", createAggregateFunctionHistogram);
+    factory.registerFunction("histogram", {createAggregateFunctionHistogram, {.description = R"DOC(Calculates an adaptive histogram with up to the specified number of bins over the input values, returning an array of (lower, upper, height) tuples.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
 }
 
 }

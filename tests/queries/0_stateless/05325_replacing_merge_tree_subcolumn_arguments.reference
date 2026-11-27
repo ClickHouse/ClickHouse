@@ -1,0 +1,58 @@
+-- Wrong subcolumns
+-- Tuple elements, vertical merge
+1	a	(2,0)
+2	c	(1,0)
+3	d	(1,0)
+1	e	(3,0)
+2	c	(1,0)
+11	y	(1,0)
+1	e	(3,0)
+2	c	(1,0)
+11	y	(1,0)
+1	e
+1	e
+2	c
+11	y
+1	e
+2	c
+11	y
+1	e	(3,0)
+2	c	(1,0)
+3	g	(2,1)
+10	x	(1,1)
+11	y	(1,0)
+-- ALTER
+1	e	(3,0)
+2	h	(5000000000,0)
+11	y	(1,0)
+1	e	(3,0)
+2	h	(5000000000,0)
+3	g	(2,1)
+10	x	(1,1)
+11	y	(1,0)
+-- Tuple elements, horizontal merge with cleanup
+1	e	(3,0)
+2	c	(1,0)
+1	e	(3,0)
+2	c	(1,0)
+-- JSON typed paths
+1	{"data":"e","del":0,"ver":3}
+1	{"data":"e","del":0,"ver":3}
+2	{"data":"f","del":1,"ver":2}
+-- Other subcolumns
+1	[1,2,3]	c
+1	[1,2,3]	c
+2	[1,2]	\N
+-- Nested
+three, first
+three, first
+-- MATERIALIZED column
+2
+-- Replicated
+1	a	(2,0)
+1	a	(2,0)
+2	d	(2,1)
+-- Merge algorithms
+t_horizontal	['Horizontal']
+t_json	['Vertical']
+t_vertical	['Vertical']

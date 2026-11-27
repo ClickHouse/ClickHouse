@@ -1,14 +1,22 @@
--- Tags: no-ordinary-database, no-encrypted-storage
+-- Tags: no-ordinary-database, no-shared-merge-tree
+-- no-shared-merge-tree: the assertions below need the rolled back part to stay in `system.parts`, and
+-- `StorageSharedMergeTree` does not implement `ActionLocks::Cleanup`. It removes parts from
+-- `PartsKillerThread` on the server-wide `parts_kill_delay_period` instead, which a stateless test
+-- cannot pin, so neither the `SYSTEM STOP CLEANUP` below nor the pinned interval holds the part there.
 
 drop table if exists txn_counters;
 
-create table txn_counters (n Int64, creation_tid DEFAULT transactionID()) engine=MergeTree order by n SETTINGS old_parts_lifetime=3600;
+create table txn_counters (n Int64, creation_tid DEFAULT transactionID()) engine=MergeTree order by n SETTINGS old_parts_lifetime=3600, merge_tree_clear_old_parts_interval_seconds=100000;
 
 insert into txn_counters(n) values (1);
 select transactionID();
 
--- stop background cleanup
+-- A merge would add a differently named part to the listings below
 system stop merges txn_counters;
+-- A rolled back part's `remove_time` is 0, so `old_parts_lifetime` does not hold it and the parts
+-- cleanup could delete it before the assertions below read `system.parts`. This statement cannot
+-- stop an iteration already in flight; the pinned interval above keeps that one's parts pass shut.
+system stop cleanup txn_counters;
 
 set throw_on_unsupported_query_inside_transaction=0;
 
@@ -41,7 +49,7 @@ alter table txn_counters drop partition id 'all';
 rollback;
 
 system flush logs transactions_info_log;
-select indexOf((select arraySort(groupUniqArray(tid)) from system.transactions_info_log where database=currentDatabase() and table='txn_counters'), tid),
+select indexOf((select arraySort(groupUniqArray(tid)) from system.transactions_info_log where event_date >= yesterday() AND event_time >= now() - 600 AND database=currentDatabase() and table='txn_counters'), tid),
        type,
        thread_id!=0,
        length(query_id)=length(queryID()) or type='Commit' and query_id='',  -- ignore fault injection after commit

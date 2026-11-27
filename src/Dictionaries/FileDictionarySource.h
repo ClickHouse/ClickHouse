@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Poco/Timestamp.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Dictionaries/IDictionarySource.h>
@@ -29,17 +30,17 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for FileDictionarySource");
     }
 
-    BlockIO loadIds(const std::vector<UInt64> & /*ids*/) override
+    BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & /*ids*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadIds is unsupported for FileDictionarySource");
     }
 
-    BlockIO loadKeys(const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
+    BlockIO loadKeys(const Columns & /*key_columns*/, const VectorWithMemoryTracking<size_t> & /*requested_rows*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadKeys is unsupported for FileDictionarySource");
     }
 
-    bool isModified() const override
+    [[nodiscard]] bool isModified() const override
     {
         // We can't count on that the mtime increases or that it has
         // a particular relation to system time, so just check for strict
@@ -47,17 +48,17 @@ public:
         return getLastModification() != last_modification;
     }
 
-    bool supportsSelectiveLoad() const override { return false; }
+    [[nodiscard]] bool supportsSelectiveLoad() const override { return false; }
 
     ///Not supported for FileDictionarySource
-    bool hasUpdateField() const override { return false; }
+    [[nodiscard]] bool hasUpdateField() const override { return false; }
 
-    DictionarySourcePtr clone() const override { return std::make_shared<FileDictionarySource>(*this); }
+    [[nodiscard]] DictionarySourcePtr clone() const override { return std::make_shared<FileDictionarySource>(*this); }
 
-    std::string toString() const override;
+    [[nodiscard]] std::string toString() const override;
 
 private:
-    Poco::Timestamp getLastModification() const;
+    [[nodiscard]] Poco::Timestamp getLastModification() const;
 
     const std::string filepath;
     const std::string format;

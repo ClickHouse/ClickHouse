@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
+#include <base/defines.h>
 #include <base/extended_types.h>
 
 
@@ -67,41 +68,41 @@ struct DecomposedFloat
 
     typename Traits::UInt x_uint;
 
-    bool isNegative() const
+    [[nodiscard]] bool isNegative() const
     {
         return x_uint >> (Traits::bits - 1);
     }
 
     /// Returns 0 for both +0. and -0.
-    int sign() const
+    [[nodiscard]] int sign() const
     {
         if (exponent() == 0 && mantissa() == 0)
             return 0;
         return isNegative() ? -1 : 1;
     }
 
-    uint16_t exponent() const
+    [[nodiscard]] uint16_t exponent() const
     {
-        return (x_uint >> (Traits::mantissa_bits)) & ((1ull << Traits::exponent_bits) - 1);
+        return (x_uint >> Traits::mantissa_bits) & ((1ull << Traits::exponent_bits) - 1);
     }
 
-    int16_t normalizedExponent() const
+    [[nodiscard]] int16_t normalizedExponent() const
     {
-        return int16_t(exponent()) - ((1ull << (Traits::exponent_bits - 1)) - 1);
+        return int16_t(int32_t(exponent()) - int32_t((1u << (Traits::exponent_bits - 1)) - 1));
     }
 
-    uint64_t mantissa() const
+    [[nodiscard]] uint64_t mantissa() const
     {
         return x_uint & ((1ull << Traits::mantissa_bits) - 1);
     }
 
-    int64_t mantissaWithSign() const
+    [[nodiscard]] int64_t mantissaWithSign() const
     {
         return isNegative() ? -mantissa() : mantissa();
     }
 
     /// NOTE Probably floating point instructions can be better.
-    bool isIntegerInRepresentableRange() const
+    [[nodiscard]] bool isIntegerInRepresentableRange() const
     {
         return x_uint == 0
             || (normalizedExponent() >= 0  /// The number is not less than one
@@ -111,12 +112,12 @@ struct DecomposedFloat
                 && ((mantissa() & ((1ULL << (Traits::mantissa_bits - normalizedExponent())) - 1)) == 0));
     }
 
-    bool isFinite() const
+    [[nodiscard]] bool isFinite() const
     {
         return exponent() != ((1ull << Traits::exponent_bits) - 1);
     }
 
-    bool isNaN() const
+    [[nodiscard]] bool isNaN() const
     {
         return !isFinite() && (mantissa() != 0);
     }
@@ -127,7 +128,7 @@ struct DecomposedFloat
     /// (note that we need total order)
     /// Returns -1, 0 or 1.
     template <typename Int>
-    int compare(Int rhs) const
+    [[nodiscard]] int compare(Int rhs) const
     {
         if (rhs == 0)
             return sign();
@@ -151,7 +152,7 @@ struct DecomposedFloat
         {
             if (rhs == std::numeric_limits<Int>::lowest())
             {
-                assert(isNegative());
+                chassert(isNegative());
 
                 if (normalizedExponent() < static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
                     return 1;
@@ -169,7 +170,7 @@ struct DecomposedFloat
             return isNegative() ? -1 : 1;
 
         using UInt = std::conditional_t<(sizeof(Int) > sizeof(typename Traits::UInt)), make_unsigned_t<Int>, typename Traits::UInt>;
-        UInt uint_rhs = rhs < 0 ? -rhs : rhs;
+        UInt uint_rhs = static_cast<UInt>(rhs < 0 ? -rhs : rhs);
 
         /// Smaller octave: abs(rhs) < abs(float)
         /// FYI, TIL: octave is also called "binade", https://en.wikipedia.org/wiki/Binade
@@ -186,11 +187,11 @@ struct DecomposedFloat
 
         bool large_and_always_integer = normalizedExponent() >= static_cast<int16_t>(Traits::mantissa_bits);
 
-        UInt a = large_and_always_integer
-            ? static_cast<UInt>(mantissa()) << (normalizedExponent() - Traits::mantissa_bits)
-            : static_cast<UInt>(mantissa()) >> (Traits::mantissa_bits - normalizedExponent());
+        UInt a = static_cast<UInt>(
+            large_and_always_integer ? static_cast<UInt>(mantissa()) << (normalizedExponent() - Traits::mantissa_bits)
+                                     : static_cast<UInt>(mantissa()) >> (Traits::mantissa_bits - normalizedExponent()));
 
-        UInt b = uint_rhs - (static_cast<UInt>(1) << normalizedExponent());
+        UInt b = static_cast<UInt>(uint_rhs - (static_cast<UInt>(1) << normalizedExponent()));
 
         if (a < b)
             return isNegative() ? 1 : -1;
@@ -213,7 +214,7 @@ struct DecomposedFloat
 
 
     template <typename Int>
-    bool equals(Int rhs) const
+    [[nodiscard]] bool equals(Int rhs) const
     {
         return compare(rhs) == 0;
     }
@@ -225,13 +226,13 @@ struct DecomposedFloat
     }
 
     template <typename Int>
-    bool less(Int rhs) const
+    [[nodiscard]] bool less(Int rhs) const
     {
         return compare(rhs) < 0;
     }
 
     template <typename Int>
-    bool greater(Int rhs) const
+    [[nodiscard]] bool greater(Int rhs) const
     {
         return compare(rhs) > 0;
     }

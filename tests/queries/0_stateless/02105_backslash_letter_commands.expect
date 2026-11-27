@@ -32,13 +32,16 @@ send -- "\\c;\r"
 expect "Syntax error: "
 expect ":) "
 
-send -- "  \\l ;  \\d;  \r"
+# The `like` predicate keeps the matched output independent of databases that
+# concurrently running tests create.
+send -- "  \\l like 'system' ;  \\d;  \r"
 expect ":) "
 
-send -- "  \\l  ;\r"
+send -- "  \\l like 'system'  ;\r"
 expect "SHOW"
 expect "DATABASES"
 expect "system"
+expect "1 row in set"
 expect ":) "
 
 send -- "\\c system;\r"

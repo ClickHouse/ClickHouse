@@ -1,0 +1,95 @@
+---
+description: 'Documentación de la interfaz gRPC de ClickHouse'
+sidebarTitle: 'Interfaz gRPC'
+slug: /interfaces/grpc
+title: 'Interfaz gRPC'
+doc_type: 'reference'
+---
+
+## Introducción {#grpc-interface-introduction}
+
+ClickHouse admite la interfaz [gRPC](https://grpc.io/). Es un sistema de llamada a procedimientos remotos de código abierto que utiliza HTTP/2 y [Protocol Buffers](https://en.wikipedia.org/wiki/Protocol_Buffers). La implementación de gRPC en ClickHouse admite:
+
+* SSL;
+* autenticación;
+* sesiones;
+* compresión;
+* consultas paralelas a través del mismo canal;
+* cancelación de consultas;
+* obtención de información de progreso y logs;
+* tablas externas.
+
+La especificación de la interfaz se describe en [clickhouse&#95;grpc.proto](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto).
+
+## Configuración de gRPC {#grpc-interface-configuration}
+
+Para usar la interfaz gRPC, establezca `grpc_port` en la [configuración principal del servidor](/es/concepts/features/configuration/server-config/configuration-files). Consulte las demás opciones de configuración en el siguiente ejemplo:
+
+```xml
+<grpc_port>9100</grpc_port>
+    <grpc>
+        <enable_ssl>false</enable_ssl>
+
+        <!-- The following two files are used only if SSL is enabled -->
+        <ssl_cert_file>/path/to/ssl_cert_file</ssl_cert_file>
+        <ssl_key_file>/path/to/ssl_key_file</ssl_key_file>
+
+        <!-- Whether server requests client for a certificate -->
+        <ssl_require_client_auth>false</ssl_require_client_auth>
+
+        <!-- The following file is used only if ssl_require_client_auth=true -->
+        <ssl_ca_cert_file>/path/to/ssl_ca_cert_file</ssl_ca_cert_file>
+
+        <!-- Default compression algorithm (applied if client doesn't specify another algorithm, see result_compression in QueryInfo).
+             Supported algorithms: none, deflate, gzip, stream_gzip -->
+        <compression>deflate</compression>
+
+        <!-- Default compression level (applied if client doesn't specify another level, see result_compression in QueryInfo).
+             Supported levels: none, low, medium, high -->
+        <compression_level>medium</compression_level>
+
+        <!-- Send/receive message size limits in bytes. -1 means unlimited -->
+        <max_send_message_size>-1</max_send_message_size>
+        <max_receive_message_size>-1</max_receive_message_size>
+    </grpc>
+```
+
+## Cliente incluido {#grpc-client}
+
+Puede escribir un cliente en cualquiera de los lenguajes de programación compatibles con gRPC usando la [especificación](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto) proporcionada.
+O bien, puede usar un cliente de Python incluido. Se encuentra en [utils/grpc-client/clickhouse-grpc-client.py](https://github.com/ClickHouse/ClickHouse/blob/master/utils/grpc-client/clickhouse-grpc-client.py) dentro del repositorio. El cliente incluido requiere los módulos de Python [grpcio and grpcio-tools](https://grpc.io/docs/languages/python/quickstart).
+
+El cliente admite los siguientes argumentos:
+
+* `--help` – Muestra un mensaje de ayuda y finaliza.
+* `--host HOST, -h HOST` – Un nombre de servidor. Valor predeterminado: `localhost`. También puede usar direcciones IPv4 o IPv6.
+* `--port PORT` – Un puerto al que conectarse. Este puerto debe estar habilitado en la configuración del servidor de ClickHouse (consulte `grpc_port`). Valor predeterminado: `9100`.
+* `--user USER_NAME, -u USER_NAME` – Un nombre de usuario. Valor predeterminado: `default`.
+* `--password PASSWORD` – Una contraseña. Valor predeterminado: cadena vacía.
+* `--query QUERY, -q QUERY` – Una consulta que se procesará al usar el modo no interactivo.
+* `--database DATABASE, -d DATABASE` – Una base de datos predeterminada. Si no se especifica, se usa la base de datos actual configurada en la configuración del servidor (`default` de forma predeterminada).
+* `--format OUTPUT_FORMAT, -f OUTPUT_FORMAT` – Un [formato](/es/reference/formats/index) de salida para el resultado. Valor predeterminado en modo interactivo: `PrettyCompact`.
+* `--debug` – Habilita la visualización de información de depuración.
+
+Para ejecutar el cliente en modo interactivo, llámelo sin el argumento `--query`.
+
+En modo por lotes, los datos de la consulta pueden pasarse mediante `stdin`.
+
+**Ejemplo de uso del cliente**
+
+En el siguiente ejemplo, se crea una tabla y se carga con datos desde un archivo CSV. Luego se consulta el contenido de la tabla.
+
+```bash title="Query"
+./clickhouse-grpc-client.py -q "CREATE TABLE grpc_example_table (id UInt32, text String) ENGINE = MergeTree() ORDER BY id;"
+echo -e "0,Input data for\n1,gRPC protocol example" > a.csv
+cat a.csv | ./clickhouse-grpc-client.py -q "INSERT INTO grpc_example_table FORMAT CSV"
+
+./clickhouse-grpc-client.py --format PrettyCompact -q "SELECT * FROM grpc_example_table;"
+```
+
+```text title="Response"
+┌─id─┬─text──────────────────┐
+│  0 │ Input data for        │
+│  1 │ gRPC protocol example │
+└────┴───────────────────────┘
+```

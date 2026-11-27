@@ -1,0 +1,245 @@
+---
+description: 'Пошаговое руководство по сборке ClickHouse из исходного кода на системах Linux'
+sidebarTitle: 'Сборка на Linux'
+slug: /development/build
+title: 'Как собрать ClickHouse на Linux'
+doc_type: 'guide'
+---
+
+<Info>
+  **Это руководство по сборке предназначено для разработчиков, вносящих изменения в сам ClickHouse.**
+
+  Если вы не изменяете исходный код ClickHouse, вы можете установить готовую сборку ClickHouse, как описано в разделе [Быстрый старт](/ru/get-started/setup/install).
+</Info>
+
+ClickHouse можно собрать на следующих платформах:
+
+* x86&#95;64
+* AArch64
+* PowerPC 64 LE (экспериментальная)
+* s390/x (экспериментальная)
+* RISC-V 64 (экспериментальная)
+
+## Предварительные условия {#assumptions}
+
+Следующее руководство основано на Ubuntu Linux, но при соответствующих изменениях оно должно работать и в любом другом дистрибутиве Linux.
+Минимальная рекомендуемая версия Ubuntu для разработки — 24.04 LTS.
+
+В этом руководстве предполагается, что у вас локально клонированы репозиторий ClickHouse и все подмодули.
+
+## Установите необходимые предварительные требования {#install-prerequisites}
+
+Сначала ознакомьтесь с общей [документацией по предварительным требованиям](/ru/resources/develop-contribute/introduction/developer-instruction).
+
+ClickHouse использует CMake и Ninja для сборки.
+
+При желании можно установить ccache, чтобы сборка повторно использовала уже скомпилированные объектные файлы.
+
+```bash
+sudo apt-get update
+sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
+```
+
+## Установите компилятор Clang {#install-the-clang-compiler}
+
+Чтобы установить Clang на Ubuntu/Debian, используйте автоматический скрипт установки LLVM, доступный [здесь](https://apt.llvm.org/).
+
+```bash
+wget https://apt.llvm.org/llvm.sh
+chmod +x llvm.sh
+sudo ./llvm.sh 23
+```
+
+<Note>
+  `apt.llvm.org` предоставляет пакеты Clang 23 для Ubuntu 24.04 (Noble) и новее, а также для Debian 12 (Bookworm) и новее.
+  Для Ubuntu 22.04 (Jammy) репозитория Clang 23 нет; в Jammy вместо него установите Clang 21 командой `sudo ./llvm.sh 21`.
+</Note>
+
+Для других дистрибутивов Linux проверьте, можно ли установить один из [предварительно собранных пакетов LLVM](https://releases.llvm.org/download.html).
+
+По состоянию на февраль 2026 года требуется Clang 21 или выше.
+GCC и другие компиляторы не поддерживаются.
+
+<Tip>
+  В ClickHouse CI для компиляции используется сборка того же релиза Clang, оптимизированная с помощью PGO и BOLT: она компилирует ClickHouse быстрее.
+  В Linux с glibc 2.38 или новее команда `eval "$(utils/download-ci-toolchain.sh)"` загружает этот компилятор с помощью `curl` и `zstd` и прописывает его в `CC` и `CXX` для конфигурирования нового каталога сборки.
+</Tip>
+
+## Установите компилятор Rust (необязательно) {#install-the-rust-compiler-optional}
+
+<Note>
+  Rust — необязательная зависимость ClickHouse.
+  Если Rust не установлен, некоторые возможности ClickHouse не будут включены в сборку.
+</Note>
+
+Сначала выполните шаги из официальной [документации Rust](https://www.rust-lang.org/tools/install), чтобы установить `rustup`.
+
+Как и в случае с зависимостями C++, ClickHouse использует вендоринг, чтобы точно контролировать состав устанавливаемых компонентов и не зависеть от сторонних сервисов (таких как реестр `crates.io`).
+
+Хотя в режиме релизной сборки с этими зависимостями должна работать любая современная версия toolchain из rustup, если вы планируете включить санитайзеры, необходимо использовать версию, которая в точности соответствует той же `std`, что и версия, используемая в CI (для которой мы вендорим крейты):
+
+```bash
+rustup toolchain install nightly-2026-11-02
+rustup default nightly-2026-11-02
+rustup component add rust-src
+```
+
+<Tip>
+  ccache не кэширует Rust, поэтому в новом каталоге сборки все крейты Rust компилируются заново.
+  С параметром `-DRUST_BUILD_CACHE_DIR=<path>` Cargo сохраняет скомпилированные крейты в этом каталоге, и новые каталоги сборки для того же извлечения репозитория и той же конфигурации используют их повторно (за исключением delta-kernel-rs). На каждое извлечение и конфигурацию требуется около 7 ГБ; размер каталога не ограничен, и его можно удалить в любой момент.
+</Tip>
+
+## Сборка ClickHouse {#build-clickhouse}
+
+Мы рекомендуем создать внутри `ClickHouse` отдельный каталог `build`, в котором будут находиться все артефакты сборки:
+
+```sh
+mkdir build
+cd build
+```
+
+У вас может быть несколько разных каталогов (например, `build_release`, `build_debug` и т. д.) для разных типов сборки.
+
+Необязательно: если у вас установлено несколько версий компилятора, при необходимости можно указать, какой именно компилятор использовать.
+
+```sh
+export CC=clang-23
+export CXX=clang++-23
+```
+
+Для разработки рекомендуется использовать отладочные сборки.
+По сравнению с релизными сборками у них ниже уровень оптимизации компилятора (`-O`), что упрощает отладку.
+Кроме того, внутренние исключения типа `LOGICAL_ERROR` приводят к немедленному аварийному завершению вместо корректной обработки ошибки.
+
+```sh
+cmake -D CMAKE_BUILD_TYPE=Debug ..
+```
+
+<Note>
+  Если вы хотите использовать отладчик, например gdb, добавьте `-D DEBUG_O_LEVEL="0"` к приведённой выше команде, чтобы отключить все оптимизации компилятора, которые могут мешать gdb просматривать переменные и обращаться к ним.
+</Note>
+
+Запустите ninja для сборки:
+
+```sh
+ninja clickhouse
+```
+
+Если вы хотите собрать все бинарные файлы (утилиты и тесты), запустите ninja без параметров:
+
+```sh
+ninja
+```
+
+Вы можете управлять количеством параллельных задач сборки с помощью параметра `-j`:
+
+```sh
+ninja -j 1 clickhouse
+```
+
+<Note>
+  `clickhouse-server`, `clickhouse-client` и другие подобные бинарные файлы представляют собой символические ссылки в каталоге `programs/`, указывающие на исполняемый файл `clickhouse` после завершения сборки.
+</Note>
+
+<Tip>
+  CMake предоставляет сокращённые варианты приведённых выше команд:
+
+  ```sh
+  cmake -S . -B build  # настроить сборку, запускать из корневого каталога репозитория
+  cmake --build build  # скомпилировать
+  ```
+</Tip>
+
+## исполняемый файл ClickHouse {#running-the-clickhouse-executable}
+
+После успешного завершения сборки исполняемый файл находится в `ClickHouse/<build_dir>/programs/`:
+
+Сервер ClickHouse пытается найти файл конфигурации `config.xml` в текущем каталоге.
+При необходимости вы также можете указать файл конфигурации в командной строке с помощью `-C`.
+
+Чтобы подключиться к серверу ClickHouse с помощью `clickhouse-client`, откройте другой терминал, перейдите в `ClickHouse/build/programs/` и выполните `./clickhouse client`.
+
+Если в macOS или FreeBSD вы получаете сообщение `Connection refused`, попробуйте указать адрес хоста 127.0.0.1:
+
+```bash
+clickhouse client --host 127.0.0.1
+```
+
+## Дополнительные параметры {#advanced-options}
+
+### Минимальная сборка {#minimal-build}
+
+Если вам не нужны возможности, предоставляемые сторонними библиотеками, вы можете ускорить сборку ещё сильнее:
+
+```sh
+cmake -DENABLE_LIBRARIES=OFF
+```
+
+Если возникнут проблемы, вам придется разбираться с ними самостоятельно ...
+
+Для работы Rust требуется подключение к интернету. Чтобы отключить поддержку Rust:
+
+```sh
+cmake -DENABLE_RUST=OFF
+```
+
+### Исполняемый файл ClickHouse {#running-the-clickhouse-executable-1}
+
+Вы можете заменить установленный в системе продакшн-бинарный файл ClickHouse на скомпилированный бинарный файл ClickHouse.
+Для этого установите ClickHouse на свой компьютер, следуя инструкциям на официальном сайте.
+Далее выполните:
+
+```bash
+sudo service clickhouse-server stop
+sudo cp ClickHouse/build/programs/clickhouse /usr/bin/
+sudo service clickhouse-server start
+```
+
+Обратите внимание, что `clickhouse-client`, `clickhouse-server` и другие — это символические ссылки на общий бинарный файл `clickhouse`.
+
+Вы также можете запустить собственноручно собранный бинарный файл ClickHouse с файлом config из установленного в системе пакета ClickHouse:
+
+```bash
+sudo service clickhouse-server stop
+sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
+```
+
+### Сборка в любом дистрибутиве Linux {#building-on-any-linux}
+
+Установите необходимые зависимости в OpenSUSE Tumbleweed:
+
+```bash
+sudo zypper install git cmake ninja clang-c++ python lld nasm yasm gawk
+git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+mkdir build
+cmake -S . -B build
+cmake --build build
+```
+
+Установите необходимые зависимости в Fedora Rawhide:
+
+```bash
+sudo yum update
+sudo yum --nogpg install git cmake make clang python3 ccache lld nasm yasm gawk
+git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+mkdir build
+cmake -S . -B build
+cmake --build build
+```
+
+### Сборка в Docker {#building-in-docker}
+
+Вы можете выполнить любую сборку локально в среде, аналогичной CI, с помощью:
+
+```bash
+python -m ci.praktika run "BUILD_JOB_NAME"
+```
+
+где BUILD&#95;JOB&#95;NAME — это имя задачи, указанное в отчёте CI, например: &quot;Build (arm&#95;release)&quot;, &quot;Build (amd&#95;debug)&quot;
+
+Эта команда загружает соответствующий Docker-образ `clickhouse/binary-builder` со всеми необходимыми зависимостями
+и запускает внутри него скрипт сборки: `./ci/jobs/build_clickhouse.py`
+
+Результат сборки будет помещён в `./ci/tmp/`.
+
+Команда работает на архитектурах AMD и ARM и не требует никаких дополнительных зависимостей, кроме Python с доступным модулем `requests` и Docker.

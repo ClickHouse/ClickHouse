@@ -1,4 +1,5 @@
 #include <Client/ProgressTable.h>
+#include <base/sort.h>
 #include <Common/ProfileEvents.h>
 #include <base/defines.h>
 
@@ -13,7 +14,6 @@
 #include <Common/formatReadable.h>
 
 #include <mutex>
-#include <numeric>
 #include <unordered_map>
 
 #include <fmt/format.h>
@@ -63,13 +63,18 @@ std::string formatReadableValue(ProfileEvents::ValueType value_type, double valu
 const std::unordered_map<std::string_view, ProfileEvents::Event> & getEventNameToEvent()
 {
     /// TODO: MemoryTracker::USAGE_EVENT_NAME and PEAK_USAGE_EVENT_NAME
-    static std::unordered_map<std::string_view, ProfileEvents::Event> event_name_to_event;
-
-    if (!event_name_to_event.empty())
-        return event_name_to_event;
-
-    for (ProfileEvents::Event event = ProfileEvents::Event(0); event < ProfileEvents::end(); ++event)
-        event_name_to_event.emplace(ProfileEvents::getName(event), event);
+    /// Use a lambda for static initialization so the entire filling is part of the
+    /// thread-safe static initialization (C++ guarantees exactly-once, thread-safe
+    /// initialization of static locals). Without this, multiple SSH embedded client
+    /// threads could race on the manual fill, corrupting the hash table.
+    static const std::unordered_map<std::string_view, ProfileEvents::Event> event_name_to_event = []()
+    {
+        std::unordered_map<std::string_view, ProfileEvents::Event> result;
+        result.reserve(ProfileEvents::end());
+        for (ProfileEvents::Event event = ProfileEvents::Event(0); event < ProfileEvents::end(); ++event)
+            result.emplace(ProfileEvents::getName(event), event);
+        return result;
+    }();
 
     return event_name_to_event;
 }
@@ -190,6 +195,11 @@ void writeWithWidthStrict(Out & out, std::string_view s, size_t width)
 void ProgressTable::writeTable(
     WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &, bool show_table, bool toggle_enabled, bool is_final)
 {
+    /// The terminal may be gone, e.g. a closed session of the client embedded into the server:
+    /// a failed write cancels the buffer and reports the error, and a write into it after that is a logical error.
+    if (message.isCanceled())
+        return;
+
     std::lock_guard lock{mutex};
     message << HIDE_CURSOR;
     if (!show_table && toggle_enabled)
@@ -232,7 +242,7 @@ void ProgressTable::writeTable(
         sorted_metrics.emplace_back(&elem);
     }
 
-    std::stable_sort(sorted_metrics.begin(), sorted_metrics.end(), [](Metrics::const_pointer a, Metrics::const_pointer b)
+    ::stableSort(sorted_metrics.begin(), sorted_metrics.end(), [](Metrics::const_pointer a, Metrics::const_pointer b)
     {
         return std::tuple(a->second.getDisplayPriority(), std::floor(std::log10(1 + a->second.getSummaryValue())))
             > std::tuple(b->second.getDisplayPriority(), std::floor(std::log10(1 + b->second.getSummaryValue())));
@@ -350,6 +360,11 @@ void ProgressTable::updateTable(const Block & block)
 
 void ProgressTable::clearTableOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &)
 {
+    /// The terminal may be gone, e.g. a closed session of the client embedded into the server:
+    /// a failed write cancels the buffer and reports the error, and a write into it after that is a logical error.
+    if (message.isCanceled())
+        return;
+
     message << "\r" << CLEAR_TO_END_OF_SCREEN << SHOW_CURSOR;
     message.next();
 }
@@ -386,7 +401,7 @@ void ProgressTable::MetricInfo::updateValue(Int64 new_value, double new_time)
     switch (type)
     {
         case ProfileEvents::Type::INCREMENT:
-            new_snapshot.value = new_snapshot.value + new_value;
+            common::addOverflow(new_snapshot.value, new_value, new_snapshot.value);
             break;
         case ProfileEvents::Type::GAUGE:
             new_snapshot.value = new_value;
@@ -406,17 +421,17 @@ double ProgressTable::MetricInfo::calculateRecentProgress(double time_now) const
     if (time_now - new_snapshot.time >= 0.5)
         return 0;
 
-    return (cur_shapshot.value - prev_shapshot.value) / (cur_shapshot.time - prev_shapshot.time);
+    return static_cast<double>(cur_shapshot.value - prev_shapshot.value) / (cur_shapshot.time - prev_shapshot.time);
 }
 
 double ProgressTable::MetricInfo::calculateAverageProgress(double time_now) const
 {
-    return cur_shapshot.value / time_now;
+    return static_cast<double>(cur_shapshot.value) / time_now;
 }
 
 double ProgressTable::MetricInfo::getValue() const
 {
-    return new_snapshot.value;
+    return static_cast<double>(new_snapshot.value);
 }
 
 void ProgressTable::MetricInfoPerHost::updateHostValue(const HostName & host, ProfileEvents::Type type, Int64 new_value, double new_time)

@@ -2,11 +2,12 @@
 
 SET send_logs_level = 'fatal';
 
-DROP DATABASE IF EXISTS database_for_dict;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
-CREATE DATABASE database_for_dict;
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-CREATE TABLE database_for_dict.table_for_dict
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.table_for_dict
 (
   key_column UInt64,
   second_column UInt8,
@@ -16,9 +17,9 @@ CREATE TABLE database_for_dict.table_for_dict
 ENGINE = MergeTree()
 ORDER BY key_column;
 
-INSERT INTO database_for_dict.table_for_dict SELECT number, number % 17, toString(number * number), number / 2.0 from numbers(100);
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.table_for_dict SELECT number, number % 17, toString(number * number), number / 2.0 from numbers(100);
 
-CREATE DICTIONARY database_for_dict.dict1
+CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict1
 (
   key_column UInt64 DEFAULT 0,
   second_column UInt8 DEFAULT 1,
@@ -26,13 +27,13 @@ CREATE DICTIONARY database_for_dict.dict1
   fourth_column Float64 DEFAULT 42.0
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' DB 'database_for_dict'))
-LIFETIME(MIN 1 MAX 10)
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' DB currentDatabase()))
+LIFETIME(0)
 LAYOUT(FLAT());
 
-SELECT count(*) from database_for_dict.dict1;
+SELECT count(*) from {CLICKHOUSE_DATABASE_1:Identifier}.dict1;
 
-CREATE DICTIONARY database_for_dict.dict2
+CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict2
 (
   key_column UInt64 DEFAULT 0,
   second_column UInt8 DEFAULT 1,
@@ -40,20 +41,22 @@ CREATE DICTIONARY database_for_dict.dict2
   fourth_column Float64 DEFAULT 42.0
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dict1' DB 'database_for_dict'))
-LIFETIME(MIN 1 MAX 10)
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dict1' DB currentDatabase()))
+LIFETIME(0)
 LAYOUT(HASHED());
 
-SELECT count(*) FROM database_for_dict.dict2;
+SELECT count(*) FROM {CLICKHOUSE_DATABASE_1:Identifier}.dict2;
 
-INSERT INTO database_for_dict.table_for_dict SELECT number, number % 17, toString(number * number), number / 2.0 from numbers(100, 100);
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.table_for_dict SELECT number, number % 17, toString(number * number), number / 2.0 from numbers(100, 100);
 
-SYSTEM RELOAD DICTIONARIES;
+-- Reload dictionaries in dependency order: table -> dict1 -> dict2
+SYSTEM RELOAD DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict1;
+SYSTEM RELOAD DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict2;
 
-SELECT count(*) from database_for_dict.dict2;
-SELECT count(*) from database_for_dict.dict1;
+SELECT count(*) from {CLICKHOUSE_DATABASE_1:Identifier}.dict2;
+SELECT count(*) from {CLICKHOUSE_DATABASE_1:Identifier}.dict1;
 
-CREATE DICTIONARY database_for_dict.dict3
+CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict3
 (
   key_column UInt64 DEFAULT 0,
   second_column UInt8 DEFAULT 1,
@@ -61,22 +64,25 @@ CREATE DICTIONARY database_for_dict.dict3
   fourth_column Float64 DEFAULT 42.0
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dict2' DB 'database_for_dict'))
-LIFETIME(MIN 1 MAX 10)
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dict2' DB currentDatabase()))
+LIFETIME(0)
 LAYOUT(HASHED());
 
-SELECT count(*) FROM database_for_dict.dict3;
+SELECT count(*) FROM {CLICKHOUSE_DATABASE_1:Identifier}.dict3;
 
-INSERT INTO database_for_dict.table_for_dict SELECT number, number % 17, toString(number * number), number / 2.0 from numbers(200, 100);
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.table_for_dict SELECT number, number % 17, toString(number * number), number / 2.0 from numbers(200, 100);
 
-SYSTEM RELOAD DICTIONARIES;
+-- Reload dictionaries in dependency order: table -> dict1 -> dict2 -> dict3
+SYSTEM RELOAD DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict1;
+SYSTEM RELOAD DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict2;
+SYSTEM RELOAD DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict3;
 
-SELECT count(*) from database_for_dict.dict3;
-SELECT count(*) from database_for_dict.dict2;
-SELECT count(*) from database_for_dict.dict1;
+SELECT count(*) from {CLICKHOUSE_DATABASE_1:Identifier}.dict3;
+SELECT count(*) from {CLICKHOUSE_DATABASE_1:Identifier}.dict2;
+SELECT count(*) from {CLICKHOUSE_DATABASE_1:Identifier}.dict1;
 
 
-CREATE DICTIONARY database_for_dict.dict4
+CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict4
 (
   key_column UInt64 DEFAULT 0,
   second_column UInt8 DEFAULT 1,
@@ -84,17 +90,17 @@ CREATE DICTIONARY database_for_dict.dict4
   fourth_column Float64 DEFAULT 42.0
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'non_existing_table' DB 'database_for_dict'))
-LIFETIME(MIN 1 MAX 10)
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'non_existing_table' DB currentDatabase()))
+LIFETIME(0)
 LAYOUT(HASHED());
 
-SELECT count(*) FROM database_for_dict.dict4; -- {serverError UNKNOWN_TABLE}
+SELECT count(*) FROM {CLICKHOUSE_DATABASE_1:Identifier}.dict4; -- {serverError UNKNOWN_TABLE}
 
-SELECT name from system.tables WHERE database = 'database_for_dict' ORDER BY name;
-SELECT name from system.dictionaries WHERE database = 'database_for_dict' ORDER BY name;
+SELECT name from system.tables WHERE database = currentDatabase() ORDER BY name;
+SELECT name from system.dictionaries WHERE database = currentDatabase() ORDER BY name;
 
-DROP DATABASE IF EXISTS database_for_dict;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
-SELECT count(*) from database_for_dict.dict3; --{serverError UNKNOWN_DATABASE}
-SELECT count(*) from database_for_dict.dict2; --{serverError UNKNOWN_DATABASE}
-SELECT count(*) from database_for_dict.dict1; --{serverError UNKNOWN_DATABASE}
+SELECT count(*) from {CLICKHOUSE_DATABASE_1:Identifier}.dict3; --{serverError UNKNOWN_DATABASE}
+SELECT count(*) from {CLICKHOUSE_DATABASE_1:Identifier}.dict2; --{serverError UNKNOWN_DATABASE}
+SELECT count(*) from {CLICKHOUSE_DATABASE_1:Identifier}.dict1; --{serverError UNKNOWN_DATABASE}

@@ -1,0 +1,269 @@
+---
+title: 'Go向けchDB'
+sidebarTitle: 'Go'
+slug: /chdb/install/go
+description: 'GoでchDBをインストールして使用する方法'
+keywords: ['chdb', 'go', 'golang', '埋め込み', 'ClickHouse', 'sql', 'OLAP']
+doc_type: 'guide'
+---
+
+chDB-goはchDB用のGoバインディングで、Goアプリケーションから外部依存関係なしでClickHouseクエリを直接実行できます。
+
+<div id="installation">
+  ## インストール
+</div>
+
+<Steps>
+  <Step title="libchdb をインストール" id="install-libchdb">
+    まず、chDB ライブラリをインストールします。
+
+    ```bash
+    curl -sL https://lib.chdb.io | bash
+    ```
+  </Step>
+
+  <Step title="chdb-go をインストール" id="install-chdb-go">
+    Go パッケージをインストールします。
+
+    ```bash
+    go install github.com/chdb-io/chdb-go@latest
+    ```
+
+    または、`go.mod` に追加します。
+
+    ```bash
+    go get github.com/chdb-io/chdb-go
+    ```
+  </Step>
+</Steps>
+
+<div id="usage">
+  ## 使い方
+</div>
+
+<div id="cli">
+  ### コマンドラインインターフェイス
+</div>
+
+chDB-go には、簡単なクエリをすばやく実行できる CLI が含まれています。
+
+```bash
+# Simple query
+./chdb-go "SELECT 123"
+
+# Interactive mode
+./chdb-go
+
+# Interactive mode with persistent storage
+./chdb-go --path /tmp/chdb
+```
+
+<div id="quick-start">
+  ### Goライブラリ - クイックスタート
+</div>
+
+<div id="stateless-queries">
+  #### ステートレスなクエリ
+</div>
+
+単純な単発のクエリの場合:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/chdb-io/chdb-go/chdb"
+)
+
+func main() {
+    // Execute a simple query
+    result, err := chdb.Query("SELECT version()", "CSV")
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println(result)
+}
+```
+
+<div id="stateful-queries">
+  #### セッションを使用するステートフルクエリ
+</div>
+
+永続的な状態を伴う複雑なクエリの場合:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/chdb-io/chdb-go/chdb"
+)
+
+func main() {
+    // Create a session with persistent storage
+    session, err := chdb.NewSession("/tmp/chdb-data")
+    if err != nil {
+        panic(err)
+    }
+    defer session.Cleanup()
+
+    // Create database and table
+    _, err = session.Query(`
+        CREATE DATABASE IF NOT EXISTS testdb;
+        CREATE TABLE IF NOT EXISTS testdb.test_table (
+            id UInt32,
+            name String
+        ) ENGINE = MergeTree() ORDER BY id
+    `, "")
+    
+    if err != nil {
+        panic(err)
+    }
+
+    // Insert data
+    _, err = session.Query(`
+        INSERT INTO testdb.test_table VALUES 
+        (1, 'Alice'), (2, 'Bob'), (3, 'Charlie')
+    `, "")
+    
+    if err != nil {
+        panic(err)
+    }
+
+    // Query data
+    result, err := session.Query("SELECT * FROM testdb.test_table ORDER BY id", "Pretty")
+    if err != nil {
+        panic(err)
+    }
+    
+    fmt.Println(result)
+}
+```
+
+<div id="sql-driver">
+  #### SQLドライバーインターフェイス
+</div>
+
+chDB-go は Go の `database/sql` インターフェイスを実装しています。
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    _ "github.com/chdb-io/chdb-go/chdb/driver"
+)
+
+func main() {
+    // Open database connection
+    db, err := sql.Open("chdb", "")
+    if err != nil {
+        panic(err)
+    }
+    defer db.Close()
+
+    // Query with standard database/sql interface
+    rows, err := db.Query("SELECT COUNT(*) FROM url('https://datasets.clickhouse.com/hits/hits.parquet')")
+    if err != nil {
+        panic(err)
+    }
+    defer rows.Close()
+
+    for rows.Next() {
+        var count int
+        err := rows.Scan(&count)
+        if err != nil {
+            panic(err)
+        }
+        fmt.Printf("Count: %d\n", count)
+    }
+}
+```
+
+<div id="query-streaming">
+  #### 大規模なデータセット向けのクエリストリーミング
+</div>
+
+メモリに収まらない大規模なデータセットを処理するには、クエリストリーミングを使用します。
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    "github.com/chdb-io/chdb-go/chdb"
+)
+
+func main() {
+    // Create a session for streaming queries
+    session, err := chdb.NewSession("/tmp/chdb-stream")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer session.Cleanup()
+
+    // Execute a streaming query for large dataset
+    streamResult, err := session.QueryStreaming(
+        "SELECT number, number * 2 as double FROM system.numbers LIMIT 1000000", 
+        "CSV",
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer streamResult.Free()
+
+    rowCount := 0
+    
+    // Process data in chunks
+    for {
+        chunk := streamResult.GetNext()
+        if chunk == nil {
+            // No more data
+            break
+        }
+        
+        // Check for streaming errors
+        if err := streamResult.Error(); err != nil {
+            log.Printf("Streaming error: %v", err)
+            break
+        }
+        
+        rowsRead := chunk.RowsRead()
+        // You can process the chunk data here
+        // For example, write to file, send over network, etc.
+        fmt.Printf("Processed chunk with %d rows\n", rowsRead)
+        rowCount += int(rowsRead)
+        if rowCount%100000 == 0 {
+            fmt.Printf("Processed %d rows so far...\n", rowCount)
+        }
+    }
+    
+    fmt.Printf("Total rows processed: %d\n", rowCount)
+}
+```
+
+**クエリストリーミングの利点:**
+
+* **メモリ効率が高い** - すべてをメモリに読み込まなくても大規模なデータセットを処理できます
+* **リアルタイム処理** - 最初の chunk が到着したらすぐにデータ処理を開始できます
+* **キャンセル対応** - `Cancel()` を使って長時間実行されるクエリをキャンセルできます
+* **エラー処理** - ストリーミング中に `Error()` でエラーを確認できます
+
+<div id="api-documentation">
+  ## APIドキュメント
+</div>
+
+chDB-go は、高レベル API と低レベル API の両方を提供しています。
+
+* **[高レベル API ドキュメント](https://github.com/chdb-io/chdb-go/blob/main/chdb.md)** - ほとんどのユースケースに推奨
+* **[低レベル API ドキュメント](https://github.com/chdb-io/chdb-go/blob/main/lowApi.md)** - きめ細かな制御が必要な高度なユースケース向け
+
+<div id="requirements">
+  ## システム要件
+</div>
+
+* Go 1.21 以降
+* Linux、macOS 対応

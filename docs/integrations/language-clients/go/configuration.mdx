@@ -1,0 +1,362 @@
+---
+sidebarTitle: 'Configuration'
+keywords: ['clickhouse', 'go', 'golang', 'configuration', 'connection', 'tls', 'authentication']
+description: 'Configuring the clickhouse-go client: connection settings, TLS, authentication, pooling, logging, and compression.'
+slug: /integrations/language-clients/go/configuration
+title: 'Configuration'
+doc_type: 'reference'
+---
+
+## Connection settings {#connection-settings}
+
+<Tip>
+For a complete per-option deep dive with defaults, DSN parameters, best practices, and troubleshooting, see [Configuration Reference](/integrations/language-clients/go/config-reference).
+</Tip>
+
+When opening a connection, an Options struct can be used to control client behavior. The following settings are available:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `Protocol` | `Protocol` | `Native` | Transport protocol: `Native` (TCP) or `HTTP`. See [TCP vs HTTP](#tcp-vs-http). |
+| `Addr` | `[]string` | — | Slice of `host:port` addresses. For multiple nodes see [Connecting to multiple nodes](#connecting-to-multiple-nodes). |
+| `Auth` | `Auth` | — | Authentication credentials (`Database`, `Username`, `Password`). See [Authentication](#authentication). |
+| `TLS` | `*tls.Config` | `nil` | TLS configuration. A non-nil value enables TLS. See [TLS](#using-tls). |
+| `DialContext` | `func(ctx, addr) (net.Conn, error)` | — | Custom dial function to control how TCP connections are established. |
+| `DialTimeout` | `time.Duration` | `30s` | Maximum time to wait when opening a new connection. Raise to `1m`–`2m` when connecting to a ClickHouse Cloud service that may be idle — see [Timeouts](/integrations/language-clients/go/config-reference#timeouts). |
+| `MaxOpenConns` | `int` | `MaxIdleConns + 5` | Maximum number of connections open at any time. |
+| `MaxIdleConns` | `int` | `5` | Number of idle connections to keep in the pool. |
+| `ConnMaxLifetime` | `time.Duration` | `1h` | Maximum lifetime of a pooled connection. See [Connection pooling](#connection-pooling). |
+| `ConnOpenStrategy` | `ConnOpenStrategy` | `ConnOpenInOrder` | Strategy for picking a node from `Addr`. See [Connecting to multiple nodes](#connecting-to-multiple-nodes). |
+| `BlockBufferSize` | `uint8` | `2` | Number of blocks to decode in parallel. Higher values increase throughput at the cost of memory. Can be overridden per query via context. |
+| `Settings` | `Settings` | — | Map of ClickHouse settings applied to every query. Individual queries can override via [context](/integrations/language-clients/go/clickhouse-api#using-context). |
+| `Compression` | `*Compression` | `nil` | Block-level compression. See [Compression](#compression). |
+| `ReadTimeout` | `time.Duration` | — | Maximum time to wait for a read from the server on a single call. |
+| `FreeBufOnConnRelease` | `bool` | `false` | If true, releases the connection's memory buffer back to the pool on every query. Reduces memory usage at a small CPU cost. |
+| `Logger` | `*slog.Logger` | `nil` | Structured logger (Go `log/slog`). See [Logging](#logging). |
+| `Debug` | `bool` | `false` | **Deprecated.** Use `Logger` instead. Enables legacy debug output to stdout. |
+| `Debugf` | `func(string, ...any)` | — | **Deprecated.** Use `Logger` instead. Custom debug log function. Requires `Debug: true`. |
+| `GetJWT` | `GetJWTFunc` | — | Callback returning a JWT token for ClickHouse Cloud authentication (HTTPS only). |
+| `HttpHeaders` | `map[string]string` | — | Additional HTTP headers sent on every request (HTTP transport only). |
+| `HttpUrlPath` | `string` | — | Additional URL path appended to HTTP requests (HTTP transport only). |
+| `HttpMaxConnsPerHost` | `int` | — | Overrides `MaxConnsPerHost` in the underlying `http.Transport` (HTTP transport only). |
+| `TransportFunc` | `func(*http.Transport) (http.RoundTripper, error)` | — | Custom HTTP transport factory. The default transport is passed in for selective overrides (HTTP transport only). |
+| `HTTPProxyURL` | `*url.URL` | — | HTTP proxy URL for all requests (HTTP transport only). |
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    DialContext: func(ctx context.Context, addr string) (net.Conn, error) {
+        dialCount++
+        var d net.Dialer
+        return d.DialContext(ctx, "tcp", addr)
+    },
+    Debug: true,
+    Debugf: func(format string, v ...interface{}) {
+        fmt.Printf(format, v)
+    },
+    Settings: clickhouse.Settings{
+        "max_execution_time": 60,
+    },
+    Compression: &clickhouse.Compression{
+        Method: clickhouse.CompressionLZ4,
+    },
+    DialTimeout:      time.Duration(10) * time.Second,
+    MaxOpenConns:     5,
+    MaxIdleConns:     5,
+    ConnMaxLifetime:  time.Duration(10) * time.Minute,
+    ConnOpenStrategy: clickhouse.ConnOpenInOrder,
+    BlockBufferSize: 10,
+})
+if err != nil {
+    return err
+}
+```
+[Full Example](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/connect_settings.go)
+
+## TLS {#using-tls}
+
+At a low level, all client connect methods (`DSN/OpenDB/Open`) will use the[ Go tls package](https://pkg.go.dev/crypto/tls) to establish a secure connection. The client knows to use TLS if the Options struct contains a non-nil `tls.Config` pointer.
+
+```go
+env, err := GetNativeTestEnvironment()
+if err != nil {
+    return err
+}
+cwd, err := os.Getwd()
+if err != nil {
+    return err
+}
+t := &tls.Config{}
+caCert, err := ioutil.ReadFile(path.Join(cwd, "../../tests/resources/CAroot.crt"))
+if err != nil {
+    return err
+}
+caCertPool := x509.NewCertPool()
+successful := caCertPool.AppendCertsFromPEM(caCert)
+if !successful {
+    return err
+}
+t.RootCAs = caCertPool
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.SslPort)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    TLS: t,
+})
+if err != nil {
+    return err
+}
+v, err := conn.ServerVersion()
+if err != nil {
+    return err
+}
+fmt.Println(v.String())
+```
+
+[Full Example](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/ssl.go)
+
+This minimal `TLS.Config` is normally sufficient to connect to the secure native port (normally 9440) on a ClickHouse server. If the ClickHouse server doesn't have a valid certificate (expired, wrong hostname, not signed by a publicly recognized root Certificate Authority), `InsecureSkipVerify` can be true, but this is strongly discouraged.
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.SslPort)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    TLS: &tls.Config{
+        InsecureSkipVerify: true,
+    },
+})
+if err != nil {
+    return err
+}
+v, err := conn.ServerVersion()
+```
+[Full Example](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/ssl_no_verify.go)
+
+If additional TLS parameters are necessary, the application code should set the desired fields in the `tls.Config` struct. That can include specific cipher suites, forcing a particular TLS version (like 1.2 or 1.3), adding an internal CA certificate chain, adding a client certificate (and private key) if required by the ClickHouse server, and most of the other options that come with a more specialized security setup.
+
+## Authentication {#authentication}
+
+Specify an Auth struct in the connection details to specify a username and password.
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+})
+if err != nil {
+    return err
+}
+
+v, err := conn.ServerVersion()
+```
+[Full Example](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/auth.go)
+
+## Connecting to multiple nodes {#connecting-to-multiple-nodes}
+
+Multiple addresses can be specified via the `Addr` struct.
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{"127.0.0.1:9001", "127.0.0.1:9002", fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+})
+if err != nil {
+    return err
+}
+v, err := conn.ServerVersion()
+if err != nil {
+    return err
+}
+fmt.Println(v.String())
+```
+
+[Full Example](https://github.com/ClickHouse/clickhouse-go/blob/1c0d81d0b1388dbb9e09209e535667df212f4ae4/examples/clickhouse_api/multi_host.go#L26-L45)
+
+Three connection strategies are available:
+
+* `ConnOpenInOrder` (default)  - addresses are consumed in order. Later addresses are only utilized in case of failure to connect using addresses earlier in the list. This is effectively a failure-over strategy.
+* `ConnOpenRoundRobin` - Load is balanced across the addresses using a round-robin strategy.
+* `ConnOpenRandom` - A node is selected at random from the list of addresses.
+
+This can be controlled through the option `ConnOpenStrategy`
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr:             []string{"127.0.0.1:9001", "127.0.0.1:9002", fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    ConnOpenStrategy: clickhouse.ConnOpenRoundRobin,
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+})
+if err != nil {
+    return err
+}
+v, err := conn.ServerVersion()
+if err != nil {
+    return err
+}
+```
+
+[Full Example](https://github.com/ClickHouse/clickhouse-go/blob/1c0d81d0b1388dbb9e09209e535667df212f4ae4/examples/clickhouse_api/multi_host.go#L50-L67)
+
+## Connection pooling {#connection-pooling}
+
+The client maintains a pool of connections, reusing these across queries as required. At most, `MaxOpenConns` will be used at any time, with the maximum pool size controlled by the `MaxIdleConns`. The client will acquire a connection from the pool for each query execution, returning it to the pool for reuse. A connection is used for the lifetime of a batch and released on `Send()`.
+
+There is no guarantee the same connection in a pool will be used for subsequent queries unless the user sets `MaxOpenConns=1`. This is rarely needed but may be required for cases where users are using temporary tables.
+
+Also, note that the `ConnMaxLifetime` is by default 1hr. This can lead to cases where the load to ClickHouse becomes unbalanced if nodes leave the cluster. This can occur when a node becomes unavailable, connections will balance to the other nodes. These connections will persist and not be refreshed for 1hr by default, even if the problematic node returns to the cluster. Consider lowering this value in heavy workload cases.
+
+Connection polling is enabled for both Native (TCP) and HTTP protocol.
+
+## Logging {#logging}
+
+The client supports structured logging via Go's standard `log/slog` package using the `Logger` field in `Options`. The older `Debug` and `Debugf` fields are deprecated but still work for backward compatibility (priority: `Debugf` > `Logger` > no-op).
+
+```go
+import (
+    "log/slog"
+    "os"
+)
+
+// JSON structured logging
+logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+    Level: slog.LevelDebug,
+}))
+
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    Logger: logger,
+})
+```
+
+You can also enrich the logger with application-level context:
+
+```go
+baseLogger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+    Level: slog.LevelInfo,
+}))
+enrichedLogger := baseLogger.With(
+    slog.String("service", "my-service"),
+    slog.String("environment", "production"),
+)
+
+conn, err := clickhouse.Open(&clickhouse.Options{
+    // ...
+    Logger: enrichedLogger,
+})
+```
+
+[Full Example](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/logger_test.go)
+
+## Compression {#compression}
+
+Support for compression methods depends on the underlying protocol in use. For the native protocol, the client supports `LZ4` and `ZSTD` compression. This is performed at a block level only. Compression can be enabled by including a `Compression` configuration with the connection.
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    Compression: &clickhouse.Compression{
+        Method: clickhouse.CompressionZSTD,
+    },
+    MaxOpenConns: 1,
+})
+ctx := context.Background()
+defer func() {
+    conn.Exec(ctx, "DROP TABLE example")
+}()
+conn.Exec(context.Background(), "DROP TABLE IF EXISTS example")
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+            Col1 Array(String)
+    ) Engine Memory
+    `); err != nil {
+    return err
+}
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+for i := 0; i < 1000; i++ {
+    if err := batch.Append([]string{strconv.Itoa(i), strconv.Itoa(i + 1), strconv.Itoa(i + 2), strconv.Itoa(i + 3)}); err != nil {
+        return err
+    }
+}
+if err := batch.Send(); err != nil {
+    return err
+}
+```
+
+[Full Example](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/compression.go)
+
+Additional compression techniques are available when using HTTP transport: `gzip`, `deflate`, and `br`. See [Database/SQL API - Compression](/integrations/language-clients/go/database-sql-api#compression) for details.
+
+## TCP vs HTTP {#tcp-vs-http}
+
+The transport is a single config switch — everything else in this guide applies to both. Here is what changes:
+
+| | TCP (Native protocol) | HTTP |
+|:---|:---|:---|
+| **Default port** | 9000 (plain), 9440 (TLS) | 8123 (plain), 8443 (TLS) |
+| **Enable** | Default — omit `Protocol` | `Protocol: clickhouse.HTTP` or use an `http://` DSN |
+| **Compression** | `lz4`, `zstd` | `lz4`, `zstd`, `gzip`, `deflate`, `br` |
+| **Sessions** | Built-in (always active) | Explicit — pass `session_id` as a setting |
+| **HTTP headers** | — | `HttpHeaders`, `HttpUrlPath`, `HttpMaxConnsPerHost` |
+| **Custom transport** | — | `TransportFunc` |
+| **JWT auth** | — | `GetJWT` (ClickHouse Cloud HTTPS) |
+| **OpenTelemetry (`WithSpan`)** | ✅ | Server supports it; client does not yet send `traceparent` header |
+
+To switch either API to HTTP:
+
+```go
+// ClickHouse API over HTTP
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr:     []string{"host:8123"},
+    Protocol: clickhouse.HTTP,
+    // ... auth, etc.
+})
+
+// database/sql over HTTP — via Options
+conn := clickhouse.OpenDB(&clickhouse.Options{
+    Addr:     []string{"host:8123"},
+    Protocol: clickhouse.HTTP,
+    // ... auth, etc.
+})
+
+// database/sql over HTTP — via DSN
+conn, err := sql.Open("clickhouse", "http://host:8123?username=user&password=pass")
+```

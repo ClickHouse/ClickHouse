@@ -1,10 +1,17 @@
 #pragma once
+
+#include <Common/StackWithMemoryTracking.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <stack>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /// Also allows to set checkpoint at some position in stream and come back to this position later.
 /// When next() is called, saves data between checkpoint and current position to own memory and loads next data to sub-buffer
@@ -25,6 +32,9 @@ public:
     /// Sets checkpoint at current position
     ALWAYS_INLINE inline void setCheckpoint()
     {
+        if (canceled)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to set a checkpoint on a canceled buffer");
+
         if (checkpoint)
         {
             /// Recursive checkpoints. We just remember offset from the
@@ -42,10 +52,13 @@ public:
         checkpoint.emplace(pos);
     }
 
+    /// Number of bytes read since the checkpoint was set.
+    [[nodiscard]] size_t offsetFromCheckpoint() const;
+
     /// Forget checkpoint and all data between checkpoint and position
     ALWAYS_INLINE inline void dropCheckpoint()
     {
-        assert(checkpoint);
+        chassert(checkpoint);
 
         if (!recursive_checkpoints_offsets.empty())
         {
@@ -72,9 +85,9 @@ public:
 
     /// Returns true if there unread data extracted from sub-buffer in own memory.
     /// This data will be lost after destruction of peekable buffer.
-    bool hasUnreadData() const;
+    [[nodiscard]] bool hasUnreadData() const;
 
-    const ReadBuffer & getSubBuffer() const { return *sub_buf; }
+    [[nodiscard]] const ReadBuffer & getSubBuffer() const { return *sub_buf; }
 
 private:
     bool nextImpl() override;
@@ -83,9 +96,9 @@ private:
 
     bool peekNext();
 
-    bool useSubbufferOnly() const { return !peeked_size; }
-    bool currentlyReadFromOwnMemory() const { return working_buffer.begin() != sub_buf->buffer().begin(); }
-    bool checkpointInOwnMemory() const { return checkpoint_in_own_memory; }
+    [[nodiscard]] bool useSubbufferOnly() const { return !peeked_size; }
+    [[nodiscard]] bool currentlyReadFromOwnMemory() const { return working_buffer.begin() != sub_buf->buffer().begin(); }
+    [[nodiscard]] bool checkpointInOwnMemory() const { return checkpoint_in_own_memory; }
 
     void checkStateCorrect() const;
 
@@ -94,10 +107,10 @@ private:
     void resizeOwnMemoryIfNecessary(size_t bytes_to_append);
 
     char * getMemoryData() { return use_stack_memory ? stack_memory : memory.data(); }
-    const char * getMemoryData() const { return use_stack_memory ? stack_memory : memory.data(); }
+    [[nodiscard]] const char * getMemoryData() const { return use_stack_memory ? stack_memory : memory.data(); }
+    void setOwnMemoryBuffer(size_t size, size_t offset);
 
-    size_t offsetFromCheckpointInOwnMemory() const;
-    size_t offsetFromCheckpoint() const;
+    [[nodiscard]] size_t offsetFromCheckpointInOwnMemory() const;
 
 
     ReadBuffer * sub_buf;
@@ -109,10 +122,10 @@ private:
     /// creation (for example if PeekableReadBuffer is often created or if we need to remember small amount of
     /// data after checkpoint), at the beginning we will use small amount of memory on stack and allocate
     /// larger buffer only if reserved memory is not enough.
-    char stack_memory[PADDING_FOR_SIMD];
+    char stack_memory[PADDING_FOR_SIMD]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - scratch buffer, written before read
     bool use_stack_memory = true;
 
-    std::stack<size_t> recursive_checkpoints_offsets;
+    StackWithMemoryTracking<size_t> recursive_checkpoints_offsets;
 };
 
 
@@ -133,5 +146,14 @@ public:
     }
 
 };
+
+/// Returns true if the `\r` at the current position is followed by `\n` or the end of data, so it ends the row.
+/// Does not move the position.
+inline bool isCRAtEndOfRow(PeekableReadBuffer & in)
+{
+    PeekableReadBufferCheckpoint checkpoint(in, true);
+    ++in.position();
+    return in.eof() || *in.position() == '\n';
+}
 
 }

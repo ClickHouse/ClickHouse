@@ -6,8 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # We just want to ensure the following query doesn't create an ASAN container-overflow
 # https://github.com/ClickHouse/ClickHouse/issues/75660
-res=$($CLICKHOUSE_CLIENT --query """
-SET enable_json_type = 1;
+res=$($CLICKHOUSE_CLIENT --use_variant_as_common_type 0 --query """
 CREATE TABLE test (\`id\` UInt64, \`json\` JSON(max_dynamic_paths = 2, \`a.b.c\` UInt32))
 ENGINE = MergeTree
 ORDER BY id

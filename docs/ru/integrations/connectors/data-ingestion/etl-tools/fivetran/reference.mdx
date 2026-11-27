@@ -1,0 +1,360 @@
+---
+sidebarTitle: 'Технический справочник'
+slug: /integrations/fivetran/reference
+description: 'Сопоставление типов, сведения о движке таблицы, столбцах метаданных и запросах для отладки, связанных с пунктом назначения Fivetran ClickHouse.'
+title: 'Технический справочник'
+doc_type: 'guide'
+keywords: ['fivetran', 'пункт назначения ClickHouse в Fivetran', 'технический справочник']
+---
+
+<div id="setup-details">
+  ## Сведения о настройке
+</div>
+
+<div id="user-and-role-management">
+  ### Управление пользователями и ролями
+</div>
+
+Рекомендуется не использовать пользователя `default`; вместо этого создайте отдельного пользователя исключительно для этого пункта назначения Fivetran. Следующие команды, выполненные от имени пользователя `default`, создадут нового пользователя `fivetran_user` с необходимыми привилегиями.
+
+```sql
+CREATE USER fivetran_user IDENTIFIED BY '<password>'; -- используйте надёжный генератор паролей
+
+GRANT CURRENT GRANTS ON *.* TO fivetran_user;
+```
+
+Кроме того, вы можете отозвать у `fivetran_user` доступ к определённым базам данных.
+Например, выполнив следующий оператор, мы ограничим доступ к базе данных `default`:
+
+```sql
+REVOKE ALL ON default.* FROM fivetran_user;
+```
+
+Вы можете выполнить эти команды в консоли ClickHouse SQL.
+
+<div id="advanced-configuration">
+  ### Расширенная конфигурация
+</div>
+
+Пункт назначения ClickHouse Cloud поддерживает необязательный JSON-файл конфигурации для расширенных сценариев использования. Этот файл позволяет тонко настроить поведение пункта назначения, переопределяя параметры по умолчанию, которые управляют размерами батчей, параллелизмом, пулами соединений и тайм-аутами запросов.
+
+<Note>
+  Эта конфигурация полностью необязательна. Если файл не загружен, пункт назначения использует подходящие параметры по умолчанию, которые хорошо работают в большинстве сценариев.
+</Note>
+
+Файл должен быть корректным JSON и соответствовать схеме, описанной ниже.
+
+Если вам нужно изменить конфигурацию после первоначальной настройки, вы можете отредактировать конфигурацию пункта назначения на панели мониторинга Fivetran и загрузить обновленный файл.
+
+Файл конфигурации содержит раздел верхнего уровня:
+
+```json
+{
+  "destination_configurations": { ... }
+}
+```
+
+В нём можно указать следующие параметры, которые управляют внутренним поведением самого коннектора назначения ClickHouse.
+Эти параметры влияют на то, как коннектор обрабатывает данные перед отправкой в ClickHouse.
+
+| Настройка                | Тип     | По умолчанию | Допустимый диапазон | Описание                                                                                                                                                        |
+| ------------------------ | ------- | ------------ | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `write_batch_size`       | integer | `100000`     | 5,000 – 100,000     | Число строк в батче для операций вставки, обновления и замены.                                                                                                  |
+| `select_batch_size`      | integer | `1500`       | 200 – 1,500         | Число строк в батче для запросов SELECT, используемых при обновлении.                                                                                           |
+| `mutation_batch_size`    | integer | `1500`       | 200 – 1,500         | Число строк в батче для мутаций ALTER TABLE UPDATE в режиме истории. Уменьшите его, если SQL-операторы получаются слишком большими.                             |
+| `hard_delete_batch_size` | integer | `1500`       | 200 – 1,500         | Число строк в батче для операций жёсткого удаления при обычной синхронизации и в режиме истории. Уменьшите его, если SQL-операторы получаются слишком большими. |
+
+Все поля необязательны. Если поле не указано, используется значение по умолчанию.
+Если значение выходит за пределы допустимого диапазона, коннектор назначения сообщит об ошибке во время синхронизации.
+Неизвестные поля игнорируются без уведомления (при этом в журнал записывается предупреждение) и не вызывают ошибок, что обеспечивает совместимость при добавлении новых настроек.
+
+Пример:
+
+```json
+{
+  "destination_configurations": {
+    "write_batch_size": 50000,
+    "select_batch_size": 200
+  }
+}
+```
+
+<div id="type-mapping">
+  ## Сопоставление преобразования типов
+</div>
+
+Пункт назначения Fivetran ClickHouse сопоставляет [типы данных Fivetran](https://fivetran.com/docs/destinations#datatypes) с типами ClickHouse следующим образом:
+
+| тип Fivetran  | тип ClickHouse                                                   |
+| ------------- | ---------------------------------------------------------------- |
+| BOOLEAN       | [Bool](/ru/reference/data-types/boolean)                            |
+| SHORT         | [Int16](/ru/reference/data-types/int-uint)                          |
+| INT           | [Int32](/ru/reference/data-types/int-uint)                          |
+| LONG          | [Int64](/ru/reference/data-types/int-uint)                          |
+| BIGDECIMAL    | [Decimal(P, S)](/ru/reference/data-types/decimal)                   |
+| FLOAT         | [Float32](/ru/reference/data-types/float)                           |
+| DOUBLE        | [Float64](/ru/reference/data-types/float)                           |
+| LOCALDATE     | [Date32](/ru/reference/data-types/date32)                           |
+| LOCALDATETIME | [DateTime64(0, &#39;UTC&#39;)](/ru/reference/data-types/datetime64) |
+| INSTANT       | [DateTime64(9, &#39;UTC&#39;)](/ru/reference/data-types/datetime64) |
+| STRING        | [String](/ru/reference/data-types/string)                           |
+| LOCALTIME     | [String](/ru/reference/data-types/string) * **                      |
+| BINARY        | [String](/ru/reference/data-types/string) *                         |
+| XML           | [String](/ru/reference/data-types/string) *                         |
+| JSON          | [String](/ru/reference/data-types/string) *                         |
+
+<Note>
+  * BINARY, XML, LOCALTIME и JSON хранятся как [String](/ru/reference/data-types/string), поскольку тип `String` в ClickHouse может представлять произвольный набор байтов. Пункт назначения добавляет комментарий к столбцу, чтобы указать исходный тип данных. Тип данных [JSON](/ru/reference/data-types/newjson) в ClickHouse не используется, так как он был помечен как устаревший и никогда не рекомендовался для использования в продакшн.
+    ** ПРИМЕЧАНИЕ: Задача для отслеживания поддержки типа LOCALTIME: [clickhouse-fivetran-destination #15](https://github.com/ClickHouse/clickhouse-fivetran-destination/issues/15).
+</Note>
+
+<div id="date-and-time-value-ranges">
+  ### Диапазоны значений даты и времени
+</div>
+
+Источники Fivetran могут отправлять значения даты и времени в диапазоне [0001-01-01, 9999-12-31](https://fivetran.com/docs/destinations#dateandtimevaluerange).
+Типы даты и времени в ClickHouse Cloud имеют более узкие диапазоны, поэтому значения вне поддерживаемого диапазона без предупреждения приводятся к ближайшей границе:
+
+| Тип Fivetran  | Тип ClickHouse Cloud         | Минимальное значение | Максимальное значение |
+| ------------- | ---------------------------- | -------------------- | --------------------- |
+| LOCALDATE     | Date32                       | 1900-01-01           | 2299-12-31            |
+| LOCALDATETIME | DateTime64(0, &#39;UTC&#39;) | 1900-01-01 00:00:00  | 2262-04-11 23:47:16   |
+| INSTANT       | DateTime64(9, &#39;UTC&#39;) | 1900-01-01 00:00:00  | 2262-04-11 23:47:16   |
+
+* Верхняя граница для INSTANT — 2262-04-11 23:47:16, поскольку DateTime64(9) хранит наносекунды с epoch в формате int64, а 2^63 - 1 наносекунд соответствует этой дате.
+  Сам ClickHouse поддерживает DateTime64 с precision &lt;= 9 вплоть до 2299-12-31 23:59:59.
+* Верхняя граница для LOCALDATETIME также ограничена значением 2262-04-11 23:47:16 из-за [известной ошибки](https://github.com/ClickHouse/clickhouse-go/issues/1311) в Go-драйвере ClickHouse: `time.Time.UnixNano()` вызывается для всех значений precision у DateTime64 до scaling, что приводит к overflow int64 для дат после 2262 года даже при precision 0.
+
+<div id="table-structure">
+  ## Целевые таблицы
+</div>
+
+Для пункта назначения ClickHouse Cloud используется
+тип движка [Replacing](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree) из
+семейства [SharedMergeTree](/ru/products/cloud/features/infrastructure/shared-merge-tree)
+(в частности, `SharedReplacingMergeTree`) с версионированием по столбцу `_fivetran_synced`.
+
+Каждый столбец, кроме первичных (сортировочных) ключей и столбцов метаданных Fivetran, создается
+как [Nullable(T)](/ru/reference/data-types/nullable), где `T` — это
+тип ClickHouse Cloud на основе [сопоставления типов данных](#type-mapping).
+
+Структура таблицы различается в зависимости от режима
+[синхронизации](https://fivetran.com/docs/using-fivetran/features#deletedrowhandling),
+настроенного для коннектора: **мягкое удаление** (по умолчанию) или **режим истории** (SCD Type 2).
+
+<div id="soft-delete-mode">
+  ### Режим мягкого удаления
+</div>
+
+В режиме мягкого удаления каждая целевая таблица содержит следующие служебные столбцы метаданных:
+
+| Столбец             | Тип                    | Описание                                                                                                                                   |
+| ------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `_fivetran_synced`  | `DateTime64(9, 'UTC')` | Временная метка, указывающая, когда запись была синхронизирована Fivetran. Используется как столбец версии для `SharedReplacingMergeTree`. |
+| `_fivetran_deleted` | `Bool`                 | Маркер мягкого удаления. Устанавливается в `true`, когда запись удаляется из источника.                                                    |
+| `_fivetran_id`      | `String`               | Автоматически сгенерированный уникальный идентификатор. Присутствует только в том случае, если у исходной таблицы нет первичных ключей.    |
+
+<div id="single-pk">
+  #### Один первичный ключ в исходной таблице
+</div>
+
+Например, исходная таблица `users` содержит столбец первичного ключа `id` (`INT`) и обычный столбец `name` (`STRING`).
+Целевая таблица будет определена следующим образом:
+
+```sql
+CREATE TABLE `users`
+(
+    `id`                Int32,
+    `name`              Nullable(String),
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY id
+SETTINGS index_granularity = 8192
+```
+
+В этом случае столбец `id` выбран в качестве ключа сортировки таблицы.
+
+<div id="multiple-pks">
+  #### Несколько первичных ключей в исходной таблице
+</div>
+
+Если у исходной таблицы несколько первичных ключей, они используются в порядке, в котором указаны в определении исходной таблицы Fivetran.
+
+Например, есть исходная таблица `items` со столбцами первичного ключа `id` (`INT`) и `name` (`STRING`), а также дополнительным обычным столбцом `description` (`STRING`). Целевая таблица будет определена следующим образом:
+
+```sql
+CREATE TABLE `items`
+(
+    `id`                Int32,
+    `name`              String,
+    `description`       Nullable(String),
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, name)
+SETTINGS index_granularity = 8192
+```
+
+В этом случае столбцы `id` и `name` выбраны в качестве ключей сортировки таблицы.
+
+<div id="no-pks">
+  #### В исходной таблице нет первичных ключей
+</div>
+
+Если в исходной таблице нет первичных ключей, Fivetran добавит уникальный идентификатор в виде столбца `_fivetran_id`.
+Рассмотрим таблицу `events`, в которой есть только столбцы `event` (`STRING`) и `timestamp` (`LOCALDATETIME`).
+В этом случае целевая таблица будет выглядеть следующим образом:
+
+```sql
+CREATE TABLE events
+(
+    `event`             Nullable(String),
+    `timestamp`         Nullable(DateTime),
+    `_fivetran_id`      String,
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY _fivetran_id
+SETTINGS index_granularity = 8192
+```
+
+Поскольку `_fivetran_id` уникален и других вариантов первичного ключа нет, он используется в качестве ключа сортировки таблицы.
+
+<div id="history-mode">
+  ### Режим истории (SCD Type 2)
+</div>
+
+Когда [режим истории](https://fivetran.com/docs/using-fivetran/features#historymode) включен,
+целевая система сохраняет каждую версию каждой записи вместо перезаписи предыдущих значений.
+Это реализует [Slowly Changing Dimension Type 2](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row) (SCD Type 2),
+сохраняя полный аудитный след всех изменений.
+
+В режиме истории каждая целевая таблица содержит следующие служебные столбцы метаданных:
+
+| Столбец            | Тип                              | Описание                                                                                                                                               |
+| ------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `_fivetran_synced` | `DateTime64(9, 'UTC')`           | Временная метка, указывающая, когда запись была синхронизирована Fivetran. Используется как столбец версии для `SharedReplacingMergeTree`.             |
+| `_fivetran_start`  | `DateTime64(9, 'UTC')`           | Временная метка, указывающая, когда эта версия записи стала активной. Часть ключа сортировки таблицы.                                                  |
+| `_fivetran_end`    | `Nullable(DateTime64(9, 'UTC'))` | Временная метка, указывающая, когда эта версия была заменена более новой. Для текущих активных записей устанавливается значение `2262-04-11 23:47:16`. |
+| `_fivetran_active` | `Nullable(Bool)`                 | Указывает, является ли эта версия записи текущей активной.                                                                                             |
+| `_fivetran_id`     | `String`                         | Автоматически сгенерированный уникальный идентификатор. Присутствует только тогда, когда в исходной таблице нет первичных ключей.                      |
+
+Столбец `_fivetran_start` всегда включается в предложение `ORDER BY` как последний элемент составного ключа сортировки.
+Это позволяет нескольким версиям одной и той же записи (с разным временем начала) сосуществовать в таблице.
+
+Когда запись обновляется:
+
+* Для предыдущей версии значение `_fivetran_end` устанавливается равным значению `_fivetran_start` новой версии минус одна наносекунда, а `_fivetran_active` устанавливается в `false`.
+* Новая версия вставляется со значением `_fivetran_active`, установленным в `true`, и значением `_fivetran_end`, установленным в `2262-04-11 23:47:16.000000000` (максимальное значение `DateTime64(9)`).
+
+<div id="single-pk">
+  #### Один первичный ключ в исходной таблице
+</div>
+
+Например, в исходной таблице `users` есть столбец первичного ключа `id` (`INT`) и обычные столбцы `name` (`STRING`) и `status` (`STRING`).
+Целевая таблица в режиме истории будет определена следующим образом:
+
+```sql
+CREATE TABLE `users`
+(
+    `id`               Int32,
+    `name`             Nullable(String),
+    `status`           Nullable(String),
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+В этом случае `id` и `_fivetran_start` образуют составной ключ сортировки.
+
+После нескольких синхронизаций таблица может содержать следующие данные:
+
+| id | name    | status | &#95;fivetran&#95;start       | &#95;fivetran&#95;end         | &#95;fivetran&#95;active |
+| -- | ------- | ------ | ----------------------------- | ----------------------------- | ------------------------ |
+| 1  | name 1  | TODO   | 2025-11-10 20:57:00.000000000 | 2025-11-11 20:56:59.999000000 | false                    |
+| 1  | name 11 | TODO   | 2025-11-11 20:57:00.000000000 | 2262-04-11 23:47:16.000000000 | true                     |
+| 2  | name 2  | TODO   | 2025-11-10 20:57:00.000000000 | 2262-04-11 23:47:16.000000000 | true                     |
+
+У записи `id=1` есть две версии: исходная (`name 1`, неактивная) и обновлённая (`name 11`, активная).
+У записи `id=2` есть только одна версия, и сейчас она активна.
+
+<div id="multiple-pks">
+  #### Несколько первичных ключей в исходной таблице
+</div>
+
+Если в исходной таблице несколько первичных ключей, все они включаются в `ORDER BY`, а `_fivetran_start` указывается последним элементом.
+
+Например, есть исходная таблица `items` со столбцами первичного ключа `id` (`INT`) и `name` (`STRING`), а также
+дополнительным обычным столбцом `description` (`STRING`). Целевая таблица в режиме истории определяется следующим образом:
+
+```sql
+CREATE TABLE `items`
+(
+    `id`               Int32,
+    `name`             String,
+    `description`      Nullable(String),
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, name, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+В этом случае `id`, `name` и `_fivetran_start` образуют составной ключ сортировки.
+
+<div id="no-pks">
+  #### В исходной таблице нет первичных ключей
+</div>
+
+Если в исходной таблице нет первичных ключей, Fivetran добавит уникальный идентификатор в виде столбца `_fivetran_id`,
+а `_fivetran_start` будет добавлен в ключ сортировки.
+Рассмотрим таблицу `events`, в которой в источнике есть только столбцы `event` (`STRING`) и `timestamp` (`LOCALDATETIME`).
+Целевая таблица в режиме истории выглядит следующим образом:
+
+```sql
+CREATE TABLE events
+(
+    `event`            Nullable(String),
+    `timestamp`        Nullable(DateTime),
+    `_fivetran_id`     String,
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (_fivetran_id, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+Поскольку `_fivetran_id` и `_fivetran_start` образуют составной ключ сортировки.
+
+<div id="selecting-latest-version">
+  ### Выбор последней версии данных без дубликатов
+</div>
+
+`SharedReplacingMergeTree` выполняет фоновую дедупликацию данных
+[только во время слияний и в непредсказуемый момент времени](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree).
+Однако получить последнюю версию данных без дубликатов по запросу можно с помощью ключевого слова `FINAL`:
+
+```sql
+SELECT *
+FROM example FINAL
+LIMIT 1000 
+```
+
+См. раздел [оптимизация запросов на чтение](/ru/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#optimizing-reading-queries)&quot; в руководстве по устранению неполадок: там вы найдёте рекомендации по оптимизации запросов.
+
+<div id="retries-on-network-failures">
+  ## Повторные попытки при сетевых сбоях
+</div>
+
+Пункт назначения ClickHouse Cloud повторяет попытки после временных сетевых ошибок с использованием алгоритма экспоненциальной задержки.
+Это безопасно даже в тех случаях, когда пункт назначения выполняет вставку данных, поскольку возможные дубликаты обрабатываются
+движком таблицы `SharedReplacingMergeTree`.

@@ -1,0 +1,4 @@
+summing_rows_after_clear	0
+summing_column_meta_after_clear	c	Int64
+coalescing_clear_values	1	0
+coalescing_column_meta_after_clear	c	UInt64

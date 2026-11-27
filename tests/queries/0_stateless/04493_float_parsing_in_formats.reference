@@ -1,0 +1,18 @@
+-- CSV --
+1.6725
+1.6724999999999999
+-- TSV --
+1.6725
+-- JSONEachRow --
+1.6725
+-- scientific notation --
+0.000001
+0.0000010000000000000002
+1
+-- VALUES literal --
+1234567891209	1
+1234567891209.0002	0
+-- overflow lenient --
+inf
+-inf
+0

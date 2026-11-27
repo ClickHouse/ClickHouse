@@ -3,9 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/StringHelpers.h>
-#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Common/TLDListsHolder.h>
 
 namespace DB
@@ -14,7 +12,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 struct FirstSignificantSubdomainCustomLookup
@@ -32,39 +29,22 @@ struct FirstSignificantSubdomainCustomLookup
 };
 
 template <typename Extractor, typename Name>
-class FunctionCutToFirstSignificantSubdomainCustomImpl : public IFunction
+class FunctionCutToFirstSignificantSubdomainCustomImpl final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCutToFirstSignificantSubdomainCustomImpl>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        if (!isString(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}. Must be String.",
-                arguments[0].type->getName(), getName());
-        if (!isString(arguments[1].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument (TLD_list_name) of function {}. Must be String/FixedString.",
-                arguments[1].type->getName(), getName());
-        const auto * column = arguments[1].column.get();
-        if (!column || !checkAndGetColumnConstStringOrFixedString(column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "The second argument of function {} should be a constant string with the name of the custom TLD",
-                getName());
+    [[nodiscard]] String getSignatureString() const override { return "(String, const StringOrFixedString) -> String"; }
 
-        return arguments[0].type;
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         const ColumnConst * column_tld_list_name = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
         FirstSignificantSubdomainCustomLookup tld_lookup(column_tld_list_name->getValue<String>());
@@ -91,8 +71,8 @@ public:
         size_t res_offset = 0;
 
         /// Matched part.
-        Pos start;
-        size_t length;
+        Pos start = nullptr;
+        size_t length = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {

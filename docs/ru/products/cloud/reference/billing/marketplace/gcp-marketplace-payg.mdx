@@ -1,0 +1,143 @@
+---
+slug: /cloud/billing/marketplace/gcp-marketplace-payg
+title: 'GCP Marketplace PAYG'
+description: 'Оформите подписку на ClickHouse Cloud через GCP Marketplace (PAYG).'
+keywords: ['gcp', 'маркетплейс', 'Биллинг', 'PAYG']
+doc_type: 'guide'
+---
+
+Начните работу с ClickHouse Cloud в [GCP Marketplace](https://console.cloud.google.com/marketplace) по публичному предложению PAYG (Pay-as-you-go).
+
+<div id="prerequisites">
+  ## Предварительные требования {#prerequisites}
+</div>
+
+* Проект GCP, в котором администратор биллинга включил права на покупку.
+* Чтобы подписаться на ClickHouse Cloud в GCP Marketplace, необходимо войти в аккаунт с правами на покупку и выбрать соответствующий проект.
+
+## Порядок регистрации {#steps-to-sign-up}
+
+1. Перейдите в [GCP Marketplace](https://cloud.google.com/marketplace) и найдите ClickHouse Cloud. Убедитесь, что выбран нужный проект.
+
+<div className="ch-image-md">
+  <Frame>
+    ![Главная страница GCP Marketplace](/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-1.webp)
+  </Frame>
+</div>
+
+2. Откройте [страницу продукта](https://console.cloud.google.com/marketplace/product/clickhouse-public/clickhouse-cloud) и нажмите **Subscribe**.
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud в GCP Marketplace](/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-2.webp)
+  </Frame>
+</div>
+
+3. На следующем экране настройте подписку:
+
+* По умолчанию будет выбран план «ClickHouse Cloud»
+* Период подписки — «Monthly»
+* Выберите нужный аккаунт биллинга
+* Примите условия и нажмите **Subscribe**
+
+<br />
+
+<div className="ch-image-sm">
+  <Frame>
+    ![Настройка подписки в GCP Marketplace](/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-3.webp)
+  </Frame>
+</div>
+
+<br />
+
+4. После нажатия **Subscribe** откроется модальное окно **Sign up with ClickHouse**.
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![Модальное окно регистрации в GCP Marketplace](/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-4.webp)
+  </Frame>
+</div>
+
+<br />
+
+5. Обратите внимание: на этом этапе настройка ещё не завершена. Нажмите **Set up your account**, чтобы перейти в ClickHouse Cloud, и зарегистрируйтесь там.
+
+6. В ClickHouse Cloud можно войти с существующим аккаунтом или зарегистрировать новый. Этот шаг очень важен: именно он позволяет привязать вашу организацию ClickHouse Cloud к биллингу через GCP Marketplace.
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![Страница входа в ClickHouse Cloud](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-6.webp)
+  </Frame>
+</div>
+
+<br />
+
+Если вы новый пользователь ClickHouse Cloud, нажмите **Register** внизу страницы. Вам будет предложено создать нового пользователя и подтвердить адрес электронной почты. После подтверждения можно закрыть страницу входа ClickHouse Cloud и войти с новым именем пользователя на [https://console.clickhouse.cloud](https://console.clickhouse.cloud).
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![Страница регистрации в ClickHouse Cloud](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-7.webp)
+  </Frame>
+</div>
+
+<br />
+
+Новому пользователю также потребуется указать основные сведения о своей компании — см. снимки экрана ниже.
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![Форма регистрационных данных ClickHouse Cloud](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp)
+  </Frame>
+</div>
+
+<br />
+
+Если вы уже пользуетесь ClickHouse Cloud, просто войдите со своими учётными данными.
+
+7. После успешного входа будет создана новая организация ClickHouse Cloud. Она будет связана с вашим аккаунтом биллинга GCP, и всё использование будет оплачиваться через аккаунт GCP.
+
+8. После входа вы можете убедиться, что биллинг действительно привязан к GCP Marketplace, и приступить к настройке облачных ресурсов ClickHouse Cloud.
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![Страница входа в ClickHouse Cloud](/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-5.webp)
+  </Frame>
+</div>
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![Страница новых сервисов ClickHouse Cloud](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-11.webp)
+  </Frame>
+</div>
+
+<br />
+
+9. Вам придёт письмо с подтверждением регистрации:
+
+<br />
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![Письмо с подтверждением от GCP Marketplace](/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-6.webp)
+  </Frame>
+</div>
+
+<br />
+
+<br />
+
+Если возникнут какие-либо проблемы, обращайтесь в [нашу службу поддержки](https://clickhouse.com/support/program).

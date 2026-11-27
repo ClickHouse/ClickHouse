@@ -8,6 +8,8 @@ SELECT number FROM (SELECT number FROM numbers(2097152)) ORDER BY number * 12345
 SETTINGS log_comment='02402_external_disk_mertrics/sort'
 FORMAT Null;
 
+-- The adaptive aggregator takes the single stream of the query below too, and it stays below the threshold and
+-- writes no temporary files. The metrics checked are those of the external aggregation, so the query turns it off.
 SET max_bytes_before_external_group_by = '100M';
 SET max_bytes_ratio_before_external_group_by = 0;
 SET max_memory_usage = '410M';
@@ -15,19 +17,31 @@ SET group_by_two_level_threshold = '100K';
 SET group_by_two_level_threshold_bytes = '50M';
 
 SELECT sum(k), sum(c) FROM (SELECT number AS k, sum(number) AS c FROM (SELECT * FROM system.numbers LIMIT 2097152) GROUP BY k)
-SETTINGS log_comment='02402_external_disk_mertrics/aggregation'
+SETTINGS log_comment='02402_external_disk_mertrics/aggregation', enable_adaptive_aggregator = 0
 FORMAT Null;
 
 SET join_algorithm = 'partial_merge';
 SET default_max_bytes_in_join = 0;
-SET max_bytes_in_join = 10000000;
+SET max_bytes_in_join = '10M';
 
 SELECT n, j * 2097152 FROM
 (SELECT number * 200000 as n FROM numbers(5)) nums
 ANY LEFT JOIN ( SELECT number * 2 AS n, number AS j FROM numbers(1000000) ) js2
 USING n
 ORDER BY n
-SETTINGS log_comment='02402_external_disk_mertrics/join'
+SETTINGS log_comment='02402_external_disk_mertrics/partial_merge_join'
+FORMAT Null;
+
+SET join_algorithm = 'grace_hash', grace_hash_join_initial_buckets=32, grace_hash_join_max_buckets=32;
+-- `max_bytes_in_join` is a hard cap, not a spill trigger: use the spill threshold to force temporary files.
+SET max_bytes_in_join = 0, max_bytes_before_external_join = '20M';
+
+SELECT n, j * 2097152 FROM
+(SELECT number * 200000 as n FROM numbers(5)) nums
+ANY LEFT JOIN ( SELECT number * 2 AS n, number AS j FROM numbers(1000000) ) js2
+USING n
+ORDER BY n
+SETTINGS log_comment='02402_external_disk_mertrics/grace_join'
 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
@@ -45,7 +59,7 @@ SELECT
         'ok',
         'fail: ' || toString(count()) || ' ' || toString(any(ProfileEvents))
     )
-    FROM system.query_log WHERE current_database = currentDatabase()
+    FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
         AND log_comment = '02402_external_disk_mertrics/sort'
         AND query ILIKE 'SELECT%2097152%' AND type = 'QueryFinish';
 
@@ -62,26 +76,25 @@ SELECT
         'ok',
         'fail: ' || toString(count()) || ' ' || toString(any(ProfileEvents))
     )
-    FROM system.query_log WHERE current_database = currentDatabase()
+    FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
         AND log_comment = '02402_external_disk_mertrics/aggregation'
         AND query ILIKE 'SELECT%2097152%' AND type = 'QueryFinish';
 
 SELECT
     if(
-        any(ProfileEvents['ExternalProcessingFilesTotal']) >= 1 AND
-        any(ProfileEvents['ExternalProcessingCompressedBytesTotal']) >= 100000 AND
-        any(ProfileEvents['ExternalProcessingUncompressedBytesTotal']) >= 100000 AND
-        any(ProfileEvents['ExternalJoinWritePart']) >= 1 AND
-        any(ProfileEvents['ExternalJoinMerge']) >= 0 AND
-        any(ProfileEvents['ExternalJoinCompressedBytes']) >= 100000 AND
-        any(ProfileEvents['ExternalJoinUncompressedBytes']) >= 100000 AND
-        count() == 1,
+        ProfileEvents['ExternalProcessingFilesTotal'] >= 1 AND
+        ProfileEvents['ExternalProcessingCompressedBytesTotal'] >= 100000 AND
+        ProfileEvents['ExternalProcessingUncompressedBytesTotal'] >= 100000 AND
+        ProfileEvents['ExternalJoinWritePart'] >= 1 AND
+        ProfileEvents['ExternalJoinMerge'] >= 0 AND
+        ProfileEvents['ExternalJoinCompressedBytes'] >= 100000 AND
+        ProfileEvents['ExternalJoinUncompressedBytes'] >= 100000,
         'ok',
-        'fail: ' || toString(count()) || ' ' || toString(any(ProfileEvents))
+        'fail: ' || toString(ProfileEvents) || ' ' || log_comment
     )
     FROM system.query_log
-    WHERE current_database = currentDatabase()
-        AND log_comment = '02402_external_disk_mertrics/join'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+        AND log_comment like '02402_external_disk_mertrics/%join'
         AND query ILIKE 'SELECT%2097152%' AND type = 'QueryFinish';
 
 -- Do not check values because they can be not recorded, just existence
@@ -91,5 +104,6 @@ SELECT
     CurrentMetric_TemporaryFilesForJoin,
     CurrentMetric_TemporaryFilesForSort
 FROM system.metric_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
 ORDER BY event_time DESC LIMIT 5
 FORMAT Null;

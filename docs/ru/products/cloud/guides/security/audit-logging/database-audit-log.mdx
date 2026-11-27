@@ -1,0 +1,68 @@
+---
+sidebarTitle: 'Журнал аудита базы данных'
+slug: /cloud/security/audit-logging/database-audit-log
+title: 'Журнал аудита базы данных'
+description: 'На этой странице описано, как просматривать журнал аудита базы данных'
+doc_type: 'guide'
+keywords: ['журналирование аудита', 'журналы базы данных', 'соответствие требованиям', 'безопасность', 'мониторинг']
+---
+
+ClickHouse по умолчанию предоставляет журналы аудита базы данных. Эта страница посвящена журналам, связанным с безопасностью. Дополнительные сведения о данных, записываемых системой, см. в документации по [системным таблицам](/ru/reference/system-tables/overview).
+
+<Tip>
+  **Хранение журналов**
+
+  Информация записывается непосредственно в системные таблицы и по умолчанию хранится до 30 дней. Этот срок может быть как больше, так и меньше и зависит от частоты слияний в системе. При необходимости клиенты могут принять дополнительные меры для более длительного хранения журналов или экспортировать их в систему управления информацией и событиями безопасности (SIEM) для долгосрочного хранения. Подробности ниже.
+</Tip>
+
+<div id="security-relevant-logs">
+  ## Журналы событий безопасности
+</div>
+
+ClickHouse записывает связанные с безопасностью события базы данных в основном в журналы сеансов и запросов.
+
+[system.session&#95;log](/ru/reference/system-tables/session_log) регистрирует успешные и неудачные попытки входа, а также место, откуда была предпринята попытка аутентификации. Эти сведения можно использовать для выявления атак с массовым подбором учетных данных или brute force-атак на экземпляр ClickHouse.
+
+Пример запроса, показывающего неудачные попытки входа
+
+```sql
+select event_time
+    ,type
+    ,user
+    ,auth_type
+    ,client_address 
+FROM clusterAllReplicas('default',system.session_log) 
+WHERE type='LoginFailure' 
+LIMIT 100
+```
+
+[system.query&#95;log](/ru/reference/system-tables/query_log) фиксирует активность запросов, выполняемых в экземпляре ClickHouse. Эта информация может быть полезна, чтобы определить, какие запросы выполнял злоумышленник.
+
+Пример запроса для поиска действий пользователя &quot;compromised&#95;account&quot;
+
+```sql
+SELECT event_time
+    ,address
+    ,initial_user
+    ,initial_address
+    ,forwarded_for
+    ,query 
+FROM clusterAllReplicas('default', system.query_log) 
+WHERE user=’compromised_account’
+```
+
+<div id="reatining-log-data-within-services">
+  ## Хранение данных журнала в сервисах
+</div>
+
+Клиенты, которым требуется более длительное хранение или повышенная надежность журнала, могут использовать materialized views для достижения этих целей. Подробнее о materialized views, их назначении, преимуществах и способах реализации см. в наших видео и документации по [materialized views](/ru/concepts/features/materialized-views/index).
+
+<div id="exporting-logs">
+  ## Экспорт журналов
+</div>
+
+Системные журналы можно записывать или экспортировать в хранилище в различных форматах, совместимых с системами SIEM. Подробнее см. в нашей документации по [табличным функциям](/ru/reference/functions/table-functions/index). Наиболее распространённые способы:
+
+* [Запись в S3](/ru/reference/functions/table-functions/s3)
+* [Запись в GCS](/ru/reference/functions/table-functions/gcs)
+* [Запись в Azure Blob Storage](/ru/reference/functions/table-functions/azureBlobStorage)

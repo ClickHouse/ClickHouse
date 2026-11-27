@@ -2,6 +2,7 @@
 #include <Core/Block.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/VarInt.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -9,11 +10,11 @@
 #include <Formats/IndexForNativeFormat.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Formats/NativeWriter.h>
+#include <Formats/FormatSettings.h>
 
 #include <Common/typeid_cast.h>
-#include <Columns/ColumnLazy.h>
 #include <Columns/ColumnSparse.h>
-#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnReplicated.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -25,8 +26,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
+
+NativeWriter::NativeWriter(WriteBuffer & ostr_, UInt64 client_revision_, SharedHeader header_)
+    : NativeWriter(ostr_, client_revision_, std::move(header_), std::nullopt)
+{
+}
 
 NativeWriter::NativeWriter(
     WriteBuffer & ostr_,
@@ -35,15 +42,23 @@ NativeWriter::NativeWriter(
     std::optional<FormatSettings> format_settings_,
     bool remove_low_cardinality_,
     IndexForNativeFormat * index_,
-    size_t initial_size_of_file_)
+    size_t initial_size_of_file_,
+    NativeWriterTypeCache * type_cache_)
     : ostr(ostr_)
     , client_revision(client_revision_)
     , header(header_)
     , index(index_)
     , initial_size_of_file(initial_size_of_file_)
     , remove_low_cardinality(remove_low_cardinality_)
-    , format_settings(std::move(format_settings_))
+    , format_settings(format_settings_ ? std::make_shared<const FormatSettings>(std::move(*format_settings_)) : nullptr)
+    , type_cache(type_cache_)
 {
+    /// The map keeps what the current protocol writes. Old revisions and these settings change the type name or the serialization.
+    if (type_cache
+        && (remove_low_cardinality || client_revision < DBMS_TCP_PROTOCOL_VERSION
+            || (format_settings && format_settings->native.encode_types_in_binary_format)))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "NativeWriter got a type cache with revision {} or with settings that change the types it writes", client_revision);
+
     if (index)
     {
         ostr_concrete = typeid_cast<CompressedWriteBuffer *>(&ostr);
@@ -62,7 +77,7 @@ void NativeWriter::flush()
     const ISerialization & serialization,
     const ColumnPtr & column,
     WriteBuffer & ostr,
-    const std::optional<FormatSettings> & format_settings,
+    const FormatSettings * format_settings,
     UInt64 offset,
     UInt64 limit,
     UInt64 client_revision)
@@ -73,18 +88,12 @@ void NativeWriter::flush()
       */
     ColumnPtr full_column = column->convertToFullColumnIfConst()->decompress();
 
-    if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(full_column.get()))
-    {
-        const auto & columns = column_lazy->getColumns();
-        full_column = ColumnTuple::create(columns);
-    }
-
     ISerialization::SerializeBinaryBulkSettings settings;
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
     settings.position_independent_encoding = false;
     settings.low_cardinality_max_dictionary_size = 0;
     settings.native_format = true;
-    settings.format_settings = format_settings ? &*format_settings : nullptr;
+    settings.format_settings = format_settings;
     if (client_revision < DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION)
     {
         settings.dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V1;
@@ -117,11 +126,49 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
                 result_column = recursiveRemoveSparse(result_column);
         }
 
-        auto info = column.type->getSerializationInfo(*result_column);
+        auto info = column.type->getSerializationInfo(*result_column, getSerializationInfoSettings(client_revision));
         return {column.type->getSerialization(*info), info, result_column};
     }
 
-    return {column.type->getDefaultSerialization(), nullptr, recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated())};
+    return {column.type->getDefaultSerialization(), nullptr, removeSpecialRepresentations(column.column)};
+}
+
+SerializationInfoSettings NativeWriter::getSerializationInfoSettings(UInt64 client_revision)
+{
+    /// The size-stream String layout follows the peer revision and needs no per-column wire marker.
+    return SerializationInfoSettings::enableAllSupportedSerializations(
+        client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
+}
+
+NativeWriterTypeCache::Entry & NativeWriter::getCachedType(const DataTypePtr & type)
+{
+    if (auto it = type_cache->entries.find(type.get()); it != type_cache->entries.end())
+        return it->second;
+    NativeWriterTypeCache::Entry entry;
+    entry.source = type;
+    entry.type = type;
+    setAggregateFunctionStateVersions(entry.type, client_revision);
+    entry.name = entry.type->getName();
+    return type_cache->entries.emplace(type.get(), std::move(entry)).first->second;
+}
+
+SerializationPtr NativeWriter::getCachedSerialization(NativeWriterTypeCache::Entry & entry, const SerializationInfo & info)
+{
+    WriteBufferFromOwnString kinds;
+    info.serialializeKindStackBinary(kinds);
+    for (const auto & cached : entry.serializations)
+        if (cached.kinds == kinds.str())
+            return cached.serialization;
+    SerializationPtr serialization = entry.type->getSerialization(info);
+    if (entry.serializations.size() < NativeWriterTypeCache::max_serializations_per_type)
+        entry.serializations.push_back({.kinds = kinds.str(), .serialization = serialization});
+    return serialization;
+}
+
+void NativeWriter::setAggregateFunctionStateVersions(DataTypePtr & type, UInt64 client_revision)
+{
+    bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
+    setVersionToAggregateFunctions(type, /* if_empty= */ client_revision == 0, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
 }
 
 size_t NativeWriter::write(const Block & block)
@@ -138,6 +185,16 @@ size_t NativeWriter::write(const Block & block)
     size_t columns = block.columns();
     size_t rows = block.rows();
 
+    /// A block with no columns can still carry rows. A receiver below the revision rejects such a block,
+    /// and sending zero rows instead would lose them.
+    if (columns == 0 && rows > 0 && client_revision < DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot write {} rows that carry no columns at protocol revision {}: it requires revision {}",
+            rows,
+            client_revision,
+            DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT);
+
     writeVarUInt(columns, ostr);
     writeVarUInt(rows, ostr);
 
@@ -152,6 +209,10 @@ size_t NativeWriter::write(const Block & block)
         index_block.columns.resize(columns);
     }
 
+    /// Remove unreferenced data from replicated columns before serialization.
+    Columns compacted_columns = block.getColumns();
+    compactReplicatedColumns(compacted_columns);
+
     for (size_t i = 0; i < columns; ++i)
     {
         /// For the index.
@@ -165,6 +226,7 @@ size_t NativeWriter::write(const Block & block)
         }
 
         auto column = block.safeGetByPosition(i);
+        column.column = compacted_columns[i];
 
         /// Send data to old clients without low cardinality type.
         if (remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE))
@@ -176,13 +238,33 @@ size_t NativeWriter::write(const Block & block)
         /// Name
         writeStringBinary(column.name, ostr);
 
-        bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
-        setVersionToAggregateFunctions(column.type, include_version, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
+        /// The state version of a versioned aggregate function on the wire is derived from the
+        /// negotiated revision, and the receiver derives it the same way. It must not be taken from a
+        /// version pinned on the local type - a table attached from metadata that predates versioning
+        /// has its columns pinned to version 0, and version 0 is not printed in the type name, so the
+        /// receiver would see no version at all and read the payload with its own, higher version.
+        /// Re-serializing loses nothing: the states are kept in memory in a version-independent form.
+        ///
+        /// Revision 0 means there is no peer to negotiate with: the block goes to a self-describing
+        /// stream that is read back by whoever wrote it (`StripeLog` data, `Set`/`Join` backups, a
+        /// `Native` format file). Here the version must be taken from the type: the reader derives
+        /// nothing from a revision and trusts the type name in the stream, so a version pinned on a
+        /// stored column (`pinCurrentStateVersionToAggregateFunctions`) has to survive, or the state
+        /// would silently degrade to version 0 on every round trip through local persistence.
+        NativeWriterTypeCache::Entry * cached_type = type_cache ? &getCachedType(column.type) : nullptr;
+        if (cached_type)
+            column.type = cached_type->type;
+        else
+            setAggregateFunctionStateVersions(column.type, client_revision);
 
         /// Type
         if (format_settings && format_settings->native.encode_types_in_binary_format)
         {
             encodeDataType(column.type, ostr);
+        }
+        else if (cached_type)
+        {
+            writeStringBinary(cached_type->name, ostr);
         }
         else
         {
@@ -199,18 +281,17 @@ size_t NativeWriter::write(const Block & block)
 
         /// Serialization. Dynamic, if client supports it.
         SerializationPtr serialization;
-        bool skip_writing = false;
-        if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(column.column.get()))
-        {
-            if (!column_lazy->getColumns().empty())
-                serialization = column_lazy->getDefaultSerialization();
-            else
-                skip_writing = true;
-        }
-        else
         {
             SerializationInfoPtr info;
-            std::tie(serialization, info, column.column) = getSerializationAndColumn(client_revision, column);
+            if (cached_type)
+            {
+                info = column.type->getSerializationInfo(*column.column, getSerializationInfoSettings(client_revision));
+                serialization = getCachedSerialization(*cached_type, *info);
+            }
+            else
+            {
+                std::tie(serialization, info, column.column) = getSerializationAndColumn(client_revision, column);
+            }
             if (info)
             {
                 writeBinary(static_cast<UInt8>(info->hasCustomSerialization()), ostr);
@@ -220,8 +301,8 @@ size_t NativeWriter::write(const Block & block)
         }
 
         /// Data
-        if (!skip_writing && rows)    /// Zero items of data is always represented as zero number of bytes.
-            writeData(*serialization, column.column, ostr, format_settings, 0, 0, client_revision);
+        if (rows)    /// Zero items of data is always represented as zero number of bytes.
+            writeData(*serialization, column.column, ostr, format_settings.get(), 0, 0, client_revision);
 
         if (index)
         {

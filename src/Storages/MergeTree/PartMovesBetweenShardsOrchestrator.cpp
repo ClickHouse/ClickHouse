@@ -4,6 +4,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -22,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NO_SUCH_DATA_PART;
     extern const int TIMEOUT_EXCEEDED;
 }
 
@@ -33,7 +35,7 @@ PartMovesBetweenShardsOrchestrator::PartMovesBetweenShardsOrchestrator(StorageRe
     , entries_znode_path(zookeeper_path + "/part_moves_shard")
 {
     /// Schedule pool is not designed for long-running tasks. TODO replace with a separate thread?
-    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), logger_name, [this]{ run(); });
+    task = storage.getContext()->getSchedulePool()->createTask(storage.getStorageID(), logger_name, [this]{ run(); });
 }
 
 void PartMovesBetweenShardsOrchestrator::run()
@@ -43,6 +45,8 @@ void PartMovesBetweenShardsOrchestrator::run()
 
     if (need_stop)
         return;
+
+    auto component_guard = Coordination::setCurrentComponent("PartMovesBetweenShardsOrchestrator");
 
     /// Don't poll ZooKeeper too often.
     auto sleep_ms = 3 * 1000;
@@ -90,7 +94,10 @@ void PartMovesBetweenShardsOrchestrator::syncStateFromZK()
 
     auto zk = storage.getZooKeeper();
 
-    Strings task_names = zk->getChildren(entries_znode_path);
+    /// A replicated table whose Keeper tree is absent stays attached in read-only mode instead of
+    /// failing to attach, so it can have no task node at all, and then it has no moves to report.
+    Strings task_names;
+    zk->tryGetChildren(entries_znode_path, task_names);
     for (auto const & task_name : task_names)
     {
         PartMovesBetweenShardsOrchestrator::Entry e;
@@ -193,6 +200,7 @@ bool PartMovesBetweenShardsOrchestrator::step()
 
 PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::stepEntry(Entry entry, zkutil::ZooKeeperPtr zk)
 {
+    StorageReplicatedMergeTree::WatchEventByPath watch_events;
     switch (entry.state.value)
     {
         case EntryState::DONE: [[fallthrough]];
@@ -257,7 +265,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
             }
 
-            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(zookeeper_path, sync_source_log_entry, 1);
+            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(zookeeper_path, sync_source_log_entry, 1, watch_events);
             if (!unwaited.empty())
                 throw Exception(
                     ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
@@ -315,7 +323,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
             }
 
-            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, sync_destination_log_entry, 1);
+            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, sync_destination_log_entry, 1, watch_events);
             if (!unwaited.empty())
                 throw Exception(
                     ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
@@ -376,7 +384,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
             }
 
-            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, fetch_log_entry, 1);
+            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, fetch_log_entry, 1, watch_events);
             if (!unwaited.empty())
                 throw Exception(
                     ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
@@ -456,7 +464,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                     LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
                 }
 
-                Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, attach_rollback_log_entry, 1);
+                Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, attach_rollback_log_entry, 1, watch_events);
                 if (!unwaited.empty())
                     throw Exception(
                         ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
@@ -471,6 +479,14 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
             ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
 
             auto part = storage.getActiveContainingPart(entry.part_name);
+            /// The pin blocks only merges and DROP PART, so the part can be removed, e.g. by TRUNCATE or DROP PARTITION.
+            if (!part)
+                throw Exception(
+                    ErrorCodes::NO_SUCH_DATA_PART,
+                    "Part {} is not active on replica {}, it cannot be attached on shard {}",
+                    entry.part_name,
+                    storage.replica_name,
+                    entry.to_shard);
 
             /// Allocating block number in other replicas zookeeper path
             /// TODO Maybe we can do better.
@@ -523,7 +539,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 log_entry = *ReplicatedMergeTreeLogEntry::parse(log_entry_str, stat, storage.format_version);
             }
 
-            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, log_entry, 1);
+            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, log_entry, 1, watch_events);
             if (!unwaited.empty())
                 throw Exception(
                     ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
@@ -598,7 +614,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
             }
 
-            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(zookeeper_path, source_drop_log_entry, 1);
+            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(zookeeper_path, source_drop_log_entry, 1, watch_events);
             if (!unwaited.empty())
                 throw Exception(
                     ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
@@ -657,6 +673,8 @@ void PartMovesBetweenShardsOrchestrator::removePins(const Entry & entry, zkutil:
 
 CancellationCode PartMovesBetweenShardsOrchestrator::killPartMoveToShard(const UUID & task_uuid)
 {
+    auto component_guard = Coordination::setCurrentComponent("PartMovesBetweenShardsOrchestrator");
+
     while (true)
     {
         auto entry = getEntryByUUID(task_uuid);
@@ -699,6 +717,8 @@ CancellationCode PartMovesBetweenShardsOrchestrator::killPartMoveToShard(const U
 
 std::vector<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrchestrator::getEntries()
 {
+    auto component_guard = Coordination::setCurrentComponent("PartMovesBetweenShardsOrchestrator");
+
     // Force sync. Also catches parsing errors.
     syncStateFromZK();
 

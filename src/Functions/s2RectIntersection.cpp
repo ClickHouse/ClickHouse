@@ -19,7 +19,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
 }
@@ -28,7 +27,7 @@ namespace
 {
 
 
-class FunctionS2RectIntersection : public IFunction
+class FunctionS2RectIntersection final : public IFunction
 {
 public:
     static constexpr auto name = "s2RectIntersection";
@@ -38,35 +37,25 @@ public:
         return std::make_shared<FunctionS2RectIntersection>();
     }
 
-    std::string getName() const override
+    [[nodiscard]] std::string getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 4; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 4; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// `0` is not a valid S2 cell id.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        for (size_t i = 0; i < getNumberOfArguments(); ++i)
-        {
-            const auto * arg = arguments[i].get();
-            if (!WhichDataType(arg).isUInt64())
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}. Must be UInt64",
-                    arg->getName(), i, getName());
-        }
-
-        DataTypePtr element = std::make_shared<DataTypeUInt64>();
-
-        return std::make_shared<DataTypeTuple>(DataTypes{element, element});
+        return "(UInt64, UInt64, UInt64, UInt64) -> Tuple(UInt64, UInt64)";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
@@ -152,7 +141,24 @@ public:
 
 REGISTER_FUNCTION(S2RectIntersection)
 {
-    factory.registerFunction<FunctionS2RectIntersection>();
+    FunctionDocumentation::Description description = R"(
+Returns the intersection of two S2 latitude-longitude rectangles. Each rectangle is represented by a pair of S2 cell identifiers for its low and high corners.
+    )";
+    FunctionDocumentation::Syntax syntax = "s2RectIntersection(s2Rect1Low, s2Rect1High, s2Rect2Low, s2Rect2High)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s2Rect1Low", "S2 cell identifier of the low vertex of the first rectangle.", {"UInt64"}},
+        {"s2Rect1High", "S2 cell identifier of the high vertex of the first rectangle.", {"UInt64"}},
+        {"s2Rect2Low", "S2 cell identifier of the low vertex of the second rectangle.", {"UInt64"}},
+        {"s2Rect2High", "S2 cell identifier of the high vertex of the second rectangle.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple (s2RectLow, s2RectHigh) representing the intersection rectangle.", {"Tuple(UInt64, UInt64)"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2RectIntersection(5178914411069187297, 5177056748191934217, 5179062030687166815, 5177056748191934217)",
+     "(5178914411069187297,5177056748191934217)"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionS2RectIntersection>(documentation);
 }
 
 

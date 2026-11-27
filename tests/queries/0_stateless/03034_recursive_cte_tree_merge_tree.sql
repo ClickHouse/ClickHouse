@@ -1,7 +1,5 @@
 -- { echoOn }
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS tree;
 CREATE TABLE tree
 (
@@ -21,7 +19,7 @@ WITH RECURSIVE search_tree AS (
     FROM tree t, search_tree st
     WHERE t.link = st.id
 )
-SELECT * FROM search_tree;
+SELECT * FROM search_tree ORDER BY ALL;
 
 SELECT '--';
 
@@ -34,7 +32,7 @@ WITH RECURSIVE search_tree AS (
     FROM tree t, search_tree st
     WHERE t.link = st.id
 )
-SELECT * FROM search_tree;
+SELECT * FROM search_tree ORDER BY ALL;
 
 DROP TABLE tree;
 
@@ -159,7 +157,7 @@ SELECT * FROM
         SELECT * FROM x)
       )
   SELECT * FROM q LIMIT 24
-) ORDER BY id, parent_department, name;
+) ORDER BY id, parent_department, name SETTINGS max_threads = 1;
 
 SELECT * FROM
 (
@@ -174,6 +172,6 @@ SELECT * FROM
         SELECT * FROM x)
       )
   SELECT * FROM q LIMIT 32
-) ORDER BY id, parent_department, name;
+) ORDER BY id, parent_department, name SETTINGS max_threads = 1;
 
 -- { echoOff }

@@ -38,7 +38,7 @@ HTTPBasicCredentials::HTTPBasicCredentials()
 }
 
 
-HTTPBasicCredentials::HTTPBasicCredentials(const std::string& username, const std::string& password):
+HTTPBasicCredentials::HTTPBasicCredentials(std::string_view username, std::string_view password):
 	_username(username),
 	_password(password)
 {
@@ -76,13 +76,13 @@ void HTTPBasicCredentials::clear()
 }
 
 
-void HTTPBasicCredentials::setUsername(const std::string& username)
+void HTTPBasicCredentials::setUsername(std::string_view username)
 {
 	_username = username;
 }
 
 
-void HTTPBasicCredentials::setPassword(const std::string& password)
+void HTTPBasicCredentials::setPassword(std::string_view password)
 {
 	_password = password;
 }
@@ -115,7 +115,7 @@ void HTTPBasicCredentials::parseAuthInfo(const std::string& authInfo)
 	static const int eof = std::char_traits<char>::eof();
 
 	std::istringstream istr(authInfo);
-	Base64Decoder decoder(istr);
+	Base64Decoder decoder(istr, Poco::BASE64_NO_PADDING);
 	int ch = decoder.get();
 	while (ch != eof && ch != ':')
 	{

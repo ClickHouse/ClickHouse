@@ -1,0 +1,79 @@
+DROP TABLE IF EXISTS hierarchy_source_table;
+CREATE TABLE hierarchy_source_table (id UInt64, parent_id UInt64) ENGINE = TinyLog;
+INSERT INTO hierarchy_source_table VALUES (1, 0), (2, 1), (3, 1), (4, 2);
+
+-- Hierarchy:
+--   1 (root, its parent 0 is the null value)
+--   |- 2
+--   |  \- 4
+--   \- 3
+--
+-- dictGetRoot returns the topmost ancestor of each key. It is the equivalent of the
+-- last element of dictGetHierarchy, i.e. dictGetHierarchy(dict, key)[-1].
+-- Key 1 is a top-level node, so it is its own root. Keys 0 and 5 are absent from the
+-- dictionary, so the default value 0 is returned.
+
+{% for layout in ['FLAT()', 'HASHED()', 'HASHED_ARRAY()', 'CACHE(SIZE_IN_CELLS 10)', 'DIRECT()'] -%}
+
+DROP DICTIONARY IF EXISTS hierarchy_dictionary;
+CREATE DICTIONARY hierarchy_dictionary
+(
+    id UInt64,
+    parent_id UInt64 HIERARCHICAL
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'hierarchy_source_table' DB currentDatabase()))
+LAYOUT({{ layout }})
+{% if layout != 'DIRECT()' %}LIFETIME(MIN 1 MAX 1000){% endif %};
+
+SELECT '{{ layout }}';
+SELECT dictGetRoot('hierarchy_dictionary', number) FROM numbers(6);
+SELECT 'equivalence', min(dictGetRoot('hierarchy_dictionary', number) = if(empty(dictGetHierarchy('hierarchy_dictionary', number)), 0, dictGetHierarchy('hierarchy_dictionary', number)[-1])) FROM numbers(6);
+
+DROP DICTIONARY hierarchy_dictionary;
+
+{% endfor %}
+
+DROP TABLE hierarchy_source_table;
+
+-- The same, but for a hierarchy with a Nullable parent key.
+-- Here the hierarchy stops at a NULL parent instead of the 0 sentinel, so 0 can be a
+-- genuine node of the hierarchy rather than the null value.
+
+DROP TABLE IF EXISTS hierarchy_source_table_nullable;
+CREATE TABLE hierarchy_source_table_nullable (id UInt64, parent_id Nullable(UInt64)) ENGINE = TinyLog;
+INSERT INTO hierarchy_source_table_nullable VALUES (0, NULL), (1, 0), (2, 1), (3, NULL), (4, 2);
+
+-- Hierarchy:
+--   0 (root, its parent is NULL)
+--   \- 1
+--      \- 2
+--         \- 4
+--   3 (root, its parent is NULL)
+--
+-- Keys 0 and 3 are top-level nodes, so they are their own roots. Note that key 0 is a
+-- real node here (its root is 0), while the absent key 5 also returns the default 0;
+-- the two cases are indistinguishable, exactly as for dictGetHierarchy(dict, key)[-1].
+
+{% for layout in ['FLAT()', 'HASHED()', 'HASHED_ARRAY()', 'CACHE(SIZE_IN_CELLS 10)', 'DIRECT()'] -%}
+
+DROP DICTIONARY IF EXISTS hierarchy_dictionary_nullable;
+CREATE DICTIONARY hierarchy_dictionary_nullable
+(
+    id UInt64,
+    parent_id Nullable(UInt64) HIERARCHICAL
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'hierarchy_source_table_nullable' DB currentDatabase()))
+LAYOUT({{ layout }})
+{% if layout != 'DIRECT()' %}LIFETIME(MIN 1 MAX 1000){% endif %};
+
+SELECT 'Nullable {{ layout }}';
+SELECT dictGetRoot('hierarchy_dictionary_nullable', number) FROM numbers(6);
+SELECT 'equivalence', min(dictGetRoot('hierarchy_dictionary_nullable', number) = if(empty(dictGetHierarchy('hierarchy_dictionary_nullable', number)), 0, dictGetHierarchy('hierarchy_dictionary_nullable', number)[-1])) FROM numbers(6);
+
+DROP DICTIONARY hierarchy_dictionary_nullable;
+
+{% endfor %}
+
+DROP TABLE hierarchy_source_table_nullable;

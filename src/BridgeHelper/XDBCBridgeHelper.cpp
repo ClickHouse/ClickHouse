@@ -15,7 +15,7 @@ Poco::URI XDBCBridgeHelper<T>::createBaseURI() const
 {
     Poco::URI uri;
     uri.setHost(bridge_host);
-    uri.setPort(bridge_port);
+    uri.setPort(static_cast<uint16_t>(bridge_port));
     uri.setScheme("http");
     uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
     return uri;

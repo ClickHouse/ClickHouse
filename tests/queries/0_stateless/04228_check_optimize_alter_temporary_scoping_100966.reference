@@ -1,0 +1,11 @@
+CHECK on TEMPORARY-only Log table returns success:
+1
+CHECK on collision targets TEMPORARY Memory (rejects):
+OK
+OPTIMIZE on collision targets TEMPORARY Memory (rejects):
+OK
+ALTER on collision modifies TEMPORARY (z appears in DESCRIBE):
+world	UInt64
+z	UInt8
+ALTER on collision does not modify permanent (no z in system.columns):
+0

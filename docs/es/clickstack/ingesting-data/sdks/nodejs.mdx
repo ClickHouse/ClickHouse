@@ -1,0 +1,129 @@
+---
+slug: /use-cases/observability/clickstack/sdks/nodejs
+description: 'Envíe logs, métricas y trazas de Node.js a ClickStack con el SDK de Node.js de ClickStack.'
+title: 'Node.js'
+sidebarTitle: 'Node.js'
+doc_type: 'guide'
+keywords: ['ClickStack', 'SDK', 'Node.js', 'OpenTelemetry']
+---
+
+import { ClickStackIntegrates } from '/snippets/es/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+El SDK de Node.js de ClickStack se basa en el SDK de OpenTelemetry upstream y en sus autoinstrumentaciones. Además, incorpora la captura de la salida de consola, la captura de excepciones no capturadas y el vaciado de la telemetría durante el apagado. Las aplicaciones que ya tienen OpenTelemetry configurado pueden seguir usando su SDK actual y [configurar la exportación OTLP](/es/clickstack/ingesting-data/opentelemetry).
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## Instalación {#install}
+
+Utilice Node.js **22.15 o posterior**. Instale el SDK en su aplicación:
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+El paquete es compatible con módulos ES y CommonJS. npm instala automáticamente su dependencia peer `@opentelemetry/api`. Si su aplicación importa ese paquete directamente, instale `@opentelemetry/api@~1.9.1`; la versión 1.10 queda fuera del rango compatible con este SDK.
+
+## Configure su destino {#configure-destination}
+
+Defina las variables de entorno antes de iniciar su aplicación. Use un endpoint OTLP HTTP base sin `/v1/traces`, `/v1/logs` ni `/v1/metrics`; los exportadores añaden esas rutas.
+
+Use el endpoint OTLP HTTP de su recolector y la clave de ingestión configurada para su receiver OTLP. Para configurar el recolector, consulte [Ingesta con OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry).
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='http://localhost:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+export OTEL_SERVICE_NAME='my-node-app'
+```
+
+Este endpoint da por hecho que la aplicación y el recolector se ejecutan en el mismo host. Si el recolector se ejecuta en otra máquina, sustitúyalo por una dirección accesible desde su aplicación.
+
+## Inicie su aplicación {#start-application}
+
+Precargue el SDK antes de que su aplicación importe las bibliotecas que instrumenta:
+
+```shell
+node --import @clickhouse/clickstack-node/register server.js
+```
+
+Reemplace `server.js` por el archivo de entrada de su aplicación. Este comando carga el SDK antes de que se inicie su aplicación y utiliza las variables de entorno configuradas anteriormente. Es compatible con aplicaciones CommonJS y de módulos ES.
+
+Ya puede [verificar la ingestión](#verify-ingestion). Las alternativas siguientes solo son necesarias si desea iniciar la aplicación mediante un script de npm o configurar el SDK en el código.
+
+<Accordion title="Métodos de inicio alternativos">
+  También se admite `--require`. Si usa `NODE_OPTIONS`, limite su alcance al comando de la aplicación para que las herramientas de build no inicien sus propias canalizaciones de telemetría:
+
+  ```shell
+  NODE_OPTIONS='--import @clickhouse/clickstack-node/register' npm start
+  ```
+
+  Como alternativa, cree un módulo de instrumentación y precárguelo. Las variables de entorno de la sección anterior siguen configurando la exportación:
+
+  ```javascript
+  // instrumentation.mjs
+  import { isMainThread } from 'node:worker_threads';
+  import { init } from '@clickhouse/clickstack-node';
+
+  if (isMainThread) {
+    init();
+  }
+  ```
+
+  ```shell
+  node --import ./instrumentation.mjs server.mjs
+  ```
+
+  Esta comprobación impide que los hilos de trabajo, como los workers de transporte de Pino, inicien instancias adicionales del SDK.
+
+  Utilice el punto de entrada de registro del paquete o su propio módulo de instrumentación, pero no ambos. No inicialice un segundo SDK en la aplicación. Las importaciones estáticas de módulos ES se ejecutan antes que el cuerpo del módulo, por lo que llamar a `init` antes de las importaciones estáticas en el mismo archivo no garantiza el orden de inicialización.
+</Accordion>
+
+## Verificar la ingestión {#verify-ingestion}
+
+Inicie su aplicación, envíe solicitudes a una ruta instrumentada y emita un mensaje por consola. En ClickStack, seleccione un intervalo de tiempo reciente y busque `my-node-app` en Logs o Traces. Antes de comprobar las métricas, espere a que transcurra el intervalo de exportación de métricas.
+
+Si faltan datos, revise los diagnósticos del SDK en stderr, el endpoint y la autenticación, así como la conectividad de red. Asegúrese de que la instrumentación se cargue antes que las dependencias de la aplicación. Las bibliotecas empaquetadas no pueden instrumentarse automáticamente si el empaquetador las inserta en línea; mantenga el SDK y las dependencias instrumentadas como externas. Consulte la [compatibilidad del SDK](https://github.com/ClickHouse/clickstack-node#compatibility) para conocer los requisitos de TypeScript, módulos ES, frameworks y empaquetadores.
+
+## Configurar la instrumentación {#configure-instrumentation}
+
+Las variables de entorno estándar de OpenTelemetry conservan el significado que tienen en upstream, incluidos el muestreo, la agrupación por lotes, los exportadores y los atributos del recurso. Por ejemplo:
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES='deployment.environment.name=production'
+```
+
+La salida de la consola se captura de forma predeterminada. La captura del cuerpo HTTP está deshabilitada de forma predeterminada; actívela solo cuando sea adecuado para los datos que gestiona su aplicación:
+
+```shell
+export CLICKSTACK_CAPTURE_HTTP_BODY='true'
+```
+
+Los cuerpos capturados pueden contener datos personales y credenciales. La ocultación de información sensible que realiza el SDK no está garantizada; mantenga la ocultación de información sensible en el recolector cuando sea necesario. Consulte las [opciones de privacidad del SDK](https://github.com/ClickHouse/clickstack-node#privacy) para obtener información sobre la captura de encabezados, los límites de tamaño de los cuerpos y la sanitización.
+
+### Opciones de inicialización {#initialization-options}
+
+Pase estas opciones a `init` en su módulo de instrumentación:
+
+| Opción                       | Valor predeterminado                                 | Propósito                                                                                                                                                                        |
+| ---------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `endpoint`                   | `http://localhost:4318`                              | URL base de OTLP HTTP; la sobrescribe `OTEL_EXPORTER_OTLP_ENDPOINT`                                                                                                              |
+| `serviceName`                | `unknown_service:` seguido del nombre del ejecutable | Nombre del servicio; lo sobrescribe `OTEL_SERVICE_NAME` o `service.name` en `OTEL_RESOURCE_ATTRIBUTES`                                                                           |
+| `environment`                | Sin definir                                          | Establece `deployment.environment.name`; la misma clave en `OTEL_RESOURCE_ATTRIBUTES` tiene precedencia                                                                          |
+| `apiKey`                     | Sin definir                                          | Valor de la cabecera de autorización; se ignora si `OTEL_EXPORTER_OTLP_HEADERS` ya tiene un valor, aunque solo contenga encabezados no relacionados                              |
+| `httpBodyCapture`            | `false`                                              | Captura los cuerpos HTTP; lo sobrescribe `CLICKSTACK_CAPTURE_HTTP_BODY`                                                                                                          |
+| `instrumentations`           | Valores predeterminados de la configuración upstream | Mapa de configuración para `getNodeAutoInstrumentations`; los valores `enabled` explícitos sobrescriben las variables de entorno que habilitan o deshabilitan la instrumentación |
+| `additionalInstrumentations` | `[]`                                                 | Instancias de instrumentación adicionales para bibliotecas no incluidas en el paquete predeterminado                                                                             |
+
+Si las variables de entorno no están definidas o están vacías, se aplica la opción correspondiente. Para desactivar la captura de la consola, incluya `console` en `OTEL_NODE_DISABLED_INSTRUMENTATIONS`. Consulte la [referencia del SDK de Node.js](https://github.com/ClickHouse/clickstack-node#quick-start) para ver todos los valores predeterminados.
+
+Para salidas explícitas del proceso o handlers de AWS Lambda, consulte la [documentación del ciclo de vida del SDK](https://github.com/ClickHouse/clickstack-node#lifecycle).
+
+## Uso del SDK upstream {#using-upstream-sdk}
+
+Si su aplicación ya configura OpenTelemetry, o necesita procesadores personalizados o un comportamiento que no cubren las opciones del SDK de ClickStack, utilice el `NodeSDK` upstream y configure la exportación OTLP hacia el destino indicado anteriormente. Siga el [ejemplo de configuración del SDK upstream](https://github.com/ClickHouse/clickstack-node#using-the-upstream-sdk-directly), que explica la configuración adicional del cargador y del ciclo de vida. No inicialice ambos SDK en el mismo proceso.
+
+## Migración desde el SDK de HyperDX para Node.js {#migration}
+
+Reemplace `@hyperdx/node-opentelemetry` por `@clickhouse/clickstack-node` y utilice el nuevo punto de entrada de registro. Reemplace `HYPERDX_API_KEY` por `OTEL_EXPORTER_OTLP_HEADERS` y use el formato de autorización correspondiente al destino indicado anteriormente.
+
+El nuevo SDK no conserva todos los helpers ni todas las opciones de HyperDX. Consulte la [guía de migración del SDK](https://github.com/ClickHouse/clickstack-node/blob/main/docs/migration.md) antes de reemplazar integraciones de logger, manejadores de errores, atributos de traza personalizados o ajustes de muestreo.

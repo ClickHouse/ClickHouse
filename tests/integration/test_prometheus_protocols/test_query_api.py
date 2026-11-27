@@ -1,0 +1,769 @@
+import gzip
+import json
+import lzma
+import urllib
+import uuid
+import zlib
+
+import pytest
+import requests
+import zstandard
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
+from .prometheus_test_utils import (
+    convert_time_series_to_protobuf,
+    execute_query_via_http_api,
+    execute_range_query_via_http_api,
+    extract_data_from_http_api_response,
+    extract_error_from_http_api_response,
+    get_response_to_http_api_query,
+    get_response_to_http_api_range_query,
+    send_protobuf_to_remote_write,
+)
+
+
+cluster = ClickHouseCluster(__file__)
+
+node = cluster.add_instance(
+    "node",
+    main_configs=["configs/prometheus.xml", "configs/unavailable_shard_cluster.xml"],
+    user_configs=["configs/allow_experimental_time_series_table.xml"],
+    handle_prometheus_remote_read=(9093, "/read"),
+    handle_prometheus_remote_write=(9093, "/write"),
+)
+
+
+# The query pipeline runs on its own threads and hands blocks to the HTTP thread through
+# a small bounded buffer. To make an error land *after* some results have been written,
+# the row limit must sit well above that buffer: `max_block_size=1` puts one series in
+# each block, so the pipeline fills the buffer and then blocks, and cannot reach the limit
+# until the HTTP thread has taken and written out a block. Without that margin the
+# pipeline reaches the limit while the buffer is still unread, the error wins the race,
+# and the response becomes a plain error envelope instead.
+STREAM_ERROR_SERIES_COUNT = 32
+STREAM_ERROR_ROW_LIMIT = 16
+
+
+def send_to_clickhouse(time_series):
+    protobuf = convert_time_series_to_protobuf(time_series)
+    send_protobuf_to_remote_write(node.ip_address, 9093, "/write", protobuf)
+
+
+def send_test_data():
+    # `post_body_metric` is used by the GET-vs-POST tests.
+    send_to_clickhouse(
+        [({"__name__": "post_body_metric", "job": "test"}, {1000.0: 1.0, 1001.0: 2.0})]
+    )
+    # `foo` (3 series) is used by the tests that expect the error before any output.
+    send_to_clickhouse(
+        [
+            ({"__name__": "foo", "shape": "square", "size": "s"}, {110: 4, 130: 40}),
+            ({"__name__": "foo", "shape": "triangle", "size": "m"}, {110: 8, 120: 80}),
+            ({"__name__": "foo", "shape": "circle", "size": "l"}, {110: 16, 130: 16, 150: 16}),
+        ]
+    )
+    # `stream_error` is used by the tests that expect the error only after results have
+    # already been written.
+    send_to_clickhouse(
+        [
+            ({"__name__": "stream_error", "instance": f"i{i:02}"}, {110: i, 130: i * 2})
+            for i in range(STREAM_ERROR_SERIES_COUNT)
+        ]
+    )
+    # `rfc3339_metric` is used by the tests of RFC3339 times.
+    send_to_clickhouse(
+        [({"__name__": "rfc3339_metric", "job": "vmalert"}, {1700000000: 1.0, 1700000030: 2.0, 1700000060: 3.0})]
+    )
+
+
+@pytest.fixture(scope="module", autouse=True)
+def start_cluster():
+    try:
+        cluster.start()
+        node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+        node.query(
+            "CREATE TABLE prometheus_seconds "
+            "(samples Array(Tuple(DateTime64(0), Float64))) ENGINE=TimeSeries"
+        )
+        node.query(
+            "INSERT INTO prometheus_seconds (metric_name, tags, samples) VALUES"
+            " ('foo_seconds_old', {'shape': 'circle'}, [(toDateTime64(150, 0), 16)]),"
+            " ('foo_seconds_exact', {'shape': 'circle'}, [(toDateTime64(151, 0), 17)])"
+        )
+        send_test_data()
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+# `/api/v1/query` must accept params via a POST `application/x-www-form-urlencoded`
+# body just as it does via the URL query string. Run the same instant query both
+# ways and assert the response data is identical.
+def test_query_post_urlencoded():
+    host, port = node.ip_address, 9093
+    query = "post_body_metric"
+    t = 1000
+    get_data = execute_query_via_http_api(host, port, "/api/v1/query", query, timestamp=t)
+    url = f"http://{host}:{port}/api/v1/query"
+    post_resp = requests.post(
+        url,
+        data={"query": query, "time": str(t)},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    post_data = extract_data_from_http_api_response(post_resp)
+    assert get_data == post_data
+
+
+# `/api/v1/query_range` must accept params via a POST `application/x-www-form-urlencoded`
+# body just as it does via the URL query string. Run the same range query both
+# ways and assert the response data is identical.
+def test_range_query_post_urlencoded():
+    host, port = node.ip_address, 9093
+    query = "post_body_metric"
+    start_s, end_s, step = 999, 1002, "1"
+    get_data = execute_range_query_via_http_api(
+        host, port, "/api/v1/query_range", query, start_s, end_s, step
+    )
+    url = f"http://{host}:{port}/api/v1/query_range"
+    post_resp = requests.post(
+        url,
+        data={
+            "query": query,
+            "start": str(start_s),
+            "end": str(end_s),
+            "step": step,
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    post_data = extract_data_from_http_api_response(post_resp)
+    assert get_data == post_data
+
+
+def test_range_query_rejects_non_positive_step_for_equal_start_and_end():
+    for step in (0, -1):
+        error = execute_range_query_via_http_api(
+            node.ip_address,
+            9093,
+            "/api/v1/query_range",
+            "vector(1)",
+            10,
+            10,
+            step,
+            expect_error=True,
+        )
+        assert "step must be positive" in error
+
+
+def test_range_query_accepts_positive_step_for_equal_start_and_end():
+    result = execute_range_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        "post_body_metric",
+        1000,
+        1000,
+        1,
+    )
+    assert result == '{"resultType": "matrix", "result": [{"metric": {"__name__": "post_body_metric", "job": "test"}, "values": [[1000, "1"]]}]}'
+
+
+# As in Prometheus, a range query is rejected with 400 bad_data if (end - start) / step is greater than 11000.
+def test_range_query_max_points_per_series():
+    def range_query(end, params=None):
+        return get_response_to_http_api_range_query(
+            node.ip_address, 9093, "/api/v1/query_range", "vector(1)", 0, end, 1, params
+        )
+
+    response = range_query(11001)
+    assert response.status_code == 400
+    assert response.json()["errorType"] == "bad_data"
+    assert response.json()["error"] == (
+        "exceeded maximum resolution of 11000 points per timeseries. "
+        "Try decreasing the query resolution (?step=XX) or increasing the setting promql_max_points_per_series"
+    )
+
+    response = range_query(11000)
+    assert response.status_code == 200
+    assert len(response.json()["data"]["result"][0]["values"]) == 11001
+
+    response = range_query(20000, {"promql_max_points_per_series": 0})
+    assert response.status_code == 200
+    assert len(response.json()["data"]["result"][0]["values"]) == 20001
+
+
+def test_query_lookback_delta():
+    query = 'foo{shape="circle"}'
+    timestamp = 151
+
+    expected = '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [151, "16"]}]}'
+    assert execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp) == expected
+
+    assert (
+        execute_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp,
+            params={"lookback_delta": "500ms"},
+        )
+        == '{"resultType": "vector", "result": []}'
+    )
+
+    for lookback_delta in ("0", "-1"):
+        assert (
+            execute_query_via_http_api(
+                node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp,
+                params={"lookback_delta": lookback_delta},
+            )
+            == expected
+        )
+
+    error = execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp,
+        params={"lookback_delta": "banana"}, expect_error=True,
+    )
+    assert "Cannot parse duration" in error
+
+
+def test_query_lookback_delta_low_timestamp_precision():
+    old_sample = execute_query_via_http_api(
+        node.ip_address, 9093, "/dynamic_table/api/v1/query",
+        'foo_seconds_old{shape="circle"}', timestamp=151,
+        params={"table": "prometheus_seconds", "lookback_delta": "500ms"},
+    )
+    assert old_sample == '{"resultType": "vector", "result": []}'
+
+    exact_sample = execute_query_via_http_api(
+        node.ip_address, 9093, "/dynamic_table/api/v1/query",
+        'foo_seconds_exact{shape="circle"}', timestamp=151,
+        params={"table": "prometheus_seconds", "lookback_delta": "500ms"},
+    )
+    assert exact_sample == '{"resultType": "vector", "result": [{"metric": {"__name__": "foo_seconds_exact", "shape": "circle"}, "value": [151, "17"]}]}'
+
+
+def test_range_query_lookback_delta():
+    query = 'foo{shape="circle"}'
+
+    expected = '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[150, "16"]]}]}'
+    assert (
+        execute_range_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query_range", query, 150, 151, 1,
+            params={"lookback_delta": "0.5"},
+        )
+        == expected
+    )
+
+
+# Malformed PromQL is rejected at parse time.
+# The response must be a well-formed Prometheus error response `{"status":"error",...}`
+def test_error_while_parsing():
+    response = get_response_to_http_api_query(
+        node.ip_address, 9093, "/api/v1/query", "((", 150,
+    )
+    error_message = extract_error_from_http_api_response(response)
+    assert "while parsing PromQL query" in error_message
+
+
+# Errors raised before the query runs (a bad setting, a wrong password) keep their HTTP status
+# and come as a Prometheus error response `{"status":"error",...}` too.
+def test_error_before_dispatch():
+    node.query("CREATE USER IF NOT EXISTS prometheus_password_user IDENTIFIED BY 'right'")
+    for params, status_code, error_type, error in (
+        ({"no_such_setting": "1"}, 404, "not_found", "UNKNOWN_SETTING"),
+        ({"max_threads": "abc"}, 400, "bad_data", "CANNOT_PARSE"),
+        ({"user": "prometheus_password_user", "password": "wrong"}, 403, "bad_data", "AUTHENTICATION_FAILED"),
+    ):
+        response = get_response_to_http_api_query(
+            node.ip_address, 9093, "/api/v1/query", "vector(1)", 150, params=params,
+        )
+        assert response.status_code == status_code, response.text
+        assert response.headers["Content-Type"] == "application/json"
+        assert response.json()["errorType"] == error_type
+        assert error in extract_error_from_http_api_response(response)
+    node.query("DROP USER prometheus_password_user")
+
+
+# A time-series table that cannot be found keeps its HTTP status too.
+def test_unknown_table_before_query():
+    for params, error in (
+        ({"table": "no_such_table"}, "UNKNOWN_TABLE"),
+        ({"database": "no_such_database", "table": "prometheus"}, "UNKNOWN_DATABASE"),
+    ):
+        response = get_response_to_http_api_query(
+            node.ip_address, 9093, "/dynamic_table/api/v1/query", "vector(1)", 150, params=params,
+        )
+        assert response.status_code == 404, response.text
+        assert response.headers["Content-Type"] == "application/json"
+        assert response.json()["errorType"] == "not_found"
+        assert error in extract_error_from_http_api_response(response)
+
+
+# Checks the case when an exception appears before any block has been written to the response buffer.
+# The response must be a well-formed Prometheus error response `{"status":"error",...}`
+def test_error_before_first_block():
+    response = get_response_to_http_api_query(
+        node.ip_address, 9093, "/api/v1/query",
+        "topk(+Inf, last_over_time(foo[10]))[50:10]", 150,
+    )
+    error_message = extract_error_from_http_api_response(response)
+    assert "k of aggregation operator is too large" in error_message
+
+
+# Checks the case when an exception appears after some blocks have been written
+# to the response buffer, but before the response buffer has been sent to the client.
+# The response must be a well-formed Prometheus error response `{"status":"error",...}`
+def test_error_after_first_block():
+    # `result_overflow_mode=throw` makes the query throw once `STREAM_ERROR_ROW_LIMIT` rows
+    # have been written. The response buffer is left at its default size, so those rows are
+    # still buffered and the handler can drop them and write the error response instead.
+    url = (
+        f"http://{node.ip_address}:9093/api/v1/query_range"
+        f"?query={urllib.parse.quote_plus('stream_error')}"
+        f"&start=100&end=200&step=10"
+        f"&max_block_size=1"
+        f"&max_result_rows={STREAM_ERROR_ROW_LIMIT}"
+        f"&result_overflow_mode=throw"
+    )
+    response = requests.get(url)
+    error_message = extract_error_from_http_api_response(response)
+    assert "Limit for result exceeded" in error_message
+
+
+# Checks the case when an exception appears after some blocks have been written
+# to the response buffer and after the response buffer has been sent to the client.
+# The handler can no longer change the status code or produce a well-formed Prometheus
+# error response `{"status":"error",...}`, so it aborts the chunked stream
+# by writing an `__exception__` marker block and skipping the terminating empty chunk.
+def test_query_after_response_sent():
+    # Same as `test_error_after_first_block`, except `http_response_buffer_size=1` flushes
+    # the response buffer as soon as the first block is written. The head is therefore
+    # already on the wire when the query throws, and the handler has no way back.
+    # The response is not compressed, because a compressor would hold the small body back.
+    url = (
+        f"http://{node.ip_address}:9093/api/v1/query_range"
+        f"?query={urllib.parse.quote_plus('stream_error')}"
+        f"&start=100&end=200&step=10"
+        f"&http_response_buffer_size=1"
+        f"&max_block_size=1"
+        f"&max_result_rows={STREAM_ERROR_ROW_LIMIT}"
+        f"&result_overflow_mode=throw"
+    )
+    with requests.get(url, headers={"Accept-Encoding": "identity"}, stream=True) as response:
+        assert response.status_code == 200, (
+            f"expected head to be sent before the throw, "
+            f"got {response.status_code}: {response.text!r}"
+        )
+        assert response.headers.get("Transfer-Encoding") == "chunked", (
+            f"expected chunked transfer, got headers={dict(response.headers)!r}"
+        )
+
+        received = b""
+        with pytest.raises(requests.exceptions.ChunkedEncodingError):
+            for piece in response.iter_content(chunk_size=None):
+                received += piece
+
+        # What the client got must be a truncated success response, not an error response:
+        # the success envelope and some `stream_error` results were already written when the
+        # query threw. Without this the test would also pass if the stream were aborted
+        # before anything was written.
+        assert received.startswith(b'{"status":"success"'), received
+        assert b"stream_error" in received, received
+
+        # The stream ends with the `__exception__` marker block that replaces the
+        # terminating empty chunk, and it carries the error that caused the abort. This
+        # distinguishes a deliberate abort from the connection merely dropping.
+        assert b"__exception__" in received, received
+        assert b"Limit for result exceeded" in received, received
+
+
+@pytest.mark.parametrize(
+    ("encoding", "decompress"),
+    [
+        ("gzip", gzip.decompress),
+        ("deflate", zlib.decompress),
+        ("zstd", lambda data: zstandard.ZstdDecompressor().decompressobj().decompress(data)),
+    ],
+)
+def test_response_compression(encoding, decompress):
+    url = (
+        f"http://{node.ip_address}:9093/api/v1/query_range"
+        "?query=sum(stream_error)&start=100&end=200&step=10"
+    )
+    plain = requests.get(url, headers={"Accept-Encoding": "identity"})
+    assert plain.status_code == 200, plain.text
+    assert "Content-Encoding" not in plain.headers
+    assert plain.headers["Vary"] == "Accept-Encoding"
+    assert plain.json()["status"] == "success"
+
+    # The body is decompressed by the test, because `requests` may not decode every encoding.
+    with requests.get(url, headers={"Accept-Encoding": encoding}, stream=True) as response:
+        assert response.status_code == 200
+        assert response.headers["Content-Encoding"] == encoding
+        assert response.headers["Vary"] == "Accept-Encoding"
+        assert decompress(response.raw.read(decode_content=False)) == plain.content
+
+    # An error response is compressed too, and it is still a well-formed error envelope.
+    error_url = f"http://{node.ip_address}:9093/api/v1/query?query=%28%28&time=150"
+    with requests.get(error_url, headers={"Accept-Encoding": encoding}, stream=True) as response:
+        assert response.status_code == 400
+        assert response.headers["Content-Encoding"] == encoding
+        error = json.loads(decompress(response.raw.read(decode_content=False)))
+    assert error["status"] == "error", error
+    assert "while parsing PromQL query" in error["error"], error
+
+    # `enable_http_compression=0` turns the compression off.
+    response = requests.get(
+        url + "&enable_http_compression=0", headers={"Accept-Encoding": encoding}
+    )
+    assert "Content-Encoding" not in response.headers
+    assert response.content == plain.content
+
+
+def test_compression_level_per_codec():
+    # `http_zlib_compression_level` is for gzip and deflate only: xz takes `output_format_compression_level`.
+    url = (
+        f"http://{node.ip_address}:9093/api/v1/query"
+        "?query=vector(1)&time=150"
+        "&http_zlib_compression_level=12&output_format_compression_level=3"
+    )
+    plain = requests.get(url, headers={"Accept-Encoding": "identity"})
+    assert plain.status_code == 200, plain.text
+
+    with requests.get(url, headers={"Accept-Encoding": "xz"}, stream=True) as response:
+        assert response.status_code == 200, response.status_code
+        assert response.headers["Content-Encoding"] == "xz"
+        assert lzma.decompress(response.raw.read(decode_content=False)) == plain.content
+
+
+def test_large_compressed_response():
+    # One million points make both the plain and the compressed body larger than
+    # the 1 MiB buffers of the compressor and of the HTTP response.
+    url = (
+        f"http://{node.ip_address}:9093/api/v1/query_range"
+        "?query=time()&start=0&end=999999&step=1&promql_max_points_per_series=0"
+    )
+    plain = requests.get(url, headers={"Accept-Encoding": "identity"})
+    assert plain.status_code == 200, plain.text
+    assert len(plain.json()["data"]["result"][0]["values"]) == 1000000
+
+    with requests.get(url, headers={"Accept-Encoding": "gzip"}, stream=True) as response:
+        assert response.status_code == 200
+        assert response.headers["Content-Encoding"] == "gzip"
+        compressed = response.raw.read(decode_content=False)
+    assert len(compressed) > 1024 * 1024, len(compressed)
+    assert gzip.decompress(compressed) == plain.content
+
+
+def test_error_after_first_block_compressed():
+    # Same as `test_query_after_response_sent`, but the compressor holds the small partial
+    # body back, so the client still gets a well-formed compressed error response.
+    url = (
+        f"http://{node.ip_address}:9093/api/v1/query_range"
+        f"?query={urllib.parse.quote_plus('stream_error')}"
+        f"&start=100&end=200&step=10"
+        f"&http_response_buffer_size=1"
+        f"&max_block_size=1"
+        f"&max_result_rows={STREAM_ERROR_ROW_LIMIT}"
+        f"&result_overflow_mode=throw"
+    )
+    response = requests.get(url, headers={"Accept-Encoding": "gzip"})
+    assert response.headers["Content-Encoding"] == "gzip"
+    assert "Limit for result exceeded" in extract_error_from_http_api_response(response)
+
+
+def test_error_after_compressor_flush():
+    # Each block is larger than the 1 MiB compressor buffer, so the compressor has passed data on
+    # when the query throws, while the large HTTP buffer has sent nothing. The error goes out uncompressed.
+    url = (
+        f"http://{node.ip_address}:9093/api/v1/query_range"
+        f"?query={urllib.parse.quote_plus('stream_error')}"
+        f"&start=110&end=210&step=0.001"
+        f"&promql_max_points_per_series=0"
+        f"&http_response_buffer_size={64 * 1024 * 1024}"
+        f"&max_block_size=1"
+        f"&max_result_rows={STREAM_ERROR_ROW_LIMIT}"
+        f"&result_overflow_mode=throw"
+    )
+    response = requests.get(url, headers={"Accept-Encoding": "gzip"})
+    assert response.status_code == 400, response.status_code
+    assert "Content-Encoding" not in response.headers
+    assert "Limit for result exceeded" in extract_error_from_http_api_response(response)
+
+
+def test_table_query_param():
+    query = 'foo{shape="square"}'
+    timestamp = 150
+
+    expected = '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "value": [150, "40"]}]}'
+    assert execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp) == expected
+
+    # Both database and table names come from the URL query as two separate parameters
+    # `database` and `table`.
+    assert (
+        execute_query_via_http_api(
+            node.ip_address, 9093, "/dynamic_table/api/v1/query", query, timestamp=timestamp,
+            params={"database": "default", "table": "prometheus"},
+        )
+        == expected
+    )
+
+    # A single `table` parameter carries the qualified `database.table` name.
+    assert (
+        execute_query_via_http_api(
+            node.ip_address, 9093, "/dynamic_table/api/v1/query", query, timestamp=timestamp,
+            params={"table": "default.prometheus"},
+        )
+        == expected
+    )
+
+    # A request without a `table` parameter fails.
+    error = execute_query_via_http_api(
+        node.ip_address, 9093, "/dynamic_table/api/v1/query", query, timestamp=timestamp,
+        expect_error=True,
+    )
+    assert "table name is not set" in error
+
+    # The table name comes from the URL query, and the database name comes from the configuration.
+    assert (
+        execute_query_via_http_api(
+            node.ip_address, 9093, "/dynamic_table_and_fixed_db/api/v1/query", query, timestamp=timestamp,
+            params={"table": "prometheus"},
+        )
+        == expected
+    )
+
+    # The configured database cannot be overridden by the `database` query parameter.
+    error = execute_query_via_http_api(
+        node.ip_address, 9093, "/dynamic_table_and_fixed_db/api/v1/query", query, timestamp=timestamp,
+        params={"database": "default", "table": "prometheus"}, expect_error=True,
+    )
+    assert "cannot be overridden" in error
+
+    # A qualified `<table>default.prometheus</table>` in the configuration (the static `/api/v1/query`
+    # handler) sets the database too, so it cannot be overridden by the `database` query parameter.
+    error = execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp,
+        params={"database": "other"}, expect_error=True,
+    )
+    assert "cannot be overridden" in error
+
+
+def test_generated_sql_always_runs_with_materialized_cte():
+    # The SQL generated for PromQL marks shared subqueries AS MATERIALIZED, which the handler
+    # honors by turning enable_materialized_cte on. The materialization itself is covered by
+    # 04816_promql_shared_subqueries_materialized; here it is enough to check the setting the
+    # generated query ran with. `AS MATERIALIZED` also needs the analyzer, but that is no
+    # longer a setting the handler has to pin: the analyzer is the only query analysis since
+    # 26.9, so it is not in the changed settings this row records.
+    for path, time_params in (
+        ("/api/v1/query", "time=1000"),
+        ("/api/v1/query_range", "start=999&end=1002&step=1"),
+    ):
+        query_id = f"promql-analyzer-{uuid.uuid4()}"
+        url = (
+            f"http://{node.ip_address}:9093{path}"
+            f"?query=post_body_metric&{time_params}"
+        )
+        response = requests.get(url, headers={"X-ClickHouse-Query-Id": query_id})
+        extract_data_from_http_api_response(response)  # raises unless a success envelope
+
+        node.query("SYSTEM FLUSH LOGS query_log")
+        # The response is flushed to the client before the QueryFinish row is queued, so a
+        # flush can run before there is anything to flush and the row then waits for the
+        # background interval. Retry for longer than that interval.
+        assert_eq_with_retry(
+            node,
+            "SELECT Settings['enable_materialized_cte'] "
+            f"FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
+            "1\n",
+            retry_count=30,
+            sleep_time=1,
+        )
+
+
+# Parameters of other Prometheus-compatible servers that are safe to ignore don't change the result.
+def test_ignored_params():
+    query = 'foo{shape="square"}'
+    expected = execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=150)
+    for name, value in [("trace", "1"), ("round_digits", "3")]:
+        assert (
+            execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=150, params={name: value})
+            == expected
+        )
+
+
+# The SQL that `/api/v1/query` executes is generated by the server, so the request settings passed as URL
+# parameters must not change how it is parsed: neither another `dialect` nor a small `max_query_size`.
+def test_generated_sql_ignores_request_dialect_and_parser_limits():
+    expected = execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query", "post_body_metric", timestamp=1000
+    )
+    for params in ({"dialect": "kusto"}, {"max_query_size": "20"}, {"max_parser_depth": "5"}):
+        assert (
+            execute_query_via_http_api(
+                node.ip_address, 9093, "/api/v1/query", "post_body_metric", timestamp=1000, params=params
+            )
+            == expected
+        )
+
+
+# Thanos' deduplication and partial responses are not implemented, so `dedup=true` and `partial_response=true` are rejected.
+def test_thanos_params():
+    query = 'foo{shape="square"}'
+    expected = execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=150)
+    # The spellings of false that Thanos accepts.
+    for name in ["dedup", "partial_response"]:
+        for value in ["false", "0", "f", "F", "False"]:
+            assert execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=150, params={name: value}) == expected
+    for name, value, error in [
+        ("dedup", "true", "The 'dedup=true' parameter is not supported"),
+        ("partial_response", "true", "The 'partial_response=true' parameter is not supported"),
+    ]:
+        response = get_response_to_http_api_query(node.ip_address, 9093, "/api/v1/query", query, 150, params={name: value})
+        assert response.status_code == 400
+        assert response.json()["errorType"] == "bad_data"
+        assert error in extract_error_from_http_api_response(response)
+    # A repeated parameter is rejected if any of its values asks for the option.
+    url = f"http://{node.ip_address}:9093/api/v1/query"
+    for name in ["dedup", "partial_response"]:
+        response = requests.get(url, params=[("query", query), ("time", "150"), (name, "false"), (name, "true")])
+        assert response.status_code == 400
+        assert f"The '{name}=true' parameter is not supported" in extract_error_from_http_api_response(response)
+    # Every value is checked, so a malformed one is an error in any position.
+    for values in [["1", "garbage"], ["garbage", "1"]]:
+        response = requests.get(url, params=[("query", query), ("time", "150")] + [("nocache", value) for value in values])
+        assert response.status_code == 400
+        assert "Invalid value of the 'nocache' parameter: 'garbage'" in response.text
+
+
+# `nocache=1` bypasses the query cache that a settings profile enables.
+def test_nocache_bypasses_query_cache():
+    node.query(
+        "CREATE SETTINGS PROFILE query_cache_profile SETTINGS use_query_cache = 1, query_cache_nondeterministic_function_handling = 'save'"
+    )
+    node.query("CREATE USER query_cache_user IDENTIFIED WITH no_password SETTINGS PROFILE query_cache_profile")
+    node.query("GRANT SELECT ON default.*, CREATE TEMPORARY TABLE ON *.* TO query_cache_user")
+
+    def get_value(params):
+        params = {"user": "query_cache_user", **params}
+        data = execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", "nocache_metric", timestamp=1010, params=params)
+        return json.loads(data)["result"][0]["value"][1]
+
+    send_to_clickhouse([({"__name__": "nocache_metric"}, {1000.0: 1.0})])
+    assert get_value({}) == "1"
+    send_to_clickhouse([({"__name__": "nocache_metric"}, {1005.0: 2.0})])
+    assert get_value({}) == "1"
+    assert get_value({"nocache": "1"}) == "2"
+    # Any `nocache=1` among repeated values bypasses the cache.
+    send_to_clickhouse([({"__name__": "nocache_metric"}, {1008.0: 3.0})])
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/query",
+        params=[("query", "nocache_metric"), ("time", "1010"), ("user", "query_cache_user"), ("nocache", "0"), ("nocache", "1")],
+    )
+    assert json.loads(extract_data_from_http_api_response(response))["result"][0]["value"][1] == "3"
+
+    # `nocache=1` wins over `use_query_cache=1` in the same request.
+    # Another time keeps the cache key apart from query_cache_user's entry, which blocks this user's insert.
+    def get_default_user_value(extra_params):
+        params = [("query", "nocache_metric"), ("time", "1011"), ("use_query_cache", "1"), ("query_cache_nondeterministic_function_handling", "save")]
+        response = requests.get(f"http://{node.ip_address}:9093/api/v1/query", params=params + extra_params)
+        return json.loads(extract_data_from_http_api_response(response))["result"][0]["value"][1]
+
+    assert get_default_user_value([]) == "3"
+    send_to_clickhouse([({"__name__": "nocache_metric"}, {1009.0: 4.0})])
+    assert get_default_user_value([]) == "3"
+    assert get_default_user_value([("nocache", "1")]) == "4"
+
+
+# `partial_response=false` makes an unreachable shard an error even for a user with `skip_unavailable_shards = 1`.
+# The TimeSeries tables use version 9, the last one that can have an external (here Distributed) data table.
+def test_partial_response_false_requires_all_shards():
+    node.query("CREATE TABLE shard_data (id UUID, timestamp DateTime64(3), value Float64) ENGINE=MergeTree ORDER BY (id, timestamp)")
+    node.query("CREATE TABLE dist_data AS shard_data ENGINE=Distributed(unavailable_shard, default, shard_data, 0)")
+    node.query("CREATE TABLE prometheus_dist ENGINE=TimeSeries SETTINGS version = 9 DATA dist_data")
+    node.query("INSERT INTO prometheus_dist (metric_name, tags, samples) VALUES ('dist_metric', {}, [(toDateTime64(1000, 3), 7)])")
+    node.query("CREATE USER skip_shards_user IDENTIFIED WITH no_password SETTINGS skip_unavailable_shards = 1")
+    node.query("GRANT SELECT ON default.*, CREATE TEMPORARY TABLE ON *.* TO skip_shards_user")
+
+    path = "/dynamic_table/api/v1/query"
+    params = {"table": "prometheus_dist", "user": "skip_shards_user"}
+    data = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params)
+    assert json.loads(data)["result"][0]["value"][1] == "7"
+    params["partial_response"] = "false"
+    error = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params, expect_error=True)
+    assert "Connection refused" in error
+
+    # `partial_response=false` wins over `skip_unavailable_shards=1` in the same request.
+    params = {"table": "prometheus_dist", "skip_unavailable_shards": "1"}
+    data = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params)
+    assert json.loads(data)["result"][0]["value"][1] == "7"
+    params["partial_response"] = "false"
+    error = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params, expect_error=True)
+    assert "Connection refused" in error
+
+    # It also wins over the Distributed table's own `skip_unavailable_shards = 1` for a user with the default `skip_unavailable_shards = 0`.
+    node.query("CREATE TABLE shard_data_skip AS shard_data")
+    node.query("CREATE TABLE dist_data_skip AS shard_data ENGINE=Distributed(unavailable_shard, default, shard_data_skip, 0) SETTINGS skip_unavailable_shards = 1")
+    node.query("CREATE TABLE prometheus_dist_skip ENGINE=TimeSeries SETTINGS version = 9 DATA dist_data_skip")
+    node.query("INSERT INTO prometheus_dist_skip (metric_name, tags, samples) VALUES ('dist_metric', {}, [(toDateTime64(1000, 3), 7)])")
+    params = {"table": "prometheus_dist_skip"}
+    data = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params)
+    assert json.loads(data)["result"][0]["value"][1] == "7"
+    params["partial_response"] = "false"
+    error = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params, expect_error=True)
+    assert "Connection refused" in error
+
+
+# Tenancy filters must be rejected, never ignored.
+def test_tenancy_filters_rejected():
+    url = f"http://{node.ip_address}:9093"
+    responses = [
+        (name, get_response_to_http_api_query(node.ip_address, 9093, "/api/v1/query", "foo", 150, params={name: value}))
+        for name, value in [("extra_label", "shape=square"), ("extra_filters", '{shape="square"}'), ("extra_filters[]", '{shape="square"}')]
+    ]
+    responses.append(("extra_label", requests.get(f"{url}/api/v1/series", params={"match[]": "foo", "extra_label": "shape=square"})))
+    responses.append(("extra_filters[]", requests.post(f"{url}/api/v1/query", data={"query": "foo", "time": "150", "extra_filters[]": '{shape="square"}'})))
+    for name, response in responses:
+        assert response.status_code == 400
+        assert response.json()["errorType"] == "bad_data"
+        assert f"The '{name}' parameter is not supported" in extract_error_from_http_api_response(response)
+
+
+# vmalert and other Go clients send times in RFC3339 format; they must give the same result as Unix times.
+@pytest.mark.parametrize(
+    "path, unix_params, rfc3339_params",
+    [
+        ("/api/v1/query", {"time": "1700000060"}, {"time": "2023-11-14T22:14:20Z"}),
+        ("/api/v1/query", {"time": "1700000060"}, {"time": "2023-11-15T00:14:20+02:00"}),
+        ("/api/v1/query", {"time": "1700000045.123"}, {"time": "2023-11-14T17:14:05.123456789-05:00"}),
+        # Any other format parseDateTimeBestEffort understands is accepted too.
+        ("/api/v1/query", {"time": "1700000060"}, {"time": "Tue, 14 Nov 2023 22:14:20 GMT"}),
+        ("/api/v1/query", {"time": "1700000060"}, {"time": "2023-11-14 22:14:20 +0000"}),
+        (
+            "/api/v1/query_range",
+            {"start": "1700000000", "end": "1700000060", "step": "15s"},
+            {"start": "2023-11-14T22:13:20Z", "end": "2023-11-14T22:14:20Z", "step": "15s"},
+        ),
+        (
+            "/api/v1/series",
+            {"start": "1700000000", "end": "1700000060"},
+            {"start": "2023-11-14T22:13:20Z", "end": "2023-11-14T17:14:20-05:00"},
+        ),
+    ],
+)
+def test_rfc3339_times(path, unix_params, rfc3339_params):
+    selector = {"match[]": "rfc3339_metric"} if path == "/api/v1/series" else {"query": "rfc3339_metric"}
+    url = f"http://{node.ip_address}:9093{path}"
+    unix_data = extract_data_from_http_api_response(requests.get(url, params={**selector, **unix_params}))
+    rfc3339_data = extract_data_from_http_api_response(requests.get(url, params={**selector, **rfc3339_params}))
+    assert "rfc3339_metric" in unix_data
+    assert rfc3339_data == unix_data
+
+
+@pytest.mark.parametrize(
+    "time",
+    ["2023-11-14T22:14:20z", "2023-11-14T22:14:20Z junk", "2023-11-14T22:14:20Z ", " 1700000060", "now", "abc"],
+)
+def test_rfc3339_times_invalid(time):
+    error = execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query", "rfc3339_metric", params={"time": time}, expect_error=True
+    )
+    assert "Cannot parse a timestamp" in error

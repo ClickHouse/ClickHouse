@@ -1,0 +1,39 @@
+-- cap 10 over 8 + 8 rows: 10 rows total, not 16
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+-- branch limits below the cap stay intact: 3 + 2 rows
+2
+2
+2
+2
+2
+-- cap 4 over branch limits 3 + 2: 4 rows
+3
+3
+3
+3
+-- negative branch limits below the cap: last 3 + last 2 rows
+4
+4
+4
+4
+4
+-- cap 4 over negative branch limits 3 + 3: 4 rows
+5
+5
+5
+5
+-- offset 3, limit 2 over 3 + 2 rows: skip 3 of the merged stream, return 2
+6
+6
+-- offset 3 alone over 3 + 2 rows: return 2
+7
+7

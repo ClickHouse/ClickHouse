@@ -1,0 +1,67 @@
+---
+slug: /community-wisdom/creative-use-cases
+sidebarTitle: 'Retours d’expérience'
+doc_type: 'guide'
+keywords: [
+  'cas d’usage créatifs clickhouse',
+  'retours d’expérience clickhouse',
+  'usages non conventionnels des bases de données',
+  'limitation de débit clickhouse',
+  'applications de base de données analytiques',
+  'analyse mobile clickhouse',
+  'analytique orientée client',
+  'innovation en bases de données',
+  'applications en temps réel clickhouse',
+  'solutions de base de données alternatives',
+  'briser les conventions des bases de données',
+  'retours d’expérience en production'
+]
+title: 'Enseignements - cas d’usage créatifs'
+description: 'Trouvez des solutions aux problèmes ClickHouse les plus courants, notamment les requêtes lentes, les erreurs de mémoire, les problèmes de connexion et de configuration.'
+---
+
+*Ce guide fait partie d’un recueil d’enseignements issus de rencontres de la communauté. Pour découvrir d’autres solutions concrètes et retours d’expérience, vous pouvez [parcourir les contenus par problème spécifique](/fr/resources/support-center/tips-and-tricks/community-wisdom).*
+*Besoin de conseils pour déboguer un problème en production ? Consultez le guide communautaire [Debugging Insights](/fr/resources/support-center/tips-and-tricks/debugging-insights).*
+
+Ces témoignages montrent comment des entreprises ont réussi avec ClickHouse pour leurs cas d’usage, certaines remettant même en question les catégories traditionnelles de bases de données et prouvant que, parfois, le « mauvais » outil devient exactement la bonne solution.
+
+<div id="clickhouse-rate-limiter">
+  ## ClickHouse comme mécanisme de limitation de débit
+</div>
+
+Lorsque Craigslist a eu besoin de mettre en place une limitation de débit de premier niveau pour protéger ses utilisateurs, l’équipe s’est retrouvée face au même choix que toutes les équipes d’ingénierie : suivre les pratiques établies et utiliser Redis, ou tenter une autre approche. Brad Lhotsky, qui travaillait chez Craigslist, savait que Redis était le choix standard — pratiquement tous les tutoriels et exemples de limitation de débit en ligne utilisent Redis, et ce pour de bonnes raisons. Il offre des primitives riches pour les opérations de limitation de débit, des modèles bien établis et un historique éprouvé. Mais l’expérience de Craigslist avec Redis ne correspondait pas aux exemples théoriques. *&quot;Notre expérience avec Redis ne ressemble pas à ce que vous avez vu au cinéma... nous avons rencontré beaucoup de problèmes de maintenance étranges, par exemple quand nous redémarrons un nœud dans un cluster Redis et qu’un pic de latence frappe le front-end.&quot;* Pour une petite équipe qui accorde de l’importance à la simplicité de maintenance, ces difficultés d’exploitation devenaient un vrai problème.
+
+Alors, lorsque les exigences de limitation de débit lui ont été présentées, Brad a choisi une autre approche : *&quot;J’ai demandé à mon patron : &#39;Que penses-tu de cette idée ? Peut-être que je peux essayer ça avec ClickHouse ?&#39;&quot;* L’idée était peu conventionnelle — utiliser une base de données analytique pour ce qui relève habituellement d’un problème de couche de cache — mais elle répondait à leurs exigences fondamentales : échouer en mode ouvert, n’imposer aucune pénalité de latence et rester facile à maintenir pour une petite équipe. La solution s’appuyait sur leur infrastructure existante, où les logs d’accès arrivaient déjà dans ClickHouse via Kafka. Au lieu de maintenir un cluster Redis distinct, ils pouvaient analyser directement les modèles de requêtes à partir des données de logs d’accès et injecter des règles de limitation de débit dans leur API ACL existante. Cette approche entraînait une latence légèrement supérieure à celle de Redis, qui *&quot;triche un peu en instanciant ce data set à l’avance&quot;* au lieu d’exécuter de vraies requêtes d’agrégation en temps réel, mais les requêtes s’exécutaient tout de même en moins de 100 millisecondes.
+
+**Résultats clés :**
+
+* Amélioration spectaculaire par rapport à une infrastructure Redis
+* Le TTL intégré pour le nettoyage automatique a éliminé la surcharge de maintenance
+* La flexibilité de SQL a permis de définir des règles complexes de limitation de débit au-delà de simples compteurs
+* Exploitation du pipeline de données existant au lieu de nécessiter une infrastructure distincte
+
+<div id="customer-analytics">
+  ## ClickHouse pour l’analyse client
+</div>
+
+Lorsque ServiceNow a dû faire évoluer sa plateforme d’analyse mobile, l’entreprise s’est heurtée à une question simple : *« Pourquoi remplacer quelque chose qui fonctionne ? »* Amir Vaza, chez ServiceNow, savait que leur système existant était fiable, mais les demandes des clients dépassaient ce qu’il pouvait prendre en charge. *« La motivation pour remplacer un modèle existant et fiable vient en réalité des besoins produit »*, a expliqué Amir. ServiceNow proposait l’analyse mobile dans le cadre de sa solution pour le web, le mobile et les chatbots, mais les clients voulaient une flexibilité analytique allant au-delà des données pré-agrégées.
+
+Leur système précédent utilisait environ 30 tables différentes contenant des données pré-agrégées segmentées selon des dimensions fixes : application, version de l’application et plateforme. Pour les propriétés personnalisées — des paires clé-valeur que les clients pouvaient envoyer — ils créaient des compteurs distincts pour chaque groupe. Cette approche offrait de bonnes performances de tableau de bord, mais avec une limite majeure. *« C’est excellent pour ventiler rapidement les valeurs, mais, comme je l’ai mentionné, cette limite entraîne une forte perte de contexte analytique »*, a noté Amir. Les clients ne pouvaient pas effectuer d’analyse complexe du parcours client ni poser des questions comme « combien de sessions ont commencé avec le terme de recherche “research RSA token” », puis analyser ce que ces utilisateurs faisaient ensuite. La structure pré-agrégée détruisait le contexte séquentiel nécessaire à une analyse en plusieurs étapes, et chaque nouvelle dimension analytique nécessitait un travail d’ingénierie pour pré-agréger et stocker les données.
+
+Ainsi, lorsque ces limites sont devenues évidentes, ServiceNow est passé à ClickHouse et a entièrement éliminé ces contraintes de précalcul. Au lieu de calculer chaque variable à l’avance, l’équipe a décomposé les métadonnées en points de données et a tout inséré directement dans ClickHouse. Elle a utilisé la file d’attente `async insert` de ClickHouse, qu’Amir a qualifiée de *« vraiment incroyable »*, pour gérer efficacement l’ingestion de données. Cette approche signifiait que les clients pouvaient désormais créer leurs propres segments, ventiler librement les données selon n’importe quelles dimensions et effectuer une analyse complexe du parcours client qui n’était pas possible auparavant.
+
+**Résultats clés :**
+
+* Segmentation dynamique selon n’importe quelles dimensions, sans précalcul
+* L’analyse complexe du parcours client est devenue possible
+* Les clients pouvaient créer leurs propres segments et ventiler librement les données
+* Plus aucun goulot d’étranglement côté ingénierie pour les nouvelles exigences analytiques
+
+<div id="video-sources">
+  ## Sources vidéo
+</div>
+
+* **[Briser les règles - créer un mécanisme de limitation de débit avec ClickHouse](https://www.youtube.com/watch?v=wRwqrbUjRe4)** - Brad Lhotsky (Craigslist)
+* **[ClickHouse comme solution analytique chez ServiceNow](https://www.youtube.com/watch?v=b4Pmpx3iRK4)** - Amir Vaza (ServiceNow)
+
+*Ces témoignages montrent qu&#39;en remettant en question les idées reçues sur les bases de données, on peut aboutir à des solutions de rupture qui redéfinissent le champ des possibles avec les bases de données analytiques.*

@@ -4,7 +4,7 @@
 #include <IO/ReadBuffer.h>
 #include <Storages/FileLog/StorageFileLog.h>
 #include <Common/AllocatorWithMemoryTracking.h>
-#include <Common/TrackedString.h>
+#include <Common/StringWithMemoryTracking.h>
 
 namespace DB
 {
@@ -19,17 +19,17 @@ public:
         size_t stream_number_,
         size_t max_streams_number_);
 
-    auto pollTimeout() const { return poll_timeout; }
+    [[nodiscard]] auto pollTimeout() const { return poll_timeout; }
 
-    bool hasMorePolledRecords() const { return current != records.end(); }
+    [[nodiscard]] bool hasMorePolledRecords() const { return current != records.end(); }
 
     ReadBufferPtr consume();
 
     bool noRecords() { return buffer_status == BufferStatus::NO_RECORD_RETURNED; }
 
-    auto getFileName() const { return current[-1].file_name; }
-    auto getOffset() const { return current[-1].offset; }
-    const auto & getCurrentRecord() const { return current[-1].data; }
+    [[nodiscard]] auto getFileName() const { return current[-1].file_name; }
+    [[nodiscard]] auto getOffset() const { return current[-1].offset; }
+    [[nodiscard]] const auto & getCurrentRecord() const { return current[-1].data; }
 
 private:
     enum class BufferStatus : uint8_t
@@ -57,10 +57,10 @@ private:
 
     struct Record
     {
-        TrackedString data;
+        StringWithMemoryTracking data;
         std::string file_name;
         /// Offset is the start of a row, which is needed for virtual columns.
-        UInt64 offset;
+        UInt64 offset{};
     };
     using Records = std::vector<Record, AllocatorWithMemoryTracking<Record>>;
 

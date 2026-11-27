@@ -1,0 +1,28 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>threads</name>
+            <values>
+                <value>1</value>
+                <value>0</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE sort_string_full (
+            str_col String
+        ) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO sort_string_full
+        SELECT randomPrintableASCII(rand() % 100 + 1) AS str_col
+        FROM numbers(3000000)
+    </fill_query>
+
+    <query>SELECT * FROM sort_string_full ORDER BY str_col FORMAT Null SETTINGS max_threads = {threads}</query>
+    <query>SELECT * FROM sort_string_full ORDER BY str_col DESC FORMAT Null SETTINGS max_threads = {threads}</query>
+
+    <drop_query>DROP TABLE IF EXISTS sort_string_full</drop_query>
+</test>

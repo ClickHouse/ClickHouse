@@ -1,0 +1,35 @@
+-- 1. The dimension join is recomputed per node: a Replicated join over ReplicatedReads, no exchange
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + ))
+          JoinLogical (Broadcast HashJoin  swapped)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.rsj_fact)
+            JoinLogical (Replicated )
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (ReplicatedRead default.rsj_dim1)
+              Expression (((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change column names to column identifiers))
+                ReadFromMergeTree (ReplicatedRead default.rsj_dim2)
+-- 2. Results match the non-distributed baseline
+100000	4999950000
+100000	4999950000
+-- 3. A non-deterministic join condition falls back to broadcasting a single-node join
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + ))
+          JoinLogical (Broadcast HashJoin  swapped)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.rsj_fact)
+            BroadcastExchange
+              JoinLogical (Local HashJoin )
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (default.rsj_dim1)
+                Expression (((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change column names to column identifiers))
+                  ReadFromMergeTree (default.rsj_dim2)
+-- 4. Outer join kinds are eligible too: results match the baseline
+100000
+100000

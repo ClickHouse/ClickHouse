@@ -1,4 +1,5 @@
 #include <Formats/ProtobufWriter.h>
+#include <base/sanitizer_defs.h>
 
 #if USE_PROTOBUF
 #   include <IO/WriteHelpers.h>
@@ -105,6 +106,7 @@ void ProtobufWriter::startNestedMessage()
     num_bytes_skipped = NESTED_MESSAGE_PADDING;
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void ProtobufWriter::endNestedMessage(int field_number, bool is_group, bool skip_if_empty)
 {
     const auto & nested_info = nested_infos.back();
@@ -122,7 +124,7 @@ void ProtobufWriter::endNestedMessage(int field_number, bool is_group, bool skip
         num_bytes_skipped = num_bytes_skipped_at_start;
         return;
     }
-    size_t num_bytes_inserted;
+    size_t num_bytes_inserted = 0;
     if (is_group)
     {
         writeFieldNumber(field_number, GROUP_END, buffer);

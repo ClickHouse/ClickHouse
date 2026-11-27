@@ -1,0 +1,415 @@
+#include <Parsers/Prometheus/parseTimeSeriesTypes.h>
+
+#include <Common/DateLUT.h>
+#include <Common/IntervalKind.h>
+#include <Common/quoteString.h>
+#include <Core/ConstantValue.h>
+#include <Core/DecimalFunctions.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/parseDateTimeBestEffort.h>
+#include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
+
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+    template <is_decimal T>
+    std::string_view getTypeName()
+    {
+        if constexpr (std::is_same_v<T, DateTime64>)
+            return "timestamp";
+        else
+            return "duration";
+    }
+
+    template <is_decimal T>
+    T getFromInt(Int64 int_value, UInt32 scale)
+    {
+        T result{};
+        if (common::mulOverflow(int_value, DecimalUtils::scaleMultiplier<T>(scale), result.value))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot convert {} to {}: Overflow, the number is too big",
+                            int_value, getTypeName<T>());
+        }
+        return result;
+    }
+
+    template <is_decimal T>
+    T getFromDecimal(Int64 decimal_value, UInt32 decimal_scale, UInt32 scale)
+    {
+        T result{};
+        if (scale > decimal_scale)
+        {
+            if (common::mulOverflow(decimal_value, DecimalUtils::scaleMultiplier<T>(scale - decimal_scale), result.value))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Cannot convert {} to {}: Overflow, the number is too big",
+                                toString(Decimal64{decimal_value}, decimal_scale), getTypeName<T>());
+            }
+        }
+        else
+        {
+            result.value = decimal_value / DecimalUtils::scaleMultiplier<T>(decimal_scale - scale);
+        }
+        return result;
+    }
+
+    template <is_decimal T>
+    T getFromFloat(Float64 float_value, UInt32 scale)
+    {
+        /// A non-finite value bypasses the range check below (every comparison with NaN is false),
+        /// so the final static_cast<NativeType>(NaN) would be undefined behavior. Reject it up front.
+        if (!std::isfinite(float_value))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot convert {} to {}: the value is not finite",
+                            float_value, getTypeName<T>());
+        }
+        Float64 scaled_value = float_value * static_cast<Float64>(DecimalUtils::scaleMultiplier<T>(scale));
+        if ((scaled_value >= static_cast<Float64>(std::numeric_limits<typename T::NativeType>::max())) ||
+            (scaled_value < static_cast<Float64>(std::numeric_limits<typename T::NativeType>::min())))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot convert {} to {}: Overflow, the number is too big",
+                            float_value, getTypeName<T>());
+        }
+        return static_cast<typename T::NativeType>(scaled_value);
+    }
+
+    template <is_decimal T>
+    T getFromIntervalKind(Int64 intervals, IntervalKind interval_kind, UInt32 scale)
+    {
+        Int64 unit_multiplier = 1;
+        Int64 scale_multiplier = 1;
+        Int64 scale_divisor = 1;
+
+        switch (interval_kind)
+        {
+            case IntervalKind::Kind::Nanosecond:
+            {
+                if (scale > 9)
+                    scale_multiplier = DecimalUtils::scaleMultiplier<T>(scale - 9);
+                else if (scale < 9)
+                    scale_divisor = DecimalUtils::scaleMultiplier<T>(9 - scale);
+                break;
+            }
+            case IntervalKind::Kind::Microsecond:
+            {
+                if (scale > 6)
+                    scale_multiplier = DecimalUtils::scaleMultiplier<T>(scale - 6);
+                else if (scale < 6)
+                    scale_divisor = DecimalUtils::scaleMultiplier<T>(6 - scale);
+                break;
+            }
+            case IntervalKind::Kind::Millisecond:
+            {
+                if (scale > 3)
+                    scale_multiplier = DecimalUtils::scaleMultiplier<T>(scale - 3);
+                else if (scale < 3)
+                    scale_divisor = DecimalUtils::scaleMultiplier<T>(3 - scale);
+                break;
+            }
+            case IntervalKind::Kind::Second:
+            {
+                scale_multiplier = DecimalUtils::scaleMultiplier<T>(scale);
+                break;
+            }
+            case IntervalKind::Kind::Minute:
+            {
+                unit_multiplier = 60;
+                scale_multiplier = DecimalUtils::scaleMultiplier<T>(scale);
+                break;
+            }
+            case IntervalKind::Kind::Hour:
+            {
+                unit_multiplier = 60 * 60;
+                scale_multiplier = DecimalUtils::scaleMultiplier<T>(scale);
+                break;
+            }
+            case IntervalKind::Kind::Day:
+            {
+                unit_multiplier = 24 * 60 * 60;
+                scale_multiplier = DecimalUtils::scaleMultiplier<T>(scale);
+                break;
+            }
+            case IntervalKind::Kind::Week:
+            {
+                unit_multiplier = 7 * 24 * 60 * 60;
+                scale_multiplier = DecimalUtils::scaleMultiplier<T>(scale);
+                break;
+            }
+            case IntervalKind::Kind::Year:
+            {
+                /// "1y" means exactly 365 days in Prometheus, so we don't take leap years into account here.
+                unit_multiplier = 365 * 24 * 60 * 60;
+                scale_multiplier = DecimalUtils::scaleMultiplier<T>(scale);
+                break;
+            }
+            default:
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Cannot extract a {} from an interval of type {}",
+                                getTypeName<T>(), interval_kind.toString());
+            }
+        }
+
+        T result{};
+        if (common::mulOverflow(intervals, unit_multiplier, result.value)
+            || common::mulOverflow(result.value, scale_multiplier, result.value))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot convert {} {}s to {}: Overflow, the number is too big",
+                            intervals, interval_kind.toString(), getTypeName<T>());
+        }
+
+        result.value /= scale_divisor;
+        return result;
+    }
+
+    /// Parses an RFC3339 time zone: 'Z', '+hh:mm' or '-hh:mm'. Returns the offset in seconds.
+    std::optional<Int64> tryParseTimeZoneOffset(std::string_view str)
+    {
+        if (str == "Z")
+            return 0;
+
+        if (str.size() != 6 || (str[0] != '+' && str[0] != '-') || str[3] != ':' || !isNumericASCII(str[1]) || !isNumericASCII(str[2])
+            || !isNumericASCII(str[4]) || !isNumericASCII(str[5]))
+            return {};
+
+        Int64 hours = (str[1] - '0') * 10 + (str[2] - '0');
+        Int64 minutes = (str[4] - '0') * 10 + (str[5] - '0');
+        if (hours > 23 || minutes > 59)
+            return {};
+
+        Int64 offset = (hours * 60 + minutes) * 60;
+        return (str[0] == '-') ? -offset : offset;
+    }
+
+    /// Parses '2023-11-14 22:13:20' in the default time zone, or an RFC3339 time like '2023-11-14T22:13:20.5+02:00' in its own zone.
+    bool tryParseDateTime(std::string_view str, UInt32 scale, DateTime64 & result)
+    {
+        std::optional<Int64> offset;
+        if (str.size() > 19 && str[10] == 'T')
+        {
+            size_t zone_size = str.ends_with('Z') ? 1 : 6;
+            offset = tryParseTimeZoneOffset(str.substr(str.size() - zone_size));
+            if (offset)
+                str.remove_suffix(zone_size);
+        }
+
+        /// Parse without saturation so that invalid calendar dates like '1970-13-01' are rejected instead of clamped.
+        ReadBufferFromString buf{str};
+        if (!tryReadDateTime64Text(result, scale, buf, offset ? DateLUT::instance("UTC") : DateLUT::instance(),
+                /* allowed_date_delimiters = */ nullptr, /* allowed_time_delimiters = */ nullptr, /* saturate_on_overflow = */ false)
+            || !buf.eof())
+            return false;
+
+        return !offset || !common::subOverflow(result.value, getFromInt<DateTime64>(*offset, scale).value, result.value);
+    }
+
+    /// Whether the text has the shape of a number: '5', '-1.5', '1_000', '2023e6' or '0x1F'.
+    bool looksLikeNumber(std::string_view str)
+    {
+        if (str.starts_with('+') || str.starts_with('-'))
+            str.remove_prefix(1);
+        while (!str.empty() && isWhitespaceASCII(str.front()))
+            str.remove_prefix(1);
+
+        if (str.starts_with("0x") || str.starts_with("0X"))
+            return true;
+
+        size_t mantissa_size = std::min(str.find_first_not_of("0123456789._"), str.size());
+        if (mantissa_size == 0)
+            return false;
+        if (mantissa_size == str.size())
+            return true;
+        if (str[mantissa_size] != 'e' && str[mantissa_size] != 'E')
+            return false;
+
+        std::string_view exponent = str.substr(mantissa_size + 1);
+        if (exponent.starts_with('+') || exponent.starts_with('-'))
+            exponent.remove_prefix(1);
+        return exponent.find_first_not_of("0123456789") == std::string_view::npos;
+    }
+
+    template <is_decimal T>
+    T parseFromString(std::string_view str, UInt32 scale)
+    {
+        T result{};
+        String error_message;
+        size_t error_pos = 0;
+
+        if constexpr (std::is_same_v<T, DateTime64>)
+        {
+            /// Like Prometheus, a time with leading or trailing whitespace is an error.
+            if (!str.empty() && (isWhitespaceASCII(str.front()) || isWhitespaceASCII(str.back())))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse a timestamp from string {}: Leading or trailing whitespace", quoteString(str));
+
+            /// No number has two decimal points, so a dotted date like '14.11.2023' is not read as Unix seconds.
+            bool may_be_number = std::ranges::count(str, '.') < 2;
+            if (!may_be_number)
+                error_message = "Too many decimal points";
+            else if (PrometheusQueryParsingUtil::tryParseTimestamp(
+                    str, scale, result, &error_message, &error_pos, /* allow_octal_literals */ false))
+                return result;
+
+            if (tryParseDateTime(str, scale, result))
+                return result;
+
+            /// Otherwise accept any date-time text parseDateTimeBestEffort understands, e.g. 'Tue, 14 Nov 2023 22:13:20 GMT'.
+            /// A number is always Unix seconds, so one that failed above (too big) is not read as a date.
+            bool is_number = may_be_number && looksLikeNumber(str);
+            ReadBufferFromString buf{str};
+            if (!is_number && tryParseDateTime64BestEffort(result, scale, buf, DateLUT::instance(), DateLUT::instance("UTC")) && buf.eof())
+                return result;
+        }
+        else
+        {
+            if (PrometheusQueryParsingUtil::tryParseDuration(
+                    str, scale, result, &error_message, &error_pos, /* allow_octal_literals */ false))
+                return result;
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse a {} from string {}: {}",
+                        getTypeName<T>(), quoteString(str), error_message);
+    }
+
+    template <is_decimal T>
+    T getFromField(const Field & field, UInt32 scale)
+    {
+        switch (field.getType())
+        {
+            case Field::Types::Int64:
+            {
+                return getFromInt<T>(field.safeGet<Int64>(), scale);
+            }
+            case Field::Types::UInt64:
+            {
+                UInt64 uint_value = field.safeGet<UInt64>();
+                if (uint_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Cannot convert {} to {}: Overflow, the number is too big",
+                                    uint_value, getTypeName<T>());
+                }
+                return getFromInt<T>(static_cast<Int64>(uint_value), scale);
+            }
+            case Field::Types::Float64:
+            {
+                return getFromFloat<T>(field.safeGet<Float64>(), scale);
+            }
+            case Field::Types::Decimal32:
+            {
+                auto decimal32 = field.safeGet<Decimal32>();
+                return getFromDecimal<T>(decimal32.getValue().value, decimal32.getScale(), scale);
+            }
+            case Field::Types::Decimal64:
+            {
+                auto decimal64 = field.safeGet<Decimal64>();
+                return getFromDecimal<T>(decimal64.getValue().value, decimal64.getScale(), scale);
+            }
+            case Field::Types::String:
+            {
+                return parseFromString<T>(field.safeGet<String>(), scale);
+            }
+            default:
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Cannot extract a {} from a field of type {}", getTypeName<T>(), field.getType());
+            }
+        }
+    }
+
+    /// Same as `getFromField`, reading the value straight from the constant column by its exact type. The types
+    /// accepted are the ones whose values `getFromField` accepts, except `Bool`, which is rejected whether it comes
+    /// from a literal or an expression (it is not a time).
+    template <is_decimal T>
+    T getFromConstant(const ConstantValue & value, UInt32 scale)
+    {
+        const auto & type = value.getType();
+        const auto data_type = removeLowCardinalityAndNullable(type);
+        const WhichDataType which(data_type);
+
+        if (value.isNull())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot extract a {} from NULL", getTypeName<T>());
+
+        if (isBool(data_type))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot extract a {} from a value of type {}", getTypeName<T>(), type->getName());
+
+        if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(data_type.get()))
+            return getFromIntervalKind<T>(value.getInt(), interval_type->getKind(), scale);
+
+        if (which.isNativeInt() || which.isDate32() || which.isEnum() || which.isTime())
+            return getFromInt<T>(value.getInt(), scale);
+
+        if (which.isNativeUInt() || which.isDate() || which.isDateTime())
+        {
+            const UInt64 uint_value = value.getUInt();
+            if (uint_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Cannot convert {} to {}: Overflow, the number is too big",
+                                uint_value, getTypeName<T>());
+            }
+            return getFromInt<T>(static_cast<Int64>(uint_value), scale);
+        }
+
+        if (which.isFloat())
+            return getFromFloat<T>(value.getFloat64(), scale);
+
+        /// `DateTime64` and `Time64` are stored as `Decimal64`.
+        if (which.isDecimal32() || which.isDecimal64() || which.isDateTime64() || which.isTime64())
+            return getFromDecimal<T>(value.getInt(), getDecimalScale(*data_type), scale);
+
+        if (which.isStringOrFixedString())
+            return parseFromString<T>(value.getDataAt(), scale);
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot extract a {} from a value of type {}", getTypeName<T>(), type->getName());
+    }
+}
+
+DateTime64 parseTimeSeriesTimestamp(const String & str, UInt32 timestamp_scale)
+{
+    return parseFromString<DateTime64>(str, timestamp_scale);
+}
+
+DateTime64 parseTimeSeriesTimestamp(const Field & field, UInt32 timestamp_scale)
+{
+    return getFromField<DateTime64>(field, timestamp_scale);
+}
+
+Decimal64 parseTimeSeriesDuration(const String & str, UInt32 duration_scale)
+{
+    return parseFromString<Decimal64>(str, duration_scale);
+}
+
+Decimal64 parseTimeSeriesDuration(const Field & field, UInt32 duration_scale)
+{
+    return getFromField<Decimal64>(field, duration_scale);
+}
+
+DateTime64 parseTimeSeriesTimestamp(const ConstantValue & value, UInt32 timestamp_scale)
+{
+    return getFromConstant<DateTime64>(value, timestamp_scale);
+}
+
+Decimal64 parseTimeSeriesDuration(const ConstantValue & value, UInt32 duration_scale)
+{
+    return getFromConstant<Decimal64>(value, duration_scale);
+}
+
+}

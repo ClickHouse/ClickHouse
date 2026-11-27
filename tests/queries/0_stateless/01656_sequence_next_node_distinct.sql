@@ -1,4 +1,4 @@
-SET allow_experimental_funnel_functions = 1;
+SET enable_funnel_functions = 1;
 
 DROP TABLE IF EXISTS events_demo;
 

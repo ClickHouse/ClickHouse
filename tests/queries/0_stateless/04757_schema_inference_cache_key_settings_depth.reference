@@ -1,0 +1,4 @@
+-- Parquet depth, high limit then low limit must throw
+1
+-- Parquet depth, low limit alone throws (control)
+1

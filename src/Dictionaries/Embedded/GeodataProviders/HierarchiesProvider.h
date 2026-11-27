@@ -2,7 +2,7 @@
 
 #include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
 
-#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/FileUpdatesTracker.h>
 
 namespace DB
@@ -18,7 +18,7 @@ private:
 public:
     explicit RegionsHierarchyDataSource(const std::string & path_) : path(path_), updates_tracker(path_) {}
 
-    bool isModified() const override;
+    [[nodiscard]] bool isModified() const override;
 
     IRegionsHierarchyReaderPtr createReader() override;
 };
@@ -31,7 +31,7 @@ private:
     // path to file with default regions hierarchy
     std::string path;
 
-    using HierarchyFiles = std::unordered_map<std::string, std::string>;
+    using HierarchyFiles = UnorderedMapWithMemoryTracking<std::string, std::string>;
     HierarchyFiles hierarchy_files;
 
 public:
@@ -44,10 +44,10 @@ public:
       */
     explicit RegionsHierarchiesDataProvider(const std::string & path_);
 
-    std::vector<std::string> listCustomHierarchies() const override;
+    [[nodiscard]] VectorWithMemoryTracking<std::string> listCustomHierarchies() const override;
 
-    IRegionsHierarchyDataSourcePtr getDefaultHierarchySource() const override;
-    IRegionsHierarchyDataSourcePtr getHierarchySource(const std::string & name) const override;
+    [[nodiscard]] IRegionsHierarchyDataSourcePtr getDefaultHierarchySource() const override;
+    [[nodiscard]] IRegionsHierarchyDataSourcePtr getHierarchySource(const std::string & name) const override;
 
 private:
     void discoverFilesWithCustomHierarchies();

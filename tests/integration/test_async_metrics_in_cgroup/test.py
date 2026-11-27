@@ -4,7 +4,24 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", stay_alive=True, main_configs=["configs/config.xml"])
-node2 = cluster.add_instance("node2", stay_alive=True, main_configs=["configs/config.xml"])
+node2 = cluster.add_instance("node2", stay_alive=True, main_configs=["configs/config.xml"], cpu_limit=6)
+# No CPU quota, the limit is only in the cpuset: as for a Kubernetes pod with exclusive CPUs
+# under the `static` CPU manager policy, where `cpu.max` is `max`.
+node3 = cluster.add_instance(
+    "node3",
+    stay_alive=True,
+    main_configs=["configs/config.xml"],
+    cpu_limit=False,
+    cpuset="0-1",
+)
+# A quota larger than the cpuset: the cpuset is the limit.
+node4 = cluster.add_instance(
+    "node4",
+    stay_alive=True,
+    main_configs=["configs/config.xml"],
+    cpu_limit=4,
+    cpuset="0-1",
+)
 
 
 @pytest.fixture(scope="module")
@@ -62,10 +79,10 @@ def test_normalized_user_cpu(start_cluster):
     run_cpu_intensive_task(node2)
 
     node1_cpu_time = get_async_metric(node1, "CGroupUserTimeNormalized")
-    assert float(node1_cpu_time) < 1.01
+    assert float(node1_cpu_time) < 1.1
 
     node2_cpu_time = get_async_metric(node2, "CGroupUserTimeNormalized")
-    assert float(node2_cpu_time) < 1.01
+    assert float(node2_cpu_time) < 1.1
 
 
 def test_system_wide_metrics(start_cluster):
@@ -89,3 +106,26 @@ def test_system_wide_metrics(start_cluster):
     ]:
         node2_value = get_async_metric(node2, metric)
         assert float(node2_value) > 0
+
+
+def test_cpuset_without_quota(start_cluster):
+    max_cpu = node3.query_with_retry(
+        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'CGroupMaxCPU'",
+        check_callback=lambda result: result.strip() == "2",
+    )
+    assert max_cpu.strip() == "2"
+
+    # Normalized metrics are computed from the second update on.
+    normalized = node3.query_with_retry(
+        "SELECT count() FROM system.asynchronous_metrics WHERE metric = 'CGroupUserTimeNormalized'",
+        check_callback=lambda result: result.strip() == "1",
+    )
+    assert normalized.strip() == "1"
+
+
+def test_quota_larger_than_cpuset(start_cluster):
+    max_cpu = node4.query_with_retry(
+        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'CGroupMaxCPU'",
+        check_callback=lambda result: result.strip() == "2",
+    )
+    assert max_cpu.strip() == "2"

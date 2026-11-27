@@ -1,7 +1,0 @@
-position: 30
-label: 'Database & Table Engines'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  slug: /engines

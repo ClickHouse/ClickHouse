@@ -57,6 +57,7 @@ enum Command
     COM_STMT_PREPARE = 0x16,
     COM_STMT_EXECUTE = 0x17,
     COM_STMT_CLOSE = 0x19,
+    COM_STMT_RESET = 0x1a,
     COM_RESET_CONNECTION = 0x1f,
     COM_DAEMON = 0x1d,
     COM_BINLOG_DUMP_GTID = 0x1e
@@ -65,9 +66,9 @@ enum Command
 class SSLRequest : public IMySQLReadPacket
 {
 public:
-    uint32_t capability_flags;
-    uint32_t max_packet_size;
-    uint8_t character_set;
+    uint32_t capability_flags{};
+    uint32_t max_packet_size{};
+    uint8_t character_set{};
 
 protected:
     void readPayloadImpl(ReadBuffer & buf) override;
@@ -86,7 +87,7 @@ public:
     String info;
 
 protected:
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void readPayloadImpl(ReadBuffer & payload) override;
 
@@ -107,7 +108,7 @@ public:
     int status_flags;
 
 protected:
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void readPayloadImpl(ReadBuffer & payload) override;
 
@@ -128,7 +129,7 @@ public:
     String error_message;
 
 protected:
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void readPayloadImpl(ReadBuffer & payload) override;
 
@@ -190,7 +191,7 @@ class LengthEncodedNumber : public IMySQLWritePacket
 protected:
     uint64_t value;
 
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void writePayloadImpl(WriteBuffer & buffer) const override;
 

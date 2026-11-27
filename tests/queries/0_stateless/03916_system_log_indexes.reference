@@ -1,0 +1,6 @@
+system	query_log	event_time_index	minmax	1
+system	query_log	event_time_microseconds_index	minmax	1
+system	query_log	initial_query_id_index	bloom_filter	1
+system	query_log	query_id_index	bloom_filter	1
+system	metric_log	event_time_index	minmax	1
+system	metric_log	event_time_microseconds_index	minmax	1

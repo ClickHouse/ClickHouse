@@ -1,0 +1,2 @@
+parquet_required_depth: TOO_DEEP_RECURSION
+unlimited_depth: accepted

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<clickhouse>
+  <shutdown_wait_unfinished>5</shutdown_wait_unfinished>
+  <include from_zk="/min_bytes_for_wide_part" merge="true"/>
+</clickhouse>

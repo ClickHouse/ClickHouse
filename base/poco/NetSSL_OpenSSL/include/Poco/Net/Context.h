@@ -100,7 +100,8 @@ namespace Net
             PROTO_SSLV3 = 0x02,
             PROTO_TLSV1 = 0x04,
             PROTO_TLSV1_1 = 0x08,
-            PROTO_TLSV1_2 = 0x10
+            PROTO_TLSV1_2 = 0x10,
+            PROTO_TLSV1_3 = 0x20
         };
 
         struct NetSSL_API CAPaths
@@ -108,6 +109,9 @@ namespace Net
             std::string caDefaultDir;
             std::string caDefaultFile;
             std::string caLocation;
+            bool caEmbedded = false;
+            /// Whether the CA certificates embedded into the binary were added to the store
+            /// because none were found on the filesystem.
         };
 
         struct NetSSL_API Params
@@ -145,6 +149,14 @@ namespace Net
             std::string cipherList;
             /// Specifies the supported ciphers in OpenSSL notation.
             /// Defaults to "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH".
+            /// Applies to TLS 1.2 and earlier only; the TLS 1.3 cipher
+            /// suites are configured with cipherSuites.
+
+            std::string cipherSuites;
+            /// Specifies the supported TLS 1.3 cipher suites in OpenSSL notation.
+            /// If left empty, the OpenSSL default cipher suites are used.
+            /// Cipher suite names OpenSSL does not recognize are ignored; a value that
+            /// leaves no recognized suite throws SSLContextException.
 
             std::string dhParamsFile;
             /// Specifies a file containing Diffie-Hellman parameters.

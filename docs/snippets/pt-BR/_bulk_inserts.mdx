@@ -1,0 +1,15 @@
+---
+title: Inserções em massa
+---
+
+Os mecanismos acima ilustram uma sobrecarga constante, independentemente do tamanho da inserção, o que torna o tamanho do lote o fator de otimização mais importante para a taxa de transferência da ingestão. Agrupar inserções em lotes reduz a sobrecarga em relação ao tempo total de inserção e melhora a eficiência do processamento.
+
+Recomendamos inserir dados em lotes de pelo menos 1.000 linhas e, idealmente, entre 10.000 e 100.000 linhas. Fazer menos inserções, porém maiores, reduz o número de partes gravadas, minimiza a carga de merge e diminui o uso geral de recursos do sistema.
+
+**Para que uma estratégia de inserção síncrona seja eficaz, esse agrupamento em lotes no lado do cliente é necessário.**
+
+Se você não conseguir agrupar os dados em lotes no lado do cliente, o ClickHouse oferece suporte a inserções assíncronas, que transferem esse agrupamento para o servidor ([veja Inserções assíncronas](/pt-BR/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts)).
+
+<Tip>
+  Independentemente do tamanho das suas inserções, recomendamos manter o número de consultas de inserção em cerca de uma consulta de inserção por segundo. O motivo dessa recomendação é que as partes criadas são mescladas em partes maiores em segundo plano (para otimizar seus dados para consultas de leitura), e enviar consultas de inserção demais por segundo pode levar a situações em que a mesclagem em segundo plano não consegue acompanhar o número de novas partes. No entanto, você pode usar uma taxa maior de consultas de inserção por segundo ao usar inserções assíncronas (veja [Inserções assíncronas](/pt-BR/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts)).
+</Tip>

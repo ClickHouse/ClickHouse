@@ -1,0 +1,16 @@
+1. the dictionary filter must not suppress the null-conversion error
+filter off: reading nulls as non-nullable raises an error (baseline)
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+filter on: the row group must NOT be skipped, so the same error is raised (not suppressed)
+CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN
+filter on, read as Nullable: nulls stay null, so the row group is still pruned
+{"result":[{"count()":0}],"rows_read":0}
+2. input_format_parquet_bloom_filter_push_down=0 must disable bloom filtering
+all filters off: both row groups are read
+{"result":[{"count()":0}],"rows_read":2000}
+dict on, bloom on: row group 0 pruned by dictionary, row group 1 pruned by bloom
+{"result":[{"count()":0}],"rows_read":0}
+dict on, bloom off: row group 0 pruned by dictionary, row group 1 read (bloom is disabled)
+{"result":[{"count()":0}],"rows_read":1000}
+dict on, bloom off, value only in row group 1: found, and row group 1 is read
+{"result":[{"count()":1}],"rows_read":1000}

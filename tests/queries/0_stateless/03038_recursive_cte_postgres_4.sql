@@ -32,7 +32,6 @@
 
 -- { echoOn }
 
-SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
 
 --
@@ -57,6 +56,7 @@ WITH RECURSIVE search_graph AS (
 	WHERE g.f = sg.t AND NOT is_cycle
 )
 SELECT * FROM search_graph
+ORDER BY ALL
 SETTINGS query_plan_join_swap_table = 'false'
 ;
 

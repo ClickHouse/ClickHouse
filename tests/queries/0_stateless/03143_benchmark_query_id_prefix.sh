@@ -8,4 +8,4 @@ query_id_prefix=${CLICKHOUSE_DATABASE}_test_benchmark
 $CLICKHOUSE_BENCHMARK -i 100 -c 8 <<< "SELECT 1" --query_id_prefix $query_id_prefix 2>/dev/null
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
-$CLICKHOUSE_CLIENT --query "SELECT countIf(query_id = '$query_id_prefix'), countIf(query_id LIKE '$query_id_prefix%') FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish'"
+$CLICKHOUSE_CLIENT --query "SELECT countIf(query_id = '$query_id_prefix'), countIf(query_id LIKE '$query_id_prefix%') FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish'"

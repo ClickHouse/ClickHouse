@@ -19,6 +19,12 @@ namespace ErrorCodes
   */
 struct ArrayCumSumNonNegativeImpl
 {
+    /// Authoritative — like `arrayCumSum` but the running total is clamped to zero; the result
+    /// element type widens the same way, via the `arraySumResult` type function.
+    static constexpr auto signature =
+        "(Function((Any, ...), T : Number), Array, ...) -> Array(arraySumResult(T))"
+        " OR (Array(T : Number)) -> Array(arraySumResult(T))";
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -78,7 +84,7 @@ struct ArrayCumSumNonNegativeImpl
             Dst accumulated{};
             for (; pos < offset; ++pos)
             {
-                accumulated += src_values[pos];
+                accumulated += static_cast<Dst>(src_values[pos]);
                 if (accumulated < Dst{})
                     accumulated = {};
                 res_values[pos] = accumulated;
@@ -150,8 +156,8 @@ REGISTER_FUNCTION(ArrayCumSumNonNegative)
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the partial sums of the elements in the source array, with any negative running sum replaced by zero. The result type matches the input array's numeric type.", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {
-        {"Basic usage", "SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res", "[1, 2, 0, 1]"},
-        {"With lambda", "SELECT arrayCumSumNonNegative(x -> x * 2, [1, -2, 3]) AS res", "[2, 0, 6]"}
+        {"Basic usage", "SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res", "[1,2,0,1]"},
+        {"With lambda", "SELECT arrayCumSumNonNegative(x -> x * 2, [1, -2, 3]) AS res", "[2,0,6]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {18, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

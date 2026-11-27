@@ -1,6 +1,6 @@
 #pragma once
 
-#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Poco/Exception.h>
 #include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
 #include <Dictionaries/Embedded/RegionsHierarchy.h>
@@ -15,7 +15,7 @@ namespace DB
 class RegionsHierarchies
 {
 private:
-    using Container = std::unordered_map<std::string, RegionsHierarchy>;
+    using Container = UnorderedMapWithMemoryTracking<std::string, RegionsHierarchy>;
     Container data;
 
 public:
@@ -29,7 +29,7 @@ public:
             elem.second.reload();
     }
 
-    const RegionsHierarchy & get(const std::string & key) const
+    [[nodiscard]] const RegionsHierarchy & get(const std::string & key) const
     {
         auto it = data.find(key);
 

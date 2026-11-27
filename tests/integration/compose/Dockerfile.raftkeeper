@@ -1,0 +1,52 @@
+# Build RaftKeeper (JDRaftKeeper) for keeper stress tests.
+# amd64: use official release tarball. arm64: build from source (no release tarball).
+# Build: docker build -f tests/integration/compose/Dockerfile.raftkeeper -t raftkeeper:test .
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Detect architecture (default amd64 for backward compatibility)
+ARG TARGETARCH
+ARG TARGETOS=linux
+
+# --- amd64: install deps and download pre-built tarball ---
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates wget xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download RaftKeeper v2.3.0 ClickHouse-compatible Linux x86_64 release (amd64 only)
+ENV RAFTKEEPER_VERSION=v2.3.0
+ENV RAFTKEEPER_TAR=RaftKeeper-v2.3.0-linux-x86_64-clickhouse.tar.gz
+RUN if [ "${TARGETARCH:-amd64}" = "amd64" ]; then \
+    wget -q "https://github.com/JDRaftKeeper/RaftKeeper/releases/download/${RAFTKEEPER_VERSION}/${RAFTKEEPER_TAR}" -O /tmp/raftkeeper.tar.gz \
+    && tar -xzf /tmp/raftkeeper.tar.gz -C /tmp \
+    && cp /tmp/RaftKeeper/lib/raftkeeper /usr/bin/raftkeeper \
+    && chmod +x /usr/bin/raftkeeper \
+    && rm -rf /tmp/raftkeeper.tar.gz /tmp/RaftKeeper; \
+    fi
+
+# --- arm64: build from source (RaftKeeper requires Clang 17+) ---
+RUN if [ "${TARGETARCH:-amd64}" = "arm64" ]; then \
+    apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates wget gnupg software-properties-common \
+    && wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor -o /usr/share/keyrings/llvm-apt.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/llvm-apt.gpg] http://apt.llvm.org/jammy/ llvm-toolchain-jammy-17 main" > /etc/apt/sources.list.d/llvm17.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    git cmake build-essential clang-17 libc++-17-dev llvm-17 \
+    && rm -rf /var/lib/apt/lists/* \
+    && git clone --depth 1 https://github.com/JDRaftKeeper/RaftKeeper.git /tmp/RaftKeeper \
+    && cd /tmp/RaftKeeper \
+    && git submodule sync && git submodule update --init --recursive \
+    && mkdir -p build && cd build \
+    && export CC=clang-17 CXX=clang++-17 PATH="/usr/lib/llvm-17/bin:$PATH" \
+    && cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCOMPATIBLE_MODE_ZOOKEEPER=OFF -DENABLE_THINLTO=OFF \
+    && make -j$(nproc) raftkeeper \
+    && cp programs/raftkeeper /usr/bin/raftkeeper \
+    && chmod +x /usr/bin/raftkeeper \
+    && cd / && rm -rf /tmp/RaftKeeper; \
+    fi
+
+# Ensure binary exists (one of the two paths above must run)
+RUN test -x /usr/bin/raftkeeper || (echo "RAFTKEEPER BINARY MISSING - check TARGETARCH" && exit 1)
+
+ENTRYPOINT ["/usr/bin/raftkeeper", "server"]

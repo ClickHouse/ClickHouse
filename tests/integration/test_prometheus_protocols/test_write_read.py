@@ -2,10 +2,21 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-from .prometheus_test_utils import *
+from .prometheus_test_utils import (
+    compress_remote_write_request,
+    convert_read_request_to_protobuf,
+    convert_time_series_to_protobuf,
+    execute_query_via_http_api,
+    get_response_to_remote_read,
+    get_response_to_remote_write,
+    receive_protobuf_from_remote_read,
+    send_protobuf_to_remote_write,
+    types_pb2,
+)
 import re
 import requests
 import time
+import uuid
 
 
 cluster = ClickHouseCluster(__file__)
@@ -21,9 +32,8 @@ node = cluster.add_instance(
 )
 
 
-# Data are inserted via RemoteWrite protocol to ClickHouse,
-# we need to wait a bit until we get some data.
-def wait_for_data():
+# Waits until Prometheus scrapes some data and sends it to ClickHouse via the RemoteWrite protocol.
+def wait_for_scraped_data():
     start_time = time.monotonic()
     assert_eq_with_retry(
         node, "SELECT count() > 0 FROM timeSeriesData(prometheus)", "1"
@@ -32,7 +42,7 @@ def wait_for_data():
     data_num_rows = int(node.query("SELECT count() FROM timeSeriesData(prometheus)"))
     tags_num_rows = int(node.query("SELECT count() FROM timeSeriesTags(prometheus)"))
     metrics_num_rows = int(
-        node.query("SELECT count() FROM timeSeriesMetrics(prometheus)")
+        node.query("SELECT count() FROM timeSeriesMetricFamilies(prometheus)")
     )
     print(f"After waiting {elapsed} seconds got numbers of rows:")
     print(
@@ -40,22 +50,34 @@ def wait_for_data():
     )
 
 
+# Sends lots of data to ClickHouse via the RemoteWrite protocol.
+def send_big_data(metric_name="big_data", start_time=1724112000, end_time=1724115600, count=75000):
+    time_series = []
+    step = (end_time - start_time) / count
+    for i in range(0, count):
+        timestamp = start_time + i * step
+        value = i
+        time_series.append(({"__name__": metric_name}, {timestamp: value}))
+    protobuf = convert_time_series_to_protobuf(time_series)
+    send_protobuf_to_remote_write(node.ip_address, 9093, "/write", protobuf)
+
+
 # Executes a query in the "prometheus_reader" service. This service uses the RemoteRead protocol to get data from ClickHouse.
 def execute_query_in_prometheus_reader(query, timestamp):
     return execute_query_via_http_api(
-        cluster.prometheus_reader_ip,
-        cluster.prometheus_reader_port,
+        cluster.prometheus_ip["reader"],
+        cluster.prometheus_port["reader"],
         "/api/v1/query",
         query,
         timestamp,
     )
 
 
-# Executes a query in the "prometheus_receiver" service. We send data to this service via the RemoteWrite protocol.
+# Executes a query in the "prometheus_writer" service. This service sends data to ClickHouse via the RemoteWrite protocol.
 def execute_query_in_prometheus_writer(query, timestamp):
     return execute_query_via_http_api(
-        cluster.prometheus_writer_ip,
-        cluster.prometheus_writer_port,
+        cluster.prometheus_ip["writer"],
+        cluster.prometheus_port["writer"],
         "/api/v1/query",
         query,
         timestamp,
@@ -83,28 +105,27 @@ def start_cluster():
     try:
         cluster.start()
         node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+        wait_for_scraped_data()
+        send_big_data()
         yield cluster
     finally:
         cluster.shutdown()
 
 
 def test_handle_normal_scrape():
-    wait_for_data()
     query = "up"
     evaluation_time = time.time()
     result = execute_query_in_prometheus(query, evaluation_time)
     print(f"result={result}")
-    pattern = '\{"resultType":\ "vector",\ "result":\ \[\{"metric":\ \{"__name__":\ "up",\ "instance":\ "localhost:9090",\ "job":\ "prometheus"},\ "value":\ \[[0-9]+(\.[0-9]*)?,\ "1"]}]}'
+    pattern = '\\{"resultType": "vector", "result": \\[\\{"metric": \\{"__name__": "up", "instance": "localhost:9090", "job": "prometheus"}, "value": \\[[0-9]+(\\.[0-9]*)?, "1"]}]}'
     assert re.match(pattern, result)
     chresult = execute_query_in_clickhouse(query, evaluation_time)
     print(f"chresult={chresult}")
-    chpattern = "\[\('__name__','up'\),\('instance','localhost:9090'\),\('job','prometheus'\)]\t[^\t]*\t1\n"
+    chpattern = "\\[\\('__name__','up'\\),\\('instance','localhost:9090'\\),\\('job','prometheus'\\)]\t[^\t]*\t1\n"
     assert re.match(chpattern, chresult)
 
 
 def test_remote_read_auth():
-    wait_for_data()
-
     read_request = convert_read_request_to_protobuf(
         "^up$", time.time() - 300, time.time()
     )
@@ -128,3 +149,169 @@ def test_remote_read_auth():
         read_request,
     )
     assert auth_fail_response.status_code == requests.codes.forbidden
+
+
+def test_remote_read_big_data():
+    read_request = convert_read_request_to_protobuf(
+        "^big_data$", 1724112000, 1724115600
+    )
+
+    read_response = receive_protobuf_from_remote_read(
+        node.ip_address,
+        9093,
+        "read_auth_ok",
+        read_request)
+
+    assert len(read_response.results) == 1
+    assert len(read_response.results[0].timeseries) == 1
+    assert len(read_response.results[0].timeseries[0].samples) == 75000
+
+
+def test_remote_write_zstd():
+    start_time = 1724116000
+    count = 100
+    time_series = []
+    for i in range(0, count):
+        time_series.append(({"__name__": "zstd_data"}, {start_time + i: float(i)}))
+    protobuf = convert_time_series_to_protobuf(time_series)
+
+    send_protobuf_to_remote_write(
+        node.ip_address, 9093, "/write", protobuf, content_encoding="zstd"
+    )
+
+    read_request = convert_read_request_to_protobuf(
+        "^zstd_data$", start_time, start_time + count
+    )
+    read_response = receive_protobuf_from_remote_read(
+        node.ip_address, 9093, "read_auth_ok", read_request
+    )
+    assert len(read_response.results) == 1
+    assert len(read_response.results[0].timeseries) == 1
+    assert len(read_response.results[0].timeseries[0].samples) == count
+
+
+def get_dropped_exemplars():
+    return int(
+        node.query(
+            "SELECT sum(value) FROM system.events WHERE event = 'PrometheusRemoteWriteDroppedExemplars'"
+        )
+    )
+
+
+def test_remote_write_counts_dropped_exemplars():
+    timestamp = 1724118000
+    # A unique metric name keeps repeated runs from seeing each other's samples.
+    metric_name = f"exemplar_data_{uuid.uuid4().hex}"
+    write_request = convert_time_series_to_protobuf(
+        [
+            ({"__name__": metric_name, "series": "a"}, {timestamp: 1.0}),
+            ({"__name__": metric_name, "series": "a"}, {}),
+            ({"__name__": metric_name, "series": "b"}, {timestamp: 2.0}),
+        ]
+    )
+    exemplar = types_pb2.Exemplar(
+        labels=[types_pb2.Label(name="trace_id", value="abc")],
+        value=1.0,
+        timestamp=timestamp * 1000,
+    )
+    # Prometheus sends each exemplar in its own series without samples.
+    write_request.timeseries[1].exemplars.append(exemplar)
+    # Exemplars next to a sample are dropped too.
+    write_request.timeseries[2].exemplars.extend([exemplar, exemplar])
+
+    before = get_dropped_exemplars()
+    send_protobuf_to_remote_write(node.ip_address, 9093, "/write", write_request)
+    assert get_dropped_exemplars() - before == 3
+
+    # The samples are stored even though the exemplars are dropped.
+    assert (
+        node.query(
+            "SELECT count() FROM timeSeriesData(prometheus) WHERE id IN "
+            f"(SELECT id FROM timeSeriesTags(prometheus) WHERE metric_name = '{metric_name}')"
+        )
+        == "2\n"
+    )
+
+
+def test_remote_write_unsupported_content_encoding():
+    time_series = [({"__name__": "gzip_data"}, {1724117000: 1.0})]
+    protobuf = convert_time_series_to_protobuf(time_series)
+
+    response = get_response_to_remote_write(
+        node.ip_address, 9093, "/write", protobuf, content_encoding="gzip"
+    )
+    assert response.status_code == requests.codes.unsupported_media_type
+    assert "Content-Encoding" in response.text
+
+
+def test_remote_write_unsupported_content_type():
+    time_series = [({"__name__": "text_data"}, {1724117000: 1.0})]
+    protobuf = convert_time_series_to_protobuf(time_series)
+
+    response = get_response_to_remote_write(
+        node.ip_address, 9093, "/write", protobuf, content_type="text/plain"
+    )
+    assert response.status_code == requests.codes.unsupported_media_type
+    assert "Content-Type" in response.text
+
+
+def post_undecodable_body(path, content_encoding):
+    """A body the client encoded wrongly, sent verbatim so nothing compresses it on the way out."""
+    return requests.post(
+        f"http://{node.ip_address}:9093/{path.strip('/')}",
+        data=b"this is not a compressed protobuf",
+        headers={
+            "Content-Encoding": content_encoding,
+            "Content-Type": "application/x-protobuf",
+            "User-Agent": requests.utils.default_user_agent(),
+            "X-Prometheus-Remote-Write-Version": "0.1.0",
+        },
+    )
+
+
+@pytest.mark.parametrize("content_encoding", ["snappy", "zstd"])
+def test_remote_write_undecodable_body(content_encoding):
+    """A body that cannot be decompressed is the sender's permanent fault. It must not be answered
+    with a 5xx, which Prometheus retries for as long as it keeps the batch."""
+    response = post_undecodable_body("/write", content_encoding)
+    assert response.status_code == requests.codes.bad_request, response.text
+    assert "Cannot decode the request body" in response.text
+
+
+@pytest.mark.parametrize("content_encoding", ["snappy", "zstd"])
+def test_remote_write_truncated_request(content_encoding):
+    """A body that ends in the middle of its second series gets 400, and no series of it is written."""
+    time_series = [
+        ({"__name__": "truncated_data", "job": "first"}, {1724117000: 1.0}),
+        ({"__name__": "truncated_data", "job": "second" * 10}, {1724117000: 2.0}),
+    ]
+    serialized = convert_time_series_to_protobuf(time_series).SerializeToString()
+    response = requests.post(
+        f"http://{node.ip_address}:9093/write",
+        data=compress_remote_write_request(serialized[: len(serialized) - 30], content_encoding),
+        headers={
+            "Content-Encoding": content_encoding,
+            "Content-Type": "application/x-protobuf",
+            "User-Agent": requests.utils.default_user_agent(),
+            "X-Prometheus-Remote-Write-Version": "0.1.0",
+        },
+    )
+    assert response.status_code == requests.codes.bad_request, response.text
+    assert "Cannot parse WriteRequest" in response.text
+    assert node.query("SELECT count() FROM timeSeriesTags(prometheus) WHERE metric_name = 'truncated_data'") == "0\n"
+
+
+def test_remote_read_undecodable_body():
+    response = requests.get(
+        f"http://{node.ip_address}:9093/read_auth_ok",
+        data=b"this is not a compressed protobuf",
+        headers={
+            "Content-Encoding": "snappy",
+            "Accept-Encoding": "snappy",
+            "Content-Type": "application/x-protobuf",
+            "User-Agent": requests.utils.default_user_agent(),
+            "X-Prometheus-Remote-Read-Version": "0.1.0",
+        },
+    )
+    assert response.status_code == requests.codes.bad_request, response.text
+    assert "Cannot decode the request body" in response.text

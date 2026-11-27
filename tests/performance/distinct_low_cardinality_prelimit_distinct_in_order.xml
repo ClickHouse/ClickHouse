@@ -1,0 +1,37 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>cardinality</name>
+            <values>
+                <value>2000</value>
+                <value>20000</value>
+                <value>200000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE test_strings_{cardinality}
+        (
+            col1 LowCardinality(String),
+            col2 LowCardinality(String)
+        )
+        ENGINE = MergeTree
+        ORDER BY col1
+    </create_query>
+
+    <fill_query>
+        INSERT INTO test_strings_{cardinality}
+        SELECT lc AS col1, lc AS col2
+        FROM
+        (
+            SELECT toLowCardinality(toString(number % {cardinality})) AS lc
+            FROM numbers(10000000)
+        )
+    </fill_query>
+
+    <query>SELECT DISTINCT col1 FROM test_strings_{cardinality} FORMAT Null</query>
+    <query>SELECT DISTINCT col2 FROM test_strings_{cardinality} FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_strings_{cardinality}</drop_query>
+</test>

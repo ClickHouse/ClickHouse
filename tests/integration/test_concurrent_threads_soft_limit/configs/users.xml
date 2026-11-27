@@ -3,6 +3,7 @@
         <default>
             <log_queries>1</log_queries>
             <max_threads>100</max_threads>
+            <max_threads_min_free_memory_per_thread>0</max_threads_min_free_memory_per_thread>
         </default>
     </profiles>
     <users>

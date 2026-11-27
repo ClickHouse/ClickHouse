@@ -1,0 +1,16 @@
+<clickhouse>
+    <named_collections>
+        <gcs_conn>
+            <url>http://resolver:22234/test/</url>
+            <http_client>gcp_oauth</http_client>
+            <service_account>my-account</service_account>
+            <metadata_service>resolver</metadata_service>
+        </gcs_conn>
+         <gcs_conn_bad>
+            <url>http://resolver:22234/test/</url>
+            <http_client>gcp_oauth</http_client>
+            <service_account>non-existing-account</service_account>
+            <metadata_service>resolver</metadata_service>
+        </gcs_conn_bad>
+    </named_collections>
+</clickhouse>

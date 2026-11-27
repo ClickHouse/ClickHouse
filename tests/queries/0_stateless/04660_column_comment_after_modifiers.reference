@@ -1,0 +1,106 @@
+CREATE TABLE default.t_column_comment_order
+(
+    `a` UInt64 COMMENT 'a comment' CODEC(ZSTD(1)),
+    `b` UInt64 COMMENT 'b comment' CODEC(ZSTD(1)),
+    `c` UInt64 DEFAULT 1 COMMENT 'c comment' CODEC(ZSTD(1)),
+    `d` DateTime,
+    `e` UInt64 COMMENT 'e comment' CODEC(ZSTD(1)) TTL d + toIntervalDay(1),
+    `f` UInt64 COMMENT 'f comment' SETTINGS (max_compress_block_size = 1024),
+    `g` UInt64 COMMENT 'g comment' STATISTICS(tdigest),
+    `h` String EPHEMERAL COMMENT 'h comment'
+)
+ENGINE = MergeTree
+ORDER BY a
+SETTINGS index_granularity = 8192
+a	a comment
+b	b comment
+c	c comment
+d	
+e	e comment
+f	f comment
+g	g comment
+h	h comment
+CREATE TABLE default.t_column_comment_order
+(
+    `a` UInt64 COMMENT 'a new comment' CODEC(LZ4),
+    `b` UInt64 COMMENT 'b newer comment' CODEC(ZSTD(1)),
+    `c` UInt64 DEFAULT 1 COMMENT 'c comment' CODEC(ZSTD(1)),
+    `d` DateTime,
+    `e` UInt64 COMMENT 'e new comment' CODEC(LZ4) TTL d + toIntervalDay(1),
+    `f` UInt64 COMMENT 'f newer comment' SETTINGS (max_compress_block_size = 4096),
+    `g` UInt64 COMMENT 'g comment' STATISTICS(tdigest),
+    `h` String EPHEMERAL COMMENT 'h comment',
+    `i` UInt64 COMMENT 'i comment' CODEC(ZSTD(1)),
+    `j` UInt64 COMMENT 'j comment' TTL d + toIntervalDay(2),
+    `k` UInt64 COMMENT 'k comment' SETTINGS (max_compress_block_size = 1024)
+)
+ENGINE = MergeTree
+ORDER BY a
+SETTINGS index_granularity = 8192
+CREATE TABLE default.t_column_comment_order
+(
+    `a` UInt64 COMMENT 'a new comment' CODEC(LZ4),
+    `b` UInt64 COMMENT 'b newer comment' CODEC(ZSTD(1)),
+    `c` UInt64 DEFAULT 1 COMMENT 'c comment' CODEC(ZSTD(1)),
+    `d` DateTime,
+    `e` UInt64 COMMENT 'e new comment' CODEC(LZ4) TTL d + toIntervalDay(1),
+    `f` UInt64 COMMENT 'f newer comment' SETTINGS (max_compress_block_size = 4096),
+    `g` UInt64 COMMENT 'g new comment' STATISTICS(uniq),
+    `h` String EPHEMERAL COMMENT 'h comment',
+    `i` UInt64 COMMENT 'i comment' CODEC(ZSTD(1)),
+    `j` UInt64 COMMENT 'j comment' TTL d + toIntervalDay(2),
+    `k` UInt64 COMMENT 'k comment' SETTINGS (max_compress_block_size = 1024),
+    `s` UInt64 COMMENT 's comment' STATISTICS(tdigest)
+)
+ENGINE = MergeTree
+ORDER BY a
+SETTINGS index_granularity = 8192
+CREATE TABLE default.t_column_comment_order
+(
+    `a` UInt64 COMMENT 'a new comment' CODEC(LZ4),
+    `b` UInt64 COMMENT 'b newer comment' CODEC(ZSTD(1)),
+    `c` UInt64 DEFAULT 1 COMMENT 'c comment' CODEC(ZSTD(1)),
+    `d` DateTime,
+    `e` UInt64 COMMENT 'e new comment' CODEC(LZ4) TTL d + toIntervalDay(1),
+    `f` UInt64 COMMENT 'f newer comment' SETTINGS (max_compress_block_size = 4096),
+    `g` UInt64 COMMENT 'g newest comment' STATISTICS(uniq),
+    `h` String EPHEMERAL COMMENT 'h comment',
+    `i` UInt64 COMMENT 'i comment' CODEC(ZSTD(1)),
+    `j` UInt64 COMMENT 'j comment' TTL d + toIntervalDay(2),
+    `k` UInt64 COMMENT 'k comment' SETTINGS (max_compress_block_size = 1024),
+    `s` UInt64 COMMENT 's comment' STATISTICS(tdigest)
+)
+ENGINE = MergeTree
+ORDER BY a
+SETTINGS index_granularity = 8192
+a	a new comment
+b	b newer comment
+c	c comment
+d	
+e	e new comment
+f	f newer comment
+g	g newest comment
+h	h comment
+i	i comment
+j	j comment
+k	k comment
+s	s comment
+CREATE TABLE default.t_column_comment_order_pk
+(
+    `a` UInt64 COMMENT 'a comment',
+    `b` UInt64
+)
+ENGINE = MergeTree
+PRIMARY KEY tuple(a)
+ORDER BY tuple(a)
+SETTINGS index_granularity = 8192
+CREATE TABLE t\n(\n    `a` UInt64 COMMENT \'a comment\' CODEC(ZSTD)\n)\nENGINE = Memory
+CREATE TABLE t\n(\n    `a` UInt64 COMMENT \'a comment\' STATISTICS(tdigest)\n)\nENGINE = MergeTree\nORDER BY a
+CREATE TABLE t\n(\n    `a` DateTime COMMENT \'a comment\' TTL a + toIntervalDay(1)\n)\nENGINE = MergeTree\nORDER BY a
+CREATE TABLE t\n(\n    `a` String COMMENT \'a comment\' COLLATE utf8_bin\n)\nENGINE = Memory
+CREATE TABLE t\n(\n    `a` String TTL now() COLLATE utf8_bin\n)\nENGINE = MergeTree\nORDER BY a
+ALTER TABLE t\n    (MODIFY COLUMN `a` UInt64 COMMENT \'a comment\' CODEC(ZSTD))
+ALTER TABLE t\n    (MODIFY COLUMN `a` COMMENT \'a comment\' SETTINGS (max_compress_block_size = 1024))
+ALTER TABLE t\n    (MODIFY COLUMN `a` COMMENT \'a comment\' STATISTICS(tdigest))
+CREATE TABLE t\n(\n    `a` String COMMENT \'a comment\' COLLATE utf8_bin\n)\nENGINE = Memory
+CREATE TABLE t\n(\n    `a` String TTL now() COLLATE utf8_bin\n)\nENGINE = MergeTree\nORDER BY a

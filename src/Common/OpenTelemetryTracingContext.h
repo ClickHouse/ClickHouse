@@ -16,6 +16,7 @@ enum TraceFlags : UInt8
 {
     TRACE_FLAG_NONE = 0,
     TRACE_FLAG_SAMPLED = 1,
+    TRACE_FLAG_KEEPER_SPANS = 2,
 };
 
 /// The runtime info we need to create new OpenTelemetry spans.
@@ -30,12 +31,18 @@ struct TracingContext
 
     // Parse/compose OpenTelemetry traceparent header.
     bool parseTraceparentHeader(std::string_view traceparent, String & error);
-    String composeTraceparentHeader() const;
+    [[nodiscard]] String composeTraceparentHeader() const;
 
-    bool isTraceEnabled() const
+    [[nodiscard]] bool isTraceEnabled() const
     {
         return trace_id != UUID();
     }
+
+    /// Generate a new random non-zero trace ID
+    static UUID generateTraceId();
+
+    /// Generate a new random span ID
+    static UInt64 generateSpanId();
 
     void deserialize(ReadBuffer & buf);
     void serialize(WriteBuffer & buf) const;

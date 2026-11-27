@@ -49,8 +49,9 @@ const char * toString(ApplyColumnTransformerType type)
     }
 }
 
-ApplyColumnTransformerNode::ApplyColumnTransformerNode(QueryTreeNodePtr expression_node_)
+ApplyColumnTransformerNode::ApplyColumnTransformerNode(QueryTreeNodePtr expression_node_, String column_name_prefix_)
     : IColumnTransformerNode(children_size)
+    , column_name_prefix(std::move(column_name_prefix_))
 {
     if (expression_node_->getNodeType() == QueryTreeNodeType::LAMBDA)
         apply_transformer_type = ApplyColumnTransformerType::LAMBDA;
@@ -78,23 +79,25 @@ void ApplyColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatState 
 bool ApplyColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const ApplyColumnTransformerNode &>(rhs);
-    return apply_transformer_type == rhs_typed.apply_transformer_type;
+    return apply_transformer_type == rhs_typed.apply_transformer_type && column_name_prefix == rhs_typed.column_name_prefix;
 }
 
 void ApplyColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const
 {
     hash_state.update(static_cast<size_t>(getTransformerType()));
     hash_state.update(static_cast<size_t>(getApplyTransformerType()));
+    hash_state.update(column_name_prefix.size());
+    hash_state.update(column_name_prefix);
 }
 
 QueryTreeNodePtr ApplyColumnTransformerNode::cloneImpl() const
 {
-    return std::make_shared<ApplyColumnTransformerNode>(getExpressionNode());
+    return std::make_shared<ApplyColumnTransformerNode>(getExpressionNode(), column_name_prefix);
 }
 
 ASTPtr ApplyColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto ast_apply_transformer = std::make_shared<ASTColumnsApplyTransformer>();
+    auto ast_apply_transformer = make_intrusive<ASTColumnsApplyTransformer>();
     const auto & expression_node = getExpressionNode();
 
     if (apply_transformer_type == ApplyColumnTransformerType::FUNCTION)
@@ -106,10 +109,12 @@ ASTPtr ApplyColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options
     else
     {
         auto & lambda_expression = expression_node->as<LambdaNode &>();
-        if (!lambda_expression.getArgumentNames().empty())
-            ast_apply_transformer->lambda_arg = lambda_expression.getArgumentNames()[0];
+        if (!lambda_expression.getArguments().getNames().empty())
+            ast_apply_transformer->lambda_arg = lambda_expression.getArguments().getNames()[0];
         ast_apply_transformer->lambda = lambda_expression.toAST(options);
     }
+
+    ast_apply_transformer->column_name_prefix = column_name_prefix;
 
     return ast_apply_transformer;
 }
@@ -228,7 +233,7 @@ QueryTreeNodePtr ExceptColumnTransformerNode::cloneImpl() const
 
 ASTPtr ExceptColumnTransformerNode::toASTImpl(const ConvertToASTOptions & /* options */) const
 {
-    auto ast_except_transformer = std::make_shared<ASTColumnsExceptTransformer>();
+    auto ast_except_transformer = make_intrusive<ASTColumnsExceptTransformer>();
 
     if (column_matcher)
     {
@@ -238,7 +243,7 @@ ASTPtr ExceptColumnTransformerNode::toASTImpl(const ConvertToASTOptions & /* opt
 
     ast_except_transformer->children.reserve(except_column_names.size());
     for (const auto & name : except_column_names)
-        ast_except_transformer->children.push_back(std::make_shared<ASTIdentifier>(name));
+        ast_except_transformer->children.push_back(make_intrusive<ASTIdentifier>(name));
 
     return ast_except_transformer;
 }
@@ -335,7 +340,7 @@ QueryTreeNodePtr ReplaceColumnTransformerNode::cloneImpl() const
 
 ASTPtr ReplaceColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto ast_replace_transformer = std::make_shared<ASTColumnsReplaceTransformer>();
+    auto ast_replace_transformer = make_intrusive<ASTColumnsReplaceTransformer>();
 
     const auto & replacement_expressions_nodes = getReplacements().getNodes();
     size_t replacements_size = replacement_expressions_nodes.size();
@@ -344,7 +349,7 @@ ASTPtr ReplaceColumnTransformerNode::toASTImpl(const ConvertToASTOptions & optio
 
     for (size_t i = 0; i < replacements_size; ++i)
     {
-        auto replacement_ast = std::make_shared<ASTColumnsReplaceTransformer::Replacement>();
+        auto replacement_ast = make_intrusive<ASTColumnsReplaceTransformer::Replacement>();
         replacement_ast->name = replacements_names[i];
         replacement_ast->children.push_back(replacement_expressions_nodes[i]->toAST(options));
         ast_replace_transformer->children.push_back(std::move(replacement_ast));

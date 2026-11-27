@@ -4,10 +4,12 @@
 
 #if USE_EMBEDDED_COMPILER
 
+#    include <base/sanitizer_defs.h>
 #    include <AggregateFunctions/IAggregateFunction_fwd.h>
 #    include <Core/SortDescription.h>
 #    include <Functions/IFunction.h>
 #    include <Interpreters/JIT/CHJIT.h>
+#    include <Interpreters/JIT/callJITFunction.h>
 
 
 namespace DB
@@ -21,6 +23,7 @@ struct ColumnData
 {
     const char * data = nullptr;
     const char * null_data = nullptr;
+    const char * offset_data = nullptr; // For String type, points to offsets data
 };
 
 /** Returns ColumnData for column.
@@ -36,7 +39,7 @@ using JITCompiledFunction = void (*)(ColumnDataRowsSize, ColumnData *);
 struct CompiledFunction
 {
 
-    JITCompiledFunction compiled_function;
+    JITCompiledFunction compiled_function{};
 
     CHJIT::CompiledModule compiled_module;
 };
@@ -61,15 +64,15 @@ using JITInsertAggregateStatesIntoColumnsFunction = void (*)(ColumnDataRowsOffse
 
 struct CompiledAggregateFunctions
 {
-    JITCreateAggregateStatesFunction create_aggregate_states_function;
-    JITAddIntoAggregateStatesFunction add_into_aggregate_states_function;
-    JITAddIntoAggregateStatesFunctionSinglePlace add_into_aggregate_states_function_single_place;
+    JITCreateAggregateStatesFunction create_aggregate_states_function{};
+    JITAddIntoAggregateStatesFunction add_into_aggregate_states_function{};
+    JITAddIntoAggregateStatesFunctionSinglePlace add_into_aggregate_states_function_single_place{};
 
-    JITMergeAggregateStatesFunction merge_aggregate_states_function;
-    JITInsertAggregateStatesIntoColumnsFunction insert_aggregates_into_columns_function;
+    JITMergeAggregateStatesFunction merge_aggregate_states_function{};
+    JITInsertAggregateStatesIntoColumnsFunction insert_aggregates_into_columns_function{};
 
     /// Count of functions that were compiled
-    size_t functions_count;
+    size_t functions_count{};
 
     /// Compiled module. It is client responsibility to destroy it after functions are no longer required.
     CHJIT::CompiledModule compiled_module;
@@ -90,7 +93,7 @@ using JITSortDescriptionFunc = int8_t (*)(size_t, size_t, ColumnData *, ColumnDa
 
 struct CompiledSortDescriptionFunction
 {
-    JITSortDescriptionFunc comparator_function;
+    JITSortDescriptionFunc comparator_function{};
     CHJIT::CompiledModule compiled_module;
 };
 

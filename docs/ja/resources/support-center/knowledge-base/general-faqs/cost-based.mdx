@@ -1,0 +1,37 @@
+---
+title: 'ClickHouse にはオプティマイザはありますか？'
+sidebarTitle: 'オプティマイザ'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/cost-based
+description: 'ClickHouse には、自動的に収集されるカラム統計に基づいて、JOIN 順序、JOIN のビルド側、PREWHERE 条件の順序を決定するオプティマイザがあります'
+doc_type: 'reference'
+keywords: ['CBO', 'cost-based optimizer', 'optimizer', 'statistics', 'join reordering']
+---
+
+はい。ClickHouse にはオプティマイザ (CBO) があります。CBO はカラム統計をもとにクエリの各ステップが出力する行数を推定し、その推定値を用いて同等なクエリプランの中から最適なものを選択します。
+
+コストに基づいて決定される項目は次のとおりです。
+
+* **JOIN 順序。** 複数のテーブルを結合するクエリでは、プランナーが推定コストの最も低い JOIN 順序を探索します。デフォルトでは動的計画法アルゴリズム `dpsub` を使用し、`LEFT`、`RIGHT`、`FULL`、`SEMI`、`ANTI` 結合を含むものも含め、有効なすべての JOIN 順序を検討します。探索対象となるグループのテーブル数は最大 10 で、この上限は `query_plan_optimize_join_order_limit` で設定します。これより多くのテーブルを結合するクエリは複数のグループに分割され、グループごとに個別に最適化されます。上限を 12 より大きくした場合、12 を超えるテーブルからなるグループには、代わりに貪欲法アルゴリズムが使用されます。詳しくは [`query_plan_optimize_join_order_algorithm`](/ja/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_algorithm) および [`query_plan_optimize_join_order_limit`](/ja/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) を参照してください。
+* **JOIN のビルド側。** ハッシュ結合では、クエリ内のテーブルの記述順にかかわらず、プランナーは推定サイズが小さい方の入力をハッシュテーブルに格納します。詳しくは [`query_plan_join_swap_table`](/ja/reference/settings/session-settings/query-plan#query_plan_join_swap_table) を参照してください。
+* **結合アルゴリズム。** 結合対象のテーブルを結合キーの順序で読み取れる場合、プランナーはコストに基づいてハッシュ結合と `full_sorting_merge` のいずれかを選択し、ソート済みの出力を後続の結合で活用できるプランを優先します。詳しくは [`query_plan_join_order_use_interesting_orders`](/ja/reference/settings/session-settings/query-plan#query_plan_join_order_use_interesting_orders) を参照してください。
+* **フィルタの順序。** `WHERE` 内の条件は [`PREWHERE`](/ja/optimize/prewhere) に移動され、カラムの圧縮サイズと各条件の推定選択度に基づいて、低コストかつ選択度の高い条件から先に評価されるよう並べ替えられます。
+
+## 推定値はどこから得られるのか {#where-do-the-estimates-come-from}
+
+`MergeTree` テーブルは、パーツのマージ時に各データパーツのカラム統計を自動的に収集します。また、[`materialize_statistics_on_insert_max_table_size`](/ja/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert_max_table_size)(デフォルトは 25 GiB)より小さいテーブルでは、INSERT 時にも収集されます。そのため、`ANALYZE` を実行したり、統計を手動で管理したりする必要はありません。統計の種別は [`auto_statistics_types`](/ja/reference/settings/merge-tree-settings/other#auto_statistics_types) テーブル設定で指定します。デフォルトは `basic`(最小値と最大値、デフォルト値および `NULL` 値の数、文字列の合計長)と `uniq_v2`(異なる値の数)です。`tdigest`(値の分布)や `countmin`(個々の値の出現頻度)などの種別を追加すると、偏りのあるデータに対する範囲条件や等価条件の推定精度が向上します。詳細は [カラム統計](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) を参照してください。
+
+統計は [`use_statistics`](/ja/reference/settings/session-settings/use-statistics#use_statistics) が有効な場合に使用されます(デフォルトで有効)。JOIN 順序オプティマイザーは、カラム統計に加えて、同じ結合の過去の実行で観測されたハッシュテーブルのサイズ([`use_hash_table_stats_for_join_reordering`](/ja/reference/settings/session-settings/use#use_hash_table_stats_for_join_reordering))や、Iceberg のマニフェストファイル内の統計([`use_datalake_metadata_statistics`](/ja/reference/settings/session-settings/use))も利用できます。
+
+## オプティマイザが何を行ったかを確認するにはどうすればよいですか？ {#how-can-i-see-what-the-optimizer-did}
+
+選択された実行計画を確認するには [`EXPLAIN`](/ja/reference/statements/explain) を使用します。[`EXPLAIN ANALYZE`](/ja/reference/statements/explain#explain-analyze) を使用すると、クエリを実行して各処理ステップの実際のメトリクスを確認できます。join ステップについては、[推定行数と実際の行数の比較](/ja/reference/statements/explain#explain-analyze-join-estimation)も表示されます。
+
+## オプティマイザが重要になるのはどのような場合か {#when-does-the-optimizer-matter}
+
+ClickHouse のパフォーマンスの多くは、オプティマイザに依存しません。主キー、スキップ索引、パーティションプルーニング、ベクトル化実行により、実行計画を探索しなくてもクエリは高速に実行されます。オプティマイザが特に重要になるのは、TPC-H、TPC-DS、Join Order Benchmark のワークロードのように、多数のテーブルを結合するクエリです。
+
+<Tip>
+  JOIN 計画を制御する設定の一覧については、[JOIN 設定](/ja/concepts/features/operations/select/join-settings)を参照してください。
+</Tip>

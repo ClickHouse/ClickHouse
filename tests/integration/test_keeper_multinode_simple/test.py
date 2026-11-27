@@ -183,17 +183,30 @@ def test_session_expiration(started_cluster):
             pm.partition_instances(node3, node1)
             node3_zk.stop()
             node3_zk.close()
-            for _ in range(100):
-                if (
-                    node1_zk.exists("/test_ephemeral_node") is None
-                    and node2_zk.exists("/test_ephemeral_node") is None
-                ):
+
+            # Wait for the ephemeral node to disappear after session expiration.
+            # Use a wall-clock timeout instead of a fixed iteration count,
+            # because under sanitizers (especially MSan) everything is much slower.
+            # session_timeout_ms is 10s; give extra time for sanitizer builds.
+            start = time.time()
+            while time.time() - start < 120:
+                time.sleep(2)
+                try:
+                    node1_exists = node1_zk.exists("/test_ephemeral_node")
+                    node2_exists = node2_zk.exists("/test_ephemeral_node")
+                except Exception as e:
+                    print("Exception checking existence:", e)
+                    continue
+
+                if node1_exists is None and node2_exists is None:
                     break
-                print("Node1 exists", node1_zk.exists("/test_ephemeral_node"))
-                print("Node2 exists", node2_zk.exists("/test_ephemeral_node"))
-                time.sleep(0.1)
-                node1_zk.sync("/")
-                node2_zk.sync("/")
+
+                print("Node1 exists", node1_exists)
+                print("Node2 exists", node2_exists)
+            else:
+                raise Exception(
+                    "Ephemeral node was not deleted after session expiration"
+                )
 
         assert node1_zk.exists("/test_ephemeral_node") is None
         assert node2_zk.exists("/test_ephemeral_node") is None

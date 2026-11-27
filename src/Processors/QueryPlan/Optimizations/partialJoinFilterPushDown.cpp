@@ -1,5 +1,9 @@
+#include <Columns/ColumnConst.h>
+#include <Columns/FilterDescription.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -46,25 +50,37 @@ struct ConditionList
     };
 
     ConditionType condition_type = SingleCondition;
-    std::vector<const ActionsDAG::Node *> existing_nodes;
-    std::vector<ConditionList> subconditions;
+    ActionsDAG::NodeRawConstPtrs existing_nodes;
+    VectorWithMemoryTracking<ConditionList> subconditions;
 
-    bool assumedTrue() const
+    [[nodiscard]] bool assumedTrue() const
     {
         return existing_nodes.empty() &&
             (subconditions.empty() || (subconditions.size() == 1 && subconditions.front().assumedTrue()));
     }
 };
 
-/// Check if the whole subgraph that calculates the node only uses columns from the list
+/// Check if the whole subgraph that calculates the node only uses columns from the list.
+/// Also rejects subgraphs containing ARRAY_JOIN, because pushing such predicates below
+/// a JOIN would cause the array expansion to execute twice (once in the pushed-down filter
+/// and once in the original filter above the JOIN), producing duplicate rows.
 bool onlyDependsOnAvailableColumns(const ActionsDAG::Node & node, const NameSet & available_columns)
 {
     if (node.type == ActionsDAG::ActionType::INPUT)
     {
         return available_columns.contains(node.result_name);
     }
+    else if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
+    {
+        return false;
+    }
     else
     {
+        /// The extracted predicate runs in addition to the filter above the JOIN, so a per-row draw such as
+        /// `rand` happens twice and only a row passing both survives; a lambda body is a separate DAG.
+        if (!allNodeFunctions(node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); }))
+            return false;
+
         for (const auto * child : node.children)
         {
             if (!onlyDependsOnAvailableColumns(*child, available_columns))
@@ -74,9 +90,50 @@ bool onlyDependsOnAvailableColumns(const ActionsDAG::Node & node, const NameSet 
     }
 }
 
+bool dependsOnSomeColumn(const ActionsDAG::Node & node)
+{
+    if (node.type == ActionsDAG::ActionType::INPUT)
+        return true;
+
+    for (const auto * child : node.children)
+    {
+        if (dependsOnSomeColumn(*child))
+            return true;
+    }
+
+    return false;
+}
+
+/// A condition that reads no column is the same for every row, so pre-filtering a side with it can
+/// only do one useful thing: a constant that is already known to be false makes the side's read
+/// provably empty, which the join-order estimator turns into an exact empty relation
+/// (`04516_join_order_estimation_pruned_parts`). Anything else - a `materialize(1)`, a folded true
+/// constant - removes nothing and only interposes a `Filter` step, which changes what later
+/// optimizations recognize: a `Filter` above a key-value right side hides the prepared storage, so
+/// a forced `join_algorithm = 'direct'` had no algorithm left and the query failed with
+/// `NOT_IMPLEMENTED` as soon as such a conjunct was added to the `WHERE` clause.
+///
+/// The always-false case is deliberately limited to a constant the DAG has already folded. Deriving
+/// it for an unfolded expression such as `materialize(0)` would be strictly worse: it buys only
+/// symmetry with the folded case, and it costs the `NOT_IMPLEMENTED` above for one more class of
+/// queries, because the filter it lets through is the very `Filter` that hides the key-value side.
+/// For the same reason the caller does not offer a side whose push-down is disabled at all, even
+/// though a column-free conjunct passes the column check for it vacuously.
+bool isUsefulToPreFilterWith(const ActionsDAG::Node & node)
+{
+    if (dependsOnSomeColumn(node))
+        return true;
+
+    if (!node.column)
+        return false;
+
+    const ConstantFilterDescription constant_filter(*node.column);
+    return constant_filter.always_false;
+}
+
 /// Extract all conditions from the filter that use only columns from the list.
 /// The resulting condition is broader then the full filter but can be used to early pre-filtering of the data
-ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameSet & available_columns)
+ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameSet & available_columns, bool only_conditions_safe_on_more_rows)
 {
     const bool is_conjunction = node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->getName() == "and";
     const bool is_disjunction = node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->getName() == "or";
@@ -86,7 +143,7 @@ ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameS
         conjuction_template.condition_type = ConditionList::And;
         for (const auto * child : node.children)
         {
-            auto child_condition_template = extractPartialPredicate(*child, available_columns);
+            auto child_condition_template = extractPartialPredicate(*child, available_columns, only_conditions_safe_on_more_rows);
             if (!child_condition_template.assumedTrue())
                 conjuction_template.subconditions.emplace_back(std::move(child_condition_template));
         }
@@ -98,7 +155,7 @@ ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameS
         disjuction_template.condition_type = ConditionList::Or;
         for (const auto * child : node.children)
         {
-            auto child_condition_template = extractPartialPredicate(*child, available_columns);
+            auto child_condition_template = extractPartialPredicate(*child, available_columns, only_conditions_safe_on_more_rows);
             if (child_condition_template.assumedTrue())
                 return ConditionList{}; /// The whole disjunction can be assumed True, so it in not included into partial predicate
 
@@ -108,12 +165,19 @@ ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameS
     }
     else if (node.type == ActionsDAG::ActionType::ALIAS)
     {
-        return extractPartialPredicate(*node.children.front(), available_columns);
+        return extractPartialPredicate(*node.children.front(), available_columns, only_conditions_safe_on_more_rows);
     }
     else
     {
         if (!onlyDependsOnAvailableColumns(node, available_columns))
             return ConditionList{}; /// If the subtree depends on other columns then we cannot include it into partial predicate, so assume it's True
+
+        /// the partial predicate also gets the rows that the conditions it leaves out reject
+        if (only_conditions_safe_on_more_rows && !canBeMovedToTheFrontOfAndChain(&node))
+            return ConditionList{};
+
+        if (!isUsefulToPreFilterWith(node))
+            return ConditionList{}; /// Nothing to pre-filter with, so assume it's True
 
         return ConditionList{
             .condition_type = ConditionList::SingleCondition,
@@ -164,7 +228,13 @@ const ActionsDAG::Node * buildPredicateFromTemplate(ActionsDAG & full_dag, const
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG & original_dag,
     const std::string & filter_name,
-    const Names & available_columns)
+    const Names & available_columns,
+    bool only_conditions_safe_on_more_rows = false);
+std::optional<ActionsDAG> tryToExtractPartialPredicate(
+    const ActionsDAG & original_dag,
+    const std::string & filter_name,
+    const Names & available_columns,
+    bool only_conditions_safe_on_more_rows)
 {
     if (!original_dag.tryFindInOutputs(filter_name))
         return {};
@@ -173,7 +243,8 @@ std::optional<ActionsDAG> tryToExtractPartialPredicate(
 
     const ActionsDAG::Node & predicate = full_dag.findInOutputs(filter_name);
 
-    auto predicate_template = extractPartialPredicate(predicate, NameSet(available_columns.begin(), available_columns.end()));
+    auto predicate_template = extractPartialPredicate(
+        predicate, NameSet(available_columns.begin(), available_columns.end()), only_conditions_safe_on_more_rows);
 
     if (predicate_template.assumedTrue())
         return {};
@@ -187,9 +258,19 @@ std::optional<ActionsDAG> tryToExtractPartialPredicate(
     full_dag.addOrReplaceInOutputs(*predicate_node);
     full_dag.removeUnusedActions();
 
+    /// removeUnusedActions unconditionally keeps ARRAY_JOIN nodes because they change
+    /// the number of rows. This can bring back INPUT nodes from the other side of the
+    /// JOIN that are not available in the target stream. Since extractPartialPredicate
+    /// already correctly rejects predicates depending on ARRAY_JOIN (via
+    /// onlyDependsOnAvailableColumns), any ARRAY_JOIN surviving here is an artifact
+    /// and pushing it below a JOIN would cause duplicate rows.
+    if (full_dag.hasArrayJoin())
+        return {};
+
     return full_dag;
 }
 
+void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag);
 void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag)
 {
     auto & new_filter_node = nodes.emplace_back();
@@ -201,7 +282,7 @@ void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::No
 
     auto filter_column_name = filter_dag.getOutputs().front()->result_name;
     // Let's keep the order inputs for the join
-    std::multimap<std::string, const ActionsDAG::Node *> filter_inputs;
+    MultiMapWithMemoryTracking<std::string, const ActionsDAG::Node *> filter_inputs;
     for (const auto * input : filter_dag.getInputs())
         filter_inputs.insert({input->result_name, input});
 

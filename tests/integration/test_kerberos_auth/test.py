@@ -73,14 +73,14 @@ def test_kerberos_auth_with_keytab(kerberos_cluster):
 
 def test_kerberos_auth_without_keytab(kerberos_cluster):
     assert (
-        "DB::Exception: : Authentication failed: password is incorrect, or there is no user with such name."
+        "DB::Exception: : Authentication failed: password is incorrect, or there is no user with such name"
         in make_auth(instance2)
     )
 
 
 def test_bad_path_to_keytab(kerberos_cluster):
     assert (
-        "DB::Exception: : Authentication failed: password is incorrect, or there is no user with such name."
+        "DB::Exception: : Authentication failed: password is incorrect, or there is no user with such name"
         in make_auth(instance3)
     )
     assert instance3.contains_in_log("Keytab file not found")

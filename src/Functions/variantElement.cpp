@@ -4,6 +4,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <Columns/ColumnArray.h>
@@ -21,7 +22,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -30,29 +30,50 @@ namespace
 /** Extract element of Variant by variant type name.
   * Also the function looks through Arrays: you can get Array of Variant elements from Array of Variants.
   */
-class FunctionVariantElement : public IFunction
+class FunctionVariantElement final : public IFunction
 {
 public:
     static constexpr auto name = "variantElement";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionVariantElement>(); }
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Documentation-only — the result type is the requested Variant element
+    /// (or array of, when called on Array(Variant)), looked up dynamically from
+    /// the const-string type-name in the second argument. The optional third
+    /// argument is the default value.
+    [[nodiscard]] String getSignatureString() const override
     {
-        const size_t number_of_arguments = arguments.size();
+        return "(Variant | Array, const String, [Any]) -> Any";
+    }
 
-        if (number_of_arguments < 2 || number_of_arguments > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                            getName(), number_of_arguments);
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        auto is_variant_or_array_of_variant = [](const IDataType & type)
+        {
+            const IDataType * current_type = &type;
+            while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(current_type))
+                current_type = array->getNestedType().get();
+            return isVariant(current_type);
+        };
+
+        FunctionArgumentDescriptors mandatory_args{
+            {"variant", is_variant_or_array_of_variant, nullptr, "Variant or Array of Variant"},
+            {"name", &isString, &isColumnConst, "const String"}
+        };
+
+        FunctionArgumentDescriptors optional_args{
+            {"default", nullptr, nullptr, "Any"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         size_t count_arrays = 0;
         const IDataType * input_type = arguments[0].type.get();
@@ -63,16 +84,11 @@ public:
         }
 
         const DataTypeVariant * variant_type = checkAndGetDataType<DataTypeVariant>(input_type);
-        if (!variant_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be Variant or Array of Variant. Actual {}",
-                    getName(),
-                    arguments[0].type->getName());
 
-        std::optional<size_t> variant_global_discr = getVariantGlobalDiscriminator(arguments[1].column, *variant_type, number_of_arguments);
+        std::optional<size_t> variant_global_discr = getVariantGlobalDiscriminator(arguments[1].column, *variant_type, arguments.size());
         if (variant_global_discr.has_value())
         {
-            DataTypePtr return_type = makeNullableOrLowCardinalityNullableSafe(variant_type->getVariant(variant_global_discr.value()));
+            DataTypePtr return_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(variant_type->getVariant(variant_global_discr.value()));
 
             for (; count_arrays; --count_arrays)
                 return_type = std::make_shared<DataTypeArray>(return_type);
@@ -82,7 +98,7 @@ public:
         return arguments[2].type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & input_arg = arguments[0];
         const IDataType * input_type = input_arg.type.get();
@@ -121,7 +137,7 @@ public:
     }
 
 private:
-    std::optional<size_t> getVariantGlobalDiscriminator(const ColumnPtr & index_column, const DataTypeVariant & variant_type, size_t argument_size) const
+    [[nodiscard]] std::optional<size_t> getVariantGlobalDiscriminator(const ColumnPtr & index_column, const DataTypeVariant & variant_type, size_t argument_size) const
     {
         const auto * name_col = checkAndGetColumnConst<ColumnString>(index_column.get());
         if (!name_col)
@@ -142,7 +158,7 @@ private:
         return std::nullopt;
     }
 
-    ColumnPtr wrapInArraysAndConstIfNeeded(ColumnPtr res, const Columns & array_offsets, bool input_arg_is_const, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr wrapInArraysAndConstIfNeeded(ColumnPtr res, const Columns & array_offsets, bool input_arg_is_const, size_t input_rows_count) const
     {
         for (auto it = array_offsets.rbegin(); it != array_offsets.rend(); ++it)
             res = ColumnArray::create(res, *it);

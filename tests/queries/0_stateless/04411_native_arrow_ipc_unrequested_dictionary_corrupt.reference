@@ -1,0 +1,12 @@
+--- ArrowStream: SELECT the column whose dictionary is intact succeeds ---
+a0
+a1
+a2
+--- ArrowStream: SELECT the column whose dictionary is corrupt fails ---
+has no data
+--- Arrow: SELECT the column whose dictionary is intact succeeds ---
+a0
+a1
+a2
+--- Arrow: SELECT the column whose dictionary is corrupt fails ---
+has no data

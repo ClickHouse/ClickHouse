@@ -1,4 +1,8 @@
 #include <Columns/IColumn.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeString.h>
+#include <Core/NamesAndTypes.h>
 #include <Common/Macros.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemMacros.h>
@@ -28,3 +32,6 @@ void StorageSystemMacros::fillData(MutableColumns & res_columns, ContextPtr cont
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemMacros) }

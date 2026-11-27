@@ -1,0 +1,94 @@
+---
+slug: /operations/utilities/static-files-disk-uploader
+title: 'clickhouse-static-files-disk-uploader'
+keywords: ['clickhouse-static-files-disk-uploader', 'أداة مساعدة', 'قرص', 'رافِع']
+description: 'يوفّر وصفًا للأداة المساعدة clickhouse-static-files-disk-uploader'
+doc_type: 'guide'
+---
+
+ينشئ دليلَ بيانات يحتوي على بيانات وصفية لجدول ClickHouse محدد. ويمكن استخدام هذه البيانات الوصفية لإنشاء جدول ClickHouse على خادم آخر يحتوي على مجموعة بيانات للقراءة فقط ومدعومة بقرص `web`.
+
+لا تستخدم هذه الأداة لترحيل البيانات. بدلًا من ذلك، استخدم أوامر [`BACKUP` و`RESTORE`](/ar/concepts/features/backup-restore/overview).
+
+<div id="usage">
+  ## الاستخدام
+</div>
+
+```bash
+$ clickhouse static-files-disk-uploader [args]
+```
+
+<div id="commands">
+  ## الأوامر
+</div>
+
+| الأمر                    | الوصف                                                                               |
+| ------------------------ | ----------------------------------------------------------------------------------- |
+| `-h`, `--help`           | يعرض معلومات المساعدة                                                               |
+| `--metadata-path [path]` | المسار الذي يحتوي على البيانات الوصفية للجدول المحدد                                |
+| `--test-mode`            | يفعّل وضع `test`، الذي يرسل طلب PUT إلى عنوان URL المحدد مع البيانات الوصفية للجدول |
+| `--link`                 | ينشئ روابط رمزية بدلًا من نسخ الملفات إلى دليل الإخراج                              |
+| `--url [url]`            | عنوان URL لخادم الويب لوضع `test`                                                   |
+| `--output-dir [dir]`     | دليل إخراج الملفات في وضع `non-test`                                                |
+
+<div id="retrieve-metadata-path-for-the-specified-table">
+  ## استرداد مسار البيانات الوصفية للجدول المحدد
+</div>
+
+عند استخدام `clickhouse-static-files-disk-uploader`، يجب الحصول على مسار البيانات الوصفية للجدول المطلوب.
+
+1. شغّل الاستعلام التالي مع تحديد الجدول الهدف وقاعدة البيانات:
+
+<br />
+
+```sql
+SELECT data_paths
+  FROM system.tables
+  WHERE name = 'mytable' AND database = 'default';
+```
+
+2. يجب أن يُرجع هذا مسار دليل البيانات الخاص بالجدول المحدد:
+
+<br />
+
+```response
+┌─data_paths────────────────────────────────────────────┐
+│ ['./store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee/'] │
+└───────────────────────────────────────────────────────┘
+```
+
+<div id="output-table-metadata-directory-to-the-local-filesystem">
+  ## تصدير دليل البيانات الوصفية للجدول إلى نظام الملفات المحلي
+</div>
+
+باستخدام دليل الإخراج الهدف `output` ومسار البيانات الوصفية المحدد، نفِّذ الأمر التالي:
+
+```bash
+$ clickhouse static-files-disk-uploader --output-dir output --metadata-path ./store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee/
+```
+
+إذا تمت العملية بنجاح، يفترض أن تظهر لك الرسالة التالية، وأن يحتوي الدليل `output` على البيانات الوصفية للجدول المحدد:
+
+```repsonse
+Data path: "/Users/john/store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee", destination path: "output"
+```
+
+<div id="output-table-metadata-directory-to-an-external-url">
+  ## إخراج دليل البيانات الوصفية للجدول إلى URL خارجي
+</div>
+
+تشبه هذه الخطوة إخراج دليل البيانات إلى نظام الملفات المحلي، ولكن مع إضافة العلامة `--test-mode`. وبدلًا من تحديد دليل للإخراج، يجب تحديد URL الهدف باستخدام العلامة `--url`.
+
+عند تمكين وضع `test`، يُرفع دليل البيانات الوصفية للجدول إلى عنوان URL المحدد عبر طلب PUT.
+
+```bash
+$ clickhouse static-files-disk-uploader --test-mode --url http://nginx:80/test1 --metadata-path ./store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee/
+```
+
+<div id="using-the-table-metadata-directory-to-create-a-clickhouse-table">
+  ## استخدام دليل البيانات الوصفية للجدول لإنشاء جدول ClickHouse
+</div>
+
+بمجرد أن يتوفر لديك دليل البيانات الوصفية للجدول، يمكنك استخدامه لإنشاء جدول ClickHouse على خادم آخر.
+
+يُرجى الاطلاع على [مستودع GitHub هذا](https://github.com/ClickHouse/web-tables-demo) الذي يعرض مثالًا توضيحيًا. في هذا المثال، ننشئ جدولًا باستخدام قرص `web`، ما يتيح لنا إلحاق الجدول بمجموعة بيانات على خادم آخر.

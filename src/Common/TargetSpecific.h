@@ -1,5 +1,10 @@
 #pragma once
 
+#if defined(__clang__)
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wunused-macros"
+#endif
+
 #include <base/defines.h>
 #include <base/types.h>
 
@@ -10,15 +15,21 @@
  * Thus, it's allowed to call functions inside these namespaces only after
  * checking platform in runtime (see isArchSupported() below).
  *
- * If compiler is not gcc/clang or target isn't x86_64 or ENABLE_MULTITARGET_CODE
- * was set to OFF in cmake, all code inside these macros will be removed and
- * USE_MULTITARGET_CODE will be set to 0. Use #if USE_MULTITARGET_CODE whenever you
- * use anything from this namespaces.
+ * If target isn't x86_64/AArch64 or ENABLE_MULTITARGET_CODE
+ * was set to OFF in cmake, all code inside these macros will be removed and both
+ * USE_X86_64_MULTITARGET_CODE and USE_ARM_MULTITARGET_CODE will be set to 0.
+ *
+ * There are two independent multitarget guards:
+ *   - USE_X86_64_MULTITARGET_CODE: set to 1 only on x86_64. Use #if USE_X86_64_MULTITARGET_CODE
+ *     whenever you use anything from the x86_64-specific namespaces (x86_64_v2, x86_64_v3,
+ *     x86_64_v4, etc.)
+ *   - USE_ARM_MULTITARGET_CODE: set to 1 only on AArch64. Use #if USE_ARM_MULTITARGET_CODE
+ *     whenever you use anything from the ARM-specific namespaces (ARM_SVE).
  *
  * For similarities there is a macros DECLARE_DEFAULT_CODE, which wraps code
  * into the namespace TargetSpecific::Default but doesn't specify any additional
- * copile options. Functions and classes inside this macros are available regardless
- * of USE_MUTLITARGE_CODE.
+ * compile options. Functions and classes inside this macros are available regardless
+ * of USE_X86_64_MULTITARGET_CODE or USE_ARM_MULTITARGET_CODE.
  *
  * Example of usage:
  *
@@ -28,76 +39,97 @@
  * }
  * ) // DECLARE_DEFAULT_CODE
  *
- * DECLARE_AVX2_SPECIFIC_CODE (
+ * DECLARE_X86_64_V3_SPECIFIC_CODE (
  * int funcImpl() {
  *     return 2;
  * }
- * ) // DECLARE_AVX2_SPECIFIC_CODE
+ * ) // DECLARE_X86_64_V3_SPECIFIC_CODE
+ *
+ * DECLARE_ARM_SVE_SPECIFIC_CODE (
+ * int funcImpl() {
+ *     return 2;
+ * }
+ * ) // DECLARE_ARM_SVE_SPECIFIC_CODE
  *
  * int func() {
- * #if USE_MULTITARGET_CODE
- *     if (isArchSupported(TargetArch::AVX2))
- *         return TargetSpecific::AVX2::funcImpl();
+ * #if USE_X86_64_MULTITARGET_CODE
+ *     if (isArchSupported(TargetArch::x86_64_v3))
+ *         return TargetSpecific::x86_64_v3::funcImpl();
+ * #elif USE_ARM_MULTITARGET_CODE
+ *     if (isArchSupported(TargetArch::ARM_SVE))
+ *         return TargetSpecific::ARM_SVE::funcImpl();
  * #endif
  *     return TargetSpecific::Default::funcImpl();
  * }
  *
  * Sometimes code may benefit from compiling with different options.
- * For these purposes use DECLARE_MULTITARGET_CODE macros. It will create a copy
- * of the code for every supported target and compile it with different options.
+ * For these purposes use DECLARE_X86_64_MULTITARGET_CODE macro. It will create copies
+ * of the code for x86_64_v3 and x86_64_v4 and compile them with different options.
  * These copies are available via TargetSpecific namespaces described above.
+ * On other architectures, including AArch64, it creates only the Default copy.
  *
  * Inside every TargetSpecific namespace there is a constexpr variable BuildArch,
  * which indicates the target platform for current code.
  *
  * Example:
  *
- * DECLARE_MULTITARGET_CODE(
+ * DECLARE_X86_64_MULTITARGET_CODE(
  * int funcImpl(int size, ...) {
  *     int iteration_size = 1;
- *     if constexpr (BuildArch == TargetArch::SSE42)
- *         iteration_size = 2
- *     else if constexpr (BuildArch == TargetArch::AVX || BuildArch == TargetArch::AVX2)
- *         iteration_size = 4;
+ *     if constexpr (BuildArch == TargetArch::x86_64_v4)
+ *         iteration_size = 16;
+ *     else if constexpr (BuildArch == TargetArch::x86_64_v3)
+ *         iteration_size = 8;
  *     for (int i = 0; i < size; i += iteration_size)
  *     ...
  * }
- * ) // DECLARE_MULTITARGET_CODE
+ * ) // DECLARE_X86_64_MULTITARGET_CODE
  *
  * // All target-specific and default implementations are available here via
  * TargetSpecific::<Arch>::funcImpl. Use runtime detection to choose one.
  *
- * If you want to write IFunction or IExecutableFunctionImpl with several implementations
- * see PerformanceAdaptors.h.
+ * An IFunction with several implementations picks one in its constructor, based on
+ * isArchSupported, and forwards executeImpl to it. See FunctionSHA1.cpp for an example.
  */
 
 namespace DB
 {
 
+/// See https://en.wikipedia.org/wiki/X86-64#Microarchitecture_levels for more details on the instruction sets supported by each level.
+/// We use these levels as a convenient way to group related instruction sets and avoid long lists of features and many different instruction
+/// sets with small differences.
+/// See https://en.wikipedia.org/wiki/AArch64#ARMv8.1-A for AArch64 instruction sets.
 enum class TargetArch : UInt32
 {
-    Default = 0, /// Without any additional compiler options.
-    SSE42 = (1 << 0), /// SSE4.2
-    AVX = (1 << 1),
-    AVX2 = (1 << 2),
-    AVX512F = (1 << 3),
-    AVX512BW = (1 << 4),
-    AVX512VL    = (1 << 5),
-    AVX512VBMI = (1 << 6),
-    AVX512VBMI2 = (1 << 7),
-    AVX512BF16 = (1 << 8),
-    AMXBF16 = (1 << 9),
-    AMXTILE = (1 << 10),
-    AMXINT8 = (1 << 11),
-    GenuineIntel = (1 << 12), /// Not an instruction set, but a CPU vendor.
+    Default = 0,
+
+    /// x86-64 instruction set levels
+    x86_64_v2 = (1 << 0),
+    x86_64_v3 = (1 << 1),
+    x86_64_v4 = (1 << 2),
+    /// Not a psABI level: `arch=icelake-server` feature set, v4 + VBMI, VBMI2 (`vpexpandb`, `vpcompressb`), IFMA, VNNI,
+    /// VPOPCNTDQ, BITALG, GFNI, VAES, VPCLMULQDQ. Despite the name, also set on AMD Zen 4 and Zen 5.
+    x86_64_icelake = (1 << 3),
+    /// `arch=sapphirerapids` feature set: icelake + AVX512FP16, AVX512BF16, AVX-VNNI, AMX. Intel only (Zen 4/5 lack FP16 and AMX).
+    x86_64_sapphirerapids = (1 << 4),
+    GenuineIntel = (1 << 5),          /// Not an instruction set, but a CPU vendor. Used for optimizations that are only applicable for Intel CPUs, like prefetching
+    x86_64_vaes = (1 << 6),           /// v3 + VAES. Not a microarchitecture level: VAES appears on Zen 3, which has no AVX-512 at all, and on Intel only from Ice Lake, so neither v4 nor icelake describes the set of CPUs that have it.
+
+    /// ARM instruction set extensions
+    ARM_SVE = (1 << 7),
 };
 
 /// Runtime detection.
 UInt32 getSupportedArchs();
+
+/// Constant-initialized, so a read is a plain load of a global: no guard variable on every call, and
+/// no dependency on the initialization order of other translation units. Filled in before any other
+/// static constructor runs, see `TargetSpecific.cpp`.
+extern constinit UInt32 supported_archs;
+
 inline ALWAYS_INLINE bool isArchSupported(TargetArch arch)
 {
-    static UInt32 arches = getSupportedArchs();
-    return arch == TargetArch::Default || (arches & static_cast<UInt32>(arch));
+    return arch == TargetArch::Default || (supported_archs & static_cast<UInt32>(arch));
 }
 
 String toString(TargetArch arch);
@@ -106,145 +138,149 @@ String toString(TargetArch arch);
 #   define ENABLE_MULTITARGET_CODE 0
 #endif
 
-#if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
+#if ENABLE_MULTITARGET_CODE && defined(__x86_64__)
 
-/// NOLINTNEXTLINE
-#define USE_MULTITARGET_CODE 1
 
-#define AVX512BF16_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,avx512bf16")))
-#define AVX512VBMI2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2")))
-#define AVX512VBMI_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi")))
-#define AVX512VL_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f, avx512bw, avx512vl")))
-#define AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw")))
-#define AVX512_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f")))
-#define AVX2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,bmi2")))
-#define AVX_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt,avx")))
-#define SSE42_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sse,sse2,sse3,ssse3,sse4.2,popcnt")))
+#define USE_X86_64_MULTITARGET_CODE 1
+#define USE_ARM_MULTITARGET_CODE 0
+
+/// Function-specific attributes using arch= for cleaner specification
+/// This matches -march= compiler flags and avoids long feature lists
+///
+/// IMPORTANT: Clang's default tuning for `x86-64-v4` includes `TuningPrefer256Bit` (see X86_64V4Tuning
+/// in contrib/llvm-project/llvm/lib/Target/X86/X86.td). This was added conservatively to avoid AVX-512
+/// frequency throttling on early implementations like Skylake-X. However, for ClickHouse's data-intensive
+/// workloads, 512-bit operations often provide better performance despite potential frequency drops because:
+/// - Memory-bound operations are less sensitive to frequency reduction
+/// - Processing 64 bytes vs 32 bytes per instruction overcomes the penalty for large datasets
+/// - Newer CPUs (Ice Lake, Sapphire Rapids, AMD Zen 4/5) have minimal throttling
+///
+/// We explicitly override with `no-prefer-256-bit` to enable 512-bit vectorization for AVX-512 targets.
+///
+/// `X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE` is needed for TUs explicitly pinned to `-march=x86-64-v2`
+/// (e.g. `FunctionsHashingMisc.cpp`, `arrayDistance.cpp`, `arrayNorm.cpp`, see their CMakeLists.txt
+/// overrides). At v2 the `Default` namespace inherits v2 codegen (SSE2/XMM), so without a per-function
+/// v3 specialization there is no AVX2/YMM body to call at all. Selecting it needs no runtime check:
+/// multi-target code is only built when the whole binary targets x86-64-v3 (see `src/CMakeLists.txt`).
+/// Same rationale applies to `MULTITARGET_FUNCTION_X86_V4_V3` below.
+#define X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v3")))
+#define X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v4,no-prefer-256-bit")))
+#define X86_64_ICELAKE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=icelake-server,no-prefer-256-bit")))
+#define X86_64_SAPPHIRE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=sapphirerapids,no-prefer-256-bit")))
+/// A single feature on top of the baseline rather than a level, for the reason given on TargetArch::x86_64_vaes.
+#define X86_64_VAES_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v3,vaes")))
+/// VAES on 512-bit registers. arch=x86-64-v4 supplies the avx512f that the _mm512_aes* intrinsics require.
+#define X86_64_VAES512_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v4,vaes")))
+
 #define DEFAULT_FUNCTION_SPECIFIC_ATTRIBUTE
 
-#   define BEGIN_AVX512BF16_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2,avx512bf16\"))),apply_to=function)")
-#   define BEGIN_AVX512VBMI2_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi,avx512vbmi2\"))),apply_to=function)")
-#   define BEGIN_AVX512VBMI_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl,avx512vbmi\"))),apply_to=function)")
-#   define BEGIN_AVX512VL_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw,avx512vl\"))),apply_to=function)")
-#   define BEGIN_AVX512BW_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f,avx512bw\"))),apply_to=function)")
-#   define BEGIN_AVX512F_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,avx512f\"))),apply_to=function)")
-#   define BEGIN_AVX2_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.2,popcnt,avx,avx2,bmi2\"))),apply_to=function)")
-#   define BEGIN_AVX_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.2,popcnt,avx\"))),apply_to=function)")
-#   define BEGIN_SSE42_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4.2,popcnt\"))),apply_to=function)")
-#   define END_TARGET_SPECIFIC_CODE \
-        _Pragma("clang attribute pop")
+/// Begin target-specific code blocks using arch= for cleaner specification
+#define BEGIN_X86_64_V3_SPECIFIC_CODE \
+    _Pragma("clang attribute push(__attribute__((target(\"arch=x86-64-v3\"))),apply_to=function)")
+#define BEGIN_X86_64_V4_SPECIFIC_CODE \
+    _Pragma("clang attribute push(__attribute__((target(\"arch=x86-64-v4,no-prefer-256-bit\"))),apply_to=function)")
+#define BEGIN_X86_64_ICELAKE_SPECIFIC_CODE \
+    _Pragma("clang attribute push(__attribute__((target(\"arch=icelake-server,no-prefer-256-bit\"))),apply_to=function)")
+#define BEGIN_X86_64_SAPPHIRE_SPECIFIC_CODE \
+    _Pragma("clang attribute push(__attribute__((target(\"arch=sapphirerapids,no-prefer-256-bit\"))),apply_to=function)")
+
+#define END_TARGET_SPECIFIC_CODE \
+    _Pragma("clang attribute pop")
 
 /* Clang shows warning when there aren't any objects to apply pragma.
  * To prevent this warning we define this function inside every macros with pragmas.
  */
 #   define DUMMY_FUNCTION_DEFINITION [[maybe_unused]] void _dummy_function_definition();
 
-
-#define DECLARE_SSE42_SPECIFIC_CODE(...) \
-BEGIN_SSE42_SPECIFIC_CODE \
-namespace TargetSpecific::SSE42 { \
+/// Goes hand in hand with the `-march=x86-64-v2` override on `FunctionsHashingMisc.cpp` (and other v2-overridden TUs):
+/// when the file is compiled at v2, the `Default` namespace inherits v2 codegen. The `x86_64_v3` per-function attribute
+/// here is what gives those template instantiations an AVX2/YMM specialization callers can use. Removing it caused
+/// +12-18% regressions on `general_purpose_hashes_on_UUID #30/#32` (hiveHash/javaHash on UUID columns).
+#define DECLARE_X86_64_V3_SPECIFIC_CODE(...) \
+BEGIN_X86_64_V3_SPECIFIC_CODE \
+namespace TargetSpecific::x86_64_v3 { \
     DUMMY_FUNCTION_DEFINITION \
-    using namespace DB::TargetSpecific::SSE42; \
+    using namespace DB::TargetSpecific::x86_64_v3; \
     __VA_ARGS__ \
 } \
 END_TARGET_SPECIFIC_CODE
 
-#define DECLARE_AVX_SPECIFIC_CODE(...) \
-BEGIN_AVX_SPECIFIC_CODE \
-namespace TargetSpecific::AVX { \
+#define DECLARE_X86_64_V4_SPECIFIC_CODE(...) \
+BEGIN_X86_64_V4_SPECIFIC_CODE \
+namespace TargetSpecific::x86_64_v4 { \
     DUMMY_FUNCTION_DEFINITION \
-    using namespace DB::TargetSpecific::AVX; \
+    using namespace DB::TargetSpecific::x86_64_v4; \
     __VA_ARGS__ \
 } \
 END_TARGET_SPECIFIC_CODE
 
-#define DECLARE_AVX2_SPECIFIC_CODE(...) \
-BEGIN_AVX2_SPECIFIC_CODE \
-namespace TargetSpecific::AVX2 { \
+#define DECLARE_X86_ICELAKE_SPECIFIC_CODE(...) \
+BEGIN_X86_64_ICELAKE_SPECIFIC_CODE \
+namespace TargetSpecific::x86_64_icelake { \
     DUMMY_FUNCTION_DEFINITION \
-    using namespace DB::TargetSpecific::AVX2; \
+    using namespace DB::TargetSpecific::x86_64_icelake; \
     __VA_ARGS__ \
 } \
 END_TARGET_SPECIFIC_CODE
 
-#define DECLARE_AVX512F_SPECIFIC_CODE(...) \
-BEGIN_AVX512F_SPECIFIC_CODE \
-namespace TargetSpecific::AVX512F { \
+#define DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(...) \
+BEGIN_X86_64_SAPPHIRE_SPECIFIC_CODE \
+namespace TargetSpecific::x86_64_sapphirerapids { \
     DUMMY_FUNCTION_DEFINITION \
-    using namespace DB::TargetSpecific::AVX512F; \
+    using namespace DB::TargetSpecific::x86_64_sapphirerapids; \
     __VA_ARGS__ \
 } \
 END_TARGET_SPECIFIC_CODE
 
-#define DECLARE_AVX512BW_SPECIFIC_CODE(...) \
-BEGIN_AVX512BW_SPECIFIC_CODE \
-namespace TargetSpecific::AVX512BW { \
+/* Delete AArch64-specific code.
+ */
+#define DECLARE_ARM_SVE_SPECIFIC_CODE(...)
+
+#elif ENABLE_MULTITARGET_CODE && defined(__aarch64__) && (defined(__linux__) || defined(__FreeBSD__))
+
+#define USE_X86_64_MULTITARGET_CODE 0
+#define USE_ARM_MULTITARGET_CODE 1
+
+#define SVE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("+sve")))
+
+#define BEGIN_SVE_SPECIFIC_CODE \
+    _Pragma("clang attribute push(__attribute__((target(\"+sve\"))),apply_to=function)")
+#define END_TARGET_SPECIFIC_CODE \
+    _Pragma("clang attribute pop")
+
+/* Clang shows warning when there aren't any objects to apply pragma.
+ * To prevent this warning we define this function inside every macros with pragmas.
+ */
+#define DUMMY_FUNCTION_DEFINITION [[maybe_unused]] void _dummy_function_definition();
+
+#define DECLARE_ARM_SVE_SPECIFIC_CODE(...) \
+BEGIN_SVE_SPECIFIC_CODE \
+namespace TargetSpecific::ARM_SVE { \
     DUMMY_FUNCTION_DEFINITION \
-    using namespace DB::TargetSpecific::AVX512BW; \
+    using namespace DB::TargetSpecific::ARM_SVE; \
     __VA_ARGS__ \
 } \
 END_TARGET_SPECIFIC_CODE
 
-#define DECLARE_AVX512VL_SPECIFIC_CODE(...) \
-BEGIN_AVX512VL_SPECIFIC_CODE \
-namespace TargetSpecific::AVX512VL { \
-    DUMMY_FUNCTION_DEFINITION \
-    using namespace DB::TargetSpecific::AVX512VL; \
-    __VA_ARGS__ \
-} \
-END_TARGET_SPECIFIC_CODE
-
-#define DECLARE_AVX512VBMI_SPECIFIC_CODE(...) \
-BEGIN_AVX512VBMI_SPECIFIC_CODE \
-namespace TargetSpecific::AVX512VBMI { \
-    DUMMY_FUNCTION_DEFINITION \
-    using namespace DB::TargetSpecific::AVX512VBMI; \
-    __VA_ARGS__ \
-} \
-END_TARGET_SPECIFIC_CODE
-
-#define DECLARE_AVX512VBMI2_SPECIFIC_CODE(...) \
-BEGIN_AVX512VBMI2_SPECIFIC_CODE \
-namespace TargetSpecific::AVX512VBMI2 { \
-    DUMMY_FUNCTION_DEFINITION \
-    using namespace DB::TargetSpecific::AVX512VBMI2; \
-    __VA_ARGS__ \
-} \
-END_TARGET_SPECIFIC_CODE
-
-#define DECLARE_AVX512BF16_SPECIFIC_CODE(...) \
-BEGIN_AVX512BF16_SPECIFIC_CODE \
-namespace TargetSpecific::AVX512BF16 { \
-    DUMMY_FUNCTION_DEFINITION \
-    using namespace DB::TargetSpecific::AVX512BF16; \
-    __VA_ARGS__ \
-} \
-END_TARGET_SPECIFIC_CODE
+/* Delete x86_64-specific code.
+ */
+#define DECLARE_X86_64_V3_SPECIFIC_CODE(...)
+#define DECLARE_X86_64_V4_SPECIFIC_CODE(...)
+#define DECLARE_X86_ICELAKE_SPECIFIC_CODE(...)
+#define DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(...)
 
 #else
 
-#define USE_MULTITARGET_CODE 0
+#define USE_X86_64_MULTITARGET_CODE 0
+#define USE_ARM_MULTITARGET_CODE 0
 
 /* Multitarget code is disabled, just delete target-specific code.
  */
-#define DECLARE_SSE42_SPECIFIC_CODE(...)
-#define DECLARE_AVX_SPECIFIC_CODE(...)
-#define DECLARE_AVX2_SPECIFIC_CODE(...)
-#define DECLARE_AVX512F_SPECIFIC_CODE(...)
-#define DECLARE_AVX512BW_SPECIFIC_CODE(...)
-#define DECLARE_AVX512VL_SPECIFIC_CODE(...)
-#define DECLARE_AVX512VBMI_SPECIFIC_CODE(...)
-#define DECLARE_AVX512VBMI2_SPECIFIC_CODE(...)
-#define DECLARE_AVX512BF16_SPECIFIC_CODE(...)
+#define DECLARE_X86_64_V3_SPECIFIC_CODE(...)
+#define DECLARE_X86_64_V4_SPECIFIC_CODE(...)
+#define DECLARE_X86_ICELAKE_SPECIFIC_CODE(...)
+#define DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(...)
+#define DECLARE_ARM_SVE_SPECIFIC_CODE(...)
 
 #endif
 
@@ -254,58 +290,38 @@ namespace TargetSpecific::Default { \
     __VA_ARGS__ \
 }
 
-/// NOLINTNEXTLINE
-#define DECLARE_MULTITARGET_CODE(...) \
-DECLARE_DEFAULT_CODE         (__VA_ARGS__) \
-DECLARE_SSE42_SPECIFIC_CODE  (__VA_ARGS__) \
-DECLARE_AVX_SPECIFIC_CODE    (__VA_ARGS__) \
-DECLARE_AVX2_SPECIFIC_CODE   (__VA_ARGS__) \
-DECLARE_AVX512F_SPECIFIC_CODE(__VA_ARGS__) \
-DECLARE_AVX512BW_SPECIFIC_CODE    (__VA_ARGS__) \
-DECLARE_AVX512VL_SPECIFIC_CODE    (__VA_ARGS__) \
-DECLARE_AVX512VBMI_SPECIFIC_CODE  (__VA_ARGS__) \
-DECLARE_AVX512VBMI2_SPECIFIC_CODE (__VA_ARGS__) \
-DECLARE_AVX512BF16_SPECIFIC_CODE (__VA_ARGS__)
+
+/* x86_64 multi-target code, generating Default, x86_64_v3 and x86_64_v4 copies.
+ * On AArch64 and other platforms only the Default copy is generated.
+ */
+#define DECLARE_X86_64_MULTITARGET_CODE(...) \
+DECLARE_DEFAULT_CODE              (__VA_ARGS__) \
+DECLARE_X86_64_V3_SPECIFIC_CODE   (__VA_ARGS__) \
+DECLARE_X86_64_V4_SPECIFIC_CODE   (__VA_ARGS__)
 
 DECLARE_DEFAULT_CODE(
-    constexpr auto BuildArch = TargetArch::Default; /// NOLINT
-) // DECLARE_DEFAULT_CODE
+    constexpr auto BuildArch = TargetArch::Default;
+)
 
-DECLARE_SSE42_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::SSE42; /// NOLINT
-) // DECLARE_SSE42_SPECIFIC_CODE
+DECLARE_X86_64_V3_SPECIFIC_CODE(
+    constexpr auto BuildArch = TargetArch::x86_64_v3;
+)
 
-DECLARE_AVX_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::AVX; /// NOLINT
-) // DECLARE_AVX_SPECIFIC_CODE
+DECLARE_X86_64_V4_SPECIFIC_CODE(
+    constexpr auto BuildArch = TargetArch::x86_64_v4;
+)
 
-DECLARE_AVX2_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::AVX2; /// NOLINT
-) // DECLARE_AVX2_SPECIFIC_CODE
+DECLARE_X86_ICELAKE_SPECIFIC_CODE(
+    constexpr auto BuildArch = TargetArch::x86_64_icelake;
+)
 
-DECLARE_AVX512F_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::AVX512F; /// NOLINT
-) // DECLARE_AVX512F_SPECIFIC_CODE
+DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(
+    constexpr auto BuildArch = TargetArch::x86_64_sapphirerapids;
+)
 
-DECLARE_AVX512BW_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::AVX512BW; /// NOLINT
-) // DECLARE_AVX512BW_SPECIFIC_CODE
-
-DECLARE_AVX512VL_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::AVX512VL; /// NOLINT
-) // DECLARE_AVX512VL_SPECIFIC_CODE
-
-DECLARE_AVX512VBMI_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::AVX512VBMI; /// NOLINT
-) // DECLARE_AVX512VBMI_SPECIFIC_CODE
-
-DECLARE_AVX512VBMI2_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::AVX512VBMI2; /// NOLINT
-) // DECLARE_AVX512VBMI2_SPECIFIC_CODE
-
-DECLARE_AVX512BF16_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::AVX512BF16; /// NOLINT
-) // DECLARE_AVX512BF16_SPECIFIC_CODE
+DECLARE_ARM_SVE_SPECIFIC_CODE(
+    constexpr auto BuildArch = TargetArch::ARM_SVE;
+)
 
 /** Runtime Dispatch helpers for class members.
   *
@@ -314,33 +330,29 @@ DECLARE_AVX512BF16_SPECIFIC_CODE(
   * class TestClass
   * {
   * public:
-  *     MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
-  *     MULTITARGET_FUNCTION_HEADER(int), testFunctionImpl, MULTITARGET_FUNCTION_BODY((int value)
+  *     MULTITARGET_FUNCTION_X86_V4_ARM_SVE(
+  *     MULTITARGET_FUNCTION_HEADER(int), testFunctionImpl, MULTITARGET_FUNCTION_BODY((int value) /// NOLINT
   *     {
   *          return value;
   *     })
   *     )
   *
   *     void testFunction(int value) {
-  *         if (isArchSupported(TargetArch::AVX512BW))
+  * #if USE_X86_64_MULTITARGET_CODE
+  *         if (isArchSupported(TargetArch::x86_64_v4))
   *         {
-  *             testFunctionImplAVX512BW(value);
-  *         }
-  *         else if (isArchSupported(TargetArch::AVX512F))
-  *         {
-  *             testFunctionImplAVX512F(value);
-  *         }
-  *         else if (isArchSupported(TargetArch::AVX2))
-  *         {
-  *             testFunctionImplAVX2(value);
-  *         }
-  *         else if (isArchSupported(TargetArch::SSE42))
-  *         {
-  *             testFunctionImplSSE42(value);
+  *             testFunctionImpl_x86_64_v4(value);
   *         }
   *         else
+  * #elif USE_ARM_MULTITARGET_CODE
+  *         if (isArchSupported(TargetArch::ARM_SVE))
   *         {
-  *             testFunction(value);
+  *             testFunctionImpl_ARM_SVE(value);
+  *         }
+  *         else
+  * #endif
+  *         {
+  *             testFunctionImpl(value);
   *         }
   *     }
   *};
@@ -353,20 +365,13 @@ DECLARE_AVX512BF16_SPECIFIC_CODE(
 /// Function body
 #define MULTITARGET_FUNCTION_BODY(...) __VA_ARGS__
 
-#if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
+#if ENABLE_MULTITARGET_CODE && defined(__x86_64__)
 
-/// NOLINTNEXTLINE
-#define MULTITARGET_FUNCTION_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \
+#define MULTITARGET_FUNCTION_X86_V4(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
-    AVX2_FUNCTION_SPECIFIC_ATTRIBUTE \
-    name##AVX2 \
-    FUNCTION_BODY \
-    \
-    FUNCTION_HEADER \
-    \
-    SSE42_FUNCTION_SPECIFIC_ATTRIBUTE \
-    name##SSE42 \
+    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##_x86_64_v4 \
     FUNCTION_BODY \
     \
     FUNCTION_HEADER \
@@ -374,30 +379,23 @@ DECLARE_AVX512BF16_SPECIFIC_CODE(
     name \
     FUNCTION_BODY \
 
-/// NOLINTNEXTLINE
-#define MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \
+/// Generates `_x86_64_v4`, `_x86_64_v3`, and `Default` versions of `name`. Used by callers that need a
+/// per-function v3 specialization in addition to v4 — required for TUs explicitly pinned to
+/// `-march=x86-64-v2` via `set_source_files_properties` (see `arrayDistance.cpp`, `arrayNorm.cpp`),
+/// where the `Default` namespace inherits v2 codegen and the runtime dispatcher would otherwise have
+/// no AVX2/YMM body to pick. Callers must call `name##_x86_64_v4` / `name##_x86_64_v3` from a
+/// dispatcher guarded by `isArchSupported(TargetArch::x86_64_v4)` / `isArchSupported(TargetArch::x86_64_v3)`.
+#define MULTITARGET_FUNCTION_X86_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
-    AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE \
-    name##AVX512BW \
+    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##_x86_64_v4 \
     FUNCTION_BODY \
     \
     FUNCTION_HEADER \
     \
-    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE \
-    name##AVX512F \
-    FUNCTION_BODY \
-    \
-    FUNCTION_HEADER \
-    \
-    AVX2_FUNCTION_SPECIFIC_ATTRIBUTE \
-    name##AVX2 \
-    FUNCTION_BODY \
-    \
-    FUNCTION_HEADER \
-    \
-    SSE42_FUNCTION_SPECIFIC_ATTRIBUTE \
-    name##SSE42 \
+    X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##_x86_64_v3 \
     FUNCTION_BODY \
     \
     FUNCTION_HEADER \
@@ -405,44 +403,93 @@ DECLARE_AVX512BF16_SPECIFIC_CODE(
     name \
     FUNCTION_BODY \
 
-/// NOLINTNEXTLINE
-/// Just extended vector operations above SSE4.2
-#define MULTITARGET_FUNCTION_AVX512BW_AVX2(FUNCTION_HEADER, name, FUNCTION_BODY) \
-FUNCTION_HEADER \
-\
-AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE \
-name##AVX512BW \
-FUNCTION_BODY \
-\
-FUNCTION_HEADER \
-\
-AVX2_FUNCTION_SPECIFIC_ATTRIBUTE \
-name##AVX2 \
-FUNCTION_BODY \
-\
+#define MULTITARGET_FUNCTION_ARM_SVE(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#define MULTITARGET_FUNCTION_X86_V4_ARM_SVE MULTITARGET_FUNCTION_X86_V4
+
+#define MULTITARGET_FUNCTION_X86_V4_V3_ARM_SVE MULTITARGET_FUNCTION_X86_V4_V3
+
+#elif ENABLE_MULTITARGET_CODE && defined(__aarch64__) && (defined(__linux__) || defined(__FreeBSD__))
+
+#define MULTITARGET_FUNCTION_X86_V4(FUNCTION_HEADER, name, FUNCTION_BODY) \
 FUNCTION_HEADER \
 \
 name \
 FUNCTION_BODY \
 
+#define MULTITARGET_FUNCTION_X86_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#define MULTITARGET_FUNCTION_ARM_SVE(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    SVE_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##_ARM_SVE \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#define MULTITARGET_FUNCTION_X86_V4_ARM_SVE(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    SVE_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##_ARM_SVE \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#define MULTITARGET_FUNCTION_X86_V4_V3_ARM_SVE(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    SVE_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##_ARM_SVE \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
 #else
 
-    /// NOLINTNEXTLINE
-#define MULTITARGET_FUNCTION_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \
+#define MULTITARGET_FUNCTION_X86_V4(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
     name \
     FUNCTION_BODY \
 
-
-/// NOLINTNEXTLINE
-#define MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \
+#define MULTITARGET_FUNCTION_X86_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
     name \
     FUNCTION_BODY \
 
-#define MULTITARGET_FUNCTION_AVX512BW_AVX2(FUNCTION_HEADER, name, FUNCTION_BODY) \
+#define MULTITARGET_FUNCTION_ARM_SVE(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#define MULTITARGET_FUNCTION_X86_V4_ARM_SVE(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#define MULTITARGET_FUNCTION_X86_V4_V3_ARM_SVE(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
     name \
@@ -451,3 +498,7 @@ FUNCTION_BODY \
 #endif
 
 }
+
+#if defined(__clang__)
+#    pragma clang diagnostic pop
+#endif

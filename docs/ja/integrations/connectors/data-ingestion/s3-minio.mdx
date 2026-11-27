@@ -1,0 +1,48 @@
+---
+sidebarTitle: 'MinIO'
+slug: /integrations/minio
+description: 'ClickHouse で MinIO を使用する方法について説明するページ'
+title: 'MinIO を使う'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+keywords: ['s3', 'minio', 'オブジェクトストレージ', 'データロード', '互換性のあるストレージ']
+---
+
+import SelfManaged from '/snippets/ja/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+すべての S3 関数とテーブルは、[MinIO](https://min.io/) と互換性があります。特にネットワーク的に近い環境では、セルフホストの MinIO ストアでより高いスループットが得られる場合があります。
+
+また、backed merge tree の設定も、構成を少し変更すれば互換性があります:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        ...
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>https://min.io/tables//</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+                <region></region>
+                <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
+            </s3>
+            <s3_cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                <max_size>10Gi</max_size>
+            </s3_cache>
+        </disks>
+        ...
+    </storage_configuration>
+</clickhouse>
+```
+
+<Tip>
+  endpointタグ内の二重スラッシュに注意してください。これはバケットのルートを示すために必要です。
+</Tip>

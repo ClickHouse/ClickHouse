@@ -1,0 +1,96 @@
+---
+description: 'Guia para integrar bibliotecas Rust ao ClickHouse'
+sidebarTitle: 'Bibliotecas Rust'
+slug: /development/integrating_rust_libraries
+title: 'Integrando bibliotecas Rust'
+doc_type: 'guide'
+---
+
+A integração de bibliotecas Rust será apresentada com base na integração da função de hash BLAKE3.
+
+A primeira etapa da integração é criar um projeto Rust vazio em `contrib/<library>-cmake` e incluir a biblioteca necessária no Cargo.toml dele. O projeto é membro do workspace do cargo em `contrib/rust-contrib-workspace`: adicione `workspace = "../rust-contrib-workspace"` em `[package]` e liste a pasta em `members` de `contrib/rust-contrib-workspace/Cargo.toml`. Mantenha-o como uma biblioteca simples, sem `crate-type`. Os membros não são compilados como bibliotecas independentes: o pacote raiz do workspace, `_ch_rust_workspace`, reexporta cada membro habilitado e é a única biblioteca estática que o ClickHouse vincula. Em `contrib/rust-contrib-workspace/Cargo.toml`, adicione ao pacote raiz uma feature e uma dependência opcional para o membro (`blake3 = ["dep:_ch_rust_blake3"]` e `_ch_rust_blake3 = { path = "../blake3-cmake", optional = true }`) e reexporte-o em `contrib/rust-contrib-workspace/src/lib.rs` (`#[cfg(feature = "blake3")] pub use _ch_rust_blake3;`).
+
+Em seguida, você precisa vincular a biblioteca ao CMake usando a biblioteca Corrosion. O primeiro passo é adicionar a pasta da biblioteca ao `contrib/CMakeLists.txt` com `add_contrib`, junto aos outros membros do workspace. Depois disso, você deve adicionar o arquivo CMakeLists.txt ao diretório da biblioteca. Nele, é preciso adicionar o membro com `clickhouse_add_rust_member`: isso cria um target de interface que vincula a biblioteca estática do workspace e habilita a feature correspondente do pacote raiz, que `contrib/rust-contrib-workspace/CMakeLists.txt` importa com o Corrosion depois de todos os membros. Para o BLAKE3, estas linhas seriam:
+
+```CMake
+clickhouse_add_rust_member(_ch_rust_blake3 FEATURE blake3)
+
+target_include_directories(_ch_rust_blake3 INTERFACE include)
+add_library(ch_rust::blake3 ALIAS _ch_rust_blake3)
+```
+
+Assim, criaremos um target CMake para o membro e, em seguida, daremos a ele um nome mais conveniente. Observe que o nome `_ch_rust_blake3` vem do Cargo.toml, onde é usado como nome do projeto (`name = "_ch_rust_blake3"`).
+
+Como os tipos de dados do Rust não são compatíveis com os tipos de dados de C/C++, usaremos nosso projeto de biblioteca vazio para criar métodos shim para converter os dados recebidos de C/C++, chamar métodos da biblioteca e fazer a conversão inversa dos dados de saída. Por exemplo, este método foi escrito para o BLAKE3:
+
+```rust
+#[no_mangle]
+pub unsafe extern "C" fn blake3_apply_shim(
+    begin: *const c_char,
+    _size: u32,
+    out_char_data: *mut u8,
+```
+
+```rust
+#[no_mangle]
+pub unsafe extern "C" fn blake3_apply_shim(
+    begin: *const c_char,
+    _size: u32,
+    out_char_data: *mut u8,
+) -> *mut c_char {
+    if begin.is_null() {
+        let err_str = CString::new("input was a null pointer").unwrap();
+        return err_str.into_raw();
+    }
+    let mut hasher = blake3::Hasher::new();
+    let input_bytes = CStr::from_ptr(begin);
+    let input_res = input_bytes.to_bytes();
+    hasher.update(input_res);
+    let mut reader = hasher.finalize_xof();
+    reader.fill(std::slice::from_raw_parts_mut(out_char_data, blake3::OUT_LEN));
+    std::ptr::null_mut()
+}
+```
+
+Esse método recebe como entrada uma string compatível com C, seu tamanho e um ponteiro para a string de saída. Em seguida, ele converte entradas compatíveis com C em tipos usados pelos métodos reais da biblioteca e os chama. Depois disso, ele deve converter as saídas dos métodos da biblioteca de volta para um tipo compatível com C. Nesse caso específico, a biblioteca suportava escrita direta no ponteiro pelo método fill(), então a conversão não foi necessária. A principal recomendação aqui é criar menos métodos, para que você precise fazer menos conversões em cada chamada de método e não gere muita sobrecarga.
+
+Vale observar que o atributo `#[no_mangle]` e `extern "C"` são obrigatórios para todos esses métodos. Sem eles, não será possível realizar uma compilação correta compatível com C/C++. Além disso, eles são necessários para a próxima etapa da integração.
+
+Depois de escrever o código para os métodos shim, precisamos preparar o arquivo de cabeçalho da biblioteca. Isso pode ser feito manualmente, ou você pode usar a biblioteca cbindgen para geração automática. Caso use o cbindgen, será necessário escrever um script de compilação, build.rs, e incluir o cbindgen como dependência de compilação.
+
+Um exemplo de script de compilação que pode gerar automaticamente um arquivo de cabeçalho:
+
+```rust
+    let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+
+    let package_name = env::var("CARGO_PKG_NAME").unwrap();
+    let output_file = ("include/".to_owned() + &format!("{}.h", package_name)).to_string();
+
+    match cbindgen::generate(&crate_dir) {
+        Ok(header) => {
+            header.write_to_file(&output_file);
+        }
+        Err(err) => {
+            panic!("{}", err)
+        }
+    }
+```
+
+## Gerando o cabeçalho neste repositório {#generating-the-header-in-this-repository}
+
+O script de compilação acima grava o cabeçalho na árvore de código-fonte a cada compilação, o que não deixa nada a ser verificado: um cabeçalho confirmado que não corresponde mais ao lado Rust é simplesmente sobrescrito localmente e continua errado para todos os demais. Por isso, os crates aqui adotam uma de duas abordagens:
+
+* gerar o cabeçalho no diretório de compilação e apontar `target_include_directories` para ele, como faz `contrib/delta-kernel-rs`. Nada é confirmado no repositório, portanto nada pode ficar desatualizado;
+* fazer commit do cabeçalho e fazer com que o script de compilação o compare com o recém-gerado, falhando a compilação quando houver diferença, como faz `contrib/vortex-cmake`. As duas metades de uma FFI são unidades de tradução separadas, ligadas pelo nome do símbolo, de modo que uma assinatura alterada em apenas um dos lados resulta em comportamento indefinido silencioso, e não em um erro de compilação - é a comparação que torna impossível esquecer de gerar novamente o cabeçalho. Mantenha uma variável de ambiente que reescreva o arquivo confirmado, para que atualizá-lo continue exigindo um único comando.
+
+Há duas coisas a saber antes de adicionar `cbindgen` a um crate de `contrib/rust-contrib-workspace`:
+
+* fixe a versão exata. A saída dele muda entre versões de patch, portanto, com um requisito flexível, a verificação passa a acusar a versão do gerador em vez de uma diferença real. A versão também precisa ser uma das disponíveis em `contrib/rust_vendor`; caso contrário, será necessário executar novamente `contrib/rust-contrib-workspace/vendor.sh` e atualizar o submódulo;
+* interprete o arquivo-fonte com `Builder::with_src` em vez de processar o crate com `cbindgen::generate`. O caminho via crate faz o cbindgen executar `cargo metadata` em um processo aninhado, e esse processo não herda o `--config` que aponta o cargo para as fontes vendorizadas.
+
+Além disso, você deve usar o atributo #[no&#95;mangle] e `extern "C"` para todo atributo compatível com C. Sem isso, a biblioteca pode compilar incorretamente e o cbindgen não iniciará a geração automática de cabeçalhos.
+
+Depois de todas essas etapas, você pode testar sua biblioteca em um projeto pequeno para identificar eventuais problemas de compatibilidade ou de geração de cabeçalhos. Se surgir algum problema durante a geração de cabeçalhos, tente configurá-la com o arquivo cbindgen.toml (você pode encontrar um modelo aqui: [https://github.com/eqrion/cbindgen/blob/master/template.toml](https://github.com/eqrion/cbindgen/blob/master/template.toml)).
+
+Vale mencionar o problema que ocorreu ao integrar o BLAKE3:
+O MemorySanitizer pode gerar relatórios de falso positivo, pois não consegue determinar se algumas variáveis em Rust estão inicializadas ou não. Isso foi resolvido escrevendo um método com uma definição mais explícita para algumas variáveis, embora essa implementação do método seja mais lenta e seja usada apenas para corrigir builds do MemorySanitizer.

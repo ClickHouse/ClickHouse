@@ -42,7 +42,7 @@ enum class ErrorHandling : uint8_t
     Null
 };
 
-class FunctionFormatQuery : public IFunction
+class FunctionFormatQuery final : public IFunction
 {
 public:
     FunctionFormatQuery(ContextPtr context, String name_, OutputFormatting output_formatting_, ErrorHandling error_handling_)
@@ -56,31 +56,39 @@ public:
         implicit_select = settings[Setting::implicit_select];
     }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// The captured parser settings decide whether a query is formatted or rejected, and how the
+    /// data types in it are rendered, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override
     {
-        FunctionArgumentDescriptors args{
-            {"query", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        DataTypePtr string_type = std::make_shared<DataTypeString>();
-        if (error_handling == ErrorHandling::Null)
-            return std::make_shared<DataTypeNullable>(string_type);
-        return string_type;
+        hash.update(max_query_size);
+        hash.update(max_parser_depth);
+        hash.update(max_parser_backtracks);
+        hash.update(print_pretty_type_names);
+        hash.update(implicit_select);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// An empty string is not a query.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return error_handling != ErrorHandling::Exception; }
+
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return error_handling == ErrorHandling::Null
+            ? "(String) -> Nullable(String)"
+            : "(String) -> String";
+    }
+
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr col_query = arguments[0].column;
 
         ColumnUInt8::MutablePtr col_null_map;
         if (error_handling == ErrorHandling::Null)
-            col_null_map = ColumnUInt8::create(input_rows_count, 0);
+            col_null_map = ColumnUInt8::create(input_rows_count, false);
 
         if (const ColumnString * col_query_string = checkAndGetColumn<ColumnString>(col_query.get()))
         {
@@ -182,16 +190,13 @@ REGISTER_FUNCTION(formatQuery)
         FunctionDocumentation{
             .description = "Returns a formatted, possibly multi-line, version of the given SQL query. Throws in case of a parsing error.\n[example:multiline]",
             .syntax = "formatQuery(query)",
-            .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
+            .arguments = {{"query", "The SQL query to be formatted. [String](/reference/data-types/string)"}},
             .returned_value = {"The formatted query", {"String"}},
             .examples{
                 {"multiline",
                  "SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');",
-                 "SELECT\n"
-                 "    a,\n"
-                 "    b\n"
-                 "FROM tab\n"
-                 "WHERE (a > 3) AND (b < 3)"}},
+                 R"(SELECT\n    a,\n    b\nFROM tab\nWHERE (a > 3) AND (b < 3))"}},
+            .introduced_in = {23, 10},
             .category = FunctionDocumentation::Category::Other});
 }
 
@@ -203,16 +208,13 @@ REGISTER_FUNCTION(formatQueryOrNull)
         FunctionDocumentation{
             .description = "Returns a formatted, possibly multi-line, version of the given SQL query. Returns NULL in case of a parsing error.\n[example:multiline]",
             .syntax = "formatQueryOrNull(query)",
-            .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
+            .arguments = {{"query", "The SQL query to be formatted. [String](/reference/data-types/string)"}},
             .returned_value = {"The formatted query", {"String"}},
             .examples{
                 {"multiline",
                  "SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');",
-                 "SELECT\n"
-                 "    a,\n"
-                 "    b\n"
-                 "FROM tab\n"
-                 "WHERE (a > 3) AND (b < 3)"}},
+                 R"(SELECT\n    a,\n    b\nFROM tab\nWHERE (a > 3) AND (b < 3))"}},
+            .introduced_in = {23, 11},
             .category = FunctionDocumentation::Category::Other});
 }
 
@@ -224,12 +226,13 @@ REGISTER_FUNCTION(formatQuerySingleLine)
         FunctionDocumentation{
             .description = "Like formatQuery() but the returned formatted string contains no line breaks. Throws in case of a parsing error.\n[example:multiline]",
             .syntax = "formatQuerySingleLine(query)",
-            .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
+            .arguments = {{"query", "The SQL query to be formatted. [String](/reference/data-types/string)"}},
             .returned_value = {"The formatted query", {"String"}},
             .examples{
                 {"multiline",
                  "SELECT formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3');",
                  "SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)"}},
+            .introduced_in = {23, 10},
             .category = FunctionDocumentation::Category::Other});
 }
 
@@ -247,6 +250,7 @@ REGISTER_FUNCTION(formatQuerySingleLineOrNull)
                 {"multiline",
                  "SELECT formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3');",
                  "SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)"}},
+            .introduced_in = {23, 11},
             .category = FunctionDocumentation::Category::Other});
 }
 

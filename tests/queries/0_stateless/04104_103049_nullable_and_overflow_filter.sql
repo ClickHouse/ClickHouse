@@ -1,0 +1,49 @@
+-- { echo }
+-- Regression test for #103049: WHERE x AND toNullable(N) returned 0 rows
+-- for any N >= 256 due to a UInt8 overflow in the MergeTree virtual-column
+-- filter path.
+--
+-- Root cause: `VirtualColumnUtils::splitFilterNodeForAllowedInputs` reduced
+-- `(c != '') AND toNullable(256)` to the single child `toNullable(256)` whose
+-- type `Nullable(UInt16)` differs from the parent `and` result type
+-- `Nullable(UInt8)`. The code then wrapped the child in `notEquals(x, 0)` to
+-- obtain a boolean, but used `result_type->getDefault()` to build the zero
+-- constant. For a `Nullable` type, `getDefault` returns `Null()`, so the
+-- inserted comparison became `notEquals(toNullable(256), NULL)` which is
+-- `NULL` under SQL three-valued logic — treated as false and all rows are
+-- filtered out. The fix uses `removeNullable(result_type)->getDefault()` to
+-- obtain a real zero of the nested type, producing `notEquals(256, 0) = 1`.
+--
+-- N = 255 never exercised the bug because `toNullable(255)` is
+-- `Nullable(UInt8)`, which equals the parent `and` result type, so the
+-- type-mismatch branch was skipped entirely.
+
+DROP TABLE IF EXISTS bug_103049;
+CREATE TABLE bug_103049 (c String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO bug_103049 SELECT toString(number) FROM numbers(100);
+
+-- All of the following should return 100 (c is always non-empty, N is truthy).
+
+-- Non-nullable baseline: already correct (non-bug path).
+SELECT count() FROM bug_103049 WHERE (c != '') AND 256;
+
+-- Nullable(UInt8) with N = 255 — works because result type matches parent.
+SELECT count() FROM bug_103049 WHERE (c != '') AND toNullable(255);
+
+-- Nullable(UInt16) with N = 256 — the core of the bug.
+SELECT count() FROM bug_103049 WHERE (c != '') AND toNullable(256);
+
+-- Nullable(UInt16) with N = 65535 — upper bound of UInt16.
+SELECT count() FROM bug_103049 WHERE (c != '') AND toNullable(65535);
+
+-- Nullable(Int64) with N > UInt32 range.
+SELECT count() FROM bug_103049 WHERE (c != '') AND toNullable(2147483648);
+
+-- Negative integer: also differs in type and would truncate under a plain cast.
+SELECT count() FROM bug_103049 WHERE (c != '') AND toNullable(toInt8(-1));
+
+-- NULL constant should still correctly filter ALL rows (0 rows).
+-- Three-valued logic: `x AND NULL` is NULL when x is true, which is falsy.
+SELECT count() FROM bug_103049 WHERE (c != '') AND CAST(NULL, 'Nullable(UInt16)');
+
+DROP TABLE bug_103049;

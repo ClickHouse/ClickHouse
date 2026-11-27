@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Core/BlockNameMap.h>
+#include <Core/CaseAwareBlockNameMap.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/BSONTypes.h>
 #include <Processors/Formats/IRowInputFormat.h>
@@ -81,25 +82,25 @@ private:
     String current_key_name;
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
-    std::vector<UInt8> read_columns;
+    VectorWithMemoryTracking<UInt8> read_columns;
     /// Set of columns which already met in row. Exception is thrown if there are more than one column with the same name.
-    std::vector<UInt8> seen_columns;
+    VectorWithMemoryTracking<UInt8> seen_columns;
     /// These sets may be different, because if null_as_default=1 read_columns[i] will be false and seen_columns[i] will be true
     /// for row like {..., "non-nullable column name" : null, ...}
 
     /// Hash table match `field name -> position in the block`.
-    BlockNameMap name_map;
+    CaseAwareBlockNameMap name_map;
 
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
-    std::vector<BlockNameMap::const_iterator> prev_positions;
+    VectorWithMemoryTracking<std::pair<std::string_view, size_t>> prev_positions;
 
     DataTypes types;
 
-    size_t current_document_start;
-    BSONSizeT current_document_size;
+    size_t current_document_start{};
+    BSONSizeT current_document_size{};
 };
 
-class BSONEachRowSchemaReader : public IRowWithNamesSchemaReader
+class BSONEachRowSchemaReader final : public IRowWithNamesSchemaReader
 {
 public:
     BSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & settings_);
@@ -108,8 +109,8 @@ private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
-    NamesAndTypesList getDataTypesFromBSONDocument(bool skip_unsupported_types);
-    DataTypePtr getDataTypeFromBSONField(BSONType type, bool skip_unsupported_types, bool & skip);
+    NamesAndTypesList getDataTypesFromBSONDocument(bool skip_unsupported_types, size_t depth);
+    DataTypePtr getDataTypeFromBSONField(BSONType type, bool skip_unsupported_types, bool & skip, size_t depth);
 };
 
 }

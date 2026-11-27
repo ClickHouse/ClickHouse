@@ -23,8 +23,17 @@ enum class MergeType : uint8_t
     TTLDrop = 4,
 };
 
+/// Specification of merge in terms of part coverage.
+enum class MergeCoverage : uint8_t
+{
+    /// Continuous by block numbers parts
+    PartitionSegment = 1,
+    /// All parts in partition
+    FullPartition = 2,
+};
+
 /// Check parsed merge_type from raw int and get enum value.
-MergeType checkAndGetMergeType(UInt32 merge_type);
+MergeType checkAndGetMergeType(std::underlying_type_t<MergeType> merge_type);
 
 /// Check this merge assigned with TTL
 bool isTTLMergeType(MergeType merge_type);

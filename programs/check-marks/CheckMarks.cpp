@@ -48,12 +48,13 @@ static void checkByCompressedReadBuffer(const std::string & mrk_path, const std:
         out << ", decompressed size " << bin_in.available();
 
         out << ".\n" << DB::flush;
-
-        out.finalize();
     }
+
+    out.finalize();
 }
 
 
+int mainEntryClickHouseCheckMarks(int argc, char ** argv);
 int mainEntryClickHouseCheckMarks(int argc, char ** argv)
 {
     boost::program_options::options_description desc("Allowed options");

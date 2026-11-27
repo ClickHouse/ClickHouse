@@ -1,0 +1,218 @@
+---
+slug: '/examples/aggregate-function-combinators/avgMergeState'
+title: 'avgMergeState'
+description: 'avgMergeState コンビネータの使用例'
+keywords: ['avg', 'MergeState', 'combinator', '例', 'avgMergeState']
+sidebarTitle: 'avgMergeState'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+[`MergeState`](/ja/reference/functions/aggregate-functions/combinators#-state) コンビネータは、
+[`avg`](/ja/reference/functions/aggregate-functions/avg)
+関数に適用でき、`AverageFunction(avg, T)` 型の部分的な集約状態をマージして、
+新しい中間集約状態を返します。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+`MergeState` コンビネータ は、多段階の集計シナリオで特に有用です。事前に集計された状態を結合し、それらを後続の処理のために状態のまま (最終化せずに) 維持したい場合に役立ちます。これを示すために、個々のサーバーのパフォーマンスメトリクスを、複数レベルにまたがる階層的な集計へと変換する例を見ていきます。サーバーレベル → Region レベル
+→ データセンターレベルです。
+
+まず、生データを格納するためのテーブルを作成します。
+
+```sql
+CREATE TABLE raw_server_metrics
+(
+    timestamp DateTime DEFAULT now(),
+    server_id UInt32,
+    region String,
+    datacenter String,
+    response_time_ms UInt32
+)
+ENGINE = MergeTree()
+ORDER BY (region, server_id, timestamp);
+```
+
+サーバーレベルの集約用ターゲットテーブルを作成し、それに対する insert トリガーとして機能する Incremental
+materialized view を定義します：
+
+```sql
+CREATE TABLE server_performance
+(
+    server_id UInt32,
+    region String,
+    datacenter String,
+    avg_response_time AggregateFunction(avg, UInt32)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY (region, server_id);
+
+CREATE MATERIALIZED VIEW server_performance_mv
+TO server_performance
+AS SELECT
+    server_id,
+    region,
+    datacenter,
+    avgState(response_time_ms) AS avg_response_time
+FROM raw_server_metrics
+GROUP BY server_id, region, datacenter;
+```
+
+リージョンレベルとデータセンターレベルについても、同様に行います：
+
+```sql
+CREATE TABLE region_performance
+(
+    region String,
+    datacenter String,
+    avg_response_time AggregateFunction(avg, UInt32)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY (datacenter, region);
+
+CREATE MATERIALIZED VIEW region_performance_mv
+TO region_performance
+AS SELECT
+    region,
+    datacenter,
+    avgMergeState(avg_response_time) AS avg_response_time
+FROM server_performance
+GROUP BY region, datacenter;
+
+-- データセンターレベルのテーブルとmaterialized view
+
+CREATE TABLE datacenter_performance
+(
+    datacenter String,
+    avg_response_time AggregateFunction(avg, UInt32)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY datacenter;
+
+CREATE MATERIALIZED VIEW datacenter_performance_mv
+TO datacenter_performance
+AS SELECT
+      datacenter,
+      avgMergeState(avg_response_time) AS avg_response_time
+FROM region_performance
+GROUP BY datacenter;
+```
+
+次に、生のサンプルデータをソーステーブルに挿入します。
+
+```sql
+INSERT INTO raw_server_metrics (timestamp, server_id, region, datacenter, response_time_ms) VALUES
+    (now(), 101, 'us-east', 'dc1', 120),
+    (now(), 101, 'us-east', 'dc1', 130),
+    (now(), 102, 'us-east', 'dc1', 115),
+    (now(), 201, 'us-west', 'dc1', 95),
+    (now(), 202, 'us-west', 'dc1', 105),
+    (now(), 301, 'eu-central', 'dc2', 145),
+    (now(), 302, 'eu-central', 'dc2', 155);
+```
+
+各レベルごとに、3つのクエリを書きます:
+
+<Tabs>
+  <Tab title="サービスレベル">
+    ```sql
+    SELECT
+        server_id,
+        region,
+        avgMerge(avg_response_time) AS avg_response_ms
+    FROM server_performance
+    GROUP BY server_id, region
+    ORDER BY region, server_id;
+    ```
+
+    ```response
+    ┌─server_id─┬─region─────┬─avg_response_ms─┐
+    │       301 │ eu-central │             145 │
+    │       302 │ eu-central │             155 │
+    │       101 │ us-east    │             125 │
+    │       102 │ us-east    │             115 │
+    │       201 │ us-west    │              95 │
+    │       202 │ us-west    │             105 │
+    └───────────┴────────────┴─────────────────┘
+    ```
+  </Tab>
+
+  <Tab title="リージョンレベル">
+    ```sql
+    SELECT
+        region,
+        datacenter,
+        avgMerge(avg_response_time) AS avg_response_ms
+    FROM region_performance
+    GROUP BY region, datacenter
+    ORDER BY datacenter, region;
+    ```
+
+    ```response
+    ┌─region─────┬─datacenter─┬────avg_response_ms─┐
+    │ us-east    │ dc1        │ 121.66666666666667 │
+    │ us-west    │ dc1        │                100 │
+    │ eu-central │ dc2        │                150 │
+    └────────────┴────────────┴────────────────────┘
+    ```
+  </Tab>
+
+  <Tab title="データセンターレベル">
+    ```sql
+    SELECT
+        datacenter,
+        avgMerge(avg_response_time) AS avg_response_ms
+    FROM datacenter_performance
+    GROUP BY datacenter
+    ORDER BY datacenter;
+    ```
+
+    ```response
+    ┌─datacenter─┬─avg_response_ms─┐
+    │ dc1        │             113 │
+    │ dc2        │             150 │
+    └────────────┴─────────────────┘
+    ```
+  </Tab>
+</Tabs>
+
+さらにデータを挿入できます:
+
+```sql
+INSERT INTO raw_server_metrics (timestamp, server_id, region, datacenter, response_time_ms) VALUES
+    (now(), 101, 'us-east', 'dc1', 140),
+    (now(), 201, 'us-west', 'dc1', 85),
+    (now(), 301, 'eu-central', 'dc2', 135);
+```
+
+データセンターレベルのパフォーマンスをもう一度確認してみましょう。集計チェーン全体が自動的に更新されていることがわかります。
+
+```sql
+SELECT
+    datacenter,
+    avgMerge(avg_response_time) AS avg_response_ms
+FROM datacenter_performance
+GROUP BY datacenter
+ORDER BY datacenter;
+```
+
+```response
+┌─datacenter─┬────avg_response_ms─┐
+│ dc1        │ 112.85714285714286 │
+│ dc2        │                145 │
+└────────────┴────────────────────┘
+```
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`avg`](/ja/reference/functions/aggregate-functions/avg)
+* [`AggregateFunction`](/ja/reference/data-types/aggregatefunction)
+* [`Merge`](/ja/reference/functions/aggregate-functions/combinators#-merge)
+* [`MergeState`](/ja/reference/functions/aggregate-functions/combinators#-mergestate)

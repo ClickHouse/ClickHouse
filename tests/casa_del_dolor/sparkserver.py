@@ -9,10 +9,9 @@ import time
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-sys.path.append("..")
-from integration.helpers.cluster import is_port_free
-from utils.httpserver import DolorHTTPServer
-from catalogs.datalakes import SparkHandler
+from tests.integration.helpers.cluster import is_port_free
+from tests.casa_del_dolor.utils.httpserver import DolorHTTPServer
+from tests.casa_del_dolor.catalogs.datalakes import SparkHandler
 
 
 def get_unique_free_ports(total: int) -> list[int]:
@@ -74,10 +73,11 @@ if __name__ == "__main__":
     from types import SimpleNamespace
 
     # FIXME these should be parameters for the script
-    # So far I call `tests/docker_scripts/setup_minio.sh stateless` to start MinIO
+    # So far I call `ci/jobs/scripts/functional_tests/setup_seaweedfs.sh stateless` to start SeaweedFS
     cluster_settings = {
         "minio_ip": "127.0.0.1",
         "minio_port": 11111,
+        "minio_s3_port": 11111,
         "minio_bucket": "test",
         "minio_access_key": "clickhouse",
         "minio_secret_key": "clickhouse",
@@ -88,6 +88,13 @@ if __name__ == "__main__":
         "azure_container_name": "cont",
         "instances_dir": "/var/lib/clickhouse/user_files",
         "client_bin_path": sys.argv[1],
+        "with_kafka": False,
+        "with_nats": False,
+        "with_rabbitmq": False,
+        "iceberg_rest_catalog_port": 8181,
+        "glue_catalog_port": 3000,
+        "hms_catalog_port": 9083,
+        "get_instance_ip": lambda _: "127.0.0.1",
     }
     cluster = SimpleNamespace(**cluster_settings)
     os.makedirs(cluster.instances_dir, exist_ok=True)
@@ -105,7 +112,7 @@ if __name__ == "__main__":
 
     all_running = True
     while all_running:
-        start = time.time()
+        start = time.monotonic()
         finish = start + 1
 
         while all_running and start < finish:

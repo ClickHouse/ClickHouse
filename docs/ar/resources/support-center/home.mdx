@@ -1,0 +1,32 @@
+---
+slug: support
+title: مركز الدعم
+description: 'تصفّح وابحث في قاعدة معرفة ClickHouse'
+keywords: ['الدعم', 'قاعدة المعرفة', 'kb', 'المقالات', 'الأسئلة الشائعة']
+mode: 'custom'
+hideNext: true
+---
+
+import { KBExplorer } from '/snippets/ar/components/KBExplorer/KBExplorer.jsx'
+import { kbIndex } from '/snippets/ar/components/KBExplorer/kb-data.jsx'
+
+{/* المقالات المميّزة — لكلٍّ منها معرّف مقال (مسار نسبي ضمن knowledge-base، من دون امتداد)
+    وصورة لافتة (يُعرَض عنوان المقال داخل الصورة) */}
+
+export const featuredArticles = [
+  { id: 'cloud-services/aws-privatelink-setup-for-clickpipes' },
+  { id: 'tables-schema/schema-migration-tools' },
+  { id: 'data-management/read-consistency' }
+];
+
+<div className="relative overflow-hidden">
+  <div className="absolute top-0 left-0 right-0 opacity-80">
+    <img src="/images/background-light.svg" className="block dark:hidden pointer-events-none w-full h-auto" alt="صورة خلفية للزينة." />
+
+    <img src="/images/background-dark.svg" className="hidden dark:block pointer-events-none w-full h-auto" alt="صورة خلفية للزينة." />
+  </div>
+
+  {/* kbIndex is imported from the generated kb-data.jsx; featuredArticles is hand-maintained */}
+
+  <KBExplorer index={kbIndex} featured={featuredArticles} />
+</div>

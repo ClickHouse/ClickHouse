@@ -91,6 +91,10 @@ private:
 
     void checkResultCode(int code) const;
 
+    /// Re-throws a stored exception from a minizip C callback, if any.
+    void rethrowStoredException();
+    void rethrowStoredExceptionLocked() TSA_REQUIRES(mutex);
+
     const String path_to_archive;
     std::unique_ptr<StreamInfo> TSA_GUARDED_BY(mutex) stream_info;
     int compression_method TSA_GUARDED_BY(mutex); /// By default the compression method is "deflate".

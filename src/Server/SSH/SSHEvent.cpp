@@ -2,8 +2,8 @@
 
 #if USE_SSH && defined(OS_LINUX)
 
-#include <stdexcept>
 #include <Common/Exception.h>
+#include <base/errnoToString.h>
 #include <Common/clibssh.h>
 
 namespace DB
@@ -53,19 +53,12 @@ void SSHEvent::removeSession(SSHSession & session)
 
 int SSHEvent::poll(int timeout)
 {
-    while (true)
-    {
-        int rc = ssh_event_dopoll(event.get(), timeout);
+    int rc = ssh_event_dopoll(event.get(), timeout);
 
-        if (rc == SSH_AGAIN)
-            continue;
-        if (rc == SSH_ERROR)
-            throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Error on polling on ssh event. {}", errnoToString());
-        if (rc != SSH_OK)
-            throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "The failure happened with no reason provided by the libssh");
+    if (rc == SSH_ERROR)
+        throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Error on polling on ssh event. {}", errnoToString());
 
-        return rc;
-    }
+    return rc;
 }
 
 int SSHEvent::poll()
@@ -75,7 +68,7 @@ int SSHEvent::poll()
 
 void SSHEvent::addFd(int fd, int events, EventCallback cb, void * userdata)
 {
-    if (ssh_event_add_fd(event.get(), fd, events, cb, userdata) != SSH_OK)
+    if (ssh_event_add_fd(event.get(), fd, static_cast<int16_t>(events), cb, userdata) != SSH_OK)
         throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Error on adding custom file descriptor to ssh event");
 }
 

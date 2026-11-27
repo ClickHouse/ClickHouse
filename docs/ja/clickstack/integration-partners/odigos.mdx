@@ -1,0 +1,249 @@
+---
+slug: /use-cases/observability/clickstack/integration-partners/odigos
+title: 'Odigos を使用して OpenTelemetry を ClickStack へ送信する'
+sidebarTitle: 'Odigos'
+description: 'Odigos で Kubernetes ワークロードを自動インストルメントし、OTLP 経由でテレメトリーを ClickStack にエクスポート'
+doc_type: 'guide'
+keywords: ['Odigos', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'eBPF', '自動インストルメンテーション']
+---
+
+import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **要点**
+
+  このガイドでは、Odigos のテレメトリーを ClickStack にエクスポートする方法を説明します。ここでは、次の内容を学びます。
+
+  * Helm を使用して Kubernetes に Odigos をデプロイする
+  * Odigos UI でソースを追加する
+  * ClickStack を宛先とする OTLP HTTP 宛先を追加する
+  * ClickStack でログ、メトリクス、トレースを確認する
+
+  Odigos は、コードを変更したり再起動したりすることなく、アプリケーションを自動的にインストルメントします。ClickStack はそのデータを ClickHouse に保存し、クエリできます。
+
+  所要時間: 10～20 分
+</Info>
+
+{/* vale off */}
+
+## Odigosとは？ {#what-is-odigos}
+
+{/* vale on */}
+
+[Odigos](https://odigos.io/) は、**eBPF** を使ってカーネルからアプリケーションをインストルメントする、Kubernetes と VM 向けのインストルメンテーション制御プレーンです。収集はカーネル内で実行されるため、アプリへのオーバーヘッドを低く抑えながら、高い可観測性を確保できます。アプリケーションコードに新たなエージェントを組み込んだり、すべてのサービスでライブラリのアップグレードを待ったりすることなく、本番環境で利用できる OpenTelemetry のトレース、メトリクス、ログ、プロファイルを取得できます。
+
+この eBPF レイヤーこそが、大規模環境でも深く一貫したテレメトリーを可能にしています。Odigos は必要に応じて、より詳細なインストルメンテーションを自動で有効化・無効化し、問題のデバッグやトラブルシューティングを支援します。
+
+* **コードレベルのコンテキスト** — 関数やランタイムの挙動にひも付く属性
+* **HTTP トラフィック** — サービス間のリクエストとレスポンス
+* **メッセージングシステム** — Kafka や同様のブローカーからのペイロードやメッセージ
+* **詳細なエラー情報** — 障害発生時のスタックトレース
+* **カスタム インストルメンテーション** — 自動インストルメンテーションでカバーできない範囲を、コード変更や再起動なしで拡張
+
+Odigos は内部で、クラスター向けの完全な OpenTelemetry パイプライン を作成・管理します。これには、負荷に応じてスケールする collector、選択したバックエンドへのルーティング、そして UI から制御できる パイプライン ロジックが含まれます。**サンプリング** を定義してデータ量を管理し、**PII マスキング** で機微なデータがエクスポートに含まれないようにし、**OTTL ルール** でテレメトリーがクラスター外に出る前にフィルタリング、変換、拡充を行えます。
+
+{/* vale off */}
+
+## なぜ Odigos + ClickStack なのか {#why-odigos-clickstack}
+
+{/* vale on */}
+
+多数のサービスに OpenTelemetry を展開するには時間がかかることが多く、アプリケーション内部の挙動も表面的にしか把握できません。Odigos は Kubernetes 上で、より深いテレメトリー取得のための eBPF インストルメンテーションと collector の運用を担います。ClickStack は ClickHouse を基盤としたストレージと、大規模なテレメトリーをクエリできる ClickStack UI を提供します。
+
+<Tip>
+  **主なポイント**
+
+  * **Odigos** は再起動なしであらゆる Kubernetes ワークロードを自動的にインストルメントし、OpenTelemetry パイプラインを自動で管理します。
+  * **ClickStack** はログ、メトリクス、トレースを ClickHouse に保存し、ClickStack UI に表示します。
+</Tip>
+
+## 前提条件 {#prerequisites}
+
+* Kubernetes クラスターからアクセス可能な **ClickStack Open Source** がインストールされていること。[ClickStack Open Source を使い始める](/ja/clickstack/getting-started/oss) を参照してください。
+* ClickStack の **OTLP HTTP エンドポイント** (ポート `4318`) と、Odigos が `Authorization` ヘッダーで渡す認証値。オープンソース版 ClickStack の場合、これは ClickStack UI の **Team Settings → API Keys** にある **API取り込みキー** です。
+* **Kubernetes クラスター** (eBPF インストルメンテーションには、カーネル 4.18 以降の Linux ノードが必要)
+* `odigos-system` ネームスペースにインストールするための **Helm**、**kubectl**、およびクラスター認証情報
+* **Odigos Enterprise オンプレミス トークン** — アクセスするには [Odigos チーム](https://odigos.io/) にお問い合わせください
+
+{/* vale off */}
+
+## ClickStack と Odigos を統合する {#integrate-odigos-clickstack}
+
+{/* vale on */}
+
+<Steps>
+  <Step title="HelmでOdigosをデプロイする" id="deploy-odigos">
+    Odigos Enterprise にはオンプレミス用のライセンス トークンが必要です。シェルでこれをエクスポートします:
+
+    ```bash
+    export ODIGOS_ONPREM_TOKEN="<your-enterprise-token>"
+    ```
+
+    または、インストール前に、`odigos-pro` という名前の Kubernetes Secret にトークンを保存しておくこともできます。詳しくは、[Odigos Enterprise ドキュメント](https://enterprise.docs.odigos.io/) (アクセス権が必要) を参照してください。
+
+    Odigos の Helm リポジトリを追加し、チャートを `odigos-system` にインストールします。
+
+    ```bash
+    helm repo add odigos https://odigos-io.github.io/odigos/
+    helm repo update
+
+    helm upgrade --install odigos odigos/odigos \
+      --namespace odigos-system \
+      --create-namespace \
+      --set onPremToken=$ODIGOS_ONPREM_TOKEN
+    ```
+
+    `--set` フラグまたはカスタム values ファイル (`-f`) を使用して、追加の設定上書きを指定できます。チャートのデフォルト値を確認するには、`helm show values odigos/odigos` を実行します。
+
+    Odigos のポッドが実行中であることを確認してください。
+
+    ```bash
+    kubectl get pods -n odigos-system
+    ```
+  </Step>
+
+  <Step title="Odigos UI でソースを追加する" id="add-sources">
+    1. Odigos UI のサービスをポートフォワードします:
+
+    ```bash
+    kubectl port-forward svc/ui -n odigos-system 3000:3000
+    ```
+
+    2. ブラウザで [http://localhost:3000](http://localhost:3000) を開きます。
+    3. **SOURCES** に移動し、インストルメントするネームスペースまたはワークロードを選択します。
+    4. すべてのワークロードをインストルメンテーション対象としてマークしたら、画面下部の done をクリックします。
+    5. SOURCES 列で、ワークロードが正常にインストルメントされていることを確認します。
+  </Step>
+
+  <Step title="Odigos UI で ClickStack を宛先として追加する" id="add-destination-ui">
+    オープンソース版 ClickStack にテレメトリーを送信するには、Odigos で **OTLP HTTP** 宛先を追加します。同梱の collector は、ClickStack UI で発行されたAPI取り込みキーを使用してテレメトリーを受信します。
+
+    <Tip>
+      **代替手段: ClickHouse に直接書き込む**
+
+      Kubernetes クラスターから ClickHouse にアクセスできる場合は、OTLP collector を完全に省略して、代わりに Odigos の [Native **ClickHouse** 宛先](#native-clickhouse-destination) を使用できます。
+    </Tip>
+
+    オープンソース版 ClickStack では、たとえば all-in-one イメージを使用する場合、ゲートウェイ OpenTelemetry Collector が含まれており、API取り込みキー は ClickStack UI によって自動的に生成されます。
+
+    1. Odigos UI で **Add Destination** をクリックし、**OTLP HTTP** を選択します。
+    2. **OTLP HTTP Endpoint** に ClickStack collector を設定します (例: `http://clickstack.example.com:4318`) 。エンドポイントの詳細については、[OpenTelemetry でのインジェスト](/ja/clickstack/ingesting-data/opentelemetry#sending-data-to-collector-oss) を参照してください。
+    3. ClickStack UI の **Team Settings → API Keys** で API取り込みキー をコピーします。
+    4. **Headers** に以下を追加します。
+       * **Key**: `Authorization`
+       * **Value**: API取り込みキー
+    5. **Logs**、**Metrics**、**Traces** を有効にします。
+    6. 宛先を保存します。
+  </Step>
+
+  <Step title="ClickStack でテレメトリーを確認する" id="verify-telemetry">
+    1. ClickStack UI を開きます。
+       * **オープンソース版 ClickStack**: たとえば、all-in-one イメージでは `http://<host>:8080` です。
+    2. **Logs**、**Metrics**、**Traces** を確認し、インストルメントしたサービスからのデータがあることを確認します。
+    3. `odigos.version` でトレースを絞り込み、エンドツーエンドでエクスポートされていることを検証します。
+
+    データが見つからない場合は、collector のログを確認してください: `kubectl logs deploy/odigos-gateway -n odigos-system`
+  </Step>
+</Steps>
+
+## 詳細設定 {#advanced-configuration}
+
+### HyperDX ログノーマライザー {#hyperdx-log-normalizer}
+
+Odigos のネイティブ **ClickHouse** 宛先を使用して ClickHouse に直接エクスポートする場合 (ClickStack への OTLP HTTP ではなく) 、**HyperDX ログノーマライザー** (`HYPERDX_LOG_NORMALIZER: true`) を有効にしてください。これにより、JSON 形式のログ本文が解析され、属性が正規化されるため、ClickStack UI でより適切にクエリできるようになります。
+
+### Native ClickHouse 宛先 {#native-clickhouse-destination}
+
+このオプションは **ClickStack Open Source およびセルフマネージドの ClickHouse Observability にのみ** 適用されます。完全マネージド型の ClickHouse Observability では、[オブザーバビリティガイド](/ja/clickstack/observability/integration-partners/odigos#add-destination-ui) で説明しているマネージド OTLP エンドポイントを使用してください。
+
+クラスターから ClickHouse に直接アクセスできる場合は、OTLP HTTP の代わりに Odigos のNative **ClickHouse** 宛先を使用できます。ClickHouse のエンドポイント、データベース名、スキーマオプションは、UI またはマニフェストで設定します。詳しくは [Odigos ClickHouse 宛先](https://docs.odigos.io/backends/clickhouse) を参照してください。
+
+* **本番環境のスキーマ**: `CLICKHOUSE_CREATE_SCHEME` を `false` に設定し、独自の DDL を適用してください。
+* **TLS / 認証**: `CLICKHOUSE_TLS_ENABLED` と `CLICKHOUSE_USERNAME` を使用し、パスワードは Kubernetes Secret で指定します。
+
+### Kubernetes のマニフェストで宛先を設定する {#destination-manifest}
+
+**OTLP HTTP (ClickStack)**
+
+```yaml
+apiVersion: odigos.io/v1alpha1
+kind: Destination
+metadata:
+  name: clickstack
+  namespace: odigos-system
+spec:
+  type: otlphttp
+  destinationName: otlphttp
+  signals:
+    - TRACES
+    - METRICS
+    - LOGS
+  data:
+    OTLP_HTTP_ENDPOINT: 'http://clickstack.example.com:4318'
+    # API ingestion key for ClickStack Open Source
+    OTLP_HTTP_HEADERS: 'Authorization:<YOUR_AUTHORIZATION_VALUE>'
+```
+
+**ClickHouse (直接接続)&#x20;**
+
+```yaml
+apiVersion: odigos.io/v1alpha1
+kind: Destination
+metadata:
+  name: clickhouse
+  namespace: odigos-system
+spec:
+  type: clickhouse
+  destinationName: clickhouse
+  signals:
+    - TRACES
+    - METRICS
+    - LOGS
+  data:
+    CLICKHOUSE_ENDPOINT: 'http://clickstack.example.com:8123'
+    CLICKHOUSE_DATABASE_NAME: 'otel'
+    CLICKHOUSE_CREATE_SCHEME: 'true'
+```
+
+マニフェストを適用します:
+
+```bash
+kubectl apply -f destination.yaml
+```
+
+{/* vale off */}
+
+### Odigos VM エージェント {#odigos-vm-agent}
+
+{/* vale on */}
+
+[Odigos VM Agent](https://docs.odigos.io/vmagent/overview) は、eBPF を使用して Linux プロセス、systemd サービス、および/または Docker コンテナーをインストルメントします。テレメトリーは、OTLP HTTP 経由の ClickStack を含め、クラスターベースの Odigos と同じ宛先にエクスポートされます。
+
+VM Agent は Odigos Pro の一部です。セットアップ、ソース、宛先の設定については、[VM Agent の概要](https://docs.odigos.io/vmagent/overview)を参照してください。
+
+{/* vale off */}
+
+### Odigos Central {#odigos-central}
+
+{/* vale on */}
+
+[Odigos Central](https://docs.odigos.io/central/overview) は、一元管理されたコントロールプレーンであり、各クラスターを個別に設定する代わりに、1 つの UI から複数の Kubernetes クラスターにまたがるインストルメンテーション、宛先、パイプライン設定を管理できます。
+
+Odigos Central は Odigos Enterprise で利用できます。マルチクラスター管理、SSO、統合されたサンプリングルールについては、[Central の概要](https://docs.odigos.io/central/overview) を参照してください。
+
+## 次のステップ {#next-steps}
+
+* **ClickStack で、インストルメント済みの各サービスのトレースを確認する**
+* **Odigos がエクスポートしたメトリクスのダッシュボードを作成する**
+* **保持期間やクエリパターンに合わせて ClickHouse のスキーマと有効期限 (TTL) を調整する**
+
+## 関連情報 {#read-more}
+
+* [Odigos Enterprise ドキュメント](https://enterprise.docs.odigos.io/)(アクセス権が必要)
+* [Odigos ClickHouse 宛先](https://docs.odigos.io/backends/clickhouse)
+* [Odigos VM Agent 概要](https://docs.odigos.io/vmagent/overview)
+* [Odigos Central 概要](https://docs.odigos.io/central/overview)
+* [本番環境での当て推量をやめる: ClickHouse と Odigos で実現する大規模なフルフィデリティトレーシング](https://clickhouse.com/blog/odigos-full-fidelity-tracing)
+* [オープンソース版 ClickStack を使い始める](/ja/clickstack/getting-started/oss)

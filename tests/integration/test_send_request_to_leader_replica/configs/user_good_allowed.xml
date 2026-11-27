@@ -1,11 +1,13 @@
 <clickhouse>
     <profiles>
         <default>
+            <async_insert>0</async_insert>
             <max_memory_usage>10000000000</max_memory_usage>
             <use_uncompressed_cache>0</use_uncompressed_cache>
             <load_balancing>random</load_balancing>
         </default>
         <good>
+            <async_insert>0</async_insert>
             <max_memory_usage>10000000000</max_memory_usage>
             <use_uncompressed_cache>0</use_uncompressed_cache>
             <load_balancing>random</load_balancing>

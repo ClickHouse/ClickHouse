@@ -61,7 +61,7 @@ def test_schema_inference(started_cluster_iceberg_with_spark, format_version, st
                 ["decimalC1", "Nullable(Decimal(10, 3))"],
                 ["decimalC2", "Nullable(Decimal(20, 10))"],
                 ["decimalC3", "Nullable(Decimal(38, 30))"],
-                ["dateC", "Nullable(Date)"],
+                ["dateC", "Nullable(Date32)"],
                 ["timestampC", "Nullable(DateTime64(6, 'UTC'))"],
                 ["stringC", "Nullable(String)"],
                 ["binaryC", "Nullable(String)"],

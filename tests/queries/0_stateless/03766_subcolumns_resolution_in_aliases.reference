@@ -1,0 +1,23 @@
+0	43
+QUERY id: 0
+  PROJECTION COLUMNS
+    ab UInt64
+    bcd UInt64
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: ab, result_type: UInt64, source_id: 3
+        EXPRESSION
+          FUNCTION id: 4, function_name: _CAST, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 5, nodes: 2
+                COLUMN id: 6, column_name: a.b, result_type: Dynamic, source_id: 3
+                CONSTANT id: 7, constant_value: \'UInt64\', constant_value_type: String
+      COLUMN id: 8, column_name: bcd, result_type: UInt64, source_id: 3
+        EXPRESSION
+          FUNCTION id: 9, function_name: _CAST, function_type: ordinary, result_type: UInt64
+            ARGUMENTS
+              LIST id: 10, nodes: 2
+                COLUMN id: 11, column_name: b.c.d, result_type: Dynamic, source_id: 3
+                CONSTANT id: 12, constant_value: \'UInt64\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test

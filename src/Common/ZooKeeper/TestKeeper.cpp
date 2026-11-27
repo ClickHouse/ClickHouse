@@ -1,10 +1,26 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils.h>
+#include <Common/SipHash.h>
+
 #include <base/types.h>
+
+#include <algorithm>
 #include <functional>
+#include <ranges>
+#include <string_view>
+
+#ifdef ZOOKEEPER_IMPL
+#  error "TestKeeper must not use ZooKeeper implementation"
+#endif
+
+namespace DB::ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 namespace Coordination
 {
@@ -23,24 +39,59 @@ static String baseName(const String & path)
     return path.substr(rslash_pos + 1);
 }
 
+/// Descendants of `path` are exactly the keys starting with this prefix, contiguous in `TestKeeper::Container`.
+/// Siblings like `path-1` sort between `path` and its descendants, so a subtree scan starts at the prefix.
+static String descendantsPrefix(const String & path)
+{
+    return path == "/" ? path : path + "/";
+}
+
+static bool passesFilter(ListRequestType filter, bool is_ephemeral)
+{
+    return filter != (is_ephemeral ? ListRequestType::PERSISTENT_ONLY : ListRequestType::EPHEMERAL_ONLY);
+}
+
 
 using Undo = std::function<void()>;
 
 
 struct TestKeeperRequest : virtual Request
 {
-    virtual ResponsePtr createResponse() const = 0;
+    [[nodiscard]] virtual ResponsePtr createResponse() const = 0;
     virtual std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const = 0;
-    virtual void processWatches(TestKeeper::Watches & /*watches*/, TestKeeper::Watches & /*list_watches*/) const {}
+    virtual void processWatches(
+        TestKeeper::Watches & /*watches*/,
+        TestKeeper::Watches & /*list_watches*/,
+        TestKeeper::ListWithDataWatches & /*list_with_data_watches*/) const
+    {
+    }
 
-    static void processWatchesImpl(const String & path, TestKeeper::Watches & watches, TestKeeper::Watches & list_watches);
+    /// Cleared by `process` of a write that succeeds without a change, so a `multi` triggers no watches for it.
+    mutable bool changed = true;
+
+    /// `event` is what happened to `path`: CREATED, DELETED or CHANGED.
+    static void processWatchesImpl(
+        const String & path,
+        TestKeeper::Watches & watches,
+        TestKeeper::Watches & list_watches,
+        TestKeeper::ListWithDataWatches & list_with_data_watches,
+        Event event,
+        bool is_ephemeral = false);
 };
 
 
-void TestKeeperRequest::processWatchesImpl(const String & path, TestKeeper::Watches & watches, TestKeeper::Watches & list_watches)
+void TestKeeperRequest::processWatchesImpl(
+    const String & path,
+    TestKeeper::Watches & watches,
+    TestKeeper::Watches & list_watches,
+    TestKeeper::ListWithDataWatches & list_with_data_watches,
+    Event event,
+    bool is_ephemeral)
 {
     {
         WatchResponse watch_response;
+        watch_response.type = event;
+        watch_response.state = CONNECTED;
         watch_response.path = path;
 
         auto it = watches.find(watch_response.path);
@@ -56,22 +107,43 @@ void TestKeeperRequest::processWatchesImpl(const String & path, TestKeeper::Watc
         }
     }
 
+    auto trigger_list_watches = [&](const String & watch_path, Event list_event)
     {
         WatchResponse watch_list_response;
-        watch_list_response.path = parentPath(path);
+        watch_list_response.type = list_event;
+        watch_list_response.state = CONNECTED;
+        watch_list_response.path = watch_path;
 
-        auto it = list_watches.find(watch_list_response.path);
-        if (it != list_watches.end())
+        TestKeeper::WatchCallbacks callbacks;
+        if (auto it = list_watches.find(watch_path); it != list_watches.end())
         {
-            for (const auto & event_or_callback : it->second)
-            {
-                if (event_or_callback)
-                    event_or_callback(watch_list_response);
-            }
-
+            callbacks = std::move(it->second);
             list_watches.erase(it);
         }
-    }
+        if (auto it = list_with_data_watches.find(watch_path); it != list_with_data_watches.end())
+        {
+            callbacks.merge(it->second.callbacks);
+            list_with_data_watches.erase(it);
+        }
+
+        for (const auto & event_or_callback : callbacks)
+        {
+            if (event_or_callback)
+                event_or_callback(watch_list_response);
+        }
+    };
+
+    if (event == DELETED)
+        trigger_list_watches(path, DELETED);
+
+    /// Keeper keeps one children watch per session and path, and fires it on a child's data change only if it was
+    /// set by a list request with children stats or data whose filter passes the child.
+    const String parent_path = parentPath(path);
+    const auto with_data_it = list_with_data_watches.find(parent_path);
+    const bool fires_on_change
+        = with_data_it != list_with_data_watches.end() && passesFilter(with_data_it->second.filter, is_ephemeral);
+    if (path != "/" && (event != CHANGED || fires_on_change))
+        trigger_list_watches(parent_path, CHILD);
 }
 
 
@@ -79,12 +151,15 @@ struct TestKeeperCreateRequest final : CreateRequest, TestKeeperRequest
 {
     TestKeeperCreateRequest() = default;
     explicit TestKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
-    void processWatches(TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches) const override
+    void processWatches(
+        TestKeeper::Watches & node_watches,
+        TestKeeper::Watches & list_watches,
+        TestKeeper::ListWithDataWatches & list_with_data_watches) const override
     {
-        processWatchesImpl(getPath(), node_watches, list_watches);
+        processWatchesImpl(getPath(), node_watches, list_watches, list_with_data_watches, CREATED);
     }
 };
 
@@ -92,12 +167,15 @@ struct TestKeeperRemoveRequest final : RemoveRequest, TestKeeperRequest
 {
     TestKeeperRemoveRequest() = default;
     explicit TestKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
-    void processWatches(TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches) const override
+    void processWatches(
+        TestKeeper::Watches & node_watches,
+        TestKeeper::Watches & list_watches,
+        TestKeeper::ListWithDataWatches & list_with_data_watches) const override
     {
-        processWatchesImpl(getPath(), node_watches, list_watches);
+        processWatchesImpl(getPath(), node_watches, list_watches, list_with_data_watches, DELETED);
     }
 };
 
@@ -105,35 +183,43 @@ struct TestKeeperRemoveRecursiveRequest final : RemoveRecursiveRequest, TestKeep
 {
     TestKeeperRemoveRecursiveRequest() = default;
     explicit TestKeeperRemoveRecursiveRequest(const RemoveRecursiveRequest & base) : RemoveRecursiveRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
-    void processWatches(TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches) const override
+    void processWatches(
+        TestKeeper::Watches & node_watches,
+        TestKeeper::Watches & list_watches,
+        TestKeeper::ListWithDataWatches & list_with_data_watches) const override
     {
-        std::vector<std::pair<String, size_t>> deleted;
-
-        auto add_deleted_watches = [&](TestKeeper::Watches & w)
-        {
-            for (const auto & [watch_path, _] : w)
-                if (watch_path.starts_with(path))
-                    deleted.emplace_back(watch_path, std::count(watch_path.begin(), watch_path.end(), '/'));
-        };
-
-        add_deleted_watches(node_watches);
-        add_deleted_watches(list_watches);
-        std::sort(deleted.begin(), deleted.end(), [](const auto & lhs, const auto & rhs)
-        {
-            return lhs.second < rhs.second;
-        });
-
-        for (const auto & [watch_path, _] : deleted)
-            processWatchesImpl(watch_path, node_watches, list_watches);
+        /// Sorted, so every node comes after its parent; Keeper removes a child before its parent.
+        for (const auto & removed_path : removed_paths | std::views::reverse)
+            processWatchesImpl(removed_path, node_watches, list_watches, list_with_data_watches, DELETED);
     }
+
+    mutable std::vector<String> removed_paths;
+};
+
+struct TestKeeperListRecursiveRequest final : ListRecursiveRequest, TestKeeperRequest
+{
+    TestKeeperListRecursiveRequest() = default;
+    explicit TestKeeperListRecursiveRequest(const ListRecursiveRequest & base) : ListRecursiveRequest(base) {}
+    [[nodiscard]] ResponsePtr createResponse() const override;
+    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+};
+
+struct TestKeeperListWithOptionsRequest final : ListWithOptionsRequest, TestKeeperRequest
+{
+    TestKeeperListWithOptionsRequest() = default;
+    explicit TestKeeperListWithOptionsRequest(const ListWithOptionsRequest & base) : ListWithOptionsRequest(base) {}
+    [[nodiscard]] ResponsePtr createResponse() const override;
+    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
 struct TestKeeperExistsRequest final : ExistsRequest, TestKeeperRequest
 {
-    ResponsePtr createResponse() const override;
+    TestKeeperExistsRequest() = default;
+    explicit TestKeeperExistsRequest(const ExistsRequest & base) : ExistsRequest(base) {}
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
@@ -141,7 +227,7 @@ struct TestKeeperGetRequest final : GetRequest, TestKeeperRequest
 {
     TestKeeperGetRequest() = default;
     explicit TestKeeperGetRequest(const GetRequest & base) : GetRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
@@ -149,33 +235,33 @@ struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
 {
     TestKeeperSetRequest() = default;
     explicit TestKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
-    void processWatches(TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches) const override
+    void processWatches(
+        TestKeeper::Watches & node_watches,
+        TestKeeper::Watches & list_watches,
+        TestKeeper::ListWithDataWatches & list_with_data_watches) const override
     {
-        processWatchesImpl(getPath(), node_watches, list_watches);
+        processWatchesImpl(getPath(), node_watches, list_watches, list_with_data_watches, CHANGED, is_ephemeral);
     }
+
+    mutable bool is_ephemeral = false;
 };
 
 struct TestKeeperListRequest : ListRequest, TestKeeperRequest
 {
     TestKeeperListRequest() = default;
     explicit TestKeeperListRequest(const ListRequest & base) : ListRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
-};
-
-struct TestKeeperFilteredListRequest final : TestKeeperListRequest
-{
-    ListRequestType list_request_type;
 };
 
 struct TestKeeperCheckRequest final : CheckRequest, TestKeeperRequest
 {
     TestKeeperCheckRequest() = default;
     explicit TestKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
@@ -183,7 +269,7 @@ struct TestKeeperSyncRequest final : SyncRequest, TestKeeperRequest
 {
     TestKeeperSyncRequest() = default;
     explicit TestKeeperSyncRequest(const SyncRequest & base) : SyncRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
@@ -191,7 +277,7 @@ struct TestKeeperReconfigRequest final : ReconfigRequest, TestKeeperRequest
 {
     TestKeeperReconfigRequest() = default;
     explicit TestKeeperReconfigRequest(const ReconfigRequest & base) : ReconfigRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
@@ -199,12 +285,21 @@ struct TestKeeperGetACLRequest final : GetACLRequest, TestKeeperRequest
 {
     TestKeeperGetACLRequest() = default;
     explicit TestKeeperGetACLRequest(const GetACLRequest & base) : GetACLRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
 struct TestKeeperMultiRequest final : MultiRequest<RequestPtr>, TestKeeperRequest
 {
+    std::optional<bool> is_multi_read = std::nullopt;
+    void validateOrSpecifyRequestType(bool is_read)
+    {
+        if (!is_multi_read)
+            is_multi_read = is_read;
+
+        chassert(is_multi_read.value() == is_read);
+    }
+
     explicit TestKeeperMultiRequest(const Requests & generic_requests)
         : TestKeeperMultiRequest(std::span(generic_requests))
     {}
@@ -217,46 +312,76 @@ struct TestKeeperMultiRequest final : MultiRequest<RequestPtr>, TestKeeperReques
         {
             if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
             {
-                auto create = std::make_shared<TestKeeperCreateRequest>(*concrete_request_create);
-                requests.push_back(create);
+                validateOrSpecifyRequestType(/*is_read=*/false);
+                requests.push_back(std::make_shared<TestKeeperCreateRequest>(*concrete_request_create));
             }
             else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
             {
+                validateOrSpecifyRequestType(/*is_read=*/false);
                 requests.push_back(std::make_shared<TestKeeperRemoveRequest>(*concrete_request_remove));
             }
             else if (const auto * concrete_request_remove_recursive = dynamic_cast<const RemoveRecursiveRequest *>(generic_request.get()))
             {
+                validateOrSpecifyRequestType(/*is_read=*/false);
                 requests.push_back(std::make_shared<TestKeeperRemoveRecursiveRequest>(*concrete_request_remove_recursive));
             }
             else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
             {
+                validateOrSpecifyRequestType(/*is_read=*/false);
                 requests.push_back(std::make_shared<TestKeeperSetRequest>(*concrete_request_set));
             }
             else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
             {
+                validateOrSpecifyRequestType(/*is_read=*/false);
                 requests.push_back(std::make_shared<TestKeeperCheckRequest>(*concrete_request_check));
             }
             else if (const auto * concrete_request_get = dynamic_cast<const GetRequest *>(generic_request.get()))
             {
+                validateOrSpecifyRequestType(/*is_read=*/true);
                 requests.push_back(std::make_shared<TestKeeperGetRequest>(*concrete_request_get));
+            }
+            else if (const auto * concrete_request_list_recursive = dynamic_cast<const ListRecursiveRequest *>(generic_request.get()))
+            {
+                validateOrSpecifyRequestType(/*is_read=*/true);
+                requests.push_back(std::make_shared<TestKeeperListRecursiveRequest>(*concrete_request_list_recursive));
+            }
+            else if (const auto * concrete_request_list_with_options = dynamic_cast<const ListWithOptionsRequest *>(generic_request.get()))
+            {
+                validateOrSpecifyRequestType(/*is_read=*/true);
+                requests.push_back(std::make_shared<TestKeeperListWithOptionsRequest>(*concrete_request_list_with_options));
             }
             else if (const auto * concrete_request_list = dynamic_cast<const ListRequest *>(generic_request.get()))
             {
+                validateOrSpecifyRequestType(/*is_read=*/true);
                 requests.push_back(std::make_shared<TestKeeperListRequest>(*concrete_request_list));
+            }
+            else if (const auto * concrete_request_exists = dynamic_cast<const ExistsRequest *>(generic_request.get()))
+            {
+                validateOrSpecifyRequestType(/*is_read=*/true);
+                requests.push_back(std::make_shared<TestKeeperExistsRequest>(*concrete_request_exists));
             }
             else
                 throw Exception::fromMessage(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
         }
     }
 
-    void processWatches(TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches) const override
+    void processWatches(
+        TestKeeper::Watches & node_watches,
+        TestKeeper::Watches & list_watches,
+        TestKeeper::ListWithDataWatches & list_with_data_watches) const override
     {
         for (const auto & generic_request : requests)
-            dynamic_cast<const TestKeeperRequest &>(*generic_request).processWatches(node_watches, list_watches);
+        {
+            const auto & request = dynamic_cast<const TestKeeperRequest &>(*generic_request);
+            if (request.changed)
+                request.processWatches(node_watches, list_watches, list_with_data_watches);
+        }
     }
 
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+    std::pair<ResponsePtr, Undo> processMultiWrite(TestKeeper::Container & container, int64_t zxid) const;
+    std::pair<ResponsePtr, Undo> processMultiRead(TestKeeper::Container & container, int64_t zxid) const;
 };
 
 
@@ -268,7 +393,10 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
 
     if (container.contains(path))
     {
-        response.error = Error::ZNODEEXISTS;
+        if (not_exists)
+            response.error = Error::ZOK;
+        else
+            response.error = Error::ZNODEEXISTS;
     }
     else
     {
@@ -296,6 +424,8 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
             created_node.data = data;
             created_node.is_ephemeral = is_ephemeral;
             created_node.is_sequental = is_sequential;
+            created_node.is_ttl = include_ttl;
+            created_node.ttl = include_ttl ? ttl : 0;
             std::string path_created = path;
 
             if (is_sequential)
@@ -323,6 +453,7 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
         }
     }
 
+    changed = static_cast<bool>(undo);
     return { std::make_shared<CreateResponse>(response), undo };
 }
 
@@ -335,15 +466,18 @@ std::pair<ResponsePtr, Undo> TestKeeperRemoveRequest::process(TestKeeper::Contai
     auto it = container.find(path);
     if (it == container.end())
     {
-        response.error = Error::ZNONODE;
+        if (!try_remove)
+            response.error = Error::ZNONODE;
     }
     else if (version != -1 && version != it->second.stat.version)
     {
-        response.error = Error::ZBADVERSION;
+        if (!try_remove)
+            response.error = Error::ZBADVERSION;
     }
     else if (it->second.stat.numChildren)
     {
-        response.error = Error::ZNOTEMPTY;
+        if (!try_remove)
+            response.error = Error::ZNOTEMPTY;
     }
     else
     {
@@ -363,6 +497,7 @@ std::pair<ResponsePtr, Undo> TestKeeperRemoveRequest::process(TestKeeper::Contai
         };
     }
 
+    changed = static_cast<bool>(undo);
     return { std::make_shared<RemoveResponse>(response), undo };
 }
 
@@ -374,24 +509,16 @@ std::pair<ResponsePtr, Undo> TestKeeperRemoveRecursiveRequest::process(TestKeepe
 
     auto root_it = container.find(path);
     if (root_it == container.end())
-    {
-        response.error = Error::ZNONODE;
         return { std::make_shared<RemoveRecursiveResponse>(response), undo };
-    }
 
-    std::vector<std::pair<std::string, Coordination::TestKeeper::Node>> children;
+    std::vector<std::pair<std::string, Coordination::TestKeeper::Node>> removed_nodes;
+    removed_nodes.emplace_back(root_it->first, root_it->second);
 
-    for (auto it = std::next(root_it); it != container.end(); ++it)
-    {
-        const auto & [child_path, child_node] = *it;
+    const String prefix = descendantsPrefix(path);
+    for (auto it = container.upper_bound(prefix); it != container.end() && it->first.starts_with(prefix); ++it)
+        removed_nodes.emplace_back(it->first, it->second);
 
-        if (child_path.starts_with(path))
-            children.emplace_back(child_path, child_node);
-        else
-            break;
-    }
-
-    if (children.size() > remove_nodes_limit)
+    if (removed_nodes.size() > remove_nodes_limit)
     {
         response.error = Error::ZNOTEMPTY;
         return { std::make_shared<RemoveRecursiveResponse>(response), undo };
@@ -401,15 +528,16 @@ std::pair<ResponsePtr, Undo> TestKeeperRemoveRecursiveRequest::process(TestKeepe
     --parent.stat.numChildren;
     ++parent.stat.cversion;
 
-    for (const auto & [child_path, child_node] : children)
+    for (const auto & [child_path, child_node] : removed_nodes)
     {
         auto child_it = container.find(child_path);
         chassert(child_it != container.end());
         container.erase(child_it);
+        removed_paths.push_back(child_path);
     }
 
     response.error = Error::ZOK;
-    undo = [&container, dead = std::move(children), root_path = path]()
+    undo = [&container, dead = std::move(removed_nodes), root_path = path]()
     {
         for (auto && [child_path, child_node] : dead)
             container.emplace(child_path, child_node);
@@ -461,6 +589,108 @@ std::pair<ResponsePtr, Undo> TestKeeperGetRequest::process(TestKeeper::Container
     return { std::make_shared<GetResponse>(response), {} };
 }
 
+std::pair<ResponsePtr, Undo> TestKeeperListRecursiveRequest::process(TestKeeper::Container & container, int64_t zxid) const
+{
+    ListRecursiveResponse response;
+    response.zxid = zxid;
+
+    auto it = container.find(path);
+    if (it == container.end())
+    {
+        response.error = Error::ZNONODE;
+        return { std::make_shared<ListRecursiveResponse>(response), {} };
+    }
+
+    const auto path_with_slash = descendantsPrefix(path);
+    std::vector<String> children;
+    for (auto child_it = container.upper_bound(path_with_slash); child_it != container.end(); ++child_it)
+    {
+        if (!child_it->first.starts_with(path_with_slash) || children.size() >= children_nodes_limit)
+            break;
+        children.push_back(child_it->first);
+    }
+
+    response.children = std::move(children);
+    response.error = Error::ZOK;
+    return { std::make_shared<ListRecursiveResponse>(response), {} };
+}
+
+std::pair<ResponsePtr, Undo> TestKeeperListWithOptionsRequest::process(TestKeeper::Container & container, int64_t zxid) const
+{
+    ListWithOptionsResponse response;
+    response.zxid = zxid;
+    response.expected_options_version = options_version;
+    response.expected_with_stat = options.with_stat;
+    response.expected_with_data = options.with_data;
+
+    if (options_version != ListOptionsVersion::V1 || path.empty() || path[0] != '/')
+    {
+        response.error = Error::ZMARSHALLINGERROR;
+        return { std::make_shared<ListWithOptionsResponse>(response), {} };
+    }
+    const auto root = container.find(path);
+    if (root == container.end())
+    {
+        response.error = Error::ZNONODE;
+        return { std::make_shared<ListWithOptionsResponse>(response), {} };
+    }
+
+    response.stat = root->second.stat;
+    const String prefix = descendantsPrefix(path);
+    std::vector<TestKeeper::Container::const_iterator> candidates;
+    bool limit_reached = false;
+    for (auto it = container.upper_bound(prefix); it != container.end() && it->first.starts_with(prefix); ++it)
+    {
+        if (!options.recursive && parentPath(it->first) != path)
+            continue;
+
+        if (!passesFilter(options.filter, it->second.stat.ephemeralOwner != 0))
+            continue;
+
+        if (!options.shuffle)
+        {
+            /// One additional matching candidate is enough to determine truncation.
+            if (options.max_results != 0 && candidates.size() >= options.max_results)
+            {
+                limit_reached = true;
+                break;
+            }
+        }
+
+        candidates.push_back(it);
+    }
+    if (options.shuffle)
+    {
+        std::ranges::sort(candidates, [&](const auto & lhs, const auto & rhs)
+        {
+            const std::string_view lhs_relative{lhs->first.data() + prefix.size(), lhs->first.size() - prefix.size()};
+            const std::string_view rhs_relative{rhs->first.data() + prefix.size(), rhs->first.size() - prefix.size()};
+            const UInt64 lhs_rank = sipHash64Keyed(0, static_cast<UInt64>(zxid), lhs_relative.data(), lhs_relative.size());
+            const UInt64 rhs_rank = sipHash64Keyed(0, static_cast<UInt64>(zxid), rhs_relative.data(), rhs_relative.size());
+            return std::pair{lhs_rank, lhs_relative} < std::pair{rhs_rank, rhs_relative};
+        });
+    }
+
+    for (const auto & it : candidates)
+    {
+        if (options.max_results != 0 && response.names.size() >= options.max_results)
+        {
+            response.truncated = true;
+            break;
+        }
+
+        response.names.emplace_back(it->first.substr(prefix.size()));
+        if (options.with_stat)
+            response.stats.emplace_back(it->second.stat);
+        if (options.with_data)
+            response.data.emplace_back(it->second.data);
+    }
+
+    response.truncated = response.truncated || limit_reached;
+    response.error = Error::ZOK;
+    return { std::make_shared<ListWithOptionsResponse>(response), {} };
+}
+
 std::pair<ResponsePtr, Undo> TestKeeperSetRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     SetResponse response;
@@ -475,6 +705,7 @@ std::pair<ResponsePtr, Undo> TestKeeperSetRequest::process(TestKeeper::Container
     else if (version == -1 || version == it->second.stat.version)
     {
         auto prev_node = it->second;
+        is_ephemeral = it->second.stat.ephemeralOwner != 0;
 
         it->second.data = data;
         ++it->second.stat.version;
@@ -526,14 +757,18 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
             using enum ListRequestType;
             if (parentPath(child_it->first) == path)
             {
-                ListRequestType list_request_type = ALL;
-                if (const auto * filtered_list = dynamic_cast<const TestKeeperFilteredListRequest *>(this))
-                    list_request_type = filtered_list->list_request_type;
+                const bool should_return = passesFilter(list_request_type.value_or(ALL), child_it->second.stat.ephemeralOwner != 0);
 
-                const auto is_ephemeral = child_it->second.stat.ephemeralOwner != 0;
-                if (list_request_type == ALL || (is_ephemeral && list_request_type == EPHEMERAL_ONLY)
-                    || (!is_ephemeral && list_request_type == PERSISTENT_ONLY))
+                if (should_return)
+                {
                     response.names.emplace_back(baseName(child_it->first));
+
+                    if (with_data.value_or(false))
+                        response.data.emplace_back(child_it->second.data);
+
+                    if (with_stat.value_or(false))
+                        response.stats.emplace_back(child_it->second.stat);
+                }
             }
         }
 
@@ -544,22 +779,57 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
     return { std::make_shared<ListResponse>(response), {} };
 }
 
+static bool checkNodeStat(const Coordination::Stat & verifiable, const Coordination::Stat & validator)
+{
+    if (validator.czxid != -1 && validator.czxid != verifiable.czxid)
+        return false;
+    else if (validator.mzxid != -1 && validator.mzxid != verifiable.mzxid)
+        return false;
+    else if (validator.ctime != -1 && validator.ctime != verifiable.ctime)
+        return false;
+    else if (validator.mtime != -1 && validator.mtime != verifiable.mtime)
+        return false;
+    else if (validator.version != -1 && validator.version != verifiable.version)
+        return false;
+    else if (validator.cversion != -1 && validator.cversion != verifiable.cversion)
+        return false;
+    else if (validator.aversion != -1 && validator.aversion != verifiable.aversion)
+        return false;
+    else if (validator.ephemeralOwner != -1 && validator.ephemeralOwner != verifiable.ephemeralOwner)
+        return false;
+    else if (validator.dataLength != -1 && validator.dataLength != verifiable.dataLength)
+        return false;
+    else if (validator.numChildren != -1 && validator.numChildren != verifiable.numChildren)
+        return false;
+    else if (validator.pzxid != -1 && validator.pzxid != verifiable.pzxid)
+        return false;
+
+    return true;
+}
+
 std::pair<ResponsePtr, Undo> TestKeeperCheckRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     CheckResponse response;
     response.zxid = zxid;
     auto it = container.find(path);
-    if (it == container.end())
+
+    if (not_exists)
     {
-        response.error = Error::ZNONODE;
-    }
-    else if (version != -1 && version != it->second.stat.version)
-    {
-        response.error = Error::ZBADVERSION;
+        if (it != container.end() && (version == -1 || version == it->second.stat.version))
+            response.error = Error::ZNODEEXISTS;
+        else
+            response.error = Error::ZOK;
     }
     else
     {
-        response.error = Error::ZOK;
+        if (it == container.end())
+            response.error = Error::ZNONODE;
+        else if (version != -1 && version != it->second.stat.version)
+            response.error = Error::ZBADVERSION;
+        else if (stat_to_check && !checkNodeStat(it->second.stat, stat_to_check.value()))
+            response.error = Error::ZBADVERSION;
+        else
+            response.error = Error::ZOK;
     }
 
     return { std::make_shared<CheckResponse>(response), {} };
@@ -595,6 +865,14 @@ std::pair<ResponsePtr, Undo> TestKeeperGetACLRequest::process(TestKeeper::Contai
 }
 
 std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Container & container, int64_t zxid) const
+{
+    if (is_multi_read.has_value() && is_multi_read.value())
+        return processMultiRead(container, zxid);
+    else
+        return processMultiWrite(container, zxid);
+}
+
+std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::processMultiWrite(TestKeeper::Container & container, int64_t zxid) const
 {
     MultiResponse response;
     response.zxid = zxid;
@@ -646,6 +924,28 @@ std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Contain
     }
 }
 
+std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::processMultiRead(TestKeeper::Container & container, int64_t zxid) const
+{
+    MultiResponse response;
+    response.zxid = zxid;
+    response.error = Error::ZOK;
+    response.responses.reserve(requests.size());
+
+    for (const auto & request : requests)
+    {
+        const TestKeeperRequest & concrete_request = dynamic_cast<const TestKeeperRequest &>(*request);
+        auto [ cur_response, _ ] = concrete_request.process(container, zxid);
+
+        response.responses.emplace_back(cur_response);
+
+        /// Set error for the whole transaction.
+        if (response.error == Error::ZOK && cur_response->error != Error::ZOK)
+            response.error = cur_response->error;
+    }
+
+    return { std::make_shared<MultiResponse>(response), {} };
+}
+
 ResponsePtr TestKeeperCreateRequest::createResponse() const { return std::make_shared<CreateResponse>(); }
 ResponsePtr TestKeeperRemoveRequest::createResponse() const { return std::make_shared<RemoveResponse>(); }
 ResponsePtr TestKeeperRemoveRecursiveRequest::createResponse() const { return std::make_shared<RemoveRecursiveResponse>(); }
@@ -657,7 +957,17 @@ ResponsePtr TestKeeperCheckRequest::createResponse() const { return std::make_sh
 ResponsePtr TestKeeperSyncRequest::createResponse() const { return std::make_shared<SyncResponse>(); }
 ResponsePtr TestKeeperReconfigRequest::createResponse() const { return std::make_shared<ReconfigResponse>(); }
 ResponsePtr TestKeeperGetACLRequest::createResponse() const { return std::make_shared<GetACLResponse>(); }
-ResponsePtr TestKeeperMultiRequest::createResponse() const { return std::make_shared<MultiResponse>(); }
+ResponsePtr TestKeeperListRecursiveRequest::createResponse() const { return std::make_shared<ListRecursiveResponse>(); }
+ResponsePtr TestKeeperListWithOptionsRequest::createResponse() const { return std::make_shared<ListWithOptionsResponse>(); }
+
+ResponsePtr TestKeeperMultiRequest::createResponse() const
+{
+    auto response = std::make_shared<MultiResponse>();
+    response->responses.reserve(requests.size());
+    for (const auto & request : requests)
+        response->responses.push_back(dynamic_cast<const TestKeeperRequest &>(*request).createResponse());
+    return response;
+}
 
 
 TestKeeper::TestKeeper(const zkutil::ZooKeeperArgs & args_)
@@ -670,6 +980,17 @@ TestKeeper::TestKeeper(const zkutil::ZooKeeperArgs & args_)
         if (args.chroot.back() == '/')
             args.chroot.pop_back();
     }
+
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::FILTERED_LIST);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::MULTI_READ);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::CHECK_NOT_EXISTS);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::REMOVE_RECURSIVE);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::GET_CHILDREN_RECURSIVE);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::CHECK_STAT);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::TRY_REMOVE);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::LIST_WITH_OPTIONS);
 
     processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
 }
@@ -698,6 +1019,8 @@ void TestKeeper::processingThread()
     {
         while (!expired)
         {
+            clearExpiredTTLNodes();
+
             RequestInfo info;
 
             UInt64 max_wait = static_cast<UInt64>(args.operation_timeout_ms);
@@ -720,11 +1043,32 @@ void TestKeeper::processingThread()
                     /// or if it was exists request which allows to add watches for non existing nodes.
                     if (response->error == Error::ZOK)
                     {
-                        auto & watches_type = dynamic_cast<const ListRequest *>(info.request.get())
-                            ? list_watches
-                            : watches;
+                        const auto with_data_filter = [&]() -> std::optional<ListRequestType>
+                        {
+                            if (const auto * list = dynamic_cast<const ListRequest *>(info.request.get());
+                                list && (list->with_stat.value_or(false) || list->with_data.value_or(false)))
+                                return list->list_request_type.value_or(ListRequestType::ALL);
+                            if (const auto * list = dynamic_cast<const ListWithOptionsRequest *>(info.request.get());
+                                list && (list->options.with_stat || list->options.with_data))
+                                return list->options.filter;
+                            return std::nullopt;
+                        }();
 
-                        watches_type[info.request->getPath()].insert(info.watch);
+                        if (with_data_filter)
+                        {
+                            auto & watch = list_with_data_watches
+                                .try_emplace(info.request->getPath(), ListWithDataWatch{.callbacks = {}, .filter = *with_data_filter})
+                                .first->second;
+                            if (watch.filter != *with_data_filter)
+                                watch.filter = ListRequestType::ALL;
+                            watch.callbacks.insert(info.watch);
+                        }
+                        else
+                        {
+                            const bool is_list = dynamic_cast<const ListRequest *>(info.request.get())
+                                || dynamic_cast<const ListWithOptionsRequest *>(info.request.get());
+                            (is_list ? list_watches : watches)[info.request->getPath()].insert(info.watch);
+                        }
                     }
                     else if (response->error == Error::ZNONODE && dynamic_cast<const ExistsRequest *>(info.request.get()))
                     {
@@ -733,7 +1077,7 @@ void TestKeeper::processingThread()
                 }
 
                 if (response->error == Error::ZOK)
-                    info.request->processWatches(watches, list_watches);
+                    info.request->processWatches(watches, list_watches, list_with_data_watches);
 
                 response->removeRootPath(args.chroot);
                 if (info.callback)
@@ -745,6 +1089,43 @@ void TestKeeper::processingThread()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
         finalize(__PRETTY_FUNCTION__);
+    }
+}
+
+void TestKeeper::clearExpiredTTLNodes()
+{
+    const int64_t now_ms = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
+
+    /// This is called on every iteration of the processing thread, i.e. before processing every
+    /// request. Scanning the whole container each time would make request processing O(container size),
+    /// which is prohibitively slow when there are many nodes (see TestConcurrentUpdatesFromHints).
+    /// TTL granularity is coarse anyway, so it is enough to sweep at most once per `TTL_CLEANUP_INTERVAL_MS`.
+    static constexpr int64_t TTL_CLEANUP_INTERVAL_MS = 100;
+    if (now_ms - last_ttl_cleanup_ms < TTL_CLEANUP_INTERVAL_MS)
+        return;
+    last_ttl_cleanup_ms = now_ms;
+
+    std::vector<String> expired_paths;
+    for (const auto & [path, node] : container)
+        if (node.is_ttl && now_ms >= node.stat.mtime + node.ttl)
+            expired_paths.push_back(path);
+
+    for (const auto & path : expired_paths)
+    {
+        auto it = container.find(path);
+        if (it == container.end() || it->second.stat.numChildren)
+            continue;
+
+        container.erase(it);
+
+        auto parent_it = container.find(parentPath(path));
+        if (parent_it != container.end())
+        {
+            --parent_it->second.stat.numChildren;
+            ++parent_it->second.stat.cversion;
+        }
+
+        TestKeeperRequest::processWatchesImpl(path, watches, list_watches, list_with_data_watches, DELETED);
     }
 }
 
@@ -780,6 +1161,11 @@ void TestKeeper::exprireRequest(RequestInfo && request)
     }
 }
 
+silk::FiberEvent & TestKeeper::getExpiredEvent()
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "TestKeeper does not support waiting for the session to expire");
+}
+
 void TestKeeper::finalize(const String &)
 {
     {
@@ -798,30 +1184,38 @@ void TestKeeper::finalize(const String &)
     try
     {
         {
-            for (auto & path_watch : watches)
-            {
-                WatchResponse response;
-                response.type = SESSION;
-                response.state = EXPIRED_SESSION;
-                response.error = Error::ZSESSIONEXPIRED;
+            /// A client keeps one bucket of list callbacks per path.
+            for (auto & [path, watch] : list_with_data_watches)
+                list_watches[path].merge(watch.callbacks);
+            list_with_data_watches.clear();
 
-                for (const auto & event_or_callback : path_watch.second)
+            for (auto * watches_type : {&watches, &list_watches})
+            {
+                for (auto & path_watch : *watches_type)
                 {
-                    if (event_or_callback)
+                    WatchResponse response;
+                    response.type = SESSION;
+                    response.state = EXPIRED_SESSION;
+                    response.error = Error::ZSESSIONEXPIRED;
+
+                    for (const auto & event_or_callback : path_watch.second)
                     {
-                        try
+                        if (event_or_callback)
                         {
-                            event_or_callback(response);
-                        }
-                        catch (...)
-                        {
-                            tryLogCurrentException(__PRETTY_FUNCTION__);
+                            try
+                            {
+                                event_or_callback(response);
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(__PRETTY_FUNCTION__);
+                            }
                         }
                     }
                 }
-            }
 
-            watches.clear();
+                watches_type->clear();
+            }
         }
 
         RequestInfo info;
@@ -860,7 +1254,6 @@ void TestKeeper::pushRequest(RequestInfo && request)
         throw;
     }
 }
-
 
 void TestKeeper::create(
     const String & path,
@@ -909,6 +1302,43 @@ void TestKeeper::removeRecursive(
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperRemoveRecursiveRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveRecursiveResponse &>(response)); };
+    pushRequest(std::move(request_info));
+}
+
+void TestKeeper::listRecursive(
+    const String & path,
+    uint32_t get_children_recursive_nodes_limit,
+    ListRecursiveCallback callback)
+{
+    TestKeeperListRecursiveRequest request;
+    request.path = path;
+    request.children_nodes_limit = get_children_recursive_nodes_limit;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<TestKeeperListRecursiveRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListRecursiveResponse &>(response)); };
+    pushRequest(std::move(request_info));
+}
+
+void TestKeeper::listWithOptions(
+    const String & path,
+    const ListOptions & options,
+    ListWithOptionsCallback callback,
+    WatchCallbackPtrOrEventPtr watch)
+{
+    options.validate();
+    if (options.recursive && watch)
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions does not support recursive watches");
+
+    TestKeeperListWithOptionsRequest request;
+    request.path = path;
+    request.options_version = requiredListOptionsVersion(options);
+    request.options = options;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<TestKeeperListWithOptionsRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListWithOptionsResponse &>(response)); };
+    request_info.watch = std::move(watch);
     pushRequest(std::move(request_info));
 }
 
@@ -963,11 +1393,15 @@ void TestKeeper::list(
     const String & path,
     ListRequestType list_request_type,
     ListCallback callback,
-    WatchCallbackPtrOrEventPtr watch)
+    WatchCallbackPtrOrEventPtr watch,
+    bool with_stat,
+    bool with_data)
 {
-    TestKeeperFilteredListRequest request;
+    TestKeeperListRequest request;
     request.path = path;
     request.list_request_type = list_request_type;
+    request.with_stat = with_stat;
+    request.with_data = with_data;
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperListRequest>(std::move(request));

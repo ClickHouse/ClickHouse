@@ -56,7 +56,7 @@ QueryTreeNodePtr ListNode::cloneImpl() const
 
 ASTPtr ListNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto expression_list_ast = std::make_shared<ASTExpressionList>();
+    auto expression_list_ast = make_intrusive<ASTExpressionList>();
 
     size_t children_size = children.size();
     expression_list_ast->children.resize(children_size);

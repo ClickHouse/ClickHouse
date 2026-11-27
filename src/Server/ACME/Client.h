@@ -66,7 +66,7 @@ private:
 
     std::string zookeeper_path;
 
-    bool terms_of_service_agreed;
+    bool terms_of_service_agreed{};
     Poco::URI directory_url;
     std::string acme_hostname;
     std::string contact_email;
@@ -85,8 +85,8 @@ private:
     std::shared_ptr<zkutil::ZooKeeperLock> lock;
 
     std::vector<std::string> domains;
-    UInt64 refresh_certificates_task_interval_ms;
-    UInt64 refresh_certificates_before_seconds;
+    UInt64 refresh_certificates_task_interval_ms{};
+    UInt64 refresh_certificates_before_seconds{};
     std::optional<std::string> active_order;
 };
 

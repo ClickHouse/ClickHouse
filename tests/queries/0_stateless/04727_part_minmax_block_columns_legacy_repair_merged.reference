@@ -1,0 +1,12 @@
+-- inherited from a part without the index --
+all_1_3_1	(NULL,NULL)	(NULL,NULL)
+-- after the mutation, before a reload --
+all_1_3_1_4	(1,3)	(NULL,NULL)
+-- pruning works without a reload --
+0
+-- after the mutation and a reload --
+all_1_3_1_4	(1,3)	(NULL,NULL)
+-- pruning works again --
+0
+-- the repaired range admits every row --
+9

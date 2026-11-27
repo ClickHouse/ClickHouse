@@ -1,9 +1,20 @@
 #include <Columns/ColumnUnique.h>
+#include <Common/Exception.h>
 #include <Common/SipHash.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+void throwNotImplementedForColumnUnique(const char * method)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method {} is not supported for ColumnUnique.", method);
+}
 
 template <typename ColumnType>
 void ColumnUnique<ColumnType>::updateHashWithValue(size_t n, SipHash & hash_func) const

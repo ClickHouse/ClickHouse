@@ -1,0 +1,79 @@
+{%- for (codec, use_indexes) in [('none', 0), ('none', 1), ('bitpacking', 1)] -%}
+-- { echo on }
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab
+(
+    id UInt64,
+    s String,
+    INDEX idx_s (s) TYPE text (tokenizer = splitByNonAlpha, posting_list_block_size = 1024, posting_list_codec = '{{ codec }}')
+)
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab
+SELECT
+    number,
+    concatWithSeparator(
+        ' ',
+        if (number % 30000 = 12345, 'inlined', ''),
+        if (number % 10000 = 1234, 'raw', ''),
+        if (number % 300 = 123, 'single', ''),
+        if (number % 3 = 0, 'multiple', ''))
+FROM numbers(100000);
+SET use_skip_indexes = {{ use_indexes }};
+SELECT id FROM tab WHERE hasAllTokens(s, 'inlined') ORDER BY id;
+12345
+42345
+72345
+SELECT id FROM tab WHERE hasAllTokens(s, 'raw') ORDER BY id;
+1234
+11234
+21234
+31234
+41234
+51234
+61234
+71234
+81234
+91234
+SELECT count() FROM tab WHERE hasAllTokens(s, 'single');
+333
+SELECT count() FROM tab WHERE hasAllTokens(s, 'multiple');
+33334
+SELECT id FROM tab WHERE hasAllTokens(s, 'inlined multiple') ORDER BY id;
+12345
+42345
+72345
+SELECT id FROM tab WHERE hasAllTokens(s, 'raw multiple') ORDER BY id;
+21234
+51234
+81234
+SELECT count() FROM tab WHERE hasAllTokens(s, 'single multiple');
+333
+SELECT count() FROM tab WHERE hasAllTokens(s, 'inlined single multiple');
+0
+SELECT count() FROM tab WHERE hasAllTokens(s, 'inlined single raw multiple');
+0
+SELECT count() FROM tab WHERE hasAllTokens(s, 'inlined raw multiple');
+0
+SELECT count() FROM tab WHERE hasAnyTokens(s, 'inlined');
+3
+SELECT count() FROM tab WHERE hasAnyTokens(s, 'raw');
+10
+SELECT count() FROM tab WHERE hasAnyTokens(s, 'single');
+333
+SELECT count() FROM tab WHERE hasAnyTokens(s, 'multiple');
+33334
+SELECT count() FROM tab WHERE hasAnyTokens(s, 'inlined multiple');
+33334
+SELECT count() FROM tab WHERE hasAnyTokens(s, 'raw multiple');
+33341
+SELECT count() FROM tab WHERE hasAnyTokens(s, 'single multiple');
+33334
+SELECT count() FROM tab WHERE hasAnyTokens(s, 'inlined single multiple');
+33334
+SELECT count() FROM tab WHERE hasAnyTokens(s, 'inlined single raw multiple');
+33341
+SELECT count() FROM tab WHERE hasAnyTokens(s, 'inlined raw multiple');
+33341
+DROP TABLE tab;
+{% endfor -%}

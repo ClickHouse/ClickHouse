@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsDateTime.h>
@@ -22,7 +23,7 @@ namespace
  * Emulates MySQL's TIMESTAMP() but supports only input format 'yyyy-mm-dd[ hh:mm:ss[.mmmmmm]]' instead of
  * MySQLs possible input formats (https://dev.mysql.com/doc/refman/8.0/en/date-and-time-literals.html).
   */
-class FunctionTimestamp : public IFunction
+class FunctionTimestamp final : public IFunction
 {
 public:
     static constexpr UInt32 DATETIME_SCALE = 6;
@@ -31,75 +32,60 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimestamp>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    /// Throws when a row cannot be parsed.
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    /// An empty time and a zero-filled `FixedString`, the defaults behind a `NULL`, cannot be parsed.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"timestamp", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
-        };
-        FunctionArgumentDescriptors optional_args{
-            {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeDateTime64>(DATETIME_SCALE);
+        return "(StringOrFixedString, [String]) -> DateTime64(6)";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    static DateTime64 parseDateTime(std::string_view str, const DateLUTImpl & time_zone)
     {
-        const DateLUTImpl * local_time_zone = &DateLUT::instance();
+        ReadBufferFromMemory read_buffer(str);
+        DateTime64 value = 0;
+        readDateTime64Text(value, DATETIME_SCALE, read_buffer, time_zone);
+        return value;
+    }
+
+    static Decimal64 parseTime(std::string_view str)
+    {
+        ReadBufferFromMemory read_buffer(str);
+        Decimal64 value = 0;
+        readTime64Text(value, DATETIME_SCALE, read_buffer);
+        return value;
+    }
+
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        const DateLUTImpl & local_time_zone = DateLUT::instance();
 
         auto col_result = ColumnDateTime64::create(input_rows_count, DATETIME_SCALE);
         ColumnDateTime64::Container & vec_result = col_result->getData();
 
         const IColumn * col_timestamp = arguments[0].column.get();
 
-        if (const ColumnString * col_timestamp_string = checkAndGetColumn<ColumnString>(col_timestamp))
+        if (const ColumnConst * col_timestamp_const = checkAndGetColumn<ColumnConst>(col_timestamp))
         {
-            const ColumnString::Chars * chars = &col_timestamp_string->getChars();
-            const IColumn::Offsets * offsets = &col_timestamp_string->getOffsets();
-
-            size_t current_offset = 0;
-
+            std::fill(vec_result.begin(), vec_result.end(), parseDateTime(col_timestamp_const->getDataAt(0), local_time_zone));
+        }
+        else if (const ColumnString * col_timestamp_string = checkAndGetColumn<ColumnString>(col_timestamp))
+        {
             for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                const size_t next_offset = (*offsets)[i];
-                const size_t string_size = next_offset - current_offset;
-
-                ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
-
-                DateTime64 value = 0;
-                readDateTime64Text(value, col_result->getScale(), read_buffer, *local_time_zone);
-                vec_result[i] = value;
-
-                current_offset = next_offset;
-            }
+                vec_result[i] = parseDateTime(col_timestamp_string->getDataAt(i), local_time_zone);
         }
         else if (const ColumnFixedString * col_timestamp_fixed_string = checkAndGetColumn<ColumnFixedString>(col_timestamp))
         {
-            const ColumnString::Chars * chars = &col_timestamp_fixed_string->getChars();
-            const size_t fixed_string_size = col_timestamp_fixed_string->getN();
-
-            size_t current_offset = 0;
-
             for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                const size_t next_offset = current_offset + fixed_string_size;
-
-                ReadBufferFromMemory read_buffer(&(*chars)[current_offset], fixed_string_size);
-
-                DateTime64 value = 0;
-                readDateTime64Text(value, col_result->getScale(), read_buffer, *local_time_zone);
-                vec_result[i] = value;
-
-                current_offset = next_offset;
-            }
+                vec_result[i] = parseDateTime(col_timestamp_fixed_string->getDataAt(i), local_time_zone);
         }
         else
         {
@@ -114,46 +100,21 @@ public:
 
         const IColumn * col_time = arguments[1].column.get();
 
-        if (const ColumnString * col_time_string = checkAndGetColumn<ColumnString>(col_time))
+        if (const ColumnConst * col_time_const = checkAndGetColumn<ColumnConst>(col_time))
         {
-            const ColumnString::Chars * chars = &col_time_string->getChars();
-            const IColumn::Offsets * offsets = &col_time_string->getOffsets();
-
-            size_t current_offset = 0;
-
+            const Decimal64 time_value = parseTime(col_time_const->getDataAt(0));
+            for (auto & value : vec_result)
+                value.addOverflow(time_value);
+        }
+        else if (const ColumnString * col_time_string = checkAndGetColumn<ColumnString>(col_time))
+        {
             for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                const size_t next_offset = (*offsets)[i];
-                const size_t string_size = next_offset - current_offset;
-
-                ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
-
-                Decimal64 value = 0;
-                readTime64Text(value, col_result->getScale(), read_buffer);
-                vec_result[i].addOverflow(value);
-
-                current_offset = next_offset;
-            }
+                vec_result[i].addOverflow(parseTime(col_time_string->getDataAt(i)));
         }
         else if (const ColumnFixedString * col_time_fixed_string = checkAndGetColumn<ColumnFixedString>(col_time))
         {
-            const ColumnString::Chars * chars = &col_time_fixed_string->getChars();
-            const size_t fixed_string_size = col_time_fixed_string->getN();
-
-            size_t current_offset = 0;
-
             for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                const size_t next_offset = current_offset + fixed_string_size;
-
-                ReadBufferFromMemory read_buffer(&(*chars)[current_offset], fixed_string_size);
-
-                Decimal64 value = 0;
-                readTime64Text(value, col_result->getScale(), read_buffer);
-                vec_result[i].addOverflow(value);
-
-                current_offset = next_offset;
-            }
+                vec_result[i].addOverflow(parseTime(col_time_fixed_string->getDataAt(i)));
         }
         else
         {
@@ -172,7 +133,7 @@ public:
 REGISTER_FUNCTION(Timestamp)
 {
     FunctionDocumentation::Description description = R"(
-Converts the first argument `expr` to type [`DateTime64(6)`](/sql-reference/data-types/datetime64).
+Converts the first argument `expr` to type [`DateTime64(6)`](/reference/data-types/datetime64).
 If a second argument `expr_time` is provided, it adds the specified time to the converted value.
     )";
     FunctionDocumentation::Syntax syntax = R"(

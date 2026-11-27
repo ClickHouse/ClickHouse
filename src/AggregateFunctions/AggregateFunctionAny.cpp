@@ -1,9 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/SingleValueData.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <base/defines.h>
 
 
 namespace DB
@@ -34,7 +32,7 @@ public:
 
     using IAggregateFunction::argument_types;
 
-    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    [[nodiscard]] AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
     {
         /// For types that are potentially large, we use SingleValueReference to avoid unnecessary memory allocations during merging final
         /// Large types are: String, FixedString (N > 20), Array, Map, Object, Variant, Dynamic
@@ -49,7 +47,7 @@ public:
         return IAggregateFunction::getAggregateFunctionForMergingFinal();
     }
 
-    String getName() const override { return "any"; }
+    [[nodiscard]] String getName() const override { return "any"; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
@@ -129,7 +127,7 @@ public:
             this->data(place).set(*columns[0], 0, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if (!this->data(place).has())
             this->data(place).set(this->data(rhs), arena);
@@ -140,12 +138,28 @@ public:
         this->data(place).write(buf, *serialization);
     }
 
+    [[nodiscard]] std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    {
+        return singleValueSerializedSizeBound<Data>();
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        if constexpr (HasSerializedSizeBound<Data>)
+        {
+            this->data(place).write(dst, *serialization);
+            return dst;
+        }
+        else
+            return IAggregateFunction::serializeToMemory(place, dst, version);
+    }
+
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
-    bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
@@ -153,7 +167,7 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         if constexpr (!Data::is_compilable)
             return false;
@@ -220,7 +234,7 @@ public:
 
     using IAggregateFunction::argument_types;
 
-    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    [[nodiscard]] AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
     {
         /// For types that are potentially large, we use SingleValueReference to avoid unnecessary memory allocations during merging final
         /// Large types are: String, FixedString (N >= 20), Array, Map, Object, Variant, Dynamic
@@ -235,7 +249,7 @@ public:
         return IAggregateFunction::getAggregateFunctionForMergingFinal();
     }
 
-    String getName() const override { return "anyLast"; }
+    [[nodiscard]] String getName() const override { return "anyLast"; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
@@ -318,7 +332,7 @@ public:
         this->data(place).set(*columns[0], 0, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         this->data(place).set(this->data(rhs), arena);
     }
@@ -328,12 +342,28 @@ public:
         this->data(place).write(buf, *serialization);
     }
 
+    [[nodiscard]] std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    {
+        return singleValueSerializedSizeBound<Data>();
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        if constexpr (HasSerializedSizeBound<Data>)
+        {
+            this->data(place).write(dst, *serialization);
+            return dst;
+        }
+        else
+            return IAggregateFunction::serializeToMemory(place, dst, version);
+    }
+
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
-    bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
@@ -341,7 +371,7 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         if constexpr (!Data::is_compilable)
             return false;
@@ -393,15 +423,16 @@ AggregateFunctionPtr createAggregateFunctionAnyLast(
 
 }
 
+void registerAggregateFunctionsAny(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsAny(AggregateFunctionFactory & factory)
 {
     /// any documentation
     FunctionDocumentation::Description description = R"(
 Selects the first encountered value of a column.
 
-:::warning
+<Warning>
 As a query can be executed in arbitrary order, the result of this function is non-deterministic. If you need an arbitrary but deterministic result, use functions min or max.
-:::
+</Warning>
 
 By default, the function never returns NULL, i.e. ignores NULL values in the input column.
 However, if the function is used with the `RESPECT NULLS` modifier, it returns the first value reads no matter if NULL or not.
@@ -414,19 +445,19 @@ This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY`.
 When a `SELECT` query has the `GROUP BY` clause or at least one aggregate function, ClickHouse (in contrast to MySQL) requires that all expressions in the `SELECT`, `HAVING`, and `ORDER BY` clauses be calculated from keys or from aggregate functions.
 In other words, each column selected from the table must be used either in keys or inside aggregate functions.
 To get behavior like in MySQL, you can put the other columns in the `any` aggregate function.
+
+<Note>
+The return type of the function is the same as the input, except for LowCardinality which is discarded.
+This means that given no rows as input it will return the default value of that type (0 for integers, or Null for a Nullable() column).
+You might use the -OrNull combinator to modify this behaviour.
+</Note>
     )";
-    FunctionDocumentation::Syntax syntax = "any(column) [RESPECT NULLS]";
+    FunctionDocumentation::Syntax syntax = "any(column)[ RESPECT NULLS]";
     FunctionDocumentation::Arguments arguments = {
         {"column", "The column name.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns the first value encountered.
-
-:::note
-The return type of the function is the same as the input, except for LowCardinality which is discarded.
-This means that given no rows as input it will return the default value of that type (0 for integers, or Null for a Nullable() column).
-You might use the -OrNull combinator to modify this behaviour.
-:::
     )",
     {"Any"}
     };
@@ -451,18 +482,19 @@ SELECT any(city), anyRespectNulls(city) FROM tab;
 
     AggregateFunctionProperties default_properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
 
-    factory.registerFunction("any", {createAggregateFunctionAny, default_properties, documentation});
+    factory.registerFunction("any", {createAggregateFunctionAny, documentation, default_properties});
     factory.registerAlias("any_value", "any", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("first_value", "any", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("arbitrary", "any", AggregateFunctionFactory::Case::Insensitive);
 
     /// anyLast documentation
     FunctionDocumentation::Description anyLast_description = R"(
 Selects the last encountered value of a column.
 
-:::warning
+<Warning>
 As a query can be executed in arbitrary order, the result of this function is non-deterministic.
-If you need an arbitrary but deterministic result, use functions min or max.
-:::
+If you need an arbitrary but deterministic result, use functions [min](/reference/functions/aggregate-functions/min) or [max](/reference/functions/aggregate-functions/max).
+</Warning>
 
 By default, the function never returns NULL, i.e. ignores NULL values in the input column.
 However, if the function is used with the `RESPECT NULLS` modifier, it returns the last value reads no matter if NULL or not.
@@ -471,12 +503,12 @@ However, if the function is used with the `RESPECT NULLS` modifier, it returns t
     FunctionDocumentation::Arguments anyLast_arguments = {
         {"column", "The column name.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue anyLast_returned_value = {"The last value encountered.", {"Any"}};
+    FunctionDocumentation::ReturnedValue anyLast_returned_value = {"Returns the last value encountered.", {"Any"}};
     FunctionDocumentation::Examples anyLast_examples = {
     {
         "Usage example",
         R"(
-CREATE TABLE tab (city Nullable(String)) ENGINE=Memory;
+CREATE TABLE tab(city Nullable(String)) ENGINE=Memory;
 INSERT INTO tab (city) VALUES ('Amsterdam'), (NULL), ('New York'), ('Tokyo'), ('Valencia'), (NULL);
 SELECT anyLast(city), anyLastRespectNulls(city) FROM tab;
         )",
@@ -491,7 +523,7 @@ SELECT anyLast(city), anyLastRespectNulls(city) FROM tab;
     FunctionDocumentation::Category anyLast_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation anyLast_documentation = {anyLast_description, anyLast_syntax, anyLast_arguments, {}, anyLast_returned_value, anyLast_examples, anyLast_introduced_in, anyLast_category};
 
-    factory.registerFunction("anyLast", {createAggregateFunctionAnyLast, default_properties, anyLast_documentation}, AggregateFunctionFactory::Case::Sensitive);
+    factory.registerFunction("anyLast", {createAggregateFunctionAnyLast, anyLast_documentation, default_properties}, AggregateFunctionFactory::Case::Sensitive);
     factory.registerAlias("last_value", "anyLast", AggregateFunctionFactory::Case::Insensitive);
 }
 }

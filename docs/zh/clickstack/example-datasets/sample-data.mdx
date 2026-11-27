@@ -1,0 +1,189 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/sample-data
+title: '示例日志、链路追踪和指标'
+description: '使用 ClickStack 和包含日志、会话、链路追踪及指标的示例数据集快速入门'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', '示例数据', '示例数据集', '日志', '可观测性']
+---
+
+本指南通过一个示例数据集演示 ClickStack 开源版。
+
+以下示例假设您已使用 [all-in-one 镜像](/zh/clickstack/getting-started/oss) 启动了 ClickStack 开源版，并已复制[摄取 API key](/zh/clickstack/getting-started/oss#copy-ingestion-api-key)。
+
+<Steps>
+  <Step title="进入 ClickStack 用户界面" id="navigate-to-the-hyperdx-ui">
+    访问 [http://localhost:8080](http://localhost:8080) 即可打开 ClickStack 用户界面。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickStack 用户界面](/images/use-cases/observability/hyperdx.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="复制摄取 API key" id="copy-ingestion-api-key">
+    前往 [`Team Settings`](http://localhost:8080/team)，在 `API Keys` 部分复制 `Ingestion API Key`。该 API key 可确保通过 OpenTelemetry 采集器进行的数据摄取安全可靠。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![复制 API key](/images/use-cases/observability/copy_api_key.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="下载样本数据" id="download-sample-data">
+    要在 UI 中填充样本数据，请下载以下文件：
+
+    [样本数据](https://storage.googleapis.com/hyperdx/sample.tar.gz)
+
+    ```shell
+    # curl
+    curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
+    # or
+    # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
+    ```
+
+    该文件包含来自我们公开的 [OpenTelemetry Demo](https://github.com/ClickHouse/opentelemetry-demo) 的示例日志、指标和链路追踪数据。该演示是一个基于微服务架构的简单电商应用。请将此文件复制到您选择的任意目录中。
+  </Step>
+
+  <Step title="加载样本数据" id="load-sample-data">
+    要加载这些数据，只需将其发送到已部署的 OpenTelemetry (OTel) 采集器的 HTTP 端点即可。
+
+    首先，将上面复制的 API key 导出为环境变量。
+
+    ```shell
+    # export API key
+    export CLICKSTACK_API_KEY=<YOUR_INGESTION_API_KEY>
+    ```
+
+    运行以下命令，将数据发送到 OTel collector：
+
+    ```shell
+    for filename in $(tar -tf sample.tar.gz); do
+      endpoint="http://localhost:4318/v1/${filename%.json}"
+      echo "loading ${filename%.json}"
+      tar -xOf sample.tar.gz "$filename" | while read -r line; do
+        printf '%s\n' "$line" | curl -s -o /dev/null -X POST "$endpoint" \
+        -H "Content-Type: application/json" \
+        -H "authorization: ${CLICKSTACK_API_KEY}" \
+        --data-binary @-
+      done
+    done
+    ```
+
+    这会模拟 OTLP 日志、trace 和指标数据源向 OTel collector 发送数据。在生产环境中，这些数据源可能是各编程语言的客户端，甚至可能是其他 OTel collector。
+
+    返回 `Search` 视图，您应该会看到数据已开始加载 (如果数据未显示，请将时间范围调整为 `Last 1 hour`) ：
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickStack 用户界面搜索](/images/use-cases/observability/hyperdx-10.webp)
+      </Frame>
+    </div>
+
+    数据加载需要几分钟。请等待加载完成后，再继续执行后续步骤。
+  </Step>
+
+  <Step title="探索会话" id="explore-sessions">
+    假设我们收到报告，称用户在支付商品时遇到问题。我们可以借助 ClickStack 用户界面的会话回放功能，查看用户的实际操作过程。
+
+    从左侧菜单中选择 [`Client Sessions`](http://localhost:8080/sessions?from=1747312320000\&to=1747312920000\&sessionSource=l1324572572)。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![会话](/images/use-cases/observability/hyperdx-11.webp)
+      </Frame>
+    </div>
+
+    该视图展示了我们电商商店的前端会话。在用户结账并尝试完成购买之前，会话始终处于匿名状态。
+
+    请注意，部分带有电子邮件的会话关联了错误，这可能印证了有关交易失败的报告。
+
+    选择一个包含失败且关联了电子邮件的 trace。在随后打开的视图中，我们可以回放该用户的会话，查看其遇到的问题。点击 play 即可观看该会话。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![会话回放](/images/use-cases/observability/hyperdx-12.webp)
+      </Frame>
+    </div>
+
+    回放显示了用户浏览网站、将商品加入购物车的过程。您可以直接跳到会话后段，查看用户尝试完成付款的部分。
+
+    <Tip>
+      所有错误都会在时间线上以红色标注。
+    </Tip>
+
+    用户未能成功下单，且没有出现明显的错误提示。滚动到左侧面板底部，这里列出了来自用户浏览器的网络和控制台事件。可以看到，在调用 `/api/checkout` 时抛出了一个 500 错误。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![会话中的错误](/images/use-cases/observability/hyperdx-13.webp)
+      </Frame>
+    </div>
+
+    选择这个 `500` 错误。`Overview` 和 `Column Values` 都没有指出问题的根源，只表明这是一个意外错误，并导致了 `Internal Error`。
+  </Step>
+
+  <Step title="探索链路追踪" id="explore-traces">
+    切换到 `Trace` 选项卡，查看完整的分布式 trace。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![会话 trace](/images/use-cases/observability/hyperdx-14.webp)
+      </Frame>
+    </div>
+
+    在 trace 中向下滚动，可以看到错误的起点——`checkout` 服务的跨度。选择 `Payment` 服务的跨度。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![跨度](/images/use-cases/observability/hyperdx-15.webp)
+      </Frame>
+    </div>
+
+    选择 `Column Values` 选项卡并向下滚动。可以看到，该问题与缓存已满有关。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![列值](/images/use-cases/observability/hyperdx-16.webp)
+      </Frame>
+    </div>
+
+    向上滚动并返回 trace，可以看到，得益于之前的配置，日志已与该跨度关联，可提供更多上下文信息。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![关联的日志](/images/use-cases/observability/hyperdx-17.webp)
+      </Frame>
+    </div>
+
+    由此可以确定，payment 服务中的缓存正在被填满，导致支付无法完成。
+  </Step>
+
+  <Step title="探索日志" id="explore-logs">
+    如需进一步了解详情，可以返回 [`Search` 视图](http://localhost:8080/search)：
+
+    在数据源中选择 `Logs`，并对 `payment` 服务应用过滤器。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![日志](/images/use-cases/observability/hyperdx-18.webp)
+      </Frame>
+    </div>
+
+    可以看到，虽然该问题出现的时间不长，但受影响的支付数量很多。此外，与 Visa 支付相关的缓存似乎也在引发问题。
+  </Step>
+
+  <Step title="图表指标" id="chart-metrics">
+    虽然代码中显然引入了一个错误，但我们仍可借助指标来确认缓存大小。请切换到 `Chart Explorer` 视图。
+
+    选择 `Metrics` 作为数据源。在图表构建器中完成配置，绘制 `visa_validation_cache.size (Gauge)` 的 `Maximum`，然后点击 play 按钮。可以清楚地看到，缓存在达到最大值之前一直在增长，此后便开始产生错误。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![指标](/images/use-cases/observability/hyperdx-19.webp)
+      </Frame>
+    </div>
+  </Step>
+</Steps>

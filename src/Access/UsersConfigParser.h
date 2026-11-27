@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
+#include <Common/Logger_fwd.h>
 #include <Core/UUID.h>
 #include <vector>
 #include <memory>
@@ -22,19 +23,19 @@ class UsersConfigParser
 public:
     explicit UsersConfigParser(AccessControl & access_control_);
 
-    std::vector<AccessEntityPtr> parseUsers(
+    [[nodiscard]] std::vector<AccessEntityPtr> parseUsers(
         const Poco::Util::AbstractConfiguration & config,
         const std::unordered_set<UUID> & allowed_profile_ids,
         const std::unordered_set<UUID> & role_ids_from_users_config) const;
 
-    std::vector<AccessEntityPtr> parseRoles(
+    [[nodiscard]] std::vector<AccessEntityPtr> parseRoles(
         const Poco::Util::AbstractConfiguration & config,
         const std::unordered_set<UUID> & role_ids_from_users_config) const;
 
-    std::vector<AccessEntityPtr> parseQuotas(const Poco::Util::AbstractConfiguration & config) const;
-    std::vector<AccessEntityPtr> parseRowPolicies(const Poco::Util::AbstractConfiguration & config) const;
+    [[nodiscard]] std::vector<AccessEntityPtr> parseQuotas(const Poco::Util::AbstractConfiguration & config) const;
+    [[nodiscard]] std::vector<AccessEntityPtr> parseRowPolicies(const Poco::Util::AbstractConfiguration & config) const;
 
-    std::vector<AccessEntityPtr> parseSettingsProfiles(
+    [[nodiscard]] std::vector<AccessEntityPtr> parseSettingsProfiles(
         const Poco::Util::AbstractConfiguration & config,
         const std::unordered_set<UUID> & allowed_parent_profile_ids) const;
 

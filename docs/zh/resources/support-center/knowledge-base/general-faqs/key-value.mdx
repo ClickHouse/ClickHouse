@@ -1,0 +1,19 @@
+---
+slug: /faq/use-cases/key-value
+title: '我可以将 ClickHouse 用作键值存储吗？'
+toc_hidden: true
+toc_priority: 101
+description: '回答关于 ClickHouse 是否可以用作键值存储的常见问题。'
+doc_type: 'reference'
+keywords: ['键值', '数据模型', '使用场景', 'schema 设计', '存储模式']
+---
+
+简短的答案是 **“不能”**。键值工作负载恰恰属于<span class="text-danger">**不应**</span>使用 ClickHouse 的典型场景之一。毕竟它本质上是一个 [OLAP](/zh/resources/support-center/knowledge-base/general-faqs/olap) 系统，而市面上已经有许多优秀的键值存储系统。
+
+不过，在某些情况下，使用 ClickHouse 处理类键值查询仍然说得通。通常，这类场景出现在预算有限的产品中：主要工作负载本质上是分析型的，并且很适合 ClickHouse，但同时还有某个次要流程需要键值模式，请求吞吐量不高，也没有严格的延迟要求。如果你的预算无限，你可能会为这个次要工作负载再部署一个键值数据库；但在现实中，额外维护一套存储系统 (监控、备份等) 也会带来成本，而这往往是人们希望避免的。
+
+如果你决定不按推荐做，而是让 ClickHouse 执行某些类键值查询，下面是一些建议：
+
+* ClickHouse 中点查询成本高的关键原因，在于主 [MergeTree 表引擎家族](/zh/reference/engines/table-engines/mergetree-family/mergetree) 使用的是稀疏主索引。这个索引无法定位到每一条具体的行数据，而只能指向每第 N 行；因此系统必须从相邻的第 N 行扫描到目标行，并在过程中读取额外的数据。在键值场景中，适当减小 `index_granularity` 设置中的 N 值可能会有所帮助。
+* ClickHouse 将每一列保存在各自独立的一组文件中，因此要拼装出完整的一行数据，就需要遍历这些文件。文件数量会随着列数线性增长，因此在键值场景中，最好避免使用过多的列，而是将所有载荷放进单个 `String` 列中，并用 JSON、Protobuf 或其他合适的序列化格式进行编码。
+* 还有一种替代方案：使用 [Join](/zh/reference/engines/table-engines/special/join) 表引擎，而不是普通的 `MergeTree` 表，再通过 [joinGet](/zh/reference/functions/regular-functions/other-functions#joinGet) 函数获取数据。这样做可能带来更好的查询性能，但也可能存在一些易用性和可靠性问题。这里有一个[使用示例](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00800_versatile_storage_join.sql#L49-L51)。

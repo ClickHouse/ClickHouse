@@ -1,0 +1,6 @@
+--- Nullable(UInt8) key: WHERE flag must not count NULL-only granules
+1
+1
+1
+--- Nullable(Bool) key: same invariant
+1

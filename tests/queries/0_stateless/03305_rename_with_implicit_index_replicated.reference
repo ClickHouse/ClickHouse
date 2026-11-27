@@ -1,0 +1,49 @@
+Initial indices:
+auto_minmax_index_a	minmax	a
+auto_minmax_index_b	minmax	b
+After rename:
+auto_minmax_index_a	minmax	a
+auto_minmax_index_c	minmax	c
+1	2
+3	4
+After adding column:
+auto_minmax_index_a	minmax	a
+auto_minmax_index_b	minmax	b
+auto_minmax_index_c	minmax	c
+1	2	0
+3	4	0
+After dropping column b:
+auto_minmax_index_a	minmax	a
+auto_minmax_index_c	minmax	c
+1	2
+3	4
+After rename and add:
+auto_minmax_index_a	minmax	a
+auto_minmax_index_d	minmax	d
+auto_minmax_index_old_b	minmax	old_b
+1	2	0
+3	4	0
+Before type change:
+auto_minmax_index_a	minmax	a
+auto_minmax_index_b	minmax	b
+After type change to String:
+auto_minmax_index_a	minmax	a
+1	2
+3	4
+Before adding explicit index:
+auto_minmax_index_a	minmax	a
+auto_minmax_index_b	minmax	b
+After adding explicit index on b:
+auto_minmax_index_a	minmax	a
+idx_explicit_b	minmax	b
+a	1
+b	1
+After dropping explicit index:
+auto_minmax_index_a	minmax	a
+auto_minmax_index_b	minmax	b
+After adding index and column:
+auto_minmax_index_b	minmax	b
+auto_minmax_index_c	minmax	c
+idx_explicit_a	minmax	a
+1	2	0
+3	4	0

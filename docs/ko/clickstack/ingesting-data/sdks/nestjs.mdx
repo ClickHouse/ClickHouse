@@ -1,0 +1,48 @@
+---
+slug: /use-cases/observability/clickstack/sdks/nestjs
+description: 'ClickStack용 NestJS SDK - ClickHouse Observability Stack'
+title: 'NestJS'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', '로깅', '통합', '애플리케이션 모니터링']
+---
+
+import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+ClickStack Node.js SDK를 사용하면 NestJS 애플리케이션에서 텔레메트리를 수집해 ClickStack으로 전송할 수 있습니다. 이 SDK에는 NestJS 요청 instrumentation이 포함되어 있으며 콘솔 출력도 수집합니다.
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## SDK 설치 {#install-sdk}
+
+Node.js 22.15 이상 버전을 사용하십시오:
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+## 대상 구성 {#configure-destination}
+
+ClickStack 수집기의 OTLP HTTP 엔드포인트와 수집 키를 설정하십시오. collector에 TLS가 구성되어 있지 않다면 `http://`를 사용하십시오. collector 설정 방법은 [OpenTelemetry로 데이터 수집하기](/ko/clickstack/ingesting-data/opentelemetry)를 참조하십시오.
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+```
+
+## 애플리케이션 시작하기 {#start-application}
+
+애플리케이션을 식별할 수 있도록 `OTEL_SERVICE_NAME`을 설정하십시오. NestJS 애플리케이션을 빌드한 다음, 컴파일된 진입점보다 먼저 SDK가 로드되도록 프리로드하십시오:
+
+```shell
+npm run build
+OTEL_SERVICE_NAME='my-nestjs-app' node --import @clickhouse/clickstack-node/register dist/main.js
+```
+
+빌드 출력 경로에 맞게 `dist/main.js`를 수정하세요. `ts-node`나 `require`를 후킹하는 다른 트랜스파일러를 사용한다면 `--require @clickhouse/clickstack-node/register`를 대신 사용하세요. 애플리케이션을 번들링할 때는 SDK와 계측된 의존성을 외부(external)로 유지하세요.
+
+NestJS의 기본 콘솔 로거를 그대로 사용할 수 있습니다. 사용자 정의 로거가 필요하면 Winston이나 Pino 같은 지원되는 통합을 사용하세요. 구성 및 호환성에 대한 자세한 내용은 [Node.js 가이드](/ko/clickstack/ingesting-data/sdks/nodejs)를 참조하세요.
+
+## 수집 확인 {#verify-ingestion}
+
+컨트롤러에 요청을 보내 로그 메시지를 출력하십시오. ClickStack에서 최근 시간 범위를 선택한 다음 Logs 및 Traces에서 애플리케이션의 서비스 이름을 찾으십시오. 메트릭이 내보내질 때까지 잠시 기다린 후 Metrics를 확인하십시오.

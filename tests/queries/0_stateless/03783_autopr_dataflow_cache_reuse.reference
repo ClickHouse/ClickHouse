@@ -1,0 +1,9 @@
+query	stats_collected	pr_used
+03783_autopr_dataflow_cache_reuse_query_0	1	0
+03783_autopr_dataflow_cache_reuse_query_1	0	0
+03783_autopr_dataflow_cache_reuse_query_2	1	0
+03783_autopr_dataflow_cache_reuse_query_3	0	1
+03783_autopr_dataflow_cache_reuse_query_4	1	0
+03783_autopr_dataflow_cache_reuse_query_5	0	1
+03783_autopr_dataflow_cache_reuse_query_6	1	0
+03783_autopr_dataflow_cache_reuse_query_7	0	0

@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-TEST_PREFIX="${CLICKHOUSE_DATABASE}"
+TEST_PREFIX="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 ${CLICKHOUSE_CLIENT} -q "drop user if exists u_00600${TEST_PREFIX}"
 ${CLICKHOUSE_CLIENT} -q "create user u_00600${TEST_PREFIX} settings max_execution_time=60, readonly=1, max_rows_to_read=0"
 ${CLICKHOUSE_CLIENT} -q "grant select on system.numbers to u_00600${TEST_PREFIX}"
@@ -32,7 +32,7 @@ $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL&query_id=${CLICKHOUSE_DATABASE}hello&repla
 wait_for_query_to_start "${CLICKHOUSE_DATABASE}hello"
 
 # Replace it
-$CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL&query_id=${CLICKHOUSE_DATABASE}hello&replace_running_query=1" -d 'SELECT 0'
+$CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL&query_id=${CLICKHOUSE_DATABASE}hello&replace_running_query=1&replace_running_query_max_wait_ms=30000" -d 'SELECT 0'
 
 # Wait for it to be replaced
 wait
@@ -57,5 +57,5 @@ ${CLICKHOUSE_CLIENT} --query_id="${CLICKHOUSE_DATABASE}42" --replace_running_que
 wait
 wait_for_queries_to_finish
 
-${CLICKHOUSE_CLIENT} --query_id="${CLICKHOUSE_DATABASE}42" --replace_running_query=1 --query='SELECT 44'
+${CLICKHOUSE_CLIENT} --query_id="${CLICKHOUSE_DATABASE}42" --replace_running_query=1 --replace_running_query_max_wait_ms=30000 --query='SELECT 44'
 ${CLICKHOUSE_CLIENT} -q "drop user u_00600${TEST_PREFIX}"

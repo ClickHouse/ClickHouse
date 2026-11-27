@@ -1,0 +1,14 @@
+<clickhouse>
+    <auxiliary_zookeepers>
+        <zookeeper2>
+            <node index="1">
+                <host>zoo1</host>
+                <port>2181</port>
+            </node>
+            <node index="2">
+                <host>zoo2</host>
+                <port>2181</port>
+            </node>
+        </zookeeper2>
+    </auxiliary_zookeepers>
+</clickhouse>

@@ -4,7 +4,6 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 
 #include <AggregateFunctions/AggregateFunctionNothing.h>
-#include <AggregateFunctions/AggregateFunctionCount.h>
 #include <DataTypes/DataTypeNullable.h>
 
 
@@ -22,11 +21,11 @@ namespace
 class AggregateFunctionCombinatorNull final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "Null"; }
+    [[nodiscard]] String getName() const override { return "Null"; }
 
-    bool isForInternalUsageOnly() const override { return true; }
+    [[nodiscard]] bool isForInternalUsageOnly() const override { return true; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         size_t size = arguments.size();
         DataTypes res(size);
@@ -42,7 +41,7 @@ public:
     }
 
     template <typename T>
-    std::optional<AggregateFunctionPtr> tryTransformStateFunctionImpl(const AggregateFunctionPtr & nested_function,
+    [[nodiscard]] std::optional<AggregateFunctionPtr> tryTransformStateFunctionImpl(const AggregateFunctionPtr & nested_function,
                                                        const AggregateFunctionProperties & properties,
                                                        const DataTypes & arguments,
                                                        const Array & params) const
@@ -59,7 +58,7 @@ public:
         return {};
     }
 
-    AggregateFunctionPtr tryTransformStateFunction(const AggregateFunctionPtr & nested_function,
+    [[nodiscard]] AggregateFunctionPtr tryTransformStateFunction(const AggregateFunctionPtr & nested_function,
                                                    const AggregateFunctionProperties & properties,
                                                    const DataTypes & arguments,
                                                    const Array & params) const
@@ -69,7 +68,7 @@ public:
             .value_or(nullptr);
     }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties & properties,
         const DataTypes & arguments,
@@ -77,7 +76,7 @@ public:
     {
         bool has_nullable_types = false;
         bool has_null_types = false;
-        std::unordered_set<size_t> arguments_that_can_be_only_null;
+        UnorderedSetWithMemoryTracking<size_t> arguments_that_can_be_only_null;
         if (nested_function)
             arguments_that_can_be_only_null = nested_function->getArgumentsThatCanBeOnlyNull();
 
@@ -115,7 +114,7 @@ public:
             return std::make_shared<AggregateFunctionNothingNull>(arguments, params);
         }
 
-        assert(nested_function);
+        chassert(nested_function);
 
         if (auto adapter = nested_function->getOwnNullAdapter(nested_function, arguments, params, properties))
             return adapter;
@@ -163,9 +162,13 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorNull>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorNull>(), Documentation{
+        .description = "An internal combinator that adapts an aggregate function to handle `Nullable` arguments and results.",
+        .syntax = "<aggregate_function>",
+        .related = {"OrNull", "OrDefault"}});
 }
 
 }

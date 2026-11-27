@@ -1,0 +1,31 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: the selected marks and EXPLAIN output may differ with
+-- random settings.
+
+-- A predicate leaf over a key that has both a space-filling curve and another key expression over
+-- the same column. The leaf becomes a group with one atom per key expression, and the
+-- space-filling-curve collapse turns the curve-argument range of the group into a relaxed atom. The
+-- group must keep pruning through its other atom, also under negation, and the counts must match a
+-- full scan.
+
+SET explain_query_plan_default = 'legacy';
+SET optimize_trivial_count_with_sparsity_filter = 0;
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan, the marks
+    selected by index analysis and the key condition. `settings` apply to the whole check. -#}
+{% macro check(table, predicate, settings = '') -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }})),
+    (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' | ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }}) WHERE trimLeft(explain) LIKE 'Condition:%')
+    {%- if settings %} SETTINGS {{ settings }}{% endif %}
+FORMAT TSVRaw;
+{%- endmacro %}
+
+CREATE TABLE t_negated_curve_group (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY (mortonEncode(x, y), plus(x, 1))
+SETTINGS index_granularity = 4;
+INSERT INTO t_negated_curve_group SELECT intDiv(number, 8), number % 8 FROM numbers(64);
+
+{{ check('t_negated_curve_group', 'NOT x') }}
+{{ check('t_negated_curve_group', 'x = 0') }}
+{{ check('t_negated_curve_group', 'NOT has([3, 5], x)', settings = 'optimize_rewrite_has_to_in = 0') }}

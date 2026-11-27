@@ -1,0 +1,562 @@
+---
+title: 'DataStore 工厂方法'
+sidebarTitle: '工厂方法'
+slug: /chdb/datastore/factory-methods
+description: '从文件、数据库、云存储和数据湖创建 DataStore 实例'
+keywords: ['chdb', 'datastore', 'factory', 'from_file', 'from_s3', 'uri', 'mysql', 'postgresql']
+doc_type: 'reference'
+---
+
+DataStore 提供了 20 多种工厂方法，可从多种数据源创建 DataStore 实例，包括本地文件、数据库、云存储和数据湖。
+
+<div id="uri">
+  ## 通用 URI 接口
+</div>
+
+推荐使用 `uri()` 方法作为统一入口，它会自动检测源类型：
+
+```python
+from chdb.datastore import DataStore
+
+# 本地文件
+ds = DataStore.uri("data.csv")
+ds = DataStore.uri("/path/to/data.parquet")
+
+# 云存储
+ds = DataStore.uri("s3://bucket/data.parquet?nosign=true")
+ds = DataStore.uri("https://example.com/data.csv")
+
+# 数据库
+ds = DataStore.uri("mysql://user:pass@host:3306/db/table")
+ds = DataStore.uri("postgresql://user:pass@host:5432/db/table")
+```
+
+<div id="uri-syntax">
+  ### URI 语法参考
+</div>
+
+| 来源类型       | URI 格式                                      | 示例                                                     |
+| ---------- | ------------------------------------------- | ------------------------------------------------------ |
+| 本地文件       | `path/to/file`                              | `data.csv`, `/abs/path/data.parquet`                   |
+| S3         | `s3://bucket/path`                          | `s3://mybucket/data.parquet?nosign=true`               |
+| GCS        | `gs://bucket/path`                          | `gs://mybucket/data.csv`                               |
+| Azure      | `az://container/path`                       | `az://mycontainer/data.parquet`                        |
+| HTTP/HTTPS | `https://url`                               | `https://example.com/data.csv`                         |
+| MySQL      | `mysql://user:pass@host:port/db/table`      | `mysql://root:pass@localhost:3306/mydb/users`          |
+| PostgreSQL | `postgresql://user:pass@host:port/db/table` | `postgresql://postgres:pass@localhost:5432/mydb/users` |
+| SQLite     | `sqlite:///path?table=name`                 | `sqlite:///data.db?table=users`                        |
+| ClickHouse | `clickhouse://host:port/db/table`           | `clickhouse://localhost:9000/default/hits`             |
+
+***
+
+<div id="file-sources">
+  ## File 数据源
+</div>
+
+<div id="from-file">
+  ### `from_file`
+</div>
+
+通过自动检测格式，从本地或远程文件创建 DataStore。
+
+```python
+DataStore.from_file(path, format=None, compression=None, **kwargs)
+```
+
+**参数：**
+
+| 参数            | 类型  | 默认值    | 说明                      |
+| ------------- | --- | ------ | ----------------------- |
+| `path`        | str | *必填*   | 文件路径 (本地路径或 URL)        |
+| `format`      | str | `None` | 文件格式 (若为 `None`，则自动检测)  |
+| `compression` | str | `None` | 压缩类型 (若为 `None`，则自动检测)  |
+
+**支持的格式：** CSV、TSV、Parquet、JSON、JSONLines、ORC、Avro、Arrow
+
+**示例：**
+
+```python
+from chdb.datastore import DataStore
+
+# 从扩展名自动检测格式
+ds = DataStore.from_file("data.csv")
+ds = DataStore.from_file("data.parquet")
+ds = DataStore.from_file("data.json")
+
+# 显式指定格式
+ds = DataStore.from_file("data.txt", format="CSV")
+
+# 使用压缩
+ds = DataStore.from_file("data.csv.gz", compression="gzip")
+```
+
+<div id="pandas-read">
+  ### 兼容 Pandas 的读取函数
+</div>
+
+```python
+from chdb import datastore as pd
+
+# CSV 文件
+ds = pd.read_csv("data.csv")
+ds = pd.read_csv("data.csv", sep=";", header=0, nrows=1000)
+
+# Parquet 文件（推荐用于大型数据集）
+ds = pd.read_parquet("data.parquet")
+ds = pd.read_parquet("data.parquet", columns=['col1', 'col2'])
+
+# JSON 文件
+ds = pd.read_json("data.json")
+ds = pd.read_json("data.jsonl", lines=True)
+
+# Excel 文件
+ds = pd.read_excel("data.xlsx", sheet_name="Sheet1")
+```
+
+***
+
+<div id="cloud-storage">
+  ## 云存储
+</div>
+
+<div id="from-s3">
+  ### `from_s3`
+</div>
+
+从亚马逊 S3 创建 DataStore。
+
+```python
+DataStore.from_s3(url, access_key_id=None, secret_access_key=None, format=None, **kwargs)
+```
+
+**参数：**
+
+| 参数                  | 类型  | 默认值    | 描述                         |
+| ------------------- | --- | ------ | -------------------------- |
+| `url`               | str | *必填*   | S3 URL (s3://bucket/path)  |
+| `access_key_id`     | str | `None` | AWS 访问密钥 ID                |
+| `secret_access_key` | str | `None` | AWS 秘密访问密钥                 |
+| `format`            | str | `None` | 文件格式 (自动检测)                |
+
+**示例：**
+
+```python
+from chdb.datastore import DataStore
+
+# 匿名访问（公共存储桶）
+ds = DataStore.from_s3("s3://bucket/data.parquet")
+
+# 使用凭证
+ds = DataStore.from_s3(
+    "s3://bucket/data.parquet",
+    access_key_id="AKIAIOSFODNN7EXAMPLE",
+    secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+)
+
+# 使用带查询参数的 URI
+ds = DataStore.uri("s3://bucket/data.parquet?nosign=true")
+ds = DataStore.uri("s3://bucket/data.parquet?access_key_id=KEY&secret_access_key=SECRET")
+```
+
+<div id="from-gcs">
+  ### `from_gcs`
+</div>
+
+基于 Google Cloud Storage 创建 DataStore。
+
+```python
+DataStore.from_gcs(url, credentials_path=None, **kwargs)
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_gcs("gs://bucket/data.parquet")
+ds = DataStore.from_gcs("gs://bucket/data.parquet", credentials_path="/path/to/creds.json")
+```
+
+<div id="from-azure">
+  ### `from_azure`
+</div>
+
+从 Azure Blob 存储创建 DataStore。
+
+```python
+DataStore.from_azure(url, account_name=None, account_key=None, **kwargs)
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_azure(
+    "az://container/data.parquet",
+    account_name="myaccount",
+    account_key="mykey"
+)
+```
+
+<div id="from-hdfs">
+  ### `from_hdfs`
+</div>
+
+基于 HDFS 创建 DataStore。
+
+```python
+DataStore.from_hdfs(url, **kwargs)
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_hdfs("hdfs://namenode:8020/path/data.parquet")
+```
+
+<div id="from-url">
+  ### `from_url`
+</div>
+
+从 HTTP/HTTPS URL 创建 DataStore。
+
+```python
+DataStore.from_url(url, format=None, **kwargs)
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_url("https://example.com/data.csv")
+ds = DataStore.from_url("https://raw.githubusercontent.com/user/repo/main/data.parquet")
+```
+
+***
+
+<div id="databases">
+  ## 数据库
+</div>
+
+<div id="from-mysql">
+  ### `from_mysql`
+</div>
+
+从 MySQL 数据库创建一个 DataStore。
+
+```python
+DataStore.from_mysql(host, database, table, user, password, port=3306, **kwargs)
+```
+
+**参数：**
+
+| 参数         | 类型  | 默认值        | 描述       |
+| ---------- | --- | ---------- | -------- |
+| `host`     | str | *required* | MySQL 主机 |
+| `database` | str | *required* | 数据库名称    |
+| `table`    | str | *required* | 表名称      |
+| `user`     | str | *required* | 用户名      |
+| `password` | str | *required* | 密码       |
+| `port`     | int | `3306`     | 端口号      |
+
+**示例：**
+
+```python
+ds = DataStore.from_mysql(
+    host="localhost",
+    database="mydb",
+    table="users",
+    user="root",
+    password="password"
+)
+
+# 使用 URI
+ds = DataStore.uri("mysql://root:password@localhost:3306/mydb/users")
+```
+
+<div id="from-postgresql">
+  ### `from_postgresql`
+</div>
+
+从 PostgreSQL 数据库创建 DataStore。
+
+```python
+DataStore.from_postgresql(host, database, table, user, password, port=5432, **kwargs)
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_postgresql(
+    host="localhost",
+    database="mydb",
+    table="users",
+    user="postgres",
+    password="password"
+)
+
+# 使用 URI
+ds = DataStore.uri("postgresql://postgres:password@localhost:5432/mydb/users")
+```
+
+<div id="from-clickhouse">
+  ### `from_clickhouse`
+</div>
+
+从 ClickHouse server 中创建 DataStore。
+
+```python
+DataStore.from_clickhouse(host, database, table, user=None, password=None, port=9000, **kwargs)
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_clickhouse(
+    host="localhost",
+    database="default",
+    table="hits",
+    user="default",
+    password=""
+)
+
+# 连接级模式（探索数据库）
+ds = DataStore.from_clickhouse(
+    host="analytics.company.com",
+    user="analyst",
+    password="secret"
+)
+ds.databases()                  # 列出数据库
+ds.tables("production")         # 列出表
+result = ds.sql("SELECT * FROM production.users LIMIT 10")
+```
+
+<div id="from-mongodb">
+  ### `from_mongodb`
+</div>
+
+从 MongoDB 创建 DataStore。
+
+```python
+DataStore.from_mongodb(uri, database, collection, **kwargs)
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_mongodb(
+    uri="mongodb://localhost:27017",
+    database="mydb",
+    collection="users"
+)
+```
+
+<div id="from-sqlite">
+  ### `from_sqlite`
+</div>
+
+从 SQLite 数据库中创建 DataStore。
+
+```python
+DataStore.from_sqlite(database_path, table, **kwargs)
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_sqlite("data.db", table="users")
+
+# 使用 URI
+ds = DataStore.uri("sqlite:///data.db?table=users")
+```
+
+***
+
+<div id="data-lakes">
+  ## 数据湖
+</div>
+
+<div id="from-iceberg">
+  ### `from_iceberg`
+</div>
+
+从 Apache Iceberg 表中创建 DataStore。
+
+```python
+DataStore.from_iceberg(path, **kwargs)
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_iceberg("/path/to/iceberg_table")
+ds = DataStore.uri("iceberg://catalog/namespace/table")
+```
+
+<div id="from-delta">
+  ### `from_delta`
+</div>
+
+从 Delta Lake 表中创建 DataStore。
+
+```python
+DataStore.from_delta(path, **kwargs)
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_delta("/path/to/delta_table")
+ds = DataStore.uri("deltalake:///path/to/delta_table")
+```
+
+<div id="from-hudi">
+  ### `from_hudi`
+</div>
+
+从 Apache Hudi 表中创建 DataStore。
+
+```python
+DataStore.from_hudi(path, **kwargs)
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_hudi("/path/to/hudi_table")
+ds = DataStore.uri("hudi:///path/to/hudi_table")
+```
+
+***
+
+<div id="in-memory">
+  ## 内存源
+</div>
+
+<div id="from-df">
+  ### `from_df` / `from_dataframe`
+</div>
+
+通过 pandas DataFrame 创建 DataStore。
+
+```python
+DataStore.from_df(df, name=None)
+DataStore.from_dataframe(df, name=None)  # 别名
+```
+
+**示例：**
+
+```python
+import pandas
+from chdb.datastore import DataStore
+
+pdf = pandas.DataFrame({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})
+ds = DataStore.from_df(pdf)
+```
+
+<div id="dataframe-constructor">
+  ### `DataFrame` 构造函数
+</div>
+
+使用类似 pandas 的构造方式创建 DataStore。
+
+```python
+from chdb import datastore as pd
+
+# 从字典创建
+ds = pd.DataFrame({
+    'name': ['Alice', 'Bob'],
+    'age': [25, 30]
+})
+
+# 从 pandas DataFrame 创建
+import pandas
+pdf = pandas.DataFrame({'a': [1, 2, 3]})
+ds = pd.DataFrame(pdf)
+```
+
+***
+
+<div id="special-sources">
+  ## 特殊数据源
+</div>
+
+<div id="from-numbers">
+  ### `from_numbers`
+</div>
+
+使用连续数字创建 DataStore (适合测试) 。
+
+```python
+DataStore.from_numbers(count, **kwargs)
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_numbers(1000000)  # 100万行，包含 'number' 列
+result = ds.filter(ds['number'] % 2 == 0).head(10)  # 偶数
+```
+
+<div id="from-random">
+  ### `from_random`
+</div>
+
+用随机数据创建 DataStore。
+
+```python
+DataStore.from_random(rows, columns, **kwargs)
+```
+
+**示例：**
+
+```python
+ds = DataStore.from_random(rows=1000, columns=5)
+```
+
+<div id="run-sql">
+  ### `run_sql`
+</div>
+
+从原始 SQL 查询创建 DataStore。
+
+```python
+DataStore.run_sql(query)
+```
+
+**示例：**
+
+```python
+ds = DataStore.run_sql("""
+    SELECT number, number * 2 as doubled
+    FROM numbers(100)
+    WHERE number % 10 = 0
+""")
+```
+
+***
+
+<div id="summary">
+  ## 汇总表
+</div>
+
+| Method              | 来源类型                 | 示例                                                       |
+| ------------------- | -------------------- | -------------------------------------------------------- |
+| `uri()`             | 通用                   | `DataStore.uri("s3://bucket/data.parquet")`              |
+| `from_file()`       | 本地/远程文件              | `DataStore.from_file("data.csv")`                        |
+| `read_csv()`        | CSV 文件               | `pd.read_csv("data.csv")`                                |
+| `read_parquet()`    | Parquet 文件           | `pd.read_parquet("data.parquet")`                        |
+| `from_s3()`         | 亚马逊 S3               | `DataStore.from_s3("s3://bucket/path")`                  |
+| `from_gcs()`        | Google Cloud Storage | `DataStore.from_gcs("gs://bucket/path")`                 |
+| `from_azure()`      | Azure Blob 存储        | `DataStore.from_azure("az://container/path")`            |
+| `from_hdfs()`       | HDFS                 | `DataStore.from_hdfs("hdfs://host/path")`                |
+| `from_url()`        | HTTP/HTTPS           | `DataStore.from_url("https://example.com/data.csv")`     |
+| `from_mysql()`      | MySQL                | `DataStore.from_mysql(host, db, table, user, pass)`      |
+| `from_postgresql()` | PostgreSQL           | `DataStore.from_postgresql(host, db, table, user, pass)` |
+| `from_clickhouse()` | ClickHouse           | `DataStore.from_clickhouse(host, db, table)`             |
+| `from_mongodb()`    | MongoDB              | `DataStore.from_mongodb(uri, db, collection)`            |
+| `from_sqlite()`     | SQLite               | `DataStore.from_sqlite("data.db", table)`                |
+| `from_iceberg()`    | Apache Iceberg       | `DataStore.from_iceberg("/path/to/table")`               |
+| `from_delta()`      | Delta Lake           | `DataStore.from_delta("/path/to/table")`                 |
+| `from_hudi()`       | Apache Hudi          | `DataStore.from_hudi("/path/to/table")`                  |
+| `from_df()`         | pandas DataFrame     | `DataStore.from_df(pandas_df)`                           |
+| `DataFrame()`       | 字典 / DataFrame       | `pd.DataFrame({'a': [1, 2, 3]})`                         |
+| `from_numbers()`    | 连续数字                 | `DataStore.from_numbers(1000000)`                        |
+| `from_random()`     | 随机数据                 | `DataStore.from_random(rows=1000, columns=5)`            |
+| `run_sql()`         | Raw SQL              | `DataStore.run_sql("SELECT * FROM ...")`                 |

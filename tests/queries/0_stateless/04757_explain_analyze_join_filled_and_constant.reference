@@ -1,0 +1,17 @@
+ground truth: rows, matched
+1000	439
+1000	521
+ConstantJoin: CROSS
+1	1	1	1	not collected	not collected
+ConstantJoin: constant ON
+1	1	not collected	not collected
+Join engine ALL INNER
+1	1	1	2	439	521
+Join engine ALL INNER, no matches
+439	not collected
+Join engine ANY LEFT
+not collected	not collected
+Direct ALL INNER
+1	0	1	439	43.90	1.00
+Direct ALL LEFT
+1	0	1	439	43.90	1.00

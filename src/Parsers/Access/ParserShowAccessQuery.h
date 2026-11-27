@@ -14,11 +14,11 @@ namespace DB
 class ParserShowAccessQuery : public IParserBase
 {
 protected:
-    const char * getName() const override { return "SHOW ACCESS query"; }
+    [[nodiscard]] const char * getName() const override { return "SHOW ACCESS query"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
-        auto query = std::make_shared<ASTShowAccessQuery>();
+        auto query = make_intrusive<ASTShowAccessQuery>();
 
         if (!ParserKeyword(Keyword::SHOW_ACCESS).ignore(pos, expected))
             return false;

@@ -1,0 +1,11 @@
+<clickhouse>
+    <s3>
+        <gcp_oauth_endpoint>
+            <endpoint>http://minio1:9001/root/gcpoauth/</endpoint>
+            <http_client>gcp_oauth</http_client>
+            <google_adc_client_id>bogus-server-client-id</google_adc_client_id>
+            <google_adc_client_secret>bogus-server-client-secret</google_adc_client_secret>
+            <google_adc_refresh_token>bogus-server-refresh-token</google_adc_refresh_token>
+        </gcp_oauth_endpoint>
+    </s3>
+</clickhouse>

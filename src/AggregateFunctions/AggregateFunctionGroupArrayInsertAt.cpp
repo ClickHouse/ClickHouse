@@ -133,7 +133,7 @@ public:
         columns[0]->get(row_num, arr[position]);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         Array & arr_lhs = data(place).value;
         const Array & arr_rhs = data(rhs).value;
@@ -174,6 +174,10 @@ public:
         if (size > AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                             "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE);
+
+        if (length_to_resize && size > length_to_resize)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size (maximum: {})", length_to_resize);
 
         Array & arr = data(place).value;
         arr.resize(size);
@@ -229,6 +233,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArrayInsertAt(
 
 }
 
+void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -247,7 +252,7 @@ If in one query several values are inserted into the same position, the function
         {"default_x", "Optional. Default value for substituting in empty positions.", {"Any"}},
         {"size", "Optional. Length of the resulting array. When using this parameter, the default value `default_x` must be specified.", {"UInt32"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Array with inserted values.", {"Array"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with inserted values.", {"Array"}};
     FunctionDocumentation::Examples examples = {
     {
         "Basic usage without parameters",
@@ -289,7 +294,7 @@ SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size
         )",
         R"(
 ┌─groupArrayInsertAt(number, 0)─┐
-│ [7]                           │
+│ [0]                           │
 └───────────────────────────────┘
         )"
     }
@@ -298,7 +303,8 @@ SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("groupArrayInsertAt", {createAggregateFunctionGroupArrayInsertAt, {}, documentation});
+    AggregateFunctionProperties properties = {.is_order_dependent = true, .variant_arguments_conversion = VariantArgumentsConversion::AllExceptFirst};
+    factory.registerFunction("groupArrayInsertAt", {createAggregateFunctionGroupArrayInsertAt, documentation, properties});
 }
 
 }

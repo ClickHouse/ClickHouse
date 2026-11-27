@@ -76,7 +76,7 @@ struct EntropyData
         }
     }
 
-    Float64 get() const
+    [[nodiscard]] Float64 get() const
     {
         UInt64 total_value = 0;
         for (const auto & pair : map)
@@ -85,7 +85,7 @@ struct EntropyData
         Float64 shannon_entropy = 0;
         for (const auto & pair : map)
         {
-            Float64 frequency = Float64(pair.getMapped()) / total_value;
+            Float64 frequency = static_cast<Float64>(pair.getMapped()) / static_cast<Float64>(total_value);
             shannon_entropy -= frequency * log2(frequency);
         }
 
@@ -107,14 +107,14 @@ public:
     {
     }
 
-    String getName() const override { return "entropy"; }
+    [[nodiscard]] String getName() const override { return "entropy"; }
 
     static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeNumber<Float64>>();
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -130,7 +130,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -175,6 +175,7 @@ AggregateFunctionPtr createAggregateFunctionEntropy(
 
 }
 
+void registerAggregateFunctionEntropy(AggregateFunctionFactory & factory);
 void registerAggregateFunctionEntropy(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -207,7 +208,7 @@ SELECT entropy(vals), entropy(strings) FROM entropy
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    factory.registerFunction("entropy", {createAggregateFunctionEntropy, {}, documentation});
+    factory.registerFunction("entropy", {createAggregateFunctionEntropy, documentation, {}});
 }
 
 }

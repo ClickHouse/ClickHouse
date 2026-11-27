@@ -1,0 +1,173 @@
+---
+slug: '/examples/aggregate-function-combinators/minSimpleState'
+title: 'minSimpleState'
+description: 'minSimpleState combinator를 사용하는 예시'
+keywords: ['min', 'state', 'simple', 'combinator', '예시', 'minSimpleState']
+sidebarTitle: 'minSimpleState'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+[`SimpleState`](/ko/reference/functions/aggregate-functions/combinators#-simplestate) combinator는 [`min`](/ko/reference/functions/aggregate-functions/min)
+함수에 적용할 수 있으며, 모든 입력값 중 최솟값을 반환합니다. 반환되는
+결과의 타입은 [`SimpleAggregateFunction`](/ko/reference/data-types/simpleaggregatefunction)입니다.
+
+<div id="example-usage">
+  ## 예시 사용법
+</div>
+
+일일 온도 측정값을 추적하는 테이블을 사용하는 실용적인 예시를 살펴보겠습니다.
+각 위치별로 기록된 최저 온도를 유지합니다.
+`SimpleAggregateFunction` 유형을 `min`과 함께 사용하면 더 낮은 온도가 기록될 때
+저장된 값이 자동으로 업데이트됩니다.
+
+원시 온도 측정값을 저장할 원본 테이블을 생성합니다:
+
+```sql
+CREATE TABLE raw_temperature_readings
+(
+    location_id UInt32,
+    location_name String,
+    temperature Int32,
+    recorded_at DateTime DEFAULT now()
+)
+    ENGINE = MergeTree()
+ORDER BY (location_id, recorded_at);
+```
+
+최소 기온을 저장할 집계 테이블을 생성합니다:
+
+```sql
+CREATE TABLE temperature_extremes
+(
+    location_id UInt32,
+    location_name String,
+    min_temp SimpleAggregateFunction(min, Int32),  -- 최저 온도 저장
+    max_temp SimpleAggregateFunction(max, Int32)   -- 최고 온도 저장
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY location_id;
+```
+
+삽입된 데이터에 대해 삽입 트리거처럼 동작하며 위치별 최저 및 최고 온도를 유지하는 증분형 materialized view를 생성하세요.
+
+```sql
+CREATE MATERIALIZED VIEW temperature_extremes_mv
+TO temperature_extremes
+AS SELECT
+    location_id,
+    location_name,
+    minSimpleState(temperature) AS min_temp,     -- SimpleState combinator 사용
+    maxSimpleState(temperature) AS max_temp      -- SimpleState combinator 사용
+FROM raw_temperature_readings
+GROUP BY location_id, location_name;
+```
+
+초기 온도 측정값을 몇 개 삽입하세요:
+
+```sql
+INSERT INTO raw_temperature_readings (location_id, location_name, temperature) VALUES
+(1, 'North', 5),
+(2, 'South', 15),
+(3, 'West', 10),
+(4, 'East', 8);
+```
+
+이 측정값은 materialized view에서 자동으로 처리됩니다. 현재 상태를
+확인해 보겠습니다:
+
+```sql
+SELECT
+    location_id,
+    location_name,
+    min_temp,     -- SimpleAggregateFunction 값에 직접 접근
+    max_temp      -- SimpleAggregateFunction은 finalization 함수가 필요 없음
+FROM temperature_extremes
+ORDER BY location_id;
+```
+
+```response
+┌─location_id─┬─location_name─┬─min_temp─┬─max_temp─┐
+│           1 │ North         │        5 │        5 │
+│           2 │ South         │       15 │       15 │
+│           3 │ West          │       10 │       10 │
+│           4 │ East          │        8 │        8 │
+└─────────────┴───────────────┴──────────┴──────────┘
+```
+
+데이터를 조금 더 삽입하세요:
+
+```sql
+INSERT INTO raw_temperature_readings (location_id, location_name, temperature) VALUES
+    (1, 'North', 3),
+    (2, 'South', 18),
+    (3, 'West', 10),
+    (1, 'North', 8),
+    (4, 'East', 2);
+```
+
+새 데이터가 들어온 후 업데이트된 극값을 확인하세요:
+
+```sql
+SELECT
+    location_id,
+    location_name,
+    min_temp,  
+    max_temp
+FROM temperature_extremes
+ORDER BY location_id;
+```
+
+```response
+┌─location_id─┬─location_name─┬─min_temp─┬─max_temp─┐
+│           1 │ North         │        3 │        8 │
+│           1 │ North         │        5 │        5 │
+│           2 │ South         │       18 │       18 │
+│           2 │ South         │       15 │       15 │
+│           3 │ West          │       10 │       10 │
+│           3 │ West          │       10 │       10 │
+│           4 │ East          │        2 │        2 │
+│           4 │ East          │        8 │        8 │
+└─────────────┴───────────────┴──────────┴──────────┘
+```
+
+위에서 볼 수 있듯이 각 위치마다 삽입된 값이 두 개씩 있습니다. 이는
+파트가 아직 머지되지 않았기 때문입니다(즉, `AggregatingMergeTree`에 의해 아직 집계되지 않았습니다). 부분 상태에서 최종 결과를 얻으려면
+`GROUP BY`를 추가해야 합니다:
+
+```sql
+SELECT
+    location_id,
+    location_name,
+    min(min_temp) AS min_temp,  -- 모든 파트에 대해 집계 
+    max(max_temp) AS max_temp   -- 모든 파트에 대해 집계
+FROM temperature_extremes
+GROUP BY location_id, location_name
+ORDER BY location_id;
+```
+
+이제 예상한 결과가 출력됩니다:
+
+```response
+┌─location_id─┬─location_name─┬─min_temp─┬─max_temp─┐
+│           1 │ North         │        3 │        8 │
+│           2 │ South         │       15 │       18 │
+│           3 │ West          │       10 │       10 │
+│           4 │ East          │        2 │        8 │
+└─────────────┴───────────────┴──────────┴──────────┘
+```
+
+<Note>
+  `SimpleState`를 사용하면 부분 집계 상태를 결합할 때 `Merge` combinator를 사용할 필요가 없습니다.
+</Note>
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`min`](/ko/reference/functions/aggregate-functions/min)
+* [`SimpleState combinator`](/ko/reference/functions/aggregate-functions/combinators#-simplestate)
+* [`SimpleAggregateFunction type`](/ko/reference/data-types/simpleaggregatefunction)

@@ -14,5 +14,7 @@ struct SettingFieldOptionalUUID
         explicit SettingFieldOptionalUUID(const Field & field);
 
         explicit operator Field() const;
+
+        [[nodiscard]] String toString() const;
     };
 }

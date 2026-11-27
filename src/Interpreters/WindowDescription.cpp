@@ -2,7 +2,7 @@
 #include <Core/Field.h>
 #include <IO/Operators.h>
 #include <Interpreters/WindowDescription.h>
-#include <Parsers/ASTFunction.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
 
@@ -20,15 +20,33 @@ std::string WindowFunctionDescription::dump() const
     WriteBufferFromOwnString ss;
 
     ss << "window function '" << column_name << "\n";
-    if (function_node)
-        ss << "function node " << function_node->dumpTree() << "\n";
-    ss << "aggregate function '" << aggregate_function->getName() << "'\n";
+    ss << "function '" << getFunctionName() << "'\n";
     if (!function_parameters.empty())
     {
         ss << "parameters " << toString(function_parameters) << "\n";
     }
 
     return ss.str();
+}
+
+String WindowFunctionDescription::getFunctionName() const
+{
+    return general_function ? general_function->getName() : aggregate_function->getName();
+}
+
+const DataTypePtr & WindowFunctionDescription::getResultType() const
+{
+    return general_function ? general_function->getResultType() : aggregate_function->getResultType();
+}
+
+void validateWindowFunctions(const WindowDescription & window)
+{
+    for (const auto & function : window.window_functions)
+    {
+        const auto & general = function.general_function;
+        if (general && general->getRequirements(window).order_by && window.order_by.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window function '{}' requires ORDER BY in its window definition", general->getName());
+    }
 }
 
 std::string WindowDescription::dump() const
@@ -120,8 +138,8 @@ void WindowFrame::checkValid() const
     // Check relative positioning of offsets.
     // UNBOUNDED PRECEDING end and UNBOUNDED FOLLOWING start should have been
     // forbidden at the parsing level.
-    assert(!(begin_type == BoundaryType::Unbounded && !begin_preceding));
-    assert(!(end_type == BoundaryType::Unbounded && end_preceding));
+    chassert(!(begin_type == BoundaryType::Unbounded && !begin_preceding));
+    chassert(!(end_type == BoundaryType::Unbounded && end_preceding));
 
     if (begin_type == BoundaryType::Unbounded
         || end_type == BoundaryType::Unbounded)
@@ -155,7 +173,7 @@ void WindowFrame::checkValid() const
         && begin_type == BoundaryType::Offset)
     {
         // Frame start offset must be less or equal that the frame end offset.
-        bool begin_less_equal_end;
+        bool begin_less_equal_end = false;
         if (begin_preceding && end_preceding)
         {
             /// we can't compare Fields using operator<= if fields have different types

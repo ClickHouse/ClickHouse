@@ -3,11 +3,12 @@
 #include <Common/typeid_cast.h>
 #include <iostream>
 #include <unistd.h>
+#include <Examples/clickhouse_examples.h>
 
 
 using namespace zkutil;
 
-int main(int argc, char ** argv)
+int mainEntryExampleZkutilTestCommands(int argc, char ** argv)
 try
 {
     if (argc < 2)

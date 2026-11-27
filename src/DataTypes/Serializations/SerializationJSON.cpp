@@ -1,3 +1,5 @@
+#include <Common/SipHash.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -16,16 +18,20 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 template <typename Parser>
 SerializationJSON<Parser>::SerializationJSON(
-    const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
+    const DataTypeObject::TypedPathsMap & typed_paths_types_,
+    const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
+    const std::unordered_set<String> & shared_typed_paths_,
     const std::unordered_set<String> & paths_to_skip_,
     const std::vector<String> & path_regexps_to_skip_,
     const DataTypePtr & dynamic_type_,
+    const SerializationPtr & dynamic_serialization_,
     std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
-    : SerializationObject(typed_paths_types_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_)
+    : SerializationObject(typed_paths_types_, typed_paths_serializations_, shared_typed_paths_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, dynamic_serialization_)
     , json_extract_tree(std::move(json_extract_tree_))
 {
 }
@@ -55,7 +61,7 @@ struct PathElements
         elements.emplace_back(last_dot_pos + 1, size_t(pos - last_dot_pos - 1));
     }
 
-    size_t size() const { return elements.size(); }
+    [[nodiscard]] size_t size() const { return elements.size(); }
 
     std::vector<std::string_view> elements;
 };
@@ -75,7 +81,7 @@ struct Prefix
     }
 
     /// Check is_first flag in current object.
-    bool isFirstInCurrentObject() const
+    [[nodiscard]] bool isFirstInCurrentObject() const
     {
         if (elements.empty())
             return root_is_first_flag;
@@ -91,7 +97,7 @@ struct Prefix
             elements.back().second = false;
     }
 
-    size_t size() const { return elements.size(); }
+    [[nodiscard]] size_t size() const { return elements.size(); }
 
     /// Elements of the prefix: (path element, is_first flag in this prefix).
     /// is_first flag indicates if we already serialized some key in the object with such prefix.
@@ -128,7 +134,15 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
     Prefix current_prefix;
     for (auto it = ColumnObject::SortedPathsIterator(column_object, row_num); !it.end(); it.next())
     {
-        auto path_info = it.getCurrentPathInfo();
+        auto path_info = it.getCurrentPathInfo(/*materialize_shared_data_value=*/ false);
+
+        /// When type_json_skip_null_typed_paths is enabled, treat NULL in typed paths
+        /// as absence of the path, matching the behavior of dynamic paths.
+        if (settings.json.type_json_skip_null_typed_paths
+            && path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED
+            && path_info.column->isNullAt(path_info.row))
+            continue;
+
         PathElements path_elements(path_info.path);
         /// Change prefix to common prefix between current prefix and current path.
         /// If prefix changed (it can only decrease), close all finished objects.
@@ -230,9 +244,13 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
         if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED)
         {
             if (pretty)
-                typed_paths_serializations.at(path_info.path)->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, settings, indent + current_prefix.size() + 1);
+                typed_paths_serializations.at(String(path_info.path))->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, settings, indent + current_prefix.size() + 1);
             else
-                typed_paths_serializations.at(path_info.path)->serializeTextJSON(*path_info.column, path_info.row, ostr, settings);
+                typed_paths_serializations.at(String(path_info.path))->serializeTextJSON(*path_info.column, path_info.row, ostr, settings);
+        }
+        else if (path_info.type == ColumnObject::SortedPathsIterator::PathType::SHARED_DATA)
+        {
+            SerializationDynamic::serializeBinaryEncodedValueTextJSON(it.getCurrentSharedDataValue(), ostr, settings, pretty, indent + current_prefix.size() + 1);
         }
         else
         {
@@ -275,6 +293,7 @@ void SerializationJSON<Parser>::deserializeObject(IColumn & column, std::string_
     JSONExtractInsertSettings insert_settings;
     insert_settings.escape_dots_in_json_keys = settings.json.json_type_escape_dots_in_keys;
     insert_settings.skip_invalid_typed_paths = settings.json.type_json_skip_invalid_typed_paths;
+    insert_settings.use_partial_match_to_skip_paths_by_regexp = settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
     if (!json_extract_tree->insertResultToColumn(column, document, insert_settings, settings, error))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert data into JSON column: {}", error);
 }
@@ -314,14 +333,20 @@ void SerializationJSON<Parser>::serializeTextQuoted(const IColumn & column, size
 {
     WriteBufferFromOwnString buf;
     serializeTextImpl(column, row_num, buf, settings);
-    writeQuotedString(buf.str(), ostr);
+    if (settings.values.escape_quote_with_quote)
+        writeQuotedStringPostgreSQL(buf.str(), ostr);
+    else
+        writeQuotedString(buf.str(), ostr);
 }
 
 template <typename Parser>
 void SerializationJSON<Parser>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String object;
-    readQuotedString(object, istr);
+    /// Use SQL-style quoted reader so we accept both `\'` and the SQL-standard `''` apostrophe escapes.
+    /// `serializeTextQuoted` above can emit either form depending on `output_format_values_escape_quote_with_quote`,
+    /// and a JSON column written by us via `Values` must be parseable back by the same path.
+    readQuotedStringWithSQLStyle(object, istr);
     deserializeObject(column, object, settings);
 }
 
@@ -365,8 +390,19 @@ template <typename Parser>
 void SerializationJSON<Parser>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String object_buffer;
-    auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer);
+    auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer, settings.json.max_row_size_for_json_each_row);
     deserializeObject(column, object_view, settings);
+}
+
+template <typename Parser>
+UInt128 SerializationJSON<Parser>::getHash(
+    const DataTypeObject::TypedPathsMap &,
+    const std::unordered_set<String> &,
+    const std::vector<String> &,
+    const DataTypePtr &)
+{
+    /// Check the comment in the ::create method.
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Method getHash is not implemented for SerializationJSON");
 }
 
 #if USE_SIMDJSON

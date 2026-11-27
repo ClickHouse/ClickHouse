@@ -1,0 +1,175 @@
+---
+slug: /cloud/billing/marketplace/gcp-marketplace-committed-contract
+title: 'GCP Marketplace の確約契約'
+description: 'GCP Marketplace を通じて ClickHouse Cloud の確約契約を申し込む'
+keywords: ['gcp', 'google', 'marketplace', '請求', '確約', '確約契約']
+doc_type: 'guide'
+---
+
+確約契約を通じて、[GCP Marketplace](https://console.cloud.google.com/marketplace) から ClickHouse Cloud の利用を開始できます。確約契約は Private Offer とも呼ばれ、一定期間にわたって ClickHouse Cloud に一定額を支出することをお客様が確約できる仕組みです。
+
+<div id="prerequisites">
+  ## 前提条件 {#prerequisites}
+</div>
+
+* 特定の契約条件に基づく ClickHouse の Private Offer。
+
+## 登録手順 {#steps-to-sign-up}
+
+1. プライベートオファーの確認と承諾を行うためのリンクが記載されたメールが届いているはずです。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![GCP Marketplace のプライベートオファーのメール](/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-1.webp)
+  </Frame>
+</div>
+
+<br />
+
+2. メール内の **Review Offer** リンクをクリックします。プライベートオファーの詳細が記載された GCP Marketplace のページに移動します。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![GCP Marketplace のオファー概要](/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-2.webp)
+  </Frame>
+</div>
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![GCP Marketplace の料金体系の概要](/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-3.webp)
+  </Frame>
+</div>
+
+<br />
+
+3. プライベートオファーの詳細を確認し、問題がなければ **Accept** をクリックします。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![GCP Marketplace の承諾ページ](/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-4.webp)
+  </Frame>
+</div>
+
+<br />
+
+4. **Go to product page** をクリックします。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![GCP Marketplace の承諾確認](/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-5.webp)
+  </Frame>
+</div>
+
+<br />
+
+5. **Manage on provider** をクリックします。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![GCP Marketplace の ClickHouse Cloud ページ](/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-6.webp)
+  </Frame>
+</div>
+
+<br />
+
+この時点で必ず ClickHouse Cloud に移動し、登録またはサインインを行ってください。この手順を完了しないと、GCP Marketplace のサブスクリプションを ClickHouse Cloud に関連付けることができません。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![GCP Marketplace のサイト離脱確認モーダル](/images/cloud/manage/billing/marketplace/gcp-marketplace-committed-7.webp)
+  </Frame>
+</div>
+
+<br />
+
+6. ClickHouse Cloud にリダイレクトされたら、既存のアカウントでログインするか、新しいアカウントを登録します。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud のサインインページ](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-6.webp)
+  </Frame>
+</div>
+
+<br />
+
+ClickHouse Cloud を初めて利用する場合は、ページ下部の **Register** をクリックします。新しいユーザーの作成とメールアドレスの確認を求められます。メールアドレスの確認後は、ClickHouse Cloud のログインページを閉じ、[https://console.clickhouse.cloud](https://console.clickhouse.cloud) から新しいユーザー名でログインできます。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud の登録ページ](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-7.webp)
+  </Frame>
+</div>
+
+<br />
+
+なお、新規ユーザーの場合は、会社に関する基本情報の入力も必要です。以下のスクリーンショットを参照してください。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloudの登録情報フォーム](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp)
+  </Frame>
+</div>
+
+<br />
+
+既存の ClickHouse Cloud ユーザーの場合は、お使いの認証情報でログインしてください。
+
+7. ログインに成功すると、新しい ClickHouse Cloud 組織が作成されます。この組織は GCP の請求アカウントに紐付けられ、すべての使用量は GCP アカウント経由で請求されます。
+
+8. ログイン後、請求が GCP Marketplace に紐付けられていることを確認し、ClickHouse Cloud のクラウドリソースのセットアップを開始できます。
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud のサインインページ](/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-5.webp)
+  </Frame>
+</div>
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud の新しいサービスページ](/images/cloud/manage/billing/marketplace/aws-marketplace-payg-11.webp)
+  </Frame>
+</div>
+
+<br />
+
+9. 登録完了を知らせるメールが届きます。
+
+<br />
+
+<br />
+
+<div className="ch-image-md">
+  <Frame>
+    ![GCP Marketplace の確認メール](/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-6.webp)
+  </Frame>
+</div>
+
+<br />
+
+<br />
+
+問題が発生した場合は、お気軽に[サポートチーム](https://clickhouse.com/support/program)までお問い合わせください。

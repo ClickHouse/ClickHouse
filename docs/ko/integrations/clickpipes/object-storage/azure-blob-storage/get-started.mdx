@@ -1,0 +1,113 @@
+---
+sidebarTitle: '시작하기'
+description: '첫 Azure Blob Storage (ABS) ClickPipe를 생성하는 단계별 가이드입니다.'
+slug: /integrations/clickpipes/object-storage/azure-blob-storage/get-started
+title: '첫 Azure Blob Storage ClickPipe 만들기'
+doc_type: 'guide'
+---
+
+**사전 요구 사항**
+
+이 가이드를 따르려면 다음이 필요합니다.
+
+* Azure Blob Storage 계정
+* [Azure 연결 문자열(Connection String)](/ko/integrations/connectors/data-ingestion/azure/azure-data-factory/using-azureblobstorage#acquiring-azure-blob-storage-access-keys)
+* 컨테이너 이름
+* 실행 중인 ClickHouse Cloud 서비스
+
+<Steps>
+  <Step title="데이터 소스로 이동" id="navigate-to-data-sources">
+    서비스 홈 페이지의 왼쪽 메뉴에서 **데이터 소스(Data Sources)**를 클릭하십시오.
+    **ClickPipes** 드롭다운을 펼치고 **ClickPipe 생성**을 클릭하십시오.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![데이터 소스(Data Sources)로 이동](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp)
+      </Frame>
+    </div>
+
+    <div className="ch-image-md">
+      <Frame>
+        ![ClickPipe 생성](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="데이터 소스 선택" id="select-data-source">
+    데이터 유형으로 **Azure Blob Storage**를 선택하십시오.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Azure Blob Storage 선택](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="ClickPipe 연결 설정" id="setup-connection">
+    1. ClickPipe에 알아보기 쉬운 이름을 지정하십시오.
+    2. 인증 방법 드롭다운에서 **연결 문자열(Connection String)**을 선택하십시오.
+    3. **연결 문자열(Connection String)** 필드에 Azure 연결 문자열(Connection String)을 붙여 넣으십시오.
+    4. 컨테이너 이름을 입력하십시오.
+    5. Azure Blob Storage 파일 경로를 입력하십시오. 여러 파일을 수집하려면 와일드카드를 사용하십시오.
+
+    필요에 따라 지속적인 수집을 활성화할 수도 있습니다. 자세한 내용은 [&quot;지속적인 수집&quot;](/ko/integrations/clickpipes/object-storage/azure-blob-storage/overview#continuous-ingestion)을 참조하십시오.
+
+    마지막으로 **Incoming data**를 클릭하십시오.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![구성 세부 정보](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="데이터 포맷 선택" id="select-data-format">
+    1. 파일 유형을 선택하십시오.
+    2. 파일 압축 방식을 선택하십시오(`detect automatically`, `none`, `gzip`, `brotli`, `xz` 또는 `zstd`).
+    3. 쉼표로 구분된 포맷의 구분 기호 등 포맷별 추가 구성을 완료하십시오.
+    4. **파싱 정보**를 클릭하십시오.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![데이터 포맷 선택](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="테이블, 스키마 및 설정 구성" id="configure-table-schema">
+    이제 수신 데이터를 저장할 테이블을 새로 생성하거나 기존 테이블을 선택해야 합니다.
+
+    1. 데이터를 새 테이블에 업로드할지, 기존 테이블에 업로드할지 선택하십시오.
+    2. 사용할 데이터베이스를 선택하고, 새 테이블인 경우 테이블 이름을 지정하십시오.
+    3. 정렬 키를 하나 이상 선택하십시오.
+    4. 소스 파일과 대상 테이블(destination table) 간의 컬럼 이름, 컬럼 유형, 기본값, null 허용 여부 매핑을 정의하십시오.
+    5. 마지막으로 사용할 엔진 유형, 파티션 기준 표현식, 기본 키 등 고급 설정을 지정하십시오.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![파싱 정보](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp)
+      </Frame>
+    </div>
+
+    테이블, 스키마 및 설정 구성을 마쳤으면 **Details and settings**를 클릭하십시오.
+  </Step>
+
+  <Step title="권한 구성" id="configure-permissions">
+    ClickPipes는 데이터 쓰기 전용 데이터베이스 사용자를 생성합니다.
+    이 사용자의 역할은 직접 선택할 수 있습니다.
+    대상 테이블(destination table)에서 구체화된 뷰(Materialized View)나 딕셔너리에 액세스해야 하는 경우 &quot;Full access&quot;를 선택하십시오.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![권한 구성](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="설정 완료" id="complete-setup">
+    **ClickPipe 생성**을 클릭하여 설정을 완료하십시오.
+
+    이제 ClickPipe가 프로비저닝 상태로 표시됩니다.
+    잠시 후 상태가 **provisioning**에서 **completed**로 바뀝니다.
+  </Step>
+</Steps>

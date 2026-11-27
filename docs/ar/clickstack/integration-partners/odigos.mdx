@@ -1,0 +1,249 @@
+---
+slug: /use-cases/observability/clickstack/integration-partners/odigos
+title: 'إرسال OpenTelemetry إلى ClickStack باستخدام Odigos'
+sidebarTitle: 'Odigos'
+description: 'فعّل auto-instrumentation لأعباء عمل Kubernetes باستخدام Odigos وصدّر بيانات القياس عن بُعد إلى ClickStack عبر OTLP'
+doc_type: 'guide'
+keywords: ['Odigos', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'eBPF', 'auto-instrumentation']
+---
+
+import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **باختصار**
+
+  يوضّح هذا الدليل كيفية تصدير بيانات القياس عن بُعد من Odigos إلى ClickStack. ستتعلّم كيفية:
+
+  * نشر Odigos على Kubernetes باستخدام Helm
+  * إضافة مصادر في واجهة مستخدم Odigos
+  * إضافة وجهة OTLP HTTP تشير إلى ClickStack
+  * التحقّق من السجلات والمقاييس والتتبعات في ClickStack
+
+  يضيف Odigos أدوات القياس للتطبيقات تلقائيًا من دون تغيير الشيفرة أو إعادة التشغيل؛ ويخزّن ClickStack البيانات ويستعلم عنها في ClickHouse.
+
+  الوقت المطلوب: 10–20 دقيقة
+</Info>
+
+{/* vale off */}
+
+## ما هو Odigos؟ {#what-is-odigos}
+
+{/* vale on */}
+
+يُعد [Odigos](https://odigos.io/) مستوى تحكم لأدوات الرصد في Kubernetes والآلات الافتراضية، ويقوم بإضافة أدوات الرصد إلى التطبيقات من النواة باستخدام **eBPF**. ونظرًا لأن عملية الجمع تعمل داخل النواة، يبقى الحمل الإضافي على التطبيق منخفضًا مع الحفاظ على مستوى عالٍ من الرؤية. وتحصل على traces وmetrics وlogs وprofiles من OpenTelemetry بجودة مناسبة لبيئات production، من دون نشر agents جديدة ضمن application code أو انتظار ترقيات المكتبات عبر كل service.
+
+هذه الطبقة من eBPF هي ما يجعل بيانات القياس عن بُعد العميقة والمتسقة ممكنة على نطاق واسع. ويمكن لـ Odigos تشغيل أدوات رصد أعمق أو إيقافها تلقائيًا عند الحاجة للمساعدة في Debug المشكلات أو استكشافها وإصلاحها:
+
+* **سياق على مستوى الشيفرة** — attributes مرتبطة بالدوال وسلوك runtime
+* **حركة مرور HTTP** — الطلبات والاستجابات عبر خدماتك
+* **أنظمة المراسلة** — payloads والرسائل من Kafka وbrokers المشابهة
+* **الأخطاء بالتفصيل** — stack traces عند حدوث الإخفاقات
+* **أدوات رصد مخصصة** — وسّع نطاق التغطية حيث تتوقف auto-instrumentation من دون الحاجة إلى تغييرات في الشيفرة أو إعادة التشغيل
+
+في الخلفية، ينشئ Odigos ويدير pipeline كاملة لـ OpenTelemetry لعنقودك: collectors تتوسع مع الحمل، وتوجيه إلى backends التي تختارها، ومنطق pipeline تتحكم فيه عبر واجهة المستخدم. حدّد **sampling** لإدارة الحجم، و**إخفاء PII** لمنع تصدير البيانات الحساسة، و**قواعد OTTL** من أجل filter أو transform أو enrich لبيانات القياس عن بُعد قبل أن تغادر العنقود.
+
+{/* vale off */}
+
+## لماذا Odigos + ClickStack؟ {#why-odigos-clickstack}
+
+{/* vale on */}
+
+غالبًا ما يستغرق نشر OpenTelemetry عبر عدد كبير من الخدمات وقتًا طويلًا، ولا يوفّر سوى رؤية سطحية داخل التطبيقات. يتولى Odigos إضافة أدوات الرصد باستخدام eBPF للحصول على بيانات القياس عن بُعد أعمق، كما يدير عمليات المجمّع على Kubernetes؛ بينما يوفّر ClickStack تخزينًا مستندًا إلى ClickHouse وواجهة مستخدم ClickStack للاستعلام عن بيانات القياس عن بُعد على نطاق واسع.
+
+<Tip>
+  **أهم النقاط**
+
+  * **Odigos** يضيف أدوات الرصد تلقائيًا إلى أي عبء عمل على Kubernetes من دون الحاجة إلى إعادة التشغيل، ويدير مسارات تنفيذ الاستعلام في OpenTelemetry تلقائيًا.
+  * **ClickStack** يخزّن السجلات والمقاييس والتتبعات في ClickHouse ويعرضها في واجهة مستخدم ClickStack.
+</Tip>
+
+## المتطلبات الأساسية {#prerequisites}
+
+* أن يكون **ClickStack Open Source** مثبّتًا ويمكن الوصول إليه من **عنقود Kubernetes** لديك. راجع [Getting started with ClickStack Open Source](/ar/clickstack/getting-started/oss).
+* **نقطة نهاية OTLP HTTP** الخاصة بـ ClickStack لديك (المنفذ `4318`) وقيمة **المصادقة** التي سيمرّرها Odigos في ترويسة `Authorization`. عند استخدام **ClickStack مفتوح المصدر**، تكون هذه هي **مفتاح API للاستيعاب** من **Team Settings → API Keys** في **واجهة مستخدم ClickStack**.
+* **عنقود Kubernetes** (عُقد Linux بنواة 4.18 أو أحدث من أجل **أدوات الرصد** باستخدام eBPF)
+* **Helm** و**kubectl** و**بيانات اعتماد** العنقود للتثبيت في **مساحة الأسماء** `odigos-system`
+* **رمز Odigos Enterprise المحلي** — تواصل مع [فريق Odigos](https://odigos.io/) للحصول على إمكانية الوصول
+
+{/* vale off */}
+
+## دمج ClickStack مع Odigos {#integrate-odigos-clickstack}
+
+{/* vale on */}
+
+<Steps>
+  <Step title="نشر Odigos باستخدام Helm" id="deploy-odigos">
+    يتطلّب Odigos Enterprise رمز ترخيص للنشر المحلي. صدِّره في جلسة shell لديك:
+
+    ```bash
+    export ODIGOS_ONPREM_TOKEN="<your-enterprise-token>"
+    ```
+
+    بدلًا من ذلك، يمكنك تخزين الرمز في Kubernetes Secret باسم `odigos-pro` قبل التثبيت. راجع [توثيق Odigos Enterprise](https://enterprise.docs.odigos.io/) (يتطلّب صلاحية وصول).
+
+    أضف مستودع Helm الخاص بـ Odigos وثبّت الحزمة في `odigos-system`:
+
+    ```bash
+    helm repo add odigos https://odigos-io.github.io/odigos/
+    helm repo update
+
+    helm upgrade --install odigos odigos/odigos \
+      --namespace odigos-system \
+      --create-namespace \
+      --set onPremToken=$ODIGOS_ONPREM_TOKEN
+    ```
+
+    يمكنك تمرير تجاوزات إعدادات إضافية باستخدام خيارات `--set` أو ملف values مخصص (`-f`). لعرض القيم الافتراضية للمخطط، شغّل `helm show values odigos/odigos`.
+
+    تحقق من أن وحدات Pod الخاصة بـ Odigos قيد التشغيل:
+
+    ```bash
+    kubectl get pods -n odigos-system
+    ```
+  </Step>
+
+  <Step title="أضِف المصادر في واجهة Odigos" id="add-sources">
+    1. نفِّذ إعادة توجيه المنفذ لخدمة واجهة Odigos:
+
+    ```bash
+    kubectl port-forward svc/ui -n odigos-system 3000:3000
+    ```
+
+    2. افتح [http://localhost:3000](http://localhost:3000) في متصفحك.
+    3. انتقل إلى **المصادر** وحدد مساحات الأسماء أو أعباء العمل التي تريد إضافة أدوات الرصد إليها.
+    4. انقر على **done** في الأسفل بعد تحديد جميع أعباء العمل المطلوب إضافة أدوات الرصد إليها.
+    5. تحقّق من إضافة أدوات الرصد إلى أعباء العمل بنجاح في عمود المصادر.
+  </Step>
+
+  <Step title="أضِف ClickStack كوجهة في واجهة Odigos" id="add-destination-ui">
+    لإرسال بيانات القياس عن بُعد إلى ClickStack Open Source، أضِف وجهة **OTLP HTTP** في Odigos. يستقبل المجمّع المضمّن بيانات القياس عن بُعد باستخدام مفتاح API للاستيعاب المأخوذ من واجهة مستخدم ClickStack.
+
+    <Tip>
+      **بديل: اكتب مباشرةً إلى ClickHouse**
+
+      إذا كان ClickHouse متاحًا من داخل عنقود Kubernetes لديك، فيمكنك تخطي مجمّع OTLP بالكامل واستخدام وجهة Odigos [**ClickHouse** الأصلية](#native-clickhouse-destination) بدلًا من ذلك.
+    </Tip>
+
+    في ClickStack مفتوح المصدر، مثل image الشاملة المتكاملة، يكون مجمّع OpenTelemetry الذي يعمل كبوابة مضمنًا، وتُنشئ واجهة مستخدم ClickStack مفتاح API للاستيعاب تلقائيًا.
+
+    1. في واجهة Odigos، انقر **Add Destination** ثم اختر **OTLP HTTP**.
+    2. اضبط **OTLP HTTP Endpoint** على مجمّع ClickStack لديك (على سبيل المثال، `http://clickstack.example.com:4318`). راجع [الاستيعاب باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry#sending-data-to-collector-oss) لمعرفة تفاصيل نقطة النهاية.
+    3. انسخ مفتاح API للاستيعاب من واجهة مستخدم ClickStack ضمن **Team Settings → API Keys**.
+    4. في **Headers**، أضِف:
+       * **Key**: `Authorization`
+       * **Value**: مفتاح API للاستيعاب الخاص بك
+    5. فعِّل **Logs** و**Metrics** و**Traces**.
+    6. احفظ الوجهة.
+  </Step>
+
+  <Step title="تحقّق من بيانات القياس عن بُعد في ClickStack" id="verify-telemetry">
+    1. افتح واجهة مستخدم ClickStack:
+       * **ClickStack مفتوح المصدر**: على سبيل المثال، `http://<host>:8080` على صورة all-in-one.
+    2. تحقّق من **Logs** و**Metrics** و**Traces** للتأكد من وجود بيانات من خدماتك التي جرت إضافة أدوات الرصد إليها.
+    3. صفِّ التتبعات حسب `odigos.version` للتحقق من اكتمال التصدير من البداية إلى النهاية.
+
+    إذا كانت البيانات مفقودة، فتحقّق من سجلات المجمّع: `kubectl logs deploy/odigos-gateway -n odigos-system`
+  </Step>
+</Steps>
+
+## الإعدادات المتقدمة {#advanced-configuration}
+
+### مُطبِّع سجلّات HyperDX {#hyperdx-log-normalizer}
+
+إذا كنت تُصدِّر مباشرةً إلى ClickHouse باستخدام وجهة **ClickHouse** الأصلية في Odigos (بدلاً من OTLP HTTP إلى ClickStack)، ففعِّل **مُطبِّع سجلّات HyperDX** (`HYPERDX_LOG_NORMALIZER: true`). فهو يحلّل محتوى سجلّات JSON ويُوحِّد السمات لتحسين الاستعلام عنها في واجهة ClickStack.
+
+### وجهة ClickHouse الأصلية {#native-clickhouse-destination}
+
+ينطبق هذا الخيار على **ClickStack Open Source وClickHouse Observability المُدار ذاتيًا فقط**. أما في حالة ClickHouse Observability المُدار بالكامل، فاستخدم نقطة نهاية OTLP المُدارة الموضّحة في [دليل إمكانية المراقبة](/ar/clickstack/observability/integration-partners/odigos#add-destination-ui).
+
+عندما يمكن الوصول إلى ClickHouse مباشرةً من العنقود لديك، يمكنك استخدام وجهة **ClickHouse** الأصلية في Odigos بدلًا من OTLP HTTP. اضبط نقطة النهاية الخاصة بـ ClickHouse واسم قاعدة البيانات وخيارات المخطط في واجهة المستخدم أو باستخدام ملف manifest — راجع [وجهة ClickHouse في Odigos](https://docs.odigos.io/backends/clickhouse).
+
+* **مخطط الإنتاج**: عيّن `CLICKHOUSE_CREATE_SCHEME` إلى `false` وطبّق تعليمات DDL الخاصة بك.
+* **TLS / المصادقة**: استخدم `CLICKHOUSE_TLS_ENABLED` و`CLICKHOUSE_USERNAME` وKubernetes Secret لكلمة المرور.
+
+### إعداد الوجهات باستخدام ملفات manifest في Kubernetes {#destination-manifest}
+
+**OTLP HTTP (ClickStack)**
+
+```yaml
+apiVersion: odigos.io/v1alpha1
+kind: Destination
+metadata:
+  name: clickstack
+  namespace: odigos-system
+spec:
+  type: otlphttp
+  destinationName: otlphttp
+  signals:
+    - TRACES
+    - METRICS
+    - LOGS
+  data:
+    OTLP_HTTP_ENDPOINT: 'http://clickstack.example.com:4318'
+    # API ingestion key for ClickStack Open Source
+    OTLP_HTTP_HEADERS: 'Authorization:<YOUR_AUTHORIZATION_VALUE>'
+```
+
+**ClickHouse (direct)**
+
+```yaml
+apiVersion: odigos.io/v1alpha1
+kind: Destination
+metadata:
+  name: clickhouse
+  namespace: odigos-system
+spec:
+  type: clickhouse
+  destinationName: clickhouse
+  signals:
+    - TRACES
+    - METRICS
+    - LOGS
+  data:
+    CLICKHOUSE_ENDPOINT: 'http://clickstack.example.com:8123'
+    CLICKHOUSE_DATABASE_NAME: 'otel'
+    CLICKHOUSE_CREATE_SCHEME: 'true'
+```
+
+طبّق ملف manifest:
+
+```bash
+kubectl apply -f destination.yaml
+```
+
+{/* vale off */}
+
+### Odigos VM Agent {#odigos-vm-agent}
+
+{/* vale on */}
+
+يقوم [Odigos VM Agent](https://docs.odigos.io/vmagent/overview) بإضافة إمكانات جمع بيانات الرصد إلى عمليات Linux وخدمات systemd و/أو حاويات docker باستخدام eBPF. ويُصدِّر بيانات القياس عن بُعد إلى الوجهات نفسها التي يستخدمها Odigos القائم على العنقود، بما في ذلك ClickStack عبر OTLP HTTP.
+
+يُعد VM Agent جزءًا من Odigos Pro. راجع [نظرة عامة على VM Agent](https://docs.odigos.io/vmagent/overview) للاطلاع على الإعداد والمصادر وتهيئة الوجهة.
+
+{/* vale off */}
+
+### Odigos Central {#odigos-central}
+
+{/* vale on */}
+
+[Odigos Central](https://docs.odigos.io/central/overview) هي طبقة تحكم مركزية لإدارة instrumentation والوجهات وتهيئة مسارات المعالجة عبر عدة Kubernetes clusters من واجهة المستخدم واحدة، بدلًا من تهيئة كل cluster على حدة.
+
+يتوفر Odigos Central في Odigos Enterprise. راجع [Central overview](https://docs.odigos.io/central/overview) للتعرّف على إدارة العناقيد المتعددة وSSO وقواعد sampling الموحّدة.
+
+## الخطوات التالية {#next-steps}
+
+* **استكشف التتبعات** عبر الخدمات التي جرى تزويدها بأدوات الرصد في ClickStack
+* **أنشئ لوحات معلومات** لمقاييس Odigos المُصدَّرة
+* **اضبط مخطط ClickHouse وTTL** بما يناسب سياسات الاحتفاظ وأنماط الاستعلامات لديك
+
+## اقرأ المزيد {#read-more}
+
+* [وثائق Odigos Enterprise](https://enterprise.docs.odigos.io/) (يتطلب صلاحية الوصول)
+* [وجهة ClickHouse في Odigos](https://docs.odigos.io/backends/clickhouse)
+* [نظرة عامة على VM Agent في Odigos](https://docs.odigos.io/vmagent/overview)
+* [نظرة عامة على Odigos Central](https://docs.odigos.io/central/overview)
+* [توقّف عن التخمين في بيئة الإنتاج: تتبّع كامل التفاصيل على نطاق واسع باستخدام ClickHouse وOdigos](https://clickhouse.com/blog/odigos-full-fidelity-tracing)
+* [بدء الاستخدام مع ClickStack مفتوح المصدر](/ar/clickstack/getting-started/oss)

@@ -4,6 +4,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <Columns/ColumnArray.h>
@@ -29,21 +30,29 @@ namespace
 /** Extract element of Dynamic by type name.
   * Also the function looks through Arrays: you can get Array of Dynamic elements from Array of Dynamic.
   */
-class FunctionDynamicElement : public IFunction
+class FunctionDynamicElement final : public IFunction
 {
 public:
     static constexpr auto name = "dynamicElement";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDynamicElement>(); }
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Documentation-only — the result type is the requested variant
+    /// element (or array of), looked up dynamically from the const-string
+    /// or const-Array(String) type-name in the second argument.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(Dynamic, const String) -> Any";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const size_t number_of_arguments = arguments.size();
 
@@ -66,7 +75,7 @@ public:
                             getName(),
                             arguments[0].type->getName());
 
-        auto return_type = makeNullableOrLowCardinalityNullableSafe(getRequestedType(arguments[1].column));
+        auto return_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(getRequestedType(arguments[1].column));
 
         for (; count_arrays; --count_arrays)
             return_type = std::make_shared<DataTypeArray>(return_type);
@@ -74,7 +83,7 @@ public:
         return return_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & input_arg = arguments[0];
         const IDataType * input_type = input_arg.type.get();
@@ -109,7 +118,7 @@ public:
     }
 
 private:
-    DataTypePtr getRequestedType(const ColumnPtr & type_name_column) const
+    [[nodiscard]] DataTypePtr getRequestedType(const ColumnPtr & type_name_column) const
     {
         const auto * name_col = checkAndGetColumnConst<ColumnString>(type_name_column.get());
         if (!name_col)
@@ -123,7 +132,7 @@ private:
         return element_type;
     }
 
-    ColumnPtr wrapInArraysAndConstIfNeeded(ColumnPtr res, const Columns & array_offsets, bool input_arg_is_const, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr wrapInArraysAndConstIfNeeded(ColumnPtr res, const Columns & array_offsets, bool input_arg_is_const, size_t input_rows_count) const
     {
         for (auto it = array_offsets.rbegin(); it != array_offsets.rend(); ++it)
             res = ColumnArray::create(res, *it);
@@ -139,25 +148,25 @@ private:
 
 REGISTER_FUNCTION(DynamicElement)
 {
-    FunctionDocumentation::Description dynamicElement_description = R"(
+    FunctionDocumentation::Description description = R"(
 Extracts a column with specified type from a `Dynamic` column.
 
 This function allows you to extract values of a specific type from a Dynamic column. If a row contains a value
 of the requested type, it returns that value. If the row contains a different type or NULL, it returns NULL
 for scalar types or an empty array for array types.
     )";
-    FunctionDocumentation::Syntax dynamicElement_syntax = "dynamicElement(dynamic, type_name)";
-    FunctionDocumentation::Arguments dynamicElement_arguments =
+    FunctionDocumentation::Syntax syntax = "dynamicElement(dynamic, type_name)";
+    FunctionDocumentation::Arguments arguments =
     {
         {"dynamic", "Dynamic column to extract from.", {"Dynamic"}},
         {"type_name", "The name of the variant type to extract (e.g., 'String', 'Int64', 'Array(Int64)')."}
     };
-    FunctionDocumentation::ReturnedValue dynamicElement_returned_value =
+    FunctionDocumentation::ReturnedValue returned_value =
     {
         "Returns values of the specified type from the Dynamic column. Returns NULL for non-matching types (or empty array for array types).",
         {"Any"}
     };
-    FunctionDocumentation::Examples dynamicElement_examples =
+    FunctionDocumentation::Examples examples =
     {
     {
         "Extracting different types from Dynamic column",
@@ -176,11 +185,11 @@ SELECT d, dynamicType(d), dynamicElement(d, 'String'), dynamicElement(d, 'Int64'
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn dynamicElement_introduced_in = {24, 1};
-    FunctionDocumentation::Category dynamicElement_category = FunctionDocumentation::Category::JSON;
-    FunctionDocumentation dynamicElement_documentation = {dynamicElement_description, dynamicElement_syntax, dynamicElement_arguments, {}, dynamicElement_returned_value, dynamicElement_examples, dynamicElement_introduced_in, dynamicElement_category};
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionDynamicElement>(dynamicElement_documentation);
+    factory.registerFunction<FunctionDynamicElement>(documentation);
 }
 
 }

@@ -13,7 +13,7 @@ def _fill_nodes(nodes, shard):
         node.query(
             """
                 CREATE DATABASE test;
-    
+
                 CREATE TABLE test_table(date Date, id UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id;
             """.format(
@@ -92,6 +92,6 @@ def test_replication_when_node_ip_changed(both_https_cluster):
     assert node1.query("SELECT count(*) from test_table") == "6\n"
 
     # drop DNS cache
-    node2.query("SYSTEM DROP DNS CACHE")
+    node2.query("SYSTEM CLEAR DNS CACHE")
     # Data is fetched
     assert_eq_with_retry(node2, "SELECT count(*) from test_table", "6")

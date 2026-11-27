@@ -1,0 +1,21 @@
+---
+title: 'ClickHouse prend-il en charge les JOIN distribués ?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/distributed-join
+description: 'ClickHouse prend en charge les JOIN distribués'
+doc_type: 'reference'
+keywords: ['distributed', 'join']
+---
+
+Oui, ClickHouse prend en charge les JOIN distribués sur un cluster.
+
+Lorsque les données sont co-localisées sur le cluster (par exemple, si le JOIN est effectué sur l’identifiant utilisateur, qui est aussi une clé de sharding), ClickHouse permet d’effectuer la jointure sans déplacement de données sur le réseau.
+
+Lorsque les données ne sont pas co-localisées, ClickHouse permet d’utiliser un broadcast join, dans lequel certaines parties des données à joindre sont réparties entre les nœuds du cluster.
+
+En 2025, ClickHouse n’effectue pas de shuffle joins, ce qui signifie qu’aucun des deux côtés de la jointure n’est redistribué sur le réseau du cluster en fonction des clés de jointure.
+
+<Tip>
+  Pour plus d’informations sur les jointures dans ClickHouse de manière générale, consultez la page [&quot;clause JOIN&quot;](/fr/reference/statements/select/join#supported-types-of-join).
+</Tip>

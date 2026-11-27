@@ -8,6 +8,7 @@
 #include <base/strong_typedef.h>
 #include <base/Decimal.h>
 #include <base/defines.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <base/UUID.h>
 #include <base/IPv4andIPv6.h>
 
@@ -30,9 +31,9 @@ struct Null
 
     Value value{Value::Null};
 
-    bool isNull() const { return value == Value::Null; }
-    bool isPositiveInfinity() const { return value == Value::PositiveInfinity; }
-    bool isNegativeInfinity() const { return value == Value::NegativeInfinity; }
+    [[nodiscard]] bool isNull() const { return value == Value::Null; }
+    [[nodiscard]] bool isPositiveInfinity() const { return value == Value::PositiveInfinity; }
+    [[nodiscard]] bool isNegativeInfinity() const { return value == Value::NegativeInfinity; }
 
     auto operator<=>(const Null & other) const
     {
@@ -49,5 +50,5 @@ using Int256 = ::Int256;
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;
-using TypeIndexesSet = std::unordered_set<TypeIndex>;
+using TypeIndexesSet = UnorderedSetWithMemoryTracking<TypeIndex>;
 }

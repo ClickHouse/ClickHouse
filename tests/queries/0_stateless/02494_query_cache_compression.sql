@@ -1,7 +1,7 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 DROP TABLE IF EXISTS t;
 
 -- Create test table with lot's of rows
@@ -19,7 +19,7 @@ SELECT '-- read from cache';
 SELECT * FROM t ORDER BY c
 SETTINGS use_query_cache = true;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 -- Run query which, store *uncompressed* result in query cache
 SELECT '-- insert with disabled compression';
@@ -32,4 +32,4 @@ SELECT * FROM t ORDER BY c
 SETTINGS use_query_cache = true;
 
 DROP TABLE t;
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;

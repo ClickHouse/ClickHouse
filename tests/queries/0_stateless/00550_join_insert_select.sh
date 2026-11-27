@@ -21,6 +21,6 @@ INSERT INTO test1_00550 SELECT id, name FROM test2_00550 ANY LEFT OUTER JOIN tes
 DROP TABLE test1_00550;
 DROP TABLE test2_00550;
 DROP TABLE test3_00550;
-" --server_logs_file=/dev/null 2>&1 | grep -F "Number of columns doesn't match" | wc -l
+" --server_logs_file=/dev/null 2>&1 | grep -F "Number of columns doesn't match" | wc -l | tr -d ' '
 
 $CLICKHOUSE_CLIENT --query="SELECT 1";

@@ -64,8 +64,24 @@ fi
 
 rm -f "$CONFIG_FILE"
 
-# Test 6: Multiple --host and --port combinations should all work
-echo "Test 6: Multiple host/port format variations"
+echo "Test 6: Connection string with only user should not trigger OAuth"
+output=$($CLICKHOUSE_CLIENT_BINARY "clickhouse://default@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_TCP}/" --query "SELECT 1" 2>&1)
+if echo "$output" | grep -qi "login\|OAuth\|browser"; then
+    echo "FAILED: OAuth login triggered despite connection string credentials"
+else
+    echo "OK"
+fi
+
+echo "Test 7: Connection string with user:password@ should not trigger OAuth"
+output=$($CLICKHOUSE_CLIENT_BINARY "clickhouse://default:super-secret@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_TCP}/" --query "SELECT 1" 2>&1)
+if echo "$output" | grep -qi "login\|OAuth\|browser"; then
+    echo "FAILED: OAuth login triggered despite connection string credentials"
+else
+    echo "OK"
+fi
+
+# Test 8: Multiple --host and --port combinations should all work
+echo "Test 8: Multiple host/port format variations"
 failed=0
 for cmd in \
     "$CLICKHOUSE_CLIENT_BINARY --host=${CLICKHOUSE_HOST} --port=${CLICKHOUSE_PORT_TCP} --query 'SELECT 1'" \

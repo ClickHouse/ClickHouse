@@ -1,0 +1,369 @@
+---
+title: '실행 엔진 구성'
+sidebarTitle: '실행 엔진'
+slug: /chdb/configuration/execution-engine
+description: 'DataStore 실행 엔진 구성 - auto, chdb 또는 pandas'
+keywords: ['chdb', 'datastore', 'execution', 'engine', 'chdb', 'pandas', 'auto']
+doc_type: 'guide'
+---
+
+DataStore는 서로 다른 백엔드를 사용해 작업을 실행할 수 있습니다. 이 가이드에서는 엔진 선택을 구성하고 최적화하는 방법을 설명합니다.
+
+<div id="engines">
+  ## 사용 가능한 엔진
+</div>
+
+| Engine   | Description                           | Best For              |
+| -------- | ------------------------------------- | --------------------- |
+| `auto`   | 작업별로 가장 적합한 엔진을 자동으로 선택합니다            | 일반적인 용도(기본값)          |
+| `chdb`   | 모든 작업을 ClickHouse SQL을 통해 수행하도록 강제합니다 | 대규모 데이터셋, 집계          |
+| `pandas` | 모든 작업을 pandas를 통해 수행하도록 강제합니다         | 호환성 테스트, pandas 전용 기능 |
+
+<div id="setting">
+  ## 엔진 설정
+</div>
+
+<div id="global">
+  ### 전역 구성
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# Option 1: Using set method
+config.set_execution_engine('auto')    # Default
+config.set_execution_engine('chdb')    # Force ClickHouse
+config.set_execution_engine('pandas')  # Force pandas
+
+# Option 2: Using shortcuts
+config.use_auto()     # Auto-select
+config.use_chdb()     # Force ClickHouse
+config.use_pandas()   # Force pandas
+```
+
+<div id="checking">
+  ### 현재 사용 중인 엔진 확인
+</div>
+
+```python
+print(config.execution_engine)  # 'auto', 'chdb', or 'pandas'
+```
+
+***
+
+<div id="auto-mode">
+  ## 자동 모드
+</div>
+
+`auto` 모드(기본값)에서는 DataStore가 각 작업에 대해 최적의 엔진을 선택합니다:
+
+<div id="auto-chdb">
+  ### chDB에서 실행되는 작업
+</div>
+
+* SQL 호환 필터링 (`filter()`, `where()`)
+* 컬럼 선택 (`select()`)
+* 정렬 (`sort()`, `orderby()`)
+* 그룹화 및 집계 (`groupby().agg()`)
+* 조인 (`join()`, `merge()`)
+* 중복 제거 (`distinct()`, `drop_duplicates()`)
+* 행 수 제한 (`limit()`, `head()`, `tail()`)
+
+<div id="auto-pandas">
+  ### pandas에서 수행되는 작업
+</div>
+
+* 사용자 정의 apply 함수 (`apply(custom_func)`)
+* 사용자 정의 집계를 포함한 복잡한 피벗 테이블
+* SQL로 표현할 수 없는 작업
+* 입력이 이미 pandas DataFrame인 경우
+
+<div id="auto-example">
+  ### 예시
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+config.use_auto()  # Default
+
+ds = pd.read_csv("data.csv")
+
+# This uses chDB (SQL)
+result = (ds
+    .filter(ds['amount'] > 100)   # SQL: WHERE
+    .groupby('region')            # SQL: GROUP BY
+    .agg({'amount': 'sum'})       # SQL: SUM()
+)
+
+# This uses pandas (custom function)
+result = ds.apply(lambda row: complex_calculation(row), axis=1)
+```
+
+***
+
+<div id="chdb-mode">
+  ## chDB 모드
+</div>
+
+모든 작업이 ClickHouse SQL을 통해 수행되도록 강제합니다:
+
+```python
+config.use_chdb()
+```
+
+<div id="chdb-when">
+  ### 사용해야 하는 경우
+</div>
+
+* 대규모 데이터셋(수백만 행) 처리
+* 집계 부하가 큰 워크로드
+* SQL 최적화를 최대한 활용해야 하는 경우
+* 모든 작업 전반에서 일관된 동작이 필요할 때
+
+<div id="chdb-performance">
+  ### 성능 특성
+</div>
+
+| 작업 유형      | 성능             |
+| ---------- | -------------- |
+| GroupBy/집계 | 탁월함(최대 20배 빠름) |
+| 복잡한 필터링    | 탁월함            |
+| 정렬         | 매우 우수          |
+| 단순한 단일 필터  | 우수(약간의 오버헤드)   |
+
+<div id="chdb-limitations">
+  ### 제한 사항
+</div>
+
+* 사용자 정의 Python 함수는 지원되지 않을 수 있습니다.
+* 일부 pandas 전용 기능은 변환이 필요할 수 있습니다.
+
+***
+
+<div id="pandas-mode">
+  ## pandas 모드
+</div>
+
+모든 작업이 pandas를 거치도록 강제합니다:
+
+```python
+config.use_pandas()
+```
+
+<div id="chdb-when">
+  ### 사용해야 하는 경우
+</div>
+
+* pandas와의 호환성 테스트가 필요한 경우
+* pandas 전용 기능을 사용하는 경우
+* pandas 관련 문제를 디버깅하는 경우
+* 데이터가 이미 pandas 포맷인 경우
+
+<div id="chdb-performance">
+  ### 성능 특성
+</div>
+
+| 작업 유형     | 성능         |
+| --------- | ---------- |
+| 단순 작업     | 우수         |
+| 사용자 정의 함수 | 매우 우수      |
+| 복잡한 집계    | chDB보다 느림  |
+| 대규모 데이터셋  | 메모리 사용량이 큼 |
+
+***
+
+<div id="cross-datastore">
+  ## Cross-DataStore 엔진
+</div>
+
+서로 다른 DataStore의 컬럼을 결합하는 작업에 사용할 엔진을 구성합니다:
+
+```python
+# Set cross-DataStore engine
+config.set_cross_datastore_engine('auto')
+config.set_cross_datastore_engine('chdb')
+config.set_cross_datastore_engine('pandas')
+```
+
+<div id="auto-example">
+  ### 예시
+</div>
+
+```python
+ds1 = pd.read_csv("sales.csv")
+ds2 = pd.read_csv("inventory.csv")
+
+# This operation involves two DataStores
+result = ds1.join(ds2, on='product_id')
+# Uses cross_datastore_engine setting
+```
+
+***
+
+<div id="selection-logic">
+  ## 엔진 선택 로직
+</div>
+
+<div id="decision-tree">
+  ### 자동 모드 결정 트리
+</div>
+
+```text
+Operation requested
+    │
+    ├─ Can be expressed in SQL?
+    │      │
+    │      ├─ Yes → Use chDB
+    │      │
+    │      └─ No → Use pandas
+    │
+    └─ Cross-DataStore operation?
+           │
+           └─ Use cross_datastore_engine setting
+```
+
+<div id="function-override">
+  ### 함수 수준 재정의
+</div>
+
+일부 함수는 엔진을 명시적으로 지정할 수 있습니다:
+
+```python
+from chdb.datastore.config import function_config
+
+# Force specific functions to use specific engine
+function_config.use_chdb('length', 'substring')
+function_config.use_pandas('upper', 'lower')
+```
+
+자세한 내용은 [함수 구성](/ko/chdb/configuration/function-config)에서 확인하십시오.
+
+***
+
+<div id="performance-comparison">
+  ## 성능 비교
+</div>
+
+1,000만 행 기준 벤치마크 결과:
+
+| 작업               | pandas (ms) | chdb (ms) | 속도 향상  |
+| ---------------- | ----------- | --------- | ------ |
+| GroupBy count    | 347         | 17        | 19.93x |
+| 결합 작업            | 1,535       | 234       | 6.56x  |
+| 복잡한 파이프라인        | 2,047       | 380       | 5.39x  |
+| Filter+Sort+Head | 1,537       | 350       | 4.40x  |
+| GroupBy 집계       | 406         | 141       | 2.88x  |
+| 단일 필터            | 276         | 526       | 0.52x  |
+
+**핵심 사항:**
+
+* chDB는 집계와 복잡한 파이프라인에서 특히 뛰어난 성능을 보입니다
+* pandas는 단순한 단일 작업에서 약간 더 빠릅니다
+* 두 방식의 장점을 모두 활용하려면 `auto` 모드를 사용하세요
+
+***
+
+<div id="best-practices">
+  ## 권장 사항
+</div>
+
+<div id="start-with-auto-mode">
+  ### 1. 자동 모드로 시작하기
+</div>
+
+```python
+config.use_auto()  # Let DataStore decide
+```
+
+<div id="profile-before-forcing">
+  ### 2. 강제 적용 전 프로파일링
+</div>
+
+```python
+config.enable_profiling()
+# Run your workload
+# Check profiler report to see where time is spent
+```
+
+<div id="force-engine-for-specific-workloads">
+  ### 3. 특정 워크로드에 엔진을 강제로 지정
+</div>
+
+```python
+# For heavy aggregation workloads
+config.use_chdb()
+
+# For pandas compatibility testing
+config.use_pandas()
+```
+
+<div id="use-explain-to-understand-execution">
+  ### 4. `explain()`을 사용해 실행 과정 이해하기
+</div>
+
+```python
+ds = pd.read_csv("data.csv")
+query = ds.filter(ds['age'] > 25).groupby('city').agg({'salary': 'sum'})
+
+# See what SQL will be generated
+query.explain()
+```
+
+***
+
+<div id="troubleshooting">
+  ## 문제 해결
+</div>
+
+<div id="issue-operation-slower">
+  ### 문제: 작업 속도가 예상보다 느림
+</div>
+
+```python
+# Check current engine
+print(config.execution_engine)
+
+# Enable debug to see what's happening
+config.enable_debug()
+
+# Try forcing specific engine
+config.use_chdb()  # or config.use_pandas()
+```
+
+<div id="issue-unsupported-operation">
+  ### 문제: chdb 모드에서 지원되지 않는 작업
+</div>
+
+```python
+# Some pandas operations aren't supported in SQL
+# Solution: use auto mode
+config.use_auto()
+
+# Or explicitly convert to pandas first
+df = ds.to_df()
+result = df.some_pandas_specific_operation()
+```
+
+<div id="issue-memory-issues">
+  ### 문제: 대용량 데이터 관련 메모리 문제
+</div>
+
+```python
+# Use chdb engine to avoid loading all data into memory
+config.use_chdb()
+
+# Filter early to reduce data size
+result = ds.filter(ds['date'] >= '2024-01-01').to_df()
+
+# For maximum throughput on large datasets, use performance mode
+# which enables parallel Parquet reading and single-SQL aggregation
+config.use_performance_mode()
+```
+
+<Tip>
+  **성능 모드**
+
+  대규모 집계 워크로드를 실행 중이고 정확한 pandas 출력 호환성(행 순서, MultiIndex, Dtype 보정)이 필요하지 않다면 [성능 모드](/ko/chdb/configuration/performance-mode) 사용을 고려해 보십시오. 이 모드는 엔진을 `chdb`로 자동 설정하고 pandas 호환성을 위한 모든 추가 오버헤드를 제거합니다.
+</Tip>

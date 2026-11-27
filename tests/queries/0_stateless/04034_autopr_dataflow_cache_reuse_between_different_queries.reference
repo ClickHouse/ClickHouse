@@ -1,0 +1,4 @@
+query	stats_collected	pr_used
+04034_autopr_dataflow_cache_reuse_between_different_queries_query_0	1	0
+04034_autopr_dataflow_cache_reuse_between_different_queries_query_1	0	1
+04034_autopr_dataflow_cache_reuse_between_different_queries_query_2	0	1

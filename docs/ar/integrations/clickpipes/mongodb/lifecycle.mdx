@@ -1,0 +1,85 @@
+---
+sidebarTitle: 'دورة حياة ClickPipe في MongoDB'
+description: 'حالات ClickPipe المختلفة ومعانيها'
+slug: /integrations/clickpipes/mongodb/lifecycle
+title: 'دورة حياة ClickPipe في MongoDB'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'إدخال البيانات', 'مزامنة في الوقت الفعلي']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+هذا مستند يشرح المراحل المختلفة لـ ClickPipe في MongoDB، والحالات المختلفة التي قد يمر بها، وما تعنيه.
+
+<div id="provisioning">
+  ## Provisioning
+</div>
+
+عند النقر على زر Create ClickPipe، يتم إنشاء ClickPipe بحالة `Provisioning`. في هذه المرحلة، نُنشئ البنية التحتية الأساسية اللازمة لتشغيل ClickPipes للخدمة، إلى جانب تسجيل بعض metadata الأولية الخاصة بـ pipe. ونظرًا لأن موارد compute الخاصة بـ ClickPipes داخل الخدمة تكون مشتركة، فسيتم إنشاء ClickPipe الثاني لديك أسرع بكثير من الأول -- لأن البنية التحتية تكون جاهزة بالفعل.
+
+<div id="setup">
+  ## Setup
+</div>
+
+بعد تهيئة pipe، ينتقل إلى الحالة `Setup`. وفي هذه الحالة ننشئ جداول ClickHouse الخاصة بالوجهة.
+
+<div id="snapshot">
+  ## Snapshot
+</div>
+
+بمجرد اكتمال الإعداد، ندخل في حالة `Snapshot` (ما لم يكن `pipe` مخصّصًا لـ CDC فقط، ففي هذه الحالة ينتقل إلى `Running`). تُستخدم `Snapshot` و`Initial Snapshot` و`Initial Load` (وهو الأكثر شيوعًا) كمصطلحات مترادفة. في هذه الحالة، نأخذ snapshot من مجموعات MongoDB المصدر ونحمّلها إلى ClickHouse. يجب أن يراعي إعداد الاحتفاظ الخاص بـ `oplog` الوقت اللازم للتحميل الأولي. سيدخل `pipe` أيضًا في حالة `Snapshot` عند تشغيل `resync` أو عند إضافة جداول جديدة إلى `pipe` موجود.
+
+<div id="running">
+  ## قيد التشغيل
+</div>
+
+بمجرد اكتمال التحميل الأولي، يدخل خط الأنابيب في حالة `Running` (ما لم يكن خط أنابيب مخصّصًا للّقطة فقط، وفي هذه الحالة سينتقل إلى `Completed`). وهنا يبدأ خط الأنابيب `CDC (التقاط تغييرات البيانات)`. في هذه الحالة، نبدأ ببث التغييرات من عنقود MongoDB المصدر إلى ClickHouse. ولمزيد من المعلومات حول التحكم في CDC، راجع [المستند الخاص بالتحكم في CDC](/ar/integrations/clickpipes/mongodb/controlling-sync).
+
+<div id="paused">
+  ## متوقفة مؤقتًا
+</div>
+
+بمجرد أن يصبح المسار في الحالة `Running`، يمكنك إيقافه مؤقتًا. سيؤدي ذلك إلى إيقاف عملية CDC، وسينتقل المسار إلى الحالة `Paused`. في هذه الحالة، لن تُسحَب أي بيانات جديدة من MongoDB المصدر، لكن البيانات الموجودة بالفعل في ClickHouse ستبقى كما هي. يمكنك استئناف المسار من هذه الحالة.
+
+<div id="pausing">
+  ## Pausing
+</div>
+
+<Note>
+  ستتوفر هذه الحالة قريبًا. إذا كنت تستخدم [واجهة برمجة تطبيقات OpenAPI](/ar/products/cloud/features/admin-features/api/openapi) الخاصة بنا، فمن الأفضل إضافة دعم لها الآن لضمان استمرار عمل تكاملك عند طرحها.
+</Note>
+
+عند النقر على زر Pause، يدخل المسار في حالة `Pausing`. وهذه حالة انتقالية يجري خلالها إيقاف عملية CDC. وبمجرد إيقاف عملية CDC بالكامل، ينتقل المسار إلى حالة `Paused`.
+
+<div id="modifying">
+  ## التعديل
+</div>
+
+<Note>
+  ستتوفر هذه الحالة قريبًا. إذا كنت تستخدم [OpenAPI](/ar/products/cloud/features/admin-features/api/openapi) الخاص بنا، ففكّر في إضافة دعم لها من الآن لضمان استمرار عمل التكامل لديك عند إصدارها.
+</Note>
+
+يشير هذا حاليًا إلى أن الـpipe قيد إزالة الجداول.
+
+<div id="resync">
+  ## إعادة المزامنة
+</div>
+
+<Note>
+  ستتوفر هذه الحالة قريبًا. إذا كنت تستخدم [OpenAPI](/ar/products/cloud/features/admin-features/api/openapi)، ففكّر في إضافة دعم لها الآن لضمان استمرار عمل التكامل لديك عند إصدارها.
+</Note>
+
+تشير هذه الحالة إلى أن المسار في مرحلة إعادة المزامنة، حيث يُجري تبديلًا ذريًا بين جداول &#95;resync والجداول الأصلية. ويمكنك العثور على مزيد من المعلومات حول إعادة المزامنة في [وثائق إعادة المزامنة](/ar/integrations/clickpipes/mongodb/resync).
+
+<div id="completed">
+  ## مكتمل
+</div>
+
+تنطبق هذه الحالة على الأنابيب المخصّصة للقطات فقط، وتشير إلى اكتمال اللقطة وعدم وجود أي عمل إضافي.
+
+<div id="failed">
+  ## Failed
+</div>
+
+إذا وقع خطأ يتعذّر التعافي منه في خط الأنابيب، فسينتقل إلى الحالة `Failed`. يمكنك التواصل مع الدعم أو [إعادة مزامنة](/ar/integrations/clickpipes/mongodb/resync) خط الأنابيب للتعافي من هذه الحالة.

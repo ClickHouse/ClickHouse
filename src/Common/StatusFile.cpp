@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/LocalDateTime.h>
+#include <Common/ErrnoException.h>
 #include <base/errnoToString.h>
 #include <base/defines.h>
 
@@ -14,6 +15,7 @@
 #include <IO/LimitReadBuffer.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;

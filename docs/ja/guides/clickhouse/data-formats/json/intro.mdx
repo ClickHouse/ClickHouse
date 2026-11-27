@@ -1,0 +1,31 @@
+---
+sidebarTitle: '概要'
+title: 'JSON の扱い'
+slug: /integrations/data-formats/json/overview
+description: 'ClickHouse での JSON の扱い'
+keywords: ['json', 'clickhouse']
+score: 10
+doc_type: 'guide'
+---
+
+<Frame>
+  <iframe
+    src="//www.youtube.com/embed/gCg5ISOujtc"
+    frameborder="0"
+    allow="autoplay;
+fullscreen;
+picture-in-picture"
+    allowfullscreen
+  />
+</Frame>
+
+<br />
+
+ClickHouse では JSON を扱うための方法がいくつか用意されており、それぞれに長所・短所と適した用途があります。このガイドでは、JSON の読み込み方法と、スキーマを最適に設計する方法を説明します。このガイドは、以下のセクションで構成されています。
+
+* [JSON の読み込み](/ja/guides/clickhouse/data-formats/json/loading) - シンプルなスキーマで、ClickHouse に構造化 JSON と半構造化 JSON を読み込み、クエリする方法。
+* [JSON スキーマ推論](/ja/guides/clickhouse/data-formats/json/inference) - JSON スキーマ推論を使って JSON をクエリし、テーブルスキーマを作成する方法。
+* [JSONスキーマの設計](/ja/guides/clickhouse/data-formats/json/schema) - JSON スキーマを設計し、最適化するための手順。
+* [JSON のエクスポート](/ja/guides/clickhouse/data-formats/json/exporting) - JSON をエクスポートする方法。
+* [他の JSON フォーマットの扱い方](/ja/guides/clickhouse/data-formats/json/formats) - 改行区切り (NDJSON) 以外の JSON フォーマットを扱う際のヒント。
+* [JSON をモデリングするその他の方法](/ja/guides/clickhouse/data-formats/json/other) - JSON をモデリングする従来の方法です。**推奨されません。**

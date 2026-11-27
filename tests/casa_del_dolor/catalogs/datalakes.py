@@ -4,26 +4,32 @@ import random
 import shutil
 import socket
 import subprocess
-import sys
 import time
 import threading
 
 from pathlib import Path
-from integration.helpers.client import Client
+from tests.integration.helpers.client import Client, QueryRuntimeException
 from pyiceberg.catalog import load_catalog
+from .streamingtest import (
+    FileLogHandler,
+    KafkaHandler,
+    NATSHandler,
+    ObjectQueueHandler,
+    RabbitMQHandler,
+)
+from .filetables import FileHandler
 from .laketables import (
     TableStorage,
     LakeFormat,
     LakeCatalogs,
     SparkTable,
+    quote_ch_table_path,
 )
 from .tablegenerator import LakeTableGenerator, sample_from_dict, true_false_lambda
 from .datagenerator import LakeDataGenerator
 from .tablecheck import SparkAndClickHouseCheck
 
-sys.path.append("..")
 from utils.backgroundworker import BackgroundWorker
-
 
 """
 ┌─────────────────┬────────────────┬──────────────────────────────────────┐
@@ -53,6 +59,18 @@ from utils.backgroundworker import BackgroundWorker
 
 def get_local_base_path(catalog_name: str) -> str:
     return f"/var/lib/clickhouse/user_files/lakehouses/{catalog_name}"
+
+
+def get_warehouse_uri(cluster, catalog_name: str, storage: TableStorage) -> str:
+    """The `spark.sql.warehouse.dir` a session for this catalog and storage is given."""
+    if storage == TableStorage.S3:
+        return f"s3a://{cluster.minio_bucket}/{catalog_name}"
+    if storage == TableStorage.Azure:
+        return (
+            f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}"
+            f".blob.core.windows.net/{catalog_name}"
+        )
+    return f"file://{get_local_base_path(catalog_name)}"
 
 
 spark_properties = {
@@ -130,8 +148,8 @@ spark_properties = {
 
 
 def wait_for_port(host, port, timeout=90):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout:
         try:
             with socket.create_connection((host, port), 1):
                 return True
@@ -155,10 +173,18 @@ class DolorCatalog:
 
 
 class SparkHandler:
+    # Engines whose tables a broker, an object storage or a file handler feeds, keyed in `streaming_handlers`
+    STREAMING_ENGINES = ("kafka", "nats", "rabbitmq", "s3queue", "azurequeue", "filelog")
+
     def __init__(self, cluster, with_unity: bool, env: dict[str, str]):
         self.logger = logging.getLogger(__name__)
         self.catalogs_lock = threading.Lock()
-        self.spark_lock = threading.Lock()
+        # Guards the whole lifetime of a Spark session (create -> use -> stop), not
+        # just creation: `getOrCreate` returns the JVM's active session if one
+        # exists (ignoring new context-level configs), so two concurrent operations
+        # would share a context and `stop()` it under each other. Re-entrant so
+        # holders can call get_spark, which acquires it too
+        self.spark_lock = threading.RLock()
         self.uc_server = None
         self.catalogs = {}
         self.uc_server_dir = None
@@ -171,8 +197,15 @@ class SparkHandler:
         self.spark_query_logger = self.spark_log_dir / "query.log"
         self.derby_logger = self.spark_log_dir / "derby.log"
         self.metastore_db = self.spark_log_dir / "metastore_db"
+        # Disk-backed scratch space for Spark instead of the default RAM-backed
+        # /tmp tmpfs (see `spark.local.dir` in get_spark). Remove leftovers from a
+        # previous run first: this process has no Spark sessions yet
+        self.spark_local_dir = self.spark_log_dir / "local"
+        shutil.rmtree(self.spark_local_dir, ignore_errors=True)
+        self.spark_local_dir.mkdir(parents=True, exist_ok=True)
         self.data_generator = LakeDataGenerator(self.spark_query_logger)
         self.table_check = SparkAndClickHouseCheck()
+        self.file_handler = FileHandler(self)
         self.env = env
         spark_log = f"""
 # ----- log4j2.properties -----
@@ -221,6 +254,18 @@ logger.jetty.level = warn
 
         self.worker = BackgroundWorker(my_task, interval=1)
         self.worker.start()
+        # Kafka, NATS, RabbitMQ, S3Queue, AzureQueue and FileLog tables by engine name
+        self.streaming_handlers = {"filelog": FileLogHandler(cluster, self)}
+        if cluster.with_minio:
+            self.streaming_handlers["s3queue"] = ObjectQueueHandler(cluster, self, False)
+        if cluster.with_azurite:
+            self.streaming_handlers["azurequeue"] = ObjectQueueHandler(cluster, self, True)
+        if cluster.with_kafka:
+            self.streaming_handlers["kafka"] = KafkaHandler(cluster, self)
+        if cluster.with_nats:
+            self.streaming_handlers["nats"] = NATSHandler(cluster, self)
+        if cluster.with_rabbitmq:
+            self.streaming_handlers["rabbitmq"] = RabbitMQHandler(cluster, self)
 
     def start_uc_server(self):
         with self.catalogs_lock:
@@ -255,17 +300,6 @@ logger.jetty.level = warn
                         )
                 self.logger.info(f"Starting UC server using pid = {self.uc_server.pid}")
                 if not wait_for_port("localhost", uc_port, timeout=120):
-                    # Print a few lines of output to help debug
-                    try:
-                        for _ in range(50):
-                            line = self.uc_server.stdout.readline()
-                            if not line:
-                                break
-                            self.logger.error(
-                                f"UC server did not start: Here is a line {line}"
-                            )
-                    except Exception:
-                        pass
                     raise TimeoutError(
                         f"UC server did not start on localhost:{uc_port} within timeout"
                     )
@@ -280,16 +314,36 @@ logger.jetty.level = warn
             )
         cmd: list[str] = [str(self.uc_server_dir / "bin" / "uc")]
         cmd.extend(args)
-        proc = subprocess.Popen(
-            cmd, cwd=str(self.uc_server_run_dir), env=os.environ.copy(), text=True
+        result = subprocess.run(
+            cmd,
+            cwd=str(self.uc_server_run_dir),
+            env=os.environ.copy(),
+            text=True,
+            capture_output=True,
         )
-        if proc.returncode != 0:
+        if result.returncode != 0:
             self.logger.error(
-                f"UC CLI failed (exit {proc.returncode}).\n"
+                f"UC CLI failed (exit {result.returncode}).\n"
                 f"Command: {' '.join(cmd)}\n"
-                f"stdout:\n{proc.stdout}\n"
-                f"stderr:\n{proc.stderr}"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
             )
+
+    # `session.stop()` does not remove a context's `spark-<uuid>` scratch directory
+    # (that only happens at JVM shutdown, and the PySpark JVM lives as long as this
+    # process), so a long run leaks one jar-set copy per created session. Sessions
+    # live for a single operation, so anything not modified for an hour belongs to
+    # a stopped context and can be removed.
+    STALE_SPARK_DIR_SECONDS = 1800
+
+    def _cleanup_stale_spark_dirs(self):
+        now = time.time()
+        for entry in self.spark_local_dir.glob("spark-*"):
+            try:
+                if now - entry.stat().st_mtime > self.STALE_SPARK_DIR_SECONDS:
+                    shutil.rmtree(entry, ignore_errors=True)
+            except OSError:
+                pass
 
     def get_spark(
         self,
@@ -310,13 +364,15 @@ logger.jetty.level = warn
         catalog_extension = ""
         catalog_format = ""
         all_jars = [
-            "io.delta:delta-spark_2.13:4.0.0",
+            "io.delta:delta-spark_2.13:4.0.1",
             "io.unitycatalog:unitycatalog-spark_2.13:0.3.0",
             "org.apache.iceberg:iceberg-aws-bundle:1.10.0",
             "org.apache.iceberg:iceberg-azure-bundle:1.10.0",
             "org.apache.iceberg:iceberg-spark-extensions-4.0_2.13:1.10.0",
             "org.apache.iceberg:iceberg-spark-runtime-4.0_2.13:1.10.0",
+            "org.apache.spark:spark-avro_2.13:4.0.2",
             "org.apache.spark:spark-hadoop-cloud_2.13:4.0.1",
+            "org.apache.paimon:paimon-spark-4.0_2.13:1.4.1",
             # Derby jars
             "org.apache.derby:derby:10.14.2.0",
             "org.apache.derby:derbytools:10.14.2.0",
@@ -336,11 +392,16 @@ logger.jetty.level = warn
                 if catalog == LakeCatalogs.Unity
                 else "org.apache.spark.sql.delta.catalog.DeltaCatalog"
             )
+        elif lake == LakeFormat.Paimon:
+            catalog_extension = (
+                "org.apache.paimon.spark.extensions.PaimonSparkSessionExtensions"
+            )
+            catalog_format = "org.apache.paimon.spark.SparkCatalog"
         else:
             raise Exception("Unknown lake format")
 
         os.environ["PYSPARK_SUBMIT_ARGS"] = (
-            f"--packages {",".join(all_jars)} pyspark-shell"
+            f"--packages {','.join(all_jars)} pyspark-shell"
         )
         for k, val in env.items():
             os.environ[k] = val
@@ -353,9 +414,15 @@ logger.jetty.level = warn
         with self.spark_lock:
             from pyspark.sql import SparkSession
 
+            self._cleanup_stale_spark_dirs()
             builder = SparkSession.builder
             builder.config("spark.sql.extensions", catalog_extension)
             builder.config(f"spark.sql.catalog.{catalog_name}", catalog_format)
+            # Each SparkContext start copies the whole resolved `--packages` jar set
+            # into a fresh `spark-<uuid>` scratch directory, removed only at JVM
+            # shutdown. Keep those off the RAM-backed /tmp tmpfs, which a long run
+            # fills up ("Disk quota exceeded" at context startup)
+            builder.config("spark.local.dir", str(self.spark_local_dir))
             builder.config(
                 "spark.driver.extraJavaOptions",
                 f"-Dlog4j.configurationFile=file:{sparklogfile} -Dderby.stream.error.file={derbylogfile}",
@@ -397,7 +464,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:9000",
+                        f"http://{cluster.minio_ip}:{cluster.minio_port}",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -416,7 +483,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.glue.endpoint",
-                        "http://localhost:3000",
+                        f"http://localhost:{cluster.glue_catalog_port}",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.glue.region", "us-east-1"
@@ -426,6 +493,23 @@ logger.jetty.level = warn
                         f"spark.sql.catalog.{catalog_name}.warehouse",
                         "s3://warehouse-glue/data",
                     )
+                elif storage == TableStorage.Azure:
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.io-impl",
+                        "org.apache.iceberg.azure.AzureFileIO",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.adls.account-name",
+                        cluster.azurite_account,
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.adls.account-key",
+                        cluster.azurite_key,
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.warehouse",
+                        f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}.blob.core.windows.net/warehouse-glue",
+                    )
             elif catalog == LakeCatalogs.Hive:
                 builder.config(
                     "spark.sql.catalog.hive.catalog-impl",
@@ -433,7 +517,8 @@ logger.jetty.level = warn
                 )
 
                 builder.config(
-                    f"spark.sql.catalog.{catalog_name}.uri", "thrift://0.0.0.0:9083"
+                    f"spark.sql.catalog.{catalog_name}.uri",
+                    f"thrift://{cluster.get_instance_ip('hive')}:{cluster.hms_catalog_port}",
                 )
                 if storage == TableStorage.S3:
                     builder.config(
@@ -442,7 +527,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:9000",
+                        f"http://{cluster.minio_ip}:{cluster.minio_port}",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -465,6 +550,23 @@ logger.jetty.level = warn
                         f"spark.sql.catalog.{catalog_name}.warehouse",
                         "s3a://warehouse-hms/data",
                     )
+                elif storage == TableStorage.Azure:
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.io-impl",
+                        "org.apache.iceberg.azure.AzureFileIO",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.adls.account-name",
+                        cluster.azurite_account,
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.adls.account-key",
+                        cluster.azurite_key,
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.warehouse",
+                        f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}.blob.core.windows.net/warehouse-hms",
+                    )
             elif catalog == LakeCatalogs.REST or (
                 catalog == LakeCatalogs.Unity and lake == LakeFormat.Iceberg
             ):
@@ -474,7 +576,7 @@ logger.jetty.level = warn
                 )
                 builder.config(
                     f"spark.sql.catalog.{catalog_name}.uri",
-                    f"http://localhost:{"8085/api/2.1/unity-catalog/iceberg" if catalog == LakeCatalogs.Unity else "8182"}",
+                    f"http://localhost:{'8085/api/2.1/unity-catalog/iceberg' if catalog == LakeCatalogs.Unity else cluster.iceberg_rest_catalog_port}",
                 )
                 if storage == TableStorage.S3:
                     builder.config(
@@ -483,7 +585,7 @@ logger.jetty.level = warn
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                        f"http://{cluster.get_instance_ip('minio')}:9000",
+                        f"http://{cluster.minio_ip}:{cluster.minio_port}",
                     )
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
@@ -504,6 +606,23 @@ logger.jetty.level = warn
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.warehouse",
                         "s3://warehouse-rest/data",
+                    )
+                elif storage == TableStorage.Azure:
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.io-impl",
+                        "org.apache.iceberg.azure.AzureFileIO",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.adls.account-name",
+                        cluster.azurite_account,
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.adls.account-key",
+                        cluster.azurite_key,
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.warehouse",
+                        f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}.blob.core.windows.net/warehouse-rest",
                     )
             elif catalog == LakeCatalogs.Unity and lake == LakeFormat.DeltaLake:
                 builder.config(
@@ -528,6 +647,8 @@ logger.jetty.level = warn
                 builder.config("datanucleus.fixedDatastore", "false")
                 builder.config("spark.sql.catalogImplementation", "hive")
                 builder.enableHiveSupport()
+            elif lake == LakeFormat.Paimon:
+                pass
 
             # ============================================================
             # STORAGE CONFIGURATIONS
@@ -573,20 +694,27 @@ logger.jetty.level = warn
                         "spark.hadoop.fs.s3a.aws.credentials.provider",
                         "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
                     )
+                    # iceberg-aws-bundle 1.10 ships an unrelocated AWS SDK >= 2.30 that
+                    # shadows hadoop-aws' older bundle, so S3A's bulk DeleteObjects now
+                    # sends CRC32 checksums instead of Content-MD5. The integration-test
+                    # MinIO (RELEASE.2024-09-13) rejects that with "Missing required
+                    # header ... Content-Md5" (e.g. the "Remove S3 Dir Markers" cleanup
+                    # after df.write). Single-object deletes need no payload checksum,
+                    # so fall back to them.
+                    builder.config(
+                        "spark.hadoop.fs.s3a.multiobjectdelete.enable", "false"
+                    )
 
                 if catalog == LakeCatalogs.NoCatalog:
+                    warehouse = get_warehouse_uri(cluster, catalog_name, storage)
+                    builder.config("spark.sql.warehouse.dir", warehouse)
                     builder.config(
-                        "spark.sql.warehouse.dir",
-                        f"s3a://{cluster.minio_bucket}/{catalog_name}",
-                    )
-                    builder.config(
-                        f"spark.sql.catalog.{catalog_name}.warehouse",
-                        f"s3a://{cluster.minio_bucket}/{catalog_name}",
+                        f"spark.sql.catalog.{catalog_name}.warehouse", warehouse
                     )
             elif storage == TableStorage.Azure:
                 # For Azurite local emulation
                 builder.config(
-                    f"spark.hadoop.fs.azure.storage.emulator.account.name",
+                    "spark.hadoop.fs.azure.storage.emulator.account.name",
                     cluster.azurite_account,
                 )
                 builder.config(
@@ -601,13 +729,10 @@ logger.jetty.level = warn
                 builder.config("spark.hadoop.fs.azure.always.use.https", "false")
                 builder.config("spark.hadoop.fs.azure.ssl.enabled", "false")
 
+                warehouse = get_warehouse_uri(cluster, catalog_name, storage)
+                builder.config("spark.sql.warehouse.dir", warehouse)
                 builder.config(
-                    "spark.sql.warehouse.dir",
-                    f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}.blob.core.windows.net/{catalog_name}",
-                )
-                builder.config(
-                    f"spark.sql.catalog.{catalog_name}.warehouse",
-                    f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}.blob.core.windows.net/{catalog_name}",
+                    f"spark.sql.catalog.{catalog_name}.warehouse", warehouse
                 )
             elif storage == TableStorage.Local:
                 os.makedirs(get_local_base_path(catalog_name), exist_ok=True)
@@ -615,13 +740,10 @@ logger.jetty.level = warn
                 builder.config(
                     "spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem"
                 )
+                warehouse = get_warehouse_uri(cluster, catalog_name, storage)
+                builder.config("spark.sql.warehouse.dir", warehouse)
                 builder.config(
-                    "spark.sql.warehouse.dir",
-                    f"file://{get_local_base_path(catalog_name)}",
-                )
-                builder.config(
-                    f"spark.sql.catalog.{catalog_name}.warehouse",
-                    f"file://{get_local_base_path(catalog_name)}",
+                    f"spark.sql.catalog.{catalog_name}.warehouse", warehouse
                 )
             else:
                 raise Exception("Unknown storage")
@@ -647,6 +769,7 @@ logger.jetty.level = warn
             builder.config(
                 "spark.databricks.delta.retentionDurationCheck.enabled", "false"
             )
+            builder.config("spark.hadoop.zlib.compress.level", "DEFAULT_COMPRESSION")
             # Set timezone to match ClickHouse
             if "TZ" in env:
                 builder.config("spark.sql.session.timeZone", env["TZ"])
@@ -685,7 +808,9 @@ logger.jetty.level = warn
         # Ignore spark_query_logger at the moment because this is multithreaded
         # with open(self.spark_query_logger, "a") as f:
         #    f.write(query + "\n")
-        session.sql(query)
+        # session.sql takes a single statement; the Iceberg/Delta SQL-extension grammars are
+        # stricter than Spark's base parser and reject a trailing ';' with "expecting <EOF>".
+        session.sql(query.strip().rstrip(";"))
 
     def create_database(self, session, catalog_name: str):
         next_sql = f"CREATE DATABASE IF NOT EXISTS {catalog_name}.test;"
@@ -696,14 +821,14 @@ logger.jetty.level = warn
         catalog = data["catalog"]
         catalog_name = data["database_name"]
         next_storage = TableStorage.storage_from_str(data["storage"])
-        next_lake = LakeFormat.lakeformat_from_str(data["lake"])
+        next_lake = LakeFormat.lakeformat_from_str(data["engine"])
         next_catalog = LakeCatalogs.catalog_from_str(catalog)
         next_catalog_impl = None
 
         # Load catalog if needed
         if next_lake == LakeFormat.Iceberg and next_storage == TableStorage.S3:
             params = {
-                "s3.endpoint": f"http://{cluster.get_instance_ip('minio')}:9000",
+                "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
                 "s3.access-key-id": cluster.minio_access_key,
                 "s3.secret-access-key": cluster.minio_secret_key,
                 "s3.signing-region": "us-east-1",
@@ -714,14 +839,14 @@ logger.jetty.level = warn
                 params.update(
                     {
                         "type": "rest",
-                        "uri": "http://localhost:8182",
+                        "uri": f"http://localhost:{cluster.iceberg_rest_catalog_port}",
                     }
                 )
             elif next_catalog == LakeCatalogs.Glue:
                 params.update(
                     {
                         "type": "glue",
-                        "glue.endpoint": "http://localhost:3000",
+                        "glue.endpoint": f"http://localhost:{cluster.glue_catalog_port}",
                         "glue.region": "us-east-1",
                         "glue.access-key-id": cluster.minio_access_key,
                         "glue.secret-access-key": cluster.minio_secret_key,
@@ -731,8 +856,38 @@ logger.jetty.level = warn
                 params.update(
                     {
                         "type": "hive",
-                        "uri": "thrift://0.0.0.0:9083",
+                        "uri": f"thrift://{cluster.get_instance_ip('hive')}:{cluster.hms_catalog_port}",
                         "client.region": "us-east-1",
+                    }
+                )
+            else:
+                raise Exception("I have not implemented this case yet")
+            next_catalog_impl = load_catalog(catalog_name, **params)
+        elif next_lake == LakeFormat.Iceberg and next_storage == TableStorage.Azure:
+            params = {
+                "adls.account-name": cluster.azurite_account,
+                "adls.account-key": cluster.azurite_key,
+            }
+            if next_catalog == LakeCatalogs.REST:
+                params.update(
+                    {
+                        "type": "rest",
+                        "uri": f"http://localhost:{cluster.iceberg_rest_catalog_port}",
+                    }
+                )
+            elif next_catalog == LakeCatalogs.Glue:
+                params.update(
+                    {
+                        "type": "glue",
+                        "glue.endpoint": f"http://localhost:{cluster.glue_catalog_port}",
+                        "glue.region": "us-east-1",
+                    }
+                )
+            elif next_catalog == LakeCatalogs.Hive:
+                params.update(
+                    {
+                        "type": "hive",
+                        "uri": f"thrift://{cluster.get_instance_ip('hive')}:{cluster.hms_catalog_port}",
                     }
                 )
             else:
@@ -742,6 +897,8 @@ logger.jetty.level = warn
             self.start_uc_server()
             self.logger.info(f"Creating unity catalog {catalog_name}")
             self.run_unity_cmd(["catalog", "create", "--name", catalog_name])
+        elif next_lake == LakeFormat.Paimon:
+            pass
         else:
             raise Exception("I have not implemented this case yet")
 
@@ -751,7 +908,10 @@ logger.jetty.level = warn
                 next_catalog,
                 next_catalog_impl,
             )
-        if next_lake == LakeFormat.Iceberg and next_storage == TableStorage.S3:
+        if next_lake == LakeFormat.Iceberg and next_storage in (
+            TableStorage.S3,
+            TableStorage.Azure,
+        ):
             try:
                 self.logger.info(f"Creating Iceberg catalog {catalog_name}")
                 next_catalog_impl.create_namespace("test")
@@ -766,23 +926,40 @@ logger.jetty.level = warn
             except Exception:
                 pass  # already exists
         else:
-            next_session = self.get_next_session(
-                cluster, catalog_name, next_storage, next_lake, next_catalog
-            )
-            try:
-                self.create_database(next_session, catalog_name)
-            except Exception as e:
-                saved_exception = e
-            next_session.stop()
+            with self.spark_lock:
+                next_session = None
+                try:
+                    next_session = self.get_next_session(
+                        cluster, catalog_name, next_storage, next_lake, next_catalog
+                    )
+                    self.create_database(next_session, catalog_name)
+                except Exception as e:
+                    saved_exception = e
+                finally:
+                    if next_session is not None:
+                        next_session.stop()
             if saved_exception is not None:
+                with self.catalogs_lock:
+                    self.catalogs.pop(catalog_name, None)
                 raise saved_exception
         return True
 
     def create_lake_table(self, cluster, data) -> bool:
         saved_exception = None
+        if data["engine"] == "file":
+            return self.file_handler.create_table(cluster, data)
+        if data["engine"] in self.STREAMING_ENGINES:
+            return self.streaming_handlers[data["engine"]].create_table(
+                data["database_name"],
+                data["table_name"],
+                data["topic"],
+                data["group"],
+                data["format"],
+                data["columns"],
+            )
         catalog_name = data["catalog_name"]
         next_storage = TableStorage.storage_from_str(data["storage"])
-        next_lake = LakeFormat.lakeformat_from_str(data["lake"])
+        next_lake = LakeFormat.lakeformat_from_str(data["engine"])
         next_table_generator = LakeTableGenerator.get_next_generator(next_lake)
         catalog_type = LakeCatalogs.NoCatalog
         catalog_impl = None
@@ -795,21 +972,41 @@ logger.jetty.level = warn
                 None,
             )
             self.catalogs_lock.release()
-            next_session = self.get_next_session(
-                cluster, catalog_name, next_storage, next_lake, LakeCatalogs.NoCatalog
-            )
             saved_exception = None
-            try:
-                self.create_database(next_session, catalog_name)
-            except Exception as e:
-                saved_exception = e
-            next_session.stop()
+            with self.spark_lock:
+                next_session = None
+                try:
+                    next_session = self.get_next_session(
+                        cluster,
+                        catalog_name,
+                        next_storage,
+                        next_lake,
+                        LakeCatalogs.NoCatalog,
+                    )
+                    self.create_database(next_session, catalog_name)
+                except Exception as e:
+                    saved_exception = e
+                finally:
+                    if next_session is not None:
+                        next_session.stop()
             if saved_exception is not None:
+                with self.catalogs_lock:
+                    self.catalogs.pop(catalog_name, None)
                 raise saved_exception
         else:
             catalog_type = self.catalogs[catalog_name].catalog_type
             catalog_impl = self.catalogs[catalog_name].catalog_impl
             self.catalogs_lock.release()
+
+        # No-catalog DeltaLake tables all share `spark_catalog`, whose `test` database is
+        # created once and whose Hive LOCATION then pins the first table's storage. Name the
+        # location explicitly so Spark writes where the ClickHouse engine points.
+        next_location = None
+        if catalog_type == LakeCatalogs.NoCatalog and next_lake == LakeFormat.DeltaLake:
+            next_location = (
+                f"{get_warehouse_uri(cluster, catalog_name, next_storage)}"
+                f"/test.db/{data['table_name']}"
+            )
 
         next_sql, next_table = next_table_generator.generate_create_table_ddl(
             catalog_name,
@@ -820,51 +1017,63 @@ logger.jetty.level = warn
             data["deterministic"] > 0,
             next_storage,
             catalog_type,
+            next_location,
         )
-        next_session = self.get_next_session(
-            cluster,
-            catalog_name,
-            next_storage,
-            next_lake,
-            catalog_type,
-        )
-        with self.catalogs_lock:
-            self.catalogs[catalog_name].spark_tables[data["table_name"]] = next_table
+        with self.spark_lock:
+            next_session = self.get_next_session(
+                cluster,
+                catalog_name,
+                next_storage,
+                next_lake,
+                catalog_type,
+            )
+            try:
+                if (
+                    next_lake == LakeFormat.Iceberg
+                    and next_storage == TableStorage.S3
+                    and catalog_type
+                    in (LakeCatalogs.Hive, LakeCatalogs.REST, LakeCatalogs.Glue)
+                ):
+                    next_info = next_table_generator.create_catalog_table(
+                        catalog_impl, data["columns"], next_table
+                    )
+                    self.logger.info(f"Created catalog table: {next_info}")
+                elif catalog_type == LakeCatalogs.NoCatalog:
+                    self.run_query(next_session, next_sql)
+                else:
+                    raise Exception("I have not implemented this case yet")
 
-        try:
-            if (
-                next_lake == LakeFormat.Iceberg
-                and next_storage == TableStorage.S3
-                and catalog_type
-                in (LakeCatalogs.Hive, LakeCatalogs.REST, LakeCatalogs.Glue)
-            ):
-                next_info = next_table_generator.create_catalog_table(
-                    catalog_impl, data["columns"], next_table
-                )
-                self.logger.info(f"Created catalog table: {next_info}")
-            elif catalog_type == LakeCatalogs.NoCatalog:
-                self.run_query(next_session, next_sql)
-            else:
-                raise Exception("I have not implemented this case yet")
+                # Register only after the table actually exists: a failed CREATE must
+                # not leave a phantom entry that every later operation trips over
+                with self.catalogs_lock:
+                    self.catalogs[catalog_name].spark_tables[
+                        data["table_name"]
+                    ] = next_table
 
-            if random.randint(1, 5) != 5:
-                self.data_generator.insert_random_data(next_session, next_table)
-        except Exception as e:
-            saved_exception = e
-        next_session.stop()
+                if random.randint(1, 5) != 5:
+                    self.data_generator.insert_random_data(next_session, next_table)
+            except Exception as e:
+                saved_exception = e
+            next_session.stop()
         if saved_exception is not None:
             raise saved_exception
         return True
 
     def update_or_check_table(self, cluster, data) -> bool:
         res = False
+        next_table = None
+        next_session = None
         saved_exception = None
         catalog_name = data["catalog_name"]
-        run_background_worker = data["async"] == 0 and random.randint(1, 2) == 1
         catalog_type = LakeCatalogs.NoCatalog
-        with self.catalogs_lock:
-            next_table = self.catalogs[catalog_name].spark_tables[data["table_name"]]
-            catalog_type = self.catalogs[catalog_name].catalog_type
+        run_background_worker = data["async"] == 0 and random.randint(1, 2) == 1
+
+        if data["engine"] not in self.STREAMING_ENGINES + ("file",):
+            with self.catalogs_lock:
+                next_table = self.catalogs[catalog_name].spark_tables[
+                    data["table_name"]
+                ]
+                catalog_type = self.catalogs[catalog_name].catalog_type
 
         if run_background_worker:
 
@@ -879,33 +1088,94 @@ logger.jetty.level = warn
                     command=cluster.client_bin_path,
                 )
                 nloops = random.randint(1, 50)
+                is_file = data["engine"] == "file"
+                tbl = (
+                    quote_ch_table_path(data["catalog_name"], data["table_name"])
+                    if data["engine"] in self.STREAMING_ENGINES + ("file",)
+                    else next_table.get_clickhouse_path()
+                )
+                # For File tables, reuse the reader's decode settings so these concurrent
+                # probes tolerate the same truncated/empty files and deliberately-skipped
+                # columns the checker does (engine_file_skip_empty_files + the per-format
+                # allow-missing-columns flags), exercising real reads instead of noise the
+                # BackgroundWorker would just log and swallow.
+                file_table = None
+                if is_file:
+                    with self.file_handler.file_lock:
+                        file_table = self.file_handler.file_tables.get(
+                            (data["catalog_name"], data["table_name"])
+                        )
                 for _ in range(nloops):
-                    client.query(
-                        f"SELECT * FROM {next_table.get_clickhouse_path()} LIMIT 100;"
-                    )
+                    if self.worker.is_paused():
+                        # The update is over, and BuzzHouse may drop the table from now on
+                        break
+                    if file_table is not None:
+                        # Recompute per probe to rotate the reader/decoder choices
+                        settings = f" SETTINGS {self.file_handler._full_decode_settings(file_table)}"
+                    elif is_file:
+                        settings = " SETTINGS engine_file_skip_empty_files = 1"
+                    elif data["engine"] in self.STREAMING_ENGINES:
+                        # Consumes the messages, racing with the views that read the table
+                        settings = " SETTINGS stream_like_engine_allow_direct_select = 1"
+                    else:
+                        settings = ""
+                    query = f"SELECT * FROM {tbl} LIMIT 100{settings};"
+                    try:
+                        client.query(query, timeout=60)
+                    except QueryRuntimeException as e:
+                        # Broken messages and data files fail some reads on purpose, the next ones still run
+                        lines = str(e).splitlines()
+                        error = next((line for line in lines if line.startswith("Code:")), lines[0])
+                        self.logger.info(f"Background read failed: {query} {error}")
                     time.sleep(1)
 
             self.worker.set_task_function(my_new_task)
             self.worker.resume()
 
-        next_session = self.get_next_session(
-            cluster,
-            catalog_name,
-            next_table.storage,
-            next_table.lake_format,
-            catalog_type,
-        )
         try:
-            res = (
-                self.data_generator.update_table(next_session, next_table)
-                if random.randint(1, 10) < 9
-                else self.table_check.check_table(cluster, next_session, next_table)
-            )
+            if data["engine"] in self.STREAMING_ENGINES:
+                res = self.streaming_handlers[data["engine"]].update_table(
+                    data["catalog_name"], data["table_name"]
+                )
+            elif data["engine"] in ("file", "iceberg", "deltalake", "paimon"):
+                is_file = data["engine"] == "file"
+                with self.spark_lock:
+                    # File tables have no Spark catalog behind them, so any local session works;
+                    # catalog_type already defaults to NoCatalog for them
+                    next_session = self.get_next_session(
+                        cluster,
+                        "file_tables" if is_file else catalog_name,
+                        (
+                            TableStorage.storage_from_str("local")
+                            if is_file
+                            else next_table.storage
+                        ),
+                        (
+                            LakeFormat.lakeformat_from_str("iceberg")
+                            if is_file
+                            else next_table.lake_format
+                        ),
+                        catalog_type,
+                    )
+                    try:
+                        if is_file:
+                            res = self.file_handler.update_or_check_table(
+                                cluster, next_session, data
+                            )
+                        elif random.randint(1, 10) < 8:
+                            res = self.data_generator.update_table(
+                                next_session, next_table
+                            )
+                        else:
+                            res = self.table_check.check_table(
+                                cluster, next_session, next_table
+                            )
+                    finally:
+                        next_session.stop()
         except Exception as e:
             saved_exception = e
         if run_background_worker:
             self.worker.pause()
-        next_session.stop()
         if saved_exception is not None:
             raise saved_exception
         return res

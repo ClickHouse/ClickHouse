@@ -1,0 +1,96 @@
+---
+description: 'Rust 라이브러리를 ClickHouse에 통합하는 가이드'
+sidebarTitle: 'Rust 라이브러리'
+slug: /development/integrating_rust_libraries
+title: 'Rust 라이브러리 통합'
+doc_type: 'guide'
+---
+
+Rust 라이브러리 통합은 BLAKE3 해시 함수 통합을 예시로 설명합니다.
+
+통합의 첫 단계는 `contrib/<library>-cmake`에 빈 Rust 프로젝트를 만들고 해당 프로젝트의 Cargo.toml에 필요한 라이브러리를 포함하는 것입니다. 이 프로젝트는 `contrib/rust-contrib-workspace`에 있는 cargo 워크스페이스의 멤버입니다. `[package]` 아래에 `workspace = "../rust-contrib-workspace"`를 추가하고, `contrib/rust-contrib-workspace/Cargo.toml`의 `members`에 해당 폴더를 등록하십시오. `crate-type`은 지정하지 말고 일반 라이브러리로 두십시오. 멤버는 각각 별도의 라이브러리로 빌드되지 않습니다. 워크스페이스의 루트 패키지인 `_ch_rust_workspace`가 활성화된 모든 멤버를 다시 내보내며, 이 패키지가 ClickHouse가 링크하는 유일한 정적 라이브러리입니다. `contrib/rust-contrib-workspace/Cargo.toml`에서 루트 패키지에 해당 멤버용 기능과 선택적 의존성(`blake3 = ["dep:_ch_rust_blake3"]` 및 `_ch_rust_blake3 = { path = "../blake3-cmake", optional = true }`)을 추가하고, `contrib/rust-contrib-workspace/src/lib.rs`에서 이를 다시 내보내십시오(`#[cfg(feature = "blake3")] pub use _ch_rust_blake3;`).
+
+다음으로, Corrosion 라이브러리를 사용해 해당 라이브러리를 CMake에 연결해야 합니다. 첫 단계는 `add_contrib`를 사용해 라이브러리 폴더를 `contrib/CMakeLists.txt`에 추가하는 것으로, 워크스페이스의 다른 멤버들과 같은 위치에 추가합니다. 그런 다음 라이브러리 디렉터리에 CMakeLists.txt 파일을 추가해야 합니다. 이 파일에서 `clickhouse_add_rust_member`로 멤버를 추가해야 합니다. 이 함수는 워크스페이스의 정적 라이브러리를 링크하는 인터페이스 타깃을 생성하고 루트 패키지의 기능을 활성화합니다. 루트 패키지는 모든 멤버가 추가된 후 `contrib/rust-contrib-workspace/CMakeLists.txt`에서 Corrosion으로 가져옵니다. BLAKE3의 경우 다음과 같은 줄을 사용합니다:
+
+```CMake
+clickhouse_add_rust_member(_ch_rust_blake3 FEATURE blake3)
+
+target_include_directories(_ch_rust_blake3 INTERFACE include)
+add_library(ch_rust::blake3 ALIAS _ch_rust_blake3)
+```
+
+따라서 해당 멤버에 대한 CMake 타깃을 만든 다음, 더 편리한 이름을 부여합니다. `_ch_rust_blake3`라는 이름은 Cargo.toml에서 온 것으로, 그곳에서 프로젝트 이름(`name = "_ch_rust_blake3"`)으로 사용된다는 점에 유의하십시오.
+
+Rust 데이터 타입은 C/C++ 데이터 타입과 호환되지 않으므로, 비어 있는 라이브러리 프로젝트를 사용해 C/C++에서 전달받은 데이터를 변환하고, 라이브러리 메서드를 호출하며, 출력 데이터를 다시 변환하는 shim 메서드를 만듭니다. 예를 들어, BLAKE3에는 다음과 같은 메서드를 작성했습니다:
+
+```rust
+#[no_mangle]
+pub unsafe extern "C" fn blake3_apply_shim(
+    begin: *const c_char,
+    _size: u32,
+    out_char_data: *mut u8,
+```
+
+```rust
+#[no_mangle]
+pub unsafe extern "C" fn blake3_apply_shim(
+    begin: *const c_char,
+    _size: u32,
+    out_char_data: *mut u8,
+) -> *mut c_char {
+    if begin.is_null() {
+        let err_str = CString::new("input was a null pointer").unwrap();
+        return err_str.into_raw();
+    }
+    let mut hasher = blake3::Hasher::new();
+    let input_bytes = CStr::from_ptr(begin);
+    let input_res = input_bytes.to_bytes();
+    hasher.update(input_res);
+    let mut reader = hasher.finalize_xof();
+    reader.fill(std::slice::from_raw_parts_mut(out_char_data, blake3::OUT_LEN));
+    std::ptr::null_mut()
+}
+```
+
+이 메서드는 C 호환 문자열, 해당 크기, 그리고 출력 문자열 포인터를 입력으로 받습니다. 그런 다음 C 호환 입력값을 실제 라이브러리 메서드에서 사용하는 타입으로 변환한 뒤 해당 메서드를 호출합니다. 이후에는 라이브러리 메서드의 출력을 다시 C 호환 타입으로 변환해야 합니다. 하지만 이 경우에는 라이브러리가 `fill()` 메서드를 통해 포인터에 직접 쓸 수 있도록 지원하므로 변환이 필요하지 않았습니다. 여기서 핵심 권장 사항은 메서드 수를 최소화하는 것입니다. 그래야 각 메서드 호출 시 수행해야 하는 변환이 줄어들고 오버헤드도 크게 늘어나지 않습니다.
+
+`#[no_mangle]` 속성과 `extern "C"`는 이러한 모든 메서드에 반드시 필요하다는 점도 알아두어야 합니다. 이것들이 없으면 올바른 C/C++ 호환 컴파일을 수행할 수 없습니다. 또한 이는 통합의 다음 단계에도 필요합니다.
+
+shim 메서드용 코드를 작성한 후에는 라이브러리용 헤더 파일을 준비해야 합니다. 이는 수동으로 할 수도 있고, 자동 생성을 위해 cbindgen 라이브러리를 사용할 수도 있습니다. cbindgen을 사용하는 경우에는 build.rs 빌드 스크립트를 작성하고 cbindgen을 build-dependency로 포함해야 합니다.
+
+헤더 파일을 자동 생성할 수 있는 빌드 스크립트 예시:
+
+```rust
+    let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+
+    let package_name = env::var("CARGO_PKG_NAME").unwrap();
+    let output_file = ("include/".to_owned() + &format!("{}.h", package_name)).to_string();
+
+    match cbindgen::generate(&crate_dir) {
+        Ok(header) => {
+            header.write_to_file(&output_file);
+        }
+        Err(err) => {
+            panic!("{}", err)
+        }
+    }
+```
+
+## 이 리포지토리에서 헤더 생성하기 {#generating-the-header-in-this-repository}
+
+위의 빌드 스크립트는 빌드할 때마다 헤더를 소스 트리에 기록하므로 검사할 대상이 남지 않습니다. 커밋된 헤더가 더 이상 Rust 측과 일치하지 않더라도 로컬에서는 그냥 덮어써질 뿐이며, 다른 모든 사람에게는 잘못된 상태로 남습니다. 따라서 이 리포지토리의 크레이트는 대신 다음 두 가지 방식 중 하나를 사용합니다:
+
+* `contrib/delta-kernel-rs`처럼 헤더를 빌드 디렉터리에 생성하고 `target_include_directories`가 해당 위치를 가리키도록 합니다. 아무것도 커밋되지 않으므로 오래된 상태가 될 여지도 없습니다;
+* `contrib/vortex-cmake`처럼 헤더를 커밋하고, 빌드 스크립트가 이를 새로 생성한 헤더와 비교하여 서로 다르면 빌드를 실패시키도록 합니다. FFI의 양쪽은 심볼 이름으로 링크되는 별개의 번역 단위이므로, 한쪽에서만 시그니처가 변경되면 컴파일 오류가 아니라 아무런 경고 없이 정의되지 않은 동작이 발생합니다. 이 비교 덕분에 헤더를 다시 생성하는 것을 잊을 수 없게 됩니다. 커밋된 파일을 재작성하는 환경 변수를 두어, 파일 업데이트가 명령 하나로 끝나도록 유지하십시오.
+
+`contrib/rust-contrib-workspace`의 크레이트에 `cbindgen`을 추가하기 전에 알아 두어야 할 사항이 두 가지 있습니다:
+
+* 버전을 정확히 고정하십시오. 출력이 패치 릴리스마다 달라지므로, 버전 요구 사항을 느슨하게 지정하면 검사가 실제 차이가 아니라 generator의 버전 차이를 보고하게 됩니다. 또한 버전은 `contrib/rust_vendor`에 포함된 버전이어야 하며, 그렇지 않으면 `contrib/rust-contrib-workspace/vendor.sh`를 다시 실행하고 서브모듈을 업데이트해야 합니다;
+* 크레이트를 `cbindgen::generate`로 처리하는 대신 소스 파일을 `Builder::with_src`로 파싱하십시오. 크레이트 경로를 사용하면 cbindgen이 중첩된 프로세스에서 `cargo metadata`를 실행하는데, 이 프로세스는 cargo가 벤더링된 소스를 가리키도록 하는 `--config`를 상속하지 않습니다.
+
+또한 모든 C 호환 항목에는 #[no&#95;mangle] 속성과 `extern "C"`를 사용해야 합니다. 이를 사용하지 않으면 라이브러리가 잘못 컴파일될 수 있으며 cbindgen이 헤더 자동 생성을 수행하지 않습니다.
+
+이 모든 단계를 마친 후에는 작은 프로젝트에서 라이브러리를 테스트하여 호환성이나 헤더 생성과 관련된 문제를 모두 찾아볼 수 있습니다. 헤더 생성 중 문제가 발생하면 `cbindgen.toml` 파일로 설정을 조정해 볼 수 있습니다(템플릿은 여기에서 확인할 수 있습니다: [https://github.com/eqrion/cbindgen/blob/master/template.toml](https://github.com/eqrion/cbindgen/blob/master/template.toml)).
+
+BLAKE3를 통합할 때 발생한 문제도 언급할 만합니다:
+MemorySanitizer는 Rust에서 일부 변수가 초기화되었는지 확인하지 못하므로 거짓 양성(false positive) 보고가 발생할 수 있습니다. 이 문제는 일부 변수에 대해 더 명확하게 정의된 메서드를 작성하여 해결했지만, 이 메서드 구현은 더 느리며 MemorySanitizer builds를 수정하기 위한 용도로만 사용됩니다.

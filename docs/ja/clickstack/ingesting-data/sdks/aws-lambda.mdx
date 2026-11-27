@@ -1,0 +1,98 @@
+---
+slug: /use-cases/observability/clickstack/sdks/aws_lambda
+description: 'ClickStack 向け AWS Lambda - ClickHouse オブザーバビリティスタック'
+title: 'AWS Lambda'
+doc_type: 'guide'
+keywords: ['ClickStack', 'オブザーバビリティ', 'aws-lambda', 'lambda-layers']
+---
+
+import { ClickStackIntegrates } from '/snippets/ja/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+非同期ハンドラーを使用する Node.js 関数には、ClickStack Node.js SDK を使用してください。その他のランタイムやコールバックベースのハンドラーには、後述の OpenTelemetry Lambda レイヤーを使用してください。
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## Node.js の非同期ハンドラー {#nodejs-async-handlers}
+
+SDK の最小要件である Node.js 22.15 以上に対応した Lambda の Node.js ランタイムを使用してください。SDK をインストールし、デプロイメントパッケージに含めます。
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+次の Lambda 環境変数を設定して、ハンドラーが読み込まれる前に SDK を初期化し、サービス名を指定します。
+
+```text
+NODE_OPTIONS=--import @clickhouse/clickstack-node/register
+OTEL_SERVICE_NAME=my-lambda-function
+```
+
+呼び出しが戻る前にバッファリングされたテレメトリーが確実にエクスポートされるよう、非同期ハンドラーを `withFlush` でラップします。
+
+```javascript
+// index.mjs
+import { withFlush } from '@clickhouse/clickstack-node';
+
+export const handler = withFlush(async (event) => {
+  console.log('request received');
+  return { statusCode: 200, body: 'OK' };
+});
+```
+
+関数のハンドラーを `index.handler` に設定します。関数をバンドルする場合は、SDK と計装済みの依存関係を外部として扱い、デプロイメントパッケージに含めてください。この構成では、自動計装用の Lambda レイヤーを併用しないでください。
+
+以下の宛先変数を、Lambda 関数の環境設定で指定します。エンドポイントには関数から接続可能である必要があります。SDK は呼び出しのデッドラインまでに flush を完了します。なお、コールバックベースのハンドラーは `withFlush` ではサポートされていません。
+
+### 宛先を設定する {#configure-destination}
+
+ClickStack collector の OTLP HTTP エンドポイントとインジェストキーを設定します。collector で TLS が設定されていない場合は、`http://` を使用してください。collector のセットアップについては、[OpenTelemetry によるデータの取り込み](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+```
+
+## その他のランタイムとハンドラー {#other-runtimes-and-handlers}
+
+公式の [Lambda 自動計装の手順](https://opentelemetry.io/docs/platforms/faas/lambda-auto-instrument/)に従い、ご利用のランタイム、アーキテクチャ、AWSリージョンに対応するレイヤーを選択して、インストルメンテーションのラッパーを設定してください。
+
+[OpenTelemetry collector の Lambda レイヤー](https://opentelemetry.io/docs/platforms/faas/lambda-collector/)を追加して設定します。アップストリームのドキュメントに記載されているとおり、アプリケーションの SDK エクスポーターの送信先はローカルの collector のままにしておいてください。collector からの送信側の接続は、以下の手順で設定します。
+
+### Lambda collector の宛先を設定する {#configure-lambda-collector-destination}
+
+Lambda 関数の環境変数に `CLICKHOUSE_OTLP_ENDPOINT` と `CLICKHOUSE_INGESTION_API_KEY` を設定し、collector の設定に次のエクスポーターを追加します。
+
+`CLICKHOUSE_OTLP_ENDPOINT` には ClickStack collector の OTLP HTTP エンドポイントを、`CLICKHOUSE_INGESTION_API_KEY` にはそのインジェスト用キーを設定します。このエンドポイントには Lambda 関数から接続可能である必要があります。
+
+```yaml
+exporters:
+  otlphttp/clickhouse:
+    endpoint: ${env:CLICKHOUSE_OTLP_ENDPOINT}
+    headers:
+      Authorization: "${env:CLICKHOUSE_INGESTION_API_KEY}"
+```
+
+送信対象とする各シグナルのパイプラインで、`exporters` リストに `otlphttp/clickhouse` を指定します。たとえば、アップストリームの `otlp` receiver を使用する場合は次のようになります。
+
+```yaml
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+    metrics:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+    logs:
+      receivers: [otlp]
+      exporters: [otlphttp/clickhouse]
+```
+
+これらの設定を collector の設定にマージしてください。その際、既存の receiver とプロセッサーの設定は変更せずに残してください。続いて、アップストリームの collector のセットアップ手順に従って設定ファイルを関数と一緒にパッケージ化し、`OPENTELEMETRY_COLLECTOR_CONFIG_URI` にそのファイルの配置場所 (例: `/var/task/collector.yaml`) を設定します。
+
+## インジェストを確認する {#verify-ingestion}
+
+関数をデプロイして呼び出します。ClickStack で直近の時間範囲を選択し、Traces で関数のサービス名を確認します。インストルメンテーションがログやメトリクスのシグナルを出力している場合は、Logs と Metrics も確認してください。パイプラインを追加しただけでは、これらのシグナルの収集は自動的に有効になりません。
+
+レイヤーの設定やトラブルシューティングについては、[OpenTelemetry Lambda のドキュメント](https://github.com/open-telemetry/opentelemetry-lambda)を参照してください。

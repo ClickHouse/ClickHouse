@@ -1,0 +1,17 @@
+rows left	297
+with the index	3
+without the index	3
+without rescoring	3
+with rescoring	3
+the index answer	[1,1,1]
+the bruteforce answer	[1,1,1]
+apply_deleted_mask = 0 uses the index	1
+apply_deleted_mask = 0	[0,0,0]
+apply_deleted_mask = 0 and _row_exists uses the index	0
+apply_deleted_mask = 0 and _row_exists	3
+apply_deleted_mask = 0 and _row_exists	[1,1,1]
+FINAL, apply_deleted_mask = 0 and deferred PREWHERE _row_exists uses the index	0
+FINAL, apply_deleted_mask = 0 and deferred PREWHERE _row_exists	3
+a deleted cluster	3
+a pending delete	3
+a delete in a patch part	3

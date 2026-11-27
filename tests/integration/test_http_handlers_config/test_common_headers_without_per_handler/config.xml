@@ -1,0 +1,29 @@
+<clickhouse>
+    <http_handlers>
+        <common_http_response_headers>
+            <X-My-Common-Header>Common header present</X-My-Common-Header>
+        </common_http_response_headers>
+
+        <rule>
+            <url>/query_param_with_url</url>
+            <methods>GET,HEAD</methods>
+            <headers>
+                <PARAMS_XXX><![CDATA[regex:(?P<name_1>[^/]+)]]></PARAMS_XXX>
+            </headers>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>
+                    SELECT {name_1:String}
+                </query>
+            </handler>
+        </rule>
+
+        <rule>
+            <methods>GET,POST,HEAD,OPTIONS</methods>
+            <handler>
+                <type>dynamic_query_handler</type>
+                <query_param_name>query</query_param_name>
+            </handler>
+        </rule>
+    </http_handlers>
+</clickhouse>

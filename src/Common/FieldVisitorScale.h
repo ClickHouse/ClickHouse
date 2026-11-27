@@ -2,6 +2,7 @@
 
 #include <Common/FieldVisitors.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -11,12 +12,14 @@ namespace DB
 class FieldVisitorScale : public StaticVisitor<void>
 {
 private:
-    Int32 rhs;
+    Int64 rhs;
 
 public:
-    explicit FieldVisitorScale(Int32 rhs_);
+    explicit FieldVisitorScale(Int64 rhs_);
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void operator() (Int64 & x) const;
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void operator() (UInt64 & x) const;
     void operator() (Float64 & x) const;
     void operator() (Null &) const;
@@ -30,10 +33,12 @@ public:
     [[noreturn]] void operator() (IPv6 &) const;
     [[noreturn]] void operator() (AggregateFunctionStateData &) const;
     [[noreturn]] void operator() (CustomType &) const;
+    [[noreturn]] void operator() (NumberLiteral &) const;
     [[noreturn]] void operator() (bool &) const;
 
     template <typename T>
     void operator() (DecimalField<T> & x) const { x = DecimalField<T>(x.getValue() * T(rhs), x.getScale()); }
+    void operator() (DecimalField<Decimal32> & x) const { x = DecimalField<Decimal32>(x.getValue() * Decimal32(static_cast<int32_t>(rhs)), x.getScale()); }
 
     template <typename T>
     requires is_big_int_v<T>

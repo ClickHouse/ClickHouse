@@ -1,0 +1,68 @@
+---
+title: Keeper 配置
+---
+
+为了使复制正常工作，需要先搭建并配置 ClickHouse Keeper 集群。ClickHouse Keeper 为数据复制提供协调系统，
+可作为 ZooKeeper 的替代方案，当然也可以直接使用 ZooKeeper。
+不过，推荐使用 ClickHouse Keeper，因为它能提供更好的保障和
+可靠性，并且比 ZooKeeper 占用更少的资源。为了实现高可用性并
+保持 quorum，建议至少运行三个 ClickHouse Keeper 节点。
+
+<Note>
+  ClickHouse Keeper 可以与 ClickHouse 一起运行在集群的任何节点上，不过
+  更推荐将其部署在专用节点上，这样就可以独立于数据库集群对
+  ClickHouse Keeper 集群进行扩缩容和管理。
+</Note>
+
+在示例文件夹的根目录下，使用以下命令为每个 ClickHouse Keeper 节点
+创建 `keeper_config.xml` 文件：
+
+```bash
+for i in {01..03}; do
+  touch fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper/keeper_config.xml
+done
+```
+
+修改在每个
+节点目录 `fs/volumes/clickhouse-keeper-{}/etc/clickhouse-keeper` 中创建的空配置文件。下方高亮显示的内容需要改为各节点对应的具体值：
+
+```xml title="/clickhouse-keeper/keeper_config.xml" highlight={12}
+<clickhouse replace="true">
+    <logger>
+        <level>information</level>
+        <log>/var/log/clickhouse-keeper/clickhouse-keeper.log</log>
+        <errorlog>/var/log/clickhouse-keeper/clickhouse-keeper.err.log</errorlog>
+        <size>1000M</size>
+        <count>3</count>
+    </logger>
+    <listen_host>0.0.0.0</listen_host>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <raft_logs_level>information</raft_logs_level>
+        </coordination_settings>
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>clickhouse-keeper-01</hostname>
+                <port>9234</port>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>clickhouse-keeper-02</hostname>
+                <port>9234</port>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>clickhouse-keeper-03</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
+```

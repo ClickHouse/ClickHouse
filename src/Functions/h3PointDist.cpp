@@ -19,47 +19,41 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 }
 
 namespace
 {
-template <class Impl>
+
 class FunctionH3PointDist final : public IFunction
 {
 public:
-    static constexpr auto name = Impl::name;
-    static constexpr auto function = Impl::function;
+    using DistFunc = double (*)(const LatLng *, const LatLng *);
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3PointDist>(); }
+    FunctionH3PointDist(const char * name_, DistFunc func_) : function_name(name_), dist_func(func_) {}
 
-    std::string getName() const override { return name; }
-
-    size_t getNumberOfArguments() const override { return 4; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    static FunctionPtr create(const char * name, DistFunc func)
     {
-        for (size_t i = 0; i < getNumberOfArguments(); ++i)
-        {
-            const auto * arg = arguments[i].get();
-            if (!WhichDataType(arg).isFloat64())
-                throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of argument {} of function {}. Must be Float64",
-                        arg->getName(), i + 1, getName());
-        }
-        return std::make_shared<DataTypeFloat64>();
+        return std::make_shared<FunctionH3PointDist>(name, func);
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] std::string getName() const override { return function_name; }
+
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 4; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(Float64, Float64, Float64, Float64) -> Float64";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
@@ -119,34 +113,19 @@ public:
             LatLng point1 = {degsToRads(lat1), degsToRads(lon1)};
             LatLng point2 = {degsToRads(lat2), degsToRads(lon2)};
 
-            // function will be equivalent to distanceM or distanceKm or distanceRads
-            Float64 res = function(&point1, &point2);
+            Float64 res = dist_func(&point1, &point2);
             dst_data[row] = res;
         }
 
         return dst;
     }
+
+private:
+    const char * function_name;
+    DistFunc dist_func;
 };
 
 }
-
-struct H3PointDistM
-{
-    static constexpr auto name = "h3PointDistM";
-    static constexpr auto function = distanceM;
-};
-
-struct H3PointDistKm
-{
-    static constexpr auto name = "h3PointDistKm";
-    static constexpr auto function = distanceKm;
-};
-
-struct H3PointDistRads
-{
-    static constexpr auto name = "h3PointDistRads";
-    static constexpr auto function = distanceRads;
-};
 
 
 REGISTER_FUNCTION(H3PointDistM)
@@ -171,16 +150,16 @@ distance between pairs of GeoCoord points (latitude/longitude) in meters.
             "Calculate distance between two points in meters",
             "SELECT h3PointDistM(-10.0, 0.0, 10.0, 0.0) AS h3PointDistM",
             R"(
-┌──────h3PointDistM─┐
-│ 2223901.039504589 │
-└───────────────────┘
+┌───────h3PointDistM─┐
+│ 2223901.0395045886 │
+└────────────────────┘
             )"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionH3PointDist<H3PointDistM>>(documentation);
+    factory.registerFunction("h3PointDistM", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistM", greatCircleDistanceM); }, documentation);
 }
 REGISTER_FUNCTION(H3PointDistKm)
 {
@@ -204,16 +183,16 @@ distance between pairs of GeoCoord points (latitude/longitude) in kilometers.
             "Calculate distance between two points in kilometers",
             "SELECT h3PointDistKm(-10.0, 0.0, 10.0, 0.0) AS h3PointDistKm",
             R"(
-┌─────h3PointDistKm─┐
-│ 2223.901039504589 │
-└───────────────────┘
+┌──────h3PointDistKm─┐
+│ 2223.9010395045884 │
+└────────────────────┘
             )"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionH3PointDist<H3PointDistKm>>(documentation);
+    factory.registerFunction("h3PointDistKm", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistKm", greatCircleDistanceKm); }, documentation);
 }
 REGISTER_FUNCTION(H3PointDistRads)
 {
@@ -246,7 +225,7 @@ distance between pairs of GeoCoord points (latitude/longitude) in radians.
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionH3PointDist<H3PointDistRads>>(documentation);
+    factory.registerFunction("h3PointDistRads", [](ContextPtr){ return FunctionH3PointDist::create("h3PointDistRads", greatCircleDistanceRads); }, documentation);
 }
 
 }

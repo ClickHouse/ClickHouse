@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
+# Tags: no-parallel-replicas, no-fasttest
+# no-fasttest: Too slow for fast test (~10s), covered by regular stateless runs.
 # no-parallel-replicas: unrelated error
 
 # INSERT buffer_02572 -> data_02572 -> copy_02572
@@ -32,12 +33,19 @@ for _ in {1..100}; do
     sleep 0.5
 done
 
+# Wait for the MV to finish writing to copy_02572 as well.
+# The buffer flush pipeline writes to data_02572 first (sink), then processes MVs (post-sink).
+# Data may appear in data_02572 before the MV completes writing to copy_02572.
+for _ in {1..100}; do
+    $CLICKHOUSE_CLIENT -q "select * from copy_02572;" | grep -q "1" && break
+    sleep 0.5
+done
 
 ${CLICKHOUSE_CLIENT} --ignore-error --query "select * from data_02572; select * from copy_02572;"
 
 ${CLICKHOUSE_CLIENT} --query="system flush logs query_views_log;"
 ${CLICKHOUSE_CLIENT} --query="select count() > 0, lower(status::String), errorCodeToName(exception_code)
-    from system.query_views_log where
+    from system.query_views_log where event_date >= yesterday() AND event_time >= now() - 600 AND
     view_name = concatWithSeparator('.', currentDatabase(), 'mv_02572') and
     view_target = concatWithSeparator('.', currentDatabase(), 'copy_02572')
     group by 2, 3;"

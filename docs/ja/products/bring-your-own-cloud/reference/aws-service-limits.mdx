@@ -1,0 +1,56 @@
+---
+title: 'AWS サービス制限とクォータの管理'
+slug: /cloud/reference/byoc/aws-service-limits
+sidebarTitle: 'AWS サービス制限とクォータ'
+keywords: ['BYOC', 'bring your own cloud', 'AWS', 'service quotas', 'service limits', 'EC2', 'EKS', 'VPC', 'EBS']
+description: 'BYOC のオンボーディング前に確認すべき AWS のサービスクォータ、引き上げをリクエストする方法、サービスのスケールに伴って監視すべき項目'
+doc_type: 'reference'
+---
+
+BYOC デプロイメントを成功させるには、AWS アカウントに十分な AWS サービスクォータ (以前は *サービス制限* と呼ばれていました) があることが重要です。AWS では、ほとんどのサービスに対してリージョンごとのデフォルトクォータが適用されます。こうしたデフォルト値の多くは、特に新規作成した AWS アカウントや利用実績の少ない AWS アカウントでは、本番環境の BYOC デプロイメントに必要な水準を下回っています。
+
+このページでは、デプロイ前に確認すべきクォータのチェックリストを掲載しています。使用状況を監視し、クォータ引き上げの申請はクラウドサービスプロバイダーに直接行ってください。
+
+<div id="pre-deployment-quota-checklist">
+  ## デプロイ前のクォータ チェックリスト
+</div>
+
+BYOC のオンボーディングを開始する前に、デプロイ先の AWS リージョンで以下のクォータを確認してください。クォータはリージョン単位かつアカウント単位で適用されます。
+
+<div id="required-quotas">
+  ### 必要なクォータ
+</div>
+
+| サービス                       | クォータ名                                                            | BYOC 要件                                                                                                  | デフォルト                        | 対応                                                   |
+| -------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------- | ---------------------------------------------------- |
+| **EC2**                    | Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances | ≥ サービスティアのピーク vCPU × 1.5 (オートスケーリングおよび MBB アップグレード用のヘッドルーム) + システムおよび Keeper ワークロード向けに 100 vCPU の CPU コア | 新規アカウントでは 32～256 vCPU のことが多い | BYOC 要件に合わせて**増枠を申請**                                |
+| **EC2 (VPC)**              | VPCs per Region                                                  | ≥ 1 (BYOC により専用 VPC が 1 つ作成されます)                                                                         | 5                            | 利用可能か確認                                              |
+| **EC2 (VPC)**              | Elastic IPs per Region                                           | ≥ 3 (NAT ゲートウェイ用に各 AZ に 1 つ)                                                                             | 5                            | 利用可能か確認。同じリージョンで複数の BYOC デプロイメントを実行する場合は増枠を申請してください。 |
+| **EC2 (VPC)**              | NAT Gateways per AZ                                              | ≥ 1                                                                                                      | 5                            | 利用可能か確認                                              |
+| **EC2 (VPC)**              | Internet Gateways per Region                                     | ≥ 1                                                                                                      | 5                            | 利用可能か確認                                              |
+| **EC2 (VPC)**              | Subnets per VPC                                                  | ≥ 6 (パブリック 3 + プライベート 3)                                                                                 | 200                          | 対応不要                                                 |
+| **EC2 (VPC)**              | Security groups per VPC                                          | ≥ 10                                                                                                     | 2,500                        | 対応不要                                                 |
+| **EKS**                    | Clusters per Region                                              | ≥ 1                                                                                                      | 100                          | 対応不要                                                 |
+| **EKS**                    | Managed node groups per cluster                                  | ≥ 4                                                                                                      | 30                           | 対応不要                                                 |
+| **EKS**                    | Nodes per managed node group                                     | ≥ サービスティアのピークノード数                                                                                        | 450                          | 対応不要                                                 |
+| **S3**                     | Buckets per account                                              | ≥ 4 (データ、バックアップ、課金、監視)                                                                                   | 100 (最大 1,000 まで増枠可能)        | 他のワークロード向けのヘッドルームを確認                                 |
+| **EBS**                    | Storage for General Purpose SSD (gp3)                            | ≥ ClickHouse ログのピーク + OS ボリューム × ノード数                                                                    | 50 TiB                       | 利用可能か確認                                              |
+| **Elastic Load Balancing** | Network Load Balancers per Region                                | ClickHouse サービスごとに ≥ 1                                                                                   | 50                           | 利用可能か確認                                              |
+| **CloudWatch Logs**        | Log groups per Region                                            | ≥ 5                                                                                                      | 1,000,000                    | 対応不要                                                 |
+
+<div id="optional-feature-quotas">
+  ### オプション機能が有効かどうかを確認するためのクォータ
+</div>
+
+| 有効化する機能         | サービス      | クォータ                                                                                        |
+| --------------- | --------- | ------------------------------------------------------------------------------------------- |
+| AWS PrivateLink | EC2 (VPC) | Region ごとの VPC エンドポイントサービス数 (デフォルト 20) — PrivateLink 対応サービスを同時実行する場合は、サービスごとに引き上げを申請してください。 |
+| VPC Peering     | EC2 (VPC) | VPC ごとのアクティブな VPC ピアリング接続数 (デフォルト 50) 。                                                     |
+
+<div id="related">
+  ## 関連
+</div>
+
+* [課金対象の AWS サービス](/ja/products/bring-your-own-cloud/reference/billable-aws-services) — BYOC でプロビジョニングされる AWS サービスの全一覧
+* [BYOC のコストモデル (AWS) ](/ja/products/bring-your-own-cloud/reference/cost-model-aws) — ClickHouse Cloud と AWS の料金がどのように組み合わさるか
+* [BYOC アーキテクチャ](/ja/products/bring-your-own-cloud/overview/architecture) — ClickHouse Cloud がユーザーのアカウントにデプロイするコンポーネント

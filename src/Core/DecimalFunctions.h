@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Core/AccurateComparison.h>
 #include <Common/Exception.h>
 #include <Common/intExp.h>
 #include <base/arithmeticOverflow.h>
 
+#include <cmath>
 #include <limits>
 #include <type_traits>
 
@@ -78,7 +80,7 @@ struct DataTypeDecimalTrait
 
     /// @returns multiplier for U to become T with correct scale
     template <typename U>
-    T scaleFactorFor(const DataTypeDecimalTrait<U> & x, bool) const
+    [[nodiscard]] T scaleFactorFor(const DataTypeDecimalTrait<U> & x, bool) const
     {
         if (scale < x.scale)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Decimal result's scale is less than argument's one");
@@ -90,7 +92,7 @@ struct DataTypeDecimalTrait
 /// Calculates result = x * multiplier + delta.
 /// If the multiplication or the addition overflows, returns false or throws DECIMAL_OVERFLOW.
 template <typename T, bool throw_on_error>
-inline bool multiplyAdd(const T & x, const T & multiplier, const T & delta, T & result)
+ALWAYS_INLINE inline bool multiplyAdd(const T & x, const T & multiplier, const T & delta, T & result)
 {
     T multiplied = 0;
     if (common::mulOverflow(x, multiplier, multiplied))
@@ -111,11 +113,17 @@ inline bool multiplyAdd(const T & x, const T & multiplier, const T & delta, T & 
 }
 
 template <typename T>
-inline T multiplyAdd(const T & x, const T & multiplier, const T & delta)
+ALWAYS_INLINE inline T multiplyAdd(const T & x, const T & multiplier, const T & delta)
 {
     T res;
     multiplyAdd<T, true>(x, multiplier, delta, res);
     return res;
+}
+
+template <typename T>
+inline bool tryMultiplyAdd(const T & x, const T & multiplier, const T & delta, T & result)
+{
+    return multiplyAdd<T, false>(x, multiplier, delta, result);
 }
 
 /** Make a decimal value from whole and fractional components with given scale multiplier.
@@ -150,7 +158,7 @@ inline DecimalType decimalFromComponentsWithMultiplier(
         const typename DecimalType::NativeType & fractional,
         typename DecimalType::NativeType scale_multiplier)
 {
-    DecimalType result;
+    DecimalType result{};
     decimalFromComponentsWithMultiplierImpl<DecimalType, true>(whole, fractional, scale_multiplier, result);
     return result;
 }
@@ -242,7 +250,7 @@ inline bool dateTimeFromComponentsWithMultiplierImpl(
     DateTime64 & result)
 {
     using T = DateTime64::NativeType;
-    T result_value;
+    T result_value = 0;
 
     if (!multiplyAdd<T, throw_on_error>(
             T(whole_seconds), scale_multiplier, fractional % scale_multiplier, result_value))
@@ -430,6 +438,22 @@ bool tryConvertTo(const DecimalType & decimal, UInt32 scale, To & result)
     return convertToImpl<To, DecimalType, bool>(decimal, scale, result);
 }
 
+/// Whether the conversion of `decimal` to the floating-point type `To` is exact: rounding the converted value
+/// back to the nearest tick of `scale` restores `decimal`. All decimals within the resolution of `To` convert
+/// to the same value, and this holds for exactly one of them. The ticks are restored by rounding rather than
+/// by the truncation of `convertToDecimal`: the nearest double to `0.29` lies below it, so truncating its
+/// product with the multiplier would restore `0.28` and reject a conversion that `To` represents as well as
+/// it can.
+template <is_floating_point To, typename DecimalType>
+bool convertsToFloatExactly(const DecimalType & decimal, UInt32 scale)
+{
+    using NativeType = typename DecimalType::NativeType;
+    const Float64 multiplier = static_cast<Float64>(scaleMultiplier<NativeType>(scale));
+    const Float64 restored_ticks = std::round(static_cast<Float64>(convertTo<To>(decimal, scale)) * multiplier);
+    NativeType restored{};
+    return accurate::convertNumeric(restored_ticks, restored) && restored == decimal.value;
+}
+
 /// Converts a decimal to another decimal.
 template <is_decimal To, typename DecimalType>
 To convertTo(UInt32 to_scale, const DecimalType & decimal, UInt32 scale)
@@ -470,6 +494,9 @@ inline DataTypeDecimalTrait<U> binaryOpResult(const DataTypeNumber<T> &, const D
 {
     return DataTypeDecimalTrait<U>(DecimalUtils::max_precision<U>, ty.getScale());
 }
+
+/// Returns the current time.
+DateTime64 getCurrentDateTime64(UInt32 scale);
 
 }
 

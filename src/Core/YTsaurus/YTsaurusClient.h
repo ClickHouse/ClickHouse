@@ -1,6 +1,4 @@
 #pragma once
-#include <unordered_map>
-#include <utility>
 #include "config.h"
 
 #if USE_YTSAURUS
@@ -12,6 +10,7 @@
 #include <Core/Types.h>
 #include <IO/ReadBuffer.h>
 #include <Common/Logger.h>
+#include <Common/SecretString.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/URI.h>
@@ -19,6 +18,13 @@
 #include <Poco/JSON/Parser.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+
+#include <atomic>
+#include <memory>
+#include <unordered_map>
+#include <utility>
 
 #include <boost/noncopyable.hpp>
 
@@ -45,8 +51,8 @@ public:
 
     struct ConnectionInfo
     {
-        std::vector<String> http_proxy_urls;
-        String oauth_token;
+        VectorWithMemoryTracking<String> http_proxy_urls;
+        SecretString oauth_token;
         String api_version = "v3";
         bool encode_utf8 = false;
         bool enable_heavy_proxy_redirection = true;
@@ -54,37 +60,57 @@ public:
 
     explicit YTsaurusClient(ContextPtr context_, const ConnectionInfo & connection_info_);
 
+    /// Validates the OAuth token sent in the `Authorization` header with `HTTPHeaderFilter`.
+    static void checkHeaders(const ContextPtr & context, std::string_view oauth_token);
+
+    YTsaurusClient(const YTsaurusClient & other);
+
     const ConnectionInfo & getConnectionInfo() { return connection_info; }
 
-    ReadBufferPtr readTable(const String & cypress_path);
+    ReadBufferPtr readTable(const String & cypress_path, const std::pair<size_t, size_t> & rows_range);
 
-    ReadBufferPtr lookupRows(const String & cypress_path, const Block & lookup_block_input);
+    ReadBufferPtr lookupRows(const String & cypress_path, const Block & lookup_block_input, ThrottlerPtr lookup_throttler = nullptr);
 
-    ReadBufferPtr selectRows(const String & cypress_path);
+    ReadBufferPtr selectRows(const String & cypress_path, const String& column_names_str);
+
+    ReadBufferPtr selectRows(const String & cypress_path, const ColumnsWithTypeAndName& columns);
 
     YTsaurusNodeType getNodeType(const String & cypress_path);
+
+    String startTx(size_t timeout_ms);
+
+    void commitTx(const String & transaction_id);
+
+    String getNodeIdFromLock(const String & lock_id);
+
+    String lock(const String & cypress_path, const String & transaction_id);
+
+    size_t getTableNumberOfRows(const String& table_path);
 
     struct SchemaDescription
     {
         bool is_strict;
-        std::unordered_map<String, DataTypePtr> columns;
+        UnorderedMapWithMemoryTracking<String, DataTypePtr> columns;
     };
 
     SchemaDescription getTableSchema(const String & cypress_path);
 
     bool checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block, String & reason, bool allow_nullable);
 private:
-    Poco::JSON::Object::Ptr getTableInfo(const String & cypress_path);
+    Poco::JSON::Object::Ptr getNodeMetadata(const String & cypress_path);
 
-    Poco::Dynamic::Var getTableAttribute(const String & cypress_path, const String & attribute_name);
+    Poco::Dynamic::Var getNodeAttribute(const String & cypress_path, const String & attribute_name);
 
     YTsaurusNodeType getNodeTypeFromAttributes(const Poco::JSON::Object::Ptr & json_ptr);
 
     Poco::Dynamic::Var getMetadata(const String & path);
 
 
-    ReadBufferPtr createQueryRWBuffer(const URI& uri,  const ReadWriteBufferFromHTTP::OutStreamCallback& out_callback, const std::string & http_method);
-    ReadBufferPtr executeQuery(YTsaurusQueryPtr query, const ReadWriteBufferFromHTTP::OutStreamCallback && out_callback = nullptr);
+    ReadBufferPtr createQueryRWBuffer(const URI & uri, const ReadWriteBufferFromHTTP::OutStreamCallback & out_callback, const std::string & http_method);
+    /// `request_throttler` (if set) is consumed once per actual HTTP attempt, i.e. also for every retry against
+    /// another http proxy, so a configured requests-per-second limit holds under proxy failover as well.
+    ReadBufferPtr executeQuery(
+        YTsaurusQueryPtr query, const ReadWriteBufferFromHTTP::OutStreamCallback && out_callback = nullptr, const ThrottlerPtr & request_throttler = nullptr);
 
     URI getHeavyProxyURI(const URI& uri);
 
@@ -92,10 +118,32 @@ private:
 
     const ConnectionInfo connection_info;
     LoggerPtr log;
-    size_t recently_used_url_index = 0;
+    /// `CacheDictionary` can call `loadIds` / `loadKeys` concurrently on the same `YTsarususDictionarySource`,
+    /// so a single `YTsaurusClient` can be used by several threads at once. This index is only a round-robin hint
+    /// for proxy selection, but it must still be accessed atomically to avoid a data race.
+    std::atomic<size_t> recently_used_url_index = 0;
+    constexpr static String LOCKS_STORAGE_CYPRESS_PATH = "//sys/locks";
 };
 
 using YTsaurusClientPtr = std::shared_ptr<YTsaurusClient>;
+
+class YTsaurusTableLock
+{
+public:
+    YTsaurusTableLock(YTsaurusClientPtr client_, const String& cypress_path_, size_t transaction_timeout_ms);
+    [[nodiscard]] String getNodePath() const
+    {
+        return node_cypress_path;
+    }
+    ~YTsaurusTableLock();
+private:
+    YTsaurusClientPtr client;
+    String transaction_id;
+    String lock_id;
+    String node_cypress_path;
+};
+
+using YTsaurusTableLockPtr = std::shared_ptr<YTsaurusTableLock>;
 
 }
 

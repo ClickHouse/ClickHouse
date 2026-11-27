@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/Compaction/PartProperties.h>
+#include <Storages/MergeTree/Compaction/PartitionStatistics.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <memory>
@@ -12,19 +13,25 @@ namespace DB
 
 using PartitionIdsHint = std::unordered_set<String>;
 
+struct CollectedPartsRanges
+{
+    PartsRanges ranges;
+    PartitionsStatistics partitions_stats;
+};
+
 class IPartsCollector
 {
 public:
     virtual ~IPartsCollector() = default;
 
-    virtual PartsRanges grabAllPossibleRanges(
+    virtual CollectedPartsRanges grabAllPossibleRanges(
         const StorageMetadataPtr & metadata_snapshot,
         const StoragePolicyPtr & storage_policy,
         const time_t & current_time,
         const std::optional<PartitionIdsHint> & partitions_hint,
         LogSeriesLimiter & series_log) const = 0;
 
-    virtual std::expected<PartsRange, PreformattedMessage> grabAllPartsInsidePartition(
+    [[nodiscard]] virtual std::expected<PartsRange, PreformattedMessage> grabAllPartsInsidePartition(
         const StorageMetadataPtr & metadata_snapshot,
         const StoragePolicyPtr & storage_policy,
         const time_t & current_time,

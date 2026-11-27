@@ -46,14 +46,14 @@ private:
     krb5_creds my_creds {};
     krb5_keytab keytab = nullptr;
     krb5_principal defcache_princ = nullptr;
-    String fmtError(krb5_error_code code) const;
+    [[nodiscard]] String fmtError(krb5_error_code code) const;
 };
 }
 
 
 String KerberosInit::fmtError(krb5_error_code code) const
 {
-    const char *msg;
+    const char *msg = nullptr;
     msg = krb5_get_error_message(k5.ctx, code);
     String fmt_error = fmt::format(" ({}, {})", code, msg);
     krb5_free_error_message(k5.ctx, msg);
@@ -65,7 +65,7 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
     auto log = getLogger("KerberosInit");
     LOG_TRACE(log,"Trying to authenticate with Kerberos v5");
 
-    krb5_error_code ret;
+    krb5_error_code ret = 0;
 
     const char *deftype = nullptr;
 

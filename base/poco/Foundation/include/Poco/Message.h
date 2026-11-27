@@ -54,7 +54,8 @@ public:
         PRIO_INFORMATION, /// An informational message, usually denoting the successful completion of an operation.
         PRIO_DEBUG, /// A debugging message.
         PRIO_TRACE, /// A tracing message. This is the lowest priority useful for production.
-        PRIO_TEST /// A message for test environment.
+        PRIO_TEST, /// A message for test environment.
+        PRIO_END
     };
 
     Message();
@@ -69,7 +70,8 @@ public:
         const std::string & source,
         const std::string & text,
         Priority prio,
-        std::string && file,
+        const char * file,
+        const char * function,
         int line,
         std::string_view fmt_str = {},
         const std::vector<std::string> & fmt_str_args = {});
@@ -77,7 +79,8 @@ public:
         std::string && source,
         std::string && text,
         Priority prio,
-        std::string && file,
+        const char * file,
+        const char * function,
         int line,
         std::string_view fmt_str,
         std::vector<std::string> && fmt_str_args);
@@ -162,8 +165,12 @@ public:
     /// the __FILE__ macro. The string is not copied
     /// internally for performance reasons.
 
-    const std::string & getSourceFile() const;
+    const char * getSourceFile() const;
     /// Returns the source file path of the code creating
+    /// the message. May be "" if not set.
+
+    const char * getSourceFunction() const;
+    /// Returns the function name of the code creating
     /// the message. May be "" if not set.
 
     void setSourceLine(int line);
@@ -195,7 +202,8 @@ private:
     long _tid;
     std::string _thread;
     mutable long _pid = -1;
-    std::string _file;
+    const char * _file = "";
+    const char * _function = "";
     int _line;
     std::string_view _fmt_str;
     std::vector<std::string> _fmt_str_args;
@@ -241,9 +249,15 @@ inline long Message::getTid() const
 }
 
 
-inline const std::string & Message::getSourceFile() const
+inline const char * Message::getSourceFile() const
 {
     return _file;
+}
+
+
+inline const char * Message::getSourceFunction() const
+{
+    return _function;
 }
 
 

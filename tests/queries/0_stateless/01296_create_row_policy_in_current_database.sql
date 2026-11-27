@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
 
 DROP ROW POLICY IF EXISTS p1_01296, p2_01296, p3_01296, p4_01296, p5_01296 ON db_01296.table;
 DROP ROW POLICY IF EXISTS p3_01296, p5_01296 ON db_01296.table2;

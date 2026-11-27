@@ -1,0 +1,82 @@
+three UInt64 keys (keys256)
+0	1	2	0
+1	2	3	100
+2	3	4	200
+3	4	5	300
+4	5	6	400
+0
+100
+200
+300
+400
+two UInt64 keys (keys128)
+0	500	0
+1	501	10
+2	502	20
+UInt8 + UInt16 keys (keys32, packed widest-first)
+7	4000	0
+8	4001	10
+9	4002	20
+UInt64 + UInt8 + UInt128 keys (keys256, packed in clause order)
+900	3	70000	0
+901	4	70001	10
+902	5	70002	20
+two UInt32 keys (keys64)
+0	500	0
+1	501	10
+2	502	20
+single wide numeric key
+61f0c404-5cb3-11e7-907b-a6006ad3dba0	7
+-12345678901234567890	7
+FixedString keys
+abcd	7	10
+efgh	8	20
+ab	cd	10
+ef	gh	20
+abc	10
+def	20
+four keys
+0	10	20	30	0
+1	11	21	31	7
+2	12	22	32	14
+repeated engine key name
+0	1000	0
+1	1001	10
+2	1002	20
+a subset of the key columns, reordered
+90000	7
+90001	8
+90002	9
+4000	0
+4001	10
+4002	20
+ANY INNER (one row per key)
+0	5	0
+1	6	10
+2	7	20
+ALL RIGHT (the key columns are also kept in the stored block)
+0	5	0
+1	6	10
+2	7	20
+several rows per key
+1	2	10
+1	2	20
+1	2	30
+5	6	50
+Nullable key component
+1	2	10
+4	5	40
+the scanned rows match the joined rows
+1
+single-column keys are unchanged
+0	0
+1	10
+2	20
+	3
+x	1
+yy	2
+x	1
+yy	2
+1	10
+3	30
+keys stored as a hash are still rejected

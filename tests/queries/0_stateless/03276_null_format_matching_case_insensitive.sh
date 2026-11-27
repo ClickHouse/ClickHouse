@@ -13,5 +13,5 @@ $CLICKHOUSE_CLIENT -q "
   SYSTEM FLUSH LOGS query_log;
 
   -- SendBytes should be close to 0, previously for this query it was around 800MB
-  select ProfileEvents['NetworkSendBytes'] < 1e6 from system.query_log where current_database = currentDatabase() and event_date >= yesterday() and query_id = '$query_id' and type = 'QueryFinish';
+  select ProfileEvents['NetworkSendBytes'] < 1e6 from system.query_log where current_database = currentDatabase() and event_date >= yesterday() AND event_time >= now() - 600 and query_id = '$query_id' and type = 'QueryFinish';
 "

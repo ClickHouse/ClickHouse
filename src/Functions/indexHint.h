@@ -1,4 +1,5 @@
 #pragma once
+#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -20,7 +21,7 @@ namespace DB
   *
   * The function can be used for debugging purposes, as well as for (hidden from the user) query conversions.
   */
-class FunctionIndexHint : public IFunction
+class FunctionIndexHint final : public IFunction
 {
 public:
     static constexpr auto name = "indexHint";
@@ -29,44 +30,58 @@ public:
         return std::make_shared<FunctionIndexHint>();
     }
 
-    bool isVariadic() const override
+    static FunctionOverloadResolverPtr createImplied();
+    static FunctionIndexHint * tryGet(const FunctionBasePtr & function_base);
+
+    [[nodiscard]] bool isVariadic() const override
     {
         return true;
     }
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    /// Arguments are never evaluated and the result is always UInt8, so a Nothing-typed
+    /// argument must not force the declared return type to Nothing (which would mismatch
+    /// the UInt8 column produced by executeImpl).
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
 
-    bool useDefaultImplementationForSparseColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    bool isSuitableForConstantFolding() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForSparseColumns() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
 
-    String getName() const override
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+
+    [[nodiscard]] String getSignatureString() const override
     {
-        return std::make_shared<DataTypeUInt8>();
+        return "() -> UInt8 OR (Any, ...) -> UInt8";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeUInt8().createColumnConst(input_rows_count, 1u);
     }
 
     void setActions(ActionsDAG actions_) { actions = std::move(actions_); }
-    const ActionsDAG & getActions() const { return actions; }
+    [[nodiscard]] const ActionsDAG & getActions() const { return actions; }
+
+    void setImplied(bool implied_) { implied = implied_; }
+    [[nodiscard]] bool isImplied() const { return implied; }
 
 private:
     ActionsDAG actions;
+    /// The condition follows from the other conjuncts of the `and` that holds the hint.
+    bool implied = false;
 };
 
 }

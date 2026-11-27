@@ -22,7 +22,7 @@ TEST(ReadBufferFromFile, seekBackwards)
     }
 
     ReadBufferFromFile in(tmp_file->path(), BUF_SIZE);
-    size_t x;
+    size_t x = {};
 
     /// Read something to initialize the buffer.
     in.seek(BUF_SIZE * 10, SEEK_SET);

@@ -42,16 +42,16 @@ public:
 
     static constexpr auto family_name = "Decimal";
 
-    const char * getFamilyName() const override { return family_name; }
+    [[nodiscard]] const char * getFamilyName() const override { return family_name; }
 
-    std::string doGetName() const override;
-    TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
-    bool canBePromoted() const override { return true; }
-    DataTypePtr promoteNumericType() const override;
+    [[nodiscard]] std::string doGetName() const override;
+    [[nodiscard]] TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
+    [[nodiscard]] bool canBePromoted() const override { return true; }
+    [[nodiscard]] DataTypePtr promoteNumericType() const override;
 
-    bool equals(const IDataType & rhs) const override;
+    [[nodiscard]] bool equals(const IDataType & rhs) const override;
     T parseFromString(const String & str) const;
-    SerializationPtr doGetDefaultSerialization() const override;
+    [[nodiscard]] SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
 };
 
 using DataTypeDecimal32 = DataTypeDecimal<Decimal32>;
@@ -65,7 +65,7 @@ inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)
     return typeid_cast<const DataTypeDecimal<T> *>(&data_type);
 }
 
-inline UInt32 getDecimalScale(const IDataType & data_type)
+inline std::optional<UInt32> tryGetDecimalScale(const IDataType & data_type)
 {
     if (const auto * decimal_type = checkDecimal<Decimal32>(data_type))
         return decimal_type->getScale();
@@ -79,6 +79,13 @@ inline UInt32 getDecimalScale(const IDataType & data_type)
         return date_time_type->getScale();
     if (const auto * time_type = typeid_cast<const DataTypeTime64 *>(&data_type))
         return time_type->getScale();
+    return {};
+}
+
+inline UInt32 getDecimalScale(const IDataType & data_type)
+{
+    if (auto scale = tryGetDecimalScale(data_type))
+        return *scale;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get decimal scale from type {}", data_type.getName());
 }
@@ -135,6 +142,30 @@ ReturnType ALWAYS_INLINE convertDecimalsImpl(const typename FromDataType::FieldT
 #define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
     extern template ALWAYS_INLINE void convertDecimalsImpl<FROM_DATA_TYPE, TO_DATA_TYPE, void>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename TO_DATA_TYPE::FieldType & result); \
     extern template ALWAYS_INLINE bool convertDecimalsImpl<FROM_DATA_TYPE, TO_DATA_TYPE, bool>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename TO_DATA_TYPE::FieldType & result);
+#define INVOKE(X) FOR_EACH_DECIMAL_TYPE_PASS(DISPATCH, X)
+FOR_EACH_DECIMAL_TYPE(INVOKE);
+#undef INVOKE
+#undef DISPATCH
+
+
+/// Batch conversion for arrays - hoists scale comparison and multiplier computation outside the loop
+/// This is significantly faster than calling convertDecimalsImpl in a loop because:
+/// 1. Scale comparison is done once before the loop
+/// 2. Scale multiplier is computed once and reused
+/// 3. No function call overhead per element
+template <typename FromDataType, typename ToDataType, typename ReturnType = void>
+requires (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
+NO_SANITIZE_UNDEFINED void convertDecimalsBatch(
+    const typename FromDataType::FieldType * __restrict from,
+    typename ToDataType::FieldType * __restrict to,
+    size_t size,
+    UInt32 scale_from,
+    UInt32 scale_to,
+    ReturnType * __restrict nullmap = nullptr);
+
+#define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
+    extern template void convertDecimalsBatch<FROM_DATA_TYPE, TO_DATA_TYPE, void>(const typename FROM_DATA_TYPE::FieldType * __restrict, typename TO_DATA_TYPE::FieldType * __restrict, size_t, UInt32, UInt32, void *); \
+    extern template void convertDecimalsBatch<FROM_DATA_TYPE, TO_DATA_TYPE, UInt8>(const typename FROM_DATA_TYPE::FieldType * __restrict, typename TO_DATA_TYPE::FieldType * __restrict, size_t, UInt32, UInt32, UInt8 *);
 #define INVOKE(X) FOR_EACH_DECIMAL_TYPE_PASS(DISPATCH, X)
 FOR_EACH_DECIMAL_TYPE(INVOKE);
 #undef INVOKE
@@ -201,6 +232,22 @@ FOR_EACH_ARITHMETIC_TYPE(INVOKE);
 #undef INVOKE
 #undef DISPATCH
 
+/// Converts a column with the results and errors of `convertFromDecimal` on each row, without a call per row.
+template <typename FromDataType, typename ToDataType>
+requires (IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>)
+void convertFromDecimalBatch(
+    const typename FromDataType::FieldType * __restrict from,
+    typename ToDataType::FieldType * __restrict to,
+    size_t size,
+    UInt32 scale);
+
+#define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
+    extern template void convertFromDecimalBatch<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType * __restrict, typename TO_DATA_TYPE::FieldType * __restrict, size_t, UInt32);
+#define INVOKE(X) FOR_EACH_DECIMAL_TYPE_PASS(DISPATCH, X)
+FOR_EACH_ARITHMETIC_TYPE(INVOKE);
+#undef INVOKE
+#undef DISPATCH
+
 
 template <typename FromDataType, typename ToDataType, typename ReturnType>
 requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
@@ -209,6 +256,24 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
 #define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
     extern template void convertToDecimalImpl<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType & result);  \
     extern template bool convertToDecimalImpl<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType & result);
+#define INVOKE(X) FOR_EACH_ARITHMETIC_TYPE_PASS(DISPATCH, X)
+FOR_EACH_DECIMAL_TYPE(INVOKE);
+#undef INVOKE
+#undef DISPATCH
+
+/// Batch conversion from arithmetic types to decimals - optimized to hoist multiplier computation outside the loop
+template <typename FromDataType, typename ToDataType, typename ReturnType = void>
+requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
+NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
+    const typename FromDataType::FieldType * __restrict from,
+    typename ToDataType::FieldType * __restrict to,
+    size_t size,
+    UInt32 scale,
+    ReturnType * __restrict nullmap = nullptr);
+
+#define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
+    extern template void convertToDecimalBatch<FROM_DATA_TYPE, TO_DATA_TYPE, void>(const typename FROM_DATA_TYPE::FieldType * __restrict, typename TO_DATA_TYPE::FieldType * __restrict, size_t, UInt32, void *); \
+    extern template void convertToDecimalBatch<FROM_DATA_TYPE, TO_DATA_TYPE, UInt8>(const typename FROM_DATA_TYPE::FieldType * __restrict, typename TO_DATA_TYPE::FieldType * __restrict, size_t, UInt32, UInt8 *);
 #define INVOKE(X) FOR_EACH_ARITHMETIC_TYPE_PASS(DISPATCH, X)
 FOR_EACH_DECIMAL_TYPE(INVOKE);
 #undef INVOKE

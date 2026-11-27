@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-msan
+# Tags: long, no-msan, no-azure-blob-storage
 # msan: too slow
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 
-CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1 --allow_suspicious_variant_types=1"
+CH_CLIENT="$CLICKHOUSE_CLIENT --allow_suspicious_variant_types=1"
 
 function test6_insert()
 {

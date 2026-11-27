@@ -1,0 +1,2 @@
+HTTP/1.1 403 Forbidden
+X-ClickHouse-Exception-Code: 497

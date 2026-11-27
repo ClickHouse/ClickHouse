@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/TypeList.h>
 #include <base/range.h>
 
 
@@ -14,12 +15,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
 template <typename Impl>
-class FunctionNumericPredicate : public IFunction
+class FunctionNumericPredicate final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -28,51 +28,48 @@ public:
         return std::make_shared<FunctionNumericPredicate>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return false;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (!isNativeNumber(arguments.front()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be a number", getName());
+        /// `BFloat16` is not a `NativeNumber` but is accepted by these predicates (matches the
+        /// legacy `isNativeNumber(arg) || isBFloat16(arg)` check); `Decimal` / wide integers stay rejected.
+        return "(NativeNumber | BFloat16) -> UInt8";
+    }
 
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeUInt8>();
-    }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * in = arguments.front().column.get();
 
         ColumnPtr res;
-        if (!((res = execute<UInt8>(in, input_rows_count))
-            || (res = execute<UInt16>(in, input_rows_count))
-            || (res = execute<UInt32>(in, input_rows_count))
-            || (res = execute<UInt64>(in, input_rows_count))
-            || (res = execute<Int8>(in, input_rows_count))
-            || (res = execute<Int16>(in, input_rows_count))
-            || (res = execute<Int32>(in, input_rows_count))
-            || (res = execute<Int64>(in, input_rows_count))
-            || (res = execute<Float32>(in, input_rows_count))
-            || (res = execute<Float64>(in, input_rows_count))))
+        TypeListUtils::forEach(
+            TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64, BFloat16>{},
+            [&]<typename T>(TypeList<T>)
+            {
+                if (!res)
+                    res = execute<T>(in, input_rows_count);
+            });
+        if (!res)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
 
         return res;

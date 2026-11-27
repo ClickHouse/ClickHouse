@@ -1,0 +1,34 @@
+---
+date: 2023-06-07
+title: なぜClickHouse KeeperはZooKeeperより推奨されるのですか？
+description: ClickHouse Keeperは、ディスク使用量の削減、復旧の高速化、メモリ消費量の抑制などにより、ZooKeeperより優れた性能をClickHouseクラスターにもたらします。
+tags: ['コアデータの概念']
+keywords: ['ClickHouse Keeper', 'ZooKeeper']
+---
+
+***
+
+<div id="question">
+  ## 質問
+</div>
+
+ClickHouse Keeper は、データのレプリケーションや distributed DDL クエリの実行を支える調整システムを提供します。ClickHouse Keeper は ZooKeeper と互換性がありますが、ZooKeeper ではなく ClickHouse Keeper を使うべき理由は、必ずしも明らかではないかもしれません。この記事では、Keeper の利点をいくつか紹介します。
+
+<div id="answer">
+  ## 回答
+</div>
+
+[ClickHouse Cloud](https://console.clickhouse.cloud/) では、マルチテナント環境で数千ものサービスを大規模に運用するために `clickhouse-keeper` を使用しています。私たちは、Java ベースの ZooKeeper 実装への依存をなくすために Keeper を設計・開発しました。ClickHouse Keeper は、ZooKeeper のよく知られた多くの欠点を解消し、さらに次のような改善も加えています。
+
+* より優れた圧縮により、スナップショットとログのディスク使用量を大幅に削減できる
+* デフォルトのパケットサイズやノードデータサイズに制限がない (ZooKeeper では 1 MB)
+* `zxid` のオーバーフロー問題がない (ZooKeeper では 20 億トランザクションごとに再起動が必要)
+* より優れた分散コンセンサスプロトコルを採用しているため、ネットワーク分断後の復旧が速い
+* 同じデータ量でも使用メモリが少ない
+* セットアップが容易で、JVM のヒープサイズやカスタムのガベージコレクション実装を指定する必要がない
+* プロトコル内のいくつかのカスタムコマンドにより、`ReplicatedMergeTree` テーブルでの操作を高速化できる
+* Jepsen テストのカバレッジがより広い
+
+さらに ClickHouse Support では、ZooKeeper ではなく `clickhouse-keeper` を使用している環境で、クラスターの問題が大幅に減少していることを確認しています。
+
+ClickHouse Keeper の設定方法と実行方法の詳細については、[Keeper ドキュメントページ](/ja/guides/oss/deployment-and-scaling/keeper/index) を参照してください。

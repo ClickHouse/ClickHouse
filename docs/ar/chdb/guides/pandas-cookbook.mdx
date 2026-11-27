@@ -1,0 +1,629 @@
+---
+title: 'وصفات Pandas'
+sidebarTitle: 'وصفات Pandas'
+slug: /chdb/guides/pandas-cookbook
+description: 'أنماط Pandas الشائعة وما يقابلها في DataStore'
+keywords: ['chdb', 'DataStore', 'Pandas', 'وصفات', 'أنماط', 'أمثلة']
+doc_type: 'guide'
+---
+
+أنماط Pandas الشائعة وما يقابلها في DataStore. تعمل معظم الشيفرات كما هي!
+
+<div id="loading">
+  ## تحميل البيانات
+</div>
+
+<div id="read-csv">
+  ### قراءة CSV
+</div>
+
+```python
+# Pandas
+import pandas as pd
+df = pd.read_csv("data.csv")
+
+# DataStore - same!
+from chdb import datastore as pd
+df = pd.read_csv("data.csv")
+```
+
+<div id="read-multiple-files">
+  ### قراءة عدة ملفات
+</div>
+
+```python
+# Pandas
+import glob
+dfs = [pd.read_csv(f) for f in glob.glob("data/*.csv")]
+df = pd.concat(dfs)
+
+# DataStore - more efficient with glob pattern
+df = pd.read_csv("data/*.csv")
+```
+
+***
+
+<div id="filtering">
+  ## التصفية
+</div>
+
+<div id="single-condition">
+  ### شرط واحد
+</div>
+
+```python
+# Pandas and DataStore - identical
+df[df['age'] > 25]
+df[df['city'] == 'NYC']
+df[df['name'].str.contains('John')]
+```
+
+<div id="multiple-conditions">
+  ### شروط متعددة
+</div>
+
+```python
+# AND
+df[(df['age'] > 25) & (df['city'] == 'NYC')]
+
+# OR
+df[(df['age'] < 18) | (df['age'] > 65)]
+
+# NOT
+df[~(df['status'] == 'inactive')]
+```
+
+<div id="using-query">
+  ### استخدام query()
+</div>
+
+```python
+# Pandas and DataStore - identical
+df.query('age > 25 and city == "NYC"')
+df.query('salary > 50000')
+```
+
+<div id="isin">
+  ### isin()
+</div>
+
+```python
+# Pandas and DataStore - identical
+df[df['city'].isin(['NYC', 'LA', 'SF'])]
+```
+
+<div id="between">
+  ### between()
+</div>
+
+```python
+# Pandas and DataStore - identical
+df[df['age'].between(18, 65)]
+```
+
+***
+
+<div id="selecting">
+  ## اختيار الأعمدة
+</div>
+
+<div id="single-column-select">
+  ### عمود واحد
+</div>
+
+```python
+# Pandas and DataStore - identical
+df['name']
+df.name  # attribute access
+```
+
+<div id="multiple-columns-select">
+  ### أعمدة متعددة
+</div>
+
+```python
+# Pandas and DataStore - identical
+df[['name', 'age', 'city']]
+```
+
+<div id="select-and-filter">
+  ### الاختيار والتصفية
+</div>
+
+```python
+# Pandas and DataStore - identical
+df[df['age'] > 25][['name', 'salary']]
+
+# DataStore also supports SQL-style
+df.filter(df['age'] > 25).select('name', 'salary')
+```
+
+***
+
+<div id="sorting">
+  ## الفرز
+</div>
+
+<div id="single-column-select">
+  ### عمود واحد
+</div>
+
+```python
+# Pandas and DataStore - identical
+df.sort_values('salary')
+df.sort_values('salary', ascending=False)
+```
+
+<div id="multiple-columns-select">
+  ### أعمدة متعددة
+</div>
+
+```python
+# Pandas and DataStore - identical
+df.sort_values(['city', 'salary'], ascending=[True, False])
+```
+
+<div id="get-top-bottom-n">
+  ### استخراج أعلى/أدنى N
+</div>
+
+```python
+# Pandas and DataStore - identical
+df.nlargest(10, 'salary')
+df.nsmallest(5, 'age')
+```
+
+***
+
+<div id="groupby">
+  ## GroupBy والتجميع
+</div>
+
+<div id="simple-groupby">
+  ### GroupBy بسيط
+</div>
+
+```python
+# Pandas and DataStore - identical
+df.groupby('city')['salary'].mean()
+df.groupby('city')['salary'].sum()
+df.groupby('city').size()  # count
+```
+
+<div id="multiple-aggregations">
+  ### تجميعات متعددة
+</div>
+
+```python
+# Pandas and DataStore - identical
+df.groupby('city')['salary'].agg(['sum', 'mean', 'count'])
+
+df.groupby('city').agg({
+    'salary': ['sum', 'mean'],
+    'age': ['min', 'max']
+})
+```
+
+<div id="named-aggregations">
+  ### التجميعات المُسمّاة
+</div>
+
+```python
+# Pandas and DataStore - identical
+df.groupby('city').agg(
+    total_salary=('salary', 'sum'),
+    avg_salary=('salary', 'mean'),
+    employee_count=('id', 'count')
+)
+```
+
+<div id="multiple-groupby-keys">
+  ### مفاتيح متعددة في GroupBy
+</div>
+
+```python
+# Pandas and DataStore - identical
+df.groupby(['city', 'department'])['salary'].mean()
+```
+
+***
+
+<div id="joining">
+  ## ضمّ البيانات
+</div>
+
+<div id="inner-join">
+  ### الربط الداخلي
+</div>
+
+```python
+# Pandas
+pd.merge(df1, df2, on='id')
+
+# DataStore - same API
+pd.merge(df1, df2, on='id')
+
+# DataStore also supports
+df1.join(df2, on='id')
+```
+
+<div id="left-join">
+  ### الربط الأيسر
+</div>
+
+```python
+# Pandas and DataStore - identical
+pd.merge(df1, df2, on='id', how='left')
+```
+
+<div id="join-on-different-columns">
+  ### الربط باستخدام أعمدة مختلفة
+</div>
+
+```python
+# Pandas and DataStore - identical
+pd.merge(df1, df2, left_on='emp_id', right_on='id')
+```
+
+<div id="concat">
+  ### Concat
+</div>
+
+```python
+# Pandas and DataStore - identical
+pd.concat([df1, df2, df3])
+pd.concat([df1, df2], axis=1)
+```
+
+***
+
+<div id="string">
+  ## عمليات على السلاسل النصية
+</div>
+
+<div id="case-conversion">
+  ### تحويل حالة الأحرف
+</div>
+
+```python
+# Pandas and DataStore - identical
+df['name'].str.upper()
+df['name'].str.lower()
+df['name'].str.title()
+```
+
+<div id="substring">
+  ### السلسلة الفرعية
+</div>
+
+```python
+# Pandas and DataStore - identical
+df['name'].str[:3]        # First 3 characters
+df['name'].str.slice(0, 3)
+```
+
+<div id="search">
+  ### البحث
+</div>
+
+```python
+# Pandas and DataStore - identical
+df['name'].str.contains('John')
+df['name'].str.startswith('A')
+df['name'].str.endswith('son')
+```
+
+<div id="replace">
+  ### استبدال
+</div>
+
+```python
+# Pandas and DataStore - identical
+df['text'].str.replace('old', 'new')
+df['text'].str.replace(r'\d+', '', regex=True)  # Remove digits
+```
+
+<div id="split">
+  ### تقسيم
+</div>
+
+```python
+# Pandas and DataStore - identical
+df['name'].str.split(' ')
+df['name'].str.split(' ', expand=True)
+```
+
+<div id="length">
+  ### الطول
+</div>
+
+```python
+# Pandas and DataStore - identical
+df['name'].str.len()
+```
+
+***
+
+<div id="datetime">
+  ## عمليات DateTime
+</div>
+
+<div id="extract-components">
+  ### استخراج المكوّنات
+</div>
+
+```python
+# Pandas and DataStore - identical
+df['date'].dt.year
+df['date'].dt.month
+df['date'].dt.day
+df['date'].dt.dayofweek
+df['date'].dt.hour
+```
+
+<div id="formatting">
+  ### التنسيق
+</div>
+
+```python
+# Pandas and DataStore - identical
+df['date'].dt.strftime('%Y-%m-%d')
+```
+
+***
+
+<div id="missing">
+  ## البيانات المفقودة
+</div>
+
+<div id="check-missing">
+  ### فحص القيم المفقودة
+</div>
+
+```python
+# Pandas and DataStore - identical
+df['col'].isna()
+df['col'].notna()
+df.isna().sum()
+```
+
+<div id="drop-missing">
+  ### استبعاد القيم المفقودة
+</div>
+
+```python
+# Pandas and DataStore - identical
+df.dropna()
+df.dropna(subset=['col1', 'col2'])
+```
+
+<div id="fill-missing">
+  ### ملء القيم المفقودة
+</div>
+
+```python
+# Pandas and DataStore - identical
+df.fillna(0)
+df.fillna({'col1': 0, 'col2': 'Unknown'})
+df.fillna(method='ffill')
+```
+
+***
+
+<div id="new-columns">
+  ## إنشاء أعمدة جديدة
+</div>
+
+<div id="simple-assignment">
+  ### تعيين بسيط
+</div>
+
+```python
+# Pandas and DataStore - identical
+df['total'] = df['price'] * df['quantity']
+df['age_group'] = df['age'] // 10 * 10
+```
+
+<div id="using-assign">
+  ### استخدام الدالة assign()
+</div>
+
+```python
+# Pandas and DataStore - identical
+df = df.assign(
+    total=df['price'] * df['quantity'],
+    is_adult=df['age'] >= 18
+)
+```
+
+<div id="conditional-where-mask">
+  ### التعبير الشرطي (where/mask)
+</div>
+
+```python
+# Pandas and DataStore - identical
+df['status'] = df['age'].where(df['age'] >= 18, 'minor')
+```
+
+<div id="apply-for-custom-logic">
+  ### apply() للمنطق المخصص
+</div>
+
+```python
+# Works, but triggers pandas execution
+df['category'] = df['amount'].apply(lambda x: 'high' if x > 1000 else 'low')
+
+# DataStore alternative (stays lazy)
+df['category'] = (
+    df.when(df['amount'] > 1000, 'high')
+      .otherwise('low')
+)
+```
+
+***
+
+<div id="reshaping">
+  ## إعادة تشكيل البيانات
+</div>
+
+<div id="pivot-table">
+  ### الجدول المحوري
+</div>
+
+```python
+# Pandas and DataStore - identical
+df.pivot_table(
+    values='amount',
+    index='region',
+    columns='product',
+    aggfunc='sum'
+)
+```
+
+<div id="melt-unpivot">
+  ### Melt (فكّ التمحور)
+</div>
+
+```python
+# Pandas and DataStore - identical
+df.melt(
+    id_vars=['name'],
+    value_vars=['score1', 'score2', 'score3'],
+    var_name='test',
+    value_name='score'
+)
+```
+
+<div id="explode">
+  ### Explode
+</div>
+
+```python
+# Pandas and DataStore - identical
+df.explode('tags')  # Expand array column
+```
+
+***
+
+<div id="window">
+  ## الدوال النافذة
+</div>
+
+<div id="rolling">
+  ### المتحرك
+</div>
+
+```python
+# Pandas and DataStore - identical
+df['rolling_avg'] = df['price'].rolling(window=7).mean()
+df['rolling_sum'] = df['amount'].rolling(window=30).sum()
+```
+
+<div id="expanding">
+  ### التوسيع
+</div>
+
+```python
+# Pandas and DataStore - identical
+df['cumsum'] = df['amount'].expanding().sum()
+df['cummax'] = df['amount'].expanding().max()
+```
+
+<div id="shift">
+  ### الإزاحة
+</div>
+
+```python
+# Pandas and DataStore - identical
+df['prev_value'] = df['value'].shift(1)   # Lag
+df['next_value'] = df['value'].shift(-1)  # Lead
+```
+
+<div id="diff">
+  ### الفرق
+</div>
+
+```python
+# Pandas and DataStore - identical
+df['change'] = df['value'].diff()
+df['pct_change'] = df['value'].pct_change()
+```
+
+***
+
+<div id="output">
+  ## المخرجات
+</div>
+
+<div id="to-csv">
+  ### بصيغة CSV
+</div>
+
+```python
+# Pandas and DataStore - identical
+df.to_csv("output.csv", index=False)
+```
+
+<div id="to-parquet">
+  ### بصيغة Parquet
+</div>
+
+```python
+# Pandas and DataStore - identical
+df.to_parquet("output.parquet")
+```
+
+<div id="to-pandas-dataframe">
+  ### التحويل إلى pandas DataFrame
+</div>
+
+```python
+# DataStore specific
+pandas_df = ds.to_df()
+pandas_df = ds.to_pandas()
+```
+
+***
+
+<div id="extras">
+  ## إضافات DataStore
+</div>
+
+<div id="view-sql">
+  ### عرض SQL
+</div>
+
+```python
+# DataStore only
+print(ds.to_sql())
+```
+
+<div id="explain-plan">
+  ### شرح خطة التنفيذ
+</div>
+
+```python
+# DataStore only
+ds.explain()
+```
+
+<div id="clickhouse-functions">
+  ### دوال ClickHouse
+</div>
+
+```python
+# DataStore only - extra accessors
+df['domain'] = df['url'].url.domain()
+df['json_value'] = df['data'].json.get_string('key')
+df['ip_valid'] = df['ip'].ip.is_ipv4_string()
+```
+
+<div id="universal-uri">
+  ### URI الشامل
+</div>
+
+```python
+# DataStore only - read from anywhere
+ds = DataStore.uri("s3://bucket/data.parquet")
+ds = DataStore.uri("mysql://user:pass@host/db/table")
+```

@@ -1,0 +1,12 @@
+---
+title: 전용 Keeper 서버
+---
+
+<Note>
+  ClickHouse 서버와 ClickHouse Keeper를 동일한 서버에서 함께 실행할 수는 있지만,
+  프로덕션 환경에서는 ClickHouse Keeper용 *전용* 호스트를 사용하는 것을 강력히 권장합니다.
+  이 예시에서도 이 방식을 보여드립니다.
+
+  Keeper 서버는 더 작은 사양으로도 충분하며, 일반적으로 각 Keeper 서버에는 4GB RAM이면 충분합니다.
+  ClickHouse 서버 규모가 커지기 전까지는 그렇습니다.
+</Note>

@@ -1,6 +1,10 @@
 \N
 \N
 []
+0	\N	LowCardinality(Nullable(String))
+1	a	LowCardinality(Nullable(String))
+2		LowCardinality(Nullable(String))
+3	\N	LowCardinality(Nullable(String))
 1396-01-12
 1396-01-13
 \N

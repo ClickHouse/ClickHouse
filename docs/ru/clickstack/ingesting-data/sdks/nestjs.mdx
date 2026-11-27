@@ -1,0 +1,48 @@
+---
+slug: /use-cases/observability/clickstack/sdks/nestjs
+description: 'NestJS SDK для ClickStack — стека обсервабилити ClickHouse'
+title: 'NestJS'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', 'логирование', 'интеграция', 'мониторинг приложений']
+---
+
+import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Используйте ClickStack Node.js SDK, чтобы собирать телеметрию из приложения NestJS и отправлять её в ClickStack. SDK обеспечивает инструментирование запросов NestJS и перехватывает вывод в консоль.
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## Установка SDK {#install-sdk}
+
+Требуется Node.js версии 22.15 или выше:
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+## Настройка пункта назначения {#configure-destination}
+
+Укажите конечную точку OTLP HTTP и ключ ингестии для коллектора ClickStack. Если для коллектора не настроен TLS, используйте `http://`. Инструкции по настройке коллектора см. в разделе [Загрузка данных с помощью OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+```
+
+## Запуск приложения {#start-application}
+
+Задайте переменную `OTEL_SERVICE_NAME`, чтобы идентифицировать приложение. Соберите приложение NestJS, затем предварительно загрузите SDK перед скомпилированной точкой входа:
+
+```shell
+npm run build
+OTEL_SERVICE_NAME='my-nestjs-app' node --import @clickhouse/clickstack-node/register dist/main.js
+```
+
+Измените `dist/main.js` в соответствии с результатом вашей сборки. Если вы используете `ts-node` или другой транспайлер, который перехватывает `require`, используйте вместо этого `--require @clickhouse/clickstack-node/register`. Если вы собираете приложение в бандл, исключите из него SDK и инструментированные зависимости, оставив их внешними.
+
+Вы можете и дальше использовать стандартный консольный логгер NestJS. Если нужен собственный логгер, используйте одну из поддерживаемых интеграций, например Winston или Pino. Подробнее о конфигурации и совместимости см. [руководство по Node.js](/ru/clickstack/ingesting-data/sdks/nodejs).
+
+## Проверка ингестии {#verify-ingestion}
+
+Отправьте запрос к контроллеру и запишите сообщение в журнал. В ClickStack выберите недавний временной диапазон и найдите имя сервиса вашего приложения в разделах Logs и Traces. Раздел Metrics проверьте чуть позже, когда данные успеют экспортироваться.

@@ -169,6 +169,7 @@ std::vector<std::shared_future<void>> PatchJoinCache::Entry::addRangesAsync(cons
         /// Firstly lookup with read lock, because all needed ranges are likely read already.
         std::shared_lock lock(mutex);
 
+
         for (const auto & range : ranges)
         {
             auto it = ranges_futures.find(range);
@@ -189,6 +190,11 @@ std::vector<std::shared_future<void>> PatchJoinCache::Entry::addRangesAsync(cons
     {
         futures.clear();
         std::lock_guard lock(mutex);
+
+        /// A previous call to addBlock on this entry may have failed, leaving
+        /// hash_map in an inconsistent state. Rethrow the original error.
+        if (error)
+            std::rethrow_exception(error);
 
         for (const auto & range : ranges)
         {
@@ -253,6 +259,11 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
 
     std::lock_guard lock(mutex);
 
+    /// A previous call to addBlock on this entry may have failed, leaving
+    /// hash_map in an inconsistent state. Rethrow the original error.
+    if (error)
+        std::rethrow_exception(error);
+
 #ifdef DEBUG_OR_SANITIZER_BUILD
     for (const auto & block : blocks)
         assertCompatibleHeader(*block_with_data, *block, "patch join cache");
@@ -277,45 +288,55 @@ void PatchJoinCache::Entry::addBlock(Block read_block)
     /// to optimize the insertion. It gives average complexity of O(1) instead of O(log n).
     PatchOffsetsMap::const_iterator last_inserted_it;
 
-    for (size_t i = 0; i < num_read_rows; ++i)
+    try
     {
-        UInt64 block_number = block_number_column[i];
-        UInt64 block_offset = block_offset_column[i];
-
-        if (block_number != prev_block_number)
+        for (size_t i = 0; i < num_read_rows; ++i)
         {
-            prev_block_number = block_number;
-            current_offsets = &hash_map[block_number];
+            UInt64 block_number = block_number_column[i];
+            UInt64 block_offset = block_offset_column[i];
 
-            min_block = std::min(min_block, block_number);
-            max_block = std::max(max_block, block_number);
-            last_inserted_it = current_offsets->end();
-        }
+            if (block_number != prev_block_number)
+            {
+                prev_block_number = block_number;
+                current_offsets = &hash_map[block_number];
 
-        /// try_emplace overload with hint doesn't return 'inserted' flag,
-        /// so we need to check size before and after emplace.
-        size_t old_size = current_offsets->size();
-        auto it = current_offsets->try_emplace(last_inserted_it, block_offset);
-        last_inserted_it = it;
-        bool inserted = current_offsets->size() > old_size;
+                min_block = std::min(min_block, block_number);
+                max_block = std::max(max_block, block_number);
+                last_inserted_it = current_offsets->end();
+            }
 
-        if (inserted)
-        {
-            it->second = std::make_pair(static_cast<UInt32>(new_block_idx), static_cast<UInt32>(i));
-        }
-        else
-        {
-            const auto & [patch_block_index, patch_row_index] = it->second;
-            const auto & existing_version_column = blocks[patch_block_index]->getByPosition(version_column_position).column;
+            /// try_emplace overload with hint doesn't return 'inserted' flag,
+            /// so we need to check size before and after emplace.
+            size_t old_size = current_offsets->size();
+            auto it = current_offsets->try_emplace(last_inserted_it, block_offset);
+            last_inserted_it = it;
+            bool inserted = current_offsets->size() > old_size;
 
-            UInt64 current_version = data_version_column[i];
-            UInt64 existing_version = assert_cast<const ColumnUInt64 &>(*existing_version_column).getData()[patch_row_index];
-            chassert(current_version != existing_version);
-
-            /// Keep only the row with the highest version.
-            if (current_version > existing_version)
+            if (inserted)
+            {
                 it->second = std::make_pair(static_cast<UInt32>(new_block_idx), static_cast<UInt32>(i));
+            }
+            else
+            {
+                const auto & [patch_block_index, patch_row_index] = it->second;
+                const auto & existing_version_column = blocks[patch_block_index]->getByPosition(version_column_position).column;
+
+                UInt64 current_version = data_version_column[i];
+                UInt64 existing_version = assert_cast<const ColumnUInt64 &>(*existing_version_column).getData()[patch_row_index];
+                chassert(current_version != existing_version);
+
+                /// Keep only the row with the highest version.
+                if (current_version > existing_version)
+                    it->second = std::make_pair(static_cast<UInt32>(new_block_idx), static_cast<UInt32>(i));
+            }
         }
+    }
+    catch (...)
+    {
+        /// Mark the entry as poisoned so that concurrent and future callers
+        /// do not touch the potentially corrupted hash_map.
+        error = std::current_exception();
+        throw;
     }
 }
 

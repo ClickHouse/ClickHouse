@@ -2,10 +2,11 @@
 
 #include <memory>
 
+#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/BloomFilter.h>
-#include <Interpreters/ITokenExtractor.h>
+#include <Interpreters/ITokenizer.h>
 
 
 namespace DB
@@ -23,9 +24,9 @@ struct MergeTreeIndexGranuleBloomFilterText final : public IMergeTreeIndexGranul
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return !has_elems; }
+    [[nodiscard]] bool empty() const override { return !has_elems; }
 
-    size_t memoryUsageBytes() const override;
+    [[nodiscard]] size_t memoryUsageBytes() const override;
 
     const String index_name;
     const BloomFilterParameters params;
@@ -42,11 +43,11 @@ struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
         const Names & index_columns_,
         const String & index_name_,
         const BloomFilterParameters & params_,
-        TokenExtractorPtr token_extractor_);
+        TokenizerPtr tokenizer_);
 
     ~MergeTreeIndexAggregatorBloomFilterText() override = default;
 
-    bool empty() const override { return !granule || granule->empty(); }
+    [[nodiscard]] bool empty() const override { return !granule || granule->empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
 
     void update(const Block & block, size_t * pos, size_t limit) override;
@@ -54,7 +55,9 @@ struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
     Names index_columns;
     String index_name;
     BloomFilterParameters params;
-    TokenExtractorPtr token_extractor;
+
+    std::unique_ptr<ITokenizer> owned_tokenizer;
+    TokenizerPtr tokenizer;
 
     MergeTreeIndexGranuleBloomFilterTextPtr granule;
 };
@@ -68,12 +71,16 @@ public:
             ContextPtr context,
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
-            TokenExtractorPtr token_extactor_);
+            TokenizerPtr token_extactor_,
+            IsShadowingColumn is_column_shadowing_map_subcolumn_,
+            JSONIndexArgumentTypes json_argument_types_);
 
     ~MergeTreeConditionBloomFilterText() override = default;
 
-    bool alwaysUnknownOrTrue() const override;
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
+    [[nodiscard]] bool alwaysUnknownOrTrue() const override;
+    [[nodiscard]] bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
+    [[nodiscard]] std::string getDescription() const override { return ""; }
+
 private:
     struct KeyTuplePositionMapping
     {
@@ -131,7 +138,7 @@ private:
 
     bool traverseTreeEquals(
         const String & function_name,
-        const RPNBuilderTreeNode & key_node,
+        const RPNBuilderTreeNode & wrapped_key_node,
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out);
@@ -140,12 +147,18 @@ private:
     bool tryPrepareSetBloomFilter(const RPNBuilderTreeNode & left_argument, const RPNBuilderTreeNode & right_argument, RPNElement & out);
 
     static bool createFunctionEqualsCondition(
-        RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenExtractorPtr token_extractor);
+        RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenizerPtr tokenizer);
 
     Names index_columns;
+    /// Argument types of the JSON index functions of this index, by position in `index_columns`.
+    JSONIndexArgumentTypes json_argument_types;
     DataTypes index_data_types;
     BloomFilterParameters params;
-    TokenExtractorPtr token_extractor;
+
+    std::unique_ptr<ITokenizer> owned_tokenizer;
+    TokenizerPtr tokenizer;
+    IsShadowingColumn is_column_shadowing_map_subcolumn;
+
     RPN rpn;
 };
 
@@ -153,24 +166,25 @@ class MergeTreeIndexBloomFilterText final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexBloomFilterText(
+        StorageMetadataPtr metadata_snapshot_,
         const IndexDescription & index_,
         const BloomFilterParameters & params_,
-        std::unique_ptr<ITokenExtractor> && token_extractor_)
-        : IMergeTreeIndex(index_)
+        std::unique_ptr<ITokenizer> && tokenizer_)
+        : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
         , params(params_)
-        , token_extractor(std::move(token_extractor_)) {}
+        , tokenizer(std::move(tokenizer_)) {}
 
     ~MergeTreeIndexBloomFilterText() override = default;
 
-    MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    [[nodiscard]] MergeTreeIndexGranulePtr createIndexGranule() const override;
+    [[nodiscard]] MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
             const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     BloomFilterParameters params;
     /// Function for selecting next token.
-    std::unique_ptr<ITokenExtractor> token_extractor;
+    std::unique_ptr<ITokenizer> tokenizer;
 };
 
 }

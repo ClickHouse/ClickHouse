@@ -47,6 +47,8 @@ public:
     Status prepare() override;
     void work() override;
 
+    virtual void onFinish() {}
+
     InputPort & getInputPort() { return input; }
     OutputPort & getOutputPort() { return output; }
 

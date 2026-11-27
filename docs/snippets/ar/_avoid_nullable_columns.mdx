@@ -1,0 +1,31 @@
+---
+title: تجنّب الأعمدة Nullable
+---
+
+[`Nullable` column](/ar/reference/data-types/nullable) (مثل `Nullable(String)`) ينشئ عمودًا منفصلًا من النوع `UInt8`. ويجب معالجة هذا العمود الإضافي في كل مرة يتعامل فيها المستخدم مع عمود Nullable. ويؤدي ذلك إلى استهلاك مساحة تخزين إضافية، كما يؤثر سلبًا في الأداء في معظم الحالات.
+
+لتجنّب الأعمدة `Nullable`، يُنصح بتعيين قيمة افتراضية لهذا العمود. على سبيل المثال، بدلًا من:
+
+```sql highlight={4}
+CREATE TABLE default.sample
+(
+    `x` Int8,
+    `y` Nullable(Int8)
+)
+ENGINE = MergeTree
+ORDER BY x
+```
+
+استخدم
+
+```sql highlight={4}
+CREATE TABLE default.sample2
+(
+    `x` Int8,
+    `y` Int8 DEFAULT 0
+)
+ENGINE = MergeTree
+ORDER BY x
+```
+
+راعِ حالة الاستخدام لديك؛ فقد لا تكون القيمة الافتراضية مناسبة.

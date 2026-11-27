@@ -68,6 +68,7 @@ def start_cluster():
 
 
 def test_modulo_partition_key_issue_23508(start_cluster):
+    node2.query("DROP TABLE IF EXISTS test SYNC")
     node2.query(
         "CREATE TABLE test (id Int64, v UInt64, value String) ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/table1', '1', v) PARTITION BY id % 20 ORDER BY (id, v)"
     )

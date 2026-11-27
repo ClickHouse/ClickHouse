@@ -15,6 +15,8 @@ $CLICKHOUSE_CLIENT -q "
         enable_block_number_column = 1,
         enable_block_offset_column = 1,
         max_uncompressed_bytes_in_patches = '100Ki',
+        index_granularity = 8192,
+        index_granularity_bytes = '10Mi',
         cleanup_delay_period = 1,
         max_cleanup_delay_period = 1,
         cleanup_delay_period_random_add = 0;

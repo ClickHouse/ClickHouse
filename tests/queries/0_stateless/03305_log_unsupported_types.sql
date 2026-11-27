@@ -1,7 +1,4 @@
--- Tags: no-parallel, log-engine
-
-set enable_json_type=1;
-set enable_dynamic_type=1;
+-- Tags: log-engine
 
 drop table if exists test;
 create table test (d Dynamic) engine=Log(); -- {serverError ILLEGAL_COLUMN}

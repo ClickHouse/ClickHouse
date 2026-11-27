@@ -1,0 +1,14 @@
+mapValues local	1
+mapValues cluster	2
+mapValues dist	2
+mapKeys local	1
+mapKeys cluster	2
+mapKeys dist	2
+mapValues mv-over-dist	2
+mapKeys mv-over-dist	2
+mapValues merge-over-dist	2
+mapKeys merge-over-dist	2
+mapValues buffer-over-dist	2
+mapKeys buffer-over-dist	2
+mapValues lazy-proxy dist	2
+mapKeys lazy-proxy dist	2

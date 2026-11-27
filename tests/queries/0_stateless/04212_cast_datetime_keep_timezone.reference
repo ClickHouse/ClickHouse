@@ -1,0 +1,37 @@
+-- DateTime source, DateTime target without time zone
+DateTime(\'America/Los_Angeles\')	DateTime(\'America/Los_Angeles\')	DateTime(\'America/Los_Angeles\')	DateTime(\'America/Los_Angeles\')
+-- DateTime source with explicit time zone, DateTime target with explicit time zone (target wins)
+DateTime(\'UTC\')
+-- DateTime source without explicit time zone, DateTime target without time zone
+1
+-- DateTime64 source, DateTime64 target without time zone
+DateTime64(3, \'America/Los_Angeles\')	DateTime64(3, \'America/Los_Angeles\')	DateTime64(6, \'America/Los_Angeles\')
+-- DateTime64 source, DateTime target without time zone (cross-type)
+DateTime(\'America/Los_Angeles\')
+-- DateTime source, DateTime64 target without time zone (cross-type)
+DateTime64(3, \'America/Los_Angeles\')
+-- Nullable wrappers
+Nullable(DateTime(\'America/Los_Angeles\'))
+DateTime(\'America/Los_Angeles\')
+-- LowCardinality wrappers
+DateTime(\'America/Los_Angeles\')
+-- Non-DateTime source: target stays unchanged
+DateTime
+DateTime
+-- Values are unchanged: only the type carries the time zone
+1	1
+-- toDateTime function behavior matches CAST behavior
+1
+-- accurateCast preserves the source time zone
+DateTime(\'America/Los_Angeles\')
+DateTime64(6, \'America/Los_Angeles\')
+-- accurateCast: target with explicit time zone wins over source
+DateTime(\'UTC\')
+-- accurateCastOrNull preserves the source time zone (result is Nullable)
+Nullable(DateTime(\'America/Los_Angeles\'))
+Nullable(DateTime64(6, \'America/Los_Angeles\'))
+-- accurateCastOrNull: target with explicit time zone wins over source
+Nullable(DateTime(\'UTC\'))
+-- accurateCast / accurateCastOrNull look through Nullable and LowCardinality wrappers
+DateTime(\'America/Los_Angeles\')
+Nullable(DateTime(\'America/Los_Angeles\'))

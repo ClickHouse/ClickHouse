@@ -1,0 +1,39 @@
+Test 1: JSONExtractString
+1	Alice	Alice
+2	Bob	Bob
+3	Charlie	Charlie
+Test 2: JSONExtractInt
+1	30	30
+2	25	25
+3	35	35
+Test 3: JSONExtractUInt
+1	30	30
+2	25	25
+3	35	35
+Test 4: JSONExtractRaw
+1	[85,90,95]	[85,90,95]
+2	[75,80,88]	[75,80,88]
+3	[92,88,90]	[92,88,90]
+Test 5: JSONExtract (generic with type)
+1	30	30
+2	25	25
+3	35	35
+Test 6: JSONExtractFloat
+3.14159
+Test 7: JSONExtractBool
+1
+Test 8: Nested path extraction
+42
+99
+Test 9: Missing path returns default
+0	
+Test 10: ColumnConst JSON object
+777
+Test 11: JSONExtractRaw with nested object
+"Hello"
+{"b":"World"}
+Test 12: Date type extraction as String
+2020-01-01
+Test 15: Type hint path with conflicting subobject
+42
+All tests completed

@@ -1,0 +1,50 @@
+<test>
+    <!-- `min` / `max` over 128/256-bit columns. Data shapes cover fully random values, values that fit in
+         the low 64 bits, and ascending values (where the accumulator is updated on every row). -->
+
+    <create_query>
+        CREATE TABLE minmax_wide
+        (
+            u128 UInt128, i128 Int128, small_i128 Int128, asc_i128 Int128,
+            d128 Decimal128(4), d256 Decimal256(8),
+            i256 Int256,
+            cond UInt8,
+            n_i128 Nullable(Int128)
+        ) ENGINE = Memory
+    </create_query>
+    <fill_query>
+        INSERT INTO minmax_wide SELECT
+            bitShiftLeft(toUInt128(cityHash64(number, 1)), 64) + cityHash64(number, 2),
+            toInt128(bitShiftLeft(toUInt128(cityHash64(number, 3)), 64) + cityHash64(number, 4)),
+            toInt128(cityHash64(number, 5)),
+            toInt128(number),
+            toDecimal128(cityHash64(number, 6) % 1000000000, 4),
+            toDecimal256(cityHash64(number, 7) % 1000000000, 8),
+            toInt256(bitShiftLeft(toUInt128(cityHash64(number, 8)), 64) + cityHash64(number, 9)),
+            number % 7 = 0,
+            if(number % 5 = 0, NULL, toInt128(cityHash64(number, 10)))
+        FROM numbers(10000000)
+    </fill_query>
+
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT max(u128) FROM minmax_wide</query>
+    <query>SELECT min(u128) FROM minmax_wide</query>
+    <query>SELECT max(i128) FROM minmax_wide</query>
+    <query>SELECT min(i128) FROM minmax_wide</query>
+    <query>SELECT max(small_i128) FROM minmax_wide</query>
+    <query>SELECT max(asc_i128) FROM minmax_wide</query>
+    <query>SELECT max(d128) FROM minmax_wide</query>
+    <query>SELECT min(d128) FROM minmax_wide</query>
+    <query>SELECT max(i256) FROM minmax_wide</query>
+    <query>SELECT max(d256) FROM minmax_wide</query>
+    <query>SELECT maxIf(i128, cond) FROM minmax_wide</query>
+    <query>SELECT minIf(d128, cond) FROM minmax_wide</query>
+    <query>SELECT max(n_i128) FROM minmax_wide</query>
+    <query>SELECT maxIf(n_i128, cond) FROM minmax_wide</query>
+    <query>SELECT max(i128), min(i128), max(d128), min(d128) FROM minmax_wide GROUP BY u128 % 1000 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS minmax_wide</drop_query>
+</test>

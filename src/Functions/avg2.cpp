@@ -12,7 +12,7 @@ struct NameMidpoint
 using FunctionMidpointBinary = FunctionBinaryArithmetic<MidpointImpl, NameMidpoint>;
 
 template <typename SpecializedFunction>
-class Avg2Resolver : public MidpointResolver<SpecializedFunction>
+class Avg2Resolver final : public MidpointResolver<SpecializedFunction>
 {
 public:
     static constexpr auto name = "avg2";
@@ -23,9 +23,9 @@ public:
     {
     }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isVariadic() const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isVariadic() const override { return false; }
 };
 
 REGISTER_FUNCTION(Avg2)

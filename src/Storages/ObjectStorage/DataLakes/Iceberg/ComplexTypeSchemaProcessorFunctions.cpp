@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ComplexTypeSchemaProcessorFunctions.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <base/defines.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -168,7 +169,7 @@ std::vector<std::vector<size_t>> IIcebergSchemaTransform::traverseAllPaths(const
                         current_path.pop_back();
                         continue;
                     }
-                    auto next_val = std::get<Map>(current_value)[i];
+                    auto next_val = std::get<Map>(current_value)[i].safeGet<Tuple>()[1];
 
                     Tuple tmp_node_tuple;
                     Array tmp_node_array;
@@ -257,7 +258,7 @@ void IIcebergSchemaTransform::transform(ComplexNode & initial_node)
                     }
                     else if (current_tuple[subfield_index].tryGet(tmp_node_map))
                     {
-                        current_node = std::move(tmp_node_array);
+                        current_node = std::move(tmp_node_map);
                     }
 
                     else
@@ -404,7 +405,7 @@ public:
 
     void transformChildNode(Tuple & initial_node) override { initial_node.erase(initial_node.begin() + index_to_delete); }
 
-    size_t getDeleteIndex() const { return index_to_delete; }
+    [[nodiscard]] size_t getDeleteIndex() const { return index_to_delete; }
 
 private:
     IcebergDeletingOperation operation;
@@ -414,7 +415,8 @@ private:
 class AddingTransform : public IIcebergSchemaTransform
 {
 public:
-    explicit AddingTransform(const IcebergAddingOperation & operation_, DataTypePtr type, DataTypePtr old_type)
+    explicit AddingTransform(
+        const IcebergAddingOperation & operation_, DataTypePtr type, DataTypePtr old_type, const Poco::JSON::Object::Ptr & subfield)
         : IIcebergSchemaTransform(operation_.getPath())
         , operation(operation_)
     {
@@ -496,18 +498,21 @@ public:
         }
         if (index_to_insert == current_types.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find field {} in data", operation.field_name);
+
+        const auto & inserted_type = current_types[index_to_insert];
+        inserted_value = getIcebergInitialDefault(subfield, inserted_type).value_or(inserted_type->getDefault());
     }
 
     void transformChildNode(Tuple & initial_node) override
     {
-        Field inserted_field = current_types[index_to_insert]->getDefault();
-        initial_node.insert(initial_node.begin() + index_to_insert, inserted_field);
+        initial_node.insert(initial_node.begin() + index_to_insert, inserted_value);
     }
 
 private:
     IcebergAddingOperation operation;
     size_t index_to_insert;
     DataTypes current_types;
+    Field inserted_value;
 };
 
 class ReorderingTransform : public IIcebergSchemaTransform
@@ -679,7 +684,8 @@ void ExecutableEvolutionFunction::pushNewNode(
         auto old_subfields = old_node->getObject("type")->getObject("element");
 
         if (current_path)
-            current_path->push_back({"", "", TransformType::ARRAY});
+            current_path->push_back(
+                {old_node->getValue<std::string>("name"), new_node->getValue<std::string>("name"), TransformType::STRUCT});
 
         walk_stack.push(
             {makeArrayFromObject(old_subfields),
@@ -694,7 +700,8 @@ void ExecutableEvolutionFunction::pushNewNode(
         auto subfields = new_node->getObject("type")->getObject("value");
         auto old_subfields = old_node->getObject("type")->getObject("value");
         if (current_path)
-            current_path->push_back({"", "", TransformType::MAP});
+            current_path->push_back(
+                {old_node->getValue<std::string>("name"), new_node->getValue<std::string>("name"), TransformType::STRUCT});
 
         walk_stack.push(
             {makeArrayFromObject(old_subfields),
@@ -706,7 +713,7 @@ void ExecutableEvolutionFunction::pushNewNode(
     }
 }
 
-std::shared_ptr<ReorderingTransform> makeReorderingTransform(
+static std::shared_ptr<ReorderingTransform> makeReorderingTransform(
     const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
     const std::vector<size_t> & initial_permutation,
     DataTypePtr old_type)
@@ -716,7 +723,7 @@ std::shared_ptr<ReorderingTransform> makeReorderingTransform(
     return transform;
 }
 
-std::shared_ptr<DeletingTransform> makeDeletingTransform(
+static std::shared_ptr<DeletingTransform> makeDeletingTransform(
     const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
     const std::vector<size_t> & initial_permutation,
     DataTypePtr old_type,
@@ -728,14 +735,14 @@ std::shared_ptr<DeletingTransform> makeDeletingTransform(
 }
 
 
-std::shared_ptr<AddingTransform> makeAddingTransform(
+static std::shared_ptr<AddingTransform> makeAddingTransform(
     const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
     DataTypePtr type,
     DataTypePtr old_type,
     Poco::JSON::Object::Ptr subfield)
 {
     auto operation = IcebergAddingOperation(current_path, subfield->getValue<String>("name"));
-    auto transform = std::make_shared<AddingTransform>(operation, type, old_type);
+    auto transform = std::make_shared<AddingTransform>(operation, type, old_type, subfield);
     return transform;
 }
 

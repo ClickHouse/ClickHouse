@@ -1,0 +1,12 @@
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_step2.webp" alt="Fill out connection details" />
+    </Frame>
+
+    * **GCS file path**: The GCS ClickPipe uses the Cloud Storage [XML API](https://docs.cloud.google.com/storage/docs/interoperability) for interoperability, which requires the `storage.googleapis.com` endpoint:
+
+        ```bash
+        https://storage.googleapis.com/bucket-name/key-name
+        ```
+
+        You can use POSIX wildcards to match multiple files or prefixes. See the [reference documentation](/integrations/clickpipes/object-storage/google-cloud-storage/overview#file-pattern-matching) for guidance on supported patterns.

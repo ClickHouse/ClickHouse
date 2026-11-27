@@ -1,0 +1,12 @@
+reproducer from den-crane
+0
+intersect non_empty with filter-excluded empty state
+0
+intersect filter-excluded empty state with non_empty (commuted)
+0
+intersect two filter-excluded empty states
+0
+sanity check - non-empty intersection still works
+5
+AggregatingMergeTree variant from the issue
+0

@@ -8,6 +8,8 @@
     #include <syscall.h>
 #elif defined(OS_FREEBSD)
     #include <pthread_np.h>
+#elif defined(OS_WASM)
+    #include <pthread.h>
 #else
     #include <pthread.h>
     #include <stdexcept>
@@ -27,6 +29,9 @@ static void setCurrentThreadId()
 #elif defined(OS_SUNOS)
     // On Solaris-derived systems, this returns the ID of the LWP, analogous
     // to a thread.
+    current_tid = static_cast<uint64_t>(pthread_self());
+#elif defined(OS_WASM)
+    // No `gettid` under Emscripten. The pthread handle is a stable per-thread identifier.
     current_tid = static_cast<uint64_t>(pthread_self());
 #else
     if (0 != pthread_threadid_np(nullptr, &current_tid))

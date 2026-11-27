@@ -1,0 +1,20 @@
+---
+title: Demonstração
+---
+
+### Arquitetura da demonstração {#demo-architecture}
+
+A demonstração é composta por microsserviços escritos em diferentes linguagens de programação que se comunicam entre si via gRPC e HTTP e por um gerador de carga que usa o Locust para simular tráfego de usuários. O código-fonte original desta demonstração foi modificado para usar a [instrumentação do ClickStack](/pt-BR/clickstack/ingesting-data/sdks/index).
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Arquitetura](/images/use-cases/observability/hyperdx-demo/architecture.webp)
+  </Frame>
+</div>
+
+*Crédito: https://opentelemetry.io/docs/demo/architecture/*
+
+Mais detalhes sobre a demonstração podem ser encontrados em:
+
+* [documentação do OpenTelemetry](https://opentelemetry.io/docs/demo/)
+* [fork mantido pelo ClickStack](https://github.com/ClickHouse/opentelemetry-demo)

@@ -17,6 +17,28 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+
+/// 999:59:59, the largest `Time` value.
+constexpr Int128 max_time_seconds = 999 * 3600 + 59 * 60 + 59;
+
+/// An integer token is a number of seconds; out-of-range values saturate to the `Time` range.
+template <typename ReturnType>
+ReturnType readTimeSecondsText(time_t & x, ReadBuffer & istr)
+{
+    Int128 seconds = 0;
+    if constexpr (std::is_same_v<ReturnType, void>)
+        readIntText128Saturating(seconds, istr);
+    else if (!readIntText128Saturating<bool>(seconds, istr))
+        return false;
+    x = static_cast<time_t>(std::clamp(seconds, -max_time_seconds, max_time_seconds));
+    return ReturnType(true);
+}
+
 }
 
 inline void readTimeText(
@@ -38,7 +60,7 @@ inline bool tryReadTimeText(
     const DateLUTImpl & time_zone,
     const DateLUTImpl & /*utc_time_zone*/)
 {
-    bool res;
+    bool res = false;
     res = tryReadTimeText(x, istr, time_zone);
 
     x = std::max<time_t>(0, x);
@@ -109,7 +131,7 @@ void SerializationTime::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
     }
     else /// Just 493808 or 0493808
     {
-        readIntText(x, istr);
+        readTimeSecondsText<void>(x, istr);
     }
     /// It's important to do this at the end - for exception safety.
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
@@ -125,7 +147,7 @@ bool SerializationTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & 
     }
     else
     {
-        if (!tryReadIntText(x, istr))
+        if (!readTimeSecondsText<bool>(x, istr))
             return false;
     }
 
@@ -151,7 +173,7 @@ void SerializationTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr,
     }
     else
     {
-        readIntText(x, istr);
+        readTimeSecondsText<void>(x, istr);
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
@@ -167,7 +189,7 @@ bool SerializationTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer & is
     }
     else
     {
-        if (!tryReadIntText(x, istr))
+        if (!readTimeSecondsText<bool>(x, istr))
             return false;
     }
 
@@ -240,6 +262,11 @@ bool SerializationTime::tryDeserializeTextCSV(IColumn & column, ReadBuffer & ist
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
     return true;
+}
+
+void SerializationTime::serializeTextHive(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type Time is not supported by the HiveText output format");
 }
 
 }

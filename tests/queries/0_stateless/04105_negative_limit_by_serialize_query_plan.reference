@@ -1,0 +1,99 @@
+-- { echo }
+
+SET serialize_query_plan = 1, prefer_localhost_replica = 0;
+SELECT number, number % 3 AS g FROM remote('127.0.0.1', numbers(15)) ORDER BY g, number LIMIT -3 BY g;
+6	0
+9	0
+12	0
+7	1
+10	1
+13	1
+8	2
+11	2
+14	2
+SELECT number, number % 3 AS g FROM remote('127.0.0.1', numbers(15)) ORDER BY number LIMIT -3 BY g;
+6	0
+7	1
+8	2
+9	0
+10	1
+11	2
+12	0
+13	1
+14	2
+SELECT number, number % 3 AS g FROM remote('127.0.0.1', numbers(15)) ORDER BY g, number LIMIT -3 OFFSET -2 BY g;
+0	0
+3	0
+6	0
+1	1
+4	1
+7	1
+2	2
+5	2
+8	2
+SELECT number, number % 3 AS g FROM remote('127.0.0.1', numbers(15)) ORDER BY number LIMIT -3 OFFSET -2 BY g;
+0	0
+1	1
+2	2
+3	0
+4	1
+5	2
+6	0
+7	1
+8	2
+SELECT number, number % 3 AS g FROM remote('127.0.0.1', numbers(15)) ORDER BY g, number LIMIT -2 OFFSET 3 BY g;
+9	0
+12	0
+10	1
+13	1
+11	2
+14	2
+SELECT number, number % 3 AS g FROM remote('127.0.0.1', numbers(15)) ORDER BY number LIMIT -2 OFFSET 3 BY g;
+9	0
+10	1
+11	2
+12	0
+13	1
+14	2
+SELECT number, number % 3 AS g FROM remote('127.0.0.1', numbers(15)) ORDER BY g, number LIMIT 2 OFFSET -3 BY g;
+0	0
+3	0
+1	1
+4	1
+2	2
+5	2
+SELECT number, number % 3 AS g FROM remote('127.0.0.1', numbers(15)) ORDER BY number LIMIT 2 OFFSET -3 BY g;
+0	0
+1	1
+2	2
+3	0
+4	1
+5	2
+SELECT number, number % 2 AS g1, number % 3 AS g2 FROM remote('127.0.0.1', numbers(12)) ORDER BY g1, g2, number LIMIT -1 BY g1, g2;
+6	0	0
+10	0	1
+8	0	2
+9	1	0
+7	1	1
+11	1	2
+SELECT number, number % 2 AS g1, number % 3 AS g2 FROM remote('127.0.0.1', numbers(12)) ORDER BY number LIMIT -1 BY g1, g2;
+6	0	0
+7	1	1
+8	0	2
+9	1	0
+10	0	1
+11	1	2
+SELECT number FROM remote('127.0.0.1', numbers(15)) ORDER BY number % 3, number LIMIT -2 BY number % 3;
+9
+12
+10
+13
+11
+14
+SELECT number FROM remote('127.0.0.1', numbers(15)) ORDER BY number LIMIT -2 BY number % 3;
+9
+10
+11
+12
+13
+14
