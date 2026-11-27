@@ -57,12 +57,13 @@ check()
     fi
 }
 
-echo '-- the hosts do not run the query as the user, so DEDUPLICATE BY requires SELECT on the whole table'
+echo '-- the hosts do not run the query as the user, so DEDUPLICATE requires SELECT on the whole table'
 reset
 check 'column not granted   ' "$u_cols" "OPTIMIZE TABLE $db.t ON CLUSTER test_shard_localhost FINAL DEDUPLICATE BY sort_key, secret"
 count
 check 'columns granted      ' "$u_cols" "OPTIMIZE TABLE $db.t ON CLUSTER test_shard_localhost FINAL DEDUPLICATE BY sort_key, id"
 check 'DEDUPLICATE, no list ' "$u_cols" "OPTIMIZE TABLE $db.t ON CLUSTER test_shard_localhost FINAL DEDUPLICATE"
+check 'no list, granted     ' "$u_full" "OPTIMIZE TABLE $db.t ON CLUSTER test_shard_localhost FINAL DEDUPLICATE"
 
 echo '-- an Alias or a table missing on the initiator cannot be checked there'
 reset

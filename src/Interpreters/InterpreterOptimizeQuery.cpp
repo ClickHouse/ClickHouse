@@ -48,7 +48,7 @@ BlockIO InterpreterOptimizeQuery::execute()
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess();
-        if (ast.deduplicate_by_columns)
+        if (ast.deduplicate)
         {
             params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
             {
@@ -57,20 +57,20 @@ BlockIO InterpreterOptimizeQuery::execute()
                     return;
                 const auto & query = captured_query_ptr->as<const ASTOptimizeQuery &>();
                 const StorageID table_id(query.getDatabase().empty() ? cluster_default_database : query.getDatabase(), query.getTable());
-                /// The hosts expand the list without the user, so `SELECT` is required on the whole table here.
+                /// The hosts compare the columns without the user, so `SELECT` is required on the whole table here.
                 context->checkAccess(AccessType::SELECT, table_id.database_name, table_id.table_name);
                 const auto table = DatabaseCatalog::instance().tryGetTable(table_id, context);
                 if (!table)
                     throw Exception(ErrorCodes::UNKNOWN_TABLE,
                         "Table {} does not exist on the initiator. The other hosts do not run the query as the initiating user. So the "
-                        "initiator must check the columns that DEDUPLICATE BY reads. Run the query on a host that has this table. "
+                        "initiator must check the columns that DEDUPLICATE compares. Run the query on a host that has this table. "
                         "Alternatively, let every host check the query as the initiating user. For that, enable the server setting "
                         "distributed_ddl_use_initial_user_and_roles on every host, and set distributed_ddl_entry_format_version to at least {}",
                         table_id.getNameForLogs(), DDLLogEntry::INITIATOR_USER_VERSION);
                 if (castStorage<StorageAlias>(table, DeferredTable::Load))
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Table {} is an Alias. The other hosts do not run the query as the initiating user, so they would not check SELECT "
-                        "on its target. Run OPTIMIZE ... ON CLUSTER ... DEDUPLICATE BY on the target table. Alternatively, enable the server "
+                        "on its target. Run OPTIMIZE ... ON CLUSTER ... DEDUPLICATE on the target table. Alternatively, enable the server "
                         "setting distributed_ddl_use_initial_user_and_roles on every host, and set distributed_ddl_entry_format_version to at least {}",
                         table_id.getNameForLogs(), DDLLogEntry::INITIATOR_USER_VERSION);
                 if (auto view = castStorage<StorageMaterializedView>(table, DeferredTable::Load))
@@ -162,6 +162,11 @@ BlockIO InterpreterOptimizeQuery::execute()
                         required_col, fmt::join(column_names, "', '"));
             }
         }
+    }
+    else if (ast.deduplicate)
+    {
+        /// Without a list, deduplication compares all physical columns.
+        checkAccessRights(table, table_id, storage_snapshot, metadata_snapshot->getColumns().getNamesOfPhysical(), getContext());
     }
 
     if (ast.dry_run)

@@ -768,18 +768,20 @@ bool StorageMaterializedView::optimize(
     ContextPtr local_context)
 {
     checkStatementCanBeForwarded();
-    if (!deduplicate_by_columns.empty())
+    if (deduplicate)
     {
         /// Reading the view requires `SELECT` on its source table too, see `readImpl`.
         auto view_metadata = getInMemoryMetadataPtr(local_context, false);
         const auto & select_table_id = view_metadata->select.select_table_id;
         if (!select_table_id.empty())
         {
+            const auto & columns = view_metadata->getColumns();
             auto context = view_metadata->getSQLSecurityOverriddenContext(local_context);
             context->checkAccess(
                 AccessType::SELECT,
                 select_table_id,
-                view_metadata->getColumns().getColumnNamesForSelectAccessCheck(deduplicate_by_columns, context, select_table_id));
+                columns.getColumnNamesForSelectAccessCheck(
+                    deduplicate_by_columns.empty() ? columns.getNamesOfPhysical() : deduplicate_by_columns, context, select_table_id));
         }
     }
     auto storage_ptr = getTargetTable();

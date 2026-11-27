@@ -28,6 +28,7 @@ def started_cluster():
 @pytest.fixture(autouse=True)
 def cleanup():
     yield
+    node.query("DROP TABLE IF EXISTS t SYNC")
     node.query("DROP USER IF EXISTS u, other ON CLUSTER cluster")
     node.query("DROP ROLE IF EXISTS r ON CLUSTER cluster")
 
@@ -60,3 +61,37 @@ def test_current_user_needs_no_alter_user():
     )
     assert "ACCESS_DENIED" in error
     assert default_roles("other") == "[]"
+
+
+def rows():
+    return node.query("SELECT count() FROM t").strip()
+
+
+# The hosts run `OPTIMIZE ... ON CLUSTER` as the user, so they check `SELECT` on the compared columns themselves.
+def test_hosts_check_deduplicate_columns_as_the_user():
+    node.query(
+        "CREATE TABLE t (sort_key UInt64, id UInt64, secret String) ENGINE = MergeTree ORDER BY sort_key"
+    )
+    node.query(
+        "INSERT INTO t VALUES (1, 1, 'A'), (1, 1, 'B'), (1, 2, 'A'), (2, 3, 'A'), (2, 3, 'C')"
+    )
+    node.query("CREATE USER u")
+    node.query("GRANT CLUSTER ON *.* TO u")
+    node.query("GRANT SELECT(sort_key, id), OPTIMIZE ON default.t TO u")
+
+    # The host refuses a column the user cannot read, and no row is removed.
+    for query in [
+        "OPTIMIZE TABLE t ON CLUSTER cluster FINAL DEDUPLICATE BY sort_key, secret",
+        "OPTIMIZE TABLE t ON CLUSTER cluster FINAL DEDUPLICATE",
+    ]:
+        error = node.query_and_get_error(query, user="u", settings=ENTRY_VERSION)
+        assert "Not enough privileges" in error
+    assert rows() == "5"
+
+    # The listed columns are enough: the whole-table `SELECT` required when the hosts do not keep the user is not.
+    node.query(
+        "OPTIMIZE TABLE t ON CLUSTER cluster FINAL DEDUPLICATE BY sort_key, id",
+        user="u",
+        settings=ENTRY_VERSION,
+    )
+    assert rows() == "3"

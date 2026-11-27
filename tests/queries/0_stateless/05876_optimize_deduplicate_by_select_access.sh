@@ -72,7 +72,7 @@ check()
     fi
 }
 
-echo '-- DEDUPLICATE BY requires SELECT on the columns it compares'
+echo '-- DEDUPLICATE requires SELECT on the columns it compares'
 reset
 check 'listed, granted      ' "$u_cols" "OPTIMIZE TABLE $db.t DRY RUN PARTS $parts DEDUPLICATE BY sort_key, id"
 check 'listed, not granted  ' "$u_cols" "OPTIMIZE TABLE $db.t DRY RUN PARTS $parts DEDUPLICATE BY sort_key, secret"
@@ -82,6 +82,7 @@ check 'asterisk             ' "$u_cols" "OPTIMIZE TABLE $db.t DRY RUN PARTS $par
 check 'asterisk except      ' "$u_cols" "OPTIMIZE TABLE $db.t DRY RUN PARTS $parts DEDUPLICATE BY * EXCEPT secret"
 check 'COLUMNS matcher      ' "$u_cols" "OPTIMIZE TABLE $db.t DRY RUN PARTS $parts DEDUPLICATE BY sort_key, COLUMNS('^se')"
 check 'DEDUPLICATE, no list ' "$u_cols" "OPTIMIZE TABLE $db.t DRY RUN PARTS $parts DEDUPLICATE"
+check 'no list, SELECT      ' "$u_full" "OPTIMIZE TABLE $db.t DRY RUN PARTS $parts DEDUPLICATE"
 check 'FINAL, not granted   ' "$u_cols" "OPTIMIZE TABLE $db.t FINAL DEDUPLICATE BY sort_key, secret"
 count
 
@@ -91,6 +92,7 @@ check 'target not granted   ' "$u_alias" "OPTIMIZE TABLE $db.t_alias FINAL DEDUP
 count
 check 'target granted       ' "$u_alias" "OPTIMIZE TABLE $db.t_alias FINAL DEDUPLICATE BY sort_key, id"
 count
+check 'target, no list      ' "$u_alias" "OPTIMIZE TABLE $db.t_alias FINAL DEDUPLICATE"
 
 echo '-- through a materialized view, SELECT is also required on its source table'
 reset
@@ -98,6 +100,7 @@ check 'read, source denied  ' "$u_mv" "SELECT secret FROM $db.mv FORMAT Null"
 check 'source not granted   ' "$u_mv" "OPTIMIZE TABLE $db.mv FINAL DEDUPLICATE BY sort_key, secret"
 echo "mv rows: $(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM $db.mv")"
 check 'source granted       ' "$u_mv" "OPTIMIZE TABLE $db.mv FINAL DEDUPLICATE BY sort_key, id"
+check 'source, no list      ' "$u_mv" "OPTIMIZE TABLE $db.mv FINAL DEDUPLICATE"
 
 echo '-- a materialized view with SQL SECURITY DEFINER checks its source table as the definer, as its read does'
 check 'read, definer lacks  ' "$u_full" "SELECT secret FROM $db.mv_def FORMAT Null"

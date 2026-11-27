@@ -507,13 +507,18 @@ bool StorageAlias::optimize(
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::OPTIMIZE});
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
-    if (!deduplicate_by_columns.empty())
+    if (deduplicate)
+    {
+        const auto & columns = target_metadata->getColumns();
         local_context->checkAccess(
             AccessType::SELECT,
             target_database,
             target_table,
-            target_metadata->getColumns().getColumnNamesForSelectAccessCheck(
-                deduplicate_by_columns, local_context, StorageID(target_database, target_table)));
+            columns.getColumnNamesForSelectAccessCheck(
+                deduplicate_by_columns.empty() ? columns.getNamesOfPhysical() : deduplicate_by_columns,
+                local_context,
+                StorageID(target_database, target_table)));
+    }
     return target_storage->optimize(query, target_metadata, partition, final, deduplicate,
                                     deduplicate_by_columns, cleanup, local_context);
 }

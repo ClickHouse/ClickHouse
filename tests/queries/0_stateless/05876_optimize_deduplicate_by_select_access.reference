@@ -1,4 +1,4 @@
--- DEDUPLICATE BY requires SELECT on the columns it compares
+-- DEDUPLICATE requires SELECT on the columns it compares
 listed, granted      : OK
 listed, not granted  : (ACCESS_DENIED) hides secret
 no SELECT at all     : (ACCESS_DENIED) hides secret
@@ -6,7 +6,8 @@ SELECT on the table  : OK
 asterisk             : (ACCESS_DENIED) hides secret
 asterisk except      : OK
 COLUMNS matcher      : (ACCESS_DENIED) hides secret
-DEDUPLICATE, no list : OK
+DEDUPLICATE, no list : (ACCESS_DENIED) hides secret
+no list, SELECT      : OK
 FINAL, not granted   : (ACCESS_DENIED) hides secret
 rows: 6
 -- through an Alias, SELECT is also required on the target
@@ -14,11 +15,13 @@ target not granted   : (ACCESS_DENIED) hides secret
 rows: 6
 target granted       : OK
 rows: 6
+target, no list      : (ACCESS_DENIED) hides secret
 -- through a materialized view, SELECT is also required on its source table
 read, source denied  : (ACCESS_DENIED) hides secret
 source not granted   : (ACCESS_DENIED) hides secret
 mv rows: 6
 source granted       : OK
+source, no list      : (ACCESS_DENIED) hides secret
 -- a materialized view with SQL SECURITY DEFINER checks its source table as the definer, as its read does
 read, definer lacks  : (ACCESS_DENIED) names secret
 definer lacks column : (ACCESS_DENIED) names secret
