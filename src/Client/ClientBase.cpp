@@ -143,6 +143,8 @@ namespace Setting
     extern const SettingsBool async_insert;
     extern const SettingsBool send_table_structure_on_insert_with_inline_data;
     extern const SettingsDialect dialect;
+    extern const SettingsSeconds receive_timeout;
+    extern const SettingsSeconds send_timeout;
     extern const SettingsString format;
     extern const SettingsString output_format;
     extern const SettingsString input_format;
@@ -3294,7 +3296,10 @@ void ClientBase::processParsedSingleQuery(
     {
         /// Temporarily apply query settings to context.
         Settings old_settings = client_context->getSettingsRef();
+        /// The timeouts are overridden by the query settings below, restore them together with the settings.
+        const ConnectionTimeouts old_timeouts = connection_parameters.timeouts;
         SCOPE_EXIT_SAFE({
+            connection_parameters.timeouts = old_timeouts;
             try
             {
                 /// We need to park ParallelFormating threads,
@@ -3352,6 +3357,16 @@ void ClientBase::processParsedSingleQuery(
 
         connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
+
+        /// The client's own timeouts for this connection come from the configuration and the command line.
+        /// Let `SET` and the query `SETTINGS` clause change them as well, otherwise e.g. after
+        /// `SET receive_timeout = 3600` the client still gives up on a long query after the default timeout,
+        /// while the setting shows up as changed. `Connection::sendQuery` applies them to the socket.
+        const auto & query_settings = client_context->getSettingsRef();
+        if (query_settings.isChanged("receive_timeout"))
+            connection_parameters.timeouts.receive_timeout = query_settings[Setting::receive_timeout];
+        if (query_settings.isChanged("send_timeout"))
+            connection_parameters.timeouts.send_timeout = query_settings[Setting::send_timeout];
 
         /// With `use_client_time_zone`, DateTime string literals must be interpreted in the client time
         /// zone. The client parses synchronous INSERT literals itself, but literals interpreted server-side
