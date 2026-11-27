@@ -1200,8 +1200,15 @@ def test_request_payer(started_cluster):
         )
         == "1\n"
     )
+    # `DROP TABLE ... SYNC` does not wait for the removal of the blobs (`disk_transaction_wait_for_blob_removal` is
+    # disabled in the tests): the disk removes them in background, with requests through the mock. Wait for them,
+    # otherwise the mock records them during `test_request_payer_does_not_send_endpoint_headers`.
+    disk_name = node.query(
+        "SELECT DISTINCT disk_name FROM system.parts WHERE table IN ('t_request_payer_src', 't_request_payer_restored')"
+    ).strip()
     node.query("DROP TABLE t_request_payer_src SYNC")
     node.query("DROP TABLE t_request_payer_restored SYNC")
+    node.query(f"SYSTEM WAIT BLOBS CLEANUP '{disk_name}'")
 
     # `<http_forbid_headers>` refuses the header before any request is sent.
     other = started_cluster.instances["s3_non_default"]
@@ -1649,7 +1656,7 @@ def test_seekable_formats(started_cluster, format_name, expected_bytes_read):
     )
     assert int(result) == expected_lines
 
-    instance.query(f"SELECT * FROM {table_function} FORMAT Null")
+    instance.query(f"SELECT * FROM {table_function} SETTINGS use_page_cache_for_object_storage = 0 FORMAT Null")
 
     instance.query("SYSTEM FLUSH LOGS")
     result = instance.query(
@@ -3353,9 +3360,7 @@ def test_archive(started_cluster):
     )
 
     query_id = f"query_{uuid.uuid4()}"
-    # Implementation with whole archive sending can have duplicates,
-    # this is was a mistake in implementation.
-    assert expected_count <= int(
+    assert expected_count == int(
         node2.query(f"SELECT count() FROM {cluster_function_old}", query_id=query_id)
     )
     node2.query("SYSTEM FLUSH LOGS")
@@ -4181,3 +4186,26 @@ def test_row_policy_over_csv(started_cluster):
     finally:
         run_query(instance, "DROP ROW POLICY test_row_policy_csv_p ON test_row_policy_csv")
         run_query(instance, "DROP TABLE test_row_policy_csv")
+
+
+def test_hive_partition_key_named_headers_with_map_value(started_cluster):
+    # The storage type, not the registered type, says who owns `_headers`: only `Web` object storage
+    # serves it as a response-header `Map`, and a Hive key of that name can infer as `Map` too, so on
+    # `s3` the path value must win. The key holds `{`, which is a glob in SQL, hence the direct put.
+    instance = started_cluster.instances["dummy"]
+    bucket = started_cluster.minio_bucket
+    prefix = f"test_hive_headers_map_{generate_random_string()}"
+
+    put_s3_file_content(
+        started_cluster, bucket, f"{prefix}/_headers={{1:2}}/data.tsv", b"1\n"
+    )
+
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{prefix}/_headers=*/data.tsv"
+    assert (
+        run_query(
+            instance,
+            f"SELECT toTypeName(_headers), _headers FROM s3('{url}', 'TSV', 'x UInt64')",
+            settings={"use_hive_partitioning": 1},
+        )
+        == "Map(Int64, Int64)\t{1:2}\n"
+    )
