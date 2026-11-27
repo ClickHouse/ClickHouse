@@ -358,20 +358,23 @@ ReadRangesRegistry::ReadRangesRegistry(std::shared_ptr<RuntimeDataflowStatistics
 
 ReadRangesRegistry::~ReadRangesRegistry()
 {
+    ProfileEventTimeIncrement<Time::Nanoseconds> watch(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds);
     {
         std::lock_guard lock(block->read_ranges_registries_mutex);
         std::erase(block->read_ranges_registries, this);
     }
 
-    if (stopped())
-        return;
-
-    ProfileEventTimeIncrement<Time::Nanoseconds> watch(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds);
-    size_t bytes = 0;
+    /// Freed here rather than with the members, which are destroyed after the timer; after the lock, as in `release`.
+    decltype(read_ranges_by_path) freed;
     std::lock_guard lock(mutex);
-    for (auto & [_, read_ranges] : read_ranges_by_path)
-        bytes += read_ranges->mergeAndCount();
-    (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(bytes, std::memory_order_relaxed);
+    if (!stopped())
+    {
+        size_t bytes = 0;
+        for (auto & [_, read_ranges] : read_ranges_by_path)
+            bytes += read_ranges->mergeAndCount();
+        (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(bytes, std::memory_order_relaxed);
+    }
+    freed.swap(read_ranges_by_path);
 }
 
 ReadRangesRegistry::ReadRanges * ReadRangesRegistry::getReadRanges(const String & path)
