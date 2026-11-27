@@ -8,7 +8,10 @@
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <filesystem>
 #include <unordered_set>
@@ -20,6 +23,9 @@ namespace CurrentMetrics
 {
     extern const Metric FilesystemCacheDownloadQueueElements;
     extern const Metric FilesystemCacheDelayedCleanupElements;
+    extern const Metric FilesystemCacheCleanupHelperThreads;
+    extern const Metric FilesystemCacheCleanupHelperThreadsActive;
+    extern const Metric FilesystemCacheCleanupHelperThreadsScheduled;
     extern const Metric FilesystemCacheKeys;
 }
 
@@ -37,6 +43,32 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int FILECACHE_ACCESS_DENIED;
+    extern const int CANNOT_RMDIR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char file_cache_empty_key_directory_queue_memory_limit[];
+}
+
+namespace
+{
+
+/// Returns false when the directory is missing or not empty.
+bool removeDirectoryIfEmpty(const fs::path & directory)
+{
+    if (0 == ::rmdir(directory.c_str()))
+        return true;
+
+    /// Saved because building the exception message may change `errno`.
+    const int rmdir_errno = errno;
+    if (rmdir_errno == ENOENT || rmdir_errno == ENOTEMPTY || rmdir_errno == EEXIST)
+        return false;
+    ErrnoException::throwFromPathWithErrno(
+        ErrorCodes::CANNOT_RMDIR, directory, rmdir_errno, "Cannot remove directory {}", directory.string());
+}
+
 }
 
 FileSegmentMetadata::FileSegmentMetadata(FileSegmentPtr && file_segment_)
@@ -232,7 +264,9 @@ CacheMetadata::CacheMetadata(
     size_t background_download_queue_size_limit_,
     size_t background_download_threads_,
     bool write_cache_per_user_directory_,
-    bool use_real_disk_size_)
+    bool use_real_disk_size_,
+    size_t background_cleanup_threads_,
+    size_t background_cleanup_elements_per_thread_)
     : path(path_)
     , cleanup_queue(std::make_shared<CleanupQueue>())
     , download_queue(std::make_shared<DownloadQueue>(background_download_queue_size_limit_))
@@ -241,6 +275,8 @@ CacheMetadata::CacheMetadata(
     , log(getLogger("CacheMetadata"))
     , origins(ProfileEvents::FilesystemCacheLockOriginPoolMicroseconds)
     , download_threads_num(background_download_threads_)
+    , max_cleanup_threads(background_cleanup_threads_)
+    , cleanup_elements_per_thread(background_cleanup_elements_per_thread_)
 {
 
 }
@@ -349,7 +385,7 @@ LockedKeyPtr CacheMetadata::lockKeyMetadata(
         if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
             return nullptr;
 
-        if (key_state == KeyMetadata::KeyState::REMOVING)
+        if (key_state == KeyMetadata::KeyState::QUEUED_FOR_REMOVAL)
         {
             locked_metadata->removeFromCleanupQueue();
             LOG_DEBUG(log, "Removal of key {} is cancelled", key);
@@ -441,7 +477,7 @@ void CacheMetadata::iterate(IterateFunc && func, const KeyMetadata::UserID & use
                 func(*locked_key);
                 continue;
             }
-            if (key_state == KeyMetadata::KeyState::REMOVING)
+            if (key_state == KeyMetadata::KeyState::QUEUED_FOR_REMOVAL)
                 continue;
 
             throw Exception(
@@ -727,11 +763,11 @@ CacheMetadata::removeEmptyKey(
 
     try
     {
-        if (fs::exists(key_directory))
-        {
-            fs::remove_all(key_directory);
+        /// Why remove_all: because of migration to "file size in file name" we can have left over files in certain cases.
+        /// FIXME: Can we get rid of those leftovers?
+        /// Anyway remove_all here is safe since Key level lock is held throughout.
+        if (removeDirectoryIfEmpty(key_directory) || fs::remove_all(key_directory))
             LOG_TEST(log, "Directory ({}) for key {} removed", key_directory.string(), key);
-        }
     }
     catch (...)
     {
@@ -743,9 +779,8 @@ CacheMetadata::removeEmptyKey(
     try
     {
         std::unique_lock mutex(key_prefix_directory_mutex);
-        if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
+        if (removeDirectoryIfEmpty(key_prefix_directory))
         {
-            fs::remove(key_prefix_directory);
             LOG_TEST(log, "Prefix directory ({}) for key {} removed", key_prefix_directory.string(), key);
 
             /// Also drop the per-user-id directory once empty. Safe under the
@@ -755,11 +790,8 @@ CacheMetadata::removeEmptyKey(
             if (write_cache_per_user_directory)
             {
                 const fs::path user_directory = key_prefix_directory.parent_path();
-                if (fs::exists(user_directory) && fs::is_empty(user_directory))
-                {
-                    fs::remove(user_directory);
+                if (removeDirectoryIfEmpty(user_directory))
                     LOG_TEST(log, "User directory ({}) for key {} removed", user_directory.string(), key);
-                }
             }
         }
     }
@@ -771,24 +803,102 @@ CacheMetadata::removeEmptyKey(
     return next_it;
 }
 
+void CacheMetadata::removeEmptyKeyDirectoryFromStartup(const std::string & key_prefix_directory, const Key & key)
+{
+    const auto key_directory = fs::path(key_prefix_directory) / key.toString();
+    {
+        auto & bucket = getMetadataBucket(key);
+        auto lock = bucket.lock();
+        if (bucket.contains(key) || !removeDirectoryIfEmpty(key_directory))
+            return;
+    }
+    LOG_DEBUG(log, "Removed empty key directory: {}", key_directory.string());
+}
+
+struct CleanupTask
+{
+    /// A key which has no file segments left.
+    explicit CleanupTask(const FileCacheKey & key_)
+        : key(key_), startup_leftover(false)
+    {
+    }
+
+    /// The key directories of one key prefix directory which the initial load found empty.
+    CleanupTask(std::string && key_prefix_path_, VectorWithMemoryTracking<FileCacheKey> && startup_leftover_keys_)
+        : startup_leftover(true)
+        , key_prefix_path(std::move(key_prefix_path_))
+        , startup_leftover_keys(std::move(startup_leftover_keys_))
+    {
+    }
+
+    /// Not set for a startup leftover.
+    FileCacheKey key{};
+    bool startup_leftover;
+    /// Set only for a startup leftover: its keys have no metadata to take the path from.
+    std::string key_prefix_path;
+    VectorWithMemoryTracking<FileCacheKey> startup_leftover_keys;
+    /// Emptied keys and empty key directories which were still waiting when this task was taken.
+    size_t backlog = 0;
+};
+
 class CleanupQueue
 {
-    friend class CacheMetadata;
 public:
     void add(const FileCacheKey & key)
     {
-        bool inserted = false;
+        {
+            std::lock_guard lock(mutex);
+            if (cancelled || !keys.insert(key).second)
+                return;
+            ++size;
+            CurrentMetrics::add(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
+        }
+        cv.notify_one();
+    }
+
+    void addEmptyKeyDirectoryFromStartup(const std::string & key_prefix_directory, const FileCacheKey & key)
+    {
         {
             std::lock_guard lock(mutex);
             if (cancelled)
                 return;
-            inserted = keys.insert(key).second;
-        }
-        if (inserted)
-        {
+
+            auto it = empty_key_directories_from_startup.try_emplace(key_prefix_directory).first;
+            SCOPE_EXIT({ if (it->second.empty()) empty_key_directories_from_startup.erase(it); });
+            it->second.push_back(key);
+            ++size;
             CurrentMetrics::add(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
-            cv.notify_one();
         }
+        cv.notify_one();
+    }
+
+    /// Waits for a task and returns nothing when the queue is cancelled.
+    std::optional<CleanupTask> waitAndPop()
+    {
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [&] { return cancelled || size != 0; });
+        return popUnlocked();
+    }
+
+    /// Returns nothing when no task is waiting or the queue is cancelled.
+    std::optional<CleanupTask> tryPop()
+    {
+        std::lock_guard lock(mutex);
+        return popUnlocked();
+    }
+
+    /// For a failed initial load: a retried load would queue the same directories again.
+    void dropEmptyKeyDirectoriesFromStartup()
+    {
+        std::lock_guard lock(mutex);
+
+        size_t dropped_elements = 0;
+        for (const auto & [_, keys_from_startup] : empty_key_directories_from_startup)
+            dropped_elements += keys_from_startup.size();
+        size -= dropped_elements;
+        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheDelayedCleanupElements, dropped_elements);
+
+        empty_key_directories_from_startup.clear();
     }
 
     void cancel()
@@ -796,61 +906,152 @@ public:
         {
             std::lock_guard lock(mutex);
             cancelled = true;
+
+            /// No task is taken from the queue after this point, so the ones which are left do not wait for cleanup anymore.
+            CurrentMetrics::sub(CurrentMetrics::FilesystemCacheDelayedCleanupElements, size);
+            size = 0;
+            keys.clear();
+            empty_key_directories_from_startup.clear();
         }
         cv.notify_all();
     }
 
 private:
+    /// Emptied keys go first. A task from startup is a whole key prefix directory, so that
+    /// the cleanup threads remove directories under different parents and take this mutex less often.
+    std::optional<CleanupTask> popUnlocked()
+    {
+        if (cancelled)
+            return {};
+
+        std::optional<CleanupTask> task;
+        size_t taken_elements = 1;
+        if (!keys.empty())
+        {
+            task.emplace(keys.extract(keys.begin()).value());
+        }
+        else if (!empty_key_directories_from_startup.empty())
+        {
+            auto node = empty_key_directories_from_startup.extract(empty_key_directories_from_startup.begin());
+            taken_elements = node.mapped().size();
+            task.emplace(std::move(node.key()), std::move(node.mapped()));
+        }
+        else
+        {
+            return {};
+        }
+
+        size -= taken_elements;
+        task->backlog = size;
+        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheDelayedCleanupElements, taken_elements);
+        return task;
+    }
+
     std::unordered_set<FileCacheKey> keys;
-    mutable std::mutex mutex;
+    /// Key directories that the initial load found empty, by key prefix directory. There can be millions
+    /// of them, so the memory limit applies: the load does not queue a directory which goes over it.
+    UnorderedMapWithMemoryTracking<std::string, VectorWithMemoryTracking<FileCacheKey>> empty_key_directories_from_startup;
+    /// Emptied keys plus key directories from startup.
+    size_t size = 0;
+    std::mutex mutex;
     std::condition_variable cv;
     bool cancelled = false;
 };
 
-void CacheMetadata::cleanupThreadFunc()
+void CacheMetadata::removeKeyIfStillQueuedForRemoval(const Key & key)
+{
+    auto & bucket = getMetadataBucket(key);
+    auto lock = bucket.lock();
+
+    auto it = bucket.find(key);
+    if (it == bucket.end())
+        return;
+
+    auto locked_key = it->second->lockNoStateCheck();
+    if (locked_key->getKeyState() == KeyMetadata::KeyState::QUEUED_FOR_REMOVAL)
+    {
+        removeEmptyKey(bucket, it, *locked_key, lock);
+    }
+}
+
+void CacheMetadata::runCleanupTask(const CleanupTask & task)
+{
+    if (!task.startup_leftover)
+    {
+        removeKeyIfStillQueuedForRemoval(task.key);
+        return;
+    }
+
+    for (const auto & key : task.startup_leftover_keys)
+    {
+        try
+        {
+            removeEmptyKeyDirectoryFromStartup(task.key_prefix_path, key);
+        }
+        catch (...)
+        {
+            /// The other directories of this task must still be removed.
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        }
+    }
+}
+
+void CacheMetadata::runCleanupUntilEmpty()
 {
     while (true)
     {
-        Key key;
-        {
-            std::unique_lock lock(cleanup_queue->mutex);
-            if (cleanup_queue->cancelled)
-                return;
-
-            auto & keys = cleanup_queue->keys;
-            if (keys.empty())
-            {
-                cleanup_queue->cv.wait(lock, [&](){ return cleanup_queue->cancelled || !keys.empty(); });
-                if (cleanup_queue->cancelled)
-                    return;
-            }
-
-            auto it = keys.begin();
-            key = *it;
-            keys.erase(it);
-        }
-
-        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
-
         try
         {
+            auto task = cleanup_queue->tryPop();
+            /// No task is waiting, so this helper thread is not needed anymore.
+            if (!task)
+                return;
+            runCleanupTask(*task);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        }
+    }
+}
 
-            auto & bucket = getMetadataBucket(key);
-            auto lock = bucket.lock();
+void CacheMetadata::cleanupThreadFunc()
+{
+    /// Helper threads are started when cleanup tasks pile up; each exits once it finds none left.
+    /// The queue is cancelled before this function returns, so joining them waits for one task at most,
+    /// which can be all the empty key directories of one key prefix directory.
+    /// This thread is one of `max_cleanup_threads`, and the pool needs room for one thread at least.
+    const size_t max_helper_threads = std::max<size_t>(1, max_cleanup_threads - 1);
+    ThreadPool helper_threads(
+        CurrentMetrics::FilesystemCacheCleanupHelperThreads,
+        CurrentMetrics::FilesystemCacheCleanupHelperThreadsActive,
+        CurrentMetrics::FilesystemCacheCleanupHelperThreadsScheduled,
+        /* max_threads */max_helper_threads,
+        /* max_free_threads */0,
+        /* queue_size */max_helper_threads);
 
-            auto it = bucket.find(key);
-            if (it == bucket.end())
-                continue;
+    while (true)
+    {
+        try
+        {
+            auto task = cleanup_queue->waitAndPop();
+            /// Only at shutdown: with an empty queue `waitAndPop` waits, and it returns nothing once cancelled.
+            if (!task)
+                return;
+            runCleanupTask(*task);
 
-            auto locked_key = it->second->lockNoStateCheck();
-            if (locked_key->getKeyState() == KeyMetadata::KeyState::REMOVING)
+            /// This thread counts as the first one.
+            const size_t running_threads = helper_threads.active() + 1;
+            if (running_threads < max_cleanup_threads
+                && task->backlog >= running_threads * cleanup_elements_per_thread
+                && helper_threads.trySchedule([this] { runCleanupUntilEmpty(); }))
             {
-                removeEmptyKey(bucket, it, *locked_key, lock);
+                LOG_DEBUG(log, "Started a helper cleanup thread: {} keys were waiting for cleanup", task->backlog);
             }
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
         }
     }
 }
@@ -1181,6 +1382,20 @@ bool KeyMetadata::addToDownloadQueue(FileSegmentPtr file_segment)
     return cache_metadata->download_queue->add(file_segment);
 }
 
+void CacheMetadata::addEmptyKeyDirectoryFromStartup(const std::string & key_prefix_directory, const Key & key)
+{
+    fiu_do_on(FailPoints::file_cache_empty_key_directory_queue_memory_limit,
+    {
+        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint: the queue of empty key directories is over the memory limit");
+    });
+    cleanup_queue->addEmptyKeyDirectoryFromStartup(key_prefix_directory, key);
+}
+
+void CacheMetadata::dropEmptyKeyDirectoriesFromStartup()
+{
+    cleanup_queue->dropEmptyKeyDirectoriesFromStartup();
+}
+
 void KeyMetadata::addToCleanupQueue()
 {
     cache_metadata->cleanup_queue->add(key);
@@ -1203,15 +1418,15 @@ LockedKey::~LockedKey()
     /// will be REMOVED here and we will return in the check above.
     /// See comment near cleanupThreadFunc() for more details.
 
-    key_metadata->key_state = KeyMetadata::KeyState::REMOVING;
+    key_metadata->key_state = KeyMetadata::KeyState::QUEUED_FOR_REMOVAL;
     LOG_TEST(key_metadata->logger(), "Submitting key {} for removal", getKey());
     key_metadata->addToCleanupQueue();
 }
 
 void LockedKey::removeFromCleanupQueue()
 {
-    if (key_metadata->key_state != KeyMetadata::KeyState::REMOVING)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove non-removing");
+    if (key_metadata->key_state != KeyMetadata::KeyState::QUEUED_FOR_REMOVAL)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot cancel the removal of a key which is not queued for removal");
 
     /// Just mark key_state as "not to be removed", the cleanup thread will check it and skip the key.
     key_metadata->key_state = KeyMetadata::KeyState::ACTIVE;
