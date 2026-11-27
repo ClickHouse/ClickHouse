@@ -1,0 +1,5 @@
+answered: yes
+token of the conversation in the prompt: yes
+calls run in the first step: 1
+bare block is quoted text of the transcript: True
+requests to the model: 2
