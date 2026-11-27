@@ -1,0 +1,39 @@
+find_super_nodes
+/test-keeper-client-default/fam	4
+/test-keeper-client-default/wide	60
+/test-keeper-client-default/fam/a	3
+find_big_family
+/test-keeper-client-default	185
+/test-keeper-client-default/chain	101
+/test-keeper-client-default/chain/c1	100
+/test-keeper-client-default/chain/c1/c2	99
+/test-keeper-client-default/chain/c1/c2/c3	98
+/test-keeper-client-default/wide	66
+/test-keeper-client-default/wide/w00	6
+/test-keeper-client-default/wide/w59	1
+/test-keeper-client-default/fam	17
+/test-keeper-client-default/fam/d	4
+/test-keeper-client-default/fam/c	4
+/test-keeper-client-default/fam	17
+/test-keeper-client-default/fam/d	4
+/test-keeper-client-default/fam/c	4
+/test-keeper-client-default/fam/b	4
+/test-keeper-client-default/fam/a	4
+/test-keeper-client-default/fam/d/3	1
+/test-keeper-client-default/fam/d/2	1
+/test-keeper-client-default/fam/d/1	1
+/test-keeper-client-default/fam/c/3	1
+/test-keeper-client-default/fam/c/2	1
+/test-keeper-client-default/fam/c/1	1
+/test-keeper-client-default/fam/b/3	1
+/test-keeper-client-default/fam/b/2	1
+/test-keeper-client-default/fam/b/1	1
+/test-keeper-client-default/fam/a/3	1
+/test-keeper-client-default/fam/a/2	1
+/test-keeper-client-default/fam/a/1	1
+/test-keeper-client-default/nonexistent	1
+get_all_children_number
+184
+65
+0
+node doesn't exist
