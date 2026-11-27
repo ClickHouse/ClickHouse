@@ -120,6 +120,13 @@ std::weak_ordering operator<=>(const ProcessedManifestFileEntryPtr & lhs, const 
         <=> std::tie(*rhs->common_partition_specification, rhs->normalized_partition_key_value, rhs->sequence_number);
 }
 
+bool positionDeleteMayReferenceDataFile(const ParsedManifestFileEntry & position_delete, const IcebergPathFromMetadata & data_file_path)
+{
+    const auto & lower = position_delete.lower_reference_data_file_path;
+    const auto & upper = position_delete.upper_reference_data_file_path;
+    return (!lower.has_value() || *lower <= data_file_path) && (!upper.has_value() || *upper >= data_file_path);
+}
+
 std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
     ProcessedManifestFileEntryPtr data_object_,
     const std::vector<ProcessedManifestFileEntryPtr> & deletes_objects,
@@ -193,8 +200,11 @@ PositionDeletesByDataFile groupPositionDeletesByDataFile(const std::vector<Proce
     PositionDeletesByDataFile result;
     for (const auto & position_delete : position_deletes)
     {
-        const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
-        if (lower.has_value() && lower == position_delete->parsed_entry->upper_reference_data_file_path)
+        const auto & entry = *position_delete->parsed_entry;
+        const auto & lower = entry.lower_reference_data_file_path;
+        if (entry.isDeletionVector() && entry.referenced_data_file_path.has_value())
+            result.single_data_file[*entry.referenced_data_file_path].push_back(position_delete);
+        else if (lower.has_value() && lower == entry.upper_reference_data_file_path)
             result.single_data_file[*lower].push_back(position_delete);
         else
             result.other.push_back(position_delete);

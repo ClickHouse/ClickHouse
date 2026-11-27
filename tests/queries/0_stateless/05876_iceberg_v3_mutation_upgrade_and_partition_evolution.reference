@@ -1,0 +1,10 @@
+-- the first UPDATE after an upgrade from format-version 2
+0	0
+1	1
+2	updated
+3	3
+4	4
+5	5	0
+-- deletes of a data file of an older partition spec whose source column was dropped
+[0,3,4,5,6,7,8,9]
+[0,5,6,7,8,9]

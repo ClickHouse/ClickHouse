@@ -640,7 +640,8 @@ void generateManifestFile(
     const std::vector<std::optional<Int32>> & data_file_sort_order_ids,
     const std::vector<DataFileEntryLineage> & per_file_entry_lineage,
     Poco::JSON::Object::Ptr schema_to_serialize,
-    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics)
+    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics,
+    const std::vector<DeletionVectorLocation> & per_file_deletion_vectors)
 {
     /// A throw, not a `chassert`: mis-pairing statistics with data files publishes metadata that is
     /// wrong in the unsafe direction for external readers, and `chassert` compiles out of release builds.
@@ -663,6 +664,13 @@ void generateManifestFile(
     chassert(
         per_file_entry_lineage.empty() || per_file_entry_lineage.size() == data_file_names.size(),
         "per_file_entry_lineage size does not match number of data files");
+
+    if (!per_file_deletion_vectors.empty() && per_file_deletion_vectors.size() != data_file_names.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "per_file_deletion_vectors size does not match number of files: {} vs {}",
+            per_file_deletion_vectors.size(),
+            data_file_names.size());
 
     if (per_file_partition_values.size() != data_file_names.size())
         throw Exception(
@@ -719,7 +727,8 @@ void generateManifestFile(
 
     writer.setMetadata(Iceberg::f_partition_spec, stringifyJSON(partition_spec->getArray(Iceberg::f_fields)));
     writer.setMetadata(Iceberg::f_manifest_partition_spec_id, std::to_string(partition_spec_id));
-    writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
+    if (version >= 2)
+        writer.setMetadata(Iceberg::f_content, content_type == Iceberg::FileContentType::DATA ? "data" : "deletes");
     for (size_t file_idx = 0; file_idx < data_file_names.size(); ++file_idx)
     {
         const auto & data_file_name = data_file_names[file_idx];
@@ -849,6 +858,16 @@ void generateManifestFile(
                 split_offsets_array.push_back(avro::GenericDatum(static_cast<Int64>(offset)));
         }
 
+        if (!per_file_deletion_vectors.empty())
+        {
+            if (version < 3)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Deletion vectors require Iceberg format-version 3, got {}", version);
+            const auto & deletion_vector = per_file_deletion_vectors[file_idx];
+            setVersionedField(data_file, deletion_vector.referenced_data_file.serialize(), Iceberg::f_referenced_data_file);
+            setVersionedField(data_file, deletion_vector.content_offset, Iceberg::f_content_offset);
+            setVersionedField(data_file, deletion_vector.content_size_in_bytes, Iceberg::f_content_size_in_bytes);
+        }
+
         /// Preserve the source file's sort_order_id.
         if (!data_file_sort_order_ids.empty() && data_file_sort_order_ids[file_idx].has_value())
         {
@@ -976,7 +995,8 @@ void generateManifestList(
     const std::vector<Int64> & entry_partition_spec_ids,
     const std::vector<ManifestPartitionSummary> & entry_partition_summaries,
     const std::vector<Int64> & entry_row_counts,
-    const std::vector<Int64> & entry_file_counts)
+    const std::vector<Int64> & entry_file_counts,
+    const std::vector<DeleteManifestListEntry> & delete_manifest_entries)
 {
     chassert(
         per_entry_content_types.empty() || per_entry_content_types.size() == manifest_entry_names.size(),
@@ -1027,16 +1047,13 @@ void generateManifestList(
 
     /// Writes the `partitions` field summary of one manifest-list entry; readers use its bounds to skip whole
     /// manifests. Left null when no summaries are supplied (unpartitioned table).
-    auto write_partition_summary = [&](avro::GenericRecord & entry, size_t entry_idx)
+    auto write_partition_summary_fields = [&](avro::GenericRecord & entry, const std::vector<ManifestPartitionSummary::FieldSummary> & fields)
     {
-        if (entry_partition_summaries.empty())
-            return;
-
         auto & partitions_field = entry.field(Iceberg::f_partitions);
         partitions_field.selectBranch(1);
         auto & summaries = partitions_field.value<avro::GenericArray>();
         auto summary_schema = summaries.schema()->leafAt(0);
-        for (const auto & field_summary : entry_partition_summaries[entry_idx].getFields())
+        for (const auto & field_summary : fields)
         {
             avro::GenericDatum summary_datum(summary_schema);
             auto & summary_record = summary_datum.value<avro::GenericRecord>();
@@ -1060,6 +1077,13 @@ void generateManifestList(
             }
             summaries.value().push_back(summary_datum);
         }
+    };
+
+    auto write_partition_summary = [&](avro::GenericRecord & entry, size_t entry_idx)
+    {
+        if (entry_partition_summaries.empty())
+            return;
+        write_partition_summary_fields(entry, entry_partition_summaries[entry_idx].getFields());
     };
 
     Int64 snapshot_first_row_id = 0;
@@ -1348,6 +1372,66 @@ void generateManifestList(
             setVersionedField(entry, reserve_row_ids(added_rows_count), Iceberg::f_manifest_first_row_id);
 
         write_partition_summary(entry, entry_idx);
+
+        writer.write(entry_datum);
+    }
+
+    if (!delete_manifest_entries.empty() && version < 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Delete manifests require Iceberg format-version 2 or later, got {}", version);
+
+    for (const auto & delete_manifest : delete_manifest_entries)
+    {
+        avro::GenericDatum entry_datum(schema.root());
+        avro::GenericRecord & entry = entry_datum.value<avro::GenericRecord>();
+
+        const Int64 new_sequence_number = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
+        entry.field(Iceberg::f_manifest_path) = delete_manifest.path.serialize();
+        entry.field(Iceberg::f_manifest_length) = delete_manifest.length;
+        entry.field(Iceberg::f_partition_spec_id) = delete_manifest.partition_spec_id;
+        entry.field(Iceberg::f_content) = static_cast<Int32>(Iceberg::ManifestFileContentType::DELETE);
+        entry.field(Iceberg::f_sequence_number) = new_sequence_number;
+        entry.field(Iceberg::f_min_sequence_number) = delete_manifest.min_sequence_number.value_or(new_sequence_number);
+        entry.field(Iceberg::f_added_snapshot_id) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+        entry.field(Iceberg::f_added_files_count) = delete_manifest.added_files_count;
+        entry.field(Iceberg::f_existing_files_count) = delete_manifest.existing_files_count;
+        entry.field(Iceberg::f_deleted_files_count) = delete_manifest.deleted_files_count;
+        entry.field(Iceberg::f_added_rows_count) = delete_manifest.added_rows_count;
+        entry.field(Iceberg::f_existing_rows_count) = delete_manifest.existing_rows_count;
+        entry.field(Iceberg::f_deleted_rows_count) = delete_manifest.deleted_rows_count;
+
+        if (delete_manifest.partition_summary)
+        {
+            write_partition_summary_fields(entry, delete_manifest.partition_summary->getFields());
+        }
+        else if (delete_manifest.serialized_partition_summary)
+        {
+            auto & partitions_field = entry.field(Iceberg::f_partitions);
+            partitions_field.selectBranch(1);
+            auto & summaries = partitions_field.value<avro::GenericArray>();
+            auto summary_schema = summaries.schema()->leafAt(0);
+            for (const auto & field_summary : *delete_manifest.serialized_partition_summary)
+            {
+                avro::GenericDatum summary_datum(summary_schema);
+                auto & summary_record = summary_datum.value<avro::GenericRecord>();
+                summary_record.field(Iceberg::f_contains_null) = avro::GenericDatum(field_summary.contains_null);
+                if (field_summary.contains_nan)
+                {
+                    auto & contains_nan = summary_record.field(Iceberg::f_contains_nan);
+                    contains_nan.selectBranch(1);
+                    contains_nan.value<bool>() = true;
+                }
+                if (field_summary.lower_bound && field_summary.upper_bound)
+                {
+                    auto & lower = summary_record.field(Iceberg::f_lower_bound);
+                    lower.selectBranch(1);
+                    lower.value<std::vector<uint8_t>>().assign(field_summary.lower_bound->begin(), field_summary.lower_bound->end());
+                    auto & upper = summary_record.field(Iceberg::f_upper_bound);
+                    upper.selectBranch(1);
+                    upper.value<std::vector<uint8_t>>().assign(field_summary.upper_bound->begin(), field_summary.upper_bound->end());
+                }
+                summaries.value().push_back(summary_datum);
+            }
+        }
 
         writer.write(entry_datum);
     }

@@ -67,6 +67,13 @@ struct DataFileEntryLineage
     std::optional<Int64> file_sequence_number;
 };
 
+struct DeletionVectorLocation
+{
+    Iceberg::IcebergPathFromMetadata referenced_data_file;
+    Int64 content_offset = 0;
+    Int64 content_size_in_bytes = 0;
+};
+
 /// The manifest-list `partitions` field summary of one manifest, accumulated over the partition tuples of its entries.
 class ManifestPartitionSummary
 {
@@ -129,7 +136,8 @@ void generateManifestFile(
     Poco::JSON::Object::Ptr schema_to_serialize = nullptr,
     /// Optional freshly-computed per-file statistics parallel to `data_file_names`; when set each entry's stats
     /// describe only its own data file, else the shared `data_file_statistics` is used for every entry.
-    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics = nullptr);
+    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics = nullptr,
+    const std::vector<DeletionVectorLocation> & per_file_deletion_vectors = {});
 
 /// Per manifest-list entry file/row counts and lineage for rewritten manifests.
 struct ManifestListEntryCounts
@@ -150,6 +158,22 @@ struct ManifestListEntryCounts
     std::optional<Int64> added_sequence_number;
 };
 
+struct DeleteManifestListEntry
+{
+    Iceberg::IcebergPathFromMetadata path;
+    Int64 length = 0;
+    Int32 partition_spec_id = 0;
+    Int32 added_files_count = 0;
+    Int32 existing_files_count = 0;
+    Int32 deleted_files_count = 0;
+    Int64 added_rows_count = 0;
+    Int64 existing_rows_count = 0;
+    Int64 deleted_rows_count = 0;
+    std::optional<Int64> min_sequence_number;
+    std::optional<ManifestPartitionSummary> partition_summary;
+    std::optional<Iceberg::PartitionFieldSummaries> serialized_partition_summary;
+};
+
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
     Poco::JSON::Object::Ptr metadata,
@@ -167,7 +191,8 @@ void generateManifestList(
     const std::vector<Int64> & entry_partition_spec_ids = {},
     const std::vector<ManifestPartitionSummary> & entry_partition_summaries = {},
     const std::vector<Int64> & entry_row_counts = {},
-    const std::vector<Int64> & entry_file_counts = {});
+    const std::vector<Int64> & entry_file_counts = {},
+    const std::vector<DeleteManifestListEntry> & delete_manifest_entries = {});
 
 class IcebergStorageSink final : public SinkToStorage
 {
