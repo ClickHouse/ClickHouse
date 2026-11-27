@@ -117,6 +117,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <csignal>
+#include <poll.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -199,6 +200,7 @@ namespace ErrorCodes
     extern const int USER_SESSION_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_POLL;
     extern const int USER_EXPIRED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int CANNOT_WRITE_TO_FILE;
@@ -216,6 +218,18 @@ namespace ProfileEvents
     extern const Event ThrottlerSleepMicroseconds;
     extern const Event SchedulerIOReadWaitMicroseconds;
     extern const Event SchedulerIOWriteWaitMicroseconds;
+    extern const Event OSReadBytes;
+    extern const Event OSWriteBytes;
+    extern const Event ReadBufferFromS3Bytes;
+    extern const Event WriteBufferFromS3Bytes;
+    extern const Event ReadBufferFromAzureBytes;
+    extern const Event WriteBufferFromAzureBytes;
+    extern const Event ReadWriteBufferFromHTTPBytes;
+    extern const Event WriteBufferFromHTTPBytes;
+    extern const Event NetworkSendBytes;
+    extern const Event NetworkReceiveBytes;
+    extern const Event StreamingExchangeSendBytes;
+    extern const Event StreamingExchangeReceiveBytes;
 }
 
 namespace
@@ -1056,6 +1070,9 @@ try
     {
         output_buffer_canceled = false;
 
+        if (connection)
+            connection->onQueryOutputCreated();
+
         /// Ignore all results when fuzzing as they can be huge.
         if (query_fuzzer_runs)
         {
@@ -1338,6 +1355,9 @@ void ClientBase::initLogsOutputStream()
 {
     if (!logs_out_stream)
     {
+        if (connection)
+            connection->onQueryOutputCreated();
+
         WriteBuffer * wb = out_logs_buf.get();
 
         bool color_logs = false;
@@ -2316,6 +2336,19 @@ void ClientBase::onProfileEvents(Block & block)
         std::string_view throttler_sleep_name = ProfileEvents::getName(ProfileEvents::ThrottlerSleepMicroseconds);
         std::string_view scheduler_io_read_wait_name = ProfileEvents::getName(ProfileEvents::SchedulerIOReadWaitMicroseconds);
         std::string_view scheduler_io_write_wait_name = ProfileEvents::getName(ProfileEvents::SchedulerIOWriteWaitMicroseconds);
+        std::string_view os_read_bytes_name = ProfileEvents::getName(ProfileEvents::OSReadBytes);
+        std::string_view os_write_bytes_name = ProfileEvents::getName(ProfileEvents::OSWriteBytes);
+        std::string_view s3_read_bytes_name = ProfileEvents::getName(ProfileEvents::ReadBufferFromS3Bytes);
+        std::string_view s3_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromS3Bytes);
+        std::string_view azure_read_bytes_name = ProfileEvents::getName(ProfileEvents::ReadBufferFromAzureBytes);
+        std::string_view azure_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromAzureBytes);
+        std::string_view http_rw_bytes_name = ProfileEvents::getName(ProfileEvents::ReadWriteBufferFromHTTPBytes);
+        std::string_view http_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromHTTPBytes);
+        std::string_view network_send_bytes_name = ProfileEvents::getName(ProfileEvents::NetworkSendBytes);
+        std::string_view network_receive_bytes_name = ProfileEvents::getName(ProfileEvents::NetworkReceiveBytes);
+        /// `NetworkSendBytes` and `NetworkReceiveBytes` do not count the sockets of streaming exchanges.
+        std::string_view exchange_send_bytes_name = ProfileEvents::getName(ProfileEvents::StreamingExchangeSendBytes);
+        std::string_view exchange_receive_bytes_name = ProfileEvents::getName(ProfileEvents::StreamingExchangeReceiveBytes);
 
         HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)
@@ -2348,6 +2381,13 @@ void ClientBase::onProfileEvents(Block & block)
             /// (workload resource requests), summed up into a single "waited" figure.
             else if (event_name == throttler_sleep_name || event_name == scheduler_io_read_wait_name || event_name == scheduler_io_write_wait_name)
                 thread_times[host_name].waited_us += value;
+            else if (
+                event_name == os_read_bytes_name || event_name == s3_read_bytes_name || event_name == azure_read_bytes_name
+                || event_name == os_write_bytes_name || event_name == s3_write_bytes_name || event_name == azure_write_bytes_name
+                || event_name == http_rw_bytes_name || event_name == http_write_bytes_name
+                || event_name == network_send_bytes_name || event_name == network_receive_bytes_name
+                || event_name == exchange_send_bytes_name || event_name == exchange_receive_bytes_name)
+                thread_times[host_name].io_bytes += value;
             /// The rows below are `GAUGE` snapshots and can also come in several rows for one host:
             /// from several queued snapshots of one source, or from several shards on one server.
             /// Summing would multiply one source's usage by the number of coalesced snapshots,
@@ -2499,6 +2539,9 @@ void ClientBase::resetOutput()
     }
     pager_cmd = nullptr;
 
+    if (connection)
+        connection->onQueryOutputReleased();
+
     std_out->next();
 }
 
@@ -2583,6 +2626,9 @@ void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
 
 namespace
 {
+/// Returns false when stdin is unreadable (closed fd, broken pipe, etc.)
+/// because callers use this as a probe: "is there extra stdin data for this INSERT?"
+/// An unreadable stdin simply means there is no extra data, not an error to report.
 bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
 {
     try
@@ -2595,6 +2641,61 @@ bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
             return false;
         throw;
     }
+}
+
+enum class StdinState
+{
+    Data,
+    EndOfFile,
+    Ambiguous,
+};
+
+/// Checks stdin without blocking. An open pipe/socket with neither data nor EOF is
+/// ambiguous: it can be an intentionally unused inherited stdin or a delayed writer.
+/// Callers decide whether that is valid for their particular INSERT source.
+///
+/// Error handling mirrors `isStdinNotEmptyAndValid`: an unreadable stdin (closed fd,
+/// `POLLNVAL`, or `POLLERR` without `POLLIN`) is reported as end of file rather than
+/// failing the INSERT.
+/// Genuine `poll` failures (`ret < 0` after retrying `EINTR`) indicate system-level
+/// problems (`EFAULT`/`EINVAL`/`ENOMEM`) and are surfaced as exceptions instead of
+/// being silently swallowed.
+StdinState getStdinStateNonBlocking(ReadBuffer & std_in, int fd)
+{
+    if (std_in.hasPendingData())
+        return StdinState::Data;
+
+    struct pollfd pfd{};
+    pfd.fd = fd;
+    pfd.events = POLLIN;
+    pfd.revents = 0;
+
+    int ret = 0;
+    do
+    {
+        ret = poll(&pfd, 1, 0);
+    }
+    while (ret < 0 && errno == EINTR);
+
+    if (ret < 0)
+        throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot poll stdin");
+
+    if (ret == 0)
+        return StdinState::Ambiguous;
+
+    if (pfd.revents & POLLNVAL)
+        return StdinState::EndOfFile;
+
+    /// `POLLERR` or `POLLHUP` do not imply that no bytes remain readable: e.g. a socket
+    /// whose peer sent data and then reset the connection reports `POLLIN | POLLERR | POLLHUP`,
+    /// and the data is still readable. Check `POLLIN` first, so such data is not ignored.
+    if (pfd.revents & POLLIN)
+        return StdinState::Data;
+
+    if (pfd.revents & (POLLERR | POLLHUP))
+        return StdinState::EndOfFile;
+
+    return StdinState::Ambiguous;
 }
 }
 
@@ -2727,7 +2828,20 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
     /// `FROM INFILE` names the data source, so stdin is not read for it. Do not even check stdin then: the check waits
     /// for data or EOF, so an open pipe would block the query.
-    bool have_data_in_stdin = !parsed_insert_query->infile && !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+    /// Inline data is a complete payload of an INSERT, so an open inherited stdin must not prevent executing it:
+    /// use a non-blocking check and append stdin only when it already has data. When there is no other data source,
+    /// use the blocking check as before.
+    bool have_data_in_stdin = false;
+    if (!parsed_insert_query->infile && !is_interactive && !stdin_is_a_tty)
+    {
+        if (parsed_insert_query->data)
+        {
+            const auto stdin_state = getStdinStateNonBlocking(*std_in, stdin_fd);
+            have_data_in_stdin = stdin_state == StdinState::Data && isStdinNotEmptyAndValid(*std_in);
+        }
+        else
+            have_data_in_stdin = isStdinNotEmptyAndValid(*std_in);
+    }
 
     if (need_render_progress)
     {
@@ -3267,7 +3381,11 @@ void ClientBase::processParsedSingleQuery(
 
         if (is_async_insert_with_inlined_data)
         {
-            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+            auto stdin_state = StdinState::EndOfFile;
+            if (!is_interactive && !stdin_is_a_tty)
+                stdin_state = getStdinStateNonBlocking(*std_in, stdin_fd);
+
+            const bool have_data_in_stdin = stdin_state == StdinState::Data && isStdinNotEmptyAndValid(*std_in);
             bool have_external_data = have_data_in_stdin || insert->infile;
 
             if (have_external_data)
@@ -3277,7 +3395,11 @@ void ClientBase::processParsedSingleQuery(
 
         if (is_inline_insert_data)
         {
-            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+            auto stdin_state = StdinState::EndOfFile;
+            if (!is_interactive && !stdin_is_a_tty)
+                stdin_state = getStdinStateNonBlocking(*std_in, stdin_fd);
+
+            const bool have_data_in_stdin = stdin_state == StdinState::Data && isStdinNotEmptyAndValid(*std_in);
             bool have_external_data = have_data_in_stdin || insert->infile;
 
             if (have_external_data)
@@ -4259,12 +4381,7 @@ bool ClientBase::processQueryText(const String & text)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", *slash_command_error);
     }
 
-    if (query_fuzzer_runs)
-    {
-        processWithASTFuzzer(text);
-        return true;
-    }
-
+    /// With the AST fuzzer `executeMultiQuery` fuzzes each statement and returns false when the server is gone.
     return executeMultiQuery(text);
 }
 
@@ -4353,9 +4470,14 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
     auto & storage_settings = *ast_create.storage->settings;
     bool added_new_setting = false;
 
+    /// The query may name a setting by its alias, while the changes from the command line use canonical names.
+    std::unordered_set<String> settings_in_query;
+    for (const auto & change : storage_settings.changes)
+        settings_in_query.emplace(MergeTreeSettings::resolveName(change.name));
+
     for (const auto & change : all_changed)
     {
-        if (!storage_settings.changes.tryGet(change.name))
+        if (!settings_in_query.contains(String(MergeTreeSettings::resolveName(change.name))))
         {
             storage_settings.changes.emplace_back(change.name, change.value);
             added_new_setting = true;
@@ -4496,7 +4618,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
             switch (packet.type)
             {
                 case Protocol::Server::Data:
-                    if (!packet.block.empty() && packet.block.rows() > 0)
+                    if (packet.block.columns() != 0 && packet.block.rows() > 0)
                     {
                         /// Convert block to string representation
                         /// For schema queries, we expect single column results
@@ -5554,16 +5676,8 @@ void ClientBase::runNonInteractive()
     {
         for (const auto & query : queries)
         {
-            if (query_fuzzer_runs)
-            {
-                if (!processWithASTFuzzer(query))
-                    return;
-            }
-            else
-            {
-                if (!processQueryText(query))
-                    return;
-            }
+            if (!processQueryText(query))
+                return;
         }
     }
     else
@@ -5573,10 +5687,7 @@ void ClientBase::runNonInteractive()
         ReadBufferFromFileDescriptor in(stdin_fd);
         String text;
         readStringUntilEOF(text, in);
-        if (query_fuzzer_runs)
-            processWithASTFuzzer(text);
-        else
-            processQueryText(text);
+        processQueryText(text);
     }
 }
 

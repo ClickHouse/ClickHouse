@@ -14,6 +14,9 @@ SET use_query_condition_cache=0;
 -- so the states are estimated off one hash table.
 SET max_threads=4;
 SET group_by_two_level_threshold=0, group_by_two_level_threshold_bytes=0;
+-- The adaptive aggregator also takes an aggregation with both two-level thresholds at 0, and it records its
+-- output in its own way, so it is off.
+SET enable_adaptive_aggregator=0;
 
 DROP TABLE IF EXISTS asz_t;
 

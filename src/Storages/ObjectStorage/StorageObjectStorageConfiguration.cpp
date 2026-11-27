@@ -248,6 +248,7 @@ void StorageObjectStorageConfiguration::initialize(
                  engine_args, local_context, true, nullptr, table_id, /* settings= */ nullptr, configuration_to_initialize.is_replayed_definition))
     {
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
+        configuration_to_initialize.initialized_from_named_collection = true;
 
         /// A base-URL setting (e.g. `s3_base`) rewrote a relative URL coming from the named
         /// collection. Materialize the resolved URL back into the engine args as a `url='...'`

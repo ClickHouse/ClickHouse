@@ -6,13 +6,11 @@ tags: ['Cloud の管理', 'データモデリング']
 keywords: ['Dictionaries']
 ---
 
-<div id="dictionaries-in-clickhouse">
-  ## ClickHouse における Dictionaries
-</div>
+## ClickHouse における Dictionary {#dictionaries-in-clickhouse}
 
-ClickHouse Cloud で作成した Dictionaries は、初回の作成時に不整合が発生することがあります。つまり、作成直後は dictionary にデータがまったく表示されない場合があります。ただし、数回再試行すると、作成クエリが別のレプリカに到達し、データが表示されるようになることがあります。
+ClickHouse Cloud で作成した Dictionary は、初回の作成時に不整合が発生することがあります。つまり、作成直後は dictionary にデータがまったく表示されない場合があります。ただし、数回再試行すると、作成クエリが別のレプリカに到達し、データが表示されるようになることがあります。
 
-これは、part が server に到達する前に dictionary が作成されたために発生する場合があります。例を挙げると、次のとおりです。
+これは、part が サーバー に到達する前に dictionary が作成されたために発生する場合があります。例を挙げると、次のとおりです。
 
 ```
 2024-01-25 13:38:25.615837 - CREATE DICTIONARY received
@@ -24,12 +22,16 @@ ClickHouse Cloud で作成した Dictionaries は、初回の作成時に不整�
 
 この問題を解決するには、Dictionary の作成時にソーステーブルを指定する代わりに `SELECT` クエリを使用し、`select_sequential_consistency=1` 設定を有効にします。
 
+<Note title="ClickHouse Cloud">
+  ClickHouse テーブルから読み取る Dictionary を作成する場合は、`SOURCE` 句に専用ユーザーのユーザー名とパスワードを指定してください。このユーザーには、ソーステーブルに対する `SELECT` アクセス許可が必要です。詳しくは [ClickHouse Dictionary ソースの例](/ja/reference/statements/create/dictionary/sources/clickhouse)を参照してください。
+</Note>
+
 ソーステーブルを指定する代わりに:
 
 ```sql
 SOURCE(CLICKHOUSE(
     table 'test.temp_title_table_1706189903924'
-    user default password 'PASSWORD'))
+    user 'dict_reader' password 'dict_reader_password'))
 ```
 
 `select_sequential_consistency=1` を指定した `SELECT` クエリを使用します:
@@ -38,12 +40,10 @@ SOURCE(CLICKHOUSE(
 SOURCE(CLICKHOUSE(QUERY
     'SELECT songTitle, mappedTitle
     FROM test.temp_title_table_1706189903924
-    SETTINGS select_sequential_consistency=1' USER default PASSWORD ''))
+    SETTINGS select_sequential_consistency=1' USER 'dict_reader' PASSWORD 'dict_reader_password'))
 ```
 
-<div id="why-does-this-issue-occur">
-  ## この問題はなぜ発生するのですか？
-</div>
+## この問題はなぜ発生するのですか？ {#why-does-this-issue-occur}
 
 データを挿入してから Dictionary を作成または再読み込みすると、データ (または新しいデータ) より先に DDL がレプリカに到達することがあります。その結果、Dictionary がレプリカ間で不整合になり、どのレプリカがクエリを受け取るかによって結果が異なる場合があります。
 

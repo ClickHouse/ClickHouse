@@ -6,6 +6,7 @@
 #include <Storages/StorageInput.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
@@ -124,6 +125,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool add_implicit_sign_column_constraint_for_collapsing_engine;
 }
 
+namespace FailPoints
+{
+    extern const char insert_pause_before_reading_serialization_hints[];
+}
+
 namespace ServerSetting
 {
     extern const ServerSettingsBool disable_insertion_and_mutation;
@@ -139,6 +145,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_USAGE_OF_INPUT;
     extern const int READONLY;
 }
 
@@ -562,7 +569,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
         async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
-        context);
+        context, /*preserve_input_order=*/ pipeline.getNumStreams() == 1);
     returning_insert_views_serial = query.returning && insert_dependencies->getViewProcessingNumThreads() == 1;
 
     const auto & settings = context->getSettingsRef();
@@ -1148,7 +1155,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, context, nullptr);
 
         if (settings[Setting::enable_parsing_to_custom_serialization])
-            format->setSerializationHints(table->getSerializationHints());
+        {
+            /// The format parses the columns with the types from `metadata_snapshot`; a concurrent `ALTER` may have changed them since.
+            FailPointInjection::pauseFailPoint(FailPoints::insert_pause_before_reading_serialization_hints);
+            format->setSerializationHints(table->getSerializationHints(*metadata_snapshot));
+        }
 
         auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), context, nullptr);
         pipeline.complete(std::move(pipe));
@@ -1552,6 +1563,11 @@ BlockIO InterpreterInsertQuery::execute()
     {
         if (no_destination || async_insert)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "RETURNING is not supported for this kind of INSERT");
+
+        ASTPtr returning_input_function;
+        ASTInsertQuery::tryFindInputFunction(query.returning, returning_input_function);
+        if (returning_input_function)
+            throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "The `input` table function is not supported in RETURNING");
 
         if (query.select)
         {

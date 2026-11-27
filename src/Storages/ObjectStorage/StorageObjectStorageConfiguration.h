@@ -47,23 +47,25 @@ namespace ErrorCodes
 struct StorageObjectStorageQuerySettings
 {
     /// Insert settings:
-    bool truncate_on_insert;
-    bool create_new_file_on_insert;
+    bool truncate_on_insert = false;
+    bool create_new_file_on_insert = false;
     /// If not zero, a new file is started as soon as this number of bytes is written into the current one.
-    size_t split_on_write_by_size_bytes;
+    size_t split_on_write_by_size_bytes = 0;
 
     /// Schema inference settings:
-    bool schema_inference_use_cache;
-    SchemaInferenceMode schema_inference_mode;
+    bool schema_inference_use_cache = false;
+    SchemaInferenceMode schema_inference_mode = SchemaInferenceMode::DEFAULT;
 
     /// List settings:
-    bool skip_empty_files;
-    size_t list_object_keys_size;
-    bool throw_on_zero_files_match;
-    bool ignore_non_existent_file;
+    bool skip_empty_files = false;
+    size_t list_object_keys_size = 0;
+    bool throw_on_zero_files_match = false;
+    bool ignore_non_existent_file = false;
+    /// Number of threads used to list a globbed path in parallel (1 = serial listing).
+    size_t list_object_parallelism = 1;
     /// Skip objects with a path segment starting with '_' or '.' below the non-glob prefix
     /// when listing by glob. Tables with hive partition strategy skip them unconditionally.
-    bool skip_hidden_files;
+    bool skip_hidden_files = false;
 };
 
 
@@ -390,6 +392,7 @@ public:
 
     virtual SinkToStoragePtr write(
         SharedHeader /* sample_block */,
+        StorageMetadataPtr /* metadata_snapshot */,
         const StorageID & /* table_id */,
         ObjectStoragePtr /* object_storage */,
         const std::optional<FormatSettings> & /* format_settings */,
@@ -563,6 +566,9 @@ public:
     /// Set by the storage when the table definition is replayed from stored metadata (see `isReplayedTableDefinition`):
     /// the inferred `format` or `structure` stored over a `NOT OVERRIDABLE` `'auto'` of the named collection is then accepted.
     bool is_replayed_definition = false;
+
+    /// Set by `initialize` when the arguments come from a named collection.
+    bool initialized_from_named_collection = false;
 
     /// False when the storage is instantiated from anything other than a user-issued `CREATE`
     /// (ATTACH, server startup, RESTORE, replicated-DDL replay). `initPartitionStrategy` must not

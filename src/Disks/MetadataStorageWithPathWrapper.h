@@ -80,13 +80,6 @@ public:
         delegate->setLastModified(wrappedPath(path), timestamp);
     }
 
-    [[nodiscard]] bool supportsChmod() const override { return delegate->supportsChmod(); }
-
-    void chmod(const String & path, mode_t mode) override
-    {
-        delegate->chmod(wrappedPath(path), mode);
-    }
-
     void setReadOnly(const std::string & path) override
     {
         delegate->setReadOnly(wrappedPath(path));
@@ -150,6 +143,7 @@ public:
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) override { return delegate->generateObjectKeyForPath(path); }
     void recordBlobsReplication(const StoredObject & blob, const Locations & missing_locations) override { delegate->recordBlobsReplication(blob, missing_locations); }
     StoredObjects getSubmittedForRemovalBlobs() override { return delegate->getSubmittedForRemovalBlobs(); }
+    BatchIds getSubmittedForRemovalBatches() override { return delegate->getSubmittedForRemovalBatches(); }
 };
 
 class MetadataStorageWithPathWrapper final : public IMetadataStorage
@@ -233,8 +227,6 @@ public:
         return delegate->getLastChanged(wrappedPath(path));
     }
 
-    [[nodiscard]] bool supportsChmod() const override { return delegate->supportsChmod(); }
-
     [[nodiscard]] bool supportsStat() const override { return delegate->supportsStat(); }
 
     [[nodiscard]] struct stat stat(const String & path) const override { return delegate->stat(wrappedPath(path)); }
@@ -309,14 +301,29 @@ public:
         return delegate->getBlobsToRemove(cluster, max_count);
     }
 
+    BatchesToRemove getBatchesToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override
+    {
+        return delegate->getBatchesToRemove(cluster, max_count);
+    }
+
     int64_t recordAsRemoved(const StoredObjects & blobs) override
     {
         return delegate->recordAsRemoved(blobs);
     }
 
+    int64_t recordBatchesAsRemoved(const BatchesToRemove & batches) override
+    {
+        return delegate->recordBatchesAsRemoved(batches);
+    }
+
     [[nodiscard]] bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override
     {
         return delegate->hasPendingRemovalBlobs(blobs);
+    }
+
+    [[nodiscard]] bool hasPendingRemovalBatches(const BatchIds & batch_ids) const override
+    {
+        return delegate->hasPendingRemovalBatches(batch_ids);
     }
 
     [[nodiscard]] bool hasDeadBlobsQueue() const override

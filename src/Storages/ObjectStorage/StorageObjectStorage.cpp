@@ -170,6 +170,11 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     /// We don't want to throw an exception if there are no files with specified path.
     query_settings.throw_on_zero_files_match = false;
     query_settings.ignore_non_existent_file = true;
+    /// Force serial listing here: this sample path drives hive-partitioning detection, and the parallel
+    /// iterator returns keys in scheduler (non-deterministic) order, so parallel listing would make the
+    /// detected partitioning depend on listing timing. `s3_list_object_parallelism` must stay a pure
+    /// performance knob, so keep the sample path deterministic (S3's lexicographic order).
+    query_settings.list_object_parallelism = 1;
 
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
@@ -1095,7 +1100,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
     if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
-        return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
+        return configuration->write(sample_block, metadata_snapshot, storage_id, object_storage, format_settings, local_context, catalog);
 
     /// Not a data lake, just raw object storage
 
@@ -1508,9 +1513,16 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
     ObjectInfos & read_keys,
     const ContextPtr & context)
 {
+    /// Force serial listing during schema/format inference: the parallel iterator returns keys in
+    /// scheduler (non-deterministic) order, and inference reads the first listed file(s), so parallel
+    /// listing could otherwise make the inferred format/schema depend on listing timing.
+    /// `s3_list_object_parallelism` must stay a pure performance knob.
+    auto query_settings = configuration->getQuerySettings(context);
+    query_settings.list_object_parallelism = 1;
+
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
-        configuration->getQuerySettings(context),
+        query_settings,
         object_storage,
         nullptr, /* storage_metadata */
         false, /* distributed_processing */

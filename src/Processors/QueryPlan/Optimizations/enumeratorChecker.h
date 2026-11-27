@@ -149,7 +149,8 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
              dp_table[lhs_subset].estimated_rows.value_or(0),
              dp_table[rhs_subset].estimated_rows.value_or(0));
 
-    if (!dp_table.isConnected(result_subset) || plan_cost < dp_table[result_subset].cost)
+    if (!dp_table.isConnected(result_subset)
+        || isCheaperPlan(plan_cost, rows_cost, dp_table[result_subset].cost, dp_table[result_subset].rows_cost))
     {
         auto & entry = dp_table[result_subset];
         entry.left = lhs_subset;
@@ -245,8 +246,10 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
         const bool keeps_order = optimizer.isInterestingOrder(key, static_cast<UInt32>(result_subset));
         auto ordered_it = keeps_order ? std::ranges::find(entry.ordered, key, &Plan::order_class) : entry.ordered.end();
         const bool new_ordered = keeps_order && ordered_it == entry.ordered.end();
-        const bool better_ordered = keeps_order && !new_ordered && cost < ordered_it->cost;
-        const bool better_cheapest = cost < entry.cost;
+        const double rows_cost = planAt(lhs_subset, left->plan).rows_cost + planAt(rhs_subset, right->plan).rows_cost
+            + estimateJoinedRows(selectivity, left->input.rows, right->input.rows);
+        const bool better_ordered = keeps_order && !new_ordered && isCheaperPlan(cost, rows_cost, ordered_it->cost, ordered_it->rows_cost);
+        const bool better_cheapest = isCheaperPlan(cost, rows_cost, entry.cost, entry.rows_cost);
         if (!new_ordered && !better_ordered && !better_cheapest)
             continue;
 
@@ -256,8 +259,7 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
         plan.left_plan = left->plan;
         plan.right_plan = right->plan;
         plan.cost = cost;
-        plan.rows_cost = planAt(lhs_subset, left->plan).rows_cost + planAt(rhs_subset, right->plan).rows_cost
-            + estimateJoinedRows(selectivity, left->input.rows, right->input.rows);
+        plan.rows_cost = rows_cost;
         plan.sel = selectivity.reported_value;
         plan.kind = kind;
         plan.strictness = strictness;

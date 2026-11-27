@@ -483,7 +483,7 @@ Se `func` não for especificada, retorna o número de elementos não zero no arr
 
 `arrayCount` é uma [função de ordem superior](/pt-BR/reference/functions/regular-functions/overview#higher-order-functions).
 
-<Info>
+<Note>
   **Use a configuração `array_count_legacy_uint32_result` para retornar `UInt32`**
 
   A versão 26.10 introduziu uma alteração incompatível com versões anteriores: `arrayCount` passou a retornar `UInt64` em vez de `UInt32`, para que o resultado seja exato em arrays com mais de `4294967295` elementos correspondentes.
@@ -491,7 +491,7 @@ Se `func` não for especificada, retorna o número de elementos não zero no arr
   Para manter o comportamento anterior (tanto o tipo de resultado `UInt32` quanto a constância do resultado), defina a configuração `array_count_legacy_uint32_result` (padrão: `false`) como `true`.
 
   Durante uma atualização gradual de um cluster, uma consulta distribuída iniciada por um servidor ainda não atualizado não repassa essa configuração; assim, expressões sensíveis ao tipo avaliadas localmente em shards já atualizados (por exemplo, `byteSize(arrayCount(...))`) passam a ver `UInt64` nesses shards. Para manter essas consultas totalmente inalteradas até que todo o cluster seja atualizado, defina `array_count_legacy_uint32_result = 1` nos servidores atualizados para os usuários com os quais as consultas são executadas nos shards e remova essa configuração após a conclusão do upgrade. O usuário em questão depende da configuração do cluster: com um `secret` interserver configurado, o shard executa a consulta como o usuário atual do iniciador; caso contrário, é usado o usuário da definição do cluster ou da função de tabela `remote` (`default`, se nenhum for especificado). A abordagem mais simples e robusta é habilitar a configuração para todos os usuários dos servidores atualizados.
-</Info>
+</Note>
 
 **Sintaxe**
 
@@ -3485,6 +3485,8 @@ Introduzido em: v20.4.0
 
 Aplica uma função de agregação aos elementos do array nos intervalos especificados e retorna um array contendo o resultado correspondente a cada intervalo.
 A função retornará o mesmo resultado que várias chamadas de `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
+A única diferença é que o comprimento é sem sinal: um comprimento maior que o valor máximo de `Int64` seleciona o restante do array,
+enquanto `arraySlice` interpreta esse valor como um comprimento negativo.
 
 **Sintaxe**
 
@@ -4523,6 +4525,172 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 [['a','c'],['b','d']]
 ```
 
+## arrayTreePreorder {#arrayTreePreorder}
+
+Introduzido em: v26.11.0
+
+Organiza em pré-ordem de busca em profundidade uma árvore (ou uma floresta) armazenada como dois arrays: identificadores de nós e identificadores de pais.
+
+O elemento `i` de `ids` e `parent_ids` descreve o nó de entrada `i` e seu pai.
+A função retorna uma tupla nomeada de quatro arrays. Todos estão em pré-ordem, e todas as posições são baseadas em 1:
+o elemento `k` descreve o `k`-ésimo nó da pré-ordem.
+
+* `order[k]` — o índice de entrada deste nó. Para colocar arrays de dados em pré-ordem, use `arrayMap(i -> x[i], t.order)`.
+* `size[k]` — o número de nós na subárvore deste nó, incluindo o próprio nó. A subárvore corresponde ao intervalo contíguo de posições `[k, k + size[k])`.
+* `parent[k]` — a posição em pré-ordem do nó cujo identificador é igual ao identificador do pai deste nó, ou `0` se esse nó não existir.
+* `depth[k]` — a distância deste nó até a raiz de sua árvore; `0` para as raízes.
+
+O nó `a` é ancestral do nó `b` se e somente se `a < b AND b < a + size[a]`.
+Funções agregadas aditivas sobre uma subárvore correspondem à diferença entre duas somas de prefixo (veja [`arrayCumSum`](#arrayCumSum)).
+Outras funções agregadas sobre uma subárvore podem ser obtidas aplicando [`arraySlice`](#arraySlice) a um array de dados reordenado em pré-ordem.
+
+As árvores são gravadas uma a uma, na ordem de entrada de suas raízes, e os filhos de cada nó são visitados na ordem de entrada,
+de modo que o resultado é determinístico. A complexidade de tempo é linear em relação ao tamanho do array, e não há limite para a profundidade da árvore.
+
+A função não lança exceção em razão do conteúdo dos arrays e produz uma floresta válida a partir de qualquer entrada:
+
+* Um nó é raiz se o identificador de seu pai for `NULL` ou não estiver presente em `ids` — por exemplo, uma string vazia ou um nó órfão.
+* Se os vínculos de pai formarem um ciclo, o vínculo do nó do ciclo que aparece primeiro na entrada é cortado, e esse nó se torna uma raiz. Seu `parent` mantém a posição de seu pai real, que é maior que sua própria posição; assim, `parent[k] > k` indica que um ciclo foi cortado na posição `k`. Um nó que é seu próprio pai recebe `parent[k] = k`.
+* Se `ids` tiver valores duplicados, os filhos são anexados à primeira ocorrência.
+
+Os identificadores são comparados por hash. Eles não podem ser nem conter números de ponto flutuante (porque `0.0` e `-0.0` são iguais, mas têm hashes diferentes),
+nem valores `Dynamic`, `Variant` e `JSON` (porque um `NULL` dentro deles seria comparado como um valor comum, enquanto um `NULL` de um tipo `Nullable` gera uma raiz).
+
+A estrutura da entrada pode ser deduzida a partir do resultado (veja os exemplos abaixo):
+
+* Existe um ciclo: `arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent))`.
+* Posições em que os ciclos foram cortados: `arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent)`.
+* Posições das raízes das árvores: `arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)`; o número de árvores é `countEqual(t.depth, 0)`.
+* Posições dos nós cujo identificador de pai não está presente: `arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)`.
+* A entrada é uma única árvore com uma raiz real: `t.size[1] = length(ids) AND t.parent[1] <= 1`. Essa expressão aceita as duas convenções de raiz (um identificador de pai ausente resulta em `0`; um autolaço resulta em `1`) e rejeita um array que forme um único grande ciclo.
+* Posições dos nós do ciclo cortado na posição `r`: `arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))`. São os nós entre `r` e seu pai real `t.parent[r]` cuja subárvore contém o pai real.
+* Identificadores duplicados: `arrayEnumerateUniq(ids) > 1`.
+
+Para obter o índice de entrada do nó na posição `k`, use `t.order[k]`.
+
+**Sintaxe**
+
+```sql
+arrayTreePreorder(ids, parent_ids)
+```
+
+**Argumentos**
+
+* `ids` — Identificadores dos nós. Números de ponto flutuante, `Dynamic`, `Variant` e `JSON` não são suportados. [`Array(T)`](/pt-BR/reference/data-types/array)
+* `parent_ids` — Identificadores dos pais, um por nó. Deve ter o mesmo tamanho que `ids`. [`Array(T)`](/pt-BR/reference/data-types/array)
+
+**Valor retornado**
+
+Retorna a tupla do layout em pré-ordem. [`Tuple(order Array(UInt32), size Array(UInt32), parent Array(UInt32), depth Array(UInt32))`](/pt-BR/reference/data-types/tuple)
+
+**Exemplos**
+
+**Exemplo de uso**
+
+```sql title=Query
+SELECT arrayTreePreorder(['G2', 'A', 'T1', 'B', 'G1', 'G3'], ['B', '', 'B', 'A', 'A', 'A']) AS t
+```
+
+```response title=Response
+([2,4,1,3,5,6],[6,3,1,1,1,1],[0,1,2,2,1,1],[0,1,2,2,1,1])
+```
+
+**Custo e número de descendentes de cada span de agente de um trace**
+
+```sql title=Query
+WITH
+    ['A', 'G1', 'B', 'G2', 'T1', 'G3'] AS ids,
+    ['', 'A', 'A', 'B', 'B', 'A'] AS parent_ids,
+    ['AGENT', 'GENERATION', 'AGENT', 'GENERATION', 'TOOL', 'GENERATION'] AS types,
+    [0, 2, 0, 3, 0, 1] AS costs,
+    arrayTreePreorder(ids, parent_ids) AS t,
+    arrayCumSum(arrayMap(i -> costs[i], t.order)) AS cum
+SELECT arrayMap(k -> (ids[t.order[k]], cum[k + t.size[k] - 1] - cum[k], t.size[k] - 1),
+    arrayFilter(k -> types[t.order[k]] = 'AGENT', arrayEnumerate(t.order))) AS res
+```
+
+```response title=Response
+[('A',6,5),('B',3,2)]
+```
+
+**Entrada inválida: um ciclo C -&gt; D -&gt; E -&gt; C, um nó F abaixo do ciclo e um nó órfão G**
+
+```sql title=Query
+SELECT arrayTreePreorder(['A', 'B', 'C', 'D', 'E', 'F', 'G'], ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+```
+
+```response title=Response
+([1,2,3,5,4,6,7],[2,1,4,2,1,1,1],[0,1,5,3,4,3,0],[0,1,0,1,2,1,0])
+```
+
+**Detectar ciclos e identificar onde foram interrompidos**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+SELECT
+    arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent)) AS has_cycle,
+    arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent) AS cut_positions,
+    arrayMap(k -> ids[t.order[k]], cut_positions) AS cut_ids
+```
+
+```response title=Response
+┌─has_cycle─┬─cut_positions─┬─cut_ids─┐
+│         1 │ [3]           │ ['C']   │
+└───────────┴───────────────┴─────────┘
+```
+
+**Raízes, número de árvores, nós cujo pai não é encontrado e verificação de árvore única**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+SELECT
+    arrayMap(k -> ids[t.order[k]], arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)) AS roots,
+    countEqual(t.depth, 0) AS trees,
+    arrayMap(k -> ids[t.order[k]], arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)) AS parent_not_found,
+    t.size[1] = length(ids) AND t.parent[1] <= 1 AS is_one_tree
+```
+
+```response title=Response
+┌─roots─────────┬─trees─┬─parent_not_found─┬─is_one_tree─┐
+│ ['A','C','G'] │     3 │ ['A','G']        │           0 │
+└───────────────┴───────┴──────────────────┴─────────────┘
+```
+
+**Nós do ciclo interrompido na posição 3**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t,
+    3 AS r
+SELECT arrayMap(k -> ids[t.order[k]], arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))) AS cycle
+```
+
+```response title=Response
+┌─cycle─────────┐
+│ ['C','E','D'] │
+└───────────────┘
+```
+
+**Identificadores duplicados: os filhos são anexados à primeira ocorrência**
+
+```sql title=Query
+WITH ['a', 'b', 'a', 'c'] AS ids
+SELECT
+    arrayFilter((id, n) -> n > 1, ids, arrayEnumerateUniq(ids)) AS duplicate_ids,
+    arrayTreePreorder(ids, ['', 'a', '', 'a']).order AS order
+```
+
+```response title=Response
+┌─duplicate_ids─┬─order─────┐
+│ ['a']         │ [1,2,4,3] │
+└───────────────┴───────────┘
+```
+
 ## arrayUnion {#arrayUnion}
 
 Introduzido em: v24.10.0
@@ -4798,7 +4966,7 @@ Verifica se o array de entrada está vazio.
 Um array é considerado vazio se não contiver nenhum elemento.
 
 <Note>
-  Pode ser otimizada ao habilitar a [`configuração optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). Com `optimize_functions_to_subcolumns = 1`, a função lê apenas a subcoluna [size0](/pt-BR/reference/data-types/array#array-size), em vez de ler e processar toda a coluna de array. A consulta `SELECT empty(arr) FROM TABLE;` é transformada em `SELECT arr.size0 = 0 FROM TABLE;`.
+  Quando a coluna não é usada em nenhum outro lugar da consulta, a função pode ler apenas a subcoluna [size0](/pt-BR/reference/data-types/array#array-size), em vez de ler e processar toda a coluna de array. A consulta `SELECT empty(arr) FROM TABLE;` é transformada em `SELECT arr.size0 = 0 FROM TABLE;`. Essa otimização é controlada pela configuração [`optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns), que vem habilitada por padrão.
 </Note>
 
 A função também funciona com strings ou UUIDs.
@@ -5849,7 +6017,7 @@ Verifica se o array de entrada não está vazio.
 Um array é considerado não vazio se contiver pelo menos um elemento.
 
 <Note>
-  Pode ser otimizada ativando a configuração [`optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). Com `optimize_functions_to_subcolumns = 1`, a função lê apenas a subcoluna [size0](/pt-BR/reference/data-types/array#array-size), em vez de ler e processar toda a coluna do tipo array. A consulta `SELECT notEmpty(arr) FROM table` é transformada em `SELECT arr.size0 != 0 FROM TABLE`.
+  Quando a coluna não é usada em nenhum outro ponto da consulta, a função pode ler apenas a subcoluna [size0](/pt-BR/reference/data-types/array#array-size), em vez de ler e processar toda a coluna do tipo array. A consulta `SELECT notEmpty(arr) FROM table` é transformada em `SELECT arr.size0 != 0 FROM TABLE`. Essa otimização é controlada pela configuração [`optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns), que vem habilitada por padrão.
 </Note>
 
 A função também funciona com Strings ou UUIDs.

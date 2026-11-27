@@ -236,8 +236,8 @@ bool ParserStatisticsDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
 bool ParserStatisticsDeclarationWithoutTypes::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-
-    ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    /// Used by `DROP`, `CLEAR` and `MATERIALIZE STATISTICS`, where column names may be query parameters.
+    ParserList columns_p(std::make_unique<ParserIdentifier>(/* allow_query_parameter_ = */ true), std::make_unique<ParserToken>(TokenType::Comma), false);
 
     ASTPtr columns;
 
@@ -2012,6 +2012,8 @@ CREATE FUNCTION ...
 CREATE NAMED COLLECTION ...
 CREATE USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
 CREATE TOKEN ...
+CREATE INDEX ...
+CREATE WORKLOAD | RESOURCE ...
 )",
         .related = {"ATTACH", "DROP", "CREATE TABLE", "CREATE DATABASE", "CREATE VIEW", "CREATE DICTIONARY"},
     };
@@ -3589,6 +3591,7 @@ Available refresh settings:
 * `refresh_retry_initial_backoff_ms` - Delay before the first retry, if `refresh_retries` is not zero. Each subsequent retry doubles the delay, up to `refresh_retry_max_backoff_ms`. Default: 100 ms.
 * `refresh_retry_max_backoff_ms` - Limit on the exponential growth of delay between refresh attempts. Default: 60000 ms (1 minute).
 * `all_replicas` - In a [Replicated database](/reference/engines/database-engines/replicated) with `APPEND`, controls whether all replicas refresh independently or only one replica refreshes at each scheduled time. Cannot be changed after the view is created. Default: `false`.
+* `refresh_coordination_jitter_ms` - If refreshes are coordinated across replicas, each replica waits a random delay of up to this long before starting a due refresh, so that refreshes are spread across replicas even without `RANDOMIZE FOR`. The delay is not reflected in `next_refresh_time`. 0 disables the delay. Default: 1000 ms.
 
 ### Changing Refresh Parameters {#changing-refresh-parameters}
 

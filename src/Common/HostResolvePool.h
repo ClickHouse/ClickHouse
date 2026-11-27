@@ -85,7 +85,8 @@ public:
         const String & operator*() const & { return resolved_host; }
 
         /// Mark the address as failed in the pool. Also suppresses the destructor's success callback.
-        void setFail();
+        /// With `refresh`, the host is resolved again right away.
+        void setFail(bool refresh = true);
         /// Suppress the destructor's success callback without reporting a failure to the pool.
         /// Use when the address was selected via `resolve` but never actually attempted
         void setUnused();
@@ -129,7 +130,7 @@ protected:
     WeakPtr getWeakFromThis();
 
     void setSuccess(const Poco::Net::IPAddress & address);
-    void setFail(const Poco::Net::IPAddress & address);
+    void setFail(const Poco::Net::IPAddress & address, bool refresh);
 
     struct Record
     {
@@ -264,6 +265,8 @@ public:
 private:
     Silk::FiberMutex mutex;
     std::unordered_map<String, HostResolver::Ptr> host_pools TSA_GUARDED_BY(mutex);
+    /// Incremented by `dropCache`, so that the resolutions which started before the drop are not cached.
+    UInt64 generation TSA_GUARDED_BY(mutex) = 0;
 };
 
 }
