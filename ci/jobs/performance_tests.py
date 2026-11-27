@@ -3128,6 +3128,19 @@ def rebuild_table(port, source, destination):
         Shell.check(f'{client} --query "DROP TABLE {source} SYNC"', strict=True, verbose=True)
 
 
+def rebuild_database(port, database):
+    # Rebuild every table of the database in place. Each table ends as one part.
+    client = _perf_client(port)
+    tables = Shell.get_output(f'{client} --query "SHOW TABLES FROM {database}"', strict=True).split()
+    if not tables:
+        raise RuntimeError(f"rebuild_database: no tables in {database}")
+    # An interrupted rebuild_table leaves <table>_rebuild and <table>_old behind.
+    # Rebuilding <table> drops them, and fails if <table> itself is missing.
+    names = sorted({table.removesuffix("_rebuild").removesuffix("_old") for table in tables})
+    for table in names:
+        rebuild_table(port, f"{database}.{table}", f"{database}.{table}")
+
+
 POPULATE_DONE_MARKER = "test._populate_done"
 
 # The MergeTree datasets are attached to `Atomic` databases (the default engine), so that their
@@ -3220,10 +3233,10 @@ def attach_datasets(port, server_db):
 
 
 def populate_data(port):
-    # Rebuild the hits datasets on one server, sequentially. The three inserts
+    # Rebuild the datasets on one server, sequentially. The three hits inserts
     # share the per-user memory limit (~28GiB) and hits_100m_single alone uses
     # ~21GiB, so running them in parallel is killed by the OvercommitTracker.
-    # A dedicated marker table is created only after all three tables are
+    # A dedicated marker table is created only after all tables are
     # rebuilt: it is the "done" signal for the re-entrant restart() skip. Table
     # existence cannot serve as the marker, because the in-place *_single tables
     # already exist (attached from the tarball) before they are rebuilt.
@@ -3232,13 +3245,13 @@ def populate_data(port):
         print(f"populate_data: server {port} already populated, skipping")
         return
     Shell.check(f'{client} --query "CREATE DATABASE IF NOT EXISTS test"', strict=True, verbose=True)
-    # Scope: only the hits datasets are rebuilt (they back the bulk of the
-    # suite, including clickbench). The other attached datasets (tpch, tpcds,
-    # values) still read their frozen tarball parts, so write-time defaults are
-    # not yet exercised on those workloads.
+    # The hits, tpch and tpcds datasets are rebuilt.
+    # The values dataset keeps its tarball parts.
     rebuild_table(port, "default.hits_10m_single", "default.hits_10m_single")
     rebuild_table(port, "default.hits_100m_single", "default.hits_100m_single")
     rebuild_table(port, "datasets.hits_v1", "test.hits")
+    rebuild_database(port, "tpch10")
+    rebuild_database(port, "tpcds")
     Shell.check(f'{client} --query "CREATE TABLE {POPULATE_DONE_MARKER} (done UInt8) ENGINE = Log"', strict=True, verbose=True)
 
 
