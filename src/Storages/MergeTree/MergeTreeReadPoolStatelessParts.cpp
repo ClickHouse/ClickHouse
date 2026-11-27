@@ -187,6 +187,8 @@ void MergeTreeReadPoolStatelessParts::fillPerThreadInfoForBorrowedParts(size_t t
 
             threads_tasks[i].parts_and_ranges.push_back({part_idx, std::move(ranges_to_get_from_part)});
             threads_tasks[i].sum_marks_in_parts.push_back(marks_in_ranges);
+            /// The base class counts down the marks it hands out, to cut the end of the read into smaller tasks.
+            remaining_marks += marks_in_ranges;
             if (marks_in_ranges != 0)
                 remaining_thread_tasks.insert(i);
         }
@@ -310,10 +312,30 @@ MergeTreeDataPartInfoForReaderPtr MergeTreeReadPoolStatelessParts::buildReaderIn
 
     MergeTreeIndexGranularityPtr index_granularity;
 
+    /// A part always has at least one physical column. Everything below (the marks of a compact part, the
+    /// column the reader falls back to when the query asks for no physical column) relies on it.
+    if (serialization_columns.empty())
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "No columns in part {} with path {}", part_name, part_root);
+
     /// Compact parts need getTotalSubstreams() (below) when mark_type.with_substreams is true.
     ColumnsSubstreams columns_substreams;
     if (auto buf = data_part_storage->readFileIfExists("columns_substreams.txt", metadata_read_settings, {}))
+    {
         columns_substreams.readText(*buf);
+
+        /// The same handling as in `IMergeTreeDataPart::loadColumnsSubstreams`: a wide part can do without
+        /// the file, so one that carries the substream names of a renamed column is discarded; otherwise
+        /// the file has to describe exactly the columns of the part, in the same order.
+        if (part.type == MergeTreeDataPartType::Wide && !columns_substreams.findInvalidSubstreamName().first.empty())
+            columns_substreams = {};
+        else
+            columns_substreams.validateColumns(serialization_columns.getNames(), ErrorCodes::CORRUPTED_DATA);
+    }
+    else if (part.type == MergeTreeDataPartType::Compact && mark_type->with_substreams)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+                        "Compact part {} with path {} has marks with substreams, but no `columns_substreams.txt`", part_name, part_root);
+    }
 
     NameSet invalidated_system_columns;
     if (auto invalidated_buf = data_part_storage->readFileIfExists(IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME, metadata_read_settings, {}))
@@ -326,8 +348,6 @@ MergeTreeDataPartInfoForReaderPtr MergeTreeReadPoolStatelessParts::buildReaderIn
             index_granularity_info.changeGranularityIfRequired(*data_part_storage);
 
             /// Granularity is shared across columns; load it from any present column (or its parent).
-            if (serialization_columns.empty())
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "No columns in wide part {} with path {}", part_name, part_root);
             NameAndTypePair column = requested_columns.empty() ? serialization_columns.front() : requested_columns.front();
             if (!serialization_columns.contains(column.name))
             {
