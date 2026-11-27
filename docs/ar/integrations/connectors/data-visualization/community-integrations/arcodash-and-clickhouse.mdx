@@ -1,0 +1,62 @@
+---
+sidebarTitle: 'arcodash'
+slug: /integrations/arcodash
+keywords: ['clickhouse', 'arcodash', 'connect', 'integrate', 'visualization', 'dashboard', 'alerts']
+description: 'اربط arcodash بـ ClickHouse عبر واجهة HTTP لإنشاء لوحات معلومات تعتمد على SQL وإجراء فحوصات مجدولة للبيانات.'
+title: 'ربط arcodash بـ ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[arcodash](https://www.arcodash.com/connectors/clickhouse/?utm_source=clickhouse-docs\&utm_medium=docs\&utm_campaign=growth-v2\&utm_content=clickhouse-docs-integration) أداة ذكاء أعمال مستضافة تتضمن فحوصات مدمجة للبيانات: لوحات معلومات SQL، ومساعد استعلامات بالذكاء الاصطناعي، وفحوصات مجدولة ترسل تنبيهات عبر البريد الإلكتروني أو Slack أو Teams أو webhook أو PagerDuty. وتتصل الأداة بـ ClickHouse عبر واجهة HTTP(S).
+
+<Steps>
+  <Step title="اجمع بيانات الاتصال" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+
+    يحتاج arcodash إلى المضيف، ومنفذ HTTP (`8123`، أو `8443` لـ ClickHouse Cloud مع HTTPS)، واسم المستخدم، وكلمة المرور، وقاعدة البيانات.
+  </Step>
+
+  <Step title="أنشئ مستخدمًا للقراءة فقط" id="2-create-a-read-only-user">
+    ```sql
+    CREATE USER arcodash_ro IDENTIFIED BY 'change-me' SETTINGS readonly = 1;
+    GRANT SELECT ON analytics.* TO arcodash_ro;
+    GRANT SELECT ON system.columns TO arcodash_ro;
+    ```
+
+    يقرأ متصفح المخطط من `system.columns`.
+  </Step>
+
+  <Step title="أضف الموصل" id="3-add-the-connector">
+    في arcodash، اختر **اتصال** &gt; **ClickHouse** وأدخل المضيف والمنفذ واسم المستخدم وكلمة المرور وقاعدة البيانات. فعّل HTTPS عند استخدام ClickHouse Cloud، ثم شغّل اختبار الاتصال.
+
+    <Image size="lg" img="/images/integrations/data-visualization/arcodash_01.png" alt="نموذج موصل ClickHouse في arcodash" border />
+  </Step>
+
+  <Step title="شغّل استعلامًا وفحصًا" id="4-run-a-query-and-a-check">
+    ```sql
+    SELECT dateDiff('second', max(loaded_at), now()) AS seconds_since_last_row
+    FROM analytics.events
+    ```
+
+    احفظ الاستعلام بوصفه مراقِبًا على `seconds_since_last_row` بالشرط `>` `3600` ليُرسَل تنبيه عندما يتوقف الجدول عن استقبال البيانات.
+
+    <Image size="lg" img="/images/integrations/data-visualization/arcodash_02.png" alt="مراقِب arcodash على استعلام ClickHouse" border />
+  </Step>
+</Steps>
+
+## القيود {#limitations}
+
+* يستخدم arcodash واجهة HTTP فقط، ولا يستخدم المنفذ الأصلي `9000`.
+* يُلحق arcodash بند `FORMAT` تلقائيًا، لذا يجب ألا تنتهي الاستعلامات ببند `FORMAT` خاص بها.
+* تقتصر النتائج على 10,000 صف كحد أقصى لكل استعلام.
+* لا يُعلن arcodash عن عناوين IP صادرة ثابتة، لذا يجب أن يكون خادم ClickHouse متاحًا للوصول من الإنترنت.

@@ -251,6 +251,10 @@ def run_fuzzer(fuzzer: str, timeout: int):
         parser = configparser.ConfigParser()
         parser.read(path)
 
+        # Environment variables of the target, e.g. `FORMAT_NAME` of a `format_fuzzer` instance. `configparser` lowercases keys.
+        if parser.has_section("env"):
+            env_common.update({key.upper(): value for key, value in parser["env"].items()})
+
         if parser.has_section("asan"):
             env_common["ASAN_OPTIONS"] = ":".join(
                 [os.environ.get("ASAN_OPTIONS", "")]

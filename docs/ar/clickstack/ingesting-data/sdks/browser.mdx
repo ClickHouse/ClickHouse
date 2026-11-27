@@ -1,183 +1,159 @@
 ---
 slug: /use-cases/observability/clickstack/sdks/browser
-description: 'Browser SDK لـ ClickStack - حزمة Observability من ClickHouse'
+description: 'اجمع سجلات المتصفح وبيانات تتبّع وإعادة تشغيل session باستخدام SDK للمتصفح من ClickStack.'
 title: 'JavaScript للمتصفح'
 doc_type: 'guide'
-keywords: ['ClickStack', 'browser-sdk', 'javascript', 'session-replay', 'frontend']
+keywords: ['ClickStack', 'SDK', 'browser', 'session replay']
+sidebarTitle: 'JavaScript للمتصفح'
 ---
 
 import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-يتيح لك Browser SDK الخاص بـ ClickStack تضمين أدوات الرصد في
-تطبيق الواجهة الأمامية لديك لإرسال
-الأحداث إلى ClickStack. وهذا يتيح لك عرض
-طلبات الشبكة والاستثناءات إلى جانب أحداث الواجهة الخلفية ضمن خط زمني واحد.
-
-بالإضافة إلى ذلك، سيلتقط تلقائيًا بيانات إعادة تشغيل الجلسة ويربطها،
-بحيث يمكنك استعراض ما كان يراه المستخدم بصريًا خطوة بخطوة واستكشاف
-المشكلات أثناء استخدامه لتطبيقك.
+يعتمد SDK للمتصفح الخاص بـ ClickStack على OpenTelemetry لجمع طلبات المتصفح والأخطاء وبيانات إعادة تشغيل session. استخدمه لتحليل أحداث الواجهة الأمامية جنبًا إلى جنب مع بيانات القياس عن بُعد الخاصة بالواجهة الخلفية في ClickStack.
 
 <ClickStackIntegrates signals={['logs', 'traces']} />
 
-## البدء {#getting-started}
+## التثبيت {#install}
 
-<br />
+ثبّت الحزمة في تطبيق الواجهة الأمامية لديك:
 
-<Tabs>
-  <Tab title="استيراد الحزمة">
-    **ثبّت عبر استيراد الحزمة (موصى به)**
+```shell
+npm install @clickhouse/clickstack-browser
+```
 
-    استخدم الأمر التالي لتثبيت [حزمة المتصفح](https://www.npmjs.com/package/@hyperdx/browser).
+تستخدم الحزمة وحدات ES. ويثبّت npm تبعيات النظير (peer dependencies) الخاصة بـ OpenTelemetry تلقائيًا. إذا كان تطبيقك يثبّت `@opentelemetry/api` مباشرةً أيضًا، فاستخدم الإصدار `~1.9.1` واحرص على الإبقاء على نسخة واحدة منها فقط؛ إذ يقع الإصدار 1.10 خارج نطاق الإصدارات التي تدعمها حزمة SDK هذه.
 
-    ```shell
-    npm install @hyperdx/browser
-    ```
+## تهيئة الوجهة {#configure-destination}
 
-    **أعِدّ ClickStack**
-
-    ```javascript
-    import HyperDX from '@hyperdx/browser';
-
-    HyperDX.init({
-        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
-        apiKey: '<YOUR_INGESTION_API_KEY>', // احذفها عند استخدام Managed ClickStack
-        service: 'my-frontend-app',
-        tracePropagationTargets: [/api.myapp.domain/i], // حدّده لربط التتبعات من الواجهة الأمامية بطلبات الواجهة الخلفية
-        consoleCapture: true, // التقاط سجلات وحدة التحكّم (القيمة الافتراضية false)
-        advancedNetworkCapture: true, // التقاط الرؤوس والمتن الكامل لطلبات HTTP واستجاباته (القيمة الافتراضية false)
-    });
-    ```
-  </Tab>
-
-  <Tab title="وسم Script">
-    **ثبّت عبر وسم Script (بديل)**
-
-    يمكنك أيضًا تضمين البرنامج النصي وتثبيته عبر وسم script بدلًا من
-    التثبيت عبر NPM. سيؤدي ذلك إلى إتاحة المتغير العام `HyperDX`، ويمكن
-    استخدامه بالطريقة نفسها المستخدمة مع حزمة NPM.
-
-    يُنصح بهذا إذا كان موقعك لا يُبنى حاليًا باستخدام أداة تجميع.
-
-    ```html
-    <script src="//www.unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
-    <script>
-      window.HyperDX.init({
-        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
-        apiKey: '<YOUR_INGESTION_API_KEY>', // احذفها عند استخدام Managed ClickStack
-        service: 'my-frontend-app',
-        tracePropagationTargets: [/api.myapp.domain/i], // حدّده لربط التتبعات من الواجهة الأمامية بطلبات الواجهة الخلفية
-      });
-    </script>
-    ```
-  </Tab>
-</Tabs>
-
-### الخيارات {#options}
-
-* `apiKey` - مفتاح واجهة برمجة تطبيقات للإدخال الخاص بك في ClickStack.
-* `service` - اسم الخدمة الذي ستظهر به الأحداث في واجهة مستخدم HyperDX.
-* `tracePropagationTargets` - قائمة بأنماط Regex لمطابقتها مع طلبات HTTP
-  لربط تتبعات الواجهة الأمامية والخلفية، وسيضيف ذلك
-  ترويسة `traceparent` إضافية إلى جميع الطلبات التي تطابق أيًا من الأنماط. يجب
-  ضبط هذا على نطاق واجهة برمجة تطبيقات للواجهة الخلفية لديك (مثلًا `api.yoursite.com`).
-* `consoleCapture` - (اختياري) التقاط جميع سجلات وحدة التحكّم (القيمة الافتراضية `false`).
-* `advancedNetworkCapture` - (اختياري) التقاط رؤوس الطلبات/الاستجابات كاملةً
-  والأجسام (القيمة الافتراضية `false`).
-* `url` - (اختياري) عنوان URL لـ OpenTelemetry Collector، وهو مطلوب فقط
-  للمثيلات المستضافة ذاتيًا.
-* `maskAllInputs` - (اختياري) ما إذا كان يجب إخفاء جميع حقول الإدخال في
-  إعادة تشغيل الجلسة (القيمة الافتراضية `false`).
-* `maskAllText` - (اختياري) ما إذا كان يجب إخفاء كل النصوص في إعادة تشغيل الجلسة (القيمة الافتراضية
-  `false`).
-* `disableIntercom` - (اختياري) ما إذا كان يجب تعطيل تكامل Intercom (القيمة الافتراضية `false`)
-* `disableReplay` - (اختياري) ما إذا كان يجب تعطيل إعادة تشغيل الجلسة (القيمة الافتراضية `false`)
-
-## تهيئة إضافية {#additional-configuration}
-
-### إرفاق معلومات المستخدم أو البيانات الوصفية {#attach-user-information-or-metadata}
-
-سيتيح لك إرفاق معلومات المستخدم البحث في الجلسات والأحداث وتصفيتها
-في واجهة مستخدم HyperDX. يمكن استدعاء ذلك في أي وقت أثناء جلسة العميل. وسترتبط
-جلسة العميل الحالية وجميع الأحداث المُرسلة بعد هذا الاستدعاء
-بمعلومات المستخدم.
-
-ستملأ `userEmail` و`userName` و`teamName` واجهة الجلسات
-بالقيم المقابلة، ولكن يمكن حذفها. ويمكن أيضًا تحديد أي قيم إضافية
-واستخدامها للبحث عن الأحداث.
+استخدم نقطة نهاية OTLP HTTP الخاصة بجامع البيانات لديك، ومفتاح الإدخال الذي جرت تهيئته له. يجب أن تكون نقطة النهاية قابلة للوصول إليها من متصفحات المستخدمين لديك. لمعرفة كيفية إعداد جامع البيانات، راجع [إدخال البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry).
 
 ```javascript
-HyperDX.setGlobalAttributes({
-  userId: user.id,
-  userEmail: user.email,
-  userName: user.name,
-  teamName: user.team.name,
-  // Other custom properties...
+import { init } from '@clickhouse/clickstack-browser';
+
+init({
+  endpoint: 'https://YOUR_COLLECTOR_HOST:4318',
+  apiKey: 'YOUR_INGESTION_API_KEY',
+  serviceName: 'my-frontend-app',
 });
 ```
 
-### الالتقاط التلقائي لأخطاء حدود الأخطاء في React {#auto-capture-react-error-boundary-errors}
+استخدم المفتاح الذي تمت تهيئته لمستقبِل OTLP في جامع البيانات لديك. ويجب أن يسمح جامع البيانات بمصدر تطبيقك ضمن تهيئة CORS لمستقبِل HTTP الخاص به.
 
-إذا كنت تستخدم React، فيمكنك تلقائيًا التقاط الأخطاء التي تحدث داخل
-حدود الأخطاء في React من خلال تمرير مكوّن حدّ الأخطاء الخاص بك
-إلى الدالة `attachToReactErrorBoundary`.
+استدعِ `init` مرة واحدة عند كل تحميل للصفحة، في المستوى الأعلى من وحدة الدخول (entry module)، مثل `src/main.ts` في Vite أو `instrumentation-client.ts` في Next.js. تجري التهيئة بشكل غير متزامن، لذا قد لا تُلتقط الطلبات المُرسلة فورًا ضمن الـ tick نفسه. لا تُجرِ التهيئة داخل React effect، إذ إن دالة التنظيف التي تستدعي `shutdown` توقف بيانات القياس عن بُعد نهائيًا طوال تحميل الصفحة ذاك.
 
-```javascript
-// Import your ErrorBoundary (we're using react-error-boundary as an example)
-import { ErrorBoundary } from 'react-error-boundary';
+<Note>
+  تكون تهيئة المتصفح، بما فيها مفتاح الإدخال، مرئية لكل من يحمّل الصفحة. وللإبقاء على المفتاح في الخادم لديك، استخدم نقطة نهاية من المصدر نفسه مثل `/otel`، واحذف `apiKey`، ثم هيِّئ الخادم لإعادة توجيه طلبات OTLP مع ترويسة التفويض المناسبة.
+</Note>
 
-// This will hook into the ErrorBoundary component and capture any errors that occur
-// within any instance of it.
-HyperDX.attachToReactErrorBoundary(ErrorBoundary);
-```
+## التحقق من إدخال البيانات {#verify-ingestion}
 
-### إرسال الإجراءات المخصّصة {#send-custom-actions}
+حمّل تطبيقك، وتفاعل مع الصفحة، وأرسل طلبًا، وأطلق خطأً في وحدة التحكم. في ClickStack، اختر نطاقًا زمنيًا حديثًا وابحث في Logs أو Traces عن `my-frontend-app`. ثم افتح إعادة تشغيل session لفحص session المسجّلة.
 
-لتتبّع حدث معيّن في التطبيق بشكل صريح (مثل التسجيل أو الإرسال
-وغير ذلك)، يمكنك استدعاء الدالة `addAction` مع اسم الحدث وبيانات
-وصفية اختيارية له.
+إذا كانت البيانات مفقودة، فافحص وحدة تحكم المتصفح وطلبات الشبكة المرسلة إلى `/v1/traces` و`/v1/logs`. وتحقّق من نقطة النهاية، وترويسة التفويض، وإعدادات CORS، وسياسة أمان المحتوى (Content Security Policy). تأكّد كذلك من أن إصدار ClickStack لديك يدعم إعادة التشغيل والـ attribute القياسي `session.id` الخاص بـ SDK؛ فاستلام السجلات وحده لا يضمن ظهور sessions في UI.
 
-مثال:
+## خيارات التهيئة {#initialization-options}
 
-```javascript
-HyperDX.addAction('Form-Completed', {
-  formId: 'signup-form',
-  formName: 'Signup Form',
-  formType: 'signup',
-});
-```
+مرّر هذه الخيارات إلى `init`. استخدم `endpoint` لجامع بيانات مشترك، أو حدّد نقطتي النهاية الخاصتين بالإشارتين معاً عندما تكون لبيانات تتبّع والسجلات وجهات منفصلة.
 
-### تفعيل التقاط حركة الشبكة ديناميكيًا {#enable-network-capture-dynamically}
+| الخيار               | القيمة الافتراضية                                     | الغرض                                                                                                                                     |
+| -------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `endpoint`           | مطلوب ما لم تُعيَّن نقطتا النهاية الخاصتان بالإشارتين | URL أساسي لـ OTLP عبر HTTP أو مسار وكيل من المصدر نفسه؛ وتُلحِق SDK مسارات الإشارات به                                                    |
+| `tracesEndpoint`     | غير معيّن                                             | URL كامل لبيانات تتبّع، يُستخدم كما هو بدلاً من URL المشتق من `endpoint`                                                                |
+| `logsEndpoint`       | غير معيّن                                             | URL كامل للسجلات وإعادة التشغيل، يُستخدم كما هو بدلاً من URL المشتق من `endpoint`                                                         |
+| `serviceName`        | مطلوب                                                 | تعيين `service.name` على جميع بيانات القياس عن بُعد                                                                                       |
+| `apiKey`             | غير معيّن                                             | قيمة ترويسة `authorization`؛ استخدم الصيغة الخاصة بوجهتك الموضّحة أعلاه                                                                   |
+| `traceOrigins`       | غير معيّن                                             | مصادر الخوادم الخلفية أو التعبيرات النمطية التي تستقبل سياق التتبّع                                                                       |
+| `replay`             | `true`                                                | تسجيل إعادة تشغيل session؛ مع القيمة `false` تُجمَع بيانات القياس عن بُعد من المتصفح لكن تُعطَّل إعادة التشغيل                             |
+| `resourceAttributes` | غير معيّن                                             | سمات موارد إضافية تُطبَّق أيضاً على إعادة التشغيل؛ وتكون الأسبقية لـ `serviceName` و`serviceVersion` و`environment` على المفاتيح المطابقة |
+| `maskAllText`        | `true`                                                | إخفاء النصوص في إعادة التشغيل                                                                                                             |
+| `maskAllInputs`      | `true`                                                | إخفاء قيم عناصر input وtextarea وselect                                                                                                   |
+| `console`            | `'error'`                                             | التقاط المستوى `'error'` أو `'warn'` أو `'info'` (بما في ذلك `console.log`) أو `'debug'` وما هو أشد خطورة منه؛ استخدم `false` للتعطيل     |
+| `serviceVersion`     | غير معيّن                                             | تحديد إصدار تطبيقك                                                                                                                        |
+| `environment`        | غير معيّن                                             | تعيين `deployment.environment.name`                                                                                                       |
+| `sanitizeUrl`        | غير معيّن                                             | إعادة كتابة عناوين URL المسجَّلة، على سبيل المثال لإزالة معلمات الاستعلام                                                                 |
 
-لتفعيل أو تعطيل التقاط حركة الشبكة ديناميكيًا، ما عليك سوى استدعاء الدالة `enableAdvancedNetworkCapture` أو `disableAdvancedNetworkCapture` حسب الحاجة.
+للاطلاع على واجهة برمجة التطبيقات كاملةً، راجع [مرجع SDK للمتصفح](https://github.com/ClickHouse/clickstack-browser#quick-start).
 
-```javascript
-HyperDX.enableAdvancedNetworkCapture();
-```
+## إعادة تشغيل session والخصوصية {#session-replay-and-privacy}
 
-### تفعيل توقيت الموارد لطلبات CORS {#enable-resource-timing-for-cors-requests}
+تكون إعادة تشغيل session مفعّلة افتراضيًا، ويُخفى النص وقيم الإدخال افتراضيًا كذلك.
 
-إذا كان تطبيق الواجهة الأمامية لديك يُجري طلبات إلى واجهة برمجة تطبيقات على نطاق مختلف، فيمكنك
-اختياريًا تفعيل إرسال ترويسة `Timing-Allow-Origin`[header](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Timing-Allow-Origin) مع الطلب. يتيح ذلك لـ ClickStack التقاط
-معلومات دقيقة عن توقيت الموارد للطلب، مثل استعلام DNS وتنزيل
-الاستجابة وغير ذلك، عبر [`PerformanceResourceTiming`](https://developer.mozilla.org/en-US/docs/Web/API/PerformanceResourceTiming).
+لا يشمل إخفاء البيانات حالات مربعات الاختيار، ولا حالات أزرار الاختيار، ولا السمات مثل عناوين URL للروابط والعناصر النائبة. استخدم الصنف `rr-block` لاستبعاد العناصر الحساسة. ولا يشمل تنقيح عناوين URL العناوينَ الواردة في محتوى الصفحة المُعاد تشغيله، أو في تتبّعات مكدس الاستدعاءات، أو في رسائل وحدة التحكم. لا تلتقط من معلومات المستخدم إلا ما تسمح به سياسة الخصوصية لديك.
 
-إذا كنت تستخدم `express` مع حزم `cors`، فيمكنك استخدام
-المقتطف التالي لتفعيل الترويسة:
+لإيقاف إعادة التشغيل مؤقتًا دون إيقاف بيانات القياس عن بُعد الخاصة بالمتصفح:
 
 ```javascript
-var cors = require('cors');
-var onHeaders = require('on-headers');
+import { pauseReplay } from '@clickhouse/clickstack-browser';
 
-// ... all your stuff
-
-app.use(function (req, res, next) {
-  onHeaders(res, function () {
-    var allowOrigin = res.getHeader('Access-Control-Allow-Origin');
-    if (allowOrigin) {
-      res.setHeader('Timing-Allow-Origin', allowOrigin);
-    }
-  });
-  next();
-});
-app.use(cors());
+pauseReplay();
 ```
+
+عندما تكون مستعدًا لاستئناف التسجيل:
+
+```javascript
+import { resumeReplay } from '@clickhouse/clickstack-browser';
+
+resumeReplay();
+```
+
+## ربط تتبّعات الواجهة الأمامية بتتبّعات الخدمات الخلفية {#trace-propagation}
+
+لربط طلبات المتصفح بتتبّعات الخدمات الخلفية، أضف `traceOrigins` إلى خيارات `init`، واستبدل القيمة الواردة في المثال بمصدر خدمتك الخلفية:
+
+```javascript
+traceOrigins: ['https://api.example.com'],
+```
+
+تحمل الطلبات المُرسَلة إلى المصدر الخاص بالصفحة نفسها وإلى الخوادم الخلفية المطابقة الترويسات `traceparent` و`tracestate` و`baggage`. ويجب أن يكون الخادم الخلفي لديك مزوّدًا بأدوات الرصد حتى يواصل هذا السياق.
+
+يجب أن تسمح الخوادم الخلفية ذات المصادر المختلفة (cross-origin) بتمرير هذه الترويسات عبر CORS. كما يجب أن يسمح جامع بيانات القياس عن بُعد بمصدر الواجهة الأمامية. وإذا كان تطبيقك يستخدم سياسة أمان المحتوى (Content Security Policy)، فأضِف نقطة نهاية جامع البيانات إلى القائمة المسموح بها في `connect-src`.
+
+## التعرّف على المستخدمين وتسجيل الأخطاء {#users-and-errors}
+
+عند تسجيل الدخول، استخدم `setUser` لإرفاق معلومات المستخدم بمقاطع التتبع والسجلات اللاحقة:
+
+```javascript
+import { setUser } from '@clickhouse/clickstack-browser';
+
+setUser({ id: 'user-123', email: 'user@example.com' });
+```
+
+عند تسجيل الخروج، امسح معلومات المستخدم وابدأ session جديدة:
+
+```javascript
+import { setUser, startNewSession } from '@clickhouse/clickstack-browser';
+
+setUser(null);
+startNewSession();
+```
+
+لإرفاق بيانات وصفية خاصة بالتطبيق بمقاطع التتبع والسجلات اللاحقة، استخدم `setAttributes`. يحلّ كل استدعاء محلّ المجموعة السابقة؛ ولمسحها، مرّر `null`:
+
+```javascript
+import { setAttributes } from '@clickhouse/clickstack-browser';
+
+setAttributes({ 'app.team.name': 'checkout' });
+```
+
+تُلتقَط الأخطاء غير المُعالَجة (uncaught errors) وحالات الرفض غير المُعالَجة (unhandled rejections) تلقائيًا. كما تُلتقَط افتراضيًا الأخطاء التي تُبلِّغ عنها حدود الأخطاء (error boundaries) في React عبر `console.error`. استخدم `recordException` للأخطاء المُلتقَطة التي لم تُسجَّل مسبقًا؛ إذ يؤدي تسجيل الخطأ نفسه عبر `recordException` وعبر السجلات معًا إلى إنشاء أحداث مكررة:
+
+```javascript
+import { recordException } from '@clickhouse/clickstack-browser';
+
+try {
+  await submitCheckout();
+} catch (error) {
+  recordException(error, { 'app.operation': 'checkout' });
+  // Handle the error in your application.
+}
+```
+
+استبدل `submitCheckout` بعملية التطبيق التي تريد مراقبتها.
+
+## الترحيل من SDK للمتصفح الخاص بـ HyperDX {#migration}
+
+لا تقتصر هذه الترقية على تغيير اسم الحزمة فحسب؛ إذ يصبح `url` هو `endpoint`، ويصبح `service` هو `serviceName`، ويصبح `tracePropagationTargets` هو `traceOrigins`. كما أصبح إخفاء النصوص وحقول الإدخال مفعّلًا افتراضيًا بالقيمة `true`. استبدل `setGlobalAttributes` بـ `setUser` لتحديد هوية المستخدم، وبـ `setAttributes` للبيانات الوصفية الخاصة بالتطبيق. لا تحتاج حدود الأخطاء (error boundaries) في React التي تُبلغ عن الأخطاء عبر `console.error` إلى أي خطاف إضافي؛ أما إذا لم يكن الخطأ مُسجَّلًا مسبقًا، فاستخدم `recordException`.
+
+راجع [دليل ترحيل SDK](https://github.com/ClickHouse/clickstack-browser/blob/main/docs/migration.md) للاطلاع على الخيارات المُزالة والتغييرات في السمات. وفي حال التثبيت عبر وسم script أو إذا كان تطبيقك يُهيّئ OpenTelemetry مسبقًا، فراجع [ملف README الخاص بـ SDK](https://github.com/ClickHouse/clickstack-browser#readme).
+
+إذا تسبب SDK للمتصفح من ClickStack في مشكلة توافق في تطبيقك، فيمكنك استخدام [SDK للمتصفح القديم من HyperDX](https://github.com/hyperdxio/hyperdx-js/tree/main/packages/browser) ريثما تتحقق من المشكلة. استعد تهيئته واستدعاءات API الخاصة به بالاستعانة بدليل الترحيل المذكور أعلاه؛ إذ إن حزمتَي SDK غير قابلتين للتبادل، ولا ينبغي تشغيلهما معًا.

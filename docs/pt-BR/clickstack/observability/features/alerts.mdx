@@ -1,0 +1,426 @@
+---
+slug: /clickstack/observability/features/alerts
+title: 'Alertas com ClickHouse Observability'
+sidebarTitle: 'Alertas'
+description: 'Alertas com ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'observability', 'alerts', 'search-alerts', 'notifications', 'thresholds', 'slack', 'email', 'pagerduty', 'error-monitoring', 'performance-monitoring', 'user-events']
+---
+
+O ClickHouse Observability oferece suporte nativo a alertas, permitindo que as equipes detectem e respondam a problemas em tempo real em logs, métricas e rastros.
+
+Os alertas podem ser criados diretamente na interface do usuário e se integram a sistemas de notificação populares, como Slack e PagerDuty.
+
+Os alertas funcionam de forma integrada em todos os seus dados de observabilidade, ajudando você a acompanhar a integridade do sistema, detectar regressões de desempenho e monitorar eventos de negócio importantes.
+
+## Tipos de alertas {#types-of-alerts}
+
+Você pode criar alertas a partir de uma **pesquisa salva**, diretamente no **Chart Explorer** ou a partir de um **gráfico em um dashboard salvo**. Os alertas de pesquisa contam os eventos correspondentes, enquanto os alertas de gráfico avaliam os valores calculados pelo gráfico.
+
+### Alertas de pesquisa {#search-alerts}
+
+Os alertas de pesquisa permitem disparar notificações com base nos resultados de uma pesquisa salva. Eles ajudam a detectar quando eventos ou padrões específicos ocorrem com mais (ou menos) frequência do que o esperado.
+
+Um alerta é acionado quando a contagem de resultados correspondentes em uma janela de tempo definida fica acima ou abaixo de um limiar especificado.
+
+Para criar um alerta de pesquisa:
+
+Para criar um alerta para uma pesquisa, é preciso que ela esteja salva. Você pode criar o alerta para uma pesquisa salva existente ou salvar a pesquisa durante a criação do alerta. No exemplo abaixo, consideramos que a pesquisa ainda não foi salva.
+
+<Steps>
+  <Step title="Abra a caixa de diálogo de criação de alerta" id="open-dialog">
+    Comece inserindo uma [pesquisa](/pt-BR/clickstack/observability/features/search) e clicando no botão `Alerts` no canto superior direito da página `Search`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Visualização de pesquisa com o botão Alerts destacado](/images/clickstack/observability-alerts-search.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Crie o alerta" id="create-the-alert">
+    No painel de criação de alerta, você pode:
+
+    * Atribuir um nome à pesquisa salva associada ao alerta.
+    * Escolher um operador de comparação, uma contagem de eventos correspondentes e uma janela de tempo. Por exemplo, disparar quando pelo menos 10 eventos correspondentes ocorrerem em 5 minutos.
+    * Especificar um valor `grouped by`. Isso permite aplicar uma agregação à pesquisa, por exemplo, por `ServiceName`, de modo que vários alertas possam ser acionados a partir da mesma pesquisa.
+    * Escolher um destino de notificação, como e-mail ou webhook. Você pode adicionar um novo webhook diretamente nesta tela. Consulte [Adicionando um webhook](#add-webhook) para mais detalhes.
+
+    Antes de salvar, a interface exibe uma visualização da condição de limiar para que você confirme se ela se comportará como esperado.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Configuração de alerta de pesquisa com limiar estático, agrupamento por ServiceName e destino webhook](/images/clickstack/observability-search-alert.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+É possível adicionar vários alertas a uma pesquisa. Se você repetir o processo acima, os alertas atuais aparecerão como abas na parte superior da caixa de diálogo de edição de alerta, cada um identificado por um número.
+
+<div className="ch-image-md">
+  <Frame>
+    ![Aba New Alert ao lado de um alerta existente para uma pesquisa salva](/images/clickstack/observability-multiple-search-alerts.png)
+  </Frame>
+</div>
+
+### Alertas do Chart Explorer {#chart-explorer-alerts}
+
+Crie um alerta diretamente no [Chart Explorer](/pt-BR/clickstack/observability/features/dashboards/overview#navigate-chart-explorer) para monitorar um gráfico sem precisar adicioná-lo a um dashboard.
+
+<Steps>
+  <Step title="Crie o gráfico" id="build-explorer-alert-chart">
+    Selecione **Chart explorer** na barra lateral e use o tipo de gráfico **Time Series**. Escolha uma fonte de dados e configure a agregação, os filtros e o agrupamento que você deseja monitorar. Por exemplo, conte os logs de erro e agrupe por `ServiceName` para avaliar cada serviço separadamente.
+
+    Selecione **Run** e confira os resultados antes de configurar o alerta.
+  </Step>
+
+  <Step title="Configure o alerta" id="configure-explorer-alert">
+    Selecione **Adicionar Alerta**. Para um alerta do tipo **Static threshold**, configure:
+
+    * **Trigger when value**: escolha o operador de comparação e o limiar.
+    * **over**: escolha a janela de tempo de avaliação, por exemplo, 5 minutos.
+    * **Name**: dê ao alerta um nome descritivo.
+    * **Send to**: escolha um destino de e-mail ou webhook. Para criar um webhook, consulte [Adicionando um webhook](#add-webhook).
+
+    Você também pode adicionar rótulos e uma nota para dar contexto ao alerta.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Chart Explorer com um gráfico de contagem de logs e o painel de alerta exibindo os controles de limiar, nome, destino de notificação e Create alert](/images/clickstack/observability-chart-explorer-alert.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Crie e gerencie o alerta" id="create-explorer-alert">
+    Selecione **Create alert** para salvá-lo. Não é necessário salvar um dashboard antes.
+
+    Abra **Alerts** na barra lateral e selecione o alerta para ver os detalhes, incluindo a condição, o destino de notificação, o gráfico e o histórico de avaliações.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Página de detalhes do alerta do Chart Explorer exibindo o status do alerta, o limiar, o intervalo de avaliação, o destino de notificação, o gráfico e o histórico de avaliações](/images/clickstack/observability-chart-explorer-alert-details.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+### Alertas de gráficos de dashboard {#dashboard-alerts}
+
+Os alertas de dashboard estendem os alertas aos gráficos.
+
+Você pode criar um alerta baseado em gráfico diretamente em um dashboard salvo, com suporte a agregações SQL completas e funções do ClickHouse para cálculos avançados.
+
+Quando uma métrica ultrapassa um limiar definido, um alerta é acionado automaticamente, o que permite monitorar KPIs, latências ou outras métricas-chave ao longo do tempo.
+
+<Note>
+  Para criar um alerta para uma visualização em um dashboard, o dashboard precisa estar salvo.
+</Note>
+
+Para adicionar um alerta de dashboard:
+
+Os alertas podem ser criados durante a criação do gráfico, ao adicionar um gráfico a um dashboard, ou adicionados a gráficos já existentes. No exemplo abaixo, consideramos que o gráfico já existe no dashboard.
+
+<Steps>
+  <Step title="Abra a caixa de diálogo de edição do gráfico" id="open-chart-dialog">
+    Clique no ícone de sino **Adicionar Alerta** na barra de ferramentas do gráfico para abrir a caixa de diálogo de edição do gráfico.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Gráfico de dashboard com o botão Adicionar Alerta destacado](/images/clickstack/observability-dashboard-add-alert.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Adicione o alerta" id="add-chart-alert">
+    Selecione **Adicionar Alerta**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Editor de gráfico com o botão Adicionar Alerta destacado](/images/clickstack/observability-chart-editor-add-alert.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Defina as condições do alerta" id="define-alert-conditions">
+    Defina a condição (`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`), o limiar, a duração e o webhook. A duração também determina a frequência com que o alerta é acionado.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Editor de gráfico com o painel de condições do alerta aberto](/images/clickstack/observability-create-chart-alert.png)
+      </Frame>
+    </div>
+
+    Você pode adicionar um novo webhook diretamente nesta tela. Consulte [Adicionando um webhook](#add-webhook) para mais detalhes.
+  </Step>
+</Steps>
+
+## Adicionando um webhook {#add-webhook}
+
+Durante a criação de um alerta, você pode usar um webhook existente ou criar um novo. Depois de criado, o webhook fica disponível para ser reutilizado em outros alertas.
+
+É possível criar webhooks para diferentes tipos de serviço, incluindo Slack e PagerDuty, além de destinos genéricos.
+
+No painel de alertas, selecione **Add New Incoming Webhook** para criar um destino de notificação.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Painel de alertas com Add New Incoming Webhook destacado](/images/clickstack/observability-add-new-webhook.png)
+  </Frame>
+</div>
+
+Isso abre a caixa de diálogo de criação de webhook, na qual você pode criar um novo webhook:
+
+<div className="ch-image-md">
+  <Frame>
+    ![Caixa de diálogo Add New Webhook com os campos de tipo de serviço, nome, URL e descrição](/images/clickstack/observability-add-webhook-dialog.png)
+  </Frame>
+</div>
+
+O nome do webhook é obrigatório; a descrição é opcional. As demais configurações a serem preenchidas dependem do tipo de serviço.
+
+Consulte [Integrações por tipo de serviço](#integrations) para ver os serviços de notificação compatíveis.
+
+### Integrações por tipo de serviço {#integrations}
+
+Os alertas se integram nativamente aos seguintes tipos de serviço:
+
+* **Slack**: envie notificações diretamente para um canal por meio de webhook ou da API.
+* **PagerDuty**: roteie incidentes para equipes de plantão por meio da API do PagerDuty.
+* **incident.io**: envie alertas para o incident.io.
+* **Generic**: conecte alertas a qualquer sistema ou fluxo de trabalho personalizado por meio de um webhook genérico.
+
+<Info>
+  **Integrações exclusivas do ClickHouse Cloud**
+
+  As integrações com a API do Slack e com o PagerDuty estão disponíveis apenas no ClickHouse Cloud.
+</Info>
+
+Dependendo do tipo de serviço, você precisará fornecer informações diferentes, a saber:
+
+**Slack (URL do webhook)**
+
+* URL do webhook. Por exemplo: `https://hooks.slack.com/services/<unique_path>`. Consulte a [documentação do Slack](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/) para mais detalhes.
+
+**Slack (API)**
+
+* Token de bot do Slack. Consulte a [documentação do Slack](https://docs.slack.dev/authentication/tokens/#bot/) para mais detalhes.
+
+**API do PagerDuty**
+
+* Chave de integração do PagerDuty. Consulte a [documentação do PagerDuty](https://support.pagerduty.com/main/docs/api-access-keys) para mais detalhes.
+
+**Generic**
+
+* URL do webhook
+* Cabeçalhos do webhook (opcional)
+* Corpo do webhook (opcional). O corpo é um template Handlebars. Além de `{{title}}`, `{{body}}` e `{{link}}`, ele pode usar variáveis que descrevem o alerta e o disparo, como `{{alertId}}`, `{{status}}`, `{{value}}`, `{{threshold}}` e `{{groupKey}}`. Consulte [Variáveis de template de webhook de alerta](https://github.com/ClickHouse/ClickStack/blob/main/docs/alert-webhook-template-variables.md) para ver a lista completa.
+
+## Gerenciando alertas {#managing-alerts}
+
+Selecione **Alerts** na barra lateral esquerda para gerenciar seus alertas. Você pode buscar por nome e filtrar por estado, fonte de dados ou tipo.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Página de gerenciamento de alertas com Alerts destacado na barra lateral](/images/clickstack/observability-manage-alerts.png)
+  </Frame>
+</div>
+
+Essa visualização também exibe o histórico de avaliações dos alertas. Os alertas são avaliados em um intervalo de tempo recorrente (definido pelo período/duração configurado na criação do alerta). Em cada avaliação, o serviço consulta seus dados para verificar se a condição do alerta foi atendida:
+
+* **Barra vermelha**: a condição de limiar foi atendida nessa avaliação e o alerta disparou (notificação enviada)
+* **Barra verde**: o alerta foi avaliado, mas a condição de limiar não foi atendida (nenhuma notificação enviada)
+
+Cada avaliação é independente: o alerta verifica os dados daquela janela de tempo e só dispara se a condição for verdadeira naquele momento.
+
+No exemplo acima, o **Alert 1** está com o status **OK**, e as barras verdes mostram avaliações recentes em que a condição de limiar não foi atendida.
+
+Selecione um alerta para abrir a página de detalhes dele, com a condição, o destino da notificação e o histórico de avaliações.
+
+### Excluir um alerta {#deleting-alerts}
+
+Para remover um alerta de gráfico, abra o editor de gráficos e selecione **Edit alert**. Clique no ícone de lixeira no canto superior direito do painel do alerta.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Editor de gráficos com Edit alert e o botão de exclusão do alerta destacados](/images/clickstack/observability-remove-chart-alert.png)
+  </Frame>
+</div>
+
+## Alertas de gráfico baseados em SQL {#sql-based-alerts}
+
+Os alertas de gráfico baseados em SQL permitem escrever qualquer consulta em SQL do ClickHouse para definir as condições de alerta. Isso oferece controle total sobre filtragem, agregação e cálculos: tudo o que puder ser expresso em SQL pode se tornar um alerta.
+
+### Tipos de gráfico compatíveis {#supported-chart-types}
+
+Alertas baseados em SQL são compatíveis com três tipos de exibição de gráfico:
+
+| Tipo de gráfico     | Comportamento                                                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **linha**           | Alerta de séries temporais. A consulta deve produzir linhas agrupadas em buckets de tempo. Cada bucket é avaliado de forma independente em relação ao limiar. |
+| **Barra Empilhada** | Alerta de séries temporais. Mesmo comportamento do tipo linha.                                                                                                |
+| **Número**          | Alerta de valor único. A consulta retorna um único resultado numérico, que é comparado ao limiar uma vez a cada avaliação.                                    |
+
+Os demais tipos de gráfico baseados em SQL (Tabela, Pizza, Mapa de calor etc.) não oferecem suporte a alertas.
+
+### Criando um alerta SQL {#create-sql-based-alert}
+
+Para criar um alerta em um gráfico baseado em SQL:
+
+<Steps>
+  <Step title="Crie ou abra um gráfico baseado em SQL em um dashboard" id="open-sql-chart">
+    Em um dashboard salvo, [crie um novo gráfico com o modo de gráfico **SQL**](/pt-BR/clickstack/observability/features/dashboards/sql-visualizations) ou abra um gráfico existente baseado em SQL para edição.
+
+    Escolha **linha**, **Barra Empilhada** ou **Número** como tipo de exibição.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Editor de gráfico SQL com SQL e Adicionar Alerta destacados](/images/clickstack/observability-sql-chart-alert.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Adicione o alerta" id="add-sql-alert">
+    Selecione **Adicionar Alerta** na seção de alertas do editor de gráficos. Configure:
+
+    * **Threshold type**: `>=` (maior ou igual), `>` (maior que), `<=` (menor ou igual), `<` (menor que), `=` (igual), `!=` (diferente), `≤ x ≤` (entre) ou `< or >` (fora do intervalo)
+    * **Threshold value**: o valor numérico usado na comparação
+    * **Interval**: a frequência com que o alerta é avaliado (5m, 15m, 30m, 1h, 6h, 12h ou 1d). Também define a janela de tempo de cada avaliação.
+    * **Webhook**: o canal de notificação usado quando o alerta disparar. Consulte [Adicionando um webhook](#add-webhook).
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Editor de gráfico SQL com as configurações de limiar e notificação do alerta abertas](/images/clickstack/observability-raw-sql-alert.png)
+      </Frame>
+    </div>
+
+    <Warning>
+      **Intervalo de Tempo do Alerta**
+
+      Normalmente, as consultas de alerta são executadas uma vez por intervalo. No entanto, se um ou mais intervalos forem ignorados devido a erros ou consultas lentas, a execução seguinte usará um intervalo de tempo que abrange os intervalos perdidos. Nesse caso, os parâmetros de intervalo da consulta continuarão definidos com o período configurado no alerta, mas os parâmetros de intervalo de tempo refletirão o intervalo mais longo.
+    </Warning>
+  </Step>
+
+  <Step title="Salve o dashboard" id="save-sql-dashboard">
+    Salve o dashboard para ativar o alerta. O alerta passará a ser avaliado no intervalo configurado.
+  </Step>
+</Steps>
+
+### Como os resultados da consulta são interpretados {#sql-result-interpretation}
+
+O sistema de alertas inspeciona as colunas retornadas pela sua consulta SQL para determinar o que comparar com o limiar.
+
+* **Coluna de valor**: A **última coluna numérica** da sua cláusula `SELECT` é usada como valor do alerta. Se a sua consulta retornar várias colunas numéricas (por exemplo, `count, avg_latency, p99_latency`), apenas a última (`p99_latency`) será comparada com o limiar.
+* **Coluna de timestamp**: Em gráficos de séries temporais (linha e Barra Empilhada), o sistema identifica a coluna Date/DateTime nos seus resultados como o intervalo de tempo (ou seja, o eixo x de um gráfico de séries temporais). A coluna de valor de cada intervalo de tempo é avaliada em relação ao limiar de forma independente e, se o valor de qualquer intervalo de tempo ultrapassar o limiar configurado, o alerta será disparado.
+* **Colunas de grupo**: Todas as colunas não numéricas que não sejam de timestamp (por exemplo, `ServiceName`, `Environment`) são tratadas como dimensões de agrupamento. Quando há grupos, cada combinação única de valores de grupo é monitorada e gera alertas separadamente. O serviço enviará um alerta para cada grupo cujo valor ultrapasse o limiar configurado. Grupos estão disponíveis apenas para gráficos de séries temporais.
+
+### Parâmetros de consulta e macros {#query-params}
+
+As consultas SQL de alerta oferecem suporte a parâmetros de template e macros, que são substituídos automaticamente no momento da avaliação. São os mesmos parâmetros e macros disponíveis ao [criar um gráfico baseado em SQL](/pt-BR/clickstack/observability/features/dashboards/sql-visualizations).
+
+#### Parâmetros obrigatórios e recomendados {#required-alert-parameters}
+
+As consultas usadas em alertas de gráficos de linha ou de barras empilhadas **devem** incluir um parâmetro de intervalo ou uma macro (`{intervalSeconds:Int64}`, `{intervalMilliseconds:Int64}`, `$__timeInterval(col)` ou `$__timeInterval_ms(col)`). Durante a execução do alerta, esse valor será substituído pelo período configurado no alerta.
+
+As consultas usadas em alertas **devem, preferencialmente,** incluir um filtro de intervalo de tempo (`{startDateMilliseconds:Int64}` e `{endDateMilliseconds:Int64}`, ou `$__timeFilter(col)` etc.). Com ou sem filtro de intervalo de tempo na consulta, a consulta do alerta será executada sobre o período configurado no alerta. Se não houver filtro de intervalo de tempo, a consulta lerá todo o intervalo de tempo disponível na tabela de origem a cada execução.
+
+<Warning>
+  **Intervalo de Tempo do Alerta**
+
+  Normalmente, as consultas de alerta são executadas uma vez por intervalo. No entanto, se um ou mais intervalos forem ignorados devido a erros ou consultas lentas, a execução seguinte usará um intervalo de tempo que abrange os intervalos perdidos. Nesse caso, os parâmetros de intervalo da consulta continuarão definidos com o período configurado no alerta, mas os parâmetros de intervalo de tempo refletirão o intervalo de tempo mais longo.
+</Warning>
+
+### Exemplos de consultas de alerta {#example-queries}
+
+#### Taxa de erro por serviço (séries temporais) {#example-error-rate}
+
+Dispare um alerta quando qualquer serviço atingir uma taxa de erro de pelo menos 5%, com mais de 10 requisições no período do alerta, para evitar alertas ruidosos em serviços de baixo tráfego.
+
+```sql
+WITH error_rates AS (
+  SELECT
+    $__timeInterval(Timestamp) as ts,
+    ServiceName,
+    countIf (SpanKind = 'Server') as request_count,
+    countIf (
+      SpanKind = 'Server'
+      and StatusCode = 'Error'
+    ) as error_count,
+    error_count / request_count * 100 AS error_percent
+  FROM $__sourceTable
+  WHERE $__timeFilter(Timestamp)
+  GROUP BY ts, ServiceName
+)
+SELECT ts, ServiceName, error_percent
+FROM error_rates
+WHERE request_count > 10
+```
+
+**Tipo de exibição**: linha ou Barra Empilhada
+**Limiar**: `>= 5` (dispara quando a taxa de erros atinge 5%)
+
+Nesta consulta, `ServiceName` é uma coluna não numérica e que não é de timestamp, portanto cada serviço é monitorado como um grupo de alerta distinto. O alerta dispara de forma independente para cada serviço.
+
+#### Detecção de anomalias com média defasada (séries temporais) {#example-anomaly-detection}
+
+Dispare um alerta quando as contagens de erros ultrapassarem uma média deslizante em mais de dois desvios-padrão. Isso detecta picos em relação ao comportamento de referência recente, em vez de depender de um limiar fixo.
+
+```sql
+WITH buckets AS (
+  SELECT
+    $__timeInterval(Timestamp) AS ts,
+    count() AS bucket_count
+  FROM $__sourceTable
+  WHERE TimestampTime >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
+        - toIntervalSecond($__interval_s * 30) -- Fetch 30 intervals back
+    AND TimestampTime < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
+    AND SeverityText = 'error'
+  GROUP BY ts
+  ORDER BY ts
+  WITH FILL
+    FROM toDateTime(fromUnixTimestamp64Milli({startDateMilliseconds:Int64}))
+    TO toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:Int64}))
+    STEP toIntervalSecond($__interval_s)
+),
+
+anomaly_detection AS (
+  SELECT
+    ts,
+    bucket_count,
+    avg(bucket_count) OVER (
+      ORDER BY ts ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS previous_30_avg,
+    stddevPop(bucket_count) OVER (
+      ORDER BY ts ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS previous_30_stddev,
+    greatest(
+      bucket_count - (previous_30_avg + 2 * previous_30_stddev), 0
+    ) AS excess_error_count
+  FROM buckets
+)
+
+SELECT ts, excess_error_count
+FROM anomaly_detection
+WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
+  AND ts < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
+```
+
+**Tipo de exibição**: linha
+**Limiar**: `> 0` (dispara quando são detectados erros em excesso acima da linha de referência deslizante)
+
+Observe que a consulta busca 30 intervalos *antes* do início do intervalo de datas para inicializar os cálculos da janela deslizante e, em seguida, filtra a saída final para incluir apenas a janela de avaliação.
+
+## Cenários comuns de alertas {#common-alert-scenarios}
+
+Veja alguns cenários comuns de alertas que você pode configurar:
+
+**Erros:** Recomendamos configurar alertas para as buscas salvas padrão
+`All Error Events` e `HTTP Status >= 400` para ser notificado quando
+ocorrer um volume excessivo de erros.
+
+**Operações lentas:** Você pode configurar uma busca por operações lentas (por exemplo,
+`duration:>5000`) e, em seguida, criar um alerta para quando houver operações lentas
+em excesso.
+
+**Eventos de usuário:** Você também pode configurar alertas para que equipes que atendem clientes sejam
+notificadas quando novos usuários se cadastrarem ou quando uma ação crítica de usuário for realizada.

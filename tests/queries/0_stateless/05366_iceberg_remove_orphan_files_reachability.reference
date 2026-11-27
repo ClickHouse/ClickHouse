@@ -1,0 +1,46 @@
+format version 2
+dry run, cutoff in UTC+14 is before the cutoff file
+deleted_data_files_count	1
+deleted_manifest_files_count	1
+deleted_metadata_files_count	1
+dry run, cutoff in UTC-10 is after the cutoff file
+deleted_data_files_count	2
+deleted_manifest_files_count	1
+deleted_metadata_files_count	1
+cutoff equal to the file mtime keeps the file
+deleted_data_files_count	1
+deleted_manifest_files_count	1
+deleted_metadata_files_count	1
+cutoff now, then a second run deletes nothing
+reachable files deleted:
+orphans left:
+./data/orphan-future.parquet
+all snapshots unchanged
+[1,3,4]
+format version 3
+dry run, cutoff in UTC+14 is before the cutoff file
+deleted_data_files_count	1
+deleted_manifest_files_count	1
+deleted_metadata_files_count	1
+dry run, cutoff in UTC-10 is after the cutoff file
+deleted_data_files_count	2
+deleted_manifest_files_count	1
+deleted_metadata_files_count	1
+cutoff equal to the file mtime keeps the file
+deleted_data_files_count	1
+deleted_manifest_files_count	1
+deleted_metadata_files_count	1
+cutoff now, then a second run deletes nothing
+reachable files deleted:
+orphans left:
+./data/orphan-future.parquet
+all snapshots unchanged
+[1,2,3,4]
+scale
+deleted_data_files_count	200
+100
+2000	999000
+access control
+ACCESS_DENIED
+granted
+SUPPORT_IS_DISABLED

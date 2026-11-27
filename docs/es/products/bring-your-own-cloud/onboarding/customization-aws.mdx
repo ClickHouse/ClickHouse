@@ -4,11 +4,11 @@ slug: /cloud/reference/byoc/onboarding/customization-aws
 sidebarTitle: 'Configuración personalizada en AWS'
 keywords: ['BYOC', 'nube', 'Bring Your Own Cloud', 'onboarding', 'AWS', 'VPC']
 description: 'Despliegue ClickHouse BYOC en su VPC de AWS existente'
-doc_type: 'referencia'
+doc_type: 'reference'
 ---
 
 <div id="customer-managed-vpc-aws">
-  ## VPC gestionada por el cliente (BYO-VPC) para AWS
+  ## VPC gestionada por el cliente (BYO-VPC) para AWS {#customer-managed-vpc-aws}
 </div>
 
 Si prefiere usar una VPC existente para implementar ClickHouse BYOC, en lugar de que ClickHouse Cloud cree una nueva VPC, siga estos pasos. Este enfoque ofrece un mayor control sobre la configuración de red y le permite integrar ClickHouse BYOC en su infraestructura de red existente.
@@ -21,23 +21,15 @@ Si prefiere usar una VPC existente para implementar ClickHouse BYOC, en lugar de
     4. Agrega las etiquetas `kubernetes.io/role/internal-elb=1` y `clickhouse-byoc="true"` a cada subred para habilitar la configuración correcta del balanceador de carga.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Subred de VPC de BYOC](/images/cloud/reference/byoc-subnet-1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Subred de VPC de BYOC](/images/cloud/reference/byoc-subnet-1.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Etiquetas de subred de VPC de BYOC](/images/cloud/reference/byoc-subnet-2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Etiquetas de subred de VPC de BYOC](/images/cloud/reference/byoc-subnet-2.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -45,13 +37,9 @@ Si prefiere usar una VPC existente para implementar ClickHouse BYOC, en lugar de
     Si tu VPC aún no tiene configurado un endpoint de gateway de S3, tendrás que crear uno para habilitar una comunicación segura y privada entre tu VPC y Amazon S3. Este endpoint permite que tus servicios de ClickHouse accedan a S3 sin pasar por internet pública. Consulta la captura de pantalla a continuación para ver una configuración de ejemplo.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Endpoint de S3 de BYOC](/images/cloud/reference/byoc-s3-endpoint.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Endpoint de S3 de BYOC](/images/cloud/reference/byoc-s3-endpoint.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -81,7 +69,7 @@ Si prefiere usar una VPC existente para implementar ClickHouse BYOC, en lugar de
       Los buckets de almacenamiento, el cluster de Kubernetes y los recursos de cómputo necesarios para ejecutar ClickHouse no se incluyen en esta configuración inicial. Se aprovisionarán en un paso posterior. Aunque controlas tu VPC, ClickHouse Cloud sigue requiriendo permisos de IAM para crear y administrar el cluster de Kubernetes, roles de IAM para service accounts, buckets de S3 y otros recursos esenciales de tu cuenta de AWS.
     </Note>
 
-#### Módulo de Terraform
+#### Módulo de Terraform {#terraform-module-aws}
 
     Si prefieres usar Terraform en lugar de CloudFormation, usa el módulo [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
@@ -118,13 +106,9 @@ Si prefiere usar una VPC existente para implementar ClickHouse BYOC, en lugar de
     5. Haz clic en **Set up Infrastructure** para comenzar el aprovisionamiento.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![UI de configuración de BYOC de ClickHouse Cloud con Use existing VPC seleccionado](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
-
-    </Frame>
-
+      <Frame>
+        ![UI de configuración de BYOC de ClickHouse Cloud con Use existing VPC seleccionado](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
+      </Frame>
     </div>
 
     <Note>

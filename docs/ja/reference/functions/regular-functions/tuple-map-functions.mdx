@@ -832,9 +832,9 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 導入バージョン: v21.2.0
 
 指定された map のキーを返します。
-この関数は、設定 [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) を有効にすることで最適化できます。
-この設定を有効にすると、関数は map 全体ではなく `keys` サブカラムのみを読み取ります。
+クエリ内の他の箇所で map が使用されていない場合、関数は map 全体ではなく `keys` サブカラムのみを読み取ることができます。
 クエリ `SELECT mapKeys(m) FROM table` は `SELECT m.keys FROM table` に変換されます。
+この最適化は設定 [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) によって制御され、デフォルトで有効になっています。
 
 **構文**
 
@@ -1166,9 +1166,9 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 導入バージョン: v21.2.0
 
 指定したMapの値を返します。
-この関数は、設定 [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) を有効にすることで最適化できます。
-この設定を有効にすると、関数はMap全体ではなく、`values` サブカラムのみを読み取ります。
+Mapがクエリ内の他の箇所で使用されていない場合、関数はMap全体ではなく `values` サブカラムのみを読み取ることができます。
 クエリ `SELECT mapValues(m) FROM table` は `SELECT m.values FROM table` に変換されます。
+この最適化は設定 [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) によって制御されます。この設定はデフォルトで有効です。
 
 **構文**
 
