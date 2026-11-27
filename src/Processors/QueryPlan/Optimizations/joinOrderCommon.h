@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <limits>
 
 namespace DB
@@ -261,6 +262,18 @@ inline double computeHashJoinWork(UInt64 left_rows, UInt64 right_rows, double pr
     const auto build = static_cast<double>(std::min(left_rows, right_rows));
     const auto probe = static_cast<double>(std::max(left_rows, right_rows));
     return HASH_BUILD_ROW_COST * build + HASH_PROBE_ROW_COST * probe_fraction * probe;
+}
+
+/// Costs closer than this, relative to the smaller one, are a tie: the same terms summed in another order differ in the last bits.
+constexpr double PLAN_COST_TIE_TOLERANCE = 1e-9;
+
+/// Whether a plan of `cost` beats a stored plan of `stored_cost`. A tie goes to the plan with the smaller `rows_cost`, the
+/// cost without the work of the joins, so that the work changes a plan only where it tells the plans apart.
+inline bool isCheaperPlan(double cost, double rows_cost, double stored_cost, double stored_rows_cost)
+{
+    if (std::abs(cost - stored_cost) > PLAN_COST_TIE_TOLERANCE * std::min(cost, stored_cost))
+        return cost < stored_cost;
+    return rows_cost < stored_rows_cost;
 }
 
 /// A sort-merge join charges its own work, on the scale of a hash join with `computeHashJoinWork`, so plans of different
