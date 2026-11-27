@@ -1,6 +1,6 @@
-#include <Interpreters/AdaptiveAggregation/AdaptiveTopKNullKey.h>
+#include <Interpreters/AdaptiveAggregation/TopK/AdaptiveTopKNullKey.h>
 
-#include <Interpreters/AdaptiveAggregation/AdaptiveTopKThreshold.h>
+#include <Interpreters/AdaptiveAggregation/TopK/AdaptiveTopKThreshold.h>
 
 namespace DB
 {
