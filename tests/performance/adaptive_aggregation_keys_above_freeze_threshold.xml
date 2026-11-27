@@ -1,0 +1,12 @@
+<test>
+    <!-- One input stream whose keys only just exceed the adaptive aggregator's freeze threshold. The frozen table
+         absorbs most rows in place and stages the rows of the other keys, which repeat on every pass over them. -->
+    <settings>
+        <max_threads>1</max_threads>
+        <max_threads_min_free_memory_per_thread>0</max_threads_min_free_memory_per_thread>
+    </settings>
+
+    <query>SELECT k, count() AS c FROM (SELECT toUInt32(number % 20000) AS k FROM numbers(50000000)) GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null</query>
+    <query>SELECT k, count() AS c, sum(number) AS s FROM (SELECT toUInt32(number % 20000) AS k, number FROM numbers(50000000)) GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null</query>
+    <query>SELECT k, count() FROM (SELECT toUInt32(number % 18000) AS k FROM numbers(50000000)) GROUP BY k FORMAT Null</query>
+</test>

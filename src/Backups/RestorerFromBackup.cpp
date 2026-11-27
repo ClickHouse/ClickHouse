@@ -1,8 +1,12 @@
 #include <Access/AccessBackup.h>
+#include <Access/AccessControl.h>
 #include <Access/AccessRights.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Access/Role.h>
+#include <Access/SettingsProfile.h>
+#include <Access/SettingsProfileElement.h>
+#include <Access/resolveEffectiveSettings.h>
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupMetadataFinder.h>
 #include <Backups/BackupSettings.h>
@@ -203,6 +207,7 @@ void RestorerFromBackup::run(Mode mode_)
     setStage(Stage::CHECKING_ACCESS_RIGHTS);
     loadSystemAccessTables();
     checkAccessForObjectsFoundInBackup();
+    checkSettingsOfAccessEntitiesToRestore();
 
     if (mode == Mode::CHECK_ACCESS_ONLY)
         return;
@@ -588,6 +593,71 @@ AccessEntitiesToRestore RestorerFromBackup::getAccessEntitiesToRestore(const Str
     }
 
     return entities;
+}
+
+void RestorerFromBackup::checkSettingsOfAccessEntitiesToRestore() const
+{
+    std::lock_guard lock{mutex};
+    if (!access_restorer)
+        return;
+
+    auto & access_control = context->getAccessControl();
+
+    /// References must be resolved by name first: the backup's UUIDs are unknown here, and a profile the check cannot read is skipped.
+    auto restorer_copy = access_restorer->makeCopyForChecking();
+    restorer_copy.generateRandomIDsAndResolveDependencies(access_control);
+
+    /// An entity existing here may not exist on another host of `RESTORE ON CLUSTER`, so it is checked too.
+    auto entities = restorer_copy.getEntitiesFromBackup();
+    for (const auto & [id, entity] : entities)
+    {
+        if (const auto * user = typeid_cast<const User *>(entity.get()))
+            context->checkSettingsConstraints(AlterSettingsProfileElements{user->settings}, SettingSource::USER);
+        else if (const auto * role = typeid_cast<const Role *>(entity.get()))
+            context->checkSettingsConstraints(AlterSettingsProfileElements{role->settings}, SettingSource::ROLE);
+        else if (const auto * profile = typeid_cast<const SettingsProfile *>(entity.get()))
+            context->checkSettingsConstraints(AlterSettingsProfileElements{profile->elements}, SettingSource::PROFILE);
+    }
+
+    if (restore_settings.create_access != RestoreAccessCreationMode::kReplace)
+        return;
+
+    /// Profiles restored by this `RESTORE` are not readable yet, so they are substituted by their elements.
+    std::unordered_map<UUID, SettingsProfilePtr> restored_profiles;
+    for (const auto & [id, entity] : entities)
+    {
+        if (auto profile = typeid_cast<SettingsProfilePtr>(entity))
+            restored_profiles.emplace(id, profile);
+    }
+    auto get_profile = [&](const UUID & profile_id) -> SettingsProfilePtr
+    {
+        auto it = restored_profiles.find(profile_id);
+        return (it != restored_profiles.end()) ? it->second : access_control.tryRead<SettingsProfile>(profile_id);
+    };
+    auto substitute = [&](SettingsProfileElements & elements)
+    {
+        std::vector<UUID> profiles;
+        std::vector<UUID> substituted_profiles;
+        std::unordered_map<UUID, String> names_of_substituted_profiles;
+        substituteProfiles(elements, get_profile, profiles, substituted_profiles, names_of_substituted_profiles);
+    };
+
+    std::vector<AccessEntityPtr> new_entities;
+    for (const auto & [id, entity] : entities)
+    {
+        auto new_entity = entity->clone();
+        if (auto * user = typeid_cast<User *>(new_entity.get()))
+            substitute(user->settings);
+        else if (auto * role = typeid_cast<Role *>(new_entity.get()))
+            substitute(role->settings);
+        else if (auto * profile = typeid_cast<SettingsProfile *>(new_entity.get()))
+            substitute(profile->elements);
+        else
+            continue;
+        new_entities.push_back(new_entity);
+    }
+
+    context->checkSettingsConstraintsForOverwrite(new_entities, access_control.getStorageForRestore()->getStorageName());
 }
 
 void RestorerFromBackup::createAndCheckDatabases()

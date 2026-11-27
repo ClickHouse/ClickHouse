@@ -1256,7 +1256,8 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
         auto function_node = node.toFunctionNode();
         auto function_name = function_node.getFunctionName();
 
-        /// disallow arrayJoin expressions to be moved to PREWHERE for now
+        /// disallow arrayJoin expressions to be moved to PREWHERE
+        /// PREWHERE must give exactly one filter value per row read
         if (function_name == "arrayJoin")
             return true;
 
