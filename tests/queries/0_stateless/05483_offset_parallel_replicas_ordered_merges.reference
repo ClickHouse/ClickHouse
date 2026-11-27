@@ -59,3 +59,12 @@ offset_pr_distinct_subquery	3
 offset_pr_except	3
 offset_pr_intersect	3
 offset_pr_intersect_custom_key	6
+10000
+1
+30000
+900000000
+offset_pr_array_join	3
+offset_pr_join_left	3
+offset_pr_join_right	3
+offset_pr_join_root	1
+offset_pr_join_storage	3
