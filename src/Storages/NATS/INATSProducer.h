@@ -30,7 +30,7 @@ protected:
     };
 
     NATSClient::Connection & getConnection() { return connection->get(); }
-    const String & getSubject() const { return subject; }
+    [[nodiscard]] const String & getSubject() const { return subject; }
 
     /// Throws if the connection fails: the message is published again after connecting again.
     virtual PublishStatus publishMessage(const String & message, String & error) = 0;

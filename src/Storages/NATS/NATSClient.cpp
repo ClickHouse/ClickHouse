@@ -133,7 +133,7 @@ String getCredentialsBlock(std::string_view content, size_t index)
             continue;
         if (line.starts_with("---"))
         {
-            if (line.find("BEGIN") != String::npos)
+            if (line.contains("BEGIN"))
             {
                 in_block = true;
                 ++block;
@@ -255,7 +255,7 @@ ServerAddress ServerAddress::parse(std::string_view url)
     {
         rest.remove_prefix(7);
     }
-    else if (rest.find("://") != std::string_view::npos)
+    else if (rest.contains("://"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported scheme of the NATS server address");
 
     /// A path after the host is not used.
@@ -267,10 +267,10 @@ ServerAddress ServerAddress::parse(std::string_view url)
         if (auto colon = user_info.find(':'); colon != std::string_view::npos)
         {
             address.user = String(user_info.substr(0, colon));
-            address.password = SecretString(String(user_info.substr(colon + 1)));
+            address.password = SecretString(user_info.substr(colon + 1));
         }
         else
-            address.token = SecretString(String(user_info));
+            address.token = SecretString(user_info);
         rest.remove_prefix(at + 1);
     }
 

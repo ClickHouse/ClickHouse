@@ -124,7 +124,7 @@ void NATSJetStreamConsumer::requestPull()
     getConnection().publish(
         fmt::format("$JS.API.CONSUMER.MSG.NEXT.{}.{}", stream_name, consumer_name),
         inbox,
-        fmt::format("{{\"batch\":{},\"expires\":{}}}", PULL_BATCH, expires_ns));
+        fmt::format(R"({{"batch":{},"expires":{}}})", PULL_BATCH, expires_ns));
     pull_outstanding = true;
     pull_remaining = PULL_BATCH;
     pull_expires_at = std::chrono::steady_clock::now() + PULL_EXPIRES;

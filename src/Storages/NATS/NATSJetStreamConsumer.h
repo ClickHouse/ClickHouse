@@ -22,7 +22,7 @@ public:
         LoggerPtr log,
         const std::atomic<bool> & stopped);
 
-    bool needsAck() const override { return true; }
+    [[nodiscard]] bool needsAck() const override { return true; }
 
 protected:
     void subscribeImpl() override;

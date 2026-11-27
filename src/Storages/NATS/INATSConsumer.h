@@ -34,7 +34,7 @@ public:
         String reply;
     };
 
-    bool isSubscribed() const { return subscribed; }
+    [[nodiscard]] bool isSubscribed() const { return subscribed; }
 
     /// True when the connection was lost, so that only a re-subscribe, which connects again, resumes consuming.
     bool needsResubscribe() { return subscribed && !connection.isConnected(); }
@@ -78,20 +78,20 @@ public:
     void markLastConsumedSkipped();
 
     /// True while a consumed message may still turn into rows that nothing has acknowledged yet.
-    bool hasConsumedMessages() const { return !consumed_messages.empty(); }
+    [[nodiscard]] bool hasConsumedMessages() const { return !consumed_messages.empty(); }
 
     /// Throw away what was received and consumed, but not committed.
     void dropBuffered();
 
-    size_t subjectsCount() const { return subjects.size(); }
+    [[nodiscard]] size_t subjectsCount() const { return subjects.size(); }
 
-    bool isConsumerStopped() const { return stopped; }
+    [[nodiscard]] bool isConsumerStopped() const { return stopped; }
 
     /// Whether no message is available without waiting.
     bool queueEmpty();
 
-    auto getSubject() const { return current.subject; }
-    const String & getCurrentMessage() const { return current.message; }
+    [[nodiscard]] auto getSubject() const { return current.subject; }
+    [[nodiscard]] const String & getCurrentMessage() const { return current.message; }
 
     /// Return read buffer containing next available message or nullptr if there are no messages to
     /// process. With `timeout_ms` set, waits up to that long for a message; without it, returns at once.
@@ -99,9 +99,9 @@ public:
 
 protected:
     NATSClient::Connection & getConnection() { return connection.get(); }
-    const std::vector<String> & getSubjects() const { return subjects; }
-    const LoggerPtr & getLogger() const { return log; }
-    const String & getQueueName() const { return queue_name; }
+    [[nodiscard]] const std::vector<String> & getSubjects() const { return subjects; }
+    [[nodiscard]] const LoggerPtr & getLogger() const { return log; }
+    [[nodiscard]] const String & getQueueName() const { return queue_name; }
 
     virtual void subscribeImpl() = 0;
     virtual void unsubscribeImpl() = 0;
@@ -109,7 +109,7 @@ protected:
     /// Waits for the next message of the subscriptions at most `timeout_ms`.
     virtual std::optional<NATSClient::Message> receiveImpl(UInt64 timeout_ms) = 0;
 
-    virtual bool needsAck() const { return false; }
+    [[nodiscard]] virtual bool needsAck() const { return false; }
 
     /// Before unsubscribing: waits until nothing more is going to be delivered, and returns the reply subjects of what was.
     virtual std::vector<String> drainBeforeUnsubscribe() { return {}; }

@@ -30,7 +30,7 @@ struct NATSConfiguration
     bool secure{};
 
     /// The settings of the client. A credentials file is read here, so it is read again on every connect.
-    NATSClient::ConnectionSettings getConnectionSettings() const;
+    [[nodiscard]] NATSClient::ConnectionSettings getConnectionSettings() const;
 };
 
 /// Loads the TLS material, which reports a file that cannot be read or parsed without opening a connection.
