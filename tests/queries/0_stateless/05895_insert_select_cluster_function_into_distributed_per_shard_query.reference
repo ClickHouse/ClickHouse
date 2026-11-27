@@ -1,0 +1,40 @@
+plain	600	180300	1	600
+plain, parallel_distributed_insert_select = 1	600	180300	1	600
+udf row-local	600	180900	2	601
+limit	5
+limit, parallel_distributed_insert_select = 1	5
+order by limit	5	15	1	5
+offset	599
+distinct	7	21	0	6
+group by	3	600	200	200
+sum	1	180300	180300	180300
+apply sum	1	180300	180300	180300
+udf sum	1	180300	180300	180300
+row_number	600	180300	1	600
+qualify	3	6	1	3
+scalar subquery over the source	600	600	1	1
+IN subquery	299	89700	2	598
+IN table	299	89700	2	598
+folded scalar subquery	12	7134	589	600
+array scalar subquery	2	1194	596	598
+EXISTS	600	180300	1	600
+case_01_plain	1
+case_02_plain_pdis_1	1
+case_03_udf_row_local	1
+case_04_limit	0
+case_05_limit_pdis_1	0
+case_06_order_by_limit	0
+case_07_offset	0
+case_08_distinct	0
+case_09_group_by	0
+case_10_sum	0
+case_11_apply_sum	0
+case_12_udf_sum	0
+case_13_row_number	0
+case_14_qualify	0
+case_15_scalar_same_source	0
+case_16_in_subquery	0
+case_17_in_table	0
+case_18_folded_scalar	0
+case_19_array_scalar	0
+case_20_exists	0

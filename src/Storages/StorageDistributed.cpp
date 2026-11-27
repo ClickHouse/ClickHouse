@@ -63,6 +63,7 @@
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -77,6 +78,7 @@
 #include <Planner/CollectSets.h>
 #include <Planner/Planner.h>
 #include <Planner/Utils.h>
+#include <Planner/findQueryForParallelReplicas.h>
 
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
@@ -1560,6 +1562,29 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
     return source->detachFilterActionsDAG();
 }
 
+/// Whether the analyzed query reads a subquery, including one the analysis folded into a constant or `__getScalar`.
+static bool hasSubqueryAfterAnalysis(const QueryTreeNodePtr & node)
+{
+    if (isQueryOrUnionNode(node))
+        return true;
+    if (const auto * function = node->as<FunctionNode>())
+    {
+        if (function->getFunctionName() == "__getScalar")
+            return true;
+        const auto & arguments = function->getArguments().getNodes();
+        if (isNameOfInFunction(function->getFunctionName()) && arguments.size() >= 2
+            && (arguments[1]->getNodeType() == QueryTreeNodeType::TABLE || arguments[1]->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION))
+            return true;
+    }
+    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression()
+        && hasSubqueryAfterAnalysis(constant->getSourceExpression()))
+        return true;
+    for (const auto & child : node->getChildren())
+        if (child && hasSubqueryAfterAnalysis(child))
+            return true;
+    return false;
+}
+
 
 std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(
     IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
@@ -1613,6 +1638,16 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     const bool needs_cluster_function = source_table_function && !endsWith(source_table_function->name, "Cluster");
     if (needs_cluster_function && cluster_name.empty())
         return {};
+
+    /// Each shard runs the forwarded SELECT on its share of the files: it must neither read anything else nor need the other shares.
+    InterpreterSelectQueryAnalyzer interpreter(
+        query.select, local_context, SelectQueryOptions(QueryProcessingStage::Complete).ignoreASTOptimizations());
+    const auto * analyzed_select = interpreter.getQueryTree()->as<QueryNode>();
+    if (!analyzed_select || !canRunQueryOnEachReplicaShare(*analyzed_select))
+        return {};
+    for (const auto & child : analyzed_select->getChildren())
+        if (child && hasSubqueryAfterAnalysis(child))
+            return {};
 
     src_storage_cluster.updateExternalDynamicMetadataIfExists(local_context);
     const auto storage_metadata = src_storage_cluster.getInMemoryMetadataPtr(local_context, false);
