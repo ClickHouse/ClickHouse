@@ -708,7 +708,7 @@ void collectAppliedJoinRuntimeFiltersImpl(const Stack & stack, const NameSet * d
     if (!read_step && !object_storage_read_step)
         return;
 
-    auto register_filter = [&](const RuntimeFilterIndexAnalysisDescriptor & descr)
+    auto register_filter = [delivered_filter_ids, read_step, object_storage_read_step](const RuntimeFilterIndexAnalysisDescriptor & descr)
     {
         if (delivered_filter_ids && !delivered_filter_ids->contains(descr.filter_id))
             return;
