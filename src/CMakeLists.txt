@@ -1014,6 +1014,20 @@ if (TARGET ch_rust::delta_kernel_rs)
     # Without it some symbols for lz4/zstd can be used from crates instead of our contrib.
     target_link_libraries(clickhouse_common_io PRIVATE ch_rust::delta_kernel_rs)
     target_link_libraries(dbms PRIVATE ch_rust::delta_kernel_rs)
+
+    # The sources that include `delta_kernel_ffi.hpp`, which the cargo build writes: only they get its directory, so a
+    # new includer missing here fails to compile on every build. With Ninja only they wait for cargo.
+    add_glob(_delta_kernel_ffi_sources Storages/ObjectStorage/DataLakes/DeltaLake/*.cpp)
+    list(APPEND _delta_kernel_ffi_sources
+        Interpreters/InterpreterSystemQuery.cpp
+        Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.cpp
+        Storages/ObjectStorage/StorageObjectStorage.cpp
+        Storages/tests/gtest_delta_kernel.cpp)
+    get_filename_component(_delta_kernel_ffi_dir "${DELTA_KERNEL_FFI_HEADER}" DIRECTORY)
+    set_source_files_properties(${_delta_kernel_ffi_sources} PROPERTIES INCLUDE_DIRECTORIES "${_delta_kernel_ffi_dir}")
+    if (CMAKE_GENERATOR MATCHES "Ninja")
+        set_source_files_properties(${_delta_kernel_ffi_sources} PROPERTIES OBJECT_DEPENDS "${DELTA_KERNEL_FFI_HEADER}")
+    endif()
 endif ()
 
 if (TARGET ch_rust::vortex)

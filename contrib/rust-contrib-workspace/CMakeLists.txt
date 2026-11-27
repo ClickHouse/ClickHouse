@@ -20,6 +20,18 @@ if (RUST_BUILD_CACHE_DIR AND "delta_kernel" IN_LIST _features)
     message(STATUS "RUST_BUILD_CACHE_DIR is not used: the Rust workspace includes delta-kernel-rs")
 endif()
 
+# The includers of `delta_kernel_ffi.hpp` read a copy the build owns (`DELTA_KERNEL_FFI_HEADER`), made after every cargo
+# run like the copy of the library, so that a deleted copy comes back even when the build script does not run again.
+if ("delta_kernel" IN_LIST _features)
+    get_filename_component(_delta_kernel_ffi_dir "${DELTA_KERNEL_FFI_HEADER}" DIRECTORY)
+    add_custom_command(TARGET _cargo-build__ch_rust_workspace POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${_delta_kernel_ffi_dir}"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${RUST_BUILD_SCRIPT_TARGET_DIR}/delta_kernel_ffi.hpp" "${DELTA_KERNEL_FFI_HEADER}"
+        BYPRODUCTS "${DELTA_KERNEL_FFI_HEADER}"
+        VERBATIM)
+endif()
+
 get_property(_build_depends GLOBAL PROPERTY CLICKHOUSE_RUST_BUILD_DEPENDS)
 if (_build_depends)
     list(REMOVE_DUPLICATES _build_depends)
@@ -56,4 +68,11 @@ if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE AND NOT ENABLE
             COMMENT "Stripping internal symbols from the Rust library"
         )
     endif ()
+endif ()
+
+# With Ninja, the consumers link the library without the dependency on the cargo build (see `_clickhouse_link_rust_archive`).
+# Deferred after the post-processing steps, which set the final location of the library the same way.
+if (CMAKE_GENERATOR MATCHES "Ninja")
+    add_library(_ch_rust_workspace_archive STATIC IMPORTED GLOBAL)
+    cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL _clickhouse_link_rust_archive _ch_rust_workspace)
 endif ()

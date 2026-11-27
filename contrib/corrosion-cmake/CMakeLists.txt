@@ -484,6 +484,35 @@ function(clickhouse_postprocess_rust_lib target_name)
     ")
 endfunction()
 
+# Make `<target>` link `<target>_archive` instead of `<target>-static`: the same library and link interface, without the
+# dependency on the cargo build that Corrosion gives `-static`, which would make every object of every consumer wait for
+# cargo. The link command has the library as an input, so Ninja finds its rule by the path. Called at the end of the
+# top-level directory, after the post-processing steps set the final location.
+function(_clickhouse_link_rust_archive target_name)
+    set(_static ${target_name}-static)
+    set(_archive ${target_name}_archive)
+    set(_properties IMPORTED_LOCATION INTERFACE_LINK_LIBRARIES INTERFACE_LINK_OPTIONS INTERFACE_LINK_DIRECTORIES)
+    foreach (_config IN LISTS CMAKE_CONFIGURATION_TYPES)
+        string(TOUPPER "${_config}" _config)
+        list(APPEND _properties "IMPORTED_LOCATION_${_config}")
+    endforeach()
+    foreach (_property IN LISTS _properties)
+        get_target_property(_value ${_static} ${_property})
+        if (_value)
+            set_property(TARGET ${_archive} PROPERTY ${_property} "${_value}")
+        endif()
+    endforeach()
+
+    get_target_property(_libraries ${target_name} INTERFACE_LINK_LIBRARIES)
+    list(FIND _libraries ${_static} _index)
+    if (_index EQUAL -1)
+        message(FATAL_ERROR "${target_name} does not link ${_static}: ${_libraries}")
+    endif()
+    list(REMOVE_AT _libraries ${_index})
+    list(INSERT _libraries ${_index} ${_archive})
+    set_property(TARGET ${target_name} PROPERTY INTERFACE_LINK_LIBRARIES "${_libraries}")
+endfunction()
+
 # Not the target directory of cargo (corrosion passes `--target-dir`): only build scripts read it, the one of
 # `delta_kernel_ffi` writes its headers there.
 set(RUST_BUILD_SCRIPT_TARGET_DIR "${CMAKE_BINARY_DIR}/contrib/delta-kernel-rs/include" CACHE INTERNAL "Rust config")
