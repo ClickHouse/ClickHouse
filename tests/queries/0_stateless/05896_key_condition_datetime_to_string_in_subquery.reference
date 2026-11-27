@@ -5,6 +5,7 @@ fixed-offset primary key condition	1
 fixed-offset match	1
 non-UTC primary key condition	0
 non-UTC match	1
-ISO primary key condition	0
-ISO match	1
+ISO primary key condition	1
+ISO match	1970-01-01 00:00:42
+Unix timestamp match	1970-01-01 03:00:42
 DST repeated-hour matches	2	1

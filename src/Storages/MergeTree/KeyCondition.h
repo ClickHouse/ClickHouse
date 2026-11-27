@@ -853,7 +853,6 @@ private:
         MergeTreeSetIndex::KeyTuplePositionMapping index_mapping;
         std::optional<DeterministicKeyTransformDag> set_transform;
         DataTypePtr key_expr_type;
-        bool date_time_output_format_is_simple = false;
     };
 
     /// The inputs for one set atom, keeping each matched predicate component with its key mapping.

@@ -1,4 +1,4 @@
--- A one-argument `toString` over an explicit fixed-offset `DateTime` can use a DateTime set only with simple output.
+-- A one-argument `toString` over an explicit fixed-offset `DateTime` can use a matching `DateTime` set.
 
 DROP TABLE IF EXISTS t_utc;
 DROP TABLE IF EXISTS t_fixed_offset;
@@ -57,7 +57,7 @@ SELECT 'non-UTC match', count() FROM t_utc
 WHERE toString(k) IN (SELECT toDateTime(18042, 'America/New_York'))
 SETTINGS date_time_output_format = 'simple', use_statistics_for_part_pruning = 0, use_query_condition_cache = 0;
 
--- An alternate output format must not use the simple DateTime-to-String set conversion.
+-- `date_time_output_format` does not change the string produced by `toString` for a plain `DateTime`.
 SELECT 'ISO primary key condition', count() FROM
 (
     EXPLAIN indexes = 1
@@ -67,9 +67,14 @@ SELECT 'ISO primary key condition', count() FROM
 )
 WHERE explain ILIKE '%Condition: (toString(k) in %';
 
-SELECT 'ISO match', count() FROM t_utc
+SELECT 'ISO match', toString(k) FROM t_utc
 WHERE toString(k) IN (SELECT toDateTime(42, 'UTC'))
-SETTINGS date_time_output_format = 'iso', cast_string_to_date_time_mode = 'best_effort',
+SETTINGS max_rows_to_read = 40, date_time_output_format = 'iso', cast_string_to_date_time_mode = 'best_effort',
+    use_statistics_for_part_pruning = 0, use_query_condition_cache = 0;
+
+SELECT 'Unix timestamp match', toString(k) FROM t_fixed_offset
+WHERE toString(k) IN (SELECT toDateTime(42, 'Etc/GMT-3'))
+SETTINGS max_rows_to_read = 40, date_time_output_format = 'unix_timestamp', cast_string_to_date_time_mode = 'basic',
     use_statistics_for_part_pruning = 0, use_query_condition_cache = 0;
 
 -- The two instants in the fall-back hour stringify identically; a DST-zone transform cannot be used as a key condition.

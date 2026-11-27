@@ -85,7 +85,6 @@ namespace Setting
     extern const SettingsBool analyze_index_with_multiple_key_columns_per_condition;
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
-    extern const SettingsDateTimeOutputFormat date_time_output_format;
     extern const SettingsTimezone session_timezone;
     extern const SettingsBool validate_enum_literals_in_operators;
 }
@@ -3654,9 +3653,7 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
             candidate.column_mappings.push_back({
                 .index_mapping = std::move(index_mapping),
                 .set_transform = std::nullopt,
-                .key_expr_type = std::move(data_type),
-                .date_time_output_format_is_simple = node.getContext()->getSettingsRef()[Setting::date_time_output_format]
-                    == FormatSettings::DateTimeOutputFormat::Simple});
+                .key_expr_type = std::move(data_type)});
         }
         else if (auto transform = tryGetDeterministicKeyTransform(node, info))
         {
@@ -3721,8 +3718,7 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
 /// Whether the chain ends by rendering a native integer, `Date`, or a supported `DateTime` as text that the cast into
 /// `element_type` parses back to the same value, as an element renders. A custom serialization (`Bool`, also in
 /// `SimpleAggregateFunction`) breaks that.
-static bool isTextOfElementValues(
-    const std::vector<FunctionBasePtr> & chain, const DataTypePtr & element_type, bool date_time_output_format_is_simple)
+static bool isTextOfElementValues(const std::vector<FunctionBasePtr> & chain, const DataTypePtr & element_type)
 {
     if (chain.empty())
         return false;
@@ -3741,11 +3737,12 @@ static bool isTextOfElementValues(
     if ((isNativeInteger(source_type) && isNativeInteger(element_type)) || (isDate(source_type) && isDate(element_type)))
         return true;
 
-    if (name != "toString" || !date_time_output_format_is_simple)
+    if (name != "toString")
         return false;
 
-    /// `DataTypeDateTime::equals` ignores its time zone, while `toString` and `CAST` use it. Matching explicit fixed-offset
-    /// time zones with `simple` output give the key text and the index-side conversion the same canonical spelling.
+    /// For a plain `DateTime`, both `toString` and the index-side cast use `writeDateTimeText` regardless of
+    /// `date_time_output_format`. Require matching explicit fixed-offset zones for an unambiguous round trip,
+    /// since `DataTypeDateTime::equals` ignores the time zone.
     const auto * source_date_time = typeid_cast<const DataTypeDateTime *>(source_type.get());
     const auto * element_date_time = typeid_cast<const DataTypeDateTime *>(element_type.get());
     return source_date_time && element_date_time
@@ -3841,8 +3838,7 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         /// `JSON` accepts only objects, a `Variant` infers an alternative from the spelling (`CAST('42',
         /// 'Variant(Date)')` throws), and a `Dynamic` does so under `cast_string_to_dynamic_use_inference` -
         /// so the full scan may match another spelling or raise a conversion error that pruning would hide.
-        /// Text of an integer or `Date` holds one spelling. One-argument `toString` of explicit UTC `DateTime` does too
-        /// with `date_time_output_format = 'simple'`, so these sets keep the index.
+        /// Canonical text of the element values, as checked by `isTextOfElementValues`, keeps the index.
         if (membership_compares_carriers)
         {
             const DataTypePtr predicate_column_type
@@ -3851,8 +3847,7 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
 
             if (isStringOrFixedString(predicate_column_type) && !isString(element_type) && !isNothing(element_type)
                 && !element_type->equals(*predicate_column_type)
-                && !(!mapping.set_transform && isTextOfElementValues(
-                    mapping.index_mapping.functions, element_type, mapping.date_time_output_format_is_simple)))
+                && !(!mapping.set_transform && isTextOfElementValues(mapping.index_mapping.functions, element_type)))
                 return false;
         }
 
