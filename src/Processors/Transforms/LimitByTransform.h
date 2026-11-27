@@ -126,7 +126,8 @@ public:
         UInt64 group_offset_,
         const SortDescription & sorted_columns_descr,
         bool always_read_till_end_ = false,
-        UInt64 max_groups_ = 0);
+        UInt64 outer_limit_ = 0,
+        UInt64 final_limit_by_offset_ = 0);
 
     String getName() const override { return "LimitBySortedStreamTransform"; }
 
@@ -146,6 +147,9 @@ private:
 
     void finishGroup();
 
+    /// The rows that the final `LIMIT BY` returns from a group of which this stream has `group_rows` rows.
+    UInt64 rowsReturnedByFinalLimitBy(UInt64 group_rows) const;
+
     /// Positions of the non-constant grouping key columns in the chunk header, in physical sort order so
     /// that every column probed by `getEqualRangeEndAssumeSorted` is contiguous within the range.
     VectorWithMemoryTracking<size_t> grouping_key_positions;
@@ -155,16 +159,17 @@ private:
     const UInt64 group_limit_end;
     const bool always_read_till_end;
 
-    /// Stop reading once this many groups are complete. 0 disables the stop.
-    const UInt64 max_groups;
+    /// Stop once the final `LIMIT BY`, whose offset is `final_limit_by_offset`, returns `outer_limit` rows of this stream. 0 disables it.
+    const UInt64 outer_limit;
+    const UInt64 final_limit_by_offset;
 
     MutableColumns previous_chunk_last_grouping_key_columns;
 
     /// Number of rows already seen for the current logical group.
     UInt64 current_group_rows_seen = 0;
 
-    /// Groups whose last row has already been seen, so no later row can join them.
-    UInt64 completed_groups = 0;
+    /// `rowsReturnedByFinalLimitBy` summed over the groups whose last row has already been seen.
+    UInt64 finished_groups_rows_returned = 0;
 
     /// Slices from the current chunk that will be emitted to output.
     PODArray<ChunkRowRange> output_slices;

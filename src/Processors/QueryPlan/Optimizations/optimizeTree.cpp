@@ -727,7 +727,7 @@ void optimizeTreeSecondPass(
                 optimizeLimitByInOrder(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.push_limit_by_into_sort)
-                pushLimitByIntoSort(stack, optimization_settings.limit_by_use_outer_limit);
+                pushLimitByIntoSort(stack, optimization_settings.push_down_limit_below_limit_by);
         });
 
     /// After PREWHERE promotion, projection replacement and the read-in-order decision: each changes the

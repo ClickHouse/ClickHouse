@@ -261,13 +261,15 @@ void SortingStep::updateOutputHeader()
 
 void SortingStep::updateLimitByHint(
     Names limit_by_columns_,
-    UInt64 limit_by_group_length_,
-    UInt64 limit_by_max_groups_,
+    UInt64 limit_by_length_,
+    UInt64 limit_by_offset_,
+    UInt64 limit_by_outer_limit_,
     bool limit_by_always_read_till_end_)
 {
     limit_by_columns = std::move(limit_by_columns_);
-    limit_by_group_length = limit_by_group_length_;
-    limit_by_max_groups = limit_by_max_groups_;
+    limit_by_group_length = limit_by_length_ + limit_by_offset_;
+    limit_by_group_offset = limit_by_offset_;
+    limit_by_outer_limit = limit_by_outer_limit_;
     limit_by_always_read_till_end = limit_by_always_read_till_end_;
 }
 
@@ -286,7 +288,13 @@ void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, c
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
             return std::make_shared<LimitBySortedStreamTransform>(
-                header, limit_by_group_length, 0, sort_prefix, limit_by_always_read_till_end, limit_by_max_groups);
+                header,
+                limit_by_group_length,
+                0,
+                sort_prefix,
+                limit_by_always_read_till_end,
+                limit_by_outer_limit,
+                limit_by_group_offset);
         });
 }
 
@@ -769,8 +777,8 @@ void SortingStep::describeActions(FormatSettings & settings) const
 
         settings.out << prefix << "Per-stream LIMIT BY length " << limit_by_group_length << '\n';
 
-        if (limit_by_max_groups)
-            settings.out << prefix << "Per-stream LIMIT BY max groups " << limit_by_max_groups << '\n';
+        if (limit_by_outer_limit)
+            settings.out << prefix << "Per-stream LIMIT BY outer limit " << limit_by_outer_limit << '\n';
     }
 }
 
@@ -799,8 +807,8 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Per-stream LIMIT BY Columns", std::move(columns_array));
         map.add("Per-stream LIMIT BY Length", limit_by_group_length);
 
-        if (limit_by_max_groups)
-            map.add("Per-stream LIMIT BY Max Groups", limit_by_max_groups);
+        if (limit_by_outer_limit)
+            map.add("Per-stream LIMIT BY Outer Limit", limit_by_outer_limit);
     }
 }
 
@@ -937,7 +945,8 @@ QueryPlanStepPtr SortingStep::clone() const
     cloned->threshold_tracker = threshold_tracker;
     cloned->limit_by_columns = limit_by_columns;
     cloned->limit_by_group_length = limit_by_group_length;
-    cloned->limit_by_max_groups = limit_by_max_groups;
+    cloned->limit_by_group_offset = limit_by_group_offset;
+    cloned->limit_by_outer_limit = limit_by_outer_limit;
     cloned->limit_by_always_read_till_end = limit_by_always_read_till_end;
     return cloned;
 }

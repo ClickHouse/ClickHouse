@@ -334,14 +334,16 @@ LimitBySortedStreamTransform::LimitBySortedStreamTransform(
     UInt64 group_offset_,
     const SortDescription & sorted_columns_descr,
     bool always_read_till_end_,
-    UInt64 max_groups_)
+    UInt64 outer_limit_,
+    UInt64 final_limit_by_offset_)
     : ISimpleTransform(header, header, true)
     , group_offset(group_offset_)
     , group_limit_end(computeGroupLimitEnd(group_length_, group_offset_))
     , always_read_till_end(always_read_till_end_)
-    , max_groups(max_groups_)
+    , outer_limit(outer_limit_)
+    , final_limit_by_offset(final_limit_by_offset_)
 {
-    chassert(!max_groups || !always_read_till_end);
+    chassert(!outer_limit || !always_read_till_end);
 
     Names key_names;
     key_names.reserve(sorted_columns_descr.size());
@@ -389,10 +391,16 @@ void LimitBySortedStreamTransform::processRun(UInt64 run_start_row, UInt64 run_r
     current_group_rows_seen = group_rows_seen_before_run + run_row_count;
 }
 
+UInt64 LimitBySortedStreamTransform::rowsReturnedByFinalLimitBy(UInt64 group_rows) const
+{
+    const UInt64 rows = std::min(group_rows, group_limit_end);
+    return rows > final_limit_by_offset ? rows - final_limit_by_offset : 0;
+}
+
 void LimitBySortedStreamTransform::finishGroup()
 {
+    finished_groups_rows_returned += rowsReturnedByFinalLimitBy(current_group_rows_seen);
     current_group_rows_seen = 0;
-    ++completed_groups;
 }
 
 void LimitBySortedStreamTransform::transform(Chunk & chunk)
@@ -476,8 +484,8 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
         return;
     }
 
-    /// Later groups of this stream sort after the completed ones, so an outer `LIMIT` of `max_groups` rows never needs them.
-    if (max_groups && completed_groups >= max_groups)
+    /// The final `LIMIT BY` returns at least this many rows before this stream's next row, so the outer `LIMIT` never needs it.
+    if (outer_limit && finished_groups_rows_returned + rowsReturnedByFinalLimitBy(current_group_rows_seen) >= outer_limit)
         stopReading();
 
     /// No row from this chunk survived.

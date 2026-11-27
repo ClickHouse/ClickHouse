@@ -392,7 +392,7 @@ void optimizeLimitForAggregationInOrder(QueryPlan::Node & root);
 /// Execute `ORDER BY rand()` by `ShuffleStep` instead of `SortingStep`.
 void useShuffleForOrderByRand(QueryPlan::Node & node);
 void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
-void pushLimitByIntoSort(const Stack & stack, bool use_outer_limit);
+void pushLimitByIntoSort(const Stack & stack, bool push_down_limit);
 /// Descends from `node` through order-preserving steps to the reading step below it and marks that
 /// read as preferring multiple streams, so `PrefetchingConcatProcessor` does not collapse the
 /// per-stream pipeline into a single stream and serialize per-stream work above the read.

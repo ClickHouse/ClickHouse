@@ -216,12 +216,12 @@ SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELEC
 SELECT (SELECT count() FROM (SELECT a, b, c, z FROM test_multi_and WHERE a = 1 AND z > 0 AND b = 2 LIMIT 5 BY c SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT a, b, c, z FROM test_multi_and WHERE a = 1 AND z > 0 AND b = 2 LIMIT 5 BY c SETTINGS optimize_limit_by_in_order = 1));
 DROP TABLE test_multi_and;
 
--- An outer LIMIT above LIMIT BY bounds how many groups each sorted stream must produce, so a stream stops
--- after that many complete groups. Issue #113110.
+-- An outer LIMIT above LIMIT BY bounds how many rows each sorted stream must produce, so a stream stops
+-- once the rows LIMIT BY returns from it alone reach the LIMIT. Issue #113110.
 DROP TABLE IF EXISTS test_outer_limit;
 CREATE TABLE test_outer_limit (a UInt32, b UInt32, c UInt32, z UInt32) ENGINE = MergeTree ORDER BY (a, b, c);
 -- Eight parts, so that the read has several streams at any thread count: one stream serves the outer
--- LIMIT from the first granules whether or not the group limit applies.
+-- LIMIT from the first granules whether or not the outer limit applies.
 SYSTEM STOP MERGES test_outer_limit;
 INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(0, 125000) SETTINGS max_insert_block_size = 1000000;
 INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(125000, 125000) SETTINGS max_insert_block_size = 1000000;
@@ -237,18 +237,17 @@ SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 
 SYSTEM FLUSH LOGS query_log;
 SELECT read_rows < 100000 FROM system.query_log WHERE log_comment = '04238_outer_limit_full' AND current_database = currentDatabase() AND type = 'QueryFinish';
 
--- The group limit applies.
+-- The outer limit applies.
 SELECT extract(explain, 'Per-stream LIMIT BY.*') FROM (EXPLAIN actions = 1 SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c) LIMIT 10) WHERE explain LIKE '%Per-stream LIMIT BY%';
-SELECT explain LIKE '%"Per-stream LIMIT BY Max Groups": 10%' FROM (EXPLAIN json = 1, actions = 1 SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c) LIMIT 10);
+SELECT explain LIKE '%"Per-stream LIMIT BY Outer Limit": 10%' FROM (EXPLAIN json = 1, actions = 1 SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c) LIMIT 10);
 SELECT extract(explain, 'Per-stream LIMIT BY.*') FROM (EXPLAIN actions = 1 SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a) LIMIT 10) WHERE explain LIKE '%Per-stream LIMIT BY%';
 SELECT extract(explain, 'Per-stream LIMIT BY.*') FROM (EXPLAIN actions = 1 SELECT a, b, c, z FROM test_outer_limit ORDER BY a, b, c LIMIT 1 BY (a, b, c) LIMIT 10) WHERE explain LIKE '%Per-stream LIMIT BY%';
 SELECT extract(explain, 'Per-stream LIMIT BY.*') FROM (EXPLAIN actions = 1 SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a) LIMIT 10 OFFSET 5) WHERE explain LIKE '%Per-stream LIMIT BY%';
 SELECT extract(explain, 'Per-stream LIMIT BY.*') FROM (EXPLAIN actions = 1 SELECT * FROM (SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c)) LIMIT 10) WHERE explain LIKE '%Per-stream LIMIT BY%';
-
--- The group limit does not apply; the LIMIT BY is still pushed into the sort.
--- A LIMIT BY OFFSET can drop whole groups, so no number of groups is enough.
 SELECT extract(explain, 'Per-stream LIMIT BY.*') FROM (EXPLAIN actions = 1 SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 2 OFFSET 1 BY (a) LIMIT 10) WHERE explain LIKE '%Per-stream LIMIT BY%';
--- No LIMIT, or one that can need rows of more groups.
+
+-- The outer limit does not apply; the LIMIT BY is still pushed into the sort.
+-- No LIMIT, or one that can need more rows.
 SELECT extract(explain, 'Per-stream LIMIT BY.*') FROM (EXPLAIN actions = 1 SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c)) WHERE explain LIKE '%Per-stream LIMIT BY%';
 SELECT extract(explain, 'Per-stream LIMIT BY.*') FROM (EXPLAIN actions = 1 SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c) LIMIT 10 WITH TIES) WHERE explain LIKE '%Per-stream LIMIT BY%';
 -- The input must be read to the end.
@@ -256,8 +255,23 @@ SELECT extract(explain, 'Per-stream LIMIT BY.*') FROM (EXPLAIN actions = 1 SELEC
 SELECT extract(explain, 'Per-stream LIMIT BY.*') FROM (EXPLAIN actions = 1 SELECT a, count() AS n FROM test_outer_limit GROUP BY a WITH TOTALS ORDER BY a DESC LIMIT 1 BY (a) LIMIT 10) WHERE explain LIKE '%Per-stream LIMIT BY%';
 SELECT extract(explain, 'Per-stream LIMIT BY.*') FROM (EXPLAIN actions = 1 SELECT a, n FROM (SELECT a, count() AS n FROM test_outer_limit GROUP BY a WITH TOTALS) ORDER BY a DESC LIMIT 1 BY (a) LIMIT 10) WHERE explain LIKE '%Per-stream LIMIT BY%';
 -- Disabled by the setting.
-SELECT extract(explain, 'Per-stream LIMIT BY.*') FROM (EXPLAIN actions = 1 SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c) LIMIT 10 SETTINGS query_plan_limit_by_use_outer_limit = 0) WHERE explain LIKE '%Per-stream LIMIT BY%';
+SELECT extract(explain, 'Per-stream LIMIT BY.*') FROM (EXPLAIN actions = 1 SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c) LIMIT 10 SETTINGS query_plan_push_down_limit_below_limit_by = 0) WHERE explain LIKE '%Per-stream LIMIT BY%';
 DROP TABLE test_outer_limit;
+
+-- Groups of 10000 rows in each of four parts: a stream needs 4 groups for `LIMIT 3 BY` and `LIMIT 3 OFFSET 1 BY`,
+-- not the 10 that counting groups needs.
+DROP TABLE IF EXISTS test_outer_limit_rows;
+CREATE TABLE test_outer_limit_rows (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY (k, v) SETTINGS index_granularity = 1000;
+SYSTEM STOP MERGES test_outer_limit_rows;
+INSERT INTO test_outer_limit_rows SELECT intDiv(number, 10000), number FROM numbers(200000);
+INSERT INTO test_outer_limit_rows SELECT intDiv(number, 10000), number + 1000000 FROM numbers(200000);
+INSERT INTO test_outer_limit_rows SELECT intDiv(number, 10000), number + 2000000 FROM numbers(200000);
+INSERT INTO test_outer_limit_rows SELECT intDiv(number, 10000), number + 3000000 FROM numbers(200000);
+SELECT k, v FROM test_outer_limit_rows ORDER BY k DESC, v DESC LIMIT 3 BY k LIMIT 10 SETTINGS max_block_size = 1000, log_comment = '04238_outer_limit_rows';
+SELECT k, v FROM test_outer_limit_rows ORDER BY k DESC, v DESC LIMIT 3 OFFSET 1 BY k LIMIT 10 SETTINGS max_block_size = 1000, log_comment = '04238_outer_limit_rows_offset';
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, read_rows < 200000 FROM system.query_log WHERE log_comment LIKE '04238_outer_limit_rows%' AND current_database = currentDatabase() AND type = 'QueryFinish' ORDER BY log_comment;
+DROP TABLE test_outer_limit_rows;
 
 -- A group whose rows span a chunk boundary is still counted once, and one spanning several parts is
 -- counted per stream, so the final single-stream LIMIT BY still sees every row it needs.

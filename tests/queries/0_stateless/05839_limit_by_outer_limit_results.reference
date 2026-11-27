@@ -51,8 +51,67 @@ distributed
 4997	213571
 4996	216428
 4996	216428
-same rows as without the group limit
+same rows as without the outer limit
 1
+limit by offset
+4998	205714
+4997	213571
+4997	208571
+4996	211428
+4996	206428
+4995	214285
+limit by offset, asc
+1	15001
+1	100001
+2	10002
+2	15002
+2	100002
+limit by offset above the rows of a group in one part
+4999	114999
+4999	109999
+4998	114998
+4998	109998
+4997	114997
+4997	109997
+limit by offset, parallel replicas
+4997	208571
+4996	211428
+4996	206428
+4995	214285
+4995	209285
+4994	212142
+limit by offset, distributed
+4997	218571
+4997	213571
+4996	216428
+4996	211428
+4995	219285
+4995	214285
+4994	217142
+desc, n = 1, m = 0, offset = 0	1
+desc, n = 1, m = 0, offset = 5	1
+desc, n = 1, m = 2, offset = 0	1
+desc, n = 1, m = 2, offset = 5	1
+desc, n = 1, m = 6, offset = 0	1
+desc, n = 1, m = 6, offset = 5	1
+desc, n = 3, m = 0, offset = 0	1
+desc, n = 3, m = 0, offset = 5	1
+desc, n = 3, m = 2, offset = 0	1
+desc, n = 3, m = 2, offset = 5	1
+desc, n = 3, m = 6, offset = 0	1
+desc, n = 3, m = 6, offset = 5	1
+asc, n = 1, m = 0, offset = 0	1
+asc, n = 1, m = 0, offset = 5	1
+asc, n = 1, m = 2, offset = 0	1
+asc, n = 1, m = 2, offset = 5	1
+asc, n = 1, m = 6, offset = 0	1
+asc, n = 1, m = 6, offset = 5	1
+asc, n = 3, m = 0, offset = 0	1
+asc, n = 3, m = 0, offset = 5	1
+asc, n = 3, m = 2, offset = 0	1
+asc, n = 3, m = 2, offset = 5	1
+asc, n = 3, m = 6, offset = 0	1
+asc, n = 3, m = 6, offset = 5	1
 final
 4997	1004997
 4996	1004996
