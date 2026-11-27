@@ -3,6 +3,7 @@
 #include <limits.h>
 #include <stdint.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/auxv.h>
 #include "syscall.h"
 
@@ -109,6 +110,31 @@ void *__vdsosym(const char *vername, const char *name)
 	}
 
 	return 0;
+}
+
+/// The vDSO is outside this binary, so CFI cannot check calls into it. Instead, its addresses live on a page of
+/// their own (64 KiB, the largest page size) that is made read-only, so that they cannot be overwritten.
+#define VDSO_FUNCS_PAGE_SIZE 65536
+
+static union
+{
+	struct vdso_funcs funcs;
+	char page[VDSO_FUNCS_PAGE_SIZE];
+} vdso_funcs_page __attribute__((aligned(VDSO_FUNCS_PAGE_SIZE)));
+
+const struct vdso_funcs *const __vdso_funcs = &vdso_funcs_page.funcs;
+
+__attribute__((constructor(101)))
+static void vdso_funcs_init(void)
+{
+#ifdef VDSO_CGT_SYM
+	vdso_funcs_page.funcs.clock_gettime = __vdsosym(VDSO_CGT_VER, VDSO_CGT_SYM);
+#endif
+#ifdef VDSO_GETCPU_SYM
+	vdso_funcs_page.funcs.getcpu = __vdsosym(VDSO_GETCPU_VER, VDSO_GETCPU_SYM);
+#endif
+	if (__syscall(SYS_mprotect, &vdso_funcs_page, sizeof(vdso_funcs_page), PROT_READ))
+		__builtin_trap();
 }
 
 #endif

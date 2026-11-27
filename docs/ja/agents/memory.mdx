@@ -1,8 +1,8 @@
 ---
-sidebarTitle: 'Memory'
+sidebarTitle: 'メモリ'
 slug: /agents/memory
-title: 'Memory'
-description: 'ClickHouse Agents の Memory とパーソナライズ'
+title: 'メモリ'
+description: 'ClickHouse Agents におけるメモリとパーソナライズ'
 keywords: ['AI', 'ClickHouse Cloud', 'agents', 'memory', 'personalization']
 doc_type: 'reference'
 ---
@@ -11,128 +11,88 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
-エージェントが会話をまたいで参照できる、ユーザーごとの保存領域です。複数のエントリで構成されており、それぞれが秘密鍵・値の組になっています。たとえば、希望する
-日付フォーマット、普段クエリするデータベース、回答をどれくらい簡潔にしてほしいかといった情報です。エージェントは、必要に応じてこれらをコンテキストに取り込みます。
+は、エージェントが会話をまたいで参照できるユーザーごとのストアです。複数のエントリで構成され、各エントリはキー・バリューのペアです。たとえば、好みの
+日付形式、普段クエリを実行するデータベース、応答をどの程度簡潔にしてほしいか、といった情報を保持します。エージェントは、関連する場面でこれらをコンテキストに取り込みます。
 
-<div id="how-it-works">
-  ## Memory の仕組み
-</div>
+## メモリの仕組み {#how-it-works}
 
-小さな Memory エージェントが、メインの会話と並行して動作します。直近のメッセージを読み取り、何を記憶しておくべきかを判断し、ユーザーごとの保存領域にエントリを書き込みます。
-次の会話では、それらのエントリを文脈として参照できるため、同じことを繰り返し伝える必要がありません。
+メインの会話と並行して、小規模なメモリエージェントが動作します。このエージェントは最近のメッセージを読み取って記憶すべき内容を判断し、ユーザーごとのストアにエントリを書き込みます。
+次の会話では、これらのエントリがコンテキストとして利用可能になるため、同じことを繰り返し伝えなくても、メインのエージェントがそれを参照できます。
 
-その結果、会話に一貫性が生まれます。たとえば、SQL の出力は小文字がよいことや、会計年度が 3 月に終わることを一度エージェントに伝えておけば、その後の会話でもそれが反映されます。
+ユーザーにとっては、これが会話の継続性として現れます。たとえば、SQL の出力は小文字が好みであることや、会計年度が 3 月に終わることを一度エージェントに伝えておけば、以降の会話ではそれに沿った応答が返されます。
 
-<div id="manage-your-memories">
-  ## Memory を管理する
-</div>
+## メモリエントリの管理 {#manage-your-memories}
 
-左側のナビゲーションにある **Memories** (脳の) アイコンから Memory パネルを開きます。このパネルには保存されている Memory が一覧表示され、エントリの作成、編集、削除、絞り込みを行えます。
+左側のナビゲーションにある **メモリエントリ** (脳) アイコンからメモリパネルを開きます。パネルには保存済みのメモリエントリが一覧表示され、エントリの作成、編集、削除、フィルタを行うためのコントロールが用意されています。
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![左側のナビゲーションで脳のアイコンが強調表示され、フィルター入力欄、Add ボタン、Use memory チェックボックス、編集および削除の操作が付いた Memory エントリ、Admin Settings ボタンが表示されている Memories パネル](/images/cloud/agent-builder/memory/memories.webp)
-
-</Frame>
-
+  <Frame>
+    ![左側のナビゲーションで脳アイコンがハイライトされ、フィルタ入力欄、追加ボタン、「メモリを使用」チェックボックス、編集・削除コントロール付きのメモリエントリ、「管理者設定」ボタンが表示されたメモリパネル](/images/cloud/agent-builder/memory/memories.webp)
+  </Frame>
 </div>
 
-Memory はユーザーごとに非公開です。他のユーザーのエージェントがあなたのエントリを見ることはなく、あなたのエージェントがそのユーザーのエントリを見ることもありません。
+メモリはユーザーごとに非公開です。他のユーザーのエージェントがあなたのエントリを参照することはなく、あなたのエージェントが他のユーザーのエントリを参照することもありません。
 
-<div id="create-memory">
-  ### Memory を作成する
-</div>
+### メモリを作成する {#create-memory}
 
-パネル上部の **+** ボタンをクリックして **Create Memory** ダイアログを開きます。**秘密鍵** (使用できるのは小文字とアンダースコアのみ) と **値** を入力し、**Create** をクリックします。
+パネル上部の **+** ボタンをクリックして **Create Memory** ダイアログを開きます。**キー** (英小文字とアンダースコアのみ使用可) と**値**を入力し、**Create** をクリックします。
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Create Memory の + ボタンが強調表示された Memory パネル](/images/cloud/agent-builder/memory/create.webp)
-
-</Frame>
-
+  <Frame>
+    ![Create Memory の + ボタンが強調表示されたメモリパネル](/images/cloud/agent-builder/memory/create.webp)
+  </Frame>
 </div>
 
-<div id="filter-memories">
-  ### Memory を絞り込む
-</div>
+### メモリエントリをフィルタする {#filter-memories}
 
-パネル上部の **Memory を絞り込む** 入力欄を使うと、秘密鍵でエントリを検索できます。
+パネル上部にある **Filter メモリエントリ** 入力欄で、キーを指定してエントリを検索できます。
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![「Memory を絞り込む」入力欄が強調表示され、「demo」と入力された Memory パネル](/images/cloud/agent-builder/memory/filter.webp)
-
-</Frame>
-
+  <Frame>
+    ![Filter メモリエントリ 入力欄がハイライトされ、「demo」と入力されたメモリパネル](/images/cloud/agent-builder/memory/filter.webp)
+  </Frame>
 </div>
 
-<div id="edit-memory">
-  ### Memory を編集する
-</div>
+### メモリを編集する {#edit-memory}
 
-Memory の鉛筆アイコンをクリックして **Edit Memory** ダイアログを開きます。秘密鍵または値を調整し、**Save** をクリックします。
+メモリの鉛筆アイコンをクリックすると、**Edit Memory** ダイアログが開きます。キーまたは値を変更し、**保存** をクリックします。
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![Edit Memory の鉛筆アイコンが強調表示された Memory エントリ](/images/cloud/agent-builder/memory/edit.webp)
-
-</Frame>
-
+  <Frame>
+    ![Edit Memory の鉛筆アイコンが強調表示されたメモリエントリ](/images/cloud/agent-builder/memory/edit.webp)
+  </Frame>
 </div>
 
-<div id="delete-memory">
-  ### Memory を削除する
-</div>
+### メモリを削除する {#delete-memory}
 
-削除するには、Memory のごみ箱アイコンをクリックします。
+削除するメモリのゴミ箱アイコンをクリックします。
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![削除用のごみ箱アイコンが強調表示された Memory エントリ](/images/cloud/agent-builder/memory/delete.webp)
-
-</Frame>
-
+  <Frame>
+    ![「Delete Memory」ゴミ箱アイコンが強調表示されたメモリエントリ](/images/cloud/agent-builder/memory/delete.webp)
+  </Frame>
 </div>
 
-<div id="toggle-memory">
-  ## Memory の切り替え
-</div>
+## メモリの切り替え {#toggle-memory}
 
-Memory パネル上部にある **Use memory** チェックボックスで、Memory のオン/オフを切り替えます。保存したくない機密性の高いトピックや、パーソナライズが不要な単発の会話では、無効にしてください。
+メモリパネル上部の **メモリを使用** チェックボックスで、メモリのオン/オフを切り替えます。保存されたくない機密性の高い話題を扱う場合や、パーソナライズが不要な単発の会話では、メモリを無効化してください。
 
-Memory がオフのとき、エージェントは Memory ストアの読み取りも書き込みも行いません。
+メモリがオフの間、エージェントはメモリストアの読み取りも書き込みも行いません。
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![上部の Use memory チェックボックスが強調表示された Memory パネル](/images/cloud/agent-builder/memory/toggle.webp)
-
-</Frame>
-
+  <Frame>
+    ![上部の「メモリを使用」チェックボックスが強調表示されたメモリパネル](/images/cloud/agent-builder/memory/toggle.webp)
+  </Frame>
 </div>
 
-<div id="memory-best-practices">
-  ## Memory のベストプラクティス
-</div>
+## メモリのベストプラクティス {#memory-best-practices}
 
-Memory が役立つのは、次のような場合です。
+メモリは次のような情報に役立ちます。
 
-* 繰り返し使うルール: 好みの日付フォーマット、業務上の定義、命名パターン。
-* プロジェクトのコンテキスト: 普段どのサービスやデータベースをクエリするか、どのダッシュボードを重視しているか。
-* コミュニケーションスタイル: 簡潔な応答を好むか詳しい応答を好むか、コード中心か文章中心か。
+* 繰り返し使われる慣例: 好みの日付形式、ビジネス上の定義、命名パターンなど。
+* プロジェクトのコンテキスト: 普段クエリを実行するサービスやデータベース、注目しているダッシュボードなど。
+* コミュニケーションスタイル: 簡潔な応答か饒舌な応答か、コード中心の応答か文章中心の応答か。
 
-Memory はデータベースとして使うことを意図したものではありません。たとえば、大量の参考資料を保存しておく場所ではありません。
-そうした用途には、代わりに [スキル](/ja/agents/builder/skills) を使うか、その内容をエージェントの指示に組み込むべきです。
-また、過去のチャットから情報を取り出すためのものでもありません。その役割は会話履歴自体が担います。
+メモリはデータベースとしての利用を想定していません。たとえば、大量のリファレンス資料をまとめて保存する場所ではありません。
+そのような用途には、[スキル](/ja/agents/builder/skills)を使用するか、資料をエージェントの指示に組み込んでください。
+また、過去のチャットを検索するためのものでもありません。その役割は会話履歴そのものが担います。

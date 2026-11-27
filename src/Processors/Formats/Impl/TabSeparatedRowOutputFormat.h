@@ -13,7 +13,7 @@ class WriteBuffer;
 
 /** A stream for outputting data in tsv format.
   */
-class TabSeparatedRowOutputFormat : public IRowOutputFormat
+class TabSeparatedRowOutputFormat final : public IRowOutputFormat
 {
 public:
     /** with_names - output in the first line a header with column names
@@ -32,6 +32,7 @@ public:
     bool supportsSpecialSerializationKinds() const override { return format_settings.allow_special_serialization_kinds; }
 
 protected:
+    void write(const Columns & columns, size_t row_num) override;
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() final;
     void writeRowEndDelimiter() override;

@@ -26,19 +26,15 @@ import CloudTip from '/snippets/pt-BR/_cloud_tip.mdx';
 A arquitetura do cluster que você vai configurar é mostrada abaixo:
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Diagrama de arquitetura para 1 shard e 2 réplicas com ReplicatedMergeTree](/images/deployment-guides/replication-sharding-examples/replication.webp)
-
-</Frame>
-
+  <Frame>
+    ![Diagrama de arquitetura para 1 shard e 2 réplicas com ReplicatedMergeTree](/images/deployment-guides/replication-sharding-examples/replication.webp)
+  </Frame>
 </div>
 
 <DedicatedKeeperServers />
 
 <div id="pre-requisites">
-  ## Pré-requisitos
+  ## Pré-requisitos {#pre-requisites}
 </div>
 
 * Você já configurou um [servidor ClickHouse local](/pt-BR/get-started/setup/install)
@@ -149,7 +145,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
   </Step>
 
   <Step title="Configurar nós do ClickHouse" id="configure-clickhouse-servers">
-### Configuração do servidor
+### Configuração do servidor {#server-setup}
 
     Agora modifique cada arquivo de configuração vazio `config.xml` localizado em
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. As linhas que estão
@@ -223,7 +219,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
 
     Cada seção do arquivo de configuração acima é explicada em mais detalhes a seguir.
 
-#### Rede e logging
+#### Rede e logging {#networking}
 
     <ListenHost />
 
@@ -243,7 +239,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     Para obter mais informações sobre configuração de logging, consulte os comentários incluídos no
     [arquivo de configuração](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) padrão do ClickHouse.
 
-#### Configuração do cluster
+#### Configuração do cluster {#cluster-configuration}
 
     A configuração do cluster é definida no bloco `<remote_servers>`.
     Aqui é definido o nome do cluster `cluster_1S_2R`.
@@ -279,7 +275,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
 
     <ServerParameterTable />
 
-#### Configuração do Keeper
+#### Configuração do Keeper {#keeper-config-explanation}
 
     A seção `<ZooKeeper>` informa ao ClickHouse onde o ClickHouse Keeper (ou ZooKeeper) está em execução.
     Como estamos usando um cluster do ClickHouse Keeper, cada `<node>` do cluster precisa ser especificado,
@@ -309,7 +305,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
       em ambientes de produção, recomendamos fortemente que o ClickHouse Keeper seja executado em servidores dedicados.
     </Note>
 
-#### Configuração de macros
+#### Configuração de macros {#macros-config-explanation}
 
     Além disso, a seção `<macros>` é usada para definir substituições de parâmetros para
     tabelas replicadas. Elas são listadas em `system.macros` e permitem o uso de substituições
@@ -327,7 +323,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
       Eles serão definidos de maneira específica, dependendo da configuração do cluster.
     </Note>
 
-### Configuração de usuário
+### Configuração de usuário {#user-config}
 
     Agora modifique cada arquivo de configuração vazio `users.xml` localizado em
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` com o seguinte conteúdo:
@@ -384,7 +380,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
   </Step>
 
   <Step title="Configurar o ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
-### Configuração do ClickHouse Keeper
+### Configuração do ClickHouse Keeper {#configuration-explanation}
 
     <KeeperConfig />
 
@@ -786,7 +782,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
 </Steps>
 
 <div id="conclusion">
-  ## Conclusão
+  ## Conclusão {#conclusion}
 </div>
 
 A vantagem desta topologia de cluster é que, com duas réplicas,

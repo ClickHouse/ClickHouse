@@ -16,7 +16,7 @@ import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/Galaxy
 </Info>
 
 <div id="existing-hosts">
-  ## Integração com hosts existentes
+  ## Integração com hosts existentes {#existing-hosts}
 </div>
 
 Esta seção explica como configurar seus hosts existentes para enviar logs do sistema ao ClickStack, modificando a configuração do OTel collector do ClickStack para ler todos os arquivos de log do sistema (syslog, auth, kernel, daemon e logs de aplicação).
@@ -24,7 +24,7 @@ Esta seção explica como configurar seus hosts existentes para enviar logs do s
 Se você quiser testar a integração de log do host antes de configurar seu próprio ambiente existente, pode usar nossa configuração pré-configurada e os dados de exemplo na seção [&quot;Dataset de demonstração&quot;](/pt-BR/clickstack/integration-examples/host-logs#demo-dataset).
 
 <div id="prerequisites">
-  ##### Pré-requisitos
+  ##### Pré-requisitos {#prerequisites}
 </div>
 
 * Instância do ClickStack em execução
@@ -186,7 +186,7 @@ Se você quiser testar a integração de log do host antes de configurar seu pr�
     * Leia os arquivos de syslog em seus locais padrão
     * Analise o formato de syslog para extrair campos estruturados (timestamp, hostname, unidade/serviço, PID, mensagem)
     * Preservar os timestamps originais dos logs
-    * Adicione o atributo `source: host-logs` para filtrar no HyperDX
+    * Adicione o atributo `source: host-logs` para filtrar na Interface do ClickStack
     * Encaminhe os logs ao exportador do ClickHouse por meio de um pipeline dedicado
 
     <Note>
@@ -204,7 +204,7 @@ Se você quiser testar a integração de log do host antes de configurar seu pr�
     2. Definir a variável de ambiente `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
     3. Montar o diretório de syslog para que o collector possa lê-lo
 
-    ##### Opção 1: Docker Compose
+##### Opção 1: Docker Compose {#docker-compose}
 
     Atualize a configuração da implantação do ClickStack:
 
@@ -221,7 +221,7 @@ Se você quiser testar a integração de log do host antes de configurar seu pr�
           # ... other volumes ...
     ```
 
-    ##### Opção 2: Docker Run (imagem all-in-one)
+##### Opção 2: Docker Run (imagem all-in-one) {#all-in-one}
 
     Se estiver usando a imagem all-in-one com `docker run`:
 
@@ -239,8 +239,8 @@ Se você quiser testar a integração de log do host antes de configurar seu pr�
     </Note>
   </Step>
 
-  <Step title="Verificando logs no HyperDX" id="verifying-logs">
-    Depois de configurar, faça login no HyperDX e verifique se os logs estão chegando:
+  <Step title="Verificando logs na Interface do ClickStack" id="verifying-logs">
+    Depois de configurar, faça login na Interface do ClickStack e verifique se os logs estão chegando:
 
     1. Acesse a Search view
     2. Defina a source como Logs
@@ -248,30 +248,20 @@ Se você quiser testar a integração de log do host antes de configurar seu pr�
     4. Você deverá ver entradas de log estruturadas com campos como `unit`, `hostname`, `pid`, `message` etc.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Search view](/images/clickstack/host-logs/search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Search view](/images/clickstack/host-logs/search-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Log view](/images/clickstack/host-logs/log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Log view](/images/clickstack/host-logs/log-view.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
-<div id="demo-dataset">
-  ## Dataset de demonstração
-</div>
+## Conjunto de dados de demonstração {#demo-dataset}
 
 Para usuários que desejam testar a integração de logs do host antes de configurar seus sistemas de produção, fornecemos um conjunto de dados de exemplo com logs de sistema pré-gerados e padrões realistas.
 
@@ -353,44 +343,34 @@ Para usuários que desejam testar a integração de logs do host antes de config
     </Note>
   </Step>
 
-  <Step title="Verifique os logs no HyperDX" id="verify-demo-logs">
+  <Step title="Verifique os logs na Interface do ClickStack" id="verify-demo-logs">
     Quando o ClickStack estiver em execução:
 
-    1. Abra o [HyperDX](http://localhost:8080/) e faça login na sua conta (talvez seja necessário criar uma conta primeiro)
+    1. Abra a [Interface do ClickStack](http://localhost:8080/) e faça login na sua conta (talvez seja necessário criar uma conta primeiro)
     2. Vá para a Search view e defina a source como `Logs`
     3. Defina o intervalo de tempo como **2025-11-10 00:00:00 - 2025-11-13 00:00:00**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Search view](/images/clickstack/host-logs/search-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Search view](/images/clickstack/host-logs/search-view.webp)
+      </Frame>
     </div>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Log view](/images/clickstack/host-logs/log-view.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Log view](/images/clickstack/host-logs/log-view.webp)
+      </Frame>
     </div>
 
     <Info>
       **Exibição de fuso horário**
 
-      O HyperDX exibe os timestamps no fuso horário local do seu navegador. Os dados de demonstração cobrem o período de **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**. O intervalo de tempo mais amplo garante que você verá os logs de demonstração independentemente da sua localização. Depois que os logs aparecerem, você poderá restringir o intervalo para um período de 24 horas e obter visualizações mais claras.
+      A Interface do ClickStack exibe os timestamps no fuso horário local do seu navegador. Os dados de demonstração cobrem o período de **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**. O intervalo de tempo mais amplo garante que você verá os logs de demonstração independentemente da sua localização. Depois que os logs aparecerem, você poderá restringir o intervalo para um período de 24 horas e obter visualizações mais claras.
     </Info>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## Dashboards e visualização
-</div>
+## Dashboards e visualização {#dashboards}
 
 Para ajudar você a começar a monitorar logs do host com o ClickStack, fornecemos visualizações essenciais para logs do sistema.
 
@@ -400,29 +380,21 @@ Para ajudar você a começar a monitorar logs do host com o ClickStack, fornecem
   </Step>
 
   <Step title="Importe o dashboard pré-configurado" id="import-dashboard">
-    1. Abra o HyperDX e navegue até a seção Dashboards
+    1. Abra a Interface do ClickStack e navegue até a seção Dashboards
     2. Clique em **Import Dashboard** no canto superior direito, no menu de reticências
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Botão Import dashboard](/images/clickstack/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Botão Import dashboard](/images/clickstack/import-dashboard.webp)
+      </Frame>
     </div>
 
-    3. Faça upload do arquivo `host-logs-dashboard.json` e clique em **Finish Import**
+    3. Faça upload do arquivo `host-logs-dashboard.json` e clique em **Concluir Importação**
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Concluir importação](/images/clickstack/host-logs/import-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Concluir Importação](/images/clickstack/host-logs/import-dashboard.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -430,13 +402,9 @@ Para ajudar você a começar a monitorar logs do host com o ClickStack, fornecem
     O dashboard será criado com todas as visualizações pré-configuradas:
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Dashboard de logs](/images/clickstack/host-logs/host-logs-dashboard.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Dashboard de logs](/images/clickstack/host-logs/host-logs-dashboard.webp)
+      </Frame>
     </div>
 
     As principais visualizações incluem:
@@ -449,17 +417,17 @@ Para ajudar você a começar a monitorar logs do host com o ClickStack, fornecem
     * Atividade de reinicialização de serviços
 
     <Note>
-      Para o dataset de demonstração, defina o intervalo de tempo como **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** (ajuste com base no seu fuso horário local). Por padrão, o dashboard importado não terá um intervalo de tempo definido.
+      Para o conjunto de dados de demonstração, defina o intervalo de tempo como **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** (ajuste com base no seu fuso horário local). Por padrão, o dashboard importado não terá um intervalo de tempo definido.
     </Note>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## Solução de problemas
+  ## Solução de problemas {#troubleshooting}
 </div>
 
 <div id="troubleshooting-not-loading">
-  ### Configuração personalizada não está sendo carregada
+  ### Configuração personalizada não está sendo carregada {#troubleshooting-not-loading}
 </div>
 
 Verifique se a variável de ambiente está definida:
@@ -474,17 +442,15 @@ Verifique se o arquivo de configuração personalizado está montado e pode ser 
 docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml | head -10
 ```
 
-<div id="no-logs">
-  ### Nenhum log aparece no HyperDX
-</div>
+### Nenhum log aparece na interface do ClickStack {#no-logs}
 
 **Verifique se os arquivos de syslog existem e estão sendo gravados:**
 
 ```bash
-# Verificar se o syslog existe
+# Check if syslog exists
 ls -la /var/log/syslog /var/log/messages
 
-# Verificar se os logs estão sendo gravados
+# Verify logs are being written
 tail -f /var/log/syslog
 ```
 
@@ -506,14 +472,14 @@ docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 1
 docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i "filelog\|syslog"
 ```
 
-**Se estiver usando o dataset de demonstração, verifique se o arquivo de log está acessível:**
+**Se estiver usando o conjunto de dados de demonstração, verifique se o arquivo de log está acessível:**
 
 ```bash
 docker exec <container> cat /tmp/host-demo/journal.log | wc -l
 ```
 
 <div id="logs-not-parsing">
-  ### Logs não estão sendo analisados corretamente
+  ### Logs não estão sendo analisados corretamente {#logs-not-parsing}
 </div>
 
 **Verifique se o formato do seu syslog corresponde à configuração escolhida:**
@@ -537,7 +503,7 @@ tail -5 /var/log/system.log
 Se o formato não corresponder, selecione a guia de configuração adequada na seção [Criar uma configuração personalizada do OTel collector](#custom-otel).
 
 <div id="next-steps">
-  ## Próximos passos
+  ## Próximos passos {#next-steps}
 </div>
 
 * Configure [alertas](/pt-BR/clickstack/features/alerts) para eventos críticos do sistema (falhas de serviço, falhas de autenticação, avisos de disco)
@@ -545,8 +511,6 @@ Se o formato não corresponder, selecione a guia de configuração adequada na s
 * Correlacione logs do host com logs de aplicações para uma solução de problemas mais abrangente
 * Crie dashboards personalizados para monitoramento de segurança (tentativas de SSH, uso de sudo, bloqueios de firewall)
 
-<div id="going-to-production">
-  ## Preparando para produção
-</div>
+## Preparando para produção {#going-to-production}
 
 Este guia utiliza o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel Collector e enviar os dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.

@@ -363,12 +363,12 @@ public:
             value_data = typeid_cast<const ValueColumnType &>(value_array_column.getData()).getData().data();
         }
 
-        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
-        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[row_begin - 1]);
+        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[static_cast<ssize_t>(row_begin) - 1]);
+        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[static_cast<ssize_t>(row_begin) - 1]);
 
         /// Reserve memory for all the samples at once if no rows are skipped.
         if (!flags_data && row_end > row_begin)
-            reserveAdd(place, timestamp_offsets[row_end - 1] - previous_timestamp_offset, arena);
+            reserveAdd(place, timestamp_offsets[static_cast<ssize_t>(row_end) - 1] - previous_timestamp_offset, arena);
 
         for (size_t i = row_begin; i < row_end; ++i)
         {
@@ -519,20 +519,25 @@ public:
                 "Expected tuple size 2, got {}",
                 tuple.tupleSize());
 
-        TimestampColumnType & timestamps_to = typeid_cast<TimestampColumnType &>(tuple.getColumn(0));
-        ValueColumnType & values_to = typeid_cast<ValueColumnType &>(tuple.getColumn(1));
+        auto & timestamps_to = typeid_cast<TimestampColumnType &>(tuple.getColumn(0)).getData();
+        auto & values_to = typeid_cast<ValueColumnType &>(tuple.getColumn(1)).getData();
 
         Data & data = this->data(place);
 
         data.sort(arena);
 
-        for (const Element & element : data.elements)
+        const size_t num_elements = data.elements.size();
+        const size_t timestamps_offset = timestamps_to.size();
+        const size_t values_offset = values_to.size();
+        timestamps_to.resize(timestamps_offset + num_elements);
+        values_to.resize(values_offset + num_elements);
+        for (size_t i = 0; i != num_elements; ++i)
         {
-            timestamps_to.insert(element.timestamp);
-            values_to.insert(element.value);
+            timestamps_to[timestamps_offset + i] = data.elements[i].timestamp;
+            values_to[values_offset + i] = data.elements[i].value;
         }
 
-        offsets_to.push_back(offsets_to.back() + data.elements.size());
+        offsets_to.push_back(offsets_to.back() + num_elements);
     }
 
 private:

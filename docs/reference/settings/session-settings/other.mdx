@@ -47,7 +47,9 @@ The memory size at which the adaptive aggregator freezes a thread's local hash t
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Write add http CORS header.
+Adds the `Access-Control-Allow-Origin: *` header to responses of the HTTP interface, so that web applications served from another origin can read the query results in a browser.
+
+The header is added only if the request contains the `Origin` header and the `http_options_response` server configuration is not set. Because the setting is read from the settings of the authenticated user, the header is not added to responses for requests that fail authentication.
 
 ## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
 
@@ -992,6 +994,14 @@ Disabled by default.
 Controls which setting the `JSONExtract` family of functions follows when parsing a JSON string value into `DateTime` or `DateTime64`. When enabled, the parsing mode is taken from [cast_string_to_date_time_mode](/reference/settings/session-settings/cast-string#cast_string_to_date_time_mode), consistently with `CAST`. When disabled, it is taken from [date_time_input_format](/reference/settings/formats/date-time#date_time_input_format), as before version 26.8.
 
 When the chosen parser cannot read the value, the function returns the default value of the type (`1970-01-01 00:00:00`) without an error, so a mismatch between the two settings silently changes the extracted values.
+
+## json_use_optimized_type_conversion {#json_use_optimized_type_conversion}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1"},{"label": "New setting to enable optimized JSON-to-JSON type conversion that avoids full serialize+parse when only a subset of paths change."}]}]}/>
+
+When enabled, conversions between JSON types with different parameters (typed paths, skip rules) use an optimized path that reuses unchanged sub-columns by pointer and applies CAST only to changed paths. This avoids the full serialize-to-string and parse-from-string pipeline. Disable to force the legacy format+parse conversion for all JSON type changes.
 
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
@@ -1989,6 +1999,19 @@ Result:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "Traverse shadow directory when query system.remote_data_paths."}]}]}/>
 
 Traverse frozen data (shadow directory) in addition to actual table data when query system.remote_data_paths
+
+## truncate_removes_parts_immediately {#truncate_removes_parts_immediately}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "0"},{"label": "New setting. `TRUNCATE` of a `MergeTree` table keeps the removed parts for `old_parts_lifetime` seconds instead of removing them at once"}]}]}/>
+
+If enabled, `TRUNCATE` of a non-replicated `MergeTree` table removes the truncated parts from disk at once. Otherwise they become inactive and are removed after `old_parts_lifetime` seconds, like the source parts of a merge, so that running queries and readers with a stale list of parts can still read them. Replicated tables always remove the parts at once.
+
+Possible values:
+
+- 0 - The truncated parts are removed after `old_parts_lifetime` seconds.
+- 1 - The truncated parts are removed at once.
 
 ## union_default_mode {#union_default_mode}
 

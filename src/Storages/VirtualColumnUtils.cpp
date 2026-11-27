@@ -1,4 +1,5 @@
 #include <memory>
+#include <base/arithmeticOverflow.h>
 #include <numeric>
 #include <stack>
 #include <unordered_set>
@@ -504,7 +505,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             else
             {
                 size_t last_slash_pos = virtual_values.path.find_last_of('/');
-                auto filename_from_path = virtual_values.path.substr(last_slash_pos + 1);
+                auto filename_from_path = last_slash_pos == std::string::npos ? virtual_values.path : virtual_values.path.substr(last_slash_pos + 1);
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), filename_from_path)->convertToFullColumnIfConst());
             }
         }
@@ -619,7 +620,8 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 {
                     if (row >= row_positions.size())
                         return std::nullopt;
-                    return *virtual_values.first_row_id + row_positions[row];
+                    /// Row ids are modulo 2^64: `first_row_id` is a writer-declared signed long read as unsigned.
+                    return common::addIgnoreOverflow(*virtual_values.first_row_id, static_cast<UInt64>(row_positions[row]));
                 }));
         }
         else if (virtual_column.name == "_table")
@@ -629,9 +631,15 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
-        else if (!isReaderOnlyVirtualColumn(virtual_column.name))
+        else if (virtual_column.name == "_headers" && virtual_values.http_response_headers)
         {
-            /// Any other virtual column, except the reader-only ones the caller adds later, is a Hive partition column.
+            /// Added here, in its place among the requested virtual columns, and not by the caller after the other ones:
+            /// the columns of the chunk must go in the order of the header of the source, which is the requested order.
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.http_response_headers)->convertToFullColumnIfConst());
+        }
+        else
+        {
+            /// Any other virtual column is a Hive partition column.
             if (!hive_map)
             {
                 hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
@@ -718,6 +726,10 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
 {
     return allReachableNodes({node}, [](const ActionsDAG::Node * cur)
     {
+        /// `ARRAY JOIN` is the `arrayJoin` function in another node type, and that function is not deterministic.
+        if (cur->type == ActionsDAG::ActionType::ARRAY_JOIN)
+            return false;
+
         return allNodeFunctions(*cur, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
     });
 }

@@ -314,6 +314,8 @@ size_t HTTPResponseReadBuffer::readBody(char * to, size_t n)
     if (!session || !n)
         return 0;
 
+    checkBeforeRead();
+
     n = std::min(n, max_transfer_at_once);
 
     switch (encoding)
@@ -385,6 +387,7 @@ UInt64 HTTPResponseReadBuffer::readChunkLength()
     std::string line;
     while (line.size() < max_chunk_length_line)
     {
+        checkBeforeRead();
         const int ch = session->getCharRaw();
         if (ch == eof)
             throw Poco::Net::MessageException("Unexpected EOF");
@@ -413,7 +416,9 @@ void HTTPResponseReadBuffer::skipCRLF()
 {
     static const int eof = std::char_traits<char>::eof();
 
+    checkBeforeRead();
     const int c1 = session->getCharRaw();
+    checkBeforeRead();
     const int c2 = session->getCharRaw();
     if (c1 == eof || c2 == eof)
         throw Poco::Net::MessageException("Unexpected EOF");
