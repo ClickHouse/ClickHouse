@@ -7,11 +7,11 @@ doc_type: 'guide'
 keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'streaming', 'dead-letter']
 ---
 
-قالب Pub/Sub إلى ClickHouse هو مسار معالجة متدفق يقرأ الرسائل المُرمَّزة بصيغة JSON من اشتراك في Pub/Sub ويكتبها في جدول ClickHouse.
-تُوجَّه الرسائل التي يتعذر parse لها أو يتعذر map لها إلى schema الهدف إلى وجهة الرسائل المتعذّرة: جدول ClickHouse أو topic في Pub/Sub أو كليهما.
+قالب Pub/Sub إلى ClickHouse هو مسار معالجة متدفق يقرأ الرسائل المُرمَّزة بصيغة JSON من اشتراك في Pub/Sub ويكتبها في جدول ClickHouse.
+تُوجَّه الرسائل التي يتعذر تحليلها أو يتعذر Map لها إلى المخطط الهدف إلى وجهة الرسائل المتعذّرة: جدول ClickHouse أو موضوع في Pub/Sub أو كليهما.
 
 <div id="pipeline-requirements">
-  ## متطلبات مسار المعالجة
+  ## متطلبات مسار المعالجة {#pipeline-requirements}
 </div>
 
 * يجب أن يكون اشتراك Pub/Sub المصدر موجودًا.
@@ -23,7 +23,7 @@ keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'streaming', 'dead-letter']
 * عند تعيين `deadLetterTopic`، يجب أن يكون موضوع Pub/Sub موجودًا مسبقًا.
 
 <div id="template-parameters">
-  ## معلمات Template
+  ## معلمات Template {#template-parameters}
 </div>
 
 <br />
@@ -53,7 +53,7 @@ keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'streaming', 'dead-letter']
 </Note>
 
 <div id="message-format-and-schema-mapping">
-  ## تنسيق الرسائل وتعيين المخطط
+  ## تنسيق الرسائل وتعيين المخطط {#message-format-and-schema-mapping}
 </div>
 
 يجب أن تكون رسائل Pub/Sub كائنات JSON تتطابق أسماء حقولها ذات المستوى الأعلى تمامًا مع أسماء أعمدة جدول ClickHouse الهدف.
@@ -71,7 +71,7 @@ keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'streaming', 'dead-letter']
 </Warning>
 
 <div id="type-conversion">
-  ### تحويل الأنواع
+  ### تحويل الأنواع {#type-conversion}
 </div>
 
 تُحوَّل قيم JSON إلى نوع عمود ClickHouse المقابل:
@@ -87,7 +87,7 @@ keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'streaming', 'dead-letter']
 | [`String`](/ar/reference/data-types/string)                                           | يُستخدم كما هو للحقول النصية؛ أما عُقد JSON غير النصية فتُسلسَل إلى تمثيلها النصي بصيغة JSON.          |
 
 <div id="batching-and-windowing">
-  ## التجميع على دفعات وتحديد النوافذ
+  ## التجميع على دفعات وتحديد النوافذ {#batching-and-windowing}
 </div>
 
 نظرًا لأن مسار المعالجة تدفقي، تتراكم الصفوف الواردة ضمن نوافذ قبل كتابتها إلى ClickHouse. وتُختار استراتيجية تحديد النوافذ بناءً على المعلمات التي توفّرها:
@@ -102,13 +102,13 @@ keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'streaming', 'dead-letter']
 يتيح لك ضبط هذه القيم الموازنة بين زمن الاستجابة وكفاءة الإدراج. فالنوافذ الأصغر تقلل زمن الاستجابة من البداية إلى النهاية، بينما تنتج النوافذ الأكبر دفعات `INSERT` أقل عددًا وأكبر حجمًا.
 
 <div id="dead-letter-handling">
-  ## معالجة الرسائل المتعذّرة
+  ## معالجة الرسائل المتعذّرة {#dead-letter-handling}
 </div>
 
 تُوجَّه الرسائل التي تفشل في تحليل JSON، أو تعيين المخطط، أو تحويل النوع قسرًا إلى وجهة أو وجهات الرسائل المتعذّرة المُعدّة. ويجب توفير واحد على الأقل من `clickHouseDeadLetterTable` أو `deadLetterTopic`؛ وإذا جرى تعيينهما معًا، فستُرسَل الرسائل الفاشلة إلى كليهما.
 
 <div id="clickhouse-dead-letter-table">
-  ### جدول الرسائل المتعذّرة في ClickHouse
+  ### جدول الرسائل المتعذّرة في ClickHouse {#clickhouse-dead-letter-table}
 </div>
 
 عند تعيين `clickHouseDeadLetterTable`، يجب أن يكون جدول الرسائل المتعذّرة موجودًا مسبقًا بهذا المخطط الثابت:
@@ -137,7 +137,7 @@ ORDER BY failed_at;
 </Note>
 
 <div id="pubsub-dead-letter-topic">
-  ### موضوع Pub/Sub للرسائل المتعذّرة
+  ### موضوع Pub/Sub للرسائل المتعذّرة {#pubsub-dead-letter-topic}
 </div>
 
 عند تعيين `deadLetterTopic`، تُعاد كل رسالة فاشلة إلى الموضوع مع:
@@ -148,9 +148,7 @@ ORDER BY failed_at;
 
 وهذا يسهّل إعادة تمرير الرسائل الفاشلة بعد حل المشكلة الأساسية في المخطط أو المُنتِج.
 
-<div id="running-the-template">
-  ## تشغيل القالب
-</div>
+## تشغيل القالب {#running-the-template}
 
 يتوفر قالب Pub/Sub إلى ClickHouse عبر Google Cloud Console.
 
@@ -161,14 +159,11 @@ ORDER BY failed_at;
 سجّل الدخول إلى Google Cloud Console وابحث عن Dataflow.
 
 1. اضغط على الزر `CREATE JOB FROM TEMPLATE`.
+
    <div className="ch-image-lg">
-
-   <Frame>
-
-   ![وحدة تحكم Dataflow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
-
-   </Frame>
-
+     <Frame>
+       ![وحدة تحكم Dataflow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+     </Frame>
    </div>
 
 2. بعد فتح نموذج القالب، أدخل اسم المهمة وحدد المنطقة المطلوبة.
@@ -188,22 +183,16 @@ ORDER BY failed_at;
 
    {/* PLACEHOLDER: add screenshot of the expanded Pub/Sub to ClickHouse template form showing the required fields and the dead-letter section */}
 
-5. يمكنك اختياريًا تخصيص التجميع على دفعات (`windowSeconds`, `batchRowCount`) ومعلمات ضبط `ClickHouseIO`، كما هو موضح في قسم [Template parameters](#template-parameters).
+5. يمكنك اختياريًا تخصيص التجميع على دفعات (`windowSeconds`, `batchRowCount`) ومعلمات ضبط `ClickHouseIO`، كما هو موضح في قسم [معلمات القالب](#template-parameters).
 
-<div id="monitor-the-job">
-  ### راقب المهمة
-</div>
+### راقب المهمة {#monitor-the-job}
 
 انتقل إلى [علامة التبويب Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) في Google Cloud Console لمتابعة حالة المهمة. ستجد تفاصيل المهمة، بما في ذلك مدى التقدّم وأي أخطاء:
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![واجهة Dataflow تعرض مهمة Pub/Sub إلى ClickHouse قيد التشغيل](/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp)
-
-</Frame>
-
+  <Frame>
+    ![واجهة Dataflow تعرض مهمة Pub/Sub إلى ClickHouse قيد التشغيل](/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp)
+  </Frame>
 </div>
 
 يُصدر القالب أيضًا المقاييس المخصّصة التالية ضمن مساحة الاسم `PubSubToClickHouse`، ويمكن الاطلاع عليها من صفحة مهمة Dataflow:
@@ -211,16 +200,16 @@ ORDER BY failed_at;
 | المقياس                 | النوع | الوصف                                                                                 |
 | ----------------------- | ----- | ------------------------------------------------------------------------------------- |
 | `messages-received`     | عداد  | إجمالي رسائل Pub/Sub التي استقبلتها خطوة التحليل.                                     |
-| `rows-parsed-ok`        | عداد  | الرسائل التي حُوِّلت بنجاح إلى صف وأُرسلت إلى المخرج الرئيسي.                         |
+| `rows-parsed-ok`        | عداد  | الرسائل التي حُوِّلت بنجاح إلى صف وأُرسلت إلى المخرج الرئيسي.                         |
 | `rows-parse-failed`     | عداد  | الرسائل التي فشل تحليلها أو فشل تعيين المخطط لها، وأُرسلت إلى مسار الرسائل المتعذّرة. |
 | `message-payload-bytes` | توزيع | توزيع أحجام حمولة رسائل Pub/Sub الواردة، بالبايت.                                     |
 
 <div id="troubleshooting">
-  ## استكشاف الأخطاء وإصلاحها
+  ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 </div>
 
 <div id="code-241-dbexception-memory-limit-total-exceeded">
-  ### خطأ تجاوز حد الذاكرة (الإجمالي) (الرمز 241)
+  ### خطأ تجاوز حد الذاكرة (الإجمالي) (الرمز 241) {#code-241-dbexception-memory-limit-total-exceeded}
 </div>
 
 يحدث هذا الخطأ عندما تنفد ذاكرة ClickHouse أثناء معالجة دفعات كبيرة من البيانات. لحل هذه المشكلة:
@@ -229,7 +218,7 @@ ORDER BY failed_at;
 * تقليل حجم الدفعة: خفّض `batchRowCount` (و/أو `maxInsertBlockSize`) في إعدادات مهمة Dataflow لإرسال أجزاء أصغر من البيانات إلى ClickHouse، مما يقلّل استهلاك الذاكرة لكل دفعة.
 
 <div id="all-messages-going-to-dlq">
-  ### جميع الرسائل تتجه إلى وجهة الرسائل المتعذّرة
+  ### جميع الرسائل تتجه إلى وجهة الرسائل المتعذّرة {#all-messages-going-to-dlq}
 </div>
 
 الأسباب الأكثر شيوعًا هي:
@@ -241,7 +230,7 @@ ORDER BY failed_at;
 افحص العمودين `error_message` و`stack_trace` في جدول ClickHouse الخاص بالرسائل المتعذّرة (أو السمة `errorMessage` في رسائل Pub/Sub المتعذّرة) لتحديد السبب الجذري.
 
 <div id="no-rows-arriving">
-  ### يبدأ مسار المعالجة ولكن لا تصل أي صفوف إلى ClickHouse
+  ### يبدأ مسار المعالجة ولكن لا تصل أي صفوف إلى ClickHouse {#no-rows-arriving}
 </div>
 
 * تأكَّد من أن الاشتراك يستقبل الرسائل — تحقّق من مقياس `messages-received` في صفحة مهمة Dataflow.
@@ -249,7 +238,7 @@ ORDER BY failed_at;
 * تحقّق من إمكانية الوصول الشبكي بين عمّال Dataflow ونقطة نهاية ClickHouse (`firewall` أو VPC peering أو Private Service Connect).
 
 <div id="template-source-code">
-  ## الكود المصدري للقالب
+  ## الكود المصدري للقالب {#template-source-code}
 </div>
 
 الكود المصدري للقالب متاح في:

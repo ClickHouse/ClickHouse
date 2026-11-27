@@ -1,0 +1,367 @@
+---
+slug: /clickstack/observability/integration-examples/host-logs
+title: 'Мониторинг журналов хоста с помощью ClickHouse Observability'
+sidebarTitle: 'Журналы хоста (общий случай)'
+description: 'Сбор файлов syslog хоста с помощью коллектора OpenTelemetry и отправка их в ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['журналы хоста', 'systemd', 'syslog', 'OTEL', 'ClickHouse Observability', 'мониторинг системы', 'серверные журналы']
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+Собирайте файлы syslog с хоста с помощью коллектора OpenTelemetry и отправляйте их в ClickHouse Observability. Чтобы опробовать интеграцию, не собирая журналы со своего хоста, воспользуйтесь [демо-набором данных](#demo-dataset).
+
+## Предварительные требования {#prerequisites}
+
+* Сервис ClickHouse Observability
+* Docker для запуска примеров коллектора или существующее развертывание OpenTelemetry Collector Contrib
+* Для собственных журналов — файлы syslog и разрешение на их чтение для коллектора
+* Для демонстрации — `curl` для загрузки примера набора данных
+
+### Сведения о подключении {#connection-details}
+
+<Tabs>
+  <Tab title="Полностью управляемый">
+    <BetaBadge label="Сервис в стадии бета-тестирования" />
+
+    Откройте ClickHouse Observability и перейдите в **Team Settings → Data → Managed Telemetry**. Скопируйте конечную точку OTLP по HTTP и ключ API. Чтобы скопировать конфигурацию, нажмите **Copy connection details**, а чтобы увидеть скрытый ключ — **Reveal key**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Сведения о подключении управляемой телеметрии](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Для приведённых ниже примеров с экспортером OTLP задайте следующие переменные в терминале, в котором будет запускаться коллектор:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    Замените плейсхолдеры точной конечной точкой (включая порт) и ключом API вашего сервиса. Указывайте базовую конечную точку HTTP без суффикса `/v1/logs`: экспортер сам добавляет путь сигнала.
+  </Tab>
+
+  <Tab title="Самоуправляемый" id="self-managed">
+    Укажите конечную точку OTLP по HTTP вашего коллектора, доступную по сети (например, `http://YOUR_COLLECTOR_HOST:4318`), и настройки аутентификации. Если коллектор не требует аутентификации, удалите блок `headers` экспортера из приведённых ниже конфигураций. Инструкции по настройке см. в [руководстве по началу работы с самоуправляемой версией](/ru/clickstack/self-configured/getting-started/managed).
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+Конечная точка должна быть доступна из контейнера коллектора. Если коллектор-получатель запущен на этом же компьютере, используйте `http://host.docker.internal:4318`. Приведённые ниже команды Docker уже содержат сопоставление хоста.
+
+## Интеграция с существующими хостами {#existing-hosts}
+
+<Steps>
+  <Step title="Найдите файл syslog" id="locate-syslog">
+    Обычно такие файлы находятся по следующим путям: `/var/log/syslog` в Ubuntu/Debian, `/var/log/messages` в системах на базе RHEL и `/var/log/system.log` для текстовых журналов macOS. Проверьте тот файл, который есть на вашем хосте:
+
+    ```bash
+    tail -20 /var/log/syslog
+    ```
+
+    При необходимости замените путь. Если хост Linux пишет журналы только в systemd journal, воспользуйтесь [руководством по Systemd/Journald](/ru/clickstack/observability/integration-examples/systemd). Описанная здесь конфигурация считывает текстовые файлы и не собирает данные из единого хранилища журналов macOS (unified log).
+  </Step>
+
+  <Step title="Настройте коллектор" id="configure-collector">
+    Сохраните подходящую конфигурацию в файл `host-logs.yaml`. Выбор зависит от формата временных меток в вашем файле. При необходимости измените `include` на `/var/log/host/messages` или `/var/log/host/system.log`. Добавляйте другие файлы, только если они используют тот же формат.
+
+    <Tabs>
+      <Tab title="Временные метки ISO">
+        Для строк, начинающихся с временной метки вида `2026-10-15T12:34:56.123456+00:00`:
+
+        ```yaml
+        receivers:
+          filelog/host:
+            include: [/var/log/host/syslog]
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                timestamp:
+                  parse_from: attributes.timestamp
+                  layout_type: gotime
+                  layout: '2006-01-02T15:04:05.999999999Z07:00'
+                  location: UTC
+              - type: add
+                field: attributes.source
+                value: host-logs
+              - type: add
+                field: resource["service.name"]
+                value: host-service
+              - type: copy
+                from: attributes.hostname
+                to: resource["host.name"]
+
+        processors:
+          memory_limiter:
+            check_interval: 1s
+            limit_mib: 256
+            spike_limit_mib: 64
+          batch:
+            timeout: 5s
+            send_batch_size: 500
+            send_batch_max_size: 500
+
+        exporters:
+          otlp_http/observability:
+            endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+            headers:
+              authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+        service:
+          pipelines:
+            logs/host:
+              receivers: [filelog/host]
+              processors: [memory_limiter, batch]
+              exporters: [otlp_http/observability]
+        ```
+      </Tab>
+
+      <Tab title="Традиционный syslog">
+        Для строк, начинающихся с временной метки вида `Oct 15 12:34:56`:
+
+        ```yaml
+        receivers:
+          filelog/host:
+            include: [/var/log/host/syslog]
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\w+\s+\d+ \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                timestamp:
+                  parse_from: attributes.timestamp
+                  layout_type: gotime
+                  layout: 'Jan _2 15:04:05'
+                  location: UTC
+              - type: add
+                field: attributes.source
+                value: host-logs
+              - type: add
+                field: resource["service.name"]
+                value: host-service
+              - type: copy
+                from: attributes.hostname
+                to: resource["host.name"]
+
+        processors:
+          memory_limiter:
+            check_interval: 1s
+            limit_mib: 256
+            spike_limit_mib: 64
+          batch:
+            timeout: 5s
+            send_batch_size: 500
+            send_batch_max_size: 500
+
+        exporters:
+          otlp_http/observability:
+            endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+            headers:
+              authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+        service:
+          pipelines:
+            logs/host:
+              receivers: [filelog/host]
+              processors: [memory_limiter, batch]
+              exporters: [otlp_http/observability]
+        ```
+
+        В традиционных временных метках не указываются год и часовой пояс. Синтаксический анализатор определяет год автоматически; если хост пишет журнал не в UTC, укажите в `location` часовой пояс хоста в формате IANA, например `America/Chicago`.
+      </Tab>
+    </Tabs>
+
+    Приёмник извлекает `hostname`, `unit`, `pid` (если есть) и `message`, а исходная строка сохраняется в `Body`. Кроме того, он присваивает `service.name` значение `host-service` и копирует имя хоста в `host.name`. В этих текстовых форматах нет поля уровня серьёзности, поэтому данная конфигурация не определяет уровень серьёзности по тексту сообщения.
+  </Step>
+
+  <Step title="Запустите коллектор" id="run-collector">
+    Задайте [переменные подключения](#connection-details). Затем в каталоге с файлом `host-logs.yaml` выполните:
+
+    ```bash
+    docker run --rm --name host-logs-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/host-logs.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v /var/log:/var/log/host:ro \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    В macOS используйте `-v /private/var/log:/var/log/host:ro` и предоставьте Docker Desktop доступ к этому каталогу. Убедитесь, что у коллектора есть права на чтение выбранного файла журнала.
+
+    Не закрывайте этот терминал. При `start_at: end` приёмник собирает только новые строки, записанные после запуска. Выполните обычные действия, которые приводят к записи в выбранный файл журнала.
+  </Step>
+
+  <Step title="Проверьте журналы" id="verify-logs">
+    Откройте **Поиск**, выберите источник **Logs**, задайте фильтр `ServiceName:host-service` и выберите **Last 15 minutes**. Разверните запись журнала, чтобы просмотреть разобранные поля: имя хоста, юнит, PID и сообщение.
+  </Step>
+</Steps>
+
+## Демонстрационный набор данных {#demo-dataset}
+
+Выборка содержит 11,658 строк syslog за 24 часа, включая сообщения о загрузке системы, активность SSH, блокировки межсетевого экрана, запланированные задания и перезапуски сервисов.
+
+<Steps>
+  <Step title="Загрузите выборку" id="download-sample">
+    ```bash
+    mkdir -p host-demo
+    cd host-demo
+    curl -fLO https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/host-logs/journal.log
+    ```
+  </Step>
+
+  <Step title="Настройте демонстрационный коллектор" id="configure-demo-collector">
+    Сохраните следующую конфигурацию в файл `host-logs-demo.yaml` в каталоге загрузки:
+
+    ```yaml
+    receivers:
+      filelog/host:
+        include: [/var/log/host/journal.log]
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+            timestamp:
+              parse_from: attributes.timestamp
+              layout: '%Y-%m-%dT%H:%M:%S%z'
+              location: UTC
+          - type: add
+            field: attributes.source
+            value: host-demo
+          - type: add
+            field: resource["service.name"]
+            value: host-demo
+          - type: copy
+            from: attributes.hostname
+            to: resource["host.name"]
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      transform/demo_timestamps:
+        error_mode: propagate
+        log_statements:
+          - context: log
+            statements:
+              - set(time, Now() - Duration("2m") - (Time("2025-11-11T23:59:01Z", "%Y-%m-%dT%H:%M:%SZ") - time))
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+
+    service:
+      pipelines:
+        logs/host:
+          receivers: [filelog/host]
+          processors: [memory_limiter, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    <Note>
+      Преобразование временных меток, используемое только в демонстрационных целях, переносит выборку примерно на последние 24 часа: последняя запись оказывается за две минуты до момента ингестии. Для собственных журналов используйте [конфигурацию для существующих хостов](#existing-hosts) — она сохраняет исходные временные метки.
+    </Note>
+  </Step>
+
+  <Step title="Запустите демонстрационный коллектор" id="run-demo-collector">
+    Задайте [переменные подключения](#connection-details), затем выполните из каталога загрузки:
+
+    ```bash
+    docker run --rm --name host-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/host-logs-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd):/var/log/host:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    Не закрывайте терминал, пока коллектор экспортирует выборку, и следите за ошибками в его выводе. Если запустить новый контейнер повторно, записи журнала из выборки могут продублироваться.
+  </Step>
+
+  <Step title="Проверьте демонстрационные журналы" id="verify-demo-logs">
+    Откройте **Search**, выберите источник **Журнал**, задайте фильтр `ServiceName:host-demo` и выберите **Last 2 days**. Разверните запись журнала, чтобы просмотреть её разобранные атрибуты. Убедившись, что данные поступили, остановите коллектор нажатием **Ctrl+C**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Демонстрационные журналы хоста на странице Search в ClickHouse Observability](/images/clickstack/observability-host-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## Панели мониторинга и визуализация {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json" download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">Скачайте конфигурацию панели мониторинга</TrackedLink>} id="download-dashboard" />
+
+  <Step title="Импортируйте панель мониторинга" id="import-dashboard">
+    1. Откройте **Панели мониторинга** и нажмите **Import** в правом верхнем углу.
+    2. Загрузите файл `host-logs-dashboard.json`.
+    3. Сопоставьте диаграммы с источником **Журнал** и нажмите **Finish Import**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Кнопка импорта панели мониторинга](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Просмотрите панель мониторинга" id="view-dashboard">
+    Импортированная панель мониторинга показывает ваш журнал за выбранный временной диапазон. Чтобы отделить выборку от данных других сервисов, можно дополнительно применить фильтр `ServiceName:host-demo`. Чтобы увидеть всю выборку, выберите **Last 2 days**.
+
+    На панели мониторинга отображаются объём журналов, системные юниты, активность SSH, блокировки межсетевым экраном и перезапуски сервисов. Уровень серьёзности остаётся пустым, если ваш конвейер ингестии его не передаёт.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Панель мониторинга журнала хоста с объёмом журналов, системными юнитами, активностью SSH, событиями безопасности, перезапусками сервисов и активностью межсетевого экрана](/images/clickstack/observability-host-dashboard.png)
+      </Frame>
+    </div>
+
+    <Note>
+      Для собственного журнала удалите условие `ServiceName = 'host-demo' AND` (если оно есть) из фильтров агрегации в диаграммах активности SSH, блокировок межсетевым экраном и событий безопасности. Затем выберите журнал хоста с помощью фильтра по имени сервиса на панели мониторинга.
+    </Note>
+  </Step>
+</Steps>
+
+## Устранение неполадок {#troubleshooting}
+
+### Коллектор не запускается {#collector-fails-to-start}
+
+Проверьте вывод коллектора в терминале на наличие ошибок конфигурации. Убедитесь, что YAML-файл существует по смонтированному пути, а переменные подключения заданы в том терминале, где вы запускаете Docker.
+
+### Журналы не отображаются {#no-logs}
+
+* Убедитесь, что файл существует на хосте, а его смонтированный путь совпадает с `include`.
+* Проверьте права доступа к файлу, а в macOS — также настройки общего доступа к файлам в Docker Desktop.
+* Чтобы получать журналы в реальном времени, создайте новые записи после запуска коллектора: при `start_at: end` уже существующее содержимое пропускается.
+* Проверьте вывод коллектора на наличие ошибок аутентификации или экспорта.
+* Проверьте источник **Журнал**, фильтр по имени сервиса и временной диапазон. Для демонстрационных данных выберите **Last 2 days**.
+
+### Журналы разбираются некорректно {#logs-not-parsing}
+
+Сравните строку из вашего файла с выбранным форматом временной метки. Используйте подходящую конфигурацию и при необходимости скорректируйте часовой пояс для традиционного syslog. Не используйте слишком широкий глоб-шаблон для файлов, чтобы не собирать журналы посторонних приложений в других форматах.
+
+## Дальнейшие шаги {#next-steps}
+
+* Настройте [оповещения](/ru/clickstack/observability/features/alerts) о сбоях аутентификации или ошибках сервисов.
+* Чтобы проанализировать конкретный хост или сервис, отфильтруйте данные по `host.name` или по разобранному атрибуту `unit`.
+* Рекомендации по развертыванию см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/observability/ingesting-data/opentelemetry).

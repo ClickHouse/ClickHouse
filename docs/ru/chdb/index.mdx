@@ -11,7 +11,7 @@ chDB — это быстрый встраиваемый SQL OLAP-движок н
 Его можно использовать, если вам нужны возможности ClickHouse в языке программирования без необходимости подключаться к серверу ClickHouse.
 
 <div id="key-features">
-  ## Ключевые возможности
+  ## Ключевые возможности {#key-features}
 </div>
 
 * **Встраиваемый SQL OLAP-движок** - Работает на базе ClickHouse, не нужно устанавливать сервер ClickHouse
@@ -22,7 +22,7 @@ chDB — это быстрый встраиваемый SQL OLAP-движок н
 * **API DataStore** - API, совместимый с Pandas, с SQL-оптимизацией и поддержкой 630+ методов
 
 <div id="datastore">
-  ## DataStore: API, совместимый с pandas
+  ## DataStore: API, совместимый с pandas {#datastore}
 </div>
 
 **Новинка!** DataStore предоставляет API, совместимый с pandas, который сочетает привычный синтаксис pandas с производительностью ClickHouse.
@@ -35,7 +35,7 @@ chDB — это быстрый встраиваемый SQL OLAP-движок н
 </Tip>
 
 <div id="one-line-migration">
-  ### Однострочная миграция
+  ### Однострочная миграция {#one-line-migration}
 </div>
 
 ```python
@@ -48,7 +48,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 ```
 
 <div id="performance-highlights">
-  ### Ключевые показатели производительности
+  ### Ключевые показатели производительности {#performance-highlights}
 </div>
 
 | Операция          | pandas  | DataStore | Ускорение  |
@@ -60,7 +60,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 *Бенчмарки на 10 млн строках*
 
 <div id="datastore-features">
-  ### Возможности DataStore
+  ### Возможности DataStore {#datastore-features}
 </div>
 
 * **630+ методов API** - 209 методов pandas DataFrame, 185+ методов аксессоров
@@ -71,7 +71,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 Подробнее: [Документация DataStore](/ru/chdb/datastore/index)
 
 <div id="what-languages-are-supported-by-chdb">
-  ## Какие языки поддерживает chDB?
+  ## Какие языки поддерживает chDB? {#what-languages-are-supported-by-chdb}
 </div>
 
 chDB поддерживает привязки для следующих языков:
@@ -84,14 +84,14 @@ chDB поддерживает привязки для следующих язы�
 * [C и C++](/ru/chdb/install/c)
 
 <div id="how-do-i-get-started">
-  ## С чего начать?
+  ## С чего начать? {#how-do-i-get-started}
 </div>
 
 * Если вы используете [Go](/ru/chdb/install/go), [Rust](/ru/chdb/install/rust), [NodeJS](/ru/chdb/install/nodejs), [Bun](/ru/chdb/install/bun) или [C and C++](/ru/chdb/install/c), ознакомьтесь с соответствующими страницами.
-* Если вы используете Python, см. [руководство для разработчиков «Начало работы»](/ru/chdb/getting-started) или [курс chDB в записи](<https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python>).
+* Если вы используете Python, см. [руководство для разработчиков «Начало работы»](/ru/chdb/getting-started) или [курс chDB в записи](https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python).
 
 <div id="for-pandas-users">
-  ### Для пользователей pandas
+  ### Для пользователей pandas {#for-pandas-users}
 </div>
 
 Начните с API DataStore, чтобы получить привычный опыт работы с pandas и производительность ClickHouse:
@@ -103,7 +103,7 @@ chDB поддерживает привязки для следующих язы�
 * [Руководство по производительности](/ru/chdb/guides/pandas-performance) - Советы по оптимизации
 
 <div id="datastore-reference">
-  ### Справочник по API DataStore
+  ### Справочник по API DataStore {#datastore-reference}
 </div>
 
 * [Фабричные методы](/ru/chdb/datastore/factory-methods) - Создание из файлов, баз данных и облачных хранилищ
@@ -114,7 +114,7 @@ chDB поддерживает привязки для следующих язы�
 * [Отладка](/ru/chdb/debugging/index) - explain(), профилирование, логирование
 
 <div id="sql-guides">
-  ### Руководства по SQL API
+  ### Руководства по SQL API {#sql-guides}
 </div>
 
 * [Справочник по API Python](/ru/chdb/api/python) - Полная документация по SQL API
@@ -127,7 +127,7 @@ chDB поддерживает привязки для следующих язы�
 * [Использование базы данных clickhouse-local](/ru/chdb/guides/clickhouse-local)
 
 <div id="an-introductory-video">
-  ## Вводное видео
+  ## Вводное видео {#an-introductory-video}
 </div>
 
 Посмотрите краткий обзор chDB и узнайте, как он переносит возможности ClickHouse в среду Python:
@@ -139,7 +139,7 @@ chDB поддерживает привязки для следующих язы�
 </div>
 
 <div id="performance-benchmarks">
-  ## Бенчмарки производительности
+  ## Бенчмарки производительности {#performance-benchmarks}
 </div>
 
 chDB демонстрирует исключительную производительность в различных сценариях:
@@ -149,27 +149,21 @@ chDB демонстрирует исключительную производи�
 * **[DataStore vs pandas](/ru/chdb/datastore/index#performance)** - До 20 раз быстрее pandas в типовых операциях
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Результаты бенчмарка DataFrame](/images/chdb/df_bench.webp)
-
-</Frame>
-
+  <Frame>
+    ![Результаты бенчмарка DataFrame](/images/chdb/df_bench.webp)
+  </Frame>
 </div>
 
-<div id="about-chdb">
-  ## О chDB
-</div>
+## О chDB {#about-chdb}
 
 * Прочитайте полную историю создания проекта chDB в [блоге](https://clickhouse.com/blog/chdb-embedded-clickhouse-rocket-engine-on-a-bicycle)
 * Прочитайте о chDB и сценариях его использования в [блоге](https://clickhouse.com/blog/welcome-chdb-to-clickhouse)
-* Пройдите [курс по chDB в записи](<https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python>)
+* Пройдите [курс по chDB в записи](https://learn.clickhouse.com/chdb-data-analytics-with-clickhouse-and-python)
 * Познакомьтесь с chDB в браузере с помощью [примеров codapi](https://antonz.org/trying-chdb/)
 * Больше примеров смотрите здесь: (https://github.com/chdb-io/chdb/tree/main/examples)
 
 <div id="license">
-  ## Лицензия
+  ## Лицензия {#license}
 </div>
 
 chDB распространяется по лицензии Apache License 2.0. Подробнее см. в файле [LICENSE](https://github.com/chdb-io/chdb/blob/main/LICENSE.txt).

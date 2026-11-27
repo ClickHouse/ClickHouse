@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="cluster_table_function_buckets_batch_size">
-  ## cluster_table_function_buckets_batch_size
-</div>
+## cluster_table_function_buckets_batch_size {#cluster_table_function_buckets_batch_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -23,9 +21,23 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 يحدّد الحجم التقريبي للدفعة (بالبايت) المستخدمة في المعالجة الموزعة للمهام في دوال الجداول cluster عند استخدام مستوى تقسيم `bucket`. ويواصل النظام تجميع البيانات حتى يصل إلى هذا المقدار على الأقل. وقد يكون الحجم الفعلي أكبر قليلًا ليتوافق مع حدود البيانات.
 
-<div id="cluster_table_function_split_granularity">
-  ## cluster_table_function_split_granularity
-</div>
+## cluster_table_function_pushed_down_filter {#cluster_table_function_pushed_down_filter}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "إعداد داخلي جديد."}]}]} />
+
+هذا إعداد داخلي لا ينبغي استخدامه مباشرةً. يضبطه مُبادِر الاستعلام الذي يستخدم دالة جدول العنقود لدى النسخ المتماثلة، فيُعيّن قيمته إلى عامل التصفية المُسلسَل المطبَّق على الجدول، كي تحذف النسخ المتماثلة الصفوف التي لا تستوفيه قبل إرسالها.
+
+## cluster_table_function_split_by_split_offsets {#cluster_table_function_split_by_split_offsets}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد."}]}]} />
+
+عند التقسيم بمستوى التجزئة `bucket`، وإذا كانت البيانات الوصفية للجدول تسجّل حجم الملف وإزاحات مجموعات الصفوف (`split_offsets` في Iceberg)، تُقتطَع الملفات إلى نطاقات بايتات وفق هذه الإزاحات دون قراءتها، وتقرأ كل مهمة مجموعات الصفوف التي تبدأ ضمن نطاقها. أما في غير ذلك من الحالات، وكذلك عند وجود تطابق في ذاكرة التخزين المؤقت لشروط الاستعلام، فيقرأ المُبادِر تذييل كل ملف.
+
+يتطلب هذا الإعداد أن تدعمه جميع خوادم العنقود، إذ لا يمكن إرسال مهمة تتضمن نطاق بايتات إلى خادم يعمل بإصدار أقدم.
+
+## cluster_table_function_split_granularity {#cluster_table_function_split_granularity}
 
 <SettingsInfoBlock type="ObjectStorageGranularityLevel" default_value="file" />
 

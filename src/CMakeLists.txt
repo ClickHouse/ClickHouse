@@ -572,36 +572,6 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" AND ARCH_AMD64)
 endif()
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 
-# Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.
-# TUs where libcxx hardening needs to be disabled are specified here.
-set_property(SOURCE
-    Columns/IColumn.cpp                        # hashjoin_with_large_output
-    Processors/Transforms/WindowTransform.cpp                        # window functions
-    Processors/Transforms/Window/SlidingBlocks.cpp                   # window functions
-    Processors/Transforms/Window/SlidingArguments.cpp                # window functions
-    Processors/Transforms/Window/SlidingIndexes.cpp                  # window functions
-    Processors/Transforms/Window/Partition.cpp                       # window functions
-    Processors/Transforms/Window/Peers.cpp                           # window functions
-    Processors/Transforms/Window/Frame.cpp                           # window functions
-    Processors/Transforms/Window/WindowTransformParams.cpp           # window functions
-    WindowFunctions/Common/WindowArguments.cpp                       # window functions
-    WindowFunctions/General/WindowFunctionRank.cpp                   # window functions
-    WindowFunctions/General/WindowFunctionDenseRank.cpp              # window functions
-    WindowFunctions/General/WindowFunctionRowNumber.cpp              # window functions
-    WindowFunctions/General/WindowFunctionNtile.cpp                  # window functions
-    WindowFunctions/General/WindowFunctionPercentRank.cpp            # window functions
-    WindowFunctions/General/WindowFunctionCumeDist.cpp               # window functions
-    WindowFunctions/General/WindowFunctionNthValue.cpp               # window functions
-    WindowFunctions/General/WindowFunctionLagLead.cpp                # window functions
-    WindowFunctions/General/WindowFunctionExponentialTimeDecayed.cpp # window functions
-    WindowFunctions/General/WindowFunctionNonNegativeDerivative.cpp  # window functions
-    WindowFunctions/Aggregate/AggregateState.cpp                     # window functions
-    WindowFunctions/Aggregate/AggregateWindowFunctionPrefix.cpp      # window functions
-    WindowFunctions/Aggregate/AggregateWindowFunctionRecalculate.cpp # window functions
-    Interpreters/Aggregator.cpp                # destroy_aggregate_states
-    Common/IntervalTree.cpp                    # range_hashed_dictionary
-    PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
-
 if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
 elseif (USE_AVRO)
@@ -1108,6 +1078,7 @@ if (ENABLE_TESTS)
         clickhouse_aggregate_functions
         clickhouse_parsers
         clickhouse_storages_system
+        clickhouse_wyrd
         dbms
         clickhouse_common_zookeeper_base
         clickhouse_common_config
@@ -1173,6 +1144,21 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::silk_fibers)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::silk_fibers)
     endif()
+endif ()
+
+if (ENABLE_TESTS)
+    macro (grep_wyrd_gtest_sources BASE_DIR DST_VAR)
+        file(GLOB_RECURSE "${DST_VAR}" CONFIGURE_DEPENDS RELATIVE "${BASE_DIR}" "gtest_wyrd*.cpp")
+    endmacro()
+
+    # attach all wyrd gtest sources
+    grep_wyrd_gtest_sources("${ClickHouse_SOURCE_DIR}/src" wyrd_gtest_sources)
+    clickhouse_add_executable(unit_tests_wyrd ${wyrd_gtest_sources})
+
+    target_link_libraries(unit_tests_wyrd PRIVATE
+        clickhouse_wyrd_enabled
+        dbms
+    )
 endif ()
 
 if (TARGET ch_contrib::jwt-cpp)

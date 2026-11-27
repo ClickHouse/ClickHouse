@@ -16,29 +16,23 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 Подключите ClickHouse Cloud к каталогам данных, чтобы получить доступ к таблицам в открытом табличном формате. Подключения можно настроить в интерфейсе **источник данных**. Для настройки через SQL используйте движок базы данных [`DataLakeCatalog`](/ru/reference/engines/database-engines/datalake) в предпочитаемом редакторе SQL.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Интерфейс ClickHouse Cloud с интеграциями с каталогами данных](/images/cloud/features/data-catalogs-ui.png)
-
-</Frame>
-
+  <Frame>
+    ![Интерфейс ClickHouse Cloud с интеграциями каталогов данных](/images/cloud/features/data-catalogs-ui.png)
+  </Frame>
 </div>
 
-После подключения таблицы каталога отображаются в консоли SQL в базе данных с выбранным вами именем. К ним можно выполнять стандартные запросы ClickHouse SQL, объединять их с таблицами [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree) с помощью JOIN и использовать в качестве источников для [materialized views](/ru/concepts/features/materialized-views).
+После подключения таблицы каталога появляются в консоли SQL в базе данных с выбранным вами именем. К ним можно выполнять запросы на стандартном ClickHouse SQL, объединять их через JOIN с таблицами [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree) и использовать в качестве источников для [materialized view](/ru/concepts/features/materialized-views).
 
-<div id="prerequisites">
-  ## Предварительные требования
-</div>
+## Предварительные требования {#prerequisites}
 
-Перед подключением каталога убедитесь в следующем:
+Прежде чем подключать каталог, убедитесь, что выполнены следующие условия:
 
-* **Разрешения сервиса.** Для доступа к странице **Источники данных** и добавления каталогов требуется разрешение `control-plane:service:manage`.
-* **Запущенный сервис.** Если сервис бездействует, активируйте его на странице **Источники данных** или в настройках сервиса, прежде чем подключать или просматривать связанные каталоги.
-* **Учетные данные каталога.** Перед открытием выдвижной панели подготовьте сведения о подключении для вашего типа каталога. Для каждого каталога используются разные поля и способы аутентификации — см. ниже раздел [Добавление подключения к каталогу](#add-your-catalog-connection).
+* **Разрешения для сервиса.** Для доступа к странице **Источники данных** и добавления каталогов требуется разрешение `control-plane:service:manage`.
+* **Работающий сервис.** Если сервис бездействует, активируйте его на странице **Источники данных** или на страницах настроек сервиса, прежде чем подключать или просматривать связанные каталоги.
+* **Учётные данные каталога.** Перед открытием выдвижной панели подготовьте сведения о подключении для вашего типа каталога. Для каждого каталога предусмотрены свои поля и способ аутентификации — см. раздел [Добавление подключения к каталогу](#add-your-catalog-connection) ниже.
 
 <div id="connect-your-catalog">
-  ## Подключение каталога
+  ## Подключение каталога {#connect-your-catalog}
 </div>
 
 <Steps>
@@ -48,13 +42,9 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
     3. На выдвижной панели **Connect your data catalog** выберите каталог из раскрывающегося списка **Select catalog**. Если каталог поддерживает несколько открытых табличных форматов, выберите нужный формат в поле **Open table format**.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Выдвижная панель Connect your data catalog с раскрывающимся списком Select catalog, содержащим AWS Glue, BigLake Metastore, Microsoft OneLake, Polaris, REST Catalog и Unity Catalog](/images/integrations/data-catalogs/catalog-flyout-select.png)
-
-    </Frame>
-
+      <Frame>
+        ![Выдвижная панель Connect your data catalog с раскрывающимся списком Select catalog, содержащим AWS Glue, BigLake Metastore, Microsoft OneLake, Polaris, REST Catalog и Unity Catalog](/images/integrations/data-catalogs/catalog-flyout-select.png)
+      </Frame>
     </div>
   </Step>
 
@@ -213,22 +203,16 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
   </Step>
 </Steps>
 
-<div id="query-data">
-  ## Выполните запрос к данным
-</div>
+## Выполните запрос к данным {#query-data}
 
 <Steps>
   <Step title="Просмотрите таблицы каталога" id="view-tables">
     На странице **Источники данных** найдите свой каталог в таблице **Связанные каталоги** и нажмите **Просмотреть таблицы**.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Таблица связанных каталогов с действием «Просмотреть таблицы»](/images/integrations/data-catalogs/linked-catalogs-table.png)
-
-    </Frame>
-
+      <Frame>
+        ![Таблица связанных каталогов с действием «Просмотреть таблицы»](/images/integrations/data-catalogs/linked-catalogs-table.png)
+      </Frame>
     </div>
 
     ClickHouse откроет консоль SQL с выбранной базой данных каталога и отобразит список доступных таблиц.
@@ -238,13 +222,9 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
     </Note>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Браузер таблиц консоли SQL с таблицами каталога](/images/integrations/data-catalogs/catalog-tables-browser.png)
-
-    </Frame>
-
+      <Frame>
+        ![Браузер таблиц консоли SQL с таблицами каталога](/images/integrations/data-catalogs/catalog-tables-browser.png)
+      </Frame>
     </div>
   </Step>
 
@@ -256,26 +236,20 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
     ```
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![SQL-запрос с результатами: для имени таблицы с точкой используются обратные кавычки](/images/integrations/data-catalogs/catalog-sql-query.png)
-
-    </Frame>
-
+      <Frame>
+        ![SQL-запрос с результатами: для имени таблицы с точкой используются обратные кавычки](/images/integrations/data-catalogs/catalog-sql-query.png)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## Устранение неполадок
+  ## Устранение неполадок {#troubleshooting}
 </div>
 
 * Если в консоли SQL не отображаются ваши таблицы, проверьте учетные данные, сетевой доступ и типы таблиц в каталоге. Убедитесь, что ожидаемые таблицы используют поддерживаемые файловые и табличные форматы.
 
-<div id="see-also">
-  ## См. также
-</div>
+## См. также {#see-also}
 
 * [Ускорение аналитики данных в lakehouse](/ru/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — загрузка таблиц каталога в MergeTree для повторяющихся запросов
-* [Безопасный доступ к данным Iceberg](/ru/products/cloud/guides/data-sources/accessing-iceberg-data-securely) — настройка роли IAM для доступа к AWS Iceberg и Glue
+* [Безопасный доступ к данным Iceberg](/ru/products/cloud/guides/data-sources/accessing-iceberg-data-securely) — настройка роли IAM для доступа к Iceberg и Glue в AWS

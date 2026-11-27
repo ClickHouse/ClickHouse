@@ -2892,14 +2892,14 @@ namespace
             else
                 reader->startMessage(with_length_delimiter);
 
-            if (!field_infos.empty())
+            size_t old_size = mutable_columns.empty() ? 0 : mutable_columns[0]->size();
+            try
             {
-                last_field_index = 0;
-                last_field_tag = field_infos[0].field_tag;
-                size_t old_size = mutable_columns.empty() ? 0 : mutable_columns[0]->size();
-
-                try
+                if (!field_infos.empty())
                 {
+                    last_field_index = 0;
+                    last_field_tag = field_infos[0].field_tag;
+
                     int field_tag = 0;
                     while (reader->readFieldNumber(field_tag))
                     {
@@ -2932,37 +2932,42 @@ namespace
                         }
                     }
                 }
-                catch (...)
-                {
-                    for (auto & column : mutable_columns)
-                    {
-                        if (column->size() > old_size)
-                            popBackBorrowed(*column, column->size() - old_size);
-                    }
-                    resetState();
-                    throw;
-                }
+
+                if (parent_field_descriptor || has_envelope_as_parent)
+                    reader->endNestedMessage();
+                else
+                    reader->endMessage(false);
+
+                addDefaultsToMissingColumns(row_num);
             }
-
-            if (parent_field_descriptor || has_envelope_as_parent)
-                reader->endNestedMessage();
-            else
-                reader->endMessage(false);
-
-            addDefaultsToMissingColumns(row_num);
+            catch (...)
+            {
+                popRowsAddedSince(old_size);
+                resetState();
+                throw;
+            }
         }
 
         void insertDefaults(size_t row_num) override
         {
-            for (const FieldInfo & info : field_infos)
+            size_t old_size = mutable_columns.empty() ? 0 : mutable_columns[0]->size();
+            try
             {
-                if (info.field_serializer)
+                for (const FieldInfo & info : field_infos)
                 {
-                    info.field_serializer->insertDefaults(row_num);
+                    if (info.field_serializer)
+                    {
+                        info.field_serializer->insertDefaults(row_num);
+                    }
                 }
-            }
 
-            addDefaultsToMissingColumns(row_num);
+                addDefaultsToMissingColumns(row_num);
+            }
+            catch (...)
+            {
+                popRowsAddedSince(old_size);
+                throw;
+            }
         }
 
         void resetState() override
@@ -3038,6 +3043,15 @@ namespace
         {
             if (has_missing_columns)
                 missing_columns_filler->addDefaults(mutable_columns, row_num);
+        }
+
+        void popRowsAddedSince(size_t old_size)
+        {
+            for (auto & column : mutable_columns)
+            {
+                if (column->size() > old_size)
+                    popBackBorrowed(*column, column->size() - old_size);
+            }
         }
 
         bool isNullGoogleWrapper(size_t row_num)

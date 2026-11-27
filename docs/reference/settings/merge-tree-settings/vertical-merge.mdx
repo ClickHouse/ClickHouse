@@ -42,8 +42,8 @@ If true, lightweight delete is optimized on vertical merge.
 
 If true, a rows-TTL merge can use the vertical merge algorithm instead of falling back to a
 horizontal merge. Applies only in `MergeTree`, `Replacing`, `Collapsing` or `VersionedCollapsing`
-merging mode, to a table with a rows TTL and no column or `GROUP BY` TTL, and only while no part
-in the merge has a lightweight delete. Any other TTL merge stays horizontal.
+merging mode, to a table with a rows TTL and no column or `GROUP BY` TTL. Any other TTL merge stays
+horizontal.
 
 ## vertical_merge_remote_filesystem_prefetch {#vertical_merge_remote_filesystem_prefetch}
 <SettingsInfoBlock type="Bool" default_value="1" />
