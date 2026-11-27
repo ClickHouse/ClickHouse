@@ -16,6 +16,10 @@ ClickHouse supports several types of user defined functions (UDFs):
 - [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) run code compiled to WebAssembly inside a sandbox within the server process. They offer lower per‑call overhead than external executables with better isolation than native extensions, making them suitable for custom algorithms written in languages that can target WASM (e.g. C/C++/Rust).
 - [Experimental driver-based executable UDFs](#driver-based-executable-user-defined-functions) let an operator-supplied "driver" turn a code snippet supplied in `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` into an executable UDF at function-creation time (for example, by compiling it). They build on executable UDFs and require server-side driver configuration.
 
+<Note>
+With the configuration installed by the packages, the server isolates itself from the filesystem of the host (see [`filesystem_isolation`](/reference/settings/server-settings/settings/other#filesystem_isolation)), and the default Docker image has no shell or interpreter. Executable UDFs that run scripts need additional configuration, and driver-based UDFs need the isolation disabled. See [Executable UDFs with filesystem isolation](#filesystem-isolation).
+</Note>
+
 ## Executable User Defined Functions {#executable-user-defined-functions}
 
 <Note>
@@ -404,6 +408,106 @@ SELECT test_shell(number) FROM numbers(10);
     └────────────────────┘
 ```
 
+## Executable UDFs with filesystem isolation {#filesystem-isolation}
+
+The server setting [`filesystem_isolation`](/reference/settings/server-settings/settings/other#filesystem_isolation) makes the server isolate itself from the filesystem of the host at startup. Only the paths that the server needs stay visible to it. The `config.xml` installed by the packages sets it to `best_effort`, so the isolation is applied wherever the kernel allows it.
+
+The programs that the server starts run inside the same isolated filesystem. This covers executable UDFs, the [`executable`](/reference/functions/table-functions/executable) table function, the [`Executable` and `ExecutablePool`](/reference/engines/table-engines/special/executable) table engines, and the [`executable`](/reference/statements/create/dictionary/sources/executable-file) and [`executable_pool`](/reference/statements/create/dictionary/sources/executable-pool) dictionary sources. For these programs:
+
+- The directory [`user_scripts_path`](/reference/settings/server-settings/settings/user#user_scripts_path) is visible, read-only and executable. It is mounted as a whole, so scripts that are added to it or changed on the host after the startup are visible as well. The server itself cannot modify them.
+- Every other path that the server can write to is mounted with `noexec`. A program placed there cannot be started.
+- There is no shell, no interpreter, and no shared library other than those of the server itself. A script with `#!/usr/bin/python3` or `#!/bin/bash` cannot be started, and neither can a command with `execute_direct` = `0`, because it runs through `/bin/sh -c`.
+- `/tmp` is a private and empty directory.
+- A file that a program reads outside of the visible paths, such as a model, a reference dataset, a virtual environment, or a configuration file in `/etc`, is not visible.
+
+When a program cannot be started, the query fails with an error like this one, where the return code `88` means that starting the program failed:
+
+```text
+Code: 754. DB::Exception: User defined function 'test_function_python' failed. Command: 'test_function.py', Arguments: [].
+Original error: Code: 302. DB::Exception: Child process was exited with return code 88. (CHILD_WAS_NOT_EXITED_NORMALLY),. (UDF_EXECUTION_FAILED)
+```
+
+With the `executable` table function, the query can also return an empty result instead.
+
+To check whether the isolation is in force, run the following query. `disabled` means that the server runs without the isolation:
+
+```sql
+SELECT value FROM system.server_settings WHERE name = 'filesystem_isolation'
+```
+
+The server also logs the list of the visible paths at startup, in a message that starts with `Isolated the filesystem of this process`.
+
+### Making interpreters and data visible {#filesystem-isolation-paths}
+
+Make the interpreter of the scripts, the libraries it needs, and the files the scripts read visible with the [`filesystem_isolation_paths`](/reference/settings/server-settings/settings/other#filesystem_isolation) section of the server configuration. For example, for Python and shell scripts on Debian or Ubuntu:
+
+```xml title="/etc/clickhouse-server/config.d/udf_isolation.xml"
+<clickhouse>
+    <filesystem_isolation_paths>
+        <!-- The interpreters (`/bin/sh`, `/bin/bash`, `/usr/bin/python3`, `/usr/bin/env`) and the programs the scripts run. -->
+        <read_only>/bin</read_only>
+        <read_only>/usr/bin</read_only>
+        <!-- The dynamic loader and the shared libraries, and the standard library and packages of Python. -->
+        <read_only>/lib</read_only>
+        <read_only>/lib64</read_only>
+        <read_only>/usr/lib</read_only>
+        <!-- The Python packages installed with `pip`. -->
+        <read_only>/usr/local/lib</read_only>
+        <!-- Data that the scripts read. -->
+        <read_only>/opt/models</read_only>
+        <!-- A directory that the scripts write to. -->
+        <read_write>/mnt/exchange</read_write>
+    </filesystem_isolation_paths>
+</clickhouse>
+```
+
+- Paths that do not exist, such as `/lib64` on AArch64, are skipped.
+- Symbolic links on the way to a path, such as `/bin -> usr/bin`, are recreated inside, and their targets are made visible too.
+- A `<read_write>` path is mounted with `noexec`, the same as the other writable paths. Keep programs in `user_scripts_path` or in a `<read_only>` path.
+- The isolation is applied once, at startup. A change in `filesystem_isolation_paths` takes effect after a restart of the server.
+
+Each visible path also becomes reachable to an attacker who manages to run code inside the server. List the narrowest paths that work. For example, list the directory of one virtual environment instead of `/usr` or `/opt`.
+
+A statically linked program, such as one written in Go, in Rust with the `musl` target, or in C linked with `-static`, needs no interpreter and no shared library. It works in `user_scripts_path` without any additional paths, and it also works in the [Docker image](#executable-udfs-in-docker) without a shell. [WebAssembly UDFs](#webassembly-user-defined-functions) run inside the server process, so they are not affected by the isolation at all.
+
+If none of this is possible, disable the isolation. The server then loses the protection described in [`filesystem_isolation`](/reference/settings/server-settings/settings/other#filesystem_isolation):
+
+```xml title="/etc/clickhouse-server/config.d/filesystem_isolation.xml"
+<clickhouse>
+    <filesystem_isolation>disabled</filesystem_isolation>
+</clickhouse>
+```
+
+### Executable UDFs in Docker {#executable-udfs-in-docker}
+
+The default `clickhouse/clickhouse-server` image (the tags without a suffix) is built `FROM scratch`. It contains only the statically linked `clickhouse` binary, its configuration, and a few system files. There is no shell, no C library, no Python, and no other program, so a script cannot run in this image, regardless of the isolation.
+
+The image uses the same `config.xml` as the packages, with `filesystem_isolation` set to `best_effort`. Container runtimes such as Docker do not let a process create a user namespace unless it has `CAP_SYS_ADMIN`. So, by default, the server in a container runs without the isolation and logs a warning with the reason. If the container has `CAP_SYS_ADMIN` (`--cap-add=SYS_ADMIN`) and its security profile allows creating namespaces and mounting filesystems, the server applies the isolation, and the programs need the paths from the previous section as well.
+
+Choose one of these options to run executable UDFs in a container:
+
+- Use statically linked programs. They work in the default image. Mount them into `user_scripts_path`, which is `/var/lib/clickhouse/user_scripts/` in the image, and mount the configuration of the functions into `/etc/clickhouse-server/`. The configuration file must match the `*_function.*ml` pattern of [`user_defined_executable_functions_config`](/reference/settings/server-settings/settings/user-defined#user_defined_executable_functions_config):
+
+  ```bash
+  docker run -d --name clickhouse-server \
+      -v "$PWD/user_scripts:/var/lib/clickhouse/user_scripts:ro" \
+      -v "$PWD/my_function.xml:/etc/clickhouse-server/my_function.xml:ro" \
+      --ulimit nofile=262144:262144 clickhouse/clickhouse-server
+  ```
+
+- For scripts, build an image on top of the image with the `-ubuntu` suffix, which has a shell, and install the interpreter that the scripts need:
+
+  ```dockerfile
+  FROM clickhouse/clickhouse-server:latest-ubuntu
+  RUN apt-get update \
+      && apt-get install --yes --no-install-recommends python3 \
+      && rm -rf /var/lib/apt/lists/*
+  ```
+
+  Then run it with the same `-v` options as above.
+
+- For scripts that need only `/bin/sh` and its builtin commands, mount a statically linked shell, such as `busybox` from the `busybox-static` package of Debian and Ubuntu, into the default image with `-v /bin/busybox:/bin/sh:ro`.
+
 ## Error Handling {#error-handling}
 
 Some functions might throw an exception if the data is invalid.
@@ -518,6 +622,24 @@ Driver-based executable UDFs are disabled by default. To enable them:
 
 The driver registry is loaded on server start and refreshed on `SYSTEM RELOAD CONFIG`, so drivers can be added, changed, or removed without restarting the server.
 
+### Drivers and filesystem isolation {#drivers-and-filesystem-isolation}
+
+Drivers do not work with [`filesystem_isolation`](/reference/settings/server-settings/settings/other#filesystem_isolation). A driver generates the program of a function in the working directory of the function, inside [`dynamic_user_defined_executable_functions_path`](/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path). The server writes to this directory, so in the isolated filesystem it is mounted with `noexec`, and the program could never be started. While the isolation is in force:
+
+- `CREATE FUNCTION ... ENGINE = DriverName(...)` fails with the `SUPPORT_IS_DISABLED` error.
+- At startup, a persisted `ATTACH FUNCTION` whose generated configuration is missing cannot be recreated, because that would run the driver.
+- Functions that were created before the isolation was enabled are still loaded from their generated configurations, but calling them fails, because their programs cannot be started.
+
+The `config.xml` installed by the packages sets `filesystem_isolation` to `best_effort`, so disable the isolation explicitly on a server that uses drivers:
+
+```xml title="/etc/clickhouse-server/config.d/filesystem_isolation.xml"
+<clickhouse>
+    <filesystem_isolation>disabled</filesystem_isolation>
+</clickhouse>
+```
+
+The drivers themselves are programs that need a runtime. The [example C drivers](#example-c-drivers) are shell and Python 3 scripts that run `docker`, `runsc` or `cc`. None of these is in the default Docker image, which is built `FROM scratch`. To use drivers in a container, build an image on top of the image with the `-ubuntu` suffix and install the tools that the drivers need (see [Executable UDFs in Docker](#executable-udfs-in-docker)).
+
 ### Driver configuration {#driver-configuration}
 
 A driver is described by an XML (or YAML) file with a top-level `<driver>` element. The following fields are supported:
@@ -588,6 +710,7 @@ The originating query is persisted as an `ATTACH FUNCTION ...` statement in the 
 ### Limitations {#driver-limitations}
 
 - The feature is experimental and gated behind `allow_experimental_executable_udf_drivers`.
+- Drivers are not supported with [`filesystem_isolation`](/reference/settings/server-settings/settings/other#filesystem_isolation), which the `config.xml` of the packages enables. See [Drivers and filesystem isolation](#drivers-and-filesystem-isolation).
 - Driver-based functions are not supported with replicated user-defined function storage (`ON CLUSTER` and `<user_defined_zookeeper_path>`), because only the originating query is replicated, not the generated artifacts.
 - `RESTORE` of a backed-up driver-based function persists the query but does not re-run the driver; the generated configuration is materialized later by restart recovery.
 

@@ -329,6 +329,10 @@ Setting fields:
 | `execute_direct` | If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](/reference/settings/server-settings/settings/user#user_scripts_path). Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `1`. Optional. |
 | `send_chunk_header` | Controls whether to send row count before sending a chunk of data to process. Default value is `false`. Optional. |
 
+<Note>
+With the server setting [`filesystem_isolation`](/reference/settings/server-settings/settings/other#filesystem_isolation), which the `config.xml` installed by the packages enables, the command runs in the isolated filesystem of the server. With `execute_direct` = `0`, it runs through `/bin/sh -c`, so the shell, the programs that the command runs, the libraries they need, and the files they read must be made visible with `filesystem_isolation_paths`. A script started with `execute_direct` = `1` from `user_scripts_path` needs its interpreter and the files it reads to be visible. The default Docker image, built `FROM scratch`, has no shell and no interpreter. See [Executable UDFs with filesystem isolation](/reference/functions/regular-functions/udf#filesystem-isolation).
+</Note>
+
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
 )DOCS_MD",
         .syntax = "SOURCE(EXECUTABLE_POOL(command 'script.sh' format 'TabSeparated' pool_size 4))",
