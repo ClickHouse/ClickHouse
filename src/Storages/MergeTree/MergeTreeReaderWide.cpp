@@ -1346,6 +1346,13 @@ MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(
 
             auto file_view = MergeTreeReaderStream::FileView{.begin = view->begin, .end = view->end, .key = view->key};
 
+            /// The streams of the views are created by the prefixes, after the registry was set; keyed as in the map.
+            auto set_ranges_read_sink = [&](MergeTreeReaderStream & stream)
+            {
+                if (read_ranges_registry)
+                    stream.setRangesReadSink(&getRangesRead(getStreamKey(substream_path, stream_name)));
+            };
+
             /// A read of the whole part reads the view from its start to its end and loads no marks; its marks count is
             /// the part's, which the part's single mark range ends at.
             if (read_without_marks)
@@ -1357,6 +1364,7 @@ MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(
                     std::move(marks_loader), profile_callback, clock_type,
                     std::move(file_view));
                 stream->updateReadRequestMap(read_request_map);
+                set_ranges_read_sink(*stream);
                 return stream;
             }
 
@@ -1367,6 +1375,7 @@ MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(
                 marks_loader, profile_callback, clock_type,
                 std::move(file_view));
             stream->updateReadRequestMap(read_request_map);
+            set_ranges_read_sink(*stream);
             /// As below: a metadata stream is read whole from its start.
             if (data_file_size != 0 && !stream_settings.is_metadata_file)
                 marks_loader->startAsyncLoad();

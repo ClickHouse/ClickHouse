@@ -853,6 +853,8 @@ void SerializationTuple::serializeBinaryBulkWithMultipleStreams(
 {
     if (elems.empty())
     {
+        /// The stream of an empty tuple is enumerated by `ISerialization::enumerateStreams`, so its path ends with `Regular`.
+        settings.path.push_back(Substream::Regular);
         if (WriteBuffer * stream = settings.getter(settings.path))
         {
             size_t size = column.size();
@@ -863,6 +865,7 @@ void SerializationTuple::serializeBinaryBulkWithMultipleStreams(
             for (size_t i = 0; i < limit; ++i)
                 stream->write('0');
         }
+        settings.path.pop_back();
 
         return;
     }
@@ -885,6 +888,8 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
 {
     if (elems.empty())
     {
+        /// As in `serializeBinaryBulkWithMultipleStreams`.
+        settings.path.push_back(Substream::Regular);
         if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
         {
             /// Data was inserted from substreams cache.
@@ -896,6 +901,7 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
             typeid_cast<ColumnTuple &>(column).addSize(ignored_size);
             addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
         }
+        settings.path.pop_back();
 
         return;
     }
