@@ -22,16 +22,12 @@ keywords: ['مجموعة بيانات تجريبية', 'nypd', 'بيانات ا�
 **المصدر**: [data.cityofnewyork.us](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)
 **شروط الاستخدام**: https://www1.nyc.gov/home/terms-of-use.page
 
-<div id="prerequisites">
-  ## المتطلبات الأساسية
-</div>
+## المتطلبات الأساسية {#prerequisites}
 
 * نزّل مجموعة البيانات بزيارة صفحة [NYPD Complaint Data Current (Year To Date)](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)، ثم انقر على زر Export واختر **TSV for Excel**.
 * ثبّت [ClickHouse server والعميل](/ar/get-started/setup/install)
 
-<div id="a-note-about-the-commands-described-in-this-guide">
-  ### ملاحظة حول الأوامر الموضَّحة في هذا الدليل
-</div>
+### ملاحظة حول الأوامر الموضَّحة في هذا الدليل {#a-note-about-the-commands-described-in-this-guide}
 
 يوجد نوعان من الأوامر في هذا الدليل:
 
@@ -42,17 +38,13 @@ keywords: ['مجموعة بيانات تجريبية', 'nypd', 'بيانات ا�
   تفترض الأمثلة في هذا الدليل أنك حفظت ملف TSV في `${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`، لذا يُرجى تعديل الأوامر عند الحاجة.
 </Note>
 
-<div id="familiarize-yourself-with-the-tsv-file">
-  ## تعرّف على ملف TSV
-</div>
+## تعرّف على ملف TSV {#familiarize-yourself-with-the-tsv-file}
 
 قبل البدء في العمل مع قاعدة بيانات ClickHouse، اطّلع على البيانات.
 
-<div id="look-at-the-fields-in-the-source-tsv-file">
-  ### اطّلع على الحقول في ملف TSV المصدر
-</div>
+### اطّلع على الحقول في ملف TSV المصدر {#look-at-the-fields-in-the-source-tsv-file}
 
-هذا مثال على أمر للاستعلام عن ملف TSV، ولكن لا تُشغِّله بعد.
+هذا مثال على أمر للاستعلام عن ملف TSV، ولكن لا تُشغِّله بعد.
 
 ```sh title="Query"
 clickhouse-local --query \
@@ -70,7 +62,7 @@ CMPLNT_FR_TM                Nullable(String)
 ```
 
 <Tip>
-  في معظم الأحيان، سيُبيّن لك الأمر أعلاه أي الحقول في بيانات الإدخال رقمية، وأيها سلاسل نصية، وأيها tuples. لكن هذا لا يحدث دائمًا. ولأن ClickHouse يُستخدم عادةً مع مجموعات بيانات تحتوي على مليارات السجلات، يوجد حد افتراضي لعدد الصفوف التي تُفحص (100 صف) من أجل [استنتاج المخطط](/ar/guides/clickhouse/data-formats/json/inference)، وذلك لتجنّب تحليل مليارات الصفوف لاستنتاج المخطط. قد لا تتطابق الاستجابة أدناه مع ما تراه لديك، لأن مجموعة البيانات تُحدَّث عدة مرات كل عام. وبالاطلاع على قاموس البيانات، يمكنك أن ترى أن CMPLNT&#95;NUM محدد كنص، وليس كقيمة رقمية. ومن خلال تجاوز القيمة الافتراضية البالغة 100 صف للاستدلال باستخدام الإعداد `SETTINGS input_format_max_rows_to_read_for_schema_inference=2000`
+  في معظم الأحيان، سيُبيّن لك الأمر أعلاه أي الحقول في بيانات الإدخال رقمية، وأيها سلاسل نصية، وأيها tuples. لكن هذا لا يحدث دائمًا. ولأن ClickHouse يُستخدم عادةً مع مجموعات بيانات تحتوي على مليارات السجلات، يوجد حد افتراضي لعدد الصفوف التي تُفحص (100 صف) من أجل [استنتاج المخطط](/ar/guides/clickhouse/data-formats/json/inference)، وذلك لتجنّب تحليل مليارات الصفوف لاستنتاج المخطط. قد لا تتطابق الاستجابة أدناه مع ما تراه لديك، لأن مجموعة البيانات تُحدَّث عدة مرات كل عام. وبالاطلاع على قاموس البيانات، يمكنك أن ترى أن CMPLNT&#95;NUM محدد كنص، وليس كقيمة رقمية. ومن خلال تجاوز القيمة الافتراضية البالغة 100 صف للاستدلال باستخدام الإعداد `SETTINGS input_format_max_rows_to_read_for_schema_inference=2000`
   يمكنك الحصول على فكرة أدق عن المحتوى.
 
   ملاحظة: اعتبارًا من الإصدار 22.5، أصبحت القيمة الافتراضية الآن 25,000 صف لاستنتاج المخطط، لذا لا تغيّر هذا الإعداد إلا إذا كنت تستخدم إصدارًا أقدم أو إذا كنت بحاجة إلى أخذ عينة تتجاوز 25,000 صف.
@@ -125,9 +117,7 @@ New Georeferenced Column Nullable(String)
 
 عند هذه المرحلة، ينبغي التحقق من أن الأعمدة في ملف TSV تطابق الأسماء والأنواع المحددة في قسم **الأعمدة في مجموعة البيانات هذه** ضمن [صفحة ويب مجموعة البيانات](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243).  أنواع البيانات هنا ليست دقيقة جدًا؛ إذ إن جميع الحقول الرقمية معيّنة إلى `Nullable(Float64)`، وجميع الحقول الأخرى هي `Nullable(String)`.  وعند إنشاء جدول ClickHouse لتخزين البيانات، يمكنك تحديد أنواع أكثر ملاءمة وأفضل أداءً.
 
-<div id="determine-the-proper-schema">
-  ### حدِّد المخطط المناسب
-</div>
+### حدِّد المخطط المناسب {#determine-the-proper-schema}
 
 لتحديد الأنواع التي ينبغي استخدامها للحقول، لا بد من معرفة طبيعة البيانات. على سبيل المثال، الحقل `JURISDICTION_CODE` ذو قيمة رقمية: هل ينبغي أن يكون `UInt8`، أم `Enum`، أم أن `Float64` هو الأنسب؟
 
@@ -211,9 +201,7 @@ clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
 
 تتضمن مجموعة البيانات المستخدمة وقت كتابة هذا النص بضع مئات فقط من المتنزهات وملاعب الأطفال المختلفة في العمود `PARK_NM`. وهذا عدد قليل وفقًا لتوصية [LowCardinality](/ar/reference/data-types/lowcardinality#description) بأن يبقى عدد السلاسل النصية المميزة في الحقل `LowCardinality(String)` دون 10,000.
 
-<div id="datetime-fields">
-  ### حقول DateTime
-</div>
+### حقول DateTime {#datetime-fields}
 
 استنادًا إلى قسم **الأعمدة في مجموعة البيانات هذه** في [صفحة ويب مجموعة البيانات](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)، توجد حقول للتاريخ والوقت تمثل بداية الحدث المُبلّغ عنه ونهايته.  ويعطي النظر إلى القيمتين الدنيا والعليا للحقلين `CMPLNT_FR_DT` و`CMPLT_TO_DT` فكرة عمّا إذا كانت هذه الحقول تُملأ دائمًا أم لا:
 
@@ -273,9 +261,7 @@ FORMAT PrettyCompact"
 └───────────────────┴───────────────────┘
 ```
 
-<div id="make-a-plan">
-  ## ضع خطة
-</div>
+## ضع خطة {#make-a-plan}
 
 استنادًا إلى الاستقصاء أعلاه:
 
@@ -293,9 +279,7 @@ FORMAT PrettyCompact"
   هناك تغييرات أخرى كثيرة يجب إجراؤها على الأنواع، ويمكن تحديدها كلها باتباع خطوات الاستقصاء نفسها. انظر إلى عدد السلاسل النصية المميزة في الحقل، وإلى الحدين الأدنى والأقصى للقيم العددية، ثم اتخذ قراراتك. يحتوي مخطط الجدول الوارد لاحقًا في الدليل على كثير من السلاسل النصية منخفضة الكاردينالية وحقول الأعداد الصحيحة غير الموقعة، وعدد قليل جدًا من القيم العددية ذات الفاصلة العائمة.
 </Note>
 
-<div id="concatenate-the-date-and-time-fields">
-  ## دمج حقلي التاريخ والوقت
-</div>
+## دمج حقلي التاريخ والوقت {#concatenate-the-date-and-time-fields}
 
 لدمج حقلي التاريخ والوقت `CMPLNT_FR_DT` و`CMPLNT_FR_TM` في قيمة `String` واحدة يمكن تحويلها إلى `DateTime`، حدِّد الحقلين مع ربطهما بعامل الدمج: `CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM`. ويُتعامل مع الحقلين `CMPLNT_TO_DT` و`CMPLNT_TO_TM` بالطريقة نفسها.
 
@@ -323,9 +307,7 @@ FORMAT PrettyCompact"
 └─────────────────────┘
 ```
 
-<div id="convert-the-date-and-time-string-to-a-datetime64-type">
-  ## حوِّل String الخاص بالتاريخ والوقت إلى النوع DateTime64
-</div>
+## حوِّل String الخاص بالتاريخ والوقت إلى النوع DateTime64 {#convert-the-date-and-time-string-to-a-datetime64-type}
 
 اكتشفنا سابقًا في هذا الدليل أن هناك تواريخ في ملف TSV تسبق 1 يناير 1970، ما يعني أننا بحاجة إلى نوع DateTime64 لهذه التواريخ. كما يجب أيضًا تحويل التواريخ من التنسيق `MM/DD/YYYY` إلى التنسيق `YYYY/MM/DD`. ويمكن تنفيذ الأمرين معًا باستخدام [`parseDateTime64BestEffort()`](/ar/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort).
 
@@ -378,9 +360,7 @@ FORMAT PrettyCompact"
   التواريخ المعروضة أعلاه على أنها `1925` ناتجة عن أخطاء في البيانات. توجد عدة سجلات في البيانات الأصلية تحمل تواريخ في السنوات `1019` - `1022`، بينما يُفترض أن تكون `2019` - `2022`. ويجري تخزينها على أنها 1 يناير 1925، لأنه أقدم تاريخ يدعمه `DateTime` بسعة 64 بت.
 </Note>
 
-<div id="create-a-table">
-  ## إنشاء جدول
-</div>
+## إنشاء جدول {#create-a-table}
 
 تنعكس القرارات المتخذة أعلاه بشأن أنواع البيانات المستخدمة للأعمدة في مخطط الجدول
 أدناه. نحتاج أيضًا إلى تحديد `ORDER BY` و`PRIMARY KEY` المستخدمين في الجدول.  يجب تحديد
@@ -388,9 +368,7 @@ FORMAT PrettyCompact"
 الأعمدة التي ينبغي تضمينها في `ORDER BY`، وستجد مزيدًا من المعلومات في قسم *الخطوات التالية* في نهاية
 هذا المستند.
 
-<div id="order-by-and-primary-key-clauses">
-  ### عبارتا `ORDER BY` و`PRIMARY KEY`
-</div>
+### عبارتا `ORDER BY` و`PRIMARY KEY` {#order-by-and-primary-key-clauses}
 
 * يجب أن يتضمن الـ tuple الخاص بـ `ORDER BY` الحقولَ المستخدمة في عوامل تصفية الاستعلام
 * لتحقيق أقصى ضغط على القرص، يجب ترتيب الـ tuple الخاص بـ `ORDER BY` حسب الكاردينالية تصاعديًا
@@ -482,9 +460,7 @@ CREATE TABLE NYPD_Complaint (
   ORDER BY ( borough, offense_description, date_reported )
 ```
 
-<div id="finding-the-primary-key-of-a-table">
-  ### العثور على المفتاح الأساسي لجدول ما
-</div>
+### العثور على المفتاح الأساسي لجدول ما {#finding-the-primary-key-of-a-table}
 
 تحتوي قاعدة البيانات `system` في ClickHouse، وتحديدًا `system.table`، على جميع المعلومات المتعلقة بالجدول الذي
 أنشأته للتو. يوضّح هذا الاستعلام `ORDER BY` (مفتاح الترتيب)، و`PRIMARY KEY`:
@@ -515,15 +491,11 @@ table:         NYPD_Complaint
 1 row in set. Elapsed: 0.001 sec.
 ```
 
-<div id="preprocess-import-data">
-  ## المعالجة المسبقة واستيراد البيانات
-</div>
+## المعالجة المسبقة واستيراد البيانات {#preprocess-import-data}
 
 سنستخدم أداة `clickhouse-local` لإجراء المعالجة المسبقة للبيانات، و`clickhouse-client` لتحميلها.
 
-<div id="clickhouse-local-arguments-used">
-  ### وسائط `clickhouse-local` المستخدمة
-</div>
+### وسائط `clickhouse-local` المستخدمة {#clickhouse-local-arguments-used}
 
 <Tip>
   يظهر `table='input'` في وسائط `clickhouse-local` أدناه. يأخذ `clickhouse-local` الإدخال الموفَّر (`cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`) ويُدرجه في جدول. ويكون اسم الجدول افتراضيًا `table`. في هذا الدليل، ضُبط اسم الجدول على `input` لتوضيح تدفق البيانات بشكل أفضل. أما الوسيطة الأخيرة لـ `clickhouse-local` فهي استعلام يحدد البيانات من الجدول (`FROM input`)، ثم يُمرَّر إلى `clickhouse-client` لملء الجدول `NYPD_Complaint`.
@@ -573,9 +545,7 @@ cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv \
   | clickhouse-client --query='INSERT INTO NYPD_Complaint FORMAT TSV'
 ```
 
-<div id="validate-data">
-  ## تحقّق من البيانات
-</div>
+## تحقّق من البيانات {#validate-data}
 
 <Note>
   تتغير مجموعة البيانات مرة واحدة أو أكثر سنويًا، لذا قد لا تتطابق أعدادك مع ما يرد في هذا المستند.
@@ -608,13 +578,9 @@ WHERE name = 'NYPD_Complaint'
 └─────────────────────────────────┘
 ```
 
-<div id="run-queries">
-  ## نفّذ بعض الاستعلامات
-</div>
+## نفّذ بعض الاستعلامات {#run-queries}
 
-<div id="query-1-compare-the-number-of-complaints-by-month">
-  ### الاستعلام 1. قارن عدد الشكاوى حسب الأشهر
-</div>
+### الاستعلام 1. قارن عدد الشكاوى حسب الأشهر {#query-1-compare-the-number-of-complaints-by-month}
 
 ```sql title="Query"
 SELECT
@@ -647,9 +613,7 @@ Query id: 7fbd4244-b32a-4acf-b1f3-c3aa198e74d9
 12 rows in set. Elapsed: 0.006 sec. Processed 208.99 thousand rows, 417.99 KB (37.48 million rows/s., 74.96 MB/s.)
 ```
 
-<div id="query-2-compare-total-number-of-complaints-by-borough">
-  ### الاستعلام 2. قارن إجمالي عدد الشكاوى حسب البورو
-</div>
+### الاستعلام 2. قارن إجمالي عدد الشكاوى حسب البورو {#query-2-compare-total-number-of-complaints-by-borough}
 
 ```sql title="Query"
 SELECT
@@ -676,8 +640,6 @@ Query id: 8cdcdfd4-908f-4be0-99e3-265722a2ab8d
 6 rows in set. Elapsed: 0.008 sec. Processed 208.99 thousand rows, 209.43 KB (27.14 million rows/s., 27.20 MB/s.)
 ```
 
-<div id="next-steps">
-  ## الخطوات التالية
-</div>
+## الخطوات التالية {#next-steps}
 
 تستعرض [مقدمة عملية عن الفهارس الأولية المتناثرة في ClickHouse](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) الاختلافات بين الفهرسة في ClickHouse والفهرسة في قواعد البيانات العلائقية التقليدية، وكيفية إنشاء ClickHouse لفهرس أولي متناثر واستخدامه، وأفضل ممارسات الفهرسة.

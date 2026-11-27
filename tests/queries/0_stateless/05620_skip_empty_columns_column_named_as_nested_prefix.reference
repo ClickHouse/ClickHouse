@@ -1,0 +1,12 @@
+wide part columns	id
+wide part columns	n.x
+[10,20]
+[30]
+2	[30]
+compact part	Compact
+[10,20]
+[30]
+reverse part columns	id
+reverse part columns	n
+1	[]
+2	[]

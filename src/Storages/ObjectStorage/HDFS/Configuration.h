@@ -62,7 +62,9 @@ public:
     /// Therefore in the below methods we use supports_partial_prefix=false.
     [[nodiscard]] Path getRawPath() const override { return path; }
     void setRawPath(const Path & p) override { path = p; }
-    [[nodiscard]] const String & getRawURI() const override { return url; }
+    [[nodiscard]] std::string_view getRawURI() const override { return url; }
+    /// The raw URI is only the authority, so grants never filter paths, and any path is checked as the authority.
+    [[nodiscard]] String getURIForAccessCheck(const String & /*write_path*/) const override { return url; }
 
     [[nodiscard]] String getNamespace() const override { return ""; }
     [[nodiscard]] String getDataSourceDescription() const override { return url; }

@@ -19,6 +19,8 @@
 #include <Common/Exception.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
+#include <Common/SecretString.h>
+#include <Common/StringUtils.h>
 #include <Common/ThreadPool_fwd.h>
 
 #include <Disks/DirectoryIterator.h>
@@ -48,19 +50,19 @@ using ContainerClient = ContainerClientWrapper;
 class StaticCredential : public Azure::Core::Credentials::TokenCredential
 {
 public:
-    StaticCredential(std::string token_, std::chrono::system_clock::time_point expires_on_)
-        : token(std::move(token_)), expires_on(expires_on_)
+    StaticCredential(std::string_view token_, std::chrono::system_clock::time_point expires_on_)
+        : token(token_), expires_on(expires_on_)
     {}
 
     [[nodiscard]] Azure::Core::Credentials::AccessToken GetToken(
         Azure::Core::Credentials::TokenRequestContext const &,
         Azure::Core::Context const &) const override
     {
-        return Azure::Core::Credentials::AccessToken { .Token = token, .ExpiresOn = expires_on };
+        return Azure::Core::Credentials::AccessToken { .Token = String(token), .ExpiresOn = expires_on };
     }
 
 private:
-    std::string token;
+    SecretString token;
     std::chrono::system_clock::time_point expires_on;
 };
 
@@ -70,7 +72,7 @@ private:
 class TokenProviderCredential : public Azure::Core::Credentials::TokenCredential
 {
 public:
-    using TokenProvider = std::function<std::pair<std::string, std::chrono::system_clock::time_point>()>;
+    using TokenProvider = std::function<std::pair<SecretString, std::chrono::system_clock::time_point>()>;
 
     explicit TokenProviderCredential(TokenProvider provider_)
         : provider(std::move(provider_))
@@ -81,7 +83,7 @@ public:
         Azure::Core::Context const &) const override
     {
         auto [token, expires_on] = provider();
-        return Azure::Core::Credentials::AccessToken { .Token = std::move(token), .ExpiresOn = expires_on };
+        return Azure::Core::Credentials::AccessToken { .Token = String(token), .ExpiresOn = expires_on };
     }
 
 private:
@@ -222,9 +224,7 @@ struct RelativePathWithMetadata
         /// "data.tsv.gz?download=1"). They are not part of the file name and would defeat
         /// extension-based format/compression detection, so strip them only for web paths, consistent
         /// with how direct `url` reads use the URL path component.
-        const auto pos = relative_path.find_first_of("?#");
-        const std::string path_without_query = pos == std::string::npos ? relative_path : relative_path.substr(0, pos);
-        return std::filesystem::path(path_without_query).filename();
+        return std::filesystem::path(stripQueryAndFragment(relative_path)).filename();
     }
     [[nodiscard]] std::string getPath() const { return relative_path; }
     [[nodiscard]] std::string getPathForGlobMatching() const { return path_for_glob_matching.value_or(relative_path); }
@@ -252,6 +252,20 @@ struct SmallObjectDataWithMetadata
 using RelativePathWithMetadataPtr = std::shared_ptr<RelativePathWithMetadata>;
 using RelativePathsWithMetadata = std::vector<RelativePathWithMetadataPtr>;
 using ObjectKeysWithMetadata = std::vector<ObjectKeyWithMetadata>;
+
+/// Result of a single non-recursive ("one level") listing request that groups keys by a delimiter.
+/// `objects` are the keys directly under the requested prefix (the `Contents` of `ListObjectsV2`),
+/// `common_prefixes` are the immediate sub-"directories" (the `CommonPrefixes`), each ending with the delimiter.
+/// If `is_truncated` is true, `next_continuation_token` should be passed to the next request to get more results.
+struct ObjectStorageListResult
+{
+    RelativePathsWithMetadata objects;
+    std::vector<std::string> common_prefixes;
+    bool is_truncated = false;
+    std::string next_continuation_token;
+};
+
+class RemoteHostFilter;
 
 class IObjectStorageIterator;
 using ObjectStorageIteratorPtr = std::shared_ptr<IObjectStorageIterator>;
@@ -298,6 +312,73 @@ public:
         size_t max_keys,
         bool with_tags,
         const std::optional<std::string> & start_after) const;
+
+    /// Whether `listObjectsSingleLevel` is implemented for this storage.
+    /// When true, the listing of a glob can be parallelized by walking the "directory" tree
+    /// (common prefixes) concurrently instead of listing the whole prefix in a single serial stream.
+    [[nodiscard]] virtual bool supportsDelimitedListing() const { return false; }
+
+    /// Whether the parallel delimiter walk (see `supportsDelimitedListing`) may start from `key_prefix`.
+    /// The walk issues `ListObjectsV2` with `Delimiter='/'` from the glob's fixed prefix, and S3 Express /
+    /// directory buckets accept a delimiter only when the prefix ends with '/'. The caller can start a
+    /// delimiter walk from an earlier '/' boundary when a glob's fixed prefix ends mid-component, provided
+    /// that doing so still leaves a directory level to walk. The empty prefix (the bucket root) is always
+    /// allowed. Storages without this restriction just answer `supportsDelimitedListing`.
+    [[nodiscard]] virtual bool supportsDelimitedListingFromPrefix(const std::string & /*key_prefix*/) const { return supportsDelimitedListing(); }
+
+    /// Whether `listObjectsSingleLevel` may resume strictly after an arbitrary key (`start_after`, i.e. the
+    /// `StartAfter` parameter of `ListObjectsV2`). Some endpoints (e.g. S3 Express / directory buckets) reject
+    /// it outright, so every listing path that would resume by key must first ask this: such a listing has to
+    /// be expressed with the '/' delimiter and continuation tokens only (see `ObjectStorageParallelListingIterator`).
+    [[nodiscard]] virtual bool supportsStartAfterListing() const { return false; }
+
+    /// Whether `listObjectsSingleLevel` returns entries in ascending lexicographic (UTF-8 binary) order across
+    /// all pages of a listing, as general-purpose S3 buckets do. S3 Express / directory buckets do not
+    /// guarantee any order, so the parallel listing must not use the shortcuts that depend on it: stopping a
+    /// range once a key passes its upper bound, resuming a budget-trimmed parent after its last kept child,
+    /// and stopping a directory-marker range after its first page (see `ObjectStorageParallelListingIterator`).
+    [[nodiscard]] virtual bool listsKeysInLexicographicOrder() const { return true; }
+
+    /// Whether a big flat "directory" (no sub-"directories") may be listed in parallel by splitting its
+    /// keyspace. The split issues `listObjectsSingleLevel` requests that resume strictly after an arbitrary
+    /// key (`start_after`) while keeping the '/' delimiter, so subdirectories discovered in later slices
+    /// remain visible as common prefixes. Endpoints without `StartAfter` support (see
+    /// `supportsStartAfterListing`) must answer false here, and flat ranges then fall back to serial
+    /// pagination (the hierarchical delimiter walk, which uses only '/' and continuation tokens, stays
+    /// available).
+    [[nodiscard]] virtual bool supportsListingKeyspaceSplit() const { return supportsStartAfterListing(); }
+
+    /// The page size that list requests actually use when the caller passes `max_keys = 0`
+    /// ("use the storage-configured default", see `iterate` and `listObjectsSingleLevel`).
+    /// Callers that size buffers or budgets from a possibly-zero page-size setting must resolve
+    /// the zero through this, or the derived bound collapses to nothing while every response
+    /// still carries a full page. The base value matches the standard maximum page size of the
+    /// common object storages (S3, GCS, Azure) and the defaults of the corresponding settings.
+    [[nodiscard]] virtual size_t getListObjectsDefaultPageSize() const { return 1000; }
+
+    /// A hard upper bound on the bytes one object returned by `listObjectsSingleLevel` may add to a listed
+    /// batch beyond its fixed-size wrapper: its key plus its `ObjectMetadata` payload (`etag`, and `tags`
+    /// when `with_tags`), as charged by `ObjectStorageParallelListingIterator::batchBytes`. Derived from
+    /// the storage's documented limits (key length, tag count and lengths), not from observed objects, so
+    /// that the parallel listing can reserve its buffered-object byte budget for a page before listing it,
+    /// whatever the sizes of the objects listed so far. Storages implementing `listObjectsSingleLevel`
+    /// must override it.
+    [[nodiscard]] virtual size_t getListedObjectPayloadBytesUpperBound(bool with_tags) const;
+
+    /// List a single "directory level" under `path_prefix`, grouping deeper keys by `delimiter`.
+    /// Unlike `listObjects`/`iterate` (which list recursively), this returns only the keys directly
+    /// under the prefix together with the immediate sub-"directories" (common prefixes).
+    /// `start_after` (when not empty) resumes listing strictly after that key; it is only honored on
+    /// the first request of a listing (when `continuation_token` is empty), and lets a caller list an
+    /// arbitrary sub-range of the keyspace. One call corresponds to one page; pass the returned
+    /// continuation token back to fetch the next page.
+    [[nodiscard]] virtual ObjectStorageListResult listObjectsSingleLevel(
+        const std::string & path_prefix,
+        const std::string & delimiter,
+        size_t max_keys,
+        bool with_tags,
+        const std::string & start_after,
+        const std::string & continuation_token) const;
 
     /// Whether `iterate` treats its argument as an arbitrary key prefix rather than as a directory path,
     /// and honours `start_after`. A true object storage has no directories, so listing `pref` also returns
@@ -370,6 +451,11 @@ public:
         const WriteSettings & write_settings = {}) = 0;
 
     [[nodiscard]] virtual bool isRemote() const = 0;
+
+    /// Throws `UNACCEPTABLE_URL` if `remote_url_allow_hosts` does not allow a host this storage connects to.
+    /// A storage that connects to an endpoint from its configuration must override it. `local` has no host,
+    /// and `web` checks the URL of every request.
+    virtual void checkRemoteHostFilter(const RemoteHostFilter & /* filter */) const {}
 
     /// Remove object on path if exists
     virtual void removeObjectIfExists(const StoredObject & object) = 0;

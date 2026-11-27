@@ -108,6 +108,9 @@ struct RuntimeHashStatisticsContext
 
     UInt64 getCachedKey(const QueryPlan::Node * node)
     {
+        /// A sub-plan without a raw hash has no `HashTablesStatistics` entry, see `calculateHashTableCacheKeys`.
+        if (!getRawHash(node))
+            return 0;
         if (auto it = cache_keys.find(node); it != cache_keys.end())
             return it->second;
         return 0;
@@ -159,8 +162,9 @@ struct RuntimeHashStatisticsContext
 
         UInt64 raw_left = getRawHash(left_child_node);
         UInt64 raw_right = getRawHash(right_child_node);
-        UInt64 left_key = raw_left ^ calculateJoinStepCacheKeyContribution(join_step, JoinTableSide::Left);
-        UInt64 right_key = raw_right ^ calculateJoinStepCacheKeyContribution(join_step, JoinTableSide::Right);
+        /// A child without a raw hash gets no key, and neither does a join above it.
+        UInt64 left_key = raw_left ? raw_left ^ calculateJoinStepCacheKeyContribution(join_step, JoinTableSide::Left) : 0;
+        UInt64 right_key = raw_right ? raw_right ^ calculateJoinStepCacheKeyContribution(join_step, JoinTableSide::Right) : 0;
 
         /// Update cache_keys to reflect the new parent for these children (in case any
         /// downstream code reads them back via getCachedKey).
@@ -173,7 +177,7 @@ struct RuntimeHashStatisticsContext
         SipHash node_hash;
         node_hash.update(left_key);
         node_hash.update(right_key);
-        UInt64 raw_new = node_hash.get64();
+        UInt64 raw_new = left_key && right_key ? node_hash.get64() : 0;
         raw_hashes[&new_node] = raw_new;
         cache_keys[&new_node] = raw_new;
 
@@ -192,11 +196,11 @@ struct RuntimeHashStatisticsContext
             condition.getNode()->updateHash(output_hash);
         }
 
-        return {right_key, output_hash.get64()};
+        return {right_key, raw_new ? output_hash.get64() : 0};
     }
 };
 
-bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings &)
+bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * join_step = typeid_cast<JoinStep *>(node.step.get());
     if (!join_step || node.children.size() != 2 || join_step->isOptimized())
@@ -223,8 +227,12 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
     bool need_swap = false;
     if (!join_step->swap_join_tables.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
+        auto lhs_extimation = estimateReadRowsCount(
+            *node.children[0], RelationStatsOptions{.find_single_node_read = &optimization_settings.find_single_node_read})
+            .estimated_rows;
+        auto rhs_extimation = estimateReadRowsCount(
+            *node.children[1], RelationStatsOptions{.find_single_node_read = &optimization_settings.find_single_node_read})
+            .estimated_rows;
         LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
             lhs_extimation ? toString(lhs_extimation.value()) : "unknown",
             rhs_extimation ? toString(rhs_extimation.value()) : "unknown");
@@ -506,8 +514,14 @@ static bool canMergeExpressionIntoJoinGraph(const ActionsDAG & dag, bool merge_e
 /// Whether a child join step may be flattened into the group of tables to reorder. Without a
 /// conflict detector only plain inner and one-sided outer joins can. For the conflict detector,
 /// which describes each operator by its two whole subtrees, semi/anti and `FULL` joins can too.
-static bool isFlattenableChildJoin(JoinKind kind, JoinStrictness strictness, bool for_conflict_detector)
+static bool isFlattenableChildJoin(const JoinOperator & join_operator, bool for_conflict_detector)
 {
+    /// A set-operation join must see the whole rows of its arms.
+    if (join_operator.set_operation != JoinSetOperation::None)
+        return false;
+
+    const auto kind = join_operator.kind;
+    const auto strictness = join_operator.strictness;
     const bool kind_allowed = isInnerOrCross(kind) || isLeft(kind) || isRight(kind) || (for_conflict_detector && isFull(kind));
     const bool strictness_allowed = strictness == JoinStrictness::All
         || (for_conflict_detector && (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti));
@@ -596,8 +610,7 @@ static size_t addChildQueryGraph(
             /// Normally only plain joins enter the group of tables we reorder. For the conflict
             /// detector semi/anti and `FULL` joins come along too, so DPsub can reorder them as well.
             bool allow_child_join_kind = isFlattenableChildJoin(
-                child_join_step->getJoinOperator().kind, child_join_step->getJoinOperator().strictness,
-                graph.context->allow_semi_anti_flattening);
+                child_join_step->getJoinOperator(), graph.context->allow_semi_anti_flattening);
             /// Do not flatten joins that have type-changing sides (e.g., LEFT JOIN
             /// with `join_use_nulls` making right-side columns Nullable). Flattening
             /// such joins allows the optimizer to reorder them, which can separate
@@ -643,7 +656,8 @@ static size_t addChildQueryGraph(
     }
 
     graph.inputs.push_back(node);
-    RelationStats stats = estimateReadRowsCount(*node);
+    RelationStats stats = estimateReadRowsCount(
+        *node, RelationStatsOptions{.find_single_node_read = &graph.context->optimization_settings.find_single_node_read});
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
@@ -1058,32 +1072,39 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
-/// Whether the column `name` of `node` is the column `column` of the read below, only renamed by expressions and filters: a
-/// key `optimizeJoinByShards` can split by, which matches it to the primary key exactly, not through a monotonic function.
-static bool isReadColumn(const QueryPlan::Node & node, const QueryPlan::Node & reading, String name, const String & column)
+/// The first node at or below `node` that is not an expression or filter, renaming `name` along; nullptr if the column is computed.
+static const QueryPlan::Node * findColumnThroughRenames(const QueryPlan::Node & node, String & name)
 {
-    for (const auto * current = &node; current != &reading; current = current->children.front())
+    const auto * current = &node;
+    while (true)
     {
-        if (current->children.size() != 1)
-            return false;
         const ActionsDAG * dag = nullptr;
         if (const auto * expression = typeid_cast<const ExpressionStep *>(current->step.get()))
             dag = &expression->getExpression();
         else if (const auto * filter = typeid_cast<const FilterStep *>(current->step.get()))
             dag = &filter->getExpression();
         else
-            return false;
+            return current;
+        if (current->children.size() != 1)
+            return nullptr;
 
         const auto * output = dag->tryFindInOutputs(name);
         if (!output)
-            return false;
+            return nullptr;
         while (output->type == ActionsDAG::ActionType::ALIAS)
             output = output->children.front();
         if (output->type != ActionsDAG::ActionType::INPUT)
-            return false;
+            return nullptr;
         name = output->result_name;
+        current = current->children.front();
     }
-    return name == column;
+}
+
+/// Whether the column `name` of `node` is the column `column` of the read below, only renamed by expressions and filters: a
+/// key `optimizeJoinByShards` can split by, which matches it to the primary key exactly, not through a monotonic function.
+static bool isReadColumn(const QueryPlan::Node & node, const QueryPlan::Node & reading, String name, const String & column)
+{
+    return findColumnThroughRenames(node, name) == &reading && name == column;
 }
 
 /// For each input, the longest sequence of its `candidates` columns that `optimizeReadInOrder` could read it in order of.
@@ -1104,7 +1125,23 @@ static VectorWithMemoryTracking<QueryGraph::ReadInOrder> findReadInOrderPrefixes
         if (columns.empty())
             continue;
         auto * reading_node = findReadingStepForReadInOrder(*inputs[i], /*read_in_order_through_join=*/ false);
-        auto * reading = reading_node ? typeid_cast<ReadFromMergeTree *>(reading_node->step.get()) : nullptr;
+        if (!reading_node)
+        {
+            std::ranges::sort(columns);
+            for (const auto & column : columns)
+            {
+                String name = column;
+                const auto * join_node = findColumnThroughRenames(*inputs[i], name);
+                const auto * join = join_node ? typeid_cast<const JoinStepLogical *>(join_node->step.get()) : nullptr;
+                if (!join || !join->getPlannedMergeOrder() || join->getPlannedMergeOrder()->column != name)
+                    continue;
+                const auto & order = *join->getPlannedMergeOrder();
+                prefixes[i] = {.prefix = {column}, .primary_key_prefix = static_cast<size_t>(order.sharded), .from_join = true};
+                break;
+            }
+            continue;
+        }
+        auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
         if (!reading || reading->isParallelReadingFromReplicas())
             continue;
 
@@ -1155,7 +1192,7 @@ static VectorWithMemoryTracking<QueryGraph::ReadInOrder> findReadInOrderPrefixes
     return prefixes;
 }
 
-static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
+static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness, JoinSetOperation set_operation)
 {
     const bool disjunctions_optimization_applied = query_graph_builder.disjunctions_optimization_applied;
 
@@ -1353,6 +1390,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             node_stack.pop();
 
             auto join_operator = std::move(entry->join_operator);
+            /// The join operator is rebuilt, and a set-operation join is always the only join of its graph.
+            join_operator.set_operation = set_operation;
             /// See `graph_has_mixed_strictness` above: keep each entry's own strictness in a mixed
             /// graph, otherwise stamp the graph's single strictness.
             if (!graph_has_mixed_strictness)
@@ -1535,10 +1574,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                     if (mapped_it == join_expression_map.end())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in join expression map", output_node->result_name);
                     dag_outputs.push_back(mapped_it->second);
-                    /// Include COLUMN Const nodes (like `__join_result_dummy`) in actions_after_join.
-                    /// These are `fromNone` and will be placed in left_dag, ensuring the left pre-join
-                    /// always produces at least one output column (so blocks have correct row count).
-                    if (mapped_it->second->type == ActionsDAG::ActionType::COLUMN)
+                    /// The join returns only the dummy constant (it keeps the row count of its blocks); other constants are
+                    /// computed after the join, which pads a returned column with defaults for the rows without a match.
+                    if (mapped_it->second->type == ActionsDAG::ActionType::COLUMN
+                        && JoinStepLogical::isDummyResultColumn(*mapped_it->second))
                         actions_after_join.push_back(mapped_it->second);
                 }
             }
@@ -1570,7 +1609,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             join_step->setDisjunctionsOptimizationApplied(disjunctions_optimization_applied);
             /// The physical join runs it, with the user's `join_algorithm` list as its fallback.
             if (entry->join_method == JoinMethod::Merge)
+            {
                 join_step->setPlannedAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
+                join_step->setPlannedMergeOrder({entry->merge_order_column, entry->sharded});
+            }
 
             /// Diagnostic only: a join is imprecise if any of its leaves was (see `leaf_imprecise` above).
             bool imprecise_estimate = false;
@@ -1685,8 +1727,7 @@ static void collectJoinGraphRelationHeaders(
         child_join_step && !child_join_step->isOptimized())
     {
         /// Keep in sync with `addChildQueryGraph`.
-        const bool allow_child_join_kind = isFlattenableChildJoin(
-                child_join_step->getJoinOperator().kind, child_join_step->getJoinOperator().strictness, allow_semi_anti_children)
+        const bool allow_child_join_kind = isFlattenableChildJoin(child_join_step->getJoinOperator(), allow_semi_anti_children)
             && child_join_step->typeChangingSides().empty();
 
         if (child_join_step->getJoinSettings() == join_settings && join_steps_limit > 1 && allow_child_join_kind)
@@ -1757,6 +1798,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     auto strictness = join_operator.strictness;
     auto kind = join_operator.kind;
     auto locality = join_operator.locality;
+    const auto set_operation = join_operator.set_operation;
     if (!optimization_settings.query_plan_optimize_join_order_limit
         || (strictness != JoinStrictness::All && !isSwapOnlyJoinStrictness(strictness))
         || locality != JoinLocality::Unspecified
@@ -1775,7 +1817,9 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     /// group, and it turns down more tables than `DPSUB_MAX_RELATIONS`. So count the tables the group
     /// would end up with, and build it the ordinary way when there are too many: greedy can then take
     /// it over, whole, instead of it being cut down to a size DPsub accepts.
-    bool reorder_semi_anti = conflictDetectorReordersSemiAnti(optimization_settings);
+    /// A set-operation join must see the whole rows of its arms, so it is not flattened together with the joins inside
+    /// the arms: with ANY and ANTI strictness it can only be swapped.
+    bool reorder_semi_anti = set_operation == JoinSetOperation::None && conflictDetectorReordersSemiAnti(optimization_settings);
     if (reorder_semi_anti)
     {
         VectorWithMemoryTracking<SharedHeader> flattened_relations;
@@ -1810,7 +1854,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     query_graph_builder.context->allow_semi_anti_flattening = reorder_semi_anti;
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
-    node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);
+    node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness, set_operation);
 }
 
 }

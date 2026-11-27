@@ -77,8 +77,8 @@ DB::NamesAndTypesList TableChanges::getSchemaUnlocked() const
     if (schema.has_value())
         return schema.value();
 
-    using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_schema>;
-    KernelSharedSchema kernel_schema(ffi::table_changes_schema(getTableChanges().get()));
+    using KernelSharedSchema = KernelPointerWrapper<::SharedSchema, ::free_schema>;
+    KernelSharedSchema kernel_schema(::table_changes_schema(getTableChanges().get()));
     schema = convertToClickHouseSchema(kernel_schema.get(), engine.get());
 
     LOG_TRACE(log, "Table schema: {}, source header: {}", schema->toString(), header.dumpNames());
@@ -91,17 +91,17 @@ TableChanges::KernelTableChanges & TableChanges::getTableChanges() const
         return table_changes;
 
     auto * engine_builder = helper->createBuilder();
-    engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
+    engine = KernelUtils::unwrapResult(::builder_build(engine_builder), "builder_build");
     table_changes = version_range.second.has_value()
         ? KernelUtils::unwrapResult(
-            ffi::table_changes_between_versions(
+            ::table_changes_between_versions(
                 KernelUtils::toDeltaString(helper->getTableLocation()),
                 engine.get(),
                 version_range.first,
                 version_range.second.value()),
             "table_changes_between_versions")
         : KernelUtils::unwrapResult(
-            ffi::table_changes_from_version(
+            ::table_changes_from_version(
                 KernelUtils::toDeltaString(helper->getTableLocation()),
                 engine.get(),
                 version_range.first),
@@ -120,7 +120,7 @@ TableChanges::KernelTableChangesScanIterator & TableChanges::getTableChangesScan
     {
         auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, getContext());
         table_changes_scan = KernelUtils::unwrapResult(
-            ffi::table_changes_scan(
+            ::table_changes_scan(
                 getTableChanges().release(),
                 engine.get(),
                 predicate.get()),
@@ -129,7 +129,7 @@ TableChanges::KernelTableChangesScanIterator & TableChanges::getTableChangesScan
     else
     {
         table_changes_scan = KernelUtils::unwrapResult(
-            ffi::table_changes_scan(
+            ::table_changes_scan(
                 getTableChanges().release(),
                 engine.get(),
                 /* predicate */nullptr),
@@ -140,7 +140,7 @@ TableChanges::KernelTableChangesScanIterator & TableChanges::getTableChangesScan
         std::rethrow_exception(engine_predicate_exception);
 
     table_changes_scan_iterator = KernelUtils::unwrapResult(
-        ffi::table_changes_scan_execute(table_changes_scan.get(), engine.get()),
+        ::table_changes_scan_execute(table_changes_scan.get(), engine.get()),
         "table_changes_scan_execute");
 
     LOG_TEST(log, "Initialized table changes scan iterator");
@@ -152,13 +152,13 @@ DB::Chunk TableChanges::next()
 {
     std::lock_guard lock(mutex);
 
-    ffi::ArrowFFIData * ffi_arrow_data = KernelUtils::unwrapResult(
-        ffi::scan_table_changes_next(getTableChangesScanIterator().get()),
+    ::ArrowFFIData * ffi_arrow_data = KernelUtils::unwrapResult(
+        ::scan_table_changes_next(getTableChangesScanIterator().get()),
         "scan_table_changes_next");
 
     if (!ffi_arrow_data)
         return {};
-    SCOPE_EXIT({ ffi::free_arrow_ffi_data(ffi_arrow_data); });
+    SCOPE_EXIT({ ::free_arrow_ffi_data(ffi_arrow_data); });
     if (ffi_arrow_data->array.length == 0)
         return {};
 

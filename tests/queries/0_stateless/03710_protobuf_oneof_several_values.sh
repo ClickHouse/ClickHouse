@@ -7,6 +7,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SCHEMADIR=$CURDIR/format_schemas
 . "$CURDIR"/../shell_config.sh
 
+# `clickhouse-local` caches the schemas given with `format_schema_source` under its working directory.
+WORKDIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+mkdir -p "$WORKDIR"
+cd "$WORKDIR" || exit 1
+
 rm -rf "${CLICKHOUSE_TMP}"/oneof_several_values.bin
 
 # generate a Protobuf file that has values for both string1 and string2
@@ -46,3 +51,5 @@ format_schema_message_name='StringOrString', input_format_protobuf_oneof_presenc
 " < "${CLICKHOUSE_TMP}/oneof_several_values.bin"
 
 rm -rf "${CLICKHOUSE_TMP}"/oneof_several_values.bin
+
+rm -rf "$WORKDIR"

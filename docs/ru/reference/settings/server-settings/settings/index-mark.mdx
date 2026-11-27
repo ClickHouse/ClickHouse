@@ -14,7 +14,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 ## index_mark_cache_policy {#index_mark_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Название политики вытеснения кэша меток вторичных индексов. Возможные значения: `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Политика вытеснения для кэша засечек вторичных индексов. Возможные значения: `LRU`, `SLRU`, `SIEVE`. Ёмкость кэша задаётся параметром [`index_mark_cache_size`](/ru/reference/settings/server-settings/settings/index-mark#index_mark_cache_size), а размер защищённой очереди в политике SLRU — параметром [`index_mark_cache_size_ratio`](/ru/reference/settings/server-settings/settings/index-mark#index_mark_cache_size_ratio).
 
 ## index_mark_cache_prewarm_ratio {#index_mark_cache_prewarm_ratio}
 

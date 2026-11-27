@@ -1,0 +1,78 @@
+---
+slug: /clickstack/observability/text-to-dashboard
+title: 'Text-to-Dashboard'
+sidebarTitle: 'Text-to-Dashboard'
+description: '在 ClickHouse Observability 中通过自然语言提示词创建仪表盘。'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'text-to-dashboard', 'AI', '仪表盘', '自然语言']
+---
+
+只需用日常语言描述您想要监控的内容，Text-to-Dashboard 即可据此创建仪表盘。AI 会检查您的可用数据，构建相关卡片，并保存为仪表盘，供您随时打开和编辑。
+
+如果只需生成单个图表，请使用 [Text-to-Chart](/zh/clickstack/observability/text-to-chart)。
+
+## 前置条件 {#prerequisites}
+
+* 您的 ClickHouse Observability 服务中必须已有可用数据。
+* 团队管理员必须先[启用生成式 AI](/zh/clickstack/observability/notebooks#enabling-generative-ai)。
+* 您的角色必须具有使用 AI 笔记本和创建仪表盘的权限。
+
+## 生成仪表盘 {#generate-a-dashboard}
+
+<Steps>
+  <Step title="打开仪表盘生成功能" id="open-dashboard-generation">
+    在侧边栏中选择 **仪表盘**。打开 **New Dashboard**，然后选择 **Generate with AI**。
+  </Step>
+
+  <Step title="描述仪表盘" id="describe-the-dashboard">
+    在 **Generate dashboard with AI** 中，描述您希望仪表盘解答的问题，并注明相关的服务、数据源、字段和图表类型。例如：
+
+    > 使用 Logs 数据源创建一个仪表盘。显示日志总数、日志量随时间的变化趋势，以及按严重级别分组的日志计数。所有卡片均使用仪表盘的时间筛选器。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Generate dashboard with AI 对话框，其中的提示词描述了日志量、按服务划分的错误以及常见错误消息](/images/clickstack/observability-text-to-dashboard-prompt.png)
+      </Frame>
+    </div>
+
+    选择 **Generate dashboard**。
+  </Step>
+
+  <Step title="在笔记本中跟踪生成过程" id="follow-dashboard-generation">
+    系统会打开一个包含您请求内容的 AI 笔记本。AI 会检查可用的数据源和数据，创建仪表盘，并在笔记本中报告结果。如果其中说明了缺失的数据或对所请求仪表盘的调整，请仔细查看。
+  </Step>
+
+  <Step title="打开并检查仪表盘" id="review-generated-dashboard">
+    点击笔记本响应中的仪表盘链接。生成的仪表盘会自动保存，也可以在 **仪表盘** 中找到。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Observability 中由 AI 生成的仪表盘，显示日志总数、日志量随时间的变化趋势以及按严重级别划分的日志计数](/images/clickstack/observability-text-to-dashboard-result.png)
+      </Frame>
+    </div>
+
+    检查所选的数据源、筛选条件、聚合和时间范围。确认图表能够解答您最初的问题，并会随仪表盘时间筛选器的变化而更新。您可以使用标准的[仪表盘控件](/zh/clickstack/observability/features/dashboards/overview)编辑卡片和布局。
+
+    如需进一步优化结果，可在笔记本中继续提出具体的后续请求，例如添加服务筛选器或更改图表的分组方式。
+  </Step>
+</Steps>
+
+## 示例提示词 {#example-prompts}
+
+请根据您服务中的可用数据调整以下提示词：
+
+* **日志监控：**“创建一个仪表盘，显示日志量随时间的变化趋势、按服务统计的错误计数，以及出现最频繁的错误消息。”
+* **服务性能：**“使用 Traces source，为 checkout 服务创建一个仪表盘，按端点展示请求量、错误率和 p95 延迟。”
+* **聚焦调查：**“为支付失败创建一个仪表盘，展示其随时间变化的频率，并按服务和错误消息进行细分。”
+
+如果字段或属性的含义无法从 schema 中直接看出，请指明要使用的字段或属性名称，并说明在您的数据中应如何识别错误或失败。
+
+## 检查生成结果 {#review-generated-results}
+
+AI 生成的仪表盘可能包含错误的查询或假设。在依据其做出运维决策之前，请逐一检查每个卡片。图表为空可能是因为数据缺失、过滤器条件过于严格，或所选时间范围内没有匹配的事件。
+
+## 相关指南 {#related-guides}
+
+* [Text-to-Chart](/zh/clickstack/observability/text-to-chart)：在 Chart Explorer 中生成单个图表。
+* [AI 笔记本](/zh/clickstack/observability/notebooks)：借助 AI 分析排查数据，并逐步完善请求。
+* [仪表板与可视化](/zh/clickstack/observability/features/dashboards/overview)：编辑和整理仪表板面板。

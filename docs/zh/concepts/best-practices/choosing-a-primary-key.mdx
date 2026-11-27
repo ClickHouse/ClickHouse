@@ -27,9 +27,7 @@ doc_type: 'guide'
   排序键必须在创建表时定义，之后无法再添加。不过，可以通过一种称为投影的功能，在插入数据之后 (或之前) 为表增加额外的排序方式。请注意，这会导致数据重复。更多详情见[这里](/zh/reference/statements/alter/projection)。
 </Info>
 
-<div id="example">
-  ## 示例
-</div>
+## 示例 {#example}
 
 请看下面的 `posts_unordered` 表。该表中每一行对应一条 Stack Overflow 帖子。
 
@@ -121,13 +119,9 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 下面的动画展示了如何为 Stack Overflow 的 posts 表创建优化后的稀疏主索引。索引针对的不是单独的行，而是行块：
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![主键](/images/bestpractices/create_primary_key.webp)
-
-</Frame>
-
+  <Frame>
+    ![主键](/images/bestpractices/create_primary_key.webp)
+  </Frame>
 </div>
 
 如果在使用此排序键的表上重复执行相同的查询：
@@ -177,13 +171,9 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 此外，我们还用图示展示了稀疏索引如何剪枝掉所有不可能包含示例查询匹配结果的行块：
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![主键](/images/bestpractices/primary_key.webp)
-
-</Frame>
-
+  <Frame>
+    ![主键](/images/bestpractices/primary_key.webp)
+  </Frame>
 </div>
 
 <Note>

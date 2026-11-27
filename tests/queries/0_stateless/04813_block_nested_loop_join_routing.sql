@@ -5,6 +5,7 @@
 -- `ALL` strictness keep their cross-join-with-a-filter plan, so nothing that worked before moves
 -- to the new operator.
 
+SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
 SET join_algorithm = 'direct,parallel_hash,hash';
 SET cross_to_inner_join_rewrite = 0;
 -- A swapped join exchanges the sides, so the kind the plan below prints is the mirrored one. The
@@ -27,13 +28,13 @@ SELECT 'function', count() FROM (EXPLAIN SELECT count() FROM bnl_l l LEFT JOIN b
 SELECT 'disjunction', count() FROM (EXPLAIN SELECT count() FROM bnl_l l LEFT JOIN bnl_r r ON l.x = r.x OR l.y < r.y) WHERE explain LIKE '%BlockNestedLoopJoin%';
 
 -- No takeover: `INNER` with `ALL` strictness still cross joins and filters, an equality is still
--- claimed as a hash join key, and `IEJoin` still claims two inequalities when it is enabled.
+-- claimed as a hash join key, and `InequalityJoin` still claims two inequalities when it is enabled.
 SELECT 'inner', count() FROM (EXPLAIN SELECT count() FROM bnl_l l JOIN bnl_r r ON l.x < r.y) WHERE explain LIKE '%BlockNestedLoopJoin%';
 SELECT 'inner cross', count() FROM (EXPLAIN SELECT count() FROM bnl_l l JOIN bnl_r r ON l.x < r.y) WHERE explain LIKE '%Type: cross%';
 SELECT 'inner filter', count() FROM (EXPLAIN SELECT count() FROM bnl_l l JOIN bnl_r r ON l.x < r.y) WHERE explain LIKE '%Filter (Post Join Actions)%';
 SELECT 'equi', count() FROM (EXPLAIN SELECT count() FROM bnl_l l LEFT JOIN bnl_r r ON l.x = r.x) WHERE explain LIKE '%BlockNestedLoopJoin%';
 SELECT 'ie join', count() FROM (EXPLAIN SELECT count() FROM bnl_l l LEFT JOIN bnl_r r ON l.x < r.x AND l.y > r.y
-    SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join') WHERE explain LIKE '%IEJoin%';
+    SETTINGS join_algorithm = 'direct,parallel_hash,hash,inequality') WHERE explain LIKE '%InequalityJoin%';
 
 -- `EXPLAIN actions = 1` describes the operator: the kind, the strictness and the whole condition it
 -- evaluates, named by its condition column.

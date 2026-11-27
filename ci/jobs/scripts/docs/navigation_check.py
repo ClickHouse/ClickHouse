@@ -25,7 +25,6 @@ LOCALE_DIRS = {"ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"}
 IGNORED_TOP_LEVEL_DIRS = {
     ".mintlify",
     "_includes",
-    "_migration",
     "_site",
     "_templates",
     "changelogs",

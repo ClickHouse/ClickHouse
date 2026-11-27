@@ -1,4 +1,4 @@
-<test run_all_queries="1">
+<test>
     <settings>
         <max_threads>1</max_threads>
     </settings>
@@ -31,6 +31,20 @@
     <!-- Vary content and offsets in a packed string column rather than repeating one value. -->
     <query>
         SELECT sum(length(toValidUTF8(concat(repeat('x', number % 32), 'é中文🙂', repeat('z', number % 17))))) AS total
+        FROM numbers(1000000) FORMAT Null
+    </query>
+
+    <!-- Short non-ASCII words separated by one ASCII byte. -->
+    <query>
+        SELECT sum(length(toValidUTF8(materialize('купить диван в москве недорого')))) AS total
+        FROM numbers(1000000) FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(materialize('안녕하세요 오늘 날씨가 정말 좋네요 산책하러 갈까요')))) AS total
+        FROM numbers(1000000) FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(toValidUTF8(materialize(repeat('中文,', 14))))) AS total
         FROM numbers(1000000) FORMAT Null
     </query>
 </test>

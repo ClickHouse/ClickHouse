@@ -654,7 +654,7 @@ Int64 daysFromCivil(Int64 year, unsigned month, unsigned day)
     year -= month <= 2;
     const Int64 era = (year >= 0 ? year : year - 399) / 400;
     const unsigned yoe = static_cast<unsigned>(year - era * 400);
-    const unsigned doy = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1;
+    const unsigned doy = (153 * (month > 2 ? month - 3 : month + 9) + 2) / 5 + day - 1;
     const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     return era * 146097 + static_cast<Int64>(doe) - 719468;
 }
@@ -669,7 +669,7 @@ void civilFromDays(Int64 days, Int64 & year, unsigned & month, unsigned & day)
     const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
     const unsigned mp = (5 * doy + 2) / 153;
     day = doy - (153 * mp + 2) / 5 + 1;
-    month = mp + (mp < 10 ? 3 : -9);
+    month = mp < 10 ? mp + 3 : mp - 9;
     year = y + (month <= 2);
 }
 

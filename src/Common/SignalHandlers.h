@@ -1,5 +1,6 @@
 #pragma once
 #include <csignal>
+#include <exception>
 
 #include <base/defines.h>
 #include <Common/Logger_fwd.h>
@@ -95,7 +96,7 @@ private:
     sigset_t saved_mask{};
 };
 
-/// Reset the deadly signal handlers to SIG_DFL (like HandledSignals::reset(false)), idempotently.
+/// Reset the deadly signal handlers to their previous actions (like HandledSignals::reset(false)), idempotently.
 /// Safe to call from the sanitizer death callback: it does not construct HandledSignals.
 void resetHandledSignals();
 
@@ -120,6 +121,7 @@ public:
     explicit SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRequestCallback terminate_request_callback_ = nullptr);
     void run() override;
 
+    /// Also returns, by rethrowing it, when building the symbol index in this thread has failed (see `run`).
     bool waitForTerminationRequest(std::chrono::milliseconds timeout = std::chrono::milliseconds::max());
 
 private:
@@ -134,6 +136,8 @@ private:
     std::mutex terminate_request_mutex;
     std::condition_variable terminate_request_cv;
     size_t terminate_requested = 0;
+    /// The failure to build the symbol index at the start of `run`, for the main thread to rethrow.
+    std::exception_ptr symbol_index_exception;
 
     void onTerminate(std::string_view message, UInt32 thread_num) const;
 
@@ -151,7 +155,10 @@ private:
 
 struct HandledSignals
 {
-    std::vector<int> handled_signals;
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    /// Each registered signal with the action `reset` restores, in reverse order.
+    std::vector<std::pair<int, struct sigaction>> handled_signals;
+#endif
     DB::PipeFDs signal_pipe;
     std::atomic_flag fatal_error_printed;
 

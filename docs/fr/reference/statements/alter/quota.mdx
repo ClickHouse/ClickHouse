@@ -19,7 +19,7 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
     [IPV4_PREFIX_BITS number]
     [IPV6_PREFIX_BITS number]
     [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
-        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time | written_bytes | written_rows | failed_sequential_authentications | queries_per_normalized_hash} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
+        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time | written_bytes | written_rows | failed_sequential_authentications | queries_per_normalized_hash | profile_event_name} = number } [,...] | NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
@@ -28,6 +28,8 @@ Les clés `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `clie
 Les options `IPV4_PREFIX_BITS` et `IPV6_PREFIX_BITS` ne peuvent être utilisées que lorsque `KEYED BY` est défini sur `ip_address` ou `forwarded_ip_address`. Elles correspondent au champ de la table [system.quotas](/fr/reference/system-tables/quotas).
 
 Les paramètres `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `execution_time`, `written_bytes`, `written_rows`, `failed_sequential_authentications`, `queries_per_normalized_hash` correspondent aux champs de la table [system.quotas&#95;usage](/fr/reference/system-tables/quotas_usage).
+
+Il est également possible de définir une limite sur n’importe quel événement de profilage (voir la table [system.events](/fr/reference/system-tables/events)) en le désignant par son nom, par exemple `MAX S3GetObject = 1000`.
 
 La clause `ON CLUSTER` permet de créer des quotas sur un cluster, voir [DDL distribué](/fr/reference/statements/distributed-ddl).
 

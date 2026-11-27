@@ -18,9 +18,9 @@ bool isQueryKindRejectedUnderReadonly(IAST::QueryKind kind)
         case IAST::QueryKind::Explain:
         case IAST::QueryKind::Check:
         /// Session- and transaction-mutating statements (`USE`, `SET` / `SET ROLE`, `BEGIN` / `COMMIT` / `ROLLBACK` /
-        /// `SET TRANSACTION SNAPSHOT`) run under `readonly = 2`, so they are not rejected - apart from `SET ROLE`
-        /// when `access_control_improvements.readonly_restricts_set_role` is enabled. `QueryKind::Set` does not
-        /// distinguish `SET ROLE` from plain `SET`, so the kind is reported as not rejected either way. Their
+        /// `SET TRANSACTION SNAPSHOT`) run under `readonly = 2`, so they are not rejected - apart from `SET ROLE` and
+        /// `SET DEFAULT ROLE` when `access_control_improvements.readonly_restricts_set_role` is enabled. `QueryKind::Set`
+        /// does not distinguish them from plain `SET`, so the kind is reported as not rejected either way. Their
         /// session-visible side effects are reported separately by `queryKindHasSideEffectsUnderReadonly`.
         case IAST::QueryKind::Use:
         case IAST::QueryKind::Set:

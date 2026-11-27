@@ -1,11 +1,13 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string_view>
 #include <vector>
 
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/CacheLine.h>
 
 namespace DB
 {
@@ -89,7 +91,25 @@ public:
 
     /// Releases the partition's chunks and resets its cursor. Consumers may release distinct partitions
     /// concurrently, after `finishAppending`.
-    void releasePartition(size_t partition);
+    void releasePartition(size_t partition) { releasePartitions(partition, 1); }
+
+    /// Releases the chunks of the `count` consecutive partitions from `first_partition` on, and resets their cursors.
+    /// The chunks of consecutive partitions often share blocks, and the chunks of one block give their references back
+    /// with one decrement of its counter. Consumers may release distinct partitions concurrently, after
+    /// `finishAppending`.
+    void releasePartitions(size_t first_partition, size_t count);
+
+    /// Prefetches what `releasePartitions` reads first for the same partitions, for a caller that releases the same
+    /// partitions of many buffers in a row.
+    ALWAYS_INLINE void prefetchRelease(size_t first_partition, size_t count) const
+    {
+        const char * chain = reinterpret_cast<const char *>(&chains[first_partition]);
+        for (size_t offset = 0; offset < count * sizeof(Chain); offset += CH_CACHE_LINE_SIZE)
+            __builtin_prefetch(chain + offset, /*rw=*/1);
+        const char * cursor = reinterpret_cast<const char *>(&cursors[first_partition]);
+        for (size_t offset = 0; offset < count * sizeof(Cursor); offset += CH_CACHE_LINE_SIZE)
+            __builtin_prefetch(cursor + offset, /*rw=*/1);
+    }
 
     /// The total capacity of chunks allocated since construction or `clear`. This counts chunk headers and
     /// padding, excludes unused block capacity, and is not reduced by concurrent partition releases.
@@ -100,8 +120,10 @@ public:
 
 private:
     static constexpr size_t max_block_bytes = 256 << 10;
-    /// The chunks whose block counters `releasePartition` prefetches before it decrements them.
-    static constexpr size_t release_batch_chunks = 16;
+    /// The blocks whose counters `releasePartitions` prefetches before it decrements them.
+    static constexpr size_t release_batch_blocks = 16;
+    /// How many partitions ahead `releasePartitions` prefetches the header of a partition's first chunk.
+    static constexpr size_t release_prefetch_partitions = 8;
 
     struct Block;
     struct ChunkHeader;
@@ -136,6 +158,10 @@ private:
     /// The cold path of `append`: closes the partition's current chunk and starts one that holds `bytes`.
     NO_INLINE void startChunk(size_t partition, size_t bytes);
 
+    /// Gives back `references` references to `block`: that of its carver, or those of chunks carved from it. The block
+    /// is freed with its last reference, and then leaves `live_allocations`.
+    void releaseBlock(Block * block, UInt32 references = 1);
+
     /// Ends the claims on the blocks being carved, so each block is freed with its last chunk. The groups
     /// keep their totals: appends resumed after `finishAppending` continue the growth of their blocks.
     void releaseCurrentBlocks();
@@ -152,6 +178,11 @@ private:
     std::unique_ptr<Chain[]> chains;
     std::vector<Carver> carvers;
     size_t allocated_chunk_bytes = 0;
+    /// The blocks and the chunks allocated on their own that are not freed yet. The appending thread counts each one
+    /// where it allocates it, and whoever frees one counts it out: a consumer does for a block when it releases the
+    /// last chunk of the block, which happens once per block rather than once per partition. `clear` skips its walk
+    /// over the partitions when none is left.
+    std::atomic<size_t> live_allocations{0};
 };
 
 /// The head of every chunk: the next chunk of the partition, the block it was carved from (null for a chunk

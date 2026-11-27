@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/VectorWithMemoryTracking.h>
+#include <base/types.h>
 #include <Core/Block_fwd.h>
 #include <Processors/IProcessor_fwd.h>
 

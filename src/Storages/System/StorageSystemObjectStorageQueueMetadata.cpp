@@ -321,6 +321,8 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
         /// `getZooKeeper` is already bound to the right Keeper.
         const std::filesystem::path base_path(metadata->getPath());
         const bool unordered = metadata->getTableMetadata().mode == "unordered";
+        /// `exclusive` mode keeps the state of files only in memory, so it has no directories in keeper.
+        const bool exclusive = metadata->getTableMetadata().mode == "exclusive";
         const size_t batch_size = std::max<size_t>(1, metadata->getKeeperMultireadBatchSize());
 
         auto zk_retries = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
@@ -335,15 +337,18 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
 
         try
         {
-            readFolder(*metadata, zk_retries, batch_size, base_path, "processing",
-                       columns_mask[PROCESSING_NODES_COUNT], columns_mask[PROCESSING_NODES], processing_count, processing_contents);
-            readFolder(*metadata, zk_retries, batch_size, base_path, "failed",
-                       columns_mask[FAILED_NODES_COUNT], columns_mask[FAILED_NODES], failed_count, failed_contents);
-            if (unordered)
-                readFolder(*metadata, zk_retries, batch_size, base_path, "processed",
-                           columns_mask[PROCESSED_NODES_COUNT], columns_mask[PROCESSED_NODES], processed_count, processed_contents);
-            else if (columns_mask[PROCESSED_PATH])
-                processed_path = readProcessedPointers(*metadata, zk_retries, batch_size, base_path);
+            if (!exclusive)
+            {
+                readFolder(*metadata, zk_retries, batch_size, base_path, "processing",
+                           columns_mask[PROCESSING_NODES_COUNT], columns_mask[PROCESSING_NODES], processing_count, processing_contents);
+                readFolder(*metadata, zk_retries, batch_size, base_path, "failed",
+                           columns_mask[FAILED_NODES_COUNT], columns_mask[FAILED_NODES], failed_count, failed_contents);
+                if (unordered)
+                    readFolder(*metadata, zk_retries, batch_size, base_path, "processed",
+                               columns_mask[PROCESSED_NODES_COUNT], columns_mask[PROCESSED_NODES], processed_count, processed_contents);
+                else if (columns_mask[PROCESSED_PATH])
+                    processed_path = readProcessedPointers(*metadata, zk_retries, batch_size, base_path);
+            }
         }
         catch (const Coordination::Exception &)
         {

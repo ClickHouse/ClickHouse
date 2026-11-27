@@ -8,6 +8,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB
@@ -233,6 +234,11 @@ public:
     bool canReadInOrder(const InputOrderInfo & order_info_, bool allow_shorter_read_key = false);
     [[nodiscard]] const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
+    /// Forwards `ReadFromMergeTree::setPreferMultipleStreams` to the child reading steps of the ordered
+    /// pipeline (not to the build side of a join or the source of a set), so that
+    /// per-stream work installed above a `Merge` table is not serialized by the child reads.
+    void setPreferMultipleStreams();
+
     /// Whether the child plans have been created (`filterTablesAndCreateChildrenPlans`).
     [[nodiscard]] bool hasChildPlans() const { return child_plans.has_value(); }
     /// Drops the child plans, so that they are created again when they are needed next. For a first-pass
@@ -244,6 +250,7 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
+    QueryPlanRawPtrs getBuiltChildPlans() override;
 
     /// Returns child plans aligned 1:1 with `getSelectedTables()`. Entries for uninitialized
     /// plans are returned as `nullptr` so that callers can pair tables with their plans.

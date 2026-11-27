@@ -2,17 +2,26 @@
 #include <WindowFunctions/Aggregate/AggregateWindowFunctionPrefix.h>
 #include <WindowFunctions/Aggregate/AggregateWindowFunctionRecalculate.h>
 
-#include <Interpreters/WindowDescription.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+
+#include <Common/Exception.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 AggregateWindowFunctionPtr createAggregateWindowFunction(AggregateFunctionPtr function, const WindowDescription & window)
 {
-    if (window.frame.begin_type == WindowFrame::BoundaryType::Unbounded)
-        return std::make_shared<AggregateWindowFunctionPrefix>(std::move(function));
-
-    return std::make_shared<AggregateWindowFunctionRecalculate>(std::move(function));
+    if (auto prefix = tryCreateAggregateWindowFunctionPrefix(function, window))
+        return prefix;
+    else if (auto recalculate = tryCreateAggregateWindowFunctionRecalculate(function, window))
+        return recalculate;
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No aggregate window function for aggregate function {}", function->getName());
 }
 
 }

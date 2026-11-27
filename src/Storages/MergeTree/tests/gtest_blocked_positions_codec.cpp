@@ -267,16 +267,29 @@ DB::PaddedPODArray<UInt32> toPod(const std::vector<uint32_t> & v)
     return out;
 }
 
-/// Test-side wrapper over the appending kernel.
+/// Test-side wrapper: converts absolute positions to the gap lists the matcher reads.
 DB::PaddedPODArray<UInt32> matchCandidates(
     const DB::PaddedPODArray<UInt32> & candidates,
     const std::vector<DB::PaddedPODArray<UInt32>> & offsets,
     const std::vector<DB::PaddedPODArray<UInt32>> & positions,
     const std::vector<size_t> & term_to_unique)
 {
+    std::vector<DB::PaddedPODArray<UInt64>> bounds(offsets.size());
+    std::vector<DB::PaddedPODArray<UInt32>> lanes(offsets.size());
+    for (size_t u = 0; u < offsets.size(); ++u)
+    {
+        for (size_t i = 0; i + 1 < offsets[u].size(); ++i)
+        {
+            bounds[u].push_back(lanes[u].size());
+            for (UInt32 k = offsets[u][i]; k < offsets[u][i + 1]; ++k)
+                lanes[u].push_back(k == offsets[u][i] ? positions[u][k] : positions[u][k] - positions[u][k - 1]);
+            bounds[u].push_back(lanes[u].size());
+        }
+    }
+
     DB::PaddedPODArray<UInt32> matching;
     DB::TextIndexPhraseSearch::matchCandidatePositions(
-        std::span<const UInt32>(candidates.data(), candidates.size()), offsets, positions, term_to_unique, matching);
+        std::span<const UInt32>(candidates.data(), candidates.size()), bounds, lanes, term_to_unique, matching);
     return matching;
 }
 

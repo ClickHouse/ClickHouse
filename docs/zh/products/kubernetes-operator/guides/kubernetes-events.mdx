@@ -26,9 +26,7 @@ PersistentVolumeClaim 或版本探测 Job) ；其他事件则只引用
   并非持久的审计记录。
 </Note>
 
-<div id="viewing-events">
-  ## 查看事件
-</div>
+## 查看事件 {#viewing-events}
 
 最快捷的方法是对自定义资源运行 `kubectl describe`，它会在底部列出
 最新的事件：
@@ -60,17 +58,13 @@ kubectl -n $NS get events --watch
 `ClickHouseCluster` 事件 (`clickhouse-controller`) 与 `KeeperCluster` 事件
 (`keeper-controller`) 区分开来。
 
-<div id="event-reasons">
-  ## 事件原因参考
-</div>
+## 事件原因参考 {#event-reasons}
 
 Operator 会产生一组固定的原因，并按其所描述的内容分组。`Normal`
 事件表示预期的进展；`Warning` 事件表示失败，或提示用户
 应采取行动的状态。
 
-<div id="resource-lifecycle">
-  ### 资源生命周期
-</div>
+### 资源生命周期 {#resource-lifecycle}
 
 当 operator 在协调过程中无法
 应用其所管理的资源时，会在 `ClickHouseCluster` 和 `KeeperCluster` 上发出此事件。
@@ -81,9 +75,7 @@ Operator 会产生一组固定的原因，并按其所描述的内容分组。`N
 | `FailedUpdate` | Warning | operator 无法更新资源。                                                                           |
 | `FailedDelete` | Warning | operator 在协调或缩容期间无法删除其所管理的资源。                                                              |
 
-<div id="cluster-readiness">
-  ### 集群就绪情况
-</div>
+### 集群就绪情况 {#cluster-readiness}
 
 当集群跨过就绪状态边界时，这两类资源都会发出事件。
 
@@ -92,9 +84,7 @@ Operator 会产生一组固定的原因，并按其所描述的内容分组。`N
 | `ClusterReady`    | Normal  | 集群变为就绪：每个 ClickHouse 分片至少有一个就绪副本，或者 Keeper quorum 拥有一个 leader 和足够多的跟随者 (或者其单个 standalone 副本已启动) 。 |
 | `ClusterNotReady` | Warning | 集群退出就绪状态——某个 ClickHouse 分片已没有任何就绪副本，或者 Keeper quorum 丢失了 leader，或跟随者数量不足。                         |
 
-<div id="scaling">
-  ### 扩缩容
-</div>
+### 扩缩容 {#scaling}
 
 当 operator 更改 `KeeperCluster` 的副本数时，会发出此类事件。
 
@@ -113,9 +103,7 @@ Operator 会产生一组固定的原因，并按其所描述的内容分组。`N
   阻止这次变更的限制条件。
 </Note>
 
-<div id="external-secret">
-  ### 外部 Secret
-</div>
+### 外部 Secret {#external-secret}
 
 当集群引用了 operator 无法使用的外部 Secret 时，`ClickHouseCluster` 上会发出此事件。请参阅
 [配置指南](/zh/products/kubernetes-operator/guides/configuration)中的“外部 Secret”功能。
@@ -125,9 +113,7 @@ Operator 会产生一组固定的原因，并按其所描述的内容分组。`N
 | `ExternalSecretNotFound` | Warning | 被引用的 Secret 在集群所在的命名空间中不存在。                |
 | `ExternalSecretInvalid`  | Warning | 该 Secret 存在，但缺少必需的键 (仅在 `Observe` 策略下报告) 。 |
 
-<div id="version-checks">
-  ### 版本检查
-</div>
+### 版本检查 {#version-checks}
 
 由 `ClickHouseCluster` 和 `KeeperCluster` 的版本检查发出。
 `VersionProbeFailed` 是 ClickHouse 版本探测 Job 特有的事件。
@@ -138,16 +124,14 @@ Operator 会产生一组固定的原因，并按其所描述的内容分组。`N
 | `VersionDiverge`          | Warning | 检测到的某个副本版本与 operator 为集群检测到的版本不一致。在滚动更新期间，此事件会被抑制。                  |
 | `VersionUpgradeAvailable` | Warning | 配置的升级通道上有更新版本可用、当前运行版本不在该通道内，或者该版本已结束支持。operator 绝不会自行升级——此事件仅用于通知。 |
 
-<div id="clickhouse-warnings">
-  ### ClickHouse server 警告
-</div>
+### ClickHouse server 警告 {#clickhouse-warnings}
 
-| 原因                  | 类型 | 含义                                                 |
-| ------------------- | -- | -------------------------------------------------- |
+| 原因                  | 类型      | 含义                                                 |
+| ------------------- | ------- | -------------------------------------------------- |
 | `ClickHouseWarning` | Warning | 由 ClickHouse server 自身上报的警告，转发自 `system.warnings`。 |
 
 最后这一类原因比较特殊：它描述的并不是 operator 自身的操作。在
-每个就绪的副本上，operator 会定期查询服务器的
+每个可访问的副本上，operator 会定期查询服务器的
 [`system.warnings`](https://clickhouse.com/docs/operations/system-tables/system_warnings) 表，
 并将其中的每一行作为集群上的 `Warning` 事件重新发布，同时以前缀标明其来源
 副本。这样一来，ClickHouse 自身的配置和运行时
@@ -159,9 +143,7 @@ kubectl -n $NS get events \
   --field-selector reason=ClickHouseWarning,involvedObject.name=<name>
 ```
 
-<div id="events-vs-metrics">
-  ## 事件、指标和条件
-</div>
+## 事件、指标和条件 {#events-vs-metrics}
 
 operator 提供了三类可观测性信息；请按各自最擅长的场景使用：
 
@@ -180,9 +162,7 @@ operator 提供了三类可观测性信息；请按各自最擅长的场景使�
 角度描述同一个问题：事件记录的是发生当下及其消息，而 condition 则会持续反映
 该状态，直到问题消除。
 
-<div id="troubleshooting">
-  ## 通过事件进行故障排查
-</div>
+## 通过事件进行故障排查 {#troubleshooting}
 
 以下是一些常见信号及其所指向的问题：
 
@@ -199,9 +179,7 @@ operator 提供了三类可观测性信息；请按各自最擅长的场景使�
 * **`ClickHouseWarning`** — 问题出在 ClickHouse 内部，而不在 operator。
   请像处理 `system.warnings` 中的一行那样对待这条消息。
 
-<div id="related-guides">
-  ## 相关指南
-</div>
+## 相关指南 {#related-guides}
 
 * [监控 Operator](/zh/products/kubernetes-operator/guides/monitoring) — 指标和健康探针，是事件的持久化对应物。
 * [扩缩容](/zh/products/kubernetes-operator/guides/scaling) — `HorizontalScaleBlocked` 的保护作用，以及 Keeper quorum 如何限制扩缩容。

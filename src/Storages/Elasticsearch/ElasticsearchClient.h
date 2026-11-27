@@ -13,14 +13,29 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/URI.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Common/IntervalKind.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
+
+struct ElasticsearchSourceFilter
+{
+    enum class Kind
+    {
+        None,
+        All,
+        Includes,
+    };
+
+    Kind kind = Kind::All;
+    Strings includes;
+};
+
 class ElasticsearchClient
 {
 public:
-    ElasticsearchClient(ElasticsearchConfiguration, ContextPtr, const ElasticsearchSettings &);
+    ElasticsearchClient(ElasticsearchSourceFilter, ElasticsearchConfiguration, ContextPtr, const ElasticsearchSettings &);
 
     ~ElasticsearchClient();
 
@@ -43,6 +58,8 @@ private:
         const ReadSettings & request_read_settings,
         const ConnectionTimeouts & request_timeouts) const;
 
+    ElasticsearchSourceFilter source_filter;
+    Poco::JSON::Object prepared_source;
     size_t page_size;
     String pit_id;
     String pit_keep_alive;

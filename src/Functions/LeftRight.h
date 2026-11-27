@@ -23,7 +23,6 @@ using namespace GatherUtils;
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 enum class SubstringDirection : uint8_t
@@ -55,6 +54,13 @@ public:
 
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+
+    /// A row whose result is NULL, or an unused dictionary entry of a `LowCardinality` argument, may hold a UInt64 that
+    /// does not fit Int64, and `executeImpl` would throw for it
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return !uint64ArgumentMayHoldUnusedValues(arguments);
+    }
 
     [[nodiscard]] String getSignatureString() const override
     {
@@ -95,11 +101,9 @@ public:
                 // According to the docs, if length_value < 0, we need to take a suffix of the string starting from the position abs(length_value)
                 else
                 {
-                    Int64 abs_length_value = 0;
-                    if (common::subOverflow(Int64(0), length_value, abs_length_value))
-                        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                            "Argument of function {} is out of bound: {}", getName(), length_value);
-                    sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), static_cast<size_t>(abs_length_value));
+                    /// Unsigned negation, so INT64_MIN gives 2^63 instead of overflowing; it skips the whole string.
+                    const UInt64 abs_length_value = common::negateIgnoreOverflow(static_cast<UInt64>(length_value));
+                    sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), abs_length_value);
                 }
             }
             else
@@ -122,11 +126,8 @@ public:
                         slice = source.getSliceFromRight(static_cast<UInt64>(length), static_cast<UInt64>(length));
                     else if (length < 0)
                     {
-                        Int64 abs_length = 0;
-                        if (common::subOverflow(Int64(0), length, abs_length))
-                            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                                "Argument of function {} is out of bound: {}", getName(), length);
-                        slice = source.getSliceFromLeft(static_cast<size_t>(abs_length));
+                        const UInt64 abs_length = common::negateIgnoreOverflow(static_cast<UInt64>(length));
+                        slice = source.getSliceFromLeft(abs_length);
                     }
                     if (length != 0)
                         writeSlice(slice, sink);
@@ -143,6 +144,10 @@ public:
     {
         ColumnPtr column_string = arguments[0].column;
         ColumnPtr column_length = arguments[1].column;
+
+        /// The length is read with IColumn::getInt() below, so a UInt64 value that does not fit
+        /// Int64 must be rejected here rather than read as a negative length.
+        checkIntegerArgumentFitsInt64(*column_length, name, "length");
 
         const ColumnConst * column_length_const = checkAndGetColumn<ColumnConst>(column_length.get());
 

@@ -2,11 +2,13 @@
 #include <base/sort.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/DiskRoot.h>
 #include <Disks/DiskSelector.h>
 #include <Disks/createVolume.h>
 
 #include <Interpreters/Context.h>
 #include <Common/StringUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
@@ -15,8 +17,6 @@
 
 #include <algorithm>
 #include <exception>
-#include <filesystem>
-#include <map>
 #include <ranges>
 #include <set>
 
@@ -289,12 +289,12 @@ UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
     {
         auto volume_unreserved_space = volume->getMaxUnreservedFreeSpace();
         if (!volume_unreserved_space)
-            return -1ULL; /// There is at least one unlimited disk.
+            return std::numeric_limits<UInt64>::max(); /// There is at least one unlimited disk.
 
         if (!res || *volume_unreserved_space > *res)
             res = volume_unreserved_space;
     }
-    return res.value_or(-1ULL);
+    return res.value_or(std::numeric_limits<UInt64>::max());
 }
 
 
@@ -477,8 +477,7 @@ std::optional<size_t> StoragePolicy::tryGetVolumeIndexByDiskName(const String & 
 
 void StoragePolicy::buildVolumeIndices()
 {
-    /// `cache` and `encrypted` disks share the files of the disk they wrap, so two disks of a policy must not resolve to the same directory.
-    std::map<std::pair<const IMetadataStorage *, String>, String> policy_disk_by_directory;
+    VectorWithMemoryTracking<std::pair<DiskRoot, String>> policy_disk_roots;
 
     for (size_t index = 0; index < volumes.size(); ++index)
     {
@@ -500,15 +499,17 @@ void StoragePolicy::buildVolumeIndices()
                                 "Disk names must be unique in storage policy {} ({} "
                                 "is duplicated)" , backQuote(name), backQuote(disk_name));
 
-            if (auto metadata_storage = unwrapEncryptedAndCacheLayers(disk))
+            if (auto root = getDiskRoot(disk))
             {
-                String directory = std::filesystem::path(disk->getPath()).lexically_normal().string();
-                auto [it, inserted] = policy_disk_by_directory.emplace(std::pair{metadata_storage.get(), directory}, disk_name);
-                if (!inserted)
-                    throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
-                                    "Disks {} and {} in storage policy {} store data in the same directory {}, "
-                                    "so a table would load each of its parts twice",
-                                    backQuote(it->second), backQuote(disk_name), backQuote(name), backQuote(directory));
+                for (const auto & [other_root, other_disk_name] : policy_disk_roots)
+                {
+                    if (*root == other_root)
+                        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+                                        "Disks {} and {} in storage policy {} store data in the same place ({})",
+                                        backQuote(other_disk_name), backQuote(disk_name), backQuote(name), root->path);
+                }
+
+                policy_disk_roots.emplace_back(std::move(*root), disk_name);
             }
 
             volume_index_by_disk_name[disk_name] = index;

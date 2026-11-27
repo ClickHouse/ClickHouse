@@ -131,7 +131,7 @@ private:
     /// returned bare text, or returned truncated/invalid JSON) falls through to `raw_response` unchanged, so
     /// `parseFilterMatch`'s fail-closed handling of unrecognised text still applies. Parse errors are
     /// swallowed on purpose - the fail-closed default takes over.
-    [[nodiscard]] String postProcessResponse(const String & raw_response) const override
+    [[nodiscard]] String postProcessResponse(const ColumnsWithTypeAndName & /*arguments*/, const String & raw_response) const override
     {
         if (raw_response.empty() || raw_response.front() != '{')
             return raw_response;
@@ -199,7 +199,7 @@ Note: using `aiFilter` in `JOIN ... ON` evaluates the LLM once per candidate pai
         .arguments = {
             {"text", "Text to evaluate.", {"String"}},
             {"condition", "Constant natural-language condition the text must satisfy.", {"String"}},
-            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024`). The common parameters `credentials` and `model` also apply (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}},
+            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024`). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)).", {"Map(String, String)"}},
         },
         .returned_value = {"`1` if the text matches the condition, `0` otherwise. Returns the default value (`0`) if the request failed and `ai_function_throw_on_error` is disabled.", {"UInt8"}},
         .examples = {

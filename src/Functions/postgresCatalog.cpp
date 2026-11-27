@@ -15,6 +15,7 @@
 #include <Common/assert_cast.h>
 
 #include <Common/config_version.h>
+#include <Common/DateLUTImpl.h>
 
 #include <Poco/String.h>
 
