@@ -1,0 +1,7 @@
+SELECT body((SELECT body((SELECT body((SELECT 1))))))
+SELECT body((SELECT body((SELECT body((SELECT 1), \'CSV\')), \'CSV\')), \'CSV\')
+SELECT body((SELECT body((SELECT body((SELECT 1), \'CSV\')), \'CSV\')), \'CSV\')
+608
+888
+888
+SELECT body((SELECT 1) + 1, 2), body((SELECT 1) AS x), body(((SELECT 1), 2)), body((1 + 2) * 3)

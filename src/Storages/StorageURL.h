@@ -24,6 +24,7 @@ namespace DB
 {
 
 class IOutputFormat;
+class IQueryTreeNode;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 class IInputFormat;
@@ -86,11 +87,41 @@ public:
 
     bool supportsPartitionBy() const override { return true; }
 
+    /// Body of a POST request the URL table function may send.
+    /// Either a constant literal string, or a SELECT subquery whose output is
+    /// streamed into the request body using `format` (default JSONLines).
+    /// Execution is deferred: the subquery is interpreted only when a request is sent.
+    struct Body
+    {
+        /// Presence (engaged optional) is kept separate from the payload length, so that
+        /// `body('')` is treated as a specified, empty payload rather than as an absent body.
+        std::optional<String> literal;
+        ASTPtr query;
+        /// The query resolved by the analyzer in the scope of the enclosing query, if it was. It is planned instead
+        /// of `query`, see `ITableFunction::setResolvedSubqueryOfWrapper`.
+        std::shared_ptr<IQueryTreeNode> query_tree;
+        /// The output format of `query`, from its `FORMAT` clause. Empty means the default.
+        String format;
+
+        /// True only when no `body(...)` argument was given at all.
+        [[nodiscard]] bool empty() const { return !literal && !query; }
+
+        [[nodiscard]] String getFormatName() const { return format.empty() ? "JSONLines" : format; }
+
+        /// Add the `Content-Type` header of the output format of `query`, unless it is already present.
+        void addContentTypeHeaderIfNeeded(HTTPHeaderEntries & request_headers, const ContextPtr & context) const;
+
+        /// Build a callback that writes the body into the HTTP request output stream.
+        /// Returns nullptr only when no body was specified (see `empty`).
+        [[nodiscard]] std::function<void(WriteBuffer &)> makeCallback(const ContextPtr & context) const;
+    };
+
     static ColumnsDescription getTableStructureFromData(
         const String & format,
         const String & uri,
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
+        const Body & body,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context,
         const RemoteDescriptionCaller & caller = tableFunctionURLCaller(),
@@ -100,6 +131,7 @@ public:
         const String & uri,
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
+        const Body & body,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context,
         const RemoteDescriptionCaller & caller = tableFunctionURLCaller(),
@@ -111,6 +143,7 @@ public:
     static std::optional<time_t> tryGetLastModificationTime(
         const String & url,
         const HTTPHeaderEntries & headers,
+        const std::function<void(WriteBuffer &)> & write_body_callback,
         const Poco::Net::HTTPBasicCredentials & credentials,
         const ContextPtr & context,
         bool check_redirect_access);
@@ -128,7 +161,8 @@ protected:
         const ConstraintsDescription & constraints_,
         const String & comment,
         const String & compression_method_,
-        const HTTPHeaderEntries & headers_ = {},
+        HTTPHeaderEntries headers_ = {},
+        Body body_ = {},
         const String & method_ = "",
         ASTPtr partition_by = nullptr,
         bool distributed_processing_ = false,
@@ -144,6 +178,7 @@ protected:
     // In this case, format_settings is not set.
     std::optional<FormatSettings> format_settings;
     HTTPHeaderEntries headers;
+    Body body;
     String http_method; /// For insert can choose Put instead of default Post.
     ASTPtr partition_by;
     bool distributed_processing;
@@ -157,6 +192,10 @@ protected:
     RemoteDescriptionCaller glob_caller;
 
     virtual std::string getReadMethod() const;
+
+    /// When body is set, the URL function sends a POST request with the body as the
+    /// request payload. Subclasses (e.g. StorageXDBC) may override these to provide
+    /// their own POST behavior; in that case `body` is ignored.
 
     virtual std::vector<std::pair<std::string, std::string>> getReadURIParams(
         const Names & column_names,
@@ -194,6 +233,7 @@ private:
         const String & uri,
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
+        const Body & body,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context,
         const RemoteDescriptionCaller & caller,
@@ -345,6 +385,9 @@ private:
     /// see `makeQueryConditionCacheFileKey`. The OpenTelemetry headers added per query are not included.
     UInt128 request_headers_hash;
     bool need_only_count;
+    /// True when the read sends a request body (POST). Body-dependent responses must not use the
+    /// row-count cache, whose key does not account for the body.
+    bool has_request_body;
     /// Set when the reads check `READ ON URL` for the redirect targets, see `IStorageURLBase::check_redirect_access`.
     bool check_redirect_access;
     StorageID storage_id;
@@ -431,7 +474,8 @@ public:
         const String & comment,
         const ContextPtr & context_,
         const String & compression_method_,
-        const HTTPHeaderEntries & headers_ = {},
+        HTTPHeaderEntries headers_ = {},
+        Body body_ = {},
         const String & method_ = "",
         ASTPtr partition_by_ = nullptr,
         bool distributed_processing_ = false,
@@ -470,15 +514,22 @@ public:
         std::string http_method;
         HTTPHeaderEntries headers;
         std::string addresses_expr;
+        Body body;
     };
 
     static Configuration getConfiguration(
         ASTs & args, const ContextPtr & context, const StorageID * table_id = nullptr, bool is_replayed_definition = false);
 
     /// Does evaluateConstantExpressionOrIdentifierAsLiteral() on all arguments.
-    /// If `headers(...)` argument is present, parses it and moves it before the key-value arguments (to the array end if there are none).
-    /// Returns number of arguments excluding `headers(...)`.
-    static size_t evalArgsAndCollectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments = true);
+    /// `headers(...)` and `body(...)` arguments are extracted and moved (in the order `body`, `headers`) before the
+    /// key-value arguments (to the array end if there are none).
+    /// Returns number of arguments excluding `headers(...)` and `body(...)`.
+    static size_t evalArgsAndCollectHeadersAndBody(
+        ASTs & url_function_args,
+        HTTPHeaderEntries & header_entries,
+        Body & body_entry,
+        const ContextPtr & context,
+        bool evaluate_arguments = true);
 
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
 
