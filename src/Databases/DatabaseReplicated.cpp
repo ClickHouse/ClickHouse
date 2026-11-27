@@ -3192,6 +3192,19 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
         return table->supportsReplication();
     };
 
+    /// A table backed by an external database (PostgreSQL, MySQL, ...) is shared by every replica of
+    /// this database: they all point at the same remote. A data mutation must therefore run once, like
+    /// a `KeeperMap` operation above, rather than be put in the DDL log and re-applied on each replica
+    /// (which is redundant and, because the log is retried, can re-send a non-idempotent statement). Its
+    /// metadata, in contrast, is still replicated so the table definitions stay in sync.
+    const auto is_external_database_table = [&](const ASTPtr & ast)
+    {
+        auto table_id = query_context->resolveStorageID(ast, Context::ResolveOrdinary);
+        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, query_context);
+
+        return table->isExternalDatabase();
+    };
+
     const auto has_many_shards = [&]()
     {
         /// If there is only 1 shard then there is no need to replicate some queries.
@@ -3213,7 +3226,10 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
         if (is_keeper_map_table(query_ptr) && !alter->isSettingsOrCommentAlter())
             return false;
 
-        if (has_many_shards() || !is_replicated_table(query_ptr))
+        /// For an external-database table do not take the `!is_replicated_table` "replicate it"
+        /// shortcut: fall through to the command-type split below so a metadata ALTER still replicates
+        /// while a data mutation (`ALTER ... DELETE`/`UPDATE`) runs once on the shared remote.
+        if (!is_external_database_table(query_ptr) && (has_many_shards() || !is_replicated_table(query_ptr)))
             return true;
 
         try
@@ -3246,6 +3262,10 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     if (query_ptr->as<const ASTDeleteQuery>() || query_ptr->as<const ASTUpdateQuery>())
     {
         if (is_keeper_map_table(query_ptr))
+            return false;
+
+        /// Runs once on the shared remote, not once per replica (see `is_external_database_table`).
+        if (is_external_database_table(query_ptr))
             return false;
 
         return has_many_shards() || !is_replicated_table(query_ptr);

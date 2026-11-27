@@ -14,12 +14,16 @@ node1 = cluster.add_instance(
     main_configs=["configs/named_collections.xml"],
     user_configs=["configs/users.xml"],
     with_postgres=True,
+    with_zookeeper=True,
+    macros={"shard": 1, "replica": 1},
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/named_collections.xml"],
     user_configs=["configs/settings.xml", "configs/users.xml"],
     with_postgres_cluster=True,
+    with_zookeeper=True,
+    macros={"shard": 1, "replica": 2},
 )
 
 
@@ -2293,6 +2297,56 @@ def test_postgres_delete_on_cluster_rejected(started_cluster):
     node1.query("DROP TABLE test.pg_delete_cluster_tf")
     node1.query("DROP TABLE test.pg_delete_cluster")
     cursor.execute("DROP TABLE test_delete_cluster")
+
+
+def test_postgres_delete_replicated_database_runs_once(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_repl")
+    cursor.execute("CREATE TABLE test_delete_repl (id integer, value text)")
+    cursor.execute(
+        "INSERT INTO test_delete_repl SELECT i, 'name_' || i FROM generate_series(0, 9) AS i"
+    )
+
+    # A Replicated database replicates DDL to every replica through a Keeper log. A PostgreSQL table is
+    # backed by a single shared remote, so a DELETE/UPDATE must execute once on the initiator, not be
+    # replicated and re-run on each replica (redundant, and on a log retry it could re-send a
+    # non-idempotent statement). Both nodes reach the same postgres1, so a regression that replicated
+    # the mutation would run it on node2 and show up in node2's log.
+    node1.query("DROP DATABASE IF EXISTS pg_repl SYNC")
+    node2.query("DROP DATABASE IF EXISTS pg_repl SYNC")
+    node1.query(
+        "CREATE DATABASE pg_repl ENGINE = Replicated('/clickhouse/databases/pg_repl', 'shard1', 'replica1')"
+    )
+    node2.query(
+        "CREATE DATABASE pg_repl ENGINE = Replicated('/clickhouse/databases/pg_repl', 'shard1', 'replica2')"
+    )
+    # Explicit columns so the CREATE does not need to reach PostgreSQL; the definition replicates to node2.
+    node1.query(
+        f"CREATE TABLE pg_repl.pg (id Int32, value String) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_repl', 'postgres', '{pg_pass}')"
+    )
+    node2.query("SYSTEM SYNC DATABASE REPLICA pg_repl")
+    assert "pg" in node2.query("SHOW TABLES FROM pg_repl")
+
+    # Lightweight DELETE and the ALTER mutation form, both issued on node1.
+    node1.query("DELETE FROM pg_repl.pg WHERE id = 1")
+    node1.query("ALTER TABLE pg_repl.pg DELETE WHERE id = 2")
+
+    # Drain node2's DDL log: had either mutation been replicated it would be executed by now (FIFO log).
+    node2.query("SYSTEM SYNC DATABASE REPLICA pg_repl")
+
+    # Each row was deleted exactly once on the shared remote.
+    cursor.execute("SELECT id FROM test_delete_repl ORDER BY id")
+    assert cursor.fetchall() == [(0,), (3,), (4,), (5,), (6,), (7,), (8,), (9,)]
+
+    # node1 executed both remote statements; node2 executed neither (mutation ran once, not replicated).
+    assert node1.contains_in_log('Query: DELETE FROM \\"test_delete_repl\\" WHERE \\"id\\" = 1')
+    assert node1.contains_in_log('Query: DELETE FROM \\"test_delete_repl\\" WHERE \\"id\\" = 2')
+    assert not node2.contains_in_log('Query: DELETE FROM \\"test_delete_repl\\"')
+
+    node1.query("DROP DATABASE pg_repl SYNC")
+    node2.query("DROP DATABASE pg_repl SYNC")
+    cursor.execute("DROP TABLE test_delete_repl")
 
 
 if __name__ == "__main__":
