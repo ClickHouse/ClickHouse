@@ -36,8 +36,10 @@ SELECT '---- a padded needle declines the index';
 SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE s = toFixedString('hello', 10) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
 SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE s IN (SELECT fs FROM t_text_padded_needles) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
 
-SELECT '---- a needle that carries no padding still prunes';
-SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE s = toFixedString('world', 5) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
+SELECT '---- a needle that carries no padding declines the index too';
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE s = toFixedString('world', 5) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
+
+SELECT '---- a String needle still prunes';
 SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE s = 'hello' ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
 
 DROP TABLE t_text_padded_needle;
@@ -82,8 +84,8 @@ SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE s = toFixe
 SELECT '---- a padded needle declines the index';
 SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE s = toFixedString('hello', 10) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
 
-SELECT '---- a needle that carries no padding still prunes';
-SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE s = toFixedString('world', 5) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
+SELECT '---- a needle that carries no padding declines the index too';
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE s = toFixedString('world', 5) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE t_text_padded_needle;
 
@@ -104,8 +106,8 @@ SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE s = toFixe
 SELECT '---- a padded needle declines the index';
 SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE s = toFixedString('hello', 10) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
 
-SELECT '---- a needle that carries no padding still prunes';
-SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE s = toFixedString('world', 5) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
+SELECT '---- a needle that carries no padding declines the index too';
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE s = toFixedString('world', 5) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE t_text_padded_needle;
 
@@ -126,8 +128,8 @@ SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE s = toFixe
 SELECT '---- a padded needle declines the index';
 SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE s = toFixedString('hello', 10) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
 
-SELECT '---- a needle that carries no padding still prunes';
-SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE s = toFixedString('world', 5) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
+SELECT '---- a needle that carries no padding declines the index too';
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE s = toFixedString('world', 5) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE t_text_padded_needle;
 
