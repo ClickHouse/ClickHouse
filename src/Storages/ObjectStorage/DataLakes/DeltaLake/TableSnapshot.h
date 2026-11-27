@@ -68,7 +68,6 @@ public:
 private:
     class Iterator;
 
-    using KernelExternEngine = KernelPointerWrapper<::SharedExternEngine, ::free_engine>;
     using KernelSnapshot = KernelPointerWrapper<::SharedSnapshot, ::free_snapshot>;
     using KernelScan = KernelPointerWrapper<::SharedScan, ::free_scan>;
     using KernelScanMetadataIterator = KernelPointerWrapper<::SharedScanMetadataIterator, ::free_scan_metadata_iter>;
@@ -88,7 +87,7 @@ private:
     {
         KernelSnapshotState(const IKernelHelper & helper_, std::optional<size_t> snapshot_version_);
 
-        KernelExternEngine engine;
+        KernelEnginePtr engine;
         KernelSnapshot snapshot;
         KernelScan scan;
         size_t snapshot_version;

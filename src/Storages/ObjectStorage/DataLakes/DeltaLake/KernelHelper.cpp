@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <Common/FailPoint.h>
 #include <Common/FullyQualifiedObjectPath.h>
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isValidUTF8.h>
@@ -51,6 +52,11 @@ namespace DB::FailPoints
     extern const char delta_kernel_force_credentials_fingerprint_drift[];
 }
 
+namespace ProfileEvents
+{
+    extern const Event DeltaLakeKernelEngineInitializations;
+}
+
 namespace DeltaLake
 {
 
@@ -88,10 +94,14 @@ public:
     ~BuilderGuard() { if (builder) ::free_engine_builder(builder); }
     BuilderGuard(const BuilderGuard &) = delete;
     BuilderGuard & operator=(const BuilderGuard &) = delete;
+    [[nodiscard]] ::EngineBuilder * get() const { return builder; }
     ::EngineBuilder * release() { auto * b = builder; builder = nullptr; return b; }
 private:
     ::EngineBuilder * builder = nullptr;
 };
+
+/// The replay of a table checkpointed every 10 commits stays pooled; longer replays are not kept.
+constexpr size_t kernel_max_idle_connections_per_host = 32;
 
 /// The kernel parses the location as a URL, where `#` would start a fragment.
 std::string escapeForKernelUrl(std::string path)
@@ -100,6 +110,28 @@ std::string escapeForKernelUrl(std::string path)
     return path;
 }
 
+}
+
+KernelEnginePtr IKernelHelper::getEngine() const
+{
+    const auto fingerprint = getCredentialsFingerprint();
+    KernelEnginePtr replaced;
+    std::lock_guard lock(engine_mutex);
+    if (engine && engine_credentials_fingerprint == fingerprint)
+        return engine;
+
+    BuilderGuard guard(createBuilder());
+    setBuilderOption(guard.get(), "pool_max_idle_per_host", std::to_string(kernel_max_idle_connections_per_host));
+    /// Call the kernel's free function directly rather than through a function pointer stored in the deleter,
+    /// which Clang CFI rejects for a Rust function (see `KernelPointerWrapper`).
+    KernelEnginePtr built(
+        KernelUtils::unwrapResult(::builder_build(guard.release()), "builder_build"),
+        [](::SharedExternEngine * engine_ptr) { ::free_engine(engine_ptr); });
+    ProfileEvents::increment(ProfileEvents::DeltaLakeKernelEngineInitializations);
+
+    replaced = std::exchange(engine, std::move(built));
+    engine_credentials_fingerprint = fingerprint;
+    return engine;
 }
 
 std::string IKernelHelper::resolveDataFilePath(const std::string & path, const DB::ContextPtr &) const
@@ -162,12 +194,24 @@ public:
         /// Re-fetch the live S3 client. `S3ObjectStorage::applyNewSettings` swaps the
         /// MultiVersion<S3::Client> when catalog / vended credentials rotate; a captured
         /// snapshot would keep returning the original session.
-        const auto & credentials = object_storage->getS3StorageClient()->getCredentials();
+        const auto client = object_storage->getS3StorageClient();
+        const auto & credentials = client->getCredentials();
 
         SipHash hash;
-        hash.update(std::string_view(credentials.GetAWSAccessKeyId()));
-        hash.update(std::string_view(credentials.GetAWSSecretKey()));
-        hash.update(std::string_view(credentials.GetSessionToken()));
+        auto add = [&hash](std::string_view value)
+        {
+            hash.update(value.size());
+            hash.update(value);
+        };
+        add(credentials.GetAWSAccessKeyId());
+        add(credentials.GetAWSSecretKey());
+        add(credentials.GetSessionToken());
+        /// `createBuilder` also takes the SSE-C key and requester pays from these headers.
+        for (const auto & header : client->getClientConfiguration().extra_headers)
+        {
+            add(header.name);
+            add(header.value);
+        }
         auto fp = hash.get128();
         /// Simulates a credentials rotation between consecutive reads of the same cached
         /// snapshot. Deterministic XOR keeps the perturbed value stable while the failpoint
@@ -509,8 +553,17 @@ public:
     {
         /// A storage that uses the server's identity follows the restriction of the accessing session
         /// (see `AzureObjectStorage::applyNewSettings`), so a cached engine is rebuilt when it changes.
+        const auto connection_params = object_storage->getAzureBlobStorageConnectionParams();
         SipHash hash;
-        hash.update(object_storage->getAzureBlobStorageConnectionParams()->forbid_implicit_credentials);
+        hash.update(connection_params->forbid_implicit_credentials);
+        /// A config reload of the table's disk replaces the account key or SAS token passed to the engine.
+        for (const auto & [name, value] : getAzureBuilderOptions(*connection_params))
+        {
+            hash.update(name.size());
+            hash.update(name);
+            hash.update(value.size());
+            hash.update(value);
+        }
         return hash.get128();
     }
 

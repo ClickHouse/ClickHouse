@@ -49,7 +49,6 @@ public:
 
 private:
     using KernelTransaction = DeltaLake::KernelPointerWrapper<::ExclusiveTransaction, ::free_transaction>;
-    using KernelExternEngine = DeltaLake::KernelPointerWrapper<::SharedExternEngine, ::free_engine>;
     using KernelWriteContext = DeltaLake::KernelPointerWrapper<::SharedWriteContext, ::free_write_context>;
     using KernelEngineData = DeltaLake::KernelPointerWrapper<::ExclusiveEngineData, ::free_engine_data>;
 
@@ -61,7 +60,7 @@ private:
     const LoggerPtr log;
     std::string path_prefix;
 
-    KernelExternEngine engine;
+    DeltaLake::KernelEnginePtr engine;
     KernelTransaction transaction;
     KernelWriteContext unpartitioned_write_context;
     DB::NamesAndTypesList write_schema;

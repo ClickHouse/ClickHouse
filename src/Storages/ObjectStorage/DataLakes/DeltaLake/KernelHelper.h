@@ -5,12 +5,16 @@
 #include <Core/Types.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <base/defines.h>
 
+#include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
 
 struct EngineBuilder;
+struct SharedExternEngine;
 
 #if USE_AZURE_BLOB_STORAGE
 namespace DB::AzureBlobStorage
@@ -21,6 +25,8 @@ struct ConnectionParams;
 
 namespace DeltaLake
 {
+
+using KernelEnginePtr = std::shared_ptr<::SharedExternEngine>;
 
 /**
  * A helper class to manage different storage types,
@@ -44,11 +50,13 @@ public:
     /// or an absolute URI, which a shallow clone uses for the files of its source table.
     [[nodiscard]] virtual std::string resolveDataFilePath(const std::string & path, const DB::ContextPtr & context) const;
 
+protected:
     /// Create "EngineBuilder" which allows to work with
     /// delta-kernel-rs ffi api and performs all interactions
     /// with object storage layer.
     [[nodiscard]] virtual ::EngineBuilder * createBuilder() const = 0;
 
+public:
     /// Make the table location ready for a brand-new table; the local helper creates the root directory, object stores (S3/Azure) default to a no-op.
     virtual void prepareForTableCreation() const {}
 
@@ -60,6 +68,14 @@ public:
     /// `ExpiredToken` recovery path — the kernel's Rust object_store can't refresh on its
     /// own, and vended creds are static in the C++ client until this callback fires.
     virtual bool refreshCredentials() { return false; }
+
+    /// One engine (one connection pool) shared by all users of this helper; rebuilt when `getCredentialsFingerprint` changes.
+    KernelEnginePtr getEngine() const;
+
+private:
+    mutable std::mutex engine_mutex;
+    mutable KernelEnginePtr engine TSA_GUARDED_BY(engine_mutex);
+    mutable DB::UInt128 engine_credentials_fingerprint TSA_GUARDED_BY(engine_mutex) {};
 };
 
 using KernelHelperPtr = std::shared_ptr<IKernelHelper>;

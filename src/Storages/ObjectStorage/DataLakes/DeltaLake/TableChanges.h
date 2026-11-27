@@ -33,7 +33,6 @@ public:
     static TableChangesVersionRange getVersionRange(int64_t start_version, int64_t end_version);
 
 private:
-    using KernelExternEngine = KernelPointerWrapper<::SharedExternEngine, ::free_engine>;
     using KernelTableChanges = KernelPointerWrapper<::ExclusiveTableChanges, ::free_table_changes>;
     using KernelTableChangesScan = KernelPointerWrapper<::SharedTableChangesScan, ::free_table_changes_scan>;
     using KernelTableChangesScanIterator = KernelPointerWrapper<::SharedScanTableChangesIterator, ::free_scan_table_changes_iter>;
@@ -51,7 +50,7 @@ private:
     const LoggerPtr log;
 
     mutable std::mutex mutex;
-    mutable KernelExternEngine engine;
+    mutable KernelEnginePtr engine;
     mutable KernelTableChanges table_changes;
     mutable KernelTableChangesScan table_changes_scan;
     mutable KernelTableChangesScanIterator table_changes_scan_iterator;
