@@ -639,7 +639,7 @@ String canonicalKafkaPropertyName(String name)
 /// The same for every spelling of a property in a section: `kafka.consumer.fetch.min.bytes` and `kafka.consumer.fetch_min_bytes`.
 String canonicalNamedCollectionKey(const String & key)
 {
-    const auto normalized_key = tryNormalizeNamedCollectionKey(key).value_or(key);
+    auto normalized_key = tryNormalizeNamedCollectionKey(key).value_or(key);
     const auto property_key = namedCollectionPropertyKey(normalized_key);
     if (property_key.empty())
         return normalized_key;
@@ -684,7 +684,7 @@ std::unordered_set<String> getNestedOverrides(const NamedCollectionPtr & table_c
     {
         if (!table_collection->isQueryOverridden(raw_key))
             continue;
-        const auto normalized_key = tryNormalizeNamedCollectionKey(raw_key);
+        auto normalized_key = tryNormalizeNamedCollectionKey(raw_key);
         if (!normalized_key)
             continue;
         const String & key = *normalized_key;
