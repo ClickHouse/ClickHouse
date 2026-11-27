@@ -1,0 +1,5 @@
+A url over a stored endpoint, and an endpoint over a stored url, require the secrets privilege
+With the secrets privilege they are allowed
+100
+200
+A url over a NOT OVERRIDABLE endpoint is rejected even with the secrets privilege
