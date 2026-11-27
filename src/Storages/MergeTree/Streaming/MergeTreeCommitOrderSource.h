@@ -15,10 +15,9 @@
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 
 #include <Processors/IProcessor.h>
+#include <Interpreters/StreamingCursor.h>
 
 #include <map>
-#include <Interpreters/Context.h>
-
 #include <optional>
 #include <string>
 

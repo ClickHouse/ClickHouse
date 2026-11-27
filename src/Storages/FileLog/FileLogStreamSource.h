@@ -3,7 +3,8 @@
 #include <Core/Block.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Core/Streaming/Settings.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/StreamingCursor.h>
 #include <Processors/ISource.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/Logger.h>
