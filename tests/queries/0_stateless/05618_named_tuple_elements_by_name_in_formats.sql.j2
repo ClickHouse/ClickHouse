@@ -88,6 +88,12 @@ FROM numbers(2) SETTINGS output_format_orc_dictionary_key_size_threshold = 1;
 SELECT * FROM file(currentDatabase() || '_05618_dict.ORC', 'ORC', 'id UInt64, e1 Int32') ORDER BY id SETTINGS input_format_orc_dictionary_as_low_cardinality = 1, input_format_null_as_default = 1;
 SELECT * FROM file(currentDatabase() || '_05618_dict.ORC', 'ORC', 'id UInt64, e1 String DEFAULT \'fallback\'') ORDER BY id SETTINGS input_format_orc_dictionary_as_low_cardinality = 1, input_format_null_as_default = 1;
 SELECT * FROM file(currentDatabase() || '_05618_dict.ORC', 'ORC', 'id UInt64, e1 String') SETTINGS input_format_orc_dictionary_as_low_cardinality = 1, input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+INSERT INTO FUNCTION file(currentDatabase() || '_05618_dot.ORC', 'ORC') SELECT number AS id,
+    [CAST((toDate32('2200-01-01'), tuple(1), 7), 'Tuple(`a.b` Date32, a Tuple(b Int32), `Null` UInt8)'), NULL][number + 1] AS d
+FROM numbers(2);
+SELECT * FROM file(currentDatabase() || '_05618_dot.ORC', 'ORC', 'id UInt64, `d.a.b` DateTime(\'UTC\')') ORDER BY id; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT * FROM file(currentDatabase() || '_05618_dot.ORC', 'ORC', 'id UInt64, `d.null` UInt8, `d.Null` UInt8') ORDER BY id;
+SELECT * FROM file(currentDatabase() || '_05618_dot.ORC', 'ORC', 'id UInt64, `d.null` UInt8, `d.a.b` Date32') ORDER BY id SETTINGS input_format_orc_case_insensitive_column_matching = 1;
 SELECT count() FROM file(currentDatabase() || '_05618_null.Parquet', 'Parquet', 'e2 Enum8(\'a\' = 1, \'b\' = 2)') WHERE e2 = 'a' SETTINGS input_format_parquet_dictionary_filter_push_down = 0;
 SELECT count() FROM file(currentDatabase() || '_05618_null.Parquet', 'Parquet', 'e2 Enum8(\'a\' = 1, \'b\' = 2)') WHERE e2 = 'a' SETTINGS input_format_parquet_dictionary_filter_push_down = 1048576;
 

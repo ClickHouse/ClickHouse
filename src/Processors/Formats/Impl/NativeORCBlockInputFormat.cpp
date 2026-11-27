@@ -1115,6 +1115,53 @@ static void getFileReader(
     file_reader = createORCReader(std::move(input_stream), options);
 }
 
+/// The field of the ORC struct `orc_type` that the path `target` names or starts with, and the rest of the path: the first
+/// one spelled exactly like it, else with `ignore_case` the only one that matches case-insensitively. With `ambiguous`,
+/// several fields that match only case-insensitively set it and resolve to nothing instead of throwing.
+static std::pair<std::string, const ORC::Type *> findORCStructFieldByPath(
+    const std::string & target, const ORC::Type * orc_type, bool ignore_case, bool * ambiguous)
+{
+    auto search_pass = [&](bool fold) -> std::pair<std::string, const ORC::Type *>
+    {
+        auto target_copy = target;
+        if (fold)
+            boost::to_lower(target_copy);
+
+        std::optional<size_t> match;
+        for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
+        {
+            auto field_name = orc_type->getFieldName(i);
+            if (fold)
+                boost::to_lower(field_name);
+
+            if (startsWith(target_copy, field_name) && (target_copy.size() == field_name.size() || target_copy[field_name.size()] == '.'))
+            {
+                if (!fold)
+                    return {target_copy.size() == field_name.size() ? "" : target.substr(field_name.size() + 1), orc_type->getSubtype(i)};
+                if (match && ambiguous)
+                {
+                    *ambiguous = true;
+                    return {"", nullptr};
+                }
+                if (match)
+                    DataTypeTuple::throwAmbiguousCaseInsensitiveName(target, orc_type->getFieldName(*match), orc_type->getFieldName(i));
+                match = i;
+            }
+        }
+        if (!match)
+            return {"", nullptr};
+        const size_t length = orc_type->getFieldName(*match).size();
+        return {target.size() == length ? "" : target.substr(length + 1), orc_type->getSubtype(*match)};
+    };
+
+    /// A field spelled exactly like the request always wins: a struct may hold several fields
+    /// whose names differ only by case.
+    auto exact_match = search_pass(/*fold=*/false);
+    if (exact_match.second || !ignore_case)
+        return exact_match;
+    return search_pass(/*fold=*/true);
+}
+
 /// With `ambiguous`, a name that matches several fields only case-insensitively sets it and resolves to nothing instead of throwing.
 static const ORC::Type * traverseDownORCTypeByName(
     const std::string & target, const ORC::Type * orc_type, DataTypePtr & type, bool ignore_case, bool * ambiguous = nullptr)
@@ -1127,52 +1174,9 @@ static const ORC::Type * traverseDownORCTypeByName(
     if (target.empty())
         return orc_type;
 
-    auto search_struct_field = [&](const std::string & target_, const ORC::Type * type_) -> std::pair<std::string, const ORC::Type *>
-    {
-        auto search_pass = [&](bool fold) -> std::pair<std::string, const ORC::Type *>
-        {
-            auto target_copy = target_;
-            if (fold)
-                boost::to_lower(target_copy);
-
-            std::optional<size_t> match;
-            for (size_t i = 0; i < type_->getSubtypeCount(); ++i)
-            {
-                auto field_name = type_->getFieldName(i);
-                if (fold)
-                    boost::to_lower(field_name);
-
-                if (startsWith(target_copy, field_name) && (target_copy.size() == field_name.size() || target_copy[field_name.size()] == '.'))
-                {
-                    if (!fold)
-                        return {target_copy.size() == field_name.size() ? "" : target_.substr(field_name.size() + 1), type_->getSubtype(i)};
-                    if (match && ambiguous)
-                    {
-                        *ambiguous = true;
-                        return {"", nullptr};
-                    }
-                    if (match)
-                        DataTypeTuple::throwAmbiguousCaseInsensitiveName(target_, type_->getFieldName(*match), type_->getFieldName(i));
-                    match = i;
-                }
-            }
-            if (!match)
-                return {"", nullptr};
-            const size_t length = type_->getFieldName(*match).size();
-            return {target_.size() == length ? "" : target_.substr(length + 1), type_->getSubtype(*match)};
-        };
-
-        /// A field spelled exactly like the request always wins: a struct may hold several fields
-        /// whose names differ only by case.
-        auto exact_match = search_pass(/*fold=*/false);
-        if (exact_match.second || !ignore_case)
-            return exact_match;
-        return search_pass(/*fold=*/true);
-    };
-
     if (ORC::STRUCT == orc_type->getKind())
     {
-        const auto [next_target, next_orc_type] = search_struct_field(target, orc_type);
+        const auto [next_target, next_orc_type] = findORCStructFieldByPath(target, orc_type, ignore_case, ambiguous);
         return next_orc_type ? traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case, ambiguous) : nullptr;
     }
     if (ORC::LIST == orc_type->getKind())
@@ -1184,7 +1188,7 @@ static const ORC::Type * traverseDownORCTypeByName(
         const auto * orc_nested_type = orc_type->getSubtype(0);
         if (array_type && ORC::STRUCT == orc_nested_type->getKind())
         {
-            auto next_type_and_target = search_struct_field(target, orc_nested_type);
+            auto next_type_and_target = findORCStructFieldByPath(target, orc_nested_type, ignore_case, ambiguous);
             const auto & next_target = next_type_and_target.first;
             const auto * next_orc_type = next_type_and_target.second;
             if (next_orc_type)
@@ -1745,6 +1749,10 @@ void NativeORCBlockInputFormat::prepareFileReader()
                 continue;
             const auto field = findORCStructFieldByName(&file_schema, table, ignore_case);
             if (!field || file_schema.getSubtype(*field)->getKind() != ORC::STRUCT)
+                continue;
+            /// A subcolumn that is not a field of the file (a null map, sizes, a missing field) is taken from the struct after the read.
+            auto type = column.type;
+            if (!traverseDownORCTypeByName(column.name, &file_schema, type, ignore_case))
                 continue;
             auto & [tables, subcolumns] = structs[*field];
             if (std::ranges::find(tables, table) == tables.end())
@@ -3527,10 +3535,22 @@ static const ORC::Type * findStructElementORCType(
 }
 
 /// The element of the struct `path` that the subcolumn path `subpath` starts with, and the rest. Of a struct with the elements `s`
-/// and `s.j`, `s.j` is the element `s.j`.
-static std::pair<String, String> splitStructElementName(const String & path, const String & subpath, const ColumnMapper * column_mapper)
+/// and `s.j`, `s.j` is the element `s.j`. For a plain file, the field that `traverseDownORCTypeByName` selects, by the file's name.
+static std::pair<String, String> splitStructElementName(
+    const String & path, const String & subpath, const ORC::Type * orc_type, const ColumnMapper * column_mapper, bool ignore_case)
 {
-    for (size_t end = subpath.size(); column_mapper && end != String::npos && end != 0; end = subpath.rfind('.', end - 1))
+    if (!column_mapper)
+    {
+        if (orc_type && orc_type->getKind() == ORC::STRUCT)
+        {
+            const auto [rest, field] = findORCStructFieldByPath(subpath, orc_type, ignore_case, nullptr);
+            for (size_t i = 0; field && i < orc_type->getSubtypeCount(); ++i)
+                if (orc_type->getSubtype(i) == field)
+                    return {orc_type->getFieldName(i), rest};
+        }
+        return Nested::splitName(subpath);
+    }
+    for (size_t end = subpath.size(); end != String::npos && end != 0; end = subpath.rfind('.', end - 1))
     {
         const String * struct_path = column_mapper->getIcebergStructPath(path + "." + subpath.substr(0, end));
         if (struct_path && *struct_path == path)
@@ -3541,7 +3561,8 @@ static std::pair<String, String> splitStructElementName(const String & path, con
 
 /// The type of the column `path` (the file's `orc_type`, if it has one) whose requested subcolumns have the given paths below it
 /// and types, to read it under the data lake schema: a list is an array of its element, a struct has the requested elements, a
-/// whole one with its type. Without a `column_mapper` (a plain file) elements are split at the first dot and found by name.
+/// whole one with its type. Without a `column_mapper` (a plain file) an element is the field that `traverseDownORCTypeByName`
+/// selects for the path, by the file's name.
 static DataTypePtr makeTypeHintFromSubcolumns(
     const String & path,
     const ORC::Type * orc_type,
@@ -3576,7 +3597,7 @@ static DataTypePtr makeTypeHintFromSubcolumns(
     UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<std::pair<String, DataTypePtr>>> nested_subcolumns;
     for (const auto & [subpath, type] : subcolumns)
     {
-        auto [name, rest] = splitStructElementName(path, subpath, column_mapper);
+        auto [name, rest] = splitStructElementName(path, subpath, orc_type, column_mapper, ignore_case);
         if (!whole_types.contains(name) && !nested_subcolumns.contains(name))
             names.push_back(name);
         if (rest.empty())
