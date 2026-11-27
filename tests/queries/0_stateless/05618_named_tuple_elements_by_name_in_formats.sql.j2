@@ -125,9 +125,15 @@ SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase(
 
 SELECT CAST(CAST(tuple(1), 'Tuple(a Int32)'), 'Tuple(b Int32)');
 
--- A map read as an array of tuples pairs its key and value by position, as `CAST` does.
+-- A map read as an array of tuples pairs its key and value by position if no requested name is a field name, as `CAST` does.
 {% for format in ['Parquet', 'ORC', 'Arrow', 'Native', 'Vortex'] -%}
 INSERT INTO FUNCTION file(currentDatabase() || '_05618_map.{{ format }}', '{{ format }}') SELECT map('k', NULL, 'j', 7)::Map(String, Nullable(Int8)) AS m;
 SELECT '{{ format }}', * FROM file(currentDatabase() || '_05618_map.{{ format }}', '{{ format }}', 'm Array(Tuple(k String, v Int8))') SETTINGS input_format_null_as_default = 1;
-SELECT * FROM file(currentDatabase() || '_05618_map.{{ format }}', '{{ format }}', 'm Array(Tuple(key String))'); -- { serverError TYPE_MISMATCH }
+SELECT * FROM file(currentDatabase() || '_05618_map.{{ format }}', '{{ format }}', 'm Array(Tuple(x String))'); -- { serverError TYPE_MISMATCH }
 {% endfor -%}
+-- Otherwise Parquet pairs them by name, as it reads their subcolumns without the parent.
+SELECT m.key FROM file(currentDatabase() || '_05618_map.Parquet', 'Parquet', 'm Array(Tuple(value Nullable(Int8), key String))');
+SELECT m.key, m FROM file(currentDatabase() || '_05618_map.Parquet', 'Parquet', 'm Array(Tuple(value Nullable(Int8), key String))');
+SELECT count() FROM file(currentDatabase() || '_05618_map.Parquet', 'Parquet', 'm Array(Tuple(value Nullable(Int8), key String))') WHERE m.key = ['k', 'j'];
+SELECT m FROM file(currentDatabase() || '_05618_map.Parquet', 'Parquet', 'm Array(Tuple(value Nullable(Int8), key String))') WHERE m.key = ['k', 'j'];
+SELECT m.key, m FROM file(currentDatabase() || '_05618_map.Parquet', 'Parquet', 'm Array(Tuple(key String, x Nullable(Int8)))');

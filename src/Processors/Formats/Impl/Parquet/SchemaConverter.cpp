@@ -1195,9 +1195,18 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     VectorWithMemoryTracking<size_t> elements;
     if (tuple_type_hint)
     {
-        /// A map's key and value are identified by position (Parquet spec), whatever the requested names.
+        /// A map's key and value are identified by position (Parquet spec) if no requested name is a field name.
+        bool map_entry_by_position = node.schema_context == SchemaContext::MapTupleAsPlainTuple;
+        for (size_t i = 0, child_idx = schema_idx; map_entry_by_position && i < size_t(node.element->num_children); ++i)
+        {
+            bool not_in_schema = false;
+            const std::string_view child_name = useColumnMapperIfNeeded(file_metadata.schema.at(child_idx), node.name, not_in_schema);
+            map_entry_by_position = not_in_schema
+                || !tuple_type_hint->tryGetPositionByName(child_name, options.format.parquet.case_insensitive_column_matching).has_value();
+            child_idx = subtreeEnd(file_metadata.schema, child_idx).value();
+        }
         if (tuple_type_hint->hasExplicitNames() && !tuple_type_hint->getElements().empty() &&
-            node.schema_context != SchemaContext::MapTuple && node.schema_context != SchemaContext::MapTupleAsPlainTuple)
+            node.schema_context != SchemaContext::MapTuple && !map_entry_by_position)
         {
             /// Allow reading a subset of tuple elements, matched by name, possibly reordered.
             lookup_by_name = true;
