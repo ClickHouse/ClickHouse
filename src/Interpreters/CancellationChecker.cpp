@@ -219,11 +219,8 @@ void CancellationChecker::workerFunction()
                 });
         }
     }
-    /// Clear the wait state on exit so the singleton is left re-runnable: a later `workerFunction`
-    /// (a test spinning the worker up again, including under `--gtest_repeat`) must start with
-    /// `armed_deadline == 0`. A stale non-zero value would let the test's "is the worker parked yet"
-    /// poll pass before the new worker has actually armed. In the server this is a no-op: the worker
-    /// runs once and nothing reads `armed_deadline` after it exits.
+    /// Reset for a re-run (tests restart the worker): a stale value defeats the
+    /// `RearmsWaitOnEarlierDeadline` parked-check poll. No-op in the single-run server.
     armed_deadline = 0;
 
     /// `terminateThread` flips `stop_thread` to true to signal exit; clear it here while still
