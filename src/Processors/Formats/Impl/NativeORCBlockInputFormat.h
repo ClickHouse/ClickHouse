@@ -156,11 +156,7 @@ public:
     /// requested is read with its type in `nested_table_type_hints_`, the one its fields were selected with, if it is there.
     ORCColumnToCHColumn(
         const Block & header_,
-        bool allow_missing_columns_,
-        bool null_as_default_,
-        bool case_insensitive_matching_ = false,
-        bool dictionary_as_low_cardinality_ = false,
-        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore,
+        const FormatSettings & format_settings_,
         UnorderedSetWithMemoryTracking<UInt64> count_only_fields_ = {},
         const ColumnMapper * column_mapper_ = nullptr,
         NameSet absent_columns_ = {},
@@ -191,7 +187,15 @@ private:
         DataTypePtr type_hint = nullptr,
         const String & mapper_path = {}) const;
 
+    /// Reads an unshredded variant, a struct of binary `metadata` and `value`, as `Dynamic` or `JSON`.
+    ColumnWithTypeAndName readVariantFromORCStruct(
+        const ORC::ColumnVectorBatch * orc_column,
+        const ORC::Type * orc_type,
+        const std::string & column_name,
+        const DataTypePtr & type_hint) const;
+
     const Block & header;
+    const FormatSettings format_settings;
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
     bool null_as_default;

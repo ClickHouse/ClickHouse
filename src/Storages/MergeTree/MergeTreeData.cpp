@@ -6615,6 +6615,30 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         apply_context->setAnalyzingBackgroundExpressions(true);
     commands.apply(new_metadata, apply_context, share_nested_offsets, settings_defaults.get());
 
+    /// Under a Replicated database every replica re-runs this interpreter over an entry the initiator already
+    /// committed. A replica catching up on an ALTER accepted by an older version must not be failed by a check
+    /// that version did not have, or the DDL queue stalls on an entry it cannot skip.
+    bool is_initial_alter = true;
+    if (auto txn = local_context->getZooKeeperMetadataTransaction())
+        is_initial_alter = txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+    if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
+        is_initial_alter = false;
+#endif
+
+    /// `CLEAR COLUMN` of `_block_number` / `_block_offset` changes the values by which patch parts find their rows.
+    /// The mutation applies the patches that precede it, but a patch written for a part whose values of these columns
+    /// repeat may match other rows, so the unapplied patches have to be applied or dropped first, as for `DETACH PARTITION`.
+    /// Not only while lightweight updates are enabled: the patches written before they were disabled stay.
+    if (is_initial_alter)
+    {
+        for (const auto & command : commands)
+        {
+            if (command.isClearOfBlockColumns(old_metadata))
+                assertNoPatchesForClearOfBlockColumns(command, local_context);
+        }
+    }
+
     /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
     /// stay physically sorted in the directions the key had when they were written, and no regular data part records those
     /// directions: every reader of a regular data part's order takes them from the current metadata. A direction change in
@@ -6622,17 +6646,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// analysis compares boundary tuples in the claimed order, so it would prune the wrong mark ranges and silently
     /// return wrong results.
     {
-        /// Under a Replicated database every replica re-runs this interpreter over an entry the initiator already
-        /// committed. A replica catching up on an ALTER accepted by an older version must not be failed by a check
-        /// that version did not have, or the DDL queue stalls on an entry it cannot skip.
-        bool is_initial_alter = true;
-        if (auto txn = local_context->getZooKeeperMetadataTransaction())
-            is_initial_alter = txn->isInitialQuery();
-#if CLICKHOUSE_CLOUD
-        if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
-            is_initial_alter = false;
-#endif
-
         /// A definition the ALTER changes may not have an alias. One that an older server stored is kept while the
         /// definition stays as it was, up to a column rename.
         if (is_initial_alter)
@@ -12979,6 +12992,25 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     }
 
     return loaded_parts;
+}
+
+void MergeTreeData::assertNoPatchesForClearOfBlockColumns(const AlterCommand & command, ContextPtr local_context) const
+{
+    std::optional<String> partition_id;
+    if (command.partition && !command.partition->as<ASTPartition &>().all)
+        partition_id = getPartitionIDFromQuery(command.partition, local_context);
+
+    auto parts = partition_id
+        ? getVisibleDataPartsVectorInPartition(local_context, *partition_id)
+        : getVisibleDataPartsVector(local_context);
+
+    std::map<String, DataPartsVector> parts_by_partition;
+    for (const auto & part : parts)
+        parts_by_partition[part->info.getPartitionId()].push_back(part);
+
+    /// A patch committed after this check is applied by the mutation, as the ones before it.
+    for (const auto & [id, partition_parts] : parts_by_partition)
+        assertNoPatchesForParts(partition_parts, getPatchPartsVectorForPartition(id), "CLEAR COLUMN " + command.column_name);
 }
 
 bool MergeTreeData::assertNoPatchesForParts(const DataPartsVector & parts, const DataPartsVector & patches, std::string_view command, bool throw_on_error) const
