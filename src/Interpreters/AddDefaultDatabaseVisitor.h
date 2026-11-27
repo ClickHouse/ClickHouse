@@ -128,9 +128,8 @@ public:
             substituteDatabaseInTableFunctions(*child);
     }
 
-    /// For a query sent to servers that interpret it in their own default database: qualify its names and replace
-    /// `currentDatabase()` with the database. Returns false, changing nothing, if a lambda may shadow a function whose
-    /// arguments it rewrites.
+    /// Qualifies the names of a query sent to servers that use their own default database and replaces `currentDatabase()`.
+    /// Returns false, changing nothing, if a lambda may shadow a function whose call or arguments it rewrites.
     [[nodiscard]] bool tryBindQuerySentToOtherServers(ASTPtr & ast) const
     {
         if ((hasCurrentDatabaseCall(*ast) && hasNameThatMayResolveToLambda(*ast, isCurrentDatabaseName))

@@ -1399,7 +1399,6 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
             select_to_send.list_of_selects->children.at(0), src_snapshot, local_context, src_storage_cluster->getClusterName(),
             /*add_structure_and_format=*/false);
 
-        /// The nodes interpret the query in their own default database.
         if (!AddDefaultDatabaseVisitor(local_context, local_context->getCurrentDatabase())
                  .tryBindQuerySentToOtherServers(query_to_send->as<ASTInsertQuery &>().select))
             return {};
