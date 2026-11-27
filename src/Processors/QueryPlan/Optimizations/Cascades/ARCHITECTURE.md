@@ -625,7 +625,11 @@ carry only a total, so type-based estimates are scaled to match it; the total de
 excludes non-column files such as statistics sketches, which can dwarf a small table's
 data). A test hint overrides them: per-column `column_bytes` first, else `avg_row_bytes`,
 the width of the rows that a read of the table emits, divided between the emitted columns
-by type (a hinted table's physical parts are stand-ins and are not trusted). Widths follow
+by type (a hinted table's physical parts are stand-ins and are not trusted). A width that
+the statistics of a column have (the measured average size of a `String`) is used before
+the size from the parts. For a filter directly above a read, the width of the rows of the
+read is the sum of these sizes of all columns of the read, also of the columns that the
+filter does not emit, as for a filter above another step. Widths follow
 columns through renames only while the value bytes are unchanged (`Nullable`/`LowCardinality` wrapping is ignored; a value-changing hop
 such as `toString` drops the width to unknown, falling back to the type default — 64 bytes
 for `String`). The row width of every step is the sum of the widths of its output columns:
@@ -746,8 +750,11 @@ branch-and-bound pruning as the primary bound.
    A computed value with no known width has no estimate of its own: an expression or a
    filter keeps the width of its input row for it, so a narrow value that is computed from
    a wide column (`substring(url, 1, 10)`) is priced as wide, and above a join, an
-   aggregation or a `UNION ALL` it has the default of its type. Both need an estimated
-   width for each computed column that follows the column through all steps.
+   aggregation or a `UNION ALL` it has the default of its type. The width that is kept
+   is that of the whole input row, also of input columns that the step does not emit
+   (the key of a sort with a limit). All of these need an estimated width for each
+   computed column that follows the column through all steps. The statistics have the
+   names of the columns, so two output columns with one name share one width.
 13. **Reads from remote shards**: a read from a `Distributed` table (or the `remote`/
    `cluster` table functions) with genuinely remote shards is rejected up front
    (`checkStepSupportedByCascades`); localhost shards are inlined and planned normally.

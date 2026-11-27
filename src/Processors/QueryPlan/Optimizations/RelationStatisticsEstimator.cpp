@@ -278,7 +278,7 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
         case UnaryStepStatsKind::Expression:
         {
             const auto & expression_step = static_cast<const ExpressionStep &>(step);
-            remapColumnStatsOfStep(input_stats.column_stats, expression_step.getExpression(), *step.getOutputHeader());
+            remapColumnStats(input_stats.column_stats, expression_step.getExpression());
             return input_stats;
         }
         case UnaryStepStatsKind::ArrayJoin: {
@@ -296,8 +296,7 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
                 for (const auto & column : array_join_step->getColumns())
                     input_stats.column_stats.erase(column);
             else
-                remapColumnStatsOfStep(
-                    input_stats.column_stats, static_cast<const ExpressionStep &>(step).getExpression(), *step.getOutputHeader());
+                remapColumnStats(input_stats.column_stats, static_cast<const ExpressionStep &>(step).getExpression());
 
             /// The other columns keep their values, but each row repeats once per array element, and unless the join is
             /// LEFT, rows with empty arrays are dropped: the distinct set and range can only shrink, and the distribution
@@ -308,7 +307,7 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
         case UnaryStepStatsKind::Filter:
         {
             const auto & filter_step = static_cast<const FilterStep &>(step);
-            remapColumnStatsOfStep(input_stats.column_stats, filter_step.getExpression(), *step.getOutputHeader());
+            remapColumnStats(input_stats.column_stats, filter_step.getExpression());
             input_stats.addTransformation(RowSubset);
             input_stats.rows_exact = false;
             return input_stats;
@@ -789,6 +788,11 @@ RelationStats estimateRelationStatsUnderFilter(QueryPlan::Node & node, const Act
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, RelationStatsOptions options)
 {
     return estimateRelationStatsUnderFilter(node, /*filter=*/nullptr, options);
+}
+
+RelationStats estimateReadRowsCountUnderFilter(QueryPlan::Node & node, const ActionsDAG::Node * filter, RelationStatsOptions options)
+{
+    return estimateRelationStatsUnderFilter(node, filter, options);
 }
 }
 }

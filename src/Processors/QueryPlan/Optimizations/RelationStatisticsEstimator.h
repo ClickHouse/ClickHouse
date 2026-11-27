@@ -27,4 +27,9 @@ struct RelationStatsOptions
 /// rooted at `node`, keyed by the subtree's output column names.
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, RelationStatsOptions options = {});
 
+/// The same estimate for the subtree rooted at `node` when `filter` is the predicate of a `FilterStep` directly above
+/// it: the row count accounts for the predicate. The `FilterStep` is not applied to the column statistics, so they
+/// have the column names of `node`.
+RelationStats estimateReadRowsCountUnderFilter(QueryPlan::Node & node, const ActionsDAG::Node * filter, RelationStatsOptions options = {});
+
 }

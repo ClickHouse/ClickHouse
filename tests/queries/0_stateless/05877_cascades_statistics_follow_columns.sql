@@ -1,6 +1,6 @@
 -- The statistics of a step in the cost-based distributed optimizer describe the rows that the step emits.
 -- `UNION ALL` has the rows of all its inputs. `ROLLUP`, `CUBE` and `GROUPING SETS` have the rows of all their
--- sets of groups.
+-- sets of groups. A column that passes a filter keeps its distinct count.
 -- `EXPLAIN estimates = 1` shows the row estimate and the cost of each step. The test prints the row estimates
 -- only: they come from the statistics alone, and a cost depends on the whole cost model.
 
@@ -56,6 +56,11 @@ SELECT k, x, count() FROM t_stats_rows_small GROUP BY GROUPING SETS ((k), (x)));
 SELECT '-- a key of ROLLUP has one more value, in the rows of the sets without the key: 10 + 1 groups by k';
 SELECT replaceRegexpAll(explain, ', cost: [^)]+', '') FROM (EXPLAIN estimates = 1
 SELECT k, count() FROM (SELECT k, x, count() FROM t_stats_rows_small GROUP BY k, x WITH ROLLUP) GROUP BY k);
+
+SELECT '-- a filter directly above the read reads only x; k passes it and keeps its distinct count: 10 groups';
+SELECT replaceRegexpAll(explain, ', cost: [^)]+', '') FROM (EXPLAIN estimates = 1
+SELECT k, max(z), count() FROM (SELECT k, x * 2 AS z, x FROM t_stats_rows_small) WHERE x > 5 GROUP BY k
+SETTINGS optimize_move_to_prewhere = 0);
 
 DROP TABLE t_stats_rows_large;
 DROP TABLE t_stats_rows_small;
