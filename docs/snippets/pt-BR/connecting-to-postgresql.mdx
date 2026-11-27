@@ -19,9 +19,7 @@ Esta página aborda as seguintes opções para integrar o PostgreSQL ao ClickHou
   Confira nosso serviço [ClickHouse Managed Postgres](/pt-BR/products/managed-postgres/overview). Com armazenamento NVMe fisicamente co-localizado com o compute, ele oferece desempenho até 10x superior para workloads limitadas por disco em comparação com alternativas que usam armazenamento conectado à rede, como EBS, e permite replicar seus dados do Postgres para o ClickHouse usando o conector Postgres CDC no ClickPipes.
 </Tip>
 
-<div id="using-the-postgresql-table-engine">
-  ## Usando o mecanismo de tabela PostgreSQL
-</div>
+## Usando o mecanismo de tabela PostgreSQL {#using-the-postgresql-table-engine}
 
 O mecanismo de tabela `PostgreSQL` permite realizar operações **SELECT** e **INSERT** em dados armazenados no servidor PostgreSQL remoto a partir do ClickHouse.
 Este artigo ilustra métodos básicos de integração usando uma única tabela.
@@ -205,9 +203,7 @@ Este artigo ilustra métodos básicos de integração usando uma única tabela.
 Este exemplo demonstrou a integração básica entre PostgreSQL e ClickHouse usando o mecanismo de tabela `PostrgeSQL`.
 Consulte a [página de documentação do mecanismo de tabela PostgreSQL](/pt-BR/reference/engines/table-engines/integrations/postgresql) para conhecer mais recursos, como especificar esquemas, retornar apenas um subconjunto de colunas e conectar-se a várias réplicas. Consulte também o blog [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres).
 
-<div id="using-the-materializedpostgresql-database-engine">
-  ## Usando a mecanismo de banco de dados MaterializedPostgreSQL
-</div>
+## Usando a mecanismo de banco de dados MaterializedPostgreSQL {#using-the-materializedpostgresql-database-engine}
 
 <CloudNotSupportedBadge />
 
@@ -303,7 +299,7 @@ Este artigo ilustra métodos básicos de integração usando um banco de dados, 
     2. Habilite o recurso experimental do PostgreSQL para o mecanismo de banco de dados:
 
     ```sql
-    SET allow_experimental_database_materialized_postgresql=1
+    SET enable_database_materialized_postgresql=1
     ```
 
     3. Crie o novo banco de dados a ser replicado e defina a tabela inicial:

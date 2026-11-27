@@ -47,6 +47,7 @@ static struct InitFiu
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
+    REGULAR(replicas_status_replica_turns_readonly) \
     REGULAR(parallel_sync_paths_fail_fsync) \
     REGULAR(deduplication_log_fail_durable_drop_sync) \
     REGULAR(parallel_sync_paths_interrupt_fsync) \
@@ -68,6 +69,8 @@ static struct InitFiu
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \
+    REGULAR(parallel_gzip_compression_fail) \
+    REGULAR(parallel_gzip_compression_late_fail) \
     REGULAR(file_checker_update_and_save_fail_reading_sizes) \
     REGULAR(file_checker_update_and_save_fail_persisting) \
     REGULAR(file_checker_repair_memory_limit_exceeded) \
@@ -118,6 +121,7 @@ static struct InitFiu
     REGULAR(azure_inject_poco_network_error) \
     ONCE(azure_inject_poco_network_error_once) \
     REGULAR(azure_inject_bad_request) \
+    REGULAR(check_data_part_retryable_error) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
@@ -179,6 +183,7 @@ static struct InitFiu
     REGULAR(file_cache_background_eviction_push_fail) \
     REGULAR(file_cache_slru_downgrade_fail_before_finalize) \
     REGULAR(file_cache_modify_size_limits_fail) \
+    REGULAR(file_cache_empty_key_directory_queue_memory_limit) \
     REGULAR(check_table_query_delay_for_part) \
     ONCE(check_table_inject_retryable_zk_error) \
     ONCE(check_table_inject_shutdown_abort) \
@@ -218,6 +223,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_block_allocation) \
     PAUSEABLE_ONCE(smt_mutation_prune_pause_before_block_allocation) \
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_zk_partition_list) \
+    PAUSEABLE_ONCE(rmt_mutate_pause_before_wait) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
     PAUSEABLE_ONCE(nats_pause_before_building_insert_pipeline) \
@@ -241,6 +247,7 @@ static struct InitFiu
     ONCE(write_buffer_valid_utf8_finalize_throw) \
     ONCE(http_output_finalize_throw) \
     ONCE(http_push_delayed_results_throw) \
+    ONCE(prometheus_handler_finalize_throw) \
     ONCE(terminate_with_exception) \
     ONCE(terminate_with_std_exception) \
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
@@ -269,6 +276,8 @@ static struct InitFiu
     ONCE(adaptive_aggregation_drain_create_states_throw) \
     ONCE(aggregator_merge_collect_states_throw) \
     ONCE(aggregator_merge_batch_throw) \
+    ONCE(aggregator_convert_queued_states_throw) \
+    ONCE(aggregator_convert_insert_results_throw) \
     REGULAR(adaptive_aggregation_spill_no_room_to_append) \
     REGULAR(keepermap_fail_drop_data) \
     PAUSEABLE_ONCE(keepermap_create_pause_before_drop_lock_version) \
@@ -280,6 +289,7 @@ static struct InitFiu
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(async_insert_flush_pause_in_executor) \
     PAUSEABLE(async_insert_pause_before_schedule) \
+    ONCE(async_insert_throw_before_schedule) \
     PAUSEABLE_ONCE(async_insert_flush_pause_after_set_user) \
     PAUSEABLE_ONCE(completed_pipeline_pause_before_teardown) \
     PAUSEABLE(system_replicas_schedule_requests_pause) \
@@ -377,6 +387,7 @@ static struct InitFiu
     PAUSEABLE(sc_drop_intention_pause) \
     REGULAR(sc_intentions_commit_fail) \
     REGULAR(sleep_in_logs_flush) \
+    REGULAR(system_log_flush_throw) \
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     ONCE(database_replicated_restore_table_created_by_other_replica) \

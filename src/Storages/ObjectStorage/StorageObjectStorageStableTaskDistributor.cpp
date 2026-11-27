@@ -175,6 +175,10 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
             LOG_TEST(log, "Will send over the whole archive {} to replicas. "
                      "This will be suboptimal, consider turning on "
                      "cluster_function_process_archive_on_multiple_nodes setting", file_identifier);
+
+            std::lock_guard lock(mutex);
+            if (!scheduled_archives.insert(file_identifier).second)
+                continue;
         }
         else
         {

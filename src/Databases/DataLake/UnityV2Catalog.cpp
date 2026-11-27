@@ -916,6 +916,7 @@ CatalogTables UnityV2Catalog::getTablesForSchema(const std::string & schema, siz
     params.push_back({"max_results", DB::toString(limit)});
 
     CatalogTables tables;
+    std::unordered_set<String> seen_tokens;
     do
     {
         String json_str;
@@ -965,6 +966,7 @@ CatalogTables UnityV2Catalog::getTablesForSchema(const std::string & schema, siz
                 auto continuation_token = object->get("next_page_token").extract<String>();
                 if (continuation_token.empty())
                     break;
+                checkUnityPageTokenIsNew(seen_tokens, continuation_token, fmt::format("the tables of schema `{}.{}`", warehouse, schema));
 
                 if (params.size() == 4)
                     params.pop_back();
@@ -991,6 +993,7 @@ ICatalog::Namespaces UnityV2Catalog::getSchemas(const std::string & base_prefix,
     params.push_back({"catalog_name", warehouse});
 
     ICatalog::Namespaces schemas;
+    std::unordered_set<String> seen_tokens;
     do
     {
         String json_str;
@@ -1011,7 +1014,8 @@ ICatalog::Namespaces UnityV2Catalog::getSchemas(const std::string & base_prefix,
                 for (size_t i = 0; i < schemas_object->size(); ++i)
                 {
                     auto schema_info = schemas_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
-                    chassert(schema_info->get("catalog_name").extract<String>() == warehouse);
+                    if (!isUnitySchemaOfCatalog(schema_info, warehouse))
+                        continue;
                     auto schema_name = parseFullSchemaName(schema_info->get("full_name").extract<String>());
 
                     if (schema_name.schema_name.starts_with(base_prefix))
@@ -1030,6 +1034,7 @@ ICatalog::Namespaces UnityV2Catalog::getSchemas(const std::string & base_prefix,
                 auto continuation_token = object->get("next_page_token").extract<String>();
                 if (continuation_token.empty())
                     break;
+                checkUnityPageTokenIsNew(seen_tokens, continuation_token, fmt::format("the schemas of catalog `{}`", warehouse));
 
                 if (params.size() == 2)
                     params.pop_back();

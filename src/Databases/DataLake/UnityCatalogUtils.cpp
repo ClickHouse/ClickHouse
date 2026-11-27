@@ -6,10 +6,12 @@
 #include <Common/Exception.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaSchemaJSON.h>
+#include <Poco/String.h>
 
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int DATALAKE_DATABASE_ERROR;
 }
 
 namespace DataLake
@@ -133,6 +135,19 @@ bool isUnityDeltaTable(const Poco::JSON::Object::Ptr & table_json)
         return false;
 
     return has_securable_kind || has_data_source_format;
+}
+
+bool isUnitySchemaOfCatalog(const Poco::JSON::Object::Ptr & schema_info, const String & catalog_name)
+{
+    return hasValueAndItsNotNone("catalog_name", schema_info)
+        && Poco::icompare(schema_info->get("catalog_name").extract<String>(), catalog_name) == 0;
+}
+
+void checkUnityPageTokenIsNew(std::unordered_set<String> & seen_tokens, const String & token, const String & listing)
+{
+    if (!seen_tokens.insert(token).second)
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Unity catalog returned `next_page_token` `{}` twice while listing {}", token, listing);
 }
 
 }

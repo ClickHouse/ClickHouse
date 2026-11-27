@@ -1,0 +1,150 @@
+---
+title: "Canalización de ejemplo: de SQL Server a ClickHouse"
+sidebarTitle: "Canalización de ejemplo"
+slug: /integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline
+description: "Cree una canalización automatizada de SQL Server a ClickHouse que carga las filas existentes y transmite en streaming las inserciones, actualizaciones y eliminaciones."
+doc_type: guide
+keywords: ['striim', 'clickhouse', 'cdc', 'ingesta de datos', 'replicación en tiempo real']
+---
+
+Los datos operativos de SQL Server suelen ser la fuente de verdad de pedidos, pagos e inventario, pero no están pensados para consultas analíticas intensivas. En esta guía práctica, replicará una tabla de SQL Server en ClickHouse mediante una canalización automatizada: Striim carga las filas existentes y, a continuación, transmite en streaming cada inserción, actualización y eliminación en el momento en que se produce. Por último, consultará el resultado en ClickHouse.
+
+Consulte [Introducing Automated Pipelines for Effortless Data Replication](https://www.striim.com/blog/automated-pipelines-5-0/) para ver una guía completa.
+
+El CDC (captura de datos de cambios) de SQL Server requiere el plan **Premium** de Striim for ClickHouse.
+
+## Qué va a crear {#what-you-will-build}
+
+SQL Server (`sales.orders`) &gt; carga inicial con Striim y, a continuación, CDC &gt; ClickHouse (`sales.orders`, `ReplacingMergeTree`)
+
+## Antes de comenzar {#before-you-begin}
+
+* Un servicio de Striim for ClickHouse en ejecución con el plan Premium (consulte [Primeros pasos](/es/integrations/connectors/data-ingestion/etl-tools/striim/get-started)).
+* Una instancia de SQL Server accesible desde Striim, con SQL Server Agent en ejecución y permiso para habilitar la captura de cambios de datos (CDC). Los pasos siguientes son válidos tanto para SQL Server en una VM como para Amazon RDS for SQL Server.
+* Un servicio de ClickHouse, una base de datos llamada `sales`, un usuario de Striim con los privilegios necesarios y un perfil de conexión de ClickHouse.
+
+## Paso 1: Preparar SQL Server {#step-1-prepare-sql-server}
+
+Cree una base de datos y una tabla de ejemplo con algunas filas. Estos datos iniciales tienen un fin ilustrativo, para que pueda reproducir el ejemplo.
+
+```sql
+CREATE DATABASE salesdb;
+GO
+USE salesdb;
+GO
+CREATE SCHEMA sales;
+GO
+CREATE TABLE sales.orders (
+  order_id    INT           NOT NULL PRIMARY KEY,
+  customer_id INT           NOT NULL,
+  status      VARCHAR(20)   NOT NULL,
+  total       DECIMAL(10,2) NOT NULL,
+  placed_at   DATETIME2     NOT NULL
+);
+INSERT INTO sales.orders VALUES
+  (1, 101, 'NEW',     120.50, SYSDATETIME()),
+  (2, 102, 'NEW',      75.00, SYSDATETIME()),
+  (3, 103, 'NEW',     310.25, SYSDATETIME());
+GO
+```
+
+Habilite la captura de cambios de datos (CDC) en la base de datos y cree un usuario para Striim. Striim habilita CDC en cada tabla seleccionada al iniciarse la aplicación.
+
+<Tabs>
+  <Tab title="SQL Server en una VM" id="enable-cdc-vm">
+    ```sql
+    USE salesdb;
+    EXEC sys.sp_cdc_enable_db;
+    ```
+  </Tab>
+
+  <Tab title="Amazon RDS para SQL Server" id="enable-cdc-rds">
+    ```sql
+    EXEC msdb.dbo.rds_cdc_enable_db 'salesdb';
+    ```
+  </Tab>
+</Tabs>
+
+Cree el usuario de Striim en `salesdb`:
+
+```sql
+USE salesdb;
+CREATE LOGIN striim WITH PASSWORD = '<strong password>';
+CREATE USER striim FOR LOGIN striim;
+EXEC sp_addrolemember @rolename = db_owner, @membername = striim;
+```
+
+El modo de autenticación de SQL Server debe estar habilitado para el usuario de Striim. Según la documentación de Striim, el usuario lector debe tener el rol `db_owner`. Una vez iniciada la canalización, puede comprobar que CDC está activo con `EXEC sys.sp_cdc_help_change_data_capture`. Consulte [Configuring SQL Server to use MS SQL Reader](https://www.striim.com/docs/striimforclickhouse/en/configuring-sql-server-to-use-ms-sql-reader.html) para conocer los requisitos previos en VM de Azure y los grupos de disponibilidad Always On.
+
+## Paso 2: Crear la canalización automatizada {#step-2-create-the-automated-pipeline}
+
+1. En Striim, seleccione **Apps &gt; Create an App**.
+2. Busque y seleccione **SQL Server** como fuente. Seleccione **ClickHouse** como destino.
+3. Seleccione **Primeros pasos** y elija la canalización automatizada (carga inicial más CDC).
+4. Asigne un nombre a la canalización, por ejemplo `SqlServerToClickHouse`, elija un espacio de nombres y seleccione **Next**.
+5. Introduzca los datos de conexión de SQL Server: host y puerto (`<host>:1433`), nombre de la base de datos `salesdb` y el usuario `striim`. Seleccione **Next**. Striim valida la conexión. Si la validación falla, seleccione **Back** y corrija la configuración; es necesario superar la validación para continuar.
+6. Seleccione los esquemas que desea replicar. Elija `sales`; no seleccione esquemas del sistema.
+7. Seleccione las tablas que desea replicar de cada esquema. Elija `orders`.
+8. Seleccione su perfil de conexión de ClickHouse y establezca **Table Engine** en **`ReplacingMergeTree`**. Este motor es adecuado para fuentes CDC que envían una imagen completa de la fila en cada actualización.
+9. Si lo desea, edite la correspondencia de tablas. Compruebe que `sales.orders` se corresponde con `sales.orders` en ClickHouse.
+10. Revise la configuración y seleccione **Save &amp; Start**.
+
+![Revisión de la configuración de la canalización automatizada de SQL Server a ClickHouse](/images/integrations/striim/automated-pipeline-wizard.png)
+
+*Ejemplo de la pantalla de revisión del asistente. En esta guía, utilice `salesdb`, `sales.orders` y `ReplacingMergeTree`, tal como se ha descrito anteriormente.*
+
+Striim crea dos aplicaciones vinculadas. Primero ejecuta la carga inicial, la detiene de forma ordenada cuando se han copiado todas las filas y, a continuación, inicia automáticamente la aplicación de CDC y muestra el recuento de eventos a medida que se van propagando los cambios. Si se produce algún problema en cualquiera de las dos fases, la canalización se detiene y muestra las correcciones recomendadas.
+
+![Monitorización de la aplicación de Captura de Cambios de Datos en ejecución](/images/integrations/striim/pipeline-monitoring.png)
+
+<Warning>
+  No ejecute DDL sobre las tablas fuente mientras la carga inicial esté en curso, y asegúrese de que SQL Server conserve los datos de cambios (la retención predeterminada es de tres días) desde el inicio de la carga inicial hasta que la aplicación de CDC se haya puesto al día.
+</Warning>
+
+## Paso 3: Verificar la carga inicial en ClickHouse {#step-3-verify-the-initial-load-in-clickhouse}
+
+Striim creó la tabla de destino con el motor `ReplacingMergeTree` y dos columnas de metadata. Inspecciónela:
+
+```sql
+SHOW CREATE TABLE sales.orders;
+```
+
+Según la correspondencia de tipos de datos de Striim, es de esperar que `order_id` y `customer_id` sean de tipo `Int32`, `status` de tipo `String`, `total` de tipo `Decimal(10, 2)` y `placed_at` de tipo `DateTime64`, además de las columnas `__STRIIM_VERSION` (`UInt64`) y `__STRIIM_ISDELETED` (`UInt8`), `ENGINE = ReplacingMergeTree(__STRIIM_VERSION, __STRIIM_ISDELETED)` y `ORDER BY order_id`.
+
+```sql
+SELECT order_id, customer_id, status, total
+FROM sales.orders FINAL
+WHERE __STRIIM_ISDELETED = 0
+ORDER BY order_id;
+```
+
+Debería ver las tres filas cargadas desde SQL Server.
+
+## Paso 4: Transmitir los cambios {#step-4-stream-changes}
+
+Realice cambios en SQL Server:
+
+```sql
+USE salesdb;
+UPDATE sales.orders SET status = 'SHIPPED' WHERE order_id = 2;
+DELETE FROM sales.orders WHERE order_id = 3;
+INSERT INTO sales.orders VALUES (4, 104, 'NEW', 42.00, SYSDATETIME());
+```
+
+Vuelva a ejecutar la misma consulta en ClickHouse. Deberían aparecer los pedidos 1, 2 y 4, el pedido 2 debería mostrar `SHIPPED` y el pedido 3 ya no debería aparecer. La eliminación se almacena como una fila de borrado lógico (soft delete). La consulta usa `FINAL` para seleccionar la versión más reciente y `__STRIIM_ISDELETED = 0` para excluir las filas eliminadas. Los marcadores de eliminación se conservan de forma predeterminada; las fusiones en segundo plano por sí solas no garantizan su eliminación física. Consulte [`ReplacingMergeTree`](/es/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) para conocer el comportamiento de limpieza. También puede supervisar el recuento de eventos y la actualidad de los datos en el destino desde la vista de monitorización de Striim, o preguntar a Clara por el retraso actual.
+
+## Crear la misma canalización con Striim Clara {#build-the-same-pipeline-with-striim-clara}
+
+En lugar de usar el asistente, puede describir la canalización en la página de Inicio, por ejemplo: «Crea una canalización de SQL Server a ClickHouse con carga inicial y Captura de Cambios de Datos para la tabla sales.orders». Clara le pedirá los datos de conexión, generará un plan TQL y solo realizará el despliegue cuando seleccione **Accept TQL**.
+
+## Limpieza {#clean-up}
+
+* Detenga y anule el despliegue de las dos aplicaciones de Striim desde la página Apps.
+* SQL Server sigue capturando datos de cambios incluso después de anular el despliegue de las aplicaciones de Striim con los ajustes predeterminados del lector. Para dejar de capturar datos en este ejemplo, ejecute `sys.sp_cdc_disable_table` para `sales.orders`, o `sys.sp_cdc_disable_db` si ninguna otra tabla de la base de datos requiere CDC. Consulte la [documentación](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sys-sp-cdc-disable-table-transact-sql) de SQL Server para obtener más información. Como alternativa, siga el [procedimiento Auto Disable Table CDC](https://www.striim.com/docs/striimforclickhouse/en/sql-server-operational-considerations.html) de Striim.
+* Elimine las tablas de ejemplo con `DROP TABLE sales.orders;` en ambos sistemas.
+
+## Próximos pasos {#next-steps}
+
+* Pruebe otras fuentes de la [lista de fuentes compatibles](https://www.striim.com/docs/striimforclickhouse/en/sources.html).
+* Añada transformaciones in-flight o enmascaramiento en Flow Designer. Consulte [Pipelines](https://www.striim.com/docs/striimforclickhouse/en/pipelines.html) en la documentación de Striim.
+* Cree dashboards a partir de los datos replicados con las integraciones de [visualización de ClickHouse](https://clickhouse.com/docs/integrations/connectors/data-visualization).

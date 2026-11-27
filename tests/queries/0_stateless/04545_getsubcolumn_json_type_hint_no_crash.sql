@@ -1,8 +1,6 @@
 -- Tags: no-fasttest
 -- no-fasttest: requires the JSON data type.
 
-SET enable_json_type = 1;
-
 -- A ":`type hint`" continuation marker is not a subcolumn name a user can ask for directly.
 SELECT getSubcolumn('{}'::JSON, ':`Int64`'); -- { serverError ILLEGAL_COLUMN }
 SELECT getSubcolumn(materialize('{}'::JSON), ':`Int64`'); -- { serverError ILLEGAL_COLUMN }
