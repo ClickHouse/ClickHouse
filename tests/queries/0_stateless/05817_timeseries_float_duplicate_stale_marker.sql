@@ -1,5 +1,5 @@
--- A float sample whose value is the stale marker (the NaN with the bits 0x7FF0000000000002) loses to any other sample with the same
--- timestamp, an ordinary NaN (0x7FF8000000000001, Go's `math.NaN()`) included, whatever the order of the two: in the sink (INSERT),
+-- A float sample whose value is the stale marker (the NaN with the bits 0x7FF0000000000002) loses to any number or quiet NaN with the
+-- same timestamp, such as an ordinary NaN (0x7FF8000000000001, Go's `math.NaN()`), whatever the order of the two: in the sink (INSERT),
 -- in the aggregate `timeSeriesGroupArray`, which merges the rows of the samples tables, and in the other `timeSeries*` aggregate
 -- functions, which share the rule. 0x3FF0000000000000 is 1.
 

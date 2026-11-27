@@ -39,7 +39,6 @@
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/validateTimeSeriesHistograms.h>
 #include <base/EnumReflection.h>
-#include <base/bit_cast.h>
 #include <base/sort.h>
 
 #include <algorithm>
@@ -430,13 +429,10 @@ namespace
             /// Float32 values are compared as Float32, because widening them would quiet a signaling NaN.
             if (float32_values)
             {
-                const Float32 kept = float32_values->getData()[kept_index];
-                const Float32 winner = TimeSeriesDuplicateTimestampRule::floatSampleWinner(kept, float32_values->getData()[new_index]);
-                return bit_cast<UInt32>(winner) != bit_cast<UInt32>(kept);
+                const auto & values = float32_values->getData();
+                return TimeSeriesDuplicateTimestampRule::compareFloats(values[new_index], values[kept_index]) > 0;
             }
-            const Float64 kept = ts_values.getFloat64(kept_index);
-            const Float64 winner = TimeSeriesDuplicateTimestampRule::floatSampleWinner(kept, ts_values.getFloat64(new_index));
-            return bit_cast<UInt64>(winner) != bit_cast<UInt64>(kept);
+            return TimeSeriesDuplicateTimestampRule::compareFloats(ts_values.getFloat64(new_index), ts_values.getFloat64(kept_index)) > 0;
         };
     }
 

@@ -119,7 +119,8 @@ If several histogram samples have the same timestamp, only one of them is kept: 
 the greatest total count (`count_int` for an integer histogram, `count_float` for a float one; a NaN count loses to any other count)
 wins, on ties the one with the greatest `sum`, then the other elements decide in the order of the tuple, starting with `is_float` (a float
 histogram beats an integer one) and the gauge marker (a gauge histogram beats a counter one). The other counter reset hints don't decide
-which sample is kept.
+which sample is kept. The float elements are compared as the values of float samples are: of two NaN values the one with the greater
+bits wins, and `0` beats `-0`.
 The winning histogram payload does not depend on the order of merging. Where merging changes a sample's predecessor or joins separate
 input arrays, its counter reset hint is detected again from the data against the new predecessor by the rules of the inserts into a
 `TimeSeries` table (a decrease of a count is a reset, a change of the schema or of the zero threshold makes the hint unknown), whatever

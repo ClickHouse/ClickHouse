@@ -76,7 +76,24 @@ INSERT INTO duplicate_pairs VALUES
         [(100, true, 'unknown', 0, 0., 1., 0, 0, 1., 0., [], [], [], [(0, 1.)], [])]),
     ('custom_values',
         [(100, false, 'unknown', -53, 0., 1., 1, 0, 0., 0., [(0, 1)], [], [], [], [1., 3.])],
-        [(100, false, 'unknown', -53, 0., 1., 1, 0, 0., 0., [(0, 1)], [], [], [], [1., 2.])]);
+        [(100, false, 'unknown', -53, 0., 1., 1, 0, 0., 0., [(0, 1)], [], [], [], [1., 2.])]),
+    -- The float elements are compared as the values of float samples are, so `0` beats `-0`: no two different payloads are equal.
+    ('sum_zero_sign',
+        [(100, false, 'unknown', 0, 0., 0., 1, 0, 0., 0., [(0, 1)], [], [], [], [])],
+        [(100, false, 'unknown', 1, 0., -0., 1, 0, 0., 0., [(0, 1)], [], [], [], [])]),
+    ('zero_threshold_zero_sign',
+        [(100, false, 'unknown', 0, 0., 1., 2, 0, 0., 0., [(0, 2)], [], [], [], [])],
+        [(100, false, 'unknown', 0, -0., 1., 2, 1, 0., 0., [(0, 1)], [], [], [], [])]),
+    ('count_float_zero_sign',
+        [(100, true, 'unknown', 0, 0., 1., 0, 0, 0., 0., [], [], [], [], [])],
+        [(100, true, 'unknown', 0, 0., 1., 0, 0, -0., 0., [], [], [(0, 1.)], [], [])]),
+    ('float_bucket_zero_sign',
+        [(100, true, 'unknown', 0, 0., 1., 0, 0, 1., 0., [], [], [(0, 0.)], [], [])],
+        [(100, true, 'unknown', 0, 0., 1., 0, 0, 1., 0., [], [], [(0, -0.)], [(0, 1.)], [])]),
+    -- The last element: nothing else differs, so samples equal under the rule would give the first one, `a` or `b` by the order.
+    ('custom_values_zero_sign',
+        [(100, false, 'unknown', -53, 0., 1., 1, 0, 0., 0., [(0, 1)], [], [], [], [0.])],
+        [(100, false, 'unknown', -53, 0., 1., 1, 0, 0., 0., [(0, 1)], [], [], [], [-0.])]);
 
 -- `b` is a stale marker, a histogram whose `sum` is the NaN with the bits 0x7FF0000000000002. Its other elements are ignored, so its
 -- greater count must not let it win, and it loses to an ordinary NaN `sum` (0x7FF8000000000001, Go's `math.NaN()`) too.
@@ -90,6 +107,14 @@ SELECT decider,
 FROM values('decider String, stale_count Int64, a_sum UInt64, a_count Int64',
     ('stale_marker', 5, 0x3FF0000000000000, 3),
     ('stale_marker_vs_nan', 0, 0x7FF8000000000001, 0));
+
+-- Two NaN sums are ordered by their bits, as the values of float samples are: `a` has the greater ones, `b` the greater schema.
+INSERT INTO duplicate_pairs
+SELECT decider,
+       [(100, 0, 0, 0, 0., reinterpret(a_sum, 'Float64'), 0, 0, 0., 0., [], [], [], [], [])],
+       [(100, 0, 0, 1, 0., reinterpret(b_sum, 'Float64'), 0, 0, 0., 0., [], [], [], [], [])]
+FROM values('decider String, a_sum UInt64, b_sum UInt64',
+    ('sum_nan_bits', 0x7FF8000000000001, 0x7FF8000000000000));
 
 -- The winner is found by a hash of its bits: the NaN `sum` of the winner of `stale_marker_vs_nan` isn't equal to itself.
 SELECT decider,
@@ -106,4 +131,26 @@ FROM
 )
 ORDER BY decider;
 
+-- An integer count is compared as the float of the same value: the count 0 of `b` is equal to the float count `0` of `c` and beats
+-- the float count `-0` of `a`, as `c` does. `b` beats `c` by the sum, so `b` is kept in every order of the three. Were the count 0
+-- equal to `-0` too, `a` would beat `b` by the sum, `b` would beat `c` and `c` would beat `a`.
+DROP TABLE IF EXISTS duplicate_triple;
+CREATE TABLE duplicate_triple ENGINE = Memory AS SELECT decider AS name, a AS sample FROM duplicate_pairs WHERE 0;
+
+INSERT INTO duplicate_triple VALUES
+    ('a', [(100, true, 'unknown', 0, 0., 3., 0, 0, -0., 0., [], [], [], [], [])]),
+    ('b', [(100, false, 'unknown', 0, 0., 2., 0, 0, 0., 0., [], [], [], [], [])]),
+    ('c', [(100, true, 'unknown', 0, 0., 1., 0, 0, 0., 0., [], [], [], [], [])]);
+
+WITH (SELECT sample FROM duplicate_triple WHERE name = 'a') AS a,
+     (SELECT sample FROM duplicate_triple WHERE name = 'b') AS b,
+     (SELECT sample FROM duplicate_triple WHERE name = 'c') AS c
+SELECT sipHash64(arrayReduce('timeSeriesGroupArray', [a, b, c])) = sipHash64(b),
+       sipHash64(arrayReduce('timeSeriesGroupArray', [a, c, b])) = sipHash64(b),
+       sipHash64(arrayReduce('timeSeriesGroupArray', [b, a, c])) = sipHash64(b),
+       sipHash64(arrayReduce('timeSeriesGroupArray', [b, c, a])) = sipHash64(b),
+       sipHash64(arrayReduce('timeSeriesGroupArray', [c, a, b])) = sipHash64(b),
+       sipHash64(arrayReduce('timeSeriesGroupArray', [c, b, a])) = sipHash64(b);
+
+DROP TABLE duplicate_triple;
 DROP TABLE duplicate_pairs;
