@@ -206,7 +206,7 @@ String AIServerFunctionTransport::renderSystemPrompt(const String & system_promp
     writeString("\n\n## Tool protocol\n\n", out);
     writeString("You have access to the tools listed below. To call a tool, output a block of the form\n", out);
     writeString(open_tag, out);
-    writeString("{\"name\": \"<tool name>\", \"arguments\": {...}}", out);
+    writeString(R"({"name": "<tool name>", "arguments": {...}})", out);
     writeString(close_tag, out);
     writeString(
         "\nexactly, with valid JSON inside. You may output several blocks to call several tools at once, "
