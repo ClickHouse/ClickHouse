@@ -11,6 +11,8 @@
 #include <limits>
 #include <string_view>
 
+class DateLUTImpl;
+
 namespace DB
 {
 
@@ -113,6 +115,7 @@ struct JSONFormatSettings
   */
 struct FormatSettings : FormatSettingsEnums
 {
+    bool skip_duplicated_fields = false;
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
     bool with_types_use_header = false;
@@ -130,6 +133,10 @@ struct FormatSettings : FormatSettingsEnums
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
     bool try_infer_variant = false;
+
+    /// The zone to read a date/time that declares none in, filled by `getFormatSettings`. Null in
+    /// settings built by hand, which then keep the zone of the parsed type.
+    const DateLUTImpl * session_time_zone = nullptr;
 
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 25000;
@@ -254,6 +261,12 @@ struct FormatSettings : FormatSettingsEnums
         UInt64 output_record_batch_bytes = 0;
         /// Upper bound on one record batch, as opposed to the targets above, which combine small blocks.
         UInt64 output_max_record_batch_bytes = MAX_ARROW_BUFFER_SIZE;
+        /// Not settings, but choices of the formats that hand their data over as Arrow arrays (`Vortex`):
+        /// a `FixedString` is written as `Utf8` when `output_string_as_string` is set, unless this is unset;
+        /// a `DateTime` as a timestamp in seconds instead of `UInt32`; `Nothing` as the Arrow `Null` type.
+        bool output_fixed_string_as_string = true;
+        bool output_datetime_as_timestamp = false;
+        bool output_nothing_as_null = false;
     } arrow{};
 
     struct AvroSchemaRegistryTimeouts

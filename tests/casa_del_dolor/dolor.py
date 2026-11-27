@@ -651,10 +651,10 @@ if server_settings is not None:
     modified_server_settings, server_settings, generated_clusters = (
         modify_server_settings(args, cluster, is_private_binary, server_settings)
     )
-    if generated_clusters:
-        modified_user_settings, user_settings = modify_user_settings(
-            args, user_settings, generated_clusters
-        )
+if user_settings is not None:
+    modified_user_settings, user_settings = modify_user_settings(
+        args, user_settings, generated_clusters
+    )
 
 dolor_main_configs = [
     "../config/server.crt",
@@ -767,6 +767,8 @@ cluster.default_local_uploader = LocalUploader(cluster.instances["node0"])
 cluster.default_local_downloader = LocalDownloader(cluster.instances["node0"])
 
 if args.with_postgresql:
+    # The sidecar restarts a paused postgres1, which Docker reports as unhealthy, so dolor's unpause fails
+    cluster.process_integration_nodes("postgres", ["autoheal"], "stop")
     postgres_conn = get_postgres_conn(
         ip=cluster.postgres_ip, port=cluster.postgres_port
     )

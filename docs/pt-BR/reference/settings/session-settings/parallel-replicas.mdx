@@ -133,6 +133,16 @@ Substitua os motores de funções de tabela por suas alternativas -Cluster
 
 Se true, o ClickHouse também usará o algoritmo de réplicas paralelas para tabelas MergeTree não replicadas
 
+## parallel_replicas_for_object_storage_tables {#parallel_replicas_for_object_storage_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Nova configuração para ler tabelas com um motor de armazenamento de objetos usando réplicas paralelas."}]}]} />
+
+Lê uma tabela com um motor de armazenamento de objetos que tenha uma função de tabela `-Cluster` correspondente (`S3`, `AzureBlobStorage`, `HDFS`, `Iceberg`, `IcebergS3`, `IcebergAzure`, `IcebergHDFS`, `IcebergLocal`, `DeltaLake`, `DeltaLakeS3`, `DeltaLakeAzure`, `Hudi`, `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS`) distribuindo a leitura entre as réplicas de `cluster_for_parallel_replicas`, da mesma forma que `parallel_replicas_for_cluster_engines` faz com as funções de tabela. Não tem efeito quando `parallel_replicas_for_cluster_engines` está desabilitado.
+
+Uma réplica só participa da leitura se tiver a tabela, e a tabela deve ter a mesma definição em todas as réplicas.
+
 ## parallel_replicas_for_queries_with_multiple_tables {#parallel_replicas_for_queries_with_multiple_tables}
 
 <BetaBadge />

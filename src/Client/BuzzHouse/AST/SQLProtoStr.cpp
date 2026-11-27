@@ -17,17 +17,48 @@ namespace BuzzHouse
 
 static constexpr char hexDigits[] = "0123456789ABCDEF";
 
-/// Append a single-quoted SQL string literal to ret, doubling any embedded single quotes.
+static void ConvertToSQLString(String & ret, const String & s)
+{
+    for (size_t i = 0; i < s.length(); i++)
+    {
+        const char & c = s[i];
+
+        switch (c)
+        {
+            case '\'': ret += "''"; break;
+            case '\\': ret += "\\\\"; break;
+            case '\b': ret += "\\b"; break;
+            case '\f': ret += "\\f"; break;
+            case '\r': ret += "\\r"; break;
+            case '\n': ret += "\\n"; break;
+            case '\t': ret += "\\t"; break;
+            case '\0': ret += "\\0"; break;
+            case '\a': ret += "\\a"; break;
+            case '\v': ret += "\\v"; break;
+            default: {
+                if (c > static_cast<char>(31) && c < static_cast<char>(127))
+                {
+                    ret += c;
+                }
+                else
+                {
+                    const uint8_t & x = static_cast<uint8_t>(c);
+
+                    ret += "\\x";
+                    ret += hexDigits[(x & 0xF0) >> 4];
+                    ret += hexDigits[x & 0x0F];
+                }
+            }
+        }
+    }
+}
+
+/// Single-quoted SQL string literal, escaping `'`, `\` and non-printable bytes
 static void appendSQLStringLiteral(String & ret, const String & s)
 {
-    ret += '\'';
-    for (const char c : s)
-    {
-        if (c == '\'')
-            ret += '\'';
-        ret += c;
-    }
-    ret += '\'';
+    ret += "'";
+    ConvertToSQLString(ret, s);
+    ret += "'";
 }
 
 CONV_FN(Expr, expr);
@@ -150,49 +181,6 @@ CONV_FN(ExprColAlias, eca)
     }
 }
 
-static void ConvertToSQLString(String & ret, const String & s)
-{
-    for (size_t i = 0; i < s.length(); i++)
-    {
-        const char & c = s[i];
-
-        switch (c)
-        {
-            case '\'': ret += "''"; break;
-            case '\\': ret += "\\\\"; break;
-            case '\b': ret += "\\b"; break;
-            case '\f': ret += "\\f"; break;
-            case '\r': ret += "\\r"; break;
-            case '\n': ret += "\\n"; break;
-            case '\t': ret += "\\t"; break;
-            case '\0': ret += "\\0"; break;
-            case '\a': ret += "\\a"; break;
-            case '\v': ret += "\\v"; break;
-            default: {
-                if (c > static_cast<char>(31) && c < static_cast<char>(127))
-                {
-                    ret += c;
-                }
-                else
-                {
-                    const uint8_t & x = static_cast<uint8_t>(c);
-
-                    ret += "\\x";
-                    ret += hexDigits[(x & 0xF0) >> 4];
-                    ret += hexDigits[x & 0x0F];
-                }
-            }
-        }
-    }
-}
-
-/// Single-quoted literal escaping both `'` and `\`, unlike `appendSQLStringLiteral`
-static void appendEscapedSQLString(String & ret, const String & s)
-{
-    ret += "'";
-    ConvertToSQLString(ret, s);
-    ret += "'";
-}
 
 CONV_FN(ExprSchemaTable, st)
 {
@@ -1584,9 +1572,9 @@ CONV_FN(ComplicatedExpr, expr)
         case ExprType::kWindowCall: WindowFuncCallToString(ret, expr.window_call()); break;
         case ExprType::kInterval: IntervalExprToString(ret, expr.interval()); break;
         case ExprType::kColumns:
-            ret += "COLUMNS('";
-            ret += expr.columns();
-            ret += "')";
+            ret += "COLUMNS(";
+            appendSQLStringLiteral(ret, expr.columns());
+            ret += ")";
             break;
         case ExprType::kArray:
             ret += "[";
@@ -1941,11 +1929,11 @@ CONV_FN(RemoteFunc, rfunc)
         if (est.has_database())
         {
             ret += "database=";
-            appendEscapedSQLString(ret, est.database().value());
+            appendSQLStringLiteral(ret, est.database().value());
             ret += ", ";
         }
         ret += "table=";
-        appendEscapedSQLString(ret, est.table().value());
+        appendSQLStringLiteral(ret, est.table().value());
     }
     else
     {
@@ -2136,9 +2124,9 @@ CONV_FN(MergeFunc, mfunc)
     ret += "merge(";
     if (mfunc.has_mdatabase())
     {
-        ret += "REGEXP('";
-        ret += mfunc.mdatabase();
-        ret += "'), ";
+        ret += "REGEXP(";
+        appendSQLStringLiteral(ret, mfunc.mdatabase());
+        ret += "), ";
     }
     appendSQLStringLiteral(ret, mfunc.mtable());
 }
@@ -2183,7 +2171,7 @@ CONV_FN(MergeTreeProjectionFunc, mfunc)
     ret += "mergeTreeProjection(";
     FlatExprSchemaTableToString(ret, mfunc.est(), "', '");
     ret += ", ";
-    appendEscapedSQLString(ret, mfunc.proj().value());
+    appendSQLStringLiteral(ret, mfunc.proj().value());
 }
 
 CONV_FN(MergeTreeTextIndexFunc, mttxtidx)
@@ -2191,7 +2179,7 @@ CONV_FN(MergeTreeTextIndexFunc, mttxtidx)
     ret += "mergeTreeTextIndex(";
     FlatExprSchemaTableToString(ret, mttxtidx.est(), "', '");
     ret += ", ";
-    appendEscapedSQLString(ret, mttxtidx.idx().value());
+    appendSQLStringLiteral(ret, mttxtidx.idx().value());
 }
 
 CONV_FN(MergeTreeAnalyzeIndexesFunc, mfunc)
@@ -3111,9 +3099,9 @@ CONV_FN(TableEngineParam, tep)
             ret += ")";
             break;
         case TableEngineParamType::kRegexp:
-            ret += "REGEXP('";
-            ret += tep.regexp();
-            ret += "')";
+            ret += "REGEXP(";
+            appendSQLStringLiteral(ret, tep.regexp());
+            ret += ")";
             break;
         case TableEngineParamType::kEst: FlatExprSchemaTableToString(ret, tep.est(), "."); break;
         case TableEngineParamType::kExpr: ExprToString(ret, tep.expr()); break;
@@ -3961,7 +3949,7 @@ CONV_FN(DictionarySourceDetails, dsd)
 
         SelectToString(query, dsd.query());
         key("QUERY ");
-        appendEscapedSQLString(ret, query);
+        appendSQLStringLiteral(ret, query);
     }
     if (dsd.has_where())
     {
@@ -3969,7 +3957,7 @@ CONV_FN(DictionarySourceDetails, dsd)
 
         ExprToString(where, dsd.where());
         key("WHERE ");
-        appendEscapedSQLString(ret, where);
+        appendSQLStringLiteral(ret, where);
     }
     if (dsd.has_secure())
     {

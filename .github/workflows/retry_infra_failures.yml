@@ -231,7 +231,7 @@ jobs:
             fi
 
             pr_data=$(gh api "repos/$GH_REPO/pulls/$pr_number" \
-              --jq '{sha: .head.sha, updated: .updated_at}' 2>/dev/null || true)
+              --jq '{sha: .head.sha, updated: .updated_at, labels: [.labels[].name]}' 2>/dev/null || true)
             pr_sha=$(echo "$pr_data" | jq -r '.sha // empty')
             pr_updated=$(echo "$pr_data" | jq -r '.updated // empty')
 
@@ -383,6 +383,25 @@ jobs:
                 && [ "$failed_workflow_jobs" = "Finish Workflow" ]; then
                 should_rerun=false
                 echo "  Skipping: only Finish Workflow failed due to the unresolved-review-threads merge gate."
+              fi
+            fi
+
+            # `can_be_tested` in ci/jobs/scripts/workflow_hooks/trusted.py refuses a PR without the
+            # `can be tested` label (keep the text in sync); adding the label reruns the run itself,
+            # and a rerun here fails the same way and races with that rerun.
+            if [ "$should_rerun" = "true" ] && \
+               ! echo "$pr_data" | jq -e '.labels // [] | index("can be tested")' > /dev/null; then
+              config_job_id=$(echo "$jobs_raw" | jq -s -r '
+                [.[].jobs[] | select(.name == "Config Workflow" and .conclusion == "failure")] |
+                first // {} | .id // empty
+              ')
+              if [ -n "$config_job_id" ]; then
+                config_log=$(curl -sfL -H "Authorization: Bearer $GH_TOKEN" \
+                  "https://api.github.com/repos/$GH_REPO/actions/jobs/$config_job_id/logs" || true)
+                if grep -qF "'can be tested' label is required" <<< "$config_log"; then
+                  should_rerun=false
+                  echo "  Skipping: Config Workflow refused the PR for the missing 'can be tested' label, which reruns it once added."
+                fi
               fi
             fi
 

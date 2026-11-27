@@ -69,17 +69,11 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 ## max_iceberg_manifest_decode_thread_pool_free_size {#max_iceberg_manifest_decode_thread_pool_free_size}
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
-
-الحد الأقصى لعدد الخيوط (threads) الخاملة الاحتياطية التي يُحتفظ بها في مجمّع خيوط المخصص لفك ترميز ملفات manifest الخاصة ببيانات Iceberg.
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />الحد الأقصى لعدد الخيوط (threads) الخاملة الاحتياطية التي يُحتفظ بها في مجمّع خيوط المخصص لفك ترميز ملفات البيان الخاصة ببيانات Iceberg. تم إهمال هذا الإعداد ولم يعد له أي تأثير، إذ تُقرأ ملفات البيان الخاصة بـ Iceberg على مجمّع خيوط الإدخال والإخراج.
 
 ## max_iceberg_manifest_decode_thread_pool_size {#max_iceberg_manifest_decode_thread_pool_size}
 
-<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="Yes" />
-
-الحد الأقصى للعدد الإجمالي للخيوط المستخدمة في فك ترميز ملفات manifest الخاصة ببيانات Iceberg.
-
-يُفصل هذا الـ مجمّع خيوط عن مجمّع خيوط الـ IO عن قصد: فمهمة فك الترميز قد تتوقف إلى أن يستهلك الاستعلام العناصر التي أنتجتها، بينما ينتظر فك ترميز manifest الحذف مهامه في مجمّع خيوط الـ IO قبل استهلاك أي عنصر — لذا فإن مشاركة مجمّع خيوط واحد قد تؤدي إلى تجمّد متبادل (deadlock).
+<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />الحد الأقصى للعدد الإجمالي للخيوط المستخدمة في فك ترميز ملفات البيان الخاصة ببيانات Iceberg. تم إهمال هذا الإعداد ولم يعد له أي تأثير، إذ تتم قراءة ملفات البيان الخاصة بـ Iceberg في مجمّع خيوط الإدخال والإخراج.
 
 ## max_keep_alive_requests {#max_keep_alive_requests}
 

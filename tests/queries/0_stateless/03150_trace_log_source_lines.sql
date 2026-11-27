@@ -2,6 +2,7 @@
 -- no-darwin: source-line symbolization needs DWARF, which on Mach-O lives in a separate .dSYM bundle
 -- that the standard macOS build does not produce (ELF embeds DWARF directly in the binary).
 
+SELECT '@@SKIP@@: No debug symbols' FROM system.build_options WHERE name = 'CXX_FLAGS' AND value LIKE '%-g0%';
 SET log_queries = 1;
 SET log_query_threads = 1;
 SET query_profiler_real_time_period_ns = 100000000;
