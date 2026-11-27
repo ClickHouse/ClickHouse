@@ -2133,7 +2133,10 @@ protected:
     {
         std::mutex mutex;
         DequeWithMemoryTracking<DistributedQueryTaskBatch> batches TSA_GUARDED_BY(mutex);
-        bool sending TSA_GUARDED_BY(mutex) = false;
+        /// A sender job drains the queue: only the flush that sets it starts one, and the job clears it when it finds the queue
+        /// empty, so every batch has a sender and the next one goes only after the worker scheduled the previous one. The worker
+        /// then starts its stages in the walk's order, consumers before their streaming producers.
+        bool send_in_flight TSA_GUARDED_BY(mutex) = false;
     };
 
     using StagePerWorker = MapWithMemoryTracking<WorkerIndex, DistributedQueryTaskBatch::Stage>;
@@ -2219,7 +2222,7 @@ protected:
                 std::lock_guard lock(queue->mutex);
                 for (auto & batch : batches)
                     queue->batches.push_back(std::move(batch));
-                start_sender = !std::exchange(queue->sending, true);
+                start_sender = !std::exchange(queue->send_in_flight, true);
             }
 
             if (!start_sender)
@@ -2248,7 +2251,7 @@ protected:
                 {
                     std::lock_guard lock(queue->mutex);
                     queue->batches.clear();
-                    queue->sending = false;
+                    queue->send_in_flight = false;
                 }
                 cancellation->recordCurrentException();
                 throw;
@@ -2274,7 +2277,7 @@ protected:
                     if (queue->batches.empty() || cancellation->isCancelled())
                     {
                         queue->batches.clear();
-                        queue->sending = false;
+                        queue->send_in_flight = false;
                         return;
                     }
                     batch = std::move(queue->batches.front());
@@ -2296,7 +2299,7 @@ protected:
         {
             std::lock_guard lock(queue->mutex);
             queue->batches.clear();
-            queue->sending = false;
+            queue->send_in_flight = false;
             throw;
         }
     }
