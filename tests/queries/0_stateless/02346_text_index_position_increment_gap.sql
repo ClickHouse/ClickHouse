@@ -48,7 +48,7 @@ SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(arr, 'world happy
 SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(arr, 'world happy') ORDER BY id) SETTINGS use_skip_indexes = 0, use_skip_indexes_on_data_read = 0, query_plan_direct_read_from_text_index = 0;
 
 SELECT 'hasPhrase is read from the index, without the function';
-SELECT count() FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE hasPhrase(arr, 'hello world')) WHERE explain LIKE '%hasPhrase(%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE hasPhrase(arr, 'hello world') SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%hasPhrase(%';
 
 SELECT 'positions after a merge';
 INSERT INTO tab VALUES (5, ['clickhouse', 'happy']);
