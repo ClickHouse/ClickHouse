@@ -334,6 +334,7 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
     /// We have to also adjust queue size, because it limits the number of scheduled and already running jobs in total.
     queue_size = queue_size ? std::max(queue_size, max_threads) : 0;
     jobs.reserve(std::min(queue_size, MAX_JOBS_TO_RESERVE));
+    slot_freed.notify_all();
 
     if (need_start_threads)
     {
@@ -397,6 +398,8 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
     queue_size = value ? std::max(value, max_threads) : 0;
     /// Reserve memory to get rid of allocations
     jobs.reserve(std::min(queue_size, MAX_JOBS_TO_RESERVE));
+    /// A larger queue can admit the schedulers waiting for a slot.
+    slot_freed.notify_all();
 }
 
 template <typename Thread>
@@ -467,11 +470,18 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         /// Wait for available threads or timeout
         if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set. Even if the value is zero.
         {
-            if (!job_finished.wait_for(lock, std::chrono::microseconds(*wait_microseconds), pred))
+            if (!slot_freed.wait_for(lock, std::chrono::microseconds(*wait_microseconds), pred))
                 return on_error(fmt::format("no free thread (timeout={})", *wait_microseconds));
         }
         else
-            job_finished.wait(lock, pred);
+            slot_freed.wait(lock, pred);
+
+        /// A freed slot wakes only one scheduler, so pass the wakeup on while slots remain free.
+        /// This covers a scheduler that fails without taking the slot.
+        SCOPE_EXIT(
+            if (queue_size && scheduled_jobs < queue_size)
+                slot_freed.notify_one();
+        );
 
         if (finished)
             return on_error("finished");
@@ -669,7 +679,7 @@ void ThreadPoolImpl<Thread>::wait()
     /// first worker-loop iteration, or a busy thread that will see the queued
     /// job when it finishes its current one). Waking all idle threads would
     /// destroy LIFO ordering — the whole point of this pool design.
-    job_finished.wait(lock, [this] { return scheduled_jobs == 0; });
+    all_jobs_finished.wait(lock, [this] { return scheduled_jobs == 0; });
 
     if (first_exception)
     {
@@ -687,7 +697,7 @@ bool ThreadPoolImpl<Thread>::waitUntil(std::chrono::steady_clock::time_point dea
     ProfileEvents::increment(
         std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
         watch.elapsedMicroseconds());
-    return job_finished.wait_until(lock, deadline, [this] { return scheduled_jobs == 0; });
+    return all_jobs_finished.wait_until(lock, deadline, [this] { return scheduled_jobs == 0; });
 }
 
 template <typename Thread>
@@ -714,7 +724,7 @@ void ThreadPoolImpl<Thread>::finishNoLock(const std::lock_guard<std::mutex> &)
 
     /// Wake up all idle threads so they can see it and exit gracefully.
     wakeUpAllIdleThreadsNoLock();
-    job_finished.notify_all();
+    slot_freed.notify_all();
 }
 
 template <typename Thread>
@@ -1025,9 +1035,15 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 
                 --parent_pool.scheduled_jobs;
 
-                parent_pool.job_finished.notify_all();
+                if (parent_pool.scheduled_jobs == 0)
+                    parent_pool.all_jobs_finished.notify_all();
                 if (parent_pool.finished)
+                {
+                    parent_pool.slot_freed.notify_all();
                     parent_pool.wakeUpAllIdleThreadsNoLock(); /// `finished` was set, wake up other threads so they can finish themselves.
+                }
+                else
+                    parent_pool.slot_freed.notify_one();
             }
 
             /// LIFO idle thread scheduling: link this thread into the intrusive
