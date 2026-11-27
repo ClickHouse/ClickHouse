@@ -115,6 +115,71 @@ const std::vector<Chart> & getCharts()
             "metric IN ('FilesystemCacheBytes', 'FilesystemCacheCapacity')",
         },
         {
+            "Cache reuse in the last efficiency window (bytes)",
+            {
+                {"Active", "sumIf(value, metric = 'FilesystemCacheActiveBytes')"},
+                {"Passive", "sumIf(value, metric = 'FilesystemCachePassiveBytes')"},
+                {"Idle", "sumIf(value, metric = 'FilesystemCacheIdleBytes')"},
+            },
+            "asynchronous_metric_log",
+            "metric IN ('FilesystemCacheActiveBytes', 'FilesystemCachePassiveBytes', 'FilesystemCacheIdleBytes')",
+        },
+        {
+            "Reuse of large file segments in the last efficiency window (bytes)",
+            {
+                {"Active", "sumIf(value, metric = 'FilesystemCacheLargeSegmentsActiveBytes')"},
+                {"Passive", "sumIf(value, metric = 'FilesystemCacheLargeSegmentsPassiveBytes')"},
+                {"Idle", "sumIf(value, metric = 'FilesystemCacheLargeSegmentsIdleBytes')"},
+            },
+            "asynchronous_metric_log",
+            "metric IN ('FilesystemCacheLargeSegmentsActiveBytes', 'FilesystemCacheLargeSegmentsPassiveBytes', 'FilesystemCacheLargeSegmentsIdleBytes')",
+        },
+        {
+            "Cache efficiency in the last efficiency window",
+            {
+                {.label = "Efficiency",
+                 .expression = "sumIf(value, metric = 'FilesystemCacheActiveBytes')",
+                 .divisor = "sumIf(value, metric IN ('FilesystemCacheActiveBytes', 'FilesystemCachePassiveBytes'))"},
+                {.label = "LargeSegmentsEfficiency",
+                 .expression = "sumIf(value, metric = 'FilesystemCacheLargeSegmentsActiveBytes')",
+                 .divisor = "sumIf(value, metric IN ('FilesystemCacheLargeSegmentsActiveBytes', 'FilesystemCacheLargeSegmentsPassiveBytes'))"},
+                {.label = "Touched",
+                 .expression = "sumIf(value, metric IN ('FilesystemCacheActiveBytes', 'FilesystemCachePassiveBytes'))",
+                 .divisor = "sumIf(value, metric IN ('FilesystemCacheActiveBytes', 'FilesystemCachePassiveBytes', 'FilesystemCacheIdleBytes'))"},
+            },
+            "asynchronous_metric_log",
+            "metric IN ('FilesystemCacheActiveBytes', 'FilesystemCachePassiveBytes', 'FilesystemCacheIdleBytes', "
+            "'FilesystemCacheLargeSegmentsActiveBytes', 'FilesystemCacheLargeSegmentsPassiveBytes')",
+        },
+        {
+            "Cache bytes by file segment size",
+            {
+                {"UpTo512KiB", "sumIf(value, key = '524288')"},
+                {"UpTo1MiB", "sumIf(value, key = '1048576')"},
+                {"UpTo2MiB", "sumIf(value, key = '2097152')"},
+                {"UpTo4MiB", "sumIf(value, key = '4194304')"},
+                {"UpTo8MiB", "sumIf(value, key = '8388608')"},
+                {"UpTo16MiB", "sumIf(value, key = '16777216')"},
+                {"Over16MiB", "sumIf(value, key = 'inf')"},
+            },
+            "asynchronous_metric_log",
+            "metric = 'FilesystemCacheBytesBySegmentSize'",
+        },
+        {
+            "Cache file segments by size",
+            {
+                {"UpTo512KiB", "sumIf(value, key = '524288')"},
+                {"UpTo1MiB", "sumIf(value, key = '1048576')"},
+                {"UpTo2MiB", "sumIf(value, key = '2097152')"},
+                {"UpTo4MiB", "sumIf(value, key = '4194304')"},
+                {"UpTo8MiB", "sumIf(value, key = '8388608')"},
+                {"UpTo16MiB", "sumIf(value, key = '16777216')"},
+                {"Over16MiB", "sumIf(value, key = 'inf')"},
+            },
+            "asynchronous_metric_log",
+            "metric = 'FilesystemCacheFileSegmentsBySize'",
+        },
+        {
             "Cache elements",
             {
                 {"Elements", "sum(CurrentMetric_FilesystemCacheElements)"},
@@ -176,6 +241,7 @@ const std::vector<Chart> & getCharts()
             {
                 {"Evicted", "sum(ProfileEvent_FilesystemCacheEvictedBytes)"},
                 {"BackgroundEvicted", "sum(ProfileEvent_FilesystemCacheBackgroundEvictedBytes)"},
+                {"EvictedNoHit", "sum(ProfileEvent_FilesystemCacheEvictedNoHitBytes)"},
             },
         },
         {

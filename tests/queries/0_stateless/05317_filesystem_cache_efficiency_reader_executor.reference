@@ -1,0 +1,11 @@
+1. A scan on an empty cache
+has_segments=1	all_bytes_idle=1	no_active_bytes=1
+2. The queue of the first fill
+queue_entry_type=SLRU_Probationary
+3. A second scan
+has_active_bytes=1	efficiency_at_least_0_99=1	classes_add_up_to_downloaded_size=1
+protected_share_above_0_9=1
+4. Point queries, run twice
+has_active_bytes=1	efficiency_below_0_5=1
+5. Write-through
+has_idle_bytes=1	active_below_1_percent=1
