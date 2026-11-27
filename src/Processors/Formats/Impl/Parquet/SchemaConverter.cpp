@@ -1366,8 +1366,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     /// wrapped in ColumnNullable using the group null map. Make input_type Nullable(Tuple(...)) so
     /// the outer restore in processSubtree sees no type change (needs_cast stays off); the wrapping
     /// is done in Reader::formOutputColumn keyed by OutputColumnInfo::nullable_group.
-    /// No requested element is in the file or, for a Tuple read with input_format_null_as_default = 0, every one read is
-    /// Nullable and so does not reject the group NULLs: read a leaf for the group null map.
+    /// Read a leaf for the group null map when no requested element is in the file or no element read rejects group NULLs.
     bool no_leaf_rejects_group_nulls = !nullable_group && tuple_type_hint;
     for (size_t i = primitive_start; i < primitive_columns.size() && no_leaf_rejects_group_nulls; ++i)
         no_leaf_rejects_group_nulls = primitive_columns[i].output_nullable;
