@@ -7,13 +7,11 @@ doc_type: 'guide'
 keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'streaming', 'dead-letter']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 La plantilla de Pub/Sub a ClickHouse es un pipeline de streaming que lee mensajes codificados en JSON de una suscripción de Pub/Sub y los escribe en una tabla de ClickHouse.
 Los mensajes que no se pueden analizar o asignar al esquema de destino se envían a un destino dead-letter: una tabla de ClickHouse, un tema de Pub/Sub o ambos.
 
 <div id="pipeline-requirements">
-  ## Requisitos del pipeline
+  ## Requisitos del pipeline {#pipeline-requirements}
 </div>
 
 * La suscripción de Pub/Sub de origen debe existir.
@@ -25,7 +23,7 @@ Los mensajes que no se pueden analizar o asignar al esquema de destino se envía
 * Cuando se establece `deadLetterTopic`, el tema de Pub/Sub ya debe existir.
 
 <div id="template-parameters">
-  ## Parámetros de la plantilla
+  ## Parámetros de la plantilla {#template-parameters}
 </div>
 
 <br />
@@ -55,7 +53,7 @@ Los mensajes que no se pueden analizar o asignar al esquema de destino se envía
 </Note>
 
 <div id="message-format-and-schema-mapping">
-  ## Formato de los mensajes y mapeo del esquema
+  ## Formato de los mensajes y mapeo del esquema {#message-format-and-schema-mapping}
 </div>
 
 Los mensajes de Pub/Sub deben ser objetos JSON cuyos nombres de campo de nivel superior coincidan exactamente con los nombres de las columnas de la tabla de ClickHouse de destino.
@@ -73,7 +71,7 @@ Para mapear los mensajes entrantes a la tabla de destino, el pipeline realiza lo
 </Warning>
 
 <div id="type-conversion">
-  ### Conversión de tipos
+  ### Conversión de tipos {#type-conversion}
 </div>
 
 Los valores JSON se convierten al tipo de columna de ClickHouse correspondiente:
@@ -89,7 +87,7 @@ Los valores JSON se convierten al tipo de columna de ClickHouse correspondiente:
 | [`String`](/es/reference/data-types/string)                                           | Se usa tal cual para los fields textuales; los nodos JSON no textuales se serializan a su representación de cadena JSON. |
 
 <div id="batching-and-windowing">
-  ## Agrupación por lotes y ventanas
+  ## Agrupación por lotes y ventanas {#batching-and-windowing}
 </div>
 
 Como la pipeline es de streaming, las filas entrantes se acumulan en ventanas antes de escribirse en ClickHouse. La estrategia de ventanas se elige según los parámetros que proporciones:
@@ -104,13 +102,13 @@ Como la pipeline es de streaming, las filas entrantes se acumulan en ventanas an
 Ajustar estos valores permite equilibrar la latencia y la eficiencia de inserción. Las ventanas más pequeñas reducen la latencia de extremo a extremo; las más grandes generan menos lotes `INSERT`, pero de mayor tamaño.
 
 <div id="dead-letter-handling">
-  ## Gestión de mensajes dead-letter
+  ## Gestión de mensajes dead-letter {#dead-letter-handling}
 </div>
 
 Los mensajes que fallen durante el análisis de JSON, el mapeo del esquema o la coerción de tipos se enrutan al destino o destinos dead-letter configurados. Debe proporcionarse al menos uno de `clickHouseDeadLetterTable` o `deadLetterTopic`; si ambos están configurados, los mensajes fallidos se envían a ambos.
 
 <div id="clickhouse-dead-letter-table">
-  ### Tabla dead-letter de ClickHouse
+  ### Tabla dead-letter de ClickHouse {#clickhouse-dead-letter-table}
 </div>
 
 Cuando se configura `clickHouseDeadLetterTable`, la tabla dead-letter ya debe existir con este esquema fijo:
@@ -139,7 +137,7 @@ ORDER BY failed_at;
 </Note>
 
 <div id="pubsub-dead-letter-topic">
-  ### Tema dead-letter de Pub/Sub
+  ### Tema dead-letter de Pub/Sub {#pubsub-dead-letter-topic}
 </div>
 
 Cuando se establece `deadLetterTopic`, cada mensaje fallido se vuelve a publicar en el tema con:
@@ -150,9 +148,7 @@ Cuando se establece `deadLetterTopic`, cada mensaje fallido se vuelve a publicar
 
 Esto facilita reprocesar los mensajes fallidos una vez que se haya resuelto el problema subyacente del esquema o del productor.
 
-<div id="running-the-template">
-  ## Ejecutar la plantilla
-</div>
+## Ejecutar la plantilla {#running-the-template}
 
 La plantilla Pub/Sub to ClickHouse está disponible en Google Cloud Console.
 
@@ -163,11 +159,16 @@ La plantilla Pub/Sub to ClickHouse está disponible en Google Cloud Console.
 Inicie sesión en Google Cloud Console y busque Dataflow.
 
 1. Presione el botón `CREATE JOB FROM TEMPLATE`.
-   <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="Consola de Dataflow" />
 
-2. Una vez que se abra el formulario de la plantilla, introduzca un nombre para el job y seleccione la región deseada.
+   <div className="ch-image-lg">
+     <Frame>
+       ![Consola de Dataflow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+     </Frame>
+   </div>
 
-   {/* PLACEHOLDER: agregar captura de pantalla del formulario inicial de la plantilla Pub/Sub to ClickHouse (nombre del job + región) */}
+2. Una vez que se abra el formulario de la plantilla, introduzca un nombre para el Job y seleccione la región deseada.
+
+   {/* PLACEHOLDER: agregar captura de pantalla del formulario inicial de la plantilla Pub/Sub to ClickHouse (nombre del Job + región) */}
 
 3. En el campo `Dataflow Template`, escriba `ClickHouse` o `Pub/Sub` y seleccione la plantilla `Pub/Sub to ClickHouse`.
 
@@ -184,15 +185,17 @@ Inicie sesión en Google Cloud Console y busque Dataflow.
 
 5. De forma opcional, personalice la agrupación en lotes (`windowSeconds`, `batchRowCount`) y los parámetros de ajuste de `ClickHouseIO`, como se detalla en la sección [Parámetros de la plantilla](#template-parameters).
 
-<div id="monitor-the-job">
-  ### Supervisa el trabajo
+### Supervisa el Job {#monitor-the-job}
+
+Ve a la [pestaña Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) en tu Google Cloud Console para supervisar el estado del Job. Allí encontrarás los detalles del Job, incluidos el progreso y cualquier error:
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Consola de Dataflow que muestra un Job de Pub/Sub a ClickHouse en ejecución](/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp)
+  </Frame>
 </div>
 
-Ve a la [pestaña Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) en tu Google Cloud Console para supervisar el estado del trabajo. Allí encontrarás los detalles del trabajo, incluidos el progreso y cualquier error:
-
-<Image img="/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp" size="lg" border alt="Consola de Dataflow que muestra un trabajo de Pub/Sub a ClickHouse en ejecución" />
-
-La plantilla también emite las siguientes métricas personalizadas en el espacio de nombres `PubSubToClickHouse`, visibles desde la página del trabajo de Dataflow:
+La plantilla también emite las siguientes métricas personalizadas en el espacio de nombres `PubSubToClickHouse`, visibles desde la página del Job de Dataflow:
 
 | Métrica                 | Tipo         | Descripción                                                                               |
 | ----------------------- | ------------ | ----------------------------------------------------------------------------------------- |
@@ -202,11 +205,11 @@ La plantilla también emite las siguientes métricas personalizadas en el espaci
 | `message-payload-bytes` | Distribución | Distribución de los tamaños de carga útil de los mensajes entrantes de Pub/Sub, en bytes. |
 
 <div id="troubleshooting">
-  ## Solución de problemas
+  ## Solución de problemas {#troubleshooting}
 </div>
 
 <div id="code-241-dbexception-memory-limit-total-exceeded">
-  ### Error: se superó el límite total de memoria (código 241)
+  ### Error: se superó el límite total de memoria (código 241) {#code-241-dbexception-memory-limit-total-exceeded}
 </div>
 
 Este error se produce cuando ClickHouse se queda sin memoria al procesar lotes grandes de datos. Para resolver este problema:
@@ -215,7 +218,7 @@ Este error se produce cuando ClickHouse se queda sin memoria al procesar lotes g
 * Reduzca el tamaño del lote: reduzca `batchRowCount` (y/o `maxInsertBlockSize`) en la configuración del trabajo de Dataflow para enviar fragmentos de datos más pequeños a ClickHouse, lo que reduce el consumo de memoria por lote.
 
 <div id="all-messages-going-to-dlq">
-  ### Todos los mensajes van al destino dead-letter
+  ### Todos los mensajes van al destino dead-letter {#all-messages-going-to-dlq}
 </div>
 
 Las causas más comunes son:
@@ -227,7 +230,7 @@ Las causas más comunes son:
 Inspeccione las columnas `error_message` y `stack_trace` de la tabla dead-letter de ClickHouse (o el atributo `errorMessage` en los mensajes dead-letter de Pub/Sub) para identificar la causa raíz.
 
 <div id="no-rows-arriving">
-  ### El pipeline se inicia, pero no llegan filas a ClickHouse
+  ### El pipeline se inicia, pero no llegan filas a ClickHouse {#no-rows-arriving}
 </div>
 
 * Confirma que la suscripción esté recibiendo mensajes: comprueba la métrica `messages-received` en la página del job de Dataflow.
@@ -235,7 +238,7 @@ Inspeccione las columnas `error_message` y `stack_trace` de la tabla dead-letter
 * Verifica la conectividad de red entre los workers de Dataflow y el endpoint de ClickHouse (firewall, peering de VPC o private service connect).
 
 <div id="template-source-code">
-  ## Código fuente de la plantilla
+  ## Código fuente de la plantilla {#template-source-code}
 </div>
 
 El código fuente de la plantilla está disponible en:

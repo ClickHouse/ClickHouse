@@ -1,5 +1,5 @@
 ---
-description: 'Dataset que contiene 10 millones de vectores del conjunto de datos LAION 5B'
+description: 'Conjunto de datos que contiene 10 millones de vectores del conjunto de datos LAION 5B'
 sidebarTitle: 'conjunto de datos LAION 5B'
 slug: /getting-started/example-datasets/laion-5b-dataset
 title: 'conjunto de datos LAION 5B'
@@ -7,10 +7,8 @@ keywords: ['búsqueda semántica', 'similitud vectorial', 'vecinos más cercanos
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="introduction">
-  ## Introducción
+  ## Introducción {#introduction}
 </div>
 
 El [conjunto de datos LAION 5b](https://laion.ai/blog/laion-5b/) contiene 5,85 mil millones de embeddings de imagen y texto, además de los metadatos de imagen asociados. Los embeddings se generaron con el modelo `Open AI CLIP` [ViT-L/14](https://huggingface.co/sentence-transformers/clip-ViT-L-14). La dimensión de cada vector de embedding es `768`.
@@ -18,7 +16,7 @@ El [conjunto de datos LAION 5b](https://laion.ai/blog/laion-5b/) contiene 5,85 m
 Este conjunto de datos puede utilizarse para modelar aspectos de diseño, dimensionamiento y rendimiento de una aplicación real de búsqueda vectorial a gran escala. El conjunto de datos puede utilizarse tanto para la búsqueda de texto a imagen como para la búsqueda de imagen a imagen.
 
 <div id="dataset-details">
-  ## Detalles del conjunto de datos
+  ## Detalles del conjunto de datos {#dataset-details}
 </div>
 
 El conjunto de datos completo puede descargarse con [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader).
@@ -29,7 +27,7 @@ El subconjunto se almacena en un archivo `Parquet`.
 Recomendamos a los usuarios que primero realicen un ejercicio de dimensionamiento para estimar los requisitos de almacenamiento y memoria de este conjunto de datos, consultando la [documentación](/es/reference/engines/table-engines/mergetree-family/annindexes).
 
 <div id="steps">
-  ## Pasos
+  ## Pasos {#steps}
 </div>
 
 <Steps>
@@ -163,6 +161,10 @@ Recomendamos a los usuarios que primero realicen un ejercicio de dimensionamient
 
     El resultado de la búsqueda anterior se muestra a continuación:
 
-    <Image img="/images/getting-started/example-datasets/laion5b_visualization_1.webp" alt="Resultados de la búsqueda por similitud vectorial" size="md" />
+    <div className="ch-image-md">
+      <Frame>
+        ![Resultados de la búsqueda por similitud vectorial](/images/getting-started/example-datasets/laion5b_visualization_1.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>

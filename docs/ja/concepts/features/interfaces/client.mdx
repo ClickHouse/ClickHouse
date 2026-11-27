@@ -1,18 +1,16 @@
 ---
-description: 'ClickHouse コマンドラインクライアント インターフェイスのドキュメント'
+description: 'ClickHouse コマンドラインClient インターフェイスのドキュメント'
 sidebarTitle: 'ClickHouse Client'
 slug: /interfaces/client
 title: 'ClickHouse Client'
-doc_type: 'リファレンス'
+doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
-ClickHouse は、ClickHouse サーバー に対して直接 SQL クエリを実行できるネイティブのコマンドラインクライアントを提供しています。
+ClickHouse は、ClickHouse サーバー に対して直接 SQL クエリを実行できるネイティブのコマンドラインClientを提供しています。
 対話型モード (クエリをその場で実行する場合) とバッチモード (スクリプト作成や自動化の場合) の両方をサポートしています。
-クエリ結果はターミナルに表示することも、ファイルにエクスポートすることもでき、Pretty、CSV、JSON など、ClickHouse のすべての出力[フォーマット](/ja/reference/formats/index)に対応しています。
+クエリ結果は端末に表示することも、ファイルにエクスポートすることもでき、Pretty、CSV、JSON など、ClickHouse のすべての出力[フォーマット](/ja/reference/formats/index)に対応しています。
 
-このクライアントは、進捗バー、読み取った行数、処理したバイト数、クエリ実行時間を通じて、クエリ実行に関するリアルタイムのフィードバックを提供します。
+このClientは、進捗バー、読み取った行数、処理したバイト数、クエリ実行時間を通じて、クエリ実行に関するリアルタイムのフィードバックを提供します。
 [コマンドラインオプション](#command-line-options)と[設定ファイル](#configuration_files)の両方をサポートしています。
 
 ## インストール {#install}
@@ -68,7 +66,11 @@ Connected to ClickHouse server version 24.12.2.
 
 ClickHouse Cloud サービスの接続情報は、ClickHouse Cloud コンソールで確認できます。接続先のサービスを選択し、**Connect** をクリックします。
 
-<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="ClickHouse Cloud サービスの接続ボタン" />
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud サービスの接続ボタン](/images/_snippets/cloud-connect-button.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -76,13 +78,17 @@ ClickHouse Cloud サービスの接続情報は、ClickHouse Cloud コンソー�
 
 **Native** を選択すると、接続情報と `clickhouse-client` コマンドの例が表示されます。
 
-<Image img="/images/_snippets/connection-details-native.webp" size="md" alt="ClickHouse Cloud の Native TCP 接続情報" />
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse Cloud のネイティブTCP接続情報](/images/_snippets/connection-details-native.webp)
+  </Frame>
+</div>
 
-### 設定ファイルに接続情報を保存する {#connection-credentials}
+### 設定ファイルへの接続情報の保存 {#connection-credentials}
 
-1 つ以上の ClickHouse サーバーの接続情報を、[設定ファイル](#configuration_files)に保存できます。
+1 つ以上の ClickHouse サーバーの接続情報を[設定ファイル](#configuration_files)に保存できます。
 
-形式は次のとおりです。
+フォーマットは次のとおりです。
 
 ```xml
 <config>
@@ -103,10 +109,10 @@ ClickHouse Cloud サービスの接続情報は、ClickHouse Cloud コンソー�
 </config>
 ```
 
-詳しくは、[設定ファイルのセクション](#configuration_files)を参照してください。
+詳細については、[設定ファイルのセクション](#configuration_files)を参照してください。
 
 <Note>
-  クエリの構文に集中できるよう、以降の例では接続情報 (`--host`、`--port` など) を省略しています。コマンドを使用する際は、忘れずに追加してください。
+  クエリ構文の説明に焦点を当てるため、以降の例では接続情報 (`--host`、`--port` など) を省略しています。実際にコマンドを実行する際は、忘れずに指定してください。
 </Note>
 
 ## 対話型モード {#interactive-mode}
@@ -254,6 +260,14 @@ REPL 内では、以下の別名を使用できます:
 
   iTerm2: Preferences -&gt; Profile -&gt; Keys -&gt; Left Option key に移動し、Esc+ をクリックします
 </Tip>
+
+### Vim モード {#vim-mode}
+
+`--vim` パラメータを指定してClientを起動すると、`vim` ライクなキー操作でクエリを編集できます。
+入力は挿入モードで開始されます。`Esc` を押すとノーマルモードに切り替わり、モーション (`h`、`j`、`k`、`l`、`w`、`b`、`e`、`0`、`$`、`f`、`t`、`%`、`gg`、`G` など)、カウント付きのオペレーター (`d`、`c`)、テキストオブジェクト (`iw`、`aw`、`i(`、`a(` など)、および `x`、`r`、`s`、`o`、`A`、`I`、`D`、`C` などのコマンドを使用できます。
+Vim モードでは、`Enter` を押すと、挿入モードでは改行が挿入され、ノーマルモードでは次の行へ移動します。クエリを送信するには `Ctrl + j` を押します。
+ノーマルモードで `v` を押すと、現在のクエリがエディタで開きます (埋め込みClientでは使用できません)。
+履歴検索のショートカット (`Ctrl + r`、`Ctrl + s`、`Ctrl + t`、`Alt + r`) および `Alt + #` は、ノーマルモードでも使用できます。
 
 ## バッチモード {#batch-mode}
 
@@ -863,12 +877,13 @@ ClickHouse Client は、以下のうち存在する最初のファイルを使�
 
 | Option                                              | Description                                                                                      | Default              |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------- |
-| `-c [ -C, --config, --config-file ] <path-to-file>` | クライアントの設定ファイルが既定の場所にない場合は、そのファイルの場所を指定します。[Configuration Files](#configuration_files) を参照してください。 | -                    |
+| `-c [ -C, --config, --config-file ] <path-to-file>` | クライアントの設定ファイルが既定の場所にない場合は、そのファイルの場所を指定します。[設定ファイル](#configuration_files) を参照してください。 | -                    |
 | `--help`                                            | 使用方法の概要を表示して終了します。`--verbose` と組み合わせると、クエリ設定を含む利用可能なすべてのオプションを表示します。                             | -                    |
 | `--history_file <path-to-file>`                     | コマンド履歴を保存したファイルのパス。                                                                              | -                    |
 | `--history_max_entries`                             | 履歴ファイルに保存するエントリの最大数。                                                                             | `1000000` (100万)     |
 | `--prompt <prompt>`                                 | カスタムプロンプトを指定します。                                                                                 | サーバーの `display_name` |
 | `--verbose`                                         | 出力の詳細度を上げます。                                                                                     | -                    |
+| `--vim`                                             | 対話型モードで `vim` の編集モードをエミュレートします。[Vim mode](#vim-mode) を参照してください。                                  | -                    |
 | `-V [ --version ]`                                  | バージョンを表示して終了します。                                                                                 | -                    |
 
 ### 接続オプション {#command-line-options-connection}

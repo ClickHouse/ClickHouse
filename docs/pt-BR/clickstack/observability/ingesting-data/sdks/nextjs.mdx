@@ -1,0 +1,97 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/nextjs
+description: 'Instalação e configuração do Next.js para o ClickHouse Observability e implantações autogerenciadas.'
+title: 'Next.js'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'SDK', 'instrumentação']
+sidebarTitle: 'Next.js'
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/pt-BR/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+Escolha a instrumentação do lado do servidor para a sua implantação do Next.js:
+
+* **Auto-hospedado, com tempo de execução Node.js:** use o SDK Node.js do ClickStack.
+* **Vercel ou tempo de execução Edge:** use `@vercel/otel`.
+
+Para telemetria do navegador e reprodução de sessão, consulte o [guia do SDK do navegador](/pt-BR/clickstack/observability/ingesting-data/sdks/browser).
+
+<ClickStackIntegrates signals={['traces']} />
+
+## Next.js auto-hospedado {#self-hosted-nextjs}
+
+Use o Node.js 22.15 ou superior e instale o SDK:
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+Crie o arquivo `instrumentation.ts` na raiz do seu projeto ou em `src`, caso sua aplicação use esse diretório. Inicialize o SDK apenas no tempo de execução do Node.js:
+
+```typescript
+export async function register() {
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { init } = await import('@clickhouse/clickstack-node');
+    init();
+  }
+}
+```
+
+Adicione o SDK a `serverExternalPackages` na configuração existente do Next.js para que ele seja carregado fora do bundle do servidor:
+
+```javascript
+// next.config.mjs
+export default {
+  serverExternalPackages: ['@clickhouse/clickstack-node'],
+};
+```
+
+Configure o destino abaixo e defina `OTEL_SERVICE_NAME` para identificar sua aplicação. Não faça também o pré-carregamento do SDK nem inicialize outro SDK do OpenTelemetry. Para mais opções, consulte o [guia do Node.js](/pt-BR/clickstack/observability/ingesting-data/sdks/nodejs).
+
+Para considerações sobre encerramento e implantação, consulte as [orientações do SDK para Next.js](https://github.com/ClickHouse/clickstack-node#nextjs).
+
+## Vercel e tempo de execução Edge {#vercel-or-edge}
+
+Use `@vercel/otel` seguindo as [instruções de configuração do OpenTelemetry no Next.js](https://nextjs.org/docs/app/guides/open-telemetry). Use essa configuração no lugar da inicialização do SDK Node.js do ClickStack descrita acima.
+
+Configure a [exportação OTLP](https://github.com/vercel/otel/tree/main/packages/otel#registerotelconfig-configuration) usando as configurações de conexão abaixo. Substitua todos os destinos de exemplo e as substituições de endpoint específicas de cada sinal e defina as variáveis na configuração da sua implantação.
+
+Se a sua implantação na Vercel já usa uma integração de tracing, configure um [exportador personalizado](https://nextjs.org/docs/app/guides/open-telemetry#custom-exporters) para este destino; as variáveis de ambiente de endpoint, por si sós, não substituem essa integração.
+
+## Configure seu destino {#configure-destination}
+
+Defina um nome de serviço para qualquer uma das opções de instrumentação:
+
+```shell
+export OTEL_SERVICE_NAME='my-nextjs-app'
+```
+
+<Tabs>
+  <Tab title="Totalmente gerenciado">
+    <BetaBadge label="Oferta Beta" />
+
+    No seu serviço, abra **Team Settings → Data → Telemetria Gerenciada** e copie o **endpoint OTLP HTTP** e a **chave de API**. Use o endpoint HTTPS completo, incluindo a porta:
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+
+  <Tab title="Autogerenciado">
+    Use o endpoint OTLP HTTP e a chave de ingestão do seu coletor. Se o seu coletor não tiver TLS configurado, utilize `http://` em vez de `https://`. Para configurar o coletor, consulte [Ingestão com OpenTelemetry](/pt-BR/clickstack/observability/ingesting-data/opentelemetry#self-managed).
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+</Tabs>
+
+## Verifique a ingestão {#verify-ingestion}
+
+Inicie sua aplicação e faça requisições a uma página renderizada no servidor ou a uma rota de API. No ClickHouse Observability, selecione um intervalo de tempo recente e localize o nome do serviço da sua aplicação em Traces.

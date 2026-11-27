@@ -31,6 +31,8 @@ using ProgressCallback = std::function<void(const Progress & progress)>;
 struct ProfileInfo;
 using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
 
+using ProfileEventsCallback = std::function<void(const Block & block)>;
+
 struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
 
@@ -38,7 +40,8 @@ class RemoteQueryExecutorReadContext;
 
 class ParallelReplicasReadingCoordinator;
 
-using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t)>;
+/// Takes the number of the replica and a flag that becomes true when the replica's query executor is cancelled or finished.
+using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t, const std::atomic_bool &)>;
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor
@@ -174,7 +177,7 @@ public:
             chassert(type != Type::Data && type != Type::FileDescriptor);
         }
 
-        Type getType() const { return type; }
+        [[nodiscard]] Type getType() const { return type; }
 
         Block getBlock()
         {
@@ -182,7 +185,7 @@ public:
             return std::move(block);
         }
 
-        int getFileDescriptor() const
+        [[nodiscard]] int getFileDescriptor() const
         {
             chassert(type == Type::FileDescriptor);
             return fd;
@@ -219,6 +222,9 @@ public:
     /// Set callback for profile info. It will be called on ProfileInfo packet.
     void setProfileInfoCallback(ProfileInfoCallback callback);
 
+    /// Set callback for profile events. It will be called on ProfileEvents packet.
+    void setProfileEventsCallback(ProfileEventsCallback callback);
+
     /// Set the query_id. For now, used by performance test to later find the query
     /// in the server query_log. Must be called before sending the query to the server.
     void setQueryId(const std::string& query_id_) { chassert(!sent_query); query_id = query_id_; }
@@ -237,6 +243,9 @@ public:
 
     void setDistributedFanout(size_t total_connections) { distributed_fanout = total_connections; }
 
+    /// The header is the structure of the result of the remote query: the blocks received are adapted to it,
+    /// and a header with no columns means a result whose rows carry no values. A caller that does not know
+    /// the structure passes no header (`nullptr`) and gets the blocks as the remote server sends them.
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }
 
@@ -289,6 +298,7 @@ private:
 
     ProgressCallback progress_callback;
     ProfileInfoCallback profile_info_callback;
+    ProfileEventsCallback profile_events_callback;
 
     /// Scalars needed to be sent to remote servers
     Scalars scalars;
@@ -337,6 +347,10 @@ private:
       */
     mutable std::mutex was_cancelled_mutex;
     bool was_cancelled TSA_GUARDED_BY(was_cancelled_mutex) = false;
+
+    /// Set by `cancel` and `finish` before they take `was_cancelled_mutex`, which is held while the task iterator
+    /// chooses a task, so that it can stop waiting for one.
+    std::atomic_bool stop_waiting_for_read_task = false;
 
     /// Non-zero while a thread is inside `finish`, the state in which `cancel` has nothing to add:
     /// `finish` reaches its drain only after `tryCancel` sent the Cancel packet, and on every earlier
@@ -430,6 +444,12 @@ private:
 
     /// Process packet for read and return data block if possible.
     ReadResult processPacket(Packet packet) TSA_REQUIRES(was_cancelled_mutex);
+
+    /// Adapt a received block to the header, if there is one.
+    Block adaptBlock(Block block) const;
+
+    /// Refuse a result with no columns from a server too old to send its rows.
+    void throwIfColumnLessResultFromOldServer() const;
 
     /// Attributes identifying the query fragment this executor runs, for the OpenTelemetry span
     /// covering it (the read context fiber span or the synchronous-path fragment span).

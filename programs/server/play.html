@@ -1,10 +1,26 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <!-- Trusted Types, see `play_policy`. Must be the first element of the head to apply to everything. -->
+    <meta http-equiv="Content-Security-Policy" content="require-trusted-types-for 'script'; trusted-types play">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Lets the browser paint its initial canvas in the right theme, see also `color-scheme` in the styles. -->
+    <meta name="color-scheme" content="light dark">
     <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDExIDEwIj48c3R5bGU+LmJne2ZpbGw6I2ZmMH0ub3tmaWxsOiMwMDB9PC9zdHlsZT48cmVjdCBjbGFzcz0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiLz48cGF0aCBkPSJNMSwxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik0zLDEgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTUsMSBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNNywxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik05LDQuMjUgaDEgdjEuNSBoLTEgeiIgY2xhc3M9Im8iLz48L3N2Zz4K">
     <title>ClickHouse Query</title>
+    <script>
+        /// The color theme is set here, before the body, so that the page is painted in the right
+        /// theme from the start rather than switching once the large main script at the end has run.
+        /// The `theme` URL parameter wins, then the choice saved in `localStorage`, then the system
+        /// preference - which the main script keeps following unless the theme was chosen explicitly.
+        const theme_url_parameter = new URL(location.href).searchParams.get('theme');
+        const theme_explicit = ['dark', 'light'].includes(theme_url_parameter)
+            ? theme_url_parameter
+            : ['dark', 'light'].find(t => t === window.localStorage.getItem('theme'));
+        document.documentElement.setAttribute('data-theme',
+            theme_explicit ?? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+    </script>
 
     <!-- Code Style:
 
@@ -42,6 +58,8 @@
 
     <style>
         :root {
+            /* Native controls, scrollbars and the canvas follow the page theme (`data-theme`). */
+            color-scheme: light;
             --background-color-rotate: 215;
             --background-color: oklch(96% 0.0296 var(--background-color-rotate));
             /* Top color of the active tab's gradient: same hue/lightness as the page but
@@ -151,6 +169,7 @@
         }
 
         [data-theme="dark"] {
+            color-scheme: dark;
             --background-color-rotate: 250;
             --background-color: oklch(15% 0.0296 var(--background-color-rotate));
             /* Top color of the active tab's gradient: same hue as the page but brighter
@@ -1403,7 +1422,7 @@
         /* The rule above removes the default outline; re-add a clear one for
            keyboard focus only (Tab), so the controls show where focus is while a
            mouse click does not draw a ring. Covers the real <button>s (Run, Run
-           all, Download) and the icon "buttons" (copy, download, theme switcher). */
+           all, Download, the copy, download and theme switcher icons). */
         button:focus-visible,
         [role="button"]:focus-visible
         {
@@ -1710,6 +1729,7 @@
             padding: 0.25rem 0.65rem;
             cursor: pointer;
             position: relative;
+            font: inherit; /* A button element does not inherit the font, and the icon is sized in `em`. */
         }
 
         .copy-balloon
@@ -1768,6 +1788,7 @@
             padding: 0.25rem 0.65rem;
             cursor: pointer;
             position: relative;
+            font: inherit; /* A button element does not inherit the font, and the icon is sized in `em`. */
         }
 
         #download
@@ -1777,20 +1798,20 @@
             vertical-align: middle;
         }
 
+        /* A `popover`, so the browser closes it on a click outside or Escape. It is positioned next to
+           the download button by `positionDownloadDropdown`; the rest overrides the default popover
+           look (centered in the viewport, system colors). */
         #download-dropdown
         {
-            display: none;
-            position: absolute;
+            position: fixed;
+            inset: auto;
+            margin: 0;
+            color: inherit;
             background-color: var(--button-color);
             border: 1px solid var(--button-text-color);
             padding: 0.5rem;
             z-index: 999;
             box-shadow: 0 4px 6px var(--shadow-color);
-        }
-
-        #download-dropdown.show
-        {
-            display: block;
         }
 
         .download-option
@@ -1854,6 +1875,10 @@
         #theme
         {
             grid-area: theme;
+            font: inherit;
+            padding: 0;
+            background: none;
+            cursor: pointer;
         }
 
         #toggle-light, #toggle-dark
@@ -2513,20 +2538,20 @@
                 <button type="button" class="shadow" id="run-all">Run all</button>
                 <div id="hint">&nbsp;(<span id="hint-modifier">Ctrl/Cmd</span>+Enter<span id="hint-run-all" style="display: none">, +Shift to run all</span>)</div>
                 <query-progress id="query-progress"></query-progress>
-                <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
+                <button type="button" id="copy-div" class="shadow" title="Copy raw result to clipboard" aria-label="Copy raw result to clipboard">
                     <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                     </svg>
-                </div>
-                <div id="download-div" class="shadow">
+                </button>
+                <button type="button" id="download-div" class="shadow" title="Download the result" aria-label="Download the result" popovertarget="download-dropdown">
                     <svg id="download" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                         <polyline points="7 10 12 15 17 10"/>
                         <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
-                </div>
-                <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
+                </button>
+                <button type="button" id="theme" title="Switch the color theme" aria-label="Switch the color theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></button>
             </div>
         </form>
         <div id="result-panels"></div>
@@ -2536,7 +2561,7 @@
             </a>
             <a id="cloud-logo" target="_blank" rel="noopener noreferrer" href="https://clickhouse.cloud/">&#9729;</a>
         </p>
-        <div id="download-dropdown">
+        <div id="download-dropdown" popover>
             <div>
                 <div class="download-option">
                     <label for="download-format">Format:</label>
@@ -2588,6 +2613,32 @@
 
 <script type="text/javascript">
 
+/// Trusted Types (see the `Content-Security-Policy` at the top of the head). They are enforced, so
+/// the HTML sinks (`innerHTML`) take only values made by this policy, `<script src>` takes only the
+/// scripts that ship with the server (see `_loadJS`), and the sinks that turn a string into code
+/// (`eval`, `new Function`, `setTimeout` with a string) are blocked. The policy does not sanitize:
+/// every caller of `trustedHTML` builds its HTML from static markup and escaped text (`escapeHTML`,
+/// `escapeAttr`). What it gives is that all the places writing HTML are calls of `trustedHTML` that
+/// can be found and reviewed, while any other write - a new one, or one in a third-party library -
+/// throws instead of injecting markup.
+/// A browser without Trusted Types gets a pass-through stand-in with the same interface.
+const play_policy = (window.trustedTypes ?? { createPolicy: (name, rules) => rules }).createPolicy('play', {
+    createHTML: html => html,
+    createScriptURL: url =>
+    {
+        if (['uplot.js', 'viz-standalone.js'].some(name => url === QueryResultElement._assetURL(name)))
+        {
+            return url;
+        }
+        throw new Error('The script URL is not allowed by the Trusted Types policy: ' + url);
+    },
+});
+
+function trustedHTML(html)
+{
+    return play_policy.createHTML(html);
+}
+
 /// A fresh state object for the realtime resource meters (CPU/memory/disk). The state is owned by
 /// the tab whose query produced it (see `readEventStream`), NOT by the shared progress line: the
 /// CPU counters in the `profile_events` packets are per-packet increments, so a batch from a
@@ -2600,6 +2651,11 @@ function freshResourceState()
         cpu_ns: 0,       /// Cumulative CPU time (user + system), in nanoseconds.
         cpu_at_ns: 0,    /// Elapsed time at which CPU was last sampled, in nanoseconds.
         cpu_sampled_ns: 0, /// Value of `cpu_ns` at the last sample, so packets arriving between samples are not lost.
+        /// Cumulative IO (disk + object storage + network) bytes, sampled like CPU for the live rate.
+        io_bytes: 0,
+        io_at_ns: 0,
+        io_sampled: 0,
+        io: 0, /// Smoothed IO rate, in bytes/second.
         /// Per-host memory/disk gauges, keyed by host name: { memory, peak, disk } in bytes.
         /// The display shows the total across hosts and, for a distributed query (many hosts),
         /// the maximum over hosts as "max/host" - like `clickhouse-client`.
@@ -2627,6 +2683,18 @@ function accumulateResourceEvents(state, events)
             continue;
         }
 
+        /// The same events as in `clickhouse-client`. Streaming exchanges of a distributed plan are not
+        /// counted by the `Network*Bytes` events.
+        if (e.name === 'OSReadBytes' || e.name === 'OSWriteBytes' || e.name === 'ReadBufferFromS3Bytes'
+            || e.name === 'WriteBufferFromS3Bytes' || e.name === 'ReadBufferFromAzureBytes' || e.name === 'WriteBufferFromAzureBytes'
+            || e.name === 'ReadWriteBufferFromHTTPBytes' || e.name === 'WriteBufferFromHTTPBytes'
+            || e.name === 'NetworkSendBytes' || e.name === 'NetworkReceiveBytes'
+            || e.name === 'StreamingExchangeSendBytes' || e.name === 'StreamingExchangeReceiveBytes')
+        {
+            state.io_bytes += value;
+            continue;
+        }
+
         /// Memory/disk gauges are absolute per host; keep the latest value for each host.
         let host = state.hosts[e.host_name];
         if (!host) host = state.hosts[e.host_name] = { memory: 0, peak: 0, disk: 0 };
@@ -2644,13 +2712,26 @@ function accumulateResourceEvents(state, events)
     state.has = true;
 }
 
+/// Sample the IO rate like the CPU one: the bytes since the previous sample over its interval, in
+/// bytes/second. `elapsed_ns` is the query clock: the live elapsed time, or the clock of a replayed
+/// stream (see `renderEventStreamText`).
+function sampleIoRate(state, elapsed_ns)
+{
+    const dt = elapsed_ns - state.io_at_ns;
+    if (dt <= 0) return;
+    const instant = (state.io_bytes - state.io_sampled) / dt * 1e9;
+    state.io = state.io ? (state.io * 0.5 + instant * 0.5) : instant;
+    state.io_at_ns = elapsed_ns;
+    state.io_sampled = state.io_bytes;
+}
+
 class QueryProgressElement extends HTMLElement
 {
     constructor()
     {
         super();
         this.attachShadow({ mode: 'open' });
-        this.shadowRoot.innerHTML = `
+        this.shadowRoot.innerHTML = trustedHTML(`
             <style>
                 :host
                 {
@@ -2807,7 +2888,7 @@ class QueryProgressElement extends HTMLElement
             <span id="logs-toggle" class="progress-toggle">Logs</span>
             <span id="metrics-toggle" class="progress-toggle">Metrics</span>
             <div id="progress"><span id="progress-text"></span><span id="stats"></span></div>
-        `;
+        `);
         this._hourglass = this.shadowRoot.getElementById('hourglass');
         this._checkMark = this.shadowRoot.getElementById('check-mark');
         this._progress = this.shadowRoot.getElementById('progress');
@@ -2941,7 +3022,7 @@ class QueryProgressElement extends HTMLElement
         const dt = elapsed_ns - r.cpu_at_ns;
         if (dt > 0)
         {
-            /// Use the cumulative CPU time consumed since the previous sample, not only the last
+            /// Use the cumulative time/bytes consumed since the previous sample, not only the last
             /// packet's increment: a packet can arrive before a newer elapsed timestamp (dt == 0,
             /// no sample is taken), and its increment must still count towards the next sample.
             const instant = (r.cpu_ns - r.cpu_sampled_ns) / dt; /// Cores used during this interval.
@@ -2951,7 +3032,23 @@ class QueryProgressElement extends HTMLElement
             r.cpu_sampled_ns = r.cpu_ns;
         }
 
+        this._sampleIo(r);
         this._renderResources();
+    }
+
+    /// Show a (tab-owned) resource state after a `progress` packet: samples only the IO rate, since
+    /// the CPU time arrives only with `profile_events` batches and sampling it in between would see
+    /// idle intervals.
+    renderPayloadFrom(r)
+    {
+        this._resources_state = r;
+        this._sampleIo(r);
+        this._renderResources();
+    }
+
+    _sampleIo(r)
+    {
+        sampleIoRate(r, this._last_elapsed_ns);
     }
 
     /// Adopt a tab-owned resource state into the shared progress line on tab activation (see
@@ -2999,6 +3096,8 @@ class QueryProgressElement extends HTMLElement
         if (mem_max < mem_total) parts.push(this._padMetric('ram_max', `${formatReadableBytes(mem_max)} max/host`));
         if (disk_total > 0) parts.push(this._padMetric('disk', `${formatReadableBytes(disk_total)} disk`));
         if (disk_max < disk_total) parts.push(this._padMetric('disk_max', `${formatReadableBytes(disk_max)} max/host`));
+        /// Live IO rate. A small rate is mostly the progress packets themselves, so it is not shown.
+        if (r.io >= 1e6) parts.push(this._padMetric('io', `${formatReadableBytes(r.io)}/s IO`));
 
         this._resources_text = parts.join(', ');
         this._renderProgressLine();
@@ -3045,7 +3144,7 @@ class QueryProgressElement extends HTMLElement
         this._resources_final = true;
         /// Drop the now-meaningless leading "NN.N%, " from the read stats (the query reached 100%).
         this._finished = true;
-        this._stats.innerHTML = this._stats.innerHTML.replace(/^\d+(\.\d+)?%,\s*/, '');
+        this._stats.innerHTML = trustedHTML(this._stats.innerHTML.replace(/^\d+(\.\d+)?%,\s*/, ''));
         this._renderResources();
     }
 
@@ -3098,7 +3197,7 @@ class QueryProgressElement extends HTMLElement
             if (rps > 1e6) { text += ` (${formatted_rps}, ${formatted_bps})`; }
         }
 
-        this._stats.innerHTML = text;
+        this._stats.innerHTML = trustedHTML(text);
 
         this.style.setProperty('--progress',
             rows && total_rows ? (100 * rows / total_rows) + '%' : '0%');
@@ -3496,7 +3595,7 @@ class QueryResultElement extends HTMLElement
     {
         super();
         this.attachShadow({ mode: 'open' });
-        this.shadowRoot.innerHTML = `
+        this.shadowRoot.innerHTML = trustedHTML(`
             <style>
                 *
                 {
@@ -4850,7 +4949,7 @@ class QueryResultElement extends HTMLElement
             </div>
             <div id="logs_div"><div id="logs-content" class="monospace"></div></div>
             <div id="metrics_div"><table id="metrics-table" class="monospace"><tbody id="metrics-body"></tbody></table></div>
-        `;
+        `);
 
         this._resultGroup = this.shadowRoot.getElementById('result-group');
         this._viewToggle = this.shadowRoot.getElementById('view-toggle');
@@ -5064,7 +5163,7 @@ class QueryResultElement extends HTMLElement
     disconnectedCallback()
     {
         /// Multi-query results are transient elements that get removed from the DOM
-        /// (e.g. via `multiQueryContainer.innerHTML = ''`) without going through `clear`,
+        /// (e.g. via `multiQueryContainer.replaceChildren()`) without going through `clear`,
         /// so revoke the image object URL here to avoid leaking the response blob.
         this._clearImage();
         /// Removing this result from the DOM (tab close, multi-query re-render) also removes
@@ -5346,7 +5445,7 @@ class QueryResultElement extends HTMLElement
         /// a four-digit number is as often a year, which nobody groups.
         if (this._column_is_number[name] && text.match(/^\d{5,}$/))
         {
-            div.innerHTML = digitGroupsHTML(text);
+            div.innerHTML = trustedHTML(digitGroupsHTML(text));
             td.appendChild(div);
             this._appendCopyButton(td, text, value);
             return td;
@@ -5368,7 +5467,7 @@ class QueryResultElement extends HTMLElement
         let btn = document.createElement('span');
         btn.className = 'cell-copy';
         btn.title = 'Copy to clipboard';
-        btn.innerHTML = copyIcon;
+        btn.innerHTML = trustedHTML(copyIcon);
         let revertTimer = null;
         btn.onclick = async (e) => {
             e.stopPropagation();
@@ -5377,12 +5476,12 @@ class QueryResultElement extends HTMLElement
                 try
                 {
                     await navigator.clipboard.writeText(text);
-                    btn.innerHTML = copiedIcon;
+                    btn.innerHTML = trustedHTML(copiedIcon);
                     btn.title = 'Copied';
                     if (revertTimer)
                         clearTimeout(revertTimer);
                     revertTimer = setTimeout(() => {
-                        btn.innerHTML = copyIcon;
+                        btn.innerHTML = trustedHTML(copyIcon);
                         btn.title = 'Copy to clipboard';
                         revertTimer = null;
                     }, 1000);
@@ -5504,7 +5603,7 @@ class QueryResultElement extends HTMLElement
         td.className = 'row-number';
         /// Numbered within the whole result, not within the page (see `_rowNumberOffset`).
         const row_number = String(this._rowNumberOffset() + this._row_idx);
-        if (row_number.length >= 5) { td.innerHTML = digitGroupsHTML(row_number); }
+        if (row_number.length >= 5) { td.innerHTML = trustedHTML(digitGroupsHTML(row_number)); }
         else { td.appendChild(document.createTextNode(row_number)); }
         tr.appendChild(td);
 
@@ -5544,7 +5643,7 @@ class QueryResultElement extends HTMLElement
         toggle.type = 'button';
         toggle.className = 'pin-toggle';
         toggle.disabled = true;
-        toggle.innerHTML = QueryResultElement._PIN_ICON;
+        toggle.innerHTML = trustedHTML(QueryResultElement._PIN_ICON);
         this._updatePinToggle(toggle, name);
         toggle.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -5818,7 +5917,7 @@ class QueryResultElement extends HTMLElement
     {
         const toggle = document.createElement('span');
         toggle.className = 'colorize-toggle';
-        toggle.innerHTML = QueryResultElement._PALETTE_ICON;
+        toggle.innerHTML = trustedHTML(QueryResultElement._PALETTE_ICON);
         this._updateColorizeToggleTitle(toggle, name);
         toggle.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -6015,7 +6114,7 @@ class QueryResultElement extends HTMLElement
         const toggle = document.createElement('button');
         toggle.type = 'button';
         toggle.className = 'filter-toggle';
-        toggle.innerHTML = QueryResultElement._FUNNEL_ICON;
+        toggle.innerHTML = trustedHTML(QueryResultElement._FUNNEL_ICON);
         const toggle_label = 'Filter by this column (re-runs the query)';
         toggle.title = toggle_label;
         toggle.setAttribute('aria-label', toggle_label);
@@ -6090,7 +6189,7 @@ class QueryResultElement extends HTMLElement
         const apply = document.createElement('button');
         apply.type = 'button';
         apply.className = 'filter-apply';
-        apply.innerHTML = QueryResultElement._PLAY_ICON;
+        apply.innerHTML = trustedHTML(QueryResultElement._PLAY_ICON);
         const apply_label = 'Apply this filter (re-runs the query)';
         apply.title = apply_label;
         apply.setAttribute('aria-label', apply_label);
@@ -6297,7 +6396,7 @@ class QueryResultElement extends HTMLElement
 
         const button = document.createElement('span');
         button.className = 'cell-filter';
-        button.innerHTML = QueryResultElement._FUNNEL_ICON;
+        button.innerHTML = trustedHTML(QueryResultElement._FUNNEL_ICON);
         const label = 'Filter by this value';
         button.title = label;
         button.setAttribute('aria-label', label);
@@ -7796,7 +7895,7 @@ class QueryResultElement extends HTMLElement
 
             const spark_td = document.createElement('td');
             spark_td.className = 'metric-spark';
-            spark_td.innerHTML = this._sparklineSVG(row.history, row.valueType, row.maxRate);
+            spark_td.innerHTML = trustedHTML(this._sparklineSVG(row.history, row.valueType, row.maxRate));
 
             tr.append(name_td, value_td, rate_td, spark_td);
             fragment.appendChild(tr);
@@ -8045,22 +8144,15 @@ class QueryResultElement extends HTMLElement
         this._selectCell(new_cell);
     }
 
-    _loadJS(src, integrity)
+    /// Only for the JavaScript assets that ship with the server (see `_assetURL`):
+    /// no third-party code is loaded into the page.
+    _loadJS(src)
     {
         return new Promise((resolve, reject) => {
             const script = document.createElement('script');
-            script.src = src;
-            if (integrity)
-            {
-                script.crossOrigin = 'anonymous';
-                script.integrity = integrity;
-            }
-            else if (!src.startsWith('/'))
-            {
-                console.warn('no integrity for', src);
-            }
+            script.src = play_policy.createScriptURL(src);
             script.addEventListener('load', function() { resolve(true); });
-            /// Reject on a failed load (blocked/unavailable CDN, network error, or SRI mismatch)
+            /// Reject on a failed load (missing asset or network error)
             /// so awaiting callers (the chart/graph renderers in the query lifecycle) fall into
             /// their `catch` and report the error instead of hanging forever - the script `error`
             /// event otherwise leaves this promise pending and the run stuck in flight.
@@ -8105,8 +8197,7 @@ class QueryResultElement extends HTMLElement
     _loadUplot()
     {
         if (QueryResultElement._loadUplotPromise) { return QueryResultElement._loadUplotPromise; }
-        QueryResultElement._loadUplotPromise = this._loadJS('https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js',
-            'sha384-TwdJPnTsKP6pnvFZZKda0WJCXpjcHCa7MYHmjrYDu6rsEsb/UnFdoL0phS5ODqTA')
+        QueryResultElement._loadUplotPromise = this._loadJS(QueryResultElement._assetURL('uplot.js'))
             /// Drop the cached promise on failure so a later attempt can retry the load
             /// instead of re-awaiting a permanently rejected promise.
             .catch((e) => { QueryResultElement._loadUplotPromise = null; throw e; });
@@ -8128,11 +8219,15 @@ class QueryResultElement extends HTMLElement
         /// labels sized for the wrong font and spilling out of their boxes. A transparent
         /// background drops the opaque white canvas rectangle, letting `#graph` (and with it the
         /// light/dark theme) show through.
-        const svg = viz.renderSVGElement(this._explain_graph, {
+        const svg_text = viz.renderString(this._explain_graph, {
+            format: 'svg',
             graphAttributes: { fontname: 'Helvetica', bgcolor: 'transparent' },
             nodeAttributes: { fontname: 'Helvetica' },
             edgeAttributes: { fontname: 'Helvetica' },
         });
+        /// What `viz.renderSVGElement` does, but through the Trusted Types policy: its own
+        /// `DOMParser` call passes a plain string and is blocked. Graphviz escapes the labels.
+        const svg = new DOMParser().parseFromString(trustedHTML(svg_text), 'image/svg+xml').documentElement;
         this._graph.replaceChildren(svg);
         this._graph.style.display = 'block';
     }
@@ -10918,7 +11013,8 @@ function plainOutputDropsTotalsAndExtremes(format)
 
 /// Dispatch a single parsed SSE event (a packet of a framing `EventStream` response) to the result
 /// element. `options.onStop` is called when the result element asks to stop (e.g. a row limit was
-/// reached); `options.resourceMeter`, if given, receives profile-event batches for the live meters;
+/// reached); `options.resourceMeter` receives profile-event batches for the live meters (on replay,
+/// with the replay clock in nanoseconds as the second argument);
 /// `options.onBytes`, if given (a non-default output format under the base64 wire, see
 /// `makeVerbatimPayloadSink`), receives the base64-decoded payload bytes; `options.onException` is
 /// called when an `exception` packet arrives (the query failed even if the HTTP status was already
@@ -11036,7 +11132,15 @@ function makeEventStreamHandler(targetResultEl, options = {})
         }
         else if (name === 'progress')
         {
-            if (dataLines[0]) targetResultEl.update({ progress: JSON.parse(dataLines[0]) });
+            if (dataLines[0])
+            {
+                const progress = JSON.parse(dataLines[0]);
+                const stream_elapsed_ns = +progress.elapsed_ns || 0;
+                targetResultEl.update({ progress });
+                if (options.advanceClock) options.advanceClock(stream_elapsed_ns);
+                /// A missing `elapsed_ns` (omitted when zero by the framing progress packet) reads as 0.
+                if (options.progressMeter) options.progressMeter(+progress.elapsed_ns || 0);
+            }
         }
         else if (name === 'log')
         {
@@ -11062,8 +11166,9 @@ function makeEventStreamHandler(targetResultEl, options = {})
                 /// tab (live, and on replay of a saved stream). A replayed stream is timestamped
                 /// from the packets themselves (`replayTimeSeconds`), so the restored rates and
                 /// sparklines keep the timing of the original run.
-                targetResultEl.updateMetrics(events, options.replay ? replayTimeSeconds(events) : undefined);
-                if (options.resourceMeter) options.resourceMeter(events);
+                const replay_time = options.replay ? replayTimeSeconds(events) : undefined;
+                targetResultEl.updateMetrics(events, replay_time);
+                if (options.resourceMeter) options.resourceMeter(events, replay_time === undefined ? undefined : replay_time * 1e9);
             }
         }
         else if (name === 'exception')
@@ -11115,7 +11220,10 @@ function dispatchEventStreamBlock(block, handleEvent)
 /// packets are accumulated into the CELL-OWNED resource state through the same
 /// `accumulateResourceEvents` path the live `readEventStream` uses, so a framed result reopened
 /// after a reload / Back / Forward - where `clearCell` dropped that state - gets its shared
-/// CPU/RAM/peak-RAM line back. The state is only rebuilt here; the shared progress line is
+/// CPU/RAM/peak-RAM line back. The IO rate is sampled on every replayed batch and on every replayed
+/// `progress` packet, from the later of the replay clock (`replayTimeSeconds`) and the packet's
+/// `elapsed_ns`, offset by the state's last sample time so that the next statement of the run continues the clock
+/// of the previous one. The state is only rebuilt here; the shared progress line is
 /// repainted from it by `syncActiveTabChrome` (which runs after the result is materialized),
 /// exactly as for a cell whose query streamed in the background. As live, it is one aggregate per
 /// run: every replayed statement of the cell accumulates into the same state.
@@ -11126,12 +11234,24 @@ function renderEventStreamText(text, targetResultEl, rawText, base64, format, ce
     /// through the verbatim sink (incremental raw text, or an image collected until the end).
     const verbatim = (base64 && !isDefaultFormat(format)) ? makeVerbatimPayloadSink(targetResultEl, format) : null;
     if (cell && !cell.resources) cell.resources = freshResourceState();
+    const io_clock_base_ns = cell ? cell.resources.io_at_ns : 0;
+    let io_clock_ns = 0;
+    const sampleReplayIo = (clock_ns) =>
+    {
+        io_clock_ns = Math.max(io_clock_ns, clock_ns);
+        sampleIoRate(cell.resources, io_clock_base_ns + io_clock_ns);
+    };
     const handleEvent = makeEventStreamHandler(targetResultEl, {
         rawText,
         format,
         base64,
         replay: true,
-        resourceMeter: cell ? (events) => accumulateResourceEvents(cell.resources, events) : undefined,
+        resourceMeter: cell ? (events, replay_ns) =>
+        {
+            accumulateResourceEvents(cell.resources, events);
+            sampleReplayIo(replay_ns);
+        } : undefined,
+        progressMeter: cell ? (elapsed_ns) => sampleReplayIo(elapsed_ns) : undefined,
         onBytes: verbatim ? (bytes) => verbatim.onBytes(bytes) : undefined,
     });
     for (const block of text.split('\n\n'))
@@ -11205,18 +11325,53 @@ async function readEventStream(response, targetResultEl, abortController, cell, 
     /// previous run's state when a new run starts; the run's first stream creates the aggregate
     /// and every stream accumulates into it, so the meter shows the run's combined resources.
     if (!cell.resources) cell.resources = freshResourceState();
+    /// Offset this stream's clock by the run elapsed time at its start (set per group by `postMulti`,
+    /// or taken from the previous statement's last sample), so a shorter statement after a longer
+    /// barrier statement still advances `_last_elapsed_ns` and samples its own IO/CPU rates.
+    const io_clock_base_ns = cell.runElapsedBaseNs ?? Math.max(
+        cell.resources.io_at_ns,
+        cell.resources.cpu_at_ns,
+        cell.progress?.elapsed_ns || 0,
+        cellOwnsChrome(cell) ? progressEl._last_elapsed_ns : 0,
+    );
+    if (io_clock_base_ns > 0)
+    {
+        if (cell.resources.io_bytes > cell.resources.io_sampled)
+            sampleIoRate(cell.resources, io_clock_base_ns);
+        else
+            cell.resources.io_at_ns = Math.max(cell.resources.io_at_ns, io_clock_base_ns);
+        if (cell.resources.cpu_ns === cell.resources.cpu_sampled_ns)
+            cell.resources.cpu_at_ns = Math.max(cell.resources.cpu_at_ns, io_clock_base_ns);
+    }
     if (cellOwnsChrome(cell))
         progressEl.adoptResourceState(cell.resources);
 
+    /// A background cell has no chrome to render into, but its IO rate is still sampled on its own clock.
+    const sampleBackgroundIo = () => {
+        if (!cellOwnsChrome(cell) && cell.progress) sampleIoRate(cell.resources, cell.progress.elapsed_ns);
+    };
     const handleEvent = makeEventStreamHandler(targetResultEl, {
         onStop: () => { stop = true; },
         resourceMeter: (events) => {
             accumulateResourceEvents(cell.resources, events);
             if (cellOwnsChrome(cell)) progressEl.renderResourcesFrom(cell.resources);
+            sampleBackgroundIo();
         },
         rawText,
         format,
         base64,
+        advanceClock: (stream_elapsed_ns) => {
+            const elapsed_ns = io_clock_base_ns + stream_elapsed_ns;
+            if (stream_elapsed_ns && cell.progress && cell.progress.elapsed_ns < elapsed_ns)
+                cell.progress.elapsed_ns = elapsed_ns;
+            if (stream_elapsed_ns && cellOwnsChrome(cell) && progressEl._last_elapsed_ns < elapsed_ns)
+                progressEl._last_elapsed_ns = elapsed_ns;
+        },
+        /// Progress packets advance the IO clock too, so the rate falls once the IO stops.
+        progressMeter: () => {
+            if (cellOwnsChrome(cell)) progressEl.renderPayloadFrom(cell.resources);
+            sampleBackgroundIo();
+        },
         onBytes: verbatim ? (bytes) => verbatim.onBytes(bytes) : undefined,
         onException: () => { saw_exception = true; },
     });
@@ -12897,7 +13052,7 @@ async function postMulti(cell, posted_request_num, parsed, paramValuesSnapshot, 
         cell.multiContainer.className = 'multi-query-results';
         cell.resultSlot.insertBefore(cell.multiContainer, cell.resultEl);
     }
-    cell.multiContainer.innerHTML = '';
+    cell.multiContainer.replaceChildren();
     cell.multiContainer.style.display = 'block';
     if (active()) multiQueryContainer = cell.multiContainer;
     tab.multiControllers = [];
@@ -12941,14 +13096,18 @@ async function postMulti(cell, posted_request_num, parsed, paramValuesSnapshot, 
         if (active()) progressEl.updateProgress(detail);
     }
 
-    /// Listen for progress events from each result element.
+    /// Listen for progress events from each result element. Each group starts after the previous
+    /// barrier group completed, so offset its statements' elapsed clocks by the run elapsed time at
+    /// the group's start; `_last_elapsed_ns` then advances monotonically across the whole run and
+    /// later shorter statements still sample their live IO/CPU rates.
+    const statementBaseNs = new Array(parsed.length).fill(0);
     for (let i = 0; i < resultElements.length; ++i) {
         resultElements[i].addEventListener('query-progress', (e) => {
             progressState.set(i, {
                 read_rows: +e.detail.read_rows,
                 read_bytes: +e.detail.read_bytes,
                 total_rows: +e.detail.total_rows_to_read,
-                elapsed_ns: +e.detail.elapsed_ns,
+                elapsed_ns: statementBaseNs[i] + (+e.detail.elapsed_ns || 0),
             });
             updateAggregatedProgress();
         });
@@ -12976,8 +13135,24 @@ async function postMulti(cell, posted_request_num, parsed, paramValuesSnapshot, 
     let had_error = false;
     const collected = new Array(parsed.length).fill(null);
     for (const group of groups) {
-        if (posted_request_num != tab.reqNum) return;
+        if (posted_request_num != tab.reqNum) { cell.runElapsedBaseNs = null; return; }
         if (had_error) break;
+
+        let group_base_ns = cell.progress?.elapsed_ns || 0;
+        if (cell.resources) {
+            group_base_ns = Math.max(group_base_ns, cell.resources.io_at_ns || 0, cell.resources.cpu_at_ns || 0);
+        }
+        if (active()) {
+            group_base_ns = Math.max(group_base_ns, progressEl._last_elapsed_ns || 0);
+        }
+        for (let j = 0; j < resultElements.length; ++j) {
+            group_base_ns = Math.max(
+                group_base_ns,
+                progressState.get(j)?.elapsed_ns || 0,
+                statementBaseNs[j] + (resultElements[j].elapsedNs || 0));
+        }
+        cell.runElapsedBaseNs = group_base_ns;
+        for (const i of group.indices) statementBaseNs[i] = group_base_ns;
 
         const promises = group.indices.map(i => {
             const ac = new AbortController();
@@ -12989,13 +13164,14 @@ async function postMulti(cell, posted_request_num, parsed, paramValuesSnapshot, 
         const results = await Promise.all(promises);
 
         for (const { index, result } of results) {
-            if (result.cancelled) return;
+            if (result.cancelled) { cell.runElapsedBaseNs = null; return; }
             collected[index] = result;
             if (result.is_error || !result.response_ok) {
                 had_error = true;
             }
         }
     }
+    cell.runElapsedBaseNs = null;
 
     if (posted_request_num != tab.reqNum) return;
 
@@ -13625,7 +13801,7 @@ async function restoreMultiQuery(snapshot, cell, matToken) {
         cell.multiContainer.className = 'multi-query-results';
         cell.resultSlot.insertBefore(cell.multiContainer, cell.resultEl);
     }
-    cell.multiContainer.innerHTML = '';
+    cell.multiContainer.replaceChildren();
     cell.multiContainer.style.display = 'block';
     if (cellIsOnScreen(cell)) multiQueryContainer = cell.multiContainer;
 
@@ -13725,7 +13901,7 @@ async function restoreEditor(state, token) {
         /// and persist them into history / `IndexedDB`. Fall back to this tab's own saved
         /// snapshot, and clear the stale param inputs (and the stale list) so the previous tab's
         /// names/values cannot linger in the UI or leak through `getParamValues`.
-        queryParamsContainer.innerHTML = '';
+        queryParamsContainer.replaceChildren();
         currentQueryParams = [];
         /// The cleared inputs describe no text in particular; force `captureActiveTab` to
         /// re-derive (or keep the snapshot committed below) instead of trusting them.
@@ -14529,7 +14705,7 @@ function setActivePanel(tab) {
 /// clear stays local to the cell.
 function clearCell(cell) {
     if (cell.resultEl) { cell.resultEl.clear(); cell.resultEl.style.display = ''; }
-    if (cell.multiContainer) { cell.multiContainer.innerHTML = ''; cell.multiContainer.style.display = 'none'; }
+    if (cell.multiContainer) { cell.multiContainer.replaceChildren(); cell.multiContainer.style.display = 'none'; }
     /// A cleared cell no longer owns a result. Clear both the cell-owned controls and the data that
     /// backs the shared Download/Copy handlers, otherwise a connection failure after a successful
     /// query can leave actions for that previous, invisible result available.
@@ -14550,6 +14726,7 @@ function clearCell(cell) {
     /// Drop the cell-owned resource-meter state too, so a stale meter from a previous run is not
     /// re-adopted by `syncActiveTabChrome`; the next framed run creates a fresh one.
     cell.resources = null;
+    cell.runElapsedBaseNs = null;
     if (cellOwnsChrome(cell)) { progressEl.clear(); progressEl.resetViewToggles(); logoEl.style.display = 'block'; elapsed_ns = 0; paintDownloadCopy(cell); }
     updateCellStatus(cell);
 }
@@ -14807,7 +14984,7 @@ function renderQueryCellEditor(tab, cell) {
     }
     const text = (cell.query || '').trim();
     preview.classList.toggle('query-preview-empty', text === '');
-    preview.innerHTML = text === '' ? 'empty query' : collapsedQueryHTML(text);
+    preview.innerHTML = trustedHTML(text === '' ? 'empty query' : collapsedQueryHTML(text));
     /// Fade the tail only when there IS a tail. A hidden panel measures 0, so the check is
     /// repeated when the panel becomes visible (`renderNotebook` runs on every activation).
     preview.classList.toggle('query-preview-clipped', preview.scrollWidth > preview.clientWidth + 1);
@@ -14849,7 +15026,7 @@ function renderTextCell(tab, cell) {
     if (cell.editing) {
         if (cell.textarea && body.contains(cell.textarea.parentNode)) {
             /// Already editing: only the highlight can be out of date.
-            cell.backdrop.innerHTML = highlightMarkdown(cell.textarea.value);
+            cell.backdrop.innerHTML = trustedHTML(highlightMarkdown(cell.textarea.value));
             return;
         }
         body.textContent = '';
@@ -14884,7 +15061,7 @@ function renderTextCell(tab, cell) {
             apply: (px) => { cell.textHeight = px; autoGrow(); },
         });
         const repaint = () => {
-            backdrop.innerHTML = highlightMarkdown(textarea.value);
+            backdrop.innerHTML = trustedHTML(highlightMarkdown(textarea.value));
             autoGrow();
         };
         repaint();
@@ -14919,7 +15096,7 @@ function renderTextCell(tab, cell) {
         view.classList.add('cell-text-empty');
         view.textContent = 'Empty text cell — click to write Markdown';
     } else {
-        view.innerHTML = renderMarkdown(cell.text);
+        view.innerHTML = trustedHTML(renderMarkdown(cell.text));
     }
     view.addEventListener('click', (e) => {
         /// A link inside the rendered Markdown should follow, not open the editor.
@@ -17906,8 +18083,7 @@ const isMac = /mac|iphone|ipad|ipod|ios/i.test(navigator.userAgentData?.platform
 document.getElementById('hint-modifier').innerText = isMac ? 'Cmd' : 'Ctrl';
 
 document.addEventListener('keydown', event => {
-    /// Firefox has code 13 for Enter and Chromium has code 10.
-    if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
         markBootstrapDirty(event);
         if (activeInFlight()) {
             cancel();
@@ -20176,7 +20352,7 @@ function renderQueryBackdrop() {
     /// Trailing newline fix: browsers collapse a trailing \n in a div.
     if (html.endsWith('\n')) html += ' ';
 
-    queryBackdrop.innerHTML = html;
+    queryBackdrop.innerHTML = trustedHTML(html);
     queryBackdrop.style.display = 'block';
     query_area.classList.add('has-backdrop');
 
@@ -20760,7 +20936,7 @@ function renderCompletionOverlay() {
 
     const rowTop = (row) => (caretEnd.top + row * caretEnd.height - scrollTop) + 'px';
 
-    completionOverlay.innerHTML = '';
+    completionOverlay.replaceChildren();
     for (let i = winStart; i <= winEnd; ++i) {
         const word = completionCandidates[i];
         const selected = i === completionSelected;
@@ -20805,7 +20981,7 @@ function closeCompletions() {
         completionPrefix = '';
         completionPrefixStart = -1;
         completionOverlay.style.display = 'none';
-        completionOverlay.innerHTML = '';
+        completionOverlay.replaceChildren();
         /// Redraw the backdrop to drop the reserved spacer (unless we are already inside a
         /// backdrop render).
         if (!inRenderBackdrop) {
@@ -21232,7 +21408,7 @@ async function updateQueryParams()
     const query = query_area.value;
     if (!query)
     {
-        queryParamsContainer.innerHTML = '';
+        queryParamsContainer.replaceChildren();
         currentQueryParams = [];
         updateRunButtons(false);
         updateQueryBackdrop('', [], []);
@@ -21291,7 +21467,7 @@ async function updateQueryParams()
     /// an input at all.
     const savedValues = (getActiveTab() || {}).params || {};
     currentQueryParams = params;
-    queryParamsContainer.innerHTML = '';
+    queryParamsContainer.replaceChildren();
 
     for (const param of params)
     {
@@ -21422,25 +21598,12 @@ function setColorTheme(new_theme, update_preference) {
     /// the query is safe (empty).
     for (const el of resultPanelsEl.querySelectorAll('query-result')) el.redrawChart();
 }
-/// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
-let theme = current_url.searchParams.get('theme');
-if (['dark', 'light'].indexOf(theme) === -1) {
-    theme = window.localStorage.getItem('theme');
-}
+/// The theme was already applied by the script in the head, see `theme_explicit`.
+let theme = document.documentElement.getAttribute('data-theme');
 
-if (theme) {
-    document.documentElement.setAttribute('data-theme', theme);
-} else {
-    /// Obtain system-level user preference
-    const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
-    if (media_query_list.matches) {
-        setColorTheme('dark');
-    } else {
-        setColorTheme('light');
-    }
-
+if (!theme_explicit) {
     /// There is a rumor that on some computers, the theme is changing automatically on day/night.
-    media_query_list.addEventListener('change', function(e) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
         setColorTheme(e.matches ? 'dark' : 'light');
     });
 }
@@ -22018,7 +22181,7 @@ async function reconcileStartup() {
             /// different query; rebuilding from it would attach the wrong placeholder names to
             /// the reconciled tab (and auto-run with them). Clear the stale inputs/list and leave
             /// the tab's own reconciled params in place rather than deriving bogus ones.
-            queryParamsContainer.innerHTML = '';
+            queryParamsContainer.replaceChildren();
             currentQueryParams = [];
             params_synced_text = null;
         }
@@ -22083,32 +22246,7 @@ if (wasmAvailable()) loadLexer().catch(() => { /* the first tokenization retries
 dbReady = openDb();
 reconcileStartup();
 
-document.getElementById('toggle-light').onclick = function() {
-    setColorTheme('light', true);
-}
-
-document.getElementById('toggle-dark').onclick = function() {
-    setColorTheme('dark', true);
-}
-
-/// Make the icon "buttons" (copy, download) and the theme switcher reachable and
-/// operable from the keyboard: Tab focuses them, Enter/Space activates them.
-/// (Real <button> elements like Run already get this for free.)
-function makeButtonLike(elem, action)
-{
-    elem.setAttribute('tabindex', '0');
-    elem.setAttribute('role', 'button');
-    elem.addEventListener('keydown', e => {
-        if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            action();
-        }
-    });
-}
-
-makeButtonLike(document.getElementById('copy-div'), () => document.getElementById('copy-div').click());
-makeButtonLike(document.getElementById('download-div'), () => document.getElementById('download-div').click());
-makeButtonLike(document.getElementById('theme'), () => setColorTheme(theme === 'dark' ? 'light' : 'dark', true));
+document.getElementById('theme').addEventListener('click', () => setColorTheme(theme === 'dark' ? 'light' : 'dark', true));
 
 // Copy raw result to clipboard
 document.getElementById('copy-div').addEventListener('click', function() {
@@ -22146,50 +22284,36 @@ let last_database_for_download = '';
 let last_url_for_download = '';
 let last_user_for_download = '';
 
-// Toggle download dropdown
-document.getElementById('download-div').addEventListener('click', function(e) {
-    e.stopPropagation();
-    const dropdown = document.getElementById('download-dropdown');
-    const button = document.getElementById('download-div');
-    const context = document.getElementById('main');
+/// The download menu is a `popover` opened by the download button (`popovertarget`); the browser
+/// toggles it on a click of the button and closes it on a click outside or Escape. It is in the top
+/// layer, so it is placed in viewport coordinates: right-aligned with the button, over its top edge.
+/// The button scrolls with `#main` (in notebook mode it rides with the active cell's Run row), so
+/// the menu follows it on scroll and resize.
+const download_dropdown_elem = document.getElementById('download-dropdown');
 
-    if (dropdown.classList.contains('show')) {
-        dropdown.classList.remove('show');
-    } else {
-        // Position the dropdown relative to the button
-        dropdown.classList.add('show');
-        const button_rect = button.getBoundingClientRect();
-        const context_rect = context.getBoundingClientRect();
-        const dropdown_rect = dropdown.getBoundingClientRect();
+function positionDownloadDropdown()
+{
+    const button_rect = document.getElementById('download-div').getBoundingClientRect();
+    download_dropdown_elem.style.top = button_rect.top + 'px';
+    download_dropdown_elem.style.right = (document.documentElement.clientWidth - button_rect.right) + 'px';
+}
 
-        /// `#main` is the scroll container AND the positioning ancestor, so the offsets have to be
-        /// in its scrolled coordinate space: client rects are viewport-relative, hence the scroll
-        /// offsets. This matters in notebook mode, where the button rides with the active cell's
-        /// Run row and is normally well down a scrolled page.
-        dropdown.style.top = (button_rect.top - context_rect.top + context.scrollTop) + 'px';
-        dropdown.style.left = (button_rect.left - context_rect.left + context.scrollLeft
-                               + button_rect.width - dropdown_rect.width) + 'px';
-
-        // Move focus into the menu so keyboard users land on the format selection.
-        document.getElementById('download-format').focus();
-    }
+download_dropdown_elem.addEventListener('beforetoggle', e => {
+    if (e.newState === 'open') positionDownloadDropdown();
 });
-
-// Prevent dropdown from closing when clicking inside it
-document.getElementById('download-dropdown').addEventListener('click', function(e) {
-    e.stopPropagation();
+download_dropdown_elem.addEventListener('toggle', e => {
+    /// Move focus into the menu so keyboard users land on the format selection.
+    if (e.newState === 'open') document.getElementById('download-format').focus();
 });
-
-// Close dropdown when clicking outside
-document.addEventListener('click', function() {
-    const dropdown = document.getElementById('download-dropdown');
-    dropdown.classList.remove('show');
-});
+for (const target of [document.getElementById('main'), window]) {
+    target.addEventListener(target === window ? 'resize' : 'scroll', () => {
+        if (download_dropdown_elem.matches(':popover-open')) positionDownloadDropdown();
+    }, { passive: true });
+}
 
 /// Keep the open download menu contiguous with the download button in the tab
-/// order. The dropdown lives at the end of the DOM (so it is positioned without
-/// being clipped), so without this its controls would otherwise land at the very
-/// end of the tab sequence. Tab/Shift+Tab flow:
+/// order. The dropdown lives at the end of the DOM, so without this its controls
+/// would land at the very end of the tab sequence. Tab/Shift+Tab flow:
 ///   download button -> format select -> [other format] -> Download button
 /// and leaving either end closes the menu. Escape also closes it.
 function downloadTabSequence() {
@@ -22201,12 +22325,12 @@ function downloadTabSequence() {
 }
 
 document.getElementById('main').addEventListener('keydown', e => {
-    const dropdown = document.getElementById('download-dropdown');
-    if (!dropdown.classList.contains('show')) return;
+    if (!download_dropdown_elem.matches(':popover-open')) return;
 
+    /// Handled here rather than left to the popover, so that the focus goes back to the button.
     if (e.key === 'Escape') {
         e.preventDefault();
-        dropdown.classList.remove('show');
+        download_dropdown_elem.hidePopover();
         document.getElementById('download-div').focus();
         return;
     }
@@ -22223,7 +22347,7 @@ document.getElementById('main').addEventListener('keydown', e => {
             seq[idx + 1].focus();
         } else {
             /// Past the last item: close the menu and continue to the next toolbar control.
-            dropdown.classList.remove('show');
+            download_dropdown_elem.hidePopover();
             e.preventDefault();
             document.getElementById('theme').focus();
         }
@@ -22233,7 +22357,7 @@ document.getElementById('main').addEventListener('keydown', e => {
             seq[idx - 1].focus();
         } else {
             /// Before the download button: close the menu and let focus move naturally.
-            dropdown.classList.remove('show');
+            download_dropdown_elem.hidePopover();
         }
     }
 });
@@ -22357,7 +22481,7 @@ document.getElementById('download-button').addEventListener('click', async funct
     document.body.removeChild(form);
 
     // Close dropdown
-    document.getElementById('download-dropdown').classList.remove('show');
+    download_dropdown_elem.hidePopover();
 });
 
 // Web Terminal integration
