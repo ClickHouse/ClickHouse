@@ -161,6 +161,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitMetricNameKeyword(PromQLParser::MetricNameKeywordContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitKeyword(PromQLParser::KeywordContext *ctx) override {
     return visitChildren(ctx);
   }

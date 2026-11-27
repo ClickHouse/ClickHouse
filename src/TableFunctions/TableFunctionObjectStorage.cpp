@@ -264,8 +264,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     /// Only use parallel replicas if the Cluster variant of this table function exists
     /// (e.g. `s3Cluster` for `s3`). Table functions without a Cluster variant (e.g. `paimonLocal`)
     /// cannot distribute work via task iterators, so distributing would just read all data on every replica.
-    /// The change data feed of a Delta Lake table (`delta_lake_snapshot_start_version`) is read by
-    /// `ReadFromDeltaLakeTableChangesStep`, which does not distribute work either, so every replica would return all changes.
+    /// The data files of the change data feed of a Delta Lake table (`delta_lake_snapshot_start_version`) are not
+    /// distributed between replicas, because their selected rows and additional columns are not sent to replicas.
     const bool is_delta_lake_change_data_feed = configuration->isDataLakeConfiguration()
         && (query_settings[Setting::delta_lake_snapshot_start_version] != -1
             || query_settings[Setting::delta_lake_snapshot_end_version] != -1);
@@ -275,7 +275,10 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query && !context->isSQLSecurityOverriddenBody())
+    /// Stored columns accompany a table definition rather than an ad-hoc query, so creation and
+    /// replay must resolve to the same storage.
+    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query && cached_columns.empty()
+        && !context->isSQLSecurityOverriddenBody())
     {
         storage = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
@@ -700,13 +703,14 @@ SELECT * FROM s3('s3://data/path/date=*/country=*/code=*/*.parquet') WHERE date 
 
 ## Accessing requester-pays buckets {#accessing-requester-pays-buckets}
 
-To access a requester-pays bucket, a header `x-amz-request-payer = requester` must be passed in any requests. This is achieved by passing the parameter `headers('x-amz-request-payer' = 'requester')` to the s3 function. For example:
+To access a requester-pays bucket, a header `x-amz-request-payer = requester` must be passed in any requests. This is achieved with the setting [`s3_request_payer`](/reference/settings/session-settings/s3#s3_request_payer) set to `requester`, or with the `request_payer` key of the endpoint section in the server configuration. For example:
 
 ```sql
 SELECT
     count() AS num_rows,
     uniqExact(_file) AS num_files
-FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements-100*.parquet', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', headers('x-amz-request-payer' = 'requester'))
+FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements-100*.parquet', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY')
+SETTINGS s3_request_payer = 'requester'
 
 ┌───num_rows─┬─num_files─┐
 │ 1110000000 │       111 │
@@ -715,6 +719,8 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 1 row in set. Elapsed: 3.089 sec. Processed 1.09 billion rows, 0.00 B (353.55 million rows/s., 0.00 B/s.)
 Peak memory usage: 192.27 KiB.
 ```
+
+Passing the parameter `headers('x-amz-request-payer' = 'requester')` to the `s3` function works as well.
 
 ## Resolving relative URLs {#resolving-relative-urls}
 

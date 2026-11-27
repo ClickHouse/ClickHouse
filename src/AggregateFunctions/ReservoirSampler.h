@@ -219,8 +219,11 @@ private:
         {
             /// Access `items` through the logical limb order because its physical order depends on host byte order.
             cpp_int result;
-            for (unsigned i = static_cast<unsigned>(std::size(value.items)); i-- > 0;)
+            for (unsigned i = static_cast<unsigned>(std::size(value.items)); i > 0;)
+            {
+                --i;
                 result = (result << 64) | value.items[NativeType::_impl::little(i)];
+            }
 
             if (value < NativeType{})
                 result -= cpp_int(1) << (sizeof(NativeType) * 8);

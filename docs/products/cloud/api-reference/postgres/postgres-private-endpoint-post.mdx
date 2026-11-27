@@ -1,7 +1,7 @@
 ---
 title: "Create the PostgreSQL private endpoint"
 openapi: "/_specs/cloud-openapi.json POST /v1/organizations/{organizationId}/postgres/{postgresId}/privateEndpoint"
-description: "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Creates the AWS private endpoint service of a Postgres service. Creation takes about 5 to 10 minutes: `state` is `creating` until the service is `available`. A VPC endpoint can connect only after its ID is approved with the update endpoint. Returns 409 if the service already has a private endpoint. Private endpoints are available only for AWS Postgres services, and only for organizations with the feature enabled."
+description: "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Creates the AWS private endpoint service of a Postgres service. Creation takes about 5 to 10 minutes: `state` is `creating` until the service is `available`. A VPC endpoint can connect only after its ID is approved with the update endpoint. Returns 409 if the service already has a private endpoint. Private endpoints are available only for AWS Postgres services, and only for organizations with the feature enabled. Available on the Scale and Enterprise plans; Basic organizations get a 403."
 tag: "Beta"
 ---
 
@@ -9,7 +9,7 @@ tag: "Beta"
 
 <span data-endpoint-badge="Beta"><Badge color="blue">Beta</Badge></span>
 
-**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Creates the AWS private endpoint service of a Postgres service. Creation takes about 5 to 10 minutes: `state` is `creating` until the service is `available`. A VPC endpoint can connect only after its ID is approved with the update endpoint. Returns 409 if the service already has a private endpoint. Private endpoints are available only for AWS Postgres services, and only for organizations with the feature enabled.
+**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Creates the AWS private endpoint service of a Postgres service. Creation takes about 5 to 10 minutes: `state` is `creating` until the service is `available`. A VPC endpoint can connect only after its ID is approved with the update endpoint. Returns 409 if the service already has a private endpoint. Private endpoints are available only for AWS Postgres services, and only for organizations with the feature enabled. Available on the Scale and Enterprise plans; Basic organizations get a 403.
 
 <div data-permissions class="api-section">
 <div class="api-section-heading flex flex-col gap-y-4 w-full">

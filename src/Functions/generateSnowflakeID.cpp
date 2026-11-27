@@ -8,6 +8,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -50,6 +51,7 @@ uint64_t getTimestamp()
     return static_cast<uint64_t>(ticks_since_epoch) & ((1ull << timestamp_bits_count) - 1);
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 uint64_t getMachineIdImpl()
 {
     UUID server_uuid = ServerUUID::get();

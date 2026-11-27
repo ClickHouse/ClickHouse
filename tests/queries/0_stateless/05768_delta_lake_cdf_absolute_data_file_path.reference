@@ -1,0 +1,6 @@
+-- file: URI
+45	10	['insert']	[0]
+-- file:// URI
+45	10
+-- the snapshot of the same table
+45	10

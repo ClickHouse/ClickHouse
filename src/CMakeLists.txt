@@ -200,6 +200,11 @@ if (TARGET ch_contrib::nats_io)
     add_headers_and_sources(dbms Storages/NATS)
 endif()
 
+if (USE_PULSAR)
+    add_subdirectory(Storages/Pulsar/Client/Proto)
+    add_headers_and_sources(dbms Storages/Pulsar/Client)
+endif()
+
 add_headers_and_sources(dbms Storages/ObjectStorage)
 add_headers_and_sources(dbms Storages/ObjectStorage/Azure)
 add_headers_and_sources(dbms Storages/ObjectStorage/S3)
@@ -403,6 +408,7 @@ add_object_library(clickhouse_interpreters_cache Interpreters/Cache)
 add_object_library(clickhouse_interpreters_filecache Interpreters/FileCache)
 add_object_library(clickhouse_interpreters_hash_join Interpreters/HashJoin)
 add_object_library(clickhouse_interpreters_adaptive_aggregation Interpreters/AdaptiveAggregation)
+add_object_library(clickhouse_interpreters_disk_set Interpreters/DiskSet)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_whatif Interpreters/WhatIf)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
@@ -511,7 +517,7 @@ endif()
 if (TARGET ch_contrib::ssh)
     add_object_library(clickhouse_server_ssh Server/SSH)
 endif()
-if (TARGET ch_contrib::arrow_flight)
+if (TARGET ch_contrib::arrow_flight_proto)
     add_object_library(clickhouse_server_arrowflight Server/ArrowFlight)
 endif()
 add_object_library(clickhouse_server_embedded_client Server/ClientEmbedded)
@@ -567,40 +573,10 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" AND ARCH_AMD64)
 endif()
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 
-# Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.
-# TUs where libcxx hardening needs to be disabled are specified here.
-set_property(SOURCE
-    Columns/IColumn.cpp                        # hashjoin_with_large_output
-    Processors/Transforms/WindowTransform.cpp                        # window functions
-    Processors/Transforms/Window/SlidingBlocks.cpp                   # window functions
-    Processors/Transforms/Window/SlidingArguments.cpp                # window functions
-    Processors/Transforms/Window/SlidingIndexes.cpp                  # window functions
-    Processors/Transforms/Window/Partition.cpp                       # window functions
-    Processors/Transforms/Window/Peers.cpp                           # window functions
-    Processors/Transforms/Window/Frame.cpp                           # window functions
-    Processors/Transforms/Window/WindowTransformParams.cpp           # window functions
-    WindowFunctions/Common/WindowArguments.cpp                       # window functions
-    WindowFunctions/General/WindowFunctionRank.cpp                   # window functions
-    WindowFunctions/General/WindowFunctionDenseRank.cpp              # window functions
-    WindowFunctions/General/WindowFunctionRowNumber.cpp              # window functions
-    WindowFunctions/General/WindowFunctionNtile.cpp                  # window functions
-    WindowFunctions/General/WindowFunctionPercentRank.cpp            # window functions
-    WindowFunctions/General/WindowFunctionCumeDist.cpp               # window functions
-    WindowFunctions/General/WindowFunctionNthValue.cpp               # window functions
-    WindowFunctions/General/WindowFunctionLagLead.cpp                # window functions
-    WindowFunctions/General/WindowFunctionExponentialTimeDecayed.cpp # window functions
-    WindowFunctions/General/WindowFunctionNonNegativeDerivative.cpp  # window functions
-    WindowFunctions/Aggregate/AggregateState.cpp                     # window functions
-    WindowFunctions/Aggregate/AggregateWindowFunctionPrefix.cpp      # window functions
-    WindowFunctions/Aggregate/AggregateWindowFunctionRecalculate.cpp # window functions
-    Interpreters/Aggregator.cpp                # destroy_aggregate_states
-    Common/IntervalTree.cpp                    # range_hashed_dictionary
-    PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
-
 if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
-elseif (USE_AVRO)
-    # The Avro input format reads Iceberg variants with the Parquet variant decoder.
+elseif (USE_AVRO OR USE_ORC)
+    # The Avro and ORC input formats read Iceberg variants with the Parquet variant decoder.
     list (APPEND dbms_sources Processors/Formats/Impl/Parquet/VariantEncoding.cpp)
     list (APPEND dbms_headers Processors/Formats/Impl/Parquet/VariantEncoding.h)
 endif()
@@ -866,7 +842,7 @@ endif ()
 
 # Native Arrow IPC reader/writer needs only the FlatBuffers-generated metadata headers, not the Arrow runtime.
 if (TARGET ch_contrib::arrow_ipc_metadata)
-    target_link_libraries(dbms PRIVATE ch_contrib::arrow_ipc_metadata)
+    target_link_libraries(dbms PUBLIC ch_contrib::arrow_ipc_metadata)
 endif ()
 
 if (TARGET ch_contrib::avrocpp)
@@ -1053,14 +1029,18 @@ if (TARGET ch_contrib::sha3iuf)
     target_link_libraries(dbms PUBLIC ch_contrib::sha3iuf)
 endif()
 
-if (TARGET ch_contrib::arrow_flight)
-    target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight)
+if (TARGET ch_contrib::arrow_flight_proto)
+    target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight_proto)
 endif()
 
 
 
 if (ENABLE_BUZZHOUSE)
     target_link_libraries(dbms PRIVATE clickhouse_buzzhouse_proto)
+endif()
+
+if (USE_PULSAR)
+    target_link_libraries(dbms PRIVATE clickhouse_pulsar_proto)
 endif()
 
 if (TARGET ch_rust::wasmtime)
@@ -1099,6 +1079,7 @@ if (ENABLE_TESTS)
         clickhouse_aggregate_functions
         clickhouse_parsers
         clickhouse_storages_system
+        clickhouse_wyrd
         dbms
         clickhouse_common_zookeeper_base
         clickhouse_common_config
@@ -1111,6 +1092,10 @@ if (ENABLE_TESTS)
         ch_contrib::lz4)
 
     target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::heks)
+
+    if (USE_PULSAR)
+        target_link_libraries(unit_tests_dbms PRIVATE clickhouse_pulsar_proto)
+    endif()
 
     # `gtest_memchr_strlen_page_boundary` calls every x86_64 `memchr` / `strlen` tier directly.
     if (TARGET libllvmlibc_str_test_candidates)
@@ -1160,6 +1145,21 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::silk_fibers)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::silk_fibers)
     endif()
+endif ()
+
+if (ENABLE_TESTS)
+    macro (grep_wyrd_gtest_sources BASE_DIR DST_VAR)
+        file(GLOB_RECURSE "${DST_VAR}" CONFIGURE_DEPENDS RELATIVE "${BASE_DIR}" "gtest_wyrd*.cpp")
+    endmacro()
+
+    # attach all wyrd gtest sources
+    grep_wyrd_gtest_sources("${ClickHouse_SOURCE_DIR}/src" wyrd_gtest_sources)
+    clickhouse_add_executable(unit_tests_wyrd ${wyrd_gtest_sources})
+
+    target_link_libraries(unit_tests_wyrd PRIVATE
+        clickhouse_wyrd_enabled
+        dbms
+    )
 endif ()
 
 if (TARGET ch_contrib::jwt-cpp)

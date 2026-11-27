@@ -564,6 +564,8 @@ private:
 
         compressed_buffer.reset();
         file_buf.reset();
+        /// The records of an abandoned file must not be published to entry_storage.
+        unflushed_indices_with_log_location.clear();
     }
 
     WriteBuffer & getBuffer()

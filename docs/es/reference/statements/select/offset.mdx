@@ -36,6 +36,8 @@ Ejemplo:
 > • Si el cálculo da como resultado un número fraccional de filas, se redondea hacia arriba al siguiente número entero.
 
 `FETCH` especifica el número máximo de filas que puede haber en el resultado de una consulta.
+`FETCH ... ONLY` funciona sin `ORDER BY`, al igual que `LIMIT`, pero no se garantiza que las filas devueltas sean deterministas.
+`FETCH ... WITH TIES` requiere `ORDER BY` para identificar las filas que empatan con la última fila seleccionada.
 
 La opción `ONLY` se usa para devolver las filas que siguen inmediatamente a las omitidas por `OFFSET`. En este caso, `FETCH` es una alternativa a la cláusula [LIMIT](/es/reference/statements/select/limit). Por ejemplo, la siguiente consulta
 
@@ -59,7 +61,7 @@ La opción `WITH TIES` se usa para devolver también las filas adicionales que e
   El `offset` real también puede depender de la configuración [offset](/es/reference/settings/session-settings/other#offset).
 </Note>
 
-## Ejemplos
+## Ejemplos {#examples}
 
 Tabla de entrada:
 

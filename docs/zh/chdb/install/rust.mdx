@@ -7,15 +7,11 @@ keywords: ['chdb', '嵌入式', 'clickhouse-lite', 'rust', '安装', 'ffi', '绑
 doc_type: 'guide'
 ---
 
-chDB-rust 提供适用于 chDB 的 Experimental FFI (外部函数接口) 绑定，让您能够在 Rust 应用程序中直接运行 ClickHouse 查询，且无需任何外部依赖。
+chDB-rust 提供适用于 chDB 的 Experimental FFI (外部函数接口) 绑定，让您能够在 Rust 应用程序中直接运行 ClickHouse 查询，且无需任何外部依赖项。
 
-<div id="installation">
-  ## 安装
-</div>
+## 安装 {#installation}
 
-<div id="install-libchdb">
-  ### 安装 libchdb
-</div>
+### 安装 libchdb {#install-libchdb}
 
 安装 chDB 库：
 
@@ -23,15 +19,11 @@ chDB-rust 提供适用于 chDB 的 Experimental FFI (外部函数接口) 绑定�
 curl -sL https://lib.chdb.io | bash
 ```
 
-<div id="usage">
-  ## 用法
-</div>
+## 用法 {#usage}
 
 chDB Rust 提供无状态和有状态两种查询执行模式。
 
-<div id="stateless-usage">
-  ### 无状态用法
-</div>
+### 无状态用法 {#stateless-usage}
 
 对于不需要持久状态的简单查询：
 
@@ -57,9 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-<div id="stateful-usage-sessions">
-  ### 有状态用法 (会话)
-</div>
+### 有状态用法 (会话) {#stateful-usage-sessions} 
 
 对于需要持久状态 (如数据库和表) 的查询：
 
@@ -117,29 +107,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-<div id="building-testing">
-  ## 构建与测试
-</div>
+## 构建与测试 {#building-testing}
 
-<div id="build-the-project">
-  ### 构建项目
-</div>
+### 构建项目 {#build-the-project}
 
 ```bash
 cargo build
 ```
 
-<div id="run-tests">
-  ### 运行测试
-</div>
+### 运行测试 {#run-tests}
 
 ```bash
 cargo test
 ```
 
-<div id="development-dependencies">
-  ### 开发依赖项
-</div>
+### 开发依赖项 {#development-dependencies}
 
 该项目包含以下开发依赖：
 
@@ -147,9 +129,7 @@ cargo test
 * `tempdir` (v0.3.7) - 在测试中处理临时目录
 * `thiserror` (v1) - 错误处理工具
 
-<div id="error-handling">
-  ## 错误处理
-</div>
+## 错误处理 {#error-handling}
 
 chDB Rust 通过 `Error` 枚举提供了完善的错误处理机制：
 
@@ -175,8 +155,6 @@ match execute("SELECT 1", None) {
 }
 ```
 
-<div id="github-repository">
-  ## GitHub 仓库
-</div>
+## GitHub 仓库 {#github-repository}
 
 你可以在 [chdb-io/chdb-rust](https://github.com/chdb-io/chdb-rust) 找到该项目的 GitHub 仓库。

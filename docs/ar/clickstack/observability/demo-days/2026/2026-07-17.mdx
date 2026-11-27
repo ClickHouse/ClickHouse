@@ -1,0 +1,92 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-07-17
+title: 'Demo days - 2026-07-17'
+sidebarTitle: '2026-07-17'
+description: 'أيام العروض التوضيحية لـ ClickStack بتاريخ 2026-07-17'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## تحسينات تلميحات أدوات المخططات {#chart-tooltip-improvements}
+
+*عرض توضيحي يقدّمه [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/EsnGp9RPSKM" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+حظيت تلميحات أدوات المخططات في ClickStack بتحسين كبير في سهولة الاستخدام. فالنقر على المخطط يثبّت الآن تلميح الأداة في مكانه بدلاً من أن يختفي بمجرد إبعاد الماوس، ما يتيح لك قراءة البيانات فعلياً. ويعرض تلميح الأداة المثبّت جميع القيم في سلسلة البيانات، وإذا كانت كثيرة، يمكنك التمرير عبر القائمة بدلاً من أن تُقتطع.
+
+كما يمكنك الآن نسخ القيم مباشرةً من تلميح الأداة، وهي ميزة جاءت استجابةً مباشرة لملاحظات العملاء. فقد كان العملاء في السابق يرون البيانات التي يحتاجونها دون أن تتوفر لهم وسيلة لنسخها، أما الآن فيكفي النقر على أي قيمة لنسخها إلى الحافظة.
+
+ويعتمد ذلك كله على ترقية مكتبة Recharts التي باتت تعرض تلميحات الأدوات عبر portal بدلاً من عرضها داخل حاوية المخطط نفسه. وتبرز أهمية ذلك خصوصاً في لوحات المعلومات التي تضم عدداً كبيراً من المخططات المتراصّة، إذ لم تعد تلميحات الأدوات تنضغط أو تُقتطع بسبب المخططات المجاورة.
+
+**طلبات السحب ذات الصلة:** [#2642](https://github.com/hyperdxio/hyperdx/pull/2642) feat(charts): pin chart tooltip on click with inline drill-down actions
+
+## تشغيل تقييمات MCP من طلب سحب {#running-mcp-evals-from-a-pr}
+
+*عرض توضيحي يقدّمه [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/YcDm1Mnw-Qc" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+أصبح بإمكان الفريق الآن تشغيل تقييمات MCP مباشرةً من طلب سحب على GitHub بدلاً من الاقتصار على تشغيلها محلياً، ما يتيح لأي شخص معرفة أثر أي تغيير في الشيفرة على جودة MCP قبل دمجه. وهذا هو الإصدار الأول من هذا الإعداد، إذ يدمج مسار التقييم في CI ليعمل تلقائياً ويُرجع نتيجة مجمّعة إلى طلب السحب.
+
+لمزيد من المعلومات حول آلية عمل إطار تقييمات ClickStack MCP، راجع منشور المدونة [اختبار الأداء المقارن لخادم MCP في ClickStack باستخدام تقييمات HDX](https://clickhouse.com/blog/benchmarking-the-clickstack-mcp-server-with-hdx-evals).
+
+**طلبات السحب ذات الصلة:** [#2628](https://github.com/hyperdxio/hyperdx/pull/2628) feat(evals): M1 CI skeleton — تشغيل تقييمات MCP بالكامل من البداية إلى النهاية في GitHub Actions
+
+## دعم المقاييس في خادم MCP {#metrics-support-in-the-mcp-server}
+
+*عرض توضيحي يقدّمه [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/GqJWQN3P86c" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+لم يعد خادم MCP يقتصر على فهم السجلات والتتبّعات، بل أصبح يفهم المقاييس أيضًا، ويرافق ذلك إطار تقييم مخصص لقياس مدى كفاءته في استخدامها. يضيف هذا التحديث مولّدات لأنواع المقاييس الخمسة التي يدعمها ClickStack (gauge وsum وhistogram وexponential histogram وsummary)، إلى جانب سيناريوهات تقييم جديدة لا يمكن حلها إلا بالاستعانة بالمقاييس، مثل تسرّب الذاكرة في JVM الذي يكاد يستحيل حله بالاعتماد على السجلات والتتبّعات وحدها.
+
+تُظهر النتائج الأولية أن خادم MCP الداعم للمقاييس يجتاز هذه السيناريوهات أسرع بشكل ملحوظ من خادم MCP الذي يقتصر على SQL القياسية، ويرجع ذلك أساسًا إلى أنه يحتاج إلى عدد أقل من استدعاءات الأدوات للوصول إلى الإجابة. لا يزال الأمر يتطلب بعض الضبط (إذ تُربك بعض السيناريوهات قدرة نموذج LLM على مطابقة الأنماط عند تعدد صيغ كتابة المقياس نفسه)، لكن الاتجاه واضح: منح الوكيل وصولًا مباشرًا إلى المقاييس يفتح الباب أمام تحقيقات كانت متعذرة من قبل.
+
+**طلبات السحب ذات الصلة:** [#2645](https://github.com/hyperdxio/hyperdx/pull/2645) feat(evals): support metric types and seeding
+
+## تحسينات محدد المصدر {#source-picker-improvements}
+
+*عرض توضيحي يقدّمه [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/XTQygZSMUTs" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+كان اختيار المصدر الصحيح في السابق أشبه بالتمرير والتخمين. ففي المثيلات التي تضم قوائم مصادر طويلة، لم يكن هناك أي مؤشر مرئي يبيّن المصدر المحدد فعليًا عند فتح القائمة المنسدلة. يضيف هذا التحديث علامة اختيار بجوار المصدر المحدد حاليًا، على غرار نمط التحديد المتعدد المعمول به، لتعرف دائمًا بنظرة سريعة أي مصدر هو النشط قبل أن تبدأ الاستعلام.
+
+تغيير بسيط، لكنه يُغنيك عن لحظات التساؤل &quot;مهلًا، أي مصدر أعرض الآن؟&quot; التي تتراكم على مدار يوم العمل.
+
+**طلبات السحب ذات الصلة:** [#2651](https://github.com/hyperdxio/hyperdx/pull/2651) feat(app): clarify selected source in source picker
+
+## تحويل مخططات أداة الإنشاء إلى SQL {#chart-builder-to-sql-conversion}
+
+*عرض توضيحي يقدّمه [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/IBNdi1rgiTc" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+كان الانتقال من منشئ الاستعلامات المرئي إلى وضع SQL المباشر يعني في السابق البدء من الصفر. فإذا أنشأت استعلامًا يتضمن عوامل تصفية وعمليات group-by في المنشئ، ثم احتجت إلى شيء لا يستطيع المنشئ التعبير عنه، كان الانتقال إلى وضع SQL يتركك أمام محرر فارغ.
+
+أما الآن، فعند الانتقال إلى وضع SQL، يُمرَّر استعلام المنشئ عبر مسار تنفيذ الاستعلام نفسه الذي يُستخدم لتصيير المخطط، فتجد في وضع SQL الاستعلام المكافئ مكتوبًا مسبقًا باستخدام الماكرو المناسبة بدلًا من القيم المضمَّنة بشكل ثابت. أما التحويل العكسي (من SQL إلى المنشئ) فلم يتوفر بعد، لكنه مدرج في خارطة الطريق.
+
+**طلبات السحب ذات الصلة:** [#2634](https://github.com/hyperdxio/hyperdx/pull/2634) feat: Auto-convert builder charts to Raw SQL، [#2666](https://github.com/hyperdxio/hyperdx/pull/2666) fix(charts): Keep selected source when switching from builder to SQL mode
+
+## آلية جديدة لجلب عوامل التصفية {#new-filter-fetching-mechanism}
+
+*عرض توضيحي يقدّمه [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/z31cAIJA3B4" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+أصبح جلب قائمة قيم عوامل التصفية المتاحة يعتمد على طبقة توجيه أذكى. فبدلاً من الاعتماد على استراتيجية واحدة ثابتة، يفحص النظام الجديد ما يتوفر في المخطط، ولا سيما وجود الفهارس النصية من عدمه، ثم يختار الطريقة الأكثر كفاءة لبناء قائمة عوامل التصفية.
+
+عند توفر الفهارس النصية، يستعلم ClickStack عنها مباشرةً بدلاً من اللجوء إلى جداول التجميع التلخيصي، ما يعني أيضاً تقليل عدد جداول التجميع التلخيصي التي تحتاج إلى صيانة، والحدّ من خطر ضغط الذاكرة الذي واجهه بعض العملاء مع النهج القديم. ويتطلب ذلك ClickHouse 26.3، لذا سيواصل من لم ينتقل بعد إلى هذا الإصدار استخدام النهج الحالي القائم على التجميع التلخيصي إلى أن يُجري الترقية، وعندها يُفعَّل النهج الجديد تلقائياً.
+
+**طلبات السحب ذات الصلة:** [#2643](https://github.com/hyperdxio/hyperdx/pull/2643) feat: rework getAllKeyValues and add filters populated from text indices
+
+## تحسين لوحة معلومات RUM {#improved-rum-dashboard}
+
+*عرض توضيحي يقدّمه [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/roNhRzLvXro" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+باتت لوحة معلومات Browser RUM تدعم الآن الترميز اللوني، مع مفتاح توضيحي بتنسيق Markdown يشرح دلالة كل لون (ويمكن تحسين وضوح هذا المفتاح أكثر لاحقًا). كما أصبحت مربعات الأرقام الخاصة بمؤشرات مثل الجلسات التي تتضمن أخطاء تُلوَّن وفقًا لعتبات قابلة للتهيئة، فتبرز مواطن المشكلات للعين مباشرةً بدلًا من أن تضيع وسط سيلٍ من الأرقام المتشابهة.
+
+**طلبات السحب ذات الصلة:** [#2671](https://github.com/hyperdxio/hyperdx/pull/2671) feat(dashboards): color-code Browser RUM web vitals, page-load &amp; error tiles

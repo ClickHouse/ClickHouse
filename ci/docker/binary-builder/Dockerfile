@@ -22,9 +22,10 @@ COPY --from=cctools \
 # Refresh the kitware GPG key inherited from fasttest base image, it may be stale
 RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg
 
+# clang-tidy and llvm come from the fasttest image. Upgrading them here (apt would also do it for the packages of
+# bolt's source package) stores a second copy of LLVM in this layer whenever apt.llvm.org has rebuilt them.
 RUN apt-get update \
-    && apt-get -o Dpkg::Options::="--force-overwrite" upgrade --yes \
-    && apt-get -o Dpkg::Options::="--force-overwrite" install --yes \
+    && apt-get -o Dpkg::Options::="--force-overwrite" -o APT::Get::Upgrade-By-Source-Package=false install --yes \
         binutils-dev \
         build-essential \
         zlib1g-dev \
@@ -34,8 +35,6 @@ RUN apt-get update \
         yasm \
         zstd \
         zip \
-        clang-tidy-${LLVM_VERSION} \
-        llvm-${LLVM_VERSION} \
         bolt-${LLVM_VERSION} \
     && ln -sf /usr/bin/llvm-profdata-${LLVM_VERSION} /usr/bin/llvm-profdata \
     && ln -sf /usr/bin/llvm-cov-${LLVM_VERSION} /usr/bin/llvm-cov \
@@ -82,20 +81,6 @@ RUN if [ "$CLICKHOUSE_PROFILES_COMMIT" != "none" ]; then \
         fi ; \
     done \
     ; fi
-
-# Download and install mold for s390x build
-ARG MOLD_VERSION=2.40.4
-RUN arch=${TARGETARCH:-amd64} \
-    && case $arch in \
-        amd64) rarch=x86_64 ;; \
-        arm64) rarch=aarch64 ;; \
-    esac \
-    && curl -Lo /tmp/mold.tar.gz "https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/mold-${MOLD_VERSION}-${rarch}-linux.tar.gz" \
-    && mkdir /tmp/mold \
-    && tar -xzf /tmp/mold.tar.gz -C /tmp/mold \
-    && cp -r /tmp/mold/mold*/* /usr \
-    && rm -rf /tmp/mold \
-    && rm /tmp/mold.tar.gz
 
 # Architecture of the image when BuildKit/buildx is used
 ARG NFPM_VERSION=2.20.0

@@ -290,15 +290,6 @@ possible_properties = {
     ),
     "database_catalog_drop_table_concurrency": threads_lambda,
     "database_catalog_shutdown_table_concurrency": threads_lambda,
-    "database_catalog_unused_dir_cleanup_period_sec": threshold_generator(
-        0.2, 0.2, 60, 86400, allow_unlimited=False
-    ),
-    "database_catalog_unused_dir_hide_timeout_sec": threshold_generator(
-        0.2, 0.2, 60, 3600, allow_unlimited=False
-    ),
-    "database_catalog_unused_dir_rm_timeout_sec": threshold_generator(
-        0.2, 0.2, 3600, 2592000, allow_unlimited=False
-    ),
     "database_replicated_allow_detach_permanently": true_false_lambda,
     "database_replicated_drop_broken_tables": true_false_lambda,
     "dictionaries_lazy_load": true_false_lambda,
@@ -1225,13 +1216,24 @@ def normalize_cache_properties(
     if get_cache_setting(cache_element, "cache_policy", "SLRU") in ("SLRU", "SLRU_OVERCOMMIT"):
         # The same rounding as `std::lround` and `std::clamp` in `FileCacheSettings::validate`.
         get_ratio = lambda total, ratio: int(total * min(max(ratio, 0.0), 1.0) + 0.5)
-        max_size = parse_cache_size(get_cache_setting(cache_element, "max_size", "0"))
         ratio = float(get_cache_setting(cache_element, "slru_size_ratio", "0.6"))
-        parts = [max_size]
-        if get_cache_setting(cache_element, "use_split_cache", "0") == "1":
-            system_ratio = float(get_cache_setting(cache_element, "split_cache_ratio", "0.1"))
-            parts = [get_ratio(max_size, 1 - system_ratio), get_ratio(max_size, system_ratio)]
-        smallest_queue_size = min(min(get_ratio(part, ratio), get_ratio(part, 1 - ratio)) for part in parts)
+        use_split_cache = get_cache_setting(cache_element, "use_split_cache", "0") == "1"
+        system_ratio = float(get_cache_setting(cache_element, "split_cache_ratio", "0.1"))
+
+        def get_smallest_queue(total: int) -> int:
+            parts = [total]
+            if use_split_cache:
+                parts = [get_ratio(total, 1 - system_ratio), get_ratio(total, system_ratio)]
+            return min(min(get_ratio(part, ratio), get_ratio(part, 1 - ratio)) for part in parts)
+
+        # `SLRUFileCachePriority` also rejects a queue without elements.
+        max_elements = int(get_cache_setting(cache_element, "max_elements", "0"))
+        while get_smallest_queue(max_elements) == 0 and max_elements < MAX_CACHE_ELEMENTS:
+            max_elements += 1
+        set_cache_setting(cache_element, "max_elements", str(max_elements))
+
+        max_size = parse_cache_size(get_cache_setting(cache_element, "max_size", "0"))
+        smallest_queue_size = get_smallest_queue(max_size)
 
         max_file_segment_size = parse_cache_size(
             get_cache_setting(cache_element, "max_file_segment_size", str(32 << 20))
@@ -2746,6 +2748,24 @@ def modify_user_settings(
         # `allnodes`), only pick one when it is missing or names a dropped cluster.
         if (cluster_for_parallel_replicas_xml.text or "").strip() not in cluster_names:
             cluster_for_parallel_replicas_xml.text = random.choice(cluster_names)
+
+    # Allocation failures inside merges and mutations, whose thread groups take the `background` profile, built
+    # only at startup. Without that profile they use the default one, so a new profile inherits it.
+    if random.randint(1, 3) == 1:
+        modified = True
+        profiles_xml = root.find("profiles")
+        if profiles_xml is None:
+            profiles_xml = ET.SubElement(root, "profiles")
+        background_xml = profiles_xml.find("background")
+        if background_xml is None:
+            background_xml = ET.SubElement(profiles_xml, "background")
+            ET.SubElement(background_xml, "profile").text = "default"
+        fault_xml = background_xml.find("memory_tracker_fault_probability")
+        if fault_xml is None:
+            fault_xml = ET.SubElement(
+                background_xml, "memory_tracker_fault_probability"
+            )
+        fault_xml.text = "0.001"
 
     if modified:
         ET.indent(tree, space="    ", level=0)  # indent tree

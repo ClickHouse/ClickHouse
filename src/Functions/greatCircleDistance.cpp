@@ -9,6 +9,7 @@
 #include <cmath>
 #include <memory>
 #include <numbers>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -121,7 +122,7 @@ struct Impl
         return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
     }
 
-    [[nodiscard]] T fastSin(T x) const
+    [[nodiscard]] NO_SANITIZE_UNSIGNED_OVERFLOW T fastSin(T x) const
     {
         T y = std::abs(x) * (T(COS_LUT_SIZE) / T(PI) / T(2.0));
         size_t i = toIndex(y);

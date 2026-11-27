@@ -12,27 +12,21 @@ integration:
 
 في بعض الحالات، قد يكون من المنطقي استبعاد جداول معيّنة من MySQL ClickPipe - على سبيل المثال، إذا لم يكن جدول معيّن مطلوبًا لعبء عمل التحليلات لديك، فإن تخطّيه قد يقلّل تكاليف التخزين والنسخ المتماثل في ClickHouse.
 
-<div id="remove-tables-steps">
-  ## خطوات إزالة جداول محددة
-</div>
+## خطوات إزالة جداول محددة {#remove-tables-steps}
 
 الخطوة الأولى هي إزالة الجدول من الـ pipe. ويمكن القيام بذلك باتباع الخطوات التالية:
 
 1. [أوقِف](/ar/integrations/clickpipes/mysql/pause-and-resume) الـ pipe مؤقتًا.
 2. انقر على Edit Table Settings.
-3. حدِّد موقع جدولك - ويمكنك فعل ذلك بالبحث عنه في شريط البحث.
-4. ألغِ تحديد الجدول بالنقر على مربع الاختيار المحدَّد.
+3. حدِّد موقع جدولك - ويمكنك فعل ذلك بالبحث عنه في شريط البحث.
+4. ألغِ تحديد الجدول بالنقر على مربع الاختيار المحدَّد.
 
 <br />
 
 <div className="ch-image-md">
-
-<Frame>
-
-![](/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp)
-
-</Frame>
-
+  <Frame>
+    ![](/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp)
+  </Frame>
 </div>
 
 5. انقر على Update.

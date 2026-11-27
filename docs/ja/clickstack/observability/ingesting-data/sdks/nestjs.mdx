@@ -1,0 +1,67 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/nestjs
+description: 'ClickHouse オブザーバビリティおよびセルフマネージドデプロイメント向けの NestJS のセットアップと設定。'
+title: 'NestJS'
+doc_type: 'guide'
+keywords: ['ClickHouse オブザーバビリティ', 'SDK', 'インストルメンテーション']
+sidebarTitle: 'NestJS'
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+import { ClickStackIntegrates } from '/snippets/ja/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+ClickStack Node.js SDK を使用して、NestJS アプリケーションからテレメトリーを収集し、ClickHouse オブザーバビリティに送信します。この SDK には NestJS のリクエストに対するインストルメンテーションが含まれており、コンソール出力も収集できます。
+
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+
+## SDK のインストール {#install-sdk}
+
+Node.js 22.15 以降を使用してください。
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+## 宛先を設定する {#configure-destination}
+
+<Tabs>
+  <Tab title="完全マネージド型">
+    <BetaBadge label="ベータ版サービス" />
+
+    サービスで **チーム設定 → Data → マネージドテレメトリー** を開き、**OTLP HTTPエンドポイント** と **APIキー** をコピーします。エンドポイントには、ポートを含む完全なHTTPSエンドポイントを指定してください。
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+
+  <Tab title="セルフマネージド">
+    collector のOTLP HTTPエンドポイントとインジェスト key を使用します。collector でTLSを設定していない場合は、`https://` の代わりに `http://` を使用してください。collector のセットアップについては、[OpenTelemetry を使用したデータ取り込み](/ja/clickstack/observability/ingesting-data/opentelemetry#self-managed)を参照してください。
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+    export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+    ```
+  </Tab>
+</Tabs>
+
+## アプリケーションを起動する {#start-application}
+
+アプリケーションを識別できるよう、`OTEL_SERVICE_NAME` を設定します。NestJS アプリケーションをビルドしたら、コンパイル済みのエントリーポイントより先に SDK をプリロードします。
+
+```shell
+npm run build
+OTEL_SERVICE_NAME='my-nestjs-app' node --import @clickhouse/clickstack-node/register dist/main.js
+```
+
+`dist/main.js` は、ビルド出力に合わせて変更してください。`ts-node` など、`require` をフックするトランスパイラを使用している場合は、代わりに `--require @clickhouse/clickstack-node/register` を使用してください。アプリケーションをバンドルする場合は、SDK および計装済みの依存関係をバンドル対象外 (external) にしてください。
+
+NestJS のデフォルトのコンソールロガーは引き続き使用できます。カスタムロガーを使用する場合は、Winston や Pino など、サポートされているインテグレーションを使用してください。設定および互換性の詳細については、[Node.js ガイド](/ja/clickstack/observability/ingesting-data/sdks/nodejs)を参照してください。
+
+## インジェストを確認する {#verify-ingestion}
+
+コントローラーにリクエストを送信し、ログメッセージを出力します。ClickHouse オブザーバビリティで直近の時間範囲を選択し、Logs と Traces でアプリケーションのサービス名を探します。エクスポートが完了するまでしばらく待ってから、Metrics を確認します。
