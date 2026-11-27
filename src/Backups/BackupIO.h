@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
-/// Complete type needed: readFileForView() returns a std::unique_ptr to it inline.
+/// Complete type needed: readFileForPackedMember returns a std::unique_ptr to it inline.
 #include <IO/ReadBufferFromFileBase.h>
 
 #include <map>
@@ -31,9 +31,9 @@ public:
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) = 0;
 
-    /// Opens `file_name` for wrapping in ReadBufferFromFileView, which cannot sit on an mmap or direct-IO
-    /// buffer. Only local readers adjust; object storage ignores local filesystem read settings.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFileForView(const String & file_name) { return readFile(file_name); }
+    /// Opens a pack object for reading one member through ReadBufferFromFileView. Local readers turn off O_DIRECT
+    /// and mmap here: O_DIRECT floors seek positions to its alignment, which the view can't track.
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFileForPackedMember(const String & file_name) { return readFile(file_name); }
 
     /// The function copyFileToDisk() can be much faster than reading the file with readFile() and then writing it to some disk.
     /// (especially for S3 where it can use CopyObject to copy objects inside S3 instead of downloading and uploading them).

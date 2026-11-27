@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
 #include <Disks/WriteMode.h>
 #include <IO/WriteSettings.h>
@@ -170,10 +171,10 @@ public:
     /// Puts a new entry to the backup.
     virtual void writeFile(const BackupFileInfo & file_info, BackupEntryPtr entry) = 0;
 
-    /// Writes one pack object bundling several small blobs (packed mode, see BackupCoordinationFileInfos).
-    /// `members` are the pack's unique blobs (already deduplicated); each writes its physical suffix.
-    /// Called serially per pack, off the parallel per-entry writeFile path.
-    using PackMembers = std::vector<std::pair<BackupFileInfo, BackupEntryPtr>>;
+    /// Writes one pack object bundling several small data files.
+    /// `members` are the pack's unique data files (already deduplicated); each writes its physical suffix.
+    /// Called once per pack; calls for different packs and per-entry `writeFile` calls may run concurrently.
+    using PackMembers = VectorWithMemoryTracking<std::pair<BackupFileInfo, BackupEntryPtr>>;
     virtual void writeFilePack(size_t pack_id, const PackMembers & members) = 0;
 
     virtual void setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept = 0;

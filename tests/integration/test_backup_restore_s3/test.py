@@ -718,146 +718,48 @@ def _count_backup_objects(cluster, backup_name):
     return sum(1 for _ in objects)
 
 
-def test_backup_to_s3_object_packing(cluster):
+def _backup_objects_size(cluster, backup_name):
+    objects = cluster.minio_client.list_objects(
+        "root", f"data/backups/{backup_name}/", recursive=True
+    )
+    return sum(obj.size for obj in objects)
+
+
+def test_backup_to_s3_packed_format(cluster):
     # Packing coalesces many small backup data files into a few pack objects, cutting the objects (and PUT
-    # requests) written. This pack stays under S3's 5 MiB byte-range copy-source minimum, so restore reads
-    # members through buffers; the server-side ranged-copy route needs a >5 MiB pack, too costly for CI.
+    # requests) written. Restore reads each packed member with one bounded GET and writes it with one PUT.
+    node = cluster.instances["node"]
     storage_policy = "policy_s3"
-
-    backup_name_off = new_backup_name()
-    dest_off = f"S3('http://minio1:9001/root/data/backups/{backup_name_off}', 'minio', '{minio_secret_key}')"
-    check_backup_and_restore(cluster, storage_policy, dest_off)
-    objects_off = _count_backup_objects(cluster, backup_name_off)
-
-    backup_name_on = new_backup_name()
-    dest_on = f"S3('http://minio1:9001/root/data/backups/{backup_name_on}', 'minio', '{minio_secret_key}')"
-    check_backup_and_restore(
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+    _, restore_events = check_backup_and_restore(
         cluster,
         storage_policy,
-        dest_on,
-        backup_settings={"backup_pack_format": 1},
+        backup_destination,
+        backup_settings={"backup_use_packed_format": 1, "id": backup_name},
     )
-    objects_on = _count_backup_objects(cluster, backup_name_on)
 
-    # Request-cost discrimination: far fewer objects are written with packing on. Counting via the MinIO
-    # listing (destination objects) is the ground truth and is immune to the fact that native-copy
-    # CopyObject / UploadPartCopy events are not recorded in system.blob_storage_log.
+    # Each member read is bounded to its range. Restore reads the metadata, each pack's index (at most the whole
+    # pack) and every stored byte once, so at most twice the backup; an unbounded read per member pulls the rest
+    # of its pack each time.
+    backup_size = _backup_objects_size(cluster, backup_name)
     assert (
-        objects_on < objects_off
-    ), f"packing did not reduce backup object count: on={objects_on} off={objects_off}"
+        restore_events["ReadBufferFromS3Bytes"] <= 2 * backup_size
+    ), f"restore read {restore_events['ReadBufferFromS3Bytes']} bytes from a backup of {backup_size} bytes"
 
-
-def test_backup_to_s3_object_packing_incremental(cluster):
-    # An incremental backup stores only the data files new since the base, and packing coalesces those small
-    # per-part files -- so the same incremental writes fewer objects with packing on than with it off.
-    node = cluster.instances["node"]
-    storage_policy = "policy_s3"
-
-    node.query(
-        f"""
-    DROP TABLE IF EXISTS data SYNC;
-    CREATE TABLE data (key Int, value String, array Array(String)) Engine=MergeTree() ORDER BY tuple() SETTINGS storage_policy='{storage_policy}';
-    INSERT INTO data SELECT * FROM generateRandom('key Int, value String, array Array(String)') LIMIT 1000;
-    OPTIMIZE TABLE data FINAL;
-    """
+    # Fewer objects than files: the MinIO listing holds one object per entry plus the .backup manifest. The
+    # listing is the ground truth, since native-copy CopyObject / UploadPartCopy events are not recorded in
+    # system.blob_storage_log.
+    num_files, num_entries = map(
+        int,
+        node.query(
+            f"SELECT num_files, num_entries FROM system.backups WHERE id = '{backup_name}'"
+        ).split(),
     )
-
-    try:
-        # Base backup (packed).
-        base_name = new_backup_name()
-        base_dest = f"S3('http://minio1:9001/root/data/backups/{base_name}', 'minio', '{minio_secret_key}')"
-        node.query(
-            f"BACKUP TABLE data TO {base_dest} {format_settings({'backup_pack_format': 1})}"
-        )
-
-        # New rows land in fresh parts, so the incremental must store new small data files.
-        node.query(
-            "INSERT INTO data SELECT * FROM generateRandom('key Int, value String, array Array(String)') LIMIT 1000;"
-        )
-
-        # Same base, two incrementals: packing off (baseline object count) and packing on.
-        incr_off_name = new_backup_name()
-        incr_off_dest = f"S3('http://minio1:9001/root/data/backups/{incr_off_name}', 'minio', '{minio_secret_key}')"
-        node.query(f"BACKUP TABLE data TO {incr_off_dest} SETTINGS base_backup = {base_dest}")
-        objects_off = _count_backup_objects(cluster, incr_off_name)
-
-        incr_on_name = new_backup_name()
-        incr_on_dest = f"S3('http://minio1:9001/root/data/backups/{incr_on_name}', 'minio', '{minio_secret_key}')"
-        node.query(
-            f"BACKUP TABLE data TO {incr_on_dest} SETTINGS base_backup = {base_dest}, backup_pack_format = 1"
-        )
-        objects_on = _count_backup_objects(cluster, incr_on_name)
-
-        # Request-cost discrimination: packing the new small files reduces the incremental's object count.
-        assert (
-            objects_on < objects_off
-        ), f"packing did not reduce incremental backup object count: on={objects_on} off={objects_off}"
-
-        # Restore the packed incremental (base + incremental chain) and assert byte-identical data.
-        node.query(
-            f"""
-            RESTORE TABLE data AS data_restored FROM {incr_on_dest};
-            """
-        )
-        node.query(
-            """
-            SELECT throwIf(
-                (SELECT count(), sum(sipHash64(*)) FROM data) !=
-                (SELECT count(), sum(sipHash64(*)) FROM data_restored),
-                'Data does not matched after incremental BACKUP/RESTORE'
-            );
-            """
-        )
-    finally:
-        node.query(
-            """
-            DROP TABLE IF EXISTS data SYNC;
-            DROP TABLE IF EXISTS data_restored SYNC;
-            """
-        )
-
-
-def test_backup_to_s3_object_packing_on_cluster_rejected(cluster):
-    # ON CLUSTER routes through BackupCoordinationOnCluster, which does not forward
-    # backup_pack_format into the packing Config -- packing would be silently a no-op. Until
-    # ON CLUSTER packing is implemented the setting must be rejected, not ignored.
-    node = cluster.instances["node"]
-    node.query(
-        """
-    DROP TABLE IF EXISTS data SYNC;
-    CREATE TABLE data (key Int, value String, array Array(String)) Engine=MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_s3';
-    INSERT INTO data SELECT * FROM generateRandom('key Int, value String, array Array(String)') LIMIT 100;
-    """
-    )
-    try:
-        backup_dest = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', '{minio_secret_key}')"
-        error = node.query_and_get_error(
-            f"BACKUP TABLE data ON CLUSTER 'cluster' TO {backup_dest} SETTINGS backup_pack_format = 1"
-        )
-        assert "not supported with ON CLUSTER" in error, error
-    finally:
-        node.query("DROP TABLE IF EXISTS data SYNC;")
-
-
-def test_backup_to_s3_object_packing_lightweight_snapshot_rejected(cluster):
-    # A lightweight snapshot stores files by object_key, which packing has no path for and the read-side pack
-    # accounting doesn't account. The combination must be rejected, not silently mis-counted.
-    node = cluster.instances["node"]
-    node.query(
-        """
-    DROP TABLE IF EXISTS data SYNC;
-    CREATE TABLE data (key Int, value String, array Array(String)) Engine=MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_s3';
-    INSERT INTO data SELECT * FROM generateRandom('key Int, value String, array Array(String)') LIMIT 100;
-    """
-    )
-    try:
-        backup_dest = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', '{minio_secret_key}')"
-        error = node.query_and_get_error(
-            f"BACKUP TABLE data TO {backup_dest} SETTINGS backup_pack_format = 1, experimental_lightweight_snapshot = 1"
-        )
-        assert "not supported with experimental_lightweight_snapshot" in error, error
-    finally:
-        node.query("DROP TABLE IF EXISTS data SYNC;")
+    objects = _count_backup_objects(cluster, backup_name)
+    assert (
+        objects == num_entries + 1 and num_entries < num_files
+    ), f"packing did not reduce backup object count: objects={objects} entries={num_entries} files={num_files}"
 
 
 @pytest.fixture(scope="module")

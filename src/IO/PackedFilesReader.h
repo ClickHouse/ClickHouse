@@ -52,13 +52,10 @@ public:
 
     static PackedFilesIO::Index readIndex(ReadBuffer & in);
 
-    /// ReadBufferFromFileView doesn't support reading with mmap and direct io methods, because they require
-    /// special alignment which cannot be achieved while reading archive file. So just disable them.
-    static ReadSettings patchSettings(ReadSettings settings);
+    /// Turns off O_DIRECT and switches mmap to pread, which ReadBufferFromFileView needs under it.
+    static ReadSettings disableDirectIOAndMmap(ReadSettings settings);
 
-    /// Wraps an already-opened archive buffer as a view over one member's [offset, offset + size) range.
-    /// Shared with callers that open the archive buffer themselves (e.g. a backup reader that goes through
-    /// IBackupReader rather than a DiskPtr).
+    /// Wraps an already opened archive buffer as a view over one member's [offset, offset + size) range.
     static std::unique_ptr<ReadBufferFromFileBase> viewMember(
         std::unique_ptr<ReadBufferFromFileBase> archive_buffer, const String & member_name, size_t offset, size_t size);
 

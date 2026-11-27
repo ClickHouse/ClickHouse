@@ -6,12 +6,12 @@
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
 #include <Common/Logger_fwd.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <atomic>
 #include <map>
 #include <memory>
 #include <mutex>
-#include <unordered_map>
-#include <unordered_set>
 
 
 namespace DB
@@ -164,29 +164,24 @@ private:
     std::unique_ptr<ReadBufferFromFileBase>
     readFileImpl(const String & file_name, const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
 
-    /// Location of a small blob inside a pack object (packed mode). The pack object name is not stored in
-    /// the manifest -- it is derived from the pack index -- so restore reads each pack's own front index
-    /// once and builds this map, keyed by the member's data_file id.
+    /// Where a packed data file's bytes are inside its pack object.
     struct MemberLocation
     {
-        String pack_object;
+        size_t pack_id = 0;
         UInt64 offset = 0;
         UInt64 size = 0;
-        /// Size of the whole pack object. A ranged copy needs it to pick a route the storage allows for that
-        /// source -- S3 accepts a byte-range copy source only above 5 MB, and a pack can be smaller than that
-        /// (backup_pack_size is a maximum). See IBackupReader::copyFileRangeToDisk.
-        UInt64 pack_object_size = 0;
     };
 
-    /// Reads each pack's front index (packs_0000 .. packs_{num_packs-1}) and fills `packed_members`.
+    /// Reads each pack's front index (packs_0000 .. packs_{num_packs-1}), checks that every member fits in its pack,
+    /// and fills `packed_members`.
     void loadPackIndexes() TSA_REQUIRES(mutex);
     /// Fails closed unless the pack indexes and the manifest agree on which data files are packed and on each
-    /// member's byte range.
-    void checkPacksMatchManifest(const std::unordered_set<String> & declared_packed_files) const TSA_REQUIRES(mutex);
+    /// member's size.
+    void checkPacksMatchManifest(const UnorderedSetWithMemoryTracking<String> & declared_packed_files) const TSA_REQUIRES(mutex);
     std::unique_ptr<ReadBufferFromFileBase> readPackedMember(const MemberLocation & member) const;
 
-    /// How the backup's objects are laid out. Set at construction; the read path upgrades a PerFile-opened
-    /// backup to Packed once the manifest reports num_packs > 0.
+    /// How the backup's objects are laid out, set at construction. Packed is set only on write, from the setting;
+    /// a read finds packed members via `packed_members`.
     enum class BackupLayout : uint8_t
     {
         PerFile, /// One object per backed-up file.
@@ -200,7 +195,7 @@ private:
     const BackupFactory::CreateParams params;
     BackupInfo backup_info;
     const String backup_name_for_logging;
-    BackupLayout layout;
+    const BackupLayout layout;
     const ArchiveParams archive_params;
     const OpenMode open_mode;
     /// Used to write data to destinated object storage.
@@ -224,13 +219,12 @@ private:
     /// Instead of `file_infos` when the backup is opened only for lookups (`CreateParams::for_file_lookups_only`): the sizes
     /// and checksums of its files, sorted and without duplicates. Without empty files.
     std::vector<SizeAndChecksum> sizes_and_checksums TSA_GUARDED_BY(mutex);
-    /// data_file id -> its location inside a pack. Built once at restore start (see loadPackIndexes),
-    /// immutable afterwards. Empty for non-packed backups.
-    std::unordered_map<String, MemberLocation> packed_members TSA_GUARDED_BY(mutex);
-    size_t num_packs = 0; /// Number of pack objects (from the manifest on read; computed on write).
-    /// pack_id -> serialized size of the pack object (front index + member bodies), recorded as each pack is
-    /// written. Used by writeBackupMetadata to account a pack as one entry whose size includes the index.
-    std::map<size_t, UInt64> pack_object_sizes TSA_GUARDED_BY(mutex);
+    /// data_file_name -> its location inside a pack. Built once at restore start (see loadPackIndexes).
+    /// Empty for non-packed backups.
+    UnorderedMapWithMemoryTracking<String, MemberLocation> packed_members TSA_GUARDED_BY(mutex);
+    /// Number of pack objects: from the manifest on read, counted as they are written on write.
+    size_t num_packs TSA_GUARDED_BY(mutex) = 0;
+    UInt64 size_of_packs TSA_GUARDED_BY(mutex) = 0; /// Total size of the written pack objects, front indexes included.
     /// object_key -> file name, only used by lightweight snapshot
     std::unordered_map<String, String> file_object_keys TSA_GUARDED_BY(mutex);
     std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);

@@ -3,17 +3,28 @@
 #include <IO/Archives/PackedArchiveWriter.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <Common/MapWithMemoryTracking.h>
 
 
 namespace DB
 {
 
-void BackupPacker::writePack(std::unique_ptr<WriteBuffer> out, const std::vector<MemberSource> & members, UInt8 version)
+UInt64 BackupPacker::writePack(std::unique_ptr<WriteBuffer> out, const std::vector<MemberSource> & members, UInt8 version)
 {
+    const WriteBuffer & written = *out;
     VectorWithMemoryTracking<PackedArchiveWriter::Member> manifest;
-    manifest.reserve(members.size());
-    for (const auto & member : members)
-        manifest.push_back({member.name, member.size});
+    /// out is not owned by a writer yet, so cancel it here or an abandoned buffer may publish an empty pack.
+    try
+    {
+        manifest.reserve(members.size());
+        for (const auto & member : members)
+            manifest.push_back({member.name, member.size});
+    }
+    catch (...)
+    {
+        out->cancel();
+        throw;
+    }
 
     PackedArchiveWriter writer(std::move(out), std::move(manifest), version);
     for (const auto & member : members)
@@ -22,13 +33,14 @@ void BackupPacker::writePack(std::unique_ptr<WriteBuffer> out, const std::vector
         writer.writeMember(member.name, *in);
     }
     writer.finalize();
+    return written.count();
 }
 
-std::map<size_t, std::vector<size_t>> BackupPacker::selectPackMembers(const BackupFileInfos & file_infos)
+VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> BackupPacker::selectPackMembers(const BackupFileInfos & file_infos)
 {
-    /// Compare names explicitly rather than by position: this vector is in getFileInfos() insertion order,
-    /// while data_file_index indexes the separately-sorted file_infos_for_all_hosts.
-    std::map<size_t, size_t> representative_by_data_file;
+    /// file_infos is in getFileInfos() insertion order; data_file_index indexes the separately sorted
+    /// file_infos_for_all_hosts, so match representatives by file_name.
+    MapWithMemoryTracking<size_t, size_t> representative_by_data_file;
     for (size_t i = 0; i != file_infos.size(); ++i)
     {
         const auto & info = file_infos[i];
@@ -39,10 +51,15 @@ std::map<size_t, std::vector<size_t>> BackupPacker::selectPackMembers(const Back
             it->second = i;
     }
 
-    std::map<size_t, std::vector<size_t>> pack_to_member_indices;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> member_indices_by_pack_id;
     for (const auto & [data_file_index, member_index] : representative_by_data_file)
-        pack_to_member_indices[static_cast<size_t>(file_infos[member_index].pack_id)].push_back(member_index);
-    return pack_to_member_indices;
+    {
+        const auto pack_id = static_cast<size_t>(file_infos[member_index].pack_id);
+        if (pack_id >= member_indices_by_pack_id.size())
+            member_indices_by_pack_id.resize(pack_id + 1);
+        member_indices_by_pack_id[pack_id].push_back(member_index);
+    }
+    return member_indices_by_pack_id;
 }
 
 }

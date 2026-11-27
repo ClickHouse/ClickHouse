@@ -117,16 +117,17 @@ off_t ReadBufferFromFileView::seek(off_t off, int whence)
 
     size_t new_pos = left_bound + static_cast<size_t>(base + off);
 
-    /// Check the position we asked for, against the *effective* bound: an impl may report a different one --
-    /// floored to a required alignment (direct IO) or clamped to its own read-until -- while still landing on
-    /// `new_pos`. Rejecting anything past getRightBound() leaves nothing to clamp, so `new_pos` is honest.
-    if (new_pos > getRightBound())
+    off_t result = 0;
+    executeWithOriginalBuffer([&] { result = impl->seek(new_pos, SEEK_SET); });
+
+    if (result < 0)
+        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position ({}) underflow", result);
+
+    if (static_cast<size_t>(result) < left_bound || static_cast<size_t>(result) > right_bound)
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
-            "Seek position ({}) is out of bound. Available range: [{}, {}]", new_pos, left_bound, getRightBound());
+            "Seek position ({}) is out of bound. Available range: [{}, {}]", result, left_bound, right_bound);
 
-    executeWithOriginalBuffer([&] { impl->seek(new_pos, SEEK_SET); });
-
-    return new_pos - left_bound;
+    return result - left_bound;
 }
 
 template <typename Op>

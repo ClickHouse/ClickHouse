@@ -249,7 +249,7 @@ PackedFilesWriter::FinalizePlan PackedFilesWriter::prepareFinalize(const Strings
     }
     chassert(ordered_file_names.size() == num_files, "Number of files in ordered list doesn't match the number of written files");
 
-    /// Bodies start right after the serialized front index.
+    /// Calculate the size of index.
     UInt64 data_offset = getSerializedIndexSize(ordered_file_names, version);
 
     PackedFilesIO::Index index;

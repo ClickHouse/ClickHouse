@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-ordinary-database, no-encrypted-storage
-# ^ backups need a running server with a configured 'backups' disk; the KeeperMap case below needs table UUIDs,
-#   without which renaming a table can move the data to the other one.
-#   encrypted disks add a random per-file IV, so no two files are byte-identical and nothing deduplicates.
+# ^ needs the 'backups' disk; the KeeperMap renames need table UUIDs; encrypted disks make no two files identical.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,7 +14,7 @@ name="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 # Three identical columns in a wide part give several byte-identical files, stored as one object each.
 # min_bytes_for_full_part_storage=0 keeps the part one file per column: packed part storage would put the
-# whole part in a single data.packed blob, leaving nothing to deduplicate.
+# whole part in a single data.packed file, leaving nothing to deduplicate.
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (a UInt64, b UInt64, c UInt64) ENGINE=MergeTree ORDER BY a
@@ -36,26 +34,24 @@ roundtrip() {
 
 roundtrip first ""
 roundtrip checksum ", data_file_name_generator='checksum'"
+# A plain backup stores every file as its own object, duplicates included.
 roundtrip nodedup ", deduplicate_files=0"
 
-# Two KeeperMap tables sharing one Keeper path store the data once: the second table's entry is a reference to
-# the first table's file. A reference inherits its target's object name but keeps pack_id == -1, so with
-# packing on it must not be counted as an object of its own -- the pack already accounts for those bytes.
+# Two KeeperMap tables sharing one Keeper path store the data once, so the second's entry references the first's file.
+# The reference has no object of its own: with packing on, it must not be counted in addition to the pack holding the bytes.
 ${CLICKHOUSE_CLIENT} -m --query "
 CREATE TABLE km_a (key UInt64, value String) ENGINE=KeeperMap('/' || currentDatabase() || '/04654') PRIMARY KEY key;
 CREATE TABLE km_b (key UInt64, value String) ENGINE=KeeperMap('/' || currentDatabase() || '/04654') PRIMARY KEY key;
 INSERT INTO km_a SELECT number, 'v' || toString(number) FROM numbers(50);
 "
 
-# The miscount only shows when the reference is iterated before its target, and which table holds the data is
-# not ours to pick. Iteration follows the backup path order, which the names decide, so back the same pair up
-# under both name orders; taking both backups before either restore keeps the roles fixed between them.
+# The miscount appears only if the reference is iterated before its target, so back the pair up under both name orders.
 packref_backup() {
     local tag=$1 name_a=$2 name_b=$3
     ${CLICKHOUSE_CLIENT} --query "RENAME TABLE km_a TO ${name_a}, km_b TO ${name_b}"
     ${CLICKHOUSE_CLIENT} --query "
         BACKUP TABLE ${name_a}, TABLE ${name_b} TO Disk('backups', '${name}_${tag}')
-        SETTINGS id='${name}_${tag}_backup', backup_pack_format=1" | grep -o BACKUP_CREATED
+        SETTINGS id='${name}_${tag}_backup', backup_use_packed_format=1" | grep -o BACKUP_CREATED
     ${CLICKHOUSE_CLIENT} --query "RENAME TABLE ${name_a} TO km_a, ${name_b} TO km_b"
 }
 

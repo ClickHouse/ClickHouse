@@ -28,11 +28,10 @@ public:
         BackupDataFileNameGeneratorType data_file_name_generator;
         size_t data_file_name_prefix_length;
 
-        /// Experimental object packing (see BackupSettings). When off (the default) the assignment below
-        /// is byte-for-byte the historical behavior.
-        bool pack_format = false;
+        /// See BackupSettings::backup_use_packed_format.
+        bool use_packed_format = false;
         UInt64 pack_size = 0;      /// Target size of one pack object.
-        UInt64 pack_min_size = 0;  /// Blobs with physical payload below this get packed; others stay their own object.
+        UInt64 pack_min_size = 0;  /// Data files with a physical size below this get packed; others stay their own object.
     };
 
     explicit BackupCoordinationFileInfos(const Config & config_)
@@ -59,9 +58,8 @@ public:
 private:
     void prepare() const;
 
-    /// Packed mode only: bin-pack representative blobs with a small physical payload into packs of about
-    /// config.pack_size and set BackupFileInfo::pack_id (representatives and their duplicates); large blobs
-    /// keep their own object. Must run after dedup/reference resolution.
+    /// Bin-packs representative data files smaller than config.pack_min_size into packs of about config.pack_size
+    /// and sets BackupFileInfo::pack_id of them and their duplicates. Runs after dedup and reference resolution.
     void assignPacks() const;
 
     /// before preparation
