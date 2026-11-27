@@ -2849,7 +2849,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     const UInt64 max_parser_backtracks = settings[Setting::max_parser_backtracks];
 
     MutationCommands result;
-    for (const auto & alter_cmd : *this)
+    auto convert = [&](const AlterCommand & alter_cmd)
     {
         if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context, share_nested_offsets); mutation_cmd)
         {
@@ -2865,6 +2865,40 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
                 .has_partition = isCommandScopedToPartitions(alter_cmd.ast->as<const ASTAlterCommand &>()),
             });
         }
+    };
+
+    /// A mutation matches the columns of a part by exact name, so `CLEAR COLUMN` of a Nested group clears its columns one
+    /// by one: the group as `MergeTreeData::checkAlterEligibility` checks it, in the columns before the ALTER, each under
+    /// the name the previous commands gave it.
+    const ColumnsDescription columns_before_alter = metadata.columns;
+    NameToNameMap renamed_columns; /// name before the ALTER -> name after the previous commands
+    for (const auto & alter_cmd : *this)
+    {
+        if (alter_cmd.type == AlterCommand::DROP_COLUMN && alter_cmd.clear && share_nested_offsets
+            && !alter_cmd.isClearOfBlockColumns(metadata)
+            && !columns_before_alter.has(alter_cmd.column_name) && columns_before_alter.hasNested(alter_cmd.column_name))
+        {
+            for (const auto & column : columns_before_alter.getNested(alter_cmd.column_name))
+            {
+                auto renamed = renamed_columns.find(column.name);
+                const String & name = renamed == renamed_columns.end() ? column.name : renamed->second;
+                if (!metadata.columns.has(name))
+                    continue;
+
+                AlterCommand clear_column = alter_cmd;
+                clear_column.column_name = name;
+                auto ast = alter_cmd.ast->clone();
+                auto & alter_ast = ast->as<ASTAlterCommand &>();
+                alter_ast.IAST::replace(alter_ast.column, make_intrusive<ASTIdentifier>(name));
+                clear_column.ast = std::move(ast);
+                convert(clear_column);
+            }
+        }
+        else
+            convert(alter_cmd);
+
+        if (alter_cmd.type == AlterCommand::RENAME_COLUMN && !alter_cmd.ignore)
+            renamed_columns.emplace(alter_cmd.column_name, alter_cmd.rename_to);
     }
 
     if (materialize_ttl)

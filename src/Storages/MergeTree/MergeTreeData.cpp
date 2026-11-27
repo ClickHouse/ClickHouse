@@ -7149,14 +7149,23 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 /// we will clear the index files (as we do with the column files) in any other case
                 if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
                 {
-                    if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
+                    /// The CLEAR of a Nested group clears each column of the group.
+                    Names cleared_columns{command.column_name};
+                    if (is_initial_alter && share_nested_offsets && !command.isClearOfBlockColumns(old_metadata)
+                        && !old_metadata.columns.has(command.column_name))
+                        cleared_columns = old_metadata.columns.getNested(command.column_name).getNames();
+
+                    for (const auto & cleared_column : cleared_columns)
                     {
-                        throw Exception(
-                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                            "The ALTER CLEAR of the column '{}' is forbidden because it is used by the index '{}'. Check the "
-                            "MergeTree setting 'alter_column_secondary_index_mode' to change this behaviour",
-                            backQuoteIfNeed(command.column_name),
-                            it->second);
+                        if (auto it = columns_in_explicit_indices.find(cleared_column); it != columns_in_explicit_indices.end())
+                        {
+                            throw Exception(
+                                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                "The ALTER CLEAR of the column '{}' is forbidden because it is used by the index '{}'. Check the "
+                                "MergeTree setting 'alter_column_secondary_index_mode' to change this behaviour",
+                                backQuoteIfNeed(cleared_column),
+                                it->second);
+                        }
                     }
                 }
             }
