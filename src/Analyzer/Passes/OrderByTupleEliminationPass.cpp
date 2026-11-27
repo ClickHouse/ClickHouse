@@ -39,12 +39,21 @@ public:
             }
 
             auto & tuple_arguments_nodes = function_expression->getArguments().getNodes();
-            for (auto & argument_node : tuple_arguments_nodes)
+            const auto & arguments_indexes = sort_node_typed.getArgumentsProjectionColumnIndexes();
+
+            /// A tuple selected as a whole stays a sort key too, so that rows added by WITH FILL have its value.
+            bool keep_tuple = !sort_node_typed.getProjectionColumnIndexes().empty();
+            if (keep_tuple)
+                result_nodes.push_back(sort_node);
+
+            for (size_t i = 0; i < tuple_arguments_nodes.size(); ++i)
             {
-                auto result_sort_node = std::make_shared<SortNode>(argument_node,
+                auto result_sort_node = std::make_shared<SortNode>(keep_tuple ? tuple_arguments_nodes[i]->clone() : tuple_arguments_nodes[i],
                     sort_node_typed.getSortDirection(),
                     sort_node_typed.getNullsSortDirection(),
                     sort_node_typed.getCollator());
+                if (i < arguments_indexes.size())
+                    result_sort_node->setProjectionColumnIndexes(arguments_indexes[i]);
                 result_nodes.push_back(std::move(result_sort_node));
             }
         }
