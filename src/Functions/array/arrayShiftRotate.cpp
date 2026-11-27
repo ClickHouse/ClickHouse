@@ -52,13 +52,20 @@ public:
 
     /// A `Dynamic` or `Variant` default that the array elements already accept, as a `Dynamic` default of an `Array(Dynamic)`,
     /// is handled here: the adaptor would apply its NULL handling to it and change the result type from `Array`.
+    /// While the array is itself `Dynamic` or `Variant`, its element type is not known yet, so the adaptor resolves
+    /// the array first, and the default is decided for each of its types.
     [[nodiscard]] bool useDefaultImplementationForDynamicOrVariantArgument(const ColumnsWithTypeAndName & arguments, size_t argument_index) const override
     {
         if constexpr (strategy == ShiftRotateStrategy::Shift)
         {
             if (argument_index == 2 && arguments.size() == 3)
-                if (const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get()))
+            {
+                const auto & array_argument_type = arguments[0].type;
+                if (isDynamic(array_argument_type) || isVariant(array_argument_type))
+                    return false;
+                if (const auto * array_type = typeid_cast<const DataTypeArray *>(array_argument_type.get()))
                     return !defaultFitsElementType(array_type->getNestedType(), arguments[2].type);
+            }
         }
         return true;
     }

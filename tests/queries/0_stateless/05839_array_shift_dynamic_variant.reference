@@ -11,3 +11,9 @@
 [2,3,9]	Array(Variant(String, UInt8))
 [9,1,2]
 [2,3,NULL]
+[2,3,NULL]
+[2,3]
+[2,3,0]
+[2,3,NULL]
+[2,3,2]
+[2,3,NULL]
