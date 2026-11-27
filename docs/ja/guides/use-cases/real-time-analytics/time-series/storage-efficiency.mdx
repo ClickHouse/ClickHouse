@@ -11,9 +11,7 @@ doc_type: 'guide'
 Wikipedia の統計データセットに対するクエリ方法を見てきたので、次は ClickHouse でのストレージ効率の最適化に焦点を当てます。
 このセクションでは、クエリパフォーマンスを維持しながらストレージ要件を削減するための実践的な手法を紹介します。
 
-<div id="time-series-type-optimization">
-  ## 型の最適化
-</div>
+## 型の最適化 {#time-series-type-optimization}
 
 ストレージ効率を最適化する一般的な方法は、適切なデータ型を使用することです。
 `project` と `subproject` のカラムを見てみましょう。これらのカラムは String 型ですが、一意の値の数は比較的少数です。
@@ -61,9 +59,7 @@ MODIFY COLUMN `hits` UInt32;
 
 これにより、メモリ内のこのカラムのサイズを少なくとも半分にできます。なお、圧縮されるため、ディスク上のサイズは変わりません。ただし、データ型は小さすぎるものを選ばないよう注意してください。
 
-<div id="time-series-specialized-codecs">
-  ## 特殊なコーデック
-</div>
+## 特殊なコーデック {#time-series-specialized-codecs}
 
 時系列データのような連続したデータを扱う場合は、特殊なコーデックを使うことでストレージ効率をさらに高められます。
 基本的な考え方は、値そのものではなく値の変化分を保存するというもので、変化が緩やかなデータでは必要な容量を大幅に削減できます。
@@ -97,7 +93,7 @@ ORDER BY (time);
 ```sql
 CREATE TABLE optimized_wikistat
 (
-    `time` DateTime CODEC(Delta(4), ZSTD(1)),
+    `time` DateTime CODEC(Delta, Default),
     `project` LowCardinality(String),
     `subproject` LowCardinality(String),
     `path` String,

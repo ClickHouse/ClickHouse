@@ -101,6 +101,10 @@ struct MergedPlanDAG
     /// order. What a step passes through without reading is only here.
     UnorderedMapWithMemoryTracking<const QueryPlan::Node *, ActionsDAG::NodeRawConstPtrs> step_outputs;
 
+    /// Join outputs with a name clash, see `JoinStepLogical::getOutputPositionsWithNameClash`. They are not touched:
+    /// each crosses the `LIMIT` as its join outputs it, and is never read lazily or computed again above it.
+    NodeSet name_clash_outputs;
+
     [[nodiscard]] const ActionsDAG & getDAG() const { return *expression_actions.getActionsDAG(); }
 
     /// Nodes for the columns of the subtree's output header, in order.

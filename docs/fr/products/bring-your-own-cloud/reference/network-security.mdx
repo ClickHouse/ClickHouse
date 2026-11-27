@@ -2,7 +2,7 @@
 title: 'Sécurité réseau du BYOC'
 slug: /cloud/reference/byoc/reference/network_security
 sidebarTitle: 'Sécurité réseau'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'sécurité réseau', 'aws', 'gcp', 'azure', 'frontières réseau', 'firewall']
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'sécurité réseau', 'aws', 'gcp', 'azure', 'frontières réseau', 'pare-feu']
 description: 'Déployez ClickHouse dans votre propre infrastructure cloud'
 doc_type: 'reference'
 ---
@@ -43,13 +43,13 @@ Sur GCP, un périmètre VPC Service Controls qui restreint `container.googleapis
 La section suivante explique comment le réseau privé **Tailscale** est utilisé pour le dépannage et l’accès de gestion facultatif.
 
 <div id="tailscale-private-network">
-  ## Réseau privé Tailscale
+  ## Réseau privé Tailscale {#tailscale-private-network}
 </div>
 
 Tailscale fournit une connexion réseau privée de type zero trust entre les services de gestion de ClickHouse Cloud et votre déploiement BYOC. Ce canal sécurisé permet aux ingénieurs ClickHouse d’effectuer des opérations de dépannage et de gestion sans nécessiter d’accès entrant au réseau public ni de configurations VPN complexes ; les agents eux-mêmes établissent uniquement des connexions sortantes et nécessitent un accès Internet sortant pour atteindre le service de coordination Tailscale.
 
 <div id="tailscale-overview">
-  ### Vue d’ensemble
+  ### Vue d’ensemble {#tailscale-overview}
 </div>
 
 Tailscale crée un tunnel réseau privé et chiffré entre le plan de contrôle de ClickHouse (dans le VPC de ClickHouse) et votre plan de données BYOC (dans votre VPC). Cette connexion est utilisée exclusivement pour :
@@ -65,30 +65,26 @@ Tailscale crée un tunnel réseau privé et chiffré entre le plan de contrôle 
 ### Fonctionnement de Tailscale dans BYOC {#how-tailscale-works}
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![BYOC Tailscale](/images/cloud/reference/byoc-tailscale-1.webp)
-
-</Frame>
-
+  <Frame>
+    ![BYOC Tailscale](/images/cloud/reference/byoc-tailscale-1.webp)
+  </Frame>
 </div>
 
-Pour chaque service ou point de terminaison qui doit être accessible via Tailscale, ClickHouse BYOC déploie :
+Pour chaque service ou endpoint qui doit être accessible via Tailscale, ClickHouse BYOC déploie :
 
-1. **Enregistrement de l’adresse tailnet** : chaque point de terminaison enregistre une adresse tailnet unique (par ex., `k8s.xxxx.us-east-1.aws.byoc.clickhouse-prd.com` pour le serveur d’API Kubernetes)
+1. **Enregistrement de l’adresse tailnet** : chaque endpoint enregistre une adresse tailnet unique (par ex., `k8s.xxxx.us-east-1.aws.byoc.clickhouse-prd.com` pour le serveur API Kubernetes)
 
-2. **Conteneur d’agent Tailscale** : un conteneur d’agent Tailscale s’exécute dans votre cluster Kubernetes et se charge de :
+2. **Conteneur d’agent Tailscale** : un conteneur d’agent Tailscale s’exécute dans votre cluster Kubernetes et se charge de :
    * Se connecter au serveur de coordination Tailscale
    * Enregistrer les services afin de les rendre détectables
    * Coordonner la configuration réseau avec les pods Nginx
 
-3. **Pod Nginx** : un pod Nginx qui :
+3. **Pod Nginx** : un pod Nginx qui :
    * Termine le trafic TLS provenant de Tailscale
    * Achemine le trafic vers les adresses IP appropriées au sein de votre cluster Kubernetes
 
 <div id="tailscale-connection-process">
-  ### Processus de connexion réseau
+  ### Processus de connexion réseau {#tailscale-connection-process}
 </div>
 
 L’établissement de la connexion Tailscale suit les étapes suivantes :

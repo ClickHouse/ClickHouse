@@ -4,7 +4,7 @@ title: 'Глубокие ссылки'
 sidebarTitle: 'Глубокие ссылки'
 description: 'Прямые ссылки на страницы ClickStack с параметрами запроса URL'
 doc_type: 'reference'
-keywords: ['ClickStack', 'параметры URL', 'параметры запроса', 'глубокие ссылки', 'постоянная ссылка', 'HyperDX']
+keywords: ['ClickStack', 'параметры URL', 'параметры запроса', 'глубокие ссылки', 'постоянная ссылка', 'интерфейс ClickStack']
 ---
 
 Страницы ClickStack можно открывать по глубоким ссылкам с параметрами запроса URL, чтобы сразу перейти к определенному поиску, панели мониторинга или панели из внешней системы (уведомления об оповещении, runbook, задачи CI, сообщения в чате и т. д.).
@@ -27,9 +27,7 @@ keywords: ['ClickStack', 'параметры URL', 'параметры запр�
   ```
 </Info>
 
-<div id="search">
-  ## Поиск — `/search`
-</div>
+## Поиск — `/search` {#search}
 
 Основное представление для поиска журналов и трассировок. Подробнее о синтаксисе поиска см. в разделе [Поиск](/ru/clickstack/features/search).
 
@@ -48,25 +46,19 @@ keywords: ['ClickStack', 'параметры URL', 'параметры запр�
 
 Сохранённый поиск также можно открыть напрямую по адресу `/search/<savedSearchId>`.
 
-<div id="example-search-errors">
-  ### Пример: поиск ошибок сервиса `checkout` в источнике `Logs` за указанный временной диапазон
-</div>
+### Пример: поиск ошибок сервиса `checkout` в источнике `Logs` за указанный временной диапазон {#example-search-errors}
 
 ```text
 <YOUR_CLICKSTACK_URL>/search?source=Logs&from=1735689600000&to=1735693200000&where=level:error&filters=[{"type":"sql","condition":"ServiceName IN ('checkout')"}]
 ```
 
-<div id="example-search-trace">
-  ### Пример: переход сразу к представлению трассировки в виде водопада
-</div>
+### Пример: переход сразу к представлению трассировки в виде водопада {#example-search-trace}
 
 ```text
 <YOUR_CLICKSTACK_URL>/search?source=Traces&traceId=ba7217967eb90d040b7eb39f97ecc5c4
 ```
 
-<div id="saved-searches">
-  ## Сохранённые поиски — `/search/list`
-</div>
+## Сохранённые поиски — `/search/list` {#saved-searches}
 
 Список сохранённых поисков.
 
@@ -74,17 +66,13 @@ keywords: ['ClickStack', 'параметры URL', 'параметры запр�
 | -------- | ------ | ---------------------------------------------------------------- |
 | `tag`    | string | Фильтрует список, оставляя сохранённые поиски с указанным тегом. |
 
-<div id="example-saved-searches-tag">
-  ### Пример: список сохранённых поисков с тегом `production`
-</div>
+### Пример: список сохранённых поисков с тегом `production` {#example-saved-searches-tag}
 
 ```text
 <YOUR_CLICKSTACK_URL>/search/list?tag=production
 ```
 
-<div id="dashboards">
-  ## Панели мониторинга — `/dashboards/<dashboardId>`
-</div>
+## Панели мониторинга — `/dashboards/<dashboardId>` {#dashboards}
 
 Сохранённая панель мониторинга. Не указывайте `<dashboardId>` (`/dashboards`), чтобы открыть временную несохранённую панель мониторинга. Подробнее о создании панелей мониторинга см. в разделе [Панели мониторинга](/ru/clickstack/features/dashboards/overview).
 
@@ -97,9 +85,7 @@ keywords: ['ClickStack', 'параметры URL', 'параметры запр�
 | `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | Размер бакета для плиток временных рядов. `auto` выбирает размер бакета в зависимости от выбранного временного диапазона.     |
 | `highlightedTileId` | string                                                                                                                              | Прокручивает страницу до указанной плитки и выделяет её — полезно при переходе по ссылке из alert.                            |
 
-<div id="example-dashboard-highlight">
-  ### Пример: открыть панель мониторинга за указанный временной диапазон с выделенной плиткой
-</div>
+### Пример: открыть панель мониторинга за указанный временной диапазон с выделенной плиткой {#example-dashboard-highlight}
 
 Полезно, если нужно перейти из уведомления об оповещении сразу к плитке, вызвавшей его.
 
@@ -107,25 +93,19 @@ keywords: ['ClickStack', 'параметры URL', 'параметры запр�
 <YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
 ```
 
-<div id="dashboards-list">
-  ## Список панелей мониторинга — `/dashboards/list`
-</div>
+## Список панелей мониторинга — `/dashboards/list` {#dashboards-list}
 
 | Параметр | Формат | Описание                                       |
 | -------- | ------ | ---------------------------------------------- |
 | `tag`    | string | Фильтрация списка панелей мониторинга по тегу. |
 
-<div id="example-dashboards-list-tag">
-  ### Пример: вывод панелей мониторинга с тегом `infra`
-</div>
+### Пример: вывод панелей мониторинга с тегом `infra` {#example-dashboards-list-tag}
 
 ```text
 <YOUR_CLICKSTACK_URL>/dashboards/list?tag=infra
 ```
 
-<div id="chart-explorer">
-  ## Chart Explorer — `/chart`
-</div>
+## Chart Explorer — `/chart` {#chart-explorer}
 
 Конструктор диаграмм для разового использования с возможностью поделиться результатом.
 
@@ -134,17 +114,13 @@ keywords: ['ClickStack', 'параметры URL', 'параметры запр�
 | `config`     | JSON               | Полная конфигурация диаграммы (source, select, where, тип диаграммы и т. д.). Обычно создаётся с помощью ссылок «Share» в приложении, а не вручную. |
 | `from`, `to` | миллисекунды эпохи | Временной диапазон. Если не указан, по умолчанию используется период за последние 15 минут.                                                         |
 
-<div id="example-chart-config">
-  ### Пример: откройте конфигурацию диаграммы задержки p99 за выбранный временной диапазон
-</div>
+### Пример: откройте конфигурацию диаграммы задержки p99 за выбранный временной диапазон {#example-chart-config}
 
 ```text
 <YOUR_CLICKSTACK_URL>/chart?granularity=auto&from=1785759381784&to=1785762981785&config={"name":"","select":[{"aggFn":"quantile","aggCondition":"","aggConditionLanguage":"lucene","valueExpression":"Duration","level":0.99,"alias":"p99"}],"where":"","whereLanguage":"lucene","displayType":"line","alignDateRangeToGranularity":true,"source":"68814eb5d40a9d0449afc1f2","connection":"68814b6fd40a9d0449afbe78","groupBy":"ServiceName"}
 ```
 
-<div id="alerts">
-  ## Оповещения — `/alerts`
-</div>
+## Оповещения — `/alerts` {#alerts}
 
 Подробнее о создании оповещений и управлении ими см. в разделе [Оповещения](/ru/clickstack/features/alerts).
 
@@ -154,17 +130,13 @@ keywords: ['ClickStack', 'параметры URL', 'параметры запр�
 | `tag`     | string | Фильтр по тегу.                                            |
 | `creator` | string | Фильтр по имени создателя оповещения.                      |
 
-<div id="example-alerts-filter">
-  ### Пример: список оповещений с тегом `on-call`
-</div>
+### Пример: список оповещений с тегом `on-call` {#example-alerts-filter}
 
 ```text
 <YOUR_CLICKSTACK_URL>/alerts?tag=on-call
 ```
 
-<div id="session-replay">
-  ## Воспроизведение сеанса — `/sessions`
-</div>
+## Воспроизведение сеанса — `/sessions` {#session-replay}
 
 Просмотр и воспроизведение сеансов. Подробнее см. в разделе [Воспроизведение сеанса](/ru/clickstack/features/session-replay).
 
@@ -177,25 +149,19 @@ keywords: ['ClickStack', 'параметры URL', 'параметры запр�
 | `sid`           | string             | Открывает определённый сеанс по идентификатору.                                                       |
 | `sfrom`, `sto`  | миллисекунды эпохи | Временное окно открытого сеанса (используется с `sid`).                                               |
 
-<div id="example-sessions-time-range">
-  ### Пример: Просмотр воспроизведений сеансов за выбранный временной диапазон
-</div>
+### Пример: Просмотр воспроизведений сеансов за выбранный временной диапазон {#example-sessions-time-range}
 
 ```text
 <YOUR_CLICKSTACK_URL>/sessions?from=1735689600000&to=1735693200000
 ```
 
-<div id="example-sessions-open">
-  ### Пример: Откройте конкретное воспроизведение сеанса за записанный временной диапазон
-</div>
+### Пример: Откройте конкретное воспроизведение сеанса за записанный временной диапазон {#example-sessions-open}
 
 ```text
 <YOUR_CLICKSTACK_URL>/sessions?sid=6712abf0e4b0f2a1c3d4e5f6&sfrom=1735689600000&sto=1735690200000
 ```
 
-<div id="service-map">
-  ## Карта сервисов — `/service-map`
-</div>
+## Карта сервисов — `/service-map` {#service-map}
 
 Подробные сведения см. в разделе [Карта сервисов](/ru/clickstack/service-maps).
 
@@ -205,17 +171,13 @@ keywords: ['ClickStack', 'параметры URL', 'параметры запр�
 | `samplingFactor` | целое число        | Делитель сэмплирования трассировок (`1` = 100% трассировок, `2` = 50%, `4` = 25% и т. д.).    |
 | `from`, `to`     | миллисекунды эпохи | Временной диапазон. Если не указан, по умолчанию используется диапазон за последние 15 минут. |
 
-<div id="example-service-map">
-  ### Пример: просмотр карты сервисов за временной диапазон
-</div>
+### Пример: просмотр карты сервисов за временной диапазон {#example-service-map}
 
 ```text
 <YOUR_CLICKSTACK_URL>/service-map?from=1735689600000&to=1735693200000
 ```
 
-<div id="services">
-  ## Сервисы — `/services`
-</div>
+## Сервисы — `/services` {#services}
 
 Панели мониторинга HTTP, базы данных и ошибок для отдельных сервисов.
 
@@ -229,25 +191,19 @@ keywords: ['ClickStack', 'параметры URL', 'параметры запр�
 | `filters`       | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]` | Значения панели фильтров панели мониторинга.                                                  |
 | `from`, `to`    | миллисекунды эпохи                                                         | Временной диапазон. Если не указаны, по умолчанию используются последние 15 минут.            |
 
-<div id="example-services-database">
-  ### Пример: просмотр панели мониторинга базы данных сервиса за указанный временной диапазон
-</div>
+### Пример: просмотр панели мониторинга базы данных сервиса за указанный временной диапазон {#example-services-database}
 
 ```text
 <YOUR_CLICKSTACK_URL>/services?tab=database&service=checkout&from=1735689600000&to=1735693200000
 ```
 
-<div id="example-services-errors">
-  ### Пример: просмотр панели мониторинга ошибок сервиса
-</div>
+### Пример: просмотр панели мониторинга ошибок сервиса {#example-services-errors}
 
 ```text
 <YOUR_CLICKSTACK_URL>/services?tab=errors&service=payments
 ```
 
-<div id="kubernetes">
-  ## Kubernetes — `/kubernetes`
-</div>
+## Kubernetes — `/kubernetes` {#kubernetes}
 
 | Параметр                               | Формат                                  | Описание                                                                                                                                   |
 | -------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -257,17 +213,13 @@ keywords: ['ClickStack', 'параметры URL', 'параметры запр�
 | `podName`, `nodeName`, `namespaceName` | string                                  | Открывает панель сведений о конкретном поде, узле или пространстве имен.                                                                   |
 | `from`, `to`                           | миллисекунды эпохи                      | Временной диапазон. Если не указано, по умолчанию используются последние 15 минут.                                                         |
 
-<div id="example-kubernetes-pod">
-  ### Пример: откройте панель сведений о конкретном поде
-</div>
+### Пример: откройте панель сведений о конкретном поде {#example-kubernetes-pod}
 
 ```text
 <YOUR_CLICKSTACK_URL>/kubernetes?tab=pods&podName=checkout-7d9f8b5c-2xk9p
 ```
 
-<div id="notebooks">
-  ## Блокноты — `/notebook/<notebookId>`
-</div>
+## Блокноты — `/notebook/<notebookId>` {#notebooks}
 
 <Info>
   **Только в Управляемом ClickStack**
@@ -275,9 +227,7 @@ keywords: ['ClickStack', 'параметры URL', 'параметры запр�
   Блокноты доступны только в развертываниях Управляемого ClickStack. Подробнее см. в разделе [ИИ-блокноты](/ru/clickstack/notebooks).
 </Info>
 
-<div id="example-notebook-open">
-  ### Пример: откройте конкретный блокнот в указанном сервисе ClickHouse Cloud
-</div>
+### Пример: откройте конкретный блокнот в указанном сервисе ClickHouse Cloud {#example-notebook-open}
 
 ```text
 <YOUR_CLICKSTACK_URL>/notebook/64f1c2a1e8b9f3a1b0d2e5c7?chcServiceId=abc123

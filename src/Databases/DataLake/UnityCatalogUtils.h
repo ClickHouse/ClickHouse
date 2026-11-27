@@ -33,6 +33,12 @@ inline constexpr auto UNITY_DELTA_DATA_SOURCE_FORMAT = "DELTA";
 /// `securable_kind` and `data_source_format` must name Delta when present. At least one must be present.
 bool isUnityDeltaTable(const Poco::JSON::Object::Ptr & table_json);
 
+/// Whether a `GET /schemas` entry belongs to catalog `catalog_name`. Unity stores names in lowercase.
+bool isUnitySchemaOfCatalog(const Poco::JSON::Object::Ptr & schema_info, const String & catalog_name);
+
+/// Throws if a listing returns a `next_page_token` it already returned, which would repeat pages forever.
+void checkUnityPageTokenIsNew(std::unordered_set<String> & seen_tokens, const String & token, const String & listing);
+
 }
 
 #endif

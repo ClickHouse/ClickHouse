@@ -1,7 +1,6 @@
 -- Tags: no-fasttest, no-random-settings
 -- Test: Verify that without lazy type hints setting, mutations are triggered
 
-SET enable_json_type = 1;
 SET allow_suspicious_types_in_order_by = 1;
 
 -- Test: Without lazy type hints setting, ALTER should trigger mutation
