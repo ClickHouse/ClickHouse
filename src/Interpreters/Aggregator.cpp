@@ -1907,10 +1907,6 @@ void NO_INLINE Aggregator::executeImplBatch(
 {
     using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
 
-    /// During processing of row #i we will prefetch HashTable cell for row #(i + prefetch_look_ahead).
-    PrefetchingHelper prefetching;
-    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
-
     /// Optimization for special case when there are no aggregate functions.
     if (params.aggregates_size == 0)
     {
@@ -1983,6 +1979,11 @@ void NO_INLINE Aggregator::executeImplBatch(
             method, state, key_columns, aggregates_pool, row_begin, row_end, no_more_keys, all_keys_are_const, overflow_row);
         return;
     }
+
+    /// During processing of row #i we will prefetch HashTable cell for row #(i + prefetch_look_ahead).
+    /// After the paths above, which have their own: its `Stopwatch` reads the clock, once per batch.
+    PrefetchingHelper prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
 
     /// NOTE: only row_end-row_start is required, but:
     /// - this affects only optimize_aggregation_in_order,
