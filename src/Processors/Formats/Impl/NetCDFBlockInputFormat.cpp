@@ -8,13 +8,12 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/insertNullAsDefaultIfNeeded.h>
+#include <Formats/castColumnToRequestedType.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
 #include <IO/WriteBufferFromString.h>
-#include <Interpreters/castColumn.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -1113,19 +1112,15 @@ Chunk NetCDFBlockInputFormat::read()
         column->reserve(count);
         fillColumn(state, *column, indexes);
 
-        ColumnWithTypeAndName read_column{std::move(column), state.column->type, ""};
+        ColumnWithTypeAndName read_column{std::move(column), state.column->type, result_header.getByPosition(i).name};
 
         /// A variable that is read as Nullable, because of its `_FillValue` or `missing_value`
         /// attribute, gives the default value of a column that is not Nullable for its NULLs.
-        if (format_settings.null_as_default)
-            insertNullAsDefaultIfNeeded(
-                read_column, result_header.getByPosition(i), i,
-                format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr);
-
-        if (requested_type->equals(*read_column.type))
-            result.push_back(std::move(read_column.column));
-        else
-            result.push_back(castColumn(read_column, requested_type));
+        const RequestedTypeCastSettings cast_settings{.null_as_default = format_settings.null_as_default};
+        castColumnToRequestedType(
+            read_column, requested_type, cast_settings, i,
+            format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr);
+        result.push_back(std::move(read_column.column));
     }
 
     current_row += count;
