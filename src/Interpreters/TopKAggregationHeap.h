@@ -182,6 +182,7 @@ protected:
     bool skip_bitmap_filled = false;        /// the bitmap of the current batch was compared with a boundary
     size_t batch_end = 0;                   /// the end of the current batch
     ColumnRawPtrs batch_columns;            /// the ranked key columns of the current batch
+    const void * batch_typed_data = nullptr; /// the data of the numeric key column of the current batch, or null
     PaddedPODArray<UInt64> skip_compare_rows;   /// `compareColumn` scratch: the rows still tied with the boundary
     PaddedPODArray<Int8> skip_compare_results;  /// `compareColumn` scratch: each row compared with the boundary
     std::vector<size_t> evicted_rows;       /// `heap_column` rows dropped by the last `trimToK`
@@ -379,6 +380,9 @@ private:
 
     /// Compares the row with the boundary key.
     [[nodiscard, gnu::hot]] bool aboveBoundary(size_t row) const;
+
+    /// `aboveBoundary` for the keys that are not numeric; out of line, so the numeric path needs no stack frame.
+    [[nodiscard]] NO_INLINE bool aboveBoundaryGeneric(size_t row) const;
 
     [[nodiscard]] int compareHeapRowsComposite(size_t a, size_t b) const;
 

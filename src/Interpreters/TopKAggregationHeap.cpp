@@ -142,6 +142,7 @@ void TopKAggregationHeapBase::freezeBase()
     skip_compare_rows = {};
     skip_compare_results = {};
     batch_columns = {};
+    batch_typed_data = nullptr;
     evicted_rows = {};
     trim_filter = {};
     trim_old_to_new = {};
@@ -151,6 +152,11 @@ const UInt8 * TopKAggregationHeapBase::startBatch(const ColumnRawPtrs & key_colu
 {
     chassert(!frozen);
     batch_columns.assign(key_columns.begin(), key_columns.begin() + directions.size());
+    batch_typed_data = nullptr;
+    dispatchNumericKeyType(typed_key_type, [&]<typename T>()
+    {
+        batch_typed_data = assert_cast<const ColumnVector<T> &>(*batch_columns[0]).getData().data();
+    });
     batch_end = end;
     /// Sized to the whole batch once, so that a later `fillSkipBitmap` keeps the pointer valid.
     skip_bitmap.resize(end);
@@ -183,7 +189,7 @@ void TopKAggregationHeapBase::fillSkipBitmap(size_t begin, size_t end)
 
     const bool typed = dispatchNumericKeyType(typed_key_type, [&]<typename T>()
     {
-        const T * src = assert_cast<const ColumnVector<T> &>(*batch_columns[0]).getData().data();
+        const T * src = static_cast<const T *>(batch_typed_data);
         const T boundary = assert_cast<const ColumnVector<T> &>(boundaryColumn()).getData()[boundaryRow()];
         const int nulls_direction = nulls_directions[0];
         /// A row is skipped when `direction * compare(row, boundary) > 0`. The direction is 1 or -1, so this is
@@ -222,19 +228,23 @@ void TopKAggregationHeapBase::fillSkipBitmap(size_t begin, size_t end)
 
 bool TopKAggregationHeapBase::aboveBoundary(size_t row) const
 {
-    const IColumn & boundary = boundaryColumn();
-    const size_t boundary_row_index = boundaryRow();
-
     /// A numeric key is compared directly, without the virtual `compareAt`.
     bool above = false;
     const bool typed = dispatchNumericKeyType(typed_key_type, [&]<typename T>()
     {
-        const T value = assert_cast<const ColumnVector<T> &>(*batch_columns[0]).getData()[row];
-        const T boundary_value = assert_cast<const ColumnVector<T> &>(boundary).getData()[boundary_row_index];
+        const T value = static_cast<const T *>(batch_typed_data)[row];
+        const T boundary_value = assert_cast<const ColumnVector<T> &>(boundaryColumn()).getData()[boundaryRow()];
         above = directions[0] * CompareHelper<T>::compare(value, boundary_value, nulls_directions[0]) > 0;
     });
     if (typed)
         return above;
+    return aboveBoundaryGeneric(row);
+}
+
+bool TopKAggregationHeapBase::aboveBoundaryGeneric(size_t row) const
+{
+    const IColumn & boundary = boundaryColumn();
+    const size_t boundary_row_index = boundaryRow();
 
     if (!is_composite)
         return directions[0] * compareColumns(*batch_columns[0], row, boundary, boundary_row_index, 0) > 0;
