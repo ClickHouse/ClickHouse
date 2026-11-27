@@ -172,6 +172,7 @@ Selon le type de service, vous devrez fournir des informations différentes, à 
 **Slack (API)**
 
 * Jeton du bot Slack. Consultez la [documentation Slack](https://docs.slack.dev/authentication/tokens/#bot/) pour plus de détails.
+* Les Bot Token Scopes de l’application Slack doivent inclure `groups:read`, `channels:read` et `chat:write`. Les portées en lecture permettent à ClickStack de lister les canaux Slack lorsque vous modifiez une alerte.
 
 **API PagerDuty**
 
@@ -181,7 +182,7 @@ Selon le type de service, vous devrez fournir des informations différentes, à 
 
 * URL du webhook
 * En-têtes du webhook (facultatif)
-* Corps du webhook (facultatif). Le corps est un modèle Handlebars. Outre `{{title}}`, `{{body}}` et `{{link}}`, il peut utiliser des variables décrivant l’alerte et son déclenchement, telles que `{{alertId}}`, `{{status}}`, `{{value}}`, `{{threshold}}` et `{{groupKey}}`. Consultez [Variables de modèle des webhooks d’alerte](https://github.com/ClickHouse/ClickStack/blob/main/docs/alert-webhook-template-variables.md) pour obtenir la liste complète.
+* Corps du webhook (facultatif). Le corps est un Template Handlebars. Outre `{{title}}`, `{{body}}` et `{{link}}`, il peut utiliser des variables décrivant l’alerte et son déclenchement, telles que `{{alertId}}`, `{{status}}`, `{{value}}`, `{{threshold}}` et `{{groupKey}}`. Consultez [Variables de Template des webhooks d’alerte](https://github.com/ClickHouse/ClickStack/blob/main/docs/alert-webhook-template-variables.md) pour obtenir la liste complète.
 
 ## Gérer les alertes {#managing-alerts}
 

@@ -172,6 +172,7 @@ ClickStack 告警可开箱即用地集成以下服务类型：
 **Slack (API)&#x20;**
 
 * Slack bot token。更多详情请参阅 [Slack 文档](https://docs.slack.dev/authentication/tokens/#bot/)。
+* Slack 应用的 Bot Token Scopes 必须包含 `groups:read`、`channels:read` 和 `chat:write`。其中的读取权限范围使 ClickStack 能够在您编辑告警时列出 Slack 频道。
 
 **PagerDuty API**
 

@@ -171,7 +171,8 @@ keywords: ['ClickStack', 'observability', 'التنبيهات', 'search-alerts',
 
 **Slack (API)**
 
-* رمز bot الخاص بـ Slack. راجع [وثائق Slack](https://docs.slack.dev/authentication/tokens/#bot/) لمزيد من التفاصيل.
+* رمز البوت الخاص بـ Slack. راجع [وثائق Slack](https://docs.slack.dev/authentication/tokens/#bot/) لمزيد من التفاصيل.
+* يجب أن تتضمن نطاقات رمز البوت (Bot Token Scopes) في تطبيق Slack كلًّا من `groups:read` و`channels:read` و`chat:write`. تتيح نطاقات القراءة لـ ClickStack استعراض قنوات Slack أثناء تعديلك للتنبيه.
 
 **PagerDuty API**
 

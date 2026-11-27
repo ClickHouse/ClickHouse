@@ -155,7 +155,7 @@ ClickStack 알림은 별도 설정 없이 다음 서비스 유형과 통합됩�
 
 * **Slack**: 웹훅 또는 API를 통해 채널로 직접 알림을 보냅니다.
 * **PagerDuty**: PagerDuty API를 통해 온콜 팀으로 인시던트를 라우팅합니다.
-* **웹훅**: 범용 웹훅을 통해 알림을 사용자 지정 시스템 또는 워크플로에 연결합니다.
+* **웹훅**: 범용 웹훅을 통해 알림을 사용자 정의 시스템 또는 워크플로에 연결합니다.
 
 <Info>
   **ClickHouse Cloud 전용 통합**
@@ -172,6 +172,7 @@ ClickStack 알림은 별도 설정 없이 다음 서비스 유형과 통합됩�
 **Slack (API)**
 
 * Slack 봇 토큰. 자세한 내용은 [Slack 문서](https://docs.slack.dev/authentication/tokens/#bot/)를 참조하십시오.
+* Slack 앱의 Bot Token Scopes에는 `groups:read`, `channels:read`, `chat:write`가 포함되어야 합니다. 읽기 범위가 있어야 알림을 편집할 때 ClickStack이 Slack 채널 목록을 조회할 수 있습니다.
 
 **PagerDuty API**
 
@@ -181,7 +182,7 @@ ClickStack 알림은 별도 설정 없이 다음 서비스 유형과 통합됩�
 
 * 웹훅 URL
 * 웹훅 헤더(선택 사항)
-* 웹훅 본문(선택 사항). 본문은 Handlebars 템플릿입니다. `{{title}}`, `{{body}}`, `{{link}}` 외에도 `{{alertId}}`, `{{status}}`, `{{value}}`, `{{threshold}}`, `{{groupKey}}` 등 알림 및 알림 발생 정보를 나타내는 변수를 사용할 수 있습니다. 전체 목록은 [Alert 웹훅 template variables](https://github.com/ClickHouse/ClickStack/blob/main/docs/alert-webhook-template-variables.md)를 참조하십시오.
+* 웹훅 본문(선택 사항). 본문은 Handlebars 템플릿입니다. `{{title}}`, `{{body}}`, `{{link}}` 외에도 `{{alertId}}`, `{{status}}`, `{{value}}`, `{{threshold}}`, `{{groupKey}}` 등 알림 및 알림 발생 정보를 나타내는 변수를 사용할 수 있습니다. 전체 목록은 [알림 웹훅 template variables](https://github.com/ClickHouse/ClickStack/blob/main/docs/alert-webhook-template-variables.md)를 참조하십시오.
 
 ## 알림 관리 {#managing-alerts}
 

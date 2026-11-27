@@ -172,6 +172,7 @@ ClickStack の アラート は、標準で次のサービス種別と連携で�
 **Slack (API)**
 
 * Slack bot token。詳細については、[Slack documentation](https://docs.slack.dev/authentication/tokens/#bot/) を参照してください。
+* Slack アプリの Bot Token Scopes には、`groups:read`、`channels:read`、`chat:write` を含める必要があります。read 系のスコープがあることで、アラートの編集時に ClickStack が Slack チャンネルの一覧を取得できます。
 
 **PagerDuty API**
 
