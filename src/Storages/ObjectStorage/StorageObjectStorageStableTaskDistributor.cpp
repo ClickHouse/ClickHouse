@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
+#include <Interpreters/ProcessList.h>
 #include <Common/SipHash.h>
 #include <consistent_hashing.h>
 #include <optional>
@@ -13,6 +14,9 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Nothing notifies `replica_seen_cv` on cancellation, so the wait is done in steps.
+constexpr auto cancellation_check_interval = std::chrono::milliseconds(100);
 
 size_t getTaskWeight(const ObjectInfoPtr & object_info)
 {
@@ -37,10 +41,12 @@ StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistrib
     std::shared_ptr<IObjectIterator> iterator_,
     std::vector<std::string> && ids_of_nodes_,
     bool send_over_whole_archive_,
-    std::chrono::milliseconds wait_for_owner_)
+    std::chrono::milliseconds wait_for_owner_,
+    QueryStatusPtr query_status_)
     : iterator(std::move(iterator_))
     , send_over_whole_archive(send_over_whole_archive_)
     , wait_for_owner(wait_for_owner_)
+    , query_status(std::move(query_status_))
     , connection_to_files(ids_of_nodes_.size())
     , remaining_bytes(ids_of_nodes_.size(), 0)
     , ids_of_nodes(std::move(ids_of_nodes_))
@@ -50,7 +56,7 @@ StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistrib
 {
 }
 
-ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getNextTask(size_t number_of_current_replica)
+ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getNextTask(size_t number_of_current_replica, const std::atomic_bool * stop_waiting)
 {
     LOG_TRACE(log, "Received request from replica {} looking for a file", number_of_current_replica);
 
@@ -63,7 +69,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getNextTask(size_t numb
         return file;
 
     // 3. Process unprocessed files if iterator is exhausted
-    return getAnyUnprocessedFile(number_of_current_replica);
+    return getAnyUnprocessedFile(number_of_current_replica, stop_waiting);
 }
 
 size_t StorageObjectStorageStableTaskDistributor::getReplicaForFile(const String & file_path)
@@ -150,18 +156,14 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
 
     while (true)
     {
-        ObjectInfoPtr object_info;
+        ObjectInfoPtr object_info = iterator->next(0);
 
+        if (!object_info)
         {
             std::lock_guard lock(mutex);
-            object_info = iterator->next(0);
-
-            if (!object_info)
-            {
-                LOG_TEST(log, "Iterator is exhausted");
-                iterator_exhausted = true;
-                break;
-            }
+            LOG_TEST(log, "Iterator is exhausted");
+            iterator_exhausted = true;
+            break;
         }
 
         String file_identifier;
@@ -173,6 +175,10 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
             LOG_TEST(log, "Will send over the whole archive {} to replicas. "
                      "This will be suboptimal, consider turning on "
                      "cluster_function_process_archive_on_multiple_nodes setting", file_identifier);
+
+            std::lock_guard lock(mutex);
+            if (!scheduled_archives.insert(file_identifier).second)
+                continue;
         }
         else
         {
@@ -210,12 +216,19 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
     return {};
 }
 
-ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(size_t number_of_current_replica)
+ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(size_t number_of_current_replica, const std::atomic_bool * stop_waiting)
 {
     std::unique_lock lock(mutex);
 
     if (!stealing_allowed_since)
-        stealing_allowed_since = std::chrono::steady_clock::now() + wait_for_owner;
+    {
+        /// Saturates instead of overflowing: the deadline is never earlier than requested.
+        const auto now = std::chrono::steady_clock::now();
+        if (wait_for_owner < std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::time_point::max() - now))
+            stealing_allowed_since = now + wait_for_owner;
+        else
+            stealing_allowed_since = std::chrono::steady_clock::time_point::max();
+    }
 
     /// Every file is assigned to a replica by rendezvous hashing, so that the same file is read by the same replica
     /// in every query, and is read from its cache. Taking a file of another replica breaks this, so it is done only
@@ -229,7 +242,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
     /// Note that the requests are served synchronously by the threads of the initiator, so waiting here for
     /// a replica that has already asked for tasks could block the threads that serve the requests of this replica.
     ///
-    /// The loop exits in one of two ways:
+    /// The loop exits in one of three ways:
     /// - returns a file: of the current replica if it has any; otherwise of the replica with the most remaining bytes
     ///   among the replicas whose files can be taken:
     ///   - replicas that have received an empty task and will not ask again (their files could have been queued
@@ -238,6 +251,8 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
     ///   - replicas that have asked for tasks and have more than twice the average remaining bytes of the other replicas;
     /// - returns nothing when no unprocessed files are left, or when the files that are left will be processed
     ///   by their replicas.
+    /// - throws when the query is cancelled or exceeds `max_execution_time`; returns nothing with
+    ///   `timeout_overflow_mode = 'break'`, or when `stop_waiting` is set.
     /// Otherwise, when there are files of replicas that haven't asked for tasks yet, it waits until a new replica
     /// asks for tasks or until `wait_for_owner` passes, and then checks again.
     while (!unprocessed_files.empty())
@@ -307,7 +322,10 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
         if (!should_wait)
             break;
 
-        replica_seen_cv.wait_until(lock, *stealing_allowed_since);
+        if ((query_status && !query_status->checkTimeLimit()) || (stop_waiting && *stop_waiting))
+            break;
+
+        replica_seen_cv.wait_until(lock, std::min(*stealing_allowed_since, std::chrono::steady_clock::now() + cancellation_check_interval));
     }
 
     LOG_TRACE(log, "No more tasks for replica {}", number_of_current_replica);

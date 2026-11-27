@@ -249,47 +249,47 @@ struct KeeperHTTPContext : public IHTTPContext
         : context(std::move(context_))
     {}
 
-    uint64_t getMaxHstsAge() const override
+    [[nodiscard]] uint64_t getMaxHstsAge() const override
     {
         return context->getConfigRef().getUInt64("keeper_server.hsts_max_age", 0);
     }
 
-    uint64_t getMaxUriSize() const override
+    [[nodiscard]] uint64_t getMaxUriSize() const override
     {
         return context->getConfigRef().getUInt64("keeper_server.http_max_uri_size", 1048576);
     }
 
-    uint64_t getMaxFields() const override
+    [[nodiscard]] uint64_t getMaxFields() const override
     {
         return context->getConfigRef().getUInt64("keeper_server.http_max_fields", 1000000);
     }
 
-    uint64_t getMaxFieldNameSize() const override
+    [[nodiscard]] uint64_t getMaxFieldNameSize() const override
     {
         return context->getConfigRef().getUInt64("keeper_server.http_max_field_name_size", 128 * 1024);
     }
 
-    uint64_t getMaxFieldValueSize() const override
+    [[nodiscard]] uint64_t getMaxFieldValueSize() const override
     {
         return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 128 * 1024);
     }
 
-    uint64_t getMaxRequestHeaderSize() const override
+    [[nodiscard]] uint64_t getMaxRequestHeaderSize() const override
     {
         return context->getConfigRef().getUInt64("keeper_server.http_max_request_header_size", 0);
     }
 
-    Poco::Timespan getHeadersReadTimeout() const override
+    [[nodiscard]] Poco::Timespan getHeadersReadTimeout() const override
     {
         return {context->getConfigRef().getInt64("keeper_server.http_headers_read_timeout", 0), 0};
     }
 
-    Poco::Timespan getReceiveTimeout() const override
+    [[nodiscard]] Poco::Timespan getReceiveTimeout() const override
     {
         return {context->getConfigRef().getInt64("keeper_server.http_receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0};
     }
 
-    Poco::Timespan getSendTimeout() const override
+    [[nodiscard]] Poco::Timespan getSendTimeout() const override
     {
         return {context->getConfigRef().getInt64("keeper_server.http_send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0};
     }
@@ -643,8 +643,6 @@ try
         LOG_INFO(log, "Listening for {}", server.getDescription());
     }
 
-    async_metrics.start();
-
     Coordination::EventPtr unused_event = std::make_shared<Poco::Event>();
 
     /// TLS certificates, keys and CA certificates are reloaded by CertificateReloader when these files change.
@@ -760,6 +758,11 @@ try
 
 
     buildLoggers(config(), logger());
+
+    /// Start the metrics only after the loggers are rebuilt: `buildLoggers` replaces the log channel and registers its
+    /// queues, and the metrics read them.
+    async_metrics.start();
+
     main_config_reloader->start();
 
     std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;

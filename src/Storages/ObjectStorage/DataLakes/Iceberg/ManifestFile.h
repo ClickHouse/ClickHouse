@@ -56,6 +56,7 @@ struct ColumnInfo
     std::optional<Int64> rows_count;
     std::optional<Int64> bytes_size;
     std::optional<Int64> nulls_count;
+    std::optional<Int64> nans_count;
 };
 
 struct PartitionSpecsEntry
@@ -85,7 +86,7 @@ struct ManifestFileCacheableInfo
     static ManifestFileCacheableInfo fromBytes(String bytes, const IcebergPathFromMetadata & path, const FormatSettings & format_settings);
 
     /// Thread-safe. Concurrent callers wait for one parse; if it throws, the next caller parses again.
-    std::shared_ptr<AvroForIcebergDeserializer> getDeserializer() const;
+    [[nodiscard]] std::shared_ptr<AvroForIcebergDeserializer> getDeserializer() const;
 
     std::shared_ptr<State> state;
     size_t file_bytes_size = 0;
@@ -127,7 +128,7 @@ struct ParsedManifestFileEntry : boost::noncopyable
 
     std::optional<std::vector<Int64>> split_offsets;
 
-    bool isDeletionVector() const;
+    [[nodiscard]] bool isDeletionVector() const;
 
     ParsedManifestFileEntry(
         FileContentType content_type_,
@@ -196,7 +197,7 @@ struct ProcessedManifestFileEntry
     /// that compares, groups or shows partition values has to use this one.
     DB::Row normalized_partition_key_value;
 
-    String dumpDeletesMatchingInfo() const;
+    [[nodiscard]] String dumpDeletesMatchingInfo() const;
 };
 
 using ProcessedManifestFileEntryPtr = std::shared_ptr<const ProcessedManifestFileEntry>;
@@ -212,6 +213,16 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
     const std::vector<ProcessedManifestFileEntryPtr> & deletes_objects,
     bool is_equality_delete,
     LoggerPtr logger);
+
+/// Position delete files whose `file_path` lower and upper bounds are the same data file path, by that path, and the other ones,
+/// each in the order of the input.
+struct PositionDeletesByDataFile
+{
+    std::unordered_map<IcebergPathFromMetadata, std::vector<ProcessedManifestFileEntryPtr>> single_data_file;
+    std::vector<ProcessedManifestFileEntryPtr> other;
+};
+
+PositionDeletesByDataFile groupPositionDeletesByDataFile(const std::vector<ProcessedManifestFileEntryPtr> & position_deletes);
 
 }
 

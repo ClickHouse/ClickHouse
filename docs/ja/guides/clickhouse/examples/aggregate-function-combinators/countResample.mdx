@@ -7,22 +7,16 @@ sidebarTitle: 'countResample'
 doc_type: 'reference'
 ---
 
-<div id="description">
-  ## 説明
-</div>
+## 説明 {#description}
 
 [`Resample`](/ja/reference/functions/aggregate-functions/combinators#-resample)
 コンビネータは、[`count`](/ja/reference/functions/aggregate-functions/count)
 集約関数に適用でき、指定したキーカラムの値を一定数
 のインターバル (`N`) に分けてカウントできます。
 
-<div id="example-usage">
-  ## 使用例
-</div>
+## 使用例 {#example-usage}
 
-<div id="basic-example">
-  ### 基本的な例
-</div>
+### 基本的な例 {#basic-example}
 
 例を見てみましょう。従業員の`name`、`age`、`wage`を格納するテーブルを作成し、
 そこにいくつかのデータを挿入します。
@@ -35,7 +29,7 @@ CREATE TABLE employee_data
     wage Float32
 ) 
 ENGINE = MergeTree()
-ORDER BY tuple()
+ORDER BY tuple();
 
 INSERT INTO employee_data (name, age, wage) VALUES
     ('John', 16, 10.0),
@@ -61,9 +55,7 @@ SELECT countResample(30, 75, 30)(name, age) AS amount FROM employee_data
 └────────┘
 ```
 
-<div id="see-also">
-  ## 関連項目
-</div>
+## 関連項目 {#see-also}
 
 * [`count`](/ja/reference/functions/aggregate-functions/count)
 * [`Resample コンビネータ`](/ja/reference/functions/aggregate-functions/combinators#-resample)

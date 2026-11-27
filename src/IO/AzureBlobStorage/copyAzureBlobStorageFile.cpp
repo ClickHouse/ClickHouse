@@ -29,6 +29,7 @@ namespace ProfileEvents
     extern const Event AzureCopyObject;
     extern const Event AzureStageBlock;
     extern const Event AzureCommitBlockList;
+    extern const Event WriteBufferFromAzureBytes;
 
     extern const Event DiskAzureCopyObject;
     extern const Event DiskAzureStageBlock;
@@ -154,7 +155,7 @@ namespace
     public:
         void performCopy()
         {
-            if (total_size < max_single_part_upload_size)
+            if (total_size <= max_single_part_upload_size)
             {
                 performSinglepartUpload();
             }
@@ -178,6 +179,8 @@ namespace
             }
 
             Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), total_size);
+
+            ProfileEvents::increment(ProfileEvents::WriteBufferFromAzureBytes, total_size);
 
             HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
@@ -311,6 +314,7 @@ namespace
             ProfileEvents::increment(ProfileEvents::AzureStageBlock);
             if (client->IsClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskAzureStageBlock);
+            ProfileEvents::increment(ProfileEvents::WriteBufferFromAzureBytes, part_size);
 
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
             auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
@@ -391,7 +395,7 @@ void copyDataToAzureBlobStorageFile(
 }
 
 
-void copyAzureBlobStorageFile(
+bool copyAzureBlobStorageFile(
     std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client,
     std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
     const String & src_container_for_logging,
@@ -403,7 +407,8 @@ void copyAzureBlobStorageFile(
     const ReadSettings & read_settings,
     const std::optional<ObjectAttributes> & object_to_attributes,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    BlobStorageLogWriterPtr blob_storage_log)
+    BlobStorageLogWriterPtr blob_storage_log,
+    bool allow_copy_through_buffers)
 {
     auto log = getLogger("copyAzureBlobStorageFile");
     bool is_native_copy_done = false;
@@ -522,6 +527,8 @@ void copyAzureBlobStorageFile(
     }
     if (!is_native_copy_done)
     {
+        if (!allow_copy_through_buffers)
+            return false;
         /// Copy through read and write
         LOG_TRACE(log, "Reading and writing Blob: {} from Container: {}", src_blob, src_container_for_logging);
         auto create_read_buffer = [&]
@@ -533,6 +540,7 @@ void copyAzureBlobStorageFile(
         UploadHelper helper{create_read_buffer, dest_client, /* offset= */ 0, size, dest_container_for_logging, dest_blob, settings, schedule, blob_storage_log, log};
         helper.performCopy();
     }
+    return true;
 }
 
 }

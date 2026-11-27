@@ -144,7 +144,7 @@ struct RegExpTreeDictionary::RegexTreeNode
         VectorWithMemoryTracking<StringPiece> pieces;
         String original_value;
 
-        constexpr bool containsBackRefs() const { return !pieces.empty(); }
+        [[nodiscard]] constexpr bool containsBackRefs() const { return !pieces.empty(); }
     };
 
     UnorderedMapWithMemoryTracking<String, AttributeValue> attributes;
@@ -449,7 +449,7 @@ public:
     {
     }
 
-    constexpr bool collecting() const { return collect_values_limit != std::nullopt; }
+    [[nodiscard]] constexpr bool collecting() const { return collect_values_limit != std::nullopt; }
 
     // Add a name-value pair to the collection if there's space
     void add(const String & attr_name, Field field, UnorderedSetWithMemoryTracking<String> * const defaults = nullptr)
@@ -500,7 +500,7 @@ public:
     }
 
     // Returns the number of full attributes
-    size_t attributesFull() const { return n_full_attributes; }
+    [[nodiscard]] size_t attributesFull() const { return n_full_attributes; }
 };
 
 std::pair<String, bool> processBackRefs(const String & data, const re2::RE2 & searcher, const VectorWithMemoryTracking<StringPiece> & pieces)
@@ -676,7 +676,7 @@ struct MatchContext
         std::sort(matched_idx_sorted_list.begin(), matched_idx_sorted_list.end());
     }
 
-    bool contains(UInt64 idx) const
+    [[nodiscard]] bool contains(UInt64 idx) const
     {
         return matched_idx_set.contains(idx);
     }
@@ -745,24 +745,12 @@ UnorderedMapWithMemoryTracking<String, ColumnPtr> RegExpTreeDictionary::match(
         if (use_vectorscan)
         {
             /// pre-select all the possible matches
-            auto on_match = [](unsigned int id,
-                            unsigned long long /* from */, // NOLINT
-                            unsigned long long /* to */, // NOLINT
-                            unsigned int /* flags */,
-                            void * context) -> int
-            {
-                static_cast<MatchContext *>(context)->insertIdx(id);
-                return 0;
-            };
-
-            hs_error_t err = hs_scan(
+            hs_error_t err = MultiRegexps::scan(
                 origin_db.get(),
                 begin,
                 static_cast<unsigned>(length),
-                0,
                 smart_scratch.get(),
-                on_match,
-                &match_result);
+                [&](unsigned int id) { match_result.insertIdx(id); });
 
             if (err != HS_SUCCESS)
                 throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan data with vectorscan");
@@ -1022,8 +1010,6 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
 
     factory.registerLayout("regexp_tree", create_layout, true, true, Documentation{
         .description = R"DOCS_MD(
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 # Regular expression tree dictionary layout
 
 ## Overview {#overview}

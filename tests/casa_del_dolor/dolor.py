@@ -49,6 +49,8 @@ from properties import (
     SERVER_SETTLE_SLEEP_SECONDS,
     SERVER_START_WAIT_SECONDS,
     SERVER_STOP_WAIT_SECONDS,
+    generate_distributed_cache_config,
+    generate_streaming_named_collections,
     modify_server_settings,
     modify_user_settings,
     modify_keeper_settings,
@@ -207,10 +209,11 @@ parser.add_argument(
     help="In seconds. Two ordered integers separated by comma (e.g., 3,5)",
 )
 parser.add_argument(
+    "--without-s3-server",
     "--without-minio",
     action="store_false",
     dest="with_minio",
-    help="Without MinIO integration",
+    help="Without the S3 server",
 )
 parser.add_argument(
     "--with-azurite", action="store_true", help="With Azure integration"
@@ -237,6 +240,15 @@ parser.add_argument(
     "--with-arrowflight", action="store_true", help="With Arrow flight support"
 )
 parser.add_argument("--with-kafka", action="store_true", help="With Kafka integration")
+parser.add_argument("--with-nats", action="store_true", help="With NATS integration")
+parser.add_argument(
+    "--with-rabbitmq", action="store_true", help="With RabbitMQ integration"
+)
+parser.add_argument(
+    "--with-distributed-cache",
+    action="store_true",
+    help="Host distributed cache servers in each node and use them (private binary with Keeper)",
+)
 parser.add_argument(
     "--mem-limit", type=str, default="", help="Set a memory limit, e.g. '1g'"
 )
@@ -625,6 +637,7 @@ cluster = ClickHouseCluster(
     client_bin_path=args.client_binary,
     server_binaries=sorted_binaries,
     with_dolor=True,
+    s3_server="seaweedfs",
 )
 
 # Set environment variables such as locales and timezones
@@ -638,10 +651,10 @@ if server_settings is not None:
     modified_server_settings, server_settings, generated_clusters = (
         modify_server_settings(args, cluster, is_private_binary, server_settings)
     )
-    if generated_clusters:
-        modified_user_settings, user_settings = modify_user_settings(
-            args, user_settings, generated_clusters
-        )
+if user_settings is not None:
+    modified_user_settings, user_settings = modify_user_settings(
+        args, user_settings, generated_clusters
+    )
 
 dolor_main_configs = [
     "../config/server.crt",
@@ -653,13 +666,28 @@ dolor_main_configs = [
 ]
 if server_settings is not None:
     dolor_main_configs.append(server_settings)
+streaming_collections = generate_streaming_named_collections(args, cluster)
+if streaming_collections is not None:
+    dolor_main_configs.append(streaming_collections)
 # In-flush trace_log symbolization is too slow under sanitizers for the stop window.
 if os.environ.get("CLICKHOUSE_IS_SANITIZED") == "1":
     dolor_main_configs.append("../config/config.d/trace_log_no_symbolize.xml")
 
 
+use_distributed_cache = args.with_distributed_cache and is_private_binary and args.with_zookeeper
+if args.with_distributed_cache and not use_distributed_cache:
+    logger.warning("The distributed cache needs the private binary and Keeper, not adding it")
+    args.with_distributed_cache = False
+
 servers: list[ClickHouseInstance] = []
+# Number of distributed cache servers of each node
+node_distributed_cache_servers: list[int] = []
 for i in range(0, len(args.replica_values)):
+    node_main_configs = list(dolor_main_configs)
+    if use_distributed_cache:
+        dc_config, nservers = generate_distributed_cache_config(args, i)
+        node_main_configs.append(dc_config)
+        node_distributed_cache_servers.append(nservers)
     servers.append(
         cluster.add_instance(
             f"node{i}",
@@ -678,8 +706,10 @@ for i in range(0, len(args.replica_values)):
             with_hms_catalog=args.with_hms,
             with_arrowflight=args.with_arrowflight,
             with_kafka=args.with_kafka,
+            with_nats=args.with_nats,
+            with_rabbitmq=args.with_rabbitmq,
             mem_limit=None if args.mem_limit == "" else args.mem_limit,
-            main_configs=dolor_main_configs,
+            main_configs=node_main_configs,
             user_configs=[user_settings] if user_settings is not None else [],
             env_variables=test_env_variables,
             macros={"replica": args.replica_values[i], "shard": args.shard_values[i]},
@@ -702,6 +732,25 @@ for i in range(0, len(args.replica_values)):
 servers[len(servers) - 1].wait_start(8)
 servers[0].give_user_files_permissions()
 
+# Without registered cache servers every query silently skips the distributed cache, so fail early
+for i, nservers in enumerate(node_distributed_cache_servers):
+    registered = ""
+    for _ in range(60):
+        try:
+            registered = servers[i].query(
+                "SELECT count() FROM system.distributed_cache_registry"
+            ).strip()
+        except Exception as ex:
+            registered = str(ex)
+        if registered == str(nservers):
+            break
+        time.sleep(1)
+    else:
+        raise Exception(
+            f"Node node{i} has {nservers} distributed cache servers, but its registry shows: {registered}"
+        )
+    logger.info(f"Node node{i} has {nservers} distributed cache servers registered")
+
 # Uploaders for object storage
 if args.with_minio:
     prepare_s3_bucket(cluster)
@@ -718,6 +767,8 @@ cluster.default_local_uploader = LocalUploader(cluster.instances["node0"])
 cluster.default_local_downloader = LocalDownloader(cluster.instances["node0"])
 
 if args.with_postgresql:
+    # The sidecar restarts a paused postgres1, which Docker reports as unhealthy, so dolor's unpause fails
+    cluster.process_integration_nodes("postgres", ["autoheal"], "stop")
     postgres_conn = get_postgres_conn(
         ip=cluster.postgres_ip, port=cluster.postgres_port
     )
@@ -757,6 +808,10 @@ if args.with_redis:
     integrations.append("redis")
 if args.with_kafka:
     integrations.append("kafka")
+if args.with_nats:
+    integrations.append("nats")
+if args.with_rabbitmq:
+    integrations.append("rabbitmq")
 if args.with_arrowflight:
     integrations.append("arrowflight")
 
@@ -819,16 +874,19 @@ while all_running and (not reached_limit):
     if (not all_running) or reached_limit:
         break
 
+    kill_server = random.randint(1, 100) <= args.kill_server_prob
+    restart_server = random.randint(1, 100) <= args.restart_clickhouse_prob
+    # Hash a table on the server that gets restarted; an integration restart affects any of them
+    hash_node = random.choice(servers)
     dump_table = (
-        tables_oracle.collect_table_hash_before_shutdown(cluster, logger)
-        if random.randint(1, 100) <= args.compare_table_dump_prob
+        tables_oracle.collect_table_hash_before_shutdown(cluster, logger, hash_node)
+        if (restart_server or len(integrations) > 0)
+        and random.randint(1, 100) <= args.compare_table_dump_prob
         else None
     )
-    kill_server = random.randint(1, 100) <= args.kill_server_prob
-    # Pick one of the servers to restart
     # Restart ClickHouse
-    if random.randint(1, 100) <= args.restart_clickhouse_prob:
-        next_pick = random.choice(servers)
+    if restart_server:
+        next_pick = hash_node
         logger.info(
             f"Restarting the server {next_pick.name} with {'kill' if kill_server else 'manual shutdown'}"
         )
@@ -926,7 +984,7 @@ while all_running and (not reached_limit):
         choosen_instances = []
         available_options = {
             "zookeeper": list(ZOOKEEPER_CONTAINERS),
-            "minio": ["minio1"],
+            "minio": [cluster.minio_host],
             "nginx": ["nginx"],
             "azurite": ["azurite1"],
             "postgres": ["postgres1"],
@@ -934,6 +992,8 @@ while all_running and (not reached_limit):
             "mongo": ["mongo1", "mongo_no_cred", "mongo_secure"],
             "redis": ["redis1"],
             "kafka": ["kafka1"],
+            "nats": ["nats1"],
+            "rabbitmq": ["rabbitmq1"],
             "arrowflight": ["flight_server"],
         }
 
@@ -941,15 +1001,19 @@ while all_running and (not reached_limit):
         random.shuffle(restart_choices)
         for i in range(0, random.randint(1, len(restart_choices))):
             choosen_instances.append(restart_choices[i])
+        # A paused service keeps its connections open, so its clients see a hang instead of a disconnect,
+        # and a Keeper paused past the session timeout expires the sessions for real
+        if random.randint(1, 3) == 1:
+            stop_action, start_action = "pause", "unpause"
+        else:
+            stop_action, start_action = "kill" if kill_server else "stop", "start"
         logger.info(
-            f"Restarting {next_pick} instances {', '.join(choosen_instances)} with {'kill' if kill_server else 'manual shutdown'}"
+            f"Restarting {next_pick} instances {', '.join(choosen_instances)} with {stop_action}"
         )
 
-        cluster.process_integration_nodes(
-            next_pick, choosen_instances, "kill" if kill_server else "stop"
-        )
+        cluster.process_integration_nodes(next_pick, choosen_instances, stop_action)
         time.sleep(random.randint(integration_lower_bound, integration_upper_bound))
-        cluster.process_integration_nodes(next_pick, choosen_instances, "start")
+        cluster.process_integration_nodes(next_pick, choosen_instances, start_action)
     if all_running:
         tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
 
@@ -994,12 +1058,16 @@ for server in servers:
             good_exit = good_exit and exit_code in (-9, -15, 0, 137, 143)
     # A SIGKILL exit code is accepted above because the run kills servers on purpose,
     # so it cannot distinguish a deliberate kill from a shutdown that hung. Only the
-    # escalation flag can, and a final shutdown that had to be forced is a failure.
+    # escalation flag can, and a final shutdown that had to be forced is a failure,
+    # except on sanitizer builds, whose shutdown can outlast the stop window.
     if server.clickhouse_forced_stop:
-        logger.error(
-            f"Server {server.name} did not shut down gracefully and had to be force killed"
-        )
-        good_exit = False
+        # Logged on both paths: the job reads it to tell this kill from an OOM kill.
+        forced_stop = f"Server {server.name} did not shut down gracefully and had to be force killed"
+        if os.environ.get("CLICKHOUSE_IS_SANITIZED") == "1":
+            logger.warning(f"{forced_stop}, ignored on a sanitizer build")
+        else:
+            logger.error(forced_stop)
+            good_exit = False
     # The server reports one at `<Error>`, or at `<Fatal>` when it took the process down.
     # Only its own message counts: a fuzzed literal reaches the log through the query text
     # every record quotes, and would otherwise fail a run that never had an exception.

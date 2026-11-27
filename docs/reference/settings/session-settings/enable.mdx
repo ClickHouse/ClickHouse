@@ -22,7 +22,7 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New setting to enable adaptive `GROUP BY` aggregation that freezes each thread's local hash table once it reaches `adaptive_aggregator_freeze_threshold` keys, so frequent keys keep aggregating in the small local tables while rare keys are routed by their hash into per-bucket backlogs and aggregated exactly once, inside the bucket-parallel merge; this stores and processes rare keys once instead of once per thread."}]}]}/>
 
-Enables the adaptive `GROUP BY` algorithm: every thread aggregates into its local hash table until it reaches `adaptive_aggregator_freeze_threshold` keys or `adaptive_aggregator_freeze_threshold_bytes` of memory, then the table freezes, so that rows of already-seen (frequent) keys keep updating it in place, while new (rare) keys are staged by their hash into per-partition buffers and aggregated exactly once, inside the bucket-parallel merge, which takes the partitions a few at a time in cache-sized tables. Frequent keys stay in small cache-resident tables, and rare keys are stored and processed once instead of once per thread.
+Enables the adaptive `GROUP BY` algorithm: every thread aggregates into its local hash table until it reaches `adaptive_aggregator_freeze_threshold` keys or its hash-table buffer reaches `adaptive_aggregator_freeze_threshold_bytes`, then the table freezes, so that rows of already-seen (frequent) keys keep updating it in place, while new (rare) keys are staged by their hash into per-partition buffers and aggregated exactly once, inside the bucket-parallel merge, which takes the partitions a few at a time in cache-sized tables. Frequent keys stay in small cache-resident tables, and rare keys are stored and processed once instead of once per thread.
 
 The external aggregation settings (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) are honored: past the threshold a thread writes its staged records to disk and frees them, and the merge reads them back bucket by bucket. A table that has not frozen yet is written to disk as in the ordinary external aggregation once it holds enough memory, and a frozen one once its aggregate states, such as those of `uniqExact` or `groupArray`, grow enough; the thread then starts filling a new table.
 
@@ -45,16 +45,6 @@ Supported hash joins include `grace_hash` and the adaptive `hash` / `parallel_ha
 
 Enable `DISTINCT` in `IN` subqueries. This is a trade-off setting: enabling it can greatly reduce the size of temporary tables transferred for distributed IN subqueries and significantly speed up data transfer between shards, by ensuring only unique values are sent.
 However, enabling this setting adds extra merging effort on each node, as deduplication (DISTINCT) must be performed. Use this setting when network transfer is a bottleneck and the additional merging cost is acceptable.
-
-## enable_alp_codec {#enable_alp_codec}
-
-<BetaBadge/>
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to enable the experimental `ALP` compression codec individually, without the `allow_experimental_codecs`."}]}]}/>
-
-Enables the `ALP` compression codec.
 
 ## enable_automatic_decision_for_merging_across_partitions_for_final {#enable_automatic_decision_for_merging_across_partitions_for_final}
 
@@ -93,11 +83,13 @@ Takes effect only together with `make_distributed_plan = 1`: the setting alone d
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "New setting"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_cleanup_old_data_files_compaction`."}]}]}/>
 
-Allow to clean up old data files during Iceberg compaction.
+Allow to clean up old data files of Iceberg tables with background compaction.
 
-The cleanup runs `iceberg_compaction_data_cleanup` after a compaction. It expires the snapshots the compaction made obsolete, the same
-way as `expire_snapshots`: removes them from the table metadata and deletes the files that no other snapshot references. For a table
-of the format version 1 or behind a transactional catalog it only deletes the files, and the snapshots stay in the metadata.
+A background task of the table expires the snapshots that a newer one replaced longer than `iceberg_compaction_data_cleanup` ago,
+except those that branches and tags reference, the same way as `expire_snapshots`: removes them from the table metadata and deletes
+the files that no other snapshot references. It also drops the metadata files replaced as long ago from the metadata log and deletes
+them, unless a transactional catalog writes the metadata of the table. The snapshots that a query on any replica is reading stay
+until a later run. Does nothing for a table of the format version 1.
 
 ## enable_database_hms_catalog {#enable_database_hms_catalog}
 
@@ -195,6 +187,15 @@ The table below shows the behavior of this setting for various date-time functio
 | `toStartOfMinute` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 | `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 
+## enable_fixed_and_packed_string_keys_in_aggregation {#enable_fixed_and_packed_string_keys_in_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to use a dedicated hash table for `GROUP BY` with fixed-width keys of up to 16 bytes in total and one non-nullable `String` key. When disabled, the serialized method is used."}]}]}/>
+
+Use a dedicated hash table for `GROUP BY` with fixed-width keys of up to 16 bytes in total and one non-nullable `String` key. Any of these keys can be `LowCardinality`. A key with an empty string is stored by its fixed-width values alone, in cells as narrow as fixed-width keys; the other keys are stored as the fixed-width values and a packed reference to the string, which keeps strings of up to 11 bytes inline, or of up to 15 bytes when the fixed-width values take at most 4 bytes. A `GROUP BY` without aggregate functions stores the keys alone, with no room for aggregate states, so it uses less memory.
+When disabled, the serialized method is used.
+
 ## enable_full_text_index {#enable_full_text_index}
 
 **Aliases**: `allow_experimental_full_text_index`
@@ -224,7 +225,7 @@ When enabled, eligible dead scalar-subquery branches are analyzed to preserve th
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_funnel_functions`."}]}]}/>
 
-Enable functions for funnel analysis.
+Enables the experimental aggregate function `sequenceNextNode`, which is used for funnel analysis. If disabled, using `sequenceNextNode` throws an exception.
 
 ## enable_gdeflate_codec {#enable_gdeflate_codec}
 
@@ -250,7 +251,7 @@ Propagate WITH statements to UNION queries and all subqueries
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting: `GROUP BY key [ORDER BY key] LIMIT n` publishes the top-K heap boundary to the `MergeTree` reading step, which filters rows and skips granules by it. `compatibility` below 26.10 disables it."}]}]}/>
 
-For [enable_group_by_top_k_optimization](/reference/settings/session-settings/enable#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column.
+For [enable_group_by_top_k_optimization](/reference/settings/session-settings/enable#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column. When the column is read from `Parquet` files (the `file`, `s3`, `azureBlobStorage`, `hdfs` and data lake table functions and engines), the reader drops such rows itself and skips whole row groups that lie beyond the boundary by their statistics.
 
 This applies to `GROUP BY key ORDER BY key LIMIT n` and to `GROUP BY key LIMIT n` without `ORDER BY`, where any `n` groups are a valid answer.
 
@@ -466,7 +467,9 @@ Allows to use the `MaterializedPostgreSQL` table engine.
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Enable memory bound merging strategy for aggregation.
+Enables the memory-bound strategy of merging partial aggregation results in distributed queries and queries with parallel replicas.
+
+If the aggregation on the remote servers is done in the order of the `GROUP BY` keys (see `optimize_aggregation_in_order`), the remote servers send the partial results sorted by these keys, and the initiator merges them in order, so it holds only a small part of the aggregation state in memory at a time.
 
 ## enable_multiple_prewhere_read_steps {#enable_multiple_prewhere_read_steps}
 
@@ -553,6 +556,18 @@ This is faster for most workloads, but can be slower than the legacy method for 
 When disabled, the legacy `StringHashTable`-based method (the default before 26.8) is used.
 
 All servers participating in a distributed query must agree on this value: with `distributed_aggregation_memory_efficient`, two-level bucket numbers depend on the key hash, which differs between the two methods, so servers disagreeing on this setting may split the same key into different buckets and produce an incorrectly merged result. To guarantee agreement, the initiator always sends its effective value with the secondary queries (even when it comes only from server/profile defaults), overriding the remote servers' own defaults.
+
+## enable_packed_string_keys_in_hash_join {#enable_packed_string_keys_in_hash_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to make hash joins on a single `String` key faster and use less memory."}]}]}/>
+
+Makes `hash`, `parallel_hash` and `grace_hash` joins on a single `String` or `Nullable(String)` key faster and lowers their memory use. A join with `OR` qualifies when each of its conditions has a single such key.
+
+Because the hash table is smaller, a join reaches `max_bytes_in_join` and `max_bytes_before_external_join` later.
+
+The setting does not apply to `FixedString` or `LowCardinality(Nullable(String))` keys, to tables with the `Join` engine, or to `joinGet`. A join on a `LowCardinality(String)` key may use the key's dictionary instead. A join keeps exact keys when its hash table fits in the L2 cache of the CPU, and also when it would hash every left key and the right side has fewer rows than `min_rows_for_packed_string_keys_in_hash_join`. With that setting at 0, every join is packed, also one whose hash table fits in the L2 cache.
 
 ## enable_paimon_storage_engine {#enable_paimon_storage_engine}
 
@@ -661,6 +676,14 @@ Possible values:
 
 - 0 - Disabled
 - 1 - Enabled
+
+## enable_robin_hood_hash_for_joins {#enable_robin_hood_hash_for_joins}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting. In 26.10 the hash tables of the `parallel_hash` join used the Robin Hood mode when they became large, which saves memory but can make large joins slower."}]}]}/>
+
+Allow the hash tables of a hash join that splits its hash table into parts (see `hash_join_layout`) to switch to the Robin Hood mode when they become large, as the hash tables of aggregation do. A right table with more than about 8 million keys then takes up to two times less memory for its hash table, but the lookups of the join can be slower, depending on the keys.
 
 ## enable_s3_requests_logging {#enable_s3_requests_logging}
 
@@ -931,11 +954,11 @@ Enable the `ytsaurus` table function for integration with YTsaurus.
 
 ## enable_zxc_codec {#enable_zxc_codec}
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to enable the experimental `ZXC` compression codec individually, without the `allow_experimental_codecs`."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to enable the experimental `ZXC` compression codec individually, without the `allow_experimental_codecs`."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "The `ZXC` compression codec was moved to Beta."}]}]}/>
 
 Enables the `ZXC` compression codec.
 
