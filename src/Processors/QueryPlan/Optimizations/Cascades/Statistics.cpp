@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/IDataType.h>
 #include <IO/Operators.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
@@ -302,31 +303,83 @@ void fillPhysicalReadBytes(ExpressionStatistics & statistics, Float64 physical_s
     statistics.physical_read_bytes = physical_rows * statistics.estimated_bytes_per_row;
 }
 
-/// The rows and the column statistics of a read. If `filter_step` is a filter directly above the read, the row
-/// count accounts for its condition. The column statistics have the names of the columns of the read:
-/// `applyFilterToColumnStats` changes them into those of the filter.
-static RelationStats estimateReadUnderFilter(QueryPlan::Node & read_node, const FilterStep * filter_step)
+/// The statistics of the input columns that a step with `actions` passes to its output without a name in the
+/// actions. See `ActionsDAG::updateHeader`: a column of the input that is not an input of `actions` goes to the
+/// output unchanged.
+static UnorderedMapWithMemoryTracking<String, ColumnStats> statsOfColumnsPassedWithoutName(
+    const UnorderedMapWithMemoryTracking<String, ColumnStats> & input_column_stats, const ActionsDAG & actions, const Block & output_header)
 {
-    const ActionsDAG::Node * filter_condition = filter_step
-        ? filter_step->getExpression().tryFindInOutputs(filter_step->getFilterColumnName())
-        : nullptr;
-    return QueryPlanOptimizations::estimateReadRowsCountUnderFilter(read_node, filter_condition);
+    UnorderedSetWithMemoryTracking<String> names_in_actions;
+    for (const auto * input : actions.getInputs())
+        names_in_actions.insert(input->result_name);
+    for (const auto * output : actions.getOutputs())
+        names_in_actions.insert(output->result_name);
+
+    UnorderedMapWithMemoryTracking<String, ColumnStats> passed;
+    for (const auto & [column_name, stats] : input_column_stats)
+    {
+        if (!names_in_actions.contains(column_name) && output_header.has(column_name))
+            passed.emplace(column_name, stats);
+    }
+    return passed;
 }
 
-/// Changes the statistics of the columns of a read into those of the columns that the filter directly above the
-/// read emits. A column that the filter passes keeps its statistics, also if the actions of the filter do not
-/// name it.
-static void applyFilterToColumnStats(UnorderedMapWithMemoryTracking<String, ColumnStats> & column_stats, const FilterStep & filter_step)
+void remapColumnStatsOfStep(
+    UnorderedMapWithMemoryTracking<String, ColumnStats> & mapped, const ActionsDAG & actions, const Block & output_header)
 {
-    QueryPlanOptimizations::remapColumnStatsOfStep(column_stats, filter_step.getExpression(), *filter_step.getOutputHeader());
-    for (auto & [_, stats] : column_stats)
+    auto passed = statsOfColumnsPassedWithoutName(mapped, actions, output_header);
+    QueryPlanOptimizations::remapColumnStats(mapped, actions);
+    mapped.insert(passed.begin(), passed.end());
+}
+
+/// `estimateReadRowsCount` gives the estimate of a filter directly above a read with the statistics only of the
+/// columns that the actions of the filter name. Adds the statistics of the columns that the filter passes
+/// without a name: those of the columns of the read (`read_column_stats`), for the `filtered_rows` rows that
+/// the filter keeps.
+static void addStatsOfColumnsPassedWithoutName(
+    UnorderedMapWithMemoryTracking<String, ColumnStats> & column_stats,
+    const UnorderedMapWithMemoryTracking<String, ColumnStats> & read_column_stats,
+    const FilterStep & filter_step,
+    Float64 filtered_rows)
+{
+    auto passed = statsOfColumnsPassedWithoutName(read_column_stats, filter_step.getExpression(), *filter_step.getOutputHeader());
+    for (auto & [column_name, stats] : passed)
+    {
         stats.addTransformation(RowSubset);
+        /// A column cannot have more distinct values than there are rows.
+        if (Float64(stats.num_distinct_values) > filtered_rows)
+        {
+            stats.num_distinct_values = QueryPlanOptimizations::toUInt64Saturating(filtered_rows);
+            stats.ndv_provenance.add(EstimatedRowCountClamp);
+        }
+        column_stats.try_emplace(column_name, std::move(stats));
+    }
 }
 
-/// Statistics of a read from object storage, or of the filter `filter_step` directly above it, from the data lake
-/// metadata of the read.
+/// The size of each column of a `MergeTree` read, as column statistics that hold only the size, the form that
+/// `remapColumnStatsOfStep` takes: the size in the estimate of the read (`read_stats`), which was measured or
+/// hinted, else the size from the parts.
+static UnorderedMapWithMemoryTracking<String, ColumnStats> estimateReadColumnSizes(const ReadFromMergeTree & read_step, const RelationStats & read_stats)
+{
+    /// A table-level width hint marks the parts as stand-ins, so it beats their real sizes.
+    auto storage_widths = read_stats.avg_row_bytes
+        ? estimateReadColumnWidthsScaledToRow(read_step, *read_stats.avg_row_bytes)
+        : estimateReadColumnWidths(read_step);
+    UnorderedMapWithMemoryTracking<String, ColumnStats> column_sizes;
+    for (const auto & [column_name, width] : storage_widths)
+        column_sizes[column_name].avg_bytes = width;
+    for (const auto & [column_name, column_stats] : read_stats.column_stats)
+    {
+        if (column_stats.avg_bytes > 0)
+            column_sizes[column_name].avg_bytes = column_stats.avg_bytes;
+    }
+    return column_sizes;
+}
+
+/// Statistics of a read from object storage (`node`), or of the filter `filter_step` directly above it (then
+/// `node` is the filter), from the data lake metadata of the read.
 static std::optional<ExpressionStatistics> estimateObjectStorageReadStatistics(
-    QueryPlan::Node & read_node, const ReadFromObjectStorageStep & read_step, const FilterStep * filter_step)
+    QueryPlan::Node & node, const ReadFromObjectStorageStep & read_step, const FilterStep * filter_step)
 {
     const auto estimate = read_step.getOrCreateDataLakeReadEstimate();
     /// Without an estimate the read keeps the default statistics
@@ -334,19 +387,23 @@ static std::optional<ExpressionStatistics> estimateObjectStorageReadStatistics(
         return std::nullopt;
 
     const auto rows = Float64(*estimate->rows);
-    auto relation_stats = estimateReadUnderFilter(read_node, filter_step);
-    if (filter_step)
-        applyFilterToColumnStats(relation_stats.column_stats, *filter_step);
+    auto relation_stats = QueryPlanOptimizations::estimateReadRowsCount(node);
 
     ExpressionStatistics stats;
     /// A filter that the estimate cannot account for keeps at most the rows of the remaining files, as the selected
     /// rows bound a MergeTree read.
     stats.estimated_row_count = relation_stats.estimated_rows ? Float64(*relation_stats.estimated_rows) : rows;
     stats.column_statistics = std::move(relation_stats.column_stats);
+    if (filter_step)
+        addStatsOfColumnsPassedWithoutName(
+            stats.column_statistics,
+            QueryPlanOptimizations::estimateReadRowsCount(*node.children[0]).column_stats,
+            *filter_step,
+            stats.estimated_row_count);
 
     /// The manifests give no uncompressed sizes, so every column has the width of its type. The columns are
     /// those of the step itself: a filter over the read can drop a column.
-    const auto & header = filter_step ? *filter_step->getOutputHeader() : *read_step.getOutputHeader();
+    const auto & header = *node.step->getOutputHeader();
     for (const auto & column : header)
     {
         auto & column_stats = stats.column_statistics[column.name];
@@ -369,7 +426,7 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
         return estimateObjectStorageReadStatistics(node, *object_storage_read, nullptr);
     if (filter_step && node.children.size() == 1)
         if (const auto * object_storage_read = typeid_cast<const ReadFromObjectStorageStep *>(node.children[0]->step.get()))
-            return estimateObjectStorageReadStatistics(*node.children[0], *object_storage_read, filter_step);
+            return estimateObjectStorageReadStatistics(node, *object_storage_read, filter_step);
 
     std::optional<ExpressionStatistics> stats;
 
@@ -383,38 +440,30 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
         if (!read_step)
             read_step = typeid_cast<ReadFromMergeTree *>(read_node.step.get());
 
-        /// The estimate also handles `PREWHERE`. Its column statistics have the names of the columns of the read.
-        auto relation_stats = estimateReadUnderFilter(read_node, filter_step);
+        /// `estimateReadRowsCount` handles `FilterStep` and `PREWHERE` sampling internally.
+        auto relation_stats = QueryPlanOptimizations::estimateReadRowsCount(node);
         if (relation_stats.estimated_rows)
         {
-            /// The statistics hold the sizes that were measured or hinted; the sizes from the parts fill the rest,
-            /// so that width estimates above the read (join, aggregation) know the size of every column. A
-            /// table-level width hint marks the parts as stand-ins, so it beats their real sizes.
-            auto storage_widths = relation_stats.avg_row_bytes
-                ? estimateReadColumnWidthsScaledToRow(*read_step, *relation_stats.avg_row_bytes)
-                : estimateReadColumnWidths(*read_step);
-            /// The size of each column of the read, in the form that `remapColumnStatsOfStep` takes. The sizes from
-            /// the parts stay out of `relation_stats` until the filter is applied, so that a column with only a
-            /// size does not go through the filter as a column with a known distinct count.
-            UnorderedMapWithMemoryTracking<String, ColumnStats> column_sizes;
-            for (const auto & [column_name, width] : storage_widths)
-                column_sizes[column_name].avg_bytes = width;
-            for (const auto & [column_name, column_stats] : relation_stats.column_stats)
-                if (column_stats.avg_bytes > 0)
-                    column_sizes[column_name].avg_bytes = column_stats.avg_bytes;
+            /// The estimate of the read itself: it has the statistics of every column of the read. That of a
+            /// filter has the statistics only of the columns that the actions of the filter name.
+            const auto read_stats_below_filter = filter_step ? QueryPlanOptimizations::estimateReadRowsCount(read_node) : RelationStats{};
+            const RelationStats & read_stats = filter_step ? read_stats_below_filter : relation_stats;
+
+            /// The sizes fill the statistics, so that width estimates above the read (join, aggregation) know the
+            /// size of every column. The width of the rows of the read comes from all its columns.
+            auto column_sizes = estimateReadColumnSizes(*read_step, read_stats);
             const Float64 read_row_width = estimateRowWidth(*read_step->getOutputHeader(), column_sizes);
 
+            stats.emplace();
+            stats->estimated_row_count = Float64(*relation_stats.estimated_rows);
             /// The statistics of a filter over the read have the names of the filter's output columns. A column
             /// that the filter passes through keeps the statistics and the size of its read column.
             if (filter_step)
             {
-                applyFilterToColumnStats(relation_stats.column_stats, *filter_step);
-                QueryPlanOptimizations::remapColumnStatsOfStep(
-                    column_sizes, filter_step->getExpression(), *filter_step->getOutputHeader());
+                addStatsOfColumnsPassedWithoutName(
+                    relation_stats.column_stats, read_stats.column_stats, *filter_step, stats->estimated_row_count);
+                remapColumnStatsOfStep(column_sizes, filter_step->getExpression(), *filter_step->getOutputHeader());
             }
-
-            stats.emplace();
-            stats->estimated_row_count = Float64(*relation_stats.estimated_rows);
             stats->column_statistics = std::move(relation_stats.column_stats);
             for (const auto & [column_name, column_size] : column_sizes)
             {

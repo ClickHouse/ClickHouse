@@ -789,10 +789,5 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, RelationStatsOptions
 {
     return estimateRelationStatsUnderFilter(node, /*filter=*/nullptr, options);
 }
-
-RelationStats estimateReadRowsCountUnderFilter(QueryPlan::Node & node, const ActionsDAG::Node * filter, RelationStatsOptions options)
-{
-    return estimateRelationStatsUnderFilter(node, filter, options);
-}
 }
 }
