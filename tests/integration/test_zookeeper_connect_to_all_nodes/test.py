@@ -34,17 +34,20 @@ def started_cluster():
         cluster.shutdown()
 
 
-def set_zookeeper_config(hosts, **settings):
-    """Every config keeps `in_order` with keeper1 first, so only a metric of the policy can choose another node."""
+def set_zookeeper_config(hosts, connect_to_all_nodes=True, **settings):
+    """Every config keeps `in_order` with keeper1 first, so only a metric of the policy can choose another node.
+    `connect_to_all_nodes=False` omits the key, so that only a non-default policy can turn the mode on."""
     nodes = "".join(
         f"<node><host>{host}</host><port>9181</port></node>" for host in hosts
     )
+    if connect_to_all_nodes:
+        settings = {"connect_to_all_nodes": 1, **settings}
     extra = "".join(f"<{key}>{value}</{key}>" for key, value in settings.items())
     node.replace_config(
         "/etc/clickhouse-server/config.d/zookeeper.xml",
         f"<clickhouse><zookeeper>{nodes}"
         "<zookeeper_load_balancing>in_order</zookeeper_load_balancing>"
-        f"<connect_to_all_nodes>1</connect_to_all_nodes>{extra}"
+        f"{extra}"
         "</zookeeper></clickhouse>",
     )
     node.query("SYSTEM RELOAD CONFIG")
@@ -70,6 +73,8 @@ def assert_error_with_retry(instance, query, message, retries=60):
 
 
 def test_different_clusters():
+    # node_b may have connected to cluster A at startup, before its own Keeper listened.
+    node_b.query("SYSTEM RECONNECT ZOOKEEPER")
     assert_error_with_retry(
         node_b, CHECK_QUERY_ONCE, "report different cluster configurations"
     )
@@ -78,7 +83,7 @@ def test_different_clusters():
     )
 
     set_zookeeper_config(CLUSTER_A)
-    assert connected_host() in CLUSTER_A
+    assert connected_host() == "keeper1"
 
 
 def create_znodes(keeper_name, count):
@@ -154,6 +159,11 @@ def test_wait_and_fastest_connect():
         assert connected_host() != "keeper1"
 
         set_zookeeper_config(
+            CLUSTER_A, connection_timeout_ms=5000, connect_to_all_nodes_wait_ms=30000
+        )
+        assert connected_host() == "keeper1"
+
+        set_zookeeper_config(
             CLUSTER_A,
             connection_timeout_ms=5000,
             connect_to_all_nodes_wait_ms=30000,
@@ -178,5 +188,7 @@ def test_lowest_latency():
         client.stop()
         client.close()
 
-    set_zookeeper_config(CLUSTER_A, connect_to_all_nodes_policy="lowest_latency")
+    set_zookeeper_config(
+        CLUSTER_A, connect_to_all_nodes=False, connect_to_all_nodes_policy="lowest_latency"
+    )
     assert connected_host() != "keeper1"
