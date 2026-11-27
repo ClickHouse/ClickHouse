@@ -21,6 +21,7 @@
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <base/memcmpSmall.h>
 
 
 namespace DB
@@ -147,6 +148,7 @@ class AggregateFunctionMap final
 {
 private:
     DataTypePtr key_type;
+    TypeIndex key_type_id = TypeIndex::Nothing;
     AggregateFunctionPtr nested_func;
     size_t arguments_num;
 
@@ -184,6 +186,7 @@ public:
         , nested_func(nested), arguments_num(types.size())
     {
         key_type = getKeyType(types, nested_func);
+        key_type_id = key_type->getTypeId();
     }
 
     [[nodiscard]] String getName() const override { return nested_func->getName() + "Map"; }
@@ -205,35 +208,43 @@ public:
         return types.back();
     }
 
-    void addSingleKey(AggregateDataPtr __restrict place, const IColumn & key_column, const IColumn ** value_column, size_t position, Arena * arena) const
+    /// Returns the nested state of the key, creating it if the key is new.
+    ALWAYS_INLINE AggregateDataPtr findOrCreateNestedPlace(Data & data, const typename Data::SearchType & key, Arena * arena) const
     {
-        const typename Data::SearchType key = keyAt(key_column, position);
+        auto it = data.merged_maps.find(key);
+        if (it != data.merged_maps.end())
+            return it->second;
+        return createNestedPlace(data, key, arena);
+    }
 
-        auto & merged_maps = this->data(place).merged_maps;
-        auto it = merged_maps.find(key);
-        if (it == merged_maps.end())
+    NO_INLINE AggregateDataPtr createNestedPlace(Data & data, const typename Data::SearchType & key, Arena * arena) const
+    {
+        /// Take the slot before creating the state. `emplace` allocates a node, and a copy
+        /// of the key when it is a `String`, so it can throw and strand the fresh state:
+        /// nothing would reference it and `destroyImpl` walks only `merged_maps`.
+        auto it = data.merged_maps.emplace(key, nullptr).first;
+
+        try
         {
-            /// Take the slot before creating the state. `emplace` allocates a node, and a copy
-            /// of the key when it is a `String`, so it can throw and strand the fresh state:
-            /// nothing would reference it and `destroyImpl` walks only `merged_maps`.
-            it = merged_maps.emplace(key, nullptr).first;
-
-            try
-            {
-                // create a new place for each key
-                AggregateDataPtr new_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
-                nested_func->create(new_place);
-                it->second = new_place;
-            }
-            catch (...)
-            {
-                /// The slot still holds a null state, which `destroyImpl` would dereference.
-                merged_maps.erase(it);
-                throw;
-            }
+            // create a new place for each key
+            AggregateDataPtr new_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
+            nested_func->create(new_place);
+            it->second = new_place;
+        }
+        catch (...)
+        {
+            /// The slot still holds a null state, which `destroyImpl` would dereference.
+            data.merged_maps.erase(it);
+            throw;
         }
 
-        nested_func->add(it->second, value_column, position, arena);
+        return it->second;
+    }
+
+    void addSingleKey(AggregateDataPtr __restrict place, const IColumn & key_column, const IColumn ** value_column, size_t position, Arena * arena) const
+    {
+        AggregateDataPtr nested_place = findOrCreateNestedPlace(this->data(place), keyAt(key_column, position), arena);
+        nested_func->add(nested_place, value_column, position, arena);
     }
 
     /// Reads one key out of a key column in the representation `merged_maps` is keyed by.
@@ -241,9 +252,9 @@ public:
     {
         if constexpr (std::is_same_v<KeyType, String>)
         {
-            if (key_type->getTypeId() == TypeIndex::FixedString)
+            if (key_type_id == TypeIndex::FixedString)
                 return assert_cast<const ColumnFixedString &>(key_column).getDataAt(row);
-            if (key_type->getTypeId() == TypeIndex::IPv6)
+            if (key_type_id == TypeIndex::IPv6)
                 return assert_cast<const ColumnIPv6 &>(key_column).getDataAt(row);
             return assert_cast<const ColumnString &>(key_column).getDataAt(row);
         }
@@ -286,6 +297,145 @@ public:
             }
 
         }
+    }
+
+    /// A batch remembers the key at each of the first positions of a map with its nested state. A key equal to the one
+    /// remembered for its position skips the lookup, which is valid while the rows go to the same state.
+    static constexpr size_t cached_key_positions = 16;
+
+    struct KeyPositionCache
+    {
+        typename Data::SearchType keys[cached_key_positions]{};
+        AggregateDataPtr places[cached_key_positions]{};
+        size_t size = 0;
+    };
+
+    /// Both keys point into the (padded) key column of the batch.
+    static bool keysEqual(const typename Data::SearchType & lhs, const typename Data::SearchType & rhs)
+    {
+        if constexpr (std::is_same_v<KeyType, String>)
+            return memequalSmallAllowOverflow15(lhs.data(), lhs.size(), rhs.data(), rhs.size());
+        else
+            return CompareHelperEqual<KeyType>{}(lhs, rhs);
+    }
+
+    /// Adds the elements [begin, end) of the map column, the map of one row, to the state `data`.
+    void addMapCached(
+        Data & data, const IColumn & key_column, const IColumn ** nested_columns, size_t begin, size_t end,
+        KeyPositionCache & cache, Arena * arena) const
+    {
+        for (size_t i = begin; i < end; ++i)
+        {
+            const typename Data::SearchType key = keyAt(key_column, i);
+            const size_t position = i - begin;
+
+            AggregateDataPtr nested_place;
+            if (position < cache.size && keysEqual(cache.keys[position], key))
+            {
+                nested_place = cache.places[position];
+            }
+            else
+            {
+                nested_place = findOrCreateNestedPlace(data, key, arena);
+                if (position < cached_key_positions)
+                {
+                    cache.keys[position] = key;
+                    cache.places[position] = nested_place;
+                    cache.size = std::max(cache.size, position + 1);
+                }
+            }
+
+            nested_func->add(nested_place, nested_columns, i, arena);
+        }
+    }
+
+    void addBatchSinglePlace( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        if constexpr (Plain)
+        {
+            Base::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
+        }
+        else
+        {
+            const auto & map_column = assert_cast<const ColumnMap &>(*columns[0]);
+            const IColumn::Offsets & offsets = map_column.getNestedColumn().getOffsets();
+            const auto & key_column = map_column.getNestedData().getColumn(0);
+            const IColumn * nested_columns[1] = {&map_column.getNestedData().getColumn(1)};
+            const UInt8 * flags = if_argument_pos >= 0
+                ? assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data()
+                : nullptr;
+
+            auto & data = this->data(place);
+            KeyPositionCache cache;
+            for (size_t row = row_begin; row < row_end; ++row)
+            {
+                if (!flags || flags[row])
+                    addMapCached(data, key_column, nested_columns, offsets[static_cast<ssize_t>(row) - 1], offsets[row], cache, arena);
+            }
+        }
+    }
+
+    void addBatch( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        if constexpr (Plain)
+        {
+            Base::addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+        }
+        else
+        {
+            const auto & map_column = assert_cast<const ColumnMap &>(*columns[0]);
+            const IColumn::Offsets & offsets = map_column.getNestedColumn().getOffsets();
+            const auto & key_column = map_column.getNestedData().getColumn(0);
+            const IColumn * nested_columns[1] = {&map_column.getNestedData().getColumn(1)};
+            const UInt8 * flags = if_argument_pos >= 0
+                ? assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data()
+                : nullptr;
+
+            KeyPositionCache cache;
+            AggregateDataPtr cached_place = nullptr;
+            for (size_t row = row_begin; row < row_end; ++row)
+            {
+                if (!places[row] || (flags && !flags[row]))
+                    continue;
+
+                AggregateDataPtr place = places[row] + place_offset;
+                if (place != cached_place)
+                {
+                    cache.size = 0;
+                    cached_place = place;
+                }
+
+                addMapCached(this->data(place), key_column, nested_columns, offsets[static_cast<ssize_t>(row) - 1], offsets[row], cache, arena);
+            }
+        }
+    }
+
+    void addBatchWithNonNullPlaces( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        if constexpr (Plain)
+            Base::addBatchWithNonNullPlaces(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+        else
+            addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -423,7 +573,7 @@ public:
             {
                 /// `keyAt` reads exactly N bytes of a `FixedString(N)` key, so a key of another length
                 /// could never be found again (e.g. by `rollbackInsertResult`).
-                if (key_type->getTypeId() == TypeIndex::FixedString)
+                if (key_type_id == TypeIndex::FixedString)
                 {
                     const size_t n = assert_cast<const DataTypeFixedString &>(*key_type).getN();
                     if (key.size() != n)
