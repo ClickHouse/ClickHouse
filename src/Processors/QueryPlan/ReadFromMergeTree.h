@@ -297,6 +297,13 @@ public:
 
     const IndexStats & getIndexStats() const;
     const ProjectionStats & getProjectionStats() const;
+
+    /// The read of a `SQL SECURITY DEFINER` / `NONE` view whose plan the user may not see is shown as a read of the view:
+    /// under the view's name and without the names of the table's skip indexes and projections.
+    bool isSourceHiddenInExplain() const { return source_alias_for_explain.has_value(); }
+    StorageID getStorageIDForExplain() const { return source_alias_for_explain ? *source_alias_for_explain : data.getStorageID(); }
+    IndexStats getIndexStatsForExplain() const;
+    ProjectionStats getProjectionStatsForExplain() const;
     void describeProjections(JSONBuilder::JSONMap & map) const override;
 
     const Names & getAllColumnNames() const { return all_column_names; }
@@ -1028,6 +1035,7 @@ private:
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
+    std::optional<StorageID> source_alias_for_explain;
     bool allow_query_condition_cache = true;
     bool allow_top_k_prewhere_query_condition_cache = true;
     bool allow_spreading_small_read = true;

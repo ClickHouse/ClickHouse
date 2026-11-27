@@ -1862,7 +1862,11 @@ UseProjectionsResult optimizeUseAggregateProjections(
         });
     }
 
-    projection_reading->setStepDescription(selected_projection_name, optimization_settings.max_step_description_length);
+    /// A hidden source keeps the name it is shown under.
+    if (reading->isSourceHiddenInExplain())
+        projection_reading->setStepDescription(*reading);
+    else
+        projection_reading->setStepDescription(selected_projection_name, optimization_settings.max_step_description_length);
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
 
     /// Root node of optimized child plan using @projection_name

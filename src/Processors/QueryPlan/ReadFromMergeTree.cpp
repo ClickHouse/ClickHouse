@@ -654,8 +654,10 @@ ReadFromMergeTree::ReadFromMergeTree(
     /// `max_streams_to_max_threads_ratio`, so bound the effective value here too.
     requested_num_streams = std::min<size_t>(requested_num_streams, 256 * getNumberOfCPUCoresToUse());
 
+    source_alias_for_explain = context->getReadSourceAliasForExplain();
+
     /// Add explicit description.
-    std::string description = data.getStorageID().getFullNameNotQuoted();
+    std::string description = getStorageIDForExplain().getFullNameNotQuoted();
     setStepDescription(description, context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
     enable_vertical_final = query_info.isFinal() && context->getSettingsRef()[Setting::enable_vertical_final]
         && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
@@ -7016,7 +7018,7 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 {
     const auto & result = getAnalysisResult();
-    const auto & index_stats = result.index_stats;
+    const auto index_stats = getIndexStatsForExplain();
 
     const std::string & prefix = format_settings.detail_prefix;
     if (!index_stats.empty())
@@ -7086,14 +7088,13 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 
 void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
 {
-    if (auto indexes_json = indexStatsToJSON(getIndexStats()))
+    if (auto indexes_json = indexStatsToJSON(getIndexStatsForExplain()))
         map.add("Indexes", std::move(indexes_json));
 }
 
 void ReadFromMergeTree::describeProjections(FormatSettings & format_settings) const
 {
-    const auto & result = getAnalysisResult();
-    const auto & projection_stats = result.projection_stats;
+    const auto projection_stats = getProjectionStatsForExplain();
 
     const std::string & prefix = format_settings.detail_prefix;
     if (!projection_stats.empty())
@@ -7135,7 +7136,7 @@ void ReadFromMergeTree::describeProjections(FormatSettings & format_settings) co
 
 void ReadFromMergeTree::describeProjections(JSONBuilder::JSONMap & map) const
 {
-    if (auto projections_json = projectionStatsToJSON(getProjectionStats()))
+    if (auto projections_json = projectionStatsToJSON(getProjectionStatsForExplain()))
         map.add("Projections", std::move(projections_json));
 }
 
@@ -7147,6 +7148,27 @@ const ReadFromMergeTree::IndexStats & ReadFromMergeTree::getIndexStats() const
 const ReadFromMergeTree::ProjectionStats & ReadFromMergeTree::getProjectionStats() const
 {
     return getAnalysisResult().projection_stats;
+}
+
+ReadFromMergeTree::IndexStats ReadFromMergeTree::getIndexStatsForExplain() const
+{
+    IndexStats index_stats = getIndexStats();
+    if (isSourceHiddenInExplain())
+    {
+        for (auto & stat : index_stats)
+        {
+            stat.name.clear();
+            stat.description.clear();
+        }
+    }
+    return index_stats;
+}
+
+ReadFromMergeTree::ProjectionStats ReadFromMergeTree::getProjectionStatsForExplain() const
+{
+    if (isSourceHiddenInExplain())
+        return {};
+    return getProjectionStats();
 }
 
 void ReadFromMergeTree::clearParallelReadingExtension()

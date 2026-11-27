@@ -1729,6 +1729,7 @@ ContextData::ContextData(const ContextData &o) :
     skip_forced_projection_check(o.skip_forced_projection_check),
     is_view_inner_query(o.is_view_inner_query),
     is_sql_security_overridden_body(o.is_sql_security_overridden_body),
+    read_source_alias_for_explain(o.read_source_alias_for_explain),
     join_analyze_mode(o.join_analyze_mode),
     is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
     totals_without_storage_access(o.totals_without_storage_access),
