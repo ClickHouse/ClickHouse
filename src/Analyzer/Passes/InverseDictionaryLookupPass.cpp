@@ -380,6 +380,26 @@ bool dependsOnScalarSubquery(const QueryTreeNodePtr & node)
     return false;
 }
 
+/// The key of `dictGet` is matched with a column of the view in the tree resolved for inspection, where two constants
+/// are equal if their values are (`ConstantNode::isEqual`). A constant folded from a non-deterministic function, such as
+/// `randConstant` or `now`, can get another value when the view is read, and then the column is not the key of `dictGet`.
+bool hasNonDeterministicConstant(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    if (const auto * constant_node = node->as<ConstantNode>())
+        return !constant_node->isDeterministic();
+
+    for (const auto & child : node->getChildren())
+    {
+        if (hasNonDeterministicConstant(child))
+            return true;
+    }
+
+    return false;
+}
+
 struct ColumnDefinition
 {
     QueryTreeNodePtr defining_expression;
@@ -459,7 +479,7 @@ tryParseDictFunctionCall(const QueryTreeNodePtr & node, const ContextPtr & conte
             return std::nullopt;
 
         auto info = tryParseDictFunctionCall(column_definition->defining_expression, context, cache);
-        if (!info)
+        if (!info || hasNonDeterministicConstant(info->key_expr_node))
             return std::nullopt;
 
         /// The `dictGet` comes from the view definition, which may run under the definer's rights
@@ -481,7 +501,7 @@ tryParseDictFunctionCall(const QueryTreeNodePtr & node, const ContextPtr & conte
 
         for (size_t i = 0; i < projection_nodes.size(); ++i)
         {
-            if (!info->key_expr_node->isEqual(*projection_nodes[i]))
+            if (!info->key_expr_node->isEqual(*projection_nodes[i]) || hasNonDeterministicConstant(projection_nodes[i]))
                 continue;
 
             NameAndTypePair outer_key_column{projection_columns[i].name, projection_columns[i].type};
