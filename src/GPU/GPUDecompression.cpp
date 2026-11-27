@@ -9,19 +9,16 @@
 #include <Common/Exception.h>
 #include <base/scope_guard.h>
 
-#include <Compression/CompressionCodecGDeflate.h>
-#include <base/unaligned.h>
-
 #include <nvcomp/gdeflate.h>
 #include <nvcomp/lz4.h>
 #include <nvcomp/zstd.h>
 
 #include <algorithm>
+#include <cstring>
 #include <utility>
 
 namespace DB::ErrorCodes
 {
-    extern const int CANNOT_DECOMPRESS;
     extern const int GPU_ERROR;
 }
 
@@ -124,100 +121,116 @@ T * arrayAt(char * base, size_t & offset, size_t count)
     return values;
 }
 
+/// The chunks of one codec, which one batched call of nvcomp expands: where each is on the device, and where it goes.
+struct CodecCall
+{
+    GPUCodec codec;
+    std::vector<const void *> compressed;
+    std::vector<void *> destinations;
+    std::vector<size_t> compressed_bytes;
+    std::vector<size_t> decompressed_bytes;
+    size_t decompressed_total = 0;
+    size_t max_decompressed = 0;
+
+    size_t size() const { return compressed.size(); }
+
+    void add(const char * from, size_t from_bytes, char * to, size_t to_bytes)
+    {
+        compressed.push_back(from);
+        compressed_bytes.push_back(from_bytes);
+        destinations.push_back(to);
+        decompressed_bytes.push_back(to_bytes);
+        decompressed_total += to_bytes;
+        max_decompressed = std::max(max_decompressed, to_bytes);
+    }
+};
+
+/// A copy on the device, of bytes expanded elsewhere to where they go.
+struct Move
+{
+    const char * from;
+    char * to;
+    size_t bytes;
+};
+
 }
 
-void addCompressedBlocksOf(
-    GPUCodec codec, std::string_view payload, size_t offset, size_t decompressed_bytes, std::vector<CompressedBlock> & blocks)
+struct DecompressionBatch::State
 {
-    if (codec != GPUCodec::GDEFLATE)
+    explicit State(cuda::stream_ref stream_) : stream(stream_) { }
+
+    CodecCall & callOf(GPUCodec codec)
     {
-        blocks.push_back({.codec = codec, .offset = offset, .compressed_bytes = payload.size(), .decompressed_bytes = decompressed_bytes});
-        return;
+        for (CodecCall & call : calls)
+        {
+            if (call.codec == codec)
+                return call;
+        }
+        return calls.emplace_back(CodecCall{.codec = codec});
     }
 
-    /// The number of chunks, the compressed size of each, then the chunks, each from a multiple of 4 bytes.
-    constexpr size_t chunk_bytes = CompressionCodecGDeflate::chunk_bytes;
-    constexpr size_t chunk_alignment = 4;
-    if (payload.size() < sizeof(UInt32))
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "A GDeflate block of {} bytes", payload.size());
-    const size_t num_chunks = unalignedLoadLittleEndian<UInt32>(payload.data());
-    const size_t header_bytes = sizeof(UInt32) * (1 + num_chunks);
-    if (num_chunks != (decompressed_bytes + chunk_bytes - 1) / chunk_bytes || header_bytes > payload.size())
-        throw Exception(
-            ErrorCodes::CANNOT_DECOMPRESS,
-            "A GDeflate block of {} bytes holds {} chunks, where {} expanded bytes make {}",
-            payload.size(),
-            num_chunks,
-            decompressed_bytes,
-            (decompressed_bytes + chunk_bytes - 1) / chunk_bytes);
+    /// Queues the call of nvcomp and the copy of its statuses back to `host_results`.
+    void launch(const CodecCall & call);
 
-    size_t at = header_bytes;
-    for (size_t i = 0; i < num_chunks; ++i)
-    {
-        const size_t compressed_bytes = unalignedLoadLittleEndian<UInt32>(payload.data() + sizeof(UInt32) * (1 + i));
-        if (at + compressed_bytes > payload.size())
-            throw Exception(
-                ErrorCodes::CANNOT_DECOMPRESS, "Chunk {} of a GDeflate block of {} bytes ends at {}", i, payload.size(), at + compressed_bytes);
-        blocks.push_back({
-            .codec = codec,
-            .offset = offset + at,
-            .compressed_bytes = compressed_bytes,
-            .decompressed_bytes = std::min(chunk_bytes, decompressed_bytes - i * chunk_bytes),
-        });
-        at = (at + compressed_bytes + chunk_alignment - 1) / chunk_alignment * chunk_alignment;
-    }
-}
+    /// Once the call is done, that every chunk expanded as its header says.
+    void check(const CodecCall & call) const;
 
-size_t decompressedBytesOf(std::span<const CompressedBlock> blocks)
-{
-    size_t total = 0;
-    for (const CompressedBlock & block : blocks)
-        total += block.decompressed_bytes;
-    return total;
-}
+    const cuda::stream_ref stream;
 
-DecompressionBatch::DecompressionBatch(cuda::stream_ref stream_)
-    : stream(stream_)
+    /// The compressed bytes of each column on the device.
+    std::vector<DeviceBuffer> uploaded;
+    std::vector<CodecCall> calls;
+    /// nvcomp takes only aligned destinations: the chunks of others expand elsewhere and are moved in place.
+    std::vector<DeviceBuffer> expanded_elsewhere;
+    std::vector<Move> moves;
+
+    PinnedBuffer host_arguments;
+    PinnedBuffer host_results;
+    DeviceBuffer device_arguments{stream};
+    DeviceBuffer device_results{stream};
+    DeviceBuffer device_temp{stream};
+};
+
+DecompressionBatch::DecompressionBatch(cuda::stream_ref stream)
+    : state(std::make_unique<State>(stream))
 {
 }
 
-std::vector<DecompressionBatch::Piece> & DecompressionBatch::piecesOf(GPUCodec codec)
-{
-    for (auto & [of, list] : pieces_by_codec)
-    {
-        if (of == codec)
-            return list;
-    }
-    return pieces_by_codec.emplace_back(codec, std::vector<Piece>{}).second;
-}
+DecompressionBatch::~DecompressionBatch() = default;
 
 void DecompressionBatch::add(const CompressedHostColumn & column, char * destination)
 {
-    if (column.blocks.empty())
+    if (column.empty())
         return;
 
-    char * const at = uploaded.emplace_back(stream).grow(column.bytes.size());
+    const cuda::stream_ref stream = state->stream;
+    char * const uploaded = state->uploaded.emplace_back(stream).grow(column.bytes.size());
     checkCuda(
-        cudaMemcpyAsync(at, column.bytes.data(), column.bytes.size(), cudaMemcpyHostToDevice, stream.get()),
+        cudaMemcpyAsync(uploaded, column.bytes.data(), column.bytes.size(), cudaMemcpyHostToDevice, stream.get()),
         "Cannot send compressed blocks to the device");
 
-    /// A piece of each run of blocks of one codec, expanded after the run before.
-    const std::span<const CompressedBlock> blocks = column.blocks;
-    for (size_t first = 0; first < blocks.size();)
+    /// Each run of chunks of one codec expands after the run before.
+    const auto & chunks = column.chunks;
+    for (size_t first = 0; first < chunks.size();)
     {
         size_t last = first + 1;
-        while (last < blocks.size() && blocks[last].codec == blocks[first].codec)
-            ++last;
-        const std::span<const CompressedBlock> run = blocks.subspan(first, last - first);
-        const size_t run_bytes = decompressedBytesOf(run);
+        size_t run_bytes = chunks[first].decompressed_bytes;
+        while (last < chunks.size() && chunks[last].codec == chunks[first].codec)
+            run_bytes += chunks[last++].decompressed_bytes;
 
         char * expand_to = destination;
         if (reinterpret_cast<uintptr_t>(destination) % expand_alignment != 0)
         {
-            expand_to = expanded_elsewhere.emplace_back(stream).grow(run_bytes);
-            moves.push_back({expand_to, destination, run_bytes});
+            expand_to = state->expanded_elsewhere.emplace_back(stream).grow(run_bytes);
+            state->moves.push_back({expand_to, destination, run_bytes});
         }
-        piecesOf(run.front().codec).push_back({.device_compressed = at, .compressed_bytes = column.bytes.size(), .blocks = run, .destination = expand_to});
+
+        CodecCall & call = state->callOf(chunks[first].codec);
+        for (size_t i = first; i < last; ++i)
+        {
+            call.add(uploaded + chunks[i].offset, chunks[i].compressed_bytes, expand_to, chunks[i].decompressed_bytes);
+            expand_to += chunks[i].decompressed_bytes;
+        }
 
         destination += run_bytes;
         first = last;
@@ -228,157 +241,101 @@ GPUFuture<void> DecompressionBatch::expand()
 {
     /// The buffers are freed in the order of the stream, after what is queued on it.
     SCOPE_EXIT({
-        pieces_by_codec.clear();
-        uploaded.clear();
-        expanded_elsewhere.clear();
-        moves.clear();
+        state->calls.clear();
+        state->uploaded.clear();
+        state->expanded_elsewhere.clear();
+        state->moves.clear();
     });
 
-    for (auto & [codec, pieces] : pieces_by_codec)
-        check(launch(codec, pieces));
-    for (const Move & move : moves)
+    const cuda::stream_ref stream = state->stream;
+    for (const CodecCall & call : state->calls)
+    {
+        state->launch(call);
+        GPUPromise<void>(stream).fulfill().get();
+        state->check(call);
+    }
+    for (const Move & move : state->moves)
         checkCuda(cudaMemcpyAsync(move.to, move.from, move.bytes, cudaMemcpyDeviceToDevice, stream.get()), "Cannot move expanded bytes on the device");
     return GPUPromise<void>(stream).fulfill();
 }
 
-GPUFuture<void> DecompressionBatch::launch(GPUCodec codec, std::span<const Piece> pieces)
+void DecompressionBatch::State::launch(const CodecCall & call)
 {
-    size_t num_blocks = 0;
-    size_t decompressed_total = 0;
-    size_t max_decompressed = 0;
+    const size_t num_chunks = call.size();
+    const size_t vector_bytes = num_chunks * sizeof(void *);
+    const size_t arguments_bytes = 4 * vector_bytes;
+    static_assert(sizeof(void *) == sizeof(size_t));
 
-    for (const Piece & piece : pieces)
-    {
-        size_t piece_compressed = 0;
-        for (const CompressedBlock & block : piece.blocks)
-        {
-            piece_compressed = std::max(piece_compressed, block.offset + block.compressed_bytes);
-            decompressed_total += block.decompressed_bytes;
-            max_decompressed = std::max(max_decompressed, block.decompressed_bytes);
-        }
-
-        if (piece_compressed > piece.compressed_bytes)
-            throw Exception(
-                ErrorCodes::GPU_ERROR,
-                "The compressed blocks reach {} bytes into an upload of {}",
-                piece_compressed,
-                piece.compressed_bytes);
-
-        num_blocks += piece.blocks.size();
-
-    }
-
-    expected_bytes.clear();
-    expected_bytes.reserve(num_blocks);
-
-    if (num_blocks == 0)
-        return GPUPromise<void>(stream).fulfill();
-
-    const size_t arguments_bytes = num_blocks * (2 * sizeof(void *) + 2 * sizeof(size_t));
     host_arguments.clear();
     char * const arguments = growBy(host_arguments, arguments_bytes);
-
-    size_t offset = 0;
-    const void ** compressed_ptrs = arrayAt<const void *>(arguments, offset, num_blocks);
-    void ** value_ptrs = arrayAt<void *>(arguments, offset, num_blocks);
-    size_t * compressed_bytes = arrayAt<size_t>(arguments, offset, num_blocks);
-    size_t * decompressed_bytes = arrayAt<size_t>(arguments, offset, num_blocks);
-
-    size_t block_index = 0;
-    size_t at = 0;
-    for (const Piece & piece : pieces)
-    {
-        char * const destination = piece.destination;
-        at = 0;
-        for (const CompressedBlock & block : piece.blocks)
-        {
-            compressed_ptrs[block_index] = piece.device_compressed + block.offset;
-            value_ptrs[block_index] = destination + at;
-            compressed_bytes[block_index] = block.compressed_bytes;
-            decompressed_bytes[block_index] = block.decompressed_bytes;
-            expected_bytes.push_back(block.decompressed_bytes);
-            at += block.decompressed_bytes;
-            ++block_index;
-        }
-    }
+    memcpy(arguments, call.compressed.data(), vector_bytes);
+    memcpy(arguments + vector_bytes, call.destinations.data(), vector_bytes);
+    memcpy(arguments + 2 * vector_bytes, call.compressed_bytes.data(), vector_bytes);
+    memcpy(arguments + 3 * vector_bytes, call.decompressed_bytes.data(), vector_bytes);
 
     waitOnFailure(stream, [&]
     {
         device_arguments.clear();
         device_arguments.append(bytesOf(host_arguments));
 
-        offset = 0;
-        const void * const * d_compressed_ptrs = arrayAt<const void *>(device_arguments.data(), offset, num_blocks);
-        void * const * d_value_ptrs = arrayAt<void *>(device_arguments.data(), offset, num_blocks);
-        const size_t * d_compressed_bytes = arrayAt<size_t>(device_arguments.data(), offset, num_blocks);
-        const size_t * d_decompressed_bytes = arrayAt<size_t>(device_arguments.data(), offset, num_blocks);
+        size_t offset = 0;
+        const void * const * d_compressed = arrayAt<const void *>(device_arguments.data(), offset, num_chunks);
+        void * const * d_destinations = arrayAt<void *>(device_arguments.data(), offset, num_chunks);
+        const size_t * d_compressed_bytes = arrayAt<size_t>(device_arguments.data(), offset, num_chunks);
+        const size_t * d_decompressed_bytes = arrayAt<size_t>(device_arguments.data(), offset, num_chunks);
 
-        const size_t results_bytes = num_blocks * (sizeof(size_t) + sizeof(nvcompStatus_t));
+        const size_t results_bytes = num_chunks * (sizeof(size_t) + sizeof(nvcompStatus_t));
         device_results.clear();
         device_results.grow(results_bytes);
 
         offset = 0;
-        size_t * d_actual_bytes = arrayAt<size_t>(device_results.data(), offset, num_blocks);
-        nvcompStatus_t * d_statuses = arrayAt<nvcompStatus_t>(device_results.data(), offset, num_blocks);
+        size_t * d_actual_bytes = arrayAt<size_t>(device_results.data(), offset, num_chunks);
+        nvcompStatus_t * d_statuses = arrayAt<nvcompStatus_t>(device_results.data(), offset, num_chunks);
 
         size_t temp_bytes = 0;
         checkNvcomp(
-            decompressTempBytes(codec, num_blocks, max_decompressed, decompressed_total, &temp_bytes, stream),
+            decompressTempBytes(call.codec, num_chunks, call.max_decompressed, call.decompressed_total, &temp_bytes, stream),
             "Cannot size nvcomp's scratch space");
-
         device_temp.clear();
         device_temp.grow(temp_bytes);
 
-        host_results.clear();
-        char * const results = growBy(host_results, results_bytes);
-
         checkNvcomp(
             decompressAsync(
-                codec,
-                d_compressed_ptrs,
+                call.codec,
+                d_compressed,
                 d_compressed_bytes,
                 d_decompressed_bytes,
                 d_actual_bytes,
-                num_blocks,
+                num_chunks,
                 device_temp.data(),
                 temp_bytes,
-                d_value_ptrs,
+                d_destinations,
                 d_statuses,
                 stream),
             "Cannot decompress on the device");
 
+        host_results.clear();
+        char * const results = growBy(host_results, results_bytes);
         checkCuda(
             cudaMemcpyAsync(results, device_results.data(), results_bytes, cudaMemcpyDeviceToHost, stream.get()),
             "Cannot copy the decompression statuses back");
-
     });
-    return GPUPromise<void>(stream).fulfill();
 }
 
-void DecompressionBatch::check(GPUFuture<void> expanded)
+void DecompressionBatch::State::check(const CodecCall & call) const
 {
-    std::move(expanded).get();
-
-    const size_t num_blocks = expected_bytes.size();
-    if (num_blocks == 0)
-        return;
-
+    const size_t num_chunks = call.size();
     size_t offset = 0;
-    const size_t * actual_bytes = arrayAt<size_t>(host_results.data(), offset, num_blocks);
-    const nvcompStatus_t * statuses = arrayAt<nvcompStatus_t>(host_results.data(), offset, num_blocks);
+    char * const results = const_cast<char *>(host_results.data());
+    const size_t * actual_bytes = arrayAt<size_t>(results, offset, num_chunks);
+    const nvcompStatus_t * statuses = arrayAt<nvcompStatus_t>(results, offset, num_chunks);
 
-    for (size_t block_index = 0; block_index < num_blocks; ++block_index)
+    for (size_t i = 0; i < num_chunks; ++i)
     {
-        if (statuses[block_index] != nvcompSuccess)
-            throw Exception(
-                ErrorCodes::GPU_ERROR, "Block {} did not decompress: nvcomp status {}", block_index, static_cast<int>(statuses[block_index]));
-        if (actual_bytes[block_index] != expected_bytes[block_index])
-            throw Exception(
-                ErrorCodes::GPU_ERROR,
-                "Block {} expanded to {} bytes, expected {}",
-                block_index,
-                actual_bytes[block_index],
-                expected_bytes[block_index]);
+        if (statuses[i] != nvcompSuccess)
+            throw Exception(ErrorCodes::GPU_ERROR, "Block {} did not decompress: nvcomp status {}", i, static_cast<int>(statuses[i]));
+        if (actual_bytes[i] != call.decompressed_bytes[i])
+            throw Exception(ErrorCodes::GPU_ERROR, "Block {} expanded to {} bytes, expected {}", i, actual_bytes[i], call.decompressed_bytes[i]);
     }
 }
 

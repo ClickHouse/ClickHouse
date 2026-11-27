@@ -2,7 +2,6 @@
 
 #if USE_GPU
 
-#include <GPU/GPUTypeMapping.h>
 
 #include <Common/Exception.h>
 
@@ -12,7 +11,6 @@
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::GPU
@@ -20,14 +18,6 @@ namespace DB::GPU
 
 namespace
 {
-
-/// Where each compressed block starts on the device, as nvcomp reads them, see `nvcompZstdRequiredDecompressionAlignment`.
-constexpr size_t compressed_alignment = 8;
-
-size_t alignedUp(size_t bytes)
-{
-    return (bytes + compressed_alignment - 1) / compressed_alignment * compressed_alignment;
-}
 
 bool isVariable(GPUElementType type)
 {
@@ -126,39 +116,7 @@ void GPUBlockStager::addCompressedBlock(
     size_t skipped_bytes,
     size_t kept_bytes)
 {
-    const auto codec = codecOf(method);
-    /// The plan knows the codecs of the table, not those of the blocks of a part: a part written before an `ALTER` of a
-    /// codec, or by the adaptive codec, may hold blocks of others.
-    if (!codec)
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "A block of compression method {:#x} read for the GPU, which the device does not expand; such a part is aggregated "
-            "on the CPU with `allow_experimental_gpu_aggregation = 0`",
-            static_cast<UInt16>(method));
-
-    if (skipped_bytes + kept_bytes > decompressed_bytes)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "{} bytes kept after {} skipped of a block of {} for the GPU", kept_bytes, skipped_bytes, decompressed_bytes);
-
-    /// A batch has one run of bytes of each stream: it starts at a block that skips bytes, and ends at one cut short.
-    CompressedHostColumn & column = streamOrThrow(column_index, stream);
-    if (column.isCut() || (!column.empty() && skipped_bytes != 0))
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "A block for the GPU that skips {} bytes after the first of a range, or after one cut short, of column {}",
-            skipped_bytes,
-            column_index);
-
-    if (column.empty())
-    {
-        column.skipped_bytes = skipped_bytes;
-        column.bytes.reserve(std::max(expected_bytes, payload.size()));
-    }
-    column.kept_bytes += kept_bytes;
-
-    column.bytes.resize_fill(alignedUp(column.bytes.size()), 0);
-    addCompressedBlocksOf(*codec, payload, column.bytes.size(), decompressed_bytes, column.blocks);
-    appendHostBytes(column.bytes, payload);
+    streamOrThrow(column_index, stream).append(method, payload, decompressed_bytes, skipped_bytes, kept_bytes, expected_bytes);
 }
 
 }

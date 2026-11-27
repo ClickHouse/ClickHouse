@@ -86,10 +86,10 @@ GPUDeviceColumn::GPUDeviceColumn(const GPUHostColumn & host, DecompressionBatch 
     /// The first block expands whole: the rows start after the bytes it skips, which the padding aligns.
     const CompressedHostColumn & host_values = host.values;
     const size_t element = isVariable() ? 1 : sizeOf(type);
-    const size_t padding = (element - host_values.skipped_bytes % element) % element;
+    const size_t padding = (element - host_values.skippedBytes() % element) % element;
     char * const base = values_memory.grow(padding + host_values.expandedBytes());
-    values = base + padding + host_values.skipped_bytes;
-    values_bytes = host_values.kept_bytes;
+    values = base + padding + host_values.skippedBytes();
+    values_bytes = host_values.keptBytes();
     decompression.add(host_values, base + padding);
 
     if (!isVariable())
@@ -98,10 +98,10 @@ GPUDeviceColumn::GPUDeviceColumn(const GPUHostColumn & host, DecompressionBatch 
     /// The sizes expand so that, after the bytes the first block skips, they follow an offset of zero, which `finish`
     /// writes over what is skipped, aligned as offsets.
     const CompressedHostColumn & host_sizes = host.sizes;
-    const size_t before = sizeof(UInt64) + (sizeof(UInt64) - host_sizes.skipped_bytes % sizeof(UInt64)) % sizeof(UInt64);
+    const size_t before = sizeof(UInt64) + (sizeof(UInt64) - host_sizes.skippedBytes() % sizeof(UInt64)) % sizeof(UInt64);
     char * const sizes_base = offsets_memory.grow(before + host_sizes.expandedBytes());
-    offsets = reinterpret_cast<uint64_t *>(sizes_base + before + host_sizes.skipped_bytes) - 1;
-    sizes_bytes = host_sizes.kept_bytes;
+    offsets = reinterpret_cast<uint64_t *>(sizes_base + before + host_sizes.skippedBytes()) - 1;
+    sizes_bytes = host_sizes.keptBytes();
     decompression.add(host_sizes, sizes_base + before);
 }
 
