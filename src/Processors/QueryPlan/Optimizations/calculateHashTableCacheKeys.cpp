@@ -191,25 +191,33 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform, const PlanKeyC
         /// permutation of same-typed columns has the same layout - so two mirror queries whose only
         /// difference is which join input a column comes from would otherwise share a key. Hash the
         /// permutation, which is structural and so equal in both plan builds.
-        if (const auto * expression = typeid_cast<const ExpressionStep *>(&transform))
-        {
-            if (auto permutation = pureColumnPermutation(expression->getExpression()))
-            {
-                bool is_identity = true;
-                for (size_t i = 0; i < permutation->size(); ++i)
-                    is_identity &= (*permutation)[i] == i;
+        const auto * expression = typeid_cast<const ExpressionStep *>(&transform);
+        std::optional<std::vector<size_t>> permutation;
+        if (expression)
+            permutation = pureColumnPermutation(expression->getExpression());
 
-                if (!is_identity)
-                {
-                    SipHash permutation_hash;
-                    permutation_hash.update("column permutation");
-                    for (auto index : *permutation)
-                        permutation_hash.update(index);
-                    return permutation_hash.get64();
-                }
-            }
+        if (permutation)
+        {
+            bool is_identity = true;
+            for (size_t i = 0; i < permutation->size(); ++i)
+                is_identity &= (*permutation)[i] == i;
+
+            if (is_identity)
+                return 0;
+
+            SipHash permutation_hash;
+            permutation_hash.update("column permutation");
+            for (auto index : *permutation)
+                permutation_hash.update(index);
+            return permutation_hash.get64();
         }
-        return 0;
+
+        /// An expression that computes its outputs moves the same bytes whatever it computes, which is all
+        /// the statistics care about. The keys that pair two plans care about what it computes: a filter
+        /// above `k + 200000 AS x` is pushed down to the read as a condition on `k`, so `k + 100000 AS x`
+        /// in the other plan makes it select other ranges. Serialize such an expression whole.
+        if (!expression || !constants.all_values)
+            return 0;
     }
 
     /// This serialized form is only ever hash input - nothing reads the bytes back - so it is
