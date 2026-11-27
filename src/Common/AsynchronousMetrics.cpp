@@ -13,6 +13,7 @@
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/ThreadProfileEvents.h>
 #include <Common/ErrnoException.h>
 #include <Common/MemoryWorker.h>
 #include <Common/formatReadable.h>
@@ -847,20 +848,21 @@ void AsynchronousMetrics::ProcStatValuesCPU::read(ReadBuffer & in)
     skipToNextLineOrEOF(in);
 }
 
+/// Kernel counters can go backwards (iowait in /proc/stat, see proc(5)), or restart when a device is re-created.
 AsynchronousMetrics::ProcStatValuesCPU
 AsynchronousMetrics::ProcStatValuesCPU::operator-(const AsynchronousMetrics::ProcStatValuesCPU & other) const
 {
     ProcStatValuesCPU res{};
-    res.user = user - other.user;
-    res.nice = nice - other.nice;
-    res.system = system - other.system;
-    res.idle = idle - other.idle;
-    res.iowait = iowait - other.iowait;
-    res.irq = irq - other.irq;
-    res.softirq = softirq - other.softirq;
-    res.steal = steal - other.steal;
-    res.guest = guest - other.guest;
-    res.guest_nice = guest_nice - other.guest_nice;
+    res.user = safeDiff(other.user, user);
+    res.nice = safeDiff(other.nice, nice);
+    res.system = safeDiff(other.system, system);
+    res.idle = safeDiff(other.idle, idle);
+    res.iowait = safeDiff(other.iowait, iowait);
+    res.irq = safeDiff(other.irq, irq);
+    res.softirq = safeDiff(other.softirq, softirq);
+    res.steal = safeDiff(other.steal, steal);
+    res.guest = safeDiff(other.guest, guest);
+    res.guest_nice = safeDiff(other.guest_nice, guest_nice);
     return res;
 }
 
@@ -868,9 +870,9 @@ AsynchronousMetrics::ProcStatValuesOther
 AsynchronousMetrics::ProcStatValuesOther::operator-(const AsynchronousMetrics::ProcStatValuesOther & other) const
 {
     ProcStatValuesOther res{};
-    res.interrupts = interrupts - other.interrupts;
-    res.context_switches = context_switches - other.context_switches;
-    res.processes_created = processes_created - other.processes_created;
+    res.interrupts = safeDiff(other.interrupts, interrupts);
+    res.context_switches = safeDiff(other.context_switches, context_switches);
+    res.processes_created = safeDiff(other.processes_created, processes_created);
     return res;
 }
 
@@ -912,21 +914,21 @@ AsynchronousMetrics::BlockDeviceStatValues
 AsynchronousMetrics::BlockDeviceStatValues::operator-(const AsynchronousMetrics::BlockDeviceStatValues & other) const
 {
     BlockDeviceStatValues res{};
-    res.read_ios = read_ios - other.read_ios;
-    res.read_merges = read_merges - other.read_merges;
-    res.read_sectors = read_sectors - other.read_sectors;
-    res.read_ticks = read_ticks - other.read_ticks;
-    res.write_ios = write_ios - other.write_ios;
-    res.write_merges = write_merges - other.write_merges;
-    res.write_sectors = write_sectors - other.write_sectors;
-    res.write_ticks = write_ticks - other.write_ticks;
+    res.read_ios = safeDiff(other.read_ios, read_ios);
+    res.read_merges = safeDiff(other.read_merges, read_merges);
+    res.read_sectors = safeDiff(other.read_sectors, read_sectors);
+    res.read_ticks = safeDiff(other.read_ticks, read_ticks);
+    res.write_ios = safeDiff(other.write_ios, write_ios);
+    res.write_merges = safeDiff(other.write_merges, write_merges);
+    res.write_sectors = safeDiff(other.write_sectors, write_sectors);
+    res.write_ticks = safeDiff(other.write_ticks, write_ticks);
     res.in_flight_ios = in_flight_ios; /// This is current value, not total.
-    res.io_ticks = io_ticks - other.io_ticks;
-    res.time_in_queue = time_in_queue - other.time_in_queue;
-    res.discard_ops = discard_ops - other.discard_ops;
-    res.discard_merges = discard_merges - other.discard_merges;
-    res.discard_sectors = discard_sectors - other.discard_sectors;
-    res.discard_ticks = discard_ticks - other.discard_ticks;
+    res.io_ticks = safeDiff(other.io_ticks, io_ticks);
+    res.time_in_queue = safeDiff(other.time_in_queue, time_in_queue);
+    res.discard_ops = safeDiff(other.discard_ops, discard_ops);
+    res.discard_merges = safeDiff(other.discard_merges, discard_merges);
+    res.discard_sectors = safeDiff(other.discard_sectors, discard_sectors);
+    res.discard_ticks = safeDiff(other.discard_ticks, discard_ticks);
     return res;
 }
 
@@ -934,14 +936,14 @@ AsynchronousMetrics::NetworkInterfaceStatValues
 AsynchronousMetrics::NetworkInterfaceStatValues::operator-(const AsynchronousMetrics::NetworkInterfaceStatValues & other) const
 {
     NetworkInterfaceStatValues res{};
-    res.recv_bytes = recv_bytes - other.recv_bytes;
-    res.recv_packets = recv_packets - other.recv_packets;
-    res.recv_errors = recv_errors - other.recv_errors;
-    res.recv_drop = recv_drop - other.recv_drop;
-    res.send_bytes = send_bytes - other.send_bytes;
-    res.send_packets = send_packets - other.send_packets;
-    res.send_errors = send_errors - other.send_errors;
-    res.send_drop = send_drop - other.send_drop;
+    res.recv_bytes = safeDiff(other.recv_bytes, recv_bytes);
+    res.recv_packets = safeDiff(other.recv_packets, recv_packets);
+    res.recv_errors = safeDiff(other.recv_errors, recv_errors);
+    res.recv_drop = safeDiff(other.recv_drop, recv_drop);
+    res.send_bytes = safeDiff(other.send_bytes, send_bytes);
+    res.send_packets = safeDiff(other.send_packets, send_packets);
+    res.send_errors = safeDiff(other.send_errors, send_errors);
+    res.send_drop = safeDiff(other.send_drop, send_drop);
     return res;
 }
 

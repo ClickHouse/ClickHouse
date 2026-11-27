@@ -389,8 +389,9 @@ public:
     virtual void createAndDeserializeBatch(PaddedPODArray<AggregateDataPtr> & data, AggregateDataPtr __restrict place, size_t total_size_of_state, size_t limit, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const = 0;
 
     /// Sets a just-created state to what it would be after aggregating `count` rows whose values add up to `sum`, for
-    /// callers that already know both (e.g. the aggregation from column statistics). Implemented by `sum`, `avg` and
-    /// `sumCount`; `sum` is a `Field` of the result type of `sum` over the argument. Other functions throw.
+    /// callers that already know both (e.g. the aggregation from column statistics). Implemented by `sum`, `avg`,
+    /// `sumCount` and `count`; `sum` is a `Field` of the result type of `sum` over the argument, and ignored by `count`.
+    /// Over a `Nullable` argument, `count` is the number of non-NULL rows. Other functions throw.
     virtual void setSumAndCount(AggregateDataPtr __restrict place, const Field & sum, UInt64 count) const;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
@@ -551,6 +552,16 @@ public:
         AggregateDataPtr __restrict place,
         size_t place_stride,
         const IColumn ** columns,
+        Arena * arena) const = 0;
+
+    /// The same as addBatchConsecutivePlaces, but the rows with `null_map[i] != 0` are skipped.
+    virtual void addBatchConsecutivePlacesNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        size_t place_stride,
+        const IColumn ** columns,
+        const UInt8 * null_map,
         Arena * arena) const = 0;
 
     /** The case when the aggregation key is UInt8
@@ -996,6 +1007,20 @@ public:
             static_cast<const Derived *>(this)->add(place, columns, i, arena);
     }
 
+    void addBatchConsecutivePlacesNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        size_t place_stride,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena) const override
+    {
+        for (size_t i = row_begin; i < row_end; ++i, place += place_stride)
+            if (!null_map[i])
+                static_cast<const Derived *>(this)->add(place, columns, i, arena);
+    }
+
     void addBatchLookupTable8(
         size_t row_begin,
         size_t row_end,
@@ -1169,22 +1194,20 @@ public:
         std::unique_ptr<Data[]> places{new Data[256 * UNROLL_COUNT]};
         bool has_data[256 * UNROLL_COUNT]{}; /// Separate flags array to avoid heavy initialization.
 
-        size_t i = row_begin;
-
-        /// Aggregate data into different lookup tables.
-
-        size_t size_unrolled = (row_end - row_begin) / UNROLL_COUNT * UNROLL_COUNT;
-        for (; i < size_unrolled; i += UNROLL_COUNT)
+        /// Table `j` gets the `j`-th of `UNROLL_COUNT` consecutive row ranges, so merging tables in order keeps row order.
+        size_t range_size = (row_end - row_begin) / UNROLL_COUNT;
+        for (size_t offset = 0; offset < range_size; ++offset)
         {
             for (size_t j = 0; j < UNROLL_COUNT; ++j)
             {
-                size_t idx = j * 256 + key[i + j];
+                size_t row = row_begin + j * range_size + offset;
+                size_t idx = j * 256 + key[row];
                 if (unlikely(!has_data[idx]))
                 {
                     new (&places[idx]) Data;
                     has_data[idx] = true;
                 }
-                func.add(reinterpret_cast<char *>(&places[idx]), columns, i + j, nullptr);
+                func.add(reinterpret_cast<char *>(&places[idx]), columns, row, nullptr);
             }
         }
 
@@ -1208,7 +1231,7 @@ public:
 
         /// Process tails and add directly to the final destination.
 
-        for (; i < row_end; ++i)
+        for (size_t i = row_begin + range_size * UNROLL_COUNT; i < row_end; ++i)
         {
             size_t k = key[i];
             AggregateDataPtr & place = map[k];
@@ -1248,9 +1271,11 @@ struct AggregateFunctionProperties
       */
     bool is_order_dependent = false;
 
-    /** The result is correct only if each state receives its rows in order, while `merge` puts the states in order by
-      * itself (example: `deltaSumTimestamp`, which compares each row with the previous one and orders the states it
-      * merges by their timestamps). An aggregation that adds the rows of several streams to one state cannot honor it.
+    /** The result is correct only if each state receives its rows in order. In another order the result is wrong,
+      * not just different as for `is_order_dependent` (examples: `deltaSum` and `deltaSumTimestamp`, which compare
+      * each row with the previous one). `deltaSumTimestamp` orders the states it merges by their timestamps, so it
+      * is correct on any number of streams, while `deltaSum` is correct only on one. An aggregation that adds the
+      * rows of several streams to one state cannot honor it.
       */
     bool requires_ordered_rows_per_state = false;
 

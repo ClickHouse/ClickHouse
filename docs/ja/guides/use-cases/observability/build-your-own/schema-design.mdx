@@ -11,26 +11,26 @@ doc_type: 'guide'
 
 * **主キーの選択** - デフォルトのスキーマでは、特定のアクセスパターン向けに最適化された `ORDER BY` が使用されています。通常、実際のアクセスパターンがこれに一致するとは限りません。
 * **構造の抽出** - 既存のカラム、たとえば `Body` カラムから新しいカラムを抽出したい場合があります。これは マテリアライズドカラム を使用して実現できます (より複雑なケースでは materialized view を使用します) 。これにはスキーマの変更が必要です。
-* **Map の最適化** - デフォルトのスキーマでは、属性の保存に Map 型 が使用されています。これらのカラムでは任意のメタデータを保存できます。イベントに含まれるメタデータは事前に定義されていないことが多く、ClickHouse のような強く型付けされたデータベースでは、こうした機能がなければ保存できないため、これは重要な機能です。ただし、マップ のキーとその値へのアクセスは、通常のカラムへのアクセスほど効率的ではありません。これに対処するために、スキーマを変更し、最もよく参照される マップ キーをトップレベルのカラムとして持たせます。[&quot;SQL による構造の抽出&quot;](#extracting-structure-with-sql) を参照してください。これにはスキーマの変更が必要です。
-* **マップ キーアクセスの簡素化** - マップ 内のキーにアクセスするには、より冗長な構文が必要です。これは別名を使うことで緩和できます。クエリを簡潔にする方法については、[&quot;別名の使用&quot;](#using-aliases) を参照してください。
+* **Map の最適化** - デフォルトのスキーマでは、属性の保存に Map 型 が使用されています。これらのカラムでは任意のメタデータを保存できます。イベントに含まれるメタデータは事前に定義されていないことが多く、ClickHouse のような強く型付けされたデータベースでは、こうした機能がなければ保存できないため、これは重要な機能です。ただし、Map のキーとその値へのアクセスは、通常のカラムへのアクセスほど効率的ではありません。これに対処するために、スキーマを変更し、最もよく参照される Map キーをトップレベルのカラムとして持たせます。[&quot;SQL による構造の抽出&quot;](#extracting-structure-with-sql) を参照してください。これにはスキーマの変更が必要です。
+* **Map キーアクセスの簡素化** - Map 内のキーにアクセスするには、より冗長な構文が必要です。これは別名を使うことで緩和できます。クエリを簡潔にする方法については、[&quot;別名の使用&quot;](#using-aliases) を参照してください。
 * **セカンダリ索引** - デフォルトのスキーマでは、Map へのアクセスの高速化とテキストクエリの高速化のためにセカンダリ索引を使用しています。これらは通常は不要であり、追加のディスク容量を消費します。利用することはできますが、本当に必要かどうかを確認するため、事前にテストすべきです。[&quot;セカンダリ / データスキッピングインデックス&quot;](#secondarydata-skipping-indices) を参照してください。
 * **Codec の使用** - 想定されるデータの特性を理解しており、それによって圧縮が改善される根拠がある場合は、カラムの codec をカスタマイズすることもできます。
 
 *上記の各ユースケースについては、以下で詳しく説明します。*
 
-**重要:** 最適な圧縮率とクエリ性能を実現するためにスキーマを拡張・変更することは推奨されますが、可能な限りコアカラムについては OTel のスキーマ命名に従ってください。ClickHouse Grafana プラグインは、クエリ構築を支援するために、Timestamp や SeverityText などの基本的な OTel カラムがいくつか存在することを前提としています。ログおよびトレースに必要なカラムについては、それぞれ [[1]](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format)[[2]](https://grafana.com/docs/grafana/latest/explore/logs-integration/) と [こちら](https://grafana.com/docs/grafana/latest/explore/trace-integration/#data-frame-structure) に記載されています。これらのカラム名を変更し、プラグイン設定でデフォルト値を上書きすることもできます。
+**重要:** 最適な圧縮率とクエリパフォーマンスを実現するためにスキーマを拡張・変更することは推奨されますが、可能な限りコアカラムについては OTel のスキーマ命名に従ってください。ClickHouse Grafana プラグインは、クエリ構築を支援するために、Timestamp や SeverityText などの基本的な OTel カラムがいくつか存在することを前提としています。ログおよびトレースに必要なカラムについては、それぞれ [[1]](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format)[[2]](https://grafana.com/docs/grafana/latest/explore/logs-integration/) と [こちら](https://grafana.com/docs/grafana/latest/explore/trace-integration/#data-frame-structure) に記載されています。これらのカラム名を変更し、プラグイン設定でデフォルト値を上書きすることもできます。
 
 <Tip>
   **ClickStack には最適化済みのデフォルトスキーマが用意されています**
 
-  **ClickStack には、ログ、トレース、メトリクス向けのスキーマが標準で用意されています**。これらには、最新の ClickHouse 機能 (全文検索およびマップキー検索のためのテキスト索引、直接読み取りフィルタリングのためのマテリアライズドカラムと ALIAS 配列、block-number 行ルックアップ) が取り入れられており、ロギングおよびトレースのワークロードで、導入直後から高いパフォーマンスを発揮できることがベンチマークで確認されています。独自設計を行う際の参考として活用してください。
+  **ClickStack には、ログ、トレース、メトリクス向けのスキーマが標準で用意されています**。これらには、最新の ClickHouse 機能 (全文検索およびMapキー検索のためのテキスト索引、直接読み取りフィルタリングのためのマテリアライズドカラムと ALIAS 配列、block-number 行ルックアップ) が取り入れられており、ロギングおよびトレースのワークロードで、導入直後から高いパフォーマンスを発揮できることがベンチマークで確認されています。独自設計を行う際の参考として活用してください。
 
   * 標準的な DDL: [ClickStack で使用されるテーブルとスキーマ](/ja/clickstack/ingesting-data/schemas)。
   * 最適化のレシピ: [ClickStack パフォーマンスチューニング](/ja/clickstack/managing/performance-tuning)。このページの推奨事項の多く (マテリアライズドカラム、スキップ索引、主キーの選択、projections、materialized views) は、自前で構築する構成にもそのまま適用できます。
 </Tip>
 
 <div id="extracting-structure-with-sql">
-  ## SQL による構造の抽出
+  ## SQL による構造の抽出 {#extracting-structure-with-sql}
 </div>
 
 構造化ログでも非構造化ログでも、ユーザーはしばしば次のことを行える必要があります。
@@ -173,16 +173,14 @@ LIMIT 5
   [こちら](/ja/guides/use-cases/observability/build-your-own/integrating-opentelemetry#processing---filtering-transforming-and-enriching) で説明しているように、OTel collector のプロセッサや operator を使って処理を行うこともできます。ほとんどの場合、ClickHouse は collector のプロセッサよりも大幅にリソース効率が高く、高速です。すべてのイベント処理を SQL で行う主な欠点は、ソリューションが ClickHouse に強く依存することです。たとえば、処理済みのログを OTel collector から S3 などの別の宛先へ送信したい場合もあるでしょう。
 </Info>
 
-<div id="materialized-columns">
-  ### マテリアライズドカラム
-</div>
+### マテリアライズドカラム {#materialized-columns}
 
-マテリアライズドカラムは、他のカラムから構造を抽出するための最もシンプルな方法です。これらのカラムの値は常に insert 時に計算されるため、INSERT クエリで指定することはできません。
+マテリアライズドカラムは、他のカラムから構造を抽出するための最もシンプルな方法です。これらのカラムの値は常に 挿入時に計算されるため、INSERT クエリで指定することはできません。
 
 <Info>
   **オーバーヘッド**
 
-  マテリアライズドカラムでは、値が insert 時にディスク上の新しいカラムとして抽出されるため、追加のストレージオーバーヘッドが発生します。
+  マテリアライズドカラムでは、値が 挿入時にディスク上の新しいカラムとして抽出されるため、追加のストレージオーバーヘッドが発生します。
 </Info>
 
 マテリアライズドカラムでは、任意の ClickHouse 式をサポートしており、[文字列の処理](/ja/reference/functions/regular-functions/string-functions) ([正規表現や検索](/ja/reference/functions/regular-functions/string-search-functions) を含む) や [URL](/ja/reference/functions/regular-functions/url-functions)、[型変換](/ja/reference/functions/regular-functions/type-conversion-functions)、[JSON からの値の抽出](/ja/reference/functions/regular-functions/json-functions)、[数学演算](/ja/reference/functions/regular-functions/math-functions) のためのさまざまな分析関数を活用できます。
@@ -192,21 +190,21 @@ LIMIT 5
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String),
         `RequestPage` String MATERIALIZED path(LogAttributes['request_path']),
         `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
         `RefererDomain` String MATERIALIZED domain(LogAttributes['referer'])
@@ -218,7 +216,7 @@ ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)
 
 JSON 関数を使用して String の `Body` から抽出する場合の同等のスキーマは、[こちら](https://pastila.nl/?005cbb97/513b174a7d6114bf17ecc657428cf829#gqoOOiomEjIiG6zlWhE+Sg==)にあります。
 
-3 つのマテリアライズドカラムでは、リクエストされたページ、リクエストの種類、リファラーのドメインを抽出します。これらは map のキーにアクセスし、その値に関数を適用します。その結果、後続のクエリは大幅に高速になります：
+3 つのマテリアライズドカラムでは、リクエストされたページ、リクエストの種類、リファラーのドメインを抽出します。これらは Map のキーにアクセスし、その値に関数を適用します。その結果、後続のクエリは大幅に高速になります：
 
 ```sql
 SELECT RequestPage AS path, count() AS c
@@ -246,22 +244,16 @@ Peak memory usage: 3.16 MiB.
   マテリアライズドカラムは、デフォルトでは `SELECT *` の結果には含まれません。これは、`SELECT *` の結果を常に INSERT を使ってそのままテーブルに挿入し直せるという不変条件を保つためです。この動作は `asterisk_include_materialized_columns=1` を設定すると無効にできます。また、Grafana ではデータソース設定の `Additional Settings -> Custom Settings` で有効にできます。
 </Note>
 
-<div id="materialized-views">
-  ## materialized view
-</div>
+## materialized view {#materialized-views}
 
 [materialized view](/ja/concepts/features/materialized-views/index) を使うと、ログやトレースに対する SQL ベースのフィルタリングや変換を、より柔軟かつ強力に適用できます。
 
-Materialized Views を使うと、計算コストを query time から insert time へ移せます。ClickHouse の materialized view は、データの block がテーブルに挿入されるたびに、その block に対してクエリを実行する単なるトリガーです。このクエリの結果は、2 つ目の「ターゲット」テーブルに挿入されます。
+Materialized Views を使うと、計算コストを クエリ実行時 から 挿入時 へ移せます。ClickHouse の materialized view は、データの block がテーブルに挿入されるたびに、その block に対してクエリを実行する単なるトリガーです。このクエリの結果は、2 つ目の「ターゲット」テーブルに挿入されます。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![materialized view](/images/use-cases/observability/observability-10.webp)
-
-</Frame>
-
+  <Frame>
+    ![materialized view](/images/use-cases/observability/observability-10.webp)
+  </Frame>
 </div>
 
 <Info>
@@ -270,7 +262,7 @@ Materialized Views を使うと、計算コストを query time から insert ti
   ClickHouse の materialized view は、基になるテーブルにデータが流れ込むたびにリアルタイムで更新され、継続的に更新される索引に近い動作をします。一方、他のデータベースの materialized view は通常、refresh が必要なクエリの静的な snapshot です (ClickHouse のリフレッシュ可能な materialized view に近いものです) 。
 </Info>
 
-materialized view に関連付けられたクエリは、理論上は aggregation を含むほぼ任意のクエリにできますが、[JOIN には制限があります](https://clickhouse.com/blog/using-materialized-views-in-clickhouse#materialized-views-and-joins)。ログやトレースで必要になる変換およびフィルタリングの workload であれば、基本的にどの `SELECT` ステートメントでも使用できると考えてよいでしょう。
+materialized view に関連付けられたクエリは、理論上は aggregation を含むほぼ任意のクエリにできますが、[JOIN には制限があります](https://clickhouse.com/blog/using-materialized-views-in-clickhouse#materialized-views-and-joins)。ログやトレースで必要になる変換およびフィルタリングの ワークロード であれば、基本的にどの `SELECT` ステートメントでも使用できると考えてよいでしょう。
 
 ここで覚えておくべきなのは、このクエリはテーブル (ソーステーブル) に挿入される行に対して実行される単なるトリガーであり、その結果が新しいテーブル (ターゲットテーブル) に送られるという点です。
 
@@ -279,21 +271,21 @@ materialized view に関連付けられたクエリは、理論上は aggregatio
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1))
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String)
 ) ENGINE = Null
 ```
 
@@ -349,12 +341,12 @@ SeverityNumber:  9
 1 row in set. Elapsed: 0.027 sec.
 ```
 
-上記では `Body` カラムも抽出しています。これは、後からSQLで抽出されない追加のattributeが追加された場合に備えるためです。このカラムはClickHouseで効率よく圧縮され、アクセス頻度も低いため、クエリパフォーマンスへの影響はありません。最後に、キャストを使用してTimestampをDateTime型に変換し、容量を節約します (詳細は[「型の最適化」](#optimizing-types)を参照) 。
+上記では `Body` カラムも抽出しています。これは、後からSQLで抽出されない追加の属性が追加された場合に備えるためです。このカラムはClickHouseで効率よく圧縮され、アクセス頻度も低いため、クエリパフォーマンスへの影響はありません。最後に、キャストを使用してTimestampをDateTime型に変換し、容量を節約します (詳細は[「型の最適化」](#optimizing-types)を参照) 。
 
 <Info>
   **条件関数**
 
-  上では、`SeverityText` と `SeverityNumber` を抽出するために [条件関数](/ja/reference/functions/regular-functions/conditional-functions) を使っている点に注目してください。これらは複雑な条件を組み立てたり、map 内で値が設定されているかどうかを確認したりする際に非常に便利です。ここでは `LogAttributes` にすべてのキーが存在すると素朴に仮定しています。ぜひ使い方に慣れておくことをおすすめします。[NULL 値](/ja/reference/functions/regular-functions/functions-for-nulls) を扱う関数とあわせて、ログのパースで大いに役立ちます。
+  上では、`SeverityText` と `SeverityNumber` を抽出するために [条件関数](/ja/reference/functions/regular-functions/conditional-functions) を使っている点に注目してください。これらは複雑な条件を組み立てたり、Map 内で値が設定されているかどうかを確認したりする際に非常に便利です。ここでは `LogAttributes` にすべてのキーが存在すると素朴に仮定しています。ぜひ使い方に慣れておくことをおすすめします。[NULL 値](/ja/reference/functions/regular-functions/functions-for-nulls) を扱う関数とあわせて、ログのパースで大いに役立ちます。
 </Info>
 
 これらの結果を受け取るテーブルが必要です。以下のターゲットテーブルは上記のクエリに対応しています：
@@ -390,7 +382,7 @@ ORDER BY (ServiceName, Timestamp)
   スキーマが大きく変わっていることに注目してください。実際には、保持しておきたい Trace カラムに加えて、`ResourceAttributes` カラム (通常は Kubernetes のメタデータを含みます) もあるはずです。Grafana は Trace カラムを利用して、ログとトレースの間を相互にたどれるリンク機能を提供できます。詳しくは[&quot;Grafana の使用&quot;](/ja/guides/use-cases/observability/build-your-own/grafana)を参照してください。
 </Note>
 
-以下では、materialized view `otel_logs_mv` を作成します。これは、`otel_logs` テーブルに対して上記のSELECTを実行し、その結果を `otel_logs_v2` に送信します。
+以下では、materialized view `otel_logs_mv` を作成します。このビューは `otel_logs` テーブルに対して上記の SELECT を実行し、その結果を `otel_logs_v2` に送信します。
 
 ```sql
 CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
@@ -418,13 +410,9 @@ FROM otel_logs
 上記を以下に示します。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![OTel MV](/images/use-cases/observability/observability-11.webp)
-
-</Frame>
-
+  <Frame>
+    ![OTel MV](/images/use-cases/observability/observability-11.webp)
+  </Frame>
 </div>
 
 ここで、[&quot;ClickHouse へのエクスポート&quot;](/ja/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse) で使用した collector の設定を再起動すると、データが意図したフォーマットで `otel_logs_v2` に取り込まれるようになります。型付き JSON 抽出関数を使用している点にも注目してください。
@@ -485,7 +473,7 @@ FROM otel_logs
 ```
 
 <div id="beware-types">
-  ### 型に注意
+  ### 型に注意 {#beware-types}
 </div>
 
 上記の materialized view は暗黙的なキャストに依存しています。特に `LogAttributes` マップ を使用する場合はその傾向が顕著です。ClickHouse は多くの場合、抽出した値をターゲットテーブルの型に透過的にキャストしてくれるため、必要な構文を減らせます。ただし、ビューの `SELECT` ステートメントを、同じスキーマを持つターゲットテーブルに対する [`INSERT INTO`](/ja/reference/statements/insert-into) ステートメントと組み合わせて、必ずビューをテストすることを推奨します。これにより、型が正しく処理されていることを確認できます。特に次のケースに注意してください。
@@ -501,7 +489,7 @@ FROM otel_logs
 </Info>
 
 <div id="choosing-a-primary-ordering-key">
-  ## プライマリ (順序付け) キーの選択
+  ## プライマリ (順序付け) キーの選択 {#choosing-a-primary-ordering-key}
 </div>
 
 必要なカラムを抽出したら、順序付けキー / 主キーの最適化を始められます。
@@ -524,7 +512,7 @@ FROM otel_logs
 </Info>
 
 <div id="using-maps">
-  ## Map の使用
+  ## Map の使用 {#using-maps}
 </div>
 
 前述の例では、`Map(String, String)` カラム内の値にアクセスするために、`map['key']` という map 構文を使用しました。ネストされたキーにアクセスするための map 記法に加えて、これらのカラムを絞り込んだり選択したりするための専用の ClickHouse [map 関数](/ja/reference/functions/regular-functions/tuple-map-functions#mapKeys) も利用できます。
@@ -552,9 +540,7 @@ Peak memory usage: 71.90 MiB.
   Map のカラム名にドットを使用することは推奨しておらず、将来的に非推奨となる可能性があります。`_` を使用してください。
 </Info>
 
-<div id="using-aliases">
-  ## 別名の使用
-</div>
+## 別名の使用 {#using-aliases}
 
 Map型に対するクエリは、通常のカラムに対するクエリよりも低速です。詳しくは[&quot;クエリの高速化&quot;](#accelerating-queries)を参照してください。また、構文も複雑になりがちで、記述が煩雑になることがあります。後者の問題に対処するため、Aliasカラムの使用を推奨します。
 
@@ -563,21 +549,21 @@ ALIASカラムはクエリ時に計算され、テーブルには保存されま
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String),
         `RequestPath` String MATERIALIZED path(LogAttributes['request_path']),
         `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
         `RefererDomain` String MATERIALIZED domain(LogAttributes['referer']),
@@ -638,13 +624,13 @@ LIMIT 5
 </Info>
 
 <div id="optimizing-types">
-  ## 型の最適化
+  ## 型の最適化 {#optimizing-types}
 </div>
 
 型の最適化に関する[ClickHouse の一般的なベストプラクティス](/ja/guides/clickhouse/data-modelling/schema-design#optimizing-types)は、この ClickHouse のユースケースにも当てはまります。
 
 <div id="using-codecs">
-  ## コーデックの使用
+  ## コーデックの使用 {#using-codecs}
 </div>
 
 型の最適化に加えて、ClickHouseオブザーバビリティのスキーマで圧縮の最適化を行う際には、[コーデックに関する一般的なベストプラクティス](/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec)に従うこともできます。
@@ -653,33 +639,27 @@ LIMIT 5
 
 さらに、タイムスタンプは圧縮の面ではデルタエンコーディングの恩恵を受けますが、このカラムをプライマリキーまたはソートキーに使用すると、クエリ性能が低下することが確認されています。圧縮率とクエリ性能のトレードオフを評価することを推奨します。
 
-<div id="using-dictionaries">
-  ## Dictionaries の使用
-</div>
+## Dictionary の使用 {#using-dictionaries}
 
-[Dictionaries](/ja/reference/statements/create/dictionary) は ClickHouse の[重要な機能](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)の 1 つで、さまざまな内部および外部[SOURCES](/ja/reference/statements/create/dictionary/sources/overview#dictionary-sources) から取得したデータをインメモリの [キー・バリュー](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) 形式で表現し、超低レイテンシのルックアップクエリ向けに最適化します。
+[Dictionary](/ja/reference/statements/create/dictionary) は ClickHouse の[重要な機能](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)の 1 つで、さまざまな内部および外部[SOURCES](/ja/reference/statements/create/dictionary/sources/overview#dictionary-sources) から取得したデータをインメモリの [キー・バリュー](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) 形式で表現し、超低レイテンシのルックアップクエリ向けに最適化します。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![オブザーバビリティと Dictionaries](/images/use-cases/observability/observability-12.webp)
-
-</Frame>
-
+  <Frame>
+    ![オブザーバビリティと Dictionary](/images/use-cases/observability/observability-12.webp)
+  </Frame>
 </div>
 
 これはさまざまな場面で役立ちます。たとえば、インジェスト処理を遅くすることなく取り込みデータをその場で enrich したり、クエリ全体のパフォーマンスを向上させたりできます。特に JOIN で効果を発揮します。
-オブザーバビリティのユースケースでは JOIN が必要になることはまれですが、Dictionaries は エンリッチメント の用途で引き続き便利です。insert 時にもクエリ時にも利用できます。以下では、その両方の例を紹介します。
+オブザーバビリティのユースケースでは JOIN が必要になることはまれですが、Dictionary は エンリッチメント の用途で引き続き便利です。insert 時にもクエリ時にも利用できます。以下では、その両方の例を紹介します。
 
 <Info>
   **JOIN の高速化**
 
-  Dictionaries を使った JOIN の高速化に関心がある場合は、[こちら](/ja/concepts/features/dictionaries/index)で詳細を確認できます。
+  Dictionary を使った JOIN の高速化に関心がある場合は、[こちら](/ja/concepts/features/dictionaries/index)で詳細を確認できます。
 </Info>
 
 <div id="insert-time-vs-query-time">
-  ### 挿入時とクエリ時
+  ### 挿入時とクエリ時 {#insert-time-vs-query-time}
 </div>
 
 Dictionaries は、データセットをクエリ時または挿入時にエンリッチするために使用できます。これらのアプローチには、それぞれ長所と短所があります。要約すると、次のとおりです。
@@ -692,7 +672,7 @@ Dictionaries は、データセットをクエリ時または挿入時にエン�
 シンプルなエンリッチメントの例については、Dictionaries のガイドを[こちら](/ja/concepts/features/dictionaries/index)で参照してください。以下では、オブザーバビリティでよくあるエンリッチのタスクに焦点を当てます。
 
 <div id="using-ip-dictionaries">
-  ### IP辞書の使用
+  ### IP辞書の使用 {#using-ip-dictionaries}
 </div>
 
 IPアドレスを使ってログやトレースに緯度・経度の値をGeoエンリッチすることは、オブザーバビリティでは一般的な要件です。これは、`ip_trie` 構造の Dictionary を使って実現できます。
@@ -799,7 +779,7 @@ CREATE TABLE geoip
         `country_code` String
 )
 ENGINE = MergeTree
-ORDER BY cidr
+ORDER BY cidr;
 
 INSERT INTO geoip
 WITH
@@ -815,7 +795,7 @@ SELECT
 FROM geoip_url
 ```
 
-ClickHouse で低レイテンシの IP ルックアップを実現するために、Geo IP データのキー -&gt; 属性のマッピングをメモリ内に保持する Dictionary を利用します。ClickHouse には、ネットワークプレフィックス (CIDR ブロック) を座標と国コードにマッピングするための `ip_trie` [Dictionary 構造](/ja/reference/statements/create/dictionary/layouts/ip-trie) が用意されています。次のクエリでは、このレイアウトを使用し、上記のテーブルをソースとする Dictionary を定義しています。
+ClickHouse で低レイテンシの IP ルックアップを実現するために、Geo IP データのキー -&gt; 属性のマッピングをインメモリに保持する Dictionary を利用します。ClickHouse には、ネットワークプレフィックス (CIDR ブロック) を座標と国コードにマッピングするための `ip_trie` [Dictionary 構造](/ja/reference/statements/create/dictionary/layouts/ip-trie) が用意されています。次のクエリでは、このレイアウトを使用し、上記のテーブルをソースとする Dictionary を定義しています。
 
 ```sql
 CREATE DICTIONARY ip_trie (
@@ -849,10 +829,10 @@ SELECT * FROM ip_trie LIMIT 3
 <Info>
   **定期的な更新**
 
-  ClickHouse の Dictionaries は、基となる table のデータと、上で使用した lifetime clause に基づいて定期的に更新されます。DB-IP dataset の最新の変更を Geo IP Dictionary に反映するには、変換を適用したうえで、`geoip_url` remote table から `geoip` table へデータを再度 insert するだけです。
+  ClickHouse の Dictionaries は、基となる テーブル のデータと、上で使用した lifetime clause に基づいて定期的に更新されます。DB-IP データセット の最新の変更を Geo IP Dictionary に反映するには、変換を適用したうえで、`geoip_url` remote テーブル から `geoip` テーブル へデータを再度 挿入 するだけです。
 </Info>
 
-これで Geo IP データが `ip_trie` Dictionary (これも `ip_trie` という名前です) に読み込まれたので、IP のジオロケーションに利用できます。これは次のように [`dictGet()` function](/ja/reference/functions/regular-functions/ext-dict-functions) を使って実現できます。
+これで Geo IP データが `ip_trie` Dictionary (これも `ip_trie` という名前です) に読み込まれたので、IP のジオロケーションに利用できます。これは次のように [`dictGet()` 関数](/ja/reference/functions/regular-functions/ext-dict-functions) を使って実現できます。
 
 ```sql
 SELECT dictGet('ip_trie', ('country_code', 'latitude', 'longitude'), CAST('85.242.48.167', 'IPv4')) AS ip_details
@@ -863,7 +843,7 @@ SELECT dictGet('ip_trie', ('country_code', 'latitude', 'longitude'), CAST('85.24
 │ ('PT',38.7944,-9.34284) │
 └─────────────────────────┘
 
-1 行 in set. Elapsed: 0.003 sec.
+1 row in set. Elapsed: 0.003 sec.
 ```
 
 ここでの取得の速さに注目してください。これにより、ログをエンリッチできます。この場合は、**クエリ時にエンリッチする**ことを選択します。
@@ -931,16 +911,14 @@ ORDER BY (ServiceName, Timestamp)
 
 上記の国情報と座標を使用すると、国ごとのグループ化やフィルタリングだけでなく、さらに幅広い可視化が可能になります。参考として、[&quot;Geoデータの可視化&quot;](/ja/guides/use-cases/observability/build-your-own/grafana#visualizing-geo-data)を参照してください。
 
-<div id="using-regex-dictionaries-user-agent-parsing">
-  ### 正規表現Dictionaryの使用 (ユーザーエージェントのパース)
-</div>
+### 正規表現Dictionaryの使用 (ユーザーエージェントのパース) {#using-regex-dictionaries-user-agent-parsing}
 
 [ユーザーエージェント文字列](https://en.wikipedia.org/wiki/User_agent)のパースは、正規表現の典型的な用途であり、ログやトレースベースのデータセットでよく求められます。ClickHouse では、正規表現ツリーDictionary を使用してユーザーエージェントを効率的にパースできます。
 
 正規表現ツリーDictionaryは、正規表現ツリーを含む YAML ファイルへのパスを指定する YAMLRegExpTree Dictionaryソース型を使って、ClickHouse オープンソース版で定義します。独自の正規表現Dictionaryを用意したい場合は、必要な構造の詳細を[こちら](/ja/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source)で確認できます。以下では、[uap-core](https://github.com/ua-parser/uap-core) を使ったユーザーエージェントのパースに焦点を当て、サポートされている CSV フォーマット向けのDictionaryをロードします。この方法は OSS と ClickHouse Cloud の両方に対応しています。
 
 <Note>
-  以下の例では、2024 年 6 月時点の uap-core の最新のユーザーエージェント解析用正規表現のスナップショットを使用します。最新版のファイルは随時更新されており、[こちら](https://raw.githubusercontent.com/ua-parser/uap-core/master/regexes.yaml)から入手できます。以下で使用する CSV ファイルにロードするには、[こちら](/ja/reference/statements/create/dictionary/layouts/regexp-tree#collecting-attribute-values)の手順に従ってください。
+  以下の例では、2024 年 6 月時点の uap-core の最新のユーザーエージェントパース用正規表現のスナップショットを使用します。最新版のファイルは随時更新されており、[こちら](https://raw.githubusercontent.com/ua-parser/uap-core/master/regexes.yaml)から入手できます。以下で使用する CSV ファイルにロードするには、[こちら](/ja/reference/statements/create/dictionary/layouts/regexp-tree#collecting-attribute-values)の手順に従ってください。
 </Note>
 
 次の Memory テーブルを作成します。これらのテーブルには、デバイス、ブラウザー、オペレーティングシステムをパースするための正規表現を格納します。
@@ -985,6 +963,10 @@ INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.e
 ```
 
 メモリテーブルへのデータ投入が完了したら、正規表現Dictionaryを読み込めます。キーの値はカラムとして指定する必要がある点に注意してください。これらが、ユーザーエージェントから抽出できる属性になります。
+
+<Note title="ClickHouse Cloud">
+  ClickHouse テーブルから読み取る Dictionary を作成する場合は、`SOURCE` 句に専用ユーザーのユーザー名とパスワードを指定してください。このユーザーには、ソーステーブルに対する `SELECT` アクセス許可が必要です。詳しくは [ClickHouse Dictionary ソースの例](/ja/reference/statements/create/dictionary/sources/clickhouse)を参照してください。
+</Note>
 
 ```sql
 CREATE DICTIONARY regexp_os_dict
@@ -1128,7 +1110,7 @@ Os:     ('Other','0','0','0')
 </Info>
 
 <div id="further-reading">
-  ### さらに詳しく
+  ### さらに詳しく {#further-reading}
 </div>
 
 Dictionary に関するさらに多くの例や詳細については、以下の記事を参照してください。
@@ -1138,13 +1120,13 @@ Dictionary に関するさらに多くの例や詳細については、以下の
 * [Dictionaries](/ja/reference/statements/create/dictionary)
 
 <div id="accelerating-queries">
-  ## クエリの高速化
+  ## クエリの高速化 {#accelerating-queries}
 </div>
 
 ClickHouse は、クエリ性能を高速化するためのさまざまな手法をサポートしています。以下の手法は、まず最も一般的なアクセスパターンに合わせて最適化し、圧縮を最大化できる適切なプライマリキー/ソートキー を選定したうえで検討してください。通常、これが最小限の労力で最も大きな性能向上をもたらします。
 
 <div id="using-materialized-views-incremental-for-aggregations">
-  ### 集計に materialized view (インクリメンタル) を使用する
+  ### 集計に materialized view (インクリメンタル) を使用する {#using-materialized-views-incremental-for-aggregations}
 </div>
 
 前のセクションでは、データ変換やフィルタリングに materialized view を使用する方法を見てきました。materialized view はそれに加えて、insert 時に集計を事前計算し、その結果を保存するためにも使用できます。この結果は後続の insert の結果で更新できるため、実質的に集計を insert 時点で事前計算できます。
@@ -1283,7 +1265,7 @@ LIMIT 5
 </Note>
 
 <div id="a-more-complex-example">
-  #### より複雑な例
+  #### より複雑な例 {#a-more-complex-example}
 </div>
 
 上記の例では、[SummingMergeTree](/ja/reference/engines/table-engines/mergetree-family/summingmergetree) を使用して、1時間ごとの単純な件数を集計しています。単純な合計より先の統計を扱うには、別のターゲットテーブルエンジンである [AggregatingMergeTree](/ja/reference/engines/table-engines/mergetree-family/aggregatingmergetree) が必要です。
@@ -1370,7 +1352,7 @@ ORDER BY Hour DESC
 ここでは、`FINAL`ではなく`GROUP BY`を使用している点に注意してください。
 
 <div id="using-materialized-views-incremental--for-fast-lookups">
-  ### 高速なルックアップのための materialized view (incremental) の利用
+  ### 高速なルックアップのための materialized view (incremental) の利用 {#using-materialized-views-incremental--for-fast-lookups}
 </div>
 
 `filter` 句や `aggregation` 句で頻繁に使われるカラムを基に ClickHouse の ソートキー を選ぶ際は、アクセスパターンを考慮する必要があります。これは、ユーザーのアクセスパターンがより多様で、単一のカラムセットでは表しきれないオブザーバビリティのユースケースでは制約になることがあります。この点は、デフォルトの OTel スキーマに組み込まれている例を見るとよくわかります。トレースのデフォルトスキーマを見てみましょう。
@@ -1475,19 +1457,17 @@ LIMIT 1000
 
 同じアプローチは、類似の アクセスパターン にも適用できます。類似の例については、Data Modeling の[こちら](/ja/concepts/features/materialized-views/incremental-materialized-view#lookup-table)で説明しています。
 
-<div id="using-projections">
-  ### プロジェクションの使用
-</div>
+### プロジェクションの使用 {#using-projections}
 
 ClickHouse のプロジェクションを使用すると、1 つのテーブルに対して複数の `ORDER BY` 句を指定できます。
 
 前のセクションでは、ClickHouse で materialized view を使用して集計を事前計算し、行を変換し、さまざまなアクセスパターンに合わせてオブザーバビリティのクエリを最適化する方法を見てきました。
 
-例として、trace ID によるルックアップを最適化するために、materialized view が、insert を受け取る元のテーブルとは異なる並び順キーを持つターゲットテーブルへ行を送るケースを示しました。
+例として、trace ID によるルックアップを最適化するために、materialized view が、insert を受け取る元のテーブルとは異なる順序キーを持つターゲットテーブルへ行を送るケースを示しました。
 
 プロジェクションも同じ問題への対処に使用でき、主キーに含まれないカラムに対するクエリ向けの最適化を可能にします。
 
-理論上、この機能を使えば 1 つのテーブルに複数の並び順キーを持たせることができますが、明確な欠点が 1 つあります。それはデータの重複です。具体的には、データはメインの主キーの順序で書き込む必要があるだけでなく、各プロジェクションで指定した順序でも書き込む必要があります。これにより insert は遅くなり、より多くのディスク容量を消費します。
+理論上、この機能を使えば 1 つのテーブルに複数の順序キーを持たせることができますが、明確な欠点が 1 つあります。それはデータの重複です。具体的には、データはメインの主キーの順序で書き込む必要があるだけでなく、各プロジェクションで指定した順序でも書き込む必要があります。これにより insert は遅くなり、より多くのディスク容量を消費します。
 
 <Info>
   **プロジェクションと Materialized Views の比較**
@@ -1496,13 +1476,9 @@ ClickHouse のプロジェクションを使用すると、1 つのテーブル�
 </Info>
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Observability and projections](/images/use-cases/observability/observability-13.webp)
-
-</Frame>
-
+  <Frame>
+    ![Observability and projections](/images/use-cases/observability/observability-13.webp)
+  </Frame>
 </div>
 
 次のクエリを考えてみましょう。これは `otel_logs_v2` テーブルを 500 エラーコードでフィルタリングするものです。これはログにおける一般的なアクセスパターンであり、ユーザーはエラーコードでフィルタリングしたいことが多いと考えられます。
@@ -1527,7 +1503,7 @@ Peak memory usage: 56.54 MiB.
   ここでは `FORMAT Null` を使い、結果は表示していません。これにより、すべての結果は読み取られますが返されないため、LIMIT によるクエリの早期終了を防げます。これは、1,000 万行すべてをスキャンするのにかかる時間を示すためだけのものです。
 </Info>
 
-上記のクエリでは、選択した順序付けキー `(ServiceName, Timestamp)` では線形スキャンが必要になります。`Status` を順序付けキーの末尾に追加すれば上記クエリのパフォーマンスを改善できますが、プロジェクションを追加することもできます。
+上記のクエリでは、選択した順序キー `(ServiceName, Timestamp)` では線形スキャンが必要になります。`Status` を順序キーの末尾に追加すれば上記クエリのパフォーマンスを改善できますが、プロジェクションを追加することもできます。
 
 ```sql
 ALTER TABLE otel_logs_v2 (
@@ -1605,7 +1581,7 @@ Peak memory usage: 27.85 MiB.
 上記の例では、プロジェクションに、先ほどのクエリで使用したカラムを指定しています。つまり、プロジェクションの一部として指定したこれらのカラムだけが、Status で並べ替えられた状態でディスクに保存されます。代わりにここで `SELECT *` を使用すると、すべてのカラムが保存されます。これにより、より多くのクエリ (任意のカラムの組み合わせを使用するもの) がプロジェクションの恩恵を受けられるようになりますが、追加のストレージが必要になります。ディスク容量と圧縮の測定については、[&quot;テーブルサイズと圧縮の測定&quot;](#measuring-table-size--compression)を参照してください。
 
 <div id="secondarydata-skipping-indices">
-  ### セカンダリ索引 / データスキッピングインデックス
+  ### セカンダリ索引 / データスキッピングインデックス {#secondarydata-skipping-indices}
 </div>
 
 ClickHouse でプライマリキーをどれほど適切に調整しても、クエリによってはフルテーブルスキャンが避けられません。これは materialized view (および一部のクエリでは projections) を使うことである程度緩和できますが、追加のメンテナンスが必要になるうえ、それらを活用するには、ユーザーがその存在を把握している必要があります。一方、従来のリレーショナルデータベースではこれをセカンダリ索引で解決しますが、ClickHouse のようなカラム指向データベースでは効果的ではありません。そこで ClickHouse では &quot;Skip&quot; 索引を使用しており、一致する値を含まない大きな chunk を読み飛ばせるため、クエリ性能を大幅に向上できる場合があります。
@@ -1617,7 +1593,7 @@ ClickHouse でプライマリキーをどれほど適切に調整しても、ク
 **一般に、プライマリキーと対象の非プライマリなカラム/式の間に強い相関があり、かつユーザーがまれな値、つまり多くの granule には現れない値を検索する場合に有効です。**
 
 <div id="text-index-for-full-text-search">
-  ### 全文検索用のテキスト索引
+  ### 全文検索用のテキスト索引 {#text-index-for-full-text-search}
 </div>
 
 ClickHouse は、全文検索向けに特化した[テキスト索引](/ja/reference/engines/table-engines/mergetree-family/textindexes)を提供しています。
@@ -1680,7 +1656,7 @@ Query id: ff0b866c-6df7-47be-9e36-795ef3888169
 ```
 
 <div id="adding-a-text-index">
-  #### テキスト索引の追加
+  #### テキスト索引の追加 {#adding-a-text-index}
 </div>
 
 Bodyカラムに対するテキスト索引は、テーブル作成時に追加できます。
@@ -1740,7 +1716,7 @@ Query id: ebc31a94-92b3-48aa-860a-939d7e788ef4
 ```
 
 <div id="using-a-preprocessor">
-  #### プリプロセッサの使用
+  #### プリプロセッサの使用 {#using-a-preprocessor}
 </div>
 
 このデータセットでは、Body カラムに複数のキー・バリュー・ペア (例: `msg`、`id`、`ctx`、`attr` など) を含む JSON 形式の文字列が格納されています。
@@ -2011,16 +1987,14 @@ Query id: 730e4b77-e697-40b3-a24d-67219ec42075
 </details>
 
 <div id="extracting-from-maps">
-  ### Map型からの抽出
+  ### Map型からの抽出 {#extracting-from-maps}
 </div>
 
 Map型は、OTelのスキーマで広く使われています。この型では、値とキーの型が同じである必要があり、Kubernetes のラベルのようなメタデータには十分です。ただし、Map型のサブキーをクエリする際は、親カラム全体が読み込まれる点に注意してください。Map に多数のキーがある場合、そのキーが独立したカラムとして存在する場合に比べて、ディスクからより多くのデータを読み込む必要があるため、クエリ性能に大きな影響が出ることがあります。
 
 特定のキーを頻繁にクエリする場合は、それをルートレベルの専用カラムとして切り出すことを検討してください。これは通常、一般的なアクセスパターンに応じてデプロイ後に行う作業であり、本番稼働前に予測するのは難しいことがあります。デプロイ後にスキーマを変更する方法については、[「スキーマ変更の管理」](/ja/guides/use-cases/observability/build-your-own/managing-data#managing-schema-changes) を参照してください。
 
-<div id="measuring-table-size--compression">
-  ## テーブルサイズと圧縮の測定
-</div>
+## テーブルサイズと圧縮の測定 {#measuring-table-size--compression}
 
 ClickHouse がオブザーバビリティで利用される主な理由の 1 つは、圧縮です。
 

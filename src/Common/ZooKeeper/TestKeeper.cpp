@@ -957,9 +957,17 @@ ResponsePtr TestKeeperCheckRequest::createResponse() const { return std::make_sh
 ResponsePtr TestKeeperSyncRequest::createResponse() const { return std::make_shared<SyncResponse>(); }
 ResponsePtr TestKeeperReconfigRequest::createResponse() const { return std::make_shared<ReconfigResponse>(); }
 ResponsePtr TestKeeperGetACLRequest::createResponse() const { return std::make_shared<GetACLResponse>(); }
-ResponsePtr TestKeeperMultiRequest::createResponse() const { return std::make_shared<MultiResponse>(); }
 ResponsePtr TestKeeperListRecursiveRequest::createResponse() const { return std::make_shared<ListRecursiveResponse>(); }
 ResponsePtr TestKeeperListWithOptionsRequest::createResponse() const { return std::make_shared<ListWithOptionsResponse>(); }
+
+ResponsePtr TestKeeperMultiRequest::createResponse() const
+{
+    auto response = std::make_shared<MultiResponse>();
+    response->responses.reserve(requests.size());
+    for (const auto & request : requests)
+        response->responses.push_back(dynamic_cast<const TestKeeperRequest &>(*request).createResponse());
+    return response;
+}
 
 
 TestKeeper::TestKeeper(const zkutil::ZooKeeperArgs & args_)

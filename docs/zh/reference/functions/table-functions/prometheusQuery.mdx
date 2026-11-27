@@ -65,7 +65,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 **注意**：`min_of(a, b)` 和 `max_of(a, b)` 分别返回两个标量值中较小或较大的值。两个参数都必须是标量。
 
-**注意**：`step`、`range`、`min_of`、`max_of`、`ts_of_min_over_time`、`ts_of_max_over_time`、`ts_of_last_over_time`、`first_over_time`、`ts_of_first_over_time` 和 `mad_over_time` 是 Prometheus 中的 Experimental 函数 (通过 `--enable-feature=promql-experimental-functions` 启用) ；ClickHouse 无需该标志即可计算它们。
+**注意**：`step`、`range`、`min_of`、`max_of`、`ts_of_min_over_time`、`ts_of_max_over_time`、`ts_of_last_over_time`、`ts_of_first_over_time` 和 `mad_over_time` 是 Prometheus 中的 Experimental 函数 (通过 `--enable-feature=promql-experimental-functions` 启用) ；ClickHouse 无需该标志即可计算它们。
 
 ### 运算符 {#operators}
 

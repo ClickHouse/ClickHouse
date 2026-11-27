@@ -20,12 +20,15 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 <ExperimentalBadge />
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+<SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "新しい実験的な設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "デフォルトで、読み取る行数と worker 数から読み取りタスク数を決定します。"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "8"},{"label": "新しい実験的な設定"}]}]} />
 
-分散クエリで並列読み取りを行う際のデフォルトのタスク数です。タスクはレプリカ間に分散されます。
-ルールベースの分散プランナーで使用されます。コストベースのオプティマイザは推定コストに基づいて読み取りのファンアウトを選択するため、この設定は使用しません。
+分散クエリにおける並列読み取りのタスク数です。タスクは各 worker に分配されます。
+
+`0` を指定すると、タスク数が自動的に決定されます。読み取り対象として選択された行 `distributed_plan_min_rows_per_reader` 行ごとに 1 タスクが割り当てられ、最小で 1、最大で worker 数までとなります。
+
+この設定はルールベースの分散プランナーで使用されます。コストベースのオプティマイザは推定コストに基づいて読み取りの fan-out を決定するため、この設定を使用しません。
 
 ## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
 
@@ -145,6 +148,17 @@ Shuffle 戦略が正しい結果を生成できない場合、たとえば `GROU
 
 分散クエリプランで、shuffle join の代わりに broadcast join を使用する際の最大行数。
 ルールベースの分散プランナーにおけるヒューリスティックです。コストベースのオプティマイザが有効な場合、broadcast と shuffle の選択は推定コストに基づいて行われるため、この設定は効果がありません。
+
+## distributed_plan_min_rows_per_reader {#distributed_plan_min_rows_per_reader}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1000000"},{"label": "新しい実験的な設定"}]}]} />
+
+`distributed_plan_default_reader_bucket_count` が `0` の場合に、各読み取りタスクに割り当てる最小行数です。
+ルールベースの分散プランナーで使用されます。
 
 ## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
 
