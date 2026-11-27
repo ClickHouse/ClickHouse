@@ -156,6 +156,7 @@ public:
     /// requested is read with its type in `nested_table_type_hints_`, the one its fields were selected with, if it is there.
     ORCColumnToCHColumn(
         const Block & header_,
+        const ORC::Type & file_schema_,
         const FormatSettings & format_settings_,
         UnorderedSetWithMemoryTracking<UInt64> count_only_fields_ = {},
         const ColumnMapper * column_mapper_ = nullptr,
@@ -197,6 +198,8 @@ private:
 
     const Block & header;
     const FormatSettings format_settings;
+    /// The type tree of the file, which the read types are pruned from.
+    const ORC::Type & file_schema;
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
     bool null_as_default;
