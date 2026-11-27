@@ -1,6 +1,5 @@
 #include <Client/ClientBaseHelpers.h>
 #include <Client/ClientSlashCommands.h>
-#include <Client/HistoryPicker.h>
 #include <Client/ReplxxLineReader.h>
 #include <Parsers/Lexer.h>
 #include <base/errnoToString.h>
@@ -17,22 +16,23 @@
 #include <cerrno>
 #include <cstring>
 #include <unistd.h>
-
-#if defined(OS_DARWIN)
-#    include <dlfcn.h>
-#endif
 #include <functional>
-#include <limits>
 #include <sys/file.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <csignal>
+#include <dlfcn.h>
 #include <fcntl.h>
 #include <fstream>
 #include <filesystem>
 #include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include "config.h" // USE_SKIM
+
+#if USE_SKIM
+#include <skim.h>
+#endif
 
 namespace
 {
@@ -89,24 +89,28 @@ std::string getEditor()
 }
 
 /// See comments in ShellCommand::executeImpl()
+/// (for the vfork via dlsym())
 int executeCommand(char * const argv[])
 {
-#if defined(OS_DARWIN)
-    /// x86_64 macOS binds library symbols lazily (there is no `-z now` there), and binding `vfork` in the call itself
-    /// can deadlock in a multithreaded program. So resolve it before the call. Elsewhere everything is bound at startup.
+#if !defined(USE_MUSL)
+    /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
+      *  because of the resolving of symbols in the shared library
+      * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
+      * Therefore, separate the resolving of the symbol from the call.
+      */
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
+#else
+    /// If we use Musl with static linking, there is no dlsym and no issue with vfork.
+    static void * real_vfork = reinterpret_cast<void *>(&vfork); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c)
+#endif
     if (!real_vfork)
         throw std::runtime_error("Cannot find vfork symbol");
+
     pid_t pid = reinterpret_cast<pid_t (*)()>(real_vfork)();
-#else
-    pid_t pid = vfork(); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c,clang-analyzer-security.insecureAPI.vfork)
-#endif
 
     if (-1 == pid)
         throw std::runtime_error(fmt::format("Cannot vfork {}: {}", argv[0], errnoToString()));
 
-    /// The child only calls async-signal-safe functions before `exec`.
-    // NOLINTBEGIN(clang-analyzer-unix.Vfork)
     /// Child
     if (0 == pid)
     {
@@ -118,7 +122,6 @@ int executeCommand(char * const argv[])
         execvp(argv[0], argv);
         _exit(-1);
     }
-    // NOLINTEND(clang-analyzer-unix.Vfork)
 
     int status = 0;
     do
@@ -351,7 +354,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     if (!history_file_path.empty())
     {
-        history_file_fd = open(history_file_path.c_str(), O_RDWR | O_CREAT, 0666);
+        history_file_fd = open(history_file_path.c_str(), O_RDWR);
         if (history_file_fd < 0)
         {
             rx.print("Open of history file failed: %s\n", errnoToString().c_str());
@@ -504,8 +507,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                 if (auto slash_commands = matchClientSlashCommandPrefix(context); !slash_commands.commands.empty())
                 {
                     context_size = static_cast<int>(slash_commands.prefix_length);
-                    /// Deliberately not truncated to `HINTS_MAX_ROWS`: the list is static and small,
-                    /// and a bare `/` promises to show all the commands.
+                    slash_commands.commands.resize(std::min(slash_commands.commands.size(), HINTS_MAX_ROWS));
                     return show(replxx::Replxx::hints_t(slash_commands.commands.begin(), slash_commands.commands.end()), context_size);
                 }
             }
@@ -541,9 +543,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         };
         rx.set_hint_callback(hint_callback);
         rx.set_hint_delay(0); /// Show hints immediately, without a delay.
-        /// The suggestion hints are already truncated to `HINTS_MAX_ROWS` above; the row cap only
-        /// needs to be wide enough for the untruncated `/`-command list.
-        rx.set_max_hint_rows(static_cast<int>(std::max(HINTS_MAX_ROWS, clientSlashCommands().size())));
+        rx.set_max_hint_rows(static_cast<int>(HINTS_MAX_ROWS));
 
         /// replxx drops its internal hint selection on every action that regenerates the line — any
         /// cursor movement, edit, etc. (see `handle_hints` on `HINT_ACTION::REGENERATE`) — but it
@@ -587,34 +587,9 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.bind_key(Replxx::KEY::PAGE_DOWN, [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_LAST, code); });
     rx.bind_key(Replxx::KEY::control('G'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_RESTORE_CURRENT, code); });
     rx.bind_key(Replxx::KEY::meta('g'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_RESTORE, code); });
-
-    /// Bind a shortcut that does not edit the text. With `--vim`, `replxx` dispatches only through
-    /// the keymap of the current mode, so the shortcut is bound in the vim normal mode as well.
-    auto bind_non_editing_key = [this, vim_mode = options.vim](char32_t key, Replxx::key_press_handler_t handler)
-    {
-        rx.bind_key(key, handler);
-        if (!vim_mode)
-            return;
-        rx.bind_key(
-            key,
-            [this, handler](char32_t code)
-            {
-                resetVim();
-                Replxx::ACTION_RESULT ret = handler(code);
-                /// Stay in normal mode with the cursor on a character of the (possibly recalled) line.
-                if (ret == Replxx::ACTION_RESULT::CONTINUE)
-                {
-                    rx.set_editing_mode(MODE_NORMAL);
-                    withVimState([this](int & pos, std::u32string & text) { resetVim(&pos, &text); });
-                }
-                return ret;
-            },
-            MODE_NORMAL);
-    };
-
-    bind_non_editing_key(Replxx::KEY::control('R'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
-    bind_non_editing_key(Replxx::KEY::control('S'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
-    bind_non_editing_key(Replxx::KEY::meta('r'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_SEEDED_INCREMENTAL_SEARCH, code); });
+    rx.bind_key(Replxx::KEY::control('R'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
+    rx.bind_key(Replxx::KEY::control('S'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
+    rx.bind_key(Replxx::KEY::meta('r'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_SEEDED_INCREMENTAL_SEARCH, code); });
 
     /// We don't want the default, "suspend" behavior, it confuses people.
     /// In the embedded mode, it would stop the whole server process with `SIGSTOP`.
@@ -759,16 +734,17 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
     };
-    bind_non_editing_key(Replxx::KEY::meta('#'), insert_comment_action);
+    rx.bind_key(Replxx::KEY::meta('#'), insert_comment_action);
 
     char key_fuzzy = 'R';
     char key_regular = 'T';
     if (options.interactive_history_legacy_keymap)
         std::swap(key_fuzzy, key_regular);
 
+#if USE_SKIM
     if (!options.embedded_mode)
     {
-        auto interactive_history_search = [this, key_regular, in_fd = options.in_fd, out_fd = options.out_fd](char32_t code)
+        auto interactive_history_search = [this, key_regular](char32_t code)
         {
             std::vector<std::string> words;
             {
@@ -778,23 +754,18 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             }
 
             std::string current_query(rx.get_state().text());
-            const int cursor_position = rx.get_state().cursor_position();
             std::string new_query;
-            /// Keep the input visible and open the picker below its end.
-            rx.set_state(replxx::Replxx::State(current_query.c_str(), std::numeric_limits<int>::max()));
-            suppress_hints_once = true;
-            rx.invoke(Replxx::ACTION::CLEAR_SELF, code);
-            rx.invoke(Replxx::ACTION::REPAINT, code);
             try
             {
-                new_query = DB::pickFromHistory(in_fd, out_fd, current_query, words);
+                new_query = std::string(skim(current_query, words));
             }
             catch (const std::exception & e)
             {
-                rx.print("\nHistory search failed: %s (consider using Ctrl-%c for a regular non-fuzzy reverse search)\n", e.what(), key_regular);
-                /// Draw the prompt below the message.
-                rx.invoke(Replxx::ACTION::REPAINT, code);
+                rx.print("skim failed: %s (consider using Ctrl-%c for a regular non-fuzzy reverse search)\n", e.what(), key_regular);
             }
+
+            /// REPAINT before to avoid prompt overlap by the query
+            rx.invoke(Replxx::ACTION::REPAINT, code);
 
             const bool selected_query = !new_query.empty();
             if (selected_query)
@@ -803,11 +774,6 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                 /// (see historyNavigate).
                 suppress_hints_once = true;
                 rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
-            }
-            else
-            {
-                /// Nothing picked: the cursor goes back to where it was.
-                rx.set_state(replxx::Replxx::State(current_query.c_str(), cursor_position));
             }
 
             if (bracketed_paste_enabled)
@@ -820,14 +786,15 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             return result;
         };
 
-        bind_non_editing_key(Replxx::KEY::control(key_fuzzy), interactive_history_search);
+        rx.bind_key(Replxx::KEY::control(key_fuzzy), interactive_history_search);
     }
+#endif
 
     /// Rebind regular incremental search.
     ///
     /// NOTE: C-T by default this is a binding to swap adjustent chars
     /// (TRANSPOSE_CHARACTERS), but for SQL it sounds pretty useless.
-    bind_non_editing_key(Replxx::KEY::control(key_regular), [this](char32_t)
+    rx.bind_key(Replxx::KEY::control(key_regular), [this](char32_t)
     {
         /// Reverse search is detected by C-R.
         uint32_t reverse_search = Replxx::KEY::control('R');
@@ -844,14 +811,6 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             rx.print("%s", "\033[0 q");
         return rx.invoke(Replxx::ACTION::TOGGLE_OVERWRITE_MODE, 0);
     });
-
-    if (options.vim)
-    {
-        vim = true;
-        rx.set_escdelay(10);
-        /// We don't want to allow opening EDITOR in the embedded mode.
-        setupVimKeybindings(/* allow_editor= */ !options.embedded_mode);
-    }
 }
 
 bool ReplxxLineReader::isCursorAtEndOfInput()
@@ -950,10 +909,6 @@ ReplxxLineReader::~ReplxxLineReader()
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
 {
     input.clear();
-
-    /// Every input starts in insert mode without a pending vim command, however the previous one ended.
-    if (vim)
-        resetVimForNewInput();
 
     const char* cinput = rx.input(prompt);
     if (cinput == nullptr)

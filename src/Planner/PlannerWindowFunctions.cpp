@@ -1,6 +1,7 @@
 #include <optional>
 #include <Planner/PlannerWindowFunctions.h>
 
+#include <AggregateFunctions/WindowFunction.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/WindowNode.h>
@@ -31,7 +32,7 @@ WindowDescription extractWindowDescriptionFromWindowNode(const QueryTreeNodePtr 
     auto & window_node = node->as<WindowNode &>();
 
     WindowDescription window_description;
-    window_description.window_name = calculateWindowNodeActionName(node, planner_context);
+    window_description.window_name = calculateWindowNodeActionName(func_node_, node, planner_context);
 
     for (const auto & partition_by_node : window_node.getPartitionBy().getNodes())
     {
@@ -48,7 +49,9 @@ WindowDescription extractWindowDescriptionFromWindowNode(const QueryTreeNodePtr 
         window_description.full_sort_description.end(), window_description.order_by.begin(), window_description.order_by.end());
 
     /// WINDOW frame is validated during query analysis stage
-    window_description.frame = window_node.getWindowFrame();
+    auto window_frame = extractWindowFrame(func_node);
+    window_description.frame = window_frame ? *window_frame : window_node.getWindowFrame();
+    auto node_frame = window_node.getWindowFrame();
 
     const auto & query_context = planner_context.getQueryContext();
     const auto & query_context_settings = query_context->getSettingsRef();
@@ -75,17 +78,9 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
 {
     std::unordered_map<std::string, WindowDescription> window_name_to_description;
 
-    /// The same window function can appear many times in the query tree, e.g. when it is reached through
-    /// several references to an alias, and it must be computed only once.
-    NameSet unique_window_function_names;
-
     for (const auto & window_function_node : window_function_nodes)
     {
         auto & window_function_node_typed = window_function_node->as<FunctionNode &>();
-
-        auto window_function_name = calculateActionNodeName(window_function_node, planner_context);
-        if (!unique_window_function_names.emplace(window_function_name).second)
-            continue;
 
         auto function_window_description = extractWindowDescriptionFromWindowNode(window_function_node, planner_context);
 
@@ -96,7 +91,7 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
 
         WindowFunctionDescription window_function;
         window_function.function_node = nullptr;
-        window_function.column_name = std::move(window_function_name);
+        window_function.column_name = calculateActionNodeName(window_function_node, planner_context);
         window_function.aggregate_function = window_function_node_typed.getAggregateFunction();
 
         const auto & parameters_nodes = window_function_node_typed.getParameters().getNodes();
@@ -128,10 +123,7 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
     result.reserve(window_name_to_description.size());
 
     for (auto && [_, window_description] : window_name_to_description)
-    {
-        validateWindowFunctions(window_description);
         result.push_back(std::move(window_description));
-    }
 
     return result;
 }

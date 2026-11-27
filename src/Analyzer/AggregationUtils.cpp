@@ -53,7 +53,7 @@ public:
         has_aggregate_functions = true;
     }
 
-    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
     {
         if (only_check && has_aggregate_functions)
             return false;
@@ -62,7 +62,7 @@ public:
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
-    [[nodiscard]] bool hasAggregateFunctions() const
+    bool hasAggregateFunctions() const
     {
         return has_aggregate_functions;
     }
@@ -102,9 +102,6 @@ bool hasAggregateFunctionNodes(const QueryTreeNodePtr & node)
 
 void assertNoAggregateFunctionNodes(const QueryTreeNodePtr & node, const String & assert_no_aggregates_place_message, const String & hint)
 {
-    if (isQueryOrUnionNode(node))
-        return;
-
     CollectAggregateFunctionNodesVisitor visitor(assert_no_aggregates_place_message, hint);
     visitor.visit(node);
 }

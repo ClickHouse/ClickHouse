@@ -1,10 +1,8 @@
 #pragma once
 
-#include <span>
 #include <Columns/IColumn_fwd.h>
 #include <Core/Block_fwd.h>
 #include <Core/BlockNameMap.h>
-#include <DataTypes/IDataType_fwd.h>
 
 namespace DB
 {
@@ -35,12 +33,12 @@ struct ColumnMapping
     void setupByHeader(const Block & header);
 
     void addColumns(
-        std::span<const String> column_names, const BlockNameMap & column_indexes_by_names, const FormatSettings & settings);
+        const Names & column_names, const BlockNameMap & column_indexes_by_names, const FormatSettings & settings);
 
     void addColumns(
-        std::span<const String> column_names, const CaseAwareBlockNameMap & column_indexes_by_names, const FormatSettings & settings);
+        const Names & column_names, const CaseAwareBlockNameMap & column_indexes_by_names, const FormatSettings & settings);
 
-    void insertDefaultsForNotSeenColumns(MutableColumns & columns, const DataTypes & data_types, std::span<UInt8> read_columns);
+    void insertDefaultsForNotSeenColumns(MutableColumns & columns, std::vector<UInt8> & read_columns);
 };
 
 }

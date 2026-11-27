@@ -12,15 +12,21 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تُعِدّ هذه الإعدادات خادم ClickHouse، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-## index_mark_cache_policy {#index_mark_cache_policy}
+<div id="index_mark_cache_policy">
+  ## index_mark_cache_policy
+</div>
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة الإخلاء لذاكرة التخزين المؤقت لعلامات الفهرس الثانوية. القيم الممكنة: `LRU`، `SLRU`، `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />اسم سياسة لذاكرة التخزين المؤقت لعلامات الفهرس الثانوية.
 
-## index_mark_cache_prewarm_ratio {#index_mark_cache_prewarm_ratio}
+<div id="index_mark_cache_prewarm_ratio">
+  ## index_mark_cache_prewarm_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.95" changeable_without_restart="No" />النسبة من الحجم الإجمالي لذاكرة التخزين المؤقت لعلامات الفهرس التي تُملأ أثناء التسخين المسبق.
 
-## index_mark_cache_size {#index_mark_cache_size}
+<div id="index_mark_cache_size">
+  ## index_mark_cache_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />
 
@@ -32,7 +38,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   يمكن تعديل هذا الإعداد في وقت التشغيل، ويُطبَّق مفعوله فورًا.
 </Note>
 
-## index_mark_cache_size_ratio {#index_mark_cache_size_ratio}
+<div id="index_mark_cache_size_ratio">
+  ## index_mark_cache_size_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.3" changeable_without_restart="No" />حجم الجزء المحمي (في حالة سياسة SLRU) في ذاكرة التخزين المؤقت لعلامات الفهرس الثانوية، نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت.
 

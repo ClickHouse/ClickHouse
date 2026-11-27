@@ -10,7 +10,6 @@
 #include <Analyzer/ValidationUtils.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/TypeTree.h>
 #include <Functions/IFunction.h>
 
 namespace DB
@@ -30,14 +29,22 @@ bool keyArgumentTypesAreAllowed(const ColumnsWithTypeAndName & columns, bool all
     if (allow_suspicious_types)
         return true;
 
-    /// Dynamic and Variant types are not allowed in GROUP BY by default.
-    auto is_suspicious = [](const IDataType & type) { return isDynamic(type) || isVariant(type); };
+    bool is_valid = true;
+    auto check = [&](const IDataType & type)
+    {
+        /// Dynamic and Variant types are not allowed in GROUP BY by default.
+        is_valid &= !isDynamic(type) && !isVariant(type);
+    };
 
     for (const auto & column : columns)
-        if (anyInTypeTree(*column.type, is_suspicious))
-            return false;
+    {
+        check(*column.type);
+        column.type->forEachChild(check);
+        if (!is_valid)
+            break;
+    }
 
-    return true;
+    return is_valid;
 }
 
 }
@@ -129,8 +136,7 @@ void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys)
     keys = std::move(new_keys);
 }
 
-QueryTreeNodes unwrapInjectiveFunctionsInKeys(
-    const QueryTreeNodes & keys, bool allow_suspicious_types, const QueryTreeNodePtrWithHashIgnoreAliasesSet * keys_to_keep)
+QueryTreeNodes unwrapInjectiveFunctionsInKeys(const QueryTreeNodes & keys, bool allow_suspicious_types)
 {
     QueryTreeNodes new_keys;
     new_keys.reserve(keys.size());
@@ -145,7 +151,7 @@ QueryTreeNodes unwrapInjectiveFunctionsInKeys(
             nodes_to_process.pop();
 
             const auto * function_node = node_to_process->as<FunctionNode>();
-            if (!function_node || (keys_to_keep && keys_to_keep->contains(node_to_process)))
+            if (!function_node)
             {
                 // Constant aggregation keys are removed in PlannerExpressionAnalysis.cpp
                 new_keys.push_back(node_to_process);

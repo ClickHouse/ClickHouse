@@ -58,8 +58,6 @@ set(DBMS_FUNCTIONS
     extractTimeZoneFromFunctionArguments.cpp # extractTimeZoneFromFunctionArguments (DateTimeTransforms.h, FunctionsConversion.cpp)
     generateSnowflakeID.cpp
     FunctionGenerateRandomStructure.cpp # FunctionGenerateRandomStructure::generateRandomDataType (Used by StorageGenerateRandom.cpp)
-    extractKeyValuePairs.cpp # KeyValuePairExtractor (Used by HivePartitioningUtils.cpp)
-    indexHint.cpp # FunctionIndexHint::createImplied, FunctionIndexHint::tryGet (Used by LogicalExpressionOptimizerPass.cpp, ActionsDAG.cpp, filterPushDown.cpp...)
 )
 extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
@@ -70,7 +68,6 @@ extract_into_parent_list(clickhouse_functions_headers dbms_headers
     extractTimeZoneFromFunctionArguments.h
     FunctionsLogical.h
     CastOverloadResolver.h
-    extractKeyValuePairs.h
 )
 
 add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_headers} ${clickhouse_functions_sources})
@@ -100,6 +97,7 @@ list (APPEND PRIVATE_LIBS
         boost::filesystem
         ch_contrib::libdivide
         ch_contrib::xxHash
+        ch_contrib::stringzilla
 )
 
 if (TARGET OpenSSL::Crypto)
@@ -162,10 +160,6 @@ if (TARGET ch_contrib::pocketfft)
     list (APPEND PRIVATE_LIBS ch_contrib::pocketfft)
 endif()
 
-if (TARGET ch_contrib::ipcrypt2)
-    list (APPEND PRIVATE_LIBS ch_contrib::ipcrypt2)
-endif()
-
 if (TARGET ch_contrib::crc32-vpmsum)
     list (APPEND PUBLIC_LIBS ch_contrib::crc32-vpmsum)
 endif()
@@ -189,6 +183,8 @@ endif()
 
 add_subdirectory(JSONPath)
 list (APPEND PRIVATE_LIBS clickhouse_functions_jsonpath)
+
+add_subdirectory(keyvaluepair)
 
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)

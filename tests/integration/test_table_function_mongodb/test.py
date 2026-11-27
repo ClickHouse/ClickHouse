@@ -679,22 +679,6 @@ def test_oid_columns_named_argument(started_cluster):
     oid_table.drop()
 
 
-def test_block_boundary(started_cluster):
-    mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
-    db = mongo_connection["test_block_boundary"]
-    block_boundary_table = db["block_boundary_table"]
-    block_boundary_table.insert_many([{"key": i} for i in range(0, 25)])
-
-    node = started_cluster.instances["node"]
-    table_func = "mongodb('mongo_no_cred:27017', 'test_block_boundary', 'block_boundary_table', '', '', structure='key UInt64')"
-
-    # The document at each block boundary used to be returned twice.
-    for max_block_size in [10, 25, 100]:
-        assert TSV(node.query(f"SELECT count(), uniqExact(key) FROM {table_func} SETTINGS max_block_size = {max_block_size}")) == TSV("25\t25\n")
-
-    block_boundary_table.drop()
-
-
 @pytest.fixture(scope="module")
 def malformed_cursor_batch_server(started_cluster):
     node = started_cluster.instances["node"]

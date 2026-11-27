@@ -163,32 +163,6 @@ public:
     /// `function_name` is either `CODEC` or `STATISTICS`. Returns nullptr when the key is absent.
     ASTPtr readSpecialFunctionChild(const char * key, const char * function_name) const;
 
-    /// Read a child AST node filling a parser-produced *expression* slot, and reject an `ASTFunction`
-    /// without an `arguments` list anywhere under its `children`: a consumer of an unanalyzed expression
-    /// dereferences that list unconditionally, while `ASTFunction::readJSON` cannot require the member,
-    /// because a function without arguments is legitimate outside an expression (a table engine, a
-    /// `CODEC`/`STATISTICS` element, an index `TYPE`). Returns nullptr when the key is absent.
-    ASTPtr readExpressionChild(const char * key) const;
-
-    /// `readExpressionChild`'s screen applied to every element of the "children" array.
-    [[nodiscard]] ASTs readExpressionChildren() const;
-
-    /// `readChildOfType<ASTFunction>` with that screen applied to the restored function's ARGUMENTS and not to the function
-    /// node itself, for a slot whose function is legitimately argument-less while its arguments are expressions.
-    ASTPtr readFunctionChildWithExpressionArguments(const char * key) const;
-
-    /// `readChildOfType<T>` with that screen applied to the whole restored subtree, for a slot holding a
-    /// query or a table function: both carry expressions and query-shape nodes only, and the parser gives
-    /// even a zero-argument table function an empty `arguments` list. Returns nullptr when the key is absent.
-    template <typename T>
-    ASTPtr readScreenedChildOfType(const char * key) const
-    {
-        ASTPtr child = readChildOfType<T>(key);
-        if (child)
-            screenArgumentlessFunctions(*child, key);
-        return child;
-    }
-
     /// Read a child AST node and require it to be a string `ASTLiteral` (both the node type and the
     /// `Field` value category). Slots like `COMMENT`/`COLLATE` are parser-produced via
     /// `ParserStringLiteral`; downstream code reads them as `child->as<ASTLiteral &>().value.safeGet<String>()`,
@@ -206,7 +180,7 @@ public:
     ASTPtr readPartitionListChild(const char * key) const;
 
     /// Read the "children" array.
-    [[nodiscard]] ASTs readChildren() const
+    ASTs readChildren() const
     {
         ASTs result;
         if (!obj.has("children"))
@@ -235,7 +209,7 @@ public:
     /// malformed `clickhouse_json` must be rejected here instead of reaching a
     /// `typeid_cast`/internal-exception path (or being silently dropped) later.
     template <typename T>
-    [[nodiscard]] ASTs readChildrenOfType(std::string_view node_name) const
+    ASTs readChildrenOfType(std::string_view node_name) const
     {
         ASTs result = readChildren();
         for (const auto & child : result)
@@ -311,7 +285,7 @@ public:
     }
 
     /// Get the underlying Poco JSON object.
-    [[nodiscard]] const Poco::JSON::Object & getObject() const { return obj; }
+    const Poco::JSON::Object & getObject() const { return obj; }
 
     /// Get a nested JSON array.
     /// Returns nullptr when the key is absent.
@@ -354,16 +328,7 @@ private:
     /// so the AST depth/element limits and `checkDepth` do not bound this recursion.
     static Field readFieldFromObjectImpl(const Poco::JSON::Object & field_obj, size_t depth);
 
-    /// `readExpressionChild`'s screen, for the template above.
-    static void screenArgumentlessFunctions(const IAST & ast, const char * key);
-
     const Poco::JSON::Object & obj;
 };
-
-/// The select query node types the AST JSON format can build; `as` matches the exact type.
-bool isBareSelectQuery(const IAST * node);
-
-/// `INTO OUTFILE`, `FORMAT`, `SETTINGS` and compression, which `ASTQueryWithOutput` carries.
-bool hasQueryOutputOptions(const IAST * node);
 
 }

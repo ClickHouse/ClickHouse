@@ -201,33 +201,30 @@ struct EntityChange
     ASTPtr before; /// Entity before change (CREATE if not set)
     ASTPtr after; /// Entity after change (DROP if not set)
 
-    /// True if the change drops the entity and creates a new one of another type
-    [[nodiscard]] bool changesType() const
-    {
-        return before && after && getEntityType(before) != getEntityType(after);
-    }
-
-    /// True if the change replaces a workload by a resource of the same name
-    [[nodiscard]] bool replacesWorkloadByResource() const
-    {
-        return changesType() && getEntityType(after) == WorkloadEntityType::Resource;
-    }
-
-    [[nodiscard]] std::vector<IWorkloadEntityStorage::Event> toEvents() const
+    std::vector<IWorkloadEntityStorage::Event> toEvents() const
     {
         if (!after)
             return {{getEntityType(before), name, {}}};
-        if (changesType())
-            return {{getEntityType(before), name, {}}, {getEntityType(after), name, after}};
-        return {{getEntityType(after), name, after}};
+        else if (!before)
+            return {{getEntityType(after), name, after}};
+        else
+        {
+            auto type_before = getEntityType(before);
+            auto type_after = getEntityType(after);
+            // If type changed, we have to remove an old entity and add a new one
+            if (type_before != type_after)
+                return {{type_before, name, {}}, {type_after, name, after}};
+            else
+                return {{type_after, name, after}};
+        }
     }
 };
 
-/// Returns `changes` ordered for execution. `new_entities` are all entities after the changes.
+/// Returns `changes` ordered for execution.
 /// Every intemediate state during execution will be consistent (i.e. all references will be valid)
 /// NOTE: It does not validate changes, any problem will be detected during execution.
 /// NOTE: There will be no error if valid order does not exist.
-std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityChange> & changes, const std::unordered_map<String, ASTPtr> & new_entities)
+std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityChange> & changes)
 {
     // Construct map from entity name into entity change
     std::unordered_map<String, const EntityChange *> change_by_name;
@@ -257,43 +254,9 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
         }
     }
 
-    // Returns the nearest changed workload above `name` in `new_entities`, skipping unchanged workloads. The result is
-    // memoized for the unchanged workloads of the walk, so every workload is walked over once.
-    std::unordered_map<String, std::optional<String>> nearest_changed_above;
-    auto nearest_changed_ancestor = [&](const String & name)
-    {
-        std::vector<String> unchanged_path;
-        std::optional<String> result;
-        String current = name;
-        while (true)
-        {
-            auto it = new_entities.find(current);
-            if (it == new_entities.end())
-                break;
-            auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(it->second.get());
-            if (!workload || !workload->hasParent())
-                break;
-            String parent = workload->getWorkloadParent();
-            if (change_by_name.contains(parent))
-            {
-                result = parent;
-                break;
-            }
-            if (auto memo = nearest_changed_above.find(parent); memo != nearest_changed_above.end())
-            {
-                result = memo->second;
-                break;
-            }
-            unchanged_path.push_back(parent);
-            current = parent;
-        }
-        for (const auto & unchanged : unchanged_path)
-            nearest_changed_above[unchanged] = result;
-        return result;
-    };
-
-    // Construct DAG of dependencies between changes. Key is entity name. Value is set of names of entities that should be changed first.
-    std::unordered_map<String, std::unordered_set<String>> dependencies;
+    // There are consistency rules that regulate order in which changes must be applied (see below).
+    // Construct DAG of dependencies between changes.
+    std::unordered_map<String, std::unordered_set<String>> dependencies; // Key is entity name. Value is set of names of entity that should be changed first.
     for (const auto & change : changes)
     {
         dependencies.emplace(change.name, std::unordered_set<String>{}); // Make sure we create nodes that have no dependencies
@@ -301,33 +264,27 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
         {
             if (!event.entity) // DROP
             {
-                // Rule 1: Entity can only be removed after all existing references to it are removed as well. A resource
-                // replaced by a workload is exempt: the workload must exist before its new children are attached (rules 2
-                // and 3), while a `FOR` clause that names a missing resource is harmless until its workload is updated.
-                if (change.changesType() && !change.replacesWorkloadByResource())
-                    continue;
-                for (const String & source : old_sources[change.name])
+                // Rule 1: Entity can only be removed after all existing references to it are removed as well.
+                for (const String & source : old_sources[event.name])
                 {
                     if (change_by_name.contains(source))
-                        dependencies[change.name].insert(source);
+                        dependencies[event.name].insert(source);
                 }
             }
             else // CREATE || CREATE OR REPLACE
             {
-                // Rule 2: Entity can only be created or updated after all changed entities it references. A dropped target or
-                // a workload replaced by a resource is not waited for: its drop waits for its old children (rule 1), so the
-                // rules form no cycle.
-                for (const String & target : new_targets[change.name])
+                // Rule 2: Entity can only be created after all entities it references are created as well.
+                for (const String & target : new_targets[event.name])
                 {
-                    if (auto it = change_by_name.find(target);
-                        it != change_by_name.end() && it->second->after && !it->second->replacesWorkloadByResource())
-                        dependencies[change.name].insert(target);
+                    if (auto it = change_by_name.find(target); it != change_by_name.end())
+                    {
+                        const EntityChange & target_change = *it->second;
+                        // If target is creating, it should be created first.
+                        // (But if target is updating, there is no dependency).
+                        if (!target_change.before)
+                            dependencies[event.name].insert(target);
+                    }
                 }
-
-                // Rule 3: A workload is changed after its nearest changed ancestor in the new hierarchy, so all its new
-                // ancestors already have their new parents when it is attached, and the hierarchy stays acyclic
-                if (auto ancestor = nearest_changed_ancestor(change.name))
-                    dependencies[change.name].insert(*ancestor);
             }
         }
     }
@@ -336,6 +293,7 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
     std::vector<EntityChange> result;
     for (const String & name : topologicallySortedDependencies(dependencies))
         result.push_back(*change_by_name[name]);
+
     return result;
 }
 
@@ -484,6 +442,8 @@ bool WorkloadEntityStorageBase::storeEntity(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists, but it is not a workload", entity_name);
             if (resource && !old_resource)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists, but it is not a resource", entity_name);
+            if (workload && !old_workload->hasParent() && workload->hasParent())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to remove root workload");
             if (other_entities.contains(entity_name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to replace workload entity '{}' that is stored in read-only {} storage", entity_name, next_storage->getName());
         }
@@ -491,6 +451,12 @@ bool WorkloadEntityStorageBase::storeEntity(
         // Validate workload
         if (workload)
         {
+            if (!workload->hasParent())
+            {
+                if (!root_name.empty() && root_name != workload->getWorkloadName())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second root is not allowed. You should probably add 'PARENT {}' clause.", root_name);
+            }
+
             // Check the settings values and throw if something is wrong
             WorkloadSettings validator;
             validator.initFromChanges(workload->changes);
@@ -793,55 +759,12 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
                 change.name);
     }
 
-    // Validate new/changed workloads' setting VALUES on the config/Keeper/disk load path (which
-    // bypasses storeEntity) — otherwise a bad value (e.g. scheduler = 'bogus', a negative weight, or
-    // such a value inside a `... FOR <resource>` clause) is accepted here and only surfaces later,
-    // when the scheduler node is built. Pass `throw_on_unknown_setting = false` so this LOAD path
-    // stays forward-compatible and no stricter than the runtime parser in
-    // `WorkloadResourceManager::NodeInfo` (which also uses `false`): an unknown setting NAME written
-    // by a newer node must not make an older node reject the whole entity. Value checks (scheduler
-    // algorithm, non-negative numerics) fire regardless of that flag, so a genuinely bad value is
-    // still rejected. Both the base group and each per-resource group are checked. Only new/changed
-    // entities are checked (like the cost-unit check above), so a pre-existing entity is not
-    // re-validated on every refresh.
-    for (const auto & change : changes)
-    {
-        if (!change.after)
-            continue;
-        if (auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(change.after.get()))
-        {
-            WorkloadSettings validator;
-            validator.initFromChanges(workload->changes, /*resource_name=*/{}, /*throw_on_unknown_setting=*/false);
-            std::unordered_set<String> validated_resources;
-            for (const auto & setting_change : workload->changes)
-            {
-                if (!setting_change.resource.empty() && validated_resources.insert(setting_change.resource).second)
-                {
-                    // A `... FOR <resource>` clause must reference an existing resource (not a
-                    // workload, not a missing entity) — the same contract storeEntity enforces via
-                    // forEachReference.
-                    auto ref = merged_new_entities.find(setting_change.resource);
-                    if (ref == merged_new_entities.end())
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Workload entity '{}' references another workload entity '{}' that doesn't exist",
-                            workload->getWorkloadName(), setting_change.resource);
-                    if (typeid_cast<ASTCreateResourceQuery *>(ref->second.get()) == nullptr)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Workload settings should reference resource in FOR clause, not '{}'.",
-                            setting_change.resource);
-                    WorkloadSettings resource_validator;
-                    resource_validator.initFromChanges(workload->changes, setting_change.resource, /*throw_on_unknown_setting=*/false);
-                }
-            }
-        }
-    }
-
     // Update local entities
     local_entities = std::move(local_new_entities);
 
     // Sort `changes` to respect consistency of references and apply them one by one.
     std::vector<Event> tx;
-    for (const auto & change : topologicallySortedChanges(changes, merged_new_entities))
+    for (const auto & change : topologicallySortedChanges(changes))
     {
         for (const auto & event : change.toEvents())
         {
@@ -863,7 +786,12 @@ void WorkloadEntityStorageBase::applyEvent(
     {
         LOG_DEBUG(log, "Create or replace workload entity: {}", event.entity->formatForLogging());
 
+        auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(event.entity.get());
         auto * resource = typeid_cast<ASTCreateResourceQuery *>(event.entity.get());
+
+        // Update root workload
+        if (workload && !workload->hasParent())
+            root_name = workload->getWorkloadName();
 
         // Update resource names. First clear any role-name field that currently points to this
         // resource: `CREATE OR REPLACE RESOURCE r (...)` may change `r`'s operation set, e.g.
@@ -911,6 +839,9 @@ void WorkloadEntityStorageBase::applyEvent(
         chassert(it != entities.end());
 
         LOG_DEBUG(log, "Drop workload entity: {}", event.name);
+
+        if (event.name == root_name)
+            root_name.clear();
 
         if (event.name == master_thread_resource)
             master_thread_resource.clear();

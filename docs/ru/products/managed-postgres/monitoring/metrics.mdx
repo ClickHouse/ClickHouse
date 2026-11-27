@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/monitoring/metrics
 sidebarTitle: 'Справочник по метрикам'
 title: 'Справочник по метрикам ClickHouse Managed Postgres'
 description: 'Полный список метрик, доступных через конечную точку Prometheus для ClickHouse Managed Postgres'
-keywords: ['managed postgres', 'метрики', 'prometheus', 'справочник', 'обсервабилити', 'события ожидания', 'ожидания блокировок']
+keywords: ['managed postgres', 'метрики', 'prometheus', 'справочник', 'обсервабилити']
 doc_type: 'reference'
 ---
 
@@ -15,7 +15,9 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 [конечную точку Prometheus для ClickHouse Managed Postgres](/ru/products/managed-postgres/monitoring/prometheus).
 Сведения о настройке и аутентификации см. на странице [конечной точке Prometheus].
 
-## Общие метки {#common-labels}
+<div id="common-labels">
+  ## Общие метки
+</div>
 
 Каждая метрика имеет следующие метки:
 
@@ -27,9 +29,11 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Некоторые метрики также добавляют метку для измерения, по которому они детализируются (например,
 `mode` у метрик CPU, `state` у соединений, `database` у метрик размера
-базы данных, `wait` у событий ожидания). Они перечислены рядом с каждой метрикой.
+базы данных). Они перечислены рядом с каждой метрикой.
 
-## Информационная метрика {#information-metric}
+<div id="information-metric">
+  ## Информационная метрика
+</div>
 
 `PostgresServiceInfo` — это метрика типа gauge, которая всегда равна `1` и содержит
 текущий статус и версию сервиса в своих метках. Используйте её, чтобы через JOIN
@@ -44,7 +48,9 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 (например, `running`, `creating`, `stopped`). `postgres_version`
 показывает основную версию Postgres (например, `17`, `18`).
 
-## Выделенные ресурсы {#capacity}
+<div id="capacity">
+  ## Выделенные ресурсы
+</div>
 
 Статические лимиты, выделенные для сервиса. Они изменяются только при
 изменении размера сервиса.
@@ -55,7 +61,9 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 | `PostgresServer_MemoryLimitBytes`  | gauge | bytes   | Объем памяти, выделенный сервису.    |
 | `PostgresServer_StorageLimitBytes` | gauge | bytes   | Объем хранилища, выделенный сервису. |
 
-## Использование ресурсов {#resource-utilization}
+<div id="resource-utilization">
+  ## Использование ресурсов
+</div>
 
 | Метрика                                | Тип     | Дополнительные метки | Описание                                                                                                                         |
 | -------------------------------------- | ------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
@@ -68,7 +76,9 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 `PostgresServer_CPUSeconds_Total` по интересующим вас режимам и
 разделите её на `PostgresServer_CPUCores`.
 
-## Дисковый и сетевой ввод-вывод {#io}
+<div id="io">
+  ## Дисковый и сетевой ввод-вывод
+</div>
 
 | Метрика                                     | Тип     | Единица | Описание                               |
 | ------------------------------------------- | ------- | ------- | -------------------------------------- |
@@ -77,7 +87,9 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 | `PostgresServer_NetworkReceiveBytes_Total`  | counter | bytes   | Количество байтов, полученных по сети. |
 | `PostgresServer_NetworkTransmitBytes_Total` | counter | bytes   | Количество байтов, переданных по сети. |
 
-## Активность базы данных {#database-activity}
+<div id="database-activity">
+  ## Активность базы данных
+</div>
 
 Накопительные счётчики с момента запуска сервиса. Используйте `rate()` или `irate()`,
 чтобы преобразовать их в значения в секунду.
@@ -92,28 +104,9 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 | `PostgresServer_TransactionsRolledBack_Total` | counter | Отменённые транзакции.            |
 | `PostgresServer_Deadlocks_Total`              | counter | Обнаруженные взаимные блокировки. |
 
-## Производительность запросов {#query-performance}
-
-Counter-метрики по событиям, зарегистрированным Query Insights, без учёта операций `UTILITY`.
-
-| Метрика                                    | Тип     | Единица      | Описание                                                                                   |
-| ------------------------------------------ | ------- | ------------ | ------------------------------------------------------------------------------------------ |
-| `PostgresQuery_Calls_Total`                | counter | события      | Зарегистрированные события запросов.                                                       |
-| `PostgresQuery_DurationMicroseconds_Total` | counter | микросекунды | Суммарная длительность зарегистрированных запросов.                                        |
-| `PostgresQuery_ErrorEvents_Total`          | counter | события      | Зарегистрированные события с ненулевым уровнем серьёзности ошибки, включая предупреждения. |
-| `PostgresQuery_FailureEvents_Total`        | counter | события      | Зарегистрированные события с уровнем серьёзности `ERROR` или выше.                         |
-| `PostgresQuery_Rows_Total`                 | counter | строки       | Строки, возвращённые или затронутые зарегистрированными запросами.                         |
-| `PostgresQuery_SharedBlocksHit_Total`      | counter | блоки        | Общие блоки, найденные в кэше при выполнении зарегистрированных запросов.                  |
-| `PostgresQuery_SharedBlocksRead_Total`     | counter | блоки        | Общие блоки, прочитанные зарегистрированными запросами.                                    |
-| `PostgresQuery_WALBytes_Total`             | counter | байты        | Объём WAL в байтах, сгенерированный зарегистрированными запросами.                         |
-| `PostgresQuery_SelectCalls_Total`          | counter | события      | Зарегистрированные события `SELECT`.                                                       |
-| `PostgresQuery_InsertCalls_Total`          | counter | события      | Зарегистрированные события `INSERT`.                                                       |
-| `PostgresQuery_UpdateCalls_Total`          | counter | события      | Зарегистрированные события `UPDATE`.                                                       |
-| `PostgresQuery_DeleteCalls_Total`          | counter | события      | Зарегистрированные события `DELETE`.                                                       |
-| `PostgresQuery_MergeCalls_Total`           | counter | события      | Зарегистрированные события `MERGE`.                                                        |
-| `PostgresQuery_OtherCalls_Total`           | counter | события      | Зарегистрированные события, кроме `SELECT`, `INSERT`, `UPDATE`, `DELETE` и `MERGE`.        |
-
-## Подключения, кэш и размер баз данных {#connections-cache-size}
+<div id="connections-cache-size">
+  ## Подключения, кэш и размер баз данных
+</div>
 
 | Метрика                            | Тип   | Дополнительные метки | Описание                                                                                                                       |
 | ---------------------------------- | ----- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -121,31 +114,12 @@ Counter-метрики по событиям, зарегистрированны
 | `PostgresServer_CacheHitRatio`     | gauge |                      | Коэффициент попаданий в буферный кэш: доля блоков, обслуженных из кэша, от общего числа просмотренных блоков, в процентах.     |
 | `PostgresServer_DatabaseSizeBytes` | gauge | `database`           | Размер каждой базы данных на диске в байтах. Включает базу `postgres` по умолчанию и все базы данных, созданные пользователем. |
 
-## События ожидания {#wait-events}
-
-Метрики типа Gauge на основе выборок ожиданий, которые ClickHouse Managed Postgres снимает на
-основном экземпляре каждые 30 секунд. На этих же выборках построены
-[чарты ожиданий в разделе «Аналитика запросов»](/ru/products/managed-postgres/monitoring/query-insights#wait-charts).
-Серия появляется, только когда есть данные для отчёта: у бездействующего
-сервиса нет серий ожиданий, а `PostgresServer_LockWaitMaxSeconds`
-появляется, только пока какой-либо сеанс ожидает снятия блокировки.
-
-| Метрика                               | Тип   | Дополнительные метки | Описание                                                                                                                                                                                                                                                                                    |
-| ------------------------------------- | ----- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PostgresServer_ActiveSessionsByWait` | gauge | `wait`               | Число активных сеансов в каждом событии ожидания, усреднённое по тем недавним выборкам, в которых это событие было зафиксировано. `wait` — событие ожидания в формате `type:event`, например `Lock:relation` или `IO:WalSync`, либо `None` для сеансов, выполняющихся без события ожидания. |
-| `PostgresServer_LockWaitMaxSeconds`   | gauge |                      | Максимальное время (в секундах), в течение которого сеанс ожидает снятия блокировки.                                                                                                                                                                                                        |
-
-Чтобы подсчитать число сеансов, ожидающих снятия блокировок, просуммируйте события ожидания `Lock`:
-
-```promql
-sum by (postgres_service_name) (PostgresServer_ActiveSessionsByWait{wait=~"Lock:.*"})
-```
-
-## Связанные страницы {#related}
+<div id="related">
+  ## Связанные страницы
+</div>
 
 * [Конечная точка Prometheus] — настройка, аутентификация и сбор метрик
 * [Панель мониторинга](/ru/products/managed-postgres/monitoring/dashboard) — встроенные диаграммы в Cloud Console
-* [Аналитика запросов](/ru/products/managed-postgres/monitoring/query-insights#wait-charts) — чарты ожиданий и таблица «Ожидания» в Cloud Console
 * [Руководство по OpenAPI](/ru/products/managed-postgres/openapi) — создание API key
   и получение идентификаторов организации и сервиса
 

@@ -1,6 +1,5 @@
 import dataclasses
 import json
-import tempfile
 from pathlib import Path
 
 from . import Artifact, Job, Workflow
@@ -12,9 +11,6 @@ from .utils import Utils
 
 
 class Cache:
-    # Workflow kv data key with per-job digest salts, see `CacheRunnerHooks.configure`.
-    DIGEST_SALTS_KV_KEY = "job_digest_salts"
-
     @dataclasses.dataclass
     class CacheRecord:
         class Type:
@@ -42,65 +38,6 @@ class Cache:
         @classmethod
         def from_dict(cls, obj):
             return Cache.CacheRecord(**obj)
-
-    @classmethod
-    def artifact_dir(cls, job_name):
-        """The name of the S3 directory with the artifacts of `job_name` under a run's prefix.
-
-        A salted job (see `CacheRunnerHooks.configure`) produces a different variant of its
-        artifacts than the regular job with the same name at the same commit, so it stores
-        them in its own directory. Otherwise a rerun of the job at the same commit with the
-        other variant overwrites them, and a cache record of the first variant, which points
-        to the run's prefix, restores the artifacts of the second one. The cache record of a
-        salted job has a salted digest, so a run that reuses it has the same salt and resolves
-        the same directory."""
-        salts = _Environment.get().JOB_KV_DATA.get(cls.DIGEST_SALTS_KV_KEY) or {}
-        name = Utils.normalize_string(job_name)
-        if job_name in salts:
-            name += f"_{Utils.normalize_string(salts[job_name])}"
-        return name
-
-    # Object with the run's digest salts under the run's S3 prefix, see `store_digest_salts`.
-    DIGEST_SALTS_FILE_NAME = "job_digest_salts.json"
-
-    @classmethod
-    def _digest_salts_s3_path(cls):
-        return f"{Settings.S3_ARTIFACT_BUCKET}/{_Environment.get().get_s3_prefix()}/{cls.DIGEST_SALTS_FILE_NAME}"
-
-    @classmethod
-    def store_digest_salts(cls, salts):
-        """Publish the digest salts of a run next to its artifacts.
-
-        A local job run with `--pr`/`--sha` (see `Runner.generate_local_run_environment`) does
-        not have the kv data of the run that produced the artifacts, and the PR labels at the
-        time of the local run do not tell which variant was built at that commit. It restores
-        the salts from this object to find the artifact directories (see `artifact_dir`).
-        Written even when empty, so that a rerun at the same commit without salts replaces
-        the salts of an earlier run."""
-        local_path = f"{Settings.TEMP_DIR}/{cls.DIGEST_SALTS_FILE_NAME}"
-        with open(local_path, "w", encoding="utf8") as f:
-            json.dump(salts, f)
-        S3.copy_file_to_s3(
-            s3_path=cls._digest_salts_s3_path(),
-            local_path=local_path,
-            tags={"retention": "default"},
-        )
-
-    @classmethod
-    def load_digest_salts(cls):
-        """The digest salts published by `store_digest_salts` for the run at the current
-        S3 prefix, None if the run did not publish them."""
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            if not S3.copy_file_from_s3(
-                s3_path=cls._digest_salts_s3_path(), local_path=tmp_dir, no_strict=True
-            ):
-                return None
-            with open(
-                Path(tmp_dir) / cls.DIGEST_SALTS_FILE_NAME, "r", encoding="utf8"
-            ) as f:
-                salts = json.load(f)
-        assert isinstance(salts, dict), f"Invalid digest salts [{salts}]"
-        return salts
 
     def __init__(self):
         self.digest = Digest()

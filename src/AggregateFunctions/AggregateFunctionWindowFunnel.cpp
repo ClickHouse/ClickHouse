@@ -69,7 +69,7 @@ struct AggregateFunctionWindowFunnelData
     bool sorted = true;
     TimestampEvents events_list;
 
-    [[nodiscard]] size_t size() const
+    size_t size() const
     {
         return events_list.size();
     }
@@ -180,7 +180,7 @@ struct AggregateFunctionWindowFunnelStrictOnceData
     UInt64 next_unique_id = 1;
     bool sorted = true;
 
-    [[nodiscard]] size_t size() const
+    size_t size() const
     {
         return events_list.size();
     }
@@ -506,7 +506,7 @@ private:
     }
 
 public:
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return "windowFunnel";
     }
@@ -548,7 +548,7 @@ public:
         }
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
@@ -664,7 +664,7 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
     }
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of first argument of aggregate function {}, must "
-                    "be Unsigned Number, Date, DateTime", arguments.front()->getName(), name);
+                    "be Unsigned Number, Date, DateTime", arguments.front().get()->getName(), name);
 }
 
 }

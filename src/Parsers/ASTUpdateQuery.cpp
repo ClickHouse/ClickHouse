@@ -33,14 +33,13 @@ ASTPtr ASTUpdateQuery::clone() const
         res->children.push_back(dst);
     };
 
-    /// The same children order as `ParserUpdateQuery`, so that the clone has the same tree hash
-    cloneTableOptions(*res);
     add_children_if_needed(partition, res->partition);
     add_children_if_needed(partitions, res->partitions);
     add_children_if_needed(predicate, res->predicate);
     add_children_if_needed(assignments, res->assignments);
-    /// Also clones `settings_ast`
-    cloneOutputOptions(*res);
+    add_children_if_needed(settings_ast, res->settings_ast);
+
+    cloneTableOptions(*res);
     return res;
 }
 
@@ -147,7 +146,7 @@ void ASTUpdateQuery::readJSON(const Poco::JSON::Object & json)
                 "'partition' and 'partitions' cannot be set at the same time during AST JSON deserialization");
         children.push_back(partitions);
     }
-    predicate = r.readExpressionChild("predicate");
+    predicate = r.readChild("predicate");
     if (!predicate)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`Update` AST requires 'predicate' during AST JSON deserialization");

@@ -21,23 +21,23 @@ public:
 
     PatchPartIndex(MergeTreePatchPartsVersion format_version_, String sorting_key_desc_);
 
-    [[nodiscard]] bool empty() const { return min_max_versions_by_part.empty(); }
-    [[nodiscard]] UInt64 getMinDataVersion() const { return min_data_version; }
-    [[nodiscard]] UInt64 getMaxDataVersion() const { return max_data_version; }
+    bool empty() const { return min_max_versions_by_part.empty(); }
+    UInt64 getMinDataVersion() const { return min_data_version; }
+    UInt64 getMaxDataVersion() const { return max_data_version; }
 
-    [[nodiscard]] UInt64 getMinDataVersion(const String & part_name) const { return min_max_versions_by_part.at(part_name).first; }
-    [[nodiscard]] UInt64 getMaxDataVersion(const String & part_name) const { return min_max_versions_by_part.at(part_name).second; }
+    UInt64 getMinDataVersion(const String & part_name) const { return min_max_versions_by_part.at(part_name).first; }
+    UInt64 getMaxDataVersion(const String & part_name) const { return min_max_versions_by_part.at(part_name).second; }
 
-    [[nodiscard]] MergeTreePatchPartsVersion getFormatVersion() const { return format_version; }
+    MergeTreePatchPartsVersion getFormatVersion() const { return format_version; }
 
     /// The table's sorting key the v2 patch was written with, as a one-line formatted text.
-    [[nodiscard]] const String & getSortingKeyDesc() const { return sorting_key_desc; }
+    const String & getSortingKeyDesc() const { return sorting_key_desc; }
     /// Returns an index with the same format version and sorting key but without source parts.
-    [[nodiscard]] PatchPartIndex cloneEmpty() const { return PatchPartIndex(format_version, sorting_key_desc); }
+    PatchPartIndex cloneEmpty() const { return PatchPartIndex(format_version, sorting_key_desc); }
 
     void addSourcePart(const String & name, UInt64 data_version);
 
-    [[nodiscard]] PatchParts getPatchParts(
+    PatchParts getPatchParts(
         const MergeTreePartInfo & original_part,
         const DataPartPtr & patch_part,
         std::shared_ptr<const KeyDescription> effective_sorting_key,

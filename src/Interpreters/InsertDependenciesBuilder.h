@@ -15,8 +15,6 @@
 #include <unordered_map>
 #include <vector>
 
-class InsertDependenciesSnapshot_TargetSharedByTwoViewsKeepsFirstSnapshot_Test;
-
 namespace DB
 {
 
@@ -38,8 +36,6 @@ class InsertDependenciesBuilder : public std::enable_shared_from_this<InsertDepe
 {
 private:
     friend class ViewErrorsRegistry;
-    /// White-box unit test: a node observed on several paths must keep its first metadata snapshot.
-    friend class ::InsertDependenciesSnapshot_TargetSharedByTwoViewsKeepsFirstSnapshot_Test;
 
     /// We cannot use std::set, because operator< is inconsistent with operator==
     /// for StorageId and StorageIDPrivate.
@@ -57,11 +53,11 @@ private:
         void pushBack(StorageIDMaybeEmpty id);
         void popBack();
 
-        [[nodiscard]] [[maybe_unused]] bool empty() const { return path.empty(); }
-        [[nodiscard]] const StorageIDMaybeEmpty & back() const { return path.back(); }
-        [[nodiscard]] const StorageIDMaybeEmpty & current() const { return back(); }
-        [[nodiscard]] StorageIDMaybeEmpty parent(size_t inheritance) const;
-        [[nodiscard]] String debugInfo() const;
+        [[maybe_unused]] bool empty() const { return path.empty(); }
+        const StorageIDMaybeEmpty & back() const { return path.back(); }
+        const StorageIDMaybeEmpty & current() const { return back(); }
+        StorageIDMaybeEmpty parent(size_t inheritance) const;
+        String debugInfo() const;
     };
 
     using MapIdManyId = std::unordered_map<
@@ -108,13 +104,9 @@ public:
         return std::make_shared<const MakeSharedEnabler>(std::forward<Args>(args)...);
     }
 
-    /// If `returning_output` is not null, a copy of the data written into the destination table
-    /// (after the conversion to the table structure with the defaults filled, before the sink) is sent
-    /// from every stream into a processor, which is returned in `returning_output`.
-    /// Its single output port is not connected. It is used for `INSERT ... RETURNING`.
-    VectorWithMemoryTracking<Chain> createChainWithDependenciesForAllStreams(ProcessorPtr * returning_output = nullptr) const;
+    VectorWithMemoryTracking<Chain> createChainWithDependenciesForAllStreams() const;
 
-    Chain createChainWithDependencies(InputPort * returning_input = nullptr) const;
+    Chain createChainWithDependencies() const;
     Chain createChainForDeduplicationRetry(const DeduplicationInfo & info, const std::string & partition_id) const;
     bool isViewsInvolved() const;
 
@@ -214,22 +206,6 @@ public:
     static bool dependentViewForwardsInsertToSeparateContext(
         const StoragePtr & storage, ContextPtr context, size_t depth = 0);
 
-    /// Whether inserting into `storage` can reach - through a dependent-view graph *hidden* behind an
-    /// `Alias` hop - a destination that requires a single stream for this input. Each `AliasSink` of a write
-    /// fan-out runs its own nested `INSERT` into the target, and keeping every nested `INSERT`
-    /// single-stream does not order the concurrent nested inserts against one another, so the outer
-    /// insert must stay single-stream itself. It fails closed (returns true) when a hop of the chain,
-    /// a dependent view or its target cannot be resolved, or the chain is too deep.
-    static bool forwardedInsertHidesSerialDestination(
-        const StoragePtr & storage, ContextPtr context, bool preserve_input_order, size_t depth = 0);
-
-    /// Whether a nested `INSERT` into `storage` can reach a destination that requires serial writes,
-    /// or ordered writes when `preserve_input_order` is true: `storage` itself, its dependent views, and the
-    /// tables reached through `Alias`, `MaterializedView` and proxy hops. Helper for
-    /// `forwardedInsertHidesSerialDestination`; fails closed like it.
-    static bool insertReachesSerialDestination(
-        const StoragePtr & storage, ContextPtr context, bool preserve_input_order, size_t depth = 0);
-
     size_t getViewProcessingNumThreads() const;
 
 
@@ -241,8 +217,7 @@ protected:
         bool async_insert_,
         bool skip_destination_table_,
         size_t max_insert_threads,
-        ContextPtr context,
-        bool preserve_input_order = true);
+        ContextPtr context);
 
 private:
     bool isView(StorageIDMaybeEmpty id) const;

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Random settings limits: input_format_parquet_memory_high_watermark=(67108864, None); output_format_parquet_compression_method=('zstd', 'zstd'); output_format_parquet_max_dictionary_size=(1048576, None)
+# Tags: no-fasttest
+# no-fasttest: needs the Parquet format which is not built in fasttest.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

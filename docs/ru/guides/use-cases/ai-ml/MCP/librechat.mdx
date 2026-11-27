@@ -8,6 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 > В этом руководстве показано, как настроить LibreChat с MCP-сервером ClickHouse с помощью Docker
 > и подключить его к демонстрационным наборам данных ClickHouse.
 
@@ -106,7 +108,7 @@ doc_type: 'guide'
     используя [хост, имя пользователя и пароль](/ru/get-started/setup/cloud#connect-with-your-app)
     своего сервиса ClickHouse Cloud.
 
-    <Card title="Начать работу с ClickHouse Cloud" href="https://clickhouse.cloud/signUp?loc=docs-guides-use-cases-ai-ml-mcp-librechat" icon="cloud">
+    <Card title="Начать работу с ClickHouse Cloud" href="https://cloud.clickhouse.com/" icon="cloud">
       Если у вас ещё нет аккаунта Cloud, начните работу с ClickHouse Cloud уже сегодня и получите $300 кредитов. По окончании 30-дневного бесплатного пробного периода вы сможете перейти на тариф с оплатой по мере использования или связаться с нами, чтобы узнать больше о наших скидках в зависимости от объёма. Подробности см. на странице с тарифами.
     </Card>
   </Step>
@@ -137,7 +139,7 @@ doc_type: 'guide'
   </Step>
 
   <Step title="Добавление локальной LLM с помощью Ollama (необязательно)" id="add-local-llm-using-ollama">
-### Установка Ollama {#install-ollama}
+    ### Установка Ollama
 
     Перейдите на [сайт Ollama](https://ollama.com/download) и установите Ollama для своей системы.
 
@@ -151,7 +153,7 @@ doc_type: 'guide'
 
     Список моделей см. в [библиотеке Ollama](https://ollama.com/library)
 
-### Настройка Ollama в librechat.yaml {#configure-ollama-in-librechat-yaml}
+    ### Настройка Ollama в librechat.yaml
 
     После загрузки модели укажите её в `librechat.yaml`:
 
@@ -194,15 +196,7 @@ doc_type: 'guide'
 
     В интерфейсе чата выберите `clickhouse-playground` в качестве MCP-сервера:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![Выберите MCP-сервер](/images/use-cases/AI_ML/MCP/librechat.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/use-cases/AI_ML/MCP/librechat.webp" alt="Выберите MCP-сервер" size="md" />
 
     Теперь вы можете дать LLM промпт для изучения примерных наборов данных ClickHouse. Попробуйте:
 

@@ -6,6 +6,8 @@ description: 'في هذا الدليل، سنناقش أولاً كيف يوزّ
 doc_type: 'مرجع'
 ---
 
+import { Image } from "/snippets/ar/components/Image.jsx";
+
 <div id="introduction">
   ## المقدمة
 </div>
@@ -17,7 +19,9 @@ doc_type: 'مرجع'
 > عدة شظايا من خلال الجداول الموزعة، ثم كيف يمكن للاستعلام أن يستفيد من
 > عدة نُسخ متماثلة أثناء تنفيذه.
 
-## البنية المُجزّأة {#sharded-architecture}
+<div id="sharded-architecture">
+  ## البنية المُجزّأة
+</div>
 
 في بنية shared-nothing، تُقسَّم العناقيد عادةً إلى
 عدة شظايا، بحيث تحتوي كل شظية على مجموعة فرعية من إجمالي البيانات. ويعلو
@@ -29,15 +33,7 @@ doc_type: 'مرجع'
 ستنفّذ كل شظية الاستعلامات المطلوبة. وسيقوم الخادم الذي تم الاستعلام من خلاله عن
 الجدول الموزّع بتجميع البيانات وإرجاع الرد إلى العميل:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![البنية المُجزّأة](/images/deployment-guides/parallel-replicas-1.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-1.webp" size="md" alt="البنية المُجزّأة" />
 
 يوضح الشكل أعلاه ما يحدث عندما يرسل عميل استعلامًا إلى جدول موزّع:
 
@@ -69,7 +65,9 @@ doc_type: 'مرجع'
 الفرق الوحيد في أن نسخة متماثلة واحدة فقط من كل شظية ستنفّذ الاستعلام.
 وهذا يعني أنه يمكن بعد ذلك معالجة المزيد من الاستعلامات بالتوازي.
 
-## بنية غير مُشظّاة {#non-sharded-architecture}
+<div id="non-sharded-architecture">
+  ## بنية غير مُشظّاة
+</div>
 
 تتمتع ClickHouse Cloud ببنية تختلف كثيرًا عن تلك المعروضة أعلاه.
 (راجع [&quot;بنية ClickHouse Cloud&quot;](/ar/products/cloud/reference/architecture)
@@ -78,15 +76,7 @@ doc_type: 'مرجع'
 
 يوضح الشكل أدناه بنية ClickHouse Cloud:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![بنية غير مُشظّاة](/images/deployment-guides/parallel-replicas-2.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-2.webp" size="md" alt="بنية غير مُشظّاة" />
 
 تتيح لنا هذه البنية إضافة النسخ المتماثلة وإزالتها بشكل شبه
 فوري، مما يضمن قابلية توسع عالية جدًا للعنقود. ويضمن عنقود ClickHouse
@@ -99,7 +89,9 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
 مُشظّاة، كان ذلك واضحًا إلى حد ما لأن كل شظية كان يستطيع بالفعل
 تنفيذ استعلام على مجموعة فرعية من البيانات. فكيف يعمل ذلك عندما لا توجد شظايا؟
 
-## تقديم النسخ المتماثلة المتوازية {#introducing-parallel-replicas}
+<div id="introducing-parallel-replicas">
+  ## تقديم النسخ المتماثلة المتوازية
+</div>
 
 لموازاة تنفيذ الاستعلام عبر عدة خوادم، نحتاج أولًا إلى
 القدرة على تعيين أحد خوادمنا بصفته منسّقًا. والمنسّق هو
@@ -113,15 +105,7 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
 
 والآن، لنرَ كيف يعمل ذلك عمليًا بمساعدة الشكل أدناه:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![النسخ المتماثلة المتوازية](/images/deployment-guides/parallel-replicas-3.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-3.webp" size="md" alt="النسخ المتماثلة المتوازية" />
 
 مع النسخ المتماثلة المتوازية:
 
@@ -179,20 +163,14 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
 
 نستعرض في الأقسام التالية كيفية تجاوز هذه العوامل.
 
-### الإعلانات {#announcements}
+<div id="announcements">
+  ### الإعلانات
+</div>
 
 لمعالجة (1) و(2) من القائمة أعلاه، قدّمنا مفهوم
 الإعلان. لنتصوّر كيف يعمل ذلك باستخدام الشكل أدناه:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![الإعلانات](/images/deployment-guides/parallel-replicas-4.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-4.webp" size="md" alt="الإعلانات" />
 
 <ol className="docs-ordered-list">
   <li>
@@ -223,7 +201,9 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
   </li>
 </ol>
 
-### التنسيق الديناميكي {#dynamic-coordination}
+<div id="dynamic-coordination">
+  ### التنسيق الديناميكي
+</div>
 
 لمعالجة مشكلة كمون الذيل، أضفنا التنسيق الديناميكي. ويعني ذلك
 أن الحبيبات لا تُرسَل كلها إلى نسخة متماثلة ضمن طلب واحد، بل تتمكن كل نسخة متماثلة
@@ -236,15 +216,7 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
 
 يوضّح الشكل أدناه كيفية عمل التنسيق الديناميكي:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![التنسيق الديناميكي - الجزء 1](/images/deployment-guides/parallel-replicas-5.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-5.webp" size="md" alt="التنسيق الديناميكي - الجزء 1" />
 
 <ol className="docs-ordered-list">
   <li>
@@ -257,15 +229,7 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
   </li>
 </ol>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![التنسيق الديناميكي - الجزء 2](/images/deployment-guides/parallel-replicas-6.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-6.webp" size="md" alt="التنسيق الديناميكي - الجزء 2" />
 
 <ol className="docs-ordered-list">
   <li>
@@ -278,15 +242,7 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
   </li>
 </ol>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![التنسيق الديناميكي - الجزء 3](/images/deployment-guides/parallel-replicas-7.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-7.webp" size="md" alt="التنسيق الديناميكي - الجزء 3" />
 
 <ol className="docs-ordered-list">
   <li>
@@ -366,7 +322,9 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
 &#39;الاستيلاء&#39; على المهام التي تكون مخصّصةً مبدئيًا لتلك النسخة المتماثلة وفقًا لـ hash، وذلك لتقليل
 كمون الذيل.
 
-### القيود
+<div id="limitations">
+  ### القيود
+</div>
 
 لهذه الميزة قيود معروفة، وقد وُثِّقت أهمها في
 هذا القسم.
@@ -395,9 +353,12 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
 | `enable_parallel_replicas`                         | `0`: معطّل<br /> `1`: مفعّل <br />`2`: فرض استخدام النسخة المتماثلة المتوازية، وسيُطلق استثناء إذا لم تُستخدم.                                                                                                                            |
 | `cluster_for_parallel_replicas`                    | اسم العنقود المُستخدَم للنسخ المتماثل المتوازي؛ وإذا كنت تستخدم ClickHouse Cloud، فاستخدم `default`.                                                                                                                                      |
 | `max_parallel_replicas`                            | الحد الأقصى لعدد النسخ المتماثلة المستخدمة في تنفيذ الاستعلام عبر عدة نسخ متماثلة. وإذا تم تحديد عدد أقل من عدد النسخ المتماثلة في العنقود، فسيتم اختيار العُقد عشوائيًا. ويمكن أيضًا الإفراط في تخصيص هذه القيمة لمراعاة التوسّع الأفقي. |
-| `parallel_replicas_min_number_of_rows_per_replica` | يساعد في تقييد عدد النسخ المتماثلة المستخدمة بناءً على عدد الصفوف المطلوب معالجتها. ويُحدَّد عدد النسخ المتماثلة المستخدمة وفقًا لما يلي: <br /> `estimated rows to read` / `min_number_of_rows_per_replica`.                             |
+| `parallel_replicas_min_number_of_rows_per_replica` | يساعد في تقييد عدد النسخ المتماثلة المستخدمة بناءً على عدد الصفوف المطلوب معالجتها. ويُحدَّد عدد النسخ المتماثلة المستخدمة وفقًا لما يلي: <br /> `estimated rows to read` / `min_number_of_rows_per_replica`.                             |
+| `enable_analyzer`                                  | لا يُدعَم تنفيذ الاستعلام باستخدام النسخ المتماثلة المتوازية إلا عند تفعيل المُحلِّل                                                                                                                                                      |
 
-## استقصاء المشكلات المتعلقة بالنسخ المتماثلة المتوازية
+<div id="investigating-issues-with-parallel-replicas">
+  ## استقصاء المشكلات المتعلقة بالنسخ المتماثلة المتوازية
+</div>
 
 يمكنك التحقق من الإعدادات المستخدمة لكل استعلام في
 جدول [`system.query_log`](/ar/reference/system-tables/query_log). ويمكنك
@@ -560,15 +521,7 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![EXPLAIN بدون النسخة_المتماثلة_المتوازية](/images/deployment-guides/parallel-replicas-8.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="EXPLAIN بدون النسخة_المتماثلة_المتوازية" />
 
 والآن مع النسخ المتماثلة المتوازية:
 
@@ -583,12 +536,4 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![EXPLAIN باستخدام النسخة_المتماثلة_المتوازية](/images/deployment-guides/parallel-replicas-9.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="EXPLAIN باستخدام النسخة_المتماثلة_المتوازية" />

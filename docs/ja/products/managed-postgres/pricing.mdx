@@ -56,7 +56,7 @@ ClickHouse Managed Postgres はローカル NVMe ストレージを基盤とし�
       <li><a href="/ja/products/managed-postgres/high-availability">High Availability</a> を含む</li>
       <li>保持期間 1 日の<a href="/ja/products/managed-postgres/monitoring/query-insights">クエリインサイト</a></li>
       <li><a href="/ja/products/managed-postgres/extensions">90 種類以上の Postgres 拡張機能</a></li>
-<li><a href="/ja/products/managed-postgres/sync-to-clickhouse/clickpipes">ClickHouse へのネイティブ CDC</a></li>
+      <li><a href="/ja/products/managed-postgres/clickhouse-integration">ClickHouse へのネイティブ CDC</a></li>
       <li><a href="/ja/products/managed-postgres/extensions"><code>pg&#95;clickhouse</code> 拡張機能</a></li>
       <li><a href="/ja/products/managed-postgres/migrations/clickpipes">完全マネージド型のデータ移行</a></li>
       <li>1 営業日以内に応答するエキスパートサポート</li>
@@ -99,9 +99,11 @@ ClickHouse Managed Postgres はローカル NVMe ストレージを基盤とし�
   </div>
 </div>
 
-### インスタンスタイプ
+<div id="instance-types">
+  ### インスタンスタイプ
+</div>
 
-インスタンス構成は、ワークロードの特性に応じたインフラストラクチャの選定を簡素化するため、3 つのカテゴリに分類されています。すべてのインスタンスタイプが、すべてのリージョンで利用できるわけではありません。以下に示すインスタンスファミリーは AWS に適用されます。GCP はプライベートプレビュー中であり、そのインスタンスタイプはオンボーディング時に案内されます。
+インスタンス構成は、ワークロードの特性に応じたインフラストラクチャの選定を簡素化するため、3 つのカテゴリに分類されています。すべてのインスタンスタイプが、すべての AWS リージョンで利用できるわけではありません。
 
 * **メモリ最適化:** メモリ集約型ワークロード向けに設計されており、メモリ対 CPU の比率は 1:8 です。x86 ベースの `r8id` および `r6id` ファミリー、ならびに AWS Graviton ベースの ARM64 `r8gd` および `r6gd` ファミリーをサポートします。大規模なワーキングセット、高いキャッシュヒット率、メモリバウンドなデータベースワークロードに最適です。
 * **ストレージ最適化:** コンピュートを比例してスケーリングすることなく、大量のローカル NVMe ストレージを必要とするワークロード向けに設計されています。AWS Graviton ベースの ARM64 `i8g` および `i8ge` ファミリー、ならびに x86 ベースの `i7i` および `i7ie` ファミリーをサポートし、構成によっては最大 60 TB のローカル NVMe ストレージを利用できます。大規模なデータセット、時系列ワークロード、ログやイベントの保存、ストレージ負荷の高い OLTP ワークロードに最適です。
@@ -126,20 +128,12 @@ ClickHouse Managed Postgres はローカル NVMe ストレージを基盤とし�
   ## ベータ料金の主なポイント
 </div>
 
-<div id="aws-public-beta-pricing">
-  ### AWS パブリックベータ料金
-</div>
-
-AWS 上でのベータ期間中は、以下のとおりです。
+ベータ期間中は、以下のとおりです。
 
 * **2026年6月15日**に使用量の計測が開始されるまでは、サービスは無料です
 * **ClickPipes** によるネイティブ CDC は追加料金なしで利用できます
 * 現在、**ネットワークエグレス** や **バックアップ** に対する料金は発生しません
 * 現在、すべてのプランに **50%割引のベータ料金** が適用されます
-
-### GCP プライベートプレビューの料金
-
-GCP 上の ClickHouse Managed Postgres は、プライベートプレビュー期間中は無料です。プライベートプレビュー終了後の料金は現在策定中です。詳細については、最終的な料金体系の見込みをお伝えしますのでお問い合わせください。GCP プライベートプレビューのウェイトリストには[こちら](https://clickhouse.com/cloud/postgres#gcp-waitlist)から登録できます。
 
 <div id="disclaimers">
   ## 免責事項

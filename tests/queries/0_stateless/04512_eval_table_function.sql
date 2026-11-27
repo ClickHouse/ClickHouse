@@ -3,7 +3,7 @@
 
 SELECT * FROM eval('SELECT 1'); -- { serverError SUPPORT_IS_DISABLED }
 
-SET enable_eval_table_function = 1;
+SET allow_experimental_eval_table_function = 1;
 
 SELECT count() FROM system.table_functions WHERE name = 'eval';
 
@@ -47,7 +47,7 @@ SELECT count() FROM eval('SELECT number FROM numbers(3) SETTINGS limit = 1');
 
 -- But the generated query cannot flip the analyzer setting, same as a usual query cannot
 -- change it in a subquery.
-SELECT * FROM eval('SELECT 31');
+SELECT * FROM eval('SELECT 31 SETTINGS enable_analyzer = 1');
 
 -- The generated query must be self-contained: it cannot use WITH aliases of the outer query.
 WITH 13 AS outer_alias SELECT * FROM eval('SELECT outer_alias'); -- { serverError UNKNOWN_IDENTIFIER }

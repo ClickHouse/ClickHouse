@@ -12,9 +12,6 @@ NOT_LOADED
 SELECT dictHas('db.d', toUInt64(1))
 ACCESS_DENIED
 NOT_LOADED
-SELECT count() FROM numbers(1) GROUP BY dictGet('db.d', 'value', number) SETTINGS enable_analyzer = 0
-ACCESS_DENIED
-NOT_LOADED
 SELECT * FROM dictionary('d')
 ACCESS_DENIED
 NOT_LOADED
@@ -27,9 +24,6 @@ NOT_LOADED
 SELECT dictHas('d', toUInt64(1))
 ACCESS_DENIED
 NOT_LOADED
-SELECT count() FROM numbers(1) GROUP BY dictGet('d', 'value', number) SETTINGS enable_analyzer = 0
-ACCESS_DENIED
-NOT_LOADED
 --- SELECT on a Dictionary table is not enough without a grant on the dictionary
 SELECT * FROM w
 ACCESS_DENIED
@@ -40,19 +34,10 @@ NOT_LOADED
 SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'hash'
 ACCESS_DENIED
 NOT_LOADED
-SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = 0
-ACCESS_DENIED
-NOT_LOADED
 EXPLAIN SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = 1
 ACCESS_DENIED
 NOT_LOADED
 CREATE VIEW v_by_user AS SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = 1
-ACCESS_DENIED
-NOT_LOADED
-EXPLAIN SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = 0
-ACCESS_DENIED
-NOT_LOADED
-CREATE VIEW v_by_user AS SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id SETTINGS join_algorithm = 'direct', enable_analyzer = 0
 ACCESS_DENIED
 NOT_LOADED
 --- creating a Dictionary table needs access to the dictionary
@@ -88,11 +73,6 @@ SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id ORD
 0	
 1	a
 LOADED
-NOT_LOADED
-SELECT n.number, w.value FROM numbers(2) AS n LEFT JOIN w ON n.number = w.id ORDER BY n.number SETTINGS join_algorithm = 'direct', enable_analyzer = 0
-0	
-1	a
-LOADED
 --- dictGet
 NOT_LOADED
 SELECT dictGet('d', 'value', toUInt64(1))
@@ -100,10 +80,6 @@ a
 LOADED
 NOT_LOADED
 SELECT dictHas('db.d', toUInt64(1))
-1
-LOADED
-NOT_LOADED
-SELECT count() FROM numbers(1) GROUP BY dictGet('d', 'value', number) SETTINGS enable_analyzer = 0
 1
 LOADED
 NOT_LOADED

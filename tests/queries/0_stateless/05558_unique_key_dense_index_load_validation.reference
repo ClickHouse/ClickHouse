@@ -1,9 +1,0 @@
-transient rows	2
-transient load fails 1
-transient rows after retry	2
-transient detached	0
-missing column rows	0
-missing column detached	1
-duplicate key rows	0
-duplicate key detached	1
-readonly load fails 1

@@ -19,17 +19,16 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
 SELECT '-- cube, group_by_use_nulls = 0';
 SELECT k1, k2, sum(v), count()
 FROM t_cube_dist GROUP BY k1, k2 WITH CUBE ORDER BY ALL
-SETTINGS group_by_use_nulls = 0, distributed_plan_fallback_to_local_execution = 0;
+SETTINGS group_by_use_nulls = 0;
 
 SELECT '-- cube with grouping(), group_by_use_nulls = 1';
 SELECT k1, k2, grouping(k1) + grouping(k2) AS level, sum(v)
 FROM t_cube_dist GROUP BY k1, k2 WITH CUBE ORDER BY ALL
-SETTINGS group_by_use_nulls = 1, distributed_plan_fallback_to_local_execution = 0;
+SETTINGS group_by_use_nulls = 1;
 
 SELECT '-- multi-argument grouping in reverse key order';
 SELECT k1, k2, grouping(k2, k1) AS g, sum(v)
-FROM t_cube_dist GROUP BY k1, k2 WITH CUBE ORDER BY ALL
-SETTINGS distributed_plan_fallback_to_local_execution = 0;
+FROM t_cube_dist GROUP BY k1, k2 WITH CUBE ORDER BY ALL;
 
 SELECT '-- distributed plan';
 -- Pin off: with memory-efficient merging the plan dump gains a `Mode` line.

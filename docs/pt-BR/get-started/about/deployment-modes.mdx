@@ -8,6 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
 ClickHouse é um sistema de banco de dados versátil que pode ser implantado de várias formas, dependendo das suas necessidades. Em essência, todas as opções de implantação **usam o mesmo poderoso mecanismo de banco de dados do ClickHouse** — o que muda é como você interage com ele e onde ele é executado.
 
 Seja para executar análises em larga escala em produção, fazer análise local de dados ou desenvolver aplicações, há uma opção de implantação adequada ao seu caso de uso. A consistência do mecanismo subjacente significa que você tem o mesmo alto desempenho e a mesma compatibilidade com SQL em todos os modos de implantação.
@@ -25,19 +27,13 @@ Cada modo de implantação tem seus próprios pontos fortes e casos de uso ideai
   <iframe src="https://www.youtube.com/embed/EOXEW_-r10A?si=6IanDSJlRzN8f9Mo" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-## ClickHouse Server {#clickhouse-server}
+<div id="clickhouse-server">
+  ## ClickHouse Server
+</div>
 
 O ClickHouse Server representa a arquitetura tradicional cliente/servidor e é ideal para implantações em produção. Esse modo de implantação oferece todos os recursos de um banco de dados OLAP, com alta taxa de transferência e consultas de baixa latência pelos quais o ClickHouse é conhecido.
 
-<div className="ch-image-sm">
-
-<Frame>
-
-![ClickHouse Server](/images/deployment-modes/ch-server.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-modes/ch-server.webp" alt="ClickHouse Server" size="sm" />
 
 <br />
 
@@ -45,19 +41,13 @@ Em termos de flexibilidade de implantação, o ClickHouse Server pode ser instal
 
 Esse modo de implantação é a escolha ideal para ambientes de produção em que confiabilidade, desempenho e acesso completo aos recursos são cruciais.
 
-## ClickHouse Cloud {#clickhouse-cloud}
+<div id="clickhouse-cloud">
+  ## ClickHouse Cloud
+</div>
 
 [ClickHouse Cloud](/pt-BR/products/cloud/getting-started/intro) é uma versão totalmente gerenciada do ClickHouse que elimina a sobrecarga operacional de manter sua própria implantação. Embora preserve todos os principais recursos do ClickHouse Server, ela aprimora a experiência com funcionalidades adicionais projetadas para simplificar o desenvolvimento e a operação.
 
-<div className="ch-image-sm">
-
-<Frame>
-
-![ClickHouse Cloud](/images/deployment-modes/ch-cloud.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-modes/ch-cloud.webp" alt="ClickHouse Cloud" size="sm" />
 
 Uma das principais vantagens do ClickHouse Cloud é seu conjunto integrado de ferramentas. [ClickPipes](/pt-BR/get-started/setup/cloud#clickpipes) oferece uma estrutura robusta de ingestão de dados, permitindo conectar e transmitir dados facilmente de várias fontes sem precisar gerenciar pipelines de ETL complexos. A plataforma também oferece uma [API de consulta](/pt-BR/products/cloud/guides/sql-console/query-endpoints) dedicada, o que facilita significativamente a criação de aplicações.
 
@@ -67,37 +57,33 @@ Para monitoramento e otimização, o ClickHouse Cloud inclui gráficos integrado
 
 Por ser um serviço gerenciado, você não precisa se preocupar com atualizações, backups, escalabilidade ou patches de segurança — tudo isso é tratado automaticamente. Isso o torna uma escolha ideal para organizações que desejam se concentrar em seus dados e aplicações, em vez de na administração do banco de dados.
 
-## CLI do ClickHouse {#clickhouse-cli}
+<div id="clickhouse-cli">
+  ## ClickHouse CLI
+</div>
 
-A [CLI do ClickHouse](/pt-BR/concepts/features/interfaces/cli) (`clickhousectl`, alias `chctl`) é uma ferramenta de linha de comando para desenvolvimento local com ClickHouse e Postgres e para o gerenciamento do ClickHouse Cloud. Ela instala versões do ClickHouse, inicia e gerencia servidores locais e executa consultas.
+A ClickHouse CLI (`clickhousectl`) é uma ferramenta de linha de comando para desenvolvimento local com ClickHouse e gerenciamento do ClickHouse Cloud. Ela simplifica o processo de instalar versões do ClickHouse, iniciar e gerenciar instâncias locais do servidor e executar consultas.
 
-Para desenvolvimento local, o `clickhousectl` instala qualquer versão do ClickHouse e executa servidores nomeados. Conecte-se com `clickhousectl local client`, que executa o `clickhouse-client` da versão correspondente. Cada servidor mantém seus dados no diretório `.clickhouse/` do projeto, o que permite executar vários ambientes isolados lado a lado. Com o Docker em execução, `clickhousectl local postgres` inicia servidores Postgres locais da mesma forma.
+Para desenvolvimento local, o `clickhousectl` ajuda a instalar versões do ClickHouse e executar servidores. Você pode instalar qualquer versão do ClickHouse, criar servidores nomeados e se conectar por meio do cliente integrado. Cada servidor recebe seu próprio diretório de dados, para que você possa executar vários ambientes isolados lado a lado.
 
-O `clickhousectl` também gerencia recursos do ClickHouse Cloud: serviços, Escalonamento, backups, Managed Postgres, ClickPipes, Managed ClickStack, chaves de API e organizações. O login pelo navegador (`clickhousectl cloud auth login`) é read-only; para criar ou alterar recursos, é necessária uma chave de API.
+O `clickhousectl` também oferece gerenciamento completo de recursos do ClickHouse Cloud, incluindo a criação e o escalonamento de serviços, o gerenciamento de chaves de API e a administração de organizações, tornando-se uma ferramenta unificada tanto para fluxos de trabalho locais quanto na nuvem.
 
 ```bash
-# Install the CLI to ~/.local/bin/clickhousectl, with a chctl alias
-curl -fsSL https://clickhouse.com/cli | sh
+# Install the CLI
+curl https://clickhouse.com/cli | sh
 
-# Install the latest ClickHouse, set it as your default, and symlink it to ~/.local/bin/clickhouse
+# Install the latest ClickHouse, set it as your default, and symlink the clickhouse binary onto your PATH
 clickhousectl local use latest
 clickhousectl local server start
 clickhousectl local client
 ```
 
-## clickhouse-local {#clickhouse-local}
+<div id="clickhouse-local">
+  ## clickhouse-local
+</div>
 
 [clickhouse-local](/pt-BR/concepts/features/tools-and-utilities/clickhouse-local) é uma poderosa ferramenta de linha de comando que oferece toda a funcionalidade do ClickHouse em um executável independente. É essencialmente o mesmo banco de dados que o ClickHouse Server, mas empacotado de uma forma que permite aproveitar todos os recursos do ClickHouse diretamente pela linha de comando, sem precisar executar uma instância do servidor.
 
-<div className="ch-image-sm">
-
-<Frame>
-
-![clickhouse-local](/images/deployment-modes/ch-local.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-modes/ch-local.webp" alt="clickhouse-local" size="sm" />
 
 Essa ferramenta se destaca na análise ad hoc de dados, principalmente ao trabalhar com arquivos locais ou dados armazenados em serviços de armazenamento em nuvem. Você pode consultar arquivos diretamente em vários formatos (CSV, JSON, Parquet etc.) usando o dialeto SQL do ClickHouse, o que a torna uma excelente opção para exploração rápida de dados ou análises pontuais.
 
@@ -105,19 +91,13 @@ Como o clickhouse-local inclui toda a funcionalidade do ClickHouse, você pode u
 
 A combinação de funções de tabela remotas e acesso ao sistema de arquivos local torna o clickhouse-local particularmente útil em cenários nos quais você precisa fazer junção de dados entre um ClickHouse Server e arquivos na sua máquina local. Isso é especialmente valioso ao trabalhar com dados locais sensíveis ou temporários que você não quer enviar para um servidor.
 
-## chDB {#chdb}
+<div id="chdb">
+  ## chDB
+</div>
 
 [chDB](/pt-BR/chdb/index) é o ClickHouse embutido como um mecanismo de banco de dados no próprio processo, com Python como implementação principal, embora também esteja disponível para Go, Rust, NodeJS e Bun. Essa opção de implantação leva os poderosos recursos de OLAP do ClickHouse diretamente para o processo da sua aplicação, eliminando a necessidade de uma instalação separada do banco de dados.
 
-<div className="ch-image-sm">
-
-<Frame>
-
-![chDB - ClickHouse embutido](/images/deployment-modes/chdb.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-modes/chdb.webp" alt="chDB - ClickHouse embutido" size="sm" />
 
 O chDB oferece integração transparente com o ecossistema da sua aplicação. Em Python, por exemplo, ele é otimizado para funcionar com eficiência com ferramentas comuns de ciência de dados, como Pandas e Arrow, minimizando a sobrecarga de cópia de dados por meio de Python memoryview. Isso o torna particularmente valioso para cientistas de dados e analistas que desejam aproveitar o desempenho de consultas do ClickHouse em seus fluxos de trabalho atuais.
 

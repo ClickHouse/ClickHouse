@@ -37,26 +37,13 @@ public:
         return std::make_shared<FunctionTupleToNameValuePairs>();
     }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// The Tuple element ellipsis requires every subsequent element to match the
-    /// captured `T`, enforcing the runtime invariant that all values share a type.
-    /// Nullable(Tuple(...)) is also accepted by the runtime (the override below
-    /// strips Nullable before extracting the element type), so a second alternative
-    /// covers that input shape. The result is never wrapped in Nullable in either
-    /// case — the runtime always returns Array(Tuple(String, T)).
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return
-            "(Tuple(T, T, ...)) -> Array(Tuple(String, T))"
-            " OR (Nullable(Tuple(T, T, ...))) -> Array(Tuple(String, T))";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const DataTypePtr col = arguments[0].type;
         const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(removeNullable(col).get());
@@ -93,7 +80,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(item_data_types));
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const DataTypeTuple * tuple_type = checkAndGetDataType<DataTypeTuple>(removeNullable(arguments[0].type).get());
 

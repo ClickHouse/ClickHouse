@@ -122,7 +122,6 @@ public:
     UInt64 getNumberOfDefaultRows() const override;
     bool hasOnlyTypeDefaults() const override;
     std::string_view getDataAt(size_t n) const override;
-    bool supportsGetDataAt() const override { return false; }
     void insertData(const char * pos, size_t length) override;
 
     void insert(const Field & x) override;
@@ -340,17 +339,12 @@ public:
 
         /// Compare paths and values of 2 iterators.
         /// Returns -1, 0, 1 if this iterator is less, equal or greater than rhs.
-        [[nodiscard]] int compare(const SortedPathsIterator & rhs, int nan_direction_hint) const;
+        int compare(const SortedPathsIterator & rhs, int nan_direction_hint) const;
 
-        /// If `materialize_shared_data_value` is false, `column` is not set for a path in shared data; use `getCurrentSharedDataValue`.
-        [[nodiscard]] PathInfo getCurrentPathInfo(bool materialize_shared_data_value = true) const;
+        PathInfo getCurrentPathInfo() const;
 
         /// Path string of the current entry.
-        [[nodiscard]] std::string_view getCurrentPath() const;
-
-        /// Raw serialized value of the current path when it is stored in shared data.
-        /// Only valid when current_path_type == PathType::SHARED_DATA.
-        [[nodiscard]] std::string_view getCurrentSharedDataValue() const;
+        std::string_view getCurrentPath() const;
 
         /// Serialize the current path's value into `buf`.
         ///
@@ -366,7 +360,10 @@ public:
 
     private:
         void setCurrentPath();
-        [[nodiscard]] std::pair<ColumnPtr, size_t> getCurrentPathColumnAndRow() const;
+        std::pair<ColumnPtr, size_t> getCurrentPathColumnAndRow() const;
+        /// Raw serialized value of the current path when it is stored in shared data.
+        /// Only valid when current_path_type == PathType::SHARED_DATA.
+        std::string_view getCurrentSharedDataValue() const;
 
         const ColumnObject & column_object;
         VectorWithMemoryTracking<std::string_view>::const_iterator typed_paths_it;

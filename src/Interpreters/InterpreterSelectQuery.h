@@ -37,17 +37,7 @@ struct RowPolicy;
 using RowPolicyPtr = std::shared_ptr<const RowPolicy>;
 
 
-/** Interprets the SELECT query with `TreeRewriter` and `ExpressionAnalyzer`, the query analysis that
-  * preceded the analyzer. Returns the stream of blocks with the results of the query before the
-  * `to_stage` stage.
-  *
-  * A query a user sends is never interpreted this way anymore - the analyzer
-  * (`InterpreterSelectQueryAnalyzer`) has been the only query analysis a query is given since v26.9,
-  * and the code that gave it the other one was removed in v26.10. What is left are the
-  * internal callers that compile a synthetic `SELECT` over a source they construct themselves, and do
-  * not go through query analysis at all: the projection machinery (`ProjectionDescription`,
-  * `optimizeUseAggregateProjection`) and the AST-based arms of `EXPLAIN SYNTAX` / `EXPLAIN AST`. Do not
-  * add a new caller; use `InterpreterSelectQueryAnalyzer`.
+/** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
   */
 class InterpreterSelectQuery : public IInterpreterUnionOrSelectQuery
 {
@@ -105,33 +95,33 @@ public:
     /// Builds QueryPlan for current query.
     void buildQueryPlan(QueryPlan & query_plan) override;
 
-    [[nodiscard]] bool ignoreLimits() const override { return options.ignore_limits; }
-    [[nodiscard]] bool ignoreQuota() const override { return options.ignore_quota; }
+    bool ignoreLimits() const override { return options.ignore_limits; }
+    bool ignoreQuota() const override { return options.ignore_quota; }
 
     void ignoreWithTotals() override;
 
-    [[nodiscard]] ASTPtr getQuery() const { return query_ptr; }
+    ASTPtr getQuery() const { return query_ptr; }
 
-    [[nodiscard]] const SelectQueryInfo & getQueryInfo() const { return query_info; }
+    const SelectQueryInfo & getQueryInfo() const { return query_info; }
 
-    [[nodiscard]] SelectQueryExpressionAnalyzer * getQueryAnalyzer() const { return query_analyzer.get(); }
+    SelectQueryExpressionAnalyzer * getQueryAnalyzer() const { return query_analyzer.get(); }
 
-    [[nodiscard]] const ExpressionAnalysisResult & getAnalysisResult() const { return analysis_result; }
+    const ExpressionAnalysisResult & getAnalysisResult() const { return analysis_result; }
 
-    [[nodiscard]] const Names & getRequiredColumns() const { return required_columns; }
+    const Names & getRequiredColumns() const { return required_columns; }
 
-    [[nodiscard]] bool hasAggregation() const { return query_analyzer->hasAggregation(); }
+    bool hasAggregation() const { return query_analyzer->hasAggregation(); }
 
     static void addEmptySourceToQueryPlan(
         QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info);
 
     Names getRequiredColumns() { return required_columns; }
 
-    [[nodiscard]] bool supportsTransactions() const override { return true; }
+    bool supportsTransactions() const override { return true; }
 
-    [[nodiscard]] FilterDAGInfoPtr getAdditionalQueryInfo() const { return additional_filter_info; }
+    FilterDAGInfoPtr getAdditionalQueryInfo() const { return additional_filter_info; }
 
-    [[nodiscard]] RowPolicyFilterPtr getRowPolicyFilter() const;
+    RowPolicyFilterPtr getRowPolicyFilter() const;
 
     static SortDescription getSortDescription(const ASTSelectQuery & query, const ContextPtr & context);
     static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
@@ -179,9 +169,10 @@ private:
 
     void addPrewhereAliasActions();
     void applyFiltersToPrewhereInAnalysis(ExpressionAnalysisResult & analysis) const;
+    bool shouldMoveToPrewhere() const;
     /// Whether the row policy filter can be handed to the storage's read(). Shared by the
     /// push site and the apply-as-FilterStep fallback, which must stay exact complements.
-    [[nodiscard]] bool shouldPushRowLevelFilterToStorage() const;
+    bool shouldPushRowLevelFilterToStorage() const;
 
     Block getSampleBlockImpl();
 
@@ -190,13 +181,15 @@ private:
     /// Different stages of query execution.
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan);
     void executeWhere(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter);
-    void executeAggregation(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool overflow_row, bool final);
+    void executeAggregation(
+        QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
     void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final, bool has_grouping_sets);
     void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter, bool overflow_row, bool final);
     void executeHaving(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter);
     /// FIXME should go through ActionsDAG to behave as a proper function
     void executeWindow(QueryPlan & query_plan);
-    void executeOrder(QueryPlan & query_plan);
+    void executeOrder(QueryPlan & query_plan, InputOrderInfoPtr sorting_info);
+    void executeOrderOptimized(QueryPlan & query_plan, InputOrderInfoPtr sorting_info, UInt64 limit, SortDescription & output_order_descr);
     void executeWithFill(QueryPlan & query_plan);
     void executeMergeSorted(QueryPlan & query_plan, const std::string & description);
     void executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset);
@@ -210,7 +203,7 @@ private:
     bool autoFinalOnQuery(ASTSelectQuery & select_query);
     std::optional<UInt64> getTrivialCount(UInt64 allow_experimental_parallel_reading_from_replicas);
     /// Check if we can limit block size to read based on LIMIT clause
-    [[nodiscard]] UInt64 maxBlockSizeByLimit() const;
+    UInt64 maxBlockSizeByLimit() const;
 
     enum class Modificator : uint8_t
     {

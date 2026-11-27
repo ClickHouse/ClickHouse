@@ -1,6 +1,8 @@
 -- Test SQL standard VALUES clause: FROM (VALUES (...), ...) AS t(col, ...)
 -- https://github.com/ClickHouse/ClickHouse/issues/99605
 
+SET enable_analyzer = 1;
+
 -- Basic VALUES with column aliases
 SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, val) ORDER BY id;
 

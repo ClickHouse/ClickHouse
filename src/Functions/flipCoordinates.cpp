@@ -18,6 +18,7 @@ namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 class FunctionFlipCoordinates final : public IFunction
@@ -26,28 +27,33 @@ public:
     static constexpr auto name = "flipCoordinates";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFlipCoordinates>(); }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    size_t getNumberOfArguments() const override { return 1; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
     /// Handle the `Geometry` `Variant` here so its type name is preserved; the generic
     /// `FunctionBaseVariantAdaptor` rebuilds a bare `Variant` and drops the custom name. Every other
     /// `Variant` still goes through the adaptor, keeping its `variant_throw_on_type_mismatch` handling.
-    [[nodiscard]] bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & type) const override
+    bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & type) const override
     {
         return type->getName() != "Geometry";
     }
 
-    /// The signature returns the argument type verbatim, so a custom type name such as `Geometry`
-    /// survives return-type inference just like the legacy `getReturnTypeImpl` it replaced.
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(T) -> T";
+        if (arguments.size() != 1)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} takes exactly one argument, got {}",
+                getName(),
+                arguments.size());
+
+        return arguments[0];
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & arg = arguments[0];
 
@@ -158,7 +164,7 @@ private:
             column_variant->getLocalToGlobalDiscriminatorsMapping());
     }
 
-    [[nodiscard]] ColumnPtr executeForPoint(const ColumnPtr & column) const
+    ColumnPtr executeForPoint(const ColumnPtr & column) const
     {
         const auto * column_tuple = checkAndGetColumn<ColumnTuple>(column.get());
         if (!column_tuple)

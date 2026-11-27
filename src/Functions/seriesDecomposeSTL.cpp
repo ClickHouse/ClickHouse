@@ -32,20 +32,26 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSeriesDecomposeSTL>(); }
 
-    [[nodiscard]] std::string getName() const override { return name; }
+    std::string getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 2; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(Array, NativeUInt) -> Array(Array(Float32))";
+        FunctionArgumentDescriptors args{
+            {"time_series", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+            {"period", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), nullptr, "Unsigned Integer"},
+        };
+        validateFunctionArguments(*this, arguments, args);
+
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>()));
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr array_ptr = arguments[0].column;
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());

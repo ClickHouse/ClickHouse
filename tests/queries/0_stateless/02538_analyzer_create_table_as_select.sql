@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS test_table_data;
 CREATE TABLE test_table_data

@@ -9,28 +9,28 @@
 namespace DB
 {
 
+/// Cursor of the partition from which this chunk was originated.
 struct PartitionCursorInfo : public ChunkInfoCloneable<PartitionCursorInfo>
 {
     String partition_id;
-    PartitionCursor first;
-    PartitionCursor last;
+    PartitionCursor cursor;
 };
 
+/// This step will calculate and set PartitionCursorInfo for each chunk.
 class StampPartitionCursorsStep : public ITransformingStep
 {
-    void updateOutputHeader() override;
-
 public:
-    StampPartitionCursorsStep(SharedHeader input_header_, String partition_id_, bool unordered_);
+    StampPartitionCursorsStep(SharedHeader input_header_, bool unordered_);
 
-    [[nodiscard]] String getName() const override { return "StampPartitionCursors"; }
+    String getName() const override { return "StampPartitionCursors"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    [[nodiscard]] QueryPlanStepPtr clone() const override;
+    QueryPlanStepPtr clone() const override;
 
 private:
-    const String partition_id;
+    void updateOutputHeader() override;
+
     const bool unordered;
 };
 

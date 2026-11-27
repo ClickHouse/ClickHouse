@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
@@ -26,23 +25,23 @@ namespace DB
 class TopNImplementation : public IOptimizationRule
 {
 public:
-    [[nodiscard]] String getName() const override { return "TopN"; }
-    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
+    String getName() const override { return "TopN"; }
+    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
     {
         return isTopNSort(*expression->getQueryPlanStep());
     }
-    [[nodiscard]] Promise getPromise() const override { return 5000; }
-    [[nodiscard]] bool isTransformation() const override { return false; }
+    Promise getPromise() const override { return 5000; }
+    bool isTransformation() const override { return false; }
 
 protected:
-    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
-GroupExpressions TopNImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+std::vector<GroupExpressionPtr> TopNImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const auto * sorting_step = typeid_cast<const SortingStep *>(expression->getQueryPlanStep());
     const SortDescription sort_desc = sorting_step->getSortDescription();
-    GroupExpressions result;
+    std::vector<GroupExpressionPtr> result;
 
     auto make_variant = [&](size_t node_count)
     {
@@ -56,7 +55,6 @@ GroupExpressions TopNImplementation::applyImpl(GroupExpressionPtr expression, co
         impl->properties = ExpressionProperties{};
         impl->properties.distribution.node_count = node_count;
         impl->properties.sorting = sort_desc;                  /// output is sorted
-        impl->properties.stream_layout = StreamLayout::Single; /// the bounded sort merges each node's streams
 
         addPhysicalToMemo(impl, required_properties, memo, result);
     };

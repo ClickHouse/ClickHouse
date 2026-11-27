@@ -29,11 +29,10 @@
                 <value>rnd</value>
             </values>
         </substitution>
-        <!-- More rows per INSERT make the test write more than the CI runner's page cache absorbs, so later runs wait for the disk -->
         <substitution>
             <name>num_rows</name>
             <values>
-                <value>5000000</value>
+                <value>20000000</value>
             </values>
         </substitution>
     </substitutions>

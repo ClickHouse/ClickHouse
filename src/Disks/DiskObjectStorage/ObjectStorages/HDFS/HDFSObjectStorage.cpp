@@ -8,13 +8,10 @@
 #include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/ObjectStorageKeyGenerator.h>
-#include <Common/RemoteHostFilter.h>
 #include <Common/Stopwatch.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/BlobStorageLog.h>
-
-#include <Poco/URI.h>
 
 
 #if USE_HDFS
@@ -28,7 +25,6 @@ namespace ErrorCodes
     extern const int HDFS_ERROR;
     extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
-    extern const int READONLY;
 }
 
 /// HDFS has no native ETag, so we synthesise a version identifier from the
@@ -46,11 +42,6 @@ namespace ErrorCodes
 /// it keyed the Parquet metadata / filesystem / page caches it could serve stale
 /// data. To use these caches with HDFS, libhdfs3 must be extended to expose the
 /// millisecond modification time (or a real version token).
-void HDFSObjectStorage::checkRemoteHostFilter(const RemoteHostFilter & filter) const
-{
-    filter.checkURL(Poco::URI(url));
-}
-
 std::string HDFSObjectStorage::makeETag(Int64 last_modified, Int64 size)
 {
     return fmt::format("{}_{}", last_modified, size);
@@ -153,8 +144,6 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
     size_t buf_size,
     const WriteSettings & write_settings)
 {
-    throwIfReadonly();
-
     /// A conditional write is a compare-and-swap request. HDFS can express only its If-None-Match
     /// half: `O_CREAT` maps to `Hdfs::Create` alone, which the NameNode rejects when the file exists,
     /// whereas the bare `O_WRONLY` used below maps to `Hdfs::Create | Hdfs::Overwrite` and truncates
@@ -215,7 +204,6 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
 /// Remove file. Throws exception if file doesn't exists or it's a directory.
 void HDFSObjectStorage::removeObject(const StoredObject & object)
 {
-    throwIfReadonly();
     initializeHDFSFS();
     auto path = object.remote_path;
     if (path.starts_with(url_without_path))
@@ -355,13 +343,7 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
     }
 }
 
-void HDFSObjectStorage::throwIfReadonly() const
-{
-    if (settings->read_only)
-        throw Exception(ErrorCodes::READONLY, "Cannot write to HDFS `{}`: tables of a DataLakeCatalog database located on HDFS are read-only", url);
-}
-
-void HDFSObjectStorage::copyObject( /// NOLINT
+String HDFSObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
@@ -378,6 +360,8 @@ void HDFSObjectStorage::copyObject( /// NOLINT
     auto out = writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     copyData(*in, *out);
     out->finalize();
+    /// HDFS names no generations.
+    return {};
 }
 
 

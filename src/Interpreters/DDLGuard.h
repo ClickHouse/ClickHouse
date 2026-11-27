@@ -38,10 +38,10 @@ public:
     ~DDLGuard();
 
     /// True when the guard was fully acquired. Only ever false when constructed with try_timeout.
-    [[nodiscard]] bool ownsTableLock() const { return table_lock.owns_lock(); }
+    bool ownsTableLock() const { return table_lock.owns_lock(); }
 
     /// True when acquisition failed on the database-level lock (an exclusive database DDL is running).
-    [[nodiscard]] bool databaseLockBusy() const { return database_lock_busy; }
+    bool databaseLockBusy() const { return database_lock_busy; }
 
     /// Unlocks table name, keeps holding read lock for database name
     void releaseTableLock() noexcept;

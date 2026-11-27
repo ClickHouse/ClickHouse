@@ -55,7 +55,7 @@ std::optional<Field> deserializeIntegerBound(const String & bytes, const IDataTy
 std::optional<std::pair<Field, Field>> boundsOfPartitionFieldSummary(
     const PartitionFieldSummary & summary, const DataTypePtr & type, Int32 partition_spec_id, size_t field_index)
 {
-    if (summary.contains_nan || !summary.lower_bound.has_value() || summary.lower_bound->empty()
+    if (summary.contains_null || summary.contains_nan || !summary.lower_bound.has_value() || summary.lower_bound->empty()
         || !summary.upper_bound.has_value() || summary.upper_bound->empty())
         return {};
 
@@ -100,8 +100,7 @@ ManifestListPruner::ManifestListPruner(
     Int32 partition_schema_id_,
     const Poco::JSON::Array::Ptr & partition_specs,
     const DB::ActionsDAG * filter_dag,
-    DB::ContextPtr context,
-    bool require_ready_sets)
+    DB::ContextPtr context)
 {
     if (filter_dag == nullptr || !partition_specs || partition_specs->size() == 0)
         return;
@@ -121,24 +120,15 @@ ManifestListPruner::ManifestListPruner(
         if (!fields || fields->size() == 0)
             continue;
 
-        auto partition_key = buildPartitionKeyFromSpec(fields, partition_schema_id_, schema_processor_, context, /* keep_nullable */ true);
+        auto partition_key = buildPartitionKeyFromSpec(fields, partition_schema_id_, schema_processor_, context);
         if (!partition_key.key_description.has_value() || partition_key.key_description->data_types.size() != fields->size())
             continue;
 
         ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
         DB::KeyCondition condition(
-            inverted_dag,
-            context,
-            partition_key.key_description->column_names,
-            partition_key.key_description->expression,
-            /* single_point_ */ false,
-            /* skip_analysis_ */ false,
-            require_ready_sets);
-        auto int32_truncate_wraparounds
-            = getInt32TruncateWraparounds(partition_key.partition_specification, schema_processor_, partition_schema_id_);
+            inverted_dag, context, partition_key.key_description->column_names, partition_key.key_description->expression);
         conditions_by_spec_id.emplace(
-            spec->getValue<Int32>(f_spec_id),
-            SpecCondition{*partition_key.key_description, std::move(condition), std::move(int32_truncate_wraparounds)});
+            spec->getValue<Int32>(f_spec_id), SpecCondition{*partition_key.key_description, std::move(condition)});
     }
 }
 
@@ -155,37 +145,19 @@ bool ManifestListPruner::canBePruned(Int32 partition_spec_id, const PartitionFie
     if (partition_key.data_types.size() != partition_summaries.size())
         return false;
 
-    /// Each summary bounds its field independently, so the manifest's partition tuples lie in the box of these ranges.
-    Hyperrectangle hyperrectangle;
-    hyperrectangle.reserve(partition_summaries.size());
+    std::vector<FieldRef> left_keys(partition_summaries.size());
+    std::vector<FieldRef> right_keys(partition_summaries.size());
     for (size_t i = 0; i < partition_summaries.size(); ++i)
     {
-        const auto & summary = partition_summaries[i];
-        auto bounds = boundsOfPartitionFieldSummary(summary, partition_key.data_types.at(i), partition_spec_id, i);
-        if (!bounds)
-            hyperrectangle.push_back(Range::createWholeUniverse());
-        else if (summary.contains_null)
-            /// NULL sorts after every value.
-            hyperrectangle.emplace_back(bounds->first, true, POSITIVE_INFINITY, true);
-        else
-            hyperrectangle.emplace_back(bounds->first, true, bounds->second, true);
+        auto bounds
+            = boundsOfPartitionFieldSummary(partition_summaries[i], partition_key.data_types.at(i), partition_spec_id, i);
+
+        left_keys[i] = bounds.has_value() ? FieldRef(bounds->first) : FieldRef(NEGATIVE_INFINITY);
+        right_keys[i] = bounds.has_value() ? FieldRef(bounds->second) : FieldRef(POSITIVE_INFINITY);
     }
 
-    /// A summary that covers a wrapped value may hold it for rows whose key is the unwrapped one.
-    for (const auto & wraparound : condition_it->second.int32_truncate_wraparounds)
-    {
-        if (wraparound.tuple_index >= hyperrectangle.size())
-            continue;
-        auto & range = hyperrectangle[wraparound.tuple_index];
-        /// The upper bound is `+inf` when the summary also contains NULL.
-        if (range.left.getType() == Field::Types::Int64 && range.left.safeGet<Int64>() <= wraparound.stored
-            && (range.right.isPositiveInfinity()
-                || (range.right.getType() == Field::Types::Int64 && wraparound.stored <= range.right.safeGet<Int64>()))
-            && wraparound.value < range.left.safeGet<Int64>())
-            range.left = Field(wraparound.value);
-    }
-
-    return !condition_it->second.condition.checkInHyperrectangle(hyperrectangle, partition_key.data_types).can_be_true;
+    return !condition_it->second.condition.mayBeTrueInRange(
+        partition_summaries.size(), left_keys.data(), right_keys.data(), partition_key.data_types);
 }
 
 }

@@ -2,7 +2,6 @@
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
 #include <memory>
-#include <utility>
 #include <base/types.h>
 #include <Core/Names.h>
 #include <boost/noncopyable.hpp>
@@ -45,10 +44,6 @@ public:
     /// Accepts host names like 'example.com:port' or '127.0.0.1:port' or '[::1]:port' and resolves its IP and port
     Poco::Net::SocketAddress resolveAddress(const std::string & host_and_port);
 
-    /// Splits 'example.com:port', '127.0.0.1:port' or '[::1]:port' the same way `resolveAddress` does.
-    /// The returned host is stripped of the square brackets, so it can be passed to the methods above.
-    static std::pair<std::string, UInt16> splitHostAndPort(const std::string & host_and_port);
-
     Poco::Net::SocketAddress resolveAddress(const std::string & host, UInt16 port);
 
     std::vector<Poco::Net::SocketAddress> resolveAddressList(const std::string & host, UInt16 port);
@@ -79,11 +74,11 @@ public:
 
     void setFilterSettings(bool dns_allow_resolve_names_to_ipv4, bool dns_allow_resolve_names_to_ipv6);
 
-    [[nodiscard]] bool getFilterIPv4() const;
-    [[nodiscard]] bool getFilterIPv6() const;
+    bool getFilterIPv4() const;
+    bool getFilterIPv6() const;
 
     /// Returns a copy of cache entries
-    [[nodiscard]] std::vector<std::pair<std::string, CacheEntry>> cacheEntries() const;
+    std::vector<std::pair<std::string, CacheEntry>> cacheEntries() const;
 
     ~DNSResolver();
 

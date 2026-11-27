@@ -38,12 +38,7 @@ std::string ColumnMap::getName() const
 ColumnMap::ColumnMap(MutableColumnPtr && nested_, const StatisticsPtr & statistics_)
     : nested(std::move(nested_)), statistics(statistics_)
 {
-    /// Use the const `ColumnPtr` accessor `getNestedColumnPtr` rather than `nested.get()`. The
-    /// latter goes through `WrappedPtr::get` → `assumeMutableRef`, which now
-    /// `chassert(use_count() == 1)`. When this constructor is reached via
-    /// `ColumnMap::create(const ColumnPtr &, ...)`, the caller still holds an immutable reference
-    /// to the underlying column, so `use_count()` is at least 2 and the assertion would fire.
-    const auto * column_array = typeid_cast<const ColumnArray *>(getNestedColumnPtr().get());
+    const auto * column_array = typeid_cast<const ColumnArray *>(nested.get());
     if (!column_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnMap can be created only from array of tuples");
 
@@ -448,13 +443,12 @@ ColumnPtr ColumnMap::compress(bool force_compression) const
 {
     auto compressed = nested->compress(force_compression);
     const auto byte_size = compressed->byteSize();
-    Columns parts{compressed};
     /// The order of evaluation of function arguments is unspecified
     /// and could cause interacting with object in moved-from state
     return ColumnCompressed::create(size(), byte_size, [my_compressed = std::move(compressed), my_statistics=statistics]
     {
         return ColumnMap::create(my_compressed->decompress(), my_statistics);
-    }, std::move(parts));
+    });
 }
 
 void ColumnMap::Statistics::merge(const Statistics & other)
@@ -534,10 +528,4 @@ void ColumnMap::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<Col
 }
 
 
-ColumnPlanes ColumnMap::getPlanes() const
-{
-    ColumnPlanes planes(ColumnPlanes::Shape::Map);
-    planes.children = {&getNestedColumn()};
-    return planes;
-}
 }

@@ -11,6 +11,8 @@ integration:
 keywords: ['DBeaver', 'データベース管理', 'SQL クライアント', 'JDBC 接続', 'マルチプラットフォーム']
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -38,77 +40,29 @@ DBeaver には複数のエディションがあります。このガイドでは
   <Step title="データベースを追加する" id="3-add-a-database">
     * **Database &gt; New Database Connection** メニュー、または **Database Navigator** の **New Database Connection** アイコンを使用して、**Connect to a database** ダイアログを開きます。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![新しいデータベースを追加する](/images/integrations/sql-clients/dbeaver-add-database.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/sql-clients/dbeaver-add-database.webp" size="md" border alt="新しいデータベースを追加する" />
 
     * **Analytical** を選択し、次に **ClickHouse** を選択します。
 
     * JDBC URL を作成します。**Main** タブで Host、Port、Username、Password、Database を設定します。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![ホスト名、ポート、ユーザー、パスワード、データベース名を設定する](/images/integrations/sql-clients/dbeaver-host-port.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/sql-clients/dbeaver-host-port.webp" size="md" border alt="ホスト名、ポート、ユーザー、パスワード、データベース名を設定する" />
 
     * デフォルトでは **SSL &gt; Use SSL** プロパティは未設定です。ClickHouse Cloud または HTTP ポートで SSL が必要なサーバーに接続する場合は、**SSL &gt; Use SSL** を有効にします。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![必要に応じて SSL を有効にする](/images/integrations/sql-clients/dbeaver-use-ssl.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/sql-clients/dbeaver-use-ssl.webp" size="md" border alt="必要に応じて SSL を有効にする" />
 
     * 接続をテストします。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![接続をテストする](/images/integrations/sql-clients/dbeaver-test-connection.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="接続をテストする" />
 
     DBeaver が ClickHouse ドライバーがインストールされていないことを検出すると、ダウンロードするよう案内されます。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![ClickHouse ドライバーをダウンロードする](/images/integrations/sql-clients/dbeaver-download-driver.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/sql-clients/dbeaver-download-driver.webp" size="md" border alt="ClickHouse ドライバーをダウンロードする" />
 
     * ドライバーをダウンロードしたら、もう一度 **Test** して接続を確認します。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![接続をテストする](/images/integrations/sql-clients/dbeaver-test-connection.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="接続をテストする" />
   </Step>
 
   <Step title="ClickHouse にクエリを実行する" id="4-query-clickhouse">
@@ -116,27 +70,11 @@ DBeaver には複数のエディションがあります。このガイドでは
 
     * 接続を右クリックし、**SQL エディタ &gt; Open SQL Script** を選択してクエリエディタを開きます。
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![SQL エディタを開く](/images/integrations/sql-clients/dbeaver-sql-editor.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/sql-clients/dbeaver-sql-editor.webp" size="md" border alt="SQL エディタを開く" />
 
     * `system.query_log` に対するクエリの例:
 
-    <div className="ch-image-md">
-
-    <Frame>
-
-    ![クエリのサンプル](/images/integrations/sql-clients/dbeaver-query-log-select.webp)
-
-    </Frame>
-
-    </div>
+    <Image img="/images/integrations/sql-clients/dbeaver-query-log-select.webp" size="md" border alt="クエリのサンプル" />
   </Step>
 </Steps>
 

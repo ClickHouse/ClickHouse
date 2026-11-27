@@ -49,24 +49,34 @@ public:
     {
     }
 
-    [[nodiscard]] std::string getName() const override { return name; }
+    std::string getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
+    size_t getNumberOfArguments() const override { return 3; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(Float, Float, UInt8) -> UInt64";
+        FunctionArgumentDescriptors mandatory_args = geotoh3_argument_order == GeoToH3ArgumentOrder::LON_LAT
+            ? FunctionArgumentDescriptors{
+                {"longitude", &isFloat, nullptr, "Float64"},
+                {"latitude", &isFloat, nullptr, "Float64"},
+                {"resolution", &isUInt8, nullptr, "UInt8"}}
+            : FunctionArgumentDescriptors{
+                {"latitude", &isFloat, nullptr, "Float64"},
+                {"longitude", &isFloat, nullptr, "Float64"},
+                {"resolution", &isUInt8, nullptr, "UInt8"}};
+        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        return std::make_shared<DataTypeUInt64>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
@@ -137,13 +147,6 @@ public:
                     static_cast<uint8_t>(res),
                     getName(),
                     MAX_H3_RES);
-
-            if (lat < -90.0 || lat > 90.0)
-                throw Exception(
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "The argument 'latitude' ({}) of function {} is out of bounds because the latitude must be in the range [-90, 90]",
-                    lat,
-                    getName());
 
             LatLng coord;
             coord.lng = degsToRads(lon);

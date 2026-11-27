@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS users_03236_zero;
 CREATE TABLE users_03236_zero (uid Int16, name String, num Int16) ENGINE=Memory;
 

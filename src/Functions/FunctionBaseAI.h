@@ -52,19 +52,19 @@ using AIParamValues = std::map<String, Field, std::less<>>; // STYLE_CHECK_ALLOW
 class FunctionBaseAI : public IFunction
 {
 public:
-    explicit FunctionBaseAI(ContextPtr context_) : context(context_) { throwIfNotAllowed(context); }
+    explicit FunctionBaseAI(ContextPtr context_) : context(context_) { throwIfBackgroundExpression(context); }
 
-    [[nodiscard]] bool isStateful() const override { return true; }
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return false; }
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-    [[nodiscard]] bool isExpensive() const override { return true; }
+    bool isStateful() const override { return true; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
+    bool isSuitableForConstantFolding() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    bool isExpensive() const override { return true; }
     /// Handle Nullable cols explicitly, since setting this to true may call functions with arbitrary input values
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return false; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
     /// Helpers for nullable col handling
 
@@ -92,7 +92,7 @@ public:
         String collection_name;
         String provider;
         String endpoint;
-        SecretString api_key;
+        String api_key;
         String api_version;
     };
 
@@ -104,11 +104,11 @@ public:
         AINamedCollectionConfig collection;
         AIParamValues values;
 
-        [[nodiscard]] bool has(std::string_view key) const { return values.contains(key); }
+        bool has(std::string_view key) const { return values.contains(key); }
 
-        [[nodiscard]] String getString(std::string_view key) const;
-        [[nodiscard]] Float64 getFloat(std::string_view key) const;
-        [[nodiscard]] UInt64 getUInt(std::string_view key) const;
+        String getString(std::string_view key) const;
+        Float64 getFloat(std::string_view key) const;
+        UInt64 getUInt(std::string_view key) const;
     };
 
     /// Type validator for the optional trailing parameter argument: a `Map(String, String)`.
@@ -143,9 +143,9 @@ public:
     /// expressions with such a context, which has full access, so the privilege checks do not apply to it.
     static void checkHasUser(const ContextPtr & context);
 
-    /// Throws if `allow_ai_functions` is disabled, or if the context analyzes expressions that are executed in the
-    /// background (mutations, expressions stored in a table definition), where `checkHasUser` throws.
-    static void throwIfNotAllowed(const ContextPtr & context);
+    /// Throws if the context analyzes expressions that are executed in the background (mutations, expressions stored
+    /// in a table definition), where `checkHasUser` throws.
+    static void throwIfBackgroundExpression(const ContextPtr & context);
 
     /// Result of `embedTexts`. `embeddings` is aligned 1:1 with the `inputs` argument of `embedTexts`. An
     /// entry is empty when that input was not embedded (quota exceeded, or a failed request with
@@ -177,29 +177,26 @@ public:
 
 protected:
     ContextPtr context;
-    [[nodiscard]] ContextPtr getContext() const { return context; }
+    ContextPtr getContext() const { return context; }
 
     /// Function-specific parameters accepted in the trailing `Map(String, String)` argument, on top
     /// of `commonParams`. Each entry carries its own default (or is required). Default: none.
-    [[nodiscard]] virtual AIParamSpecs functionParams() const { return {}; }
+    virtual AIParamSpecs functionParams() const { return {}; }
 
     /// Performs additional validation of the input arguments.
     virtual void checkSanityBeforeExecuteImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const {}
 
     /// A system prompt  applies to each request. AI funcs will probably want to provide a default on a per-function basis.
-    [[nodiscard]] virtual String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams & params) const = 0;
+    virtual String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams & params) const = 0;
 
     /// The user prompt is appended to the system prompt, this is usually what is contained in each row.
-    [[nodiscard]] virtual String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const = 0;
+    virtual String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const = 0;
 
     /// How the response should be formatted. Different AI providers treat this differently. OpenAI-like providers have a specific field
     /// for the response format, while Anthropic does not but it can be approximated with a tool-use pattern, see AnthropicProvider.h/cpp
-    [[nodiscard]] virtual Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
+    virtual Poco::JSON::Object::Ptr buildResponseFormat(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
 
-    [[nodiscard]] virtual String postProcessResponse(const ColumnsWithTypeAndName & /*arguments*/, const String & raw_response) const
-    {
-        return raw_response;
-    }
+    virtual String postProcessResponse(const String & raw_response) const { return raw_response; }
 
     /// Insert a post-processed provider response into the result column.
     /// Default appends the string as-is (`ColumnString`); subclasses may parse into other types
@@ -208,7 +205,7 @@ protected:
 
 private:
     /// Full parameter spec for this function: `commonParams` followed by `functionParams`.
-    [[nodiscard]] AIParamSpecs allParams() const;
+    AIParamSpecs allParams() const;
 };
 
 }

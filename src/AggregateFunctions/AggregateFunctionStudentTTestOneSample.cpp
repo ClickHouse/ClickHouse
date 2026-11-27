@@ -27,7 +27,7 @@ struct StudentTTestOneSampleData : public OneSampleTTestMoments<Float64>
 {
     static constexpr auto name = "studentTTestOneSample";
 
-    [[nodiscard]] std::tuple<Float64, Float64> getResult() const
+    std::tuple<Float64, Float64> getResult() const
     {
         if (!hasEnoughObservations())
             return {std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};
@@ -108,9 +108,8 @@ SELECT studentTTestOneSample()(value, 20.0) FROM t;
         )",
         R"(
 ┌─studentTTestOneSample(value, 20.)─────────┐
-├────────t_statistic─┬──────────────p_value─┤
-│ 3.2378108288009266 │ 0.023005151817711317 │
-└────────────────────┴──────────────────────┘
+│ (3.2378108288009266,0.023005151817711324) │
+└───────────────────────────────────────────┘
         )"
     },
     {
@@ -119,10 +118,9 @@ SELECT studentTTestOneSample()(value, 20.0) FROM t;
         SELECT studentTTestOneSample(0.95)(value, 20.0) FROM t;
         )",
         R"(
-┌─studentTTestOneSample(0.95)(value, 20.)────────────────────────────────────────────────────────┐
-├────────t_statistic─┬──────────────p_value─┬─confidence_interval_low─┬─confidence_interval_high─┤
-│ 3.2378108288009266 │ 0.023005151817711317 │      20.230116092352564 │        22.00321724098077 │
-└────────────────────┴──────────────────────┴─────────────────────────┴──────────────────────────┘
+┌─studentTTestOneSample(0.95)(value, 20.)────────────────────────────────────────┐
+│ (3.2378108288009266,0.023005151817711324,20.230116092352564,22.00321724098077) │
+└────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

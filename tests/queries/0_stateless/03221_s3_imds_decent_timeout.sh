@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Inaccessible IMDS should not introduce large delays, so this query should reply quickly at least sometimes:
-while clickhouse_test_time_left
+while true
 do
     # This host (likely) drops packets sent to it (does not reply), so it is good for testing timeouts.
     # At the same time, we expect that the clickhouse host does not drop packets and quickly replies with 4xx, which is a non-retriable error for S3.

@@ -169,11 +169,7 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return getNameByTrait<Trait>(); }
-
-    /// The sampler seeds itself from `thread_local_rng` unless the query names a seed, and then every
-    /// evaluation of the same expression draws differently.
-    [[nodiscard]] bool isDeterministic() const override { return Trait::sampler != Sampler::RNG || seed.has_value(); }
+    String getName() const override { return getNameByTrait<Trait>(); }
 
     void insertWithSampler(Data & a, const T & v, Arena * arena) const
     {
@@ -398,7 +394,7 @@ public:
         }
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
+    bool allocatesMemoryInArena() const override { return true; }
 };
 
 
@@ -415,7 +411,7 @@ struct GroupArrayNodeBase
     /// Returns pointer to actual payload
     char * data() { return reinterpret_cast<char *>(this) + sizeof(Node); }
 
-    [[nodiscard]] const char * data() const { return reinterpret_cast<const char *>(this) + sizeof(Node); }
+    const char * data() const { return reinterpret_cast<const char *>(this) + sizeof(Node); }
 
     /// Clones existing node (does not modify next field)
     Node * clone(Arena * arena) const
@@ -541,11 +537,7 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return getNameByTrait<Trait>(); }
-
-    /// The sampler seeds itself from `thread_local_rng` unless the query names a seed, and then every
-    /// evaluation of the same expression draws differently.
-    [[nodiscard]] bool isDeterministic() const override { return Trait::sampler != Sampler::RNG || seed.has_value(); }
+    String getName() const override { return getNameByTrait<Trait>(); }
 
     void insertWithSampler(Data & a, const Node * v, Arena * arena) const
     {
@@ -762,7 +754,7 @@ public:
             node->insertInto(column_data);
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
+    bool allocatesMemoryInArena() const override { return true; }
 };
 
 
@@ -948,7 +940,7 @@ groupArraySample(max_size[, seed])(x)
     };
     FunctionDocumentation::Parameters parameters_groupArraySample = {
         {"max_size", "Maximum size of the resulting array.", {"UInt64"}},
-        {"seed", "Optional. Seed for the random number generator. When omitted, every aggregation state seeds itself from a thread-local generator, so the sample is different for every evaluation and the function is non-deterministic. Pass a seed for a reproducible sample.", {"UInt64"}},
+        {"seed", "Optional. Seed for the random number generator. Default value: 123456.", {"UInt64"}},
         {"x", "Argument (column name or expression).", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_groupArraySample = {

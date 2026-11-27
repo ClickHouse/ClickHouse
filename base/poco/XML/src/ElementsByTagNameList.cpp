@@ -56,7 +56,7 @@ unsigned long ElementsByTagNameList::length() const
 
 namespace
 {
-	[[clang::no_destroy]] static const XMLString asterisk = toXMLString("*");
+	static const XMLString asterisk = toXMLString("*");
 }
 
 

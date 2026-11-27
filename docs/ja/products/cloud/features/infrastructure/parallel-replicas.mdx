@@ -6,6 +6,8 @@ description: 'このガイドでは、まず ClickHouse が分散テーブルを
 doc_type: 'reference'
 ---
 
+import { Image } from "/snippets/ja/components/Image.jsx";
+
 <div id="introduction">
   ## はじめに
 </div>
@@ -17,7 +19,9 @@ ClickHouse はクエリを非常に高速に処理しますが、これらのク
 > 複数の分片にどのように分散するのかを説明し、その後、クエリの実行で
 > 複数のレプリカをどのように活用できるのかを説明します。
 
-## 分片アーキテクチャ {#sharded-architecture}
+<div id="sharded-architecture">
+  ## 分片アーキテクチャ
+</div>
 
 shared-nothing アーキテクチャでは、クラスターは通常、複数の分片に
 分割され、各分片には全体データの一部が格納されます。これらの分片の
@@ -28,15 +32,7 @@ shared-nothing アーキテクチャでは、クラスターは通常、複数�
 場合は各分片で指定されたクエリが実行されます。分散テーブルに対するクエリを
 受けたサーバーがデータを集約し、クライアントに応答を返します。
 
-<div className="ch-image-md">
-
-<Frame>
-
-![分片アーキテクチャ](/images/deployment-guides/parallel-replicas-1.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-1.webp" size="md" alt="分片アーキテクチャ" />
 
 上の図は、クライアントが分散テーブルにクエリを実行した際に何が起こるかを示しています。
 
@@ -79,15 +75,7 @@ ClickHouse Cloud のアーキテクチャは、上で示したものとは大き
 
 以下の図は ClickHouse Cloud のアーキテクチャを示しています。
 
-<div className="ch-image-md">
-
-<Frame>
-
-![非分片アーキテクチャ](/images/deployment-guides/parallel-replicas-2.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-2.webp" size="md" alt="非分片アーキテクチャ" />
 
 このアーキテクチャでは、レプリカをほぼ瞬時に追加・削除できるため、
 クラスターの高い拡張性を実現できます。ClickHouse
@@ -100,7 +88,9 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
 アーキテクチャでは、各分片がデータの一部に対して実際にクエリを実行できるため、
 比較的わかりやすいものでした。では、sharding がない場合はどのように機能するのでしょうか。
 
-## 並列レプリカの紹介 {#introducing-parallel-replicas}
+<div id="introducing-parallel-replicas">
+  ## 並列レプリカの紹介
+</div>
 
 複数のサーバーにまたがってクエリ実行を並列化するには、まず
 サーバーのうち 1 台をコーディネーターとして割り当てられるようにする
@@ -115,15 +105,7 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
 
 では、以下の図を使って、実際にどのように動作するのか見てみましょう。
 
-<div className="ch-image-md">
-
-<Frame>
-
-![並列レプリカ](/images/deployment-guides/parallel-replicas-3.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-3.webp" size="md" alt="並列レプリカ" />
 
 並列レプリカでは:
 
@@ -181,19 +163,13 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
 
 これらの要因をどのように克服しているかは、以降のセクションで説明します。
 
-### アナウンス {#announcements}
+<div id="announcements">
+  ### アナウンス
+</div>
 
 上のリストの (1) と (2) に対処するため、アナウンス という概念を導入しました。以下の図でその仕組みを見てみましょう。
 
-<div className="ch-image-md">
-
-<Frame>
-
-![アナウンス](/images/deployment-guides/parallel-replicas-4.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-4.webp" size="md" alt="アナウンス" />
 
 <ol className="docs-ordered-list">
   <li>
@@ -224,7 +200,9 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
   </li>
 </ol>
 
-### 動的協調 {#dynamic-coordination}
+<div id="dynamic-coordination">
+  ### 動的協調
+</div>
 
 テールレイテンシの問題に対処するため、動的協調を追加しました。これは、
 すべてのグラニュールを1回のリクエストでレプリカに送るのではなく、各レプリカが
@@ -237,15 +215,7 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
 
 以下の図は、動的協調がどのように機能するかを示しています。
 
-<div className="ch-image-md">
-
-<Frame>
-
-![動的協調 - パート 1](/images/deployment-guides/parallel-replicas-5.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-5.webp" size="md" alt="動的協調 - パート 1" />
 
 <ol className="docs-ordered-list">
   <li>
@@ -258,15 +228,7 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
   </li>
 </ol>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![動的協調 - パート 2](/images/deployment-guides/parallel-replicas-6.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-6.webp" size="md" alt="動的協調 - パート 2" />
 
 <ol className="docs-ordered-list">
   <li>
@@ -279,15 +241,7 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
   </li>
 </ol>
 
-<div className="ch-image-md">
-
-<Frame>
-
-![動的協調 - パート 3](/images/deployment-guides/parallel-replicas-7.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-7.webp" size="md" alt="動的協調 - パート 3" />
 
 <ol className="docs-ordered-list">
   <li>
@@ -357,7 +311,9 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
 
 あるレプリカでのタスク処理が他のレプリカより遅い場合、他のレプリカは、ハッシュに基づいて本来そのレプリカに割り当てられているタスクを「奪う」ことで、テールレイテンシの低減を図ります。
 
-### 制限事項
+<div id="limitations">
+  ### 制限事項
+</div>
 
 この機能には既知の制限があり、主なものをこのセクションで説明します。
 
@@ -385,8 +341,11 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
 | `cluster_for_parallel_replicas`                    | 並列レプリカに使用するクラスター名です。ClickHouse Cloud を使用している場合は `default` を使用してください。                                                        |
 | `max_parallel_replicas`                            | 複数のレプリカでクエリを実行する際に使用するレプリカの最大数です。クラスター内のレプリカ数より少ない値を指定すると、ノードはランダムに選択されます。この値は、水平スケーリングを考慮してオーバーコミットすることもできます。              |
 | `parallel_replicas_min_number_of_rows_per_replica` | 処理対象の行数に基づいて、使用するレプリカ数を制限するのに役立ちます。使用されるレプリカ数は次の式で決まります。<br /> `estimated rows to read` / `min_number_of_rows_per_replica`。 |
+| `enable_analyzer`                                  | 並列レプリカによるクエリ実行は、アナライザが有効な場合にのみサポートされます                                                                                      |
 
-## 並列レプリカの問題の調査
+<div id="investigating-issues-with-parallel-replicas">
+  ## 並列レプリカの問題の調査
+</div>
 
 各クエリでどの設定が使われているかは、
 [`system.query_log`](/ja/reference/system-tables/query_log) テーブルで確認できます。また、
@@ -549,15 +508,7 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![並列レプリカ なしの EXPLAIN](/images/deployment-guides/parallel-replicas-8.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="並列レプリカ なしの EXPLAIN" />
 
 続いて、並列レプリカ を有効にした場合:
 
@@ -572,12 +523,4 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![並列レプリカ を使った EXPLAIN](/images/deployment-guides/parallel-replicas-9.webp)
-
-</Frame>
-
-</div>
+<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="並列レプリカ を使った EXPLAIN" />

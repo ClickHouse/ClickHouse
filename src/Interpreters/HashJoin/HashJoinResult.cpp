@@ -63,7 +63,7 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
         correctNullabilityInplace(right_column, should_be_nullable);
 
     if (null_map_filter)
-        right_column.column = JoinCommon::filterWithBlanks(right_column.column, *null_map_filter, false, right_column.type);
+        right_column.column = JoinCommon::filterWithBlanks(right_column.column, *null_map_filter);
 
     if (!right_column.type->equals(*right_key_type))
         right_column.column = castColumnAccurate(right_column, right_key_type);
@@ -165,10 +165,7 @@ static void appendRightColumns(
         {
             /// All rows in the block are unmatched: emit type defaults for the right key.
             auto column = right_key.type->createColumn();
-            if (right_key.type->isDefaultInsertTrivial())
-                column->insertManyDefaults(block.rows());
-            else
-                right_key.type->insertManyDefaultsInto(*column, block.rows());
+            column->insertManyDefaults(block.rows());
             right_col = ColumnWithTypeAndName(std::move(column), right_key.type, right_col_name);
         }
         else
@@ -566,7 +563,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             /// Copy data from the original columns to preserve columns size in the block.
             rhs_columns.reserve(columns.size());
             for (auto & column : columns)
-                rhs_columns.push_back(IColumn::mutate(column->cut(prev_offset, num_rhs_rows)));
+                rhs_columns.push_back(column->cut(prev_offset, num_rhs_rows)->assumeMutable());
 
             if (is_last)
                 columns.clear();

@@ -18,9 +18,9 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return "GatherExchange"; }
+    String getName() const override { return "GatherExchange"; }
 
-    [[nodiscard]] QueryPlanStepPtr clone() const override
+    QueryPlanStepPtr clone() const override
     {
         return std::make_unique<GatherExchangeStep>(input_headers.front(), source_bucket_count, maintain_sort_description);
     }
@@ -30,17 +30,17 @@ public:
         /// Doesn't change the pipeline if executed directly
     }
 
-    [[nodiscard]] size_t getSourceBucketCount() const override
+    size_t getSourceBucketCount() const override
     {
         return source_bucket_count;
     }
 
-    [[nodiscard]] size_t getResultBucketCount() const override
+    size_t getResultBucketCount() const override
     {
         return 1;
     }
 
-    [[nodiscard]] std::pair<QueryPlanStepPtr, QueryPlanStepPtr> createSinkAndSourcePair(const String & exchange_id, const Strings & source_shards) const override;
+    std::pair<QueryPlanStepPtr, QueryPlanStepPtr> createSinkAndSourcePair(const String & exchange_id, const Strings & source_shards) const override;
 
 private:
     void updateOutputHeader() override

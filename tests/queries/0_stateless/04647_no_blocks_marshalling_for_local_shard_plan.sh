@@ -10,12 +10,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # every statement of a multi-statement invocation, so batching below does not weaken it.
 # `--compression 1` is required as well: without a network codec the marshalling callback returns
 # the block unchanged, so nothing is wrapped into `ColumnBLOB`.
-# `serialize_query_plan` is pinned to 0 so that the counts below describe the plan this test is
-# about: with a serialized plan the shard's own plan is built here instead of on the shard, which
-# changes where the steps are counted. The `distributed plan` CI variants set
+# `enable_analyzer` is pinned because `BlocksMarshallingStep` is only ever added by the analyzer,
+# and CI runs variants with `allow_experimental_analyzer = 0`.
+# `serialize_query_plan` is pinned to 0 for the queries that are executed: a plan serialized and
+# shipped to a shard legitimately still carries `BlocksMarshalling`, which is not registered in
+# `QueryPlanStepRegistry` on master, so executing one fails with `Unknown query plan step:
+# BlocksMarshalling` independently of this fix. The `distributed plan` CI variants set
 # `serialize_query_plan = 1` in the default profile.
-CLIENT="$CLICKHOUSE_CLIENT --compression 1 --serialize_query_plan 0 --query_kind=secondary_query"
-INITIAL_CLIENT="$CLICKHOUSE_CLIENT --compression 1 --serialize_query_plan 0"
+CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer 1 --compression 1 --serialize_query_plan 0 --query_kind=secondary_query"
+INITIAL_CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer 1 --compression 1 --serialize_query_plan 0"
 
 # Statements are grouped into as few client invocations as possible, and the section headers are
 # emitted as `SELECT` constants inside those batches instead of by the shell. None of the queries
@@ -144,11 +147,9 @@ $INITIAL_CLIENT -q "
 # The plan shape is the invariant being fixed: the locally executed branch must carry no
 # `BlocksMarshalling` step, while the branch read from a remote replica must keep it.
 #
-# The parallel replicas case names the query-based reading step, so it is pinned to that
-# implementation; `05238_pr_plan_based_blocks_marshalling` asserts the same counts for plan-based.
-#
 # The last one asserts that a plan which is serialized and shipped to a shard keeps marshalling:
-# the shard sends its blocks back over the network.
+# the shard sends its blocks back over the network. EXPLAIN only, executing such a plan fails with
+# `Unknown query plan step: BlocksMarshalling` both with and without this fix.
 $CLIENT -q "
     SELECT '-- BlocksMarshalling steps for remote(): total, above ReadFromRemote, ReadFromRemote steps';
     $(marshalling_counts_query "
@@ -160,7 +161,7 @@ $CLIENT -q "
     $(marshalling_counts_query "
         SELECT x, sum(y) FROM tab
         GROUP BY GROUPING SETS ((x, z % 1), (intDiv(z, 100), z + 2))
-        SETTINGS enable_parallel_blocks_marshalling = 1, $PARALLEL_REPLICAS, serialize_query_plan = 0, parallel_replicas_plan_based = 0" "ReadFromRemoteParallelReplicas");
+        SETTINGS enable_parallel_blocks_marshalling = 1, $PARALLEL_REPLICAS, serialize_query_plan = 0" "ReadFromRemoteParallelReplicas");
 "
 
 # The same plan-shape invariant for the `Buffer` carrier, so that the assignment on the buffers

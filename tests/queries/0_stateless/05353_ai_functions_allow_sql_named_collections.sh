@@ -30,42 +30,48 @@ function config()
     </clickhouse>"
 }
 
-QUERIES="
+SETUP="
 CREATE NAMED COLLECTION ai_sql_chat AS
     provider = 'openai', endpoint = 'https://ai.example.com/v1/chat/completions', model = 'chat-model', api_key = 'fake-key';
 CREATE NAMED COLLECTION ai_sql_embed AS
     provider = 'openai', endpoint = 'https://ai.example.com/v1/embeddings', api_key = 'fake-key';
 CREATE TABLE tab (x String) ENGINE = Memory;
-
-SELECT '-- config collection, credentials parameter';
-SELECT count() FROM (SELECT aiGenerate(x, map('credentials', 'ai_config_chat')) AS r FROM tab);
-SELECT count() FROM (SELECT aiEmbed(x, 'embed-model', map('credentials', 'ai_config_embed')) AS r FROM tab);
-SELECT count() FROM (SELECT aiSimilarity(x, x, 'embed-model', map('credentials', 'ai_config_embed')) AS r FROM tab);
-
-SELECT '-- SQL collection, credentials parameter';
-SELECT count() FROM (SELECT aiGenerate(x, map('credentials', 'ai_sql_chat')) AS r FROM tab);
-SELECT count() FROM (SELECT aiEmbed(x, 'embed-model', map('credentials', 'ai_sql_embed')) AS r FROM tab);
-SELECT count() FROM (SELECT aiSimilarity(x, x, 'embed-model', map('credentials', 'ai_sql_embed')) AS r FROM tab);
-
-SELECT '-- config collection, default-credentials settings';
-SET ai_function_text_default_credentials = 'ai_config_chat', ai_function_embedding_default_credentials = 'ai_config_embed';
-SELECT count() FROM (SELECT aiGenerate(x) AS r FROM tab);
-SELECT count() FROM (SELECT aiEmbed(x, 'embed-model') AS r FROM tab);
-SELECT count() FROM (SELECT aiSimilarity(x, x, 'embed-model') AS r FROM tab);
-
-SELECT '-- SQL collection, default-credentials settings';
-SET ai_function_text_default_credentials = 'ai_sql_chat', ai_function_embedding_default_credentials = 'ai_sql_embed';
-SELECT count() FROM (SELECT aiGenerate(x) AS r FROM tab);
-SELECT count() FROM (SELECT aiEmbed(x, 'embed-model') AS r FROM tab);
-SELECT count() FROM (SELECT aiSimilarity(x, x, 'embed-model') AS r FROM tab);
 "
 
-# Prints result rows as they are and replaces each error with its code name.
+# Runs one query in its own process and prints its result, or the code name of its error.
+# `--ignore-error` is not used: older `clickhouse-local` versions do not print errors with it.
+function query()
+{
+    $CLICKHOUSE_LOCAL --config-file <(config "$1") -q "$SETUP $2" 2>&1 \
+        | sed -E 's/.*Code: [0-9]+\. DB::Exception: .*\(([A-Z_]+)\)$/\1/'
+}
+
+# $1 is the server config fragment, $2 and $3 are the chat and embedding collections.
+function queries_with_credentials()
+{
+    query "$1" "SELECT count() FROM (SELECT aiGenerate(x, map('credentials', '$2')) AS r FROM tab)"
+    query "$1" "SELECT count() FROM (SELECT aiEmbed(x, 'embed-model', map('credentials', '$3')) AS r FROM tab)"
+    query "$1" "SELECT count() FROM (SELECT aiSimilarity(x, x, 'embed-model', map('credentials', '$3')) AS r FROM tab)"
+}
+
+function queries_with_default_credentials()
+{
+    local set="SET ai_function_text_default_credentials = '$2', ai_function_embedding_default_credentials = '$3';"
+    query "$1" "$set SELECT count() FROM (SELECT aiGenerate(x) AS r FROM tab)"
+    query "$1" "$set SELECT count() FROM (SELECT aiEmbed(x, 'embed-model') AS r FROM tab)"
+    query "$1" "$set SELECT count() FROM (SELECT aiSimilarity(x, x, 'embed-model') AS r FROM tab)"
+}
+
 function run()
 {
-    $CLICKHOUSE_LOCAL --config-file <(config "$1") --ignore-error -q "$QUERIES" 2>&1 \
-        | grep -v -e '^Received exception:$' -e '^(query: ' \
-        | sed -E 's/.*Code: [0-9]+\. DB::Exception: .*\(([A-Z_]+)\)$/\1/'
+    echo "-- config collection, credentials parameter"
+    queries_with_credentials "$1" ai_config_chat ai_config_embed
+    echo "-- SQL collection, credentials parameter"
+    queries_with_credentials "$1" ai_sql_chat ai_sql_embed
+    echo "-- config collection, default-credentials settings"
+    queries_with_default_credentials "$1" ai_config_chat ai_config_embed
+    echo "-- SQL collection, default-credentials settings"
+    queries_with_default_credentials "$1" ai_sql_chat ai_sql_embed
 }
 
 echo "== default"

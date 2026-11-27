@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2154
 
-# A set port adds `--port` to `$CLICKHOUSE_CLIENT`, and then the client ignores `CLICKHOUSE_HOST`.
-unset CLICKHOUSE_PORT_TCP
-
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh

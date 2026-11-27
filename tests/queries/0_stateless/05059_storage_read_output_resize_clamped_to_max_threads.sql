@@ -1,5 +1,4 @@
 -- Tags: no-fasttest
--- Random settings limits: input_format_parquet_preserve_order=(0, 0)
 
 -- A post-read resize must not widen a storage read's output beyond the thread budget.
 -- `max_memory_usage` keeps a regression a loud query error instead of an OOM-killed server.

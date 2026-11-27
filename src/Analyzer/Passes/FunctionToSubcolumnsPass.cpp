@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -11,7 +10,6 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationMap.h>
@@ -30,21 +28,16 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 
-#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Identifier.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/LambdaNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
-#include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
-
-#include <Planner/PlannerJoinTree.h>
 
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
@@ -61,7 +54,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsMap additional_table_filters;
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsBool json_type_escape_dots_in_keys;
     extern const SettingsBool join_use_nulls;
@@ -71,31 +63,11 @@ namespace Setting
 namespace
 {
 
-/// Wrapper storages answer these predicates by walking what they wrap, so they are memoized per visitor.
-struct SubcolumnSupportAnswers
-{
-    bool all_transformers;
-    std::optional<bool> tuple_element_only;
-    std::optional<bool> map_keys_and_values;
-    std::optional<bool> bucketed_map_serialization;
-};
-
-using SubcolumnSupportCache = std::unordered_map<const IStorage *, SubcolumnSupportAnswers>;
-
-SubcolumnSupportAnswers & getSubcolumnSupportAnswers(const IStorage & storage, SubcolumnSupportCache & cache)
-{
-    auto it = cache.find(&storage);
-    if (it == cache.end())
-        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt, std::nullopt, std::nullopt}).first;
-    return it->second;
-}
-
 struct ColumnContext
 {
     NameAndTypePair column;
     TableExpressionNodePtr column_source;
     ContextPtr context;
-    SubcolumnSupportCache & subcolumn_support_cache;
 };
 
 /// A column source is either a TableNode (`FROM t`) or a TableFunctionNode (`FROM file(...)`).
@@ -171,47 +143,7 @@ struct IdentifiersToOptimize
     /// can be rewritten inside WHERE/PREWHERE.
     ColumnInSourceSet filter_only;
 
-    [[nodiscard]] bool empty() const { return everywhere.empty() && filter_only.empty(); }
-};
-
-/// The correlated columns of every subquery on the way down, one entry per query or union level.
-/// A column of an outer query that a subquery lists among its correlated columns must never be
-/// replaced by a subcolumn inside that subquery: the list would keep naming the whole column,
-/// and decorrelation would then look for the subcolumn in a join that carries only the whole
-/// column - the query fails with `NOT_FOUND_COLUMN_IN_BLOCK`. Both passes consult this stack,
-/// because the second pass can rewrite an identifier that the first pass put into `filter_only`
-/// on account of a non-correlated use of the same column elsewhere in the query.
-class CorrelatedColumnsStack
-{
-public:
-    void enter(const ListNode & correlated_columns)
-    {
-        ColumnInSourceSet columns;
-        for (const auto & correlated_column : correlated_columns.getNodes())
-        {
-            const auto * column_node = correlated_column->as<ColumnNode>();
-            if (!column_node)
-                continue;
-
-            columns.insert(makeColumnInSource(column_node->getColumnSource(), column_node->getColumnName()));
-        }
-
-        stack.push_back(std::move(columns));
-    }
-
-    void leave() { stack.pop_back(); }
-
-    [[nodiscard]] bool contains(const ColumnInSource & column_in_source) const
-    {
-        for (const auto & columns : stack)
-            if (columns.contains(column_in_source))
-                return true;
-
-        return false;
-    }
-
-private:
-    std::vector<ColumnInSourceSet> stack;
+    bool empty() const { return everywhere.empty() && filter_only.empty(); }
 };
 
 using NodeToSubcolumnTransformer = std::function<void(QueryTreeNodePtr &, FunctionNode &, ColumnContext &)>;
@@ -324,23 +256,12 @@ bool canOptimizeToExpectedSubcolumn(
     return subcolumnDescendsFromColumn(storage_snapshot, ctx.column.name, *resolved, info->substreams_path);
 }
 
-/// The type of the `size` subcolumn of a String or Nullable(String) column.
-/// For Nullable(String) it is Nullable(UInt64) with NULL in the rows where the column is NULL,
-/// which is the same as the result of `length`, `empty` and `notEmpty` for these rows.
-DataTypePtr getStringSizesSubcolumnType(const ColumnContext & ctx)
-{
-    DataTypePtr type = std::make_shared<DataTypeUInt64>();
-    if (ctx.column.type->isNullable())
-        return makeNullable(type);
-    return type;
-}
-
 void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
     /// Replace `length(argument)` with `argument.size`.
-    /// `argument` is String or Nullable(String).
+    /// `argument` is String.
 
-    NameAndTypePair column{ctx.column.name + ".size", getStringSizesSubcolumnType(ctx)};
+    NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
     if (sourceHasColumn(ctx.column_source, column.name)
         || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
@@ -352,9 +273,9 @@ void optimizeFunctionStringEmpty(QueryTreeNodePtr &, FunctionNode & function_nod
 {
     /// Replace `empty(argument)` with `equals(argument.size, 0)` if positive.
     /// Replace `notEmpty(argument)` with `notEquals(argument.size, 0)` if not positive.
-    /// `argument` is String or Nullable(String).
+    /// `argument` is String.
 
-    NameAndTypePair column{ctx.column.name + ".size", getStringSizesSubcolumnType(ctx)};
+    NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
     if (sourceHasColumn(ctx.column_source, column.name)
         || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
@@ -419,23 +340,19 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
 
     const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
     const auto & key_type = data_type_map.getKeyType();
-
-    Field key_value = second_argument_constant_node->getValue();
-    if (isEnum(key_type))
-    {
-        /// A map with Enum keys can be indexed either by the name of the enum value or by its numeric value.
-        /// Convert both forms to the numeric value of the enum. This also rejects a value that is not in
-        /// the Enum at all, which has no name and hence no key subcolumn, while `arrayElement` returns
-        /// the default value for it.
-        key_value = tryConvertFieldToType(key_value, *key_type);
-        if (key_value.isNull())
-            return;
-    }
-
     auto tmp_key_column = key_type->createColumn();
     /// Verify that the constant value is compatible with the map's key type.
-    if (!tmp_key_column->tryInsert(key_value))
-        return;
+    if (!tmp_key_column->tryInsert(second_argument_constant_node->getValue()))
+    {
+        /// A map with Enum keys can also be indexed by the name of the enum value,
+        /// so convert the name to the numeric value of the enum.
+        if (!isEnum(key_type) || second_argument_constant_node->getValue().getType() != Field::Types::String)
+            return;
+
+        Field enum_value = tryConvertFieldToType(second_argument_constant_node->getValue(), *key_type);
+        if (enum_value.isNull() || !tmp_key_column->tryInsert(enum_value))
+            return;
+    }
 
     /// Serialize the key to its text representation to construct the subcolumn name,
     /// e.g. the string key "foo" becomes the subcolumn suffix "key_foo".
@@ -558,7 +475,7 @@ bool tupleElementNameIsAmbiguousWhenFlattened(const DataTypeTuple & tuple, const
 /// True when the element name is a bare ordinal that is not guaranteed to occur in the file schema:
 /// an unnamed tuple names its elements "1", "2", ... while a source reading them from a file matches
 /// the flattened `<column>.<element>` by string. A source serving subcolumns from its own metadata does have it.
-bool tupleElementNameIsOrdinalOnly(const QueryTreeNodePtr & column_source, const DataTypeTuple & tuple, SubcolumnSupportCache & cache)
+bool tupleElementNameIsOrdinalOnly(const QueryTreeNodePtr & column_source, const DataTypeTuple & tuple)
 {
     if (tuple.hasExplicitNames())
         return false;
@@ -567,7 +484,7 @@ bool tupleElementNameIsOrdinalOnly(const QueryTreeNodePtr & column_source, const
     if (!storage)
         return false;
 
-    return !getSubcolumnSupportAnswers(*storage, cache).all_transformers;
+    return !storage->supportsOptimizationToSubcolumns();
 }
 
 template <typename DataType>
@@ -600,7 +517,7 @@ void optimizeElementToSubcolumn(QueryTreeNodePtr & node, FunctionNode & function
     if constexpr (std::is_same_v<DataType, DataTypeTuple>)
         if (tupleElementNameIsAmbiguousWhenFlattened(data_type_concrete, *subcolumn_name)
             || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
-            || tupleElementNameIsOrdinalOnly(ctx.column_source, data_type_concrete, ctx.subcolumn_support_cache))
+            || tupleElementNameIsOrdinalOnly(ctx.column_source, data_type_concrete))
             return;
 
     /// ``Tuple(`t.a` UInt64, t Tuple(a UInt64))`` resolves `c.t.a` to the sibling, not to `t`.`a`.
@@ -618,7 +535,7 @@ void optimizeElementToSubcolumn(QueryTreeNodePtr & node, FunctionNode & function
 
 void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
-    /// Replace distinctJSONPaths(json) to arraySort(groupUniqArrayArray(json.__special_subcolumn_name_for_distinct_paths_calculation))
+    /// Replace distinctJSONPaths(json) to arraySort(groupArrayDistinct(arrayJoin(json.__special_subcolumn_name_for_distinct_paths_calculation)))
     NameAndTypePair column{ctx.column.name + "." + DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION, std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())};
 
     if (sourceHasColumn(ctx.column_source, column.name)
@@ -626,12 +543,16 @@ void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnCo
         return;
 
     auto new_column_node = std::make_shared<ColumnNode>(column, ctx.column_source);
-    auto function_group_uniq_array_node = std::make_shared<FunctionNode>("groupUniqArrayArray");
-    function_group_uniq_array_node->getArguments().getNodes().push_back(std::move(new_column_node));
-    resolveAggregateFunctionNodeByName(*function_group_uniq_array_node, "groupUniqArrayArray");
+    auto function_array_join_node = std::make_shared<FunctionNode>("arrayJoin");
+    function_array_join_node->getArguments().getNodes().push_back(std::move(new_column_node));
+    resolveOrdinaryFunctionNodeByName(*function_array_join_node, "arrayJoin", ctx.context);
+
+    auto function_group_array_distinct_node = std::make_shared<FunctionNode>("groupArrayDistinct");
+    function_group_array_distinct_node->getArguments().getNodes().push_back(std::move(function_array_join_node));
+    resolveAggregateFunctionNodeByName(*function_group_array_distinct_node, "groupArrayDistinct");
 
     auto function_array_sort_node = std::make_shared<FunctionNode>("arraySort");
-    function_array_sort_node->getArguments().getNodes().push_back(std::move(function_group_uniq_array_node));
+    function_array_sort_node->getArguments().getNodes().push_back(std::move(function_group_array_distinct_node));
     resolveOrdinaryFunctionNodeByName(*function_array_sort_node, "arraySort", ctx.context);
 
     node = std::move(function_array_sort_node);
@@ -641,8 +562,10 @@ bool optimizeMapFunctionToKeys(FunctionNode & function_node, ColumnContext & ctx
 {
     const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
 
-    /// No case-insensitive check here: a format reader that binds names up to case is asked for the whole map `m` and `m.keys` is
-    /// extracted from it (see filterTupleColumnsToRead), so a top-level `M.keys` cannot shadow it. Other storages are case-sensitive.
+    /// No case-insensitive check here: only the format readers (`File`, `URL`, object storage, `Hive`) bind
+    /// column names up to case, and every one of them reports supportsOptimizationToSubcolumns() = false,
+    /// so storageAllowsTransformer never lets a Map rewrite reach them. On every storage that gets here
+    /// name resolution is case-sensitive, so a top-level `M.keys` cannot shadow `m.keys`.
     NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
     if (sourceHasColumn(ctx.column_source, column.name)
         || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeysSubcolumn, column.type))
@@ -682,80 +605,7 @@ void optimizeFunctionHasForMap(QueryTreeNodePtr &, FunctionNode & function_node,
     }
 }
 
-template <size_t map_element>
-void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
-{
-    static_assert(map_element <= 1);
-
-    const auto & function_arguments_nodes = function_node.getArguments().getNodes();
-    if (function_arguments_nodes.size() != 2)
-        return;
-
-    /// The Map LIKE adapter evaluates the pattern once per input row before traversing the Map.
-    /// Keep arbitrary expressions out of the synthesized lambda, where they would be evaluated
-    /// once per Map element (or not at all for an empty Map). Only physical columns and constants
-    /// preserve the original evaluation scope. An expression-backed ColumnNode, such as an ALIAS
-    /// column, has the same evaluation-scope problem as any other expression.
-    const auto & pattern_node = function_arguments_nodes[1];
-    if (const auto * pattern_column_node = pattern_node->as<ColumnNode>())
-    {
-        if (pattern_column_node->hasExpression())
-            return;
-
-        const auto pattern_source = pattern_column_node->getColumnSource();
-        if (!pattern_source->as<TableNode>() && !pattern_source->as<TableFunctionNode>())
-            return;
-    }
-    else if (!pattern_node->as<ConstantNode>())
-        return;
-
-    const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
-    auto map_element_type = map_element == 0 ? data_type_map.getKeyType() : data_type_map.getValueType();
-    /// The Map LIKE adapter removes LowCardinality before calling LIKE. Keep the
-    /// original path when the searched Map element or pattern is LowCardinality;
-    /// the unused Map element is not passed to LIKE.
-    /// It also propagates a NULL pattern, while arrayExists treats a NULL lambda result as false.
-    const auto & pattern_type = function_arguments_nodes[1]->getResultType();
-    if (WhichDataType(map_element_type).isLowCardinality()
-        || WhichDataType(pattern_type).isLowCardinality()
-        || WhichDataType(pattern_type).isNullable())
-        return;
-
-    auto subcolumn_type = std::make_shared<DataTypeArray>(map_element_type);
-
-    NameAndTypePair subcolumn{ctx.column.name + (map_element == 0 ? ".keys" : ".values"), subcolumn_type};
-    /// Case-sensitive check only, for the same reason as in optimizeMapFunctionToKeys.
-    if (sourceHasColumn(ctx.column_source, subcolumn.name)
-        || !canOptimizeToExpectedSubcolumn(
-            ctx,
-            subcolumn.name,
-            map_element == 0 ? SerializationMap::isKeysSubcolumn : SerializationMap::isValuesSubcolumn,
-            subcolumn.type))
-        return;
-
-    auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(Names{"x"});
-    lambda_arguments->resolve(DataTypes{map_element_type});
-
-    auto lambda_element = std::make_shared<ColumnNode>(NameAndTypePair{"x", map_element_type}, lambda_arguments);
-
-    auto like_function = std::make_shared<FunctionNode>("like");
-    like_function->markAsOperator();
-    /// The resolved Map LIKE node may be shared by multiple alias references. Keep its pattern
-    /// argument intact while attaching the same node to the synthesized lambda.
-    like_function->getArguments().getNodes() = {std::move(lambda_element), function_arguments_nodes[1]};
-    resolveOrdinaryFunctionNodeByName(*like_function, "like", ctx.context);
-
-    auto lambda_type = std::make_shared<DataTypeFunction>(DataTypes{map_element_type}, like_function->getResultType());
-    auto lambda = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(like_function), true, std::move(lambda_type));
-
-    auto array_exists = std::make_shared<FunctionNode>("arrayExists");
-    array_exists->getArguments().getNodes() = {std::move(lambda), std::make_shared<ColumnNode>(subcolumn, ctx.column_source)};
-    resolveOrdinaryFunctionNodeByName(*array_exists, "arrayExists", ctx.context);
-
-    node = std::move(array_exists);
-}
-
-[[clang::no_destroy]] std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
+std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
 {
     {
         {TypeIndex::String, "length"}, optimizeFunctionStringLength,
@@ -844,12 +694,6 @@ void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & fun
         },
     },
     {
-        {TypeIndex::Map, "mapContainsKeyLike"}, optimizeFunctionMapContainsLike<0>,
-    },
-    {
-        {TypeIndex::Map, "mapContainsValueLike"}, optimizeFunctionMapContainsLike<1>,
-    },
-    {
         {TypeIndex::Nullable, "count"},
         [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {
@@ -919,27 +763,6 @@ void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & fun
         },
     },
     {
-        {TypeIndex::Nullable, "length"}, [](QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
-        {
-            if (isString(removeNullable(ctx.column.type)))
-                optimizeFunctionStringLength(node, function_node, ctx);
-        },
-    },
-    {
-        {TypeIndex::Nullable, "empty"}, [](QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
-        {
-            if (isString(removeNullable(ctx.column.type)))
-                optimizeFunctionStringEmpty<true>(node, function_node, ctx);
-        },
-    },
-    {
-        {TypeIndex::Nullable, "notEmpty"}, [](QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
-        {
-            if (isString(removeNullable(ctx.column.type)))
-                optimizeFunctionStringEmpty<false>(node, function_node, ctx);
-        },
-    },
-    {
         {TypeIndex::Variant, "variantElement"}, optimizeElementToSubcolumn<DataTypeVariant>,
     },
     {
@@ -960,7 +783,7 @@ void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & fun
 /// primary key, partition key, or secondary index expressions. The rewritten
 /// subcolumn form will be handled by index analysis (or the index simply
 /// won't be used, which is safe — just potentially slower).
-[[clang::no_destroy]] std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
+std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 {
     {TypeIndex::Map, "arrayElement"},
 };
@@ -982,7 +805,7 @@ void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & fun
 /// the filter. Keep this set limited to transformers that make that behavior safe.
 /// Note: this exception does NOT apply to HAVING or other clauses where the
 /// subcolumn would need to appear in GROUP BY.
-[[clang::no_destroy]] std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full_column =
+std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full_column =
 {
     {TypeIndex::Map, "arrayElement"},
     {TypeIndex::Map, "mapContainsKey"},
@@ -990,33 +813,11 @@ void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & fun
     {TypeIndex::Map, "notHas"},
     {TypeIndex::Map, "mapKeys"},
     {TypeIndex::Map, "mapValues"},
-    /// Map LIKE rewrites only read the searched subcolumn, so they remain safe
-    /// when the full Map is read separately, for example by SELECT.
-    {TypeIndex::Map, "mapContainsKeyLike"},
-    {TypeIndex::Map, "mapContainsValueLike"},
     {TypeIndex::Tuple, "tupleElement"},
     {TypeIndex::Nullable, "tupleElement"},
     {TypeIndex::Variant, "variantElement"},
     {TypeIndex::QBit, "tupleElement"},
 };
-
-/// The constant path element `tupleElement` (a `String` only) or `arrayElement` (also a `Nullable` or `LowCardinality` one)
-/// accepts over `JSON`. Over `Dynamic` the call checks it only per stored type at execution.
-std::optional<String> tryGetJSONPathElement(const QueryTreeNodePtr & node, bool allow_nullable_or_low_cardinality)
-{
-    const auto * constant = node->as<ConstantNode>();
-    if (!constant || constant->getValue().getType() != Field::Types::String)
-        return {};
-
-    auto type = constant->getResultType();
-    if (allow_nullable_or_low_cardinality)
-        type = removeLowCardinalityAndNullable(type);
-
-    if (!isString(type))
-        return {};
-
-    return constant->getValue().safeGet<String>();
-}
 
 /// Optimizes:
 ///   tupleElement(... tupleElement(arrayElement(ColumnNode(Dynamic), N), 'f1') ..., 'fK')
@@ -1051,10 +852,10 @@ void optimizeJSONArrayElement(
         auto & args = function_node.getArguments().getNodes();
         if (args.size() != 2)
             return;
-        auto field_name = tryGetJSONPathElement(args[1], /*allow_nullable_or_low_cardinality=*/ false);
-        if (!field_name)
+        const auto * constant = args[1]->as<ConstantNode>();
+        if (!constant || constant->getValue().getType() != Field::Types::String)
             return;
-        field_names.push_back(std::move(*field_name));
+        field_names.push_back(constant->getValue().safeGet<String>());
     }
 
     /// All intermediates except the last (arrayElement) must be tupleElement with constant string second arg.
@@ -1066,10 +867,10 @@ void optimizeJSONArrayElement(
         auto & args = inner_func->getArguments().getNodes();
         if (args.size() != 2)
             return;
-        auto field_name = tryGetJSONPathElement(args[1], /*allow_nullable_or_low_cardinality=*/ false);
-        if (!field_name)
+        const auto * constant = args[1]->as<ConstantNode>();
+        if (!constant || constant->getValue().getType() != Field::Types::String)
             return;
-        field_names.push_back(std::move(*field_name));
+        field_names.push_back(constant->getValue().safeGet<String>());
     }
 
     /// Reverse to get inner-to-outer order (the path under Array(JSON)).
@@ -1154,10 +955,10 @@ void optimizeJSONArrayElementChain(
         auto & args = function_node.getArguments().getNodes();
         if (args.size() != 2)
             return;
-        auto key = tryGetJSONPathElement(args[1], /*allow_nullable_or_low_cardinality=*/ true);
-        if (!key)
+        const auto * constant = args[1]->as<ConstantNode>();
+        if (!constant || constant->getValue().getType() != Field::Types::String)
             return;
-        keys.push_back(std::move(*key));
+        keys.push_back(constant->getValue().safeGet<String>());
     }
 
     /// All intermediates must be arrayElement with constant string 2nd arg.
@@ -1168,10 +969,10 @@ void optimizeJSONArrayElementChain(
         auto & args = inner_func->getArguments().getNodes();
         if (args.size() != 2)
             return;
-        auto key = tryGetJSONPathElement(args[1], /*allow_nullable_or_low_cardinality=*/ true);
-        if (!key)
+        const auto * constant = args[1]->as<ConstantNode>();
+        if (!constant || constant->getValue().getType() != Field::Types::String)
             return;
-        keys.push_back(std::move(*key));
+        keys.push_back(constant->getValue().safeGet<String>());
     }
 
     /// Reverse to get inner-to-outer order (the JSON path).
@@ -1220,7 +1021,7 @@ void optimizeJSONArrayElementChain(
         node = buildCastFunction(node, original_result_type, ctx.context);
 }
 
-[[clang::no_destroy]] std::map<std::pair<TypeIndex, String>, ChainedNodeToSubcolumnTransformer> chained_node_transformers =
+std::map<std::pair<TypeIndex, String>, ChainedNodeToSubcolumnTransformer> chained_node_transformers =
 {
     {
         {TypeIndex::Dynamic, "tupleElement"}, optimizeJSONArrayElement,
@@ -1230,27 +1031,10 @@ void optimizeJSONArrayElementChain(
     },
 };
 
-/// The special subcolumn holds all paths of a read in its first row, so the rewrite is valid only
-/// when one aggregate sees every row of one table, unfiltered and with its stored values.
-bool canOptimizeDistinctJSONPaths(
-    const QueryTreeNodePtr & query_node,
-    const FunctionNode & function_node,
-    const QueryTreeNodePtr & column_source,
-    const ContextPtr & context)
+bool canOptimizeWithWherePrewhereOrGroupBy(const String & function_name)
 {
-    if (!function_node.isAggregateFunction())
-        return false;
-
-    const auto & query = query_node->as<const QueryNode &>();
-    if (query.hasWhere() || query.hasPrewhere() || query.hasGroupBy() || query.getJoinTreeNode().get() != column_source.get())
-        return false;
-
-    for (const auto & aggregate_function_node : collectAggregateFunctionNodes(query_node))
-        if (hasFunctionNode(aggregate_function_node, "arrayJoin"))
-            return false;
-
-    return !context->canUseOffsetParallelReplicas()
-        && canAnswerWholeTableAggregateFromMetadata(column_source, context, /*needs_stored_values=*/ true);
+    /// Optimization for distinctJSONPaths works correctly only if we request distinct JSON paths across whole table.
+    return function_name != "distinctJSONPaths";
 }
 
 /// Follow a chain of trivial ALIAS columns (an ALIAS column whose body is itself a ColumnNode
@@ -1285,51 +1069,22 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
     return column_node;
 }
 
-const std::unordered_set<std::string_view> map_keys_or_values_transformers =
+/// A storage may permit only tuple element rewrites while still refusing every other transformer
+/// (see IStorage::supportsOptimizationToTupleElementSubcolumns). Applied by both passes through
+/// getTypedNodesForOptimization, so their decisions cannot diverge.
+bool storageAllowsTransformer(const IStorage & storage, const IDataType & type, const String & function_name)
 {
-    "mapKeys", "mapValues", "mapContainsKey", "has", "notHas", "mapContainsValue", "mapContainsKeyLike", "mapContainsValueLike",
-};
-
-/// A storage may permit only tuple element rewrites (see IStorage::supportsOptimizationToTupleElementSubcolumns) and the `Map`
-/// keys/values rewrites (see IStorage::supportsOptimizationToMapKeysAndValuesSubcolumns) while still refusing every other
-/// transformer. Applied by both passes through getTypedNodesForOptimization, so their decisions cannot diverge.
-bool storageAllowsTransformer(
-    const IStorage & storage, const IDataType & type, const String & function_name, SubcolumnSupportCache & cache)
-{
-    auto & answers = getSubcolumnSupportAnswers(storage, cache);
-
     /// Without buckets the key subcolumn `m.key_<key>` reads the whole Map, so `m['key']` is not rewritten to it.
-    if (function_name == "arrayElement" && isMap(type))
-    {
-        if (!answers.bucketed_map_serialization)
-            answers.bucketed_map_serialization = storage.hasBucketedMapSerialization();
-        if (!*answers.bucketed_map_serialization)
-            return false;
-    }
+    if (function_name == "arrayElement" && isMap(type) && !storage.hasBucketedMapSerialization())
+        return false;
 
-    if (answers.all_transformers)
+    if (storage.supportsOptimizationToSubcolumns())
         return true;
-    if (isMap(type) && map_keys_or_values_transformers.contains(function_name))
-    {
-        if (!answers.map_keys_and_values)
-            answers.map_keys_and_values = storage.supportsOptimizationToMapKeysAndValuesSubcolumns();
-        return *answers.map_keys_and_values;
-    }
-    if (!answers.tuple_element_only)
-        answers.tuple_element_only = storage.supportsOptimizationToTupleElementSubcolumns();
     /// A `Nullable(Tuple(...))` element is a tuple element as well; `QBit` is not.
-    return *answers.tuple_element_only && function_name == "tupleElement" && isTuple(removeNullable(type.getPtr()));
+    return storage.supportsOptimizationToTupleElementSubcolumns() && function_name == "tupleElement" && isTuple(removeNullable(type.getPtr()));
 }
 
-bool storageRejectsMapSubcolumnsInPrewhere(const QueryTreeNodePtr & column_source, SubcolumnSupportCache & cache)
-{
-    auto storage = getStorageForColumnSource(column_source);
-    return storage && !getSubcolumnSupportAnswers(*storage, cache).all_transformers
-        && !storage->supportedPrewhereColumnsIncludeSubcolumns() && storage->supportedPrewhereColumns().has_value();
-}
-
-std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr>
-getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context, SubcolumnSupportCache & subcolumn_support_cache)
+std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node)
@@ -1366,7 +1121,7 @@ getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & c
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName(), subcolumn_support_cache)
+    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName())
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
@@ -1382,8 +1137,7 @@ getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & c
 /// Returns the outermost function, the underlying column, the table,
 /// and the chain of intermediate function nodes.
 std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr, std::vector<FunctionNode *>>
-getTypedNodesForChainedOptimization(
-    const QueryTreeNodePtr & node, const ContextPtr & context, SubcolumnSupportCache & subcolumn_support_cache)
+getTypedNodesForChainedOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node)
@@ -1429,7 +1183,7 @@ getTypedNodesForChainedOptimization(
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName(), subcolumn_support_cache)
+    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName())
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
@@ -1449,22 +1203,11 @@ public:
 
     void enterImpl(const QueryTreeNodePtr & node)
     {
-        /// Push a placeholder for every query level, also one that disables the optimization;
-        /// needChildVisit will update it to true when we descend into WHERE or PREWHERE.
-        if (node->as<QueryNode>())
-        {
-            in_where_prewhere_stack.push_back(false);
-            in_prewhere_stack.push_back(false);
-            query_nodes.push_back(node);
-        }
-
         if (!getSettings()[Setting::optimize_functions_to_subcolumns])
             return;
 
         if (node->as<TableNode>() || node->as<TableFunctionNode>())
         {
-            if (!getSettings()[Setting::additional_table_filters].value.empty())
-                sources_with_additional_table_filters.insert(node.get());
             enterColumnSource(node);
             return;
         }
@@ -1487,8 +1230,7 @@ public:
         if (chained_pattern_inner_nodes.contains(node.get()))
             return;
 
-        auto [function_node, first_argument_node, column_source]
-            = getTypedNodesForOptimization(node, getContext(), subcolumn_support_cache);
+        auto [function_node, first_argument_node, column_source] = getTypedNodesForOptimization(node, getContext());
         if (function_node && first_argument_node && column_source)
         {
             enterImpl(*function_node, *first_argument_node, column_source);
@@ -1496,8 +1238,7 @@ public:
         }
 
         /// Chained match (e.g. tupleElement over Dynamic through arrayElement).
-        auto [chain_func, chain_col, chain_source, intermediates]
-            = getTypedNodesForChainedOptimization(node, getContext(), subcolumn_support_cache);
+        auto [chain_func, chain_col, chain_source, intermediates] = getTypedNodesForChainedOptimization(node, getContext());
         if (chain_func && chain_col && chain_source)
         {
             enterImpl(*chain_func, *chain_col, chain_source, intermediates);
@@ -1520,37 +1261,21 @@ public:
         {
             if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
                 can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::group_by_use_nulls];
-            correlated_columns.enter(query_node->getCorrelatedColumns());
-            return;
-        }
-
-        if (const auto * union_node = node->as<UnionNode>())
-        {
-            correlated_columns.enter(union_node->getCorrelatedColumns());
+            has_where_prewhere_or_group_by = query_node->hasWhere() || query_node->hasPrewhere() || query_node->hasGroupBy();
+            /// Push a placeholder for this query level; needChildVisit will update it
+            /// to true when we descend into WHERE or PREWHERE.
+            in_where_prewhere_stack.push_back(false);
             return;
         }
     }
 
     void leaveImpl(const QueryTreeNodePtr & node)
     {
-        if (node->as<QueryNode>())
-        {
-            in_where_prewhere_stack.pop_back();
-            in_prewhere_stack.pop_back();
-            query_nodes.pop_back();
-        }
-
         if (!getSettings()[Setting::optimize_functions_to_subcolumns])
             return;
 
         if (node->as<QueryNode>())
-        {
-            correlated_columns.leave();
-        }
-        else if (node->as<UnionNode>())
-        {
-            correlated_columns.leave();
-        }
+            in_where_prewhere_stack.pop_back();
     }
 
     bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
@@ -1562,13 +1287,12 @@ public:
                 bool is_where = query_node->hasWhere() && child.get() == query_node->getWhere().get();
                 bool is_prewhere = query_node->hasPrewhere() && child.get() == query_node->getPrewhere().get();
                 in_where_prewhere_stack.back() = is_where || is_prewhere;
-                in_prewhere_stack.back() = is_prewhere;
             }
         }
         return true;
     }
 
-    [[nodiscard]] IdentifiersToOptimize getIdentifiersToOptimize() const
+    IdentifiersToOptimize getIdentifiersToOptimize() const
     {
         if (can_wrap_result_columns_with_nullable)
         {
@@ -1620,9 +1344,6 @@ public:
             if (it == identifiers_count.end())
                 continue;
 
-            if (maps_on_storages_rejecting_subcolumns_in_prewhere.contains(identifier) && mustReadWholeMap(identifier))
-                continue;
-
             if (it->second == count)
                 result.everywhere.insert(identifier);
             else if (identifiers_with_filter_optimization.contains(identifier))
@@ -1633,29 +1354,6 @@ public:
     }
 
 private:
-    /// On a storage whose `PREWHERE` takes only top-level columns, a `Map` is read whole if `PREWHERE` reads it or its parent
-    /// tuple, or if the query reads another column of its table (a filter on that column can reach `PREWHERE` from the query plan).
-    [[nodiscard]] bool mustReadWholeMap(const ColumnInSource & map) const
-    {
-        if (sources_with_additional_table_filters.contains(map.source))
-            return true;
-        if (columns_in_prewhere.contains(map))
-            return true;
-        for (size_t dot = map.column_name.find('.'); dot != String::npos; dot = map.column_name.find('.', dot + 1))
-            if (columns_in_prewhere.contains(ColumnInSource{map.source, map.column_name.substr(0, dot)}))
-                return true;
-
-        for (const auto & [identifier, _] : identifiers_count)
-            if (identifier.source == map.source && identifier.column_name != map.column_name)
-                return true;
-        return false;
-    }
-
-    ColumnInSourceSet columns_in_prewhere;
-    ColumnInSourceSet maps_on_storages_rejecting_subcolumns_in_prewhere;
-    std::unordered_set<const IQueryTreeNode *> sources_with_additional_table_filters;
-    std::vector<bool> in_prewhere_stack;
-
     ColumnInSourceSet all_key_columns;
     ColumnInSourceMap<UInt64> identifiers_count;
     ColumnInSourceMap<UInt64> optimized_identifiers_count;
@@ -1669,13 +1367,10 @@ private:
     /// Stack tracking whether the current node is inside a WHERE or PREWHERE clause.
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
     std::vector<bool> in_where_prewhere_stack;
-    std::vector<QueryTreeNodePtr> query_nodes;
-
-    CorrelatedColumnsStack correlated_columns;
 
     std::unordered_set<const IQueryTreeNode *> processed_sources;
-    SubcolumnSupportCache subcolumn_support_cache;
     bool can_wrap_result_columns_with_nullable = false;
+    bool has_where_prewhere_or_group_by = false;
 
     /// Intermediate function nodes of already-matched chained patterns.
     /// Prevents double-counting in multi-level chains like
@@ -1716,11 +1411,7 @@ private:
         if (!column_source->as<TableNode>() && !column_source->as<TableFunctionNode>())
             return;
 
-        auto qualified_name = makeColumnInSource(column_source, column_node.getColumnName());
-        ++identifiers_count[qualified_name];
-
-        if (!in_prewhere_stack.empty() && in_prewhere_stack.back())
-            columns_in_prewhere.insert(qualified_name);
+        ++identifiers_count[makeColumnInSource(column_source, column_node.getColumnName())];
     }
 
     void enterImpl(const FunctionNode & function_node, const ColumnNode & first_argument_column_node, const QueryTreeNodePtr & column_source)
@@ -1733,25 +1424,12 @@ private:
         const auto & column = first_argument_column_node.getColumn();
         auto qualified_name = makeColumnInSource(column_source, column.name);
 
-        if (function_node.getFunctionName() == "distinctJSONPaths"
-            && (query_nodes.empty() || !canOptimizeDistinctJSONPaths(query_nodes.back(), function_node, column_source, getContext())))
-            return;
-
-        /// The column belongs to an outer query, and the subquery reading it lists it among its
-        /// correlated columns. Replacing the function with a subcolumn of that column would leave
-        /// that list naming a column the subquery no longer reads, and decorrelation would then look
-        /// for the subcolumn in a join that carries the whole column - the query fails with
-        /// `NOT_FOUND_COLUMN_IN_BLOCK`. Leave every use of such a column alone.
-        if (correlated_columns.contains(qualified_name))
+        if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
             return;
 
         auto transformer_key = std::make_pair(column.type->getTypeId(), function_node.getFunctionName());
         if (node_transformers.contains(transformer_key))
         {
-            if (isMap(column.type) && !maps_on_storages_rejecting_subcolumns_in_prewhere.contains(qualified_name)
-                && storageRejectsMapSubcolumnsInPrewhere(column_source, subcolumn_support_cache))
-                maps_on_storages_rejecting_subcolumns_in_prewhere.insert(qualified_name);
-
             ++optimized_identifiers_count[qualified_name];
             if (transformers_safe_with_indexes.contains(transformer_key))
                 ++optimized_identifiers_index_safe_count[qualified_name];
@@ -1769,19 +1447,13 @@ private:
             return;
 
         const auto & column = first_argument_column_node.getColumn();
-        auto qualified_name = makeColumnInSource(column_source, column.name);
 
-        /// The same reasoning as for a direct match: a chained rewrite of a correlated column, such as
-        /// `json.a[1].b` into a subcolumn of `json.a`, would leave the subquery's list of correlated
-        /// columns naming a column the subquery no longer reads. Such a rewrite is currently also kept
-        /// away by the use counting - the list of correlated columns is itself a use of the whole
-        /// column - but that is an accident of the counting, so state the invariant here as well.
-        if (correlated_columns.contains(qualified_name))
+        if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
             return;
 
         if (chained_node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))
         {
-            ++optimized_identifiers_count[qualified_name];
+            ++optimized_identifiers_count[makeColumnInSource(column_source, column.name)];
 
             /// Mark intermediate nodes to prevent double-counting.
             for (auto * func : intermediates)
@@ -1803,9 +1475,6 @@ private:
     /// Stack tracking whether the current node is inside a WHERE or PREWHERE clause.
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
     std::vector<bool> in_where_prewhere_stack;
-
-    CorrelatedColumnsStack correlated_columns;
-    SubcolumnSupportCache subcolumn_support_cache;
 
 public:
     using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>;
@@ -1839,33 +1508,20 @@ public:
         if (!getSettings()[Setting::optimize_functions_to_subcolumns])
             return;
 
-        if (const auto * query_node = node->as<QueryNode>())
+        if (node->as<QueryNode>())
         {
             in_where_prewhere_stack.push_back(false);
-            correlated_columns.enter(query_node->getCorrelatedColumns());
-            return;
-        }
-
-        if (const auto * union_node = node->as<UnionNode>())
-        {
-            correlated_columns.enter(union_node->getCorrelatedColumns());
             return;
         }
 
         /// Direct match: first argument is a ColumnNode.
         /// Restructured from "if (!match) return" to "if (match) { ... } return"
         /// so that failed direct matches fall through to the chained match below.
-        auto [function_node, first_argument_column_node, column_source]
-            = getTypedNodesForOptimization(node, getContext(), subcolumn_support_cache);
+        auto [function_node, first_argument_column_node, column_source] = getTypedNodesForOptimization(node, getContext());
         if (function_node && first_argument_column_node && column_source)
         {
             auto column = first_argument_column_node->getColumn();
             auto qualified_name = makeColumnInSource(column_source, column.name);
-
-            /// The first pass never counts a correlated use, but the identifier can still be in
-            /// `filter_only` because of a use of the same column in the outer query's WHERE.
-            if (correlated_columns.contains(qualified_name))
-                return;
 
             /// For "filter_only" identifiers, only optimize when inside WHERE/PREWHERE.
             /// The permission is intentionally scoped to the whole identifier,
@@ -1886,7 +1542,7 @@ public:
             if (transformer_it != node_transformers.end()
                 && (transformer_it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(column_source.get())))
             {
-                ColumnContext ctx{std::move(column), column_source, getContext(), subcolumn_support_cache};
+                ColumnContext ctx{std::move(column), column_source, getContext()};
                 transformer_it->second(node, *function_node, ctx);
 
                 if (!result_type->equals(*node->getResultType()))
@@ -1896,14 +1552,12 @@ public:
         }
 
         /// Chained match: first argument is a chain of functions with a ColumnNode at the bottom.
-        auto [chain_func, chain_col, chain_source, intermediates]
-            = getTypedNodesForChainedOptimization(node, getContext(), subcolumn_support_cache);
+        auto [chain_func, chain_col, chain_source, intermediates] = getTypedNodesForChainedOptimization(node, getContext());
         if (chain_func && chain_col && chain_source)
         {
             auto column = chain_col->getColumn();
-            auto qualified_name = makeColumnInSource(chain_source, column.name);
 
-            if (correlated_columns.contains(qualified_name) || !identifiers_to_optimize.everywhere.contains(qualified_name))
+            if (!identifiers_to_optimize.everywhere.contains(makeColumnInSource(chain_source, column.name)))
                 return;
 
             auto it = chained_node_transformers.find({column.type->getTypeId(), chain_func->getFunctionName()});
@@ -1911,7 +1565,7 @@ public:
                 && (it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(chain_source.get())))
             {
                 auto result_type = chain_func->getResultType();
-                ColumnContext ctx{std::move(column), chain_source, getContext(), subcolumn_support_cache};
+                ColumnContext ctx{std::move(column), chain_source, getContext()};
                 it->second(node, *chain_func, ctx, intermediates);
 
                 if (!result_type->equals(*node->getResultType()))
@@ -1926,14 +1580,7 @@ public:
             return;
 
         if (node->as<QueryNode>())
-        {
             in_where_prewhere_stack.pop_back();
-            correlated_columns.leave();
-        }
-        else if (node->as<UnionNode>())
-        {
-            correlated_columns.leave();
-        }
     }
 };
 

@@ -158,6 +158,8 @@ Consider the following example from an extended version of the above [Python PyP
 The tags column here is unpredictable and thus impossible for us to model. To load this data, we can use our previous schema but provide an additional `tags` column of type [`JSON`](/reference/data-types/newjson):
 
 ```sql
+SET enable_json_type = 1;
+
 CREATE TABLE pypi_with_tags
 (
     `date` Date,
@@ -173,10 +175,6 @@ CREATE TABLE pypi_with_tags
 ENGINE = MergeTree
 ORDER BY (project, date);
 ```
-
-<Note>
-In versions 24.8 to 25.2, enable the `JSON` type with `SET allow_experimental_json_type = 1;` before creating the table.
-</Note>
 
 We populate the table using the same approach as for the original dataset:
 

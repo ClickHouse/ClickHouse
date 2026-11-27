@@ -1,3 +1,0 @@
-<clickhouse>
-    <allowed_disks_for_table_engines>s3,old_s3</allowed_disks_for_table_engines>
-</clickhouse>

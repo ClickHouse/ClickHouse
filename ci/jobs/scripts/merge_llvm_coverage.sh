@@ -2,23 +2,18 @@
 
 set -e
 
-# Resolved before the `cd ci/tmp` below, while the invocation path is still valid.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=./coverage_ignore_paths.sh
-source "$SCRIPT_DIR/coverage_ignore_paths.sh"
-
 echo "Merging LLVM coverage files..."
 
 # Debug: List available llvm tools
 echo "Available LLVM tools:"
-command -v llvm-profdata-23 || echo "llvm-profdata-23: not found"
-command -v llvm-cov-23 || echo "llvm-cov-23: not found"
+command -v llvm-profdata-22 || echo "llvm-profdata-22: not found"
+command -v llvm-cov-22 || echo "llvm-cov-22: not found"
 command -v llvm-profdata || echo "llvm-profdata: not found"
 command -v llvm-cov || echo "llvm-cov: not found"
 
 # Auto-detect available LLVM tools
 if [ -z "$LLVM_PROFDATA" ]; then
-  for ver in 23 22 21 20 19 18 17 16 ""; do
+  for ver in 22 21 20 19 18 17 16 ""; do
     if command -v "llvm-profdata${ver:+-$ver}" &> /dev/null; then
       LLVM_PROFDATA="llvm-profdata${ver:+-$ver}"
       break
@@ -27,7 +22,7 @@ if [ -z "$LLVM_PROFDATA" ]; then
 fi
 
 if [ -z "$LLVM_COV" ]; then
-  for ver in 23 22 21 20 19 18 17 16 ""; do
+  for ver in 22 21 20 19 18 17 16 ""; do
     if command -v "llvm-cov${ver:+-$ver}" &> /dev/null; then
       LLVM_COV="llvm-cov${ver:+-$ver}"
       break
@@ -133,6 +128,7 @@ chmod +x clickhouse unit_tests_dbms 2>/dev/null || true
 echo "Generating coverage report..."
 # The coverage data references paths like "ci/tmp/build/base/base/..."
 # We created symlinks so those paths now resolve to actual source files
+# Ignore contrib files (coverage is disabled for them)
 
 # Detect workspace path - use WORKSPACE_PATH if set, otherwise try to detect
 if [ -z "$WORKSPACE_PATH" ]; then
@@ -148,7 +144,7 @@ echo "Using workspace path: $WORKSPACE_PATH"
         -object ./unit_tests_dbms   \
         -format=lcov   \
         -path-equivalence=ci/tmp/build,$WORKSPACE_PATH \
-        -ignore-filename-regex="$COVERAGE_IGNORE_FILENAME_REGEX" \
+        -ignore-filename-regex='contrib|_gtest_|\.pb\.|\.generated\.|/(QueryFuzzer|ThreadFuzzer|fuzzQuery|fuzzBits|StorageFuzzQuery|hasThreadFuzzer)\.(cpp|h)$|/fuzzers/' \
         -skip-expansions \
         > llvm_coverage.info
 
@@ -156,14 +152,6 @@ sed -i "s|^SF:ci/tmp/build/|SF:$WORKSPACE_PATH/|" "llvm_coverage.info"
 
 echo "Deduplicating template instantiations..."
 python3 "$WORKSPACE_PATH/ci/jobs/scripts/dedup_lcov_instantiations.py" llvm_coverage.info
-
-# Drop brace-only lines and throwing statements: they carry no logic, and a
-# closing brace after a `return` or `throw` is never executed. The selection depends on
-# the source text only, so the published .info, the HTML report, the summary
-# numbers and the diff report all count the same lines on every run. See the
-# script for the exact rules.
-echo "Dropping brace-only lines and throwing statements..."
-python3 "$WORKSPACE_PATH/ci/jobs/scripts/filter_coverage_lines.py" llvm_coverage.info
 
 rm -rf ./coverage_html/*
 

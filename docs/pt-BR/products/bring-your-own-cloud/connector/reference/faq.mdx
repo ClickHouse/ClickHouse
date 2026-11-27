@@ -1,113 +1,53 @@
 ---
-title: 'Perguntas frequentes'
-sidebarTitle: 'Perguntas frequentes'
+title: 'FAQ'
+sidebarTitle: 'FAQ'
 description: 'Perguntas frequentes sobre o ClickHouse Connector'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'FAQ', 'managed mode', 'executor']
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'FAQ']
 doc_type: 'reference'
 ---
 
-import { PrivatePreviewBadge } from '/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+<div id="faq">
+  ## Perguntas frequentes
+</div>
 
-<PrivatePreviewBadge />
+<div id="what-data-leaves-my-environment">
+  ### Quais dados saem do meu ambiente?
+</div>
 
-## Perguntas frequentes {#faq}
+Dois componentes enviam dados para fora, ambos por conexões de saída abertas pelo próprio conector: o caminho de coleta, que envia metadados operacionais continuamente, e as sessões de suporte que você habilita, que retornam diagnósticos.
 
-### Quem pode alterar meus serviços, e quando? {#who-can-change-my-services}
+O coletor envia resultados de um conjunto fixo de tabelas do sistema (`metric_log`, `asynchronous_metric_log`, `tables`, `warnings`, `server_settings` por padrão), sinais periódicos de integridade e status, o estado da instância e dos backups, além das métricas do próprio conector. O conjunto de coleta padrão exclui deliberadamente `system.query_log`; portanto, o texto SQL bruto e quaisquer literais ou dados pessoais nele contidos nunca saem pelo caminho de coleta, a menos que você o adicione explicitamente. Durante uma sessão, a lista de permissões de tabelas padrão inclui `system.processes`, que mostra o texto de consultas em tempo real; remova-a da lista de permissões se isso precisar permanecer oculto.
 
-No modo managed, o ClickHouse Cloud altera apenas os serviços que você pediu para ele gerenciar. Qualquer pessoa com acesso ao host ou ao pod do Kubernetes do executor também pode controlá-los com comandos locais `clicklink clctl instances`; consulte [ciclo de vida do serviço](/pt-BR/products/bring-your-own-cloud/connector/managed-services#service-lifecycle). O ClickHouse Cloud envia comandos de ciclo de vida pelo canal de saída do executor:
+Durante uma [sessão de suporte](/pt-BR/products/bring-your-own-cloud/connector/support-sessions) ativa, o troubleshooter também retorna a saída de comandos, limitada a tabelas do ClickHouse incluídas na lista de permissões e a visualizações somente leitura do Kubernetes, incluindo logs de pods do Kubernetes, e submetida à redação (padrões integrados para IPs, credenciais, tokens e chaves, além dos seus próprios) antes de ser enviada. Os dados das suas tabelas, backups e histórico de consultas (`system.query_log`, `system.text_log`) permanecem no seu ambiente incondicionalmente. As exceções documentadas são: linhas das tabelas de histórico de métricas incluídas na lista de permissões (`system.metric_log`, `system.asynchronous_metric_log`) são enviadas a cada coleta; o texto de consultas em tempo real fica visível na sessão por meio de `system.processes`, a menos que você o remova da lista de permissões; e logs de pods do Kubernetes lidos durante uma sessão de suporte no Kubernetes saem após a redação. A lista completa de conexões de saída está na página do [modelo de privilégios](/pt-BR/products/bring-your-own-cloud/connector/reference/privilege-model).
 
-* criar, a partir da definição que você enviou
-* escalar, para um número fixo de réplicas definido pelo ClickHouse Cloud (limitado por uma configuração do ClickHouse Cloud, 20 na configuração padrão)
-* parar, iniciar e reiniciar
-* backup e exclusão de backup
-* excluir
-
-Upgrades de versão e alterações de configuração chegam da mesma forma, como uma definição de serviço reaplicada; não há etapa de aprovação do cliente para essas operações. Não há sessão de suporte envolvida: o canal do executor é separado do canal do solucionador de problemas e não depende do estado da sessão.
-
-Duas coisas dependem de você. Criar um serviço exige seus comandos `clicklink clctl executor prepare` e `clicklink clctl instances create`, porque somente você pode criar os buckets e a IAM role. As atualizações dos componentes de plataforma no seu cluster também dependem de você. O executor prepara cada pacote proposto; o seu `clicklink clctl platform approve` o aprova e emite um token de 2 horas. Consulte [atualizações de plataforma](/pt-BR/products/bring-your-own-cloud/connector/platform-updates).
-
-Tudo o que o executor faz acontece por meio da Kubernetes API. Uma política de admission restringe suas gravações aos espaços de nomes com o prefixo de serviço (`ns-` por padrão). Ela também admite três gravações no próprio espaço de nomes do executor: a renovação do token, o ConfigMap do registry de serviços e, no Kubernetes, o certificado de cliente renovado no Secret `clicklink-mtls`. Já suas leituras das mesmas famílias de resources abrangem todo o cluster. As atualizações de plataforma aprovadas são executadas com uma identidade separada, `pcm-platform`, restrita aos espaços de nomes da plataforma. Clusters que você mesmo opera nunca são alterados: o scraper e o solucionador de problemas são read-only. Os escopos exatos estão na página [modelo de privilégios](/pt-BR/products/bring-your-own-cloud/connector/reference/privilege-model).
-
-### Quais dados saem do meu ambiente? {#what-data-leaves-my-environment}
-
-Três superfícies enviam dados para fora, todas por meio de conexões de saída abertas pelo próprio connector: o caminho de scrape, o executor e as sessões de suporte que você habilitar.
-
-O scraper envia resultados de um conjunto fixo de tabelas de sistema: por padrão, `metric_log`, `asynchronous_metric_log`, `tables`, `warnings` e `server_settings`. Ele também envia heartbeats de integridade e status, o estado dos serviços e dos backups e as métricas do próprio connector. O conjunto padrão de scrape não inclui `system.query_log`. O texto SQL bruto, com quaisquer literais ou dados pessoais contidos nele, nunca sai pelo caminho de scrape, a menos que você adicione essa tabela. Durante uma sessão, a allowlist padrão de tabelas inclui `system.processes`, que exibe o texto das consultas em execução; remova-a da allowlist caso esses dados precisem permanecer ocultos.
-
-O executor envia o resultado de cada comando que executa, além do estado e da contagem de réplicas de cada serviço gerenciado. Seu heartbeat informa se o canal de comandos está conectado. Ele também transporta as versões dos componentes da plataforma, o digest do último pacote aplicado e o resultado da última atualização da plataforma. Em uma instalação em VM, o heartbeat também informa se o pacote de acesso ao Kubernetes está `ok`, `expiring`, `expired` ou ausente. Ao criar um serviço, `clicklink clctl instances create` envia o ID do seu ambiente, a nuvem e a região, o nome do serviço, os nomes dos buckets e o ARN da IAM role. Ele envia dois hashes da senha do usuário `default`; a senha em si nunca sai.
-
-Durante uma [sessão de suporte](/pt-BR/products/bring-your-own-cloud/connector/support-sessions) ativa, o solucionador de problemas também retorna a saída dos comandos. Essa saída fica restrita a tabelas do ClickHouse presentes na allowlist e a visualizações read-only do Kubernetes, incluindo logs de pods do Kubernetes. Antes de ser enviada, ela passa por ocultação de dados sensíveis (padrões integrados para IPs, credenciais, tokens e chaves, além dos seus próprios). Os dados das suas tabelas, backups e o histórico de consultas (`system.query_log`, `system.text_log`) permanecem no seu ambiente. Três coisas, sim, saem:
-
-* linhas das tabelas de histórico de métricas presentes na allowlist (`system.metric_log`, `system.asynchronous_metric_log`) são enviadas a cada scrape
-* o texto das consultas em execução fica visível em uma sessão por meio de `system.processes`, a menos que você o remova da allowlist
-* logs de pods do Kubernetes lidos durante uma sessão de suporte do Kubernetes saem após a ocultação de dados sensíveis
-
-A lista completa de conexões de saída está na página [modelo de privilégios](/pt-BR/products/bring-your-own-cloud/connector/reference/privilege-model).
-
-### Como impedir que o ClickHouse altere meus clusters? {#stop-managed-mode}
-
-Execute sem o modo managed. No momento da instalação, passe `--no-managed` para `clicklink clctl init` ou responda &quot;não&quot; quando for perguntado. Somente o scraper e o solucionador de problemas são implantados, de modo que o ClickHouse não consegue criar, alterar ou excluir serviços. O connector continua provisionando usuários ClickHouse read-only e ServiceAccounts; consulte o [modelo de privilégios](/pt-BR/products/bring-your-own-cloud/connector/reference/privilege-model).
-
-Em uma instalação existente, pare o executor e remova seu grant de administrador do cluster. Para pará-lo, defina `executor.enabled: false` nos seus valores do Helm e execute `helm upgrade`, ou execute `systemctl disable --now clicklink-executor` em uma VM. Em seguida, remova o grant. O último comando remove o próprio ServiceAccount; seu espaço de nomes é `clicklink-system` em uma instalação em VM e o espaço de nomes do connector em uma instalação em Kubernetes:
-
-```bash
-kubectl delete validatingadmissionpolicybinding pcm-executor-prefix-guard
-kubectl delete validatingadmissionpolicy pcm-executor-prefix-guard
-kubectl delete clusterrolebinding pcm-executor-cluster
-kubectl delete clusterrole pcm-executor-cluster
-kubectl delete serviceaccount pcm-executor -n <executor-namespace>
-```
-
-Os serviços que o ClickHouse criou continuam em execução, mas o ClickHouse Cloud não pode mais escalá-los, fazer upgrade, backup ou excluí-los, e os comandos pendentes para eles falham. As atualizações da plataforma também param: quem aplica a metade de cargas de trabalho delas é o executor, e ele não está mais em execução.
-
-### O que acontece se o connector ficar offline? {#connector-down}
-
-Seus serviços ClickHouse não são afetados: o connector não fica em nenhum data path, e um serviço gerenciado continua funcionando sem o executor. O impacto é a perda de visibilidade e de controle. O ClickHouse Cloud deixa de receber telemetria, e as sessões de suporte ficam indisponíveis até que o connector volte. No modo gerenciado, o ClickHouse Cloud passa a exibir seu ambiente como offline quando nenhum heartbeat chega por 5 minutos, e como pronto novamente no heartbeat seguinte.
-
-Os comandos de ciclo de vida se comportam de duas formas enquanto nenhum executor está conectado. Uma criação, exclusão ou sincronização de plataforma já aceita pelo ClickHouse Cloud é mantida e repetida. Uma criação é repetida por até 30 minutos a partir do último relatório de progresso, uma exclusão por até 2 horas e uma sincronização de plataforma por até 10 tentativas. Depois disso, o comando é reportado como falho. Os dois horizontes correspondem às chaves de configuração `executor.create_retry_horizon` e `executor.delete_retry_horizon`. Todos os demais comandos (escalar, stop, start, restart, backup, exclusão de backup), bem como qualquer criação ou exclusão enviada enquanto nenhum executor está conectado, são recusados no envio, e não enfileirados. Um resultado que o executor não conseguiu reportar é enviado na próxima conexão. Consulte [quando o connector está offline](/pt-BR/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline).
-
-Em uma VM, o scraper armazena em spool os dados coletados em `/var/lib/clicklink/buffer` sempre que o endpoint do seu connector estiver inacessível (até 168 horas ou 1024 MB por padrão). Ele entrega o spool na reconexão, de modo que uma indisponibilidade do endpoint não gera perda de telemetria. Um daemon que sofreu crash é reiniciado pelo systemd em uma VM e pelo agente de nó do Kubernetes no Kubernetes. O executor mantém o estado de seus comandos em disco, portanto uma reinicialização retoma os comandos que estavam em andamento.
-
-Para diagnosticar, verifique o endpoint `/livez` de cada componente (o sinal é o campo JSON `status`, não o código HTTP) e execute `clicklink clctl preflight` (com `sudo` no host da VM). O preflight verifica configuração, conectividade, acessibilidade do ClickHouse, acesso e disco em uma única passagem. Consulte [operações](/pt-BR/products/bring-your-own-cloud/connector/operations); se o connector continuar sem saúde, entre em contato com o suporte do ClickHouse.
-
-### O que é excluído quando um serviço é excluído? {#what-is-deleted}
-
-O executor interrompe o serviço, remove seus recursos do Kubernetes e exclui seu espaço de nomes. Ele informa que o serviço foi encerrado assim que o espaço de nomes deixa de existir. Tudo o que está fora do Kubernetes permanece: o bucket de dados, o bucket de backup e a IAM role do serviço. O executor não guarda credenciais dos seus buckets nem do IAM, portanto não pode afetá-los.
-
-O restante você remove com `clicklink clctl executor teardown`, executado com suas credenciais. Por padrão, ele remove a IAM role e mantém os dados e os backups; para excluí-los é preciso usar flags explícitas. Consulte [excluir um serviço](/pt-BR/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
-
-### Onde está a senha do meu usuário default? {#default-user-password}
-
-O `clicklink clctl executor prepare` gera a senha do seu lado e a exibe uma única vez. Se você fizer o envio com as flags individuais em vez de `--from-prepare`, o `clicklink clctl instances create` lê a senha de `--default-user-password-file` ou a gera e exibe. Somente os hashes são enviados ao ClickHouse Cloud, portanto nem o connector nem o ClickHouse conseguem exibi-la novamente. Guarde-a assim que ela for exibida.
-
-### Como revogo o acesso do ClickHouse? {#how-do-i-revoke-access}
+<div id="how-do-i-revoke-access">
+  ### Como revogo o acesso do ClickHouse?
+</div>
 
 Em ordem crescente de escalonamento:
 
-1. **Encerre o acesso interativo.** Desative a sessão: `sudo clicklink clctl troubleshoot session disable` no host da VM ou o mesmo comando com `--gateway-url` via redirecionamento de porta no Kubernetes (os comandos exatos estão na página de [sessões de suporte](/pt-BR/products/bring-your-own-cloud/connector/support-sessions)). Sem uma sessão ativa, o solucionador de problemas recusa todos os comandos, mesmo quando está conectado.
-2. **Interrompa o modo managed.** Pare o executor e remova o grant dele conforme descrito em [Como impeço o ClickHouse de alterar meus clusters?](#stop-managed-mode). As atualizações de plataforma já exigem sua aprovação, portanto negá-la as interrompe.
-3. **Impeça sessões futuras.** Esvazie a lista de permissões do operador (uma lista de permissões vazia fecha o gateway) ou desative o gateway; em uma VM, o gerenciamento local de sessões continua disponível para root no host. Consulte o [guia de configuração](/pt-BR/products/bring-your-own-cloud/connector/configuration).
-4. **Interrompa a conectividade com o ClickHouse Cloud.** Bloqueie o tráfego de saída para o endpoint do seu connector na camada de rede ou esvazie `networkPolicy.allowEgressCIDRs` em um CNI com aplicação de políticas. O connector é exclusivamente de saída, portanto o ClickHouse Cloud não tem um caminho de entrada para restaurá-lo. As leituras locais no ClickHouse continuam até que você interrompa ou desinstale as cargas de trabalho, o que representa a interrupção definitiva.
-5. **Revogue as credenciais.** Remova os usuários `pcm_scraper` e `pcm_troubleshooter` do ClickHouse e exclua os Secrets do connector (Kubernetes) ou os arquivos em `/etc/clicklink` (VM).
-6. **Remova o connector por completo.** Consulte [operações](/pt-BR/products/bring-your-own-cloud/connector/operations).
+1. **Encerre o acesso interativo.** Desative a sessão: `sudo clicklink clctl troubleshoot session disable` no host da VM ou o mesmo comando com `--gateway-url` via redirecionamento de porta no Kubernetes (os comandos exatos estão na página de [sessões de suporte](/pt-BR/products/bring-your-own-cloud/connector/support-sessions)). Sem uma sessão ativa, o troubleshooter recusa todos os comandos, mesmo quando está conectado.
+2. **Impeça sessões futuras.** Esvazie a lista de permissões do operador (uma lista de permissões vazia fecha o gateway) ou desative o gateway; em uma VM, o gerenciamento local de sessões continua disponível para root no host. Consulte o [guia de configuração](/pt-BR/products/bring-your-own-cloud/connector/configuration).
+3. **Interrompa a conectividade com o ClickHouse Cloud.** Bloqueie o tráfego de saída para o endpoint do seu conector na camada de rede ou esvazie `networkPolicy.allowEgressCIDRs` em um CNI com aplicação de políticas; o conector é exclusivamente de saída, portanto o ClickHouse Cloud não tem um caminho de entrada para restaurá-lo. As leituras locais no ClickHouse continuam até que você interrompa ou desinstale os workloads, o que representa a interrupção definitiva.
+4. **Revogue as credenciais.** Remova os usuários `pcm_scraper` e `pcm_troubleshooter` do ClickHouse e exclua os Secrets do conector (Kubernetes) ou os arquivos em `/etc/clicklink` (VM).
+5. **Remova o conector por completo.** Consulte [operações](/pt-BR/products/bring-your-own-cloud/connector/operations).
 
-### Posso executar isso isolado da internet ou por meio dos meus próprios espelhos? {#air-gapped-and-mirrors}
+<div id="air-gapped-and-mirrors">
+  ### Posso executar isso em um ambiente isolado da internet ou usando meus próprios espelhos?
+</div>
 
-Sim. Todo artefato necessário na instalação pode vir de dentro da sua fronteira:
+Sim. Todos os artefatos necessários para a instalação podem vir de dentro do seu perímetro: espelhe o tarball da CLI e a imagem de contêiner de `releases.clicklink.clickhouse.com` e do registry público, aponte `image.repository` para seu espelho e passe `--chart` com uma referência `oci://`, URL ou arquivo local (com `--chart-version`; por padrão, usa a própria versão da CLI). Se o endpoint de API do seu conector for disponibilizado dentro do seu perímetro, atrás de uma CA privada, `--api-private-ca` (Kubernetes) ou `api.tls.ca_file` (VM) o verifica em relação à cadeia de certificados do pacote de inscrição. Para inscrição sem conectividade direta, `init --handoff` usa um pacote obtido fora do canal, e `--no-auto-sign` junto com `init --signed-cert` conclui a assinatura do certificado fora do canal. Consulte [espelhos privados](/pt-BR/products/bring-your-own-cloud/connector/configuration) e a seção sobre ambientes isolados da internet em [onboarding](/pt-BR/products/bring-your-own-cloud/connector/onboarding). Observe que o conector ainda precisa de uma rota para o endpoint de API do conector da sua org em tempo de execução; sem ela, o ClickHouse Cloud não recebe telemetria.
 
-* Espelhe o tarball da CLI e a imagem de contêiner de `releases.clicklink.clickhouse.com` e do registry público e, em seguida, aponte `image.repository` para o seu espelho.
-* Passe `--chart` com uma referência `oci://`, uma URL ou um arquivo local. `--chart-version` assume por padrão a própria versão da CLI.
-* Se o seu connector endpoint for servido dentro da sua fronteira atrás de uma private CA, `--api-private-ca` (Kubernetes) ou `api.tls.ca_file` (VM) anexa a CA chain do enrollment bundle às raízes do sistema.
-* Para inscrição sem conectividade direta, `init --handoff` consome um pacote obtido fora de banda, e `--no-auto-sign` combinado com `init --signed-cert` conclui a assinatura do certificate fora de banda.
-* No modo gerenciado, as imagens do ClickHouse para seus serviços e componentes de plataforma podem vir do seu próprio registry depois que você as importar para lá; a ClickHouse registra esse registry para o seu ambiente.
-* Pacotes de plataforma podem ser entregues fora de banda e passados como arquivo para `clicklink clctl platform approve --bundle`.
+<div id="connector-down">
+  ### O que acontece se o conector ficar indisponível?
+</div>
 
-Consulte [espelhos privados](/pt-BR/products/bring-your-own-cloud/connector/configuration) e a seção sobre ambientes isolados da internet em [onboarding](/pt-BR/products/bring-your-own-cloud/connector/onboarding). O connector ainda precisa de uma rota até o seu connector endpoint em runtime; sem ela, o ClickHouse Cloud não recebe telemetria e nenhum comando de ciclo de vida chega ao executor.
+Seus serviços do ClickHouse não são afetados: o conector apenas lê dados deles e não faz parte de nenhum caminho de dados. O impacto é a perda de visibilidade: o ClickHouse Cloud deixa de receber telemetria, e as sessões de suporte ficam indisponíveis até que o conector volte a funcionar. Em uma VM, o scraper armazena os dados coletados em buffer em `/var/lib/clicklink/buffer` (até 168 horas ou 1024 MB por padrão) sempre que o endpoint da API está inacessível e os entrega ao reconectar. Portanto, uma interrupção do endpoint não causa perda de telemetria; um daemon interrompido é reiniciado pelo systemd e, no Kubernetes, pelo agente de nó do Kubernetes. Para diagnosticar, verifique o endpoint `/livez` de cada componente (o campo JSON `status` é o indicador, não o código HTTP) e execute `clicklink clctl preflight` (com `sudo` no host da VM), que verifica configuração, conectividade, acessibilidade do ClickHouse, acesso e disco de uma só vez. Consulte [operações](/pt-BR/products/bring-your-own-cloud/connector/operations); se o conector continuar não íntegro, entre em contato com o suporte do ClickHouse.
 
-### Como as sessões de suporte são auditadas? {#support-session-auditing}
+<div id="support-session-auditing">
+  ### Como as sessões de suporte são auditadas?
+</div>
 
-Cada comando executado durante uma sessão, aceito ou bloqueado, é adicionado a `/var/log/clicklink/troubleshoot-audit.log` como JSON delimitado por novas linhas. Cada entrada registra `submitted_by` (o Organization ID no canal de comandos), o texto do comando, a instance de destino, o resultado e `blocked_by` para comandos rejeitados. As chamadas ao gateway, incluindo as negadas, são registradas como linhas estruturadas `clctl.gateway` no log do próprio solucionador de problemas. Elas são atribuídas ao e-mail do operador atestado pelo token, nunca a um nome autodeclarado. As alterações de sessão local em uma VM registram o usuário do host que as iniciou como `enabled_by` em `/var/lib/clicklink/session.json`.
+Cada chamada ao gateway e cada comando de diagnóstico, aceito ou bloqueado, é adicionado a um log de auditoria em `/var/log/clicklink/troubleshoot-audit.log` como JSON delimitado por novas linhas, com atribuição por entrada: as chamadas ao gateway incluem o e-mail do operador atestado pelo token (nunca um nome autodeclarado), as alterações de sessão local da VM registram o usuário do host que as iniciou, e os comandos executados durante uma sessão registram a identidade da org no canal autenticado. As sessões têm duração limitada (4 horas por padrão, 24 horas no máximo), e cada ativação registra quem a ativou, quando ela expira e um motivo opcional, informações exibidas por `clicklink clctl troubleshoot session status`.
 
-As sessões têm duração limitada (4 horas por padrão, 24 horas no máximo). Cada ativação registra quem a ativou, quando ela expira e um motivo opcional, informações exibidas por `clicklink clctl troubleshoot session status`.
-
-Leia o log de auditoria com `clicklink clctl troubleshoot audit tail`. No Kubernetes, esse comando é o leitor compatível (a imagem de runtime não tem shell). Com o padrão `persistence.enabled: true`, o log fica no volume persistente do solucionador de problemas, para que o histórico sobreviva ao reagendamento do pod do Kubernetes. Desabilitar a persistência faz com que o log de auditoria e o estado da sessão tenham o ciclo de vida do pod do Kubernetes, algo que o chart indica como adequado apenas para desenvolvimento local. Por padrão, a rotação mantém 5 arquivos de até 128 MB por 168 horas; consulte a [referência de configuração](/pt-BR/products/bring-your-own-cloud/connector/reference/configuration) para ajustá-la e [sessões de suporte](/pt-BR/products/bring-your-own-cloud/connector/support-sessions) para conhecer o modelo de confiança completo.
+Leia o log com `clicklink clctl troubleshoot audit tail`; no Kubernetes, esse comando é o leitor compatível (a imagem de runtime não tem shell) e, com o padrão `persistence.enabled: true`, o log fica no volume persistente do troubleshooter, para que o histórico sobreviva ao reagendamento do pod do Kubernetes. Desabilitar a persistência faz com que o log de auditoria e o estado da sessão tenham o ciclo de vida do pod do Kubernetes, algo que o próprio chart indica como adequado apenas para desenvolvimento local. Por padrão, a rotação mantém 5 arquivos de até 128 MB por 168 horas; consulte a [referência de configuração](/pt-BR/products/bring-your-own-cloud/connector/reference/configuration) para ajustá-la e [sessões de suporte](/pt-BR/products/bring-your-own-cloud/connector/support-sessions) para conhecer o modelo de confiança completo.

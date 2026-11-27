@@ -1,9 +1,0 @@
-k = 1	[1]	1
-k = 5	[5]	1
-k BETWEEN 1 AND 2	[1,2]	1
-k < 3	[1,2]	1
-k > 3	[4,5,10,11,12]	2
-k = 11	[11]	2
-k = 100	[]	1
-k = 1 SETTINGS delta_lake_enable_engine_predicate = 0	[1]	2
-k = 1 SETTINGS delta_lake_snapshot_start_version = 0	[1]	0

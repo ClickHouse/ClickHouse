@@ -1,7 +1,5 @@
 #pragma once
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPlan/SortingStep.h>
 
 #include <Interpreters/WindowDescription.h>
 
@@ -15,13 +13,12 @@ class WindowStep : public ITransformingStep
 public:
     explicit WindowStep(const SharedHeader & input_header_,
             const WindowDescription & window_description_,
-            const VectorWithMemoryTracking<WindowFunctionDescription> & window_functions_,
-            bool streams_fan_out_,
-            const SortingStep::Settings & sort_settings_);
+            const std::vector<WindowFunctionDescription> & window_functions_,
+            bool streams_fan_out_);
 
-    [[nodiscard]] String getName() const override { return "Window"; }
+    String getName() const override { return "Window"; }
 
-    [[nodiscard]] bool hasCorrelatedExpressions() const override
+    bool hasCorrelatedExpressions() const override
     {
         for (const auto & actions : window_description.partition_by_actions)
             if (actions && actions->hasCorrelatedColumns())
@@ -51,35 +48,31 @@ public:
     /// `output_bytes = 0` (i.e. "shipping all pre-window rows to the initiator is free") into the cost
     /// model. Statistics are collected when a proper boundary exists below the window, e.g. an
     /// aggregation whose result the window function consumes.
-    [[nodiscard]] bool supportsDataflowStatisticsCollection() const override { return true; }
+    bool supportsDataflowStatisticsCollection() const override { return true; }
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
-    [[nodiscard]] bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    [[nodiscard]] const WindowDescription & getWindowDescription() const;
+    const WindowDescription & getWindowDescription() const;
 
-    [[nodiscard]] const VectorWithMemoryTracking<WindowFunctionDescription> & getWindowFunctions() const { return window_functions; }
-
-    [[nodiscard]] const SortingStep::Settings & getSortSettings() const { return sort_settings; }
+    const std::vector<WindowFunctionDescription> & getWindowFunctions() const { return window_functions; }
 
     /// After the last window the pipeline is resized back to `max_threads` for downstream parallelism.
-    [[nodiscard]] bool hasStreamsFanOut() const { return streams_fan_out; }
+    bool hasStreamsFanOut() const { return streams_fan_out; }
 
-    [[nodiscard]] QueryPlanStepPtr clone() const override;
+    QueryPlanStepPtr clone() const override;
 
 private:
     void updateOutputHeader() override;
 
     WindowDescription window_description;
-    VectorWithMemoryTracking<WindowFunctionDescription> window_functions;
+    std::vector<WindowFunctionDescription> window_functions;
     bool streams_fan_out;
-    SortingStep::Settings sort_settings;
 };
 
 }

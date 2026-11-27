@@ -42,7 +42,7 @@ namespace DB
 class ParserBackupQuery : public IParserBase
 {
 protected:
-    [[nodiscard]] const char * getName() const override { return "BACKUP or RESTORE query"; }
+    const char * getName() const override { return "BACKUP or RESTORE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 }

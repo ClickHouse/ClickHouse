@@ -31,18 +31,18 @@ namespace DB
 class OpenAIProvider : public IAIProvider
 {
 public:
-    OpenAIProvider(const String & endpoint_, std::string_view api_key_);
+    OpenAIProvider(const String & endpoint_, const String & api_key_);
 
     void call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response) override;
-    [[nodiscard]] HTTPHeaderEntries getHeaders() const override;
+    HTTPHeaderEntries getHeaders() const override;
 
-    [[nodiscard]] bool supportsEmbeddings() const override { return true; }
+    bool supportsEmbeddings() const override { return true; }
     void embed(
         const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts, AIEmbeddingResponse & response) override;
 
 private:
     const String endpoint;
-    const SecretString api_key;
+    const String api_key;
     const Poco::URI uri;
 };
 

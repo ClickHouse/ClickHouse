@@ -1,7 +1,6 @@
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/TypeTree.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
@@ -12,7 +11,6 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
-#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
@@ -32,9 +30,8 @@ namespace ErrorCodes
 namespace
 {
 
-/// Read the vector at `row` of an Array(Float32|Float64|BFloat16|Int8|UInt8) column into `result`. The elements of an
-/// Array(UInt8) column are shifted by `-uint8_shift`, see `quantizedCodecShiftsUInt8`.
-void readVectorRow(const ColumnArray & col_arr, size_t row, float uint8_shift, std::vector<float> & result)
+/// Read the float vector at `row` of an Array(Float32|Float64|BFloat16) column into `result`.
+void readVectorRow(const ColumnArray & col_arr, size_t row, std::vector<float> & result)
 {
     const IColumn & arr_data = col_arr.getData();
     const auto & arr_offsets = col_arr.getOffsets();
@@ -57,19 +54,9 @@ void readVectorRow(const ColumnArray & col_arr, size_t row, float uint8_shift, s
         for (size_t i = 0; i < size; ++i)
             result[i] = static_cast<float>(bf16->getData()[begin + i]);
     }
-    else if (const auto * i8 = typeid_cast<const ColumnInt8 *>(&arr_data))
-    {
-        for (size_t i = 0; i < size; ++i)
-            result[i] = static_cast<float>(i8->getData()[begin + i]);
-    }
-    else if (const auto * u8 = typeid_cast<const ColumnUInt8 *>(&arr_data))
-    {
-        for (size_t i = 0; i < size; ++i)
-            result[i] = static_cast<float>(u8->getData()[begin + i]) - uint8_shift;
-    }
     else
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Column with a Quantize codec must be Array(Float32|Float64|BFloat16|Int8|UInt8)");
+            "Column with a Quantize codec must be Array(Float32|Float64|BFloat16)");
 }
 
 /// Maximum number of vectors used for training the per-part codebook (bounds the costs for k-means; assumes that the part's
@@ -390,10 +377,9 @@ std::vector<float> SerializationQuantizedVector::trainCodebook(const IColumn & c
     const size_t n = std::min({count, PRODUCT_QUANTIZATION_MAX_TRAINING_VECTORS, budget_vectors});
     std::vector<float> flat(n * params.dimensions);
     std::vector<float> buf;
-    const float uint8_shift = quantizedCodecShiftsUInt8(params.method) ? QUANTIZED_CODEC_UINT8_SHIFT : 0.0f;
     for (size_t i = 0; i < n; ++i)
     {
-        readVectorRow(*col_arr, offset + i, uint8_shift, buf);
+        readVectorRow(*col_arr, offset + i, buf);
         if (buf.size() != params.dimensions)
             throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                 "Vector at row {} has {} elements but the Quantize codec was declared with {} dimensions",
@@ -426,10 +412,9 @@ ColumnPtr SerializationQuantizedVector::encodeCodes(const IColumn & column, size
         encoder_flat = VectorQuantizer::createEncoder(params.method, params.dimensions, params.bits);
 
     std::vector<float> buf;
-    const float uint8_shift = quantizedCodecShiftsUInt8(params.method) ? QUANTIZED_CODEC_UINT8_SHIFT : 0.0f;
     for (size_t i = 0; i < count; ++i)
     {
-        readVectorRow(*col_arr, offset + i, uint8_shift, buf);
+        readVectorRow(*col_arr, offset + i, buf);
         if (buf.size() != params.dimensions)
             throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                 "Vector at row {} has {} elements but the Quantize codec was declared with {} dimensions",
@@ -443,20 +428,6 @@ ColumnPtr SerializationQuantizedVector::encodeCodes(const IColumn & column, size
     }
 
     return result;
-}
-
-void checkNoQuantizedCodec(const NamesAndTypesList & columns, const String & engine_name)
-{
-    for (const auto & column : columns)
-    {
-        const bool has_quantized_codec = anyInTypeTree(*column.type, [](const IDataType & type)
-        {
-            return typeid_cast<const SerializationQuantizedVector *>(type.getCustomSerialization()) != nullptr;
-        });
-        if (has_quantized_codec)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support the Quantized codec of column {}",
-                engine_name, backQuote(column.name));
-    }
 }
 
 }

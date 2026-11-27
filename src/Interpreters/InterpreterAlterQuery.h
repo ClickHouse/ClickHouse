@@ -19,37 +19,25 @@ class ASTAlterQuery;
 class InterpreterAlterQuery : public IInterpreter, WithMutableContext
 {
 public:
-    enum class RowExistsColumnKind
-    {
-        Regular,
-        LightweightDeleteMarker,
-        Unknown,
-    };
-
     InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_);
 
     BlockIO execute() override;
 
-    /// `row_exists_column_kind` distinguishes the hidden lightweight-delete marker from an ordinary
-    /// physical column. An unknown kind requires both `ALTER DELETE` and `ALTER UPDATE` for `_row_exists = 0`.
-    /// `context_` resolves the source table of `ATTACH`/`REPLACE PARTITION ... FROM`, so that a session
-    /// temporary table is checked under `TEMPORARY_DATABASE` rather than the current database. Pass null
-    /// to keep the source as written (e.g. for `ON CLUSTER`, where temporary tables are not visible).
-    /// `engine` is the engine of the table, empty for `ON CLUSTER`.
+    /// `row_exists_is_lightweight_marker` is true only when `_row_exists` is the hidden virtual
+    /// lightweight-delete marker of the target table (not an ordinary physical column with that name);
+    /// it gates the `_row_exists = 0` -> ALTER DELETE shortcut in the UPDATE command. Pass false to fail
+    /// closed (e.g. a non-local ON CLUSTER target, or ALTER DATABASE).
     static AccessRightsElements getRequiredAccessForCommand(
-        const ASTAlterCommand & command,
-        const String & database,
-        const String & table,
-        RowExistsColumnKind row_exists_column_kind,
-        const ContextPtr & context_,
-        const String & engine = {});
+        const ASTAlterCommand & command, const String & database, const String & table, bool row_exists_is_lightweight_marker);
 
-    /// Returns unknown when the target storage is not available on the submitting host.
-    static RowExistsColumnKind getRowExistsColumnKind(const StoragePtr & storage, const ContextPtr & context_);
+    /// True when `_row_exists` is the hidden virtual lightweight-delete marker of `storage`, i.e. not
+    /// an ordinary physical column with that name (as is possible on engines like `Memory`). Null
+    /// storage returns false (fail closed). Used to decide whether `_row_exists = 0` is a delete.
+    static bool isRowExistsLightweightDeleteMarker(const StoragePtr & storage, const ContextPtr & context_);
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
-    [[nodiscard]] bool supportsTransactions() const override { return true; }
+    bool supportsTransactions() const override { return true; }
 
     /// Skip this query's own access check. Set only for the internal `ATTACH PARTITION` that fills the
     /// temporary table of a `CREATE OR REPLACE TABLE ... CLONE AS` (see `fillTableIfNeeded`): the query
@@ -59,7 +47,7 @@ public:
     void setSkipAccessCheck(bool skip) { skip_access_check = skip; }
 
 private:
-    [[nodiscard]] AccessRightsElements getRequiredAccess(const StoragePtr & storage) const;
+    AccessRightsElements getRequiredAccess(const StoragePtr & storage) const;
 
     /// Adds the grants `processSQLSecurityOption` demands for the view's stored SQL security, so replacing the
     /// body of a `DEFINER` or `NONE` view takes the same authority as declaring that security in the first place.

@@ -1,0 +1,35 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <local_blob>
+                <type>local_blob_storage</type>
+                <path>/var/lib/clickhouse/local_blob/</path>
+            </local_blob>
+            <cache_with_eviction_metrics>
+                <type>cache</type>
+                <disk>local_blob</disk>
+                <path>cache_eviction_metrics/</path>
+                <!-- Very small cache so the test workload immediately forces evictions. -->
+                <expose_prometheus_eviction_metrics>1</expose_prometheus_eviction_metrics>
+                <expose_prometheus_eviction_metrics_per_user>1</expose_prometheus_eviction_metrics_per_user>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <max_size>100Ki</max_size>
+                <max_elements>16</max_elements>
+                <max_file_segment_size>10Ki</max_file_segment_size>
+                <boundary_alignment>10Ki</boundary_alignment>
+                <cache_policy>SLRU</cache_policy>
+                <slru_size_ratio>0.5</slru_size_ratio>
+                <load_metadata_asynchronously>false</load_metadata_asynchronously>
+            </cache_with_eviction_metrics>
+        </disks>
+        <policies>
+            <cache_metrics_policy>
+                <volumes>
+                    <main>
+                        <disk>cache_with_eviction_metrics</disk>
+                    </main>
+                </volumes>
+            </cache_metrics_policy>
+        </policies>
+    </storage_configuration>
+</clickhouse>

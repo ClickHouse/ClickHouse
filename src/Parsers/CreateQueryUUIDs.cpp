@@ -7,8 +7,9 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
-#include <Parsers/Prometheus/TimeSeriesVersion.h>
+#include <Parsers/getTimeSeriesSettingVersion.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 
 
 namespace DB
@@ -62,7 +63,7 @@ namespace
 CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool for_restore)
 {
     if (query.is_time_series_table)
-        time_series_version = getTimeSeriesVersion(query);
+        time_series_version = getTimeSeriesSettingVersion(query);
 
     if (!generate_random || !for_restore)
     {
@@ -116,11 +117,16 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
                 generate_target_uuid(ViewTarget::Tags);
                 generate_target_uuid(ViewTarget::MetricFamilies);
 
-                if (isTimeSeriesRecentSamplesTargetEnabled(query, for_restore))
+                bool recent_samples_enabled = getTimeSeriesSettingRecentSamplesTTL(query) != 0;
+                if (for_restore && !hasExplicitTimeSeriesSettingRecentSamplesTTL(query))
+                {
+                    /// A query restored from a backup can come from a version before the `recent_samples_ttl_seconds`
+                    /// setting existed, where the absent setting means zero (see upgradeFromVersionWithNoRecentSamplesTTL),
+                    /// so a fresh UUID is not stamped on RESTORE.
+                    recent_samples_enabled = false;
+                }
+                if (recent_samples_enabled)
                     generate_target_uuid(ViewTarget::RecentSamples);
-
-                if (isTimeSeriesTimeRangesTargetEnabled(query, for_restore))
-                    generate_target_uuid(ViewTarget::TimeRanges);
             }
         }
     }

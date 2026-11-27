@@ -82,15 +82,9 @@ public:
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
     using Base = COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>;
-    static Ptr create(ColumnPtr variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
+    static Ptr create(const ColumnPtr & variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
     {
-        /// `ColumnDynamic` keeps raw mutable access to its variant column, so immutable input
-        /// must be deep-unshared here rather than borrowed. Taking the pointer by value and
-        /// moving it lets a uniquely owned temporary (e.g. the result of `decompress`) be reused
-        /// without a copy.
-        return ColumnDynamic::create(
-            IColumn::mutate(std::move(variant_column_)),
-            variant_info_, max_dynamic_types_, global_max_dynamic_types_, statistics_);
+        return ColumnDynamic::create(variant_column_->assumeMutable(), variant_info_, max_dynamic_types_, global_max_dynamic_types_, statistics_);
     }
 
     static MutablePtr create(MutableColumnPtr variant_column_, const VariantInfo & variant_info_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
@@ -105,11 +99,7 @@ public:
 
     static ColumnPtr create(ColumnPtr variant_column_, const DataTypePtr & variant_type, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_ = {})
     {
-        /// `ColumnDynamic` keeps raw mutable access to its variant column, so immutable input
-        /// must be deep-unshared here rather than borrowed.
-        return create(
-            IColumn::mutate(std::move(variant_column_)),
-            variant_type, max_dynamic_types_, global_max_dynamic_types_, statistics_);
+        return create(variant_column_->assumeMutable(), variant_type, max_dynamic_types_, global_max_dynamic_types_, statistics_);
     }
 
     static MutablePtr create(size_t max_dynamic_types_ = MAX_DYNAMIC_TYPES_LIMIT)
@@ -168,11 +158,6 @@ public:
         return variant_column_ptr->getDataAt(n);
     }
 
-    bool supportsGetDataAt() const override
-    {
-        return variant_column_ptr->supportsGetDataAt();
-    }
-
     void insertData(const char * pos, size_t length) override
     {
         variant_column_ptr->insertData(pos, length);
@@ -212,9 +197,6 @@ public:
     std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-
-    /// Hashes the type name of a non-NULL value prefix-free and distinct from the `NULL_DISCRIMINATOR` hashed for NULL.
-    static void updateHashWithTypeName(SipHash & hash, std::string_view type_name);
 
     /// Used for deduplication: hashes the raw in-memory representation of the variant column.
     /// The hash is the same for the same INSERT data, but NOT necessarily the same for

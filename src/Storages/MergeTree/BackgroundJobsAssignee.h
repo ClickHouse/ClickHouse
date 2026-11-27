@@ -39,7 +39,7 @@ public:
     virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
     virtual bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) = 0;
     virtual bool scheduleStreamingJob(BackgroundJobsAssignee & /*assignee*/) { return false; }
-    [[nodiscard]] virtual Int32 getBiasBackoffSeconds() const { return 0; }
+    virtual Int32 getBiasBackoffSeconds() const { return 0; }
 
     virtual ~IBackgroundOperation() = default;
 };
@@ -60,15 +60,9 @@ public:
     };
     Type type{Type::DataProcessing};
 
-    /// Allocates the scheduling task if needed and activates it. Idempotent.
-    /// Returns true if the task was created by this call, so that the caller can `finish` exactly
-    /// the assignees it started when the operation that started them is rolled back.
-    /// All or nothing: if activating a task created by this call throws, the task is destroyed
-    /// again before the exception leaves, so the assignee is exactly as it was before the call.
-    bool start();
+    void start();
     void trigger();
-    /// `refused_by_executor`: the executor had no free slot, so retry after the first backoff step, not the idle backoff.
-    void postpone(bool refused_by_executor = false);
+    void postpone();
     void finish();
 
     /// Update the cached storage ID after a table rename,
@@ -91,8 +85,7 @@ public:
 
 private:
     IBackgroundOperation & data;
-    StorageID storage_id TSA_GUARDED_BY(storage_id_mutex);
-    mutable std::mutex storage_id_mutex;
+    StorageID storage_id;
 
     /// Useful for random backoff timeouts generation
     pcg64 rng;
@@ -111,16 +104,9 @@ private:
 
     static String toString(Type type);
 
-    /// Must be called under `holder_mutex`. Returns true if the task was created by this call.
-    /// Takes the storage ID as an argument because it must be read before `holder_mutex` is taken,
-    /// so that `holder_mutex` and `storage_id_mutex` are never nested.
-    bool createHolderIfNeeded(const StorageID & current_storage_id);
-
     /// Function that executes in background scheduling pool
     void threadFunc();
 
     BackgroundTaskSchedulingSettings getSettings() const;
-
-    StorageID getStorageID() const;
 };
 }

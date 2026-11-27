@@ -18,21 +18,21 @@ public:
     /// The transformation is only applied in the range [start_row, start_row + n_rows)
     /// If the expression is empty this functions is just a no-op.
     /// Returns a pair with the result column and the starting position where results were written.
-    [[nodiscard]] std::pair<ColumnPtr, size_t> processColumn(const ColumnWithTypeAndName & column, size_t start_row, size_t n_rows) const;
+    std::pair<ColumnPtr, size_t> processColumn(const ColumnWithTypeAndName & column, size_t start_row, size_t n_rows) const;
 
     /// Applies the preprocessor expression to a constant string.
-    [[nodiscard]] String processConstant(const String & input) const;
+    String processConstant(const String & input) const;
 
-    [[nodiscard]] bool hasActions() const { return !original_actions.getActions().empty(); }
-    [[nodiscard]] const ActionsDAG & getOriginalActionsDAG() const { return original_actions.getActionsDAG(); }
+    bool hasActions() const { return !original_actions.getActions().empty(); }
+    const ActionsDAG & getOriginalActionsDAG() const { return original_actions.getActionsDAG(); }
 
     /// The preprocessor expression as an AST reading from an identifier named `col_name`, to splice into a larger expression.
-    [[nodiscard]] ASTPtr getExpressionAST(const String & col_name) const;
+    ASTPtr getExpressionAST(const String & col_name) const;
 
     /// The preprocessor expression over an input column `col_name` of type `col_type`, to merge into a larger DAG.
-    [[nodiscard]] ActionsDAG getActionsDAGForColumn(const String & col_name, const DataTypePtr & col_type) const;
+    ActionsDAG getActionsDAGForColumn(const String & col_name, const DataTypePtr & col_type) const;
 
-    [[nodiscard]] bool isASCIILowerOrUpper() const { return is_ascii_lower_or_upper; }
+    bool isASCIILowerOrUpper() const { return is_ascii_lower_or_upper; }
 
 private:
     /// True only when the preprocessor is exactly lower/upper applied directly to the index column

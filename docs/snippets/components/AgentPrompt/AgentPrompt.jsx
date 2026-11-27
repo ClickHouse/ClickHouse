@@ -1,4 +1,4 @@
-const AgentPrompt = ({
+export const AgentPrompt = ({
   prompt,
   title = "Agent-Assisted Setup",
   description,
@@ -147,5 +147,3 @@ const AgentPrompt = ({
     </div>
   );
 };
-
-export { AgentPrompt };

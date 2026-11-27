@@ -19,39 +19,39 @@ public:
     }
 
     /// Get the name of the function.
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isStateful() const override
+    bool isStateful() const override
     {
         return true;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    [[nodiscard]] bool isDeterministic() const override
+    bool isDeterministic() const override
     {
         return false;
     }
 
-    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> UInt64";
+        return std::make_shared<DataTypeUInt64>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto column = ColumnUInt64::create();
         auto & data = column->getData();

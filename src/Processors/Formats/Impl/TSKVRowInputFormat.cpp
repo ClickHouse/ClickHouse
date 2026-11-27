@@ -148,7 +148,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                     const auto & type = getPort().getHeader().getByPosition(index).type;
                     const auto & serialization = serializations[index];
                     if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-                        read_columns[index] = SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(*columns[index], *in, format_settings, serialization, type.get());
+                        read_columns[index] = SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(*columns[index], *in, format_settings, serialization);
                     else
                         serialization->deserializeTextEscaped(*columns[index], *in, format_settings);
                 }
@@ -311,7 +311,7 @@ void registerInputFormatTSKV(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<TSKVRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings);
-    }, /*supports_reset_parser=*/ true);
+    });
 
     factory.markFormatSupportsSubsetOfColumns("TSKV");
 

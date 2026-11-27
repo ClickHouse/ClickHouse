@@ -73,7 +73,7 @@ bool LimitSeekableReadBuffer::nextImpl()
     if (end - ptr > available_before_max)
         end = ptr + available_before_max;
 
-    setWorkingBuffer(in->buffer().subrange(begin, end), ptr - begin);
+    BufferBase::set(begin, end - begin, ptr - begin);
     chassert(position() == ptr && available());
 
     return true;

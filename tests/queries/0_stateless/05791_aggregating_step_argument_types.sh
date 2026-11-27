@@ -5,7 +5,7 @@
 # states) now check the types against the input header. The steps merging the states read the keys and then the
 # states by position, so their input must have them in the order of the plan, without duplicates.
 # The well-formed plans are accepted, so the refusals are specific.
-# The raw protocol client is the one of 05575_filling_step_plan_deserialization.sh.
+# The raw protocol client is the one of 05790_filling_step_repeated_interpolate_output.sh.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,7 +21,7 @@ USER, PASSWORD = E("CLICKHOUSE_USER", "default"), E("CLICKHOUSE_PASSWORD", "")
 DATABASE = E("CLICKHOUSE_DATABASE", "default")
 CLIENT = "aggregating step argument types"
 REVISION = 54482   # pinned, so the revision-gated fields of the handshake are fixed
-VERSION = 21       # DBMS_QUERY_PLAN_SERIALIZATION_VERSION, pinned so the byte layout is fixed too
+VERSION = 19       # DBMS_QUERY_PLAN_SERIALIZATION_VERSION, pinned so the byte layout is fixed too
 U64, STR = b"\x04", b"\x15"   # BinaryTypeIndex
 NUL = b"\x00"   # a zero flags byte
 
@@ -66,9 +66,11 @@ def node(step, payload, out_columns, children=(), version=VERSION, settings=()):
     out = vu(len(children)) + b"".join(children)
     out += sb(step) + (vu(0) if version >= 19 else b"")   # step name, per-step version
     out += sb("") + header(out_columns)   # description, header
-    for name, value in settings:   # name, flags, value; an empty name terminates
-        out += sb(name) + vu(0) + sb(value)
-    return out + vu(0) + payload
+    # In this branch the step settings are in the binary format: their number, then name, flags and value of each.
+    out += vu(len(settings))
+    for name, value in settings:
+        out += sb(name) + vu(0) + value
+    return out + payload
 
 def read_nothing(columns):
     return node("ReadNothing", b"", columns)
@@ -175,14 +177,14 @@ forge("memory-efficient grouping sets merge", GS, [[("__grouping_set", U64)] + K
       [("__grouping_set", U64)] + K_A, "MergingAggregated")
 # The output header and the reconstruction of the missing keys take every key from the input by name.
 forge("grouping set key is repeated after the states", GS, [[("__grouping_set", U64)] + K_STATE + [("k", U64)]], VERSION,
-      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", "false")])
+      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", vu(0))])
 # The memory-bound merge (with a non-empty sort description) does not support grouping sets either.
 MEMORY_BOUND = 32
 GS_SORTED = bytes([GS[0] | MEMORY_BOUND]) + GS[1:-2] + vu(1) + sb("k") + b"\x03" + vu(0)
 forge("memory-bound grouping sets merge", GS_SORTED, [[("__grouping_set", U64)] + K_STATE], VERSION,
-      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", "false")])
+      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", vu(0))])
 forge("well-formed grouping sets merge", GS, [[("__grouping_set", U64)] + K_STATE], VERSION,
-      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", "false")])
+      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", vu(0))])
 
 # Without grouping sets, the merge does not produce `__grouping_set`, so the input must not have it.
 MERGING = bytes([FINAL]) + vu(1) + sb("k") + aggregating(FINAL, aggregates=ANY_SUM[:1])[2:-1] + vu(0) + vu(0)

@@ -3,11 +3,10 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Poco/String.h>
 #include <Common/SipHash.h>
-#include <Common/quoteString.h>
+#include <Common/maskURIPassword.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
-#include <Parsers/SecretArguments.h>
 
 namespace DB
 {
@@ -15,6 +14,25 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+    /// Keys of a dictionary source whose value must not be shown. Besides the password, this covers
+    /// the TLS credentials that are given as the contents of a certificate or a key file (a path is
+    /// not accepted from a `CREATE DICTIONARY` query in the first place), and the custom HTTP headers
+    /// of the `HTTP` source, whose values often carry API tokens. The headers are hidden as a whole,
+    /// names included: the query is logged before the dictionary source validates its structure,
+    /// so a malformed definition must not leak either.
+    /// The `url` and `endpoint` of the `HTTP` source are hidden whole: the userinfo, the path or the query can carry credentials.
+    bool isSecretKey(const String & key)
+    {
+        return key == "password"
+            || key == "ssl_ca_pem" || key == "ssl_cert_pem" || key == "ssl_key_pem"
+            || key == "sslrootcert_pem" || key == "sslcert_pem" || key == "sslkey_pem"
+            || key == "headers" || key == "header"
+            || key == "url" || key == "endpoint";
+    }
 }
 
 String ASTPair::getID(char) const
@@ -55,46 +73,37 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
     auto child = r.readChild("second");
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'second' in ASTPair during AST JSON deserialization");
-
-    /// `ParserKeyValuePair` puts the value in brackets exactly when it is a list of pairs.
-    const auto * list = child->as<ASTExpressionList>();
-    if (second_with_brackets != (list != nullptr))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "'second_with_brackets' of ASTPair must be set exactly when 'second' is a list during AST JSON deserialization");
-    if (list)
-        for (const auto & element : list->children)
-            if (!element || !element->as<ASTPair>())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "'second' of ASTPair must contain only key-value pairs during AST JSON deserialization");
     set(second, child);
 }
 
 void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    /// The parser reads the key as one identifier and accepts any bare word, also a keyword (`TABLE`, `WHERE`).
-    ostr << backQuoteIfNotBareWord(Poco::toUpper(first)) << " ";
+    ostr << Poco::toUpper(first) << " ";
 
     if (second_with_brackets)
         ostr << "(";
 
-    /// Hide the secrets each dictionary source declares, e.g. the password:
-    /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
-    String masked;
-    if (!settings.show_secrets)
+    if (!settings.show_secrets && isSecretKey(first))
     {
+        /// Hide the password and the TLS credentials in the definition of a dictionary:
+        /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
+        ostr << "'[HIDDEN]'";
+    }
+    else if (!settings.show_secrets && (first == "uri"))
+    {
+        // Hide password from URI in the defention of a dictionary
         WriteBufferFromOwnString temp_buf;
         FormatSettings tmp_settings(settings.one_line);
         FormatState tmp_state;
         second->format(temp_buf, tmp_settings, tmp_state, frame);
-        masked = temp_buf.str();
-        if (!getSecretArgumentsFinder().maskDictionarySourceValue(first, masked))
-            masked.clear();
-    }
 
-    if (!masked.empty())
-        ostr << masked;
+        maskURIPassword(&temp_buf.str());
+        ostr << temp_buf.str();
+    }
     else
+    {
         second->format(ostr, settings, state, frame);
+    }
 
     if (second_with_brackets)
         ostr << ")";
@@ -103,10 +112,15 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
 
 bool ASTPair::hasSecretParts() const
 {
-    /// A partly secret value (a `uri` with a password) is a secret part only when its masker finds one.
-    String value = second->formatWithSecretsOneLine();
-    if (getSecretArgumentsFinder().maskDictionarySourceValue(first, value))
+    if (isSecretKey(first))
         return true;
+    /// The `uri` is a secret part only when it carries a password, see `formatImpl`.
+    if (first == "uri")
+    {
+        String uri = second->formatWithSecretsOneLine();
+        if (maskURIPassword(&uri))
+            return true;
+    }
     return second->hasSecretParts();
 }
 
@@ -175,8 +189,7 @@ void ASTFunctionWithKeyValueArguments::readJSON(const Poco::JSON::Object & json)
 
 void ASTFunctionWithKeyValueArguments::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    /// The parser reads the name as one identifier and accepts any bare word, also a keyword (`NULL`).
-    ostr << backQuoteIfNotBareWord(Poco::toUpper(name)) << (has_brackets ? "(" : "");
+    ostr << Poco::toUpper(name) << (has_brackets ? "(" : "");
     elements->format(ostr, settings, state, frame);
     ostr << (has_brackets ? ")" : "");
 }

@@ -54,9 +54,9 @@ public:
     {
     }
 
-    [[nodiscard]] ChangeType getType() const { return change_type; }
+    ChangeType getType() const { return change_type; }
 
-    [[nodiscard]] const std::vector<Edge> & getPath() const { return root; }
+    const std::vector<Edge> & getPath() const { return root; }
 
 protected:
     ChangeType change_type;

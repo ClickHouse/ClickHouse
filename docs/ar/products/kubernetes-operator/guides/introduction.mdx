@@ -9,7 +9,9 @@ doc_type: 'guide'
 
 يقدّم هذا المستند نظرة عامة على المفاهيم الأساسية وأنماط استخدام ClickHouse Operator.
 
-## ما هو ClickHouse Operator {#what-is-the-clickhouse-operator}
+<div id="what-is-the-clickhouse-operator">
+  ## ما هو ClickHouse Operator
+</div>
 
 ClickHouse Operator هو مُشغِّل لـ Kubernetes يعمل على أتمتة نشر عناقيد ClickHouse وإدارتها على Kubernetes. وقد بُني وفق نمط المشغّل، ويُوسِّع واجهة برمجة تطبيقات Kubernetes من خلال الموارد المخصّصة التي تمثّل عناقيد ClickHouse وتبعياتها.
 
@@ -22,11 +24,15 @@ ClickHouse Operator هو مُشغِّل لـ Kubernetes يعمل على أتمت
 * التحديثات المتدرجة والترقيات
 * توفير التخزين
 
-## الموارد المخصّصة {#custom-resources}
+<div id="custom-resources">
+  ## الموارد المخصّصة
+</div>
 
 يوفّر المشغّل تعريفين رئيسيين للموارد المخصّصة (CRDs):
 
-### ClickHouseCluster {#clickhousecluster}
+<div id="clickhousecluster">
+  ### ClickHouseCluster
+</div>
 
 يمثل عنقودًا لقاعدة بيانات ClickHouse يمكن تهيئة النسخ المتماثلة والشظايا فيه.
 
@@ -46,7 +52,9 @@ spec:
         storage: 100Gi
 ```
 
-### KeeperCluster {#keepercluster}
+<div id="keepercluster">
+  ### KeeperCluster
+</div>
 
 يمثل عنقود ClickHouse Keeper للتنسيق الموزع (كبديل لـ ZooKeeper).
 
@@ -63,27 +71,29 @@ spec:
         storage: 10Gi
 ```
 
-## التنسيق {#coordination}
+<div id="coordination">
+  ## التنسيق
+</div>
 
-### ClickHouse Keeper مطلوب {#clickhouse-keeper-is-required}
+<div id="clickhouse-keeper-is-required">
+  ### ClickHouse Keeper مطلوب
+</div>
 
 يتطلب كل ClickHouseCluster عنقود ClickHouse Keeper للتنسيق الموزع.
-أشِر إلى KeeperCluster يديره المشغّل ضمن مواصفة ClickHouseCluster باستخدام `keeperClusterRef`. افتراضيًا، يبحث المشغّل في مساحة الاسم الخاصة بـ ClickHouseCluster، ولكن يمكنك أيضًا تعيين `keeperClusterRef.namespace` للإشارة إلى KeeperCluster في مساحة اسم أخرى خاضعة للمراقبة.
-أما لاستخدام مجموعة Keeper لا يديرها المشغّل، فاذكر خوادمها في `externalKeeper` بدلًا من ذلك. راجع [Keeper المُدار خارجيًا](/ar/products/kubernetes-operator/guides/configuration#external-keeper).
+يجب الإشارة إلى عنقود Keeper في مواصفة ClickHouseCluster باستخدام `keeperClusterRef`. افتراضيًا، يبحث المشغّل في مساحة الاسم الخاصة بـ ClickHouseCluster، ولكن يمكنك أيضًا تعيين `keeperClusterRef.namespace` للإشارة إلى KeeperCluster في مساحة اسم أخرى خاضعة للمراقبة.
 
-### علاقة Keeper واحد إلى واحد {#one-to-one-keeper-relationship}
+<div id="one-to-one-keeper-relationship">
+  ### علاقة Keeper واحد إلى واحد
+</div>
 
-يحتاج كل ClickHouseCluster افتراضيًا إلى عنصر KeeperCluster مخصص له.
+يجب أن يكون لكل ClickHouseCluster عنصر KeeperCluster مخصص له. ولا يمكن مشاركة KeeperCluster واحد بين عدة ClickHouseClusters.
 
-**لماذا؟** ينشئ المشغّل تلقائيًا مفتاح مصادقة فريدًا لكل ClickHouseCluster للوصول إلى Keeper الخاص به. ويُخزَّن هذا المفتاح في Secret.
+**لماذا؟** ينشئ المشغّل تلقائيًا مفتاح مصادقة فريدًا لكل ClickHouseCluster للوصول إلى Keeper الخاص به. ويُخزَّن هذا المفتاح في Secret ولا يمكن مشاركته.
 
 **النتائج المترتبة**:
 
-* لا يمكن لعدة ClickHouseClusters الإشارة إلى KeeperCluster نفسه دون اتباع الإعداد الموضح أدناه
+* لا يمكن لعدة ClickHouseClusters الإشارة إلى KeeperCluster نفسه
 * تستلزم إعادة إنشاء ClickHouseCluster إعادة إنشاء KeeperCluster الخاص به
-
-لمشاركة عنقود Keeper واحد، عيّن قيمة مختلفة لـ `zookeeper.root` في `settings.extraConfig` لكل ClickHouseCluster،
-وأنشئ عقدة znode هذه قبل بدء تشغيل ClickHouse. راجع [Keeper المُدار خارجيًا](/ar/products/kubernetes-operator/guides/configuration#external-keeper).
 
 <Note>
   لا تُحذف وحدات التخزين الدائمة تلقائيًا عند حذف موارد ClickHouseCluster أو KeeperCluster.
@@ -95,15 +105,19 @@ spec:
 2. احذف مورد KeeperCluster
 3. انتظر حتى تتوقف جميع الكبسولات
 4. احذف PersistentVolumeClaims اختياريًا إذا كنت تريد البدء من جديد
-5. أعد إنشاء كلٍّ من KeeperCluster وClickHouseCluster معًا
+5. أعد إنشاء كلٍّ من KeeperCluster وClickHouseCluster معًا
 
 لتجنّب أخطاء المصادقة، احذف وحدات التخزين الدائمة يدويًا أو أعد إنشاء كلا العنقودين معًا باستخدام تخزين جديد.
 
-## تكرار المخطط {#schema-replication}
+<div id="schema-replication">
+  ## تكرار المخطط
+</div>
 
 يُكرِّر ClickHouse Operator تلقائيًا تعريفات قاعدة البيانات على جميع النسخ المتماثلة في العنقود.
 
-### ما الذي تجري مزامنته {#what-gets-replicated}
+<div id="what-gets-replicated">
+  ### ما الذي تجري مزامنته
+</div>
 
 يقوم المشغّل بمزامنة:
 
@@ -116,7 +130,9 @@ spec:
 * الجداول المحلية في قواعد البيانات غير المُكرّرة
 * بيانات الجداول (يتولى ClickHouse replication مزامنتها)
 
-### يُوصى به: استخدم محرك قاعدة البيانات Replicated {#recommended-use-replicated-database-engine}
+<div id="recommended-use-replicated-database-engine">
+  ### يُوصى به: استخدم محرك قاعدة البيانات Replicated
+</div>
 
 <Tip>
   **أفضل الممارسات**
@@ -137,7 +153,9 @@ spec:
 CREATE DATABASE my_database ON CLUSTER 'default' ENGINE = Replicated;
 ```
 
-### تجنب المحركات غير Replicated {#avoid-non-replicated-engines}
+<div id="avoid-non-replicated-engines">
+  ### تجنب المحركات غير Replicated
+</div>
 
 تتطلب محركات قواعد البيانات غير المكررة (Atomic وLazy وSQLite وOrdinary) إدارة المخطط يدويًا:
 
@@ -145,15 +163,21 @@ CREATE DATABASE my_database ON CLUSTER 'default' ENGINE = Replicated;
 * قد يحدث انجراف في المخطط بين العُقد
 * لا يمكن للمشغّل مزامنة النسخ المتماثلة الجديدة تلقائيًا
 
-### تعطيل تكرار المخطط {#disable-schema-replication}
+<div id="disable-schema-replication">
+  ### تعطيل تكرار المخطط
+</div>
 
 لتعطيل تكرار المخطط تلقائيًا، اضبط `spec.settings.enableDatabaseSync` على `false` في مورد ClickHouseCluster.
 
-## إدارة التخزين {#storage-management}
+<div id="storage-management">
+  ## إدارة التخزين
+</div>
 
 يتولى المشغّل إدارة التخزين عبر Kubernetes PersistentVolumeClaims ‏(PVCs).
 
-### إعداد حجم تخزين البيانات {#data-volume-configuration}
+<div id="data-volume-configuration">
+  ### إعداد حجم تخزين البيانات
+</div>
 
 حدّد متطلبات التخزين في `dataVolumeClaimSpec`:
 
@@ -166,7 +190,9 @@ spec:
         storage: 500Gi
 ```
 
-### دورة حياة التخزين {#storage-lifecycle}
+<div id="storage-lifecycle">
+  ### دورة حياة التخزين
+</div>
 
 * **الإنشاء**: يتم إنشاء PVCs تلقائيًا مع العنقود
 * **التوسعة**: تكون مدعومة إذا كانت StorageClass تسمح بتوسعة وحدة التخزين
@@ -186,7 +212,9 @@ kubectl wait --for=delete pod -l app.kubernetes.io/instance=my-cluster-clickhous
 kubectl delete pvc -l app.kubernetes.io/instance=my-cluster-clickhouse
 ```
 
-## أبرز إعدادات التكوين الافتراضية {#default-configuration-highlights}
+<div id="default-configuration-highlights">
+  ## أبرز إعدادات التكوين الافتراضية
+</div>
 
 * **عنقود مُعدّ مسبقًا:** عنقود باسم &#39;default&#39; يضم جميع عُقد ClickHouse.
 * **وحدات الماكرو الافتراضية:** بعض وحدات الماكرو المفيدة مُعرّفة مسبقًا:
@@ -196,7 +224,9 @@ kubectl delete pvc -l app.kubernetes.io/instance=my-cluster-clickhouse
 * **تخزين مُكرَّر لكيانات التحكم بالوصول المستند إلى الأدوار (RBAC)**
 * **تخزين مُكرَّر للدوال المعرّفة من قبل المستخدم (UDF)**
 
-## الخطوات التالية {#next-steps}
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
 
 * [دليل الإعداد](/ar/products/kubernetes-operator/guides/configuration) - خيارات إعداد مفصلة
 * [مرجع واجهة برمجة التطبيقات](/ar/products/kubernetes-operator/reference/api-reference) - الوثائق الكاملة لواجهة برمجة التطبيقات

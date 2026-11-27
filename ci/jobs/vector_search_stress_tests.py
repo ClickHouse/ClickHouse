@@ -522,35 +522,6 @@ class RunTest:
     def uses_vector_index(self):
         return self._search_method == SEARCH_METHOD_INDEX
 
-    def search_column(self):
-        if self._search_method == SEARCH_METHOD_QBIT:
-            return self._dataset[QBIT_COLUMN]
-        return self._vector_column
-
-    def capture_column_size(self):
-        column = self.search_column()
-        result = self._chclient.query(
-            f"SELECT count(), sum(column_bytes_on_disk), formatReadableSize(sum(column_bytes_on_disk)) "
-            f"FROM system.parts_columns WHERE database = currentDatabase() "
-            f"AND table = '{self._table}' AND column = '{column}' AND active"
-        )
-        # okay if nothing found
-        if not result.result_rows or not result.result_rows[0][0]:
-            self._column_bytes = None
-            self._column_size = "-"
-            self._column_bytes_per_row = None
-            logger(f"No size found for column {column} of {self._table}")
-            return
-
-        self._column_bytes = result.result_rows[0][1]
-        self._column_size = result.result_rows[0][2]
-        self._column_bytes_per_row = (
-            round(self._column_bytes / self._rows_inserted) if self._rows_inserted else None
-        )
-        logger(
-            f"Column {column} occupies {self._column_size} ({self._column_bytes_per_row} bytes/row)"
-        )
-
     # One (label, parameter) pair per configuration we want recall and latency for
     def search_variants(self):
         if self._search_method == SEARCH_METHOD_QUANTIZED_CODEC:
@@ -623,6 +594,13 @@ class RunTest:
             rows = result.result_rows[0][0]
             self._rows_inserted = rows
             logger(f"Loaded total {rows} rows")
+
+        result = self._chclient.query(
+            f"SELECT sum(bytes_on_disk), formatReadableSize(sum(bytes_on_disk)) FROM system.parts WHERE table = '{self._table}' AND active"
+        )
+        self._table_bytes = result.result_rows[0][0] or 0
+        self._table_size = result.result_rows[0][1]
+        logger(f"Table {self._table} occupies {self._table_size}")
 
     def optimize_table(self):
         logger("Optimizing table...")
@@ -1090,12 +1068,7 @@ def record_summary(test_name, dataset, test_runner, ok):
                 "test": test_name,
                 "table": test_runner._table if test_runner else dataset[TABLE],
                 "rows": test_runner._rows_inserted if test_runner else 0,
-                "vec_size": getattr(test_runner, "_column_size", "-") if test_runner else "-",
-                "vec_bytes": (
-                    getattr(test_runner, "_column_bytes_per_row", None)
-                    if test_runner
-                    else None
-                ),
+                "size": getattr(test_runner, "_table_size", "-") if test_runner else "-",
                 "load": timings.get("load"),
                 "merge": timings.get("merge"),
                 "index": timings.get("index"),
@@ -1151,8 +1124,7 @@ def print_summary():
         [
             ("Table", "table", 22, True),
             ("Rows", "rows", 9, False),
-            ("Vector col", "vec_size", 10, False),
-            ("Vec B/row", "vec_bytes", 9, False),
+            ("Size", "size", 10, False),
             ("Load s", "load", 7, False),
             ("Merge s", "merge", 7, False),
             ("Index s", "index", 7, False),
@@ -1187,7 +1159,6 @@ def run_single_test(test_name, dataset, test_params):
             test_runner.load_data()
         with phase_timer(timings, "merge"):
             test_runner.optimize_table()
-        test_runner.capture_column_size()
 
         # Run KNN queries first before building the index.
         if test_runner._test_params[GENERATE_TRUTH_SET]:

@@ -58,7 +58,7 @@ SELECT length(hierarchicalKMeansMerge(4)(st)) FROM (
 
 SELECT '-- errors';
 SELECT hierarchicalKMeans(2)(v) FROM (SELECT 1.0::Float32 AS v); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT hierarchicalKMeans(2)([1000, 2000]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT hierarchicalKMeans(2)([1, 2]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT hierarchicalKMeans(2)(['a', 'b']); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- Parameters themselves must be sane.
 SELECT hierarchicalKMeans(-1)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }

@@ -1,9 +1,5 @@
 #include <Access/ContextAccess.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/IdentifierNode.h>
-#include <Analyzer/TableFunctionNode.h>
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableFunction.h>
 #include <Access/Common/AccessFlags.h>
@@ -11,7 +7,6 @@
 #include <Common/StringUtils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
-#include <Poco/URI.h>
 
 #include <algorithm>
 
@@ -21,14 +16,13 @@ namespace ProfileEvents
     extern const Event TableFunctionExecute;
 }
 
-namespace DB
-{
-
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int ACCESS_DENIED;
+    extern const int LOGICAL_ERROR;;
 }
+
+namespace DB
+{
 
 const char * ITableFunction::getNonClusteredStorageEngineName() const
 {
@@ -50,13 +44,8 @@ void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query)
         if (is_insert_query)
             type_to_check = AccessType::WRITE;
 
-        checkSourceAccessForURI(context, type_to_check, *access_object, String(getFunctionURI()));
+        checkSourceAccessForURI(context, type_to_check, *access_object, getFunctionURI());
     }
-}
-
-void ITableFunction::checkSourceTableAccess(const ContextPtr & context, const StorageID & table_id, AccessType access_type) const
-{
-    context->checkAccess(access_type, table_id);
 }
 
 void ITableFunction::checkCreateTemporaryTableAccess(ContextPtr context, bool is_insert_query) const
@@ -64,15 +53,6 @@ void ITableFunction::checkCreateTemporaryTableAccess(ContextPtr context, bool is
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
     if (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly))
         context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
-}
-
-void ITableFunction::checkSourceStorageAccess(
-    const ContextPtr & context, const StoragePtr & storage, const StorageID & table_id, AccessType access_type) const
-{
-    if (const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
-        alias && !alias->isTargetTableGranted(context, access_type, {}))
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED, "Not enough privileges to access the table that {} points to", table_id.getNameForLogs());
 }
 
 void ITableFunction::checkEngineAccess(ContextPtr context) const
@@ -96,7 +76,6 @@ ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr 
     /// Resolving table structure is always a read operation.
     checkSourceAccess(context, /*is_insert_query*/ false);
     checkEngineAccess(context);
-    checkSourceObjectAccess(context, /*for_structure=*/ true);
     /// Resolving the structure may access the source (e.g. schema inference fetches a URL), so it must be
     /// gated in the same way as `execute`: otherwise `DESCRIBE TABLE url(...)` would let a user who cannot
     /// run the table function (e.g. under `readonly = 1`) make the server request an endpoint.
@@ -112,9 +91,8 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     if (check_source_access)
         checkSourceAccess(context, is_insert_query);
 
-    /// Deliberately not under `check_source_access`: no caller takes over these checks.
+    /// Deliberately not under `check_source_access`: no caller takes over the engine check.
     checkEngineAccess(context);
-    checkSourceObjectAccess(context, /*for_structure=*/ false);
 
     if (check_create_temporary_table)
         checkCreateTemporaryTableAccess(context, is_insert_query);
@@ -140,8 +118,7 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
 
         /// It will request actual table structure and create underlying storage lazily
         storage = std::make_shared<StorageTableFunctionProxy>(StorageID(getDatabaseName(), table_name), std::move(get_storage),
-                                                              std::move(cached_columns), needStructureConversion(),
-                                                              hasUnreplicatedTableDataOnDisk());
+                                                              std::move(cached_columns), needStructureConversion());
     }
 
     /// The source access check covered only the URI as typed, but a write can go to a destination computed at write time:
@@ -284,8 +261,7 @@ std::pair<String, String> getSourceAccessSubjects(AccessTypeObjects::Source sour
         if (hasDotSegment(path) || path.contains("//"))
             return {};
         /// `url` expands `{}` and splits `|` failover across the whole URI, but the subject escapes them only in the path.
-        if ((decoded.getScheme() + decoded.getAuthority()).find_first_of("{}|") != String::npos
-            || decoded.getRawQuery().find_first_of("{}|") != std::string_view::npos)
+        if ((decoded.getScheme() + decoded.getAuthority() + decoded.getRawQuery()).find_first_of("{}|") != String::npos)
             return {};
         if (source == AccessTypeObjects::Source::S3)
         {
@@ -326,31 +302,6 @@ void ITableFunction::checkSourceAccessForURI(
     if (subject != escaped_subject && !access->isGrantedWithFilter(flags, source_name, escaped_subject))
         subject.clear();
     access->checkAccessWithFilter(flags, source_name, subject);
-}
-
-void ITableFunction::appendNamedArgumentIndexes(
-    const QueryTreeNodePtr & query_node_table_function, VectorWithMemoryTracking<size_t> & result, const Strings & wrapper_names)
-{
-    const auto & arguments = query_node_table_function->as<TableFunctionNode &>().getArguments().getNodes();
-    auto is_wrapper = [&](const FunctionNode * function_node)
-    { return function_node && std::ranges::find(wrapper_names, function_node->getFunctionName()) != wrapper_names.end(); };
-
-    for (size_t i = 0; i < arguments.size(); ++i)
-        if (is_wrapper(arguments[i]->as<FunctionNode>()))
-            result.push_back(i);
-
-    for (size_t i = arguments.size(); i-- > 0;)
-    {
-        const auto * function_node = arguments[i]->as<FunctionNode>();
-        if (!function_node)
-            break;
-        if (is_wrapper(function_node))
-            continue;
-        const auto & function_arguments = function_node->getArguments().getNodes();
-        if (function_node->getFunctionName() != "equals" || function_arguments.size() != 2 || !function_arguments[0]->as<IdentifierNode>())
-            break;
-        result.push_back(i);
-    }
 }
 
 }

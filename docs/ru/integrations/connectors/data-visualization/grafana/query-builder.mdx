@@ -10,6 +10,8 @@ integration:
   - category: 'data_visualization'
 ---
 
+import { Image } from "/snippets/ru/components/Image.jsx";
+
 import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -50,19 +52,13 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 | Limit        | Добавляет оператор [LIMIT](/ru/reference/statements/select/limit) в конец запроса. Если указано значение `0`, он не добавляется. Для некоторых визуализаций может потребоваться значение `0`, чтобы показать все данные. |
 | Filters      | Список фильтров, применяемых в условии `WHERE`.                                                                                                                                                                          |
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Пример агрегатного табличного запроса](/images/integrations/data-visualization/grafana/demo_table_query.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="Пример агрегатного табличного запроса" border />
 
 Данные для этого типа запроса отображаются в виде таблицы.
 
-### Журналы {#logs}
+<div id="logs">
+  ### Журналы
+</div>
 
 Тип запроса журналов предоставляет конструктор запросов, ориентированный на работу с данными журналов.
 Значения по умолчанию можно настроить в [конфигурации журналов](/ru/integrations/connectors/data-visualization/grafana/config#logs), чтобы конструктор запросов сразу открывался с базой данных, таблицей и столбцами по умолчанию.
@@ -86,15 +82,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 | Фильтры           | Список фильтров, которые будут применены в условии `WHERE`.                                                                                                                            |
 | Фильтр сообщения  | Текстовое поле для удобной фильтрации журналов с помощью `LIKE %value%`. Исключается, если поле ввода пусто.                                                                           |
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Пример запроса к журналам OTel](/images/integrations/data-visualization/grafana/demo_logs_query.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="Пример запроса к журналам OTel" border />
 
 <br />
 
@@ -102,15 +90,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 Дополнительные столбцы, выбранные в запросе, можно просмотреть в раскрытой строке журнала:
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Пример дополнительных полей в запросе журналов](/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="Пример дополнительных полей в запросе журналов" border />
 
 <div id="time-series">
   ### Временные ряды
@@ -144,19 +124,13 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 | Limit        | Добавляет оператор [LIMIT](/ru/reference/statements/select/limit) в конец запроса. Если установить значение `0`, он не будет добавлен; это рекомендуется для некоторых датасетов временных рядов, чтобы показать визуализацию целиком. |
 | Filters      | Список фильтров, применяемых в операторе `WHERE`.                                                                                                                                                                                      |
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Пример запроса временных рядов](/images/integrations/data-visualization/grafana/demo_time_series_query.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="Пример запроса временных рядов" border />
 
 Этот тип запроса отображает данные на панели временных рядов.
 
-### Трассировки {#traces}
+<div id="traces">
+  ### Трассировки
+</div>
 
 Тип запроса Trace предоставляет конструктор запросов для удобного поиска и просмотра трассировок.
 Он предназначен для данных OpenTelemetry, но для отображения трассировок из другой схемы можно выбрать соответствующие столбцы.
@@ -189,19 +163,13 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 | Фильтры                | Список фильтров, которые будут применены в операторе `WHERE`.                                                                                                                          |
 | Trace ID               | Trace ID для фильтрации. Используется только в режиме Trace ID и при открытии [ссылки на данные](#data-links) для Trace ID.                                                            |
 
-<div className="ch-image-md">
-
-<Frame>
-
-![Пример запроса трассировки OTel](/images/integrations/data-visualization/grafana/demo_trace_query.webp)
-
-</Frame>
-
-</div>
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="Пример запроса трассировки OTel" border />
 
 Этот тип запроса отображает данные в виде таблицы в режиме Trace Search и на панели трассировки в режиме Trace ID.
 
-## Редактор SQL {#sql-editor}
+<div id="sql-editor">
+  ## Редактор SQL
+</div>
 
 Для запросов, которые слишком сложны для конструктора запросов, можно использовать редактор SQL.
 Он дает полный контроль над запросом, позволяя писать и выполнять запросы на обычном ClickHouse SQL.
@@ -213,17 +181,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 Вы можете переключаться между типами запросов, чтобы выбрать визуализацию, которая лучше всего подходит для вашего запроса.
 Это переключение также влияет на отображение в режиме панели мониторинга, особенно при работе с данными временных рядов.
 
-<div className="ch-image-md">
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="Пример SQL-запроса в исходном виде" border />
 
-<Frame>
-
-![Пример SQL-запроса в исходном виде](/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp)
-
-</Frame>
-
+<div id="data-links">
+  ## Ссылки на данные
 </div>
-
-## Ссылки на данные {#data-links}
 
 В Grafana [ссылки на данные](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)
 можно использовать для перехода к новым запросам.
@@ -232,29 +194,13 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
   Пример ссылок на трассировки в таблице
 
-  <div className="ch-image-sm">
-
-  <Frame>
-
-  ![Ссылки на трассировки в таблице](/images/integrations/data-visualization/grafana/trace_id_in_table.webp)
-
-  </Frame>
-
-  </div>
+  <Image size="sm" img="/images/integrations/data-visualization/grafana/trace_id_in_table.webp" alt="Ссылки на трассировки в таблице" border />
 </div>
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Пример ссылок на трассировки в журналах
 
-  <div className="ch-image-md">
-
-  <Frame>
-
-  ![Ссылки на трассировки в журналах](/images/integrations/data-visualization/grafana/trace_id_in_logs.webp)
-
-  </Frame>
-
-  </div>
+  <Image size="md" img="/images/integrations/data-visualization/grafana/trace_id_in_logs.webp" alt="Ссылки на трассировки в журналах" border />
 </div>
 
 <div id="how-to-make-a-data-link">
@@ -265,11 +211,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 Если OpenTelemetry включен в запросе [журнала](#logs) или [трассировки](#traces), столбец с trace ID будет добавлен автоматически.
 
-Если присутствует столбец с trace ID, плагин может добавить к данным ссылки &quot;**View Trace**&quot; и &quot;**View Logs**&quot;.
+Если в данных есть столбец с trace ID, к ним будут добавлены ссылки &quot;**View Trace**&quot; и &quot;**View Logs**&quot;.
 
-Переключатели включены по умолчанию. Для ссылки текущего типа запроса не требуются настроенные значения по умолчанию, тогда как межсигнальная ссылка появляется только при наличии у источника данных настроенных значений по умолчанию для целевого сигнала. Их можно скрыть с помощью переключателей **Показывать ссылки &quot;View trace&quot;** и **Показывать ссылки &quot;View logs&quot;** в разделах конфигурации [трассировки](/ru/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links) и [журнала](/ru/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links) источника данных.
-
-### Возможности ссылок {#linking-abilities}
+<div id="linking-abilities">
+  ### Возможности ссылок
+</div>
 
 Если настроены ссылки на данные, вы можете открывать трассировки и журналы по указанному trace ID.
 
@@ -281,15 +227,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Пример просмотра трассировки (справа) из запроса к журналам (слева)
 
-  <div className="ch-image-md">
-
-  <Frame>
-
-  ![Пример перехода по ссылкам на данные](/images/integrations/data-visualization/grafana/demo_data_links.webp)
-
-  </Frame>
-
-  </div>
+  <Image size="md" img="/images/integrations/data-visualization/grafana/demo_data_links.webp" alt="Пример перехода по ссылкам на данные" border />
 </div>
 
 <div id="macros">

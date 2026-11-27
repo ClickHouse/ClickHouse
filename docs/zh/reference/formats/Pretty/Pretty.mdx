@@ -17,7 +17,9 @@ import PrettyFormatSettings from '/snippets/zh/common-pretty-format-settings.mdx
 | -- | -- | -- |
 | ✗  | ✔  |    |
 
-## 描述 {#description}
+<div id="description">
+  ## 描述
+</div>
 
 `Pretty` 格式会将数据输出为 Unicode 艺术表格，
 并使用 ANSI 转义序列在终端中显示颜色。
@@ -27,7 +29,9 @@ import PrettyFormatSettings from '/snippets/zh/common-pretty-format-settings.mdx
 
 [NULL](/zh/reference/syntax) 会输出为 `ᴺᵁᴸᴸ`。
 
-## 示例用法 {#example-usage}
+<div id="example-usage">
+  ## 示例用法
+</div>
 
 示例 (以 [`PrettyCompact`](/zh/reference/formats/Pretty/PrettyCompact) 格式展示) ：
 
@@ -41,29 +45,17 @@ SELECT * FROM t_null
 └───┴──────┘
 ```
 
-在任何 `Pretty` 格式中，行都不会进行转义。默认情况下，值和列名中的不可打印控制字符 (C0 控制字符 `0x00`-`0x1F` 以及 `DEL` `0x7F`) 会显示为对应的 Unicode &quot;Control Pictures&quot; 字符 (`U+2400`-`U+2421`) ，从而保持可见，且不会破坏表格布局。例如，NUL 会显示为 `␀`：
+在任何 `Pretty` 格式中，行都不会进行转义。以下以 [`PrettyCompact`](/zh/reference/formats/Pretty/PrettyCompact) 格式为例：
 
 ```sql title="Query"
-SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
+SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 ```
 
 ```response title="Response"
-┌─Escaping_test─────────────────┐
-│ String with a NUL ␀ character │
-└───────────────────────────────┘
+┌─Escaping_test────────────────────────┐
+│ String with 'quotes' and      character │
+└──────────────────────────────────────┘
 ```
-
-`TAB`、换行符和 `ESC` 是例外：它们总是按原样输出，因为终端会解释这些字符，而不是将其吞掉——制表符会跳到下一个制表位，而数据正是借助 ANSI 转义序列才能呈现可视化效果。换行符也照常换行：启用 [`output_format_pretty_multiline_fields`](/zh/reference/settings/formats#output_format_pretty_multiline_fields) 时，在表格单元格内换行；否则按原样输出。列名则是这一例外中的例外：表头和表尾都只占一行，因此名称中的换行符会像其他控制字符一样被替换。
-
-如需按原样输出控制字符，请禁用 [`output_format_pretty_display_control_characters`](/zh/reference/settings/formats#output_format_pretty_display_control_characters)：
-
-```sql title="Query"
-SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
-SETTINGS output_format_pretty_display_control_characters = 0
-```
-
-此时，响应中包含的是原始的 `NUL` 字节。终端会吞掉该字节，导致该字符不可见，
-而该行也会比为其测量的边框多出一个字符宽度——显示 Control Picture 正是为了避免这种表格变形。
 
 为避免向终端输出过多数据，只会打印前 `10,000` 行。
 如果行数大于或等于 `10,000`，则会打印消息 &quot;Showed first 10 000&quot;。
@@ -108,7 +100,9 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-## 格式设置 {#format-settings}
+<div id="format-settings">
+  ## 格式设置
+</div>
 
 <PrettyFormatSettings />
 
