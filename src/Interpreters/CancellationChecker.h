@@ -12,6 +12,10 @@ class Logger;
 
 using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
+/// gtest generates this class for `TEST(CancellationChecker, RearmsWaitOnEarlierDeadline)`; it is a
+/// friend of `CancellationChecker` (below) so the test can read the private `armed_deadline`.
+class CancellationChecker_RearmsWaitOnEarlierDeadline_Test;
+
 namespace DB
 {
 
@@ -44,8 +48,10 @@ private:
     std::condition_variable cond_var;
 
     /// The deadline (ms since steady_clock epoch) the worker's wait is currently armed for;
-    /// 0 while the worker is not parked on a deadline. Lets tests synchronize with the wait state.
+    /// 0 while the worker is not parked on a deadline. The test below reads it (under `m`) to
+    /// synchronize with the wait state; it is not part of the public interface.
     UInt64 armed_deadline = 0;
+    friend class ::CancellationChecker_RearmsWaitOnEarlierDeadline_Test;
 
     static void cancelTask(CancellationChecker::QueryToTrack task);
 
@@ -75,8 +81,5 @@ public:
 
     // Worker thread function
     void workerFunction();
-
-    // The deadline the worker is currently sleeping toward, 0 when it is not. For tests.
-    UInt64 getArmedDeadline();
 };
 }

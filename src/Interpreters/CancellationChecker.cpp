@@ -228,10 +228,4 @@ void CancellationChecker::workerFunction()
     stop_thread = false;
 }
 
-UInt64 CancellationChecker::getArmedDeadline()
-{
-    std::unique_lock<std::mutex> lock(m);
-    return armed_deadline;
-}
-
 }
