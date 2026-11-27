@@ -33,10 +33,9 @@ namespace ErrorCodes
 
 IQueryPlanStep::IQueryPlanStep() = default;
 
-IQueryPlanStep::StepIndex::StepIndex()
-    : value(CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0)
-{
-}
+PlanStepIndex::PlanStepIndex()
+: value(CurrentThread::getGroup() ? CurrentThread::get().getNextPlanStepIndex() : NONE)
+{}
 
 void IQueryPlanStep::updateInputHeaders(SharedHeaders input_headers_)
 {
@@ -587,7 +586,7 @@ StepAnalyzer IQueryPlanStep::makeAnalyzer() const
 
 String IQueryPlanStep::getUniqID() const
 {
-    return fmt::format("{}_{}", getName(), step_index.value);
+    return fmt::format("{}_{}", getName(), step_index.get());
 }
 
 void IQueryPlanStep::serialize(Serialization & /*ctx*/) const
