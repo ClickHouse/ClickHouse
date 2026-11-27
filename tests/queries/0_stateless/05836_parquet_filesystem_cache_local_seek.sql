@@ -68,11 +68,11 @@ SETTINGS filesystem_cache_name = '05836_cache_no_background_download', input_for
     log_comment = 'partial_read_3_a_c';
 SELECT sum(a), sum(c) FROM s3(s3_conn, filename = currentDatabase() || '_05836_f3.parquet', format = Parquet, structure = 'a UInt64, b UInt32, c UInt64, d String')
 SETTINGS filesystem_cache_name = '05836_cache_no_background_download', log_comment = 'partial_read_4_a_c_default';
--- Row subgroups of 4096 rows read their own pages of a if its chunk is split into pages.
+-- With the offset index, row subgroups of 4096 rows read their own pages of a if its chunk is split into pages.
 SELECT sum(a) FROM s3(s3_conn, filename = currentDatabase() || '_05836_f4.parquet', format = Parquet, structure = 'a UInt64, b String')
-SETTINGS input_format_parquet_max_block_size = 4096, log_comment = 'page_read_1_cold';
+SETTINGS input_format_parquet_use_offset_index = 1, input_format_parquet_max_block_size = 4096, log_comment = 'page_read_1_cold';
 SELECT sum(a) FROM s3(s3_conn, filename = currentDatabase() || '_05836_f4.parquet', format = Parquet, structure = 'a UInt64, b String')
-SETTINGS input_format_parquet_max_block_size = 4096, log_comment = 'page_read_2_cached';
+SETTINGS input_format_parquet_use_offset_index = 1, input_format_parquet_max_block_size = 4096, log_comment = 'page_read_2_cached';
 
 SYSTEM FLUSH LOGS query_log;
 
