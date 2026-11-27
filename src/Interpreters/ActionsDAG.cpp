@@ -3842,7 +3842,10 @@ bool conjunctDependsOnAllowedInput(const ActionsDAG::Node * conjunct, const Unor
 
 }
 
-std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
+std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForConjunction(
+    NodeRawConstPtrs conjunction,
+    const ColumnsWithTypeAndName & all_inputs,
+    UnorderedMapWithMemoryTracking<const Node *, const Node *> * cloned_nodes)
 {
     if (conjunction.empty())
         return {};
@@ -3934,6 +3937,9 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
         /// If result is a column, it means that predicate is constant. Let's not push it further.
         return {};
     }
+
+    if (cloned_nodes)
+        *cloned_nodes = std::move(nodes_mapping);
 
     return ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter, false};
 }
@@ -4035,6 +4041,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
     const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
     const NameSet & cross_type_equivalent_columns,
+    const UnorderedMapWithMemoryTracking<const Node *, String> & equivalent_expression_nodes,
     bool keep_runtime_filters_out_of_left_stream,
     bool keep_runtime_filters_out_of_right_stream,
     bool filter_is_always_false)
@@ -4075,6 +4082,8 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto left_stream_allowed_nodes = get_input_nodes(left_stream_available_columns_to_push_down);
     auto right_stream_allowed_nodes = get_input_nodes(right_stream_available_columns_to_push_down);
     auto both_streams_allowed_nodes = get_input_nodes(equivalent_columns_to_push_down);
+    for (const auto & [node, _] : equivalent_expression_nodes)
+        both_streams_allowed_nodes.insert(node);
 
     auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, inputs, left_stream_allowed_nodes, false);
     auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, inputs, right_stream_allowed_nodes, false);
@@ -4217,18 +4226,41 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             rejected_conjunctions.push_back(atom);
     chassert(rejected_conjunctions.size() == rejected_count);
 
-    auto left_stream_filter_to_push_down = createActionsForConjunction(left_stream_allowed_conjunctions, left_stream_header.getColumnsWithTypeAndName());
-    auto right_stream_filter_to_push_down = createActionsForConjunction(right_stream_allowed_conjunctions, right_stream_header.getColumnsWithTypeAndName());
+    UnorderedMapWithMemoryTracking<const Node *, const Node *> left_stream_cloned_nodes;
+    UnorderedMapWithMemoryTracking<const Node *, const Node *> right_stream_cloned_nodes;
+    auto left_stream_filter_to_push_down = createActionsForConjunction(
+        left_stream_allowed_conjunctions, left_stream_header.getColumnsWithTypeAndName(), &left_stream_cloned_nodes);
+    auto right_stream_filter_to_push_down = createActionsForConjunction(
+        right_stream_allowed_conjunctions, right_stream_header.getColumnsWithTypeAndName(), &right_stream_cloned_nodes);
 
-    auto replace_equivalent_columns_in_filter = [](
+    auto replace_equivalent_columns_in_filter = [&equivalent_expression_nodes](
         const ActionsDAG & filter,
         size_t filter_pos,
         const Block & stream_header,
-        const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & columns_to_replace)
+        const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & columns_to_replace,
+        const UnorderedMapWithMemoryTracking<const Node *, const Node *> & cloned_nodes)
     {
         std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> input_nodes_to_replace;
+
+        /// A key that is an expression is replaced as a whole. Its name tells nothing about its inputs,
+        /// so the rules below, which go by the name, do not apply to it.
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> expression_nodes;
+        for (const auto & [node, name] : equivalent_expression_nodes)
+        {
+            auto cloned_it = cloned_nodes.find(node);
+            if (cloned_it == cloned_nodes.end())
+                continue;
+
+            expression_nodes.insert(cloned_it->second);
+            if (auto it = columns_to_replace.find(name); it != columns_to_replace.end())
+                input_nodes_to_replace.emplace(cloned_it->second, it->second);
+        }
+
         for (const auto & node : filter.getNodes())
         {
+            if (expression_nodes.contains(&node))
+                continue;
+
             auto it = columns_to_replace.find(node.result_name);
             if (it == columns_to_replace.end())
                 continue;
@@ -4325,13 +4357,15 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         left_stream_filter_to_push_down->dag = replace_equivalent_columns_in_filter(left_stream_filter_to_push_down->dag,
             left_stream_filter_to_push_down->filter_pos,
             left_stream_header,
-            equivalent_right_stream_column_to_left_stream_column);
+            equivalent_right_stream_column_to_left_stream_column,
+            left_stream_cloned_nodes);
 
     if (right_stream_filter_to_push_down)
         right_stream_filter_to_push_down->dag = replace_equivalent_columns_in_filter(right_stream_filter_to_push_down->dag,
             right_stream_filter_to_push_down->filter_pos,
             right_stream_header,
-            equivalent_left_stream_column_to_right_stream_column);
+            equivalent_left_stream_column_to_right_stream_column,
+            right_stream_cloned_nodes);
 
     /*
      * We should check the presence of a split filter column name in stream columns to avoid removing the required column.
