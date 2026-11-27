@@ -676,7 +676,9 @@ void StorageBuffer::read(
             for (const auto & column : buffers_columns)
                 if (pipe_column_names.contains(column.name))
                     pipe_columns.add(column);
-            buffers_columns = std::move(pipe_columns);
+            /// The planner picks no column for a read of only virtual columns, and a table must declare one.
+            if (!pipe_columns.getAllPhysical().empty())
+                buffers_columns = std::move(pipe_columns);
         }
 
         auto storage = std::make_shared<StorageValues>(
