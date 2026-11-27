@@ -79,12 +79,6 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename ReplacementLookup>
-std::optional<ActionsDAG> buildFilterActionsDAGImpl(
-    const ActionsDAG::NodeRawConstPtrs & filter_nodes,
-    ReplacementLookup && replacement_lookup,
-    bool single_output_condition_node);
-
 std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const ActionsDAG::NodeRawConstPtrs & children)
 {
     size_t num_arguments = children.size();
@@ -3765,7 +3759,7 @@ bool allIndexHintsAllowed(const ActionsDAG::Node & node, ActionsDAG::PushDownInd
 /// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
 /// Allowed predicate is a predicate which can be calculated using only nodes from the allowed_nodes set.
 ConjunctionNodes getConjunctionNodes(
-    ActionsDAG::Node * predicate,
+    const ActionsDAG::Node * predicate,
     const ActionsDAG::NodeRawConstPtrs & inputs,
     UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> allowed_nodes,
     bool allow_non_deterministic_functions,
@@ -3830,22 +3824,9 @@ ConjunctionNodes getConjunctionNodes(
     return conjunction;
 }
 
-/// Returns true if the conjunct's sub-DAG reaches at least one node from allowed_nodes.
-/// Used to detect a conjunct that depends on no allowed input of a JOIN side (e.g. a pure
-/// constant like `1` or a folded `NULL`). Such a conjunct must not be pushed to a disabled
-/// (non-preserved) side: it would be evaluated on that side's input before the join, and the
-/// non-matched rows the OUTER join fabricates would not be constrained by it.
-bool conjunctDependsOnAllowedInput(const ActionsDAG::Node * conjunct, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & allowed_nodes)
-{
-    return anyReachableNode({conjunct}, [&](const ActionsDAG::Node * node) { return allowed_nodes.contains(node); });
 }
 
-}
-
-std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForConjunction(
-    NodeRawConstPtrs conjunction,
-    const ColumnsWithTypeAndName & all_inputs,
-    UnorderedMapWithMemoryTracking<const Node *, const Node *> * cloned_nodes_mapping)
+std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
 {
     if (conjunction.empty())
         return {};
@@ -3938,9 +3919,6 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
         return {};
     }
 
-    if (cloned_nodes_mapping)
-        *cloned_nodes_mapping = std::move(nodes_mapping);
-
     return ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter, false};
 }
 
@@ -4030,21 +4008,13 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     return actions;
 }
 
-ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPushDown(
-    const std::string & filter_name,
-    bool removes_filter,
-    const Names & left_stream_available_columns_to_push_down,
-    const Block & left_stream_header,
-    const Names & right_stream_available_columns_to_push_down,
-    const Block & right_stream_header,
-    const Names & equivalent_columns_to_push_down,
-    const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
-    const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
-    const NameSet & cross_type_equivalent_columns,
-    const UnorderedMapWithMemoryTracking<const Node *, String> & equivalent_expression_nodes,
-    bool keep_runtime_filters_out_of_left_stream,
-    bool keep_runtime_filters_out_of_right_stream,
-    bool filter_is_always_false)
+ActionsDAG::NodeRawConstPtrs ActionsDAG::getConjunctionsOver(
+    const Node * predicate, const UnorderedSetWithMemoryTracking<const Node *> & allowed_nodes) const
+{
+    return getConjunctionNodes(predicate, inputs, allowed_nodes, /*allow_non_deterministic_functions=*/ false).allowed;
+}
+
+bool ActionsDAG::keepConjunctionsInFilter(const std::string & filter_name, bool removes_filter, NodeRawConstPtrs conjunctions_to_keep)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -4053,362 +4023,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             filter_name,
             dumpDAG());
 
-    /// If condition is constant let's do nothing.
-    /// It means there is nothing to push down or optimization was already applied.
-    if (predicate->type == ActionType::COLUMN)
-        return {};
-
-    auto get_input_nodes = [this](const Names & inputs_names)
-    {
-        UnorderedSetWithMemoryTracking<const Node *> allowed_nodes;
-
-        std::unordered_map<std::string_view, std::list<const Node *>> inputs_map;
-        for (const auto & input_node : inputs)
-            inputs_map[input_node->result_name].emplace_back(input_node);
-
-        for (const auto & name : inputs_names)
-        {
-            auto & inputs_list = inputs_map[name];
-            if (inputs_list.empty())
-                continue;
-
-            allowed_nodes.emplace(inputs_list.front());
-            inputs_list.pop_front();
-        }
-
-        return allowed_nodes;
-    };
-
-    auto left_stream_allowed_nodes = get_input_nodes(left_stream_available_columns_to_push_down);
-    auto right_stream_allowed_nodes = get_input_nodes(right_stream_available_columns_to_push_down);
-    auto both_streams_allowed_nodes = get_input_nodes(equivalent_columns_to_push_down);
-    for (const auto & [node, _] : equivalent_expression_nodes)
-        both_streams_allowed_nodes.insert(node);
-
-    auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, inputs, left_stream_allowed_nodes, false);
-    auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, inputs, right_stream_allowed_nodes, false);
-    auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, inputs, both_streams_allowed_nodes, false);
-
-    /// A cross-type equivalent input is replaced below by a cast of the opposite side's key rather than
-    /// renamed to an equal-typed column, so it can be constant where the input is not and is computed a
-    /// second time: a conjunct reading one must read only its value, the same way in both evaluations.
-    UnorderedSetWithMemoryTracking<const Node *> cross_type_allowed_nodes;
-    for (const auto * node : both_streams_allowed_nodes)
-        if (cross_type_equivalent_columns.contains(node->result_name))
-            cross_type_allowed_nodes.insert(node);
-
-    if (!cross_type_allowed_nodes.empty())
-    {
-        auto reads_replaced_input_representation = [&](const Node * conjunct)
-        {
-            for (const auto * input : getInputsReadByRepresentation(*conjunct))
-                if (cross_type_allowed_nodes.contains(input))
-                    return true;
-            return false;
-        };
-
-        /// `getConjunctionNodes` asserts stability within the query over the visible functions only.
-        static constexpr auto is_unstable_within_query = [](const IFunctionBase & function)
-        { return function.isStateful() || !function.isDeterministicInScopeOfQuery(); };
-        auto hides_unstable_lambda_body_over_replaced_input = [&](const Node * conjunct)
-        {
-            bool hides_unstable_body = false;
-            bool reads_replaced_input = false;
-            visitReachableNodes({conjunct}, [&](const Node * node)
-            {
-                hides_unstable_body |= hasUnsafeHiddenLambdaBody(*node, is_unstable_within_query);
-                reads_replaced_input |= cross_type_allowed_nodes.contains(node);
-                return VisitResult::Continue;
-            });
-            return hides_unstable_body && reads_replaced_input;
-        };
-
-        NodeRawConstPtrs both_streams_value_only_conjunctions;
-        for (const auto * conjunct : both_streams_push_down_conjunctions.allowed)
-        {
-            if (reads_replaced_input_representation(conjunct) || hides_unstable_lambda_body_over_replaced_input(conjunct))
-                both_streams_push_down_conjunctions.rejected.push_back(conjunct);
-            else
-                both_streams_value_only_conjunctions.push_back(conjunct);
-        }
-        both_streams_push_down_conjunctions.allowed = std::move(both_streams_value_only_conjunctions);
-    }
-
-    /// getConjunctionNodes() classifies a conjunct as pushable to a side when all of its inputs are
-    /// allowed inputs of that side. A conjunct with no inputs (a pure constant such as a literal `1`
-    /// or a folded `NULL`) satisfies this trivially, so it is classified as pushable to EVERY side,
-    /// including a side that is disabled for push-down. A side is disabled exactly when its allowed
-    /// input set is empty, which is how the non-preserved side of an OUTER join is modeled. Pushing a
-    /// constant to a non-preserved side and dropping it from the post-join filter is wrong: a falsy or
-    /// NULL constant filters out that side's input, the OUTER join then fabricates non-matched rows
-    /// with the side's columns defaulted, and those rows escape the now constant-free post-join filter.
-    /// Move such no-input conjuncts back to the post-join filter, where they correctly constrain every
-    /// output row. This is applied only to a disabled side: pushing a constant to an enabled (preserved)
-    /// side is equivalent to keeping it in the post-join filter and is the intended push-down behaviour,
-    /// so the classification for enabled sides is left intact.
-    auto keep_conjuncts_depending_on_allowed_input = [](ConjunctionNodes & conjunctions, const UnorderedSetWithMemoryTracking<const Node *> & allowed_nodes)
-    {
-        NodeRawConstPtrs kept;
-        for (const auto * conjunct : conjunctions.allowed)
-        {
-            if (conjunctDependsOnAllowedInput(conjunct, allowed_nodes))
-                kept.push_back(conjunct);
-            else
-                conjunctions.rejected.push_back(conjunct);
-        }
-        conjunctions.allowed = std::move(kept);
-    };
-
-    const bool left_stream_push_down_enabled = !left_stream_allowed_nodes.empty();
-    const bool right_stream_push_down_enabled = !right_stream_allowed_nodes.empty();
-
-    /// If no row passes the filter, the join output is already empty once a side that may be filtered
-    /// receives it, so a disabled side can receive the no-input conjuncts too and is not read in vain.
-    if (!filter_is_always_false)
-    {
-        if (!left_stream_push_down_enabled)
-            keep_conjuncts_depending_on_allowed_input(left_stream_push_down_conjunctions, left_stream_allowed_nodes);
-        if (!right_stream_push_down_enabled)
-            keep_conjuncts_depending_on_allowed_input(right_stream_push_down_conjunctions, right_stream_allowed_nodes);
-        /// A both-streams conjunct is pushed to BOTH sides, so a no-input conjunct here is unsafe if
-        /// EITHER side is disabled.
-        if (!left_stream_push_down_enabled || !right_stream_push_down_enabled)
-            keep_conjuncts_depending_on_allowed_input(both_streams_push_down_conjunctions, both_streams_allowed_nodes);
-    }
-
-    /// `extractConjunctionAtoms` yields the atoms right to left, while `and` is evaluated left to right.
-    auto conjunction_atoms = extractConjunctionAtoms(predicate);
-    std::ranges::reverse(conjunction_atoms);
-
-    /// Two copies of a runtime filter may pass different rows, and a match removed from the side an OUTER or ANTI
-    /// join only matches against makes that join emit a row it would not, so no equivalent copy is pushed there.
-    auto is_runtime_filter = [](const Node * conjunct)
-    { return anyReachableNode({conjunct}, [](const Node * node) { return node->is_runtime_filter_id; }); };
-
-    auto collect_side_conjunctions_in_written_order = [&](const NodeRawConstPtrs & side_allowed_conjunctions, bool keep_runtime_filters_out)
-    {
-        std::unordered_set<const Node *> remaining(side_allowed_conjunctions.begin(), side_allowed_conjunctions.end());
-        for (const auto * conjunct : both_streams_push_down_conjunctions.allowed)
-            if (!keep_runtime_filters_out || !is_runtime_filter(conjunct))
-                remaining.insert(conjunct);
-
-        NodeRawConstPtrs ordered;
-        ordered.reserve(remaining.size());
-        for (const auto * atom : conjunction_atoms)
-            if (remaining.erase(atom) != 0)
-                ordered.push_back(atom);
-        chassert(remaining.empty());
-        return ordered;
-    };
-
-    NodeRawConstPtrs left_stream_allowed_conjunctions = collect_side_conjunctions_in_written_order(
-        left_stream_push_down_conjunctions.allowed, keep_runtime_filters_out_of_left_stream);
-    NodeRawConstPtrs right_stream_allowed_conjunctions = collect_side_conjunctions_in_written_order(
-        right_stream_push_down_conjunctions.allowed, keep_runtime_filters_out_of_right_stream);
-
-    UnorderedSetWithMemoryTracking<const Node *> rejected_conjunctions_set;
-    rejected_conjunctions_set.insert(left_stream_push_down_conjunctions.rejected.begin(), left_stream_push_down_conjunctions.rejected.end());
-    rejected_conjunctions_set.insert(right_stream_push_down_conjunctions.rejected.begin(), right_stream_push_down_conjunctions.rejected.end());
-    rejected_conjunctions_set.insert(both_streams_push_down_conjunctions.rejected.begin(), both_streams_push_down_conjunctions.rejected.end());
-    rejected_conjunctions_set.insert(both_streams_push_down_conjunctions.allowed.begin(), both_streams_push_down_conjunctions.allowed.end());
-
-    for (const auto & left_stream_allowed_conjunction : left_stream_allowed_conjunctions)
-        rejected_conjunctions_set.erase(left_stream_allowed_conjunction);
-
-    for (const auto & right_stream_allowed_conjunction : right_stream_allowed_conjunctions)
-        rejected_conjunctions_set.erase(right_stream_allowed_conjunction);
-
-    const size_t rejected_count = rejected_conjunctions_set.size();
-    NodeRawConstPtrs rejected_conjunctions;
-    rejected_conjunctions.reserve(rejected_count);
-    for (const auto * atom : conjunction_atoms)
-        if (rejected_conjunctions_set.erase(atom) != 0)
-            rejected_conjunctions.push_back(atom);
-    chassert(rejected_conjunctions.size() == rejected_count);
-
-    UnorderedMapWithMemoryTracking<const Node *, const Node *> left_stream_cloned_nodes_mapping;
-    UnorderedMapWithMemoryTracking<const Node *, const Node *> right_stream_cloned_nodes_mapping;
-    auto left_stream_filter_to_push_down = createActionsForConjunction(
-        left_stream_allowed_conjunctions, left_stream_header.getColumnsWithTypeAndName(), &left_stream_cloned_nodes_mapping);
-    auto right_stream_filter_to_push_down = createActionsForConjunction(
-        right_stream_allowed_conjunctions, right_stream_header.getColumnsWithTypeAndName(), &right_stream_cloned_nodes_mapping);
-
-    auto replace_equivalent_columns_in_filter = [&equivalent_expression_nodes](
-        const ActionsDAG & filter,
-        size_t filter_pos,
-        const Block & stream_header,
-        const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & columns_to_replace,
-        const UnorderedMapWithMemoryTracking<const Node *, const Node *> & cloned_nodes_mapping)
-    {
-        std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> input_nodes_to_replace;
-
-        /// A key that is an expression is replaced as a whole. Its name tells nothing about its inputs,
-        /// so the rules below, which go by the name, do not apply to it.
-        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> expression_nodes;
-        for (const auto & [node, name] : equivalent_expression_nodes)
-        {
-            auto cloned_it = cloned_nodes_mapping.find(node);
-            if (cloned_it == cloned_nodes_mapping.end())
-                continue;
-
-            expression_nodes.insert(cloned_it->second);
-            if (auto it = columns_to_replace.find(name); it != columns_to_replace.end())
-                input_nodes_to_replace.emplace(cloned_it->second, it->second);
-        }
-
-        for (const auto & node : filter.getNodes())
-        {
-            if (expression_nodes.contains(&node))
-                continue;
-
-            auto it = columns_to_replace.find(node.result_name);
-            if (it == columns_to_replace.end())
-                continue;
-
-            std::vector<const ActionsDAG::Node *> input_nodes;
-            visitReachableNodes({&node}, [&](const ActionsDAG::Node * current)
-            {
-                if (current->type == ActionsDAG::ActionType::INPUT)
-                    input_nodes.push_back(current);
-                return VisitResult::Continue;
-            });
-
-            /// `Cast JOIN USING columns` preserves the original result name on derived nodes.
-            /// Replacing such nodes directly would drop the cast. Rebind the unique source input
-            /// of the equivalent expression instead, so the conversion chain is preserved.
-            if (input_nodes.size() != 1)
-                continue;
-
-            /// An input that is a key itself keeps that key's replacement, or an expression over it would be applied twice.
-            if (&node != input_nodes.front() && columns_to_replace.contains(input_nodes.front()->result_name))
-                continue;
-
-            input_nodes_to_replace.insert_or_assign(input_nodes.front(), it->second);
-        }
-
-        auto updated_filter = *buildFilterActionsDAGImpl(
-            {filter.getOutputs()[filter_pos]},
-            [&](const ActionsDAG::Node * node) -> const ColumnWithTypeAndName *
-            {
-                auto it = input_nodes_to_replace.find(node);
-                if (it == input_nodes_to_replace.end())
-                    return nullptr;
-                return &it->second;
-            },
-            true /* single_output_condition_node */);
-        chassert(updated_filter.getOutputs().size() == 1);
-
-        /** If result filter to left or right stream has column that is one of the stream inputs, we need distinguish filter column from
-          * actual input column. It is necessary because after filter step, filter column became constant column with value 1, and
-          * not all JOIN algorithms properly work with constants.
-          *
-          * Example: SELECT key FROM ( SELECT key FROM t1 ) AS t1 JOIN ( SELECT key FROM t1 ) AS t2 ON t1.key = t2.key WHERE key;
-          */
-        const auto * stream_filter_node = updated_filter.getOutputs()[0];
-        if (stream_header.has(stream_filter_node->result_name))
-        {
-            const auto & alias_node = updated_filter.addAlias(*stream_filter_node, "__filter" + stream_filter_node->result_name);
-            updated_filter.getOutputs()[0] = &alias_node;
-        }
-
-        std::unordered_map<std::string, std::list<const Node *>> updated_filter_inputs;
-
-        for (const auto & input : updated_filter.getInputs())
-            updated_filter_inputs[input->result_name].push_back(input);
-
-        for (const auto & input : filter.getInputs())
-        {
-            if (updated_filter_inputs.contains(input->result_name))
-                continue;
-
-            const Node * updated_filter_input_node = nullptr;
-
-            auto it = columns_to_replace.find(input->result_name);
-            if (it != columns_to_replace.end())
-                updated_filter_input_node = &updated_filter.addInput(it->second);
-            else
-                updated_filter_input_node = &updated_filter.addInput({input->column, input->result_type, input->result_name});
-
-            updated_filter_inputs[input->result_name].push_back(updated_filter_input_node);
-        }
-
-        for (const auto & input_column : stream_header.getColumnsWithTypeAndName())
-        {
-            const Node * input = nullptr;
-            auto & list = updated_filter_inputs[input_column.name];
-            if (list.empty())
-            {
-                input = &updated_filter.addInput(input_column);
-            }
-            else
-            {
-                input = list.front();
-                list.pop_front();
-            }
-
-            if (input != updated_filter.getOutputs()[0])
-                updated_filter.outputs.push_back(input);
-        }
-
-        return updated_filter;
-    };
-
-    if (left_stream_filter_to_push_down)
-        left_stream_filter_to_push_down->dag = replace_equivalent_columns_in_filter(left_stream_filter_to_push_down->dag,
-            left_stream_filter_to_push_down->filter_pos,
-            left_stream_header,
-            equivalent_right_stream_column_to_left_stream_column,
-            left_stream_cloned_nodes_mapping);
-
-    if (right_stream_filter_to_push_down)
-        right_stream_filter_to_push_down->dag = replace_equivalent_columns_in_filter(right_stream_filter_to_push_down->dag,
-            right_stream_filter_to_push_down->filter_pos,
-            right_stream_header,
-            equivalent_left_stream_column_to_right_stream_column,
-            right_stream_cloned_nodes_mapping);
-
-    /*
-     * We should check the presence of a split filter column name in stream columns to avoid removing the required column.
-     *
-     * Example:
-     * A filter expression is `a AND b = c`, but `b` and `c` belong to another side of the join and not in allowed columns to push down,
-     * so the final split filter is just `a`.
-     * In this case `a` can be in stream columns but not `and(a, equals(b, c))`.
-     */
-
-    bool left_stream_filter_removes_filter = true;
-    bool right_stream_filter_removes_filter = true;
-    std::optional<ActionsDAG> left_stream_filter_to_push_down_dag;
-    std::optional<ActionsDAG> right_stream_filter_to_push_down_dag;
-
-    if (left_stream_filter_to_push_down)
-    {
-        const auto & left_stream_filter_column_name = left_stream_filter_to_push_down->dag.getOutputs()[0]->result_name;
-        left_stream_filter_removes_filter = !left_stream_header.has(left_stream_filter_column_name);
-        left_stream_filter_to_push_down_dag = std::move(left_stream_filter_to_push_down->dag);
-    }
-
-    if (right_stream_filter_to_push_down)
-    {
-        const auto & right_stream_filter_column_name = right_stream_filter_to_push_down->dag.getOutputs()[0]->result_name;
-        right_stream_filter_removes_filter = !right_stream_header.has(right_stream_filter_column_name);
-        right_stream_filter_to_push_down_dag = std::move(right_stream_filter_to_push_down->dag);
-    }
-
-    ActionsDAG::ActionsForJOINFilterPushDown result{
-        .left_stream_filter_to_push_down = std::move(left_stream_filter_to_push_down_dag),
-        .left_stream_filter_removes_filter = left_stream_filter_removes_filter,
-        .right_stream_filter_to_push_down = std::move(right_stream_filter_to_push_down_dag),
-        .right_stream_filter_removes_filter = right_stream_filter_removes_filter,
-        .is_filter_const_after_all_push_downs = false};
-
-    if (!result.left_stream_filter_to_push_down && !result.right_stream_filter_to_push_down)
-        return result;
-
-    /// Now, when actions are created, update the current DAG.
-    result.is_filter_const_after_all_push_downs = removeUnusedConjunctions(std::move(rejected_conjunctions), predicate, removes_filter);
-
-    return result;
+    return removeUnusedConjunctions(std::move(conjunctions_to_keep), predicate, removes_filter);
 }
 
 bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter)
@@ -4518,7 +4133,8 @@ template <typename ReplacementLookup>
 std::optional<ActionsDAG> buildFilterActionsDAGImpl(
     const ActionsDAG::NodeRawConstPtrs & filter_nodes,
     ReplacementLookup && replacement_lookup,
-    bool single_output_condition_node)
+    bool single_output_condition_node,
+    const ActionsDAG::NodeMapping * node_replacements = nullptr)
 {
     if (filter_nodes.empty())
         return {};
@@ -4554,6 +4170,24 @@ std::optional<ActionsDAG> buildFilterActionsDAGImpl(
         }
 
         const ActionsDAG::Node * result_node = nullptr;
+
+        /// A replaced node is built as the node that replaces it. That node has the same type and is built first.
+        if (node_replacements)
+        {
+            if (auto it = node_replacements->find(node); it != node_replacements->end() && it->second != node)
+            {
+                auto built = node_to_result_node.find(it->second);
+                if (built == node_to_result_node.end())
+                {
+                    nodes_to_process.push_back({it->second, false /*visited_children*/});
+                    continue;
+                }
+
+                node_to_result_node.emplace(node, built->second);
+                nodes_to_process.pop_back();
+                continue;
+            }
+        }
 
         if (const auto * replacement = replacement_lookup(node))
         {
@@ -4722,6 +4356,15 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
     };
 
     return buildFilterActionsDAGImpl(filter_nodes, replacement_lookup, single_output_condition_node);
+}
+
+ActionsDAG ActionsDAG::buildFilterActionsDAGWithReplacedNodes(const NodeRawConstPtrs & filter_nodes, const NodeMapping & node_replacements)
+{
+    return *buildFilterActionsDAGImpl(
+        filter_nodes,
+        [](const Node *) -> const ColumnWithTypeAndName * { return nullptr; },
+        true /*single_output_condition_node*/,
+        &node_replacements);
 }
 
 ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * predicate)

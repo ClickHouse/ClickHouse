@@ -57,6 +57,17 @@ SELECT countIf(explain LIKE '%ilter column:%k + 1 < 8%') FROM (
     SELECT count() FROM t_l AS l INNER JOIN t_r AS r ON l.k = r.k AND l.k + 1 = r.k + 1 WHERE l.k + 1 < 8
 );
 
+SELECT 'Keys of different types: the other side gets a cast of its key to the common type';
+DROP TABLE IF EXISTS t_r32;
+CREATE TABLE t_r32 (x UInt32) ENGINE = Memory;
+INSERT INTO t_r32 SELECT number FROM numbers(5, 12);
+SELECT count(), sum(l.k), sum(r.x) FROM t_l AS l INNER JOIN t_r32 AS r ON l.k + 1 = r.x WHERE l.k + 1 > 8;
+SELECT countIf(explain LIKE '%ilter column:%k + 1 > 8%'), countIf(explain LIKE '%ilter column:%CAST(x AS UInt64) > 8%') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM t_l AS l INNER JOIN t_r32 AS r ON l.k + 1 = r.x WHERE l.k + 1 > 8
+);
+DROP TABLE t_r32;
+
 SELECT 'A predicate that also reads a column that is not a key stays on its side';
 SELECT count(), sum(l.k), sum(r.k) FROM t_l AS l INNER JOIN t_r AS r ON l.k + 1 = r.k + 1 WHERE l.k + 1 < 8 OR l.k = 9;
 SELECT countIf(explain LIKE '%ilter column:%k + 1 < 8%') FROM (
