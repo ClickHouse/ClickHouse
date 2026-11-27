@@ -531,7 +531,7 @@ protected:
         bytes_added = 0;
     }
 
-    bool outputBlockIsFull() const
+    [[nodiscard]] bool outputBlockIsFull() const
     {
         return (join.max_joined_block_rows && rows_added > join.max_joined_block_rows)
             || (join.max_joined_block_bytes && bytes_added > join.max_joined_block_bytes);

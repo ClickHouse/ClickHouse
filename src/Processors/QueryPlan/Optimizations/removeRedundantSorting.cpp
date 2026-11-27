@@ -1,14 +1,16 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
-#include <Processors/QueryPlan/IEJoinStep.h>
+#include <Processors/QueryPlan/InequalityJoinStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -34,7 +36,7 @@ class RemoveRedundantSorting : public QueryPlanVisitor<RemoveRedundantSorting>
     /// stack with nodes which affect order
     /// nodes added when traversing top-down
     /// as soon as all children for the node on top of stack are traversed, the node is removed from stack
-    std::vector<QueryPlan::Node *> nodes_affect_order;
+    VectorWithMemoryTracking<QueryPlan::Node *> nodes_affect_order;
 
 public:
     explicit RemoveRedundantSorting(QueryPlan::Node * root_) : QueryPlanVisitor<RemoveRedundantSorting>(root_) { }
@@ -261,10 +263,18 @@ private:
             {
                 if (typeid_cast<const FullSortingMergeJoin *>(join_step->getJoin().get()))
                     return false;
+
+                /// PASTE JOIN aligns rows from both sides by position, so sorting of its inputs is not redundant
+                if (join_step->getJoin()->getTableJoin().kind() == JoinKind::Paste)
+                    return false;
             }
 
-            /// (3) IEJoin merges its pre-sorted inputs, its sortings are not redundant
-            if (typeid_cast<const IEJoinStep *>(step))
+            if (const auto * logical_join = typeid_cast<const JoinStepLogical *>(step);
+                logical_join && logical_join->getJoinOperator().kind == JoinKind::Paste)
+                return false;
+
+            /// (3) InequalityJoin merges its pre-sorted inputs, its sortings are not redundant
+            if (typeid_cast<const InequalityJoinStep *>(step))
                 return false;
         }
 

@@ -255,8 +255,8 @@ std::string referenceEncode(const std::string & src)
     }
 
     std::string out(zeros, '1');
-    for (size_t i = digits.size(); i-- > 0;)
-        out.push_back(reference_alphabet[digits[i]]);
+    for (size_t i = digits.size(); i > 0; --i)
+        out.push_back(reference_alphabet[digits[i - 1]]);
     return out;
 }
 
@@ -284,8 +284,8 @@ std::string referenceDecode(const std::string & src)
     }
 
     std::string out(zeros, '\0');
-    for (size_t i = bytes.size(); i-- > 0;)
-        out.push_back(static_cast<char>(bytes[i]));
+    for (size_t i = bytes.size(); i > 0; --i)
+        out.push_back(static_cast<char>(bytes[i - 1]));
     return out;
 }
 

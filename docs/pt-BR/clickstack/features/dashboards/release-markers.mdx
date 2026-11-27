@@ -7,33 +7,33 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'marcadores de lançamento', 'acompanhamento de implantações', 'service.version', 'anotações', 'observabilidade']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 A primeira pergunta diante de um pico de latência ou de erros geralmente é se algo foi implantado. Os gráficos de série temporal do dashboard podem respondê-la imediatamente: ative os marcadores de lançamento, e cada bloco exibirá uma linha vertical tracejada no momento em que uma versão de um serviço aparecer pela primeira vez na telemetria.
 
 As versões vêm da telemetria que você já envia, lida por meio de uma expressão na fonte do bloco. Não é preciso configurar uma integração de CI nem enviar nada no momento da implantação.
 
-<div id="turn-on">
-  ## Ative os marcadores
-</div>
+## Ative os marcadores {#turn-on}
 
 Os marcadores de lançamento ficam desativados por padrão. Abra o menu de opções de um dashboard e selecione **Mostrar marcadores de lançamento**.
 
-<Image img="/images/clickstack/dashboards/release-markers-menu.webp" alt="Menu de opções do dashboard com o item Mostrar marcadores de lançamento na seção Visualização, abaixo de Mostrar anotações de alertas" size="sm" />
+<div className="ch-image-sm">
+  <Frame>
+    ![Menu de opções do dashboard com o item Mostrar marcadores de lançamento na seção Visualização, abaixo de Mostrar anotações de alertas](/images/clickstack/dashboards/release-markers-menu.webp)
+  </Frame>
+</div>
 
 O controle adiciona `releaseMarkers=true` à URL do dashboard; assim, um link compartilhado é aberto com os marcadores já ativados. Trata-se de um estado de visualização, e não da configuração do dashboard: ele não é salvo com o dashboard, e desativá-lo remove o parâmetro novamente.
 
-Os marcadores são exibidos em blocos de séries temporais cuja fonte é uma fonte de logs ou traces. As [anotações de alertas](/pt-BR/clickstack/features/alerts) vêm do mesmo menu e podem ser exibidas ao mesmo tempo — os dois conjuntos de marcadores são exibidos juntos, e cada um mantém seus próprios labels.
+Os marcadores são exibidos em blocos de séries temporais cuja fonte é uma fonte de logs ou traces. As [anotações de alertas](/pt-BR/clickstack/features/alerts) vêm do mesmo menu e podem ser exibidas ao mesmo tempo — os dois conjuntos de marcadores são exibidos juntos, e cada um mantém seus próprios rótulos.
 
-<div id="version-expression">
-  ## Configure a origem da versão
-</div>
+## Configure a origem da versão {#version-expression}
 
 Por padrão, o ClickStack lê `ResourceAttributes['service.version']`, o atributo de recurso do OpenTelemetry. Se os seus serviços seguem as [convenções semânticas de recursos de serviço](https://opentelemetry.io/docs/specs/semconv/registry/attributes/service/), os marcadores funcionam sem configuração.
 
 Para ler a versão de outro local, defina **Service Version Expression** na fonte de log ou trace. Edite a fonte em **Team Settings → Sources**. Em uma fonte de log, o campo fica em **Configure Optional Fields**; em uma fonte de trace, ele aparece diretamente no formulário, abaixo de **Service Name Expression**.
 
-<Image img="/images/clickstack/dashboards/service-version-expression.webp" alt="Campo Service Version Expression nos campos opcionais de uma fonte de log, mostrando o placeholder padrão ResourceAttributes['service.version']" size="lg" />
+<Frame>
+  ![Campo Service Version Expression nos campos opcionais de uma fonte de log, mostrando o placeholder padrão ResourceAttributes\['service.version'\]](/images/clickstack/dashboards/service-version-expression.webp)
+</Frame>
 
 O valor é uma expressão SQL, não um nome de atributo, o que abrange dois casos comuns:
 
@@ -50,7 +50,7 @@ coalesce(
 O campo também é exposto como `serviceVersionExpression` nas fontes de logs e traces na [API de fontes](/pt-BR/clickstack/api-reference), para que você possa defini-lo ao provisionar fontes de forma programática. Consulte a lista completa de configurações de fontes para [logs](/pt-BR/clickstack/managing/config#logs) e [traces](/pt-BR/clickstack/managing/config#traces).
 
 <div id="what-a-marker-means">
-  ## O que significa um marcador
+  ## O que significa um marcador {#what-a-marker-means}
 </div>
 
 Um marcador registra que um valor de versão apareceu pela primeira vez nos dados do bloco dentro da janela visível. Isso se aproxima de uma implantação, mas deliberadamente não representa a mesma coisa; por isso, são marcadores de lançamento, e não marcadores de implantação:
@@ -61,7 +61,7 @@ Um marcador registra que um valor de versão apareceu pela primeira vez nos dado
 A versão que já estava em execução quando a janela foi aberta é identificada e descartada, em vez de ser exibida como um lançamento que nunca ocorreu. Para isso, a consulta retrocede antes do início da janela — em 30 minutos ou 10% da janela, se esse período for maior — para localizar a versão em execução.
 
 <div id="scoping">
-  ## Quais lançamentos um bloco exibe
+  ## Quais lançamentos um bloco exibe {#scoping}
 </div>
 
 A consulta de lançamentos é executada na própria fonte do bloco, com os predicados do próprio bloco: sua cláusula `WHERE`, o filtro de cada série e quaisquer [filtros do dashboard](/pt-BR/clickstack/features/dashboards/overview#custom-filters). O que um bloco exibe depende do que ele mostra no gráfico:
@@ -74,13 +74,15 @@ A consulta de lançamentos é executada na própria fonte do bloco, com os predi
 
 No terceiro caso, o serviço de um marcador não tem uma linha correspondente no gráfico, portanto os marcadores são omitidos. Se todos os lançamentos na janela forem de um único serviço, eles serão exibidos na cor padrão dos marcadores.
 
-<div id="reading-markers">
-  ## Ler marcadores em um gráfico com muitas séries
-</div>
+## Ler marcadores em um gráfico com muitas séries {#reading-markers}
 
 Passe o cursor sobre o rótulo de um marcador para listar todos os lançamentos naquele ponto, cada um com o serviço que o disponibilizou, sua versão e o horário.
 
-<Image img="/images/clickstack/dashboards/release-marker-tooltip.webp" alt="Dica de ferramenta exibida ao passar o cursor sobre um marcador de lançamento, mostrando o serviço frontend, a versão 2.0.2 e o horário em que a versão apareceu pela primeira vez, em um gráfico de dois serviços" size="sm" />
+<div className="ch-image-sm">
+  <Frame>
+    ![Dica de ferramenta exibida ao passar o cursor sobre um marcador de lançamento, mostrando o serviço frontend, a versão 2.0.2 e o horário em que a versão apareceu pela primeira vez, em um gráfico de dois serviços](/images/clickstack/dashboards/release-marker-tooltip.webp)
+  </Frame>
+</div>
 
 A cor associa um marcador à sua série, mas a legenda do gráfico mostra no máximo quatro entradas antes de recolher as demais em &quot;+N more&quot;, e nesse ponto não há nada na tela com que comparar a cor. A dica de ferramenta informa diretamente o nome do serviço, portanto funciona independentemente de quantas séries o bloco exibe.
 
@@ -89,7 +91,7 @@ Marcadores muito próximos para serem rotulados individualmente são agrupados e
 Arrastar horizontalmente sobre o gráfico continua ampliando a visualização enquanto os marcadores são exibidos.
 
 <div id="limitations">
-  ## Limitações
+  ## Limitações {#limitations}
 </div>
 
 * **Apenas blocos de séries temporais.** Tabelas, números e mapas de calor não exibem marcadores.

@@ -38,16 +38,16 @@ public:
     static constexpr auto name = "space";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSpace>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Integer) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
@@ -123,7 +123,7 @@ public:
     }
 
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & col_num = arguments[0].column;
 
@@ -171,7 +171,7 @@ Concatenates a space (` `) as many times with itself as specified.
     FunctionDocumentation::Arguments arguments = {
         {"n", "The number of times to repeat the space.", {"(U)Int*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns astring containing a space repeated `n` times. If `n <= 0`, the function returns the empty string.", {"String"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing a space repeated `n` times. If `n <= 0`, the function returns the empty string.", {"String"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",

@@ -9,6 +9,7 @@
                 <!-- Placeholders changed by the tests: a setting the S3 client is built from and one it is not. -->
                 <s3_retry_attempts>10</s3_retry_attempts>
                 <s3_max_single_read_retries>4</s3_max_single_read_retries>
+                <persistent_removal_log>true</persistent_removal_log>
             </s3_disk_repro>
             <s3_cache_repro>
                 <type>cache</type>
@@ -28,6 +29,7 @@
                         <enabled>1</enabled>
                     </main>
                 </locations>
+                <persistent_removal_log>true</persistent_removal_log>
             </s3_locations_repro>
         </disks>
     </storage_configuration>

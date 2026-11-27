@@ -3,6 +3,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Server/HTTP/exceptionCodeToHTTPStatus.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTPHandler.h>
 #include <Server/IServer.h>
@@ -10,9 +11,12 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/String.h>
 #include <Poco/URI.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/setThreadName.h>
 #include "config.h"
 
@@ -40,6 +44,10 @@
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
+#if USE_PROMETHEUS_PROTOBUFS
+#include <google/protobuf/arena.h>
+#endif
+
 
 namespace DB
 {
@@ -47,18 +55,40 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 http_response_buffer_size;
+    extern const SettingsString log_comment;
+}
+
+namespace FailPoints
+{
+    extern const char prometheus_handler_finalize_throw[];
 }
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int FAULT_INJECTED;
     extern const int INCOMPATIBLE_SCHEMA;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
     extern const int SNAPPY_UNCOMPRESS_FAILED;
     extern const int UNSUPPORTED_MEDIA_TYPE;
     extern const int ZSTD_DECODER_FAILED;
+}
+
+namespace
+{
+
+/// Writes an error of the Prometheus HTTP API in its JSON format.
+void writePrometheusError(WriteBuffer & out, std::string_view error_type, std::string_view message)
+{
+    writeString(R"({"status":"error","errorType":")", out);
+    writeString(error_type, out);
+    writeString(R"(","error":)", out);
+    writeJSONString(message, out, FormatSettings{});
+    writeChar('}', out);
+}
+
 }
 
 /// Base implementation of a prometheus protocol.
@@ -69,8 +99,13 @@ public:
     virtual ~Impl() = default;
     virtual void beforeHandlingRequest(HTTPServerRequest & /* request */) {}
     virtual bool isSettingLikeParameter(const String & /* name */) { return false; }
+
+    /// Whether a URI parameter carries a PromQL expression. Such parameters are hidden in the request URI recorded in spans,
+    /// because `query_masking_rules` are not applied to it.
+    [[nodiscard]] virtual bool isQueryTextParameter(const String & /* name */) const { return false; }
     virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
     virtual void onException() {}
+    [[nodiscard]] virtual bool sendsJSONErrors() const { return false; }
 
 protected:
     PrometheusRequestHandler & parent() { return parent_ref; }
@@ -93,7 +128,7 @@ public:
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling metrics request from {}", request.get("User-Agent"));
+        LOG_DEBUG(log(), "Handling metrics request from {}", request.get("User-Agent", ""));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Metrics);
     }
 
@@ -136,7 +171,7 @@ public:
 
     /// When true, `handleRequest` parses `application/x-www-form-urlencoded` (and multipart) bodies for POST/PUT.
     /// Must stay false for Write/Read so the raw body stream stays available for protobuf.
-    virtual bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const { return false; }
+    [[nodiscard]] virtual bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const { return false; }
 
 protected:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
@@ -160,6 +195,10 @@ protected:
             return; /// The user is not authenticated yet, and the HTTP_UNAUTHORIZED response is sent with the "WWW-Authenticate" header,
                     /// and `request_credentials` must be preserved until the next request or until any exception.
 
+        /// Without a client trace, the user's and the request's settings decide whether to trace the request.
+        if (!parent().thread_trace_context)
+            parent().thread_trace_context = parent().startTracing(request, context);
+
         /// Apply `http_response_buffer_size` for the output buffer (0 means use the default).
         auto buffer_size = context->getSettingsRef()[Setting::http_response_buffer_size].value;
         if (buffer_size == 0)
@@ -177,6 +216,8 @@ protected:
     bool authenticateUserAndMakeContext(HTTPServerRequest & request, HTTPServerResponse & response)
     {
         session = std::make_unique<Session>(server().context(), ClientInfo::Interface::PROMETHEUS, request.isSecure());
+
+        session->getClientTraceContext() = parent().client_trace_context;
 
         if (!authenticateUser(request, response))
             return false;
@@ -202,9 +243,13 @@ protected:
         return !reserved_param_names.contains(name);
     }
 
+    /// Returns the settings which the handler derives from its own parameters.
+    [[nodiscard]] virtual SettingsChanges getSettingsFromParams() const { return {}; }
+
     void makeContext(HTTPServerRequest & request)
     {
-        context = session->makeQueryContext();
+        /// Pass a copy, because without a session context `makeQueryContext()` drops the session's client info.
+        context = session->makeQueryContext(ClientInfo{session->getClientInfo()});
 
         /// Anything else beside HTTP POST should be readonly queries.
         setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
@@ -225,6 +270,11 @@ protected:
 
         context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
         context->applySettingsChanges(settings_changes);
+
+        /// Applied last and even when unchanged, so neither the request nor a Distributed table's settings override them.
+        const SettingsChanges derived_changes = getSettingsFromParams();
+        context->checkSettingsConstraints(derived_changes, SettingSource::QUERY);
+        context->applySettingsChanges(derived_changes);
 
         /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
         String query_id = params->get("query_id", request.get("X-ClickHouse-Query-Id", ""));
@@ -299,7 +349,7 @@ public:
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling remote write request from {}", request.get("User-Agent", ""));
+        LOG_DEBUG(log(), "Handling remote write request from {}", request.get("User-Agent", ""));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Write
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
@@ -327,7 +377,8 @@ public:
         auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
         PrometheusRemoteWriteProtocol protocol{table, context};
 
-        prometheus::WriteRequest write_request;
+        google::protobuf::Arena arena;
+        prometheus::WriteRequest & write_request = *google::protobuf::Arena::Create<prometheus::WriteRequest>(&arena);
 
         {
             ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{std::move(decompressing_buf)};
@@ -366,7 +417,7 @@ public:
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling remote read request from {}", request.get("User-Agent", ""));
+        LOG_DEBUG(log(), "Handling remote read request from {}", request.get("User-Agent", ""));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Read
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
@@ -452,11 +503,13 @@ class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 public:
     using ImplWithContext::ImplWithContext;
 
-    bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const override { return true; }
+    [[nodiscard]] bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const override { return true; }
+
+    [[nodiscard]] bool sendsJSONErrors() const override { return true; }
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling Prometheus HTTP API query request from {}", request.get("User-Agent", ""));
+        LOG_DEBUG(log(), "Handling Prometheus HTTP API query request from {}", request.get("User-Agent", ""));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Query
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
@@ -467,15 +520,36 @@ public:
         if (name.empty())
             return false;
 
+        /// Parameters of other Prometheus-compatible servers; `nocache` and `partial_response=false` are mapped in getSettingsFromParams.
+        static const NameSet ignored_param_names{"nocache", "trace", "round_digits", "partial_response", "dedup"};
+        if (ignored_param_names.contains(name) || unsupported_param_names.contains(name))
+            return false;
+
         /// Some parameters (default_format, everything used in the code above) do not belong to the
         /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
         static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "database", "table"};
         return !reserved_param_names.contains(name);
     }
 
+    [[nodiscard]] SettingsChanges getSettingsFromParams() const override
+    {
+        SettingsChanges changes;
+        if (hasParamValue("nocache", true))
+            changes.push_back({"use_query_cache", false});
+        if (hasParamValue("partial_response", false))
+            changes.push_back({"skip_unavailable_shards", false});
+        return changes;
+    }
+
+    [[nodiscard]] bool isQueryTextParameter(const String & name) const override
+    {
+        /// Case-insensitive, like the `params->get` lookups above.
+        return Poco::icompare(name, "query") == 0 || Poco::icompare(name, "match[]") == 0;
+    }
+
     /// Parses the optional `limit` parameter of the metadata endpoints: the maximum number of returned items,
     /// with 0 (the default) meaning no limit.
-    UInt64 getLimitParam() const
+    [[nodiscard]] UInt64 getLimitParam() const
     {
         String limit_param = params->get("limit", "");
         if (limit_param.empty())
@@ -494,12 +568,27 @@ public:
         const String & uri = request.getURI();
         /// This endpoint accepts user/password (and other secrets) as query-string parameters via
         /// authenticateUserByHTTP, so the URI must be masked before it reaches the logs.
-        LOG_DEBUG(log(), "Processing Prometheus HTTP API query request: method={}, uri={}", request.getMethod(), maskSensitiveQueryParametersInURI(uri));
+        LOG_DEBUG(log(), "Processing Prometheus HTTP API query request: method={}, uri={}", request.getMethod(), parent().getURIForLogging(request));
 
         response.setContentType("application/json");
 
+        /// A failed table lookup goes to the outer handler, which keeps its HTTP status (e.g. 404 for an unknown table).
+        StoragePtr table;
+        if (!Poco::URI(uri).getPath().ends_with("/format_query"))
+            table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+
         try
         {
+            for (const auto & name : unsupported_param_names)
+                if (params->has(name))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The '{}' parameter is not supported", name);
+
+            /// Deduplication and partial responses are not implemented; `dedup=false` and `partial_response=false` ask only for the default.
+            if (hasParamValue("dedup", true))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'dedup=true' parameter is not supported");
+            if (hasParamValue("partial_response", true))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'partial_response=true' parameter is not supported");
+
             /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
             /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
             /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
@@ -514,7 +603,6 @@ public:
                 return;
             }
 
-            auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
             auto query_finish_callback = [&]()
@@ -525,6 +613,7 @@ public:
             if (uri_path.ends_with("/query_range"))
             {
                 String query = params->get("query", "");
+                setLogCommentToPromQL(query);
                 String start = params->get("start", "");
                 String end = params->get("end", "");
                 String step = params->get("step", "");
@@ -550,6 +639,7 @@ public:
             else if (uri_path.ends_with("/query"))
             {
                 String query = params->get("query", "");
+                setLogCommentToPromQL(query);
                 String time = params->get("time", "");
                 String lookback_delta = params->get("lookback_delta", "");
 
@@ -567,6 +657,11 @@ public:
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
+            }
+            else if (uri_path.ends_with("/federate"))
+            {
+                response.setContentType("text/plain; version=0.0.4; charset=utf-8; escaping=underscores");
+                protocol.federate(getOutputStream(response), params->getAll("match[]"), query_finish_callback);
             }
             else if (uri_path.ends_with("/parse_query"))
             {
@@ -610,7 +705,7 @@ public:
             }
             else
             {
-                LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", maskSensitiveQueryParametersInURI(uri), request.getMethod());
+                LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", parent().getURIForLogging(request), request.getMethod());
                 response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
                 writeString(R"({"status":"error","errorType":"not_found","error":"API endpoint not found"})", getOutputStream(response));
             }
@@ -627,18 +722,20 @@ public:
             /// before writing the error response.
             getOutputStream(response).rejectBufferedDataSave();
 
+            if (parent().thread_trace_context)
+                parent().thread_trace_context->root_span.addAttribute(e);
+
             /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
             /// not with the query: report it as an internal error so that clients don't attribute it
             /// to the PromQL expression.
             bool server_side_error = (e.code() == ErrorCodes::INCOMPATIBLE_SCHEMA);
+            /// The error body is JSON, also for endpoints whose success body is not.
+            response.setContentType("application/json");
             response.setStatusAndReason(
                 server_side_error ? Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR : Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             String error_str;
             WriteBufferFromString error_buf(error_str);
-            writeString(server_side_error ? R"({"status":"error","errorType":"internal","error":)"
-                                          : R"({"status":"error","errorType":"bad_data","error":)", error_buf);
-            writeJSONString(e.message(), error_buf, FormatSettings{});
-            writeString("}", error_buf);
+            writePrometheusError(error_buf, server_side_error ? "internal" : "bad_data", e.message());
             error_buf.finalize();
             writeString(error_str, getOutputStream(response));
 
@@ -647,6 +744,38 @@ public:
     }
 
 private:
+    /// These parameters change which series a client gets, so they are rejected and never ignored.
+    static inline const NameSet unsupported_param_names{"extra_label", "extra_filters", "extra_filters[]"};
+
+    /// Checks every value of a boolean parameter, because a client may repeat it.
+    [[nodiscard]] bool hasParamValue(const String & name, bool value) const
+    {
+        bool found = false;
+        for (const auto & param_value : params->getAll(name))
+            found |= (parseBoolParam(name, param_value) == value);
+        return found;
+    }
+
+    /// Accepts the spellings of Go's strconv.ParseBool, which Thanos uses for these parameters.
+    static bool parseBoolParam(const String & name, const String & value)
+    {
+        static const NameSet true_values{"1", "t", "T", "true", "TRUE", "True"};
+        static const NameSet false_values{"0", "f", "F", "false", "FALSE", "False"};
+        if (true_values.contains(value))
+            return true;
+        if (false_values.contains(value))
+            return false;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid value of the '{}' parameter: '{}', expected a boolean", name, value);
+    }
+
+    /// Records the PromQL text in query_log unless the request or the user's profile sets its own log_comment.
+    void setLogCommentToPromQL(const String & query)
+    {
+        /// The query text in query_log is masked by `query_masking_rules`, so this copy of the query is masked too.
+        if (!params->has("log_comment") && context->getSettingsRef()[Setting::log_comment].value.empty())
+            context->setSetting("log_comment", wipeSensitiveDataAndCutToLength(query, 0, /* wipe_sensitive= */ true));
+    }
+
     /// Handles the format_query endpoint: parses the PromQL expression given in the 'query' parameter
     /// and writes it back serialized from the parsed tree, i.e. with the whitespace normalized,
     /// the comments removed, and the redundant parentheses dropped.
@@ -661,7 +790,7 @@ private:
     }
 
     /// Parses an optional integer parameter of the metadata endpoint; an absent parameter defaults to -1 (no limit).
-    Int64 getMetadataLimitParam(const String & name) const
+    [[nodiscard]] Int64 getMetadataLimitParam(const String & name) const
     {
         String value = params->get(name, "");
         if (value.empty())
@@ -738,6 +867,11 @@ public:
         if (current_impl)
             current_impl->onException();
     }
+
+    [[nodiscard]] bool sendsJSONErrors() const override { return current_impl && current_impl->sendsJSONErrors(); }
+
+    /// The request URI is recorded before `current_impl` is selected, so the PromQL parameters are hidden for any endpoint.
+    [[nodiscard]] bool isQueryTextParameter(const String & name) const override { return query_impl.isQueryTextParameter(name); }
 
 private:
     /// Selects the implementation for a request based on the trailing segment of its path,
@@ -821,11 +955,34 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     DB::setThreadName(ThreadName::PROMETHEUS_HANDLER);
     applyHTTPResponseHeaders(response, response_headers);
 
+    SCOPE_EXIT({
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute("clickhouse.http_status", response.getStatus());
+        thread_trace_context.reset();
+    });
+
+    /// A request that never reached the user's sampling, e.g. one failing authentication, is sampled by the server's settings.
+    const auto start_time_us
+        = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    auto trace_if_not_sampled = [&]
+    {
+        if (thread_trace_context)
+            return;
+        thread_trace_context = startTracing(request, Context::getGlobalContextInstance());
+        thread_trace_context->root_span.start_time_us = start_time_us;
+    };
+
     try
     {
         write_event = write_event_;
         http_method = request.getMethod();
         chassert(!write_buffer_from_response); /// Nothing is written to the response yet.
+
+        parseClientTraceContext(request);
+        /// A client trace starts before authentication, so that requests failing there are traced too.
+        /// Metrics requests have no user, so the server's settings decide whether to trace them.
+        if (client_trace_context.isTraceEnabled() || config.type == PrometheusRequestHandlerConfig::Type::Metrics)
+            thread_trace_context = startTracing(request, Context::getGlobalContextInstance());
 
         /// Make keep-alive works.
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
@@ -835,18 +992,78 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
         impl->beforeHandlingRequest(request);
         impl->handleRequest(request, response);
+        trace_if_not_sampled();
 
+        fiu_do_on(FailPoints::prometheus_handler_finalize_throw,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while finalizing the Prometheus response");
+        });
         getOutputStream(response).finalize();
     }
     catch (...)
     {
+        trace_if_not_sampled();
+        thread_trace_context->root_span.addAttribute(std::current_exception());
+
         tryLogCurrentException(log);
 
         ExecutionStatus status = ExecutionStatus::fromCurrentException("", send_stacktrace);
-        getOutputStream(response).cancelWithException(request, status.code, status.message, nullptr);
+        String message = status.message;
+
+        /// Prometheus clients can parse an error of the query API only in its JSON format.
+        if (impl->sendsJSONErrors() && !response.sent())
+        {
+            response.setContentType("application/json");
+            auto http_status = exceptionCodeToHTTPStatus(status.code);
+            std::string_view error_type = "bad_data";
+            if (http_status == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+                error_type = "not_found";
+            else if (http_status == Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE)
+                error_type = "unavailable";
+            else if (http_status >= Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR)
+                error_type = "internal";
+            WriteBufferFromOwnString json;
+            writePrometheusError(json, error_type, status.message);
+            message = json.str();
+        }
+
+        getOutputStream(response).cancelWithException(request, status.code, message, nullptr);
 
         tryCallOnException();
     }
+}
+
+void PrometheusRequestHandler::parseClientTraceContext(const HTTPServerRequest & request)
+{
+    if (request.has("traceparent"))
+    {
+        std::string opentelemetry_traceparent = request.get("traceparent");
+        std::string error;
+        if (!client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
+            LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
+        client_trace_context.tracestate = request.get("tracestate", "");
+    }
+}
+
+OpenTelemetry::TracingContextHolderPtr PrometheusRequestHandler::startTracing(const HTTPServerRequest & request, const ContextPtr & settings_context)
+{
+    /// Before authentication the global context is used. It is taken from `Context` rather than from `IServer::context`,
+    /// which throws in standalone Keeper. Standalone Keeper has no span log, so the spans are not recorded there.
+    auto holder = std::make_unique<OpenTelemetry::TracingContextHolder>("PrometheusRequestHandler",
+        client_trace_context,
+        settings_context->getSettingsRef(),
+        settings_context->getOpenTelemetrySpanLog());
+    holder->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+    holder->root_span.addAttribute("clickhouse.uri", [&] { return getURIForLogging(request); });
+    holder->root_span.addAttribute("http.referer", request.get("Referer", ""));
+    holder->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
+    holder->root_span.addAttribute("http.method", request.getMethod());
+    return holder;
+}
+
+String PrometheusRequestHandler::getURIForLogging(const HTTPServerRequest & request) const
+{
+    return maskSensitiveQueryParametersInURI(request.getURI(), [this](const String & name) { return impl->isQueryTextParameter(name); });
 }
 
 WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputStream(HTTPServerResponse & response)

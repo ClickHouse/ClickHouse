@@ -21,7 +21,7 @@ from ci.jobs.scripts.test_selection_manifest import (
     SELECTION_MANIFEST,
     selection_manifest,
 )
-from ci.jobs.scripts.find_tests import Targeting
+from ci.jobs.scripts.find_tests import GitHubUnavailableError, Targeting
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
@@ -196,13 +196,21 @@ def run_tests(
     global_time_limit_arg = (
         f" --global_time_limit {global_time_limit}" if global_time_limit > 0 else ""
     )
+    test_list_arg = ""
+    if tests:
+        # A file, not argv: `bash -c` gets the whole command as one argument, which Linux caps at 128 KiB.
+        test_list_file = f"{temp_dir}/test_list.txt"
+        Path(test_list_file).write_text(
+            "".join(f"{test}\n" for test in tests), encoding="utf-8"
+        )
+        test_list_arg = f'--test-list-file "{test_list_file}"'
     # `set -o pipefail` is required so that the pipeline's exit code reflects
     # `clickhouse-test`'s exit code rather than `tee`'s. Without it, a non-zero
     # exit from `clickhouse-test` is silently swallowed by `tee` returning 0.
     command = f"set -o pipefail; clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count}{global_time_limit_arg} \
                 {extra_args} \
-                --queries ./tests/queries {('--order=random' if random_order else '')} -- {Targeting.selection_args(tests)} | ts '%Y-%m-%d %H:%M:%S' \
+                --queries ./tests/queries {('--order=random' if random_order else '')} {test_list_arg} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
@@ -239,6 +247,7 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
     "DatabaseOrdinary": "--db-ordinary",
     "wide parts enabled": "--wide-parts",
     "ParallelReplicas": "--parallel-rep",
+    "plan-based": "--parallel-rep-plan-based",
     "distributed plan": "--distributed-plan",
     "azure": "--azure",
     "AsyncInsert": " --async-insert",
@@ -258,6 +267,7 @@ DIAGNOSTICS_MODE_RUNNER_ARGUMENTS = (
 OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
+    "plan-based": "--parallel-replicas-plan-based",
     "AsyncInsert": " --no-async-insert",
     "DBReplicated": " --no-stateful --replicated-database",
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
@@ -266,6 +276,28 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "flaky check": "--flaky-check",
     "targeted": "--flaky-check --no-self-parallel",
 }
+
+
+AUTOPR_ARGUMENT = "--autopr"
+
+
+def parallel_replicas_job_runs_autopr(sha):
+    """Whether this run of a `ParallelReplicas` job swaps in the automatic parallel replicas profile.
+
+    `automatic_parallel_replicas_mode` = 1 is the only mode that runs the cost model and replaces the
+    plan with the parallel-replicas one. The settings randomizer only ever picks 0 or 2, and mode 2
+    collects statistics without ever switching, so nothing else gives the plan rewrite broad
+    coverage. The `ParallelReplicas` jobs therefore take the automatic mode every second run instead
+    of it getting jobs of its own.
+
+    Keyed off the commit rather than the clock so that a run is reproducible: the same commit always
+    picks the same mode, and which mode ran is reported in the job's own result line.
+    """
+    # `_Environment.from_env` sets the SHA to "TEST" when the job runs without a CI environment.
+    if not sha or sha == "TEST":
+        return False
+    return int(sha[:8], 16) % 2 == 1
+
 
 def allow_oversubscription(options, test_options, is_flaky_check, is_targeted_check):
     """Whether this job may run more test workers than the runner has cores.
@@ -495,6 +527,7 @@ def main():
     is_shared_catalog = False
     is_encrypted_storage = random.choice([True, False])
     is_parallel_replicas = False
+    is_plan_based_parallel_replicas = False
     is_llvm_coverage = False
     is_excluded_from_llvm = False
     is_per_test_coverage = False
@@ -553,8 +586,10 @@ def main():
             is_database_replicated = True
         if "SharedCatalog" in to:
             is_shared_catalog = True
-        if "ParallelReplicas" in to:
+        if to == "ParallelReplicas":
             is_parallel_replicas = True
+        if to == "plan-based":
+            is_plan_based_parallel_replicas = True
 
     is_no_stateful = "--no-stateful" in runner_options
 
@@ -588,6 +623,8 @@ def main():
         changed_files = info.get_changed_files()
         # The `arm_binary` jobs replacing the LLVM coverage jobs in pull requests must run in full
         # when a CI job script changes: `filter_job.py` lets them through for that very reason.
+        # The plan-based parallel replicas jobs too: a change to the job script can break how they
+        # install and start the server with the plan-based profile.
         is_coverage_replacement_with_ci_script_changes = False
         if info.pr_number > 0 and any(
             Targeting.is_ci_job_script(f) for f in changed_files or []
@@ -596,7 +633,9 @@ def main():
             from ci.defs.job_configs import JobConfigs
 
             is_coverage_replacement_with_ci_script_changes = info.job_name in [
-                j.name for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+                j.name
+                for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+                + JobConfigs.functional_tests_arm_binary_plan_based_parallel_replicas_jobs
             ]
         if changed_files:
             # A changed test data submodule is owned by the tests that read it:
@@ -679,6 +718,23 @@ def main():
         # mode mid-session). See tests/config/users.d/coverage_fault_injection_seeds.xml.
         config_installs_args += " --llvm-coverage"
 
+    # The automatic profile replaces the plain one rather than joining it: both set
+    # `enable_parallel_replicas`, `max_parallel_replicas`, `cluster_for_parallel_replicas` and
+    # `parallel_replicas_for_non_replicated_merge_tree`, so installing both would leave the values to
+    # whichever file `users.d` happens to load second.
+    # The plan-based job keeps its own profile: it covers the plan-based implementation, and its blacklist would
+    # only tolerate failures with `--autopr`.
+    autopr_mode_note = ""
+    if is_parallel_replicas and not is_plan_based_parallel_replicas and parallel_replicas_job_runs_autopr(info.sha):
+        config_installs_args = config_installs_args.replace(OPTIONS_TO_INSTALL_ARGUMENTS["ParallelReplicas"], AUTOPR_ARGUMENT)
+        runner_options += f" {AUTOPR_ARGUMENT}"
+        # The loop above has already announced the plain option as enabled; say that it is gone.
+        print(
+            f"NOTE: Replaced config option [{OPTIONS_TO_INSTALL_ARGUMENTS['ParallelReplicas']}] with [{AUTOPR_ARGUMENT}]"
+        )
+        autopr_mode_note = "Ran with automatic parallel replicas (automatic_parallel_replicas_mode = 1)."
+        print(f"NOTE: {autopr_mode_note}")
+
     if is_shared_catalog or is_parallel_replicas:
         pass
     else:
@@ -716,7 +772,11 @@ def main():
 
     runner_options += f" --jobs {workers}"
 
-    if is_flaky_check or is_targeted_check:
+    if is_targeted_check and info.is_merge_queue_event:
+        # The merge queue is meant to fail fast: a few failures are enough to bounce
+        # the entry, and running the rest of the selection only delays the queue.
+        runner_options += " --max-failures 3"
+    elif is_flaky_check or is_targeted_check:
         # Stop after 5 total failures across all parallel workers (fast feedback on broken PRs).
         runner_options += " --max-failures 5"
 
@@ -731,11 +791,12 @@ def main():
         # by an interruptible exit-time dump (see integration_test_job.py).
         # It also releases the static counter section to the OS, and per-test coverage reads
         # that section in the server process, so the two modes are mutually exclusive.
-        profile_pattern = "%2m" if is_per_test_coverage else "%c%2m"
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-{profile_pattern}.profraw"
         if is_per_test_coverage:
+            # No .profraw of the per-test job is merged, so it writes none.
+            os.environ["LLVM_PROFILE_FILE"] = os.devnull
             runner_options += " --collect-per-test-coverage"
         else:
+            os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%c%2m.profraw"
             runner_options += " --no-random-settings --no-random-merge-tree-settings  --no-long"
 
     diagnostics_dir = f"{temp_dir}/random-settings-diagnostics"
@@ -759,21 +820,18 @@ def main():
     if args.count:
         print(f"Rerun count set from --count: {args.count}")
         rerun_count = args.count
-    elif is_flaky_check and info.is_merge_queue_event:
-        # The merge-queue flaky check is a drift guard, not a full flakiness
-        # hunt: the PR CI already ran the full flaky check, and this rerun only
-        # needs to catch new tests broken by the current `master` state (e.g. a
-        # setting randomization added to `tests/clickhouse-test` after the PR's
-        # last CI run), or new `master` tests broken by the PR. A randomized
-        # setting drawn with probability 0.4 per run escapes 20 iterations with
-        # probability 0.6^20 ~= 4e-5, so a reduced count keeps merge-queue
-        # latency bounded without losing the signal.
-        rerun_count = 20
     elif is_flaky_check:
         # Large repeat count so the 45-min global_time_limit is the effective stopping
         # condition, not the repeat count.  Tests run in parallel (--jobs N) with fresh
         # random settings per TestCase; --max-failures 5 stops early on broken PRs.
         rerun_count = 50
+    elif is_targeted_check and info.is_merge_queue_event:
+        # The merge-queue targeted check reruns the PR's coverage selection
+        # against the merged `master` state to catch a PR breaking a test it
+        # touches or covers. The PR CI already repeated the selection 50 times,
+        # so a few repetitions here still sample the randomized settings, and the
+        # run usually ends well before its time limit instead of filling it.
+        rerun_count = 3
     elif is_targeted_check:
         rerun_count = 50
 
@@ -907,8 +965,6 @@ def main():
             if is_bugfix_validation and not is_labeled_bugfix_validation:
                 # Not a bugfix PR - run a simple sanity test
                 tests = ["00001_select_1"]
-            elif is_flaky_check and info.is_merge_queue_event:
-                tests = targeter.get_merge_queue_tests()
             elif is_flaky_check:
                 # Flaky check runs only changed/new test files in this PR.
                 # Previously failed and coverage-relevant tests are handled
@@ -936,6 +992,10 @@ def main():
                 Shell.check(
                     "python3 -m ci.jobs.scripts.test_selection_smoke", strict=True
                 )
+            # Always rerun the PR's changed/new tests, including in the merge
+            # queue: run against the merge group state they catch a changed test
+            # that a `master` commit landing after the PR's last CI run broke.
+            # (The merge queue used to leave this to a separate flaky check.)
             tests, selection_result = targeter.get_all_relevant_tests_with_info(
                 include_changed_tests=True
             )
@@ -948,21 +1008,50 @@ def main():
             )
             selection_result.files = [str(SELECTION_MANIFEST)]
             results.append(selection_result)
-        except CIDBTimeoutError as ex:
-            # CIDB is overloaded (typically while the coverage export inserts).
-            # Skip rather than fail: an ERROR here would skip every job that
-            # waits for the core blocking jobs. Not cached, so a rerun or the
-            # next commit selects again.
-            message = f"Targeted tests were not run: test selection timed out in CIDB: {ex}"
+        except (CIDBTimeoutError, GitHubUnavailableError) as ex:
+            # CIDB is overloaded (typically while the coverage export inserts),
+            # or the GitHub API keeps failing - only the *coverage* selection
+            # needs them. The PR's changed/new tests do not: they come from the
+            # changed-file list the Config Workflow already stored. Still run
+            # those, so a merge-queue entry never goes green without rerunning its
+            # changed tests against the merged state; only the coverage candidates
+            # are lost. Skip (not fail) only when there are no changed tests to
+            # fall back to - an ERROR would skip every job waiting on the core
+            # blocking jobs. Not cached, so a rerun or the next commit selects again.
+            if isinstance(ex, CIDBTimeoutError):
+                cause = "test selection timed out in CIDB"
+                comment = "CIDB timeout in test selection, rerun to test"
+            else:
+                cause = "the GitHub API failed during test selection"
+                comment = "GitHub API error in test selection, rerun to test"
+            changed_files = info.get_changed_files()
+            tests = (
+                Targeting.tests_from_changed_files(changed_files)
+                if changed_files is not None
+                else None
+            )
+            message = (
+                f"Coverage test selection unavailable ({cause}: {ex}); "
+                f"running only the {len(tests) if tests else 0} changed/new tests."
+            )
             print(f"WARNING: {message}")
             info.add_workflow_warning(message)
-            skipped = Result.create_from(
-                status=Result.Status.SKIPPED,
-                info=f"{message}\n{traceback.format_exc()}",
-                results=results,
-            )
-            skipped.set_comment("CIDB timeout in test selection, rerun to test")
-            skipped.complete_job(do_not_cache=True)
+            if not tests:
+                skipped = Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info=f"{message}\n{traceback.format_exc()}",
+                    results=results,
+                )
+                skipped.set_comment(comment)
+                skipped.complete_job(do_not_cache=True)
+            else:
+                results.append(
+                    Result(
+                        name="Fetch relevant tests",
+                        status=Result.Status.OK,
+                        info=message,
+                    )
+                )
         except Exception as ex:
             Result.create_from(
                 status=Result.Status.ERROR,
@@ -1281,9 +1370,7 @@ def main():
 
         global_time_limit = 0
         if is_flaky_check:
-            # The merge-queue run gets a tighter budget: it delays merges
-            # directly, and its reduced rerun_count needs less time anyway.
-            FLAKY_CHECK_TIME_LIMIT = 20 * 60 if info.is_merge_queue_event else 45 * 60
+            FLAKY_CHECK_TIME_LIMIT = 45 * 60
             # Floor the budget at a small positive value: `run_tests` interprets
             # `global_time_limit == 0` as "pass no `--global_time_limit`", i.e. no
             # cap at all. If setup already consumed the whole budget (more likely
@@ -1311,7 +1398,11 @@ def main():
             )
 
         elif is_targeted_check:
-            TARGETED_CHECK_TIME_LIMIT = 30 * 60  # 30 min
+            # The merge-queue run gets the same budget as the PR run, equal to the one
+            # of the merge-queue integration targeted check: its reduced rerun_count
+            # usually ends the run earlier anyway. Reaching the limit is not a failure
+            # (see `GLOBAL_TIME_LIMIT_EXIT_CODE` in `FTResultsProcessor`).
+            TARGETED_CHECK_TIME_LIMIT = 30 * 60
             global_time_limit = max(
                 TARGETED_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
             )
@@ -1811,7 +1902,7 @@ def main():
         results=results,
         stopwatch=stop_watch,
         files=CH.logs + debug_files,
-        info=job_info,
+        info=" ".join(x for x in (autopr_mode_note, job_info) if x),
     )
 
     if bugfix_validation_no_repro:
@@ -1896,7 +1987,7 @@ def main():
 
             # Auto-detect available LLVM profdata tool
             llvm_profdata = None
-            for ver in ["22", "21", "20", "18", "19", "17", "16", ""]:
+            for ver in ["23", "22", "21", "20", "18", "19", "17", "16", ""]:
                 cmd = f"llvm-profdata{'-' + ver if ver else ''}"
                 if Shell.check(f"command -v {cmd}", verbose=False):
                     llvm_profdata = cmd

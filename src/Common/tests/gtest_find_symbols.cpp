@@ -109,3 +109,120 @@ TEST(FindNotSymbols, NullCharacter)
     std::string long_s("abcdefgabcdefgab\0", 17u);
     test_find_first_not<'a', 'b', 'c', 'd', 'e', 'f', 'g'>(long_s, 16u);
 }
+
+TEST(FindSymbols, EveryVectorRemainder)
+{
+    for (size_t length = 0; length <= 96; ++length)
+    {
+        for (size_t alignment = 0; alignment < 16; ++alignment)
+        {
+            std::string storage(length + alignment, 'a');
+            char * begin = storage.data() + alignment;
+            char * end = begin + length;
+
+            for (size_t position = 0; position <= length; ++position)
+            {
+                SCOPED_TRACE(::testing::Message() << "length=" << length << ", alignment=" << alignment << ", position=" << position);
+                if (position < length)
+                    begin[position] = '\\';
+
+                const char * first = position < length ? begin + position : end;
+                const char * last = position < length ? begin + position : nullptr;
+                EXPECT_EQ((find_first_symbols<'\\', '"'>(begin, end)), first);
+                EXPECT_EQ((find_last_symbols_or_null<'\\', '"'>(begin, end)), last);
+
+                if (position < length)
+                    begin[position] = 'a';
+            }
+
+            std::fill(begin, end, '\\');
+            for (size_t position = 0; position <= length; ++position)
+            {
+                SCOPED_TRACE(::testing::Message() << "negative length=" << length << ", alignment=" << alignment << ", position=" << position);
+                if (position < length)
+                    begin[position] = 'a';
+
+                const char * first = position < length ? begin + position : end;
+                const char * last = position < length ? begin + position : nullptr;
+                EXPECT_EQ((find_first_not_symbols<'\\', '"'>(begin, end)), first);
+                EXPECT_EQ((find_last_not_symbols_or_null<'\\', '"'>(begin, end)), last);
+
+                if (position < length)
+                    begin[position] = '\\';
+            }
+        }
+    }
+}
+
+namespace
+{
+
+/// Compares `find_first_symbols` and its siblings with a scalar reference. Long haystacks with 4 or more
+/// symbols reach the vector loop, including the SVE2 `MATCH` kernel on AArch64 CPUs that support it.
+template <char... symbols>
+void testFirstSymbolsAgainstReference(char filler, char needle)
+{
+    static constexpr char symbols_array[] = {symbols...};
+    auto is_symbol = [](char c)
+    {
+        for (char s : symbols_array)
+            if (s == c)
+                return true;
+        return false;
+    };
+
+    for (size_t length : {0, 1, 7, 8, 15, 16, 17, 23, 24, 25, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257, 300})
+    {
+        for (size_t alignment = 0; alignment < 16; ++alignment)
+        {
+            std::string storage(length + alignment, filler);
+            char * begin = storage.data() + alignment;
+            char * end = begin + length;
+
+            for (size_t position = 0; position <= length; ++position)
+            {
+                SCOPED_TRACE(::testing::Message() << "symbols=" << sizeof...(symbols) << ", length=" << length
+                    << ", alignment=" << alignment << ", position=" << position);
+                if (position < length)
+                    begin[position] = needle;
+
+                const char * expected_found = end;
+                const char * expected_not_found = end;
+                for (const char * pos = begin; pos < end; ++pos)
+                {
+                    if (expected_found == end && is_symbol(*pos))
+                        expected_found = pos;
+                    if (expected_not_found == end && !is_symbol(*pos))
+                        expected_not_found = pos;
+                }
+
+                EXPECT_EQ((find_first_symbols<symbols...>(begin, end)), expected_found);
+                EXPECT_EQ((find_first_symbols_or_null<symbols...>(begin, end)), expected_found == end ? nullptr : expected_found);
+                EXPECT_EQ((find_first_not_symbols<symbols...>(begin, end)), expected_not_found);
+                EXPECT_EQ((find_first_not_symbols_or_null<symbols...>(begin, end)), expected_not_found == end ? nullptr : expected_not_found);
+
+                if (position < length)
+                    begin[position] = filler;
+            }
+        }
+    }
+}
+
+}
+
+TEST(FindSymbols, LongHaystacksAgainstReference)
+{
+    /// A match in a haystack of non-symbols, for `find_first_symbols`.
+    testFirstSymbolsAgainstReference<'\t', '\n', '\\', '\0'>('a', '\0');
+    testFirstSymbolsAgainstReference<'\t', '\n', '\\', '\0'>('a', '\\');
+    testFirstSymbolsAgainstReference<'\b', '\f', '\n', '\r', '\t', '\0', '\\', '\''>('x', '\'');
+    testFirstSymbolsAgainstReference<'\x80', '\xff', 'a', 'b', 'c'>('z', '\xff');
+    testFirstSymbolsAgainstReference<'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'>('g', 'f');
+
+    /// A non-symbol in a haystack of symbols, for `find_first_not_symbols`. Zero bytes must not be treated as
+    /// symbols, even though the set is padded to 16 bytes.
+    testFirstSymbolsAgainstReference<'\t', '\n', '\\', ' '>(' ', '\0');
+    testFirstSymbolsAgainstReference<'\b', '\f', '\n', '\r', '\t', '\0', '\\', '\''>('\\', 'x');
+    testFirstSymbolsAgainstReference<'\x80', '\xff', 'a', 'b', 'c'>('\x80', '\x7f');
+    testFirstSymbolsAgainstReference<'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'>('7', 'g');
+}

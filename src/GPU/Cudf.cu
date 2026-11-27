@@ -1,14 +1,18 @@
 #include <GPU/Cudf.cuh>
 
+#include <cudf/stream_compaction.hpp>
 #include <cudf/strings/strings_column_view.hpp>
 #include <cudf/unary.hpp>
+#include <cudf/utilities/error.hpp>
 
+#include <rmm/error.hpp>
 #include <rmm/mr/cuda_async_view_memory_resource.hpp>
 #include <rmm/mr/per_device_resource.hpp>
 
 #include <cstdint>
 #include <exception>
 #include <limits>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -26,6 +30,37 @@ __host__ void setCudfMemoryPool(cudaMemPool_t pool)
 __host__ void resetCudfMemoryPool()
 {
     guarded("resetting the memory resource of cuDF", [] { rmm::mr::reset_current_device_resource(); });
+}
+
+namespace
+{
+
+/// libstdc++ keeps the message of a `std::logic_error` or a `std::runtime_error` as a pointer after the vtable.
+template <typename StandardException>
+__host__ const char * messageOf(const StandardException & exception)
+{
+#if !defined(__GLIBCXX__)
+#    error "The device code is expected to be compiled with libstdc++"
+#endif
+    static_assert(sizeof(StandardException) == 2 * sizeof(void *));
+    return *reinterpret_cast<const char * const *>(reinterpret_cast<const char *>(&exception) + sizeof(void *));
+}
+
+}
+
+__host__ std::string messageOfDeviceException(const std::exception & exception)
+{
+    if (const auto * out_of_memory = dynamic_cast<const rmm::out_of_memory *>(&exception))
+        return std::string("out of device memory: ") + out_of_memory->what();
+    if (const auto * cuda_error = dynamic_cast<const cudf::cuda_error *>(&exception))
+        return std::string("CUDA error: ") + messageOf<std::runtime_error>(*cuda_error);
+    if (const auto * logic_error = dynamic_cast<const cudf::logic_error *>(&exception))
+        return messageOf<std::logic_error>(*logic_error);
+
+    std::string message = "an exception the device library does not know";
+    if (const cudaError_t last = cudaPeekAtLastError(); last != cudaSuccess)
+        message += std::string(", the device reports: ") + cudaGetErrorString(last);
+    return message;
 }
 
 __host__ cudf::data_type cudfTypeOf(GPUElementType element_type)
@@ -137,7 +172,38 @@ __host__ DeviceFixedColumn deviceViewOf(const cudf::column_view & column, GPUEle
     return {.element_type = expected_type, .data = column.head<char>(), .rows = static_cast<size_t>(column.size())};
 }
 
-__host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view & column, rmm::cuda_stream_view stream)
+__host__ DeviceFixedColumn deviceViewByBits(const cudf::column_view & column, GPUElementType type)
+{
+    checkNoNulls(column);
+    if (column.offset() != 0)
+        throwGPUError(("cuDF returned a column as a slice at offset " + std::to_string(column.offset())).c_str());
+    if (cudf::size_of(column.type()) != sizeOf(type))
+        throwGPUError(
+            ("cuDF returned a column of type " + std::to_string(static_cast<int32_t>(column.type().id()))
+            + ", which is not as wide as element type " + std::to_string(static_cast<int>(type))).c_str());
+    return {.element_type = type, .data = column.head<char>(), .rows = static_cast<size_t>(column.size())};
+}
+
+__host__ std::unique_ptr<cudf::table> keptRows(
+    const cudf::table_view & table, DeviceBitmask kept, cudf::size_type left_out, rmm::device_buffer & all_true, cuda::stream_ref stream)
+{
+    const auto rows = static_cast<size_t>(table.num_rows());
+    if (kept.rows != rows)
+        throwGPUError(("a filter of " + std::to_string(kept.rows) + " rows over " + std::to_string(rows)).c_str());
+    if (all_true.size() < rows)
+    {
+        all_true.resize(rows, stream);
+        checkCuda(cudaMemsetAsync(all_true.data(), 1, rows, stream.get()), "Cannot fill a mask of the device");
+    }
+
+    const cudf::column_view mask(cudf::data_type{cudf::type_id::BOOL8}, table.num_rows(), all_true.data(), kept.words, left_out);
+    return guarded("compacting " + std::to_string(rows) + " rows to those a filter keeps", [&]
+    {
+        return cudf::apply_retention_mask(table, mask, stream);
+    });
+}
+
+__host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view & column, cuda::stream_ref stream)
 {
     checkNoNulls(column);
 
@@ -166,7 +232,7 @@ __host__ DeviceVariableColumnOfCudf deviceViewOfVariable(const cudf::column_view
                 [&] { return cudf::cast(offsets, cudf::data_type{cudf::type_id::INT64}, stream); });
             offsets = widened_offsets->view();
             /// cuDF returns once the cast is queued, and the offsets may be read on another stream or by the host.
-            checkCuda(cudaStreamSynchronize(stream.value()), "Cannot wait for the offsets of a strings column to be widened");
+            checkCuda(cudaStreamSynchronize(stream.get()), "Cannot wait for the offsets of a strings column to be widened");
             break;
         default:
             throwGPUError(

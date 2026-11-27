@@ -1,0 +1,58 @@
+---
+slug: /clickstack/self-configured/ingesting-data/trace-sampling
+title: '트레이스 샘플링'
+sidebarTitle: '트레이스 샘플링'
+description: '자체 관리형 ClickHouse Observability에서 샘플링된 트레이스 데이터에 샘플 비율 가중 집계(aggregations)를 구성합니다.'
+doc_type: 'guide'
+keywords: ['clickstack', 'trace sampling', 'tail sampling', 'sample rate', 'weighted aggregations', 'OpenTelemetry', 'SampleRate']
+---
+
+<Note>
+  이 페이지는 **자체 관리형 ClickHouse Observability**를 다룹니다. 권장되는 완전 관리형 환경은 [여기](/ko/clickstack/observability/overview)의 문서를 참조하십시오.
+</Note>
+
+고처리량 서비스는 초당 수백만 개의 스팬을 생성할 수 있습니다. 모든 스팬을 저장하면 비용이 많이 들기 때문에, 일반적으로 OpenTelemetry Collector의 [tail-sampling 프로세서](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor)를 실행하여 N개 중 1개의 스팬만 보존합니다. 보존된 각 스팬에는 N 값을 기록한 `SampleRate` 속성이 포함됩니다.
+
+데이터를 샘플링하면 단순 집계(aggregations)로는 정확한 결과를 얻을 수 없습니다. `count()`는 실제 발생한 이벤트보다 N배 적은 값을 반환하고, `sum()`과 `avg()`에는 편향이 생기며, 백분위수도 달라집니다. 그 결과 대시보드에 요청 수, 처리량, 오류율이 실제보다 낮게 표시되어 상황을 잘못 판단하게 됩니다.
+
+자체 관리형 ClickHouse Observability는 샘플링을 인식하는 쿼리 엔진(query engine)으로 이 문제를 해결합니다. 트레이스 소스에 샘플링 비율 표현식을 구성하면 쿼리 빌더(query builder)가 SQL 집계(aggregations)를 재작성하여 대시보드, 알림, 애드혹 검색 전반에서 각 스팬에 샘플 비율만큼 가중치를 부여합니다.
+
+## 작동 방식 {#how-it-works}
+
+트레이스 소스에 `sampleRateExpression`이 구성되어 있으면 쿼리 빌더(query builder)는 이를 다음과 같이 래핑합니다:
+
+```sql
+greatest(toUInt64OrZero(toString(expr)), 1)
+```
+
+`SampleRate` 속성이 없는 스팬은 기본적으로 가중치 1이 적용되므로, 샘플링되지 않은 데이터는 원래 쿼리와 동일한 결과를 반환합니다.
+
+이후 쿼리 빌더(query builder)가 집계(aggregations)를 다음과 같이 재작성합니다.
+
+| 집계                 | 변경 전               | 변경 후(샘플 보정)                               |
+| ------------------ | ------------------ | ----------------------------------------- |
+| count              | `count()`          | `sum(weight)`                             |
+| count + 조건         | `countIf(cond)`    | `sumIf(weight, cond)`                     |
+| avg                | `avg(col)`         | `sum(col * weight) / sum(weight)`         |
+| sum                | `sum(col)`         | `sum(col * weight)`                       |
+| quantile(p)        | `quantile(p)(col)` | `quantileTDigestWeighted(p)(col, weight)` |
+| min / max          | 변경 없음              | 변경 없음                                     |
+| count&#95;distinct | 변경 없음              | 변경 없음                                     |
+
+<Note>
+  샘플링이 적용된 경우 백분위수는 근사 T-Digest 스케치인 `quantileTDigestWeighted`로 계산합니다. 결과는 실제 값에 가깝지만 정확하지는 않습니다.
+</Note>
+
+## 샘플링 비율 표현식 구성 {#configuring}
+
+**소스 설정**에서 트레이스 소스를 열고, **샘플링 비율 표현식** 필드에 스팬별 샘플 비율로 평가되는 ClickHouse 표현식을 입력하십시오.
+
+예를 들어, OpenTelemetry tail-sampling 프로세서가 샘플 비율을 `SpanAttributes['SampleRate']`에 기록하는 경우 다음과 같이 입력합니다.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![소스 설정의 샘플링 비율 표현식 필드](/images/clickstack/trace-sampling-source-settings.webp)
+  </Frame>
+</div>
+
+구성을 마치면 모든 차트, 대시보드, 알림 및 서비스 대시보드 패널에 샘플 비율 가중 집계(aggregations)가 자동으로 적용됩니다. 개별 쿼리는 변경할 필요가 없습니다.

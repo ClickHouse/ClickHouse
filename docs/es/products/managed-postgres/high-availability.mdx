@@ -7,22 +7,17 @@ keywords: ['alta disponibilidad', 'ha', 'standby', 'replicación', 'failover', '
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/es/components/Image.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.high-availability-beta" />
-
 ClickHouse Managed Postgres ofrece distintos niveles de alta disponibilidad para adaptarse a tus requisitos de durabilidad y rendimiento. Puedes añadir una o dos réplicas standby al aprovisionar tu base de datos o ajustar esta configuración más adelante desde la página de **Configuración**, según sea necesario.
 
 {/* TODO(kaushik-ubi): Captura de pantalla de la vista de configuración de alta disponibilidad
     Ruta: /images/cloud/managed-postgres/high-availability-config.png */}
 
 <div id="high-availability-options">
-  ## Opciones de alta disponibilidad
+  ## Opciones de alta disponibilidad {#high-availability-options}
 </div>
 
 <div id="two-standbys">
-  ### 2 Nodos standby
+  ### 2 Nodos standby {#two-standbys}
 </div>
 
 Con dos nodos standby, se aprovisionan dos nodos réplica junto con el nodo primario. Ambos nodos standby tienen el mismo tamaño que el primario y cualquiera de los dos puede asumir el control si el primario falla.
@@ -30,7 +25,7 @@ Con dos nodos standby, se aprovisionan dos nodos réplica junto con el nodo prim
 Esta configuración usa **replicación síncrona**, en la que el primario espera la confirmación de al menos un nodo standby antes de confirmar las escrituras. Esto ofrece garantías de durabilidad más sólidas que la replicación asíncrona. Como solo se requiere una confirmación (no ambas), el impacto en el rendimiento es menor que con la replicación síncrona con un único nodo standby.
 
 <div id="one-standby">
-  ### 1 Standby
+  ### 1 Standby {#one-standby}
 </div>
 
 Con un standby, se aprovisiona un nodo réplica junto al primario. El standby tiene el mismo tamaño que el primario y puede asumir el control si el primario falla.
@@ -38,13 +33,13 @@ Con un standby, se aprovisiona un nodo réplica junto al primario. El standby ti
 Los datos se replican en el standby mediante **replicación asíncrona**. Esto significa que las escrituras se confirman en el primario sin esperar la confirmación del standby. La replicación asíncrona garantiza que la alta disponibilidad no ralentice las escrituras debido a la latencia de red adicional. Sin embargo, también significa que es posible que el standby no haya recibido las transacciones más recientes en el momento en que falle el primario. Para la mayoría de las aplicaciones, esta compensación entre rendimiento y el pequeño riesgo de perder escrituras muy recientes merece la pena. Si necesita durabilidad en las escrituras, se recomienda optar por 2 standbys.
 
 <div id="no-standby">
-  ### Sin standby
+  ### Sin standby {#no-standby}
 </div>
 
 Con esta opción, solo se aprovisiona un nodo primario con el tamaño seleccionado. No se crea ningún nodo standby. El nodo primario sigue supervisándose para detectar fallos, pero la recuperación puede tardar más según la naturaleza del problema, ya que no hay ninguna réplica lista para asumir el control. Esta configuración es más adecuada para entornos de desarrollo, pruebas o cargas de trabajo no críticas en los que cierto tiempo de inactividad es aceptable.
 
 <div id="standbys-vs-read-replicas">
-  ## Standbys vs réplicas de lectura
+  ## Standbys vs réplicas de lectura {#standbys-vs-read-replicas}
 </div>
 
 Los standbys y las réplicas de lectura cumplen funciones distintas en ClickHouse Managed Postgres y se configuran por separado.
@@ -54,7 +49,7 @@ Los standbys y las réplicas de lectura cumplen funciones distintas en ClickHous
 **Réplicas de lectura** están diseñadas para escalar la carga de lectura. Extraen datos del WAL (Write-Ahead Log) desde el almacenamiento de objetos y se ejecutan en un entorno de red independiente con su propio endpoint de conexión. Las réplicas de lectura le permiten desviar la carga de lectura de la instancia primaria sin afectar las garantías de alta disponibilidad.
 
 <div id="why-standbys-dont-serve-read-queries">
-  ### Por qué los standby no atienden consultas de lectura
+  ### Por qué los standby no atienden consultas de lectura {#why-standbys-dont-serve-read-queries}
 </div>
 
 Aunque algunos proveedores de bases de datos ofrecen standby activos para consultas de solo lectura, ClickHouse Managed Postgres deliberadamente no lo hace. Permitir consultas de lectura en los standby puede comprometer su propósito principal: estar listas para asumir el control de inmediato cuando falle la instancia primaria.
@@ -68,7 +63,7 @@ Hay dos preocupaciones principales:
 Al mantener los standby dedicados al failover, ClickHouse Managed Postgres garantiza que siempre estén sincronizadas y listas para asumir el control con una pérdida mínima de datos y tiempo de inactividad. Para escalar la lectura, usa [réplicas de lectura](/es/products/managed-postgres/read-replicas) en su lugar.
 
 <div id="handling-failures">
-  ## Gestión de fallos
+  ## Gestión de fallos {#handling-failures}
 </div>
 
 Todas las instancias de ClickHouse Managed Postgres se supervisan continuamente para detectar fallos, independientemente de si la alta disponibilidad está habilitada. En todos los casos, el sistema intenta recuperarse automáticamente.

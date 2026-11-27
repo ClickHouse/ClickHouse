@@ -1,0 +1,183 @@
+---
+sidebarTitle: 'Facturation liée à Claude Platform'
+slug: /cloud/features/ai-ml/linked-billing-claude-platform
+title: 'Facturation liée à Claude Platform'
+description: "Liez votre organisation Claude à ClickHouse Cloud afin que l'utilisation de Claude dans ClickHouse Cloud soit facturée directement à votre compte Anthropic."
+keywords: ['IA', 'ClickHouse Cloud', 'Claude', 'Anthropic', 'facturation', 'facturation liée', 'Claude Platform', 'Facturation liée à Claude Platform', 'ClickHouse Agents']
+doc_type: 'guide'
+---
+
+import { PublicPreviewBadge } from "/snippets/fr/components/PublicPreviewBadge/PublicPreviewBadge.jsx";
+
+<PublicPreviewBadge />
+
+La facturation liée avec Claude Platform permet aux clients de ClickHouse et d&#39;Anthropic de facturer directement à leur propre organisation Claude l&#39;ensemble de leur utilisation des modèles Claude dans les produits ClickHouse Cloud, tels que [ClickHouse Agents](/fr/agents/index).
+
+La facturation liée avec Claude Platform est en préversion publique et disponible pour toutes les organisations ClickHouse Cloud.
+
+Il vous suffit de lier une seule fois votre organisation Claude à votre organisation ClickHouse Cloud.
+Dès lors, Anthropic facture à votre organisation Claude l&#39;utilisation des modèles Claude par votre organisation ClickHouse Cloud, aux tarifs de votre organisation Claude et selon ses conditions de facturation existantes.
+Vous pouvez ainsi tirer parti de tout engagement de dépenses ou de tout tarif négocié dont vous bénéficiez auprès d&#39;Anthropic.
+
+## Fonctionnement de la facturation {#how-billing-works}
+
+Tant que votre organisation Claude est liée :
+
+* Anthropic facture à votre organisation Claude l&#39;utilisation des modèles Claude dans votre organisation ClickHouse Cloud, en la déduisant de son solde prépayé ou en l&#39;ajoutant à sa facture.
+* Les tarifs de votre organisation Claude ainsi que tout engagement de dépenses souscrit auprès d&#39;Anthropic s&#39;appliquent.
+* Les requêtes adressées aux modèles Claude pour votre organisation sont envoyées à Anthropic plutôt qu&#39;aux modèles Claude hébergés dans Amazon Bedrock.
+
+Points à garder à l&#39;esprit :
+
+* La facturation liée couvre toute l&#39;utilisation des modèles Claude dans l&#39;ensemble des produits ClickHouse Cloud.
+* Une fois la facturation liée avec Claude Platform activée pour votre organisation, seuls les modèles Claude sont disponibles dans ClickHouse Cloud.
+* Les crédits promotionnels de votre organisation Claude ne peuvent pas être utilisés pour la facturation liée.
+* La liaison modifie uniquement la manière dont l&#39;utilisation de Claude est facturée. Elle ne modifie ni les conditions ni les dispositions relatives aux données applicables à votre utilisation de Claude dans ClickHouse Cloud.
+* Lors de la liaison, vous pouvez définir une limite de dépenses mensuelle pour l&#39;utilisation de Claude via ClickHouse Cloud. Lorsque les dépenses engagées via ClickHouse Cloud atteignent cette limite, les requêtes adressées aux modèles Claude depuis ClickHouse Cloud sont suspendues jusqu&#39;au mois suivant ou jusqu&#39;à ce que vous releviez la limite.
+
+Si vous ne liez pas d&#39;organisation Claude, rien ne change : les modèles Claude dans ClickHouse Cloud continuent d&#39;être fournis via Amazon Bedrock.
+
+## Prérequis {#requirements}
+
+* **Aucune conformité HIPAA ou PCI DSS activée.** La facturation liée avec Claude Platform n’est pas disponible pour les organisations ClickHouse Cloud dont la conformité [HIPAA](/fr/products/cloud/reference/security/compliance-overview#hipaa-since-2024) ou [PCI DSS](/fr/products/cloud/reference/security/compliance-overview#pci-service-provider-since-2025) est activée.
+* **Un rôle ClickHouse Cloud autorisé à lier la facturation.** Vous devez disposer du rôle Administrateur dans votre organisation ClickHouse Cloud.
+* **Un rôle Claude autorisé à approuver la facturation.** Vous devez disposer du rôle Propriétaire, Administrateur ou Facturation dans votre organisation Claude.
+* **Une organisation Claude éligible.** Votre organisation Claude doit régler directement à Anthropic son utilisation de l’API, au moyen de crédits prépayés ou d’une facturation sur facture. Les organisations Claude facturées via une place de marché cloud (AWS, Google Cloud ou Azure), ainsi que celles qui disposent uniquement d’un abonnement Claude, ne peuvent pas être liées.
+
+## Lier votre organisation Claude {#link-your-claude-organization}
+
+<Steps>
+  <Step title="Ouvrir les paramètres de l’organisation">
+    En tant qu’Administrateur de l’organisation dans la console ClickHouse Cloud, ouvrez **paramètres de l’organisation** et faites défiler la page jusqu’à la section **organisation Claude**.
+    Cliquez sur **Link your organisation Claude**.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Section organisation Claude dans les paramètres de l’organisation ClickHouse Cloud, avec le bouton Link your organisation Claude](/images/cloud/linked-billing-claude-platform/01-link-button.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Se connecter à Claude">
+    Vous êtes redirigé vers Claude.
+    Si vous n’êtes pas déjà connecté, connectez-vous avec un compte disposant du rôle Propriétaire, Administrateur ou Facturation dans l’organisation Claude à lier.
+    Si votre compte appartient à plusieurs organisations Claude, sélectionnez celle à lier.
+  </Step>
+
+  <Step title="Prendre connaissance du fonctionnement de la facturation">
+    Claude explique le fonctionnement de la facturation pour cette connexion.
+    Prenez connaissance des détails, puis cliquez sur **Continue**.
+
+    <div className="ch-image-sm">
+      <Frame>
+        ![Page d’approbation de Claude expliquant que ClickHouse utilisera Claude pour le compte de votre organisation et qu’Anthropic facturera cette utilisation à votre organisation](/images/cloud/linked-billing-claude-platform/02-consent-how-billing-works.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Définir une limite de dépenses mensuelle">
+    Si vous le souhaitez, saisissez une limite de dépenses mensuelle pour l’utilisation de Claude via ClickHouse Cloud, puis cliquez sur **Continue**.
+    Pour lier votre organisation sans limite, cliquez sur **Continue without a limit**.
+    Vous pouvez modifier cette limite à tout moment dans la Claude Console.
+
+    <div className="ch-image-sm">
+      <Frame>
+        ![Page d’approbation de Claude avec un champ permettant de définir une limite de dépenses mensuelle pour l’utilisation de Claude via ClickHouse Cloud](/images/cloud/linked-billing-claude-platform/03-consent-spend-limit.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Lier et autoriser">
+    Vérifiez les actions que ClickHouse pourra effectuer, puis cliquez sur **Link and authorize**.
+
+    <div className="ch-image-sm">
+      <Frame>
+        ![Page d’approbation de Claude indiquant que ClickHouse peut utiliser Claude pour le compte de votre organisation dans la limite de dépenses mensuelle, avec le bouton Link and authorize](/images/cloud/linked-billing-claude-platform/04-consent-link-and-authorize.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Confirmer la liaison">
+    Vous êtes renvoyé vers la console ClickHouse Cloud, qui confirme que votre organisation Claude est liée.
+    La section **organisation Claude** affiche le statut **Linked**, la date de la liaison et les derniers caractères de l’ID de liaison.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Section organisation Claude affichant le statut Linked, la date de liaison, l’ID de liaison et le bouton Dissocier](/images/cloud/linked-billing-claude-platform/05-linked.webp)
+      </Frame>
+    </div>
+
+    Désormais, l’utilisation de Claude dans votre organisation ClickHouse Cloud est facturée à votre organisation Claude.
+  </Step>
+</Steps>
+
+## Surveiller l&#39;utilisation et les dépenses dans la Claude Console {#monitor-usage}
+
+Pour connaître le coût, pour votre organisation Claude, de l&#39;utilisation de Claude via ClickHouse Cloud, ouvrez [Linked platforms](https://platform.claude.com/linked-platforms) dans la Claude Console et sélectionnez **ClickHouse**. Cette page affiche :
+
+* L&#39;organisation Claude facturée, la date à laquelle elle a été liée et la personne qui a approuvé la liaison.
+* **Spent this month** : le montant dépensé via ClickHouse Cloud ce mois-ci, rapporté à votre limite de dépenses mensuelle si vous en avez défini une. La limite est réinitialisée le premier jour de chaque mois (UTC).
+* **Link history** : chaque liaison ou dissociation de l&#39;organisation, ainsi que la personne qui l&#39;a effectuée.
+
+<div className="ch-image-sm">
+  <Frame>
+    ![Page Linked platforms de la Claude Console pour ClickHouse, affichant les informations de connexion et la jauge Spent this month par rapport à une limite de dépenses mensuelle](/images/cloud/linked-billing-claude-platform/07-claude-console-spend.webp)
+  </Frame>
+</div>
+
+Depuis cette page, vous pouvez également définir, relever ou supprimer la limite de dépenses mensuelle applicable à l&#39;utilisation de Claude via ClickHouse Cloud, ou dissocier ClickHouse.
+
+La **limite de dépenses mensuelle** globale de votre organisation Claude, accessible dans [Spend limits](https://platform.claude.com/settings/billing#spend-limits) de la Claude Console, s&#39;applique également à l&#39;utilisation de Claude via ClickHouse Cloud.
+
+## Dissocier votre organisation Claude {#unlink}
+
+Vous pouvez effectuer la dissociation depuis l’un ou l’autre côté. Le résultat n’est pas le même dans chaque cas.
+
+### Dissocier depuis ClickHouse Cloud {#unlink-in-clickhouse-cloud}
+
+Dans **Paramètres de l’organisation**, cliquez sur **Dissocier** dans la section **Organisation Claude**.
+ClickHouse Cloud revient alors au comportement par défaut : les requêtes adressées aux modèles Claude dans votre organisation sont acheminées vers les modèles Claude hébergés sur Amazon Bedrock, et l’utilisation de Claude n’est plus facturée à votre organisation Claude.
+C’est la seule façon de revenir au comportement par défaut.
+
+### Dissocier dans la Claude Console {#unlink-in-the-claude-console}
+
+Sur la page [Linked platforms](https://platform.claude.com/linked-platforms), sélectionnez **ClickHouse** et cliquez sur **Dissocier**.
+ClickHouse Cloud ne peut plus utiliser Claude pour le compte de votre organisation, et Anthropic cesse de facturer à votre organisation Claude toute nouvelle utilisation de Claude via ClickHouse Cloud.
+
+<Warning>
+  La dissociation dans la Claude Console ne rétablit pas le comportement par défaut de ClickHouse Cloud.
+  Tant que vous n’avez pas rétabli la liaison ou effectué une dissociation explicite dans les **paramètres de l’organisation** de ClickHouse Cloud, les requêtes vers les modèles Claude provenant de votre organisation ClickHouse Cloud échouent.
+  Par exemple, ClickHouse Agents renvoie le message `The model provider could not complete this request (status 403).`
+</Warning>
+
+<div className="ch-image-md">
+  <Frame>
+    ![Conversation ClickHouse Agents affichant l’erreur The model provider could not complete this request (status 403)](/images/cloud/linked-billing-claude-platform/08-agents-403-error.webp)
+  </Frame>
+</div>
+
+La section **organisation Claude** des **paramètres de l’organisation** de ClickHouse Cloud affiche alors le message `The link was removed on the Claude side, or your Claude organization cannot be billed directly. Relink to continue.`
+
+<div className="ch-image-md">
+  <Frame>
+    ![Section organisation Claude affichant un avertissement indiquant que la liaison a été supprimée côté Claude, avec les boutons Relink et Dissocier](/images/cloud/linked-billing-claude-platform/06-link-removed.webp)
+  </Frame>
+</div>
+
+Pour continuer, effectuez l’une des actions suivantes :
+
+* Cliquez sur **Relink** et suivez à nouveau les [étapes de liaison](#link-your-claude-organization) pour que l’utilisation de Claude reste facturée à votre organisation Claude.
+* Cliquez sur **Dissocier** pour revenir au comportement par défaut, dans lequel les requêtes vers les modèles Claude sont acheminées vers les modèles Claude hébergés dans Amazon Bedrock.
+
+## Dépannage {#troubleshooting}
+
+| Symptôme                                                                                                            | Cause probable                                                                                                                                                                                     | Solution                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Le bouton **Link your Claude organization** est désactivé.                                                          | Vous ne disposez pas du rôle Administrateur dans votre organisation ClickHouse Cloud, ou la conformité HIPAA ou PCI DSS est activée pour votre organisation.                                       | Demandez à un Administrateur de l’organisation d’effectuer la liaison. La facturation liée avec Claude Platform n’est pas disponible pour les organisations dont la conformité HIPAA ou PCI DSS est activée ; les modèles Claude continuent d’être fournis via Amazon Bedrock.                            |
+| Claude ne propose pas votre organisation sur la page d’approbation, ou indique que ClickHouse ne peut pas être lié. | Votre organisation Claude n’est pas [éligible](#requirements), ou votre compte n’y dispose pas du rôle Propriétaire, Administrateur ou Facturation.                                                                    | Consultez les [prérequis](#requirements).                                                                                                                                                                                                                                                                 |
+| Les requêtes Claude échouent et **paramètres de l’organisation** indique que la liaison a été supprimée côté Claude.       | La liaison a été supprimée dans la Console Claude, ou Anthropic ne peut pas facturer directement votre organisation Claude.                                                                        | [Rétablissez ou supprimez la liaison](#unlink-in-the-claude-console) dans ClickHouse Cloud.                                                                                                                                                                                                               |
+| Les requêtes Claude s’interrompent en cours de mois.                                                                | Les dépenses engagées via ClickHouse Cloud ont atteint la limite de dépenses mensuelle définie lors de la liaison, ou votre organisation Claude a atteint sa limite de dépenses mensuelle globale. | Dans la Console Claude, relevez la limite de dépenses applicable à l’utilisation de Claude via ClickHouse Cloud dans [Linked platforms](https://platform.claude.com/linked-platforms), ou la limite de votre organisation dans [Spend limits](https://platform.claude.com/settings/billing#spend-limits). |
+| Les requêtes Claude échouent alors que votre organisation Claude est liée.                                          | Anthropic ne peut pas facturer votre organisation Claude pour le moment, par exemple parce que son crédit prépayé est épuisé ou qu’elle est suspendue.                                             | Vérifiez votre facturation dans la Console Claude.                                                                                                                                                                                                                                                        |
+
+Pour toute question concernant ClickHouse Cloud, contactez l’[assistance ClickHouse](https://clickhouse.com/support/program).
+Pour gérer la limite de dépenses ou la connexion côté Anthropic, utilisez la page [Linked platforms](https://platform.claude.com/linked-platforms) de la Console Claude.

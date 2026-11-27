@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['EC2', 'AWS', '호스트 로그', 'systemd', 'syslog', 'OTel', 'ClickStack', '시스템 모니터링', '클라우드 메타데이터']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -18,7 +16,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-ec2">
-  ## 기존 EC2 인스턴스와의 통합
+  ## 기존 EC2 인스턴스와의 통합 {#existing-ec2}
 </div>
 
 이 섹션에서는 시스템 로그를 수집하고 EC2 메타데이터를 자동으로 보강해 ClickStack으로 전송할 수 있도록 EC2 인스턴스에 OpenTelemetry Collector를 설치하는 방법을 설명합니다. 이 분산 아키텍처는 프로덕션 환경에 적합하며 여러 인스턴스로 확장할 수 있습니다.
@@ -32,7 +30,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 프로덕션 인스턴스를 구성하기 전에 EC2 호스트 로그 통합을 테스트하려면 [&quot;데모 데이터셋&quot;](/ko/clickstack/integration-examples/host-logs/ec2#demo-dataset) 섹션의 사전 구성된 설정과 샘플 데이터를 사용하면 됩니다.
 
 <div id="prerequisites">
-  ##### 사전 요구 사항
+  ##### 사전 요구 사항 {#prerequisites}
 </div>
 
 * 실행 중인 ClickStack 인스턴스(온프레미스, 클라우드 또는 로컬 환경)
@@ -278,8 +276,8 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     </Info>
   </Step>
 
-  <Step title="HyperDX에서 로그 확인" id="verifying-logs">
-    collector가 실행 중이면 HyperDX에 로그인한 다음, EC2 메타데이터와 함께 로그가 유입되고 있는지 확인합니다:
+  <Step title="ClickStack UI에서 로그 확인" id="verifying-logs">
+    collector가 실행 중이면 ClickStack UI에 로그인한 다음, EC2 메타데이터와 함께 로그가 유입되고 있는지 확인합니다:
 
     1. Search view로 이동합니다
     2. source를 `Logs`로 설정합니다
@@ -292,14 +290,22 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
        * `host.type` (인스턴스 유형)
        * `cloud.availability_zone`
 
-    <Image img="/images/clickstack/host-logs/ec2/search-view.webp" alt="EC2 로그 Search view" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![EC2 로그 Search view](/images/clickstack/host-logs/ec2/search-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/host-logs/ec2/log-view.webp" alt="메타데이터가 표시된 EC2 로그 상세 보기" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![메타데이터가 표시된 EC2 로그 상세 보기](/images/clickstack/host-logs/ec2/log-view.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="demo-dataset">
-  ## 데모 데이터세트
+  ## 데모 데이터세트 {#demo-dataset}
 </div>
 
 프로덕션 인스턴스를 구성하기 전에 EC2 호스트 로그 통합을 테스트해 보려는 사용자를 위해 시뮬레이션된 EC2 메타데이터가 포함된 샘플 데이터셋을 제공합니다.
@@ -404,27 +410,35 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
       -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
       -v "$(pwd)/ec2-host-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
       -v "$(pwd)/journal.log:/tmp/host-demo/journal.log:ro" \
-      docker.hyperdx.io/hyperdx/hyperdx-all-in-one:latest
+      clickhouse/clickstack-all-in-one:latest
     ```
   </Step>
 
-  <Step title="HyperDX에서 로그 확인" id="verify-demo-logs">
+  <Step title="ClickStack UI에서 로그 확인" id="verify-demo-logs">
     collector가 실행되면 다음 단계를 따르세요:
 
-    1. [HyperDX](http://localhost:8080/)를 열고 계정에 로그인합니다 (먼저 계정을 생성해야 할 수 있습니다)
+    1. [ClickStack UI](http://localhost:8080/)를 열고 계정에 로그인합니다 (먼저 계정을 생성해야 할 수 있습니다)
     2. 검색 뷰로 이동한 다음 source를 `Logs`로 설정합니다
     3. 시간 범위를 **2025-11-10 00:00:00 - 2025-11-13 00:00:00**로 설정합니다
     4. `source:ec2-demo`로 필터링합니다
     5. 로그 항목을 펼쳐 리소스 속성에서 EC2 메타데이터를 확인합니다
 
-    <Image img="/images/clickstack/host-logs/ec2/search-view-demo.webp" alt="EC2 로그 검색 뷰" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![EC2 로그 검색 뷰](/images/clickstack/host-logs/ec2/search-view-demo.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/host-logs/ec2/log-view-demo.webp" alt="메타데이터가 포함된 EC2 로그 상세 보기" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![메타데이터가 포함된 EC2 로그 상세 보기](/images/clickstack/host-logs/ec2/log-view-demo.webp)
+      </Frame>
+    </div>
 
     <Info>
       **시간대 표시**
 
-      HyperDX는 브라우저의 로컬 시간대로 타임스탬프를 표시합니다. 데모 데이터는 **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** 범위에 걸쳐 있습니다. 시간 범위를 넓게 설정하면 위치와 관계없이 데모 로그를 확인할 수 있습니다. 로그가 표시되면 더 명확한 시각화를 위해 범위를 24시간으로 좁힐 수 있습니다.
+      ClickStack UI는 브라우저의 로컬 시간대로 타임스탬프를 표시합니다. 데모 데이터는 **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** 범위에 걸쳐 있습니다. 시간 범위를 넓게 설정하면 위치와 관계없이 데모 로그를 확인할 수 있습니다. 로그가 표시되면 더 명확한 시각화를 위해 범위를 24시간으로 좁힐 수 있습니다.
     </Info>
 
     다음과 같은 시뮬레이션된 EC2 컨텍스트가 포함된 로그가 표시되어야 합니다:
@@ -436,9 +450,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## 대시보드 및 시각화
-</div>
+## 대시보드 및 시각화 {#dashboards}
 
 ClickStack로 EC2 호스트 로그 모니터링을 시작할 수 있도록 클라우드 컨텍스트가 포함된 핵심 시각화를 제공합니다.
 
@@ -448,20 +460,32 @@ ClickStack로 EC2 호스트 로그 모니터링을 시작할 수 있도록 클�
   </Step>
 
   <Step title="사전 구축된 대시보드 가져오기" id="import-dashboard">
-    1. HyperDX를 열고 Dashboards 섹션으로 이동합니다
-    2. 오른쪽 상단의 점 3개 메뉴에서 **Import Dashboard**를 클릭합니다
+    1. ClickStack UI를 열고 대시보드 섹션으로 이동합니다
+    2. 오른쪽 상단의 점 3개 메뉴에서 **대시보드 가져오기**를 클릭합니다
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="대시보드 가져오기 버튼" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![대시보드 가져오기 버튼](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
-    3. `host-logs-dashboard.json` 파일을 업로드한 다음 **Finish Import**를 클릭합니다
+    3. `host-logs-dashboard.json` 파일을 업로드한 다음 **가져오기 완료**를 클릭합니다
 
-    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="가져오기 완료" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![가져오기 완료](/images/clickstack/host-logs/import-dashboard.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="대시보드 보기" id="created-dashboard">
     모든 시각화가 미리 구성된 상태로 대시보드가 생성됩니다:
 
-    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="EC2 로그 대시보드" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![EC2 로그 대시보드](/images/clickstack/host-logs/host-logs-dashboard.webp)
+      </Frame>
+    </div>
 
     EC2 컨텍스트를 기준으로 대시보드 시각화를 필터링할 수 있습니다:
 
@@ -470,17 +494,17 @@ ClickStack로 EC2 호스트 로그 모니터링을 시작할 수 있도록 클�
     * `host.id:i-0abc123def456` - 특정 인스턴스의 로그
 
     <Note>
-      데모 데이터셋의 경우 시간 범위를 **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**로 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되어 있지 않습니다.
+      데모 데이터셋의 경우 시간 범위를 **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**&#xB85C; 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되어 있지 않습니다.
     </Note>
   </Step>
 </Steps>
 
 <div id="troubleshooting">
-  ## 문제 해결
+  ## 문제 해결 {#troubleshooting}
 </div>
 
 <div id="no-metadata">
-  ### 로그에 EC2 메타데이터가 표시되지 않는 경우
+  ### 로그에 EC2 메타데이터가 표시되지 않는 경우 {#no-metadata}
 </div>
 
 **EC2 메타데이터 서비스에 접근할 수 있는지 확인하세요:**
@@ -508,9 +532,7 @@ sudo journalctl -u otelcol-contrib -f | grep -i "ec2\|metadata\|resourcedetectio
 # 포그라운드에서 실행 중인 경우 stdout 확인
 ```
 
-<div id="no-logs">
-  ### HyperDX에 로그가 표시되지 않는 경우
-</div>
+### ClickStack UI에 로그가 표시되지 않는 경우 {#no-logs}
 
 **syslog 파일이 존재하고 정상적으로 기록되고 있는지 확인하세요:**
 
@@ -528,24 +550,24 @@ cat /var/log/syslog | head -20
 **ClickStack으로의 네트워크 연결을 확인하세요:**
 
 ```bash
-# OTLP 엔드포인트 테스트
+# Test OTLP endpoint
 curl -v http://YOUR_CLICKSTACK_HOST:4318/v1/logs
 
-# 응답이 오면 정상 (오류 응답이더라도 엔드포인트에 도달 가능함을 의미)
+# Should get a response (even if error, means endpoint is reachable)
 ```
 
 **collector 로그에서 오류가 있는지 확인하세요:**
 
 ```bash
-# 포그라운드로 실행 중인 경우
-# stdout에서 오류 메시지 확인
+# If running in foreground
+# Look for error messages in stdout
 
-# systemd 서비스로 실행 중인 경우
+# If running as systemd service
 sudo journalctl -u otelcol-contrib -f | grep -i "error\|failed"
 ```
 
 <div id="logs-not-parsing">
-  ### 로그 파싱이 올바르지 않은 경우
+  ### 로그 파싱이 올바르지 않은 경우 {#logs-not-parsing}
 </div>
 
 **syslog 포맷을 확인하십시오:**
@@ -567,7 +589,7 @@ tail -5 /var/log/messages
 포맷이 맞지 않으면 배포판에 따라 [collector 구성 만들기](#create-config) 섹션에서 해당 구성 탭을 사용하십시오.
 
 <div id="systemd-issues">
-  ### collector가 systemd 서비스로 시작되지 않는 경우
+  ### collector가 systemd 서비스로 시작되지 않는 경우 {#systemd-issues}
 </div>
 
 **서비스 상태를 확인하세요:**
@@ -589,7 +611,7 @@ sudo journalctl -u otelcol-contrib -n 50
 * 로그 파일 읽기 권한 문제
 
 <div id="next-steps">
-  ## 다음 단계
+  ## 다음 단계 {#next-steps}
 </div>
 
 * 중요한 시스템 이벤트(서비스 장애, 인증 실패, 디스크 경고)에 대한 [알림](/ko/clickstack/features/alerts)을 설정합니다
@@ -597,8 +619,6 @@ sudo journalctl -u otelcol-contrib -n 50
 * 종합적인 문제 해결을 위해 EC2 호스트 로그를 애플리케이션 로그와 연관시킵니다
 * 보안 모니터링(SSH 시도, sudo 사용, 방화벽 차단)을 위한 사용자 지정 대시보드를 생성합니다
 
-<div id="going-to-production">
-  ## 프로덕션 환경으로 전환
-</div>
+## 프로덕션 환경으로 전환 {#going-to-production}
 
 이 가이드에서는 호스트 수준 모니터링에 권장되는 프로덕션 패턴으로 OpenTelemetry Collector를 EC2 인스턴스에 직접 설치합니다. 여러 인스턴스에 걸쳐 collector를 관리하려면 구성 관리 도구(Ansible, Chef, Puppet) 또는 Kubernetes 환경의 OpenTelemetry Operator 사용을 고려하십시오. 프로덕션 구성에 대해서는 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.
