@@ -608,8 +608,9 @@ public:
       * @param equivalent_right_stream_column_to_left_stream_column - equivalent right stream column name to left stream column map.
       * @param cross_type_equivalent_columns - the equivalent columns whose replacement is a cast of the opposite side's
       * key rather than a rename of an equal-typed column.
-      * @param equivalent_expression_nodes - nodes of this DAG that compute an equivalent column which is an expression
-      * rather than an input, with the name of that column.
+      * @param equivalent_expression_nodes - a JOIN key can be an expression that this DAG computes again, so no input
+      * has its name. The map key is a node of this DAG that computes such a JOIN key. The map value is the name
+      * that the JOIN key has in the two maps above, which go by name.
       * @param keep_runtime_filters_out_of_left_stream - the left stream is only matched against (RIGHT OUTER or ANTI join).
       * @param keep_runtime_filters_out_of_right_stream - the right stream is only matched against (LEFT OUTER or ANTI join).
       * @param filter_is_always_false - no row passes the filter, and a side whose emptiness empties the join output receives it.
@@ -689,12 +690,12 @@ public:
      *   - filter_pos: position of filter column in outputs
      *   - remove_filter: whether the filter column should be removed from original DAG after evaluation
      *
-     * If cloned_nodes is given, it is filled with the node of the new actions for every node of the conjunction.
+     * If cloned_nodes_mapping is given, it is filled with a map from every node of the conjunction to its copy in the new actions.
      */
     static std::optional<ActionsForFilterPushDown> createActionsForConjunction(
         NodeRawConstPtrs conjunction,
         const ColumnsWithTypeAndName & all_inputs,
-        UnorderedMapWithMemoryTracking<const Node *, const Node *> * cloned_nodes = nullptr);
+        UnorderedMapWithMemoryTracking<const Node *, const Node *> * cloned_nodes_mapping = nullptr);
 
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
