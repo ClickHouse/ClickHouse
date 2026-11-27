@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyLimitAggregationOperator.h>
 
+#include <Core/AccurateComparison.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -31,7 +32,7 @@ namespace
     {
         if (std::isnan(scalar))
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Argument k of aggregation operator must not be NaN");
-        if (scalar > static_cast<ScalarType>(std::numeric_limits<UInt64>::max()))
+        if (accurate::greaterOp(scalar, std::numeric_limits<UInt64>::max()))
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY, "Argument k of aggregation operator is too large: {}", scalar);
         return (scalar < 0) ? 0 : static_cast<UInt64>(scalar);
     }
