@@ -1251,7 +1251,8 @@ bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const NameSet & columns) co
 
 bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const
 {
-    /// disallow arrayJoin expressions to be moved to PREWHERE for now
+    /// disallow arrayJoin expressions to be moved to PREWHERE
+    /// PREWHERE must give exactly one filter value per row read
     if (node.getArrayJoinArgument())
         return true;
 
