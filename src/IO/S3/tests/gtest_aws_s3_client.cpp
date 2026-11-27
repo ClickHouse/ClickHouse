@@ -37,7 +37,6 @@
 #include <boost/algorithm/string/split.hpp>
 
 #include <Poco/Event.h>
-#include <Poco/ThreadPool.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 
@@ -470,7 +469,7 @@ public:
     explicit DeleteObjectsStubServer(bool accept_sha256_, String error_code_ = "MissingContentMD5")
         : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
         , factory(new Factory(*this))
-        , server(std::make_unique<Poco::Net::HTTPServer>(factory, *server_socket, makeMockServerParams()))
+        , server(std::make_unique<DB::TestHTTPServer>(factory, *server_socket, makeMockServerParams()))
         , accept_sha256(accept_sha256_)
         , error_code(std::move(error_code_))
     {
@@ -553,7 +552,7 @@ private:
 
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     Poco::SharedPtr<Factory> factory;
-    std::unique_ptr<Poco::Net::HTTPServer> server;
+    std::unique_ptr<DB::TestHTTPServer> server;
     const bool accept_sha256;
     const String error_code;
 
@@ -761,7 +760,7 @@ public:
     explicit ServerSideCopyStubServer(std::chrono::milliseconds copy_delay_)
         : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
         , factory(new Factory(*this))
-        , server(std::make_unique<Poco::Net::HTTPServer>(factory, *server_socket, makeMockServerParams()))
+        , server(std::make_unique<DB::TestHTTPServer>(factory, *server_socket, makeMockServerParams()))
         , copy_delay(copy_delay_)
     {
         server->start();
@@ -876,7 +875,7 @@ private:
 
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     Poco::SharedPtr<Factory> factory;
-    std::unique_ptr<Poco::Net::HTTPServer> server;
+    std::unique_ptr<DB::TestHTTPServer> server;
     const std::chrono::milliseconds copy_delay;
 
     mutable std::mutex mutex;
@@ -1916,7 +1915,7 @@ class FixedETagServer
 public:
     FixedETagServer(std::string body, std::string etag)
         : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
-        , server(std::make_unique<Poco::Net::HTTPServer>(
+        , server(std::make_unique<DB::TestHTTPServer>(
               new FixedETagHandlerFactory(std::move(body), std::move(etag)),
               *server_socket, makeMockServerParams()))
     {
@@ -1926,7 +1925,7 @@ public:
     [[nodiscard]] std::string getUrl() const { return "http://" + server_socket->address().toString(); }
 private:
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
-    std::unique_ptr<Poco::Net::HTTPServer> server;
+    std::unique_ptr<DB::TestHTTPServer> server;
 };
 
 /// Like FixedETagServer, but honors the `If-Match` conditional header the way S3/GCS do: if the
@@ -1986,7 +1985,7 @@ class IfMatchAwareServer
 public:
     IfMatchAwareServer(std::string body, std::string etag)
         : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
-        , server(std::make_unique<Poco::Net::HTTPServer>(
+        , server(std::make_unique<DB::TestHTTPServer>(
               new IfMatchAwareHandlerFactory(std::move(body), std::move(etag)),
               *server_socket, makeMockServerParams()))
     {
@@ -1996,7 +1995,7 @@ public:
     [[nodiscard]] std::string getUrl() const { return "http://" + server_socket->address().toString(); }
 private:
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
-    std::unique_ptr<Poco::Net::HTTPServer> server;
+    std::unique_ptr<DB::TestHTTPServer> server;
 };
 
 std::shared_ptr<DB::S3::Client> createTestS3Client(const DB::S3::URI & uri)
@@ -2271,10 +2270,9 @@ class FunctionHTTPServer
 {
 public:
     explicit FunctionHTTPServer(HTTPHandlerFunction handler, int max_threads = 16)
-        : thread_pool(std::make_unique<Poco::ThreadPool>(/* minCapacity = */ 2, max_threads))
-        , server_socket(std::make_unique<Poco::Net::ServerSocket>(/* port = */ 0, /* backlog = */ std::max(64, max_threads)))
-        , server(std::make_unique<Poco::Net::HTTPServer>(
-              new Factory(std::move(handler)), *thread_pool, *server_socket, makeServerParams(max_threads)))
+        : server_socket(std::make_unique<Poco::Net::ServerSocket>(/* port = */ 0, /* backlog = */ std::max(64, max_threads)))
+        , server(std::make_unique<DB::TestHTTPServer>(
+              new Factory(std::move(handler)), *server_socket, makeServerParams(max_threads)))
     {
         server->start();
     }
@@ -2315,9 +2313,8 @@ private:
         const HTTPHandlerFunction handler;
     };
 
-    std::unique_ptr<Poco::ThreadPool> thread_pool;
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
-    std::unique_ptr<Poco::Net::HTTPServer> server;
+    std::unique_ptr<DB::TestHTTPServer> server;
 };
 
 void sendHTTPBody(Poco::Net::HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const std::string & body)

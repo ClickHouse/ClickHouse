@@ -58,18 +58,12 @@ namespace Net
         StreamSocket & socket();
         /// Returns a reference to the underlying socket.
 
-        void start();
-        /// Calls run() and catches any exceptions that
-        /// might be thrown by run().
-
     private:
         TCPServerConnection();
         TCPServerConnection(const TCPServerConnection &);
         TCPServerConnection & operator=(const TCPServerConnection &);
 
         StreamSocket _socket;
-
-        friend class TCPServerDispatcher;
     };
 
 

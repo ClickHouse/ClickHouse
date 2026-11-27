@@ -6,7 +6,6 @@
 #include <utility>
 #include <Storages/NATS/INATSConsumer.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <Poco/Timer.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 

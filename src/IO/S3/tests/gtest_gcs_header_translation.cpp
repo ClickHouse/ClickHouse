@@ -234,7 +234,7 @@ class MockGCSServer
 public:
     MockGCSServer()
         : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
-        , server(std::make_unique<Poco::Net::HTTPServer>(
+        , server(std::make_unique<DB::TestHTTPServer>(
               new MockGCSHandlerFactory(mutex, last_request_header), *server_socket, makeMockServerParams()))
     {
         server->start();
@@ -254,7 +254,7 @@ private:
     std::mutex mutex;
     Poco::Net::MessageHeader last_request_header;
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
-    std::unique_ptr<Poco::Net::HTTPServer> server;
+    std::unique_ptr<DB::TestHTTPServer> server;
 };
 
 struct ScriptedGCSRequest
@@ -272,7 +272,7 @@ public:
     explicit ScriptedGCSServer(Script script_)
         : script(std::move(script_))
         , server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
-        , server(std::make_unique<Poco::Net::HTTPServer>(new Factory(*this), *server_socket, makeMockServerParams()))
+        , server(std::make_unique<DB::TestHTTPServer>(new Factory(*this), *server_socket, makeMockServerParams()))
     {
         server->start();
     }
@@ -325,7 +325,7 @@ private:
     std::mutex mutex;
     std::vector<ScriptedGCSRequest> requests;
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
-    std::unique_ptr<Poco::Net::HTTPServer> server;
+    std::unique_ptr<DB::TestHTTPServer> server;
 };
 
 void respond(Poco::Net::HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const std::string & body = "")

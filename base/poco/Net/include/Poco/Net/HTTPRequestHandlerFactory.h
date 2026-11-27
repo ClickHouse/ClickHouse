@@ -68,7 +68,6 @@ namespace Net
         HTTPRequestHandlerFactory(const HTTPRequestHandlerFactory &);
         HTTPRequestHandlerFactory & operator=(const HTTPRequestHandlerFactory &);
 
-        friend class HTTPServer;
         friend class HTTPServerConnection;
     };
 

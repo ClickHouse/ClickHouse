@@ -12,7 +12,7 @@
 
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
-#include <Poco/Net/HTTPServer.h>
+#include <Server/tests/TestHTTPServer.h>
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -80,7 +80,7 @@ TEST(PocoAzureHTTPClient, SetsContentLengthFromBodyStream)
 {
     CapturedRequest captured;
     Poco::Net::ServerSocket server_socket(Poco::Net::SocketAddress("127.0.0.1", 0));
-    Poco::Net::HTTPServer server(
+    DB::TestHTTPServer server(
         new CapturingRequestHandlerFactory(captured), server_socket, new Poco::Net::HTTPServerParams);
     server.start();
 

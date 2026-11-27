@@ -167,8 +167,6 @@ The path in Keeper under which the accepted time-based one-time password codes a
     DECLARE(UInt64, max_thread_pool_size, 10000, R"(
 ClickHouse uses threads from the Global Thread pool to process queries. If there is no idle thread to process a query, then a new thread is created in the pool. `max_thread_pool_size` limits the maximum number of threads in the pool.
 
-The threads that serve client connections also come from this pool. Each pool of connection threads adds room for its `max_connections` threads on top of this limit.
-
 **Example**
 
 ```xml

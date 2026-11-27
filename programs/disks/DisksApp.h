@@ -10,6 +10,7 @@
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/variables_map.hpp>
 #include <Poco/SplitterChannel.h>
+#include <Poco/Thread.h>
 #include <Poco/Util/Application.h>
 
 #include <boost/program_options/positional_options.hpp>

@@ -9,7 +9,6 @@
 #include <sys/types.h>
 #include <pwd.h>
 #include <unistd.h>
-#include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -1548,15 +1547,6 @@ try
     total_memory_tracker.setJemallocFlushProfileOnMemoryExceeded(server_settings[ServerSetting::jemalloc_flush_profile_on_memory_exceeded]);
     total_memory_tracker.setJemallocFlushProfileOnMemoryExceededSeconds(server_settings[ServerSetting::jemalloc_flush_profile_on_memory_exceeded_interval]);
 
-    TCPServerThreadPool server_pool(server_settings[ServerSetting::max_connections]);
-
-    std::unique_ptr<TCPServerThreadPool> introspection_server_pool;
-
-    std::mutex servers_lock;
-    std::vector<ProtocolServerAdapter> servers;
-    std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
-    std::vector<ProtocolServerAdapter> introspection_servers;
-
     auto stop_silk_fiber_scheduler = [&]{
 #if USE_SILK
         if (server_settings[ServerSetting::enable_silk_runtime])
@@ -1578,6 +1568,15 @@ try
 
         stop_silk_fiber_scheduler();
     });
+
+    TCPServerThreadPool server_pool(server_settings[ServerSetting::max_connections]);
+
+    std::unique_ptr<TCPServerThreadPool> introspection_server_pool;
+
+    std::mutex servers_lock;
+    std::vector<ProtocolServerAdapter> servers;
+    std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
+    std::vector<ProtocolServerAdapter> introspection_servers;
 
     if (page_cache_max_size != 0)
     {
@@ -3328,7 +3327,8 @@ try
                                 global_context->getSettingsRef()[Setting::send_timeout].totalSeconds(),
                                 false),
                             server_pool,
-                            socket),
+                            socket,
+                            makeServerParams(server_settings)),
                         /* supports_runtime_reconfiguration = */ false);
                 });
 
@@ -3356,7 +3356,8 @@ try
                                 global_context->getSettingsRef()[Setting::send_timeout].totalSeconds(),
                                 true),
                             server_pool,
-                            socket),
+                            socket,
+                            makeServerParams(server_settings)),
                         /* supports_runtime_reconfiguration = */ false);
 #else
                     UNUSED(port);
@@ -3379,6 +3380,7 @@ try
                     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
                     http_params->setTimeout(http_context->getReceiveTimeout());
                     http_params->setKeepAliveTimeout(keep_alive_timeout);
+                    http_params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
 
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(server_settings, socket, listen_host, port);
@@ -3417,6 +3419,7 @@ try
                     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
                     http_params->setTimeout(http_context->getReceiveTimeout());
                     http_params->setKeepAliveTimeout(keep_alive_timeout);
+                    http_params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
 
                     Poco::Net::SecureServerSocket socket;
                     auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);

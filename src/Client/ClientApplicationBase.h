@@ -8,6 +8,7 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/SimpleFileChannel.h>
 #include <Poco/SplitterChannel.h>
+#include <Poco/Thread.h>
 
 #include <boost/program_options.hpp>
 

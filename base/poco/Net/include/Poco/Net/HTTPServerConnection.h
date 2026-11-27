@@ -58,7 +58,7 @@ namespace Net
     private:
         HTTPServerParams::Ptr _pParams;
         HTTPRequestHandlerFactory::Ptr _pFactory;
-        /// Written by the thread calling `HTTPServer::stopAll` (via `onServerStopped`) while the
+        /// Written by the thread firing `serverStopped` (via `onServerStopped`) while the
         /// connection thread reads it in the `run` loop, so it must be atomic.
         std::atomic<bool> _stopped;
         Poco::FastMutex _mutex;

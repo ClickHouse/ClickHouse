@@ -243,7 +243,6 @@ private:
     mutable FastMutex _mutex;
 
     friend class ThreadLocalStorage;
-    friend class PooledThread;
 };
 
 

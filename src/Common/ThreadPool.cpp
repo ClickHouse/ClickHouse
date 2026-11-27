@@ -4,6 +4,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/ThreadWithThreadStatus.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -1232,6 +1233,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 template class ThreadPoolImpl<GlobalThreadType>;
 template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, true>>;
 template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, false>>;
+template class ThreadPoolImpl<ThreadWithThreadStatus>;
 template class ThreadFromGlobalPoolImpl<true, true>;
 template class ThreadFromGlobalPoolImpl<true, false>;
 template class ThreadFromGlobalPoolImpl<false, false>;

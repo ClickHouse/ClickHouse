@@ -10,6 +10,7 @@
 #include <base/types.h>
 #include <Common/Logger.h>
 #include <Common/ThreadPool.h>
+#include <Common/ThreadWithThreadStatus.h>
 #include <Server/TCPServerConnectionFactory.h>
 #include <Core/ServerSettings.h>
 
@@ -38,7 +39,7 @@ private:
 };
 
 /// Serves the connections of the TCP servers sharing it, at most `max_connections` at a time.
-class TCPServerThreadPool : public ThreadPool
+class TCPServerThreadPool : public ThreadPoolImpl<ThreadWithThreadStatus>
 {
 public:
     explicit TCPServerThreadPool(Int64 max_connections);

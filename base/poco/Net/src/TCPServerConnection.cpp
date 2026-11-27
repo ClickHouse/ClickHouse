@@ -13,11 +13,6 @@
 
 
 #include "Poco/Net/TCPServerConnection.h"
-#include "Poco/Exception.h"
-#include "Poco/ErrorHandler.h"
-
-
-using Poco::Exception;
 
 
 namespace Poco {
@@ -31,27 +26,6 @@ TCPServerConnection::TCPServerConnection(const StreamSocket& socket):
 
 
 TCPServerConnection::~TCPServerConnection() = default;
-
-
-void TCPServerConnection::start()
-{
-	try
-	{
-		run();
-	}
-	catch (Exception& exc)
-	{
-		ErrorHandler::handle(exc);
-	}
-	catch (std::exception& exc)
-	{
-		ErrorHandler::handle(exc);
-	}
-	catch (...)
-	{
-		ErrorHandler::handle();
-	}
-}
 
 
 } } // namespace Poco::Net

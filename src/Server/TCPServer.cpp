@@ -3,6 +3,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 #include <Poco/Exception.h>
 #include <Poco/Net/TCPServerConnection.h>
@@ -37,23 +38,15 @@ size_t checkMaxConnections(Int64 max_connections)
 }
 
 TCPServerThreadPool::TCPServerThreadPool(Int64 max_connections)
-    : ThreadPool(
+    : ThreadPoolImpl(
         CurrentMetrics::TCPServerThreads,
         CurrentMetrics::TCPServerThreadsActive,
         CurrentMetrics::TCPServerThreadsScheduled,
         checkMaxConnections(max_connections),
-        /* max_free_threads = */ 0,
+        /* max_free_threads = */ std::min<size_t>(checkMaxConnections(max_connections), 3),
         /* queue_size = */ 0,
         /* shutdown_on_exception = */ false)
 {
-    /// Every thread of this pool holds a global thread for a whole connection, so the global pool gets room for them.
-    auto & global_pool = GlobalThreadPool::instance();
-    const size_t threads = getMaxThreads();
-    /// Read before `setMaxThreads`, which can raise it.
-    const size_t global_queue_size = global_pool.getQueueSize();
-    global_pool.setMaxThreads(global_pool.getMaxThreads() + threads);
-    if (global_queue_size)
-        global_pool.setQueueSize(global_queue_size + threads);
 }
 
 TCPServer::TCPServer(
@@ -98,15 +91,18 @@ void TCPServer::stop()
     if (!is_open)
         return;
 
-    // FIXME: On Darwin and illumos, shutdown(SHUT_RD) on a listening socket
-    // returns ENOTCONN, so accept() is not explicitly awakened.
-#if !defined(OS_DARWIN) && !defined(OS_SUNOS)
-    // Shutdown the listen socket before stopping tcp server to avoid 2.5second delay
-    socket.shutdownReceive();
-#endif
+    {
+        /// The accept thread uses this object: it is joined even if `shutdownReceive` throws, and a failed join terminates.
+        SCOPE_EXIT({ if (accepting.exchange(false)) accept_thread.join(); });
 
-    if (accepting.exchange(false))
-        accept_thread.join();
+        // FIXME: On Darwin and illumos, shutdown(SHUT_RD) on a listening socket
+        // returns ENOTCONN, so accept() is not explicitly awakened.
+#if !defined(OS_DARWIN) && !defined(OS_SUNOS)
+        // Shutdown the listen socket before stopping tcp server to avoid 2.5second delay
+        socket.shutdownReceive();
+#endif
+    }
+
     // This notifies already established connections that they should stop serving
     // queries and close their socket as soon as they can.
     is_open = false;
@@ -119,6 +115,8 @@ void TCPServer::stop()
 
 void TCPServer::run()
 {
+    auto fault_injection_blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
+
     while (accepting)
     {
         Poco::Timespan timeout(250000);
@@ -153,7 +151,7 @@ void TCPServer::run()
                     }
 
                     /// Created before the counter is incremented, because creating it may throw.
-                    ThreadPool::Job job = [this, connection_socket] { serveConnection(connection_socket); };
+                    TCPServerThreadPool::Job job = [this, connection_socket] { serveConnection(connection_socket); };
                     ++current_connections;
                     if (!thread_pool.trySchedule(std::move(job)))
                     {

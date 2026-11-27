@@ -36,9 +36,6 @@ namespace Net
     /// to RFC 5424 "The Syslog Protocol"
     /// and RFC 5426 "Transmission of syslog messages over UDP".
     ///
-    /// In addition, RemoteSyslogListener also supports the "old" BSD syslog
-    /// protocol, as described in RFC 3164.
-    ///
     /// RFC 5425 structured data can be passed via the "structured-data"
     /// property of the log Message. The content of the "structured-data"
     /// property must be correct according to RFC 5425.

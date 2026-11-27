@@ -6,6 +6,7 @@
 #include <Server/TCPServerConnectionFactory.h>
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Runnable.h>
+#include <Poco/Thread.h>
 #include <Common/Logger.h>
 #include <Common/ThreadPool.h>
 
