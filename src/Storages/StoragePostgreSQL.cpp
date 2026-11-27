@@ -15,6 +15,7 @@
 #include <Core/Settings.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
+#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -67,6 +68,7 @@
 #include <array>
 #include <condition_variable>
 #include <mutex>
+#include <unordered_map>
 
 #include <libpq-fe.h>
 
@@ -103,6 +105,139 @@ namespace
 {
 /// Infer the structure of a result of a user-provided query by running it with `LIMIT 0` on the PostgreSQL side.
 ColumnsDescription doQueryResultStructure(pqxx::connection & connection, const String & query, bool use_nulls);
+}
+
+namespace
+{
+
+/// Stable built-in PostgreSQL type OIDs (from `pg_type.h`). Used to prove a remote column's type before
+/// a DELETE predicate that references it is pushed down.
+constexpr int PG_TYPE_OID_INT8 = 20;
+constexpr int PG_TYPE_OID_INT2 = 21;
+constexpr int PG_TYPE_OID_INT4 = 23;
+constexpr int PG_TYPE_OID_TEXT = 25;
+constexpr int PG_TYPE_OID_VARCHAR = 1043;
+constexpr int PG_TYPE_OID_DATE = 1082;
+constexpr int PG_TYPE_OID_UUID = 2950;
+
+struct RemoteColumnForMutation
+{
+    int type_oid = 0;
+    bool collation_is_deterministic = true;
+};
+
+/// Read, in the caller's transaction (so it is the same snapshot the delete runs against), the type OID
+/// and collation determinism of every column of the target table. The relation is resolved with the
+/// already-quoted identifier cast to `regclass`, exactly as the delete statement resolves it (honouring
+/// the search path), so a table that does not exist raises PostgreSQL's own `42P01` here rather than a
+/// misleading per-column error. `pg_collation.collisdeterministic` exists only in PostgreSQL 12+, but
+/// non-deterministic collations were introduced in 12 too, so on older servers every collation is
+/// deterministic and the column is simply not referenced.
+std::unordered_map<String, RemoteColumnForMutation>
+fetchRemoteColumnsForMutation(pqxx::work & tx, const String & quoted_table)
+{
+    const bool has_collation_determinism
+        = tx.exec("SELECT current_setting('server_version_num')::int >= 120000")[0][0].as<bool>();
+    const String determinism = has_collation_determinism ? "COALESCE(c.collisdeterministic, true)" : "true";
+
+    const String query = fmt::format(
+        "SELECT a.attname, a.atttypid, {} "
+        "FROM pg_attribute a "
+        "LEFT JOIN pg_collation c ON c.oid = a.attcollation "
+        "WHERE a.attrelid = {}::regclass AND NOT a.attisdropped AND a.attnum > 0",
+        determinism, tx.quote(quoted_table));
+
+    std::unordered_map<String, RemoteColumnForMutation> columns;
+    const pqxx::result rows = tx.exec(query);
+    /// The row iterator yields a lightweight `row_ref` by value, so bind it by value (a reference
+    /// would bind to a temporary, which `-Wrange-loop-bind-reference` rejects).
+    for (const auto row : rows)
+        columns.emplace(
+            row[0].as<std::string>(),
+            RemoteColumnForMutation{.type_oid = row[1].as<int>(), .collation_is_deterministic = row[2].as<bool>()});
+    return columns;
+}
+
+/// Throw unless the remote column's comparison semantics are provably identical to the ClickHouse
+/// column's for this usage, so a pushed-down DELETE removes exactly the rows the query selected. This is
+/// a deliberately small v1 allowlist (fail-closed): integer, date and uuid columns, and text/varchar
+/// columns used only with equality under a deterministic collation. Everything else — decimals, floats,
+/// booleans, timestamps, char(n), enums, text ordering/LIKE, non-deterministic collations — is rejected
+/// and left to a follow-up. See `transformMutationPredicateForExternalDatabase` for why a mutation
+/// (unlike a SELECT) cannot re-filter the remote's match locally.
+void checkRemoteColumnEquivalenceForDelete(
+    const String & column,
+    ExternalDatabaseMutationColumnUsage usage,
+    const NamesAndTypesList & clickhouse_columns,
+    const std::unordered_map<String, RemoteColumnForMutation> & remote_columns,
+    const String & predicate_for_message)
+{
+    DataTypePtr clickhouse_type;
+    for (const auto & name_and_type : clickhouse_columns)
+        if (name_and_type.name == column)
+        {
+            clickhouse_type = name_and_type.type;
+            break;
+        }
+
+    const auto remote_it = remote_columns.find(column);
+
+    auto reject = [&](const String & reason)
+    {
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "The DELETE predicate '{}' cannot be pushed down to PostgreSQL: column '{}' {}. A mutation "
+            "applies whatever rows the remote matches and cannot re-check them locally, so it is pushed "
+            "down only when the remote column's comparison semantics are provably identical to "
+            "ClickHouse's. Supported for delete: integer, date and uuid columns, and text/varchar columns "
+            "compared only with =, != or IN under a deterministic collation.",
+            predicate_for_message, column, reason);
+    };
+
+    if (!clickhouse_type || remote_it == remote_columns.end())
+    {
+        reject("could not be resolved to a PostgreSQL column");
+        return;
+    }
+
+    const auto & remote = remote_it->second;
+    const WhichDataType which(removeLowCardinalityAndNullable(clickhouse_type));
+
+    if (usage == ExternalDatabaseMutationColumnUsage::Pattern)
+    {
+        reject("is used with LIKE/NOT LIKE, which is not pushed down for deletes");
+        return;
+    }
+
+    switch (remote.type_oid)
+    {
+        case PG_TYPE_OID_INT2:
+        case PG_TYPE_OID_INT4:
+        case PG_TYPE_OID_INT8:
+            if (!which.isInteger())
+                reject("is an integer in PostgreSQL but not an integer in ClickHouse");
+            return;
+        case PG_TYPE_OID_DATE:
+            if (!(which.isDate() || which.isDate32()))
+                reject("is a date in PostgreSQL but not a Date/Date32 in ClickHouse");
+            return;
+        case PG_TYPE_OID_UUID:
+            if (!which.isUUID())
+                reject("is a uuid in PostgreSQL but not a UUID in ClickHouse");
+            return;
+        case PG_TYPE_OID_TEXT:
+        case PG_TYPE_OID_VARCHAR:
+            if (!which.isString())
+                reject("is text in PostgreSQL but not String in ClickHouse");
+            if (usage != ExternalDatabaseMutationColumnUsage::Equality)
+                reject("is a text column compared with an ordering operator, whose result depends on the remote collation");
+            if (!remote.collation_is_deterministic)
+                reject("is a text column with a non-deterministic collation, under which PostgreSQL may treat as equal strings ClickHouse does not");
+            return;
+        default:
+            reject(fmt::format("has PostgreSQL type OID {}, which is not supported for delete pushdown", remote.type_oid));
+    }
+}
+
 }
 
 StoragePostgreSQL::StoragePostgreSQL(
@@ -658,14 +793,7 @@ void StoragePostgreSQL::mutate(const MutationCommands & commands, ContextPtr loc
     /// Bound to a local: `getInMemoryMetadataPtr` returns a `StorageMetadataHandle` whose `operator->`
     /// is deleted on an rvalue, so the handle must outlive the member access.
     const auto metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false);
-
-    /// The predicate is translated in full or the query fails: see `transformMutationPredicateForExternalDatabase`.
-    const String where = transformMutationPredicateForExternalDatabase(
-        *alter_command->predicate,
-        metadata->getColumns().getAllPhysical(),
-        IdentifierQuotingStyle::DoubleQuotesPostgreSQL,
-        LiteralEscapingStyle::PostgreSQL,
-        local_context);
+    const NamesAndTypesList clickhouse_columns = metadata->getColumns().getAllPhysical();
 
     auto connection_holder = pool->get();
     auto & connection = connection_holder->get();
@@ -676,8 +804,6 @@ void StoragePostgreSQL::mutate(const MutationCommands & commands, ContextPtr loc
     const String quoted_table = remote_table_schema.empty()
         ? connection.quote_table({remote_table_or_query.getTableName()})
         : connection.quote_table({remote_table_schema, remote_table_or_query.getTableName()});
-    const String query = fmt::format("DELETE FROM {} WHERE {}", quoted_table, where);
-    LOG_TRACE(log, "Query: {}", query);
 
     /// Lets `KILL QUERY` and `max_execution_time` interrupt a statement blocked on a remote lock.
     const QueryStatusPtr query_status = local_context->getProcessListElement();
@@ -688,6 +814,28 @@ void StoragePostgreSQL::mutate(const MutationCommands & commands, ContextPtr loc
     try
     {
         pqxx::work tx(connection);
+
+        /// Translate the predicate against the remote column types/collations read in THIS transaction,
+        /// so the schema the delete runs against is exactly the one that was validated. The predicate is
+        /// translated in full or the query fails (see `transformMutationPredicateForExternalDatabase`),
+        /// and each predicate column must be provably equivalent between the two engines, because a
+        /// mutation commits whatever the remote matched and cannot re-filter it locally.
+        const auto remote_columns = fetchRemoteColumnsForMutation(tx, quoted_table);
+        const String where = transformMutationPredicateForExternalDatabase(
+            *alter_command->predicate,
+            clickhouse_columns,
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL,
+            LiteralEscapingStyle::PostgreSQL,
+            local_context,
+            [&](const String & column, ExternalDatabaseMutationColumnUsage usage)
+            {
+                checkRemoteColumnEquivalenceForDelete(
+                    column, usage, clickhouse_columns, remote_columns,
+                    alter_command->predicate->formatForErrorMessage());
+            });
+
+        const String query = fmt::format("DELETE FROM {} WHERE {}", quoted_table, where);
+        LOG_TRACE(log, "Query: {}", query);
 
         /// `exec`/`commit` below block, and libpqxx offers no way to interrupt them. So a watcher
         /// thread sends `PQcancel` (thread-safe, and built against this connection before the
@@ -1284,6 +1432,8 @@ All joins, aggregations, sorting, and `IN [ array ]` conditions are executed in 
 `DELETE FROM pg_table WHERE ...` and `ALTER TABLE pg_table DELETE WHERE ...` are executed as a single `DELETE FROM ... WHERE ...` statement on the PostgreSQL side, in its own transaction. The query returns success only after PostgreSQL confirms the commit, and it is never retried automatically: if the connection fails while the commit is in progress, the query fails reporting that the outcome is unknown.
 
 The `WHERE` predicate must be translated into PostgreSQL SQL in full: unlike `SELECT`, a predicate is never split into a remote and a local part, because weakening it would delete rows the query did not ask to delete. A query whose predicate contains expressions with no PostgreSQL form fails with `INCORRECT_QUERY` (constant expressions are folded into literals first, so they are fine). A table backed by a query (see below) cannot be mutated. `UPDATE` is not supported yet.
+
+A `SELECT` re-checks the pushed-down predicate locally, so it can push a comparison optimistically; a `DELETE` cannot, so it is pushed down only when every column it compares is provably equivalent between ClickHouse and PostgreSQL. The predicate's remote column types and collations are read inside the delete's own transaction and checked against the ClickHouse columns. The initial version supports integer, `date` and `uuid` columns, and `text`/`varchar` columns compared only with `=`, `!=` or `IN` under a deterministic collation; any other column or comparison (decimals, floats, booleans, timestamps, `char(n)`, text ordering or `LIKE`, non-deterministic collations) fails with `INCORRECT_QUERY` rather than risk deleting rows ClickHouse would not have matched.
 
 ## Passing a query instead of a table name {#passing-a-query}
 

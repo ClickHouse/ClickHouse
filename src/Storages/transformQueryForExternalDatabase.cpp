@@ -1612,7 +1612,8 @@ String transformMutationPredicateForExternalDatabase(
     const NamesAndTypesList & available_columns,
     IdentifierQuotingStyle identifier_quoting_style,
     LiteralEscapingStyle literal_escaping_style,
-    ContextPtr context)
+    ContextPtr context,
+    const ExternalDatabaseMutationColumnChecker & column_checker)
 {
     ASTPtr where = predicate.clone();
 
@@ -1681,6 +1682,52 @@ String transformMutationPredicateForExternalDatabase(
             for (const auto & child : node->children)
                 stack.push_back(child.get());
         }
+    }
+
+    /// Let the engine prove each column's remote comparison semantics match ClickHouse's. The predicate
+    /// is already fully translatable and un-widened here, so the only remaining way a pushed-down delete
+    /// can diverge is a column whose remote type/collation evaluates a comparison differently (e.g. a
+    /// `String`-declared column that is really a remote `integer`, or a non-deterministic text collation).
+    /// `isCompatible` restricts the operators to the set below, so a comparison's operands are only
+    /// identifiers, literals and tuples of them.
+    if (column_checker)
+    {
+        std::function<void(const IAST *)> visit = [&](const IAST * node)
+        {
+            if (const auto * function = node->as<ASTFunction>())
+            {
+                std::optional<ExternalDatabaseMutationColumnUsage> usage;
+                const String & name = function->name;
+                if (name == "equals" || name == "notEquals" || name == "in" || name == "notIn")
+                    usage = ExternalDatabaseMutationColumnUsage::Equality;
+                else if (name == "less" || name == "greater" || name == "lessOrEquals" || name == "greaterOrEquals")
+                    usage = ExternalDatabaseMutationColumnUsage::Ordering;
+                else if (name == "like" || name == "notLike")
+                    usage = ExternalDatabaseMutationColumnUsage::Pattern;
+
+                if (usage && function->arguments)
+                {
+                    /// Report every column appearing in the comparison (recursing through row-value
+                    /// tuples such as `(a, b) < (1, 2)`); the other operands are literals.
+                    std::function<void(const IAST *)> report_operand = [&](const IAST * operand)
+                    {
+                        if (const auto * identifier = operand->as<ASTIdentifier>())
+                            column_checker(identifier->name(), *usage);
+                        else
+                            for (const auto & child : operand->children)
+                                report_operand(child.get());
+                    };
+                    for (const auto & argument : function->arguments->children)
+                        report_operand(argument.get());
+                    return;
+                }
+                /// `and`/`or`/`not`/`isNull`/`isNotNull`/`tuple`: no type-sensitive comparison here,
+                /// recurse into the children (an `IS NULL` test is type-independent).
+            }
+            for (const auto & child : node->children)
+                visit(child.get());
+        };
+        visit(where.get());
     }
 
     dropAliases(where);

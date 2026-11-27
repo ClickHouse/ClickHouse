@@ -2154,6 +2154,107 @@ def test_postgres_delete_float_predicate_rejected(started_cluster):
     cursor.execute("DROP TABLE test_delete_float")
 
 
+def test_postgres_delete_supported_type_predicates(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_types")
+    cursor.execute(
+        "CREATE TABLE test_delete_types (id integer, d date, u uuid, name text)"
+    )
+    cursor.execute(
+        "INSERT INTO test_delete_types VALUES "
+        "(1, '2019-01-01', '11111111-1111-1111-1111-111111111111', 'alpha'), "
+        "(2, '2020-06-01', '22222222-2222-2222-2222-222222222222', 'beta'), "
+        "(3, '2021-06-01', '33333333-3333-3333-3333-333333333333', 'gamma'), "
+        "(4, '2022-06-01', '44444444-4444-4444-4444-444444444444', 'delta')"
+    )
+    node1.query(
+        f"CREATE TABLE test.pg_delete_types (id Int32, d Date, u UUID, name String) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_types', 'postgres', '{pg_pass}')"
+    )
+
+    # Every supported type/operator pair: integer, date (ordering), uuid (equality) and text
+    # (equality / IN under the default, deterministic collation) all have identical comparison
+    # semantics in both engines, so each predicate is pushed down and applied on the remote.
+    node1.query("DELETE FROM test.pg_delete_types WHERE d < '2020-01-01'")  # removes id 1
+    node1.query(
+        "DELETE FROM test.pg_delete_types WHERE u = '22222222-2222-2222-2222-222222222222'"
+    )  # removes id 2
+    node1.query("DELETE FROM test.pg_delete_types WHERE name IN ('gamma', 'zeta')")  # removes id 3
+    cursor.execute("SELECT id FROM test_delete_types ORDER BY id")
+    assert cursor.fetchall() == [(4,)]
+
+    # The ALTER form takes the same validated pushdown path.
+    node1.query("ALTER TABLE test.pg_delete_types DELETE WHERE id = 4")
+    cursor.execute("SELECT count(*) FROM test_delete_types")
+    assert cursor.fetchall() == [(0,)]
+
+    node1.query("DROP TABLE test.pg_delete_types")
+    cursor.execute("DROP TABLE test_delete_types")
+
+
+def test_postgres_delete_type_mismatch_rejected(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_mismatch")
+    # `id` is really an integer and `price` a numeric; `name` is text.
+    cursor.execute("CREATE TABLE test_delete_mismatch (id integer, price numeric(10,2), name text)")
+    cursor.execute(
+        "INSERT INTO test_delete_mismatch VALUES (1, 9.99, 'a'), (10, 1.50, 'b'), (11, 2.50, 'c')"
+    )
+    # The ClickHouse column `id` is declared String over a remote integer: ClickHouse compares
+    # `id = '01'` as a string (no match), PostgreSQL as an integer (`01` = 1). A pushed-down delete
+    # would commit PostgreSQL's match, so the type divergence is rejected rather than trusted.
+    node1.query(
+        f"CREATE TABLE test.pg_delete_mismatch (id String, price Decimal(10,2), name String) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_mismatch', 'postgres', '{pg_pass}')"
+    )
+
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_mismatch WHERE id = '01'")
+    assert "cannot be pushed down" in error and "not an integer in ClickHouse" in error
+
+    # An unsupported remote type (numeric/Decimal) is rejected rather than pushed down.
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_mismatch WHERE price < 2")
+    assert "cannot be pushed down" in error
+
+    # Ordering on a text column depends on the remote collation, so it is not pushed down.
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_mismatch WHERE name < 'c'")
+    assert "cannot be pushed down" in error and "ordering operator" in error
+
+    # None of the rejected predicates touched the remote table.
+    cursor.execute("SELECT count(*) FROM test_delete_mismatch")
+    assert cursor.fetchall() == [(3,)]
+
+    node1.query("DROP TABLE test.pg_delete_mismatch")
+    cursor.execute("DROP TABLE test_delete_mismatch")
+
+
+def test_postgres_delete_non_deterministic_collation_rejected(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_delete_ci")
+    cursor.execute("DROP COLLATION IF EXISTS test_delete_ci_coll")
+    # A non-deterministic collation makes PostgreSQL treat strings ClickHouse considers distinct as
+    # equal (here, case-insensitively), so `name = 'ALPHA'` would delete the 'alpha' row on the
+    # remote while ClickHouse's bytewise equality would not. Equality under such a collation is
+    # therefore rejected, and both rows must survive.
+    cursor.execute(
+        "CREATE COLLATION test_delete_ci_coll (provider = icu, locale = 'und-u-ks-level2', deterministic = false)"
+    )
+    cursor.execute("CREATE TABLE test_delete_ci (name text COLLATE test_delete_ci_coll)")
+    cursor.execute("INSERT INTO test_delete_ci VALUES ('alpha'), ('beta')")
+
+    node1.query(
+        f"CREATE TABLE test.pg_delete_ci (name String) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_delete_ci', 'postgres', '{pg_pass}')"
+    )
+    error = node1.query_and_get_error("DELETE FROM test.pg_delete_ci WHERE name = 'ALPHA'")
+    assert "cannot be pushed down" in error and "non-deterministic collation" in error
+    cursor.execute("SELECT count(*) FROM test_delete_ci")
+    assert cursor.fetchall() == [(2,)]
+
+    node1.query("DROP TABLE test.pg_delete_ci")
+    cursor.execute("DROP TABLE test_delete_ci")
+    cursor.execute("DROP COLLATION test_delete_ci_coll")
+
+
 def test_postgres_delete_on_cluster_rejected(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     cursor.execute("DROP TABLE IF EXISTS test_delete_cluster")
