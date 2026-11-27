@@ -4,6 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -258,6 +259,20 @@ TEST(ColumnArray, InsertManyFromRejectsRowCountOverflowForSelfAlias)
     EXPECT_EQ(column->getData().size(), 1);
     EXPECT_EQ(column->getOffsets().back(), 1);
     EXPECT_EQ(column->getData().getUInt(0), 42);
+}
+
+TEST(ColumnArray, IndexRejectsElementCountOverflow)
+{
+    /// An empty tuple holds no values, so a single row can claim half of the offset range.
+    const size_t half = std::numeric_limits<size_t>::max() / 2 + 1;
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->getData().push_back(half);
+    auto column = ColumnArray::create(ColumnTuple::create(half), std::move(offsets));
+
+    auto indexes = ColumnUInt64::create();
+    indexes->getData().push_back(0);
+    indexes->getData().push_back(0);
+    EXPECT_THROW(column->index(*indexes, 0), Exception);
 }
 
 TEST(ColumnArray, InsertManyFromSelfString)
