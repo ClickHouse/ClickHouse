@@ -63,4 +63,18 @@ struct CapturedResultSettings
     M(output_format_json_map_as_array_of_tuples)
 
 #define DECLARE_JSON_WRITING_RESULT_SETTING(NAME) extern const SettingsBool NAME;
+
+/// The settings of writing a value as text. See `conversionResultDependsOnSetting`.
+#define TEXT_WRITING_RESULT_SETTINGS(M) \
+    M(DateTimeOutputFormat, date_time_output_format) \
+    M(Bool, date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands) \
+    M(IntervalOutputFormat, interval_output_format) \
+    M(Bool, output_format_decimal_trailing_zeros) \
+    M(Bool, output_format_always_write_decimal_point_in_float_and_decimal) \
+    M(UInt64, output_format_float_precision) \
+    M(Bool, output_format_trim_fixed_string) \
+    M(Bool, output_format_values_escape_quote_with_quote)
+
+#define DECLARE_TEXT_WRITING_RESULT_SETTING(TYPE, NAME) extern const Settings##TYPE NAME;
+#define LIST_TEXT_WRITING_RESULT_SETTING(TYPE, NAME) Setting::NAME,
 #define LIST_JSON_WRITING_RESULT_SETTING(NAME) Setting::NAME,

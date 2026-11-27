@@ -536,12 +536,7 @@ bool conversionResultDependsOnSetting(
         Setting::aggregate_function_input_format};
 
     /// The settings of writing a value as text.
-    static const FunctionResultSetting writing_settings[] = {
-        Setting::date_time_output_format, Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands,
-        Setting::interval_output_format, Setting::output_format_decimal_trailing_zeros,
-        Setting::output_format_always_write_decimal_point_in_float_and_decimal,
-        Setting::output_format_float_precision, Setting::output_format_trim_fixed_string,
-        Setting::output_format_values_escape_quote_with_quote};
+    static const FunctionResultSetting writing_settings[] = {TEXT_WRITING_RESULT_SETTINGS(LIST_TEXT_WRITING_RESULT_SETTING)};
 
     /// The spellings of `Bool` values, used both to write and to parse them.
     static const FunctionResultSetting bool_settings[] = {Setting::bool_true_representation, Setting::bool_false_representation};
@@ -568,8 +563,9 @@ bool conversionResultDependsOnSetting(
         return has_type(to, [](const IDataType & type) { return isDynamic(type) || isVariant(type) || isObject(type); });
     if (std::ranges::contains(parsing_settings, setting))
         return has_type(from, [&](const IDataType & type) { return is_text(type) || may_hold_any(type); });
+    /// A `String` is not written again, e.g. by `JSONExtractRaw` of text.
     if (std::ranges::contains(writing_settings, setting))
-        return has_type(to, is_text);
+        return has_type(to, is_text) && !isString(removeNullable(removeLowCardinality(from)));
     if (std::ranges::contains(bool_settings, setting))
         return has_type(from, [&](const IDataType & type) { return is_text(type) || may_hold_any(type); }) || has_type(to, is_text);
     /// The result of `CAST` keeps the `Nullable` of the argument, and of the other conversions the `NULL` of a `Dynamic` or `Variant`.

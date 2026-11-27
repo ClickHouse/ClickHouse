@@ -23,6 +23,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsTimezone session_timezone;
     extern const SettingsBool type_json_skip_null_typed_paths;
 }
 
@@ -40,7 +41,7 @@ class FunctionJSONAllValues final : public IFunction
 {
 public:
     static constexpr auto name = "JSONAllValues";
-    static constexpr FunctionResultSetting result_settings[] = {Setting::type_json_skip_null_typed_paths};
+    static constexpr FunctionResultSetting result_settings[] = {Setting::type_json_skip_null_typed_paths, Setting::session_timezone};
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionJSONAllValues>(context); }
     explicit FunctionJSONAllValues(ContextPtr context)
@@ -56,6 +57,13 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
     [[nodiscard]] String getSignatureString() const override { return "(JSON) -> Array(String)"; }
+
+    /// A typed path holding a time without an explicit time zone is written in `session_timezone`.
+    [[nodiscard]] bool resultDependsOnSetting(
+        const FunctionResultSetting & setting, const DataTypes & arguments, const DataTypePtr & result_type) const override
+    {
+        return arguments.empty() || conversionResultDependsOnSetting(setting, arguments[0], result_type);
+    }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
