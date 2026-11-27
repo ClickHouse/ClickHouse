@@ -5,10 +5,11 @@
 10	GET
 10	GET
 10
-10
 ok
-20
-ok
+rejected
 10
 ok
 denied
+10
+ok
+20
