@@ -289,6 +289,22 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         {
             availability_zone_autodetect = config.getBool(config_name + "." + key);
         }
+        else if (key == "connect_to_all_nodes")
+        {
+            connect_to_all_nodes = config.getBool(config_name + "." + key);
+        }
+        else if (key == "connect_to_all_nodes_wait_ms")
+        {
+            connect_to_all_nodes_wait_ms = config.getUInt64(config_name + "." + key);
+        }
+        else if (key == "connect_to_all_nodes_policy")
+        {
+            String policy_str = config.getString(config_name + "." + key);
+            auto policy = magic_enum::enum_cast<NodeSelectionPolicy>(Poco::toUpper(policy_str));
+            if (!policy)
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown node selection policy: {}", policy_str);
+            connect_to_all_nodes_policy = *policy;
+        }
         else if (key == "password")
         {
             password = config.getString(config_name + "." + key);
@@ -346,6 +362,9 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
 
     if (load_balancing)
         get_priority_load_balancing = DB::GetPriorityForLoadBalancing(*load_balancing, thread_local_rng() % hosts.size());
+
+    if (connect_to_all_nodes_policy != NodeSelectionPolicy::LOAD_BALANCING)
+        connect_to_all_nodes = true;
 
     if (prefer_local_availability_zone)
         client_availability_zone = DB::PlacementInfo::PlacementInfo::instance().getAvailabilityZone();

@@ -17,6 +17,15 @@ namespace zkutil
 constexpr UInt32 ZK_MIN_FALLBACK_SESSION_DEADLINE_SEC = 3 * 60 * 60;
 constexpr UInt32 ZK_MAX_FALLBACK_SESSION_DEADLINE_SEC = 6 * 60 * 60;
 
+/// How `connect_to_all_nodes` chooses among the nodes that answered; the availability zone is compared first.
+enum class NodeSelectionPolicy : uint8_t
+{
+    LOAD_BALANCING,
+    FEWEST_CONNECTIONS,
+    FASTEST_CONNECT,
+    LOWEST_LATENCY,
+};
+
 struct ZooKeeperArgs
 {
     struct SessionLifetimeConfiguration
@@ -63,6 +72,9 @@ struct ZooKeeperArgs
     bool pass_opentelemetry_tracing_context = false;
     bool prefer_local_availability_zone = false;
     bool availability_zone_autodetect = false;
+    bool connect_to_all_nodes = false;
+    UInt64 connect_to_all_nodes_wait_ms = 1000;
+    NodeSelectionPolicy connect_to_all_nodes_policy = NodeSelectionPolicy::LOAD_BALANCING;
     DB::SecretString password;
 
     bool enforce_component_tracking = false;

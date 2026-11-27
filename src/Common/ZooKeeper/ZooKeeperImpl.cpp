@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <chrono>
+#include <cstring>
 #include <exception>
 #include <ranges>
 
@@ -21,6 +23,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <base/find_symbols.h>
 #include <base/getThreadId.h>
 #include <base/scope_guard.h>
 #include <base/sleep.h>
@@ -399,6 +402,27 @@ std::string peerHostName(const std::string & host_and_port)
 }
 #endif
 
+Poco::Net::StreamSocket createSocket(const zkutil::ShuffleHost & node)
+{
+    if (node.secure)
+    {
+#if USE_SSL
+        auto secure_socket = Poco::Net::SecureStreamSocket();
+        /// The certificate names the configured host while the socket connects to the
+        /// address it resolved to, so the name has to be carried explicitly. This is
+        /// also what puts the host into the SNI extension.
+        if (const auto peer_host_name = peerHostName(node.host); !peer_host_name.empty())
+            secure_socket.setPeerHostName(peer_host_name);
+        return secure_socket;
+#else
+        throw Poco::Exception(
+            "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
+#endif
+    }
+
+    return Poco::Net::StreamSocket();
+}
+
 }
 
 template <typename T>
@@ -473,10 +497,12 @@ ZooKeeper::ZooKeeper(
     const zkutil::ShuffleHosts & nodes,
     const zkutil::ZooKeeperArgs & args_,
     std::shared_ptr<ZooKeeperLog> zk_log_,
-    std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log_)
+    std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log_,
+    bool notify_session_expiry_)
     : send_receive_os_threads_nice_value(args_.send_receive_os_threads_nice_value)
     , path_acls(args_.path_acls)
     , args(args_)
+    , notify_session_expiry(notify_session_expiry_)
     , last_zxid_seen(args_.last_zxid_seen)
 {
     log = getLogger("ZooKeeperClient");
@@ -657,25 +683,7 @@ void ZooKeeper::connect(
                     continue;
 
                 /// Reset the state of previous attempt.
-                if (node.secure)
-                {
-#if USE_SSL
-                    auto secure_socket = Poco::Net::SecureStreamSocket();
-                    /// The certificate names the configured host while the socket connects to the
-                    /// address it resolved to, so the name has to be carried explicitly. This is
-                    /// also what puts the host into the SNI extension.
-                    if (const auto peer_host_name = peerHostName(node.host); !peer_host_name.empty())
-                        secure_socket.setPeerHostName(peer_host_name);
-                    socket = secure_socket;
-#else
-                    throw Poco::Exception(
-                        "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
-#endif
-                }
-                else
-                {
-                    socket = Poco::Net::StreamSocket();
-                }
+                socket = createSocket(node);
 
                 socket.connect(*node.address, connection_timeout);
                 socket_address = socket.peerAddress();
@@ -1574,7 +1582,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
         {
             active_session_metric_increment.destroy();
             /// Notify all subscribers (ReplicatedMergeTree tables) about expired session
-            EventNotifier::instance().notify(Error::ZSESSIONEXPIRED);
+            if (notify_session_expiry)
+                EventNotifier::instance().notify(Error::ZSESSIONEXPIRED);
 #if USE_SILK
             expired_event.set();
 #endif
@@ -1971,6 +1980,19 @@ String ZooKeeper::tryGetAvailabilityZone()
         return *res;
     }
     return "";
+}
+
+std::optional<String> ZooKeeper::tryGetClusterConfig(std::string_view path)
+{
+    return tryGetSystemZnode(path, "cluster configuration");
+}
+
+void ZooKeeper::enableSessionExpiryNotification()
+{
+    notify_session_expiry = true;
+    /// The session may have expired while it was quiet.
+    if (requests_queue.isFinished())
+        EventNotifier::instance().notify(Error::ZSESSIONEXPIRED);
 }
 
 
@@ -2628,6 +2650,60 @@ ZooKeeper::WatchesSnapshot ZooKeeper::getWatchesSnapshot() const
             result[path].push_back(create_info);
 
     return result;
+}
+
+String sendFourLetterWordCommand(
+    const zkutil::ShuffleHost & node, std::string_view command, Poco::Timespan connection_timeout, Poco::Timespan operation_timeout)
+{
+    const auto host_and_port = DNSResolver::splitHostAndPort(node.host);
+
+    /// Remove this possibly stale entry from the DNS cache, so that the next try resolves the host again.
+    bool succeeded = false;
+    SCOPE_EXIT({
+        if (!succeeded)
+            DNSResolver::instance().removeHostFromCache(host_and_port.first);
+    });
+
+    Poco::Net::StreamSocket socket = createSocket(node);
+    socket.connect(DNSResolver::instance().resolveAddress(host_and_port.first, host_and_port.second), connection_timeout);
+    socket.setReceiveTimeout(operation_timeout);
+    socket.setSendTimeout(operation_timeout);
+    socket.setNoDelay(true);
+
+    ReadBufferFromPocoSocket in(socket);
+    AutoCanceledWriteBuffer<WriteBufferFromPocoSocket> out(socket);
+
+    int32_t res = 0;
+    std::memcpy(&res, command.data(), sizeof(int32_t));
+    /// keep consistent with Coordination::read method by changing big endian to little endian.
+    int32_t cmd_int = std::byteswap(res);
+
+    Coordination::write(cmd_int, out);
+    out.next();
+
+    String response;
+    readStringUntilEOF(response, in);
+    succeeded = true;
+    return response;
+}
+
+std::map<std::string_view, std::string_view> parseFourLetterWordResponse(std::string_view response, std::string_view separator)
+{
+    std::vector<std::string_view> result_split;
+    splitInto<'\n'>(result_split, response);
+
+    std::map<std::string_view, std::string_view> responses_map;
+    for (auto line : result_split)
+    {
+        auto pos = line.rfind(separator);
+        if (pos != std::string_view::npos)
+        {
+            std::string_view key = line.substr(0, pos);
+            std::string_view value = line.substr(pos + separator.size());
+            responses_map[key] = value;
+        }
+    }
+    return responses_map;
 }
 
 }

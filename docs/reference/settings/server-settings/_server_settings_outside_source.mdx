@@ -1929,6 +1929,9 @@ The following settings can be configured by sub-tags:
 | `use_compression` (optional)               | Enables compression in Keeper protocol if set to true.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `use_xid_64` (optional)                    | Enables 64-bit transaction IDs. Set to `true` to enable extended transaction ID format. Default: `false`.                                                                                                                                                                                                                                                                                                                                                |
 | `pass_opentelemetry_tracing_context` (optional) | Enables propagation of OpenTelemetry tracing context to Keeper requests. When enabled, tracing spans will be created for Keeper operations, allowing distributed tracing across ClickHouse and Keeper. See [Tracing ClickHouse Keeper Requests](/guides/oss/deployment-and-scaling/monitoring/opentelemetry#tracing-clickhouse-keeper-requests) for more details. Default: `false`.                                                                                                                                      |
+| `connect_to_all_nodes` (optional)          | Connects to all nodes in parallel, refuses to work if they belong to different clusters, and chooses a node by `connect_to_all_nodes_policy`. Default: `false`. |
+| `connect_to_all_nodes_wait_ms` (optional)  | How long to wait for the other nodes after the first one connected, in milliseconds. Default: `1000`. |
+| `connect_to_all_nodes_policy` (optional)   | How a node is chosen: `load_balancing`, `fewest_connections`, `fastest_connect` or `lowest_latency`. A value other than `load_balancing` enables `connect_to_all_nodes`. Default: `load_balancing`. |
 
 There is also the `zookeeper_load_balancing` setting (optional) which lets you select the algorithm for ZooKeeper node selection:
 
@@ -1940,6 +1943,32 @@ There is also the `zookeeper_load_balancing` setting (optional) which lets you s
 | `hostname_levenshtein_distance`  | just like nearest_hostname, but it compares hostname in a levenshtein distance manner.                                         |
 | `first_or_random`                | selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.                |
 | `round_robin`                    | selects the first ZooKeeper node, if reconnection happens selects the next.                                                    |
+
+**Connecting to all nodes**
+
+With `connect_to_all_nodes`, every new session connects to all nodes in parallel.
+It waits for the first node, and then up to `connect_to_all_nodes_wait_ms` for the others.
+
+The nodes that answered must report the same cluster configuration.
+Otherwise ClickHouse refuses to use any of them, and the error names the two nodes.
+A new session must also share at least one server with the cluster of the previous session.
+
+Each node must allow the `srvr` four-letter command and report its cluster configuration:
+
+- ClickHouse Keeper at `/keeper/config`.
+- ZooKeeper 3.5 or newer at `/zookeeper/config`.
+
+A node in the client's availability zone is chosen first, if the availability zone preference is configured.
+Then `connect_to_all_nodes_policy` chooses among the remaining nodes, and ties follow `zookeeper_load_balancing`:
+
+| Policy               | Chooses the node                                             |
+|----------------------|--------------------------------------------------------------|
+| `load_balancing`     | that comes first in the order of `zookeeper_load_balancing`. |
+| `fewest_connections` | with the fewest client connections.                          |
+| `fastest_connect`    | that took the least time to connect.                         |
+| `lowest_latency`     | with the lowest average request latency.                     |
+
+The other sessions are closed, so each new session briefly opens one session on every node.
 
 **Example configuration**
 

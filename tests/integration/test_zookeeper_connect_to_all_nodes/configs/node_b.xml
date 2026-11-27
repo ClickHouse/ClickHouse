@@ -1,0 +1,39 @@
+<clickhouse>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>node_b</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+
+    <!-- keeper1, keeper2, keeper3 form one cluster, node_b is another one. -->
+    <zookeeper>
+        <node>
+            <host>keeper1</host>
+            <port>9181</port>
+        </node>
+        <node>
+            <host>keeper2</host>
+            <port>9181</port>
+        </node>
+        <node>
+            <host>keeper3</host>
+            <port>9181</port>
+        </node>
+        <node>
+            <host>node_b</host>
+            <port>9181</port>
+        </node>
+        <zookeeper_load_balancing>in_order</zookeeper_load_balancing>
+        <connect_to_all_nodes>1</connect_to_all_nodes>
+        <connect_to_all_nodes_wait_ms>10000</connect_to_all_nodes_wait_ms>
+    </zookeeper>
+</clickhouse>

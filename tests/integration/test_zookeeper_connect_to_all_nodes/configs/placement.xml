@@ -1,0 +1,6 @@
+<clickhouse>
+    <placement>
+        <use_imds>0</use_imds>
+        <availability_zone>az-keeper2</availability_zone>
+    </placement>
+</clickhouse>

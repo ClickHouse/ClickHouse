@@ -5,18 +5,13 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Storages/System/StorageSystemZooKeeperInfo.h>
-#include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Poco/NumberParser.h>
 #include <Common/logger_useful.h>
-#include <base/find_symbols.h>
-#include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
-#include <IO/WriteBufferFromPocoSocket.h>
-#include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
-#include <Poco/Net/StreamSocket.h>
 
 namespace DB
 {
@@ -91,25 +86,6 @@ ColumnsDescription StorageSystemZooKeeperInfo::getColumnsDescription()
     };
 }
 
-static std::map<std::string_view, std::string_view> getTokens(std::string_view response, std::string_view separator)
-{
-    std::vector<std::string_view> result_split;
-    splitInto<'\n'>(result_split, response);
-
-    std::map<std::string_view, std::string_view> responses_map;
-    for (auto line : result_split)
-    {
-        auto pos = line.rfind(separator);
-        if (pos != std::string_view::npos)
-        {
-            std::string_view key = line.substr(0, pos);
-            std::string_view value = line.substr(pos + separator.size());
-            responses_map[key] = value;
-        }
-    }
-    return responses_map;
-}
-
 void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextPtr context,
                                                     const ActionsDAG::Node *, std::vector<UInt8>) const
 {
@@ -140,7 +116,7 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
             res_columns[3]->insert(index);
 
             /// ruok command
-            auto ruok_output = sendFourLetterCommand(host, port, "ruok");
+            auto ruok_output = sendFourLetterCommand(zk_args, index, "ruok");
             if (ruok_output.has_value())
             {
                 if (ruok_output.value() == "imok")
@@ -154,7 +130,7 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
             /// isro command
             /// The server will respond with "ro" if in read-only mode or "rw" if not in read-only mode.
-            auto isro_output = sendFourLetterCommand(host, port, "isro");
+            auto isro_output = sendFourLetterCommand(zk_args, index, "isro");
             if (isro_output.has_value())
                 res_columns[5]->insert(isro_output.value() == "ro");
             else
@@ -162,11 +138,11 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
 
             /// mntr command
-            auto mntr_output_expected = sendFourLetterCommand(host, port, "mntr");
+            auto mntr_output_expected = sendFourLetterCommand(zk_args, index, "mntr");
             if (mntr_output_expected.has_value())
             {
                 const String & mntr_output = mntr_output_expected.value();
-                auto mntr_responses_map = getTokens(mntr_output, "\t");
+                auto mntr_responses_map = Coordination::parseFourLetterWordResponse(mntr_output, "\t");
 
                 /// /* 6 */{"version", std::make_shared<DataTypeString>(), "The ZooKeeper version."},
                 if (const auto it = mntr_responses_map.find("zk_version"); it != mntr_responses_map.end())
@@ -298,11 +274,11 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
             }
 
             /// srvr command
-            auto srvr_output_expected = sendFourLetterCommand(host, port, "srvr");
+            auto srvr_output_expected = sendFourLetterCommand(zk_args, index, "srvr");
             if (srvr_output_expected.has_value())
             {
                 const String & srvr_output = srvr_output_expected.value();
-                auto srvr_responses_map = getTokens(srvr_output, ": ");
+                auto srvr_responses_map = Coordination::parseFourLetterWordResponse(srvr_output, ": ");
 
                 ///* 24 */ {"connections", std::make_shared<DataTypeUInt64>(), "The ZooKeeper connections."},
                 if (const auto it = srvr_responses_map.find("Connections"); it != srvr_responses_map.end())
@@ -338,11 +314,11 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
 
             /// dirs command
-            auto dirs_output_expected = sendFourLetterCommand(host, port, "dirs");
+            auto dirs_output_expected = sendFourLetterCommand(zk_args, index, "dirs");
             if (dirs_output_expected.has_value())
             {
                 const String & dirs_output = dirs_output_expected.value();
-                auto dirs_responses_map = getTokens(dirs_output, ": ");
+                auto dirs_responses_map = Coordination::parseFourLetterWordResponse(dirs_output, ": ");
 
                 //* 28 */ {"snapshot_dir_size", std::make_shared<DataTypeUInt64>(), "The ZooKeeper snapshot directory size."},
                 if (const auto it = dirs_responses_map.find("snapshot_dir_size"); it != dirs_responses_map.end())
@@ -358,11 +334,11 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
             }
 
             /// lgif command
-            auto lgif_output_expected = sendFourLetterCommand(host, port, "lgif");
+            auto lgif_output_expected = sendFourLetterCommand(zk_args, index, "lgif");
             if (lgif_output_expected.has_value())
             {
                 const String & lgif_output = lgif_output_expected.value();
-                auto lgif_responses_map = getTokens(lgif_output, "\t");
+                auto lgif_responses_map = Coordination::parseFourLetterWordResponse(lgif_output, "\t");
 
                 // /* 30 */ {"first_log_idx", std::make_shared<DataTypeUInt64>(), "The ZooKeeper first log index."},
                 if (const auto it = lgif_responses_map.find("first_log_idx"); it != lgif_responses_map.end())
@@ -417,37 +393,25 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 }
 
 
-std::expected<String,String> StorageSystemZooKeeperInfo::sendFourLetterCommand(const String & host, UInt16 port, std::string_view command) const
+std::expected<String,String> StorageSystemZooKeeperInfo::sendFourLetterCommand(const zkutil::ZooKeeperArgs & zk_args, size_t index, std::string_view command) const
 {
-    Poco::Net::StreamSocket socket;
-
     String response;
     try
     {
-        auto address = DNSResolver::instance().resolveAddress(host, port);
-        socket = Poco::Net::StreamSocket();
-        socket.connect(address);
-        socket.setNoDelay(true);
+        zkutil::ShuffleHost node;
+        node.host = zk_args.hosts[index];
+        node.secure = node.host.starts_with("secure://");
+        if (node.secure)
+            node.host.erase(0, strlen("secure://"));
 
-        auto in = std::make_shared<ReadBufferFromPocoSocket>(socket);
-        auto out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(socket);
-
-        int32_t res = 0;
-        std::memcpy(&res, command.data(), sizeof(int32_t));
-        /// keep consistent with Coordination::read method by changing big endian to little endian.
-        int32_t cmd_int = std::byteswap(res);
-
-        Coordination::write(cmd_int,*out);
-        out->next();
-
-        readStringUntilEOF(response,*in);
+        response = Coordination::sendFourLetterWordCommand(
+            node,
+            command,
+            static_cast<Poco::Timespan::TimeDiff>(zk_args.connection_timeout_ms) * 1000,
+            static_cast<Poco::Timespan::TimeDiff>(zk_args.operation_timeout_ms) * 1000);
     }
     catch (...)
     {
-        /// Remove this possibly stale entry from the DNS cache, so that the next read of this table
-        /// resolves the host again instead of retrying a dead address until the cache is refreshed.
-        DNSResolver::instance().removeHostFromCache(host);
-
         LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "Exception  {} ", getCurrentExceptionMessage(true));
         return getCurrentExceptionMessage(true);
     }

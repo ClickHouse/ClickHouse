@@ -123,13 +123,17 @@ public:
       * Operation timeout couldn't be greater than session timeout.
       * Operation timeout applies independently for network read, network write, waiting for events and synchronization.
       */
+    /// `notify_session_expiry_`: whether the expiry of this session wakes the global `ZSESSIONEXPIRED` subscribers.
     ZooKeeper(
         const zkutil::ShuffleHosts & nodes,
         const zkutil::ZooKeeperArgs & args_,
         std::shared_ptr<ZooKeeperLog> zk_log_,
-        std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log_);
+        std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log_,
+        bool notify_session_expiry_ = true);
 
     ~ZooKeeper() override;
+
+    void enableSessionExpiryNotification();
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
@@ -140,6 +144,8 @@ public:
     int64_t getConnectionXid() const override;
 
     String tryGetAvailabilityZone() override;
+
+    std::optional<String> tryGetClusterConfig(std::string_view path);
 
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
@@ -432,6 +438,7 @@ private:
     String formatRequestSizeExceeded(size_t request_size, const ZooKeeperRequest & request) const;
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
+    std::atomic<bool> notify_session_expiry;
     std::shared_ptr<ZooKeeperLog> zk_log;
     std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log;
 
@@ -452,5 +459,12 @@ private:
     /// Server-advertised max request size in bytes, resolved at connect; 0 == unlimited/unset.
     UInt64 keeper_max_request_size = 0;
 };
+
+/// Sends a four-letter word command to the node and returns the whole answer.
+String sendFourLetterWordCommand(
+    const zkutil::ShuffleHost & node, std::string_view command, Poco::Timespan connection_timeout, Poco::Timespan operation_timeout);
+
+/// Splits each line of a four-letter word answer at the last `separator` into a key and a value.
+std::map<std::string_view, std::string_view> parseFourLetterWordResponse(std::string_view response, std::string_view separator);
 
 }

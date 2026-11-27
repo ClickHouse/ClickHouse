@@ -16,22 +16,33 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/quoteString.h>
+#include <Common/setThreadName.h>
+#include <Common/Stopwatch.h>
+#include <Common/ThreadPool.h>
 #include <Common/thread_local_rng.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
+#include <base/find_symbols.h>
+#include <base/scope_guard.h>
 #include <base/sort.h>
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
+#include <chrono>
+#include <condition_variable>
 #include <functional>
+#include <limits>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <ranges>
+#include <set>
 #include <vector>
 
 #include <fmt/ranges.h>
@@ -103,6 +114,120 @@ namespace
             maybe_span->status_message = std::string(Coordination::errorMessage(code));
         }
     }
+
+    constexpr std::string_view zookeeper_config_path = "/zookeeper/config";
+
+    using ClusterMembers = std::set<String>;
+
+    /// The members `server.<id>=<endpoint>` of a cluster configuration, without the role and the priority, which change
+    /// by reconfiguration: ClickHouse Keeper writes them after the first `;`, ZooKeeper writes the role before it.
+    ClusterMembers getClusterMembers(std::string_view config)
+    {
+        std::vector<std::string_view> lines;
+        splitInto<'\n'>(lines, config);
+
+        ClusterMembers members;
+        for (auto line : lines)
+        {
+            line = trimWhitespace(line);
+            if (!line.starts_with("server."))
+                continue;
+
+            auto member = line.substr(0, line.find(';'));
+            for (std::string_view role : {":participant", ":observer"})
+                if (member.ends_with(role))
+                    member.remove_suffix(role.size());
+            members.emplace(member);
+        }
+        return members;
+    }
+
+    struct ServerStats
+    {
+        bool is_clickhouse_keeper = false;
+        UInt64 connections = 0;
+        double avg_latency_ms = 0;
+    };
+
+    ServerStats getServerStats(const ShuffleHost & node, const ZooKeeperArgs & args)
+    {
+        const String response = Coordination::sendFourLetterWordCommand(
+            node,
+            "srvr",
+            static_cast<Poco::Timespan::TimeDiff>(args.connection_timeout_ms) * 1000,
+            static_cast<Poco::Timespan::TimeDiff>(args.operation_timeout_ms) * 1000);
+        const auto tokens = Coordination::parseFourLetterWordResponse(response, ": ");
+
+        ServerStats stats;
+        stats.is_clickhouse_keeper = tokens.contains("ClickHouse Keeper version");
+
+        bool parsed = false;
+        const auto connections = tokens.find("Connections");
+        const auto latency = tokens.find("Latency min/avg/max");
+        if (connections != tokens.end() && latency != tokens.end())
+        {
+            std::vector<std::string_view> latencies;
+            splitInto<'/'>(latencies, latency->second);
+            parsed = latencies.size() == 3 && DB::tryParse(stats.connections, connections->second)
+                && DB::tryParse(stats.avg_latency_ms, latencies[1]);
+        }
+
+        if (!parsed)
+            throw KeeperException(
+                Coordination::Error::ZMARSHALLINGERROR, "Unexpected answer to `srvr` from {}: '{}'", node.host, response);
+        return stats;
+    }
+
+    ClusterMembers getClusterConfig(Coordination::ZooKeeper & session, const ShuffleHost & node, bool is_clickhouse_keeper)
+    {
+        const std::string_view path = is_clickhouse_keeper ? DB::keeper_config_path : zookeeper_config_path;
+
+        ClusterMembers members;
+        if (auto config = session.tryGetClusterConfig(path))
+            members = getClusterMembers(*config);
+
+        if (members.empty())
+            throw KeeperException(
+                Coordination::Error::ZBADARGUMENTS, "ZooKeeper node {} does not report its cluster configuration at `{}`", node.host, path);
+        return members;
+    }
+
+    void checkSameCluster(const ShuffleHost & lhs_node, const ClusterMembers & lhs, const ShuffleHost & rhs_node, const ClusterMembers & rhs)
+    {
+        if (lhs != rhs)
+            throw KeeperException(
+                Coordination::Error::ZCONNECTIONLOSS,
+                "ZooKeeper nodes {} and {} report different cluster configurations, refusing to use any of them: '{}' and '{}'",
+                lhs_node.host,
+                rhs_node.host,
+                fmt::join(lhs, ", "),
+                fmt::join(rhs, ", "));
+    }
+
+    /// The membership may change by reconfiguration between two sessions, so a later session has to share a server only.
+    void checkSharesServer(const ShuffleHost & node, const ClusterMembers & members, const String & accepted_cluster_config)
+    {
+        if (accepted_cluster_config.empty())
+            return;
+
+        const ClusterMembers accepted = getClusterMembers(accepted_cluster_config);
+        if (std::ranges::none_of(members, [&](const String & member) { return accepted.contains(member); }))
+            throw KeeperException(
+                Coordination::Error::ZCONNECTIONLOSS,
+                "ZooKeeper node {} reports cluster configuration '{}' that shares no server with the cluster of the previous session '{}', "
+                "refusing to use it",
+                node.host,
+                fmt::join(members, ", "),
+                fmt::join(accepted, ", "));
+    }
+
+    ShuffleHost::AvailabilityZoneInfo
+    getAvailabilityZoneInfo(const ZooKeeperArgs & args, const Strings & availability_zones, size_t index)
+    {
+        if (args.client_availability_zone.empty() || availability_zones[index].empty())
+            return ShuffleHost::UNKNOWN;
+        return availability_zones[index] == args.client_availability_zone ? ShuffleHost::SAME : ShuffleHost::OTHER;
+    }
 }
 
 const int CreateMode::Persistent = 0;
@@ -173,7 +298,8 @@ void ZooKeeper::updateAvailabilityZones()
         try
         {
             ShuffleHosts single_node{node};
-            auto tmp_impl = std::make_unique<Coordination::ZooKeeper>(single_node, args, zk_log, aggregated_zookeeper_log);
+            auto tmp_impl = std::make_unique<Coordination::ZooKeeper>(
+                single_node, args, zk_log, aggregated_zookeeper_log, /*notify_session_expiry_*/ false);
             auto idx = node.original_index;
             availability_zones[idx] = tmp_impl->tryGetAvailabilityZone();
             LOG_TEST(log, "Got availability zone for {}: {}", args.hosts[idx], availability_zones[idx]);
@@ -184,6 +310,205 @@ void ZooKeeper::updateAvailabilityZones()
         }
     }
     LOG_DEBUG(log, "Updated availability zones: [{}]", fmt::join(availability_zones, ", "));
+}
+
+std::unique_ptr<Coordination::IKeeper> ZooKeeper::connectToAllNodes(ShuffleHosts & shuffled_hosts)
+{
+    struct Candidate
+    {
+        std::unique_ptr<Coordination::ZooKeeper> session;
+        ServerStats stats;
+        UInt64 connect_time_us = 0;
+        ClusterMembers members;
+        String availability_zone;
+    };
+
+    struct State
+    {
+        std::mutex mutex;
+        std::condition_variable cv;
+        /// By the index of the host in `args.hosts`.
+        std::vector<std::optional<Candidate>> candidates;
+        Strings errors;
+        size_t num_finished = 0;
+        std::optional<std::chrono::steady_clock::time_point> first_connected_at;
+        bool node_chosen = false;
+    };
+
+    auto state = std::make_shared<State>();
+    state->candidates.resize(args.hosts.size());
+    state->errors.resize(args.hosts.size());
+
+    /// A connection that is established later is closed by its own thread: a blocking connect cannot be cancelled.
+    SCOPE_EXIT({
+        std::lock_guard lock(state->mutex);
+        state->node_chosen = true;
+    });
+
+    for (const auto & node : shuffled_hosts)
+    {
+        const bool read_availability_zone = args.availability_zone_autodetect && availability_zones[node.original_index].empty();
+        ThreadFromGlobalPool(
+            [state, node, read_availability_zone, args_ = args, zk_log_ = zk_log, aggregated_zookeeper_log_ = aggregated_zookeeper_log]
+            {
+                DB::setThreadName(DB::ThreadName::ZOOKEEPER_CONNECT);
+                auto component_guard = Coordination::setCurrentComponent("ZooKeeper::connectToAllNodes");
+
+                std::optional<Candidate> candidate;
+                String error;
+                try
+                {
+                    /// Before the session, so that the statistics of the node do not include our own requests.
+                    ServerStats stats = getServerStats(node, args_);
+
+                    Stopwatch watch;
+                    auto session = std::make_unique<Coordination::ZooKeeper>(
+                        ShuffleHosts{node}, args_, zk_log_, aggregated_zookeeper_log_, /*notify_session_expiry_*/ false);
+                    UInt64 connect_time_us = watch.elapsedMicroseconds();
+
+                    ClusterMembers members = getClusterConfig(*session, node, stats.is_clickhouse_keeper);
+                    String availability_zone;
+                    if (read_availability_zone && stats.is_clickhouse_keeper)
+                        availability_zone = session->tryGetAvailabilityZone();
+
+                    candidate = Candidate{std::move(session), stats, connect_time_us, std::move(members), std::move(availability_zone)};
+                }
+                catch (...)
+                {
+                    error = DB::getCurrentExceptionMessage(/*with_stacktrace*/ false);
+                }
+
+                std::unique_lock lock(state->mutex);
+                if (state->node_chosen)
+                {
+                    lock.unlock();
+                    if (candidate)
+                        candidate->session->finalize("Connected after another ZooKeeper node was chosen");
+                    return;
+                }
+
+                if (candidate && !state->first_connected_at)
+                    state->first_connected_at = std::chrono::steady_clock::now();
+                state->candidates[node.original_index] = std::move(candidate);
+                state->errors[node.original_index] = std::move(error);
+                ++state->num_finished;
+                state->cv.notify_all();
+            })
+            .detach();
+    }
+
+    std::vector<std::optional<Candidate>> candidates;
+    Strings errors;
+    {
+        std::unique_lock lock(state->mutex);
+        auto all_finished = [&] { return state->num_finished == shuffled_hosts.size(); };
+        state->cv.wait(lock, [&] { return all_finished() || state->first_connected_at.has_value(); });
+        if (state->first_connected_at)
+        {
+            /// Every connection is bounded by its timeouts, so a longer wait is the same as waiting for all of them.
+            const std::chrono::milliseconds wait_time(std::min<UInt64>(args.connect_to_all_nodes_wait_ms, std::numeric_limits<Int32>::max()));
+            state->cv.wait_until(lock, *state->first_connected_at + wait_time, all_finished);
+        }
+
+        state->node_chosen = true;
+        candidates = std::move(state->candidates);
+        errors = std::move(state->errors);
+    }
+
+    String fail_reasons;
+    const ShuffleHost * first_node = nullptr;
+    for (const auto & node : shuffled_hosts)
+    {
+        const auto & candidate = candidates[node.original_index];
+        if (!candidate)
+        {
+            const String & error = errors[node.original_index];
+            if (error.empty())
+                fail_reasons += fmt::format("\n{}: no answer within {} ms", node.host, args.connect_to_all_nodes_wait_ms);
+            else
+                fail_reasons += fmt::format("\n{}: {}", node.host, error);
+            continue;
+        }
+
+        if (!first_node)
+            first_node = &node;
+        else
+            checkSameCluster(*first_node, candidates[first_node->original_index]->members, node, candidate->members);
+    }
+
+    if (!first_node)
+        throw KeeperException(
+            Coordination::Error::ZCONNECTIONLOSS, "All connection tries failed while connecting to ZooKeeper. nodes: {}", fail_reasons);
+
+    checkSharesServer(*first_node, candidates[first_node->original_index]->members, accepted_cluster_config);
+
+    bool availability_zones_detected = false;
+    for (size_t i = 0; i < candidates.size(); ++i)
+    {
+        if (candidates[i] && !candidates[i]->availability_zone.empty())
+        {
+            availability_zones[i] = candidates[i]->availability_zone;
+            availability_zones_detected = true;
+        }
+    }
+
+    if (availability_zones_detected)
+    {
+        LOG_DEBUG(log, "Updated availability zones: [{}]", fmt::join(availability_zones, ", "));
+        for (auto & node : shuffled_hosts)
+            node.az_info = getAvailabilityZoneInfo(args, availability_zones, node.original_index);
+        ::sort(shuffled_hosts.begin(), shuffled_hosts.end(), ShuffleHost::compare);
+    }
+
+    auto get_metric = [&](const Candidate & candidate)
+    {
+        double metric = 0;
+        switch (args.connect_to_all_nodes_policy)
+        {
+            case NodeSelectionPolicy::LOAD_BALANCING:
+                break;
+            case NodeSelectionPolicy::FEWEST_CONNECTIONS:
+                metric = static_cast<double>(candidate.stats.connections);
+                break;
+            case NodeSelectionPolicy::FASTEST_CONNECT:
+                metric = static_cast<double>(candidate.connect_time_us);
+                break;
+            case NodeSelectionPolicy::LOWEST_LATENCY:
+                metric = candidate.stats.avg_latency_ms;
+                break;
+        }
+        return metric;
+    };
+
+    auto get_key = [&](const ShuffleHost & node)
+    { return std::tuple(node.az_info, get_metric(*candidates[node.original_index]), node.priority, node.random); };
+
+    const ShuffleHost * chosen_node = nullptr;
+    for (const auto & node : shuffled_hosts)
+        if (candidates[node.original_index] && (!chosen_node || get_key(node) < get_key(*chosen_node)))
+            chosen_node = &node;
+
+    Candidate & chosen = *candidates[chosen_node->original_index];
+    for (auto & candidate : candidates)
+        if (candidate && &*candidate != &chosen)
+            candidate->session->finalize("Another ZooKeeper node was chosen");
+
+    chosen.session->enableSessionExpiryNotification();
+    accepted_cluster_config = fmt::format("{}", fmt::join(chosen.members, "\n"));
+
+    LOG_INFO(
+        log,
+        "{} of {} ZooKeeper nodes answered, chose {} by policy {} (connections: {}, average latency: {} ms, connect time: {} us){}",
+        std::ranges::count_if(candidates, [](const auto & candidate) { return candidate.has_value(); }),
+        shuffled_hosts.size(),
+        chosen_node->host,
+        args.connect_to_all_nodes_policy,
+        chosen.stats.connections,
+        chosen.stats.avg_latency_ms,
+        chosen.connect_time_us,
+        fail_reasons);
+
+    return std::move(chosen.session);
 }
 
 void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper> existing_impl)
@@ -203,6 +528,7 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
             throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "No hosts passed to ZooKeeper constructor.");
 
         chassert(args.availability_zones.size() == args.hosts.size());
+        const bool connect_to_all_nodes = args.connect_to_all_nodes && args.hosts.size() > 1;
         if (availability_zones.empty())
         {
             /// availability_zones is empty on server startup or after config reloading
@@ -215,7 +541,8 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
                 fmt::join(availability_zones | std::views::transform([](auto s) { return DB::quoteString(s); }), ", "),
                 DB::quoteString(args.client_availability_zone));
 
-            if (args.availability_zone_autodetect)
+            /// `connectToAllNodes` reads them while connecting.
+            if (args.availability_zone_autodetect && !connect_to_all_nodes)
                 updateAvailabilityZones();
         }
         chassert(availability_zones.size() == args.hosts.size());
@@ -223,7 +550,10 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
         /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
         ShuffleHosts shuffled_hosts = shuffleHosts();
 
-        impl = std::make_unique<Coordination::ZooKeeper>(shuffled_hosts, args, zk_log, aggregated_zookeeper_log);
+        if (connect_to_all_nodes)
+            impl = connectToAllNodes(shuffled_hosts);
+        else
+            impl = std::make_unique<Coordination::ZooKeeper>(shuffled_hosts, args, zk_log, aggregated_zookeeper_log);
         auto node_idx = impl->getConnectedNodeIdx();
 
         if (args.chroot.empty())
@@ -231,10 +561,22 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
         else
             LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), args.chroot);
 
-        /// If the balancing strategy has an optimal node then it will be the first in the list
-        bool connected_to_suboptimal_node = node_idx && static_cast<UInt8>(*node_idx) != shuffled_hosts[0].original_index;
         bool respect_az = args.prefer_local_availability_zone && !args.client_availability_zone.empty();
-        bool may_benefit_from_reconnecting = respect_az || args.get_priority_load_balancing.hasOptimalNode();
+        bool connected_to_suboptimal_node = false;
+        bool may_benefit_from_reconnecting = false;
+        if (connect_to_all_nodes && args.connect_to_all_nodes_policy != NodeSelectionPolicy::LOAD_BALANCING)
+        {
+            /// The policy has no fixed optimal node, only a node in a better availability zone is better.
+            connected_to_suboptimal_node
+                = node_idx && getAvailabilityZoneInfo(args, availability_zones, *node_idx) != shuffled_hosts[0].az_info;
+            may_benefit_from_reconnecting = respect_az;
+        }
+        else
+        {
+            /// If the balancing strategy has an optimal node then it will be the first in the list
+            connected_to_suboptimal_node = node_idx && static_cast<UInt8>(*node_idx) != shuffled_hosts[0].original_index;
+            may_benefit_from_reconnecting = respect_az || args.get_priority_load_balancing.hasOptimalNode();
+        }
         if (connected_to_suboptimal_node && may_benefit_from_reconnecting)
         {
             auto reconnect_timeout_sec = getSecondsUntilReconnect(args);
@@ -249,7 +591,15 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
                 {
                     LOG_DEBUG(log, "Trying to connect to a more optimal node {}", optimal_host.host);
                     ShuffleHosts node{optimal_host};
-                    std::unique_ptr<Coordination::IKeeper> new_impl = std::make_unique<Coordination::ZooKeeper>(node, args, zk_log, aggregated_zookeeper_log);
+                    const bool check_cluster = !accepted_cluster_config.empty();
+                    auto new_impl = std::make_unique<Coordination::ZooKeeper>(
+                        node, args, zk_log, aggregated_zookeeper_log, /*notify_session_expiry_*/ !check_cluster);
+                    if (check_cluster)
+                    {
+                        ServerStats stats = getServerStats(optimal_host, args);
+                        checkSharesServer(optimal_host, getClusterConfig(*new_impl, optimal_host, stats.is_clickhouse_keeper), accepted_cluster_config);
+                        new_impl->enableSessionExpiryNotification();
+                    }
 
                     auto new_node_idx = new_impl->getConnectedNodeIdx();
                     chassert(new_node_idx.has_value());
@@ -337,8 +687,10 @@ ZooKeeper::ZooKeeper(
     std::shared_ptr<DB::ZooKeeperLog> zk_log_,
     std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_,
     Strings availability_zones_,
+    String accepted_cluster_config_,
     std::unique_ptr<Coordination::IKeeper> existing_impl)
     : availability_zones(std::move(availability_zones_))
+    , accepted_cluster_config(std::move(accepted_cluster_config_))
     , opentelemetry_start_keeper_trace_probability(calculateOpenTelemetryProbability())
     , zk_log(std::move(zk_log_))
     , aggregated_zookeeper_log(std::move(aggregated_zookeeper_log_))
@@ -364,8 +716,7 @@ ShuffleHosts ZooKeeper::shuffleHosts() const
         if (shuffle_host.secure)
             shuffle_host.host.erase(0, strlen("secure://"));
 
-        if (!args.client_availability_zone.empty() && !availability_zones[i].empty())
-            shuffle_host.az_info = availability_zones[i] == args.client_availability_zone ? ShuffleHost::SAME : ShuffleHost::OTHER;
+        shuffle_host.az_info = getAvailabilityZoneInfo(args, availability_zones, i);
 
         if (get_priority)
             shuffle_host.priority = get_priority(i);
@@ -1548,7 +1899,8 @@ ZooKeeperPtr ZooKeeper::startNewSession() const
     auto args_copy = args;
     args_copy.last_zxid_seen = impl->getLastZXIDSeen();
 
-    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(args_copy, zk_log, aggregated_zookeeper_log, availability_zones, std::move(optimal_impl)));
+    auto res = std::shared_ptr<ZooKeeper>(
+        new ZooKeeper(args_copy, zk_log, aggregated_zookeeper_log, availability_zones, accepted_cluster_config, std::move(optimal_impl)));
     res->initSession();
     return res;
 }
