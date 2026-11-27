@@ -6653,7 +6653,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     if (command.type == AlterCommand::RENAME_COLUMN)
                     {
                         columns_before_renames.push_back(replayed_metadata.columns);
-                        renames.push_back({command.column_name, command.rename_to, &columns_before_renames.back()});
+                        renames.push_back({command.column_name, command.rename_to, &columns_before_renames.back(), nullptr, {}});
                     }
                     command.apply(replayed_metadata, apply_context, share_nested_offsets, &old_metadata.columns, settings_defaults.get());
                 }
