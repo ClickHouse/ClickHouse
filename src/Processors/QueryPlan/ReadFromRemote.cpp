@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/Transforms/ReadToEndTransform.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/SetWithMemoryTracking.h>
@@ -77,6 +78,7 @@ namespace Setting
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool parallel_replicas_filter_pushdown;
+    extern const SettingsBool report_streaming_cursor;
 }
 
 namespace ErrorCodes
@@ -1066,6 +1068,14 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
 
     for (const auto & processor : pipe.getProcessors())
         processor->setStorageLimits(storage_limits);
+
+    /// An incremental refresh from a `Distributed` table: every shard reports the cursor of its bounded read at the end of
+    /// its stream (see `report_streaming_cursor`). If the query does not need the rest of the rows (e.g. a `DISTINCT` by
+    /// constants), it would cancel the queries of the shards, which then do not report their cursors; so the stream of
+    /// every shard is read to the end instead.
+    if (context->getSettingsRef()[Setting::report_streaming_cursor])
+        if (auto streaming_cursor = context->getStreamingCursor())
+            pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<ReadToEndTransform>(header, streaming_cursor); });
 
     pipeline.init(std::move(pipe));
 }
