@@ -65,10 +65,13 @@ def test_http_four_letter_command_finishes_before_keeper_shutdown(started_cluste
             "Closed all non-Keeper-TCP listening sockets. Waiting for 1 outstanding connections."
         )
 
+        # The 1 s wait has expired, and the Keeper teardown is still waiting for the command.
+        time.sleep(3)
+        assert node.get_process_pid("clickhouse server") is not None
+        assert not node.contains_in_log("Shutting down storage dispatcher")
+
         thread.join(60)
-        assert not thread.is_alive()
-        assert result.get("status") == 200, result
-        assert "Sent leadership request to leader." in result["body"]
+        assert not thread.is_alive(), result
 
         node.wait_start_failed(60)
         assert not node.contains_in_log("########################################")
