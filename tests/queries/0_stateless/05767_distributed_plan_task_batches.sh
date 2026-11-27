@@ -35,6 +35,12 @@ done
 
 echo "-- Every task is sent and runs (tasks = sent = ran), and both results equal local. Without batching each task has its own"
 echo "-- request (batches_without_batching = tasks). With batching and streaming exchanges each plan sends one request per worker"
-echo "-- (batches = workers; workers adds up the workers of each plan, and the set's subquery is a plan of its own), more with"
+echo "-- (batches = workers; workers adds up the workers of each plan, and the subquery of query 3 is a plan of its own), more with"
 echo "-- flush_per_stage. With persisted exchanges a plan sends one request per worker before each wait for producers and at the end."
-print_cases
+echo
+echo "-- query 1, a shuffle aggregation: $AGGREGATION"
+print_cases aggregation
+echo "-- query 2, a shuffle join: $JOIN"
+print_cases join
+echo "-- query 3, an IN set: $IN_SET"
+print_cases set

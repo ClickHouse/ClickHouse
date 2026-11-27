@@ -60,8 +60,8 @@ function run_case()
     CASES+=("('$name', '${id}_on', '${id}_off', $([[ $off == "$expected" && $on == "$expected" ]] && echo 1 || echo 0))")
 }
 
-# Prints a row per case: the coordinator's profile events of the run with batching, its task queries, the requests of the run
-# without batching, and whether both results equal the local one.
+# Prints a table of the cases whose name is `$1 <exchange kind> <arm>`: the coordinator's profile events of the run with batching,
+# its task queries, the requests of the run without batching, and whether both results equal the local one.
 function print_cases()
 {
     $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
@@ -74,7 +74,7 @@ function print_cases()
                 WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 30 MINUTE AND type = 'QueryFinish'
                     AND startsWith(initial_query_id, '$CASE_RUN') AND query_id != initial_query_id
                 GROUP BY initial_query_id)
-        SELECT cases.name AS case,
+        SELECT splitByChar(' ', cases.name)[2] AS exchange, splitByChar(' ', cases.name)[3] AS arm,
             on_run.events['DistributedPlanRemoteTasks'] AS tasks,
             on_run.events['DistributedPlanRemoteTasksSent'] AS sent,
             on_tasks.ran AS ran,
@@ -86,6 +86,8 @@ function print_cases()
         LEFT JOIN initiators AS on_run ON on_run.query_id = cases.on_id
         LEFT JOIN initiators AS off_run ON off_run.query_id = cases.off_id
         LEFT JOIN task_queries AS on_tasks ON on_tasks.initial_query_id = cases.on_id
-        ORDER BY case
-        FORMAT TSVWithNames"
+        WHERE splitByChar(' ', cases.name)[1] = '$1'
+        ORDER BY exchange, arm
+        SETTINGS output_format_pretty_row_numbers = 0
+        FORMAT PrettyCompactMonoBlock"
 }

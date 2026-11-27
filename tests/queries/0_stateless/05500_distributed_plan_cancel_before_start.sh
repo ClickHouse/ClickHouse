@@ -60,4 +60,5 @@ $CLICKHOUSE_CLIENT --query "
             WHERE $RECENT AND current_database = currentDatabase() AND query_id = '$QUERY_ID') AS initial_query_logged,
         (SELECT count() FROM system.query_log WHERE $RECENT AND query_id != '$QUERY_ID' AND initial_query_id = '$QUERY_ID') AS ran
     FROM ($TASK_LINES)
-    FORMAT TSVWithNames"
+    SETTINGS output_format_pretty_row_numbers = 0
+    FORMAT PrettyCompactMonoBlock"
