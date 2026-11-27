@@ -53,7 +53,8 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2, parallel
     max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET automatic_parallel_replicas_min_bytes_per_replica = 0;
 SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
-SET optimize_functions_to_subcolumns = 1;
+-- `s <> ''` reads `s.size` only once `optimize_empty_string_comparisons` rewrites it to `notEmpty(s)`.
+SET optimize_functions_to_subcolumns = 1, optimize_empty_string_comparisons = 1;
 -- With unused columns kept, the plan with parallel replicas of a read filtered by the primary key does not match the
 -- single-replica plan, and no statistics are collected at all, see `05292_autopr_stats_key_constants`.
 SET query_plan_remove_unused_columns = 1;

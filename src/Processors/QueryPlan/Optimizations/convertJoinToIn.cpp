@@ -1,6 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Columns/ColumnSet.h>
 #include <Core/Block.h>
 #include <Core/UUID.h>
@@ -11,6 +12,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinUtils.h>
+#include <Interpreters/MaterializedCTE.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
@@ -18,8 +20,14 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Storages/StorageMemory.h>
+#include <Storages/StorageMerge.h>
 
 
 namespace DB::ErrorCodes
@@ -151,6 +159,82 @@ static bool hasCommonSubplanNodes(const QueryPlan::Node & root)
     return false;
 }
 
+/// The unbuilt `MATERIALIZED` CTEs a plan reads and leaves to the gate of an outer plan, dependencies first.
+struct CTEsToMaterialize
+{
+    VectorWithMemoryTracking<MaterializedCTEPtr> ctes;
+    UnorderedSetWithMemoryTracking<const MaterializedCTE *> seen;
+    /// A CTE without a plan to materialize here: claimed by another plan and not built yet, or a by-name reference.
+    bool unsatisfiable = false;
+
+    void addCTE(MaterializedCTEPtr cte)
+    {
+        if (!cte || cte->isBuilt() || !seen.insert(cte.get()).second)
+            return;
+
+        if (!cte->plan || !cte->plan->getRootNode())
+        {
+            unsatisfiable = true;
+            return;
+        }
+
+        collect(*cte->plan->getRootNode());
+        ctes.push_back(std::move(cte));
+    }
+
+    void collect(const QueryPlan::Node & root)
+    {
+        VectorWithMemoryTracking<const QueryPlan::Node *> stack{&root};
+        auto add_plan = [&](const QueryPlan * plan)
+        {
+            if (plan && plan->getRootNode())
+                stack.push_back(plan->getRootNode());
+        };
+
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+            const auto * step = node->step.get();
+
+            if (const auto * read = typeid_cast<const ReadFromMemoryStorageStep *>(step))
+            {
+                if (const auto * memory = typeid_cast<const StorageMemory *>(read->getStorage().get()))
+                    addCTE(memory->getMaterializedCTE());
+            }
+            /// The child plans are created later and leave the CTEs of this query tree to the outer gate.
+            else if (const auto * merge = typeid_cast<const ReadFromMerge *>(step))
+            {
+                for (const auto & cte : collectMaterializedCTEsFromQueryTree(merge->getQueryInfo().query_tree))
+                    addCTE(cte);
+            }
+            /// The shards read these CTEs by name, and an unbuilt one is not sent.
+            else if (const auto * remote = typeid_cast<const ReadFromRemote *>(step))
+            {
+                for (const auto & shard : remote->getShards())
+                    for (const auto & cte : collectMaterializedCTEsFromQueryTree(shard.query_tree))
+                        addCTE(cte);
+            }
+            else if (const auto * replicas = typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step))
+            {
+                for (const auto & cte : collectMaterializedCTEsFromQueryTree(replicas->getQueryTree()))
+                    addCTE(cte);
+            }
+            /// A deferred build of these sets strips the gates of their own plans.
+            else if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(step))
+            {
+                for (const auto & set : delayed->getSets())
+                    if (set && !set->get())
+                        add_plan(set->getQueryPlan());
+            }
+            else if (const auto * local = typeid_cast<const ReadFromLocalParallelReplicaStep *>(step))
+                add_plan(local->getQueryPlan());
+
+            stack.insert(stack.end(), node->children.begin(), node->children.end());
+        }
+    }
+};
+
 size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     auto & parent = parent_node->step;
@@ -230,6 +314,11 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         || hasCommonSubplanNodes(*parent_node->children.at(1)))
         return 0;
 
+    CTEsToMaterialize right_ctes;
+    right_ctes.collect(*parent_node->children.at(1));
+    if (right_ctes.unsatisfiable)
+        return 0;
+
     // {
     //     WriteBufferFromOwnString buf;
     //     IQueryPlanStep::FormatSettings s{.out=buf, .write_header=true};
@@ -297,10 +386,16 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     set_settings.transform_null_in = false;
     set_settings.size_limits = settings.network_transfer_limits;
 
+    auto in_source = std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes, *settings.source_plan));
+    /// An in-place build of the set materializes these CTEs first; a deferred build strips the steps and uses the outer gate.
+    for (auto it = right_ctes.ctes.rbegin(); it != right_ctes.ctes.rend(); ++it)
+        in_source->addStep(std::make_unique<DelayedMaterializingCTEsStep>(
+            in_source->getCurrentHeader(), VectorWithMemoryTracking<MaterializedCTEPtr>{*it}));
+
     auto in_conversion = buildInConversion(
         lhs_in_node->step->getOutputHeader(),
         name_pairs,
-        std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes, *settings.source_plan)),
+        std::move(in_source),
         std::move(set_settings));
 
     {

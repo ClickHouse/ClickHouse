@@ -40,7 +40,7 @@ FileCacheKey FileCacheKey::fromKey(const UInt128 & key)
 
 FileCacheKey FileCacheKey::fromKeyString(const std::string & key_str)
 {
-    if (key_str.size() != 32)
+    if (key_str.size() != KEY_STRING_SIZE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid cache key hex: {}", key_str);
     return FileCacheKey(unhexUInt<UInt128>(key_str.data()));
 }

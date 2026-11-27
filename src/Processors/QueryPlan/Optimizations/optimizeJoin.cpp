@@ -108,6 +108,9 @@ struct RuntimeHashStatisticsContext
 
     UInt64 getCachedKey(const QueryPlan::Node * node)
     {
+        /// A sub-plan without a raw hash has no `HashTablesStatistics` entry, see `calculateHashTableCacheKeys`.
+        if (!getRawHash(node))
+            return 0;
         if (auto it = cache_keys.find(node); it != cache_keys.end())
             return it->second;
         return 0;
@@ -159,8 +162,9 @@ struct RuntimeHashStatisticsContext
 
         UInt64 raw_left = getRawHash(left_child_node);
         UInt64 raw_right = getRawHash(right_child_node);
-        UInt64 left_key = raw_left ^ calculateJoinStepCacheKeyContribution(join_step, JoinTableSide::Left);
-        UInt64 right_key = raw_right ^ calculateJoinStepCacheKeyContribution(join_step, JoinTableSide::Right);
+        /// A child without a raw hash gets no key, and neither does a join above it.
+        UInt64 left_key = raw_left ? raw_left ^ calculateJoinStepCacheKeyContribution(join_step, JoinTableSide::Left) : 0;
+        UInt64 right_key = raw_right ? raw_right ^ calculateJoinStepCacheKeyContribution(join_step, JoinTableSide::Right) : 0;
 
         /// Update cache_keys to reflect the new parent for these children (in case any
         /// downstream code reads them back via getCachedKey).
@@ -173,7 +177,7 @@ struct RuntimeHashStatisticsContext
         SipHash node_hash;
         node_hash.update(left_key);
         node_hash.update(right_key);
-        UInt64 raw_new = node_hash.get64();
+        UInt64 raw_new = left_key && right_key ? node_hash.get64() : 0;
         raw_hashes[&new_node] = raw_new;
         cache_keys[&new_node] = raw_new;
 
@@ -192,7 +196,7 @@ struct RuntimeHashStatisticsContext
             condition.getNode()->updateHash(output_hash);
         }
 
-        return {right_key, output_hash.get64()};
+        return {right_key, raw_new ? output_hash.get64() : 0};
     }
 };
 
