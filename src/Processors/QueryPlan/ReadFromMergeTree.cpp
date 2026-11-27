@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/Streaming/ReadToEndTransform.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -5340,14 +5339,7 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
     }
 
     data.triggerStreamingSubscriptionEnrichment();
-    auto pipe = Pipe::unitePipes(std::move(pipes));
-
-    /// The read of an incremental refresh reports its cursor at the end of the bounded stream, so it has to get there
-    /// even if a step of the query stops reading earlier.
-    if (context->getStreamingCursor())
-        pipe.addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<ReadToEndTransform>(stream_header); });
-
-    return pipe;
+    return Pipe::unitePipes(std::move(pipes));
 #endif
 }
 

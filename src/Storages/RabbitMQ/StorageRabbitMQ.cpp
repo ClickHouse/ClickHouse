@@ -28,7 +28,7 @@
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
 #include <Storages/RabbitMQ/RabbitMQSource.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
-#include <Processors/Streaming/ReadToEndTransform.h>
+#include <Processors/Transforms/ReadToEndTransform.h>
 #include <Storages/RabbitMQ/RabbitMQStreamSource.h>
 #include <boost/algorithm/string/trim.hpp>
 #include <Storages/StorageFactory.h>
@@ -964,8 +964,8 @@ void StorageRabbitMQ::readStream(
 
     /// The read of an incremental refresh reports its cursor at the end of the bounded stream, so it has to get there
     /// even if a step of the query stops reading earlier.
-    if (modified_context->getStreamingCursor())
-        pipe.addSimpleTransform([](const SharedHeader & header) { return std::make_shared<ReadToEndTransform>(header); });
+    if (auto streaming_cursor = modified_context->getStreamingCursor())
+        pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<ReadToEndTransform>(header, streaming_cursor); });
 
     auto step = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
     step->setStepDescription("Read from RabbitMQ STREAM");
