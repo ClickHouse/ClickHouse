@@ -24,16 +24,16 @@ En el cliente de línea de comandos, puede especificar una sección de parámetr
 
 Puede haber varias secciones como esta, según la cantidad de tablas que se estén transmitiendo.
 
-**–external** – Marca el inicio de una cláusula.
-**–file** – Ruta al archivo con el volcado de la tabla, o -, que hace referencia a stdin.
+`--external` – Marca el inicio de una cláusula.
+`--file` – Ruta al archivo con el volcado de la tabla, o -, que hace referencia a stdin.
 Solo se puede leer una tabla desde stdin.
 
-Los siguientes parámetros son opcionales: **–name**– Nombre de la tabla. Si se omite, se usa &#95;data.
-**–format** – Formato de los datos en el archivo. Si se omite, se usa TabSeparated.
-**–scalar** – Envía los datos como un escalar en lugar de una tabla temporal. Los datos deben contener exactamente una fila; si contienen varias columnas, se empaquetan en una sola tupla. Se puede acceder al valor en la consulta mediante `__getScalar('name')`.
+Los siguientes parámetros son opcionales: `--name` – Nombre de la tabla. Si se omite, se usa &#95;data.
+`--format` – Formato de los datos en el archivo. Si se omite, se usa TabSeparated.
+`--scalar` – Envía los datos como un escalar en lugar de una tabla temporal. Los datos deben contener exactamente una fila; si contienen varias columnas, se empaquetan en una sola tupla. Se puede acceder al valor en la consulta mediante `__getScalar('name')`.
 
-Se requiere uno de los siguientes parámetros:**–types** – Una lista de tipos de columna separados por comas. Por ejemplo: `UInt64,String`. Las columnas se llamarán &#95;1, &#95;2, ...
-**–structure**– La estructura de la tabla en el formato`UserID UInt64`, `URL String`. Define los nombres y tipos de las columnas.
+Se requiere uno de los siguientes parámetros: `--types` – Una lista de tipos de columna separados por comas. Por ejemplo: `UInt64,String`. Las columnas se llamarán &#95;1, &#95;2, ...
+`--structure` – La estructura de la tabla en el formato`UserID UInt64`, `URL String`. Define los nombres y tipos de las columnas.
 
 Los archivos especificados en &#39;file&#39; se analizarán con el formato especificado en &#39;format&#39;, usando los tipos de datos especificados en &#39;types&#39; o &#39;structure&#39;. La tabla se cargará en el servidor y allí estará disponible como tabla temporal con el nombre indicado en &#39;name&#39;.
 

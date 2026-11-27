@@ -50,8 +50,11 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
             {
                 /// Borrowing a thread that owns a group: remember its name (even UNKNOWN) before the
                 /// setThreadName below renames it, so we can restore it with the group.
-                prev_thread_name = getThreadName();
-                should_restore_prev_thread_name = true;
+                if (prev_thread && prev_thread->boundToOSThread())
+                {
+                    prev_thread_name = getThreadName();
+                    should_restore_prev_thread_name = true;
+                }
                 CurrentThread::detachFromGroupIfNotDetached();
             }
         }
@@ -62,7 +65,9 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
         LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
         CurrentThread::attachToGroup(thread_group);
-        setThreadName(thread_name);
+        /// A fiber has no OS thread of its own: the name belongs to the scheduler thread it runs on.
+        if (prev_thread->boundToOSThread())
+            setThreadName(thread_name);
 
         /// Simulate a failure after the attach succeeded (e.g. setThreadName throwing),
         /// to verify the catch block detaches from the target group and restores the

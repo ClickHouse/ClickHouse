@@ -6,7 +6,9 @@
 #include <Core/SortDescription.h>
 #include <base/types.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Profiling/Analysis/StepAnalyzer.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
+#include <functional>
 #include <span>
 #include <string_view>
 #include <variant>
@@ -46,8 +48,6 @@ struct QueryPlanStepDeserialization;
 
 struct ExplainFormatSettings;
 
-using StepProcessors = std::span<IProcessor * const>;
-
 /// Single step of query plan.
 class IQueryPlanStep
 {
@@ -59,8 +59,8 @@ public:
 
     virtual ~IQueryPlanStep() = default;
 
-    virtual String getName() const = 0;
-    virtual String getSerializationName() const { return getName(); }
+    [[nodiscard]] virtual String getName() const = 0;
+    [[nodiscard]] virtual String getSerializationName() const { return getName(); }
 
     /// Add processors from current step to QueryPipeline.
     /// Calling this method, we assume and don't check that:
@@ -70,13 +70,13 @@ public:
     ///   or pipeline should be completed otherwise.
     virtual QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) = 0;
 
-    const SharedHeaders & getInputHeaders() const { return input_headers; }
+    [[nodiscard]] const SharedHeaders & getInputHeaders() const { return input_headers; }
 
-    bool hasOutputHeader() const { return output_header != nullptr; }
-    const SharedHeader & getOutputHeader() const;
+    [[nodiscard]] bool hasOutputHeader() const { return output_header != nullptr; }
+    [[nodiscard]] const SharedHeader & getOutputHeader() const;
 
     /// Methods to describe what this step is needed for.
-    std::string_view getStepDescription() const;
+    [[nodiscard]] std::string_view getStepDescription() const;
     void setStepDescription(std::string description, size_t limit);
     void setStepDescription(const IQueryPlanStep & step);
 
@@ -88,11 +88,11 @@ public:
 
     virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/, UInt64 /*version*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
-    virtual bool isSerializable() const { return false; }
+    [[nodiscard]] virtual bool isSerializable() const { return false; }
 
-    virtual QueryPlanStepPtr clone() const;
+    [[nodiscard]] virtual QueryPlanStepPtr clone() const;
 
-    virtual const SortDescription & getSortDescription() const;
+    [[nodiscard]] virtual const SortDescription & getSortDescription() const;
 
     using FormatSettings = ExplainFormatSettings;
 
@@ -118,17 +118,24 @@ public:
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
     /// Get child plans contained inside some steps (e.g ReadFromMerge) so that they are visible when doing EXPLAIN.
+    /// Some steps build their child plans here rather than handing over plans they already hold, so this
+    /// changes what the query has done by the time it returns. Callers that only observe a plan must use
+    /// `getBuiltChildPlans` instead.
     /// EXPLAIN sets `for_explain`: a step whose plan runs with privileges the current user does not hold may hide it there.
     virtual QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) { return {}; }
+
+    /// The child plans this step has already built. A step that builds them on demand reports none until
+    /// something else has asked for them, which keeps observing a plan from changing the work a query does.
+    virtual QueryPlanRawPtrs getBuiltChildPlans() { return {}; }
 
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);
 
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
-    String getUniqID() const;
+    [[nodiscard]] String getUniqID() const;
     /// The number in `getUniqID`, unique within the query.
-    size_t getStepIndex() const { return step_index.value; }
+    [[nodiscard]] size_t getStepIndex() const { return step_index.value; }
 
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(SharedHeaders input_headers_);
@@ -141,14 +148,14 @@ public:
     /// override this to check its expressions. Otherwise correlated subqueries may
     /// silently bypass the guards in `FutureSetFromSubquery::buildSetInplace` and
     /// `buildOrderedSetInplace`, and trigger `Trying to execute PLACEHOLDER action`.
-    virtual bool hasCorrelatedExpressions() const;
+    [[nodiscard]] virtual bool hasCorrelatedExpressions() const;
 
     /// `considerEnablingParallelReplicas` gates on the whole plan: one step returning false rejects it
     /// and no statistics are collected. A step that returns true must also attach a
     /// `RuntimeDataflowStatisticsCollector` in `transformPipeline` when `dataflow_cache_updater` is set,
     /// otherwise, should it end up at the replica-output boundary, the cached `output_bytes` stays 0 and
     /// the transfer to the initiator is priced at zero.
-    virtual bool supportsDataflowStatisticsCollection() const { return false; }
+    [[nodiscard]] virtual bool supportsDataflowStatisticsCollection() const { return false; }
 
     void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater);
 
@@ -156,7 +163,7 @@ public:
 
     /// Returns true if the step can take part in removing unused columns: it implements removeUnusedColumns,
     /// and getUnneededColumns unless it has no children to ask about.
-    virtual bool canRemoveUnusedColumns() const { return false; }
+    [[nodiscard]] virtual bool canRemoveUnusedColumns() const { return false; }
 
     /// What removeUnusedColumns did. The default is the answer when nothing changes.
     struct RemoveUnusedColumnsResult
@@ -214,7 +221,7 @@ public:
     /// What removeUnusedColumns would not need of each child once nobody needs these outputs.
     /// The children are to be pruned by that before the step itself is.
     /// Can be used only if canRemoveUnusedColumns returns true, for a step with children.
-    virtual UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & /*unneeded_output_positions*/) const;
+    [[nodiscard]] virtual UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & /*unneeded_output_positions*/) const;
 
     /// Different Steps have different stages of execution.
     /// For example JoinStep has build and probe stages.
@@ -225,10 +232,13 @@ public:
     /// In order for EXPLAIN ANALYZE to track all the time for every step
     /// redefine the methods below when adding a new step with several stages
     /// Follow the pattern of classes with multi stage execution that already implements these methods
-    virtual VectorWithMemoryTracking<size_t> getStepGroups() const { return {0}; }
-    virtual String getStepGroupName(size_t) const { return {}; }
+    [[nodiscard]] virtual VectorWithMemoryTracking<size_t> getStepGroups() const { return {0}; }
+    [[nodiscard]] virtual String getStepGroupName(size_t) const { return {}; }
 
-    virtual StepAnalysisReport getAnalysisReport(StepProcessors /*step_processors*/) const { return {}; }
+    /// An analyzer for this step: its stages, how to read its processors, and how to shape what
+    /// comes out. It captures what it needs by value and runs after the step is gone.
+    /// The default reports no metrics of its own and shapes the stages the ordinary way.
+    [[nodiscard]] virtual StepAnalyzer makeAnalyzer() const;
 
 protected:
     /// For a step with one child and one expression: brings the inputs of `dag`, whose outputs are pruned

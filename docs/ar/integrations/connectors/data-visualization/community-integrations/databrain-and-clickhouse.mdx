@@ -16,13 +16,9 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 [Databrain](https://usedatabrain.com) هي منصة تحليلات مضمّنة تتيح لك إنشاء لوحات معلومات تفاعلية ومقاييس وتصورات للبيانات ومشاركتها مع عملائك. يتصل Databrain بـ ClickHouse عبر واجهة HTTPS، مما يسهّل تصور بياناتك في ClickHouse وتحليلها من خلال واجهة حديثة وسهلة الاستخدام.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![واجهة لوحة معلومات Databrain تعرض تصورًا لبيانات ClickHouse](/images/integrations/data-visualization/databrain_01.webp)
-
-</Frame>
-
+  <Frame>
+    ![واجهة لوحة معلومات Databrain تعرض تصورًا لبيانات ClickHouse](/images/integrations/data-visualization/databrain_01.webp)
+  </Frame>
 </div>
 
 <br />
@@ -30,16 +26,14 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 سيرشدك هذا الدليل خلال خطوات ربط Databrain بمثيل ClickHouse لديك.
 
 <div id="pre-requisites">
-  ## المتطلبات الأساسية
+  ## المتطلبات الأساسية {#pre-requisites}
 </div>
 
 * قاعدة بيانات ClickHouse مستضافة إما على بنيتك التحتية الخاصة أو على [ClickHouse Cloud](https://clickhouse.com/).
 * [حساب Databrain](https://app.usedatabrain.com/users/sign-up).
 * مساحة عمل في Databrain لربط مصدر البيانات.
 
-<div id="steps-to-connect-databrain-to-clickhouse">
-  ## خطوات توصيل Databrain بـ ClickHouse
-</div>
+## خطوات توصيل Databrain بـ ClickHouse {#steps-to-connect-databrain-to-clickhouse}
 
 <Steps>
   <Step title="اجمع تفاصيل الاتصال الخاصة بك" id="1-gather-your-connection-details">
@@ -63,16 +57,12 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
   <Step title="أضف ClickHouse كمصدر بيانات في Databrain" id="3-add-clickhouse-as-a-data-source">
     1. سجّل الدخول إلى حسابك في Databrain، ثم انتقل إلى مساحة العمل التي تريد إضافة مصدر البيانات إليها.
 
-    2. انقر على **Data Sources** في قائمة التنقل.
+    2. انقر على **مصادر البيانات** في قائمة التنقل.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![قائمة مصادر البيانات في Databrain](/images/integrations/data-visualization/databrain_02.webp)
-
-    </Frame>
-
+      <Frame>
+        ![قائمة مصادر البيانات في Databrain](/images/integrations/data-visualization/databrain_02.webp)
+      </Frame>
     </div>
 
     3. انقر على **Add a Data Source** أو **Connect Data Source**.
@@ -80,30 +70,22 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
     4. حدّد **ClickHouse** من قائمة الموصلات المتاحة.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![اختيار الموصل في Databrain مع ظهور خيار ClickHouse](/images/integrations/data-visualization/databrain_03.webp)
-
-    </Frame>
-
+      <Frame>
+        ![اختيار الموصل في Databrain مع ظهور خيار ClickHouse](/images/integrations/data-visualization/databrain_03.webp)
+      </Frame>
     </div>
 
     5. املأ تفاصيل الاتصال:
        * **Destination Name**: أدخل اسمًا وصفيًا لهذا الاتصال (مثل: &quot;ClickHouse للإنتاج&quot; أو &quot;Analytics DB&quot;)
        * **Host**: أدخل عنوان URL لمضيف ClickHouse (مثل: `https://your-instance.region.aws.clickhouse.cloud`)
-       * **Port**: أدخل `8443` (منفذ HTTPS الافتراضي لـ ClickHouse)
-       * **Username**: أدخل اسم مستخدم ClickHouse
-       * **Password**: أدخل كلمة مرور ClickHouse
+       * **منفذ**: أدخل `8443` (منفذ HTTPS الافتراضي لـ ClickHouse)
+       * **اسم المستخدم**: أدخل اسم المستخدم في ClickHouse
+       * **كلمة المرور**: أدخل كلمة المرور في ClickHouse
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![نموذج اتصال ClickHouse في Databrain مع حقول الإعداد](/images/integrations/data-visualization/databrain_04.webp)
-
-    </Frame>
-
+      <Frame>
+        ![نموذج اتصال ClickHouse في Databrain مع حقول الإعداد](/images/integrations/data-visualization/databrain_04.webp)
+      </Frame>
     </div>
 
     6. انقر على **Test Connection** للتحقق من أن Databrain يمكنه الاتصال بمثيل ClickHouse لديك.
@@ -127,31 +109,25 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 </Steps>
 
 <div id="using-databrain-with-clickhouse">
-  ## استخدام Databrain مع ClickHouse
+  ## استخدام Databrain مع ClickHouse {#using-databrain-with-clickhouse}
 </div>
 
-<div id="explore-your-data">
-  ### استكشف بياناتك
-</div>
+### استكشف بياناتك {#explore-your-data}
 
 1. بعد الاتصال، انتقل إلى مساحة العمل الخاصة بك في Databrain.
 
 2. سترى جداول ClickHouse مدرجة في مستكشف البيانات.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![مستكشف البيانات في Databrain يعرض جداول ClickHouse](/images/integrations/data-visualization/databrain_05.webp)
-
-</Frame>
-
+  <Frame>
+    ![مستكشف البيانات في Databrain يعرض جداول ClickHouse](/images/integrations/data-visualization/databrain_05.webp)
+  </Frame>
 </div>
 
 3. انقر على أحد الجداول لاستكشاف المخطط ومعاينة البيانات.
 
 <div id="create-metrics-and-visualizations">
-  ### إنشاء المقاييس والتصورات
+  ### إنشاء المقاييس والتصورات {#create-metrics-and-visualizations}
 </div>
 
 1. انقر على **Create Metric** لبدء إنشاء التصورات من بيانات ClickHouse.
@@ -166,9 +142,7 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 
 4. احفظ المقياس لإعادة استخدامه في لوحات المعلومات.
 
-<div id="build-dashboards">
-  ### إنشاء لوحات المعلومات
-</div>
+### إنشاء لوحات المعلومات {#build-dashboards}
 
 1. انقر على **إنشاء لوحة معلومات** لبدء إنشاء لوحة معلومات جديدة.
 
@@ -177,19 +151,15 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 3. خصّص تخطيط لوحة المعلومات ومظهرها.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![لوحة معلومات Databrain تضم عدة تصورات من ClickHouse](/images/integrations/data-visualization/databrain_06.webp)
-
-</Frame>
-
+  <Frame>
+    ![لوحة معلومات Databrain تضم عدة تصورات من ClickHouse](/images/integrations/data-visualization/databrain_06.webp)
+  </Frame>
 </div>
 
 4. شارك لوحة المعلومات الخاصة بك مع فريقك أو ضمّنها في تطبيقك.
 
 <div id="advanced-features">
-  ### الميزات المتقدمة
+  ### الميزات المتقدمة {#advanced-features}
 </div>
 
 توفّر Databrain عدة ميزات متقدمة عند العمل مع ClickHouse:
@@ -202,11 +172,11 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 * **الطبقة الدلالية**: أنشئ نماذج بيانات ومنطق أعمال قابلَين لإعادة الاستخدام
 
 <div id="troubleshooting">
-  ## استكشاف الأخطاء وإصلاحها
+  ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 </div>
 
 <div id="connection-fails">
-  ### فشل الاتصال
+  ### فشل الاتصال {#connection-fails}
 </div>
 
 إذا لم تتمكن من الاتصال بـ ClickHouse:
@@ -218,7 +188,7 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 5. **أذونات المستخدم**: تحقق من أن لدى المستخدم أذونات SELECT على `information_schema` وعلى قواعد البيانات المستهدفة
 
 <div id="slow-query-performance">
-  ### بطء أداء الاستعلامات
+  ### بطء أداء الاستعلامات {#slow-query-performance}
 </div>
 
 إذا كانت الاستعلامات تعمل ببطء:
@@ -229,7 +199,7 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 4. **تحسين الفهرسة**: استفد من المفاتيح الأساسية وفهارس التخطي في ClickHouse
 
 <div id="learn-more">
-  ## اطّلِع على المزيد
+  ## اطّلِع على المزيد {#learn-more}
 </div>
 
 لمزيد من المعلومات حول ميزات Databrain وكيفية إنشاء تحليلات متقدمة:

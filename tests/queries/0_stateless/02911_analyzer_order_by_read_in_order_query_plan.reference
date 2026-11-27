@@ -283,7 +283,9 @@ select * from (explain plan actions = 1 select * from (select * from tab union a
   Result sort description: multiply(plus(__table1.a, __table1.b), __table1.c) ASC, sin(divide(__table1.a, __table1.b)) ASC
         ReadType: InOrder
         ReadType: InOrder
-select * from (select * from tab where (a + b) * c = 8 union all select * from tab3 where (a + b) * c = 18) order by sin(a / b);
+-- All rows with `a = b` have the same `sin(a / b)`, and parallel replicas return such ties in a
+-- different order, so the result is checked without them.
+select * from (select * from tab where (a + b) * c = 8 union all select * from tab3 where (a + b) * c = 18) order by sin(a / b) settings enable_parallel_replicas = 0;
 2	2	2	2
 2	2	2	2
 3	3	3	3
@@ -293,7 +295,9 @@ select * from (explain plan actions = 1 select * from (select * from tab where (
   Result sort description: sin(divide(__table1.a, __table1.b)) ASC
           ReadType: InOrder
           ReadType: InOrder
-select * from (select * from tab where (a + b) * c = 8 union all select * from tab4) order by sin(a / b);
+-- All rows with `a = b` have the same `sin(a / b)`, and parallel replicas return such ties in a
+-- different order, so the result is checked without them.
+select * from (select * from tab where (a + b) * c = 8 union all select * from tab4) order by sin(a / b) settings enable_parallel_replicas = 0;
 2	2	2	2
 2	2	2	2
 1	1	1	1

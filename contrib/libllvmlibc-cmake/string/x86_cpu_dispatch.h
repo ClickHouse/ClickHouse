@@ -14,13 +14,14 @@ enum CpuLevel : uint32_t {
 
 static uint32_t cpu_level_storage = CPU_UNKNOWN;
 
-static inline void cpuid_ex(uint32_t leaf, uint32_t subleaf, uint32_t out[4]) {
+static inline void cpuid_ex(uint32_t leaf, uint32_t subleaf,
+                            uint32_t out[4]) noexcept {
   __asm__ __volatile__("cpuid"
                        : "=a"(out[0]), "=b"(out[1]), "=c"(out[2]), "=d"(out[3])
                        : "0"(leaf), "2"(subleaf));
 }
 
-__attribute__((noinline, cold)) static uint32_t detect_cpu_level() {
+__attribute__((noinline, cold)) static uint32_t detect_cpu_level() noexcept {
   uint32_t level = CPU_BASELINE;
   uint32_t r[4];
   cpuid_ex(0, 0, r);
@@ -44,7 +45,7 @@ __attribute__((noinline, cold)) static uint32_t detect_cpu_level() {
   return level;
 }
 
-static inline uint32_t cpu_level() {
+static inline uint32_t cpu_level() noexcept {
   const uint32_t v = __atomic_load_n(&cpu_level_storage, __ATOMIC_RELAXED);
   if (__builtin_expect(v == CPU_UNKNOWN, 0))
     return detect_cpu_level();

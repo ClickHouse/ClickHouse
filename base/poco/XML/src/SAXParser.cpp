@@ -25,9 +25,9 @@ namespace Poco {
 namespace XML {
 
 
-const XMLString SAXParser::FEATURE_PARTIAL_READS = toXMLString("http://www.appinf.com/features/enable-partial-reads");
-const XMLString SAXParser::PROPERTY_BLA_MAXIMUM_AMPLIFICATION = toXMLString("http://www.appinf.com/properties/bla-maximum-amplification");
-const XMLString SAXParser::PROPERTY_BLA_ACTIVATION_THRESHOLD = toXMLString("http://www.appinf.com/properties/bla-activation-threshold");
+[[clang::no_destroy]] const XMLString SAXParser::FEATURE_PARTIAL_READS = toXMLString("http://www.appinf.com/features/enable-partial-reads");
+[[clang::no_destroy]] const XMLString SAXParser::PROPERTY_BLA_MAXIMUM_AMPLIFICATION = toXMLString("http://www.appinf.com/properties/bla-maximum-amplification");
+[[clang::no_destroy]] const XMLString SAXParser::PROPERTY_BLA_ACTIVATION_THRESHOLD = toXMLString("http://www.appinf.com/properties/bla-activation-threshold");
 
 
 SAXParser::SAXParser():
@@ -157,9 +157,9 @@ void SAXParser::setProperty(const XMLString& propertyId, const XMLString& value)
 	if (propertyId == XMLReader::PROPERTY_DECLARATION_HANDLER || propertyId == XMLReader::PROPERTY_LEXICAL_HANDLER)
 		throw SAXNotSupportedException(std::string("property does not take a string value: ") + fromXMLString(propertyId));
 	else if (propertyId == PROPERTY_BLA_MAXIMUM_AMPLIFICATION)
-		_engine.setBillionLaughsAttackProtectionMaximumAmplification(static_cast<float>(Poco::NumberParser::parseFloat(value)));
+		_engine.setBillionLaughsAttackProtectionMaximumAmplification(static_cast<float>(Poco::NumberParser::parseFloat(fromXMLString(value))));
 	else if (propertyId == PROPERTY_BLA_ACTIVATION_THRESHOLD)
-		_engine.setBillionLaughsAttackProtectionActivationThreshold(Poco::NumberParser::parseUnsigned64(value));
+		_engine.setBillionLaughsAttackProtectionActivationThreshold(Poco::NumberParser::parseUnsigned64(fromXMLString(value)));
 	else
 		throw SAXNotRecognizedException(fromXMLString(propertyId));
 }

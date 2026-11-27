@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'Entra ID', 'Azure AD', 'Microsoft', 'OAuth', 'OIDC', 'app roles', 'authentication', 'identity provider']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 import { VersionBadge } from "/snippets/ja/components/VersionBadge/VersionBadge.jsx";
@@ -56,7 +54,11 @@ import { VersionBadge } from "/snippets/ja/components/VersionBadge/VersionBadge.
     * **Supported account types**: シングルテナントを選択します。ポータルのバージョンによって、このオプションは **Single tenant only** または **Accounts in this organizational directory only** と表示されます。
     * **Redirect URI**: 空欄のままにします。ユーザーはリダイレクト URI を使用しないデバイスコードフローでサインインします。
 
-    <Image img="/images/cloud/security/jwt/entra-register-application.webp" size="lg" alt="Microsoft Entra 管理センターのアプリケーション登録フォーム。シングルテナントのアカウントタイプが選択され、リダイレクト URI は未設定" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Microsoft Entra 管理センターのアプリケーション登録フォーム。シングルテナントのアカウントタイプが選択され、リダイレクト URI は未設定](/images/cloud/security/jwt/entra-register-application.webp)
+      </Frame>
+    </div>
 
     **Register** を選択します。**Overview** ページで、次の値をコピーします。
 
@@ -72,7 +74,11 @@ import { VersionBadge } from "/snippets/ja/components/VersionBadge/VersionBadge.
     * Microsoft Graph フォーマット: `api` セクション内の `requestedAccessTokenVersion`
     * Azure AD Graph フォーマット: 下のスクリーンショットのとおり、top-level の `accessTokenAcceptedVersion`
 
-    <Image img="/images/cloud/security/jwt/entra-manifest-token-version.webp" size="lg" alt="accessTokenAcceptedVersion が 2 に設定されたアプリケーションマニフェストエディター" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![accessTokenAcceptedVersion が 2 に設定されたアプリケーションマニフェストエディター](/images/cloud/security/jwt/entra-manifest-token-version.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="API を公開する" id="expose-an-api">
@@ -80,7 +86,11 @@ import { VersionBadge } from "/snippets/ja/components/VersionBadge/VersionBadge.
 
     1. **Application ID URI** の横にある **Add** を選択し、デフォルト値 `api://<CLIENT_ID>` のまま保存します。クライアントはこの URI を使用して ClickHouse 用のトークンをリクエストします。なお、この設定によって v2.0 トークンの `aud` claim が変わることはなく、値はクライアント ID のままです。
 
-       <Image img="/images/cloud/security/jwt/entra-application-id-uri.webp" size="lg" alt="デフォルトの api:// 値が表示された Application ID URI パネルを含む Expose an API ページ" />
+       <div className="ch-image-lg">
+         <Frame>
+           ![デフォルトの api:// 値が表示された Application ID URI パネルを含む Expose an API ページ](/images/cloud/security/jwt/entra-application-id-uri.webp)
+         </Frame>
+       </div>
 
     2. **Add a scope** を選択し、フォームに入力します。このスコープは、ユーザーがサインインする際にリクエストされます。アプリケーション自身として認証するアプリケーションでは使用されません。
 
@@ -92,7 +102,11 @@ import { VersionBadge } from "/snippets/ja/components/VersionBadge/VersionBadge.
        | **Admin consent description**  | 任意の説明                                        |
        | **State**                      | **Enabled**                                  |
 
-       <Image img="/images/cloud/security/jwt/entra-add-scope.webp" size="lg" alt="access_as_application スコープ、管理者のみに限定された同意、Enabled に設定された State を示す Add a scope パネル" />
+       <div className="ch-image-lg">
+         <Frame>
+           ![access_as_application スコープ、管理者のみに限定された同意、Enabled に設定された State を示す Add a scope パネル](/images/cloud/security/jwt/entra-add-scope.webp)
+         </Frame>
+       </div>
   </Step>
 
   <Step title="ユーザーのサインインに使用するクライアントアプリケーションを承認する" id="authorize-client-application">
@@ -100,7 +114,11 @@ import { VersionBadge } from "/snippets/ja/components/VersionBadge/VersionBadge.
 
     **Expose an API** の **Authorized client applications** で、**Add a client application** を選択します。`04b07795-8ddb-461a-bbee-02f9e1bf7b46` を入力し、`api://<CLIENT_ID>/access_as_application` スコープを選択してから、**Add application** を選択します。
 
-    <Image img="/images/cloud/security/jwt/entra-authorize-client-application.webp" size="lg" alt="Azure CLI のクライアント ID と access_as_application スコープが選択された Add a client application パネル" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Azure CLI のクライアント ID と access_as_application スコープが選択された Add a client application パネル](/images/cloud/security/jwt/entra-authorize-client-application.webp)
+      </Frame>
+    </div>
 
     <Note>
       Azure CLI ではなく独自のクライアントアプリケーションを使用する場合は、別途アプリケーションを登録し、**Authentication** で **Allow public client flows** を **Yes** に設定したうえで、そのクライアント ID をここで事前承認します。その後、[clickhouse-client でサインイン](#sign-in-with-clickhouse-client)する際に、そのクライアント ID を `--oauth-client-id` に指定します。tenant でユーザーによる同意が許可されていない場合は、そのアプリケーションの `openid`、`profile`、`offline_access` アクセス許可について、管理者による同意の付与も必要です。
@@ -122,19 +140,31 @@ import { VersionBadge } from "/snippets/ja/components/VersionBadge/VersionBadge.
 
     次の例では、ClickHouseロール名を値とする3つのアプリロールを定義しています。
 
-    <Image img="/images/cloud/security/jwt/entra-app-roles.webp" size="lg" alt="ClickHouse Admin、ClickHouse Analyst DB、ClickHouse Read Onlyが、それぞれ値ch_admin、ch_analyst、ch_readonlyとともに一覧表示されたApp rolesページ" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Admin、ClickHouse Analyst DB、ClickHouse Read Onlyが、それぞれ値ch_admin、ch_analyst、ch_readonlyとともに一覧表示されたApp rolesページ](/images/cloud/security/jwt/entra-app-roles.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="割り当てを必須にする" id="require-assignment">
     デフォルトでは、tenant 内のすべてのユーザーがアプリケーションのトークンを取得できます。トークンの取得をアプリロールに割り当てたユーザー、グループ、アプリケーションのみに制限するには、**Enterprise applications** を開いてアプリ登録と同じ名前のアプリケーションを選択し、**Properties** を開きます。次に、**Assignment required?** を **Yes** に設定して **Save** を選択します。
 
-    <Image img="/images/cloud/security/jwt/entra-assignment-required.webp" size="lg" alt="Assignment required が Yes に設定されたエンタープライズアプリケーションのプロパティ" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Assignment required が Yes に設定されたエンタープライズアプリケーションのプロパティ](/images/cloud/security/jwt/entra-assignment-required.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="ユーザーとグループをアプリのロールに割り当てる" id="assign-users-and-groups">
     同じエンタープライズアプリケーションで **Users and groups** を開き、**Add user/group** を選択します。ユーザーまたはグループを選び、アプリロールを選択してから **Assign** を選択します。この手順を、ユーザーまたはグループごとに繰り返します。
 
-    <Image img="/images/cloud/security/jwt/entra-assign-users-and-groups.webp" size="lg" alt="ClickHouse Read Only アプリロールにユーザーが割り当てられている、エンタープライズアプリケーションの Users and groups ページ" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Read Only アプリロールにユーザーが割り当てられている、エンタープライズアプリケーションの Users and groups ページ](/images/cloud/security/jwt/entra-assign-users-and-groups.webp)
+      </Frame>
+    </div>
 
     直接またはグループ経由で複数のアプリロールが割り当てられているユーザーの場合、`roles` claim にはそれらすべてのロールが含まれます。
 

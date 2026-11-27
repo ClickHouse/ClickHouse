@@ -84,11 +84,11 @@ public:
     }
     void finish(bool) override { }
     void cancel() noexcept override { }
-    size_t getNumberOfOpenStreams() const override { return 0; }
-    const Block & getColumnsSample() const override { return columns_sample; }
-    const ColumnsSubstreams & getColumnsSubstreams() const override { return finished.columns_substreams; }
+    [[nodiscard]] size_t getNumberOfOpenStreams() const override { return 0; }
+    [[nodiscard]] const Block & getColumnsSample() const override { return columns_sample; }
+    [[nodiscard]] const ColumnsSubstreams & getColumnsSubstreams() const override { return finished.columns_substreams; }
 
-    const MergedBlockOutputStream::FinishedColumns & getFinishedColumns() const { return finished; }
+    [[nodiscard]] const MergedBlockOutputStream::FinishedColumns & getFinishedColumns() const { return finished; }
 
 private:
     MergedBlockOutputStream::FinishedColumns finished;
@@ -550,13 +550,13 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         if (isFullPartStorage(new_part->getDataPartStorage()))
         {
-            auto out = serializeStatisticsPacked(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings);
+            auto out = serializeStatisticsPacked(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings, getStatisticsFileVersion(*new_part->storage.getSettings()));
             written_files.emplace_back(std::move(out));
         }
         /// Write statistics as separate compressed files in packed parts to avoid double buffering.
         else
         {
-            auto files = serializeStatisticsWide(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings);
+            auto files = serializeStatisticsWide(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings, getStatisticsFileVersion(*new_part->storage.getSettings()));
             std::move(files.begin(), files.end(), std::back_inserter(written_files));
         }
     }

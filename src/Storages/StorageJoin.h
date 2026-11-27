@@ -6,6 +6,7 @@
 #include <Storages/TableLockHolder.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/JoinUtils.h>
+#include <QueryPipeline/SizeLimits.h>
 
 
 namespace DB

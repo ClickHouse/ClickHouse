@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
+#include <Columns/ColumnLowCardinality.h>
 
 #if USE_ORC
 
@@ -35,7 +36,6 @@
 #include <Formats/castColumnToRequestedType.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
-#include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadSettings.h>
 #include <IO/SeekableReadBuffer.h>
@@ -46,7 +46,6 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Set.h>
-#include <Interpreters/castColumn.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/setThreadName.h>
@@ -67,7 +66,6 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int UNKNOWN_TYPE;
 extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
-extern const int THERE_IS_NO_COLUMN;
 extern const int INCORRECT_DATA;
 extern const int ARGUMENT_OUT_OF_BOUND;
 extern const int TOO_DEEP_RECURSION;
@@ -177,16 +175,18 @@ std::unique_ptr<ORC::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
     return std::make_unique<ORCInputStreamFromString>(std::move(file_data), file_size);
 }
 
-/// Defined below, next to the read path that also uses it. The sargs path resolves predicate column
-/// names through the same recursive walk, so pruning and reading always agree on the column.
-static const ORC::Type *
-traverseDownORCTypeByName(const std::string & target, const ORC::Type * orc_type, DataTypePtr & type, bool ignore_case);
-
 struct ORCPredicateColumnTypes
 {
     DataTypePtr result_type;
     DataTypePtr declared_type;
+    /// The header column that is the predicate column, or has it as the tuple element at `path`.
+    const ColumnWithTypeAndName * header_column = nullptr;
+    ISerialization::SubstreamPath path;
 };
+
+/// Defined below, next to the read path whose binding of columns and tuple elements to the file schema it repeats,
+/// so pruning and reading always agree on the column.
+static const ORC::Type * findORCTypeOfPredicateColumn(const ORCPredicateColumnTypes & column, const ORC::Type & schema, bool ignore_case);
 
 /// True when `path` is a named tuple element at every level, so it is a file leaf with its own
 /// statistics. Nullable, LowCardinality and Array are transparent; anything else is refused,
@@ -227,13 +227,21 @@ static bool isNamedTupleElementPath(const IDataType & type, std::string_view pat
     return false;
 }
 
+/// The header column named `name`, else the only one whose name differs from it only by case.
+static const ColumnWithTypeAndName * findHeaderColumn(const Block & header, const String & name, bool ignore_case)
+{
+    bool ambiguous = false;
+    const auto position = DataTypeTuple::matchElementsByName(header.getNames(), {name}, ignore_case, &ambiguous).front();
+    return position ? &header.getByPosition(*position) : nullptr;
+}
+
 /// Resolves a named tuple element and retains its declared type before ancestor wrappers are applied.
 static std::optional<ORCPredicateColumnTypes> findTupleElementKeyTypes(
     const Block & header, const String & name, bool ignore_case)
 {
     for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
     {
-        const auto * column = header.findByName(String(column_name), ignore_case);
+        const auto * column = findHeaderColumn(header, String(column_name), ignore_case);
         if (!column || !isNamedTupleElementPath(*column->type, subcolumn_name, ignore_case))
             continue;
         if (auto subcolumn = column->type->tryGetSubcolumnInfo(subcolumn_name))
@@ -243,7 +251,7 @@ static std::optional<ORCPredicateColumnTypes> findTupleElementKeyTypes(
             /// A dotted field name can also resolve to a virtual subcolumn of another element.
             if (path.back().type != ISerialization::Substream::TupleElement)
                 continue;
-            return ORCPredicateColumnTypes{subcolumn->data.type, path.back().data.type};
+            return ORCPredicateColumnTypes{subcolumn->data.type, path.back().data.type, column, path};
         }
     }
     return {};
@@ -253,8 +261,8 @@ static std::optional<ORCPredicateColumnTypes> findTupleElementKeyTypes(
 static std::optional<ORCPredicateColumnTypes> findHeaderTypesByPath(
     const Block & header, const String & name, bool ignore_case)
 {
-    if (const auto * column = header.findByName(name, ignore_case))
-        return ORCPredicateColumnTypes{column->type, column->type};
+    if (const auto * column = findHeaderColumn(header, name, ignore_case))
+        return ORCPredicateColumnTypes{column->type, column->type, column, {}};
     return findTupleElementKeyTypes(header, name, ignore_case);
 }
 
@@ -723,7 +731,9 @@ static void buildORCSearchArgumentImpl(
     const ORC::Type & schema,
     KeyCondition::RPN & rpn_stack,
     ORC::SearchArgumentBuilder & builder,
-    const FormatSettings & format_settings)
+    const FormatSettings & format_settings,
+    /// True under an odd number of NOTs.
+    bool negated)
 {
     if (rpn_stack.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty rpn stack in buildORCSearchArgumentImpl");
@@ -782,12 +792,8 @@ static void buildORCSearchArgumentImpl(
                 break;
             }
 
-            /// The resolver rewrites the type it is given when it descends a LIST (a flattened
-            /// Nested column), so give it a scratch copy: the guards below must judge the key's
-            /// own type, which is what KeyCondition's RPN holds.
             const auto & column_type = column_types->result_type;
-            auto resolved_type = column_type;
-            const auto * orc_type = traverseDownORCTypeByName(column_name, &schema, resolved_type, ignore_case);
+            const auto * orc_type = findORCTypeOfPredicateColumn(*column_types, schema, ignore_case);
             if (!orc_type)
             {
                 builder.literal(ORC::TruthValue::YES_NO_NULL);
@@ -819,21 +825,37 @@ static void buildORCSearchArgumentImpl(
                 break;
             }
 
+            bool and_not_null = false;
+
             /// A non-nullable element converts NULL to its default even when a nullable ancestor makes
             /// its extracted type nullable. Pruning must agree with the values produced by the reader.
             const auto & declared_type = column_types->declared_type;
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(declared_type))
             {
-                /// Use the column default inserted by `insertNullAsDefaultIfNeeded`. It differs from
-                /// the type default for `Date32`.
+                /// The default a NULL row of `declared_type` gets.
                 auto default_column = declared_type->createColumn();
-                default_column->insertDefault();
+                declared_type->insertDefaultInto(*default_column);
                 const bool match_if_null = evaluateRPNElement({}, curr);
                 const bool match_if_default = evaluateRPNElement((*default_column)[0], curr);
                 if (match_if_default != match_if_null)
                 {
                     builder.literal(ORC::TruthValue::YES_NO_NULL);
                     break;
+                }
+
+                /// Under a negation ORC keeps the atom NULL for a NULL, which the reader returns as the default,
+                /// so read the row groups with NULLs. Element statistics need not count the NULLs of ancestors.
+                if (negated)
+                {
+                    bool is_top_level = false;
+                    for (UInt64 i = 0; i < schema.getSubtypeCount() && !is_top_level; ++i)
+                        is_top_level = schema.getSubtype(i) == orc_type;
+                    if (!is_top_level)
+                    {
+                        builder.literal(ORC::TruthValue::YES_NO_NULL);
+                        break;
+                    }
+                    and_not_null = true;
                 }
             }
 
@@ -842,6 +864,14 @@ static void buildORCSearchArgumentImpl(
             {
                 builder.literal(ORC::TruthValue::YES_NO_NULL);
                 break;
+            }
+
+            if (and_not_null)
+            {
+                builder.startAnd();
+                builder.startNot();
+                builder.isNull(orc_type->getColumnId(), *predicate_type);
+                builder.end();
             }
 
             if (need_wrap_not)
@@ -970,6 +1000,9 @@ static void buildORCSearchArgumentImpl(
             if (need_wrap_not)
                 builder.end();
 
+            if (and_not_null)
+                builder.end();
+
             break;
         }
         case KeyCondition::RPNElement::FUNCTION_ATOM_GROUP:
@@ -982,7 +1015,7 @@ static void buildORCSearchArgumentImpl(
             for (auto & atom : atoms)
             {
                 rpn_stack.push_back(std::move(atom));
-                buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+                buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, negated);
             }
             builder.end();
             break;
@@ -1001,7 +1034,7 @@ static void buildORCSearchArgumentImpl(
         {
             builder.startNot();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, !negated);
             builder.end();
             break;
         }
@@ -1009,8 +1042,8 @@ static void buildORCSearchArgumentImpl(
         {
             builder.startAnd();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, negated);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, negated);
             builder.end();
             break;
         }
@@ -1018,8 +1051,8 @@ static void buildORCSearchArgumentImpl(
         {
             builder.startOr();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, negated);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, negated);
             builder.end();
             break;
         }
@@ -1046,7 +1079,7 @@ std::unique_ptr<ORC::SearchArgument> buildORCSearchArgument(
         return nullptr;
 
     auto builder = std::make_unique<ORC::SearchArgumentBuilder>();
-    buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, *builder, format_settings);
+    buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, *builder, format_settings, /*negated=*/ false);
     return builder->build();
 }
 
@@ -1082,8 +1115,9 @@ static void getFileReader(
     file_reader = createORCReader(std::move(input_stream), options);
 }
 
-static const ORC::Type *
-traverseDownORCTypeByName(const std::string & target, const ORC::Type * orc_type, DataTypePtr & type, bool ignore_case)
+/// With `ambiguous`, a name that matches several fields only case-insensitively sets it and resolves to nothing instead of throwing.
+static const ORC::Type * traverseDownORCTypeByName(
+    const std::string & target, const ORC::Type * orc_type, DataTypePtr & type, bool ignore_case, bool * ambiguous = nullptr)
 {
     /// Recurses the file-controlled ORC type tree. The matching CH type (and the requested column
     /// name) bound the depth in practice, but keep a stack backstop here too, since this runs in
@@ -1101,6 +1135,7 @@ traverseDownORCTypeByName(const std::string & target, const ORC::Type * orc_type
             if (fold)
                 boost::to_lower(target_copy);
 
+            std::optional<size_t> match;
             for (size_t i = 0; i < type_->getSubtypeCount(); ++i)
             {
                 auto field_name = type_->getFieldName(i);
@@ -1109,15 +1144,26 @@ traverseDownORCTypeByName(const std::string & target, const ORC::Type * orc_type
 
                 if (startsWith(target_copy, field_name) && (target_copy.size() == field_name.size() || target_copy[field_name.size()] == '.'))
                 {
-                    return {target_copy.size() == field_name.size() ? "" : target_.substr(field_name.size() + 1), type_->getSubtype(i)};
+                    if (!fold)
+                        return {target_copy.size() == field_name.size() ? "" : target_.substr(field_name.size() + 1), type_->getSubtype(i)};
+                    if (match && ambiguous)
+                    {
+                        *ambiguous = true;
+                        return {"", nullptr};
+                    }
+                    if (match)
+                        DataTypeTuple::throwAmbiguousCaseInsensitiveName(target_, type_->getFieldName(*match), type_->getFieldName(i));
+                    match = i;
                 }
             }
-            return {"", nullptr};
+            if (!match)
+                return {"", nullptr};
+            const size_t length = type_->getFieldName(*match).size();
+            return {target_.size() == length ? "" : target_.substr(length + 1), type_->getSubtype(*match)};
         };
 
         /// A field spelled exactly like the request always wins: a struct may hold several fields
-        /// whose names differ only by case, and case-folding first binds the request to whichever
-        /// of them the file lists first.
+        /// whose names differ only by case.
         auto exact_match = search_pass(/*fold=*/false);
         if (exact_match.second || !ignore_case)
             return exact_match;
@@ -1127,7 +1173,7 @@ traverseDownORCTypeByName(const std::string & target, const ORC::Type * orc_type
     if (ORC::STRUCT == orc_type->getKind())
     {
         const auto [next_target, next_orc_type] = search_struct_field(target, orc_type);
-        return next_orc_type ? traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case) : nullptr;
+        return next_orc_type ? traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case, ambiguous) : nullptr;
     }
     if (ORC::LIST == orc_type->getKind())
     {
@@ -1145,7 +1191,7 @@ traverseDownORCTypeByName(const std::string & target, const ORC::Type * orc_type
             {
                 /// Adjust CH type to avoid inconsistency between CH and ORC type brought by flattened Nested type.
                 type = array_type->getNestedType();
-                return traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case);
+                return traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case, ambiguous);
             }
         }
     }
@@ -1155,34 +1201,71 @@ traverseDownORCTypeByName(const std::string & target, const ORC::Type * orc_type
 /// Forward declarations: updateIncludeTypeIds needs the union branch-hint machinery (defined
 /// below, near readColumnFromORCColumn, which is where it is also used) to prune struct-branch
 /// fields the same way the read path does. See computeOrcUnionBranchHints.
-static bool orcUnionBranchMatchesType(const ORC::Type * orc_branch_type, const DataTypePtr & target_type, bool case_insensitive);
+static bool orcUnionBranchMatchesType(
+    const ORC::Type * orc_branch_type, const DataTypePtr & target_type, bool case_insensitive, bool * ambiguous);
 static bool orcUnionBranchPrefersType(const ORC::Type * orc_branch_type, const DataTypePtr & target_type);
 static DataTypes computeOrcUnionBranchHints(const ORC::Type * orc_type, const DataTypePtr & type_hint, bool case_insensitive_matching);
 
-/// Binds a name to a field of an ORC struct type. A field spelled exactly like the name always
-/// wins over one that only matches case-folded, so a struct holding several fields whose names
-/// differ only by case resolves the name to the same field everywhere.
-static std::optional<size_t> findORCStructFieldByName(const ORC::Type * orc_type, const String & name, bool ignore_case)
+/// The field of an ORC struct that each of the element names of a named tuple takes, paired as the cast to the tuple pairs them.
+static VectorWithMemoryTracking<std::optional<size_t>> matchORCStructFieldsByName(
+    const ORC::Type * orc_type, const Strings & element_names, bool ignore_case, bool * ambiguous = nullptr)
 {
-    for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
-        if (name == orc_type->getFieldName(i))
-            return i;
-
-    if (ignore_case)
-        for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
-            if (boost::iequals(name, orc_type->getFieldName(i)))
-                return i;
-
-    return std::nullopt;
+    Strings field_names(orc_type->getSubtypeCount());
+    for (size_t i = 0; i < field_names.size(); ++i)
+        field_names[i] = orc_type->getFieldName(i);
+    return DataTypeTuple::matchElementsByName(field_names, element_names, ignore_case, ambiguous);
 }
 
-/// Also collects the ORC structs that are requested as a `Tuple`.
+static std::optional<size_t> findORCStructFieldByName(const ORC::Type * orc_type, const String & name, bool ignore_case)
+{
+    return matchORCStructFieldsByName(orc_type, {name}, ignore_case).front();
+}
+
+static const ORC::Type * findORCTypeOfPredicateColumn(const ORCPredicateColumnTypes & column, const ORC::Type & schema, bool ignore_case)
+{
+    auto type = column.header_column->type;
+    const auto * orc_type = traverseDownORCTypeByName(column.header_column->name, &schema, type, ignore_case);
+    for (const auto & substream : column.path)
+    {
+        if (!orc_type)
+            return nullptr;
+
+        if (substream.type == ISerialization::Substream::NullableElements)
+        {
+            type = removeNullable(type);
+            continue;
+        }
+
+        /// An element under an Array is an array column, whose predicates are not pushed down.
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+        if (substream.type != ISerialization::Substream::TupleElement || !tuple_type || !tuple_type->hasExplicitNames()
+            || orc_type->getKind() != ORC::STRUCT)
+            return nullptr;
+        const auto element = tuple_type->tryGetPositionByName(substream.name_of_substream);
+        if (!element)
+            return nullptr;
+        const auto field = matchORCStructFieldsByName(orc_type, tuple_type->getElementNames(), ignore_case)[*element];
+        type = tuple_type->getElement(*element);
+        orc_type = field ? orc_type->getSubtype(*field) : nullptr;
+    }
+    return orc_type;
+}
+
+static std::optional<VectorWithMemoryTracking<Int64>> getORCFieldIcebergIds(const ORC::Type & struct_type);
+
+/// Selects the ORC type ids to read for `type`. Under the data lake schema (`column_mapper` and the path `mapper_path` of
+/// the column in its storage encoding are given), an element of a tuple is selected from the struct field with its Iceberg
+/// field id if all the fields of the struct have one, as `readColumnFromORCColumn` reads it, so a renamed field is
+/// selected and an element whose field id the file does not have selects nothing. Also collects the ORC structs that are
+/// requested as a `Tuple`.
 static void updateIncludeTypeIds(
     DataTypePtr type,
     const ORC::Type * orc_type,
     bool ignore_case,
     UnorderedSetWithMemoryTracking<UInt64> & include_typeids,
-    VectorWithMemoryTracking<const ORC::Type *> & requested_structs)
+    VectorWithMemoryTracking<const ORC::Type *> & requested_structs,
+    const ColumnMapper * column_mapper = nullptr,
+    const String & mapper_path = {})
 {
     /// Recurses the file-controlled ORC type tree in lockstep with the (parser-bounded) CH type.
     /// Keep a stack backstop here too: this runs in prepareFileReader, before the
@@ -1203,7 +1286,14 @@ static void updateIncludeTypeIds(
             const auto * array_type = typeid_cast<const DataTypeArray *>(non_nullable_type.get());
             if (array_type)
             {
-                updateIncludeTypeIds(array_type->getNestedType(), orc_type->getSubtype(0), ignore_case, include_typeids, requested_structs);
+                updateIncludeTypeIds(
+                    array_type->getNestedType(),
+                    orc_type->getSubtype(0),
+                    ignore_case,
+                    include_typeids,
+                    requested_structs,
+                    column_mapper,
+                    mapper_path.empty() ? String{} : mapper_path + ".element");
                 return;
             }
             break;
@@ -1212,8 +1302,22 @@ static void updateIncludeTypeIds(
             const auto * map_type = typeid_cast<const DataTypeMap *>(non_nullable_type.get());
             if (map_type)
             {
-                updateIncludeTypeIds(map_type->getKeyType(), orc_type->getSubtype(0), ignore_case, include_typeids, requested_structs);
-                updateIncludeTypeIds(map_type->getValueType(), orc_type->getSubtype(1), ignore_case, include_typeids, requested_structs);
+                updateIncludeTypeIds(
+                    map_type->getKeyType(),
+                    orc_type->getSubtype(0),
+                    ignore_case,
+                    include_typeids,
+                    requested_structs,
+                    column_mapper,
+                    mapper_path.empty() ? String{} : mapper_path + ".key");
+                updateIncludeTypeIds(
+                    map_type->getValueType(),
+                    orc_type->getSubtype(1),
+                    ignore_case,
+                    include_typeids,
+                    requested_structs,
+                    column_mapper,
+                    mapper_path.empty() ? String{} : mapper_path + ".value");
                 return;
             }
             break;
@@ -1228,12 +1332,52 @@ static void updateIncludeTypeIds(
                 requested_structs.push_back(orc_type);
                 if (tuple_type->hasExplicitNames())
                 {
+                    std::optional<VectorWithMemoryTracking<Int64>> file_field_ids;
+                    if (column_mapper && !mapper_path.empty())
+                        file_field_ids = getORCFieldIcebergIds(*orc_type);
                     const auto & element_names = tuple_type->getElementNames();
+                    VectorWithMemoryTracking<std::optional<size_t>> field_positions(element_names.size());
+                    /// An element with a field id is selected from the field with its id, so only the others are paired by name.
+                    VectorWithMemoryTracking<size_t> named_elements;
+                    Strings names;
                     for (size_t tuple_i = 0; tuple_i < element_names.size(); ++tuple_i)
                     {
-                        if (auto field_i = findORCStructFieldByName(orc_type, element_names[tuple_i], ignore_case))
+                        std::optional<Int64> element_field_id;
+                        if (file_field_ids)
+                        {
+                            const auto & encoding = column_mapper->getStorageColumnEncoding();
+                            if (auto it = encoding.find(mapper_path + "." + element_names[tuple_i]); it != encoding.end())
+                                element_field_id = it->second;
+                        }
+                        if (element_field_id)
+                        {
+                            /// The field with the id of the element, whatever its name: none if the element is absent from the file.
+                            auto it = std::find(file_field_ids->begin(), file_field_ids->end(), *element_field_id);
+                            if (it != file_field_ids->end())
+                                field_positions[tuple_i] = static_cast<size_t>(it - file_field_ids->begin());
+                            continue;
+                        }
+                        named_elements.push_back(tuple_i);
+                        names.push_back(element_names[tuple_i]);
+                    }
+                    const auto named_positions = matchORCStructFieldsByName(orc_type, names, ignore_case);
+                    for (size_t j = 0; j < named_positions.size(); ++j)
+                        field_positions[named_elements[j]] = named_positions[j];
+                    for (size_t tuple_i = 0; tuple_i < element_names.size(); ++tuple_i)
+                    {
+                        const String element_path = mapper_path.empty() ? String{} : mapper_path + "." + element_names[tuple_i];
+                        const auto & field_i = field_positions[tuple_i];
+                        if (field_i)
+                        {
                             updateIncludeTypeIds(
-                                tuple_type->getElement(tuple_i), orc_type->getSubtype(*field_i), ignore_case, include_typeids, requested_structs);
+                                tuple_type->getElement(tuple_i),
+                                orc_type->getSubtype(*field_i),
+                                ignore_case,
+                                include_typeids,
+                                requested_structs,
+                                column_mapper,
+                                element_path);
+                        }
                     }
                 }
                 else
@@ -1333,6 +1477,122 @@ NativeORCBlockInputFormat::NativeORCBlockInputFormat(
 {
 }
 
+/// The Iceberg field ids of the fields of an ORC struct, in order, or nullopt if one of them has none.
+static std::optional<VectorWithMemoryTracking<Int64>> getORCFieldIcebergIds(const ORC::Type & struct_type)
+{
+    VectorWithMemoryTracking<Int64> result;
+    result.reserve(struct_type.getSubtypeCount());
+    for (size_t i = 0; i < struct_type.getSubtypeCount(); ++i)
+    {
+        const auto * subtype = struct_type.getSubtype(i);
+        Int64 field_id = 0;
+        if (!subtype->hasAttributeKey("iceberg.id") || !tryParse(field_id, subtype->getAttributeValue("iceberg.id")))
+            return {};
+        result.push_back(field_id);
+    }
+    return result;
+}
+
+/// The parsed Iceberg field ids of the ORC structs of one file (see `getORCFieldIcebergIds`), by struct.
+using ORCFieldIdsCache = UnorderedMapWithMemoryTracking<const ORC::Type *, std::optional<VectorWithMemoryTracking<Int64>>>;
+
+/// The field of the ORC struct `struct_type` with the Iceberg field id `field_id`: nullptr if no field has it, nullopt if
+/// `struct_type` is not a struct or one of its fields has no id (absence cannot be proven).
+static std::optional<const ORC::Type *> findORCFieldByIcebergId(const ORC::Type & struct_type, Int64 field_id, ORCFieldIdsCache & cache)
+{
+    if (struct_type.getKind() != ORC::STRUCT)
+        return std::nullopt;
+    auto [cached, inserted] = cache.try_emplace(&struct_type);
+    if (inserted)
+        cached->second = getORCFieldIcebergIds(struct_type);
+    const auto & field_ids = cached->second;
+    if (!field_ids)
+        return std::nullopt;
+    auto it = std::find(field_ids->begin(), field_ids->end(), field_id);
+    if (it == field_ids->end())
+        return static_cast<const ORC::Type *>(nullptr);
+    return struct_type.getSubtype(static_cast<uint64_t>(it - field_ids->begin()));
+}
+
+/// The fields of the data lake schema from the top-level one down to the field `path`, with their field ids: empty if `path` is
+/// not a field.
+static VectorWithMemoryTracking<std::pair<String, Int64>> getIcebergFieldLevels(const String & path, const ColumnMapper & column_mapper)
+{
+    const auto & encoding = column_mapper.getStorageColumnEncoding();
+    VectorWithMemoryTracking<std::pair<String, Int64>> levels;
+    for (String level = path; !level.empty(); level = column_mapper.getIcebergParentPath(level))
+    {
+        auto field = encoding.find(level);
+        if (field == encoding.end())
+            return {};
+        levels.emplace_back(level, field->second);
+    }
+    std::ranges::reverse(levels);
+    return levels;
+}
+
+/// Whether the column `path` (a field of the data lake schema or a tuple element of one) is absent from the file, matching
+/// each struct on its way from the root by Iceberg field id, and whether its `initial-default` applies: inside an absent
+/// struct it applies only if every struct from the absent one down has a struct default (else NULL, as in Parquet).
+static std::pair<bool, bool> getORCFieldAbsence(
+    const String & path, const ColumnMapper & column_mapper, const ORC::Type & file_schema, ORCFieldIdsCache & cache)
+{
+    const auto levels = getIcebergFieldLevels(path, column_mapper);
+    const ORC::Type * level_type = &file_schema;
+    for (size_t i = 0; i < levels.size(); ++i)
+    {
+        auto orc_field = findORCFieldByIcebergId(*level_type, levels[i].second, cache);
+        if (!orc_field)
+            return {false, false};
+        if (!*orc_field)
+        {
+            for (size_t j = i; j + 1 < levels.size(); ++j)
+            {
+                const Field * struct_default = column_mapper.getIcebergInitialDefault(levels[j].first);
+                if (!struct_default || struct_default->getType() != Field::Types::Tuple)
+                    return {true, false};
+            }
+            return {true, true};
+        }
+        level_type = *orc_field;
+    }
+    return {false, false};
+}
+
+static DataTypePtr makeTypeHintFromSubcolumns(
+    const String & path,
+    const ORC::Type * orc_type,
+    VectorWithMemoryTracking<std::pair<String, DataTypePtr>> subcolumns,
+    const ColumnMapper & column_mapper,
+    bool ignore_case,
+    ORCFieldIdsCache & field_ids_cache);
+
+/// The ORC type of the column `path` of the data lake schema, matching each struct on its way from the root as the reader
+/// selects it: by Iceberg field id if all the fields of the struct have one, else by name. nullptr if it is absent from the
+/// file, nullopt if a list or a map is on the way, in which case the reader matches it by name.
+static std::optional<const ORC::Type *> resolveORCFieldByIcebergId(
+    const String & path, const ColumnMapper & column_mapper, const ORC::Type & file_schema, bool ignore_case, ORCFieldIdsCache & cache)
+{
+    const auto levels = getIcebergFieldLevels(path, column_mapper);
+    if (levels.empty())
+        return std::nullopt;
+    const ORC::Type * level_type = &file_schema;
+    for (size_t i = 0; i < levels.size(); ++i)
+    {
+        auto orc_field = findORCFieldByIcebergId(*level_type, levels[i].second, cache);
+        if (!orc_field && level_type->getKind() == ORC::STRUCT)
+        {
+            const String name = i == 0 ? levels[i].first : levels[i].first.substr(levels[i - 1].first.size() + 1);
+            const auto field = findORCStructFieldByName(level_type, name, ignore_case);
+            orc_field = field ? level_type->getSubtype(*field) : nullptr;
+        }
+        if (!orc_field || !*orc_field)
+            return orc_field;
+        level_type = *orc_field;
+    }
+    return level_type;
+}
+
 void NativeORCBlockInputFormat::prepareFileReader()
 {
     getFileReader(*in, file_reader, format_settings, use_prefetch, min_bytes_for_seek, is_stopped);
@@ -1348,18 +1608,108 @@ void NativeORCBlockInputFormat::prepareFileReader()
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
     const auto & header = getPort().getHeader();
     const auto & file_schema = file_reader->getType();
+
+    /// A column of the data lake schema is absent from the file if a struct on its way identifies all its fields by Iceberg
+    /// field id and none of them has the id of the column or of its struct.
+    const ColumnMapper * column_mapper = format_filter_info ? format_filter_info->column_mapper.get() : nullptr;
+    NameSet absent_columns;
+    UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults;
+    ORCFieldIdsCache field_ids_cache;
+    if (column_mapper)
+    {
+        for (const auto & column : header)
+        {
+            const String field = column_mapper->getIcebergFieldPath(column.name);
+            const auto [absent, default_applies] = getORCFieldAbsence(field, *column_mapper, file_schema, field_ids_cache);
+            if (!absent)
+                continue;
+            absent_columns.insert(column.name);
+            if (!default_applies)
+                continue;
+            if (auto value = column_mapper->getIcebergInitialDefault(field, column.name, column.type))
+                absent_column_defaults.emplace(column.name, std::move(*value));
+        }
+    }
+
     UnorderedSetWithMemoryTracking<UInt64> include_typeids;
     VectorWithMemoryTracking<const ORC::Type *> requested_structs;
+    /// A same-named field of an absent column has another field id: it is not read. The filter push-down resolves the
+    /// columns of the filter by name, so it is disabled if that is not the field that the reader reads by field id.
+    bool absent_column_has_namesake = false;
+    /// Under the data lake schema, the top-level struct and list columns of the file whose elements are requested, selected
+    /// with the type hint that `orcColumnsToCHChunk` reads them with, so that their fields are matched by field id.
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints;
     for (const auto & column : header)
     {
         auto adjusted_type = column.type;
-        const auto * orc_type = traverseDownORCTypeByName(column.name, &file_schema, adjusted_type, ignore_case);
+        /// Under the data lake schema the fields of a struct are selected below by field id, so the name of a column is
+        /// resolved through the structs only for an absent one.
+        const ORC::Type * orc_type = nullptr;
+        const bool absent = absent_columns.contains(column.name);
+        bool name_is_ambiguous = false;
+        if (!column_mapper || absent)
+            orc_type = traverseDownORCTypeByName(
+                column.name, &file_schema, adjusted_type, ignore_case, absent ? &name_is_ambiguous : nullptr);
+        if (absent && (orc_type || name_is_ambiguous))
+        {
+            absent_column_has_namesake = true;
+            continue;
+        }
+        if (column_mapper)
+        {
+            if (auto field = findORCStructFieldByName(&file_schema, column.name, ignore_case))
+            {
+                updateIncludeTypeIds(
+                    column.type,
+                    file_schema.getSubtype(*field),
+                    ignore_case,
+                    include_typeids,
+                    requested_structs,
+                    column_mapper,
+                    column.name);
+                continue;
+            }
+            const String nested_table_name = Nested::extractTableName(column.name);
+            if (auto field = findORCStructFieldByName(&file_schema, nested_table_name, ignore_case);
+                field && nested_table_name != column.name)
+            {
+                const auto * nested_table_orc_type = file_schema.getSubtype(*field);
+                const auto orc_kind = nested_table_orc_type->getKind();
+                if (orc_kind == ORC::STRUCT || orc_kind == ORC::LIST)
+                {
+                    if (!nested_table_type_hints.contains(nested_table_name))
+                    {
+                        VectorWithMemoryTracking<std::pair<String, DataTypePtr>> subcolumns;
+                        for (const auto & name_and_type : header.getNamesAndTypesList())
+                            if (name_and_type.name.starts_with(nested_table_name + "."))
+                                subcolumns.emplace_back(name_and_type.name.substr(nested_table_name.size() + 1), name_and_type.type);
+                        auto nested_table_type = makeTypeHintFromSubcolumns(
+                            nested_table_name,
+                            nested_table_orc_type,
+                            std::move(subcolumns),
+                            *column_mapper,
+                            ignore_case,
+                            field_ids_cache);
+                        updateIncludeTypeIds(
+                            nested_table_type,
+                            nested_table_orc_type,
+                            ignore_case,
+                            include_typeids,
+                            requested_structs,
+                            column_mapper,
+                            nested_table_name);
+                        nested_table_type_hints.emplace(nested_table_name, std::move(nested_table_type));
+                    }
+                    continue;
+                }
+            }
+        }
         if (orc_type)
             updateIncludeTypeIds(adjusted_type, orc_type, ignore_case, include_typeids, requested_structs);
     }
 
     /// A requested struct none of whose requested fields is in the file is still read, through its narrowest field,
-    /// for its presence and the sizes of the lists and maps around it; `matchORCTupleElementsByName` then fills the
+    /// for its presence and the sizes of the lists and maps around it; the cast to the requested type then fills the
     /// requested fields with defaults. Inner structs first, as a read inner one makes its parents read.
     std::ranges::sort(requested_structs, std::greater{}, &ORC::Type::getColumnId);
     UnorderedSetWithMemoryTracking<UInt64> count_only_fields;
@@ -1374,16 +1724,55 @@ void NativeORCBlockInputFormat::prepareFileReader()
     }
     include_indices.assign(include_typeids.begin(), include_typeids.end());
 
+    /// A struct is read with only its selected fields, so whether they are matched by field id is told on the file's struct.
+    UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids;
+    if (column_mapper)
+    {
+        for (const auto * orc_struct : requested_structs)
+            if (!getORCFieldIcebergIds(*orc_struct))
+                structs_without_field_ids.insert(orc_struct->getColumnId());
+    }
+
+    /// The filter names the columns of the current schema, also tuple elements that the header has only through their parent.
+    const ColumnMapper * filter_column_mapper = format_filter_info && format_filter_info->current_schema_column_mapper
+        ? format_filter_info->current_schema_column_mapper.get()
+        : column_mapper;
+    if (filter_column_mapper && format_filter_info->filter_actions_dag && !absent_column_has_namesake)
+    {
+        for (const auto & required : format_filter_info->filter_actions_dag->getRequiredColumns())
+        {
+            /// Either the column is absent and a dropped field has its name, or the field with its name is another one
+            /// (a field renamed to the name of a dropped one), while the reader reads the field with its field id.
+            auto adjusted_type = required.type;
+            bool name_is_ambiguous = false;
+            const auto * field_by_name
+                = traverseDownORCTypeByName(required.name, &file_schema, adjusted_type, ignore_case, &name_is_ambiguous);
+            const auto field_by_id
+                = resolveORCFieldByIcebergId(required.name, *filter_column_mapper, file_schema, ignore_case, field_ids_cache);
+            if (name_is_ambiguous || (field_by_name && field_by_id && *field_by_id != field_by_name))
+            {
+                absent_column_has_namesake = true;
+                break;
+            }
+        }
+    }
+
     orc_column_to_ch_column = std::make_unique<ORCColumnToCHColumn>(
-        getPort().getHeader(),
+        header,
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.orc.case_insensitive_column_matching,
         format_settings.orc.dictionary_as_low_cardinality,
         format_settings.date_time_overflow_behavior,
-        std::move(count_only_fields));
+        std::move(count_only_fields),
+        column_mapper,
+        std::move(absent_columns),
+        std::move(absent_column_defaults),
+        std::move(nested_table_type_hints),
+        std::move(structs_without_field_ids));
 
-    if (format_settings.orc.filter_push_down && format_filter_info && format_filter_info->key_condition && !sargs)
+    if (format_settings.orc.filter_push_down && format_filter_info && format_filter_info->key_condition && !sargs
+        && !absent_column_has_namesake)
         sargs = buildORCSearchArgument(*format_filter_info->key_condition, header, file_schema, format_settings);
 
     selected_stripes = calculateSelectedStripes(static_cast<int>(file_reader->getNumberOfStripes()), skip_stripes);
@@ -1602,7 +1991,12 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     bool case_insensitive_matching_,
     bool dictionary_as_low_cardinality_,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
-    UnorderedSetWithMemoryTracking<UInt64> count_only_fields_)
+    UnorderedSetWithMemoryTracking<UInt64> count_only_fields_,
+    const ColumnMapper * column_mapper_,
+    NameSet absent_columns_,
+    UnorderedMapWithMemoryTracking<String, Field> absent_column_defaults_,
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_table_type_hints_,
+    UnorderedSetWithMemoryTracking<UInt64> structs_without_field_ids_)
     : header(header_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
@@ -1610,6 +2004,11 @@ ORCColumnToCHColumn::ORCColumnToCHColumn(
     , dictionary_as_low_cardinality(dictionary_as_low_cardinality_)
     , date_time_overflow_behavior(date_time_overflow_behavior_)
     , count_only_fields(std::move(count_only_fields_))
+    , column_mapper(column_mapper_)
+    , absent_columns(std::move(absent_columns_))
+    , absent_column_defaults(std::move(absent_column_defaults_))
+    , nested_table_type_hints(std::move(nested_table_type_hints_))
+    , structs_without_field_ids(std::move(structs_without_field_ids_))
 {
 }
 
@@ -1660,34 +2059,6 @@ static ColumnPtr readByteMapFromORCColumn(const ORC::ColumnVectorBatch * orc_col
 }
 
 
-/// A branch of an ORC union can be non-null at the union level yet select a null payload; ORC
-/// leaves a placeholder (a default value) at such positions. When the branch is later cast to an
-/// explicit Variant alternative, a value-checking cast (e.g. Int8 -> Enum8, or the same inside a
-/// Tuple field) would reject those placeholders even though the rows are never read (they become
-/// the Variant NULL discriminator). Overwrite every null-payload row with a copy of a non-null row
-/// before casting; the copied values are discarded downstream. If every row is a null payload there
-/// is nothing to read, so a null is returned and the caller uses a default-valued column instead.
-static ColumnPtr replaceNullPayloadRowsWithValidRow(const ColumnPtr & column, const NullMap & null_map)
-{
-    size_t valid_row = column->size();
-    for (size_t row = 0; row < column->size(); ++row)
-        if (!null_map[row])
-        {
-            valid_row = row;
-            break;
-        }
-
-    if (valid_row == column->size())
-        return nullptr;
-
-    auto result = column->cloneEmpty();
-    result->reserve(column->size());
-    for (size_t row = 0; row < column->size(); ++row)
-        result->insertFrom(*column, null_map[row] ? valid_row : row);
-    return result;
-}
-
-
 static const ORC::ColumnVectorBatch * getNestedORCColumn(const ORC::ListVectorBatch * orc_column)
 {
     return orc_column->elements.get();
@@ -1722,6 +2093,10 @@ template <bool fixed_string>
 static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
     const ORC::ColumnVectorBatch * orc_column, const ORC::Type * orc_type, const String & column_name, bool nullable)
 {
+    const auto & orc_str_column = dynamic_cast<const ORC::EncodedStringVectorBatch &>(*orc_column);
+    /// NULL rows stay NULL: the conversion to the requested type gives them its default.
+    nullable = nullable || orc_str_column.hasNulls;
+
     /// Fill CH holder_column with ORC dictionary
     /// Note that holder_column is always a ColumnString or ColumnFixedstring whether nullable is true or false, because ORC dictionary doesn't contain null values.
     DataTypePtr holder_type;
@@ -1733,7 +2108,6 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
     DataTypePtr nested_type = nullable ? std::make_shared<DataTypeNullable>(holder_type) : holder_type;
     auto internal_type = std::make_shared<DataTypeLowCardinality>(std::move(nested_type));
 
-    const auto & orc_str_column = dynamic_cast<const ORC::EncodedStringVectorBatch &>(*orc_column);
     size_t rows = orc_str_column.numElements;
     const auto & orc_dict = assert_cast<const ColumnString &>(*orc_str_column.dictionary->column);
     size_t dict_size = orc_dict.size();
@@ -1814,8 +2188,7 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
         {
             for (size_t i = 0; i < rows; ++i)
             {
-                /// Set index 0 if we meet null value. If dictionary_column is nullable, 0 represents null value.
-                /// Otherwise 0 represents default string value, it is reasonable because null values are converted to default values when casting nullable column to non-nullable.
+                /// Index 0 of the nullable dictionary is the NULL value.
                 new_index_data[i] = orc_str_column.notNull[i] ? index_data[check_index(orc_str_column.index[i], i)] : 0;
             }
         }
@@ -2258,8 +2631,11 @@ static bool orcIntegerBranchWidensTo(const DataTypePtr & type, size_t orc_size)
 /// tuple with explicit names matches by field name and may project and reorder the ORC struct's
 /// fields (the per-branch repair cast then projects/reorders the read tuple to exactly the target),
 /// while an unnamed target tuple is matched positionally with the same arity. `case_insensitive`
-/// mirrors `input_format_orc_case_insensitive_column_matching` for that name-based matching.
-static bool orcUnionBranchMatchesType(const ORC::Type * orc_branch_type, const DataTypePtr & target_type, bool case_insensitive)
+/// mirrors `input_format_orc_case_insensitive_column_matching` for that name-based matching. A name
+/// that matches several fields only case-insensitively sets `*ambiguous` and does not match, or, if
+/// `ambiguous` is null, throws AMBIGUOUS_COLUMN_NAME.
+static bool orcUnionBranchMatchesType(
+    const ORC::Type * orc_branch_type, const DataTypePtr & target_type, bool case_insensitive, bool * ambiguous)
 {
     checkStackSize();
 
@@ -2308,14 +2684,14 @@ static bool orcUnionBranchMatchesType(const ORC::Type * orc_branch_type, const D
         case ORC::TypeKind::LIST:
             return which.isArray() && orc_branch_type->getSubtypeCount() == 1
                 && orcUnionBranchMatchesType(
-                    orc_branch_type->getSubtype(0), assert_cast<const DataTypeArray &>(*type).getNestedType(), case_insensitive);
+                    orc_branch_type->getSubtype(0), assert_cast<const DataTypeArray &>(*type).getNestedType(), case_insensitive, ambiguous);
         case ORC::TypeKind::MAP:
         {
             if (!which.isMap() || orc_branch_type->getSubtypeCount() != 2)
                 return false;
             const auto & map_type = assert_cast<const DataTypeMap &>(*type);
-            return orcUnionBranchMatchesType(orc_branch_type->getSubtype(0), map_type.getKeyType(), case_insensitive)
-                && orcUnionBranchMatchesType(orc_branch_type->getSubtype(1), map_type.getValueType(), case_insensitive);
+            return orcUnionBranchMatchesType(orc_branch_type->getSubtype(0), map_type.getKeyType(), case_insensitive, ambiguous)
+                && orcUnionBranchMatchesType(orc_branch_type->getSubtype(1), map_type.getValueType(), case_insensitive, ambiguous);
         }
         case ORC::TypeKind::STRUCT:
         {
@@ -2328,27 +2704,14 @@ static bool orcUnionBranchMatchesType(const ORC::Type * orc_branch_type, const D
                 /// Match by field name, like the non-union ORC struct path: the target tuple may be
                 /// a subset of the ORC struct's fields, in any order. Each target field must map to
                 /// an ORC field with a recursively matching type; extra ORC fields are projected out
-                /// by the repair cast. Build a name -> ORC subtype map for the lookup.
-                UnorderedMapWithMemoryTracking<String, const ORC::Type *> orc_field_by_name;
-                orc_field_by_name.reserve(orc_branch_type->getSubtypeCount());
-                for (size_t i = 0; i < orc_branch_type->getSubtypeCount(); ++i)
-                {
-                    String field_name = orc_branch_type->getFieldName(i);
-                    if (case_insensitive)
-                        boost::to_lower(field_name);
-                    orc_field_by_name.emplace(std::move(field_name), orc_branch_type->getSubtype(i));
-                }
-
-                const auto & element_names = tuple_type.getElementNames();
+                /// by the repair cast.
+                const auto field_positions
+                    = matchORCStructFieldsByName(orc_branch_type, tuple_type.getElementNames(), case_insensitive, ambiguous);
                 for (size_t i = 0; i < elements.size(); ++i)
-                {
-                    String element_name = element_names[i];
-                    if (case_insensitive)
-                        boost::to_lower(element_name);
-                    auto it = orc_field_by_name.find(element_name);
-                    if (it == orc_field_by_name.end() || !orcUnionBranchMatchesType(it->second, elements[i], case_insensitive))
+                    if (!field_positions[i]
+                        || !orcUnionBranchMatchesType(
+                            orc_branch_type->getSubtype(*field_positions[i]), elements[i], case_insensitive, ambiguous))
                         return false;
-                }
                 return true;
             }
 
@@ -2356,7 +2719,7 @@ static bool orcUnionBranchMatchesType(const ORC::Type * orc_branch_type, const D
             if (elements.size() != orc_branch_type->getSubtypeCount())
                 return false;
             for (size_t i = 0; i < elements.size(); ++i)
-                if (!orcUnionBranchMatchesType(orc_branch_type->getSubtype(i), elements[i], case_insensitive))
+                if (!orcUnionBranchMatchesType(orc_branch_type->getSubtype(i), elements[i], case_insensitive, ambiguous))
                     return false;
             return true;
         }
@@ -2440,9 +2803,16 @@ static DataTypes computeOrcUnionBranchHints(const ORC::Type * orc_type, const Da
     const auto & alternatives = variant_hint->getVariants();
     VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> candidates(num_children);
     for (size_t i = 0; i < num_children; ++i)
+    {
+        bool ambiguous = false;
         for (size_t a = 0; a < alternatives.size(); ++a)
-            if (orcUnionBranchMatchesType(orc_type->getSubtype(i), alternatives[a], case_insensitive_matching))
+            if (orcUnionBranchMatchesType(orc_type->getSubtype(i), alternatives[a], case_insensitive_matching, &ambiguous))
                 candidates[i].push_back(a);
+        /// No alternative fits the branch and one of them names an ambiguous field: fail on that name, as a struct read does.
+        if (candidates[i].empty() && ambiguous)
+            for (const auto & alternative : alternatives)
+                orcUnionBranchMatchesType(orc_type->getSubtype(i), alternative, case_insensitive_matching, /*ambiguous=*/nullptr);
+    }
 
     VectorWithMemoryTracking<bool> alternative_taken(alternatives.size(), false);
     const auto preferred_candidates = [&](size_t i)
@@ -2515,123 +2885,13 @@ static DataTypes computeOrcUnionBranchHints(const ORC::Type * orc_type, const Da
     return branch_hints;
 }
 
-/// Matches the elements of the tuples in `column` to those of the named tuples in `requested_type` by name, through
-/// Nullable, Array and Map: a requested element that was not read is filled with defaults, and an element that is
-/// not requested is dropped. A CAST would match tuples with no common element names by position instead.
-static ColumnWithTypeAndName
-matchORCTupleElementsByName(const ColumnWithTypeAndName & column, const DataTypePtr & requested_type, bool case_insensitive)
-{
-    if (column.type->equals(*requested_type))
-        return column;
-
-    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(column.type.get()))
-    {
-        const auto & nullable_column = assert_cast<const ColumnNullable &>(*column.column);
-        auto nested = matchORCTupleElementsByName(
-            {nullable_column.getNestedColumnPtr(), nullable_type->getNestedType(), column.name},
-            removeNullable(requested_type),
-            case_insensitive);
-        return {
-            ColumnNullable::create(nested.column, nullable_column.getNullMapColumnPtr()),
-            std::make_shared<DataTypeNullable>(nested.type),
-            column.name};
-    }
-
-    const auto requested_non_nullable_type = removeNullable(requested_type);
-
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(column.type.get()))
-    {
-        const auto * requested_array_type = typeid_cast<const DataTypeArray *>(requested_non_nullable_type.get());
-        if (!requested_array_type)
-            return column;
-        const auto & array_column = assert_cast<const ColumnArray &>(*column.column);
-        auto nested = matchORCTupleElementsByName(
-            {array_column.getDataPtr(), array_type->getNestedType(), column.name}, requested_array_type->getNestedType(), case_insensitive);
-        return {
-            ColumnArray::create(nested.column, array_column.getOffsetsPtr()), std::make_shared<DataTypeArray>(nested.type), column.name};
-    }
-
-    if (const auto * map_type = typeid_cast<const DataTypeMap *>(column.type.get()))
-    {
-        const auto * requested_map_type = typeid_cast<const DataTypeMap *>(requested_non_nullable_type.get());
-        if (!requested_map_type)
-            return column;
-        const auto & map_column = assert_cast<const ColumnMap &>(*column.column);
-        auto keys = matchORCTupleElementsByName(
-            {map_column.getNestedData().getColumnPtr(0), map_type->getKeyType(), "key"}, requested_map_type->getKeyType(), case_insensitive);
-        auto values = matchORCTupleElementsByName(
-            {map_column.getNestedData().getColumnPtr(1), map_type->getValueType(), "value"},
-            requested_map_type->getValueType(),
-            case_insensitive);
-        return {
-            ColumnMap::create(keys.column, values.column, map_column.getNestedColumn().getOffsetsPtr()),
-            std::make_shared<DataTypeMap>(keys.type, values.type),
-            column.name};
-    }
-
-    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(column.type.get());
-    const auto * requested_tuple_type = typeid_cast<const DataTypeTuple *>(requested_non_nullable_type.get());
-    if (!tuple_type || !requested_tuple_type)
-        return column;
-
-    const auto & tuple_column = assert_cast<const ColumnTuple &>(*column.column);
-    const size_t num_rows = tuple_column.size();
-    Columns elements;
-    DataTypes types;
-    Strings names;
-
-    /// An unnamed tuple is matched by position and keeps its elements, so the CAST rejects a different number of them.
-    if (!requested_tuple_type->hasExplicitNames())
-    {
-        for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
-        {
-            ColumnWithTypeAndName element{tuple_column.getColumnPtr(i), tuple_type->getElement(i), tuple_type->getNameByPosition(i + 1)};
-            if (i < requested_tuple_type->getElements().size())
-                element = matchORCTupleElementsByName(element, requested_tuple_type->getElement(i), case_insensitive);
-            elements.push_back(std::move(element.column));
-            types.push_back(std::move(element.type));
-        }
-        auto result_column = elements.empty() ? ColumnTuple::create(num_rows) : ColumnTuple::create(std::move(elements));
-        return {std::move(result_column), std::make_shared<DataTypeTuple>(std::move(types)), column.name};
-    }
-
-    for (size_t i = 0; i < requested_tuple_type->getElements().size(); ++i)
-    {
-        const auto & requested_element_type = requested_tuple_type->getElement(i);
-        const auto & name = requested_tuple_type->getNameByPosition(i + 1);
-
-        auto pos = tuple_type->tryGetPositionByName(name, /*case_insensitive=*/false);
-        if (!pos && case_insensitive)
-            pos = tuple_type->tryGetPositionByName(name, /*case_insensitive=*/true);
-
-        if (pos)
-        {
-            auto element = matchORCTupleElementsByName(
-                {tuple_column.getColumnPtr(*pos), tuple_type->getElement(*pos), name}, requested_element_type, case_insensitive);
-            elements.push_back(std::move(element.column));
-            types.push_back(std::move(element.type));
-        }
-        else
-        {
-            auto element = requested_element_type->createColumn();
-            requested_element_type->insertManyDefaultsInto(*element, num_rows);
-            elements.push_back(std::move(element));
-            types.push_back(requested_element_type);
-        }
-        names.push_back(name);
-    }
-
-    auto result_type = std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
-    auto result_column = elements.empty() ? ColumnTuple::create(num_rows) : ColumnTuple::create(std::move(elements));
-    return {std::move(result_column), std::move(result_type), column.name};
-}
-
 ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     const ORC::ColumnVectorBatch * orc_column,
     const ORC::Type * orc_type,
     const std::string & column_name,
     bool inside_nullable,
-    DataTypePtr type_hint) const
+    DataTypePtr type_hint,
+    const String & mapper_path) const
 {
     /// Reading a nested LIST/MAP/STRUCT recurses through this function over the ORC type tree, whose
     /// depth is attacker-controlled, so guard the native stack on the data-read path as well.
@@ -2639,14 +2899,19 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
 
     bool skipped = false;
 
-    if (!inside_nullable && (orc_column->hasNulls || (type_hint && isNullableOrLowCardinalityNullable(type_hint))) && !orc_column->isEncoded
+    /// A struct read as a non-Nullable `Tuple` under the data lake schema gets no null map: its fields are already NULL in
+    /// the rows where it is NULL, and the fields it lacks keep their defaults there.
+    const bool is_data_lake_tuple
+        = orc_type->getKind() == ORC::STRUCT && column_mapper && !mapper_path.empty() && type_hint && isTuple(type_hint);
+    if (!inside_nullable && !is_data_lake_tuple
+        && (orc_column->hasNulls || (type_hint && isNullableOrLowCardinalityNullable(type_hint))) && !orc_column->isEncoded
         && (orc_type->getKind() != ORC::LIST && orc_type->getKind() != ORC::MAP && orc_type->getKind() != ORC::UNION))
     {
         DataTypePtr nested_type_hint;
         if (type_hint)
             nested_type_hint = removeNullable(type_hint);
 
-        auto nested_column = readColumnFromORCColumn(orc_column, orc_type, column_name, true, nested_type_hint);
+        auto nested_column = readColumnFromORCColumn(orc_column, orc_type, column_name, true, nested_type_hint, mapper_path);
 
         auto nullmap_column = readByteMapFromORCColumn(orc_column);
         auto nullable_type = std::make_shared<DataTypeNullable>(std::move(nested_column.type));
@@ -2733,27 +2998,13 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             /// skip the Bool -> UInt8 repair cast for a boolean branch hinted as UInt8.
             if (branch_hints[i] && branch_hints[i]->getName() != branch_non_nullable.type->getName())
             {
-                if (branch_null_map_columns[i])
-                {
-                    /// A value-checking cast (e.g. Int8 -> Enum8, or the same on a nested Tuple
-                    /// field) must not inspect the placeholder values ORC leaves at null-payload
-                    /// positions - those rows become the Variant NULL discriminator below and are
-                    /// never read. Replace them with a valid, castable row before casting.
-                    /// Wrapping the branch in Nullable is not enough: a Nullable(Tuple) cast would
-                    /// still descend into and reject a null nested field.
-                    if (auto safe = replaceNullPayloadRowsWithValidRow(branch_non_nullable.column, *branch_null_maps[i]))
-                        branch_non_nullable.column
-                            = castColumn({safe, branch_non_nullable.type, branch_non_nullable.name}, branch_hints[i]);
-                    else
-                        /// Every row is a null payload and none is read, so a default-valued column
-                        /// of the target type with the same number of rows is enough.
-                        branch_non_nullable.column
-                            = branch_hints[i]->createColumn()->cloneResized(branch_non_nullable.column->size());
-                }
+                /// A value-checking cast (e.g. Int8 -> Enum8) must not inspect the placeholder values ORC leaves at
+                /// null-payload positions: those rows become the Variant NULL discriminator below and are never read.
+                const RequestedTypeCastSettings cast_settings{.null_as_default = null_as_default, .case_insensitive = case_insensitive_matching};
+                if (branch_null_maps[i])
+                    castColumnToRequestedType(branch_non_nullable, branch_hints[i], *branch_null_maps[i], cast_settings);
                 else
-                {
-                    branch_non_nullable.column = castColumn(branch_non_nullable, branch_hints[i]);
-                }
+                    castColumnToRequestedType(branch_non_nullable, branch_hints[i], cast_settings);
                 branch_non_nullable.type = branch_hints[i];
             }
 
@@ -2976,21 +3227,23 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             const auto * orc_key_type = orc_type->getSubtype(0);
             const auto * orc_value_type = orc_type->getSubtype(1);
 
-            auto key_column = readColumnFromORCColumn(orc_key_column, orc_key_type, "key", false, key_type_hint);
+            auto key_column = readColumnFromORCColumn(
+                orc_key_column, orc_key_type, "key", false, key_type_hint, mapper_path.empty() ? String{} : mapper_path + ".key");
+            const bool key_type_requested = key_type_hint != nullptr;
             /// A map key cannot be Nullable.
             if (!key_type_hint && !DataTypeMap::isValidKeyType(key_column.type))
                 key_type_hint = removeNullableOrLowCardinalityNullable(key_column.type);
-            if (key_type_hint)
-                key_column = matchORCTupleElementsByName(key_column, key_type_hint, case_insensitive_matching);
             if (key_type_hint && !key_type_hint->equals(*key_column.type))
             {
                 /// Cast key column to target type, because it can happen
                 /// that parsed type cannot be ClickHouse Map key type.
-                key_column.column = castColumn(key_column, key_type_hint);
-                key_column.type = key_type_hint;
+                const RequestedTypeCastSettings cast_settings{
+                    .null_as_default = null_as_default && key_type_requested, .case_insensitive = case_insensitive_matching};
+                castColumnToRequestedType(key_column, key_type_hint, cast_settings);
             }
 
-            auto value_column = readColumnFromORCColumn(orc_value_column, orc_value_type, "value", false, value_type_hint);
+            auto value_column = readColumnFromORCColumn(
+                orc_value_column, orc_value_type, "value", false, value_type_hint, mapper_path.empty() ? String{} : mapper_path + ".value");
             if (skipped)
                 return {};
 
@@ -3012,13 +3265,19 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             const auto * orc_list_column = dynamic_cast<const ORC::ListVectorBatch *>(orc_column);
             const auto * orc_nested_column = getNestedORCColumn(orc_list_column);
             const auto * orc_nested_type = orc_type->getSubtype(0);
-            auto nested_column = readColumnFromORCColumn(orc_nested_column, orc_nested_type, column_name, false, nested_type_hint);
+            auto nested_column = readColumnFromORCColumn(
+                orc_nested_column,
+                orc_nested_type,
+                column_name,
+                false,
+                nested_type_hint,
+                mapper_path.empty() ? String{} : mapper_path + ".element");
 
             /// A struct read only for its size has no elements, which `createNested` below rejects. Otherwise the elements
             /// are matched after a subcolumn is extracted, as a hint for one can name a path, such as `x.v`.
             const auto * read_tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(nested_column.type).get());
             if (type_hint && isNested(type_hint) && read_tuple_type && read_tuple_type->getElements().empty())
-                nested_column = matchORCTupleElementsByName(nested_column, nested_type_hint, case_insensitive_matching);
+                matchTupleElementsByName(nested_column, nested_type_hint);
 
             auto offsets_column = readOffsetsFromORCListColumn(orc_list_column);
             DataTypePtr array_type;
@@ -3053,6 +3312,52 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             const auto * tuple_type_hint = type_hint ? typeid_cast<const DataTypeTuple *>(type_hint.get()) : nullptr;
             const auto * orc_struct_column = dynamic_cast<const ORC::StructVectorBatch *>(orc_column);
 
+            /// If all fields of the struct have an Iceberg field id, an element of the hint is read only from the field
+            /// with its id, and an element that no field has gets its `initial-default` or its type's default here, not in
+            /// the cast to the requested type, which would pair it by name with a field of another id.
+            std::optional<VectorWithMemoryTracking<Int64>> file_field_ids;
+            VectorWithMemoryTracking<bool> element_is_read(tuple_type_hint ? tuple_type_hint->getElements().size() : 0);
+            VectorWithMemoryTracking<std::optional<Int64>> element_field_ids;
+            if (column_mapper && !mapper_path.empty() && tuple_type_hint && tuple_type_hint->hasExplicitNames()
+                && !structs_without_field_ids.contains(orc_type->getColumnId()))
+            {
+                file_field_ids = getORCFieldIcebergIds(*orc_type);
+                if (file_field_ids)
+                {
+                    element_field_ids.resize(element_is_read.size());
+                    const auto & encoding = column_mapper->getStorageColumnEncoding();
+                    for (size_t pos = 0; pos < element_field_ids.size(); ++pos)
+                    {
+                        if (auto it = encoding.find(mapper_path + "." + tuple_type_hint->getNameByPosition(pos + 1)); it != encoding.end())
+                            element_field_ids[pos] = it->second;
+                    }
+                }
+            }
+
+            /// An element with an Iceberg field id is read only from the field with its id, so only the others are paired by name.
+            VectorWithMemoryTracking<std::optional<size_t>> hint_positions(orc_type->getSubtypeCount());
+            if (tuple_type_hint && tuple_type_hint->hasExplicitNames())
+            {
+                VectorWithMemoryTracking<size_t> named_elements;
+                Strings names;
+                for (size_t pos = 0; pos < tuple_type_hint->getElements().size(); ++pos)
+                {
+                    if (file_field_ids && element_field_ids[pos])
+                        continue;
+                    named_elements.push_back(pos);
+                    names.push_back(tuple_type_hint->getNameByPosition(pos + 1));
+                }
+                const auto field_positions = matchORCStructFieldsByName(orc_type, names, case_insensitive_matching);
+                for (size_t j = 0; j < field_positions.size(); ++j)
+                    if (field_positions[j])
+                        hint_positions[*field_positions[j]] = named_elements[j];
+            }
+            else if (tuple_type_hint)
+            {
+                for (size_t i = 0; i < hint_positions.size() && i < tuple_type_hint->getElements().size(); ++i)
+                    hint_positions[i] = i;
+            }
+
             for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
             {
                 /// Read only for the size and the null map of the struct, so its values are not converted.
@@ -3064,31 +3369,68 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 DataTypePtr nested_type_hint;
                 if (tuple_type_hint)
                 {
-                    if (tuple_type_hint->hasExplicitNames())
+                    /// Under the data lake schema the field is read as the element with its field id, whatever their names
+                    /// (a renamed field). An element with another field id is not read from the field even if it has its name.
+                    std::optional<size_t> pos;
+                    if (file_field_ids)
                     {
-                        /// An element spelled exactly like the field wins over one that only matches
-                        /// case-folded, so two fields whose names differ only by case cannot both
-                        /// claim the same element and leave the other one unread.
-                        auto pos = tuple_type_hint->tryGetPositionByName(field_name, /*case_insensitive=*/false);
-                        if (!pos && case_insensitive_matching)
-                            pos = tuple_type_hint->tryGetPositionByName(field_name, /*case_insensitive=*/true);
-                        if (pos)
-                        {
-                            nested_type_hint = tuple_type_hint->getElement(*pos);
-                            field_name = tuple_type_hint->getNameByPosition(*pos + 1);
-                        }
+                        auto it = std::find(element_field_ids.begin(), element_field_ids.end(), (*file_field_ids)[i]);
+                        if (it != element_field_ids.end())
+                            pos = static_cast<size_t>(it - element_field_ids.begin());
                     }
-                    else if (i < tuple_type_hint->getElements().size())
-                        nested_type_hint = tuple_type_hint->getElement(i);
+                    if (!pos)
+                        pos = hint_positions[i];
+                    /// A field that is not an element of the data lake schema (a dropped one, selected only for the rows).
+                    if (!pos && file_field_ids)
+                        continue;
+                    if (pos)
+                    {
+                        nested_type_hint = tuple_type_hint->getElement(*pos);
+                        if (tuple_type_hint->hasExplicitNames())
+                            field_name = tuple_type_hint->getNameByPosition(*pos + 1);
+                        element_is_read[*pos] = true;
+                    }
                 }
 
                 const auto * nested_orc_column = orc_struct_column->fields[i];
                 const auto * nested_orc_type = orc_type->getSubtype(i);
-                auto element = readColumnFromORCColumn(nested_orc_column, nested_orc_type, field_name, false, nested_type_hint);
+                auto element = readColumnFromORCColumn(
+                    nested_orc_column,
+                    nested_orc_type,
+                    field_name,
+                    false,
+                    nested_type_hint,
+                    mapper_path.empty() ? String{} : mapper_path + "." + field_name);
 
                 tuple_elements.emplace_back(std::move(element.column));
                 tuple_types.emplace_back(std::move(element.type));
                 tuple_names.emplace_back(std::move(element.name));
+            }
+
+            for (size_t pos = 0; file_field_ids && pos < element_is_read.size(); ++pos)
+            {
+                if (element_is_read[pos])
+                    continue;
+                const String element_name = tuple_type_hint->getNameByPosition(pos + 1);
+                const String element_path = mapper_path + "." + element_name;
+                const auto & element_field_id = element_field_ids[pos];
+                if (!element_field_id
+                    || std::find(file_field_ids->begin(), file_field_ids->end(), *element_field_id) != file_field_ids->end())
+                    continue;
+                /// The hint can have only the requested elements of a struct: the default is projected to it.
+                const auto & element_type = tuple_type_hint->getElement(pos);
+                ColumnPtr element;
+                if (auto value = column_mapper->getIcebergInitialDefault(element_path, element_path, element_type))
+                    element = element_type->createColumnConst(orc_column->numElements, *value)->convertToFullColumnIfConst();
+                else
+                {
+                    auto defaults = element_type->createColumn();
+                    element_type->insertManyDefaultsInto(*defaults, orc_column->numElements);
+                    element = std::move(defaults);
+                }
+                tuple_elements.emplace_back(std::move(element));
+                tuple_types.emplace_back(element_type);
+                tuple_names.emplace_back(element_name);
             }
 
             ColumnPtr tuple_column;
@@ -3103,6 +3445,101 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             throw Exception(
                 ErrorCodes::UNKNOWN_TYPE, "Unsupported ORC type {} while reading column {}.", orc_type->toString(), column_name);
     }
+}
+
+/// The field of the ORC struct `orc_type` that the element `name` of the struct `path` is read from, as `updateIncludeTypeIds`
+/// selects it: by field id if the struct has them, else by name.
+static const ORC::Type * findStructElementORCType(
+    const String & path,
+    const String & name,
+    const ORC::Type * orc_type,
+    const ColumnMapper & column_mapper,
+    bool ignore_case,
+    ORCFieldIdsCache & field_ids_cache)
+{
+    if (!orc_type || orc_type->getKind() != ORC::STRUCT)
+        return nullptr;
+    const auto & encoding = column_mapper.getStorageColumnEncoding();
+    if (auto it = encoding.find(path + "." + name); it != encoding.end())
+        if (auto field_by_id = findORCFieldByIcebergId(*orc_type, it->second, field_ids_cache))
+            return *field_by_id;
+    if (auto field = findORCStructFieldByName(orc_type, name, ignore_case))
+        return orc_type->getSubtype(*field);
+    return nullptr;
+}
+
+/// The element of the struct `path` that the subcolumn path `subpath` starts with, and the rest. Of a struct with the elements `s`
+/// and `s.j`, `s.j` is the element `s.j`.
+static std::pair<String, String> splitStructElementName(const String & path, const String & subpath, const ColumnMapper & column_mapper)
+{
+    for (size_t end = subpath.size(); end != String::npos && end != 0; end = subpath.rfind('.', end - 1))
+    {
+        const String * struct_path = column_mapper.getIcebergStructPath(path + "." + subpath.substr(0, end));
+        if (struct_path && *struct_path == path)
+            return {subpath.substr(0, end), end == subpath.size() ? String{} : subpath.substr(end + 1)};
+    }
+    return Nested::splitName(subpath);
+}
+
+/// The type of the column `path` (the file's `orc_type`, if it has one) whose requested subcolumns have the given paths below it
+/// and types, to read it under the data lake schema: a list is an array of its element, a struct has the requested elements, a
+/// whole one with its type.
+static DataTypePtr makeTypeHintFromSubcolumns(
+    const String & path,
+    const ORC::Type * orc_type,
+    VectorWithMemoryTracking<std::pair<String, DataTypePtr>> subcolumns,
+    const ColumnMapper & column_mapper,
+    bool ignore_case,
+    ORCFieldIdsCache & field_ids_cache)
+{
+    /// A subcolumn below a list is an array of the subcolumn of its element.
+    const String element_path = path + ".element";
+    bool is_list = false;
+    if (orc_type)
+        is_list = orc_type->getKind() == ORC::LIST;
+    else
+        is_list = column_mapper.getStorageColumnEncoding().contains(element_path) && !column_mapper.getIcebergStructPath(element_path);
+    if (is_list && std::ranges::all_of(subcolumns, [](const auto & subcolumn) { return isArray(subcolumn.second); }))
+    {
+        for (auto & [_, type] : subcolumns)
+            type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
+        return std::make_shared<DataTypeArray>(makeTypeHintFromSubcolumns(
+            element_path,
+            orc_type ? orc_type->getSubtype(0) : nullptr,
+            std::move(subcolumns),
+            column_mapper,
+            ignore_case,
+            field_ids_cache));
+    }
+
+    Names names;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> whole_types;
+    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<std::pair<String, DataTypePtr>>> nested_subcolumns;
+    for (const auto & [subpath, type] : subcolumns)
+    {
+        auto [name, rest] = splitStructElementName(path, subpath, column_mapper);
+        if (!whole_types.contains(name) && !nested_subcolumns.contains(name))
+            names.push_back(name);
+        if (rest.empty())
+            whole_types[name] = type;
+        else
+            nested_subcolumns[name].emplace_back(rest, type);
+    }
+
+    DataTypes types;
+    types.reserve(names.size());
+    for (const auto & name : names)
+    {
+        if (auto it = whole_types.find(name); it != whole_types.end())
+        {
+            types.push_back(it->second);
+            continue;
+        }
+        const auto * element_orc_type = findStructElementORCType(path, name, orc_type, column_mapper, ignore_case, field_ids_cache);
+        types.push_back(makeTypeHintFromSubcolumns(
+            path + "." + name, element_orc_type, nested_subcolumns.at(name), column_mapper, ignore_case, field_ids_cache));
+    }
+    return std::make_shared<DataTypeTuple>(types, names);
 }
 
 void ORCColumnToCHColumn::orcColumnsToCHChunk(
@@ -3135,14 +3572,16 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
         const ColumnWithTypeAndName & header_column = header.getByPosition(column_i);
 
         ColumnWithTypeAndName column;
-        auto orc_column_it = find_orc_column(header_column.name);
+        /// A column absent by field id is not read from a field that has its name, only as an element of its parent.
+        auto orc_column_it = absent_columns.contains(header_column.name) ? name_to_column_ptr.end() : find_orc_column(header_column.name);
         if (orc_column_it == name_to_column_ptr.end())
         {
             bool read_from_nested = false;
 
             /// Check if it's a column from nested table.
             String nested_table_name = Nested::extractTableName(header_column.name);
-            auto orc_nested_column_it = find_orc_column(nested_table_name);
+            auto orc_nested_column_it
+                = nested_table_name == header_column.name ? name_to_column_ptr.end() : find_orc_column(nested_table_name);
             if (orc_nested_column_it != name_to_column_ptr.end())
             {
                 /// Keyed by the file's spelling, so requests that differ only by case share one.
@@ -3158,8 +3597,33 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                     auto nested_table_type = Nested::collect(nested_columns).front().type;
 
                     const auto & orc_column_with_type = orc_nested_column_it->second;
+                    /// Under the data lake schema the fields of a struct are matched by field id and get their defaults, which
+                    /// needs the type of the column itself, not of a requested element of it.
+                    const auto orc_kind = orc_column_with_type.second->getKind();
+                    /// The read type of the file lacks the unselected fields, so the hint is the one the fields were selected with.
+                    if (auto it = nested_table_type_hints.find(nested_table_name); column_mapper && it != nested_table_type_hints.end())
+                        nested_table_type = it->second;
+                    else if (column_mapper && (orc_kind == ORC::STRUCT || orc_kind == ORC::LIST))
+                    {
+                        VectorWithMemoryTracking<std::pair<String, DataTypePtr>> subcolumns;
+                        for (const auto & name_and_type : nested_columns)
+                            subcolumns.emplace_back(name_and_type.name.substr(nested_table_name.size() + 1), name_and_type.type);
+                        ORCFieldIdsCache field_ids_cache;
+                        nested_table_type = makeTypeHintFromSubcolumns(
+                            nested_table_name,
+                            orc_column_with_type.second,
+                            std::move(subcolumns),
+                            *column_mapper,
+                            case_insensitive_matching,
+                            field_ids_cache);
+                    }
                     ColumnsWithTypeAndName cols = {readColumnFromORCColumn(
-                        orc_column_with_type.first, orc_column_with_type.second, nested_table_name, false, nested_table_type)};
+                        orc_column_with_type.first,
+                        orc_column_with_type.second,
+                        nested_table_name,
+                        false,
+                        nested_table_type,
+                        column_mapper ? nested_table_name : String{})};
                     BlockPtr block_ptr = std::make_shared<Block>(cols);
                     auto column_extractor = std::make_shared<NestedColumnExtractHelper>(*block_ptr, case_insensitive_matching);
                     nested_tables[resolved_nested_table_name] = {block_ptr, column_extractor};
@@ -3179,15 +3643,14 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
 
             if (!read_from_nested)
             {
-                if (!allow_missing_columns)
-                    throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
-
-                column.name = header_column.name;
-                column.type = header_column.type;
-                column.column = header_column.column->cloneResized(num_rows);
-                columns_list.push_back(std::move(column.column));
-                if (block_missing_values)
-                    block_missing_values->setBits(column_i, num_rows);
+                if (auto it = absent_column_defaults.find(header_column.name); it != absent_column_defaults.end())
+                {
+                    columns_list.push_back(header_column.type->createColumnConst(num_rows, it->second)->convertToFullColumnIfConst());
+                    continue;
+                }
+                columns_list.push_back(createMissingColumn(
+                    header_column, num_rows, allow_missing_columns || absent_columns.contains(header_column.name), column_i,
+                    block_missing_values));
                 continue;
             }
         }
@@ -3195,14 +3658,16 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
         {
             const auto & orc_column_with_type = orc_column_it->second;
             column = readColumnFromORCColumn(
-                orc_column_with_type.first, orc_column_with_type.second, header_column.name, false, header_column.type);
+                orc_column_with_type.first,
+                orc_column_with_type.second,
+                header_column.name,
+                false,
+                header_column.type,
+                column_mapper ? header_column.name : String{});
         }
 
-        column = matchORCTupleElementsByName(column, header_column.type, case_insensitive_matching);
-        if (null_as_default)
-            insertNullAsDefaultIfNeeded(column, header_column, column_i, block_missing_values);
-
-        castColumnToRequestedType(column, header_column.type);
+        const RequestedTypeCastSettings cast_settings{.null_as_default = null_as_default, .case_insensitive = case_insensitive_matching};
+        castColumnToRequestedType(column, header_column.type, cast_settings, column_i, block_missing_values);
         columns_list.push_back(std::move(column.column));
     }
 
@@ -3244,7 +3709,7 @@ void registerInputFormatORC(FormatFactory & factory)
 
 ## Data types matching {#data-types-matching-orc}
 
-The table below compares supported ORC data types and their corresponding ClickHouse [data types](/reference/data-types) in `INSERT` and `SELECT` queries.
+The table below compares supported ORC data types and their corresponding ClickHouse [data types](/reference/data-types/index) in `INSERT` and `SELECT` queries.
 
 | ORC data type (`INSERT`)              | ClickHouse data type                                                                                              | ORC data type (`SELECT`) |
 |---------------------------------------|-------------------------------------------------------------------------------------------------------------------|--------------------------|

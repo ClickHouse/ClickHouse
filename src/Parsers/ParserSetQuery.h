@@ -27,10 +27,10 @@ public:
                                                          IParser::Pos & pos,
                                                          Expected & expected,
                                                          bool enable_shorthand_syntax);
-    std::map<String, Documentation> getDocumentation() const override;
+    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
 
 protected:
-    const char * getName() const override { return "SET query"; }
+    [[nodiscard]] const char * getName() const override { return "SET query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     /// Parse the list `name = value` pairs, without SET.
     bool parse_only_internals;

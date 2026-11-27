@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-parallel-replicas
 # Tag no-fasttest: FileLog requires inotify.
-# Tag no-parallel: the test compares the server-wide `GlobalThread` metric, which concurrent queries also change.
-# Tag no-parallel-replicas: the test reads the `GlobalThread` metric of the server it is connected to.
+# Tag no-parallel: a run creates and drops 200 tables, about 40 s with a Replicated database.
+# Tag no-parallel-replicas: the test counts the threads of the server it is connected to.
 #
 # The directories of all `FileLog` tables are watched by one shared thread, so creating many tables must not
 # create a thread per table, and dropping them while their directories change must not hang or break the server.
@@ -18,17 +18,10 @@ WORK="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 trap 'rm -rf "${WORK}"' EXIT
 mkdir -p "${WORK}"
 
-global_threads()
-{
-    $CLICKHOUSE_CLIENT -q "SELECT value FROM system.metrics WHERE metric = 'GlobalThread'"
-}
-
 table_name()
 {
     printf '%s_%03d' "${CLICKHOUSE_TEST_UNIQUE_NAME}" "$1"
 }
-
-threads_before=$(global_threads)
 
 for i in $(seq 1 "${TABLES}"); do
     mkdir -p "${WORK}/${i}"
@@ -36,10 +29,7 @@ for i in $(seq 1 "${TABLES}"); do
     echo "CREATE TABLE $(table_name "${i}") (v String) ENGINE = FileLog('${WORK}/${i}', 'TSV');"
 done | $CLICKHOUSE_CLIENT -n
 
-threads_after=$(global_threads)
-
-# A thread per table would add at least ${TABLES} threads. The margin is generous for the threads of other queries.
-echo "threads grew by less than the number of tables: $(( threads_after - threads_before < TABLES / 2 ))"
+echo "watch threads for ${TABLES} tables: $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.stack_trace WHERE thread_name = 'FileLogWatch'")"
 
 # The tables also read the files that appear after they were created, which is what the watcher delivers.
 for i in 1 100 200; do

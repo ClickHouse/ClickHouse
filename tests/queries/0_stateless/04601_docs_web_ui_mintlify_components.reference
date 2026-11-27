@@ -3,7 +3,9 @@ ClickHouse <span class="accent">Reference</span>
 (title ? ' ' + title[1] : '')
 (?:title|label)=
 'Note', 'Warning', 'Tip', 'Info', 'Check', 'Danger', 'Caution',
+return '<details>\n<summary>' + escapeHTML(
 replace(/<[A-Z][A-Za-z0-9]*(?:\s[^>]*)?\/>/g
+1
 1
 1
 1

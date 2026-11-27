@@ -48,7 +48,7 @@ public:
     Status result = Status::OK;
 
 private:
-    inline bool checkBufferLength(int max) const;
+    [[nodiscard]] inline bool checkBufferLength(int max) const;
     inline static bool checkAvailIn(size_t avail_in, int min);
 
     inline void copyToBuffer(size_t * avail_in, const char ** next_in);

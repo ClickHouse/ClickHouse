@@ -2,8 +2,11 @@
 
 import difflib
 import hashlib
+import http.client
 import json
 import re
+import subprocess
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -75,8 +78,6 @@ def full_suite_reason(info, build_type):
         return "Requested by ci-force-all"
     # Missing inputs fail in `select`, not in the pre-hook that starts the whole workflow.
     changed = [f.removeprefix("./") for f in info.get_changed_files() or []]
-    # `PerformanceSelection.source` reads every changed file at two revisions through the GitHub API, in every
-    # shard, so a wider change exhausts the API rate limit and no test runs at all.
     if len(changed) > MAX_SELECTION_CHANGED_FILES:
         return f"Too many changed files for test selection: {len(changed)} > {MAX_SELECTION_CHANGED_FILES}"
     # Labels and automatic full-suite requests use ARM; AMD keeps query coverage selection.
@@ -249,6 +250,23 @@ def manifest_url(job):
     return f"https://s3.amazonaws.com/clickhouse-test-reports/REFs/{branch}/{job['commit_sha']}/nightlycoverage/{name}/manifest.json"
 
 
+def read_manifest(url):
+    # 403 and 404 are answers: `coverage_cohort` treats them as an unpublished manifest.
+    for attempt in range(1, 6):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response:
+                return json.load(response)
+        except (OSError, http.client.HTTPException) as error:
+            if attempt == 5 or (
+                isinstance(error, urllib.error.HTTPError) and error.code < 500
+            ):
+                raise
+            print(
+                f"WARNING: Coverage manifest read failed, attempt {attempt}: {url}: {error}"
+            )
+            time.sleep(2**attempt)
+
+
 def coverage_identity(manifest):
     # A corrected wrapper can finish a collection without changing its inputs.
     # The workflow SHA binds each manifest to its own successful job below;
@@ -325,12 +343,25 @@ def coverage_cohort(jobs, read_manifest):
             or not 1 <= plan["shard"] <= 16
         ):
             raise ValueError("Coverage manifest has an unexpected shard assignment")
-        group = groups[coverage_identity(manifest)]
+        identity = coverage_identity(manifest)
+        group = groups[identity]
         group.setdefault(plan["shard"], (job, manifest))
         if len(group) == 16:
             # Descending start time minimizes the age of the oldest shard. A
             # partial newer collection cannot displace a complete older one.
             selected = [group[n] for n in range(1, 17)]
+            if not any(
+                state["status"] == "collected"
+                for _, shard_manifest in selected
+                for state in shard_manifest["tests"].values()
+            ):
+                # Nothing was collected, so an older collection is used.
+                superseded.extend(
+                    {**shard_job, "reason": "Coverage collection covered no test"}
+                    for shard_job, _ in selected
+                )
+                del groups[identity]
+                continue
             return [j for j, _ in selected], [m for _, m in selected], superseded
     raise ValueError("No complete compatible performance coverage within 72 hours")
 
@@ -484,11 +515,6 @@ class PerformanceSelection(Targeting):
               AND check_start_time + toIntervalSecond(ceil(check_duration_ms / 1000)) < toDateTime({sql_string(cutoff)}, 'UTC')
             ORDER BY check_start_time DESC FORMAT JSONEachRow
         """)
-
-        def read_manifest(url):
-            with urllib.request.urlopen(url, timeout=60) as response:
-                return json.load(response)
-
         jobs, manifests, superseded = coverage_cohort(jobs, read_manifest)
         snapshots, tests = validate_manifests(manifests, cutoff)
         rows = self.rows(f"""
@@ -526,24 +552,28 @@ class PerformanceSelection(Targeting):
         }
         return snapshots, tests, manifests[0]["binary_sha"]
 
-    def source(self, revision, path):
-        import requests
+    def fetch_revisions(self, *revisions):
+        """The checkout is shallow: fetch the revisions `source` reads, without history."""
+        subprocess.run(
+            ["git", "fetch", "--depth=1", "--no-tags", "--no-recurse-submodules", "origin", *revisions],
+            check=True,
+        )
 
+    def source(self, revision, path):
         key = revision, path
         if key not in self._sources:
-            try:
-                response = self._github_get(
-                    f"contents/{urllib.parse.quote(path, safe='/')}?ref={revision}",
-                    accept="application/vnd.github.raw+json",
-                )
-            except requests.HTTPError as error:
-                if error.response.status_code != 404:
-                    raise
+            if subprocess.run(["git", "cat-file", "-e", f"{revision}:{path}"], stderr=subprocess.DEVNULL).returncode:
                 # A file added after collection has no source coordinates in
                 # that binary. It is reported as unmapped, never as coverage.
                 self._sources[key] = []
             else:
-                self._sources[key] = response.text.splitlines()
+                self._sources[key] = subprocess.run(
+                    ["git", "show", f"{revision}:{path}"],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    text=True,
+                    errors="replace",
+                ).stdout.splitlines()
         return self._sources[key]
 
     def select(self, test_files, directory=Path("tests/performance")):
@@ -560,6 +590,7 @@ class PerformanceSelection(Targeting):
         compare = f"compare/{metadata['base']['sha']}...{self.info.sha}"
         base = self._github_get(compare).json()["merge_base_commit"]["sha"]
         diff = self._github_get(compare, accept="application/vnd.github.diff").text
+        self.fetch_revisions(base, binary_sha)
         # Added files have no old text. They are explicitly recorded as unmapped,
         # not attributed to arbitrary nearby code or a fabricated full-suite rule.
         added = {m[1] for m in re.finditer(r"--- /dev/null\n\+\+\+ b/(.+)", diff)}

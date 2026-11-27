@@ -64,7 +64,7 @@ struct ExponentiallySmoothedAverage
     }
 
     /// Obtain the same counter in another point of reference.
-    ExponentiallySmoothedAverage remap(double current_time, double half_decay_time) const
+    [[nodiscard]] ExponentiallySmoothedAverage remap(double current_time, double half_decay_time) const
     {
         return ExponentiallySmoothedAverage(value * scale(current_time - time, half_decay_time), current_time);
     }
@@ -91,19 +91,19 @@ struct ExponentiallySmoothedAverage
     }
 
     /// Calculate the average from the sum.
-    double get(double half_decay_time) const
+    [[nodiscard]] double get(double half_decay_time) const
     {
         return value / sumWeights(half_decay_time);
     }
 
-    double get(double current_time, double half_decay_time) const
+    [[nodiscard]] double get(double current_time, double half_decay_time) const
     {
         return remap(current_time, half_decay_time).get(half_decay_time);
     }
 
     /// Compare two counters (by moving to the same point of reference and comparing sums).
     /// You can store the counters in container and sort it without changing the stored values over time.
-    bool less(const ExponentiallySmoothedAverage & other, double half_decay_time) const
+    [[nodiscard]] bool less(const ExponentiallySmoothedAverage & other, double half_decay_time) const
     {
         return remap(other.time, half_decay_time).value < other.value;
     }

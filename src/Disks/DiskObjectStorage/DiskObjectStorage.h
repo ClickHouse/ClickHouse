@@ -202,6 +202,8 @@ public:
 
     ObjectStoragePtr getObjectStorage() override;
 
+    std::unordered_map<Location, ObjectStoragePtr> getObjectStorages() const { return object_storages->getRegistry(); }
+
     bool supportsCache() const override;
 
     /// Is object storage read only?
@@ -251,9 +253,6 @@ public:
 
     bool supportsStat() const override { return metadata_storage->supportsStat(); }
     struct stat stat(const String & path) const override;
-
-    bool supportsChmod() const override { return metadata_storage->supportsChmod(); }
-    void chmod(const String & path, mode_t mode) override;
 
 #if USE_AWS_S3
     std::shared_ptr<const S3::Client> getS3StorageClient() const override;
@@ -319,13 +318,13 @@ public:
         , metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
     {}
 
-    UInt64 getSize() const override { return size; }
+    [[nodiscard]] UInt64 getSize() const override { return size; }
 
-    std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
+    [[nodiscard]] std::optional<UInt64> getUnreservedSpace() const override { return unreserved_space; }
 
-    DiskPtr getDisk(size_t i) const override;
+    [[nodiscard]] DiskPtr getDisk(size_t i) const override;
 
-    Disks getDisks() const override { return {disk}; }
+    [[nodiscard]] Disks getDisks() const override { return {disk}; }
 
     void update(UInt64 new_size) override;
 

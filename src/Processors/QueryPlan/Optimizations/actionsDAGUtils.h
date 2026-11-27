@@ -65,6 +65,11 @@ struct ActionsDAGOutputLineage
 /// Returns no value if propagation is unsupported.
 std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node, NodeMap & constant_expressions);
 
+/// Whether `node` holds the values of an input column, up to `Nullable` and `LowCardinality`: an input under aliases, `CAST`,
+/// `materialize` and `toNullable`. A lineage hop can keep the width of a column through a function that changes its values, such
+/// as `assumeNotNull` or a function with a fixed-size result of the argument's type, but those values are not the input values.
+bool holdsInputValues(const ActionsDAG::Node & node);
+
 /// Trace every output to at most one input using iterative, memoized traversal.
 /// The returned vector is ordered by output position and remains unambiguous even
 /// when input or output names are duplicated.
@@ -109,6 +114,9 @@ struct MatchedTrees
 
     using Matches = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, Match>;
 };
+
+/// an alias has the value of its child
+const ActionsDAG::Node * skipAliases(const ActionsDAG::Node * node);
 
 /// `max_size_for_sets_from_tuple_to_compare` bounds the cost of comparing `IN`-clause sets
 /// (`ColumnSet` wrapping a `FutureSetFromTuple`) by content hash. Zero disables content-hash
@@ -175,8 +183,8 @@ struct HeaderColumnsToInputs
 
     VectorWithMemoryTracking<size_t> read_by;
 
-    size_t size() const { return read_by.size(); }
-    bool passesThrough(size_t header_position) const { return read_by[header_position] == passes_through; }
+    [[nodiscard]] size_t size() const { return read_by.size(); }
+    [[nodiscard]] bool passesThrough(size_t header_position) const { return read_by[header_position] == passes_through; }
 };
 
 HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header);

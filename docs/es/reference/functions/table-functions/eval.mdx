@@ -8,10 +8,10 @@ doc_type: 'reference'
 
 La función de tabla `eval` evalúa su argumento como una cadena de consulta y, a continuación, ejecuta esa cadena como una única consulta `SELECT`.
 
-Esta función de tabla es Experimental y está deshabilitada de forma predeterminada. Habilítela con la configuración `allow_experimental_eval_table_function`:
+Esta función de tabla es Experimental y está deshabilitada de forma predeterminada. Habilítela con la configuración `enable_eval_table_function`:
 
 ```sql
-SET allow_experimental_eval_table_function = 1;
+SET enable_eval_table_function = 1;
 ```
 
 ## Sintaxis {#syntax}
@@ -112,4 +112,4 @@ Resultado:
 ## Relacionados {#related}
 
 * [función de tabla `view`](/es/reference/functions/table-functions/view)
-* configuración `allow_experimental_eval_table_function`
+* configuración `enable_eval_table_function`

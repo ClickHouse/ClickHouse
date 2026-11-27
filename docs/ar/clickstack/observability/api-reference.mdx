@@ -1,0 +1,84 @@
+---
+slug: /clickstack/observability/api-reference
+title: 'مرجع API'
+description: 'مرجع API الخاص بـ ClickHouse Observability للوحات المعلومات والتنبيهات والمصادر وخطافات الويب والأدوار وعمليات البحث المحفوظة'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'API', 'REST API', 'dashboards', 'alerts']
+sidebarTitle: 'مرجع API'
+---
+
+يعتمد ClickHouse Observability على واجهة برمجة تطبيقات ClickHouse Cloud لإدارة لوحات المعلومات والتنبيهات وخطافات الويب والأدوار وعمليات البحث المحفوظة، وللوصول إلى مصادر البيانات.
+
+<Note>
+  في التجربة المُدارة بالكامل، تتولى المنصة إدارة المصادر نيابةً عنك. استخدم عمليات قراءة المصادر للاطلاع عليها؛ أما عمليات إنشاء المصادر وتحديثها وحذفها فمخصصة لعمليات النشر التي تدير فيها مصادرك بنفسك.
+</Note>
+
+## وثائق مرجع API {#api-docs}
+
+اختر نقطة نهاية من الشريط الجانبي للاطلاع على معلماتها ومخططات الطلب والاستجابة الخاصة بها، إضافةً إلى أمثلة تفاعلية. تعتمد هذه الصفحات مواصفة **واجهة برمجة تطبيقات ClickHouse Cloud**، بما في ذلك عناوين URL للخدمة السحابية وآليات المصادقة.
+
+تتوفر نقاط النهاية التالية:
+
+| المورد                    | العمليات                                                                                  |
+| ------------------------- | ----------------------------------------------------------------------------------------- |
+| **لوحات المعلومات**       | إنشاء لوحات المعلومات واستعراضها وجلبها وتحديثها وحذفها والتحقق من صحتها                  |
+| **التنبيهات**             | إنشاء التنبيهات واستعراضها وجلبها وتحديثها وحذفها                                         |
+| **المصادر**               | استعراض مصادر البيانات وجلبها؛ وإنشاء المصادر وتحديثها وحذفها إذا كنت تتولى إدارتها بنفسك |
+| **خطافات الويب**          | إنشاء خطافات الويب واستعراضها وتحديثها وحذفها والتحقق من صحتها                            |
+| **الأدوار**               | إنشاء الأدوار واستعراضها وجلبها وتحديثها وحذفها                                           |
+| **عمليات البحث المحفوظة** | إنشاء عمليات البحث المحفوظة واستعراضها وجلبها وتحديثها وحذفها                             |
+
+## المصادقة {#authentication}
+
+يستخدم ClickHouse Observability **مفتاح API لـ ClickHouse Cloud** للمصادقة عبر [مصادقة HTTP الأساسية](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication). لمعرفة كيفية إنشاء مفاتيح API وإدارتها، راجع [إدارة مفاتيح API](/ar/products/cloud/features/admin-features/api/openapi).
+
+يجب أن يمتلك المفتاح الصلاحية `control-plane:service:manage-clickstack-api`.
+
+ضمِّن معرّف المفتاح وسرّه باستخدام مصادقة HTTP الأساسية:
+
+```bash
+export KEY_ID=<your_key_id>
+export KEY_SECRET=<your_key_secret>
+
+curl --user $KEY_ID:$KEY_SECRET \
+  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
+```
+
+## عنوان URL الأساسي وصيغة الطلبات {#base-url}
+
+تُرسَل جميع طلبات API الخاصة بـ ClickHouse Observability إلى واجهة برمجة تطبيقات ClickHouse Cloud:
+
+```bash
+https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/<resource>
+```
+
+يمكنك العثور على **معرّف المؤسسة** الخاص بك في وحدة تحكم ClickHouse Cloud ضمن **المؤسسة → تفاصيل المؤسسة**. أما **معرّف الخدمة** فيظهر في عنوان URL الخاص بالخدمة أو في صفحة تفاصيل الخدمة.
+
+### مثال: استعراض لوحات المعلومات {#list-dashboards-managed}
+
+```bash
+curl --user $KEY_ID:$KEY_SECRET \
+  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
+```
+
+### مثال: إنشاء تنبيه {#create-alert-managed}
+
+```bash
+curl -X POST --user $KEY_ID:$KEY_SECRET \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dashboardId": "<DASHBOARD_ID>",
+    "tileId": "<TILE_ID>",
+    "threshold": 100,
+    "interval": "1h",
+    "source": "tile",
+    "thresholdType": "above",
+    "channel": {
+      "type": "webhook",
+      "webhookId": "<WEBHOOK_ID>"
+    },
+    "name": "Error Spike Alert",
+    "message": "Error rate exceeded 100 in the last hour"
+  }' \
+  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/alerts
+```

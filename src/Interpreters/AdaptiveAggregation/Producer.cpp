@@ -18,7 +18,6 @@
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
-#include <Common/memcpySmall.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
 #include <base/sort.h>
@@ -39,13 +38,20 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Whether `State` reads the bytes of its keys in place, from the block's padded column buffers, which
+    /// hold them for the whole block: the bytes of a string key by `getKeyBytes`, and the packed values and
+    /// the string of a key of fixed-width values and a string by `getKeyParts`.
+    template <typename State>
+    constexpr bool adaptive_state_reads_key_bytes_in_place = requires(const State & state) { state.getKeyBytes(size_t{}); }
+        || requires(const State & state) { state.getKeyParts(size_t{}); };
+
     /// Whether the kernel of `State` may keep the bytes of its missed string-like keys in the batch (see
-    /// `AdaptiveMissBatch`): a state with `getKeyBytes` reads them from the block's padded column buffers, so it never
-    /// keeps them. The probe loops check the bound on the kept bytes only under this: the check stages the batch, and a
-    /// probe lambda that merely names the staging captures it, which changes the code of every other state's loop.
+    /// `AdaptiveMissBatch`): a state that reads them in place never keeps them. The probe loops check the
+    /// bound on the kept bytes only under this: the check stages the batch, and a probe lambda that merely
+    /// names the staging captures it, which changes the code of every other state's loop.
     template <typename RecordKey, typename State>
     constexpr bool adaptive_misses_may_keep_key_bytes
-        = adaptive_key_stages_bytes<RecordKey> && !requires(const State & state) { state.getKeyBytes(size_t{}); };
+        = adaptive_key_stages_bytes<RecordKey> && !adaptive_state_reads_key_bytes_in_place<State>;
 
     /// Whether the kernel of `state` keeps the bytes of its missed string-like keys in the batch. A state whose key
     /// views are block-stable, which the batch serialization of the serialized methods guarantees, returns the bytes
@@ -67,18 +73,6 @@ namespace
     bool ALWAYS_INLINE missBatchKeyBytesFull(const AdaptiveMissBatch & misses, bool keep_key_bytes)
     {
         return keep_key_bytes && misses.getKeys().size() >= adaptive_miss_batch_max_key_bytes;
-    }
-
-    /// Copies the bytes of a string-like key into a staged record from a buffer that keeps padding past them: the
-    /// block's key column, or the bytes that the batch of misses kept. The overflow-tolerant small copy reads and
-    /// writes up to 15 bytes past the end. The records are appended in increasing byte order with every chunk ending in
-    /// unused padding, so the scribble lands in space that the next append overwrites or that no record uses.
-    void ALWAYS_INLINE copyPaddedKeyBytes(const char * data, size_t size, char * staged)
-    {
-        if (size <= 64)
-            memcpySmallAllowReadWriteOverflow15(staged, data, size);
-        else
-            memcpy(staged, data, size);
     }
 
     /// Copies a string-like key of the block into a staged record. A state that exposes its padded column buffers is
@@ -157,8 +151,15 @@ std::optional<UInt64> Aggregator::adaptiveLocalTopKCount(AggregatedDataVariants 
     std::vector<UInt64> counts;
     const auto append_table_counts = [&](auto & method)
     {
-        if constexpr (MapAggregationMethod<std::decay_t<decltype(method)>>)
+        using Method = std::decay_t<decltype(method)>;
+        if constexpr (MapAggregationMethod<Method>)
+        {
             method.data.forEachMapped([&](AggregateDataPtr & mapped) { counts.push_back(getInlineCountState(mapped)); });
+            /// The NULL key is a group of the table outside its cells (see `keeps_null_key_slot`).
+            if constexpr (keeps_null_key_slot<Method>)
+                if (method.data.hasNullKeyData())
+                    counts.push_back(getInlineCountState(method.data.getNullKeyData()));
+        }
     };
 #define M(NAME) \
     else if (table.type == AggregatedDataVariants::Type::NAME) \
@@ -224,6 +225,16 @@ void NO_INLINE Aggregator::executeFrozenImpl(
 
     if (all_keys_are_const)
     {
+        /// A NULL key goes to its slot without a lookup (see `AdaptiveAggregationProducer::FrozenState`).
+        if constexpr (keeps_null_key_slot<LocalMethod>)
+        {
+            if (local_find_state.isNullAt(0))
+            {
+                local_method.data.hasNullKeyData() = true;
+                return;
+            }
+        }
+
         auto && key_holder = local_find_state.getKeyHolder(0, scratch_pool);
         const auto & key = keyHolderGetKey(key_holder);
         const UInt64 hash = local_method.data.hash(key);
@@ -244,17 +255,22 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     }
 
     /// A set stores a key once, so the repeats of a missed key combine into its record.
-    const size_t hits = collectCombinedMisses</*with_count=*/false, RecordKey>(
+    const AdaptiveLocalProbes probes = collectCombinedMisses</*with_count=*/false, RecordKey>(
         local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe, stage_misses);
 
-    if (frozen.recordLocalProbeResults(hits, row_end - row_begin))
+    if constexpr (keeps_null_key_slot<LocalMethod>)
+    {
+        if (probes.null_rows)
+            local_method.data.hasNullKeyData() = true;
+    }
+    if (frozen.recordLocalProbeResults(probes.hits, row_end - row_begin - probes.null_rows))
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationProbeBypasses);
 
     stage_misses();
 }
 
 template <bool with_count, typename RecordKey, typename LocalMethod, typename State, typename StageMisses>
-size_t ALWAYS_INLINE Aggregator::collectCombinedMisses(
+AdaptiveLocalProbes ALWAYS_INLINE Aggregator::collectCombinedMisses(
     LocalMethod & local_method,
     State & find_state,
     size_t row_begin,
@@ -267,7 +283,7 @@ size_t ALWAYS_INLINE Aggregator::collectCombinedMisses(
     auto & misses = adaptive.misses;
     const auto keep_key_bytes = adaptiveMissesKeepKeyBytes<RecordKey>(find_state);
     constexpr bool can_combine_partition_misses = adaptive_key_stages_bytes<RecordKey>
-        && requires { find_state.getKeyBytes(0); };
+        && adaptive_state_reads_key_bytes_in_place<State>;
     [[maybe_unused]] const bool stable_key_views = find_state.keyViewsAreBlockStable();
     struct PartitionMissEntry
     {
@@ -287,11 +303,13 @@ size_t ALWAYS_INLINE Aggregator::collectCombinedMisses(
     {
         size_t next_row;
         size_t hits;
+        size_t null_rows;
     };
     const auto collect_misses = [&, row_end, bypass_local_probe, layout]
         <bool combine_partition_misses>(size_t begin) ALWAYS_INLINE -> CollectedMisses
     {
         size_t hits = 0;
+        [[maybe_unused]] size_t null_rows = 0;
         /// Only this pass's new descriptors seed consecutive runs. The trial's last missed key may
         /// refer to an earlier descriptor rather than the last one in the array.
         const size_t first_record = can_combine_partition_misses ? misses.size() : 0;
@@ -302,8 +320,41 @@ size_t ALWAYS_INLINE Aggregator::collectCombinedMisses(
         RecordKey last_staged_key{};
         for (size_t i = begin; i < row_end; ++i)
         {
+            /// A NULL key goes to its slot without a lookup (see `AdaptiveAggregationProducer::FrozenState`),
+            /// so the row is only counted for the caller.
+            if constexpr (keeps_null_key_slot<LocalMethod>)
+            {
+                if (find_state.isNullAt(i))
+                {
+                    ++null_rows;
+                    continue;
+                }
+            }
+
             auto && key_holder = find_state.getKeyHolder(i, scratch_pool);
             const auto & key = keyHolderGetKey(key_holder);
+
+            if constexpr (is_keys_and_packed_string<RecordKey>)
+            {
+                /// A key with an empty string that repeats the last missed key, as the rows of a missing
+                /// value often do, joins the key's record without being hashed or probed again: it is missing
+                /// from the local table as well. Its fixed-width values decide it, as an empty string carries
+                /// no hash. As below, a count record counts the repeat, and a key-only record stands for it.
+                if (key.str.isEmpty() && (can_combine_partition_misses ? misses.size() != first_record : !misses.empty())
+                    && last_staged_key.str.isEmpty() && key.keys == last_staged_key.keys)
+                {
+                    if constexpr (with_count)
+                    {
+                        if constexpr (combine_partition_misses)
+                            misses.incrementCount(last_record);
+                        else
+                            misses.incrementLastCount();
+                    }
+                    keyHolderDiscardKey(key_holder);
+                    continue;
+                }
+            }
+
             const UInt64 hash = local_method.data.hash(key);
 
             if (!bypass_local_probe)
@@ -400,7 +451,7 @@ size_t ALWAYS_INLINE Aggregator::collectCombinedMisses(
             if constexpr (combine_partition_misses)
             {
                 if (stop_combining)
-                    return {i + 1, hits};
+                    return {i + 1, hits, null_rows};
             }
             if constexpr (adaptive_misses_may_keep_key_bytes<RecordKey, State>)
             {
@@ -415,26 +466,109 @@ size_t ALWAYS_INLINE Aggregator::collectCombinedMisses(
                 }
             }
         }
-        return {row_end, hits};
+        return {row_end, hits, null_rows};
     };
 
-    size_t hits = 0;
+    CollectedMisses collected{};
     if constexpr (can_combine_partition_misses)
     {
-        const auto trial = collect_misses.template operator()<true>(row_begin);
-        hits = trial.hits;
-        if (trial.next_row != row_end)
+        collected = collect_misses.template operator()<true>(row_begin);
+        if (collected.next_row != row_end)
         {
             /// Keep the trial's descriptors for the common append. The remainder tracks consecutive
             /// runs among its own new descriptors and performs no partition-cache lookups.
-            hits += collect_misses.template operator()<false>(trial.next_row).hits;
+            const auto rest = collect_misses.template operator()<false>(collected.next_row);
+            collected.hits += rest.hits;
+            collected.null_rows += rest.null_rows;
         }
     }
     else
     {
-        hits = collect_misses.template operator()<false>(row_begin).hits;
+        collected = collect_misses.template operator()<false>(row_begin);
     }
-    return hits;
+    return {.hits = collected.hits, .null_rows = collected.null_rows};
+}
+
+template <bool record_places, typename RecordKey, typename LocalMethod, typename State, typename EmplaceNullKey, typename StageMisses>
+AdaptiveLocalProbes ALWAYS_INLINE Aggregator::collectArgumentMisses(
+    LocalMethod & local_method,
+    State & local_find_state,
+    size_t row_begin,
+    size_t row_end,
+    Arena & scratch_pool,
+    AdaptiveAggregationProducer & adaptive,
+    bool bypass_local_probe,
+    AggregateDataPtr * places_data,
+    const EmplaceNullKey & emplace_null_key,
+    const StageMisses & stage_misses) const
+{
+    auto & misses = adaptive.misses;
+    const auto keep_key_bytes = adaptiveMissesKeepKeyBytes<RecordKey>(local_find_state);
+    AdaptiveLocalProbes probes;
+    /// The last missed key of fixed-width values and a string, and its hash, for the rows that repeat it.
+    [[maybe_unused]] RecordKey last_missed_key{};
+    [[maybe_unused]] UInt64 last_missed_hash = 0;
+    [[maybe_unused]] bool has_missed_key = false;
+    for (size_t i = row_begin; i < row_end; ++i)
+    {
+        if constexpr (keeps_null_key_slot<LocalMethod> && record_places)
+        {
+            if (local_find_state.isNullAt(i))
+            {
+                ++probes.null_rows;
+                places_data[i] = emplace_null_key(local_method.data);
+                continue;
+            }
+        }
+
+        auto && key_holder = local_find_state.getKeyHolder(i, scratch_pool);
+        const auto & key = keyHolderGetKey(key_holder);
+
+        if constexpr (is_keys_and_packed_string<RecordKey>)
+        {
+            /// As in `collectCombinedMisses`: a key with an empty string that repeats the last missed key
+            /// misses as well, and its record takes that key's hash without hashing or probing it again.
+            if (key.str.isEmpty() && has_missed_key && last_missed_key.str.isEmpty() && key.keys == last_missed_key.keys)
+            {
+                if constexpr (record_places)
+                    places_data[i] = nullptr;
+                misses.add<RecordKey>(static_cast<UInt32>(i), last_missed_hash, key, keep_key_bytes);
+                keyHolderDiscardKey(key_holder);
+                continue;
+            }
+        }
+
+        const UInt64 hash = local_method.data.hash(key);
+
+        if (!bypass_local_probe)
+        {
+            if (auto it = local_method.data.find(key, hash))
+            {
+                ++probes.hits;
+                if constexpr (record_places)
+                    places_data[i] = it->getMapped();
+                keyHolderDiscardKey(key_holder);
+                continue;
+            }
+        }
+
+        if constexpr (record_places)
+            places_data[i] = nullptr;
+        misses.add<RecordKey>(static_cast<UInt32>(i), hash, key, keep_key_bytes);
+        if constexpr (is_keys_and_packed_string<RecordKey>)
+        {
+            last_missed_key = key;
+            last_missed_hash = hash;
+            has_missed_key = true;
+        }
+        keyHolderDiscardKey(key_holder);
+        if constexpr (adaptive_misses_may_keep_key_bytes<RecordKey, State>)
+        {
+            if (missBatchKeyBytesFull(misses, keep_key_bytes))
+                stage_misses();
+        }
+    }
+    return probes;
 }
 
 template <typename LocalMethod, typename SharedMethod>
@@ -488,41 +622,80 @@ void NO_INLINE Aggregator::executeFrozenImpl(
             columns, adaptive, appendDelayedRecords<SharedMethod>(aggregate_instructions, adaptive, local_find_state, scratch_pool));
     };
 
+    /// Returns the slot of the NULL key, which takes the rows of the key without a lookup (see
+    /// `AdaptiveAggregationProducer::FrozenState`). The first of them fills the slot as the ordinary
+    /// aggregation fills a new cell: with created states (see `executeImplBatch`), a zero inline count for a
+    /// lone `count`, or without aggregate functions the sentinel of `executeImplBatchNoAggregates`. Generic,
+    /// so that its body compiles only for the methods that keep the slot.
+    const auto emplace_null_key = [&](auto & data) -> AggregateDataPtr &
+    {
+        if (!data.hasNullKeyData())
+        {
+            data.hasNullKeyData() = true;
+            data.getNullKeyData() = nullptr;
+            if (params.aggregates_size == 0)
+            {
+                data.getNullKeyData() = reinterpret_cast<AggregateDataPtr>(0x1);
+            }
+            else if (!is_simple_count)
+            {
+                /// Local state growth belongs to this table, while the staging runs under the aggregator's
+                /// tracker.
+                std::optional<MemoryTrackerSwitcher> local_scope;
+                if (local_memory_tracker)
+                    local_scope.emplace(local_memory_tracker);
+                AggregateDataPtr place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                createAggregateStates(place);
+                data.getNullKeyData() = place;
+            }
+        }
+        return data.getNullKeyData();
+    };
+
     if (all_keys_are_const)
     {
-        auto && key_holder = local_find_state.getKeyHolder(0, scratch_pool);
-        const auto & key = keyHolderGetKey(key_holder);
-        const UInt64 hash = local_method.data.hash(key);
-
-        bool found = false;
-        AggregateDataPtr found_place = nullptr;
-        if (auto it = local_method.data.find(key, hash))
+        /// Applies the whole range, whose rows all carry one key, to the key's place in the table, mirroring
+        /// the ordinary all-keys-are-const handling.
+        const auto add_range_to_place = [&](AggregateDataPtr & place)
         {
-            found = true;
             if (is_simple_count)
-                getInlineCountState(it->getMapped()) += row_end - row_begin;
-            else
-                found_place = it->getMapped();
-        }
-
-        if (found)
-        {
-            if (!is_simple_count && params.aggregates_size)
+            {
+                getInlineCountState(place) += row_end - row_begin;
+            }
+            else if (params.aggregates_size)
             {
                 /// Local state growth belongs to this table, while the staging runs under the aggregator's tracker.
                 std::optional<MemoryTrackerSwitcher> local_scope;
                 if (local_memory_tracker)
                     local_scope.emplace(local_memory_tracker);
 
-                /// Apply the whole range to the single place, mirroring the ordinary
-                /// all-keys-are-const handling.
                 for (size_t i = 0; i < aggregate_functions.size(); ++i)
                 {
                     AggregateFunctionInstruction * inst = aggregate_instructions + i;
                     ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
-                    addBatchSinglePlace(row_begin, row_end, inst, found_place + inst->state_offset, aggregates_pool);
+                    addBatchSinglePlace(row_begin, row_end, inst, place + inst->state_offset, aggregates_pool);
                 }
             }
+        };
+
+        /// A NULL key goes to its slot without a lookup.
+        if constexpr (keeps_null_key_slot<LocalMethod>)
+        {
+            if (local_find_state.isNullAt(0))
+            {
+                add_range_to_place(emplace_null_key(local_method.data));
+                return;
+            }
+        }
+
+        auto && key_holder = local_find_state.getKeyHolder(0, scratch_pool);
+        const auto & key = keyHolderGetKey(key_holder);
+        const UInt64 hash = local_method.data.hash(key);
+
+        auto found = local_method.data.find(key, hash);
+        if (found)
+        {
+            add_range_to_place(found->getMapped());
         }
         else
         {
@@ -553,57 +726,33 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     /// missed key combine into its record.
     if (is_simple_count || params.aggregates_size == 0)
     {
-        const size_t hits = is_simple_count
+        const AdaptiveLocalProbes probes = is_simple_count
             ? collectCombinedMisses</*with_count=*/true, RecordKey>(
                   local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe, stage_misses)
             : collectCombinedMisses</*with_count=*/false, RecordKey>(
                   local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe, stage_misses);
-        record_local_probes(hits, row_end - row_begin);
+        if constexpr (keeps_null_key_slot<LocalMethod>)
+        {
+            if (probes.null_rows)
+            {
+                AggregateDataPtr & place = emplace_null_key(local_method.data);
+                if (is_simple_count)
+                    getInlineCountState(place) += probes.null_rows;
+            }
+        }
+        record_local_probes(probes.hits, row_end - row_begin - probes.null_rows);
         stage_misses();
         return;
     }
 
-    /// The probe/staging loop of argument records, shared by the shape that records the places of the hits and the
-    /// bypassed probe, which has no hits and so skips the allocation of the places and the per-row stores.
-    auto probe_rows = [&]<bool record_places>(AggregateDataPtr * places_data) -> size_t
+    /// With the probe bypassed there is no hit, so there are no places to record, unless the block may have
+    /// rows of the NULL key.
+    if (bypass_local_probe && !local_find_state.mayHaveNullRows())
     {
-        size_t hits = 0;
-        for (size_t i = row_begin; i < row_end; ++i)
-        {
-            auto && key_holder = local_find_state.getKeyHolder(i, scratch_pool);
-            const auto & key = keyHolderGetKey(key_holder);
-            const UInt64 hash = local_method.data.hash(key);
-
-            if (!bypass_local_probe)
-            {
-                if (auto it = local_method.data.find(key, hash))
-                {
-                    ++hits;
-                    if constexpr (record_places)
-                        places_data[i] = it->getMapped();
-                    keyHolderDiscardKey(key_holder);
-                    continue;
-                }
-            }
-
-            if constexpr (record_places)
-                places_data[i] = nullptr;
-            misses.add<RecordKey>(static_cast<UInt32>(i), hash, key, keep_key_bytes);
-            keyHolderDiscardKey(key_holder);
-            if constexpr (adaptive_misses_may_keep_key_bytes<RecordKey, typename LocalMethod::StateNoCache>)
-            {
-                if (missBatchKeyBytesFull(misses, keep_key_bytes))
-                    stage_misses();
-            }
-        }
-        return hits;
-    };
-
-    /// With the probe bypassed there is no hit, so there are no places to record.
-    if (bypass_local_probe)
-    {
-        const size_t hits = probe_rows.template operator()<false>(nullptr);
-        record_local_probes(hits, row_end - row_begin);
+        const AdaptiveLocalProbes probes = collectArgumentMisses</*record_places=*/false, RecordKey>(
+            local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe,
+            /*places_data=*/nullptr, emplace_null_key, stage_misses);
+        record_local_probes(probes.hits, row_end - row_begin);
         stage_misses();
         return;
     }
@@ -617,13 +766,15 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     };
     std::unique_ptr<AggregateDataPtr[], decltype(places_deleter)> places(allocator.allocate(places_size), places_deleter);
 
-    const size_t hits = probe_rows.template operator()<true>(places.get());
-    record_local_probes(hits, row_end - row_begin);
+    const AdaptiveLocalProbes probes = collectArgumentMisses</*record_places=*/true, RecordKey>(
+        local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe, places.get(),
+        emplace_null_key, stage_misses);
+    record_local_probes(probes.hits, row_end - row_begin - probes.null_rows);
     stage_misses();
 
-    /// With no local hits every place is null and the batch pass would only skip rows; the
+    /// With no local hits and no NULL rows every place is null and the batch pass would only skip rows; the
     /// staged records carry the block's whole contribution.
-    if (hits != 0)
+    if (probes.hits + probes.null_rows != 0)
     {
         /// Keep the scratch allocations and staged records outside the local table's estimate.
         std::optional<MemoryTrackerSwitcher> local_scope;
@@ -695,9 +846,17 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
     /// the next record or the chunk's padding go, as the overflow of `copyPaddedKeyBytes` does.
     const auto batch_keeps_key_bytes = adaptiveMissesKeepKeyBytes<RecordKey>(local_find_state);
     const char * kept_key_bytes = staged_keys;
-    const auto write_key = [&](size_t record, size_t key_size, char * to)
+    const auto write_key = [&](size_t record, [[maybe_unused]] size_t key_size, char * to, [[maybe_unused]] const auto & format) ALWAYS_INLINE
     {
-        if constexpr (adaptive_key_stages_bytes<RecordKey>)
+        if constexpr (is_keys_and_packed_string<RecordKey>)
+        {
+            /// The state reads the packed values and the string in place, and the format writes them (see
+            /// `StagedKeysAndPackedStringKey::writeKey`).
+            const auto [keys, str] = local_find_state.getKeyParts(key_row_of(record));
+            chassert(sizeof(keys) + str.size() == key_size);
+            format.writeKey(to, keys, str);
+        }
+        else if constexpr (adaptive_key_stages_bytes<RecordKey>)
         {
             if (batch_keeps_key_bytes)
             {
@@ -743,7 +902,7 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
             const size_t bytes = format.bytesForKey(key_size, count);
             char * record = partitions.append(partition, bytes);
             char * const stored_key = format.writeHeader(record, hash, key_size, count);
-            write_key(i, key_size, stored_key);
+            write_key(i, key_size, stored_key, format);
             const size_t stored_key_size = format.keyBytes(key_size);
             check_record(format, record, i, hash);
             key_bytes += stored_key_size;
@@ -884,7 +1043,7 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
                 /// The key goes before the variable-size arguments, which overwrite whatever its copy scribbled past
                 /// it.
                 char * key = format.writeHeader(record, hash, key_size, bytes);
-                write_key(i, key_size, key);
+                write_key(i, key_size, key, format);
                 const size_t stored_key_size = format.keyBytes(key_size);
 
                 if constexpr (Record::with_variable_arguments)

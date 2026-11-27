@@ -40,22 +40,22 @@ public:
         UInt64 limit_,
         size_t max_block_size_);
 
-    String getName() const override { return "Shuffle"; }
+    [[nodiscard]] String getName() const override { return "Shuffle"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    const std::optional<Key> & getKey() const { return key; }
-    UInt64 getLimit() const { return limit; }
+    [[nodiscard]] const std::optional<Key> & getKey() const { return key; }
+    [[nodiscard]] UInt64 getLimit() const { return limit; }
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    QueryPlanStepPtr clone() const override;
-    bool hasCorrelatedExpressions() const override { return false; }
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
+    [[nodiscard]] bool hasCorrelatedExpressions() const override { return false; }
 
 private:
     void updateOutputHeader() override;

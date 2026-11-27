@@ -40,7 +40,7 @@ public:
     bool nextField(UInt32 & field_number, WireType & wire_type);
 
     UInt64 readVarint();
-    Int64 readSignedVarint() { UInt64 v = readVarint(); return static_cast<Int64>((v >> 1) ^ (~(v & 1) + 1)); }
+    Int64 readSignedVarint() { UInt64 v = readVarint(); return static_cast<Int64>(v >> 1) ^ -static_cast<Int64>(v & 1); }
     UInt64 readFixed64();
     UInt32 readFixed32();
     double readDouble();
@@ -105,7 +105,7 @@ struct PostScript
     std::string magic;
 
     void parse(std::string_view data);
-    std::string serialize() const;
+    [[nodiscard]] std::string serialize() const;
 };
 
 struct IntegerStatistics
@@ -131,9 +131,9 @@ struct StringStatistics
     std::optional<std::string> upper_bound;
 
     /// The minimum, or the bound that the writer stored instead of a long minimum.
-    const std::optional<std::string> & getLowerBound() const { return minimum ? minimum : lower_bound; }
+    [[nodiscard]] const std::optional<std::string> & getLowerBound() const { return minimum ? minimum : lower_bound; }
     /// The maximum, or the bound that the writer stored instead of a long maximum.
-    const std::optional<std::string> & getUpperBound() const { return maximum ? maximum : upper_bound; }
+    [[nodiscard]] const std::optional<std::string> & getUpperBound() const { return maximum ? maximum : upper_bound; }
 };
 
 struct BucketStatistics
@@ -195,7 +195,7 @@ struct ColumnStatistics
     std::optional<CollectionStatistics> collection_statistics;
 
     void parse(std::string_view data);
-    std::string serialize() const;
+    [[nodiscard]] std::string serialize() const;
 };
 
 struct RowIndexEntry
@@ -210,7 +210,7 @@ struct RowIndex
 
     /// The limits of the number of the repeated objects keep a small malformed message from allocating much memory.
     void parse(std::string_view data, size_t max_entries);
-    std::string serialize() const;
+    [[nodiscard]] std::string serialize() const;
 };
 
 struct BloomFilter
@@ -276,7 +276,7 @@ struct StripeFooter
     size_t encryption_variants = 0;
 
     void parse(std::string_view data, size_t max_columns);
-    std::string serialize() const;
+    [[nodiscard]] std::string serialize() const;
 };
 
 struct StringPair
@@ -324,7 +324,7 @@ struct Metadata
     VectorWithMemoryTracking<StripeStatistics> stripe_stats;
 
     void parse(std::string_view data, size_t max_stripes, size_t max_columns);
-    std::string serialize() const;
+    [[nodiscard]] std::string serialize() const;
 };
 
 struct Footer
@@ -342,7 +342,7 @@ struct Footer
     std::optional<std::string> software_version;
 
     void parse(std::string_view data);
-    std::string serialize() const;
+    [[nodiscard]] std::string serialize() const;
 };
 
 }
