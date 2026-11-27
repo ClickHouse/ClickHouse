@@ -492,12 +492,23 @@ public:
         nested_func->destroy(tmp_place);
     }
 
+    /// `String` keys are sorted together with their nested states, so finalization neither copies them nor looks them up again.
+    using SortedKey = std::conditional_t<std::is_same_v<KeyType, String>, std::pair<std::string_view, AggregateDataPtr>, KeyType>;
+
+    static AggregateDataPtr nestedPlaceOf(decltype(Data::merged_maps) & merged_maps, const SortedKey & key)
+    {
+        if constexpr (std::is_same_v<KeyType, String>)
+            return key.second;
+        else
+            return merged_maps[key];
+    }
+
     /// `transferred` counts the values whose transfer returned, so a caller that catches can undo those.
     template <bool merge>
     void transferValues(
         AggregateDataPtr __restrict place,
         ColumnMap & map_column,
-        const VectorWithMemoryTracking<KeyType> & keys,
+        const VectorWithMemoryTracking<SortedKey> & keys,
         size_t & transferred,
         Arena * arena) const
     {
@@ -514,12 +525,14 @@ public:
             /// and has to be inserted into the decimal column directly.
             if constexpr (is_decimal<KeyType>)
                 assert_cast<ColumnDecimal<KeyType> &>(key_column).insertValue(keys[transferred]);
+            else if constexpr (std::is_same_v<KeyType, String>)
+                key_column.insertData(keys[transferred].first.data(), keys[transferred].first.size());
             else
                 key_column.insert(keys[transferred]);
             if constexpr (merge)
-                nested_func->insertMergeResultInto(merged_maps[keys[transferred]], val_column, arena);
+                nested_func->insertMergeResultInto(nestedPlaceOf(merged_maps, keys[transferred]), val_column, arena);
             else
-                nested_func->insertResultInto(merged_maps[keys[transferred]], val_column, arena);
+                nested_func->insertResultInto(nestedPlaceOf(merged_maps, keys[transferred]), val_column, arena);
         }
 
         IColumn::Offsets & res_offsets = map_column.getNestedColumn().getOffsets();
@@ -537,13 +550,22 @@ public:
         auto & merged_maps = this->data(place).merged_maps;
 
         // sort the keys
-        VectorWithMemoryTracking<KeyType> keys;
+        VectorWithMemoryTracking<SortedKey> keys;
         keys.reserve(merged_maps.size());
         for (auto & it : merged_maps)
         {
-            keys.push_back(it.first);
+            if constexpr (std::is_same_v<KeyType, String>)
+                keys.emplace_back(it.first, it.second);
+            else
+                keys.push_back(it.first);
         }
-        ::sort(keys.begin(), keys.end(), CompareHelperLess<KeyType>{});
+        if constexpr (std::is_same_v<KeyType, String>)
+            ::sort(keys.begin(), keys.end(), [](const SortedKey & lhs, const SortedKey & rhs)
+            {
+                return CompareHelperLess<std::string_view>{}(lhs.first, rhs.first);
+            });
+        else
+            ::sort(keys.begin(), keys.end(), CompareHelperLess<KeyType>{});
 
         size_t transferred = 0;
 
@@ -566,7 +588,7 @@ public:
                 {
                     res_offsets.resize_assume_reserved(offsets_before);
                     for (size_t i = transferred; i > 0; --i)
-                        nested_func->rollbackInsertResult(merged_maps[keys[i - 1]], val_column);
+                        nested_func->rollbackInsertResult(nestedPlaceOf(merged_maps, keys[i - 1]), val_column);
                     key_column.rollback(*keys_checkpoint);
                     throw;
                 }
