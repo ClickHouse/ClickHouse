@@ -197,7 +197,7 @@ Use these as supporting checks for ClickHouse-specific invariants. They are not 
 - **Compilation time**
   Avoid non-trivial code in widely-included headers, heavy transitive includes in high-fan-out headers, unnecessary template instantiations, and large `constexpr` work in headers.
 - **No large / binary files in git**
-  Binary blobs (JARs, archives, compiled artifacts, datasets >1 MB, fat dependency bundles) must never be committed. They permanently bloat the repository for every clone and cannot be removed without history rewriting. Test dependencies should be downloaded at test time, built from source inside the test container, or pulled from Docker images. Any violation is a blocker.
+  Binary blobs (JARs, archives, compiled artifacts, datasets >1 MB, fat dependency bundles) must never be committed. They permanently bloat the repository for every clone and cannot be removed without history rewriting. Test dependencies should be downloaded at test time, built from source inside the test container, or pulled from Docker images. Any violation is a Major.
 - **PR metadata quality**
   For PR-number reviews, verify PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`: `Changelog category` correctness, required `Changelog entry` quality, and alignment with `clickhouse-pr-description` changelog guidance (specificity, user impact, and migration details for backward-incompatible changes). **Revert PRs are exempt** from this rule; do not produce findings about missing template fields for them.
 
@@ -227,10 +227,10 @@ Findings about tests, documentation, performance evidence, CI scripts, or PR met
 - A privilege check that any entrypoint into the surface it guards can bypass, including an entrypoint that exposes only structure, metadata, or an error message naming a property of the object. "No row data leaked" does not downgrade it.
 - A runtime memory address, or data from which one can be computed, reaching a user through any channel (see `references/memory-addresses.md`).
 - Server-side file access with user-controlled paths that bypass `user_files_path` or equivalent restrictions.
-- Large binary files (JARs, archives, datasets, compiled artifacts) committed to git — permanent, irreversible repo bloat.
 - Destructive shell commands (`rm -rf`, `mv`, `chmod`, `dd`, `sudo`, …) with unquoted substitution under `shell=True` or in shell scripts.
 
 **Majors** – serious but not catastrophic
+- Large binary files (JARs, archives, datasets, compiled artifacts) committed to git — permanent, irreversible repo bloat.
 - Deletion events not logged.
 - Risky new feature (new engine, execution strategy, replication mechanism, on-disk format) without an experimental gate.
 - Under-tested important edge cases or error paths.
