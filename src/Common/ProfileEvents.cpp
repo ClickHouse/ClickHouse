@@ -118,6 +118,7 @@
     M(UniqueKeyDedupProbes, "Number of new-row keys probed against existing parts on the UNIQUE KEY INSERT write-path.", ValueType::Number) \
     M(UniqueKeyConflictOverwriteRows, "Number of new-row keys that superseded a live row in an existing part on the UNIQUE KEY INSERT write-path.", ValueType::Number) \
     M(UniqueKeyConflictIgnoredRows, "Number of incoming rows dropped by unique_key_conflict_action = ignore because the key was already live in the partition.", ValueType::Number) \
+    M(UniqueKeyDeleteRows, "Number of rows marked dead by synchronous DELETE on UNIQUE KEY tables.", ValueType::Number) \
     M(PrimaryIndexCacheHits, "Number of times an entry has been found in the primary index cache, so we didn't have to load an index file.", ValueType::Number) \
     M(StatisticsCacheHits, "Number of times the statistics of a column of a data part have been found in the statistics cache.", ValueType::Number) \
     M(StatisticsCacheMisses, "Number of times the statistics of a column of a data part have not been found in the statistics cache, so they had to be loaded from the part.", ValueType::Number) \
@@ -133,10 +134,12 @@
     M(TimeSeriesMetricFamiliesDeduplicationCacheMisses, "Number of rows written to the metric families tables of TimeSeries tables after they were not found in the deduplication cache.", ValueType::Number) \
     M(TimeSeriesTagsDeduplicationCacheHits, "Number of rows not written to the tags tables of TimeSeries tables because the deduplication cache already had them or the same insert had already written them.", ValueType::Number) \
     M(TimeSeriesTagsDeduplicationCacheMisses, "Number of rows written to the tags tables of TimeSeries tables after they were not found in the deduplication cache.", ValueType::Number) \
+    M(PrometheusRemoteWriteDroppedExemplars, "Number of exemplars received through the Prometheus remote-write protocol and dropped because the TimeSeries table does not store exemplars. They are counted only when the write is stored, for an async insert when its flush succeeds.", ValueType::Number) \
     M(IcebergMetadataReadWaitTimeMicroseconds, "Total time data readers spend waiting for iceberg metadata files to be read and parsed, summed across all reader threads.", ValueType::Microseconds) \
     M(ParquetMetadataCacheHits, "Number of times parquet metadata has been found in the cache.", ValueType::Number) \
     M(ParquetMetadataCacheMisses, "Number of times parquet metadata has not been found in the cache and had to be read from disk.", ValueType::Number) \
     M(ParquetMetadataCacheOffsetIndexHits, "Number of Parquet column chunks whose offset index was taken from the parquet metadata cache instead of being read from the file.", ValueType::Number) \
+    M(ParquetMetadataCacheColumnIndexHits, "Number of Parquet column chunks whose column index was taken from the parquet metadata cache instead of being read from the file.", ValueType::Number) \
     M(ParquetMetadataCacheWeightLost, "Approximate number of bytes evicted from the parquet metadata cache.", ValueType::Number) \
     M(IcebergIteratorInitializationMicroseconds, "Total time spent on synchronous initialization of iceberg data iterators.", ValueType::Microseconds) \
     M(IcebergMetadataUpdateMicroseconds, "Total time spent updating iceberg storage metadata from state (buildStorageMetadataFromState).", ValueType::Microseconds) \
@@ -215,6 +218,7 @@
     M(TextIndexFilledFromFoldedPostings, "Number of times a text index virtual column was filled for all rows of a read directly from the posting lists folded during the index analysis, instead of from posting lists built for each granule.", ValueType::Number) \
     M(TextIndexDictionaryDFABuilds, "Number of times a DFA was built from a LIKE pattern to skip dictionary blocks of a text index. Reusing an already built DFA is not counted.", ValueType::Number) \
     M(TextIndexDiscardPatternScan, "Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.", ValueType::Number) \
+    M(TextIndexPatternScanSkippedByCost, "Number of times a text index pattern dictionary scan of a part was skipped because the dictionary blocks to scan take more bytes than the rows still readable after the primary key and prior skip indexes take in the indexed columns.", ValueType::Number) \
     M(TextIndexPatternBypassCacheHits, "Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.", ValueType::Number) \
     M(TextIndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the text index.", ValueType::Number) \
     M(TextIndexGenericExclusionSearchStepLimitReached, "Number of times the generic exclusion search over the text index reached merge_tree_generic_exclusion_search_max_steps and accepted the remaining mark ranges without further splitting.", ValueType::Number) \
@@ -398,6 +402,7 @@
     M(ReplicatedPartMutations, "Number of times data parts of ReplicatedMergeTree tables were successfully mutated.", ValueType::Number) \
     M(ReplicatedPartChecks, "Number of times we had to perform advanced search for a data part on replicas or to clarify the need of an existing data part.", ValueType::Number) \
     M(ReplicatedPartChecksFailed, "Number of times the advanced search for a data part on replicas did not give result or when unexpected part has been found and moved away.", ValueType::Number) \
+    M(PartCheckPassedAfterPageCacheReadError, "Number of times a data part of a ReplicatedMergeTree table that failed to be read passed its check with direct I/O, bypassing the OS page cache. The read error was probably caused by wrong data in the page cache, not by the data on disk.", ValueType::Number) \
     M(ReplicatedDataLoss, "Number of times a data part that we wanted doesn't exist on any replica (even on replicas that are offline right now). That data parts are definitely lost. This is normal due to asynchronous replication (if quorum inserts were not enabled), when the replica on which the data part was written was failed and when it became online after fail it doesn't contain that data part.", ValueType::Number) \
     M(ReplicatedCoveredPartsInZooKeeperOnStart, "For debugging purposes. Number of parts in ZooKeeper that have a covering part, but doesn't exist on disk. Checked on server start.", ValueType::Number) \
     \
@@ -621,6 +626,9 @@
     M(DistributedIndexAnalysisReplicaUnavailable, "Number of times distributed index analysis failed on one of replicas without fallback (failed during connect)", ValueType::Number) \
     M(DistributedIndexAnalysisReplicaFallback, "Number of times distributed index analysis failed on one of replicas with fallback to local replica", ValueType::Number) \
     M(DistributedIndexAnalysisMissingParts, "Number of missing parts during distributed index analysis that will be resolved locally", ValueType::Number) \
+    M(DistributedIndexAnalysisOnWorkersTasks, "Number of tasks sent to stateless workers for index analysis (on the coordinator)", ValueType::Number) \
+    M(DistributedIndexAnalysisOnWorkersParts, "Number of parts sent to stateless workers for index analysis (on the coordinator)", ValueType::Number) \
+    M(DistributedIndexAnalysisOnWorkersAnalyzedParts, "Number of parts a stateless worker analyzed for index analysis", ValueType::Number) \
     \
     M(WaitMarksLoadMicroseconds, "Time spent loading marks", ValueType::Microseconds) \
     M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks", ValueType::Number) \
@@ -1033,6 +1041,8 @@ The server successfully detected this situation and will download merged part fr
     M(ReadBufferFromAzureBytes, "Bytes read from Azure.", ValueType::Bytes) \
     M(ReadBufferFromAzureRequestsErrors, "Number of exceptions while reading from Azure", ValueType::Number) \
     \
+    M(WriteBufferFromAzureBytes, "Bytes written to Azure.", ValueType::Bytes) \
+    \
     M(CachedReadBufferReadFromCacheHits, "Number of times the read from filesystem cache hit the cache.", ValueType::Number) \
     M(CachedReadBufferReadFromCacheMisses, "Number of times the read from filesystem cache miss the cache.", ValueType::Number) \
     M(CachedReadBufferReadFromSourceMicroseconds, "Time reading from filesystem cache source (from remote filesystem, etc)", ValueType::Microseconds) \
@@ -1278,6 +1288,10 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperReadRequestQueueLockWaitMicroseconds, "Time spent waiting for acquiring Keeper read request queue lock", ValueType::Microseconds) \
     M(KeeperProcessAndResponsesLockWaitMicroseconds, "Time spent waiting for acquiring Keeper process and responses lock", ValueType::Microseconds) \
     M(KeeperCommitWaitElapsedMicroseconds, "Time spent waiting for certain log to be committed", ValueType::Microseconds) \
+    M(KeeperLogStoreAppend, "Number of entries appended to the Keeper log store", ValueType::Number) \
+    M(KeeperLogStoreAppendMicroseconds, "Time spent appending entries to the Keeper log store, including the changelog lock wait (the entry is written and fsynced by the background changelog writer, see KeeperChangelogFileSyncMicroseconds)", ValueType::Microseconds) \
+    M(KeeperSnapshotWriteMicroseconds, "Time spent writing a Keeper snapshot file (serialization, compression and sync)", ValueType::Microseconds) \
+    M(KeeperSnapshotApplyMicroseconds, "Time spent applying a Keeper snapshot to the Keeper state machine", ValueType::Microseconds) \
     M(KeeperBatchMaxCount, "Number of batches that hit max_requests_batch_size limit", ValueType::Number) \
     M(KeeperBatchMaxTotalSize, "Number of batches that hit max_requests_batch_bytes_size limit", ValueType::Number) \
     M(KeeperBatchMaxReadCount, "Number of batches that hit max_read_batch_size limit", ValueType::Number) \
@@ -1432,6 +1446,7 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheReadErrorsRetriable, "Distributed Cache client event. Number of retriable distributed cache errors during read requests (counted on each occurrence, including the ones recovered by a retry)", ValueType::Number) \
     M(DistrCacheReadErrorsNonRetriable, "Distributed Cache client event. Number of non-retriable distributed cache errors during read requests", ValueType::Number) \
     M(DistrCacheReadRequestRetriesExhausted, "Distributed Cache read buffer event. Number of times a retriable read error did not succeed within the read request retries limit", ValueType::Number) \
+    M(DistrCacheReadsSkippedRegistryNotReady, "Distributed Cache client event. Number of read buffers of object storage disks that asked for the distributed cache but were created without it because the distributed cache registry was not ready (e.g. no cache server was registered)", ValueType::Number) \
     M(DistrCacheWriteErrors, "Distributed Cache client event. Total number of distributed cache errors during write requests (equals DistrCacheWriteErrorsRetriable + DistrCacheWriteErrorsNonRetriable). A server-initiated write-through cache `Stop` is flow control, not an error, and is not counted", ValueType::Number) \
     M(DistrCacheWriteErrorsRetriable, "Distributed Cache client event. Number of retriable distributed cache errors during write requests (counted on each occurrence, including the ones recovered by a retry)", ValueType::Number) \
     M(DistrCacheWriteErrorsNonRetriable, "Distributed Cache client event. Number of non-retriable distributed cache errors during write requests", ValueType::Number) \
@@ -2485,8 +2500,8 @@ double Counters::getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset)
     Int64 curr_cpu_wait_microseconds = static_cast<Int64>(load(OSCPUWaitMicroseconds));
     Int64 curr_cpu_virtual_time_microseconds = static_cast<Int64>(load(OSCPUVirtualTimeMicroseconds));
 
-    Int64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - prev_cpu_wait_microseconds.load(std::memory_order_acquire);
-    Int64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - prev_cpu_virtual_time_microseconds.load(std::memory_order_acquire);
+    Int64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - static_cast<Int64>(prev_cpu_wait_microseconds.load(std::memory_order_acquire));
+    Int64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - static_cast<Int64>(prev_cpu_virtual_time_microseconds.load(std::memory_order_acquire));
 
     if (reset)
     {

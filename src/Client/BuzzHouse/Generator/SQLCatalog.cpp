@@ -295,6 +295,11 @@ bool SQLBase::isAnyStreamingEngine(const bool as_alias) const
     return isKafkaEngine(as_alias) || isNATSEngine(as_alias) || isRabbitMQEngine(as_alias);
 }
 
+bool SQLBase::isDataFileEngine() const
+{
+    return isFileEngine() || isS3Engine() || isAzureEngine() || isURLEngine();
+}
+
 String SQLBase::getDolorEngineName() const
 {
     if (isAnyIcebergEngine())
@@ -309,7 +314,7 @@ String SQLBase::getDolorEngineName() const
     {
         return "paimon";
     }
-    if (isFileEngine())
+    if (isDataFileEngine())
     {
         return "file";
     }
@@ -324,6 +329,18 @@ String SQLBase::getDolorEngineName() const
     if (isRabbitMQEngine())
     {
         return "rabbitmq";
+    }
+    if (isS3QueueEngine())
+    {
+        return "s3queue";
+    }
+    if (isAzureQueueEngine())
+    {
+        return "azurequeue";
+    }
+    if (isFileLogEngine())
+    {
+        return "filelog";
     }
     UNREACHABLE();
 }
@@ -447,6 +464,13 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                         || isAzureEngine() || isS3Engine())
         && rg.nextSmallNumber() < 3;
     has_order_by = isAnyIcebergEngine() && rg.nextSmallNumber() < 4;
+    /// Whole-file wrappers the dolor side can write with Python codecs (no lz4/brotli packages there)
+    static const DB::Strings dolorFileCompressions = {"none", "gz", "gzip", "deflate", "xz", "lzma", "zst", "zstd", "bz2", "snappy"};
+    /// Sometimes dolor writes the data file of a File, S3, AzureBlobStorage or URL table, so ClickHouse only reads it.
+    /// It writes one object, so no partitions, globs or placeholders in its path
+    const bool dolor_file = has_dolor && fc.dolor_spark_tables && isDataFileEngine() && (!isURLEngine() || fc.http_server.has_value())
+        && rg.nextBool();
+    has_partition_by &= !dolor_file;
     if (isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
         /// Set bucket path first if possible
@@ -454,7 +478,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         const String bname = rg.nextSmallNumber() < 4 ? name : ("t" + std::to_string(counter));
 
         /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
-        if (has_dolor && fc.dolor_spark_tables && isAnyLakeEngine() && rg.nextBool())
+        if (dolor_file || (has_dolor && fc.dolor_spark_tables && isAnyLakeEngine() && rg.nextBool()))
         {
             integration = IntegrationCall::Dolor;
         }
@@ -521,40 +545,49 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                 next_bucket_path += "subdir";
                 next_bucket_path += rg.nextBool() ? bname : "";
                 const bool want_partition = has_partition_by && rg.nextBool();
-                const bool want_hash = rg.nextBool();
+                const bool want_hash = !dolor_file && rg.nextBool();
                 next_bucket_path += placeholders(rg, want_partition, want_hash);
                 used_partition |= want_partition;
                 used_schema_hash |= want_hash;
                 next_bucket_path += "/";
             }
-            if (rg.nextBool())
+            if (dolor_file || rg.nextBool())
             {
                 const bool add_before = rg.nextBool();
 
                 next_bucket_path += "file";
                 next_bucket_path += add_before ? bname : "";
-                next_bucket_path
-                    += placeholders(rg, has_partition_by && !used_partition && rg.nextBool(), !used_schema_hash && rg.nextBool());
+                next_bucket_path += placeholders(
+                    rg, has_partition_by && !used_partition && rg.nextBool(), !used_schema_hash && !dolor_file && rg.nextBool());
                 next_bucket_path += !add_before ? bname : "";
                 if ((isS3QueueEngine() || isAzureQueueEngine()) && rg.nextMediumNumber() < 81)
                 {
                     next_bucket_path += "/";
                 }
             }
-            if (rg.nextBool())
+            if (!dolor_file && rg.nextBool())
             {
                 next_bucket_path += "*";
             }
             if (rg.nextBool())
             {
                 /// Either a generic .data extension or a compression-recognized extension
-                /// (exercises ClickHouse's extension-based compression auto-detection)
+                /// (exercises ClickHouse's extension-based compression auto-detection). Dolor follows the extension too
                 static const DB::Strings comp_extensions
                     = {"gz", "gzip", "bz2", "lz4", "xz", "zst", "zstd", "lzma", "br", "brotli", "deflate", "snappy", "7z"};
-                next_bucket_path += rg.nextSmallNumber() < 4 ? ".data" : ("." + rg.pickRandomly(comp_extensions));
+                const DB::Strings & extensions = dolor_file ? dolorFileCompressions : comp_extensions;
+
+                next_bucket_path += rg.nextSmallNumber() < 4 ? ".data" : ("." + rg.pickRandomly(extensions));
             }
         }
         bucket_path = std::move(next_bucket_path);
+        /// Sometimes dolor writes objects to the path of a queue, broken ones too. It names them from the path,
+        /// so not with a placeholder ClickHouse expands
+        if (has_dolor && isAnyQueueEngine() && integration != IntegrationCall::None && !bucket_path->contains('{')
+            && rg.nextBool())
+        {
+            integration = IntegrationCall::Dolor;
+        }
     }
     else if (isKeeperMapEngine() || isArrowFlightEngine() || isFileEngine() || (isURLEngine() && fc.http_server.has_value()))
     {
@@ -567,8 +600,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         }
         else if (isFileEngine())
         {
-            /// Sometimes let Spark (dolor) write the data file, so ClickHouse only reads it
-            if (has_dolor && fc.dolor_spark_tables && rg.nextBool())
+            if (dolor_file)
             {
                 integration = IntegrationCall::Dolor;
             }
@@ -583,11 +615,25 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     }
     else if (isFileLogEngine())
     {
-        /// The directory must exist at CREATE, so glob over the files `File` tables write there
-        bucket_path = fmt::format(
-            "{}/{}",
-            fc.server_file_path.generic_string(),
-            rg.nextBool() ? "*" : ("t" + std::to_string(rg.randomInt<uint32_t>(0, 20)) + "*"));
+        if (has_dolor && rg.nextBool())
+        {
+            /// Dolor creates a directory shared by some tables, or the file, before CREATE, and writes the files there.
+            /// A directory ends with `/`, a glob has `*`, otherwise it is one file
+            const String fname = "f" + std::to_string(rg.randomInt<uint32_t>(0, 9));
+            const DB::Strings suffixes = {"/", "/*", "/*.log", "/" + fname + "*", "/" + fname + ".log"};
+
+            integration = IntegrationCall::Dolor;
+            bucket_path = fmt::format(
+                "{}/filelog{}{}", fc.server_file_path.generic_string(), rg.randomInt<uint32_t>(0, 3), rg.pickRandomly(suffixes));
+        }
+        else
+        {
+            /// The directory must exist at CREATE, so glob over the files `File` tables write there
+            bucket_path = fmt::format(
+                "{}/{}",
+                fc.server_file_path.generic_string(),
+                rg.nextBool() ? "*" : ("t" + std::to_string(rg.randomInt<uint32_t>(0, 20)) + "*"));
+        }
     }
 
     if (isAnyIcebergEngine() && rg.nextMediumNumber() < 91)
@@ -607,7 +653,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         static const DB::Strings formats = {"ORC", "Parquet"};
         file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(fc.in_out_formats);
     }
-    else if (isFileEngine() && integration == IntegrationCall::Dolor)
+    else if (dolor_file)
     {
         /// Spark/pyarrow-written data files: mostly the Arrow formats, sometimes Parquet, Avro or ORC
         const uint32_t nopt = rg.nextMediumNumber();
@@ -641,12 +687,8 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     }
     if ((isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine()) && rg.nextMediumNumber() < 41)
     {
-        if (isFileEngine() && integration == IntegrationCall::Dolor)
+        if (dolor_file)
         {
-            /// Whole-file wrappers the dolor side can write with Python codecs (no lz4/brotli packages there)
-            static const DB::Strings dolorFileCompressions
-                = {"none", "gz", "gzip", "deflate", "xz", "lzma", "zst", "zstd", "bz2", "snappy"};
-
             file_comp = rg.pickRandomly(dolorFileCompressions);
         }
         else
@@ -654,7 +696,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             file_comp = rg.pickRandomly(compressionMethods);
         }
     }
-    if ((isS3Engine() || isAzureEngine()) && rg.nextMediumNumber() < 21)
+    if ((isS3Engine() || isAzureEngine()) && !dolor_file && rg.nextMediumNumber() < 21)
     {
         partition_strategy = rg.nextBool() ? "wildcard" : "hive";
     }
@@ -688,7 +730,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     }
     else if (isURLEngine())
     {
-        integration = IntegrationCall::HTTP;
+        integration = dolor_file ? IntegrationCall::Dolor : IntegrationCall::HTTP;
     }
     else if (has_dolor && isAnyStreamingEngine())
     {

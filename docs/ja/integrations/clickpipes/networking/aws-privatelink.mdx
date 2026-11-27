@@ -246,57 +246,41 @@ AWS PrivateLink は、検証済みドメインを持つ VPC エンドポイン�
   [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns)
   リソースを使用して、既存のリバース プライベート エンドポイントのマッピングを管理します。
 
-## リバース プライベート エンドポイントを使用した ClickPipe の作成 {#creating-clickpipe}
+## リバースプライベートエンドポイントを使用した ClickPipe の作成 {#creating-clickpipe}
 
 1. ClickHouse Cloud サービスの SQL Console にアクセスします。
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ClickPipes サービス](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickPipes サービス](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+  </Frame>
 </div>
 
 2. 左側のメニューで `Data Sources` ボタンを選択し、「ClickPipe をセットアップ」をクリックします。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![インポートを選択](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
-
-</Frame>
-
+  <Frame>
+    ![インポートを選択](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+  </Frame>
 </div>
 
 3. データソースとして Kafka または Postgres を選択します。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![データソースを選択](/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp)
-
-</Frame>
-
+  <Frame>
+    ![データソースを選択](/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp)
+  </Frame>
 </div>
 
 4. `Reverse private endpoint` オプションを選択します。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![リバース プライベート エンドポイントを選択](/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp)
-
-</Frame>
-
+  <Frame>
+    ![リバースプライベートエンドポイントを選択](/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp)
+  </Frame>
 </div>
 
-5. 既存のリバース プライベート エンドポイントを選択するか、新しいエンドポイントを作成します。
+5. 既存のリバースプライベートエンドポイントを選択するか、新しいエンドポイントを作成します。
 
 <Info>
   RDS へのクロスリージョンアクセスが必要な場合は、VPC エンドポイントサービスを作成する必要があります。セットアップの参考として、
@@ -306,25 +290,17 @@ AWS PrivateLink は、検証済みドメインを持つ VPC エンドポイン�
 </Info>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![リバース プライベート エンドポイントを選択](/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp)
-
-</Frame>
-
+  <Frame>
+    ![リバースプライベートエンドポイントを選択](/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp)
+  </Frame>
 </div>
 
 6. 選択したエンドポイントの種類に必要なパラメータを指定します。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![リバース プライベート エンドポイントを選択](/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp)
-
-</Frame>
-
+  <Frame>
+    ![リバースプライベートエンドポイントを選択](/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp)
+  </Frame>
 </div>
 
 * VPC リソースの場合は、設定共有 ARN と設定 ID を指定します。
@@ -332,20 +308,16 @@ AWS PrivateLink は、検証済みドメインを持つ VPC エンドポイン�
 * VPC エンドポイントサービスの場合は、サービス名を指定します。
 * 必要に応じて、[カスタム プライベート DNS](#custom-private-dns) 名を指定します。
 
-7. `Create` をクリックし、リバース プライベート エンドポイントの準備が完了するまで待ちます。
+7. `Create` をクリックし、リバースプライベートエンドポイントの準備が完了するまで待ちます。
 
    新しいエンドポイントを作成する場合、セットアップには時間がかかります。
    エンドポイントの準備が完了すると、ページは自動的に更新されます。
    VPC エンドポイントサービスでは、AWS コンソールで接続リクエストを承認する必要がある場合があります。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![リバース プライベート エンドポイントを選択](/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp)
-
-</Frame>
-
+  <Frame>
+    ![リバースプライベートエンドポイントを選択](/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp)
+  </Frame>
 </div>
 
 8. エンドポイントの準備が完了すると、DNS 名を使用してデータソースに接続できます。
@@ -367,25 +339,17 @@ AWS PrivateLink は、検証済みドメインを持つ VPC エンドポイン�
 1. サイドバーで `Settings` ボタンをクリックします。
 
    <div className="ch-image-lg">
-
-   <Frame>
-
-   ![ClickHouse Cloud の設定](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp)
-
-   </Frame>
-
+     <Frame>
+       ![ClickHouse Cloud の設定](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp)
+     </Frame>
    </div>
 
 2. `ClickPipe reverse private endpoints` セクションで `Reverse private endpoints` をクリックします。
 
    <div className="ch-image-md">
-
-   <Frame>
-
-   ![ClickHouse Cloud の設定](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp)
-
-   </Frame>
-
+     <Frame>
+       ![ClickHouse Cloud の設定](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp)
+     </Frame>
    </div>
 
    リバースプライベートエンドポイントの詳細情報がフライアウトに表示されます。

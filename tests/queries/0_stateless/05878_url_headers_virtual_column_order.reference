@@ -1,0 +1,18 @@
+-- _headers before another virtual column
+hello	/	1
+-- _headers between other virtual columns
+/	hello		1
+-- _headers after the other virtual columns
+/		hello	1
+-- _headers in SELECT, another virtual column in WHERE
+hello	1
+-- the query of the AST fuzzer, with the condition negated to get a row
+1	1
+-- _headers before all the other virtual columns
+hello	1	1	/		1
+-- the number of rows is in the cache
+1
+-- only virtual columns, _headers before another virtual column
+hello	/
+-- only virtual columns, _headers after another virtual column
+/	hello

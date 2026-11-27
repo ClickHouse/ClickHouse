@@ -269,7 +269,7 @@ MongoDBConfiguration StorageMongoDB::getConfigurationFromCollection(MutableNamed
         configuration.uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
                                                       auth_string,
                                                       named_collection->get<String>("host"),
-                                                      named_collection->get<String>("port"),
+                                                      named_collection->get<UInt64>("port"),
                                                       named_collection->get<String>("database"),
                                                       named_collection->getOrDefault<String>("options", "")));
     }

@@ -176,16 +176,16 @@ Un decodificador decide cómo procesar cada columna en función de la cadena `ty
 
 El byte `kind_stack` enumera una serialización por columna no predeterminada:
 
-| Byte   | Nombre                       | Significado                                                                               | Impacto wire en `data`                                                                     |
-| ------ | ---------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `0x00` | DEFAULT                      | Serialización predeterminada                                                              | Idéntico a `has_custom = 0`                                                                |
-| `0x01` | SPARSE                       | Serialización dispersa (v54465+)                                                          | Stream de desplazamientos + valores no predeterminados; véase más abajo                             |
+| Byte   | Nombre                       | Significado                                                                                 | Impacto wire en `data`                                                                     |
+| ------ | ---------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `0x00` | DEFAULT                      | Serialización predeterminada                                                                | Idéntico a `has_custom = 0`                                                                |
+| `0x01` | SPARSE                       | Serialización dispersa (v54465+)                                                            | Stream de desplazamientos + valores no predeterminados; véase más abajo                    |
 | `0x02` | DETACHED                     | Columna envuelta en un `ColumnBLOB` mediante la serialización paralela de bloques (v54478+) | Blob preserializado: `VarUInt size` + esa cantidad de bytes; véase más abajo               |
-| `0x03` | DETACHED&#95;OVER&#95;SPARSE | Una columna dispersa envuelta en un `ColumnBLOB`                                          | Misma carga útil de blob que `DETACHED`; véase más abajo                                   |
-| `0x04` | REPLICATED                   | Forma de diccionario para valores repetidos (v54482+)                                     | Stream de índices + valores densos de los elementos; véase más abajo                        |
-| `0x05` | COMBINATION                  | Pila de varios tipos                                                                      | Seguido de un VarUInt `count` y `count` bytes de tipo adicionales; véase la nota más abajo |
+| `0x03` | DETACHED&#95;OVER&#95;SPARSE | Una columna dispersa envuelta en un `ColumnBLOB`                                            | Misma carga útil de blob que `DETACHED`; véase más abajo                                   |
+| `0x04` | REPLICATED                   | Forma de diccionario para valores repetidos (v54482+)                                       | Stream de índices + valores densos de los elementos; véase más abajo                       |
+| `0x05` | COMBINATION                  | Stack de varios tipos                                                                        | Seguido de un VarUInt `count` y `count` bytes de tipo adicionales; véase la nota más abajo |
 
-**La carga útil de `COMBINATION` usa un enum diferente.** Las cinco filas anteriores son códigos *compactos* de un byte. `COMBINATION` (`0x05`) es el mecanismo de escape general para cualquier pila que no cubran: va seguido de un `VarUInt` `count` y, a continuación, de `count` entradas de un byte. Esas entradas **no** son los códigos compactos de la tabla, sino los valores sin procesar de `ISerialization::Kind`:
+**La carga útil de `COMBINATION` usa un enum diferente.** Las cinco filas anteriores son códigos *compactos* de un byte. `COMBINATION` (`0x05`) es el mecanismo de escape general para cualquier stack que no cubran: va seguido de un `VarUInt` `count` y, a continuación, de `count` entradas de un byte. Esas entradas **no** son los códigos compactos de la tabla, sino los valores sin procesar de `ISerialization::Kind`:
 
 | Byte   | `Kind` anidado |
 | ------ | -------------- |
@@ -196,18 +196,19 @@ El byte `kind_stack` enumera una serialización por columna no predeterminada:
 
 Los valores de byte no coinciden con los códigos compactos: `REPLICATED` es `0x03` en este enum anidado, pero `0x04` como código compacto, y no existe ninguna entrada `DETACHED_OVER_SPARSE`; esa combinación aparece como dos entradas consecutivas, `SPARSE` y `DETACHED`. Un decodificador que siga usando la tabla compacta para los bytes anidados asignará mal `0x03`/`0x04` y perderá la sincronización.
 
-`count` es la longitud total de la pila, **incluida la entrada `DEFAULT` inicial** con la que comienza toda pila. Los códigos compactos ya cubren todas las pilas de una y dos entradas, por lo que un `COMBINATION` siempre tiene un `count` de al menos tres.
+`count` es la longitud total del stack, **incluida la entrada `DEFAULT` inicial** con la que comienza todo stack. Los códigos compactos ya cubren todos los stacks de una y dos entradas, por lo que un `COMBINATION` siempre tiene un `count` de al menos tres.
 
-**Validez de la pila de tipos.** Un decodificador rechaza una pila mal formada con `INCORRECT_DATA` en lugar de construir la serialización que describe:
+**Validez del stack de tipos.** Un decodificador rechaza un stack mal formado con `INCORRECT_DATA` en lugar de construir la serialización que describe:
 
-* la pila comienza con `DEFAULT`;
-* la pila es una subsecuencia de `DEFAULT`, `SPARSE`, `REPLICATED`, `DETACHED`, que es el orden en que los tipos se envuelven entre sí. `SPARSE` puede estar dentro de `REPLICATED`, pero no al revés, y `DETACHED` siempre va al final porque un `ColumnBLOB` contiene la forma serializada de todo lo que hay por debajo. Esto también implica que ningún tipo aparece dos veces, por lo que `count` no puede superar el número de tipos.
+* el stack comienza con `DEFAULT`;
+* el stack es una subsecuencia de `DEFAULT`, `SPARSE`, `REPLICATED`, `DETACHED`, que es el orden en que los tipos se envuelven entre sí. `SPARSE` puede estar dentro de `REPLICATED`, pero no al revés, y `DETACHED` siempre va al final porque un `ColumnBLOB` contiene la forma serializada de todo lo que hay por debajo. Esto también implica que ningún tipo aparece dos veces, por lo que `count` no puede superar el número de tipos.
 
-Tenga en cuenta que este orden no coincide con el de los valores de byte de tipo indicados arriba. Cualquier otra pila describe una disposición de columna que ningún escritor genera y que ningún paso de materialización vuelve a desenvolver en una columna completa del tipo declarado; por ejemplo, un `ColumnSparse` cuya columna de valores sea a su vez dispersa o replicada permanece envuelto.
+Tenga en cuenta que este orden no coincide con el de los valores de byte de tipo indicados arriba. Cualquier otro stack describe una disposición de columna que ningún escritor genera y que ningún paso de materialización vuelve a desenvolver en una columna completa del tipo declarado; por ejemplo, un `ColumnSparse` cuya columna de valores sea a su vez dispersa o replicada permanece envuelto.
 
-**`kind_stack` recursivo para columnas `Tuple`.** La carga útil `kind_stack` anterior es el byte (o la secuencia `COMBINATION`) correspondiente a la información de serialización propia de una columna. Un `Tuple` incluye un `SerializationInfoTuple`, que primero escribe la carga útil de pila de tipos *propia* de la tupla y después una carga útil completa de pila de tipos para *cada* elemento, en orden; un decodificador lee esa misma estructura recursiva. Así, para `Tuple(A, B, C)` los bytes del campo 4 son `[tuple_kind][A_kind][B_kind][C_kind]`, y la carga útil de cada elemento es a su vez recursiva si dicho elemento también es un tipo compuesto. El byte `has_custom_serialization` (campo 3) se activa siempre que la información propia de la tupla *o la de cualquiera de sus elementos* no sea la predeterminada, de modo que un `Tuple` cuyo único elemento especial sea disperso o replicado también activa la carga útil de pila de tipos. Un decodificador que lea únicamente el byte de enum inicial de un `Tuple` se detendrá antes de tiempo e interpretará erróneamente los bytes de tipo de los elementos restantes como datos de columna.
+**`kind_stack` recursivo para columnas `Tuple`.** La carga útil `kind_stack` anterior es el byte (o la secuencia `COMBINATION`) correspondiente a la información de serialización propia de una columna. Un `Tuple` incluye un `SerializationInfoTuple`, que primero escribe la carga útil de stack de tipos *propia* de la tupla y después una carga útil completa de stack de tipos para *cada* elemento, en orden; un decodificador lee esa misma estructura recursiva. Así, para `Tuple(A, B, C)` los bytes del campo 4 son `[tuple_kind][A_kind][B_kind][C_kind]`, y la carga útil de cada elemento es a su vez recursiva si dicho elemento también es un tipo compuesto. El byte `has_custom_serialization` (campo 3) se activa siempre que la información propia de la tupla *o la de cualquiera de sus elementos* no sea la predeterminada, de modo que un `Tuple` cuyo único elemento especial sea disperso también activa la carga útil de stack de tipos. Un decodificador que lea únicamente el byte de enum inicial de un `Tuple` se detendrá antes de tiempo e interpretará erróneamente los bytes de tipo de los elementos restantes como datos de columna.
+El stack de un elemento nunca contiene `REPLICATED` ni `DETACHED`: ambos envuelven únicamente una columna top-level completa, y un decodificador rechaza cualquiera de ellos en el stack de un elemento con `INCORRECT_DATA`.
 
-**Formato wire disperso.** Cuando `kind_stack = 0x01`, el `data` de la columna consiste en dos streams escritos uno tras otro dentro del único stream TCP compartido:
+**Formato wire disperso.** Cuando `kind_stack = 0x01`, el `data` de la columna consta de dos streams escritos uno tras otro en el único stream TCP compartido:
 
 1. **Stream de desplazamientos** — una secuencia de `VarUInt`s. Cada valor `v` es uno de los siguientes:
    * `v` con el bit alto en la posición 62 sin activar: `(v & 0x3FFFFFFFFFFFFFFF)` = el número de posiciones con valor predeterminado antes del siguiente valor explícito no predeterminado. Esa posición no predeterminada es `cursor + group_size`, donde `cursor` es la posición actual; a continuación, `cursor` avanza `group_size + 1` posiciones.
@@ -234,12 +235,15 @@ Un decodificador reconstruye una columna densa seleccionando `elements[indexes[i
 **Formato wire separado.** `DETACHED` (`0x02`) y `DETACHED_OVER_SPARSE` (`0x03`) *sí* aparecen en la transmisión por red: no son puramente internos. En la ruta TCP, cuando la compresión está habilitada y la revisión negociada es igual o superior a `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` (v54478), la columna pasa por tres pasos:
 
 1. Cada columna apta (no `const`, no `Tuple`, en un bloque con más de una fila) se envuelve en un `ColumnBLOB` que contiene la columna ya serializada y comprimida fuera del thread principal.
-2. Se añade `DETACHED` al final de la pila de tipos de la columna envuelta.
+2. Se añade `DETACHED` al final del stack de tipos de la columna envuelta.
 3. Los `data` de la columna se escriben como un tamaño de blob `VarUInt`, seguido exactamente de esa cantidad de bytes del blob.
 
-Si la columna envuelta era dispersa, su pila es `{DEFAULT, SPARSE, DETACHED}`, que se serializa como `DETACHED_OVER_SPARSE`. Un Client que decodifica una columna de este tipo lee la longitud y los bytes del blob y, a continuación, descomprime el blob para recuperar la carga útil de la columna interna (consulte la [nota sobre `ColumnBLOB`](#compression-negotiation) en la sección de compresión).
+Si la columna envuelta era dispersa, su stack es `{DEFAULT, SPARSE, DETACHED}`, que se serializa como `DETACHED_OVER_SPARSE`. Un Client que decodifica una columna de este tipo lee la longitud y los bytes del blob y, a continuación, descomprime el blob para recuperar la carga útil de la columna interna (consulte la [nota sobre `ColumnBLOB`](#compression-negotiation) en la sección de compresión).
 
-`DETACHED` es direccional: solo puede aparecer en los bloques de resultados que envía un servidor, y únicamente para una columna de nivel superior completa, nunca como uno de los tipos de elemento de un `Tuple`. A diferencia de los demás tipos, hace que la columna en tiempo de ejecución sea un `ColumnBLOB` en lugar de una columna del tipo declarado, por lo que un receptor solo lo acepta si su propia canalización vuelve a convertir el blob. Por eso, un servidor rechaza con `INCORRECT_DATA` cualquier bloque enviado por un Client que contenga `DETACHED`, ya sean datos de tablas externas, escalares o datos de inserción.
+`DETACHED` es direccional: solo puede aparecer en los bloques de resultados que envía un servidor, y únicamente para una columna top-level completa, nunca como uno de los tipos de elemento de un `Tuple`. A diferencia de los demás tipos, hace que la columna en tiempo de ejecución sea un `ColumnBLOB` en lugar de una columna del tipo declarado, por lo que un receptor solo lo acepta si su propia canalización vuelve a convertir el blob.
+
+**Tipos en los bloques enviados a un servidor.** Todo tipo distinto del predeterminado es direccional: solo aparece en los bloques de resultados que envía un servidor.
+Un bloque enviado a un servidor (datos de inserción, los datos de la función de tabla `input`, datos de tablas externas y escalares, tanto si procede de un client como de otro servidor) solo contiene stacks `DEFAULT`: los emisores convierten las columnas en columnas completas antes de enviarlas, y el servidor rechaza con `INCORRECT_DATA` cualquier otro tipo que aparezca en un bloque así.
 
 ### Variantes de bloque {#block-variants}
 
@@ -565,7 +569,7 @@ Valor `Time64(3)` de `45296789` ticks (`12:34:56.789`):
 ```
 
 <Note>
-  `Time` y `Time64` son experimentales y requieren `allow_experimental_time_time64_type = 1` en el servidor.
+  `Time` y `Time64` están habilitados de forma predeterminada desde la versión 25.12. En servidores con versiones de la 25.6 a la 25.11, requieren el parámetro de configuración `enable_time_time64_type = 1`.
 </Note>
 
 #### Interval {#interval}
@@ -1443,30 +1447,51 @@ Los tres bytes de método anteriores (`NONE`/`LZ4`/`ZSTD`) son los únicos que *
 
 Cuando el indicador `0x80` no está activado, la carga útil es un stream `.pco` independiente, compatible byte a byte con la implementación de referencia de pcodec, que describe por sí mismo su tipo numérico; la forma almacenada (indicador activado) solo se utiliza cuando la compresión no reduciría el tamaño del bloque, lo que limita la salida al tamaño de la entrada más los dos bytes de encabezado. `PCO` necesita el tipo de columna para comprimir, pero puede decodificar sin él: basta con el ancho de elemento `W` y el tipo numérico incluido en el stream `.pco`. Si un decodificador conoce el tipo de columna esperado, además rechaza cualquier bloque cuyo `W` —o, en la forma comprimida, cuyo tipo numérico integrado— no coincida con ese tipo, en lugar de reinterpretar los valores.
 
+`0xa1` (GDeflate) contiene un cuerpo escrito por el códec `GDeflate`. Los bytes sin comprimir se dividen en bloques de 65536 bytes (el último puede ser más corto) y cada bloque se comprime en una página GDeflate independiente, la variante de Deflate con 32 subflujos intercalados que nvcomp y DirectStorage descomprimen en una GPU:
+
+```text
+[4 bytes:  N LE u32]                       ← number of chunks = ceil(uncompressed_size / 65536)
+[4 bytes × N: compressed chunk size LE u32]
+[chunk × N]                                ← each a GDeflate page, followed by zero bytes up to a multiple of 4
+```
+
+El bloque `i` se expande a los bytes `[i × 65536, min((i + 1) × 65536, uncompressed_size))` del bloque. El primer bloque comienza justo después de los tamaños, y cada bloque comienza en un múltiplo de 4 desde el inicio del cuerpo.
+
 El byte de método también codifica los [códecs a nivel de columna](/es/reference/statements/create/table/codec). Estos se aplican por columna en las rutas en disco de MergeTree y no al enmarcado de stream completo, pero la ruta de entrada HTTP con `decompress=1` toma el códec del byte de método de cada trama, por lo que cualquiera de estos bytes puede aparecer legítimamente en la entrada. Por tanto, un decodificador conforme debe reconocer todo el espacio asignado y rechazar los bytes que no implemente, en lugar de interpretar erróneamente el cuerpo. Sus cuerpos son específicos de cada códec y quedan fuera de este contrato genérico de trama:
 
-| Byte   | Método                                                                        |
-| ------ | ----------------------------------------------------------------------------- |
-| `0x91` | `Multiple` (un códec compuesto que envuelve una secuencia de códecs anidados) |
-| `0x92` | `Delta`                                                                       |
-| `0x93` | `T64`                                                                         |
-| `0x94` | `DoubleDelta`                                                                 |
-| `0x95` | `Gorilla`                                                                     |
-| `0x96` | `AES_128_GCM_SIV` (cifrado)                                                   |
-| `0x97` | `AES_256_GCM_SIV` (cifrado)                                                   |
-| `0x98` | `FPC`                                                                         |
-| `0x9a` | `GCD`                                                                         |
-| `0x9c` | `ALP`                                                                         |
-| `0x9d` | `SZ3`                                                                         |
-| `0x9e` | `Quantized`                                                                   |
-| `0x9f` | `ZXC`                                                                         |
-| `0xa0` | `PCO` (consulte [Tramas de códec por columna](#per-column-codec-frames))      |
+| Byte   | Método                                                                         |
+| ------ | ------------------------------------------------------------------------------ |
+| `0x91` | `Multiple` (un códec compuesto que encapsula una secuencia de códecs anidados) |
+| `0x92` | `Delta`                                                                        |
+| `0x93` | `T64`                                                                          |
+| `0x94` | `DoubleDelta`                                                                  |
+| `0x95` | `Gorilla`                                                                      |
+| `0x96` | `AES_128_GCM_SIV` (cifrado)                                                    |
+| `0x97` | `AES_256_GCM_SIV` (cifrado)                                                    |
+| `0x98` | `FPC`                                                                          |
+| `0x9a` | `GCD`                                                                          |
+| `0x9c` | `ALP`                                                                          |
+| `0x9d` | `SZ3`                                                                          |
+| `0x9e` | `Quantized`                                                                    |
+| `0x9f` | `ZXC`                                                                          |
+| `0xa0` | `PCO` (consulte [Tramas de códec por columna](#per-column-codec-frames))       |
+| `0xa1` | `GDeflate` (consulte [Tramas de códec por columna](#per-column-codec-frames))  |
 
-`DoubleDelta` (`0x94`) almacena las segundas diferencias como bits de prefijo/signo/magnitud, empezando por el MSB. La decodificación basada en palabras conserva esta codificación, el número de elementos y el relleno del último byte.
+`DoubleDelta` (`0x94`) almacena las segundas diferencias como bits de prefijo/signo/magnitud con el MSB primero. La decodificación basada en palabras conserva esta codificación, el número de elementos y el relleno del último byte.
 
-`0x9c` (`ALP`) es un códec sin pérdida en **beta** para `Float32` y `Float64` (compresión adaptativa sin pérdida de coma flotante). Solo se puede crear una tabla con `CODEC(ALP)` cuando el ajuste `enable_alp_codec` está activado, pero el byte de método siempre se acepta al descomprimir para que los datos escritos previamente sigan siendo legibles. `0x9d` (`SZ3`) es un códec *con pérdida* **experimental** y con error acotado para `Float32`, `Float64` y `Array` de esos tipos. Solo se puede crear una tabla con `CODEC(SZ3)` cuando el ajuste `enable_sz3_codec` está activado, pero el byte de método siempre se acepta al descomprimir para que los datos escritos previamente sigan siendo legibles. `0x9f` (`ZXC`) es un códec LZ asimétrico **experimental**: lento al comprimir, pero muy rápido al descomprimir, con una tasa de compresión intermedia entre `LZ4` y `ZSTD`. Solo se puede crear una tabla con `CODEC(ZXC)` cuando el ajuste `enable_zxc_codec` está activado, pero el byte de método siempre se acepta al descomprimir para que los datos escritos previamente sigan siendo legibles. `0xa0` (`PCO`) es un códec sin pérdida en **beta** para columnas numéricas de ancho fijo, implementado mediante la biblioteca de Rust pcodec. Solo se puede crear una tabla con `CODEC(PCO)` cuando el ajuste `enable_pco_codec` está activado. En las compilaciones que incluyen la biblioteca, el byte de método siempre se acepta al descomprimir para que los datos escritos previamente sigan siendo legibles. Un servidor compilado sin ella (sin Rust o con `ENABLE_PCO=OFF`) no registra el códec y rechaza las tramas `0xa0` con `UNKNOWN_CODEC`. Los bytes `0x99` (`DeflateQpl`) y `0x9b` (`ZSTD_QPL`) se asignaron a códecs que ya se han eliminado; están reservados y no se reutilizan.
+Los bytes `0x99` (`DeflateQpl`) y `0x9b` (`ZSTD_QPL`) se asignaron a códecs que ya se han eliminado; están reservados y no se reutilizan.
+
+`0x9c` (`ALP`) es un códec sin pérdida para `Float32` y `Float64` (compresión adaptativa sin pérdida de coma flotante).
+
+`0x9d` (`SZ3`) es un códec *con pérdida* **experimental** y con error acotado para `Float32`, `Float64` y `Array` de esos tipos. Solo se puede crear una tabla con `CODEC(SZ3)` cuando el ajuste `enable_sz3_codec` está activado, pero el byte de método siempre se acepta al descomprimir para que los datos escritos previamente sigan siendo legibles.
 
 `0x9e` (`Quantized`) es un códec de columna **experimental** para columnas de vectores densos (`Array(Float32)` y similares). Al igual que `NONE`, es de paso directo (el cuerpo de precisión completa se almacena tal cual), pero su presencia asocia una serialización que escribe un stream complementario, compacto y cuantizado, que se utiliza para acelerar la búsqueda vectorial. Solo se puede crear una tabla con `CODEC(Quantized(...))` cuando el ajuste `enable_quantized_codec` está activado, y el byte de método siempre se acepta al descomprimir.
+
+`0x9f` (`ZXC`) es un códec LZ asimétrico en **beta**: lento al comprimir, pero muy rápido al descomprimir, con una tasa de compresión intermedia entre `LZ4` y `ZSTD`. Solo se puede crear una tabla con `CODEC(ZXC)` cuando el ajuste `enable_zxc_codec` está activado, pero el byte de método siempre se acepta al descomprimir para que los datos escritos previamente sigan siendo legibles.
+
+`0xa0` (`PCO`) es un códec sin pérdida en **beta** para columnas numéricas de ancho fijo, implementado mediante la biblioteca de Rust pcodec. Solo se puede crear una tabla con `CODEC(PCO)` cuando el ajuste `enable_pco_codec` está activado. En las compilaciones que incluyen la biblioteca, el byte de método siempre se acepta al descomprimir para que los datos escritos previamente sigan siendo legibles. Un servidor compilado sin ella (sin Rust o con `ENABLE_PCO=OFF`) no registra el códec y rechaza las tramas `0xa0` con `UNKNOWN_CODEC`.
+
+`0xa1` (`GDeflate`) es una variante **experimental** de Deflate cuyos bloques puede expandir una GPU en paralelo. Solo se puede crear una tabla con `CODEC(GDeflate)` cuando el ajuste `enable_gdeflate_codec` está activado, pero el byte de método siempre se acepta al descomprimir para que los datos escritos previamente sigan siendo legibles.
 
 ### Suma de comprobación {#checksum}
 

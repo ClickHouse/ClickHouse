@@ -7,10 +7,10 @@ keywords: ['Iceberg', 'RBAC', 'Amazon S3', 'authentification']
 doc_type: 'guide'
 ---
 
-ClickHouse Cloud prend en charge le contrôle d’accès sécurisé basé sur les rôles pour les données Iceberg stockées dans un stockage objet (généralement S3) grâce à une relation d’approbation AWS IAM basée sur un ARN. Ce guide suit la même approche de configuration sécurisée que [Accessing S3 data securely](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely), et ajoute une configuration spécifique à Iceberg dans ClickHouse.
+ClickHouse Cloud prend en charge l’accès sécurisé basé sur les rôles pour les données Iceberg stockées dans un stockage objet (généralement S3) grâce à une relation d’approbation AWS IAM basée sur un ARN. Ce guide suit la même approche de configuration sécurisée que [Accessing S3 data securely](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely), et ajoute une configuration spécifique à Iceberg dans ClickHouse.
 
 <div id="overview">
-  ## Vue d’ensemble
+  ## Vue d’ensemble {#overview}
 </div>
 
 * Obtenez l’ID du rôle de service ClickHouse Cloud (IAM).
@@ -18,9 +18,7 @@ ClickHouse Cloud prend en charge le contrôle d’accès sécurisé basé sur le
 * Associez au rôle des politiques d’objet et de catalogue spécifiques à Iceberg.
 * Utilisez les fonctions de table Iceberg ou le moteur de table IcebergS3 avec des identifiants liés à un rôle.
 
-<div id="obtaining-the-clickhouse-service-iam-role-arn">
-  ## Obtenir l’ID du rôle de service ClickHouse (ARN)
-</div>
+## Obtenir l’identifiant du rôle de service ClickHouse (ARN) {#obtaining-the-clickhouse-service-iam-role-arn}
 
 <Steps>
   <Step title="1. Connectez-vous à votre compte ClickHouse Cloud." id="login" />
@@ -31,23 +29,19 @@ ClickHouse Cloud prend en charge le contrôle d’accès sécurisé basé sur le
 
   <Step title={<>4. Faites défiler la page jusqu’à <strong>Network security information</strong>.</>} id="network-security-information" />
 
-  <Step title={<>5. Copiez la valeur <strong>Service role ID (IAM)</strong>.</>} id="service-role-iam-value">
+  <Step title={<>5. Copiez la valeur <strong>Identifiant du rôle de service (IAM)</strong>.</>} id="service-role-iam-value">
     Cet ARN est requis dans la stratégie d’approbation du rôle AWS IAM qui accédera à vos données Iceberg.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Obtention de l’ARN du rôle IAM du service ClickHouse](/images/cloud/security/secures3_arn.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Obtention de l’ARN du rôle IAM du service ClickHouse](/images/cloud/security/secures3_arn.webp)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="setting-up-iam-assume-role">
-  ## Configurer l’action d’assumer un rôle IAM
+  ## Configurer l’action d’assumer un rôle IAM {#setting-up-iam-assume-role}
 </div>
 
 <Steps>
@@ -128,11 +122,11 @@ ClickHouse Cloud prend en charge le contrôle d’accès sécurisé basé sur le
 </Steps>
 
 <div id="configure-iceberg-access">
-  ## Configurer l’accès à Iceberg dans ClickHouse Cloud
+  ## Configurer l’accès à Iceberg dans ClickHouse Cloud {#configure-iceberg-access}
 </div>
 
 <div id="iceberg-table-function-with-role-arn">
-  ### Option A : fonction de table Iceberg avec ARN de rôle
+  ### Option A : fonction de table Iceberg avec ARN de rôle {#iceberg-table-function-with-role-arn}
 </div>
 
 Utilisez la fonction de table `icebergS3` avec l’option `NOSIGN` et des identifiants associés à un rôle. ClickHouse Cloud appellera STS pour assumer le rôle.
@@ -147,7 +141,7 @@ FROM icebergS3(
 ```
 
 <div id="persistent-iceberg-table-engine">
-  ### Option B : Moteur de table Iceberg persistant
+  ### Option B : Moteur de table Iceberg persistant {#persistent-iceberg-table-engine}
 </div>
 
 ```sql
@@ -164,7 +158,7 @@ ENGINE = IcebergS3(
 ```
 
 <div id="glue-catalog-plus-icebergs3">
-  ### Option C : catalogue Glue + IcebergS3
+  ### Option C : catalogue Glue + IcebergS3 {#glue-catalog-plus-icebergs3}
 </div>
 
 ```sql
@@ -185,7 +179,7 @@ SETTINGS
 > Remarque : lorsque vous utilisez le catalogue Glue, assurez-vous que votre rôle IAM dispose des autorisations de lecture et de listage pour S3 et Glue.
 
 <div id="datalake-catalog-for-glue">
-  ### Option D : catalogue DataLake pour Glue
+  ### Option D : catalogue DataLake pour Glue {#datalake-catalog-for-glue}
 </div>
 
 <Note>
@@ -205,7 +199,7 @@ SETTINGS
 ```
 
 <div id="validate-access">
-  ## Vérifier l’accès
+  ## Vérifier l’accès {#validate-access}
 </div>
 
 1. Exécutez une requête simple :
@@ -218,7 +212,7 @@ LIMIT 5;
 2. Vérifiez la présence d’erreurs IAM telles que `AccessDenied` ou `InvalidAccessKeyId`.
 
 <div id="troubelshooting">
-  ## Dépannage
+  ## Dépannage {#troubelshooting}
 </div>
 
 * Vérifiez l’ARN du rôle dans les paramètres du service ClickHouse Cloud.

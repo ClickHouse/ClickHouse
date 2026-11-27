@@ -404,8 +404,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// 'Block structure mismatch in JoinStep'. A duplicated NON-key build column, or a duplicated key
     /// on the probe side (where the filter is only applied and preserves the header), is harmless, so
     /// guard the build-side keys specifically. Skipping the filter is always correctness-safe. Mirrors
-    /// JoinStepLogical::canRemoveUnusedColumns(), which disables a sibling optimization on duplicated
-    /// join-condition inputs.
+    /// `JoinStepLogical::analyzeUnneededColumns`, which keeps duplicated join-condition inputs when it
+    /// removes the unused columns.
     {
         NameSet build_key_names;
         for (const auto & condition : join_operator.expression)
@@ -693,6 +693,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     join_step->setHasRuntimeFilters();
 
+    /// A packed long key is hashed for every row that reaches the join, so only a filter that passes mostly the rows
+    /// which match saves that. A `LEFT ANTI` filter passes the misses.
+    if (!check_left_does_not_contain)
+        join_step->setRuntimeFilterKeepsMatchingRows();
     return true;
 }
 
@@ -723,11 +727,9 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
             for (const auto & descr : findAppliedRuntimeFilters(filter_dag, filter_step->getFilterColumnName()))
             {
                 if (read_step)
-                    read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(
-                        descr.filter_id, descr.key_column_name, descr.key_column_type, descr.is_global_row_index);
+                    read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
                 else if (object_storage_read_step && !descr.is_global_row_index)
-                    object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(
-                        descr.filter_id, descr.key_column_name, descr.key_column_type);
+                    object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr);
             }
         }
         else if (const auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))

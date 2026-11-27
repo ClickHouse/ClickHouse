@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Начало работы",
+      "group": "Get started",
       "pages": [
         "ru/products/managed-postgres/overview",
         "ru/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "Возможности",
+      "group": "Features",
       "pages": [
         "ru/products/managed-postgres/connection",
         "ru/products/managed-postgres/settings",
@@ -43,7 +43,7 @@
       ]
     },
     {
-      "group": "Руководства",
+      "group": "Guides",
       "pages": [
         "ru/products/managed-postgres/guides/bun",
         "ru/products/managed-postgres/guides/cloudflare-workers",
@@ -63,20 +63,20 @@
       ]
     },
     {
-      "group": "Цены",
+      "group": "Pricing",
       "pages": [
         "ru/products/managed-postgres/pricing"
       ]
     },
     {
-      "group": "Интеграция с ClickHouse",
+      "group": "ClickHouse Integration",
       "pages": [
         "ru/products/managed-postgres/sync-to-clickhouse/clickpipes",
         "ru/products/managed-postgres/sync-to-clickhouse/walshadow"
       ]
     },
     {
-      "group": "Миграции",
+      "group": "Migrations",
       "pages": [
         "ru/products/managed-postgres/migrations/overview",
         "ru/products/managed-postgres/migrations/clickpipes",
@@ -89,7 +89,7 @@
       ]
     },
     {
-      "group": "Мониторинг",
+      "group": "Monitoring",
       "pages": [
         "ru/products/managed-postgres/monitoring/overview",
         "ru/products/managed-postgres/monitoring/dashboard",
@@ -100,7 +100,7 @@
       ]
     },
     {
-      "group": "Часто задаваемые вопросы",
+      "group": "FAQ",
       "pages": [
         "ru/products/managed-postgres/faq"
       ]
