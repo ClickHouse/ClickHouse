@@ -25,6 +25,7 @@ SELECT * FROM file(currentDatabase() || '_05618.{{ format }}', '{{ format }}', '
 SELECT * FROM file(currentDatabase() || '_05618.{{ format }}', '{{ format }}', 'id UInt64, t Tuple(b Int32)') ORDER BY id SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 SELECT * FROM file(currentDatabase() || '_05618.{{ format }}', '{{ format }}', 'id UInt64, mb Map(Tuple(b Tuple(q Int32)), String)') ORDER BY id SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 SELECT * FROM file(currentDatabase() || '_05618.{{ format }}', '{{ format }}', 'id UInt64, mb Map(Tuple(b Nullable(Tuple(q Nullable(Int32)))), String)') ORDER BY id;
+SELECT * FROM file(currentDatabase() || '_05618.{{ format }}', '{{ format }}', 'id UInt64, mb Map(Tuple(b Tuple(a Nullable(Int32))), String)') ORDER BY id SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 {% if format != 'Parquet' -%}
 SELECT * FROM file(currentDatabase() || '_05618.{{ format }}', '{{ format }}', 'id UInt64, l Array(Tuple(q Nullable(Int32)))') ORDER BY id;
 SELECT * FROM file(currentDatabase() || '_05618.{{ format }}', '{{ format }}', 'id UInt64, p Tuple(s Int32)') ORDER BY id SETTINGS input_format_null_as_default = 1;

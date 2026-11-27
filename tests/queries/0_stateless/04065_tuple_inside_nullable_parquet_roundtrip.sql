@@ -272,6 +272,7 @@ INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_all_missing.parquet
 SELECT c0 FROM file(currentDatabase() || '_04065_all_missing.parquet', 'Parquet', 'c0 Nullable(Tuple(z String))') SETTINGS input_format_parquet_allow_missing_columns = 1;
 SELECT count() FROM file(currentDatabase() || '_04065_all_missing.parquet', 'Parquet', 'c0 Nullable(Tuple(z String))') WHERE c0 IS NULL;
 SELECT c0 FROM file(currentDatabase() || '_04065_all_missing.parquet', 'Parquet', 'c0 Tuple(z String)') SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+SELECT c0 FROM file(currentDatabase() || '_04065_all_missing.parquet', 'Parquet', 'c0 Tuple(a Nullable(UInt32))') SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_all_missing_arr.parquet', 'Parquet') SELECT [CAST((1, 10), 'Nullable(Tuple(a UInt32, b UInt64))'), NULL] AS c0;
 SELECT c0 FROM file(currentDatabase() || '_04065_all_missing_arr.parquet', 'Parquet', 'c0 Array(Nullable(Tuple(z String)))');
 SELECT c0 FROM file(currentDatabase() || '_04065_all_missing_arr.parquet', 'Parquet', 'c0 Array(Tuple(z String))') SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }

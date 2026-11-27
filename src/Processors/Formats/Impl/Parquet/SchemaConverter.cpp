@@ -1363,8 +1363,12 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     /// wrapped in ColumnNullable using the group null map. Make input_type Nullable(Tuple(...)) so
     /// the outer restore in processSubtree sees no type change (needs_cast stays off); the wrapping
     /// is done in Reader::formOutputColumn keyed by OutputColumnInfo::nullable_group.
-    /// No requested element is in the file: read a leaf for the group null map.
-    if (group_null_map_from_leaf && primitive_start == primitive_columns.size())
+    /// No requested element is in the file or, for a Tuple read with input_format_null_as_default = 0, every one read is
+    /// Nullable and so does not reject the group NULLs: read a leaf for the group null map.
+    bool no_leaf_rejects_group_nulls = !nullable_group && tuple_type_hint;
+    for (size_t i = primitive_start; i < primitive_columns.size() && no_leaf_rejects_group_nulls; ++i)
+        no_leaf_rejects_group_nulls = primitive_columns[i].output_nullable;
+    if (group_null_map_from_leaf && (primitive_start == primitive_columns.size() || no_leaf_rejects_group_nulls))
         addLevelsOnlyPrimitive(leaves_start, leaves_in_arrays.size(), levels.back().rep, node.name, /*group_nulls=*/ true);
     /// A group without a decodable leaf has no null map in the file.
     if (nullable_group && primitive_start == primitive_columns.size())
@@ -1461,7 +1465,7 @@ std::optional<size_t> SchemaConverter::addLevelsOnlyPrimitive(
         if (leaves_start == leaves_end || options.format.parquet.skip_columns_with_unsupported_types_in_schema_inference)
             return std::nullopt;
         throw Exception(
-            ErrorCodes::INCORRECT_DATA, "No column under array {} has a known physical type to read the array sizes from, e.g. {}",
+            ErrorCodes::INCORRECT_DATA, "No column under {} has a known physical type to read its levels from, e.g. {}",
             name, thriftToString(file_metadata.schema[leaves_in_arrays[leaves_start].schema_idx]));
     }
 
