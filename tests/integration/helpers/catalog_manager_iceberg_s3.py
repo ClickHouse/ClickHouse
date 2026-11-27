@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import shutil
 import uuid
 from dataclasses import dataclass
@@ -9,11 +10,32 @@ import boto3
 import pyarrow as pa
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.table import StaticTable
 from pyiceberg.transforms import IdentityTransform
 
 from helpers.catalog_manager import arrow_to_iceberg_schema
 
 log = logging.getLogger(__name__)
+
+
+def files_only_in_old_snapshots(table, table_name: str) -> List[str]:
+    """Data files, manifests and manifest lists that no file of the current snapshot refers to,
+    as paths relative to the table location. Expiring all older snapshots must delete exactly these."""
+
+    def reachable(snapshot):
+        paths = {snapshot.manifest_list}
+        for manifest in snapshot.manifests(table.io):
+            paths.add(manifest.manifest_path)
+            for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=True):
+                paths.add(entry.data_file.file_path)
+        return paths
+
+    current = table.current_snapshot()
+    old = set()
+    for snapshot in table.metadata.snapshots:
+        if snapshot.snapshot_id != current.snapshot_id:
+            old |= reachable(snapshot)
+    return sorted(path.split(f"/default/{table_name}/", 1)[1] for path in old - reachable(current))
 
 
 @dataclass
@@ -48,14 +70,17 @@ class IcebergS3CatalogManager:
         s3_warehouse = (
             f"s3://{config.bucket}/{config.prefix}/{self._dir_name}"
         )
+        self._io_properties = {
+            "s3.access-key-id": config.access_key_id,
+            "s3.secret-access-key": config.secret_access_key,
+            "s3.region": config.region,
+        }
         self._catalog = SqlCatalog(
             "e2e_s3",
             **{
                 "uri": f"sqlite:///{self._catalog_dir}/catalog.db",
                 "warehouse": s3_warehouse,
-                "s3.access-key-id": config.access_key_id,
-                "s3.secret-access-key": config.secret_access_key,
-                "s3.region": config.region,
+                **self._io_properties,
             },
         )
         try:
@@ -228,6 +253,32 @@ class IcebergS3CatalogManager:
             partition_column,
         )
         return table_name
+
+    def delete_rows(self, table_name: str, row_filter: str) -> None:
+        self._catalog.load_table(f"default.{table_name}").delete(row_filter)
+
+    def put_file(self, table_name: str, relative_path: str, data: bytes) -> None:
+        key = f"{self.config.prefix}/{self._dir_name}/default/{table_name}/{relative_path}"
+        self._s3.put_object(Bucket=self.config.bucket, Key=key, Body=data)
+
+    def file_exists(self, table_name: str, relative_path: str) -> bool:
+        key = f"{self.config.prefix}/{self._dir_name}/default/{table_name}/{relative_path}"
+        response = self._s3.list_objects_v2(Bucket=self.config.bucket, Prefix=key)
+        return any(obj["Key"] == key for obj in response.get("Contents", []))
+
+    def files_only_in_old_snapshots(self, table_name: str) -> List[str]:
+        return files_only_in_old_snapshots(self._catalog.load_table(f"default.{table_name}"), table_name)
+
+    def load_stored_table(self, table_name: str) -> StaticTable:
+        """Load the table from its newest metadata file in S3, even if ClickHouse wrote it."""
+        prefix = f"{self.config.prefix}/{self._dir_name}/default/{table_name}/metadata/"
+        response = self._s3.list_objects_v2(Bucket=self.config.bucket, Prefix=prefix)
+        # The newest `vN.metadata.json` or `NNNNN-<uuid>.metadata.json` is the one ClickHouse reads.
+        keys = [obj["Key"] for obj in response["Contents"] if obj["Key"].endswith(".metadata.json")]
+        key = max(keys, key=lambda k: int(re.match(r"v?(\d+)", k.rsplit("/", 1)[-1]).group(1)))
+        return StaticTable.from_metadata(
+            f"s3://{self.config.bucket}/{key}", properties=self._io_properties
+        )
 
     # ------------------------------------------------------------------
     # SQL generation

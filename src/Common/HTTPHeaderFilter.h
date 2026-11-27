@@ -20,8 +20,8 @@ public:
 
     void setValuesFromConfig(const Poco::Util::AbstractConfiguration & config);
     /// Validates header names and values, throwing BAD_ARGUMENTS on an invalid or forbidden one.
-    void checkHeaders(HTTPHeaderEntries & entries) const;
-    void checkHeaders(NormalizedHTTPHeaderEntries & entries) const;
+    void checkHeaders(const HTTPHeaderEntries & entries) const;
+    void checkHeaders(const NormalizedHTTPHeaderEntries & entries) const;
 
     /// Throws if the `Authorization` header that sends these credentials is forbidden. An empty username sends no header.
     void checkBasicCredentials(const Poco::Net::HTTPBasicCredentials & credentials) const;

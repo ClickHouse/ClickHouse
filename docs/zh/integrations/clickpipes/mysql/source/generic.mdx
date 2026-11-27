@@ -14,24 +14,20 @@ integration:
   如果您使用的是受支持的提供商之一 (见侧边栏) ，请参阅该提供商对应的专用指南。
 </Info>
 
-<div id="enable-binlog-retention">
-  ## 启用二进制日志保留功能
-</div>
+## 启用二进制日志保留功能 {#enable-binlog-retention}
 
 二进制日志记录了对 MySQL 服务器实例中数据所做的修改，是进行复制所必需的。
 
-<div id="binlog-v8-x">
-  ### MySQL 8.x 及更高版本
-</div>
+### MySQL 8.x 及更高版本 {#binlog-v8-x}
 
 要在 MySQL 实例上启用二进制日志记录，请确保已配置以下设置：
 
 ```sql
-log_bin = ON                        -- 默认值
-binlog_format = ROW                 -- 默认值
-binlog_row_image = FULL             -- 默认值
+log_bin = ON                        -- default value
+binlog_format = ROW                 -- default value
+binlog_row_image = FULL             -- default value
 binlog_row_metadata = FULL
-binlog_expire_logs_seconds = 86400  -- 1天或更长；默认为30天
+binlog_expire_logs_seconds = 259200  -- 3 days or higher; default is 30 days
 ```
 
 要查看这些设置，请运行以下 SQL 命令：
@@ -51,25 +47,23 @@ SET PERSIST log_bin = ON;
 SET PERSIST binlog_format = ROW;
 SET PERSIST binlog_row_image = FULL;
 SET PERSIST binlog_row_metadata = FULL;
-SET PERSIST binlog_expire_logs_seconds = 86400;
+SET PERSIST binlog_expire_logs_seconds = 259200;
 ```
 
 如果你更改了 `log_bin` 设置，必须重启 MySQL 实例，更改才能生效。
 
 更改设置后，继续[配置数据库用户](#configure-database-user)。
 
-<div id="binlog-v5-x">
-  ### MySQL 5.7
-</div>
+### MySQL 5.7 {#binlog-v5-x}
 
 要在 MySQL 5.7 实例上启用二进制日志记录，请确保已配置以下设置：
 
 ```sql
-server_id = 1            -- 或更大；不能为 0
+server_id = 1            -- or greater; anything but 0
 log_bin = ON
-binlog_format = ROW      -- 默认值
-binlog_row_image = FULL  -- 默认值
-expire_logs_days = 1     -- 或更大；0 表示日志永久保留
+binlog_format = ROW      -- default value
+binlog_row_image = FULL  -- default value
+expire_logs_days = 3     -- or higher; 0 would mean logs are preserved forever
 ```
 
 要查看这些设置，请运行以下 SQL 命令：
@@ -90,7 +84,7 @@ server_id = 1
 log_bin = ON
 binlog_format = ROW
 binlog_row_image = FULL
-expire_logs_days = 1
+expire_logs_days = 3
 ```
 
 你必须重启 MySQL 实例，更改才能生效。
@@ -99,9 +93,7 @@ expire_logs_days = 1
   MySQL 5.7 及更早版本不支持列排除和 schema 变更。这些功能依赖于表元数据，而在 [MySQL 8.0.1](https://dev.mysql.com/blog-archive/more-metadata-is-written-into-binary-log/) 之前的 binlog 中不包含这些元数据。
 </Note>
 
-<div id="configure-database-user">
-  ## 配置数据库用户
-</div>
+## 配置数据库用户 {#configure-database-user}
 
 以 root 用户身份连接到你的 MySQL 实例，并执行以下命令：
 
@@ -128,9 +120,7 @@ expire_logs_days = 1
   请确保将 `clickpipes_user` 和 `some_secure_password` 替换为你所需的用户名和密码。
 </Note>
 
-<div id="ssl-tls-configuration">
-  ## SSL/TLS 配置 (推荐)
-</div>
+## SSL/TLS 配置 (推荐) {#ssl-tls-configuration}
 
 SSL 证书可确保与你的 MySQL 数据库建立安全连接。具体配置取决于证书类型：
 
@@ -144,9 +134,7 @@ SSL 证书可确保与你的 MySQL 数据库建立安全连接。具体配置取
 
 如需了解有关 SSL/TLS 选项的更多信息，请参阅我们的 [FAQ](/zh/integrations/clickpipes/mysql/faq#tls-certificate-validation-error)。
 
-<div id="whats-next">
-  ## 接下来做什么？
-</div>
+## 接下来做什么？ {#whats-next}
 
 您现在可以[创建您的 ClickPipe](/zh/integrations/clickpipes/mysql/index)，并开始将 MySQL 实例中的数据摄取到 ClickHouse Cloud。
 请务必记下设置 MySQL 实例时使用的连接信息，因为在创建 ClickPipe 的过程中会用到这些信息。

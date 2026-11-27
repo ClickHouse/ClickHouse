@@ -1,0 +1,259 @@
+---
+slug: /clickstack/observability/example-datasets/telemetrygen
+title: 'Генерация синтетических данных OpenTelemetry с помощью telemetrygen'
+sidebarTitle: 'Синтетические данные с telemetrygen'
+description: 'Отправка разнообразных синтетических журналов, трассировок и метрик в полностью управляемый ClickHouse Observability с помощью telemetrygen'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'telemetrygen', 'synthetic data', 'OpenTelemetry', 'test', 'logs', 'traces', 'metrics', 'observability']
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<Tabs>
+  <Tab title="Полностью управляемый">
+    <BetaBadge label="Бета-версия продукта" />
+
+    [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen) — это генератор данных из OpenTelemetry Collector Contrib. Он генерирует синтетические журналы, трассировки и метрики в формате OTLP и поддерживает флаги для настройки формы данных: несколько сервисов, уровни важности журналов, статусы спанов и дочерние спаны, а также различные типы метрик. С его помощью можно отправить тестовые данные в полностью управляемый сервис ClickHouse Observability и изучить результаты в разделах «Поиск» и «Обозреватель диаграмм».
+
+    <Steps>
+      <Step title="Предварительные требования" id="prerequisites-managed">
+        Потребуется уже созданный полностью управляемый сервис ClickHouse Observability и сетевой доступ к его управляемой конечной точке телеметрии. См. [руководство «Начало работы» для полностью управляемой версии](/ru/clickstack/observability/getting-started).
+      </Step>
+
+      <Step title="Установите telemetrygen" id="install-telemetrygen-managed">
+        Убедившись, что Docker установлен и запущен, определите обёртку для запуска `telemetrygen` из официального образа контейнера:
+
+        ```shell
+        telemetrygen() {
+          docker run --rm \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+        }
+        ```
+
+        Или установите бинарный файл с помощью Go:
+
+        ```shell
+        go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+        ```
+      </Step>
+
+      <Step title="Задайте переменные окружения" id="set-env-vars-managed">
+        Откройте сервис ClickHouse Observability и перейдите в **Team Settings → Managed Telemetry**. Скопируйте **OTLP HTTP endpoint** и **API key**.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![Раздел Managed Telemetry в Team Settings с замаскированными конечной точкой OTLP HTTP и ключом API](/images/clickstack/getting-started/observability-managed-telemetry.png)
+          </Frame>
+        </div>
+
+        В качестве конечной точки укажите только хост и порт, убрав префикс `https://`. Например, `https://YOUR_OTEL_ENDPOINT:4318` превращается в `YOUR_OTEL_ENDPOINT:4318`. Не добавляйте в конец путь сигнала, например `/v1/logs`.
+
+        ```shell
+        export OTEL_ENDPOINT='YOUR_OTEL_ENDPOINT:4318'
+        printf "API key: "
+        read -r -s OTEL_API_KEY
+        printf "\n"
+        export OTEL_API_KEY
+        ```
+
+        Определите небольшую вспомогательную функцию `tg`, чтобы в каждой команде указывать только то, что различается (сервис, уровень серьёзности, статус, атрибуты):
+
+        ```shell
+        tg() { local signal=$1; shift; telemetrygen "$signal" \
+          --otlp-endpoint "${OTEL_ENDPOINT}" --otlp-http \
+          --otlp-header "authorization=\"Bearer ${OTEL_API_KEY}\"" \
+          --rate 5 --duration 30s "$@"; }
+        ```
+
+        Вспомогательный процесс использует OTLP HTTP поверх TLS с проверкой сертификата. Не указывайте флаги `--otlp-insecure` и `--otlp-insecure-skip-verify`. Каждая команда выполняется в течение 30 секунд и аутентифицируется с помощью вашего ключа API для управляемой телеметрии.
+      </Step>
+
+      <Step title="Сгенерировать записи журнала" id="generate-logs-managed">
+        Отправьте журналы информационного уровня, предупреждений и ошибок из трёх сервисов:
+
+        ```shell
+        tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+        tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="POST"'
+        tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.status_code="500"'
+        ```
+
+        Наиболее полезные флаги для логов:
+
+        * `--service` задаёт `service.name`, чтобы события можно было соотнести с конкретным сервисом.
+        * `--severity-text` и `--severity-number` задают уровень серьёзности (`severity-number` принимает значения от 1 до 24).
+        * `--body` задаёт текст сообщения лога.
+        * `--otlp-attributes` задаёт атрибуты уровня ресурса (`key="value"`, `key=true` или `key=<integer>`).
+        * `--telemetry-attributes` задаёт атрибуты отдельных записей.
+      </Step>
+
+      <Step title="Сгенерировать трассировки" id="generate-traces-managed">
+        Отправьте трассировки из нескольких спанов с успешными и ошибочными статусами от нескольких сервисов. Каждая команда генерирует независимые трассировки; в этих примерах сервисы не вызывают друг друга:
+
+        ```shell
+        # Healthy services: the bulk of the traffic, all spans Ok
+        for svc in frontend checkout cart; do
+          tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+            --otlp-attributes 'deployment.environment="production"' \
+            --telemetry-attributes "http.route=\"/$svc\""
+        done
+
+        # A service with slower spans and errors
+        tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.route="/charge"'
+        ```
+
+        Наиболее полезные флаги для трасс:
+
+        * `--child-spans` задаёт количество дочерних спанов в каждой трассе, придавая трассам реальную глубину.
+        * `--span-duration` задаёт длительность каждого спана (например, `120ms`, `2s`).
+        * `--status-code` принимает одно из значений `Unset`, `Error`, `Ok` (или `0`, `1`, `2`). Используйте `Error`, чтобы проверить отображение ошибок.
+        * `--span-links` добавляет связи между спанами.
+        * `--workers` запускает несколько генераторов параллельно, чтобы получить больший и более разнообразный объём данных.
+      </Step>
+
+      <Step title="Создать метрики" id="generate-metrics-managed">
+        Отправьте метрики типов Sum, Gauge и Histogram. Это синтетические значения, а не реальные показатели вашей системы. Каждая команда автоматически завершается через 30 секунд:
+
+        ```shell
+        tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+        tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+        tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+        ```
+
+        `--metric-type` принимает значения `Gauge`, `Sum`, `Histogram` или `ExponentialHistogram`. `--otlp-metric-name` задаёт имя серии, по которому её можно найти в интерфейсе, а `--aggregation-temporality` принимает значение `delta` или `cumulative`.
+      </Step>
+
+      <Step title="Проверьте в ClickHouse Observability" id="verify-managed">
+        Откройте свой сервис ClickHouse Observability. В представлении `Search` задайте временной диапазон `Last 15 minutes` и переключайте источник между `Logs` и `Traces`. Отфильтруйте данные по `ServiceName`, чтобы увидеть сервисы `frontend`, `checkout`, `cart` и `payment`, и по `SeverityText`, чтобы найти строки журнала с предупреждениями и ошибками. Откройте трассу `payment`, чтобы просмотреть дочерние спаны и статус ошибки. Откройте `Chart Explorer`, выберите `Metrics` и постройте чарт по одному из имён метрик, заданных выше (например, `http.server.requests`), чтобы проверить ингестию метрик.
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="Самоуправляемый" id="self-managed">
+    [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen) — это генератор данных из OpenTelemetry Collector Contrib. Он генерирует синтетические журналы, трассировку и метрики в формате OTLP и предоставляет флаги, позволяющие задавать характер данных: несколько сервисов, уровни важности записей журнала, статусы спанов и дочерние спаны, а также различные типы метрик. С его помощью можно убедиться, что коллектор ClickStack OpenTelemetry принимает данные, а разнообразные реалистичные события отображаются в интерфейсе обсервабилити.
+
+    В этом руководстве предполагается, что коллектор уже запущен и его конечные точки OTLP доступны на портах `4317` (gRPC) и `4318` (HTTP).
+
+    <Steps>
+      <Step title="Предварительные требования" id="prerequisites-managed-self-configured">
+        В этом руководстве предполагается, что вы уже выполнили шаги из [руководства «Начало работы» для ClickHouse Observability — Self-managed](/ru/clickstack/self-configured/getting-started/managed) и у вас запущен коллектор OpenTelemetry, конечные точки OTLP gRPC (`4317`) и HTTP (`4318`) которого доступны с машины, где вы запускаете `telemetrygen`. Если вы [защитили коллектор](/ru/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) с помощью `OTLP_AUTH_TOKEN`, держите это значение под рукой.
+      </Step>
+
+      <Step title="Установите telemetrygen" id="install-telemetrygen-managed-self-configured">
+        Запустите `telemetrygen` из Docker-образа (установка не требуется). Чтобы приведённые ниже команды оставались читаемыми, определите небольшую обёртку; флаг `--add-host` позволяет контейнеру обращаться к коллектору, который принимает подключения на хосте:
+
+        ```shell
+        telemetrygen() {
+          docker run --rm --add-host=host.docker.internal:host-gateway \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+        }
+        export OTEL_ENDPOINT=host.docker.internal:4317
+        ```
+
+        Или установите бинарный файл с помощью Go и укажите в качестве адреса `localhost`:
+
+        ```shell
+        go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+        export OTEL_ENDPOINT=localhost:4317
+        ```
+      </Step>
+
+      <Step title="Задайте переменные окружения" id="set-env-vars-managed-self-configured">
+        Если коллектор защищён, экспортируйте токен аутентификации:
+
+        ```shell
+        export OTLP_AUTH_TOKEN=<your_otlp_auth_token>
+        ```
+
+        <Info>
+          **Незащищённый коллектор**
+
+          По умолчанию коллектор ClickStack OpenTelemetry не требует аутентификации. Если вы не выполнили инструкции из раздела [Защита коллектора](/ru/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) и не задали `OTLP_AUTH_TOKEN`, удалите строку `--otlp-header` из приведённой ниже вспомогательной функции.
+        </Info>
+
+        Определите небольшую вспомогательную функцию `tg`, чтобы в каждой команде указывать только то, что меняется (сервис, уровень важности, статус, атрибуты):
+
+        ```shell
+        tg() { local signal=$1; shift; telemetrygen "$signal" \
+          --otlp-endpoint ${OTEL_ENDPOINT} --otlp-insecure \
+          --otlp-header "authorization=\"${OTLP_AUTH_TOKEN}\"" \
+          --rate 5 --duration 30s "$@"; }
+        ```
+      </Step>
+
+      <Step title="Сгенерировать записи журнала" id="generate-logs-managed-self-configured">
+        Отправьте логи с реалистичным набором уровней важности от разных сервисов — в основном информационные, плюс одно предупреждение и одна ошибка, а не единый однородный поток:
+
+        ```shell
+        tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+        tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="POST"'
+        tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.status_code="500"'
+        ```
+
+        Наиболее полезные флаги для логов:
+
+        * `--service` задаёт `service.name`, чтобы события можно было соотнести с конкретным сервисом.
+        * `--severity-text` и `--severity-number` задают уровень важности (`severity-number` принимает значения от 1 до 24).
+        * `--body` задаёт текст сообщения лога.
+        * `--otlp-attributes` задаёт атрибуты уровня ресурса (`key="value"`, `key=true` или `key=<integer>`).
+        * `--telemetry-attributes` задаёт атрибуты отдельных записей.
+      </Step>
+
+      <Step title="Сгенерировать трассировки" id="generate-traces-managed-self-configured">
+        Отправьте трассы с несколькими спанами от нескольких исправных сервисов и одной сбойной зависимости. Так карта сервисов (Service Map) получит реалистичный вид (большинство сервисов работают нормально, а один возвращает ошибки), а представления с ошибками заполнятся данными:
+
+        ```shell
+        # Healthy services: the bulk of the traffic, all spans Ok
+        for svc in frontend checkout cart; do
+          tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+            --otlp-attributes 'deployment.environment="production"' \
+            --telemetry-attributes "http.route=\"/$svc\""
+        done
+
+        # One slow dependency returning errors
+        tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.route="/charge"'
+        ```
+
+        Наиболее полезные флаги для трасс:
+
+        * `--child-spans` задаёт число дочерних спанов в каждой трассе, придавая трассам реальную глубину.
+        * `--span-duration` задаёт длительность каждого спана (например, `120ms`, `2s`).
+        * `--status-code` принимает одно из значений `Unset`, `Error`, `Ok` (или `0`, `1`, `2`). Используйте `Error`, чтобы проверить отображение ошибок.
+        * `--span-links` добавляет связи между спанами.
+        * `--workers` запускает несколько генераторов параллельно, обеспечивая больший и более разнообразный объём данных.
+      </Step>
+
+      <Step title="Сгенерировать метрики" id="generate-metrics-managed-self-configured">
+        Отправьте метрики трёх распространённых типов, чтобы на панелях мониторинга были счётчики (counter), метрики типа gauge и распределение. В отличие от некоторых генераторов, `telemetrygen` учитывает параметр `--duration` для метрик, поэтому останавливать его вручную не нужно:
+
+        ```shell
+        tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+        tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+        tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+        ```
+
+        `--metric-type` принимает значения `Gauge`, `Sum`, `Histogram` или `ExponentialHistogram`. `--otlp-metric-name` задаёт имя серии, по которому её можно найти в интерфейсе, а `--aggregation-temporality` принимает значение `delta` или `cumulative`.
+      </Step>
+
+      <Step title="Проверьте в интерфейсе обсервабилити" id="verify-managed-self-configured">
+        Откройте интерфейс обсервабилити из консоли ClickHouse Cloud. В представлении `Search` задайте временной диапазон `Last 15 minutes` и переключайте источник между `Logs` и `Traces`. Отфильтруйте данные по `ServiceName`, чтобы увидеть сервисы `frontend`, `checkout`, `cart` и `payment`, и по `SeverityText`, чтобы найти строки журнала с предупреждениями и ошибками. Откройте трассу `payment`, чтобы увидеть дочерние спаны и статус ошибки. Откройте `Chart Explorer`, выберите `Metrics` и постройте чарт по одному из заданных выше имён метрик (например, `http.server.requests`), чтобы проверить ингестию метрик.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

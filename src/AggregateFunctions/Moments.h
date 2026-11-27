@@ -666,11 +666,10 @@ struct TTestMoments
         return std::sqrt(sx2 / nx + sy2 / ny);
     }
 
-    [[nodiscard]] std::pair<Float64, Float64> getConfidenceIntervals(Float64 confidence_level, Float64 degrees_of_freedom) const
+    [[nodiscard]] std::pair<Float64, Float64> getConfidenceIntervals(Float64 confidence_level, Float64 degrees_of_freedom, Float64 se) const
     {
         Float64 mean_x = getMeanX();
         Float64 mean_y = getMeanY();
-        Float64 se = getStandardError();
 
         boost::math::students_t dist(degrees_of_freedom);
         Float64 t = boost::math::quantile(boost::math::complement(dist, (1.0 - confidence_level) / 2.0));

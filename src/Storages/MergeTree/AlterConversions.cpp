@@ -239,6 +239,12 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
     }
     else if (command.type == DROP_COLUMN)
     {
+        /// `CLEAR COLUMN` of `_block_number` / `_block_offset` (see `isClearOfBlockColumns`) is applied by the
+        /// mutation alone: the reader matches pending patch parts by the stored values, so they must stay
+        /// readable until the mutation applies the patches and removes the stored values.
+        if (command.clear && (command.column_name == BlockNumberColumn::name || command.column_name == BlockOffsetColumn::name))
+            return;
+
         columns_touched_by_metadata_mutations.insert(command.column_name);
 
         /// Handle a drop after a rename: if column A was renamed to B and B is now dropped,

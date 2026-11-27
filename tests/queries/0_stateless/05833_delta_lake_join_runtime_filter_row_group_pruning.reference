@@ -1,0 +1,10 @@
+--- C a column stored under the name of another column ---
+2	201415
+2	201415
+c_on	0
+c_off	0
+--- W a column stored under its own name ---
+2	1415
+2	1415
+w_on	15
+w_off	0

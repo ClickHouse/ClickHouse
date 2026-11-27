@@ -1042,6 +1042,19 @@ void doFilterAlignedShuffle(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 #endif
 
 template <typename T>
+void ColumnVector<T>::insertFromEither(
+    const IColumn & src_true, bool src_true_is_const, const IColumn & src_false, bool src_false_is_const, const IColumn::Filter & condition)
+{
+    insertFromEitherFixedSize(
+        data,
+        assert_cast<const Self &>(src_true).getData(),
+        src_true_is_const,
+        assert_cast<const Self &>(src_false).getData(),
+        src_false_is_const,
+        condition);
+}
+
+template <typename T>
 ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
     size_t size = data.size();
