@@ -20,3 +20,15 @@ $CLICKHOUSE_CLIENT -q "CREATE SETTINGS PROFILE ${profile} SETTINGS readonly = 1,
 CLICKHOUSE_AI_TEST_PROFILE="${profile}" python3 "$CUR_DIR"/05366_client_ai_set_profile_readonly_clickhouse_dialect.python
 
 $CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE ${profile}"
+
+# The same after the client itself switched the session to another dialect. The profile puts the
+# session back to ClickHouse SQL, and the client is not told: its own copy of the setting still
+# says `kusto`. The effective dialect is asked of the server in this case as well.
+$CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE IF EXISTS ${profile}_clickhouse"
+$CLICKHOUSE_CLIENT -q "CREATE SETTINGS PROFILE ${profile}_clickhouse SETTINGS readonly = 1, dialect = 'clickhouse', enable_parallel_replicas = 0"
+
+CLICKHOUSE_AI_TEST_PROFILE="${profile}_clickhouse" \
+CLICKHOUSE_AI_TEST_STATEMENTS_BEFORE_PROFILE="SET allow_experimental_kusto_dialect = 1;SET dialect = 'kusto'" \
+    python3 "$CUR_DIR"/05366_client_ai_set_profile_readonly_clickhouse_dialect.python
+
+$CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE ${profile}_clickhouse"

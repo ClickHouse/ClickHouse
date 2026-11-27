@@ -508,6 +508,11 @@ TEST(AIQueryValidation, CollectsTableFunctionNamesAsTheFactoryLooksThemUp)
     EXPECT_EQ(collectTableFunctionNamesForAIAgent(*parse("SELECT * FROM numbers(10)")), std::vector<String>{"numbers"});
     /// A case-insensitive one is looked up in lowercase.
     EXPECT_EQ(collectTableFunctionNamesForAIAgent(*parse("SELECT * FROM VALUES('x UInt8', 1, 2)")), std::vector<String>{"values"});
+    /// On the right-hand side of `IN`, where there is no table expression around it. A tuple there
+    /// is a set of values.
+    EXPECT_EQ(collectTableFunctionNamesForAIAgent(*parse("SELECT 5 IN generateSeries(1, 9)")), std::vector<String>{"generateSeries"});
+    EXPECT_EQ(collectTableFunctionNamesForAIAgent(*parse("SELECT x NOT IN numbers(3) FROM tbl")), std::vector<String>{"numbers"});
+    EXPECT_EQ(collectTableFunctionNamesForAIAgent(*parse("SELECT 5 IN (1, 2, 3)")), std::vector<String>{});
     /// In a subquery and in every part of a union, and a name is reported once.
     EXPECT_EQ(
         collectTableFunctionNamesForAIAgent(*parse(

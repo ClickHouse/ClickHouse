@@ -36,9 +36,16 @@ void validateReadOnlyQueryForAIAgent(const IAST & ast, bool allow_schema_access 
 /// The expression is held to the same rules as an expression written in the query - including the
 /// `SETTINGS` and the query parameters of its subqueries - and it must not read other tables.
 /// `origin` describes where the expression comes from, for the message. Returns the names of the
-/// functions the expression calls (as `collectFunctionNamesForAIAgent`), which the caller must check
-/// on the server the same way as the functions of the query.
-std::vector<String> validateStoredExpressionForAIAgent(const String & expression, std::string_view origin, bool allow_schema_access);
+/// functions and of the table functions the expression calls (as `collectFunctionNamesForAIAgent`
+/// and `collectTableFunctionNamesForAIAgent`), which the caller must check on the server the same
+/// way as those of the query: `id IN generateSeries(...)` in the filter of a row policy calls a
+/// table function like a query does.
+struct AIStoredExpressionNames
+{
+    std::vector<String> functions;
+    std::vector<String> table_functions;
+};
+AIStoredExpressionNames validateStoredExpressionForAIAgent(const String & expression, std::string_view origin, bool allow_schema_access);
 
 /// Whether the statement changes a setting: a `SET` statement, or a SETTINGS clause anywhere
 /// inside it. A session with `readonly = 1` rejects the whole query because of it.

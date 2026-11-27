@@ -195,6 +195,16 @@ def main():
     try:
         read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
 
+        # What the wrapper wants done to the session before the profile is applied.
+        for statement in filter(None, os.environ.get("CLICKHOUSE_AI_TEST_STATEMENTS_BEFORE_PROFILE", "").split(";")):
+            os.write(master, statement.encode() + b"\n")
+            read_until(
+                master,
+                debug_log_fd,
+                lambda o: "Ok." in o and ":)" in o.split("Ok.", 1)[1],
+                TIMEOUT_SECONDS,
+            )
+
         os.write(master, f"SET profile = '{PROFILE}'\n".encode())
         # Both the answer and the prompt that follows it: the question must not be typed before the
         # client is reading a line again.

@@ -913,6 +913,15 @@ Strings collectTableFunctionNamesForAIAgent(const IAST & ast)
             if (auto name = allowedTableFunctionNameInFactory(function.name))
                 names.insert(std::move(*name));
         }
+        else if (const auto * function = node.as<ASTFunction>())
+        {
+            /// `x IN numbers(10)` calls a table function without an `ASTTableExpression` around it.
+            /// A tuple or an array there is a set of values, and has no name of a table function.
+            if (const auto * set_expression = getSetExpressionOfInOperator(*function))
+                if (const auto * set_function = set_expression->as<ASTFunction>())
+                    if (auto name = allowedTableFunctionNameInFactory(set_function->name))
+                        names.insert(std::move(*name));
+        }
         for (const auto & child : node.children)
             self(self, *child);
     };
@@ -1216,7 +1225,7 @@ void checkNoExpressionsOutsideOfChildren(const IAST & ast)
 
 }
 
-Strings validateStoredExpressionForAIAgent(const String & expression, std::string_view origin, bool allow_schema_access)
+AIStoredExpressionNames validateStoredExpressionForAIAgent(const String & expression, std::string_view origin, bool allow_schema_access)
 {
     ParserExpression parser;
     const ASTPtr ast = parseQuery(
@@ -1250,7 +1259,7 @@ Strings validateStoredExpressionForAIAgent(const String & expression, std::strin
             "reads `system.one`), so it is not allowed for the read-only tool. Use the run_query tool for this query",
             origin);
 
-    return collectFunctionNamesForAIAgent(*ast);
+    return {.functions = collectFunctionNamesForAIAgent(*ast), .table_functions = collectTableFunctionNamesForAIAgent(*ast)};
 }
 
 void validateReadOnlyQueryForAIAgent(const IAST & ast, bool allow_schema_access)

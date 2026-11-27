@@ -265,10 +265,12 @@ protected:
     /// session whose effective value cannot be established is treated as one that displays them.
     bool sessionMayDisplaySecrets();
 
-    /// Whether the internal queries (of the `help` command and of the AI agent) and the queries of
-    /// the agent need the `dialect = 'clickhouse'` pin: they are ClickHouse SQL, and the server
-    /// parses with the effective dialect of the session, which a settings profile may set to
-    /// another one without the client seeing it.
+    /// Whether the internal queries (of the `help` command and of the AI agent) need the
+    /// `dialect = 'clickhouse'` pin: they are ClickHouse SQL, and the server parses them with the
+    /// effective dialect of the session, which a settings profile may set to another one - or
+    /// back to ClickHouse SQL - without the client seeing it. The queries of the agent that the
+    /// user sees carry the settings of the client as well, so they are also pinned when the copy
+    /// of the client holds another dialect - see `runQueryForAI`.
     bool internalQueriesRequireDialectPin();
 
     /// The effective value of the `readonly` setting of the session. The client context has it

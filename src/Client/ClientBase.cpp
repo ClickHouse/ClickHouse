@@ -5264,12 +5264,18 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         pinned_settings.emplace(name);
     };
 
+    /// Unlike an internal query, the query of the agent carries the settings of the client. So it
+    /// is pinned also when only the copy of the client holds another dialect, while the session is
+    /// back on ClickHouse SQL (a `SET profile` after a `SET dialect`): the pin is then the value
+    /// the session already has, which the server accepts with `readonly = 1` too.
     std::optional<Field> dialect_to_restore;
-    if (internalQueriesRequireDialectPin())
+    const bool session_parses_another_dialect = internalQueriesRequireDialectPin();
+    const bool client_holds_another_dialect = client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse;
+    if (session_parses_another_dialect || client_holds_another_dialect)
     {
         /// Without the pin the server would parse ClickHouse SQL as another dialect, so the
         /// query is not sent at all: the model is told what stands in the way instead.
-        if (!can_change_settings)
+        if (session_parses_another_dialect && !can_change_settings)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The session uses a SQL dialect other than ClickHouse and `readonly = 1` does not allow changing the "
@@ -6035,21 +6041,27 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(
     /// the server like those of the query, so they are collected for the same check of
     /// `checkFunctionsForAIReadOnlyTool`.
     std::set<String> stored_expression_functions;
+    std::set<String> stored_expression_table_functions;
+    const auto collect_names = [&](AIStoredExpressionNames names)
+    {
+        for (auto & function : names.functions)
+            stored_expression_functions.insert(std::move(function));
+        for (auto & table_function : names.table_functions)
+            stored_expression_table_functions.insert(std::move(table_function));
+    };
     const auto check_stored_expressions = [&](const String & database, const String & table, std::string_view how_it_is_read = {})
     {
         const auto [begin, end] = column_expressions.equal_range({database, table});
         for (auto it = begin; it != end; ++it)
-            for (auto & function : validateStoredExpressionForAIAgent(
-                     it->second, fmt::format("a column expression of the table `{}.{}`", database, table), allow_schema_access))
-                stored_expression_functions.insert(std::move(function));
+            collect_names(validateStoredExpressionForAIAgent(
+                it->second, fmt::format("a column expression of the table `{}.{}`", database, table), allow_schema_access));
 
         for (const auto & [policy_database, policy_table, filter] : row_policy_filters)
             if ((policy_database.empty() || policy_database == database) && (policy_table.empty() || policy_table == table))
-                for (auto & function : validateStoredExpressionForAIAgent(
-                         filter,
-                         fmt::format("the filter of a row policy of the table `{}.{}`{}", database, table, how_it_is_read),
-                         allow_schema_access))
-                    stored_expression_functions.insert(std::move(function));
+                collect_names(validateStoredExpressionForAIAgent(
+                    filter,
+                    fmt::format("the filter of a row policy of the table `{}.{}`{}", database, table, how_it_is_read),
+                    allow_schema_access));
     };
 
     for (const auto & source : implicit_sources)
@@ -6172,6 +6184,8 @@ void ClientBase::checkNamedTablesForAIReadOnlyTool(
     }
 
     checkFunctionsForAIReadOnlyTool(Strings(stored_expression_functions.begin(), stored_expression_functions.end()));
+    checkTableFunctionsForAIReadOnlyTool(
+        Strings(stored_expression_table_functions.begin(), stored_expression_table_functions.end()));
 }
 
 String ClientBase::queryTextForAIContext(std::string_view query, const ASTPtr & parsed_query)
@@ -6514,8 +6528,6 @@ bool ClientBase::internalQueriesRequireDialectPin()
     applySettingsFromServerIfNeeded();
 
     const Settings & settings = client_context->getSettingsRef();
-    if (settings[Setting::dialect] != Dialect::clickhouse)
-        return true;
 
     /// The local value is the effective one only when the settings of the server reach the client,
     /// and no settings profile was applied with `SET profile` since: the server applies one without
@@ -6525,8 +6537,12 @@ bool ClientBase::internalQueriesRequireDialectPin()
     /// applied (or, where it cannot be, the query is refused). It must not be assumed to be
     /// required without asking: a profile that makes the session `readonly = 1` and leaves the
     /// dialect alone would then take the AI chat and `help` down for nothing.
+    ///
+    /// That goes for a local value of another dialect as well: after `SET dialect = 'kusto'` a
+    /// `SET profile` can have put the session back to ClickHouse SQL, and the internal queries,
+    /// which do not carry the settings of the client, are parsed under what the session has.
     if (settings[Setting::apply_settings_from_server] && !settings_may_be_changed_by_profile)
-        return false;
+        return settings[Setting::dialect] != Dialect::clickhouse;
 
     std::optional<String> value;
     try
