@@ -60,6 +60,8 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
 
 Note, that you can define multiple LDAP servers inside the `ldap_servers` section using distinct names.
 
+When `verification_cooldown` is enabled, a cached verification survives a configuration reload: `SYSTEM RELOAD CONFIG` keeps the entries of the servers that remain configured, so a reload does not force users to re-enter their passwords (see issue [#66698](https://github.com/ClickHouse/ClickHouse/issues/66698)). An entry is dropped when it expires or when a change of a parameter that affects the bind, such as `host`, `port`, `bind_dn`, or a TLS setting, makes the cached verification no longer valid. To force re-validation against the directory, restart the server or set `verification_cooldown` to `0`.
+
 **Parameters**
 
 | Parameter | Default | Description |

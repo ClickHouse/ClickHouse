@@ -65,6 +65,17 @@ void LDAPClient::Params::updateHash(SipHash & hash) const
     ::updateHash(hash, user);
     ::updateHash(hash, password);
     ::updateHash(hash, static_cast<int>(follow_referrals)); // Include follow referral behavior
+    ::updateHash(hash, static_cast<int>(protocol_version));
+    ::updateHash(hash, static_cast<int>(enable_tls));
+    ::updateHash(hash, static_cast<int>(tls_minimum_protocol_version));
+    ::updateHash(hash, static_cast<int>(tls_require_cert));
+    ::updateHash(hash, tls_cert_file);
+    ::updateHash(hash, tls_key_file);
+    ::updateHash(hash, tls_ca_cert_file);
+    ::updateHash(hash, tls_ca_cert_dir);
+    ::updateHash(hash, tls_cipher_suite);
+    ::updateHash(hash, static_cast<int>(sasl_mechanism));
+    ::updateHash(hash, search_limit);
 
     if (user_dn_detection)
         user_dn_detection->updateHash(hash);
