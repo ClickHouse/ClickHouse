@@ -163,6 +163,8 @@ namespace
             {"nats_url", "nats_server_list"},
             {"rabbitmq_host_port", "rabbitmq_address"},
             {"http_method", "method"},
+            /// The `HTTP` dictionary source requests `url` + `endpoint`, so each of them changes where the stored credentials are sent.
+            {"url", "endpoint"},
             {"compression_method", "compression"},
             {"storage_account_url", "connection_string"},
             {"user", "credentials.user"},
