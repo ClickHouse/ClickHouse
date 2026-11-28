@@ -1,0 +1,11 @@
+<test requires_s3="1">
+    <settings>
+        <use_cache_for_count_from_files>0</use_cache_for_count_from_files>
+    </settings>
+
+    <fill_query>INSERT INTO FUNCTION s3(perf_s3, filename = 'count_only_object_storage/u8.parquet', format = Parquet, structure = 'x UInt8') SELECT number % 7 FROM numbers(100000000) SETTINGS s3_truncate_on_insert = 1</fill_query>
+    <fill_query>INSERT INTO FUNCTION s3(perf_s3, filename = 'count_only_object_storage/s.parquet', format = Parquet, structure = 's String') SELECT toString(number % 7) FROM numbers(100000000) SETTINGS s3_truncate_on_insert = 1</fill_query>
+
+    <query>SELECT count() FROM s3(perf_s3, filename = 'count_only_object_storage/u8.parquet', format = Parquet, structure = 'x UInt8')</query>
+    <query>SELECT count() FROM s3(perf_s3, filename = 'count_only_object_storage/s.parquet', format = Parquet, structure = 's String')</query>
+</test>
