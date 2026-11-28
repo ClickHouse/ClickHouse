@@ -11,13 +11,15 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Common/Exception.h>
+#include <Formats/ColumnNameMaps.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
-#include <arrow/type.h>
 #include <fmt/ranges.h>
 
-#include <unordered_set>
+#include <algorithm>
+
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <vortex_ffi.h>
 
@@ -51,7 +53,7 @@ namespace
 /// the full WHERE afterwards.
 VortexExpressionPtr buildFilter(
     const Block & header,
-    const arrow::Schema & file_schema,
+    const ArrowIPC::ArrowSchema & file_schema,
     const FormatFilterInfo & filter_info,
     const FormatSettings & format_settings,
     VortexScanPlan & plan)
@@ -65,8 +67,8 @@ VortexExpressionPtr buildFilter(
         return nullptr;
 
     /// The top-level conjuncts, in their original order.
-    std::vector<const ActionsDAG::Node *> conjuncts;
-    std::vector<const ActionsDAG::Node *> stack{inverted.predicate};
+    VectorWithMemoryTracking<const ActionsDAG::Node *> conjuncts;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack{inverted.predicate};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -84,7 +86,7 @@ VortexExpressionPtr buildFilter(
     /// With a per-file column mapper (data lake schema evolution) the header and the file use the
     /// names of the schema the file was written under, while the filter uses the current names.
     /// Both mappers know the field ids, which is how a current name finds the file's one.
-    std::optional<std::unordered_map<String, String>> file_column_names;
+    std::optional<ColumnNameMap> file_column_names;
     if (filter_info.current_schema_column_mapper && filter_info.column_mapper)
     {
         file_column_names.emplace();
@@ -120,7 +122,7 @@ VortexExpressionPtr buildFilter(
 
 VortexScanPlan planVortexScan(
     const Block & header,
-    const arrow::Schema & file_schema,
+    const ArrowIPC::ArrowSchema & file_schema,
     const FormatFilterInfo * filter_info,
     const FormatSettings & format_settings,
     const LoggerPtr & log)
@@ -130,12 +132,13 @@ VortexScanPlan planVortexScan(
     /// Request the header's columns that the file actually has; the rest are filled with default
     /// values, and if none is left there is no scan at all, only a row count.
     ///
-    /// A header entry can also name a subcolumn, `name.sub`, which `ArrowColumnToCHColumn` can only
+    /// A header entry can also name a subcolumn, `name.sub`, which `ArrowIPC::buildChunk` can only
     /// extract once the whole field `name` has been read - hence the second name per column.
-    std::unordered_set<std::string> added_column_names;
+    UnorderedSetWithMemoryTracking<std::string> added_column_names;
     auto add_column_name = [&](const std::string & name)
     {
-        if (file_schema.GetFieldByName(name) && added_column_names.emplace(name).second)
+        const bool in_file = std::ranges::any_of(file_schema.fields, [&](const auto & field) { return field.name == name; });
+        if (in_file && added_column_names.emplace(name).second)
             plan.column_names.push_back(name);
     };
     for (const auto & column : header)

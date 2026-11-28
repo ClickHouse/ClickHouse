@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # A table with more manifest files than are read ahead at once is read whole, with one and with several reading threads, with and without the metadata cache.
 #
-# Tags: no-fasttest
+# Tags: no-fasttest, no-msan
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
+# - no-msan: under MSan each single-threaded read of the 73 manifests that misses the metadata cache takes 2-3 minutes, so the test runs close to the 600 s timeout
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: the Arrow format is not available in fasttest builds
-
 -- The requested-type hints of the native `Arrow` reader must resolve the same way at decode time and
 -- in the post-decode raw-byte rewrite: by tuple element name, through `Nullable`/`LowCardinality`
 -- wrappers, through the `Array` layers of a flattened `Nested` request, and for every numeric-like

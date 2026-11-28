@@ -73,7 +73,6 @@ namespace
 
         return nullptr;
     }
-
 }
 
 

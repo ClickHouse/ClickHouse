@@ -16,11 +16,12 @@
 #include <algorithm>
 #include <bit>
 #include <climits>
+#include <base/sanitizer_defs.h>
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
 #endif
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
 #    include <immintrin.h>
 #endif
 
@@ -55,10 +56,10 @@ struct FunctionStringDistanceImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             res[i] = Op::process(
-                haystack + haystack_offsets[i - 1],
-                haystack_offsets[i] - haystack_offsets[i - 1],
-                needle + needle_offsets[i - 1],
-                needle_offsets[i] - needle_offsets[i - 1]);
+                haystack + haystack_offsets[static_cast<ssize_t>(i) - 1],
+                haystack_offsets[i] - haystack_offsets[static_cast<ssize_t>(i) - 1],
+                needle + needle_offsets[static_cast<ssize_t>(i) - 1],
+                needle_offsets[i] - needle_offsets[static_cast<ssize_t>(i) - 1]);
         }
     }
 
@@ -75,7 +76,7 @@ struct FunctionStringDistanceImpl
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             res[i] = Op::process(haystack_data, haystack_size,
-                needle + needle_offsets[i - 1], needle_offsets[i] - needle_offsets[i - 1]);
+                needle + needle_offsets[static_cast<ssize_t>(i) - 1], needle_offsets[i] - needle_offsets[static_cast<ssize_t>(i) - 1]);
         }
     }
 
@@ -262,6 +263,7 @@ struct ByteEditDistanceMyersImpl
 
     using ScratchT = std::conditional_t<is_utf8, ScratchUTF8, ScratchASCII>;
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static UInt32 distance(const SymbolT* __restrict haystack, UInt32 haystack_len, const SymbolT* __restrict needle, UInt32 needle_len)
     {
         ScratchT scratch;
@@ -393,7 +395,8 @@ struct BlockMyersEditDistance
     static constexpr size_t W = sizeof(Word) * 8;
 
     // Requires haystack_len and needle_len > 0
-    static UInt32 distance(
+    /// Myers' bit-parallel algorithm detects its carries from the wraparound of `Word`.
+    static UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW distance(
         const SymbolT * __restrict haystack, UInt32 haystack_len,
         const SymbolT * __restrict needle,   UInt32 needle_len)
     {
@@ -746,6 +749,8 @@ struct LongestCommonSubsequenceImpl
     static constexpr size_t W = sizeof(Word) * 8;
 
     /// Requires needle_len > 0
+    /// The bit-parallel algorithm adds multi-word integers with a carry, which wraps around on purpose.
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static UInt32 length(const SymbolT * __restrict haystack, UInt32 haystack_len, const SymbolT * __restrict needle, UInt32 needle_len)
     {
         using PatternMasks = std::conditional_t<is_utf8,
@@ -930,7 +935,7 @@ struct ByteDamerauLevenshteinDistanceImpl
 /// selected at runtime via `isArchSupported(TargetArch::x86_64_v3)`. The
 /// `apply_to=function` pragma ensures the lambda inside `jaroScan` also
 /// inherits the attribute.
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
 DECLARE_X86_64_V3_SPECIFIC_CODE(
 
 /// Mask covering bit positions [lo, hi). Caller guarantees 0 <= lo <= hi <= 64.
@@ -1179,7 +1184,7 @@ struct ByteJaroSimilarityImpl
         /// Window size to search for matches in the other string
         const int max_range = std::max(0, std::max(s1len, s2len) / 2 - 1);
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v3))
         {
             const auto * s1 = reinterpret_cast<const unsigned char *>(haystack);

@@ -16,18 +16,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DATA_DIR=$CUR_DIR/data_parquet
 
-# TODO [parquet]: Known issues to investigate:
-
-# ClickHouse Parquet reader doesn't support such complex types, so I didn't burrow into the issue.
-# There is failure due parsing nested arrays or nested maps with NULLs:
-# ../contrib/arrow/cpp/src/arrow/array/array_nested.cc:192:  Check failed: (self->list_type_->value_type()->id()) == (data->child_data[0]->type->id())
-
-# Strange behaviour for repeated_no_annotation.parquet around __buitin_expect, so this file was disabled:
-# debug:
-#   ../contrib/arrow/cpp/src/arrow/array/array_nested.cc:193:  Check failed: self->list_type_->value_type()->Equals(data->child_data[0]->type)
-# release:
-#   Code: 349. DB::Ex---tion: Can not insert NULL data into non-nullable column "phoneNumbers": data for INSERT was parsed from stdin
-
 EXCLUDE=(
     # These have extremely long strings and blow up the output.
     list_monotonically_increasing_offsets.parquet
@@ -49,6 +37,8 @@ EXCLUDE=(
     05361_geospatial_crs_geography.parquet
     05361_geospatial_crs_srid.parquet
     05361_geospatial_geography_points.parquet
+    # GeoParquet 1.1 native (GeoArrow) encodings, tested by 05497.
+    05497_geoparquet_native_encodings.parquet
     # Intentionally non-compliant files for testing DELTA_BINARY_PACKED padding tolerance.
     04045_delta_no_padding_3vals.parquet
     04045_delta_no_padding_5vals.parquet
@@ -102,6 +92,14 @@ EXCLUDE=(
     05318_parquet_rle_boolean.parquet
     # File for the 05334 test of string filters with `DELTA_BYTE_ARRAY` pages.
     string_filters_delta_byte_array.parquet
+    # Hand-crafted malformed DELTA_BINARY_PACKED file for the 05459 test, loading it here would print an exception.
+    05459_delta_binary_packed_miniblock_overflow.parquet
+    # `INT96` timestamps outside the `DateTime64(9)` range (throws with the default `date_time_overflow_behavior`), tested by 05443.
+    05443_int96_out_of_range.parquet
+    # `INT96` timestamp on the lower boundary day of the `DateTime64(9)` range, tested by 05444.
+    05444_int96_lower_boundary.parquet
+    # Hand-crafted `DELTA_BINARY_PACKED` file for the 05479 filter-in-decoder test.
+    05479_delta_binary_packed_filter_int8.parquet
 )
 
 for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parquet.gz' \) -print0 | xargs -0 -n 1 basename | LC_ALL=C sort | grep -vFf <(printf '%s\n' "${EXCLUDE[@]}")); do

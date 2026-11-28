@@ -6,10 +6,8 @@ description: 'Dans ce guide, nous verrons d’abord comment ClickHouse répartit
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <div id="introduction">
-  ## Introduction
+  ## Introduction {#introduction}
 </div>
 
 ClickHouse traite les requêtes extrêmement rapidement, mais comment ces requêtes
@@ -19,9 +17,7 @@ sont-elles réparties et parallélisées sur plusieurs serveurs ?
 > plusieurs shards via des tables distribuées, puis comment une requête peut tirer parti
 > de plusieurs répliques pour son exécution.
 
-<div id="sharded-architecture">
-  ## Architecture shardée
-</div>
+## Architecture shardée {#sharded-architecture}
 
 Dans une architecture shared-nothing, les clusters sont généralement répartis en
 plusieurs shards, chaque shard contenant un sous-ensemble de l&#39;ensemble des données. Une
@@ -31,11 +27,15 @@ l&#39;intégralité des données.
 Les lectures peuvent être envoyées à la table locale. L&#39;exécution de la requête n&#39;aura lieu
 que sur le shard spécifié, ou bien elle peut être envoyée à la table distribuée, auquel
 cas chaque shard exécutera la requête donnée. Le serveur sur lequel la table distribuée
-a été interrogée agrégera les données et renverra la réponse au client :
+a été interrogée agrégera les données et renverra la réponse au client :
 
-<Image img="/images/deployment-guides/parallel-replicas-1.webp" size="md" alt="architecture shardée" />
+<div className="ch-image-md">
+  <Frame>
+    ![architecture shardée](/images/deployment-guides/parallel-replicas-1.webp)
+  </Frame>
+</div>
 
-La figure ci-dessus illustre ce qui se passe lorsqu&#39;un client interroge une table distribuée :
+La figure ci-dessus illustre ce qui se passe lorsqu&#39;un client interroge une table distribuée :
 
 <ol className="docs-ordered-list">
   <li>
@@ -72,9 +72,13 @@ ClickHouse Cloud présente une architecture très différente de celle décrite 
 pour plus de détails). Avec la séparation du calcul et du stockage, ainsi qu’une capacité de stockage virtuellement
 infinie, le besoin de shards devient moins important.
 
-La figure ci-dessous montre l’architecture de ClickHouse Cloud :
+La figure ci-dessous montre l’architecture de ClickHouse Cloud :
 
-<Image img="/images/deployment-guides/parallel-replicas-2.webp" size="md" alt="architecture non shardée" />
+<div className="ch-image-md">
+  <Frame>
+    ![architecture non shardée](/images/deployment-guides/parallel-replicas-2.webp)
+  </Frame>
+</div>
 
 Cette architecture permet d’ajouter et de supprimer des répliques presque
 instantanément, ce qui garantit une très forte scalabilité du cluster. Le cluster
@@ -83,9 +87,9 @@ pour les métadonnées. Les répliques peuvent récupérer les métadonnées dep
 et conservent toutes les mêmes données. Les données elles-mêmes sont stockées dans
 le stockage objet, et le cache SSD permet d’accélérer les requêtes.
 
-Mais comment distribuer désormais l’exécution des requêtes sur plusieurs serveurs ? Dans une
+Mais comment distribuer désormais l’exécution des requêtes sur plusieurs serveurs ? Dans une
 architecture shardée, c’était assez évident puisque chaque shard pouvait effectivement
-exécuter une requête sur un sous-ensemble des données. Comment cela fonctionne-t-il lorsqu’il n’y a pas de sharding ?
+exécuter une requête sur un sous-ensemble des données. Comment cela fonctionne-t-il lorsqu’il n’y a pas de sharding ?
 
 ## Présentation des répliques parallèles {#introducing-parallel-replicas}
 
@@ -99,11 +103,15 @@ l&#39;unité de travail est le shard, c&#39;est-à-dire un sous-ensemble des don
 utiliserons une petite portion de la table, appelée [granules](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing),
 comme unité de travail.
 
-Voyons maintenant comment cela fonctionne en pratique à l&#39;aide de la figure ci-dessous :
+Voyons maintenant comment cela fonctionne en pratique à l&#39;aide de la figure ci-dessous :
 
-<Image img="/images/deployment-guides/parallel-replicas-3.webp" size="md" alt="Répliques parallèles" />
+<div className="ch-image-md">
+  <Frame>
+    ![Répliques parallèles](/images/deployment-guides/parallel-replicas-3.webp)
+  </Frame>
+</div>
 
-Avec les répliques parallèles :
+Avec les répliques parallèles :
 
 <ol className="docs-ordered-list">
   <li>
@@ -134,7 +142,7 @@ Avec les répliques parallèles :
 
 Les étapes ci-dessus décrivent le fonctionnement théorique des répliques parallèles.
 Cependant, en pratique, de nombreux facteurs peuvent empêcher cette logique
-de fonctionner parfaitement :
+de fonctionner parfaitement :
 
 <ol className="docs-ordered-list">
   <li>
@@ -142,12 +150,12 @@ de fonctionner parfaitement :
   </li>
 
   <li>
-    La réplication dans ClickHouse est asynchrone ; à un instant donné, certaines répliques peuvent ne pas
+    La réplication dans ClickHouse est asynchrone ; à un instant donné, certaines répliques peuvent ne pas
     avoir les mêmes parts.
   </li>
 
   <li>
-    Il faut également gérer la tail latency.
+    Il faut également gérer la latence de queue.
   </li>
 
   <li>
@@ -161,9 +169,13 @@ Nous verrons dans les sections suivantes comment ces facteurs sont pris en compt
 
 ### Annonces {#announcements}
 
-Pour répondre aux points (1) et (2) de la liste ci-dessus, nous avons introduit le concept d&#39;annonce. Visualisons son fonctionnement à l&#39;aide de la figure ci-dessous :
+Pour répondre aux points (1) et (2) de la liste ci-dessus, nous avons introduit le concept d&#39;annonce. Visualisons son fonctionnement à l&#39;aide de la figure ci-dessous :
 
-<Image img="/images/deployment-guides/parallel-replicas-4.webp" size="md" alt="Annonces" />
+<div className="ch-image-md">
+  <Frame>
+    ![Annonces](/images/deployment-guides/parallel-replicas-4.webp)
+  </Frame>
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -195,7 +207,7 @@ Pour répondre aux points (1) et (2) de la liste ci-dessus, nous avons introduit
 
 ### Coordination dynamique {#dynamic-coordination}
 
-Pour remédier au problème de latence des requêtes les plus lentes, nous avons ajouté la coordination dynamique. Cela signifie
+Pour remédier au problème de latence de queue, nous avons ajouté la coordination dynamique. Cela signifie
 que toutes les granules ne sont pas envoyées à une réplique en une seule requête, mais que chaque réplique
 peut demander une nouvelle tâche (un ensemble de granules à traiter) au
 coordinateur. Le coordinateur fournit alors à la réplique l&#39;ensemble de granules en fonction de
@@ -204,9 +216,13 @@ l&#39;annonce reçue.
 Supposons que nous soyons à l&#39;étape du processus où toutes les répliques ont envoyé
 une annonce avec toutes les parts.
 
-La figure ci-dessous illustre le fonctionnement de la coordination dynamique :
+La figure ci-dessous illustre le fonctionnement de la coordination dynamique :
 
-<Image img="/images/deployment-guides/parallel-replicas-5.webp" size="md" alt="Coordination dynamique - partie 1" />
+<div className="ch-image-md">
+  <Frame>
+    ![Coordination dynamique - partie 1](/images/deployment-guides/parallel-replicas-5.webp)
+  </Frame>
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -219,7 +235,11 @@ La figure ci-dessous illustre le fonctionnement de la coordination dynamique :
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-6.webp" size="md" alt="Coordination dynamique - partie 2" />
+<div className="ch-image-md">
+  <Frame>
+    ![Coordination dynamique - partie 2](/images/deployment-guides/parallel-replicas-6.webp)
+  </Frame>
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -232,7 +252,11 @@ La figure ci-dessous illustre le fonctionnement de la coordination dynamique :
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-7.webp" size="md" alt="Coordination dynamique - partie 3" />
+<div className="ch-image-md">
+  <Frame>
+    ![Coordination dynamique - partie 3](/images/deployment-guides/parallel-replicas-7.webp)
+  </Frame>
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -252,7 +276,7 @@ La figure ci-dessous illustre le fonctionnement de la coordination dynamique :
 </ol>
 
 <div id="managing-cache-locality">
-  ### Gestion de la localité du cache
+  ### Gestion de la localité du cache {#managing-cache-locality}
 </div>
 
 Le dernier problème potentiel concerne la manière de préserver la localité du cache. Si la requête
@@ -305,14 +329,14 @@ systématiquement utilisée pour exécuter certaines tâches. Si `max_parallel_r
 au nombre de répliques, des répliques aléatoires sont alors sélectionnées pour l’exécution des requêtes.
 
 <div id="task-stealing">
-  ### Vol de tâches
+  ### Vol de tâches {#task-stealing}
 </div>
 
 si une réplique traite les tâches plus lentement que les autres, celles-ci essaieront de
 « voler » les tâches qui, en principe, lui sont attribuées par hachage afin de réduire la
 tail latency.
 
-### Limitations
+### Limitations {#limitations}
 
 Cette fonctionnalité présente des limitations connues, dont les principales sont documentées dans
 cette section.
@@ -333,7 +357,7 @@ cette section.
 | Compatibilité avec l’analyseur                                      | L’analyseur peut considérablement ralentir ou accélérer l’exécution des requêtes dans certains scénarios.                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 <div id="settings-related-to-parallel-replicas">
-  ## Paramètres liés aux répliques parallèles
+  ## Paramètres liés aux répliques parallèles {#settings-related-to-parallel-replicas}
 </div>
 
 | Paramètre                                          | Description                                                                                                                                                                                                                                                                                                        |
@@ -343,7 +367,7 @@ cette section.
 | `max_parallel_replicas`                            | Nombre maximal de répliques à utiliser pour exécuter la requête sur plusieurs répliques. Si un nombre inférieur au nombre de répliques du cluster est spécifié, les nœuds seront sélectionnés aléatoirement. Cette valeur peut également être surallouée pour tenir compte de la mise à l&#39;échelle horizontale. |
 | `parallel_replicas_min_number_of_rows_per_replica` | Permet de limiter le nombre de répliques utilisées en fonction du nombre de lignes à traiter. Le nombre de répliques utilisées est défini par : <br /> `estimated rows to read` / `min_number_of_rows_per_replica`.                                                                                                |
 
-## Investiguer les problèmes liés aux répliques parallèles
+## Investiguer les problèmes liés aux répliques parallèles {#investigating-issues-with-parallel-replicas}
 
 Vous pouvez vérifier quels paramètres sont utilisés pour chaque requête dans la
 table [`system.query_log`](/fr/reference/system-tables/query_log). Vous pouvez
@@ -483,7 +507,7 @@ ORDER BY event_time_microseconds ASC
 
 Enfin, vous pouvez également utiliser `EXPLAIN PIPELINE`. Il met en évidence la manière dont ClickHouse
 va exécuter une requête et quelles ressources seront utilisées pour
-son exécution. Prenons la requête suivante comme exemple :
+son exécution. Prenons la requête suivante comme exemple :
 
 ```sql
 SELECT count(), uniq(pageId) , min(timestamp), max(timestamp) 
@@ -492,7 +516,7 @@ WHERE type='type3'
 GROUP BY toYear(timestamp) LIMIT 10
 ```
 
-Voyons le pipeline de requête sans réplique parallèle :
+Voyons le pipeline de requête sans réplique parallèle :
 
 ```sql title="EXPLAIN PIPELINE (without parallel replica)"
 EXPLAIN PIPELINE graph = 1, compact = 0 
@@ -505,9 +529,13 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="EXPLAIN sans parallel_replica" />
+<div className="ch-image-lg">
+  <Frame>
+    ![EXPLAIN sans parallel_replica](/images/deployment-guides/parallel-replicas-8.webp)
+  </Frame>
+</div>
 
-Et maintenant avec la réplique parallèle :
+Et maintenant avec la réplique parallèle :
 
 ```sql title="EXPLAIN PIPELINE (with parallel replica)"
 EXPLAIN PIPELINE graph = 1, compact = 0 
@@ -520,4 +548,8 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="EXPLAIN avec parallel_replica" />
+<div className="ch-image-lg">
+  <Frame>
+    ![EXPLAIN avec parallel_replica](/images/deployment-guides/parallel-replicas-9.webp)
+  </Frame>
+</div>

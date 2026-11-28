@@ -56,10 +56,8 @@ DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.j_implicit_alias_db (k UInt64, v String) ENGINE = Join(ANY, LEFT, k);
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.j_implicit_alias_db VALUES (1, 'x');
-USE {CLICKHOUSE_DATABASE_1:Identifier};
-CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.t_implicit_alias_db (id UInt64, a_join String ALIAS joinGet('j_implicit_alias_db', 'v', id))
+CREATE TABLE t_implicit_alias_db (id UInt64, a_join String ALIAS joinGet({CLICKHOUSE_DATABASE_1:Identifier}.j_implicit_alias_db, 'v', id))
 ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_string_columns = 1;
-USE {CLICKHOUSE_DATABASE:Identifier};
 INSERT INTO t_implicit_alias_db VALUES (1);
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SETTINGS check_table_dependencies = 0;
 DETACH TABLE t_implicit_alias_db;

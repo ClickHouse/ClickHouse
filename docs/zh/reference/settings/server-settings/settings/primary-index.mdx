@@ -12,27 +12,19 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，由 ClickHouse 源代码自动生成。
 
-<div id="primary_index_cache_policy">
-  ## primary_index_cache_policy
-</div>
+## primary_index_cache_policy {#primary_index_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />主索引缓存策略的名称。
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />主索引缓存淘汰策略的名称。可选值：`LRU`、`SLRU`、`SIEVE`。
 
-<div id="primary_index_cache_prewarm_ratio">
-  ## primary_index_cache_prewarm_ratio
-</div>
+## primary_index_cache_prewarm_ratio {#primary_index_cache_prewarm_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.95" changeable_without_restart="No" />预热期间用于填充标记缓存的总大小比例。
 
-<div id="primary_index_cache_size">
-  ## primary_index_cache_size
-</div>
+## primary_index_cache_size {#primary_index_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="是" />主索引缓存的最大大小 (用于 MergeTree 家族表的索引) 。
 
-<div id="primary_index_cache_size_ratio">
-  ## primary_index_cache_size_ratio
-</div>
+## primary_index_cache_size_ratio {#primary_index_cache_size_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />主索引缓存中受保护队列 (在采用 SLRU policy 时) 的大小占缓存总大小的比例。
 

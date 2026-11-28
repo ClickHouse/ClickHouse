@@ -3,17 +3,10 @@
 #if USE_HIVE
 
 #include <boost/algorithm/string/case_conv.hpp>
-#include <arrow/io/memory.h>
-#include <arrow/api.h>
-#include <arrow/status.h>
-#include <parquet/file_reader.h>
-#include <parquet/statistics.h>
-#include <orc/Statistics.hh>
 
 #include <fmt/core.h>
 #include <Common/Exception.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -34,43 +27,30 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-template <class FieldType, class StatisticsType>
-Range createRangeFromOrcStatistics(const StatisticsType * stats)
+template <class FieldType, class T>
+Range createRangeFromOrcStatistics(const std::optional<T> & minimum, const std::optional<T> & maximum)
 {
     /// Null values or NaN/Inf values of double type.
-    if (stats->hasMinimum() && stats->hasMaximum())
-    {
-        return Range(FieldType(stats->getMinimum()), true, FieldType(stats->getMaximum()), true);
-    }
-    if (stats->hasMinimum())
-    {
-        return Range::createLeftBounded(FieldType(stats->getMinimum()), true);
-    }
-    if (stats->hasMaximum())
-    {
-        return Range::createRightBounded(FieldType(stats->getMaximum()), true);
-    }
-
+    if (minimum && maximum)
+        return Range(FieldType(*minimum), true, FieldType(*maximum), true);
+    if (minimum)
+        return Range::createLeftBounded(FieldType(*minimum), true);
+    if (maximum)
+        return Range::createRightBounded(FieldType(*maximum), true);
     return Range::createWholeUniverseWithoutNull();
 }
 
-template <class FieldType, class StatisticsType>
-Range createRangeFromParquetStatistics(std::shared_ptr<StatisticsType> stats)
+/// The range of the values of a column chunk, from its Parquet statistics bounds.
+template <class FieldType, class T>
+Range createRangeFromParquetStatistics(const Parquet::FooterMetadata::Statistics & stats)
 {
     /// We must check if there are minimum or maximum values in statistics in case of
     /// null values or NaN/Inf values of double type.
-    if (!stats->HasMinMax())
+    if (!stats.min || !stats.max)
         return Range::createWholeUniverseWithoutNull();
-    return Range(FieldType(stats->min()), true, FieldType(stats->max()), true);
-}
-
-static Range createRangeFromParquetStatistics(std::shared_ptr<parquet::ByteArrayStatistics> stats)
-{
-    if (!stats->HasMinMax())
-        return Range::createWholeUniverseWithoutNull();
-    String min_val(reinterpret_cast<const char *>(stats->min().ptr), stats->min().len);
-    String max_val(reinterpret_cast<const char *>(stats->max().ptr), stats->max().len);
-    return Range(min_val, true, max_val, true);
+    return Range(
+        FieldType(Parquet::FooterMetadata::decodeStatisticsValue<T>(*stats.min)), true,
+        FieldType(Parquet::FooterMetadata::decodeStatisticsValue<T>(*stats.max)), true);
 }
 
 std::optional<size_t> IHiveFile::getRows()
@@ -109,48 +89,40 @@ void IHiveFile::loadSplitMinMaxIndexes()
     split_minmax_idxes_loaded = true;
 }
 
-Range HiveORCFile::buildRange(const orc::ColumnStatistics * col_stats)
+Range HiveORCFile::buildRange(const ORC::Proto::ColumnStatistics * col_stats)
 {
-    if (!col_stats || col_stats->hasNull())
+    /// A missing `has_null` means that the column may contain nulls.
+    if (!col_stats || col_stats->has_null.value_or(true))
         return Range::createWholeUniverseWithoutNull();
 
-    if (const auto * int_stats = dynamic_cast<const orc::IntegerColumnStatistics *>(col_stats))
+    if (const auto & int_stats = col_stats->int_statistics)
+        return createRangeFromOrcStatistics<Int64>(int_stats->minimum, int_stats->maximum);
+    if (const auto & double_stats = col_stats->double_statistics)
+        return createRangeFromOrcStatistics<Float64>(double_stats->minimum, double_stats->maximum);
+    if (const auto & string_stats = col_stats->string_statistics)
+        return createRangeFromOrcStatistics<String>(string_stats->getLowerBound(), string_stats->getUpperBound());
+    if (const auto & bool_stats = col_stats->bucket_statistics)
     {
-        return createRangeFromOrcStatistics<Int64>(int_stats);
-    }
-    if (const auto * double_stats = dynamic_cast<const orc::DoubleColumnStatistics *>(col_stats))
-    {
-        return createRangeFromOrcStatistics<Float64>(double_stats);
-    }
-    if (const auto * string_stats = dynamic_cast<const orc::StringColumnStatistics *>(col_stats))
-    {
-        return createRangeFromOrcStatistics<String>(string_stats);
-    }
-    if (const auto * bool_stats = dynamic_cast<const orc::BooleanColumnStatistics *>(col_stats))
-    {
-        auto false_cnt = bool_stats->getFalseCount();
-        auto true_cnt = bool_stats->getTrueCount();
+        if (bool_stats->count.empty())
+            return Range::createWholeUniverseWithoutNull();
+        UInt64 true_cnt = bool_stats->count[0];
+        UInt64 false_cnt = col_stats->number_of_values.value_or(0) - true_cnt;
         if (false_cnt && true_cnt)
-        {
             return Range(UInt8(0), true, UInt8(1), true);
-        }
         if (false_cnt)
-        {
             return Range::createLeftBounded(UInt8(0), true);
-        }
         if (true_cnt)
-        {
             return Range::createRightBounded(UInt8(1), true);
-        }
+        return Range::createWholeUniverseWithoutNull();
     }
-    else if (const auto * timestamp_stats = dynamic_cast<const orc::TimestampColumnStatistics *>(col_stats))
+    if (const auto & timestamp_stats = col_stats->timestamp_statistics)
     {
-        return createRangeFromOrcStatistics<UInt32>(timestamp_stats);
+        /// The deprecated `minimum` and `maximum` are in the local time zone of the writer, which is
+        /// unknown for the statistics of the whole file, so only the UTC bounds are usable.
+        return createRangeFromOrcStatistics<UInt32>(timestamp_stats->minimum_utc, timestamp_stats->maximum_utc);
     }
-    else if (const auto * date_stats = dynamic_cast<const orc::DateColumnStatistics *>(col_stats))
-    {
-        return createRangeFromOrcStatistics<UInt16>(date_stats);
-    }
+    if (const auto & date_stats = col_stats->date_statistics)
+        return createRangeFromOrcStatistics<UInt16>(date_stats->minimum, date_stats->maximum);
     return Range::createWholeUniverseWithoutNull();
 }
 
@@ -159,14 +131,12 @@ void HiveORCFile::prepareReader()
     in = std::make_unique<ReadBufferFromHDFS>(namenode_url, path, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
     auto format_settings = getFormatSettings(getContext());
     std::atomic<int> is_stopped{0};
-    orc::ReaderOptions options;
-    options.setMemoryPool(getORCMemoryPool());
-    reader = createORCReader(asORCInputStream(*in, format_settings, /*use_prefetch=*/false, is_stopped), options);
+    reader = createORCReader(asORCInputStream(*in, format_settings, /*use_prefetch=*/false, is_stopped), ORC::ReaderOptions{});
 }
 
 void HiveORCFile::prepareColumnMapping()
 {
-    const orc::Type & type = reader->getType();
+    const ORC::Type & type = reader->getType();
     size_t count = type.getSubtypeCount();
     for (size_t pos = 0; pos < count; pos++)
     {
@@ -183,7 +153,7 @@ bool HiveORCFile::useFileMinMaxIndex() const
 }
 
 
-std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(const orc::Statistics * statistics)
+std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(const VectorWithMemoryTracking<ORC::Proto::ColumnStatistics> * statistics)
 {
     if (!statistics)
         return nullptr;
@@ -206,7 +176,7 @@ std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(c
         {
             size_t pos = it->second;
             /// Attention: column statistics start from 1. 0 has special purpose.
-            const orc::ColumnStatistics * col_stats = statistics->getColumnStatistics(static_cast<unsigned>(pos + 1));
+            const ORC::Proto::ColumnStatistics * col_stats = pos + 1 < statistics->size() ? &(*statistics)[pos + 1] : nullptr;
             idx->hyperrectangle[i] = buildRange(col_stats);
         }
         ++i;
@@ -223,8 +193,7 @@ void HiveORCFile::loadFileMinMaxIndexImpl()
         prepareColumnMapping();
     }
 
-    auto statistics = reader->getStatistics();
-    file_minmax_idx = buildMinMaxIndex(statistics.get());
+    file_minmax_idx = buildMinMaxIndex(&reader->getStatistics());
 }
 
 bool HiveORCFile::useSplitMinMaxIndex() const
@@ -243,7 +212,8 @@ void HiveORCFile::loadSplitMinMaxIndexesImpl()
 
     auto * raw_reader = reader.get();
     auto stripe_num = raw_reader->getNumberOfStripes();
-    auto stripe_stats_num = raw_reader->getNumberOfStripeStatistics();
+    const auto & stripe_statistics = raw_reader->getMetadata().stripe_stats;
+    auto stripe_stats_num = stripe_statistics.size();
     if (stripe_num != stripe_stats_num)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "orc file:{} has different strip num {} and strip statistics num {}", path, stripe_num, stripe_stats_num);
@@ -251,8 +221,7 @@ void HiveORCFile::loadSplitMinMaxIndexesImpl()
     split_minmax_idxes.resize(stripe_num);
     for (size_t i = 0; i < stripe_num; ++i)
     {
-        auto stripe_stats = raw_reader->getStripeStatistics(i);
-        split_minmax_idxes[i] = buildMinMaxIndex(stripe_stats.get());
+        split_minmax_idxes[i] = buildMinMaxIndex(&stripe_statistics[i].col_stats);
     }
 }
 
@@ -276,26 +245,20 @@ bool HiveParquetFile::useSplitMinMaxIndex() const
 void HiveParquetFile::prepareReader()
 {
     in = std::make_unique<ReadBufferFromHDFS>(namenode_url, path, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
-    auto format_settings = getFormatSettings(getContext());
-    std::atomic<int> is_stopped{0};
-    auto open_file_res = parquet::arrow::OpenFile(asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance());
-    if (!open_file_res.ok())
-        throwFromArrowStatus(open_file_res.status(), ErrorCodes::BAD_ARGUMENTS, "Failed to open Parquet file");
-    reader = *std::move(open_file_res);
+    metadata = Parquet::FooterMetadata::read(*in, getFormatSettings(getContext()));
 }
 
 void HiveParquetFile::loadSplitMinMaxIndexesImpl()
 {
-    if (!reader)
+    if (!metadata)
         prepareReader();
 
-    auto meta = reader->parquet_reader()->metadata();
-    size_t num_cols = meta->num_columns();
-    size_t num_row_groups = meta->num_row_groups();
-    const auto * schema = meta->schema();
+    const auto & columns = metadata->columns();
+    size_t num_cols = columns.size();
+    size_t num_row_groups = metadata->metadata().row_groups.size();
     for (size_t pos = 0; pos < num_cols; ++pos)
     {
-        String column{schema->Column(static_cast<int>(pos))->name()};
+        String column = columns[pos].name;
         boost::to_lower(column);
         parquet_column_positions[column] = pos;
     }
@@ -304,9 +267,9 @@ void HiveParquetFile::loadSplitMinMaxIndexesImpl()
     split_minmax_idxes.resize(num_row_groups);
     for (size_t i = 0; i < num_row_groups; ++i)
     {
-        auto row_group_meta = meta->RowGroup(static_cast<int>(i));
         split_minmax_idxes[i] = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-        split_minmax_idxes[i]->hyperrectangle.resize(num_cols, Range::createWholeUniverseWithoutNull());
+        /// One range for every column of the index, also for the ones that the file does not have: they stay unconstrained.
+        split_minmax_idxes[i]->hyperrectangle.resize(index_names_and_types.size(), Range::createWholeUniverseWithoutNull());
 
         size_t j = 0;
         auto it = index_names_and_types.begin();
@@ -319,39 +282,39 @@ void HiveParquetFile::loadSplitMinMaxIndexesImpl()
                 continue;
 
             size_t pos = mit->second;
-            auto col_chunk = row_group_meta->ColumnChunk(static_cast<int>(pos));
-            if (!col_chunk->is_stats_set())
+            auto stats = metadata->statistics(i, pos);
+            if (!stats)
                 continue;
 
-            auto stats = col_chunk->statistics();
-            if (stats->HasNullCount() && stats->null_count() > 0)
+            if (stats->null_count && *stats->null_count > 0)
                 continue;
 
-            if (auto bool_stats = std::dynamic_pointer_cast<parquet::BoolStatistics>(stats))
+            auto & range = split_minmax_idxes[i]->hyperrectangle[j];
+            /// Only the physical types that the Apache Arrow library reader supported here, before this reader
+            /// replaced it. `DOUBLE` was never matched by it, so it is not used either.
+            switch (*columns[pos].physical_type)
             {
-                split_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics<UInt8>(bool_stats);
+                case Parquet::parq::Type::BOOLEAN:
+                    if (stats->min && stats->max)
+                        range = Range(UInt8(stats->min->at(0) & 1), true, UInt8(stats->max->at(0) & 1), true);
+                    break;
+                case Parquet::parq::Type::INT32:
+                    range = createRangeFromParquetStatistics<Int32, Int32>(*stats);
+                    break;
+                case Parquet::parq::Type::INT64:
+                    range = createRangeFromParquetStatistics<Int64, Int64>(*stats);
+                    break;
+                case Parquet::parq::Type::FLOAT:
+                    range = createRangeFromParquetStatistics<Float64, Float32>(*stats);
+                    break;
+                case Parquet::parq::Type::BYTE_ARRAY:
+                    if (stats->min && stats->max)
+                        range = Range(String(*stats->min), true, String(*stats->max), true);
+                    break;
+                default:
+                    /// Other types are not supported for minmax index, skip
+                    break;
             }
-            else if (auto int32_stats = std::dynamic_pointer_cast<parquet::Int32Statistics>(stats))
-            {
-                split_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics<Int32>(int32_stats);
-            }
-            else if (auto int64_stats = std::dynamic_pointer_cast<parquet::Int64Statistics>(stats))
-            {
-                split_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics<Int64>(int64_stats);
-            }
-            else if (auto float_stats = std::dynamic_pointer_cast<parquet::FloatStatistics>(stats))
-            {
-                split_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics<Float64>(float_stats);
-            }
-            else if (auto double_stats = std::dynamic_pointer_cast<parquet::FloatStatistics>(stats))
-            {
-                split_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics<Float64>(double_stats);
-            }
-            else if (auto string_stats = std::dynamic_pointer_cast<parquet::ByteArrayStatistics>(stats))
-            {
-                split_minmax_idxes[i]->hyperrectangle[j] = createRangeFromParquetStatistics(string_stats);
-            }
-            /// Other types are not supported for minmax index, skip
         }
         split_minmax_idxes[i]->initialized = true;
     }
@@ -359,11 +322,10 @@ void HiveParquetFile::loadSplitMinMaxIndexesImpl()
 
 std::optional<size_t> HiveParquetFile::getRowsImpl()
 {
-    if (!reader)
+    if (!metadata)
         prepareReader();
 
-    auto meta = reader->parquet_reader()->metadata();
-    return meta->num_rows();
+    return metadata->metadata().num_rows;
 }
 
 }

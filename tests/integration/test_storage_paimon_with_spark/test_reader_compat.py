@@ -33,7 +33,7 @@ FIXTURES = {
         [
             ["id", "Int32"],
             ["val", "Nullable(String)"],
-            ["d", "Nullable(Date)"],
+            ["d", "Nullable(Date32)"],
             ["part", "Nullable(Int32)"],
             ["extra", "Nullable(Int64)"],
         ],
@@ -48,7 +48,7 @@ FIXTURES = {
         [
             ["id", "Int32"],
             ["val", "Nullable(String)"],
-            ["dt", "Nullable(Date)"],
+            ["dt", "Nullable(Date32)"],
             ["extra", "Nullable(Int64)"],
         ],
         [

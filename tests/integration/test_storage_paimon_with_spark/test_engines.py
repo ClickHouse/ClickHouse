@@ -22,10 +22,10 @@ def test_engine_experimental_gate(started_cluster_paimon_with_spark, storage_typ
     )
 
     error = instance.query_and_get_error(create_query)
-    assert "allow_experimental_paimon_storage_engine" in error
+    assert "enable_paimon_storage_engine" in error
 
     instance.query(
-        create_query, settings={"allow_experimental_paimon_storage_engine": 1}
+        create_query, settings={"enable_paimon_storage_engine": 1}
     )
     with drop_tables_at_exit(instance, table_name):
         # Reads do not require the experimental setting, only CREATE does.
@@ -130,7 +130,7 @@ def test_paimon_engine_autodetect(started_cluster_paimon_with_spark):
         ENGINE=Paimon('{table_name}/')
         SETTINGS disk = 'disk_s3_paimon'
         """,
-        settings={"allow_experimental_paimon_storage_engine": 1},
+        settings={"enable_paimon_storage_engine": 1},
     )
     with drop_tables_at_exit(instance, table_name):
         assert instance.query(f"SELECT a, b FROM {table_name} ORDER BY a") == "1\tone\n2\ttwo\n"

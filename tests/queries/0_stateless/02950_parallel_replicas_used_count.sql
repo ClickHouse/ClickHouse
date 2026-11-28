@@ -1,5 +1,6 @@
 -- Tags: no-azure-blob-storage
 
+SET use_statistics_for_sum_avg_aggregation = 0;
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test (k UInt64, v String)

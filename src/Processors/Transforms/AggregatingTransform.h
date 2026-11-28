@@ -1,6 +1,8 @@
 #pragma once
 #include <array>
 #include <mutex>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <optional>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
@@ -26,10 +28,10 @@ public:
     bool is_overflows = false;
     Int32 bucket_num = -1;
     UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order
-    std::vector<Int32> out_of_order_buckets; // out of order buckets for two level aggregation
+    VectorWithMemoryTracking<Int32> out_of_order_buckets; // out of order buckets for two level aggregation
 };
 
-using AggregatorList = std::list<Aggregator>;
+using AggregatorList = ListWithMemoryTracking<Aggregator>;
 using AggregatorListPtr = std::shared_ptr<AggregatorList>;
 
 class RuntimeDataflowStatisticsCacheUpdater;
@@ -68,9 +70,9 @@ struct AggregatingTransformParams
     {
     }
 
-    Block getHeader() const { return params.getHeader(header, final); }
+    [[nodiscard]] Block getHeader() const { return params.getHeader(header, final); }
 
-    Block getCustomHeader(bool final_) const { return params.getHeader(header, final_); }
+    [[nodiscard]] Block getCustomHeader(bool final_) const { return params.getHeader(header, final_); }
 };
 
 struct ManyAggregatedData
@@ -103,7 +105,7 @@ struct ManyAggregatedData
         /// Per-variant: the variant was rebuilt to the kept key set. Written only by the variant's
         /// owning stream during consumption; read by the last finishing stream in `initGenerate`,
         /// synchronized via `num_finished`.
-        std::vector<char> applied;
+        VectorWithMemoryTracking<char> applied;
     };
 
     ManyAggregatedDataVariants variants;
@@ -236,6 +238,7 @@ private:
     /// Held past the reset of `many_data` at the finish of this producer: the executor keeps the registration of the
     /// component until this transform finishes.
     std::shared_ptr<AdaptiveSessionSpillable> adaptive_spillable;
+    /// The merge threads of the step: the most that an in-memory merge takes (see `initGenerate`).
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
     bool should_produce_results_in_order_of_bucket_number = true;
@@ -259,7 +262,7 @@ private:
 
     RowsBeforeStepCounterPtr rows_before_aggregation;
 
-    std::list<TemporaryBlockStreamHolder> tmp_files;
+    ListWithMemoryTracking<TemporaryBlockStreamHolder> tmp_files;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 

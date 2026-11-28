@@ -1,7 +1,9 @@
 #pragma once
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
+#include <atomic>
 #include <functional>
+#include <limits>
 #include <queue>
 #include <optional>
 
@@ -96,6 +98,8 @@ public:
     void sendQueryPlan(const QueryPlan & query_plan) override;
 
     bool supportsQueryPlanSerializationVersion(UInt64 version) const override;
+
+    UInt64 getServerRevisionOfLastPacket() const override { return server_revision_of_last_packet; }
 
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) override
     {
@@ -194,7 +198,8 @@ private:
     std::queue<int> offsets_queue;
 
     /// The current number of valid connections to the replicas of this shard.
-    size_t active_connection_count = 0;
+    /// Atomic: `hasActiveConnections` reads it without `cancel_mutex` while `receivePacket` runs on another thread.
+    std::atomic<size_t> active_connection_count = 0;
 
     /// We count offsets in which we can't change replica anymore,
     /// it's needed to cancel choosing new replicas when we
@@ -223,6 +228,7 @@ private:
     ThrottlerPtr throttler;
     bool sent_query = false;
     bool cancelled = false;
+    UInt64 server_revision_of_last_packet = std::numeric_limits<UInt64>::max();
 
     ReplicaInfo replica_info;
 

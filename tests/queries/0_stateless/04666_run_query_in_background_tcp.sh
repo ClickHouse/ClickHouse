@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-darwin
-# no-darwin: hangs until the timeout on macOS ARM, https://github.com/ClickHouse/ClickHouse/issues/127841
+# Tags: no-ordinary-database
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -14,6 +13,13 @@ function run_native()
     local query=$1 query_id=${2:-} run_in_background=${3:-1} user=${4:-}
     $CLICKHOUSE_CLIENT --async_insert 0 --run_query_in_background "$run_in_background" \
         ${user:+--user "$user"} ${query_id:+--query_id "$query_id"} -q "$query" 2>&1
+}
+
+# Runs the query $1 with query_id $2 in the background; `--time` writes how long the client waited for the answer.
+function run_native_timed()
+{
+    local query=$1 query_id=$2
+    $CLICKHOUSE_CLIENT --async_insert 0 --run_query_in_background 1 --query_id "$query_id" --time -q "$query" 2>"$CLICKHOUSE_TMP/$query_id.time"
 }
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (n UInt64) ENGINE = MergeTree ORDER BY n"

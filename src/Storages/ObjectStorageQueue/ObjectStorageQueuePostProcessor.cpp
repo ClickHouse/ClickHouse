@@ -1,3 +1,6 @@
+#include <Common/DimensionalMetrics.h>
+#include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
 #include <Common/setThreadName.h>
@@ -14,6 +17,7 @@
 #include <IO/WriteSettings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 #include <base/scope_guard.h>
 
 #include <chrono>
@@ -25,6 +29,11 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueMovedObjects;
     extern const Event ObjectStorageQueueRemovedObjects;
     extern const Event ObjectStorageQueueTaggedObjects;
+}
+
+namespace DimensionalMetrics
+{
+    extern MetricFamily & ObjectStorageQueueFailures;
 }
 
 namespace DB
@@ -40,8 +49,8 @@ namespace FailPoints
 namespace S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
-    extern const S3AuthSettingsString secret_access_key;
-    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsSecretString secret_access_key;
+    extern const S3AuthSettingsSecretString session_token;
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
@@ -50,8 +59,15 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
     extern const S3AuthSettingsString google_adc_client_id;
-    extern const S3AuthSettingsString google_adc_client_secret;
-    extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsSecretString google_adc_client_secret;
+    extern const S3AuthSettingsSecretString google_adc_refresh_token;
+    extern const S3AuthSettingsSecretString google_service_account_key;
+    extern const S3AuthSettingsS3UriStyle uri_style;
+}
+
+namespace S3RequestSetting
+{
+    extern const S3RequestSettingsBool allow_native_copy;
 }
 
 #endif
@@ -64,17 +80,34 @@ namespace ErrorCodes
     extern const int FAULT_INJECTED;
 }
 
+/// The number of `objects` which are not in `successful_objects`: the objects for which the action did not complete.
+static size_t countObjectsNotIn(const StoredObjects & objects, const StoredObjects & successful_objects)
+{
+    UnorderedSetWithMemoryTracking<std::string_view> successful_paths;
+    successful_paths.reserve(successful_objects.size());
+    for (const auto & object : successful_objects)
+        successful_paths.insert(object.remote_path);
+
+    size_t count = 0;
+    for (const auto & object : objects)
+        if (!successful_paths.contains(object.remote_path))
+            ++count;
+    return count;
+}
+
 ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
     ContextPtr context_,
     ObjectStorageType type_,
     ObjectStoragePtr object_storage_,
     String engine_name_,
+    const StorageID & storage_id_,
     const ObjectStorageQueueTableMetadata & table_metadata_,
     AfterProcessingSettings settings_)
     : WithContext(context_)
     , type(type_)
     , object_storage(object_storage_)
     , engine_name(engine_name_)
+    , storage_id(storage_id_)
     , table_metadata(table_metadata_)
     , settings(std::move(settings_))
     , log(getLogger("ObjectStorageQueuePostProcessor"))
@@ -122,23 +155,37 @@ void ObjectStorageQueuePostProcessor::process(
                 objects.size(),
                 getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
             );
+            countFailedObjects(countObjectsNotIn(objects, successful_objects));
         }
     }
     else if (after_processing_action == ObjectStorageQueueAction::MOVE)
     {
-        switch (type)
+        /// Objects whose failure was already counted one by one by the move functions.
+        std::atomic<size_t> counted_failed_objects = 0;
+        try
         {
-            case ObjectStorageType::Azure:
-                moveAzureBlobs(objects, successful_objects);
-                break;
-            case ObjectStorageType::S3:
-                moveS3Objects(objects, successful_objects);
-                break;
-            default:
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "After processing move not allowed for storage type {}, only Azure and S3 supported",
-                    type);
+            switch (type)
+            {
+                case ObjectStorageType::Azure:
+                    moveAzureBlobs(objects, successful_objects, counted_failed_objects);
+                    break;
+                case ObjectStorageType::S3:
+                    moveS3Objects(objects, successful_objects, counted_failed_objects);
+                    break;
+                default:
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "After processing move not allowed for storage type {}, only Azure and S3 supported",
+                        type);
+            }
+        }
+        catch (...)
+        {
+            /// The move stopped for the whole batch: count the objects that were not moved and not counted yet.
+            const size_t not_moved = countObjectsNotIn(objects, successful_objects);
+            const size_t already_counted = counted_failed_objects.load();
+            countFailedObjects(not_moved > already_counted ? not_moved - already_counted : 0);
+            throw;
         }
     }
     else if (after_processing_action == ObjectStorageQueueAction::TAG)
@@ -162,6 +209,7 @@ void ObjectStorageQueuePostProcessor::process(
                 objects.size(),
                 getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
             );
+            countFailedObjects(countObjectsNotIn(objects, successful_objects));
         }
 #else
         throw Exception(
@@ -178,6 +226,17 @@ void ObjectStorageQueuePostProcessor::process(
             ObjectStorageQueueTableMetadata::actionToString(after_processing_action));
     }
 
+}
+
+void ObjectStorageQueuePostProcessor::countFailedObjects(size_t count) const
+{
+    if (!count)
+        return;
+
+    DimensionalMetrics::add(
+        DimensionalMetrics::ObjectStorageQueueFailures,
+        {storage_id.getDatabaseName(), storage_id.getTableName(), "after_processing", String(ErrorCodes::getName(getCurrentExceptionCode()))},
+        static_cast<DimensionalMetrics::Value>(count));
 }
 
 static constexpr size_t post_process_initial_backoff_ms = 100;
@@ -267,7 +326,8 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
     const StoredObjects & objects,
     const String & move_prefix,
     bool preserve_path,
-    StoredObjects & successful_objects) const
+    StoredObjects & successful_objects,
+    std::atomic<size_t> & counted_failed_objects) const
 {
     auto read_settings = getReadSettings();
     auto write_settings = getWriteSettings();
@@ -321,6 +381,8 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                         object_from.remote_path,
                         getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
                     );
+                    countFailedObjects(1);
+                    ++counted_failed_objects;
                 }
             });
 
@@ -347,12 +409,13 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
 }
 
-void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const
+void ObjectStorageQueuePostProcessor::moveS3Objects(
+    const StoredObjects & objects, StoredObjects & successful_objects, std::atomic<size_t> & counted_failed_objects) const
 {
 #if USE_AWS_S3
     const String & move_uri = settings.after_processing_move_uri;
     const String & move_access_key_id = settings.after_processing_move_access_key_id;
-    const String & move_secret_access_key = settings.after_processing_move_secret_access_key;
+    const SecretString & move_secret_access_key = settings.after_processing_move_secret_access_key;
     const String & move_prefix = settings.after_processing_move_prefix;
 
     if (!move_uri.empty() || !move_access_key_id.empty() || !move_secret_access_key.empty())
@@ -361,6 +424,10 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not enough settings to move S3 objects");
         }
+
+        /// The settings are checked at `CREATE` and `ALTER` too. This is defense in depth for a table that was created before
+        /// those checks existed, or before the list of allowed hosts was tightened. If it throws, nothing is copied and nothing is removed.
+        checkObjectStorageQueueS3MoveDestinationHost(move_uri, getContext()->getRemoteHostFilter());
 
         if (auto * s3_storage = dynamic_cast<S3ObjectStorage * >(object_storage.get()); s3_storage != nullptr)
         {
@@ -388,10 +455,15 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = "";
             s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = "";
             s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = "";
+            s3_settings->auth_settings[S3AuthSetting::google_service_account_key] = "";
             /// The move uses its own explicit keys, so also drop the request-auth material (headers/access
             /// headers and SSE-C/SSE-KMS keys) merged from the server `<s3>` config: otherwise the server's
             /// headers or encryption keys would be sent to the user-supplied move destination.
             s3_settings->auth_settings.clearServerManagedRequestAuth();
+            /// The host check and `dst_uri` below parse `move_uri` with automatic style detection. The client must use the same
+            /// parse, so the URI style of the server `<s3>` config or of the `s3_uri_style` query setting must not apply here:
+            /// otherwise the requests can go to a host that `checkObjectStorageQueueS3MoveDestinationHost` did not check.
+            s3_settings->auth_settings[S3AuthSetting::uri_style] = S3UriStyle::AUTO;
             std::shared_ptr<S3::Client> dst_client = getClient(
                 move_uri,
                 *s3_settings,
@@ -399,6 +471,10 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                 /* for_disk_s3 */ false
             );
             auto dst_uri = S3::URI(move_uri);
+            /// Native copy sends `CopyObject` through the source client, so it writes to the source endpoint. That is the checked
+            /// destination only if both clients use the same endpoint, otherwise use the buffered copy, which uploads with `dst_client`.
+            if (src_client->getInitialEndpoint() != dst_client->getInitialEndpoint())
+                s3_settings->request_settings[S3RequestSetting::allow_native_copy] = false;
             auto read_settings = getReadSettings();
             const auto read_settings_to_use = s3_storage->patchSettings(read_settings);
             auto scheduler = threadPoolCallbackRunnerUnsafe<void>(
@@ -452,6 +528,8 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                         object_from.remote_path,
                         getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
                     );
+                    countFailedObjects(1);
+                    ++counted_failed_objects;
                 }
             }
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
@@ -463,7 +541,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
     }
     else if (!move_prefix.empty())
     {
-        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects);
+        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects, counted_failed_objects);
     }
     else
     {
@@ -472,10 +550,12 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
 #else
     UNUSED(objects);
     UNUSED(successful_objects);
+    UNUSED(counted_failed_objects);
 #endif
 }
 
-void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objects, StoredObjects & successful_objects) const
+void ObjectStorageQueuePostProcessor::moveAzureBlobs(
+    const StoredObjects & objects, StoredObjects & successful_objects, std::atomic<size_t> & counted_failed_objects) const
 {
 #if USE_AZURE_BLOB_STORAGE
     const String & move_connection_string = settings.after_processing_move_connection_string;
@@ -488,6 +568,9 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not enough settings to move Azure blobs");
         }
+
+        /// See the comment in `moveS3Objects`: if it throws, nothing is copied and nothing is removed.
+        checkObjectStorageQueueAzureMoveDestinationHost(move_connection_string, move_container, getContext()->getRemoteHostFilter());
 
         if (auto * azure_storage = dynamic_cast<AzureObjectStorage * >(object_storage.get()); azure_storage != nullptr)
         {
@@ -554,6 +637,8 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                         object_from.remote_path,
                         getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
                     );
+                    countFailedObjects(1);
+                    ++counted_failed_objects;
                 }
             }
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
@@ -565,7 +650,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
     }
     else if (!move_prefix.empty())
     {
-        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects);
+        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects, counted_failed_objects);
     }
     else
     {
@@ -574,6 +659,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
 #else
     UNUSED(objects);
     UNUSED(successful_objects);
+    UNUSED(counted_failed_objects);
 #endif
 }
 

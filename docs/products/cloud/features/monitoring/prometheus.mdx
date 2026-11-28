@@ -7,7 +7,6 @@ keywords: ['prometheus', 'grafana', 'monitoring', 'metrics', 'exporter']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 
 The feature supports integrating [Prometheus](https://prometheus.io/) to monitor ClickHouse Cloud services. Access to Prometheus metrics is exposed via the [ClickHouse Cloud API](/products/cloud/features/admin-features/api/api-overview) endpoint that allows you to securely connect and export metrics into your Prometheus metrics collector. These metrics can be integrated with dashboards e.g., Grafana, Datadog for visualization.
 
@@ -88,7 +87,7 @@ ClickHouseProfileEvents_FileOpen{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1f
 # TYPE ClickHouseProfileEvents_Seek counter
 ClickHouseProfileEvents_Seek{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 1840
 
-# HELP ClickPipes_Info Always equal to 1. Label "clickpipe_state" contains the current state of the pipe: Stopped/Provisioning/Running/Paused/Failed
+# HELP ClickPipes_Info Always equal to 1. Label "clickpipe_status" contains the current state of the pipe: Stopped/Provisioning/Running/Paused/Failed
 # TYPE ClickPipes_Info gauge
 ClickPipes_Info{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent",clickpipe_status="Running"} 1
 
@@ -159,7 +158,7 @@ For ClickPipes, there's a similar `ClickPipes_Info` metric `gauge` that in addit
 
 | Label | Description |
 | --- | --- |
-| clickpipe_state | The current state of the pipe |
+| clickpipe_status | The current state of the pipe |
 
 ### Configuring Prometheus {#configuring-prometheus}
 
@@ -265,23 +264,55 @@ We provide instructions on using these options below, focusing on the details sp
 - Configure the Scrape URL to point to the Prometheus endpoint and use basic auth to configure your connection with the API key/secret
 - Test the connection to ensure you're able to connect
 
-<Image img="/images/integrations/prometheus-grafana-metrics-endpoint.webp" size="md" alt="Configure Grafana Metrics Endpoint" border/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Configure Grafana Metrics Endpoint](/images/integrations/prometheus-grafana-metrics-endpoint.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 Once configured, you should see the metrics in the drop-down that you can select to configure dashboards:
 
-<Image img="/images/integrations/prometheus-grafana-dropdown.webp" size="md" alt="Grafana Metrics Explorer Drop-down" border/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Grafana Metrics Explorer Drop-down](/images/integrations/prometheus-grafana-dropdown.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
-<Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Grafana Metrics Explorer Chart" border/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Grafana Metrics Explorer Chart](/images/integrations/prometheus-grafana-chart.webp)
+
+</Frame>
+
+</div>
 
 ### Grafana Cloud with Alloy {#grafana-cloud-with-alloy}
 
 If you're using Grafana Cloud, Alloy can be installed by navigating to the Alloy menu in Grafana and following the onscreen instructions:
 
-<Image img="/images/integrations/prometheus-grafana-alloy.webp" size="md" alt="Grafana Alloy" border/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Grafana Alloy](/images/integrations/prometheus-grafana-alloy.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -360,7 +391,15 @@ Self-managed users of Grafana can find the instructions for installing the Alloy
 
 Once configured, you should see ClickHouse related metrics in your metrics explorer:
 
-<Image img="/images/integrations/prometheus-grafana-metrics-explorer.webp" size="md" alt="Grafana Metrics Explorer" border/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Grafana Metrics Explorer](/images/integrations/prometheus-grafana-metrics-explorer.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -384,7 +423,15 @@ instances:
 
 <br />
 
-<Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Prometheus Datadog Integration" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Prometheus Datadog Integration](/images/integrations/prometheus-datadog.webp)
+
+</Frame>
+
+</div>
 
 ## Related pages {#related}
 

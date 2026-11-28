@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Every query goes through the plain single-replica path so that the mark cache is warmed and read as expected.
-CLIENT="$CLICKHOUSE_CLIENT --enable_parallel_replicas 0"
+CLIENT="$CLICKHOUSE_CLIENT --enable_parallel_replicas 0 --use_statistics_for_sum_avg_aggregation 0"
 
 # A reader that is dropped before its asynchronously loaded marks are needed cancels the queued
 # marks-loading task. The cancellation is an internal control-flow signal that nobody observes, so

@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# Tag no-fasttest: needs Parquet
 
 # An `ORDER BY ... LIMIT` read of a `File` table must not reuse the query condition cache entries of a
 # query that differs only in a conjunct on a Hive partition or virtual column. Such conjuncts are not

@@ -102,7 +102,7 @@ bash .claude/skills/good-prs/test.sh
   silently dropped.
 - A full report makes roughly two GraphQL calls per PR — several hundred per run — so
   hitting at least one transient GitHub failure is close to certain. Those (`HTTP 408`,
-  `429`, any `5xx`, gateway timeouts, connection resets, secondary rate limits) are
+  `429`, any `5xx`, gateway timeouts, GraphQL's "Something went wrong while executing your query", connection resets, secondary rate limits) are
   retried with exponential backoff, and a primary rate-limit rejection waits for the
   hourly window to reset. `GH_RETRIES` (default 5) and `GH_RETRY_DELAY` (default 2
   seconds) tune this.

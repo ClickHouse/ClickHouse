@@ -59,20 +59,20 @@ void BackgroundJobsAssignee::trigger()
     holder->schedule();
 }
 
-void BackgroundJobsAssignee::postpone()
+void BackgroundJobsAssignee::postpone(bool refused_by_executor)
 {
     std::lock_guard lock(holder_mutex);
 
     if (!holder)
         return;
 
-    no_work_done_count += 1;
+    const size_t backoff_steps = refused_by_executor ? 0 : ++no_work_done_count;
     double random_addition = std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng);
 
     size_t next_time_to_execute = static_cast<size_t>(
         1000 * (data.getBiasBackoffSeconds() + std::min(
             sleep_settings.task_sleep_seconds_when_no_work_max,
-            sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_count))
+            sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, backoff_steps))
         + random_addition));
 
     holder->scheduleAfter(next_time_to_execute, false);
@@ -106,7 +106,7 @@ bool BackgroundJobsAssignee::scheduleMoveTask(ExecutableTaskPtr move_task)
 bool BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger)
 {
     bool schedule_res = getContext()->getCommonExecutor()->trySchedule(common_task);
-    schedule_res && need_trigger ? trigger() : postpone();
+    schedule_res && need_trigger ? trigger() : postpone(/* refused_by_executor */ !schedule_res);
     return schedule_res;
 }
 
@@ -153,6 +153,11 @@ bool BackgroundJobsAssignee::start()
     /// task's own mutexes. Destroying the holder deactivates the task, which waits for a run of
     /// `threadFunc` that may already have started; that run does not touch the storage because the
     /// workers are disabled while a `table_readonly` toggle is in flight.
+    /// The jobs run in the global background executors, which `finish` also uses. The server creates them at startup,
+    /// but `clickhouse-local` only for the first storage that needs them, like a `StorageObjectStorage` table with
+    /// background jobs, which does not go through `MergeTreeData`.
+    getContext()->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
+
     /// Read the cached id before taking holder_mutex so that the two locks are never nested.
     const auto current_storage_id = getStorageID();
 

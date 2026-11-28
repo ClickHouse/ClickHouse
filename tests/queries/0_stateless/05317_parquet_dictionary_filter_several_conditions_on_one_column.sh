@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: needs the Parquet format which is not built in fasttest.
+# Random settings limits: input_format_parquet_memory_high_watermark=(67108864, None)
 
 # Row group pruning by the Parquet dictionary filter when the WHERE clause has one or many conditions
 # on the same column: every condition checks the dictionary of the same row group again, so a row
@@ -66,6 +65,9 @@ check "category in ($(absent 1 10)) or category in ($(absent 11 19), 200077)"
 
 echo "two IN sets of 10 values, the first one holding a value of row group 3: only that row group is read"
 check "category in ($(absent 1 9), 300123) or category in ($(absent 11 20))"
+
+echo "two IN sets of 5000 values, the second one holding a value of row group 2: only that row group is read"
+check "category in ($(absent 1 5000)) or category in ($(absent 5001 9999), 200077)"
 
 echo "20 equalities, the last one on a value of row group 0: only that row group is read"
 check "$(equalities $(seq 1000001 1000019) 8191)"

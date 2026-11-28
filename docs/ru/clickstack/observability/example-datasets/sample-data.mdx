@@ -1,0 +1,214 @@
+---
+slug: /clickstack/observability/example-datasets/sample-data
+title: 'Примеры журналов, трассировок и метрик'
+description: 'Знакомство с ClickHouse Observability на тестовом наборе данных с журналами, сеансами, трассировками и метриками'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'пример данных', 'тестовый набор данных', 'журналы', 'обсервабилити']
+sidebarTitle: 'Примеры журналов, трассировок и метрик'
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+Изучите ClickHouse Observability на примере тестовых журналов, сеансов, трассировок и метрик интернет-магазина. В обоих режимах развёртывания используются один и тот же набор данных и одинаковый рабочий процесс расследования.
+
+Прежде чем начать, пройдите [руководство «Начало работы» для полностью управляемого варианта](/ru/clickstack/observability/getting-started) или [руководство «Начало работы» для самоуправляемого варианта](/ru/clickstack/self-configured/getting-started/managed).
+
+<Steps>
+  <Step title="Настройте соединение" id="configure-your-connection">
+    Выберите вариант развертывания и задайте следующие переменные в терминале, из которого будете загружать выборку данных.
+
+    <Tabs>
+      <Tab title="Полностью управляемый">
+        <BetaBadge label="Бета-версия" />
+
+        Откройте **Team Settings → Data** и найдите раздел **Managed Telemetry**. В разделе **OpenTelemetry Collector** выберите параметр **URL** и скопируйте конечную точку OTLP HTTP и ключ API. Нажмите **Reveal key**, чтобы увидеть значения полностью.
+
+        Укажите базовую конечную точку без пути сигнала (например, `/v1/logs`). Значение авторизации должно включать префикс `Bearer`:
+
+        ```shell
+        export CLICKSTACK_OTLP_ENDPOINT='<your-managed-otlp-http-endpoint>'
+        export CLICKSTACK_AUTHORIZATION='Bearer <your-api-key>'
+        ```
+
+        Для этого примера развертывать коллектор не требуется.
+      </Tab>
+
+      <Tab title="Самоуправляемый" id="self-managed">
+        Вам понадобится запущенный коллектор ClickStack OpenTelemetry, подключённый к вашему сервису ClickHouse Cloud. Чтобы настроить соединение, следуйте [руководству по загрузке данных с помощью OpenTelemetry](/ru/clickstack/observability/ingesting-data/opentelemetry#self-managed), а чтобы запустить коллектор — [руководству по развертыванию](/ru/clickstack/self-configured/deployment/managed).
+
+        Укажите конечную точку OTLP HTTP коллектора, доступную с машины, на которой будет выполняться команда загрузки. Используйте базовый URL без пути сигнала (например, `/v1/logs`):
+
+        ```shell
+        export CLICKSTACK_OTLP_ENDPOINT='http://<collector-host>:4318'
+        export CLICKSTACK_AUTHORIZATION=''
+        ```
+
+        Если коллектор требует аутентификации, укажите в `CLICKSTACK_AUTHORIZATION` токен его приёмника. Для коллектора ClickStack, защищённого с помощью `OTLP_AUTH_TOKEN`, используйте это значение без префикса `Bearer`. Если приёмник не требует аутентификации, оставьте значение пустым. Не указывайте здесь пароль базы данных ClickHouse.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Скачать выборку данных" id="download-sample-data">
+    Чтобы заполнить интерфейс демонстрационными данными, скачайте следующий файл:
+
+    [Демонстрационные данные](https://storage.googleapis.com/hyperdx/sample.tar.gz)
+
+    ```shell
+    # curl
+    curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
+    # or
+    # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
+    ```
+
+    Этот файл содержит примеры журналов, метрик и трассировок из нашего публичного [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo) — простого интернет-магазина на микросервисах. Скопируйте этот файл в любой удобный каталог.
+  </Step>
+
+  <Step title="Загрузить выборку данных" id="load-sample-data">
+    Выполните следующие команды в **Bash** из каталога, в котором находится `sample.tar.gz`. Они отправляют выборку данных на настроенную выше конечную точку и добавляют заголовок авторизации, только если он требуется.
+
+    ```bash
+    set -eo pipefail
+
+    auth_headers=()
+    if [ -n "${CLICKSTACK_AUTHORIZATION:-}" ]; then
+      auth_headers=(-H "Authorization: ${CLICKSTACK_AUTHORIZATION}")
+    fi
+
+    for filename in $(tar -tf sample.tar.gz); do
+      endpoint="${CLICKSTACK_OTLP_ENDPOINT%/}/v1/${filename%.json}"
+      echo "loading ${filename%.json}"
+      tar -xOf sample.tar.gz "$filename" | while read -r line; do
+        printf '%s\n' "$line" | curl --fail-with-body -sS -X POST "$endpoint" \
+          -H "Content-Type: application/json" \
+          "${auth_headers[@]}" \
+          --data-binary @-
+      done
+    done
+    ```
+
+    Так имитируется отправка данных по OTLP из источников журналов, трасс и метрик. В продакшн-среде такими источниками могут быть SDK приложений, агенты или коллекторы OpenTelemetry.
+
+    В консоли ClickHouse Cloud выберите свой сервис и откройте ClickHouse Observability.
+
+    Вернитесь в раздел [Поиск](/ru/clickstack/observability/features/search), чтобы просмотреть загруженные данные. Выберите источник **Logs** и временной диапазон, охватывающий временные метки тестовых событий. На снимке экрана ниже показано, как тестовые журналы поступают в **Live Tail**:
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Поиск с загруженными тестовыми журналами из демонстрационных сервисов интернет-магазина](/images/clickstack/getting-started/observability-sample-data-search.png)
+      </Frame>
+    </div>
+
+    Загрузка данных займёт несколько минут. Дождитесь её завершения, прежде чем переходить к следующим шагам.
+  </Step>
+
+  <Step title="Просмотреть сеансы" id="explore-sessions">
+    Предположим, поступают сообщения о том, что у пользователей возникают проблемы с оплатой товаров. Посмотреть, что именно происходило у пользователей, можно с помощью воспроизведения сеансов.
+
+    Выберите **Клиентские сеансы** в левом меню и задайте временной диапазон, охватывающий загруженные демонстрационные сеансы.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Клиентские сеансы с демонстрационными сеансами и выделенным количеством ошибок](/images/clickstack/getting-started/observability-sample-data-sessions.png)
+      </Frame>
+    </div>
+
+    Здесь перечислены сеансы демонстрационного магазина, включая анонимные сеансы и сеансы, идентифицированные по адресу электронной почты.
+
+    У некоторых сеансов количество ошибок отлично от нуля. В этом примере у выделенного сеанса одна ошибка.
+
+    Выберите выделенный сеанс, чтобы открыть его воспроизведение. Чтобы просмотреть сеанс, нажмите кнопку воспроизведения в нижней части проигрывателя.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Воспроизведение сеанса с витриной OpenTelemetry demo и событиями навигации](/images/clickstack/getting-started/observability-sample-data-replay.png)
+      </Frame>
+    </div>
+
+    В записи видно, как пользователь перемещается по сайту и добавляет товары в корзину. Можно сразу перейти к более позднему моменту сеанса, когда пользователь пытается оплатить заказ.
+
+    <Tip>
+      События с ошибками отмечены в списке событий красным цветом.
+    </Tip>
+
+    Прокрутите список событий слева до конца. Выделенный запрос `POST /api/checkout` вернул HTTP `500`, и одновременно в консоли была зафиксирована ошибка.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Воспроизведение сеанса с выделенным неудачным POST-запросом к /api/checkout и связанной ошибкой в консоли](/images/clickstack/getting-started/observability-sample-data-checkout-error.png)
+      </Frame>
+    </div>
+
+    Выберите неудачное событие `POST /api/checkout`, чтобы изучить запрос и его трассу.
+  </Step>
+
+  <Step title="Просмотр трассировок" id="explore-traces">
+    Откройте вкладку **Trace**, чтобы просмотреть распределённую трассу вместе с относящимися к ней спанами и связанными журналами.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Каскадная диаграмма трассировки запроса checkout с его спанами, связанными журналами и ошибками](/images/clickstack/getting-started/observability-sample-data-trace.png)
+      </Frame>
+    </div>
+
+    Прокрутите трассу вниз и выберите спан `oteldemo.PaymentService/Charge` в сервисе `checkout`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Выбранный спан платёжного запроса с ошибкой об истёкшем сроке действия карты в атрибутах](/images/clickstack/getting-started/observability-sample-data-payment-span.png)
+      </Frame>
+    </div>
+
+    На вкладке **Overview** изучите раздел **Top Level Attributes**. `StatusCode` имеет значение `Error`, а `StatusMessage` сообщает, что срок действия кредитной карты истёк.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Атрибуты в разделе Overview со статусом Error и сообщением об истечении срока действия кредитной карты](/images/clickstack/getting-started/observability-sample-data-span-attributes.png)
+      </Frame>
+    </div>
+
+    В трассе выберите журнал ошибок `payment` под спаном платёжного сервиса. Его строка отмечена значком журнала — так его можно отличить от события ошибки в спане. В разделе **Overview** поле **Body** журнала подтверждает, что срок действия кредитной карты истёк. Атрибуты указывают на сервис `payment` и уровень важности `error`, дополняя трассу контекстом.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Связанный журнал ошибок платежа с сообщением об истёкшем сроке действия карты и атрибутами журнала](/images/clickstack/getting-started/observability-sample-data-correlated-log.png)
+      </Frame>
+    </div>
+
+    Мы выяснили причину неудачного оформления заказа: платёжный запрос был отклонён, поскольку срок действия кредитной карты истёк.
+  </Step>
+
+  <Step title="Просмотр журналов" id="explore-logs">
+    Чтобы изучить другие сбои платежей, вернитесь на страницу [Поиск](/ru/clickstack/observability/features/search).
+
+    Выберите **Logs** в качестве источника и отметьте `payment` в фильтре **ServiceName**. Задайте временной диапазон, который охватывает исследованный сеанс.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Поиск с фильтром по сервису payment: ошибки просроченной карты и переполнения кэша Visa наряду с успешными транзакциями](/images/clickstack/getting-started/observability-sample-data-payment-logs.png)
+      </Frame>
+    </div>
+
+    В результатах видна ошибка просроченной карты из исследованного сеанса, а также повторяющиеся ошибки `Visa cache full: cannot add new item.` Чтобы увидеть, когда возникают ошибки в сервисе payment, постройте чарт этих журналов ошибок по времени.
+  </Step>
+
+  <Step title="Построить чарт ошибок платежей" id="chart-payment-errors">
+    Откройте **Обозреватель диаграмм**, выберите **Time Series** и укажите **Logs** в качестве источника данных. В качестве aggregation выберите **Count of Events**.
+
+    В поле **Where** выберите **Lucene** и введите следующий фильтр:
+
+    ```text
+    SeverityText:"error" ServiceName:"payment"
+    ```
+
+    Задайте временной диапазон, охватывающий выборку данных, и нажмите **Выполнить**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Обозреватель диаграмм: подсчёт записей журнала об ошибках сервиса payment во времени с помощью фильтра Lucene](/images/clickstack/getting-started/observability-sample-data-payment-errors-chart.png)
+      </Frame>
+    </div>
+
+    Чарт показывает количество подходящих записей журнала об ошибках в каждом временном интервале. В него входят все ошибки сервиса `payment`, в том числе ошибки из-за истекшего срока действия карты и переполнения кэша. Это количество событий журнала, а не число уникальных неуспешных платежей.
+  </Step>
+</Steps>

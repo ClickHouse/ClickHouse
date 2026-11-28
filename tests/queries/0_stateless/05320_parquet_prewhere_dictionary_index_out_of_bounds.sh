@@ -24,5 +24,8 @@ ${CLICKHOUSE_LOCAL} --query "SELECT count(), countIf(s = 'v3'), countIf(s = 'v4'
 ${CLICKHOUSE_LOCAL} --query "SELECT overlay(base64Decode('$DATA'), '\\x08', 416) FORMAT RawBLOB" > "$FILE"
 ${CLICKHOUSE_LOCAL} --query "SELECT count(), countIf(s = 'v3') FROM file('$FILE') PREWHERE k % 7 = 3 SETTINGS $SETTINGS" 2>&1 \
     | grep -o -m1 'Dict index or rep/def level out of bounds (bp)'
+# Same file without PREWHERE: the indexes go through the fused decode-and-gather path.
+${CLICKHOUSE_LOCAL} --query "SELECT count(), countIf(s = 'v3') FROM file('$FILE') SETTINGS $SETTINGS" 2>&1 \
+    | grep -o -m1 'Dict index or rep/def level out of bounds (bp)'
 
 rm -f "$FILE"

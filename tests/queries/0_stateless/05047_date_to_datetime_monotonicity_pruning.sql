@@ -2,6 +2,7 @@
 -- window of day numbers, so key and statistics analysis must not assume order outside it.
 -- `identity` hides the column from analysis and gives the unpruned answer.
 
+SET min_marks_per_part_to_load_statistics = 0;
 set session_timezone = 'UTC'; -- these tests are timezone sensitive
 set optimize_use_implicit_projections = 0;
 
@@ -15,8 +16,8 @@ SELECT count() FROM test WHERE toDateTime32(d) > toDateTime('2020-11-06 00:00:00
 SELECT count() FROM test WHERE toDateTime32(identity(d)) > toDateTime('2020-11-06 00:00:00');
 SELECT count() FROM test WHERE CAST(d AS DateTime) > toDateTime('2020-11-06 00:00:00');
 SELECT count() FROM test WHERE CAST(identity(d) AS DateTime) > toDateTime('2020-11-06 00:00:00');
-SELECT count() FROM test WHERE accurateCast(d, 'DateTime') > toDateTime('2020-11-06 00:00:00');
-SELECT count() FROM test WHERE accurateCast(identity(d), 'DateTime') > toDateTime('2020-11-06 00:00:00');
+SELECT count() FROM test WHERE accurateCast(d, 'DateTime') > toDateTime('2020-11-06 00:00:00'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT count() FROM test WHERE accurateCast(identity(d), 'DateTime') > toDateTime('2020-11-06 00:00:00'); -- { serverError CANNOT_CONVERT_TYPE }
 
 -- The same wrapping range on the statistics surface, which has no primary key to prune on.
 drop table if exists test_stat;

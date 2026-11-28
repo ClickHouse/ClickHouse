@@ -12,6 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # slot and its partition's `merge_with_ttl_timeout` postponement, so the expired row goes as soon as the pool frees.
 
 pool_tasks=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'BackgroundMergesAndMutationsPoolSize'")
+pool_threads=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'background_pool_size'")
 num_partitions=$((pool_tasks + 2))
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_ttl_full_pool_blockers SYNC"
@@ -48,14 +49,22 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO t_ttl_full_pool VALUES (1, now() - INTER
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT merge_task_projection_stage_pause"
 $CLICKHOUSE_CLIENT --query "SYSTEM START MERGES t_ttl_full_pool_blockers"
 
+# The task metric is server-global and also counts merges of other tables (e.g. system logs) that the failpoint does not
+# hold; one of them can finish and free a slot. The pool stays full only once every merge thread is parked at the failpoint.
+parked_needed=$(( pool_threads < pool_tasks ? pool_threads : pool_tasks ))
 full=no
 deadline=$((SECONDS + 120))
 while (( SECONDS < deadline )); do
+    parked=$($CLICKHOUSE_CLIENT --query "
+        SELECT count() FROM system.merges
+        WHERE database = currentDatabase() AND table = 't_ttl_full_pool_blockers' AND current_projection != ''")
     tasks=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'BackgroundMergesAndMutationsPoolTask'")
-    if [[ "$tasks" -ge "$pool_tasks" ]]; then
+    if [[ "$parked" -ge "$parked_needed" && "$tasks" -ge "$pool_tasks" ]]; then
         full=yes
         break
     fi
+    # Hand a slot freed by a merge of another table to the blockers without waiting for their assignment backoff.
+    [[ "$tasks" -lt "$pool_tasks" ]] && $CLICKHOUSE_CLIENT --query "SYSTEM START MERGES t_ttl_full_pool_blockers"
     sleep 0.2
 done
 echo "merge pool full: $full"

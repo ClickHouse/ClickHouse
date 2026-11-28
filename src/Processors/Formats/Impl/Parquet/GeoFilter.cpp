@@ -1,5 +1,5 @@
 #include <algorithm>
-#include <unordered_set>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
@@ -141,12 +141,12 @@ bool geospatialStatisticsHaveOnlyPoints(const parq::GeospatialStatistics & stati
 
 }
 
-std::vector<SpatialFilter> extractSpatialFilters(
+VectorWithMemoryTracking<SpatialFilter> extractSpatialFilters(
     const DB::ActionsDAG & filter_dag,
     const DB::Block & sample_block)
 {
-    std::vector<SpatialFilter> result;
-    std::unordered_set<const DB::ActionsDAG::Node *> visited;
+    VectorWithMemoryTracking<SpatialFilter> result;
+    UnorderedSetWithMemoryTracking<const DB::ActionsDAG::Node *> visited;
 
     /// Walk from DAG outputs, following only `and` nodes.
     /// Spatial predicates reachable via OR or other non-conjunctive paths are excluded
@@ -165,7 +165,7 @@ std::vector<SpatialFilter> extractSpatialFilters(
 bool rowGroupFailsSpatialFilters(
     const Reader & reader,
     size_t row_group_idx,
-    const std::vector<SpatialFilter> & filters)
+    const VectorWithMemoryTracking<SpatialFilter> & filters)
 {
     /// All filters here come from a conjunctive-only extraction (only AND branches).
     /// Therefore: if ANY single filter is disjoint from the row group, the whole AND

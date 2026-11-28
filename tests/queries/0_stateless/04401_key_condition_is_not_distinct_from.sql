@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
+-- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings, no-msan
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 -- no-random-merge-tree-settings: the test asserts exact `Granules: N/M` counts, which depend on the

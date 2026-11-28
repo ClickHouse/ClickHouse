@@ -13,17 +13,17 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
-ClickHouse は複数のカタログ (Unity、Glue、Polaris など) とのインテグレーションをサポートしています。このガイドでは、ClickHouse と [Apache Polaris Catalog](https://polaris.apache.org/releases/1.1.0/getting-started/using-polaris/#setup) を使用してデータをクエリする手順を説明します。
+ClickHouse は複数のカタログ (Unity、Glue、Polaris など) とのインテグレーションをサポートしています。このガイドでは、ClickHouse と [Apache Polaris カタログ](https://polaris.apache.org/releases/1.1.0/getting-started/using-polaris/#setup) を使用してデータをクエリする手順を説明します。
 Apache Polaris は Iceberg テーブルと Delta Tables (Generic Tables 経由) をサポートしていますが、現時点でこのインテグレーションでサポートされているのは Iceberg テーブルのみです。
 
 <Note>
-  この機能は実験的なため、次を使用して有効にする必要があります。
-  `SET allow_experimental_database_unity_catalog = 1;`
+  この機能はベータ版です。次のコマンドで有効化してください。
+  `SET allow_database_iceberg = 1;`
+
+  25.8 より前のバージョンでは、この機能は実験的機能として扱われるため、代わりに `SET allow_experimental_database_iceberg = 1;` を使用してください。
 </Note>
 
-<div id="prerequisites">
-  ## 前提条件
-</div>
+## 前提条件 {#prerequisites}
 
 Polaris カタログに接続するには、次のものが必要です。
 

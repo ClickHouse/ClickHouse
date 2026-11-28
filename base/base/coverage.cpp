@@ -1,5 +1,7 @@
 #include "coverage.h"
 
+#include <base/sanitizer_defs.h>
+
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 
@@ -31,38 +33,20 @@ extern "C" void __llvm_profile_dump();  // NOLINT
 #include <vector>
 
 
-/// Minimal re-declaration of the LLVM profiling data structure.
-/// Field layout must match compiler-rt/lib/profile/InstrProfiling.h
-/// (generated from InstrProfData.inc with IntPtrT = void*).
-///
-/// Fields in order:
-///   uint64_t  NameRef
-///   uint64_t  FuncHash
-///   void*     CounterPtr   (relative offset: counter = (char*)&record + (intptr_t)CounterPtr)
-///   void*     BitmapPtr    (relative offset, similar)
-///   void*     FunctionPointer  (absolute virtual address of the function)
-///   void*     Values
-///   uint32_t  NumCounters
-///   uint16_t  NumValueSites[3]  (IPVK_Last+1 = 3)
-///   uint32_t  NumBitmapBytes
-struct LLVMProfileData  // NOLINT
+/// Same definitions as compiler-rt's `InstrProfiling.h`, so the record layout matches the bundled profile runtime.
+enum ValueKind  // NOLINT
 {
-    const uint64_t NameRef;       // NOLINT
-    const uint64_t FuncHash;      // NOLINT
-    const void * CounterPtr;      // NOLINT  relative: actual counter = (char*)this + (intptr_t)CounterPtr
-    const void * BitmapPtr;       // NOLINT  relative, unused here
-    const void * FunctionPointer; // NOLINT  absolute virtual address
-    void * Values;                // NOLINT
-    const uint32_t NumCounters;      // NOLINT
-    const uint16_t NumValueSites[3]; // NOLINT  IPVK_Last+1 = 3 (IndirectCall, MemOpSize, VTableTarget)
-    const uint32_t NumBitmapBytes;   // NOLINT  at offset 60 after 2-byte implicit padding
+#define VALUE_PROF_KIND(Enumerator, Value, Descr) Enumerator = Value,
+#include <profile/InstrProfData.inc>
 };
 
-static_assert(sizeof(LLVMProfileData) == 64,
-    "LLVMProfileData size mismatch - field layout must match compiler-rt __llvm_profile_data");
-static_assert(offsetof(LLVMProfileData, CounterPtr)     == 16, "LLVMProfileData::CounterPtr offset mismatch");
-static_assert(offsetof(LLVMProfileData, FunctionPointer)== 32, "LLVMProfileData::FunctionPointer offset mismatch");
-static_assert(offsetof(LLVMProfileData, NumCounters)    == 48, "LLVMProfileData::NumCounters offset mismatch");
+using IntPtrT = void *;  // NOLINT
+
+struct LLVMProfileData  // NOLINT
+{
+#define INSTR_PROF_DATA(Type, LLVMType, Name, Initializer) Type Name;
+#include <profile/InstrProfData.inc>
+};
 
 extern "C"
 {
@@ -112,8 +96,8 @@ namespace
 {
 
 /// FNV-64 hash matching LLVM's IndexedInstrProf::ComputeHash / __llvm_profile_str2hash.
-static uint64_t fnv64(const char * s) __attribute__((xray_never_instrument));
-static uint64_t fnv64(const char * s)
+static uint64_t NO_SANITIZE_UNSIGNED_OVERFLOW fnv64(const char * s) __attribute__((xray_never_instrument));
+static uint64_t NO_SANITIZE_UNSIGNED_OVERFLOW fnv64(const char * s)
 {
     uint64_t h = 0xcbf29ce484222325ULL;
     for (; *s; ++s) { h ^= static_cast<uint8_t>(*s); h *= 0x100000001b3ULL; }
@@ -282,13 +266,13 @@ std::vector<CovCounter> getCurrentCoveredNameRefs()
 }
 
 
-/// LLVM value-profiling node: records one (value, count) pair for indirect calls.
-/// Matches compiler-rt's ValueProfNode layout.
-struct ValueProfNode
+struct ValueProfNode;
+using PtrToNodeT = ValueProfNode *;  // NOLINT
+
+struct ValueProfNode  // NOLINT
 {
-    uint64_t value; /// Absolute runtime address of the callee
-    uint64_t count;
-    ValueProfNode * next;
+#define INSTR_PROF_VALUE_NODE(Type, LLVMType, Name, Initializer) Type Name;
+#include <profile/InstrProfData.inc>
 };
 
 std::vector<IndirectCallEntry> getCurrentIndirectCalls()
@@ -313,9 +297,7 @@ std::vector<IndirectCallEntry> getCurrentIndirectCalls()
 
     for (const LLVMProfileData * data = begin; data != end; ++data)
     {
-        /// IPVK_IndirectCallTarget is kind 0; NumValueSites[0] is the number of
-        /// indirect-call sites instrumented in this function.
-        if (data->NumValueSites[0] == 0 || !data->Values)
+        if (data->NumValueSites[IPVK_IndirectCallTarget] == 0 || !data->Values)
             continue;
 
         /// Values → array of ValueProfNode* heads, one per indirect-call site.
@@ -325,22 +307,22 @@ std::vector<IndirectCallEntry> getCurrentIndirectCalls()
         /// this manual reset every test would accumulate all prior indirect calls.
         auto * const sites = static_cast<ValueProfNode * const *>(data->Values);
 
-        for (uint16_t s = 0; s < data->NumValueSites[0]; ++s)
+        for (uint16_t s = 0; s < data->NumValueSites[IPVK_IndirectCallTarget]; ++s)
         {
-            for (ValueProfNode * node = const_cast<ValueProfNode *>(sites[s]); node; node = node->next)
+            for (ValueProfNode * node = const_cast<ValueProfNode *>(sites[s]); node; node = node->Next)
             {
-                if (node->count == 0 || node->value == 0)
+                if (node->Count == 0 || node->Value == 0)
                     continue;
-                const uint64_t call_count = node->count;
-                node->count = 0; /// reset for next test — prevents cross-test accumulation
+                const uint64_t call_count = node->Count;
+                node->Count = 0; /// reset for next test - prevents cross-test accumulation
                 /// Only record callees that lie above __executable_start (main binary).
                 /// Shared-library callees with ASLR addresses below the binary base are
                 /// filtered here; remaining ubiquitous callees (glibc, libstdc++) are
                 /// filtered at query time via HAVING uniqExact(test_name) < N.
                 /// Note: __etext is not exported by lld, so we skip the upper-bound check.
-                if (node->value < load_base)
+                if (node->Value < load_base)
                     continue;
-                const uint64_t offset = node->value - load_base;
+                const uint64_t offset = node->Value - load_base;
                 result.push_back({data->NameRef, data->FuncHash, offset, call_count});
             }
         }

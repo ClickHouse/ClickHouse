@@ -9,7 +9,15 @@ endif ()
 
 if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
     # 3rd-party libraries usually not intended to work with UBSan.
-    add_compile_options(-fno-sanitize=undefined)
+    # `unsigned-integer-overflow` is not a part of the `undefined` group and has to be listed
+    # separately. Header-only third-party code, which is compiled as a part of our own translation
+    # units and therefore is not affected by these options, is excluded in `tests/ubsan_ignorelist.txt`.
+    # Only C/C++ (and GNU-style ASM handled by clang) understand these; scope them away from other
+    # languages such as ASM_NASM (ISA-L on amd64), whose nasm assembler reads `-fno-sanitize=undefined`
+    # as `-f no-sanitize=undefined`, an output format, and fails with `unrecognised output format`.
+    add_compile_options(
+        $<$<COMPILE_LANGUAGE:C,CXX,ASM>:-fno-sanitize=undefined>
+        $<$<COMPILE_LANGUAGE:C,CXX,ASM>:-fno-sanitize=unsigned-integer-overflow>)
 endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
@@ -115,7 +123,7 @@ add_contrib (snappy-cmake snappy)
 add_contrib (thrift-cmake thrift)
 add_contrib (StringZilla-cmake StringZilla)
 add_contrib (heks-cmake heks)
-# parquet/arrow/orc
+# parquet/arrow
 add_contrib (xsimd-cmake xsimd) # required by arrow's SIMD codepaths
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion, xsimd, flatbuffers
 add_contrib (avro-cmake avro) # requires: snappy
@@ -126,6 +134,29 @@ add_contrib (libarchive-cmake libarchive)
 add_contrib (corrosion-cmake corrosion)
 add_contrib (delta-kernel-rs-cmake delta-kernel-rs)
 add_contrib (chdig-cmake chdig)
+
+# Members of the cargo workspace in `rust-contrib-workspace`
+if (ENABLE_RUST AND OS_FREEBSD)
+    # Right nix/libc requires fspacectl and it had been added only since FreeBSD14.
+    # And since sysroot has older libraries you will got undefined reference for clickhouse binary.
+    #
+    # But likely everything should work without this syscall, however it is not
+    # possible right now to gently override libraries versions for dependencies,
+    # and forking rust modules is a little bit too much for this thing.
+    #
+    # You can take a look at the details in the following issue [1].
+    #
+    #   [1]: https://github.com/rust-lang/cargo/issues/5640
+    #
+    # Update 2024-04: Now prql also requires getrandom() via std::sys::pal::unix::rand::imp::getrandom_fill_bytes
+    message(STATUS "Rust build is disabled for FreeBSD because we use old sysroot files")
+elseif (ENABLE_RUST)
+    add_contrib (prql-cmake)
+    add_contrib (polyglot-cmake)
+    add_contrib (pcodec-cmake)
+    add_contrib (vortex-cmake)
+    add_contrib (wasmtime-cmake)
+endif()
 
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
@@ -326,6 +357,9 @@ add_contrib (librtcx-cmake librtcx)
 # No base folder: nvcomp is not vendored, see contrib/nvcomp-cmake/CMakeLists.txt.
 add_contrib (nvcomp-cmake)
 add_contrib (cudf-cmake cudf) # requires: everything above, plus flatbuffers, xxHash, zlib, zstd
+
+# Must come after every member of the Rust workspace.
+add_contrib (rust-contrib-workspace)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

@@ -28,19 +28,19 @@ public:
         return std::make_shared<FunctionConsistentHashImpl<Impl>>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 2;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// executeImpl only supports NativeInteger/IPv4 for the hash value; the second arg
         /// (number of buckets) must be a constant native integer — wide (128/256-bit)
@@ -49,26 +49,26 @@ public:
         return "(NativeInteger | IPv4, const NativeInteger) -> " + ret;
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
-    bool useDefaultImplementationForConstants() const override
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
 
     /// Disable default Variant implementation for compatibility.
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    bool useDefaultImplementationForVariant() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return false; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         return {1};
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         if (isColumnConst(*arguments[1].column))
             return executeConstBuckets(arguments);
@@ -81,7 +81,7 @@ private:
     using BucketsType = typename Impl::BucketsType;
 
     template <typename T>
-    BucketsType checkBucketsRange(T buckets) const
+    [[nodiscard]] BucketsType checkBucketsRange(T buckets) const
     {
         if (unlikely(buckets <= 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} (number of buckets) must be positive number", getName());
@@ -93,7 +93,7 @@ private:
         return static_cast<BucketsType>(buckets);
     }
 
-    ColumnPtr executeConstBuckets(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] ColumnPtr executeConstBuckets(const ColumnsWithTypeAndName & arguments) const
     {
         /// `getReturnTypeImpl` already verified `arguments[1]` is an integer; read it directly to avoid an intermediate `Field`.
         const IColumn & buckets_col = *arguments[1].column;

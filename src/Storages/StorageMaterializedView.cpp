@@ -18,6 +18,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/DefinerDependencies.h>
 #include <Databases/DDLDependencyVisitor.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -89,6 +90,7 @@ namespace ErrorCodes
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
     extern const int TOO_MANY_MATERIALIZED_VIEWS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int HAVE_DEPENDENT_OBJECTS;
 }
 
 namespace ActionLocks
@@ -136,29 +138,55 @@ namespace
         return referenced_tables.contains(view_id.getQualifiedName());
     }
 
-    ASTTableExpression & getIncrementalSourceTableExpression(const ASTPtr & select_with_union)
+    /// Returns nullptr instead of throwing when `can_throw` is false.
+    ASTTableExpression * tryGetIncrementalSourceTableExpression(const ASTPtr & select_with_union, bool can_throw)
     {
         auto * union_query = select_with_union->as<ASTSelectWithUnionQuery>();
         if (!union_query || !union_query->list_of_selects || union_query->list_of_selects->children.size() != 1)
+        {
+            if (!can_throw)
+                return nullptr;
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh requires a single SELECT query");
+        }
 
         auto * select = union_query->list_of_selects->children[0]->as<ASTSelectQuery>();
         if (!select)
+        {
+            if (!can_throw)
+                return nullptr;
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh requires a plain SELECT query");
+        }
 
         auto tables = select->tables();
         if (!tables || tables->children.size() != 1)
+        {
+            if (!can_throw)
+                return nullptr;
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh requires exactly one source table (no joins)");
+        }
 
         auto * table_element = tables->children[0]->as<ASTTablesInSelectQueryElement>();
         if (!table_element || !table_element->table_expression)
+        {
+            if (!can_throw)
+                return nullptr;
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh requires a source table");
+        }
 
         auto * table_expr = table_element->table_expression->as<ASTTableExpression>();
         if (!table_expr || !table_expr->database_and_table_name)
+        {
+            if (!can_throw)
+                return nullptr;
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh source must be a table, not a subquery or table function");
+        }
 
-        return *table_expr;
+        return table_expr;
+    }
+
+    ASTTableExpression & getIncrementalSourceTableExpression(const ASTPtr & select_with_union)
+    {
+        return *tryGetIncrementalSourceTableExpression(select_with_union, /*can_throw*/ true);
     }
 
     size_t countTableExpressions(const IAST & ast)
@@ -191,9 +219,16 @@ namespace
                 "Incremental refresh source table {} has engine {}, which does not support streaming",
                 source->getStorageID().getNameForLogs(), source->getName());
 
-        /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
+        /// The refresh resumes from the cursor that the read reports through `Context::getStreamingCursor`, and only
+        /// a `MergeTree` read reports it. A source of another engine that supports STREAM (e.g. a queue) would be
+        /// read from the beginning on every refresh, appending the same rows again.
         const auto * merge_tree = castStorage<MergeTreeData>(source, DeferredTable::Load).get();
-        if (merge_tree)
+        if (!merge_tree)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Incremental refresh source table {} has engine {}; only MergeTree tables are supported",
+                source->getStorageID().getNameForLogs(), source->getName());
+
+        /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
         {
             if (merge_tree->merging_params.mode != MergeTreeData::MergingParams::Ordinary)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -467,6 +502,11 @@ StorageMaterializedView::StorageMaterializedView(
 
         InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
         create_interpreter.setInternal(true);
+        /// The inner table comes from the backup too, so it must not get a definition other than the backup's.
+        /// An inner `TimeSeries` table is an exception: the view stores only the `ENGINE = TimeSeries` clause,
+        /// without the definitions of the inner tables of the `TimeSeries` table, which `normalizeTimeSeriesDefinition`
+        /// generates only for a new table. They are not in the backup, so they must be generated again.
+        create_interpreter.setIsRestoreFromBackup(is_restore_from_backup && !manual_create_query->is_time_series_table);
         create_interpreter.execute();
 
         if (fixed_uuid)
@@ -546,18 +586,42 @@ void StorageMaterializedView::readImpl(
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
 
-    if (!view_metadata->select.select_table_id.empty())
-        context->checkAccess(AccessType::SELECT, view_metadata->select.select_table_id, column_names);
+    /// Reading a view column requires `SELECT` on the source-table column with the same name. A subcolumn
+    /// read (e.g. `t.a`) must require exactly what reading its parent `t` requires, so normalize against the
+    /// view's own schema (the one the names were resolved against), not the target table's, which can diverge.
+    const auto & select_table_id = view_metadata->select.select_table_id;
+    if (!select_table_id.empty())
+        context->checkAccess(
+            AccessType::SELECT, select_table_id, storage_snapshot->getColumnNamesForSelectAccessCheck(column_names, context, select_table_id));
 
     auto storage_id = storage->getStorageID();
 
     /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
     /// We don't need to check access if the inner table was created automatically.
+    /// Subcolumns (e.g. `t.a`) are covered by the grant on their parent column, so map them back to top-level storage
+    /// columns of the target table.
     if (!has_inner_table && !storage_id.empty() && view_metadata->sql_security_type)
-        context->checkAccess(AccessType::SELECT, storage_id, column_names);
+        context->checkAccess(
+            AccessType::SELECT, storage_id, target_storage_snapshot->getColumnNamesForSelectAccessCheck(column_names, context, storage_id));
 
     auto src_table_query_info = query_info;
     src_table_query_info.initial_storage_snapshot = storage_snapshot;
+
+    /// `context` has a query context of its own only for a `DEFINER` / `NONE` view.
+    if (local_context->hasQueryContext() && context->hasQueryContext()
+        && context->getQueryContext() != local_context->getQueryContext())
+    {
+        auto read_query = make_intrusive<ASTSelectQuery>();
+        auto select_list = make_intrusive<ASTExpressionList>();
+        for (const auto & name : column_names)
+            select_list->children.push_back(make_intrusive<ASTIdentifier>(name));
+        read_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+        read_query->replaceDatabaseAndTable(storage_id);
+        local_context->getQueryContext()->addSQLSecurityOverriddenBody(getStorageID(), context, read_query);
+        /// `storage->read` below bypasses the planner, which records what a read accesses.
+        context->getQueryContext()->addQueryAccessInfo(storage_id, column_names);
+    }
+
     storage->read(query_plan, column_names, target_storage_snapshot, src_table_query_info, context, processed_stage, max_block_size, num_streams);
 
     if (query_plan.isInitialized())
@@ -732,6 +796,22 @@ bool StorageMaterializedView::optimize(
     ContextPtr local_context)
 {
     checkStatementCanBeForwarded();
+    if (deduplicate)
+    {
+        /// Reading the view requires `SELECT` on its source table too, see `readImpl`.
+        auto view_metadata = getInMemoryMetadataPtr(local_context, false);
+        const auto & select_table_id = view_metadata->select.select_table_id;
+        if (!select_table_id.empty())
+        {
+            const auto & columns = view_metadata->getColumns();
+            auto context = view_metadata->getSQLSecurityOverriddenContext(local_context);
+            context->checkAccess(
+                AccessType::SELECT,
+                select_table_id,
+                columns.getColumnNamesForSelectAccessCheck(
+                    deduplicate_by_columns.empty() ? columns.getNamesOfPhysical() : deduplicate_by_columns, context, select_table_id));
+        }
+    }
     auto storage_ptr = getTargetTable();
     auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(local_context, false);
     return storage_ptr->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
@@ -741,11 +821,19 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
 {
     ContextPtr table_context = getContext();
     ClientInfo client_info = table_context->getClientInfo();
-    client_info.interface = ClientInfo::Interface::BACKGROUND;
-    client_info.client_name = "refreshable materialized view";
     auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
     auto refresh_context = view_metadata->getSQLSecurityOverriddenContext(table_context, &client_info);
-    refresh_context->setClientInfo(client_info);
+    /// For `SQL SECURITY DEFINER`, `getSQLSecurityOverriddenContext` fills the empty user names in
+    /// the context's `ClientInfo` with the definer. Do not assign the local `client_info` copy to
+    /// the context: `setClientInfo` replaces the whole struct and would wipe that identity out.
+    /// Re-read it instead, so that a view without SQL security (which gets a plain copy) also gets
+    /// these fields.
+    {
+        ClientInfo refresh_client_info = refresh_context->getClientInfo();
+        refresh_client_info.interface = ClientInfo::Interface::BACKGROUND;
+        refresh_client_info.client_name = "refreshable materialized view";
+        refresh_context->setClientInfo(refresh_client_info);
+    }
     refresh_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
     refresh_context->setSetting("log_comment", log_comment);
     refresh_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
@@ -818,6 +906,8 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
         /// entries. doCreateOrReplaceTable's internal drop inherits these settings via the create context.
         refresh_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
         refresh_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+        /// The temporary table repeats the stored definition of the existing target.
+        refresh_context->setSetting("allow_reserved_column_names", Field(UInt64{1}));
 
         InterpreterCreateQuery create_interpreter(create_query, refresh_context);
         create_interpreter.setInternal(true);
@@ -965,10 +1055,7 @@ void StorageMaterializedView::alter(
             /// As in InterpreterAlterQuery: the query-scoped cache can hold a snapshot pinned before
             /// this lock, and the alter below reads the inner table's metadata through that cache.
             if (auto metadata_cache = local_context->getQueryMetadataCache())
-            {
-                auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
-                cache->clear();
-            }
+                metadata_cache->clear();
             target_table->checkAlterIsPossible(column_comment_commands, local_context);
             /// Not `local_context`: a `Replicated` database has a single ZooKeeper transaction per query
             /// and commits it at the first metadata change made from the query context itself, which has
@@ -1082,7 +1169,9 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         auto rename = make_intrusive<ASTRenameQuery>();
         rename->addElement(inner_table_id.database_name, inner_table_id.table_name, new_table_id.database_name, new_target_table_name);
 
-        InterpreterRenameQuery(rename, getContext()).execute();
+        InterpreterRenameQuery interpreter(rename, getContext());
+        interpreter.setSkipDatabaseLocks(true);
+        interpreter.execute();
         updateTargetTableId(new_table_id.database_name, new_target_table_name);
     }
 
@@ -1255,6 +1344,56 @@ void StorageMaterializedView::onActionLockRemove(StorageActionBlockType action_t
 {
     if ((action_type == ActionLocks::ViewRefresh || action_type == ActionLocks::ViewRefreshPause) && refresher)
         refresher->start();
+}
+
+void StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(const StorageID & table_id, const ContextPtr & local_context, bool is_drop_database)
+{
+    auto & catalog = DatabaseCatalog::instance();
+    for (const auto & dependent_id : catalog.getReferentialDependents(table_id))
+    {
+        /// `DROP DATABASE` drops dependents before their dependencies.
+        if (is_drop_database && dependent_id.database_name == table_id.database_name)
+            continue;
+        auto view = std::dynamic_pointer_cast<StorageMaterializedView>(catalog.tryGetTable(dependent_id, local_context));
+        if (!view)
+            continue;
+        /// The override also looks up the target table, which may be unreachable.
+        auto metadata = view->IStorage::getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false);
+        const auto * refresh_strategy = metadata->refresh ? metadata->refresh->as<ASTRefreshStrategy>() : nullptr;
+        if (!refresh_strategy || !refresh_strategy->isIncremental())
+            continue;
+
+        auto * source_table_expr = tryGetIncrementalSourceTableExpression(metadata->getSelectQuery().select_query, /*can_throw*/ false);
+        if (!source_table_expr)
+            continue;
+        const auto * identifier = source_table_expr->database_and_table_name->as<ASTTableIdentifier>();
+        if (!identifier)
+            continue;
+        auto source_id = identifier->getTableId();
+        if (source_id.database_name.empty())
+            source_id.database_name = view->getStorageID().database_name;
+
+        /// The cursor is in the source's block-number space, so another table under the same name would be read from a stale cursor.
+        if (source_id.database_name == table_id.database_name && source_id.table_name == table_id.table_name)
+            throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS,
+                "Cannot drop, rename or exchange table {}, because it is the source of incremental refreshable materialized view {}. "
+                "Drop the view first",
+                table_id.getNameForLogs(), view->getStorageID().getNameForLogs());
+    }
+}
+
+void StorageMaterializedView::checkDatabaseHasNoIncrementalRefreshSources(
+    const IDatabase & database, const String & database_name, const ContextPtr & local_context, bool is_drop_database)
+{
+    /// External databases cannot hold the `MergeTree` source of an incremental view, and listing their tables may query a remote catalog.
+    if (database.isExternal())
+        return;
+
+    for (auto iterator = database.getTablesIterator(local_context); iterator->isValid(); iterator->next())
+        checkTableIsNotIncrementalRefreshSource(StorageID(database_name, iterator->name()), local_context, is_drop_database);
+
+    for (auto iterator = database.getDetachedTablesIterator(local_context, {}, false); iterator->isValid(); iterator->next())
+        checkTableIsNotIncrementalRefreshSource(StorageID(database_name, iterator->table()), local_context, is_drop_database);
 }
 
 StorageID StorageMaterializedView::getTargetTableId() const

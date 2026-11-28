@@ -37,6 +37,7 @@ namespace Setting
     extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const SettingsBool optimize_group_by_constant_keys;
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
+    extern const SettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
 }
@@ -96,21 +97,21 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     : ITTLAlgorithm(ttl_expressions_, addImplicitlyAggregatedColumns(description_, header_, storage_.getContext()), old_ttl_info_, current_time_, force_)
     , header(header_)
 {
+    const auto & context = storage_.getContext();
+    const auto & storage_columns = metadata_snapshot_->getColumns();
+    Block header_of_stored_columns;
+    for (const auto & column : header)
+        if (storage_columns.hasPhysical(column.name))
+            header_of_stored_columns.insert(column);
+
     const auto & sorting_key = metadata_snapshot_->getSortingKey();
     if (!sorting_key.column_names.empty())
     {
-        const auto & context = storage_.getContext();
-
         /// The sorting key may be calculated from subcolumns, which are not separate columns of the header.
         /// A merge calculates the sorting key before the TTL, so its header may already have a column named after
         /// a subcolumn, e.g. `n.a` for `ORDER BY n.a`. It holds the value calculated before `SET`, so the subcolumn
         /// is extracted from the stored column instead.
         auto sorting_key_dag = sorting_key.expression->getActionsDAG().clone();
-        const auto & storage_columns = metadata_snapshot_->getColumns();
-        Block header_of_stored_columns;
-        for (const auto & column : header)
-            if (storage_columns.hasPhysical(column.name))
-                header_of_stored_columns.insert(column);
         auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header_of_stored_columns, sorting_key_dag.getRequiredColumnsNames(), context);
         if (!extracting_subcolumns_dag.getNodes().empty())
             sorting_key_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(sorting_key_dag));
@@ -167,14 +168,47 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
         /*enable_parallel_single_level_merge_=*/false,
+        /*enable_parallel_single_level_merge_by_index_=*/true,
         settings[Setting::enable_packed_string_keys_in_aggregation],
+        settings[Setting::enable_fixed_and_packed_string_keys_in_aggregation],
         /* enable_adaptive_aggregator */ false,
         /* adaptive_aggregator_freeze_threshold */ 0,
         /* adaptive_aggregator_freeze_threshold_bytes */ 0,
         /* adaptive_aggregator_disable_thaw */ false,
         /* use_aggregation_memory_tracker */ true);
 
-    aggregator = std::make_unique<Aggregator>(header, params);
+    aggregator_header = header;
+    const bool has_calculated_arguments = std::ranges::any_of(description.aggregate_descriptions, [&](const AggregateDescription & aggregate)
+        { return std::ranges::any_of(aggregate.argument_names, [&](const String & name) { return !header.has(name); }); });
+    for (const auto & set_part : description.set_parts)
+    {
+        if (!has_calculated_arguments || !set_part.expression_ast)
+            continue;
+        auto arguments_expression = set_part.buildArgumentsExpression(context);
+        if (!arguments_expression)
+            continue;
+
+        auto arguments_dag = arguments_expression->getActionsDAG().clone();
+        std::erase_if(arguments_dag.getOutputs(), [&](const ActionsDAG::Node * output) { return aggregator_header.has(output->result_name); });
+        if (arguments_dag.getOutputs().empty())
+            continue;
+        arguments_dag.removeUnusedActions();
+
+        Names names;
+        for (const auto * output : arguments_dag.getOutputs())
+        {
+            names.push_back(output->result_name);
+            aggregator_header.insert({output->result_type->createColumn(), output->result_type, output->result_name});
+        }
+
+        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header_of_stored_columns, arguments_dag.getRequiredColumnsNames(), context);
+        if (!extracting_subcolumns_dag.getNodes().empty())
+            arguments_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(arguments_dag));
+
+        argument_expressions.emplace_back(std::make_shared<ExpressionActions>(std::move(arguments_dag), ExpressionActionsSettings(context)), std::move(names));
+    }
+
+    aggregator = std::make_unique<Aggregator>(aggregator_header, params);
 
     if (isMaxTTLExpired())
         new_ttl_info.ttl_finished = true;
@@ -208,6 +242,17 @@ void TTLAggregationAlgorithm::execute(Block & block)
         PaddedPODArray<Int64> timestamps;
         extractTimestamps(ttl_column.get(), timestamps);
 
+        /// Resolve columns by name once per block, not once per row.
+        std::vector<const IColumn *> key_columns_in_block;
+        key_columns_in_block.reserve(description.group_by_keys.size());
+        for (const auto & key_column : description.group_by_keys)
+            key_columns_in_block.push_back(block.getByName(key_column).column.get());
+
+        std::vector<std::pair<const IColumn *, size_t>> columns_in_block_and_header;
+        columns_in_block_and_header.reserve(column_names.size());
+        for (const auto & name : column_names)
+            columns_in_block_and_header.emplace_back(block.getByName(name).column.get(), header.getPositionByName(name));
+
         size_t rows_aggregated = 0;
         size_t current_key_start = 0;
         size_t rows_with_current_key = 0;
@@ -219,10 +264,9 @@ void TTLAggregationAlgorithm::execute(Block & block)
             bool ttl_expired = isTTLExpired(cur_ttl) && where_filter_passed;
 
             bool same_as_current = true;
-            for (size_t j = 0; j < description.group_by_keys.size(); ++j)
+            for (size_t j = 0; j < key_columns_in_block.size(); ++j)
             {
-                const String & key_column = description.group_by_keys[j];
-                const IColumn * values_column = block.getByName(key_column).column.get();
+                const IColumn * values_column = key_columns_in_block[j];
                 if (!same_as_current || (*values_column)[i] != current_key_value[j])
                 {
                     values_column->get(i, current_key_value[j]);
@@ -257,21 +301,13 @@ void TTLAggregationAlgorithm::execute(Block & block)
             {
                 ++rows_with_current_key;
                 ++rows_aggregated;
-                for (const auto & name : column_names)
-                {
-                    const IColumn * values_column = block.getByName(name).column.get();
-                    auto & column = aggregate_columns[header.getPositionByName(name)];
-                    column->insertFrom(*values_column, i);
-                }
+                for (const auto & [values_column, position] : columns_in_block_and_header)
+                    aggregate_columns[position]->insertFrom(*values_column, i);
             }
             else
             {
-                for (const auto & name : column_names)
-                {
-                    const IColumn * values_column = block.getByName(name).column.get();
-                    auto & column = result_columns[header.getPositionByName(name)];
-                    column->insertFrom(*values_column, i);
-                }
+                for (const auto & [values_column, position] : columns_in_block_and_header)
+                    result_columns[position]->insertFrom(*values_column, i);
             }
         }
 
@@ -304,12 +340,24 @@ void TTLAggregationAlgorithm::execute(Block & block)
 void TTLAggregationAlgorithm::calculateAggregates(const MutableColumns & aggregate_columns, size_t start_pos, size_t length)
 {
     Columns aggregate_chunk;
-    aggregate_chunk.reserve(aggregate_columns.size());
+    aggregate_chunk.reserve(aggregator_header.columns());
     for (const auto & name : header.getNames())
     {
         const auto & column = aggregate_columns[header.getPositionByName(name)];
         ColumnPtr chunk_column = column->cut(start_pos, length);
         aggregate_chunk.emplace_back(std::move(chunk_column));
+    }
+
+    for (const auto & [expression, names] : argument_expressions)
+    {
+        Block arguments;
+        for (const auto & input : expression->getRequiredColumnsWithTypes())
+            arguments.insert({aggregate_chunk[header.getPositionByName(input.name)], input.type, input.name});
+        /// An argument may have no inputs, e.g. `sum(1)`, so the number of rows is passed explicitly.
+        size_t num_rows = length;
+        expression->execute(arguments, num_rows);
+        for (const auto & name : names)
+            aggregate_chunk.push_back(arguments.getByName(name).column);
     }
 
     aggregator->executeOnBlock(
@@ -324,7 +372,7 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
     if (!aggregation_result.empty())
     {
         auto aggregated_res = aggregator->convertToChunks(aggregation_result, true);
-        auto res_header = aggregator->getParams().getHeader(header, true);
+        auto res_header = aggregator->getParams().getHeader(aggregator_header, true);
 
         for (auto & agg_chunk : aggregated_res)
         {

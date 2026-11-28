@@ -1,4 +1,6 @@
 #!/usr/bin/expect -f
+# Tags: no-fasttest
+# no-fasttest: Too slow for fast test (~11s), covered by regular stateless runs.
 
 # Regression test for the progress bar history recorded while the bar is not shown. The bar is
 # hidden while the query is past 50% of the total known so far, and the total can still grow:

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <limits>
+#include <optional>
 #include <type_traits>
 #include <absl/base/attributes.h>
 #include <base/types.h>
@@ -11,6 +12,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnNumbers.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 
@@ -100,6 +103,32 @@ struct MatchImpl
 
     using Searcher = std::conditional_t<case_insensitive, VolnitskyCaseInsensitiveUTF8, VolnitskyUTF8>;
 
+    /// On a string haystack with a constant pattern, [I]LIKE throws only while building the pattern, see `vectorConstant`.
+    static std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments)
+    {
+        if constexpr (!is_like)
+            return {};
+        else
+        {
+            if (arguments.size() != 2 || !isStringOrFixedString(removeLowCardinalityAndNullable(arguments[0].type)))
+                return true;
+
+            const ColumnConst * pattern = arguments[1].column ? checkAndGetColumnConstStringOrFixedString(arguments[1].column) : nullptr;
+            if (!pattern)
+                return true;
+
+            try
+            {
+                Regexps::createRegexp<is_like, is_similar_to, /*no_capture*/ true, case_insensitive>(pattern->getValue<String>());
+            }
+            catch (const Exception &)
+            {
+                return true;
+            }
+            return false;
+        }
+    }
+
 #ifndef NDEBUG
     /// Assert that the JIT-compiled matcher agrees with RE2 for every row. Debug builds only.
     static void verifyMatchAgainstRE2(
@@ -180,7 +209,7 @@ struct MatchImpl
                     {
                         const auto * str_begin = reinterpret_cast<const uint8_t *>(haystack_data.data() + prev_offset);
                         const auto * str_end = reinterpret_cast<const uint8_t *>(haystack_data.data() + haystack_offsets[i]);
-                        const bool matched = matcher.func(str_begin, str_end, str_begin, capture_starts.data(), capture_ends.data()) == 1;
+                        const bool matched = callJITFunction(matcher.func, str_begin, str_end, str_begin, capture_starts.data(), capture_ends.data()) == 1;
                         res[i] = negate ^ matched;
                         prev_offset = haystack_offsets[i];
                     }
@@ -299,14 +328,14 @@ struct MatchImpl
                     }
                     else if (isAnchoredLiteralMatchKind(match_kind))
                     {
-                        const UInt8 * const row_begin = begin + haystack_offsets[i - 1];
+                        const UInt8 * const row_begin = begin + haystack_offsets[static_cast<ssize_t>(i) - 1];
 
                         res[i] = negate ^ impl::matchesAnchoredLiteral(match_kind, required_substring, row_begin, row_end, pos);
                     }
                     else
                     {
-                        const char * str_data = reinterpret_cast<const char *>(&haystack_data[haystack_offsets[i - 1]]);
-                        size_t str_size = haystack_offsets[i] - haystack_offsets[i - 1];
+                        const char * str_data = reinterpret_cast<const char *>(&haystack_data[haystack_offsets[static_cast<ssize_t>(i) - 1]]);
+                        size_t str_size = haystack_offsets[i] - haystack_offsets[static_cast<ssize_t>(i) - 1];
 
                         /** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
                           *  so that it can match when `required_substring` occurs into the string several times,

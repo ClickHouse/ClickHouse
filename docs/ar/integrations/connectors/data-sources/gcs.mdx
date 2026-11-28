@@ -8,7 +8,6 @@ keywords: ['Google Cloud Storage ClickHouse', 'تكامل GCS مع ClickHouse', 
 ---
 
 import BucketDetails from '/snippets/ar/_GCS_authentication_and_bucket.mdx';
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Note>
   إذا كنت تستخدم ClickHouse Cloud على [Google Cloud](https://cloud.google.com)، فلا تنطبق عليك هذه الصفحة لأن خدماتك تستخدم بالفعل [Google Cloud Storage](https://cloud.google.com/storage). وإذا كنت تبحث عن كيفية تنفيذ `SELECT` أو `INSERT` على بيانات GCS، فيُرجى مراجعة [دالة الجدول `gcs`](/ar/reference/functions/table-functions/gcs).
@@ -17,17 +16,17 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يدرك ClickHouse أن GCS توفّر حلّ تخزين جذابًا إذا كنت تسعى إلى فصل التخزين عن الحوسبة. ولدعم ذلك، تتوفر إمكانية استخدام GCS كطبقة تخزين لمحرك MergeTree. ويتيح لك هذا الاستفادة من قابلية التوسع والمزايا من حيث التكلفة التي توفّرها GCS، إلى جانب أداء عمليات `insert` و`query` في محرك MergeTree.
 
 <div id="gcs-backed-mergetree">
-  ## MergeTree المدعوم بـ GCS
+  ## MergeTree المدعوم بـ GCS {#gcs-backed-mergetree}
 </div>
 
 <div id="creating-a-disk">
-  ### إنشاء قرص
+  ### إنشاء قرص {#creating-a-disk}
 </div>
 
 لاستخدام حاوية GCS كقرص، يجب أولاً التصريح بها ضمن إعدادات ClickHouse في ملف داخل `conf.d`. يوضّح المثال أدناه تعريف قرص GCS. يتضمن هذا الإعداد عدة أقسام لإعداد &quot;القرص&quot; في GCS، وذاكرة التخزين المؤقت، والسياسة التي تُحدَّد في استعلامات DDL عند إنشاء الجداول على قرص GCS. ويرد شرح كل منها أدناه.
 
 <div id="storage_configuration--disks--gcs">
-  #### تهيئة التخزين &gt; disks &gt; gcs
+  #### تهيئة التخزين &gt; disks &gt; gcs {#storage_configuration--disks--gcs}
 </div>
 
 يظهر هذا الجزء من التهيئة في القسم المميز، ويحدّد ما يلي:
@@ -64,7 +63,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 ```
 
 <div id="storage_configuration--disks--cache">
-  #### إعدادات التخزين &gt; الأقراص &gt; ذاكرة التخزين المؤقت
+  #### إعدادات التخزين &gt; الأقراص &gt; ذاكرة التخزين المؤقت {#storage_configuration--disks--cache}
 </div>
 
 يُفعّل مثال الإعدادات الموضّح أدناه ذاكرة تخزين مؤقت في الذاكرة بسعة 10Gi للقرص `gcs`.
@@ -102,7 +101,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 ```
 
 <div id="storage_configuration--policies--gcs_main">
-  #### إعدادات التخزين &gt; السياسات &gt; gcs_main
+  #### إعدادات التخزين &gt; السياسات &gt; gcs_main {#storage_configuration--policies--gcs_main}
 </div>
 
 تتيح سياسات إعدادات التخزين اختيار مكان تخزين البيانات. وتسمح السياسة المبرزة أدناه بتخزين البيانات على القرص `gcs` عبر تحديد السياسة `gcs_main`. على سبيل المثال، `CREATE TABLE ... SETTINGS storage_policy='gcs_main'`.
@@ -136,7 +135,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يمكن العثور على قائمة كاملة بالإعدادات المرتبطة بتعريف هذا القرص [هنا](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
 
 <div id="creating-a-table">
-  ### إنشاء جدول
+  ### إنشاء جدول {#creating-a-table}
 </div>
 
 بافتراض أنك قمت بتهيئة القرص لاستخدام حاوية تخزين مع صلاحية الكتابة، ينبغي أن تتمكن من إنشاء جدول كما في المثال أدناه. وللاختصار، نستخدم مجموعة فرعية من أعمدة بيانات سيارات الأجرة في مدينة نيويورك ونرسل البيانات مباشرةً إلى الجدول المدعوم من GCS:
@@ -175,13 +174,13 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 ```
 
 <div id="handling-replication">
-  ### التعامل مع النسخ المتماثل
+  ### التعامل مع النسخ المتماثل {#handling-replication}
 </div>
 
 يمكن تحقيق النسخ المتماثل باستخدام أقراص GCS عبر محرك الجدول `ReplicatedMergeTree`. راجع دليل [نسخ جزء بيانات واحد متماثلًا عبر منطقتين من GCP باستخدام GCS](#gcs-multi-region) للاطلاع على التفاصيل.
 
 <div id="learn-more">
-  ### تعرّف على المزيد
+  ### تعرّف على المزيد {#learn-more}
 </div>
 
 تتوافق [واجهة XML لـ Cloud Storage](https://cloud.google.com/storage/docs/xml-api/overview) مع بعض الأدوات والمكتبات التي تعمل مع خدمات مثل Amazon Simple Storage Service ‏(Amazon S3).
@@ -189,7 +188,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 لمزيد من المعلومات حول ضبط سلاسل التنفيذ، راجع [تحسين الأداء](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#s3-optimizing-performance).
 
 <div id="gcs-multi-region">
-  ## استخدام Google Cloud Storage ‏(GCS)
+  ## استخدام Google Cloud Storage ‏(GCS) {#gcs-multi-region}
 </div>
 
 <Tip>
@@ -197,7 +196,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 </Tip>
 
 <div id="plan-the-deployment">
-  ### تخطيط النشر
+  ### تخطيط النشر {#plan-the-deployment}
 </div>
 
 كُتب هذا الدليل العملي لشرح عملية نشر ClickHouse مكرّر يعمل على Google Cloud ويستخدم Google Cloud Storage ‏(GCS) بوصفه «type» لقرص التخزين في ClickHouse.
@@ -213,7 +212,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 يتطلب ClickHouse Keeper عقدتين ليعمل، لذا يلزم وجود ثلاث عقد لتحقيق التوافر العالي.
 
 <div id="prepare-vms">
-  ### تجهيز الآلات الافتراضية
+  ### تجهيز الآلات الافتراضية {#prepare-vms}
 </div>
 
 قم بنشر خمس آلات افتراضية في ثلاث مناطق:
@@ -227,7 +226,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 `*` يمكن أن تكون هذه منطقة توافر مختلفة ضمن نفس المنطقة الخاصة بـ 1 أو 2.
 
 <div id="deploy-clickhouse">
-  #### نشر ClickHouse
+  #### نشر ClickHouse {#deploy-clickhouse}
 </div>
 
 قم بنشر ClickHouse على مضيفين؛ وفي إعدادات المثال يُسمَّيان `chnode1` و`chnode2`.
@@ -241,7 +240,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 ارجع إلى [تعليمات التثبيت](/ar/get-started/setup/install) عند تنفيذ خطوات النشر على عُقد خادم ClickHouse.
 
 <div id="deploy-clickhouse-keeper">
-  #### نشر ClickHouse Keeper
+  #### نشر ClickHouse Keeper {#deploy-clickhouse-keeper}
 </div>
 
 انشر ClickHouse Keeper على ثلاثة مضيفين. وفي نماذج الإعداد هذه، تُسمّى `keepernode1` و`keepernode2` و`keepernode3`. يمكن نشر `keepernode1` في المنطقة نفسها التي يوجد فيها `chnode1`، و`keepernode2` مع `chnode2`، و`keepernode3` في أيٍّ من المنطقتين، ولكن في منطقة توافر مختلفة عن عقدة ClickHouse في تلك المنطقة.
@@ -249,7 +248,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 راجع [تعليمات التثبيت](/ar/get-started/setup/install) عند تنفيذ خطوات النشر على عقد ClickHouse Keeper.
 
 <div id="create-two-buckets">
-  ### إنشاء حاويتين
+  ### إنشاء حاويتين {#create-two-buckets}
 </div>
 
 سيُوضَع خادما ClickHouse في منطقتين مختلفتين لتحقيق التوفّر العالي. وستكون لكلٍّ منهما حاوية GCS في المنطقة نفسها.
@@ -261,7 +260,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 <BucketDetails />
 
 <div id="configure-clickhouse-keeper">
-  ### تهيئة ClickHouse Keeper
+  ### تهيئة ClickHouse Keeper {#configure-clickhouse-keeper}
 </div>
 
 تستخدم جميع عقد ClickHouse Keeper ملف التهيئة نفسه، باستثناء السطر `server_id` (أول سطر مميز أدناه). عدّل الملف بإدراج أسماء المضيفين الخاصة بخوادم ClickHouse Keeper لديك، وعلى كل خادم اضبط `server_id` بحيث يطابق إدخال `server` المناسب في `raft_configuration`. ونظرًا لأن `server_id` في هذا المثال مضبوط على `3`، فقد ميّزنا الأسطر المطابقة في `raft_configuration`.
@@ -314,7 +313,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 ```
 
 <div id="configure-clickhouse-server">
-  ### تهيئة خادم ClickHouse
+  ### تهيئة خادم ClickHouse {#configure-clickhouse-server}
 </div>
 
 <Info>
@@ -324,7 +323,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 </Info>
 
 <div id="networking">
-  #### الشبكة
+  #### الشبكة {#networking}
 </div>
 
 بشكل افتراضي، يستمع ClickHouse على واجهة loopback، وفي إعداد يستخدم النسخ المتماثل تكون الحاجة إلى الاتصال الشبكي بين الأجهزة ضرورية. اجعله يستمع على جميع الواجهات:
@@ -336,7 +335,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 ```
 
 <div id="remote-clickhouse-keeper-servers">
-  #### خوادم ClickHouse Keeper البعيدة
+  #### خوادم ClickHouse Keeper البعيدة {#remote-clickhouse-keeper-servers}
 </div>
 
 تتم إدارة النسخ المتماثل بواسطة ClickHouse Keeper. يحدِّد ملف التهيئة هذا عُقد ClickHouse Keeper بحسب اسم المضيف ورقم المنفذ.
@@ -363,7 +362,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 ```
 
 <div id="remote-clickhouse-servers">
-  #### خوادم ClickHouse البعيدة
+  #### خوادم ClickHouse البعيدة {#remote-clickhouse-servers}
 </div>
 
 يحدّد هذا الملف اسم المضيف والمنفذ لكل خادم ClickHouse في العنقود. يحتوي ملف التكوين الافتراضي على تعريفات نموذجية للعناقيد، ولعرض العناقيد المكتمل تكوينها فقط، أُضيف الوسم `replace="true"` إلى الإدخال `remote_servers` بحيث إنه عند دمج هذا التكوين مع التكوين الافتراضي، يستبدل قسم `remote_servers` بدلًا من الإضافة إليه.
@@ -390,7 +389,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 ```
 
 <div id="replica-identification">
-  #### تحديد هوية النسخة المتماثلة
+  #### تحديد هوية النسخة المتماثلة {#replica-identification}
 </div>
 
 يحدّد هذا الملف الإعدادات المرتبطة بمسار ClickHouse Keeper. وتحديدًا، وحدات الماكرو المستخدمة لتحديد النسخة المتماثلة التي تنتمي إليها البيانات. على أحد الخوادم، يجب تحديد النسخة المتماثلة على أنها `replica_1`، وعلى الخادم الآخر `replica_2`. يمكن تغيير الأسماء؛ فاستنادًا إلى مثالنا حيث تُخزَّن إحدى النسختين المتماثلتين في ساوث كارولاينا والأخرى في شمال فرجينيا، يمكن أن تكون القيم `carolina` و`virginia`؛ فقط تأكد من أنها مختلفة على كل جهاز.
@@ -409,7 +408,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 ```
 
 <div id="storage-in-gcs">
-  #### التخزين في GCS
+  #### التخزين في GCS {#storage-in-gcs}
 </div>
 
 يتضمن إعداد التخزين في ClickHouse كلاً من `disks` و`policies`. يحمل الـ `disk` الذي يجري إعداده أدناه الاسم `gcs`، وهو من `type` `s3`. ويكون النوع `s3` لأن ClickHouse يتعامل مع حاوية GCS كما لو أنه حاوية AWS S3. ستحتاج إلى نسختين من هذا الإعداد، واحدة لكل عقدة من عقد ClickHouse server.
@@ -459,7 +458,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 ```
 
 <div id="start-clickhouse-keeper">
-  ### تشغيل ClickHouse Keeper
+  ### تشغيل ClickHouse Keeper {#start-clickhouse-keeper}
 </div>
 
 استخدم الأوامر المناسبة لنظام التشغيل لديك، على سبيل المثال:
@@ -471,7 +470,7 @@ sudo systemctl status clickhouse-keeper
 ```
 
 <div id="check-clickhouse-keeper-status">
-  #### التحقّق من حالة ClickHouse Keeper
+  #### التحقّق من حالة ClickHouse Keeper {#check-clickhouse-keeper-status}
 </div>
 
 أرسل الأوامر إلى ClickHouse Keeper باستخدام `netcat`. على سبيل المثال، يُرجع `mntr` حالة عنقود ClickHouse Keeper. وإذا شغّلت الأمر على كل عقدة من عقد Keeper، فسترى أن إحداها هي القائد، وأن العقدتين الأخريين تابعتان:
@@ -503,7 +502,7 @@ zk_synced_followers     2
 ```
 
 <div id="start-clickhouse-server">
-  ### تشغيل ClickHouse server
+  ### تشغيل ClickHouse server {#start-clickhouse-server}
 </div>
 
 على `chnode1` و`chnode`، شغّل:
@@ -517,11 +516,11 @@ sudo service clickhouse-server status
 ```
 
 <div id="verification">
-  ### التحقق
+  ### التحقق {#verification}
 </div>
 
 <div id="verify-disk-configuration">
-  #### تحقّق من تهيئة القرص
+  #### تحقّق من تهيئة القرص {#verify-disk-configuration}
 </div>
 
 يجب أن يتضمّن `system.disks` سجلات لكل قرص:
@@ -589,7 +588,7 @@ cache_path:
 ```
 
 <div id="verify-that-tables-created-on-the-cluster-are-created-on-both-nodes">
-  #### تحقّق من أن الجداول التي أُنشئت على العنقود قد أُنشئت أيضًا على كلتا العقدتين
+  #### تحقّق من أن الجداول التي أُنشئت على العنقود قد أُنشئت أيضًا على كلتا العقدتين {#verify-that-tables-created-on-the-cluster-are-created-on-both-nodes}
 </div>
 
 ```sql highlight={1,18}
@@ -625,7 +624,7 @@ SETTINGS storage_policy='gcs_main'
 ```
 
 <div id="verify-that-data-can-be-inserted">
-  #### تحقّق من إمكانية إدراج البيانات
+  #### تحقّق من إمكانية إدراج البيانات {#verify-that-data-can-be-inserted}
 </div>
 
 ```sql
@@ -648,7 +647,7 @@ LIMIT 1000000
 ```
 
 <div id="verify-that-the-storage-policy-gcs_main-is-used-for-the-table">
-  #### تحقّق من أن سياسة التخزين `gcs_main` مستخدمة للجدول.
+  #### تحقّق من أن سياسة التخزين `gcs_main` مستخدمة للجدول. {#verify-that-the-storage-policy-gcs_main-is-used-for-the-table}
 </div>
 
 ```sql
@@ -676,19 +675,23 @@ formatReadableSize(total_bytes): 36.42 MiB
 ```
 
 <div id="verify-in-google-cloud-console">
-  #### تحقّق في Google Cloud Console
+  #### تحقّق في Google Cloud Console {#verify-in-google-cloud-console}
 </div>
 
 عند النظر إلى حاويات التخزين، سترى أنه تم إنشاء مجلد في كل حاوية بالاسم المستخدم في ملف التكوين `storage.xml`. وسِّع المجلدات وسترى العديد من الملفات التي تمثل أقسام البيانات.
 
-<div id="bucket-for-replica-one">
-  #### الحاوية الخاصة بالنسخة المتماثلة الأولى
+#### الحاوية الخاصة بالنسخة المتماثلة الأولى {#bucket-for-replica-one}
+
+<div className="ch-image-lg">
+  <Frame>
+    ![حاوية النسخة المتماثلة الأولى في Google Cloud Storage تعرض بنية المجلدات مع أقسام البيانات](/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp)
+  </Frame>
 </div>
 
-<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp" size="lg" border alt="حاوية النسخة المتماثلة الأولى في Google Cloud Storage تُظهر بنية المجلدات مع أقسام البيانات" />
+#### حاوية النسخة المتماثلة الثانية {#bucket-for-replica-two}
 
-<div id="bucket-for-replica-two">
-  #### حاوية النسخة المتماثلة الثانية
+<div className="ch-image-lg">
+  <Frame>
+    ![حاوية النسخة المتماثلة الثانية في Google Cloud Storage تُظهر بنية المجلدات مع أقسام البيانات](/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp)
+  </Frame>
 </div>
-
-<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp" size="lg" border alt="حاوية النسخة المتماثلة الثانية في Google Cloud Storage تُظهر بنية المجلدات مع أقسام البيانات" />

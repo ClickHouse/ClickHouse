@@ -26,7 +26,7 @@ LOCALE_NAVIGATION_PATHS = " ".join(
 )
 # Paths the generator owns; everything staged into the bot PR lives here.
 DOCS_PATHS = (
-    "docs/products/cloud/api-reference docs/_specs/cloud-openapi.json "
+    "docs/products/cloud/api-reference docs/_site/redirects.json docs/_specs/cloud-openapi.json "
     f"docs/products/cloud/navigation.json {LOCALE_NAVIGATION_PATHS}"
 )
 

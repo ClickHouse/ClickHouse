@@ -6,11 +6,7 @@ tags: ['العملاء الأصليون والواجهات', 'الأخطاء و�
 keywords: ['ODBC', 'موصل Power BI', 'المصادقة Failed']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
-<div id="question">
-  ## السؤال
-</div>
+## السؤال {#question}
 
 عند محاولة الاتصال من PowerBI بـ ClickHouse باستخدام الموصل، يظهر لك خطأ في المصادقة.
 
@@ -27,10 +23,14 @@ See also /etc/clickhouse-server/users.ml on the server where
 ClickHouse is installed.
 ```
 
-<Image img="/images/knowledgebase/powerbi_odbc_authentication_error.webp" size="md" alt="مربع حوار خطأ مصادقة ODBC في Power BI" border />
+<div className="ch-image-md">
+  <Frame>
+    ![مربع حوار خطأ المصادقة عبر ODBC في Power BI](/images/knowledgebase/powerbi_odbc_authentication_error.webp)
+  </Frame>
+</div>
 
 <div id="answer">
-  ## الإجابة
+  ## الإجابة {#answer}
 </div>
 
 حدّث ClickHouse ODBC Driver إلى الإصدار [1.4.1](https://github.com/ClickHouse/clickhouse-odbc/releases/tag/1.4.1.20250523).

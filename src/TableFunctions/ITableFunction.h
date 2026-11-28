@@ -17,7 +17,9 @@
 namespace DB
 {
 
+class AccessFlags;
 class Context;
+struct StorageID;
 
 /** Interface for table functions.
   *
@@ -64,6 +66,28 @@ public:
 
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
 
+    /// Set before `parseArguments` when the arguments come from a table definition the server stored
+    /// itself (`CREATE TABLE ... AS f(...)` loaded back from metadata), see `isReplayedTableDefinition`.
+    /// Such a definition has to load even if a newer version validates the arguments more strictly.
+    void setReplayedDefinition(bool value) { arguments_from_stored_definition = value; }
+
+    /** The identity of the source this call reads, if a parallel-replicas read can be coordinated over it.
+      * Each replica resolves the call itself, so the call must denote the same logical source on every
+      * replica, and evaluating it must have no effect beyond looking that source up. The identity names the
+      * read to the coordinator, so every replica must compute the same one: it must not depend on anything
+      * local to a server, such as the UUID of a hidden inner table, nor on the alias the call was written
+      * with, and calls that read different sources must get different ones. `timeSeriesSamples(db, ts)`
+      * reads the samples table of `db.ts`, and is identified as `timeSeriesSamples(db.ts)`.
+      *
+      * No value, the default, means the call cannot be the coordinated read: one that produces a storage of
+      * its own (`s3`, `numbers`, `view`, `merge`) is not the same table on any two replicas, even when that
+      * storage is a `MergeTree`. A value does not make the read eligible by itself - the storage it resolves
+      * to is checked as for a table. The identity is used only when the replicas are sent the query: a plan
+      * fragment names the storage the call resolved to on the initiator, and the read is coordinated under
+      * that storage's name.
+      */
+    virtual std::optional<String> getParallelReplicasReadID() const { return std::nullopt; }
+
     /// Returns actual table structure probably requested from remote server, may fail
     virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/, bool is_insert_query) const = 0;
 
@@ -98,6 +122,9 @@ public:
     /// (e.g. `generateRandom`). Counterpart of `IFunction::isDeterministicInScopeOfQuery`.
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
+    /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by `ITableFunctionCluster`.
+    [[nodiscard]] virtual bool isClusterFunction() const { return false; }
+
     /// The name of the named collection the table function arguments were resolved from, or an empty
     /// string. When a permanent table is created from the table function (`CREATE TABLE ... AS f(...)`),
     /// the table is registered as a dependency of the collection so that `DROP NAMED COLLECTION` is
@@ -106,9 +133,9 @@ public:
     /// query do not register anything.
     virtual String getUsedNamedCollectionName() const { return {}; }
 
-    // INSERT INTO TABLE FUNCTION ... PARTITION BY
-    // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation
-    virtual void setPartitionBy(const ASTPtr &) {}
+    /// The function sets the expression of `INSERT INTO FUNCTION ... PARTITION BY`.
+    /// Only the interpreter of `INSERT INTO FUNCTION` calls it.
+    void setPartitionBy(const ASTPtr & partition_by_) { partition_by = partition_by_; }
 
     /// Create storage according to the query.
     /// `check_create_temporary_table` is passed as false by database engines that resolve their
@@ -122,32 +149,71 @@ public:
     StoragePtr
     execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false, bool check_create_temporary_table = true, bool check_source_access = true) const;
 
-    /// Returns actual table structure after enforcing source access checks.
-    /// Use this instead of getActualTableStructure() from outside execute().
+    /// Returns actual table structure after enforcing the same access checks as `execute`: source, engine,
+    /// source object, and `CREATE TEMPORARY TABLE` (for table functions not allowed in readonly mode).
+    /// Use this instead of `getActualTableStructure` from outside `execute`.
     ColumnsDescription getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const;
+
+    /// The source whose READ/WRITE grants the function needs (e.g. S3, FILE), if any.
+    virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
 
     /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
     void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
 
+    /// Check the access needed to read the metadata of the objects this function derives from, as
+    /// opposed to its source kind, which `checkSourceAccess` covers. Called from both base-class
+    /// seams: resolving a structure is a `DESCRIBE` and needs `SHOW COLUMNS`, naming needs `SHOW TABLES`.
+    virtual void checkSourceObjectAccess(const ContextPtr & /*context*/, bool /*for_structure*/) const {}
+
+    /// Check the `CREATE TEMPORARY TABLE` grant, required to use a table function unless it is allowed
+    /// in readonly mode and the query is not an insert.
+    void checkCreateTemporaryTableAccess(ContextPtr context, bool is_insert_query) const;
+
     /// The URI of the function for permission checking. Can be an empty string if not applicable.
     /// For example, for url('https://foo.bar') the URI would be 'https://foo.bar'.
-    virtual const String & getFunctionURI() const
-    {
-        static const String empty;
-        return empty;
-    }
+    virtual std::string_view getFunctionURI() const { return {}; }
 
     /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
     void checkEngineAccess(ContextPtr context) const;
 
+    /// The function returns the name of the table engine that this function uses, as the `TABLE ENGINE` grant names it:
+    /// a cluster function is checked as its non-clustered engine. It is empty when the function has no engine.
+    [[nodiscard]] String getEngineNameForAccessCheck() const;
+
+    /// `uri` normalized by Poco; an unparsable URI becomes empty.
+    static String normalizeURIForAccessCheck(const String & uri);
+
+    /// Checks the source grant for `uri`; a location that no filter would see as accessed needs the whole-source grant.
+    static void checkSourceAccessForURI(
+        const ContextPtr & context, const AccessFlags & flags, AccessTypeObjects::Source source, const String & uri);
+
     virtual ~ITableFunction() = default;
 
 protected:
-    virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
+    /// `cached_columns` come from the metadata of a table created `AS` this function, so `executeImpl` receives
+    /// them only for such a table definition, including its replay, and never for a call in a query.
+    static bool isTableDefinition(const ColumnsDescription & cached_columns) { return !cached_columns.empty(); }
 
-    /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by
-    /// `ITableFunctionCluster`. Protected so derived functions can branch on the cluster context.
-    virtual bool isClusterFunction() const { return false; }
+    /// Appends to `result` the indexes of the named arguments, whose keys name parameters of the table function
+    /// (e.g. the overrides of a named collection) and so must not resolve to a column or alias: the trailing run of
+    /// `key = value` arguments, and the `wrapper_names` arguments, such as `headers(...)`, at any position. A
+    /// wrapper is removed by the storage parser, so it does not end the run. An `identifier = value` followed by
+    /// a positional argument is an ordinary comparison and is still analyzed.
+    static void appendNamedArgumentIndexes(
+        const QueryTreeNodePtr & query_node_table_function, VectorWithMemoryTracking<size_t> & result, const Strings & wrapper_names = {});
+
+    /// Set only for `INSERT INTO FUNCTION ... PARTITION BY`. Each partition's destination then comes from the data,
+    /// so it needs its own write access check.
+    ASTPtr partition_by;
+
+    /// Check `access_type` on the name the function was given, before that name is resolved.
+    void checkSourceTableAccess(const ContextPtr & context, const StorageID & table_id, AccessType access_type) const;
+
+    /// Metadata of an `Alias` is its target's, so reading it also needs `access_type` on the target,
+    /// the way `DESCRIBE` of that name does. Takes the resolved storage so the check binds to the
+    /// object whose metadata is consumed.
+    void checkSourceStorageAccess(
+        const ContextPtr & context, const StoragePtr & storage, const StorageID & table_id, AccessType access_type) const;
 
 private:
     virtual StoragePtr executeImpl(
@@ -168,7 +234,7 @@ private:
     virtual const char * getNonClusteredStorageEngineName() const;
 
 protected:
-    String getFunctionURINormalized() const;
+    bool arguments_from_stored_definition = false;
 };
 
 /// Properties of table function that are independent of argument types and parameters.

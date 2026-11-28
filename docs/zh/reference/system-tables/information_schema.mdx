@@ -17,40 +17,57 @@ SHOW TABLES FROM information_schema;
 
 ```text
 ┌─name────────────────────┐
+│ CHARACTER_SETS          │
 │ COLLATIONS              │
 │ COLUMNS                 │
+│ COLUMN_PRIVILEGES       │
+│ ENGINES                 │
 │ KEY_COLUMN_USAGE        │
 │ REFERENTIAL_CONSTRAINTS │
 │ SCHEMATA                │
-| STATISTICS              |
+│ SCHEMA_PRIVILEGES       │
+│ STATISTICS              │
 │ TABLES                  │
+│ TABLE_PRIVILEGES        │
+│ USER_PRIVILEGES         │
 │ VIEWS                   │
+│ character_sets          │
+│ collations              │
+│ column_privileges       │
 │ columns                 │
+│ engines                 │
 │ key_column_usage        │
 │ referential_constraints │
+│ schema_privileges       │
 │ schemata                │
-| statistics              |
+│ statistics              │
+│ table_privileges        │
 │ tables                  │
+│ user_privileges         │
 │ views                   │
 └─────────────────────────┘
 ```
 
 `INFORMATION_SCHEMA` 包含以下视图：
 
+* [CHARACTER&#95;SETS](#character_sets)
 * [COLUMNS](#columns)
+* [COLUMN&#95;PRIVILEGES](#column_privileges)
 * [COLLATIONS](#collations)
+* [ENGINES](#engines)
 * [KEY&#95;COLUMN&#95;USAGE](#key_column_usage)
 * [REFERENTIAL&#95;CONSTRAINTS](#referential_constraints)
 * [SCHEMATA](#schemata)
+* [SCHEMA&#95;PRIVILEGES](#schema_privileges)
 * [STATISTICS](#statistics)
 * [TABLES](#tables)
+* [TABLE&#95;PRIVILEGES](#table_privileges)
+* [USER&#95;PRIVILEGES](#user_privileges)
 * [VIEWS](#views)
 
 出于兼容其他数据库的考虑，还提供了不区分大小写的对应视图，例如 `INFORMATION_SCHEMA.columns`。这些视图中的所有列也是如此——同时提供了小写 (例如 `table_name`) 和大写 (`TABLE_NAME`) 两种形式。
 
-<div id="columns">
-  ## COLUMNS
-</div>
+## COLUMNS {#columns}
 
 包含从 [system.columns](/zh/reference/system-tables/columns) 系统表中读取的列，以及 ClickHouse 不支持或无实际意义 (始终为 `NULL`) 、但标准要求必须存在的列。
 
@@ -142,9 +159,7 @@ domain_schema:            ᴺᵁᴸᴸ
 domain_name:              ᴺᵁᴸᴸ
 ```
 
-<div id="schemata">
-  ## SCHEMATA
-</div>
+## SCHEMATA {#schemata}
 
 包含从 [system.databases](/zh/reference/system-tables/databases) 系统表读取的列，以及 ClickHouse 中不受支持或没有实际意义 (始终为 `NULL`) 但标准要求必须存在的列。
 
@@ -186,9 +201,7 @@ default_character_set_name:    ᴺᵁᴸᴸ
 sql_path:                      ᴺᵁᴸᴸ
 ```
 
-<div id="tables">
-  ## TABLES
-</div>
+## TABLES {#tables}
 
 包含从 [system.tables](/zh/reference/system-tables/tables) 系统表中读取的各列。
 
@@ -236,9 +249,7 @@ table_collation: utf8mb4_0900_ai_ci
 table_comment:   
 ```
 
-<div id="views">
-  ## VIEWS
-</div>
+## VIEWS {#views}
 
 包含在使用表引擎 [View](/zh/reference/engines/table-engines/special/view) 时，从 [system.tables](/zh/reference/system-tables/tables) 系统表中读取的列。
 
@@ -297,9 +308,7 @@ is_trigger_deletable:       NO
 is_trigger_insertable_into: NO
 ```
 
-<div id="key_column_usage">
-  ## KEY_COLUMN_USAGE
-</div>
+## KEY_COLUMN_USAGE {#key_column_usage}
 
 包含 [system.tables](/zh/reference/system-tables/tables) 系统表中受约束限制的列。
 
@@ -356,9 +365,7 @@ referenced_table_name:         ᴺᵁᴸᴸ
 referenced_column_name:        ᴺᵁᴸᴸ
 ```
 
-<div id="referential_constraints">
-  ## REFERENTIAL_CONSTRAINTS
-</div>
+## REFERENTIAL_CONSTRAINTS {#referential_constraints}
 
 包含有关外键的信息。目前返回空结果 (无行) ，这仅用于与 Tableau Online 等第三方工具保持兼容。
 
@@ -376,15 +383,11 @@ referenced_column_name:        ᴺᵁᴸᴸ
 * `table_name` ([String](/zh/reference/data-types/string)) — 当前未使用。
 * `referenced_table_name` ([String](/zh/reference/data-types/string)) — 当前未使用。
 
-<div id="statistics">
-  ## STATISTICS
-</div>
+## STATISTICS {#statistics}
 
 提供有关表索引的信息。目前会返回空结果 (0 行) ，仅用于兼容 Tableau Online 等第三方工具。
 
-<div id="collations">
-  ## COLLATIONS
-</div>
+## COLLATIONS {#collations}
 
 提供有关可用排序规则的信息。除 [system.collations](/zh/reference/system-tables/collations) 中的排序规则外，还包含两个用于兼容 MySQL 的行：`utf8mb4_0900_ai_ci` — MySQL protocol 在 handshake、`SCHEMATA.DEFAULT_COLLATION_NAME` 和 `TABLES.TABLE_COLLATION` 中声明的排序规则 — 以及 `binary` — MySQL protocol 在结果集元数据中标记到数值列及其他非字符串列上的伪排序规则 — 以便支持 MySQL 的 client 在此视图中查找已声明的排序规则时能够找到它们。
 
@@ -397,3 +400,76 @@ referenced_column_name:        ᴺᵁᴸᴸ
 * `is_compiled` ([Nullable](/zh/reference/data-types/nullable)([String](/zh/reference/data-types/string))) — 该排序规则是否已编译到 server 中 (两个 MySQL 兼容行均为 `Yes`，否则为 `NULL`) 。为兼容 MySQL 而提供。
 * `sortlen` ([Nullable](/zh/reference/data-types/nullable)([UInt64](/zh/reference/data-types/int-uint))) — 最小排序长度 (`utf8mb4_0900_ai_ci` 为 `0`，`binary` 为 `1`，否则为 `NULL`) 。为兼容 MySQL 而提供。
 * `pad_attribute` ([Nullable](/zh/reference/data-types/nullable)([String](/zh/reference/data-types/string))) — 填充属性，`NO PAD` 或 `PAD SPACE` (两个 MySQL 兼容行均为 `NO PAD`，否则为 `NULL`) 。为兼容 MySQL 而提供。
+
+## CHARACTER_SETS {#character_sets}
+
+提供一个静态字符集列表 (`utf8`、`utf8mb4`、`ascii`、`binary`) ，用于兼容 MySQL 工具。ClickHouse 本身使用 UTF-8 编码。
+
+列：
+
+* `character_set_name` ([String](/zh/reference/data-types/string)) — 字符集名称。
+
+## ENGINES {#engines}
+
+提供可用表引擎的相关信息，数据读取自 [system.table&#95;engines](/zh/reference/system-tables/table_engines) 系统表。该视图用于兼容 MySQL。
+
+列：
+
+* `engine` ([String](/zh/reference/data-types/string)) — 表引擎的名称。
+* `support` ([String](/zh/reference/data-types/string)) — 若该引擎被设为 [default&#95;table&#95;engine](/zh/operations/settings/settings#default_table_engine)，则值为 `DEFAULT`，否则为 `YES`。
+
+## USER_PRIVILEGES {#user_privileges}
+
+提供全局特权的相关信息，数据读取自 [system.grants](/zh/reference/system-tables/grants) 系统表 (即未指定数据库的行) 。
+
+`*_PRIVILEGES` 视图仅显示正向的、非通配符的授权：部分撤销、通配符授权 (例如 `GRANT SELECT ON db_prefix*.*`) 以及针对参数化特权类型中特定命名对象的授权 (例如 `GRANT TABLE ENGINE ON TinyLog`) 无法以 MySQL 兼容格式表示，因此会被省略。这意味着受部分撤销限制的被授权者，会显示为拥有不受限制的授权。参数化类型的 `ON *` 授权会显示为普通的全局特权。`system.grants` 才是权威数据来源。与 MySQL 不同，这些视图会显示所有用户和角色的授权，且读取这些视图需要具备 `system.grants` 的访问权限，否则查询会失败并抛出 `ACCESS_DENIED` 异常。由于 ClickHouse 不会记录授权的执行者，因此没有 `GRANTOR` 列。
+
+列：
+
+* `grantee` ([String](/zh/reference/data-types/string)) — 被授予特权的用户或角色，采用 MySQL 格式：`'name'@'%'`。MySQL 中没有与角色对应的概念，因此角色的呈现方式与用户相同。
+* `table_catalog` ([String](/zh/reference/data-types/string)) — 始终为 `def`。
+* `privilege_type` ([String](/zh/reference/data-types/string)) — 特权名称，例如 `SELECT` 或 `ALTER UPDATE`。完整列表请参见 [system.privileges](/zh/reference/system-tables/privileges)。
+* `is_grantable` ([String](/zh/reference/data-types/string)) — 如果特权是通过 `WITH GRANT OPTION` 授予的，则为 `YES`，否则为 `NO`。
+* `grantee_type` ([String](/zh/reference/data-types/string)) — `USER` 或 `ROLE`。非标准列：在 ClickHouse 中，用户和角色可以同名，此列用于区分此类被授权者。
+
+## SCHEMA_PRIVILEGES {#schema_privileges}
+
+提供数据库级特权的相关信息，数据读取自 [system.grants](/zh/reference/system-tables/grants) 系统表 (即指定了数据库但未指定表的行) 。所有 `*_PRIVILEGES` 视图共有的限制，请参阅 [USER&#95;PRIVILEGES](#user_privileges)。
+
+列：
+
+* `grantee` ([String](/zh/reference/data-types/string)) — 被授予该特权的用户或角色，采用 MySQL 格式：`'name'@'%'`。
+* `table_catalog` ([String](/zh/reference/data-types/string)) — 始终为 `def`。
+* `table_schema` ([String](/zh/reference/data-types/string)) — 数据库名称。
+* `privilege_type` ([String](/zh/reference/data-types/string)) — 特权名称。
+* `is_grantable` ([String](/zh/reference/data-types/string)) — 如果该特权是以 `WITH GRANT OPTION` 方式授予的，则为 `YES`，否则为 `NO`。
+* `grantee_type` ([String](/zh/reference/data-types/string)) — `USER` 或 `ROLE`。此为非标准列：在 ClickHouse 中，用户和角色可以同名，该列用于区分这类被授权者。
+
+## TABLE_PRIVILEGES {#table_privileges}
+
+提供表级特权的相关信息，数据读取自 [system.grants](/zh/reference/system-tables/grants) 系统表 (即指定了表但未指定列的行) 。所有 `*_PRIVILEGES` 视图共有的限制，请参阅 [USER&#95;PRIVILEGES](#user_privileges)。
+
+列：
+
+* `grantee` ([String](/zh/reference/data-types/string)) — 被授予该特权的用户或角色，采用 MySQL 格式：`'name'@'%'`。
+* `table_catalog` ([String](/zh/reference/data-types/string)) — 始终为 `def`。
+* `table_schema` ([String](/zh/reference/data-types/string)) — 数据库名称。
+* `table_name` ([String](/zh/reference/data-types/string)) — 表名称。
+* `privilege_type` ([String](/zh/reference/data-types/string)) — 特权名称。
+* `is_grantable` ([String](/zh/reference/data-types/string)) — 如果该特权是通过 `WITH GRANT OPTION` 授予的，则为 `YES`，否则为 `NO`。
+* `grantee_type` ([String](/zh/reference/data-types/string)) — `USER` 或 `ROLE`。非标准列：在 ClickHouse 中，用户和角色可以同名，此列用于区分这类被授权者。
+
+## COLUMN_PRIVILEGES {#column_privileges}
+
+提供列级特权的相关信息，数据读取自 [system.grants](/zh/reference/system-tables/grants) 系统表 (仅包含指定了列的行；每列对应一行) 。所有 `*_PRIVILEGES` 视图共有的限制，请参阅 [USER&#95;PRIVILEGES](#user_privileges)。
+
+列：
+
+* `grantee` ([String](/zh/reference/data-types/string)) — 被授予该特权的用户或角色，采用 MySQL 格式：`'name'@'%'`。
+* `table_catalog` ([String](/zh/reference/data-types/string)) — 始终为 `def`。
+* `table_schema` ([String](/zh/reference/data-types/string)) — 数据库名称。
+* `table_name` ([String](/zh/reference/data-types/string)) — 表名称。
+* `column_name` ([String](/zh/reference/data-types/string)) — 列名称。
+* `privilege_type` ([String](/zh/reference/data-types/string)) — 特权名称。
+* `is_grantable` ([String](/zh/reference/data-types/string)) — 如果该特权以 `WITH GRANT OPTION` 方式授予，则为 `YES`，否则为 `NO`。
+* `grantee_type` ([String](/zh/reference/data-types/string)) — `USER` 或 `ROLE`。非标准列：在 ClickHouse 中，用户和角色可以同名，此列用于区分这类被授权者。

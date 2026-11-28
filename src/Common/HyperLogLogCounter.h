@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <base/sanitizer_defs.h>
 #include <Common/HyperLogLogBiasEstimator.h>
 #include <Common/CompactArray.h>
 #include <Common/Exception.h>
@@ -52,7 +53,7 @@ struct LogLUT
             log_table[i] = log(static_cast<double>(i));
     }
 
-    double getLog(size_t x) const
+    [[nodiscard]] double getLog(size_t x) const
     {
         if (x <= M)
             return log_table[x];
@@ -183,7 +184,8 @@ public:
         rank_count[0] = static_cast<UInt32>(initial_value);
     }
 
-    void update(UInt8 cur_rank, UInt8 new_rank)
+    /// The counts are modulo 2^32: a corrupted state can take one below zero.
+    NO_SANITIZE_UNSIGNED_OVERFLOW void update(UInt8 cur_rank, UInt8 new_rank)
     {
         --rank_count[cur_rank];
         ++rank_count[new_rank];
@@ -200,7 +202,7 @@ public:
     }
 
     /// Adds deltas[i] to the count of rank i, modulo 2^32 like `update`.
-    void addToRankCounts(const Int32 * deltas)
+    NO_SANITIZE_UNSIGNED_OVERFLOW void addToRankCounts(const Int32 * deltas)
     {
         for (size_t i = 0; i < size; ++i)
             rank_count[i] += static_cast<UInt32>(deltas[i]);
@@ -211,7 +213,7 @@ public:
         memcpy(rank_count, counts, size * sizeof(UInt32));
     }
 
-    DenominatorType get() const
+    [[nodiscard]] DenominatorType get() const
     {
         /// Where long double holds the whole integer sum (eg aarch64 Linux, x86 with 32-bit hashes), the loop below is exact,
         /// so the integer sum gives the same result. Elsewhere (eg x86 with 64-bit hashes, ppc64le) the loop can round, so it stays.
@@ -231,7 +233,7 @@ public:
 
     /// Only the counts are checked, not the registers: a state whose registers disagree with its counts passes, and
     /// merging into it can make its counts wrap, so the merged state then fails this check.
-    bool countsAddUp(UInt64 bucket_count, UInt64 zeros) const
+    [[nodiscard]] bool countsAddUp(UInt64 bucket_count, UInt64 zeros) const
     {
         UInt64 sum = 0;
         for (size_t i = 0; i < size; ++i)
@@ -290,8 +292,9 @@ struct RankWidth<UInt64>
 
 /// The maximum of two groups of 8 registers of `width` bits; bit i of `raised` is set when register i of rhs is above that of lhs.
 /// Even and odd registers are compared apart, so that every field has free bits above it for the borrow of the subtraction.
+/// The multiplication that gathers the flags overflows on purpose: only the bits it moves into one byte are kept.
 template <UInt8 width>
-UInt64 maxOfGroups(UInt64 lhs, UInt64 rhs, UInt64 & raised)
+NO_SANITIZE_UNSIGNED_OVERFLOW UInt64 maxOfGroups(UInt64 lhs, UInt64 rhs, UInt64 & raised)
 {
     static_assert(width >= 5 && 8 * width <= 64);
     constexpr size_t slot = 2 * width;
@@ -385,7 +388,7 @@ public:
         __builtin_prefetch(rank_store.getSerializableState().data() + static_cast<size_t>(bucket) * rank_width / 8);
     }
 
-    UInt64 size() const
+    [[nodiscard]] UInt64 size() const
     {
         /// Normalizing factor for harmonic mean.
         static constexpr double alpha_m =
@@ -529,13 +532,13 @@ public:
 
 private:
     /// Extract subset of bits in [begin, end[ range.
-    HashValueType extractBitSequence(HashValueType val, UInt8 begin, UInt8 end) const
+    [[nodiscard]] HashValueType extractBitSequence(HashValueType val, UInt8 begin, UInt8 end) const
     {
         return (val >> begin) & ((1ULL << (end - begin)) - 1);
     }
 
     /// Rank is number of trailing zeros.
-    UInt8 calculateRank(HashValueType val) const
+    [[nodiscard]] UInt8 calculateRank(HashValueType val) const
     {
         if (unlikely(val == 0))
             return max_rank;
@@ -548,7 +551,7 @@ private:
         return static_cast<UInt8>(zeros_plus_one);
     }
 
-    HashValueType getHash(Value key) const
+    [[nodiscard]] HashValueType getHash(Value key) const
     {
         /// NOTE: this should be OK, since value is the same as key for HLL.
         return static_cast<HashValueType>(
@@ -558,8 +561,9 @@ private:
     /// Update maximum rank for current bucket.
     /// ALWAYS_INLINE is required to have better code layout for uniqCombined function
     /// A rank from another state is checked: a corrupted state can have ranks above `max_rank`, the last index of `rank_count`.
+    /// `zeros` is modulo 2^32, like the rank counts: a corrupted state can take it below zero.
     template <bool check_rank = false>
-    void ALWAYS_INLINE update(HashValueType bucket, UInt8 rank)
+    NO_SANITIZE_UNSIGNED_OVERFLOW void ALWAYS_INLINE update(HashValueType bucket, UInt8 rank)
     {
         UInt8 cur_rank = rank_store.get(bucket);
 
@@ -698,7 +702,7 @@ private:
         }
     }
 
-    double fixRawEstimate(double raw_estimate) const
+    [[nodiscard]] double fixRawEstimate(double raw_estimate) const
     {
         if ((mode == HyperLogLogMode::Raw) || ((mode == HyperLogLogMode::BiasCorrected) && BiasEstimator::isTrivial()))
             return raw_estimate;
@@ -722,7 +726,7 @@ private:
         throw Poco::Exception("Internal error", DB::ErrorCodes::LOGICAL_ERROR);
     }
 
-    double applyCorrection(double raw_estimate) const
+    [[nodiscard]] double applyCorrection(double raw_estimate) const
     {
         double fixed_estimate = 0;
 
@@ -751,7 +755,7 @@ private:
     /// Correction used in HyperLogLog++ algorithm.
     /// Source: "HyperLogLog in Practice: Algorithmic Engineering of a State of The Art Cardinality Estimation Algorithm"
     /// (S. Heule et al., Proceedings of the EDBT 2013 Conference).
-    double applyBiasCorrection(double raw_estimate) const
+    [[nodiscard]] double applyBiasCorrection(double raw_estimate) const
     {
         double fixed_estimate = 0;
 
@@ -766,12 +770,12 @@ private:
     /// Calculation of unique values using LinearCounting algorithm.
     /// Source: "A Linear-time Probabilistic Counting Algorithm for Database Applications"
     /// (Whang et al., ACM Trans. Database Syst., pp. 208-229, 1990).
-    double applyLinearCorrection(double raw_estimate) const
+    [[nodiscard]] double applyLinearCorrection(double raw_estimate) const
     {
         double fixed_estimate = 0;
 
         if (zeros != 0)
-            fixed_estimate = bucket_count * (log_lut.getLog(bucket_count) - log_lut.getLog(zeros));
+            fixed_estimate = bucket_count * (getLogLUT().getLog(bucket_count) - getLogLUT().getLog(zeros));
         else
             fixed_estimate = raw_estimate;
 
@@ -791,36 +795,16 @@ private:
     using ZerosCounterType = typename details::MinCounterType<bucket_count>::Type;
     ZerosCounterType zeros = bucket_count;
 
-    static details::LogLUT<precision> log_lut;
+    /// Built on first use rather than by a static initializer per instantiation.
+    static const details::LogLUT<precision> & getLogLUT()
+    {
+        static const details::LogLUT<precision> log_lut;
+        return log_lut;
+    }
 
     /// Checks.
     static_assert(precision < (sizeof(HashValueType) * 8), "Invalid parameter value");
 };
-
-
-/// Declaration of static variables for linker.
-template
-<
-    UInt8 precision,
-    typename Key,
-    typename Hash,
-    typename HashValueType,
-    typename DenominatorType,
-    typename BiasEstimator,
-    HyperLogLogMode mode,
-    DenominatorMode denominator_mode
->
-details::LogLUT<precision> HyperLogLogCounter
-<
-    precision,
-    Key,
-    Hash,
-    HashValueType,
-    DenominatorType,
-    BiasEstimator,
-    mode,
-    denominator_mode
->::log_lut;
 
 
 /// Lightweight implementation of expression's denominator is used in Metrage.

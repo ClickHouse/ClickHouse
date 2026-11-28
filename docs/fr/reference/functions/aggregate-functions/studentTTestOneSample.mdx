@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 ## studentTTestOneSample {#studentTTestOneSample}
 
-Introduit dans : v25.10.0
+Introduit dans : v25.10.0
 
 Applique le test t de Student à un échantillon pour déterminer si la moyenne d’un échantillon diffère d’une moyenne de population connue.
 
@@ -18,9 +18,9 @@ On suppose une distribution normale. L’hypothèse nulle est que la moyenne de 
 
 Le paramètre facultatif `confidence_level` permet de calculer l’intervalle de confiance.
 
-**Remarques :**
+**Remarques :**
 
-* Au moins 2 observations sont requises ; sinon, le résultat est `(nan, nan)` (et les intervalles, s’ils sont demandés, valent `nan`).
+* Au moins 2 observations sont requises ; sinon, le résultat est `(nan, nan)` (et les intervalles, s’ils sont demandés, valent `nan`).
 * Une entrée constante ou quasi constante renvoie également `nan` en raison d’une erreur-type nulle (ou pratiquement nulle).
 
 **Voir aussi**
@@ -45,7 +45,7 @@ studentTTestOneSample([confidence_level])(sample_data, population_mean)
 
 **Valeur renvoyée**
 
-Renvoie un tuple comportant deux ou quatre éléments (si `confidence_level` est spécifié) : statistique t calculée, valeur p calculée (bilatérale), [borne inférieure calculée de l’intervalle de confiance], [borne supérieure calculée de l’intervalle de confiance]. Les intervalles de confiance portent sur la moyenne de l’échantillon pour le niveau de confiance donné. [`Tuple(Float64, Float64)`](/fr/reference/data-types/tuple) ou [`Tuple(Float64, Float64, Float64, Float64)`](/fr/reference/data-types/tuple)
+Renvoie un tuple comportant deux ou quatre éléments (si `confidence_level` est spécifié) : statistique t calculée, valeur p calculée (bilatérale), [borne inférieure calculée de l’intervalle de confiance], [borne supérieure calculée de l’intervalle de confiance]. Les intervalles de confiance portent sur la moyenne de l’échantillon pour le niveau de confiance donné. [`Tuple(Float64, Float64)`](/fr/reference/data-types/tuple) ou [`Tuple(Float64, Float64, Float64, Float64)`](/fr/reference/data-types/tuple)
 
 **Exemples**
 
@@ -61,11 +61,11 @@ SELECT studentTTestOneSample()(value, 20.0) FROM t;
 ```response title=Response
 ┌─studentTTestOneSample(value, 20.)─────────┐
 ├────────t_statistic─┬──────────────p_value─┤
-│ 3.2378108288009266 │ 0.023005151817711324 │
+│ 3.2378108288009266 │ 0.023005151817711317 │
 └────────────────────┴──────────────────────┘
 ```
 
-**Avec un intervalle de confiance (95 %)**
+**Avec un intervalle de confiance (95 %)**
 
 ```sql title=Query
 SELECT studentTTestOneSample(0.95)(value, 20.0) FROM t;
@@ -74,7 +74,7 @@ SELECT studentTTestOneSample(0.95)(value, 20.0) FROM t;
 ```response title=Response
 ┌─studentTTestOneSample(0.95)(value, 20.)────────────────────────────────────────────────────────┐
 ├────────t_statistic─┬──────────────p_value─┬─confidence_interval_low─┬─confidence_interval_high─┤
-│ 3.2378108288009266 │ 0.023005151817711324 │      20.230116092352564 │        22.00321724098077 │
+│ 3.2378108288009266 │ 0.023005151817711317 │      20.230116092352564 │        22.00321724098077 │
 └────────────────────┴──────────────────────┴─────────────────────────┴──────────────────────────┘
 ```
 

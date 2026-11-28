@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="remote_servers">
-  ## remote_servers
-</div>
+## remote_servers {#remote_servers}
 
 Configuration des clusters utilisés par le moteur de table [Distributed](/fr/reference/engines/table-engines/special/distributed) et la fonction de table `cluster`.
 
@@ -30,25 +28,35 @@ Pour la valeur de l’attribut `incl`, consultez la section &quot;[Fichiers de c
 * [Découverte du cluster](/fr/guides/oss/deployment-and-scaling/cluster-discovery)
 * [Moteur de base de données Replicated](/fr/reference/engines/database-engines/replicated)
 
-<div id="remote_url_allow_hosts">
-  ## remote_url_allow_hosts
-</div>
+## remote_url_allow_hosts {#remote_url_allow_hosts}
 
 Liste des hôtes autorisés à être utilisés dans les moteurs de stockage et les fonctions de table liés aux URL.
 
-Lors de l’ajout d’un hôte avec la balise XML `\<host\>` :
+Lors de l’ajout d’un hôte avec la balise XML `\<host\>` :
 
-* il doit être spécifié exactement comme dans l’URL, car le nom est vérifié avant la résolution DNS. Par exemple : `<host>clickhouse.com</host>`
-* si le port est explicitement indiqué dans l’URL, alors host:port est vérifié dans son ensemble. Par exemple : `<host>clickhouse.com:80</host>`
-* si l’hôte est spécifié sans port, alors n’importe quel port de cet hôte est autorisé. Par exemple : si `<host>clickhouse.com</host>` est spécifié, alors `clickhouse.com:20` (FTP), `clickhouse.com:80` (HTTP), `clickhouse.com:443` (HTTPS), etc. sont autorisés.
-* si l’hôte est spécifié sous forme d’adresse IP, alors il est vérifié tel qu’il est indiqué dans l’URL. Par exemple : `[2a02:6b8:a::a]`.
+* il doit être spécifié exactement comme dans l’URL, car le nom est vérifié avant la résolution DNS. Par exemple : `<host>clickhouse.com</host>`
+* si le port est explicitement indiqué dans l’URL, alors host:port est vérifié dans son ensemble. Par exemple : `<host>clickhouse.com:80</host>`
+* si l’hôte est spécifié sans port, alors n’importe quel port de cet hôte est autorisé. Par exemple : si `<host>clickhouse.com</host>` est spécifié, alors `clickhouse.com:20` (FTP), `clickhouse.com:80` (HTTP), `clickhouse.com:443` (HTTPS), etc. sont autorisés.
+* si l’hôte est spécifié sous forme d’adresse IP, alors il est vérifié tel qu’il est indiqué dans l’URL. Par exemple : `[2a02:6b8:a::a]`.
 * s’il y a des redirections et que leur prise en charge est activée, alors chaque redirection (le champ location) est vérifiée.
 
-Par exemple :
+Lors de l’ajout d’une expression régulière avec la balise XML `\<host_regexp\>`, le moteur RE2 est utilisé et l’expression doit correspondre à l’hôte dans son intégralité. Par exemple : `<host_regexp>^.*\.clickhouse\.com$</host_regexp>`
+
+Lors de l’ajout d’un compartiment S3 unique avec la balise XML `\<s3_bucket\>`, sous la forme `host/bucket` ou `host:port/bucket` :
+
+* c’est utile lorsque l’endpoint est partagé par de nombreux utilisateurs, par exemple l’endpoint AWS de type path-style `s3.us-west-2.amazonaws.com` : autoriser l’hôte entier reviendrait à autoriser tous les buckets qu’il héberge.
+* le bucket est extrait de l’URL S3 analysée ; l’entrée correspond donc à la fois à `https://s3.us-west-2.amazonaws.com/my-bucket/...` et à `https://my-bucket.s3.us-west-2.amazonaws.com/...`.
+* cela s’applique uniquement aux URL S3 : les fonctions de table et moteurs `s3`, le moteur de base de données `S3`, `BACKUP`/`RESTORE` vers `S3`, ainsi que les disques S3 créés en SQL avec la fonction `disk`.
+* un disque S3 créé en SQL est vérifié au moment où la requête le crée. Un disque qui existait déjà lorsque la liste a été définie, ou qui a été créé par une version ne disposant pas de cette vérification, est tout de même chargé au démarrage du serveur, y compris pour une table supprimée mais pas encore effacée, afin que `UNDROP TABLE` continue de fonctionner ; le serveur le signale alors dans le journal et dans `system.warnings`.
+* une redirection permanente (301) renvoyée par S3 est également vérifiée par rapport aux entrées de bucket, tandis qu’une redirection temporaire (307) n’est vérifiée que par hôte ; elle est donc rejetée lorsque la liste ne contient que des entrées `\<s3_bucket\>`.
+
+Par exemple :
 
 ```sql
 <remote_url_allow_hosts>
     <host>clickhouse.com</host>
+    <host_regexp>^.*\.clickhouse\.com$</host_regexp>
+    <s3_bucket>s3.us-west-2.amazonaws.com/my-bucket</s3_bucket>
 </remote_url_allow_hosts>
 ```
 
