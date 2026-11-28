@@ -129,6 +129,7 @@ std::function<void(WriteBuffer &)> StorageXDBC::getReadPOSTDataCallback(
         auto column_data = columns_description.getPhysical(name);
         cols.emplace_back(column_data.name, column_data.type);
     }
+    bridge_helper->checkColumnTypes(cols);
 
     auto write_body_callback = [query, cols](WriteBuffer & out)
     {
@@ -158,6 +159,7 @@ void StorageXDBC::read(
 
 SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    bridge_helper->checkColumnTypes(metadata_snapshot->getSampleBlock().getNamesAndTypesList());
     bridge_helper->startBridgeSync();
 
     auto request_uri = Poco::URI(uri);
