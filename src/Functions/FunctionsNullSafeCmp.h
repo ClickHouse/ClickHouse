@@ -305,6 +305,14 @@ public:
         if (common_type)
         {
             // To address: Nullable vs Nullable
+            // A `FixedString` vs `String` pair is compared zero-padded by `=`, while the cast to the common type `String`
+            // drops the trailing zero bytes of the `FixedString` operand only, so compare the nested values as `=` does.
+            // The same holds for such a pair of tuple elements.
+            const bool has_zero_padded_strings = (isStringOrFixedString(left_nested_type) && isStringOrFixedString(right_nested_type))
+                || hasAlignedStringVsFixedStringElement(left_nested_type, right_nested_type)
+                || hasAlignedStringVsFixedStringElement(right_nested_type, left_nested_type);
+            if (common_type->isNullable() && has_zero_padded_strings)
+                return executeNullableWithoutSupertype(arguments, input_rows_count);
             if (common_type->isNullable())
             {
                 ColumnPtr c0_converted = castColumn(arguments[0], common_type);
@@ -328,6 +336,16 @@ public:
             // `Nullable(Int64)`).
             return executeNullableWithoutSupertype(arguments, input_rows_count);
         }
+
+        // To address: two empty tuples, also as elements of the tuples compared below. `FunctionComparison` does not
+        // compare them, while they are not distinct when wrapped in `Nullable` and compared as whole values above.
+        auto is_empty_tuple = [](const DataTypePtr & type)
+        {
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+            return tuple_type && tuple_type->getElements().empty();
+        };
+        if (is_empty_tuple(arguments[0].type) && is_empty_tuple(arguments[1].type))
+            return result_type->createColumnConst(input_rows_count, UInt8(is_equal_mode ? 1 : 0));
 
         // To address regular case (also covers types with no common supertype that are not Nullable,
         // e.g. `UInt64` vs `Int64` and `Array(UInt64)` vs `Array(Int64)`;

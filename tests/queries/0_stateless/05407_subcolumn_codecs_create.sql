@@ -24,7 +24,8 @@ CREATE TABLE t_subcolumn_codecs
 ENGINE = MergeTree ORDER BY (id, payload.ts)
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, default_compression_codec = 'LZ4',
     replace_long_file_name_to_hash = 0, ratio_of_defaults_for_sparse_serialization = 1,
-    map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
+    map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic',
+    enable_adaptive_codec_selection = 0;
 
 SELECT 'create query';
 SELECT replaceRegexpOne(create_table_query, ' SETTINGS .*$', '') FROM system.tables WHERE database = currentDatabase() AND name = 't_subcolumn_codecs';

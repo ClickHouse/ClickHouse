@@ -6,7 +6,10 @@
 #include <Core/SortDescription.h>
 #include <base/types.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/PlanStepIndex.h>
+#include <Processors/QueryPlan/Profiling/Analysis/StepAnalyzer.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
+#include <functional>
 #include <span>
 #include <string_view>
 #include <variant>
@@ -45,8 +48,6 @@ struct QueryPlanStepSerialization;
 struct QueryPlanStepDeserialization;
 
 struct ExplainFormatSettings;
-
-using StepProcessors = std::span<IProcessor * const>;
 
 /// Single step of query plan.
 class IQueryPlanStep
@@ -118,18 +119,26 @@ public:
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
     /// Get child plans contained inside some steps (e.g ReadFromMerge) so that they are visible when doing EXPLAIN.
+    /// Some steps build their child plans here rather than handing over plans they already hold, so this
+    /// changes what the query has done by the time it returns. Callers that only observe a plan must use
+    /// `getBuiltChildPlans` instead.
     /// EXPLAIN sets `for_explain`: a step whose plan runs with privileges the current user does not hold may hide it there.
     virtual QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) { return {}; }
+
+    /// The child plans this step has already built. A step that builds them on demand reports none until
+    /// something else has asked for them, which keeps observing a plan from changing the work a query does.
+    virtual QueryPlanRawPtrs getBuiltChildPlans() { return {}; }
 
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);
 
+    [[nodiscard]] String getUniqID() const;
+
+    /// The number in `getUniqID`, which is what identifies the step: see `PlanStepIndex`.
+    [[nodiscard]] UInt64 getStepIndex() const { return step_index.get(); }
+
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
-    [[nodiscard]] String getUniqID() const;
-    /// The number in `getUniqID`, unique within the query.
-    [[nodiscard]] size_t getStepIndex() const { return step_index.value; }
-
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(SharedHeaders input_headers_);
     void updateInputHeader(SharedHeader input_header, size_t idx = 0);
@@ -228,7 +237,10 @@ public:
     [[nodiscard]] virtual VectorWithMemoryTracking<size_t> getStepGroups() const { return {0}; }
     [[nodiscard]] virtual String getStepGroupName(size_t) const { return {}; }
 
-    [[nodiscard]] virtual StepAnalysisReport getAnalysisReport(StepProcessors /*step_processors*/) const { return {}; }
+    /// An analyzer for this step: its stages, how to read its processors, and how to shape what
+    /// comes out. It captures what it needs by value and runs after the step is gone.
+    /// The default reports no metrics of its own and shapes the stages the ordinary way.
+    [[nodiscard]] virtual StepAnalyzer makeAnalyzer() const;
 
 protected:
     /// For a step with one child and one expression: brings the inputs of `dag`, whose outputs are pruned
@@ -259,17 +271,7 @@ protected:
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 
 private:
-    /// A copy is a separate step, so it takes a new index; a move keeps it.
-    struct StepIndex
-    {
-        size_t value = 0;
-
-        StepIndex();
-        StepIndex(const StepIndex &) : StepIndex() {}
-        StepIndex(StepIndex &&) = default;
-    };
-
-    StepIndex step_index;
+    PlanStepIndex step_index;
 };
 
 }

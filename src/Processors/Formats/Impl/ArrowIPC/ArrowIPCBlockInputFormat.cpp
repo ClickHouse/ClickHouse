@@ -22,21 +22,21 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnsCommon.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Core/UUID.h>
-#include <Formats/insertNullAsDefaultIfNeeded.h>
-#include <Interpreters/castColumn.h>
-#include <Common/quoteString.h>
+#include <Formats/castColumnToRequestedType.h>
 #include <algorithm>
 #include <Common/assert_cast.h>
 #include <boost/algorithm/string/case_conv.hpp>
@@ -47,7 +47,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int THERE_IS_NO_COLUMN;
 }
 
 namespace
@@ -141,254 +140,6 @@ void ArrowIPCBlockInputFormat::collectDictionaryFields(const ArrowIPC::ArrowFiel
     }
 }
 
-namespace
-{
-/// When case-insensitive column matching is enabled, the named-tuple CAST that maps a decoded Arrow
-/// struct onto the requested type matches element names case-sensitively, so differently-cased struct
-/// fields would silently become default values (the library reader instead matches them). Rebuild the
-/// decoded type so that every Tuple element name matching a requested element name case-insensitively is
-/// renamed to the requested (exact) name; the subsequent CAST then matches. Only the type is rebuilt —
-/// Tuple element names live in the type, not the column, so the column data is left untouched. Recurses
-/// through Array / Map / Nullable / LowCardinality wrappers.
-DataTypePtr alignStructFieldNamesCaseInsensitive(const DataTypePtr & from, const DataTypePtr & to)
-{
-    if (const auto * to_low = typeid_cast<const DataTypeLowCardinality *>(to.get()))
-    {
-        if (const auto * from_low = typeid_cast<const DataTypeLowCardinality *>(from.get()))
-            return std::make_shared<DataTypeLowCardinality>(
-                alignStructFieldNamesCaseInsensitive(from_low->getDictionaryType(), to_low->getDictionaryType()));
-        return from;
-    }
-    if (const auto * to_null = typeid_cast<const DataTypeNullable *>(to.get()))
-    {
-        if (const auto * from_null = typeid_cast<const DataTypeNullable *>(from.get()))
-            return std::make_shared<DataTypeNullable>(
-                alignStructFieldNamesCaseInsensitive(from_null->getNestedType(), to_null->getNestedType()));
-        return alignStructFieldNamesCaseInsensitive(from, to_null->getNestedType());
-    }
-    if (const auto * from_null = typeid_cast<const DataTypeNullable *>(from.get()))
-        return std::make_shared<DataTypeNullable>(alignStructFieldNamesCaseInsensitive(from_null->getNestedType(), to));
-
-    if (const auto * to_arr = typeid_cast<const DataTypeArray *>(to.get()))
-    {
-        if (const auto * from_arr = typeid_cast<const DataTypeArray *>(from.get()))
-            return std::make_shared<DataTypeArray>(
-                alignStructFieldNamesCaseInsensitive(from_arr->getNestedType(), to_arr->getNestedType()));
-        return from;
-    }
-    if (const auto * to_map = typeid_cast<const DataTypeMap *>(to.get()))
-    {
-        if (const auto * from_map = typeid_cast<const DataTypeMap *>(from.get()))
-            return std::make_shared<DataTypeMap>(
-                alignStructFieldNamesCaseInsensitive(from_map->getKeyType(), to_map->getKeyType()),
-                alignStructFieldNamesCaseInsensitive(from_map->getValueType(), to_map->getValueType()));
-        return from;
-    }
-    if (const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get()))
-    {
-        const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
-        if (!from_tuple)
-            return from;
-
-        /// Without names on both sides, `prepareArrowColumnForCast` matches elements by position (e.g. a struct with
-        /// empty or repeated field names, read as an unnamed tuple), so descend the same way: named structs nested
-        /// inside still need their names aligned. The source keeps its own names, or the lack of them.
-        if (!from_tuple->hasExplicitNames() || !to_tuple->hasExplicitNames())
-        {
-            const auto & from_elems = from_tuple->getElements();
-            const auto & to_elems = to_tuple->getElements();
-            if (from_elems.size() != to_elems.size())
-                return from;
-            DataTypes new_elems;
-            new_elems.reserve(from_elems.size());
-            for (size_t i = 0; i < from_elems.size(); ++i)
-                new_elems.push_back(alignStructFieldNamesCaseInsensitive(from_elems[i], to_elems[i]));
-            return from_tuple->hasExplicitNames()
-                ? std::make_shared<DataTypeTuple>(new_elems, from_tuple->getElementNames())
-                : std::make_shared<DataTypeTuple>(new_elems);
-        }
-
-        const auto & from_elems = from_tuple->getElements();
-        const auto & from_names = from_tuple->getElementNames();
-        const auto & to_elems = to_tuple->getElements();
-        const auto & to_names = to_tuple->getElementNames();
-
-        UnorderedMapWithMemoryTracking<String, size_t> to_by_lower;
-        to_by_lower.reserve(to_names.size());
-        for (size_t i = 0; i < to_names.size(); ++i)
-            to_by_lower.emplace(boost::to_lower_copy(to_names[i]), i); /// first occurrence wins on duplicates
-
-        DataTypes new_elems;
-        Strings new_names;
-        new_elems.reserve(from_elems.size());
-        new_names.reserve(from_names.size());
-        for (size_t i = 0; i < from_elems.size(); ++i)
-        {
-            auto it = to_by_lower.find(boost::to_lower_copy(from_names[i]));
-            if (it != to_by_lower.end())
-            {
-                new_names.push_back(to_names[it->second]);
-                new_elems.push_back(alignStructFieldNamesCaseInsensitive(from_elems[i], to_elems[it->second]));
-            }
-            else
-            {
-                new_names.push_back(from_names[i]);
-                new_elems.push_back(from_elems[i]);
-            }
-        }
-        return std::make_shared<DataTypeTuple>(new_elems, new_names);
-    }
-    return from;
-}
-
-/// Match named struct fields recursively, dropping unrequested fields and defaulting missing ones.
-/// Nullable tuples are converted with null rows excluded before applying the requested nullability.
-/// Top-level null defaults also populate `missing_values` for column `DEFAULT` expressions.
-ColumnWithTypeAndName prepareArrowColumnForCast(
-    ColumnWithTypeAndName from, const DataTypePtr & to, const FormatSettings & settings,
-    size_t column_index = 0, BlockMissingValues * missing_values = nullptr)
-{
-    if (from.type->equals(*to))
-        return from;
-
-    if (const auto * from_null = typeid_cast<const DataTypeNullable *>(from.type.get()))
-    {
-        const auto & from_null_column = assert_cast<const ColumnNullable &>(*from.column);
-        ColumnWithTypeAndName nested{from_null_column.getNestedColumnPtr(), from_null->getNestedType(), from.name};
-        const DataTypePtr to_nested = removeNullable(to);
-        if (isTuple(nested.type) && isTuple(to_nested))
-        {
-            /// Null structs contain undefined child values. Convert only visible rows, then restore the
-            /// null rows in the destination type so text parsers never see substitute empty strings.
-            const auto & null_map = from_null_column.getNullMapData();
-            const bool has_nulls = !memoryIsZero(null_map.data(), 0, null_map.size());
-            if (has_nulls)
-            {
-                IColumn::Filter visible_rows(null_map.size());
-                for (size_t i = 0; i < null_map.size(); ++i)
-                    visible_rows[i] = !null_map[i];
-                nested.column = nested.column->filter(visible_rows, -1);
-            }
-            nested = prepareArrowColumnForCast(std::move(nested), to_nested, settings);
-            if (has_nulls)
-            {
-                if (settings.null_as_default)
-                    insertNullAsDefaultIfNeeded(nested, {to_nested->createColumn(), to_nested, from.name}, 0, nullptr);
-                auto converted = IColumn::mutate(castColumn(nested, to_nested)->convertToFullColumnIfConst());
-                const size_t default_index = converted->size();
-                to_nested->insertDefaultInto(*converted);
-                auto indexes = ColumnUInt64::create(null_map.size());
-                auto & index_data = indexes->getData();
-                size_t visible_index = 0;
-                for (size_t i = 0; i < null_map.size(); ++i)
-                    index_data[i] = null_map[i] ? default_index : visible_index++;
-                nested.column = converted->index(*indexes, 0);
-                nested.type = to_nested;
-            }
-            if (!to->isNullable() && (settings.null_as_default || !settings.schema_inference_allow_nullable_tuple_type))
-            {
-                if (has_nulls && settings.null_as_default && missing_values)
-                    missing_values->setBitsFromNullMap(column_index, null_map);
-                return nested;
-            }
-        }
-        else
-            nested = prepareArrowColumnForCast(std::move(nested), to_nested, settings);
-        from.column = ColumnNullable::create(nested.column, from_null_column.getNullMapColumnPtr());
-        from.type = std::make_shared<DataTypeNullable>(nested.type);
-        return from;
-    }
-    if (const auto * to_null = typeid_cast<const DataTypeNullable *>(to.get()))
-        return prepareArrowColumnForCast(std::move(from), to_null->getNestedType(), settings);
-
-    if (const auto * to_arr = typeid_cast<const DataTypeArray *>(to.get()))
-    {
-        const auto * from_arr = typeid_cast<const DataTypeArray *>(from.type.get());
-        if (!from_arr)
-            return from;
-        const auto & from_arr_column = assert_cast<const ColumnArray &>(*from.column);
-        auto realigned = prepareArrowColumnForCast(
-            {from_arr_column.getDataPtr(), from_arr->getNestedType(), from.name}, to_arr->getNestedType(), settings);
-        from.column = ColumnArray::create(realigned.column, from_arr_column.getOffsetsPtr());
-        from.type = std::make_shared<DataTypeArray>(realigned.type);
-        return from;
-    }
-    if (const auto * to_map = typeid_cast<const DataTypeMap *>(to.get()))
-    {
-        const auto * from_map = typeid_cast<const DataTypeMap *>(from.type.get());
-        if (!from_map)
-            return from;
-        const auto & from_map_column = assert_cast<const ColumnMap &>(*from.column);
-        const auto & from_entries = from_map_column.getNestedData();
-        auto realigned_key = prepareArrowColumnForCast(
-            {from_entries.getColumnPtr(0), from_map->getKeyType(), from.name}, to_map->getKeyType(), settings);
-        auto realigned_value = prepareArrowColumnForCast(
-            {from_entries.getColumnPtr(1), from_map->getValueType(), from.name}, to_map->getValueType(), settings);
-        from.column = ColumnMap::create(ColumnArray::create(
-            ColumnTuple::create(Columns{realigned_key.column, realigned_value.column}), from_map_column.getNestedColumn().getOffsetsPtr()));
-        from.type = std::make_shared<DataTypeMap>(realigned_key.type, realigned_value.type);
-        return from;
-    }
-    if (const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get()))
-    {
-        const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.type.get());
-        if (!from_tuple)
-            return from;
-
-        const auto & tuple_column = assert_cast<const ColumnTuple &>(*from.column);
-        const auto & source_types = from_tuple->getElements();
-        const auto & target_types = to_tuple->getElements();
-        const auto & target_names = to_tuple->getElementNames();
-        const bool match_by_name = from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames();
-        if (!match_by_name && source_types.size() != target_types.size())
-            return from;
-
-        UnorderedMapWithMemoryTracking<String, size_t> source_positions;
-        if (match_by_name)
-        {
-            const auto & source_names = from_tuple->getElementNames();
-            source_positions.reserve(source_names.size());
-            for (size_t i = 0; i < source_names.size(); ++i)
-                source_positions.emplace(source_names[i], i);
-        }
-
-        Columns columns;
-        DataTypes types;
-        columns.reserve(target_types.size());
-        types.reserve(target_types.size());
-        for (size_t i = 0; i < target_types.size(); ++i)
-        {
-            size_t source_position = i;
-            if (match_by_name)
-            {
-                auto it = source_positions.find(target_names[i]);
-                if (it == source_positions.end())
-                {
-                    columns.push_back(target_types[i]->createColumnConstWithDefaultValue(tuple_column.size())
-                        ->convertToFullColumnIfConst());
-                    types.push_back(target_types[i]);
-                    continue;
-                }
-                source_position = it->second;
-            }
-            auto prepared = prepareArrowColumnForCast(
-                {tuple_column.getColumnPtr(source_position), source_types[source_position], from.name},
-                target_types[i], settings);
-            columns.push_back(std::move(prepared.column));
-            types.push_back(std::move(prepared.type));
-        }
-
-        /// An empty tuple has no element columns to carry its row count.
-        from.column = columns.empty() ? ColumnTuple::create(tuple_column.size()) : ColumnTuple::create(std::move(columns));
-        from.type = to_tuple->hasExplicitNames()
-            ? std::make_shared<DataTypeTuple>(std::move(types), target_names)
-            : std::make_shared<DataTypeTuple>(std::move(types));
-        return from;
-    }
-    return from;
-}
-
-}
 
 void ArrowIPCBlockInputFormat::prepareReader()
 {
@@ -401,16 +152,10 @@ void ArrowIPCBlockInputFormat::prepareReader()
     const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
     auto normalize = [&](String s) -> String { if (case_insensitive) boost::to_lower(s); return s; };
     requested_top_level_fields.clear();
-    requested_field_target_types.clear();
     for (const auto & header_column : getPort().getHeader())
     {
         requested_top_level_fields.insert(normalize(header_column.name));
         requested_top_level_fields.insert(normalize(Nested::extractTableName(header_column.name)));
-        /// Record each requested column's target type by (normalized) name so the decoder can read a
-        /// `date32` mapped to a numeric target as the raw day number — recursively for a `date32` nested in
-        /// an Array/Tuple/Map, and for one addressed as a subcolumn (e.g. `t.d`). Mirrors the Apache Arrow
-        /// library reader's recursive numeric type-hint handling.
-        requested_field_target_types[normalize(header_column.name)] = header_column.type;
     }
 
     if (stream)
@@ -435,6 +180,7 @@ void ArrowIPCBlockInputFormat::prepareReader()
     /// Repeated column names were made unique by `parseSchema`.
     collectDictionaryFields(arrow_schema->fields);
     decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
+    requested_field_target_types = decoder->bindRequestedTypes(getPort().getHeader());
 
     /// Collect the dictionaries the requested columns reference and the field positions each one's values
     /// are decoded for; the stream reader skips the DictionaryBatch bodies of dictionaries used only by
@@ -524,6 +270,7 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
         /// Subset reads: only the dictionaries the requested columns reference are decoded; the bodies of
         /// dictionaries used solely by unrequested top-level fields are skipped (see the loop below).
         auto temp_decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
+        requested_field_target_types = temp_decoder->bindRequestedTypes(getPort().getHeader());
         dictionary_uses = temp_decoder->collectDictionaryUses(&requested_top_level_fields, &requested_field_target_types);
         UnorderedSetWithMemoryTracking<Int64> base_dictionary_ids;
         for (const auto & block : footer.dictionary_blocks)
@@ -581,12 +328,12 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
     batch_decoder.validateBatchLayout(*dict_batch.data(), value_fields);
     message_reader->readBody(*dict_batch.data(), body_length, body_buffer);
 
-    /// Decode the values once for each position of a field encoding this dictionary, so every field gets
-    /// the decoding it would get for inline values in a record batch. The registered type must describe the
-    /// registered column: the raw-byte rewrite the record-batch columns go through reinterprets
-    /// fixed_size_binary values under an IPv6 / big-integer hint and re-declares values the decoder already
-    /// converted or read raw, so `decodeDictionary` later builds its `LowCardinality` from a consistent
-    /// (values, type) pair.
+    /// Decode the values once for each use of this dictionary (the position of a field encoding it, with the
+    /// requested type the field resolves there), so every field gets the decoding it would get for inline
+    /// values in a record batch. The registered type must describe the registered column: the raw-byte
+    /// rewrite the record-batch columns go through reinterprets fixed_size_binary values under an IPv6 /
+    /// big-integer hint and re-declares values the decoder already converted or read raw, so
+    /// `decodeDictionary` later builds its `LowCardinality` from a consistent (values, type) pair.
     for (const ArrowIPC::DictionaryUse & use : dictionary_uses.at(id))
     {
         auto decoded = batch_decoder.decodeDictionaryValues(
@@ -595,69 +342,182 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
         /// No field: a dictionary is how a `LowCardinality` is written, and that wraps only numbers, strings,
         /// `Date` and `DateTime`, each of which has an Arrow type of its own. So a dictionary's values are
         /// never an opaque column, and the rewrite has no field metadata to act on here.
+        /// A `Variant` is repaired later, on the materialized column: a dictionary nested in a composite is
+        /// declared by its Arrow type, which a repaired value type would contradict.
         if (use.hint)
-            reinterpretRawByteColumns(values, use.hint, /*field=*/nullptr);
+            reinterpretRawByteColumns(values, use.hint, /*field=*/nullptr, /*repair_variants=*/false);
 
         /// Arrow doesn't require dictionary values to be unique, and repeated values are allowed: `decodeDictionary`
         /// builds a `LowCardinality` by inserting the values into its own unique dictionary and remapping the indexes.
-        dictionaries.set(id, use.position, {values.column, values.type, std::move(decoded.null_map)}, dict_batch.isDelta());
+        dictionaries.set(id, use, {values.column, values.type, std::move(decoded.null_map)}, dict_batch.isDelta());
     }
 }
 
 namespace
 {
 
-/// Reinterpret the raw bytes of a fixed_size_binary column (`ColumnFixedString`) as a UUID, IPv6, or big
-/// integer, matching the ClickHouse Arrow writer (which stores those types as fixed_size_binary) and the
-/// library reader. Returns nullptr when `to_no_null` is not one of those types. Throws on a width mismatch:
-/// a wrong-width value is corrupt for these fixed-width targets (the library reader rejects it too), and
-/// letting it fall through to `castColumn` would text-parse the bytes.
-MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, const DataTypePtr & to_no_null)
+/// An integer or float alternative strictly wider than a `width`-byte decoded integer.
+bool variantElementWidensTo(const DataTypePtr & alternative, size_t width)
 {
-    const WhichDataType which(to_no_null);
-    const size_t n = fixed.getN();
-    const size_t rows = fixed.size();
+    const WhichDataType which(alternative);
+    if (which.isFloat32())
+        return width <= 2;
+    if (which.isFloat64())
+        return width <= 4;
+    return which.isInteger() && alternative->getSizeOfValueInMemory() > width;
+}
 
-    auto require = [&](size_t width)
+/// The natural pairing of a decoded element with an alternative: the alternative it was itself inferred as.
+/// Decoded element names are unique (the decoder rejects a union whose children map to one ClickHouse type).
+bool variantElementPrefersType(const DataTypePtr & decoded, const DataTypePtr & alternative)
+{
+    return ArrowIPC::stripHint(alternative)->getName() == decoded->getName();
+}
+
+/// Whether a decoded `Variant` element can be repaired into a requested alternative: its own decoded type,
+/// otherwise only an alternative the ordinary (non-union) Arrow column path already reaches from `decoded`.
+/// Three exclusions whose reason the arms below do not show: a `UInt8` value outside 0/1 would render as
+/// `true` under the equal-comparing `Bool`; a cast between tuples with differing names fills the target
+/// fields rather than rejecting them, and this walk keeps the decoded names; and `Date32` decoding is
+/// hint-dependent (range-checked, saturated or verbatim) while this layer supplies no hint, whereas the
+/// admitted widenings read no hint and are in range at every scale.
+bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & alternative)
+{
+    const DataTypePtr to = ArrowIPC::stripHint(alternative);
+    const WhichDataType from(decoded);
+    const WhichDataType which(to);
+
+    /// An element admitted by no arm must still claim its own alternative, or it leaves a sibling ambiguous.
+    if (variantElementPrefersType(decoded, alternative))
+        return true;
+    if (isBool(decoded))
+        return which.isUInt8() || which.isEnum8() || variantElementWidensTo(to, 0);
+    if (from.isInt8() || from.isUInt8())
+        return which.isInt8() || (which.isUInt8() && !isBool(to)) || which.isEnum8() || variantElementWidensTo(to, 1);
+    if (from.isInt16() || from.isUInt16())
+        return which.isInt16() || which.isUInt16() || which.isEnum16() || variantElementWidensTo(to, 2)
+            || (from.isUInt16() && which.isDate());
+    if (from.isInt32() || from.isUInt32())
+        return which.isInt32() || which.isUInt32() || variantElementWidensTo(to, 4)
+            || (from.isUInt32() && (which.isIPv4() || which.isDateTime() || which.isDateTime64()));
+    if (from.isInt64() || from.isUInt64())
+        return which.isInt64() || which.isUInt64() || variantElementWidensTo(to, 8)
+            || (from.isInt64() && which.isInterval());
+    if (from.isFloat32())
+        return which.isFloat32() || which.isFloat64();
+    if (from.isFloat64())
+        return which.isFloat64();
+    if (from.isString())
+        return which.isStringOrFixedString() || ArrowIPC::rawByteWidth(which) != 0;
+    if (from.isFixedString())
     {
-        if (n != width)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Arrow fixed_size_binary of width {} cannot be read as {} (expected {})",
-                n, to_no_null->getName(), width);
+        const size_t n = assert_cast<const DataTypeFixedString &>(*decoded).getN();
+        if (which.isFixedString())
+            return assert_cast<const DataTypeFixedString &>(*to).getN() == n;
+        return which.isString() || (which.isUUID() && n == 16) || ArrowIPC::rawByteWidth(which) == n;
+    }
+    if (from.isUUID())
+        return which.isUUID() || which.isString();
+    if (from.isDecimal())
+        return which.isDecimal();
+    /// Another scale or time zone is what the flat column path returns for the same request.
+    if (from.isDateTime())
+        return which.isDateTime() || which.isDateTime64();
+    if (from.isDateTime64())
+        return which.isDateTime64();
+    if (from.isTime64())
+        return which.isTime64();
+    return false;
+}
+
+/// The alternative each element of a decoded `Variant` must be repaired into, in the decoded type's global
+/// order, null where nothing is forced. `Variant` sorts its alternatives, so the positional correspondence
+/// between Arrow union children and requested alternatives is lost and is reconstructed structurally here;
+/// an element whose correspondence stays ambiguous is left unassigned, so no guess is ever made. Two
+/// elements are never left on one alternative name: `DataTypeVariant` deduplicates by name while the column
+/// keeps one element per union child, so a shared name would describe a column whose layout contradicts its
+/// type.
+DataTypes variantElementTargets(const DataTypeVariant & from, const DataTypeVariant & to)
+{
+    const DataTypes & elements = from.getVariants();
+    const DataTypes & alternatives = to.getVariants();
+    DataTypes targets(elements.size());
+
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> candidates(elements.size());
+    for (size_t e = 0; e < elements.size(); ++e)
+        for (size_t a = 0; a < alternatives.size(); ++a)
+            if (variantElementMatchesType(elements[e], alternatives[a]))
+                candidates[e].push_back(a);
+
+    const auto preferred_candidates = [&](size_t e)
+    {
+        VectorWithMemoryTracking<size_t> preferred;
+        for (const size_t a : candidates[e])
+            if (variantElementPrefersType(elements[e], alternatives[a]))
+                preferred.push_back(a);
+        return preferred;
+    };
+    /// Erasing the taken alternative elsewhere is what keeps two elements off one alternative.
+    const auto take = [&](size_t e, size_t a)
+    {
+        targets[e] = alternatives[a];
+        for (size_t other = 0; other < elements.size(); ++other)
+            if (other != e)
+                std::erase(candidates[other], a);
     };
 
-    if (which.isUUID())
+    bool changed = true;
+    while (changed)
     {
-        require(16);
-        auto out = ColumnVector<UUID>::create(rows);
-        for (size_t i = 0; i < rows; ++i)
+        changed = false;
+        for (size_t e = 0; e < elements.size(); ++e)
         {
-            auto * dst = reinterpret_cast<uint8_t *>(&out->getData()[i]);
-            memcpy(dst, &fixed.getChars()[i * 16], 16);
-            std::reverse(dst, dst + 8);
-            std::reverse(dst + 8, dst + 16);
+            if (targets[e] || candidates[e].size() != 1)
+                continue;
+            take(e, candidates[e].front());
+            changed = true;
         }
-        return out;
+
+        if (changed)
+            continue;
+
+        for (size_t e = 0; e < elements.size() && !changed; ++e)
+        {
+            if (targets[e] || candidates[e].size() < 2)
+                continue;
+            /// A lone preference is never contested: the decoded element names are pairwise distinct.
+            const VectorWithMemoryTracking<size_t> preferred = preferred_candidates(e);
+            if (preferred.size() != 1)
+                continue;
+            take(e, preferred.front());
+            changed = true;
+        }
     }
 
-    const size_t width = ArrowIPC::rawByteWidth(which);
-    if (width == 0)
-        return nullptr;
-
-    require(width);
-    auto out = to_no_null->createColumn();
-    auto copy = [&](auto & data) { data.resize(rows); if (rows) memcpy(data.data(), fixed.getChars().data(), rows * width); };
-    switch (which.idx)
+    /// Every duplicate pairs one assigned name with one decoded name, so each pass drops at least one
+    /// assignment and the loop terminates; the worst case is no assignment, which leaves the column as decoded.
+    for (bool dropped = true; dropped;)
     {
-        case TypeIndex::IPv6: copy(assert_cast<ColumnVector<IPv6> &>(*out).getData()); break;
-        case TypeIndex::Int128: copy(assert_cast<ColumnVector<Int128> &>(*out).getData()); break;
-        case TypeIndex::UInt128: copy(assert_cast<ColumnVector<UInt128> &>(*out).getData()); break;
-        case TypeIndex::Int256: copy(assert_cast<ColumnVector<Int256> &>(*out).getData()); break;
-        default: copy(assert_cast<ColumnVector<UInt256> &>(*out).getData()); break;
+        dropped = false;
+        VectorWithMemoryTracking<bool> drop(elements.size(), false);
+        for (size_t e = 0; e < elements.size(); ++e)
+            for (size_t other = 0; targets[e] && other < elements.size(); ++other)
+                if (other != e && (targets[other] ? targets[other] : elements[other])->getName() == targets[e]->getName())
+                    drop[e] = true;
+        for (size_t e = 0; e < elements.size(); ++e)
+            if (drop[e])
+            {
+                targets[e] = nullptr;
+                dropped = true;
+            }
     }
-    return out;
+
+    return targets;
 }
+
+std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
+    const ColumnPtr & col, const DataTypePtr & from_type, const DataTypeVariant & from_variant,
+    const DataTypeVariant & to_variant, bool case_insensitive, const FormatSettings & format_settings);
 
 /// The schema field of the `i`-th child, or null when the field is unknown or does not have that child.
 /// Walking the fields alongside the types lets a leaf read its own metadata; a null field simply means no
@@ -683,7 +543,7 @@ const ArrowIPC::ArrowField * childField(const ArrowIPC::ArrowField * field, size
 /// Tuple and Map so nested shapes convert too. Anything not recognised is returned unchanged for the
 /// subsequent `castColumn`. Returns the (possibly rewritten) column and its new type.
 /// The walk follows the decoded (source) shape and resolves each level's requested type with the same
-/// hint helpers the decoder's recursion uses (`arrayElementHint`, `tupleElementHint`, `mapEntriesHint`,
+/// hint helpers the decoder's recursion uses (`arrayElementHint`, `tupleElementHints`, `mapEntriesHint`,
 /// `stripHint`): the decoder converts binary leaves under those rules — by tuple element name, through
 /// `Nullable`/`LowCardinality` wrappers — so this rewrite must resolve targets identically, or a
 /// converted leaf (physically typed, still declared by its Arrow type) would reach `castColumn`
@@ -695,7 +555,7 @@ const ArrowIPC::ArrowField * childField(const ArrowIPC::ArrowField * field, size
 std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     const ColumnPtr & col, const DataTypePtr & from_type, const DataTypePtr & to_type,
     const NullMap * ancestor_nulls, bool case_insensitive, const ArrowIPC::ArrowField * field,
-    const FormatSettings & format_settings)
+    const FormatSettings & format_settings, bool repair_variants)
 {
     field = skipRunEndEncoded(field);
     const DataTypePtr from_no_null = removeNullable(from_type);
@@ -717,7 +577,8 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
             const NullMap * combined = ArrowIPC::unionNullMaps(col_nullable->getNullMapData(), ancestor_nulls, combined_storage);
             auto [new_nested, new_nested_type]
                 = reinterpretRawBytes(
-                    col_nullable->getNestedColumnPtr(), from_no_null, to_type, combined, case_insensitive, field, format_settings);
+                    col_nullable->getNestedColumnPtr(), from_no_null, to_type, combined, case_insensitive, field, format_settings,
+                    repair_variants);
             /// A leaf the decoder already converted comes back with the same column but a new type, so
             /// change detection must look at both.
             if (new_nested.get() == col_nullable->getNestedColumnPtr().get() && new_nested_type.get() == from_no_null.get())
@@ -737,7 +598,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         const auto & col_arr = assert_cast<const ColumnArray &>(*col);
         auto [new_data, new_data_type] = reinterpretRawBytes(
             col_arr.getDataPtr(), from_arr->getNestedType(), elem_target, /*ancestor_nulls=*/nullptr, case_insensitive,
-            childField(field, 0), format_settings);
+            childField(field, 0), format_settings, repair_variants);
         if (new_data.get() == col_arr.getDataPtr().get() && new_data_type.get() == from_arr->getNestedType().get())
             return {col, from_type};
         /// The immutable factory shares both children; `IColumn::mutate` here would deep-clone the
@@ -754,20 +615,20 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         Columns new_cols(from_elems.size());
         DataTypes new_types(from_elems.size());
         bool changed = false;
+        const DataTypes elem_targets
+            = ArrowIPC::tupleElementHints(to_type, from_names, /*by_position=*/!from_tup->hasExplicitNames(), case_insensitive);
         for (size_t i = 0; i < from_elems.size(); ++i)
         {
             /// Resolve the element's target exactly as the decoder did when it decoded this element: by
             /// name for a named target Tuple (so reordered or subset targets pair correctly), by position
             /// for an unnamed one, and also by position for a struct with empty or repeated field names,
             /// which is decoded as an unnamed Tuple. An element the request does not mention stays as decoded.
-            const DataTypePtr elem_target = from_tup->hasExplicitNames()
-                ? ArrowIPC::tupleElementHint(to_type, from_names[i], i, case_insensitive)
-                : ArrowIPC::tupleElementHintByPosition(to_type, i);
+            const DataTypePtr & elem_target = elem_targets[i];
             if (elem_target)
             {
                 auto [c, t] = reinterpretRawBytes(
                     col_tup.getColumnPtr(i), from_elems[i], elem_target, ancestor_nulls, case_insensitive,
-                    childField(field, i), format_settings);
+                    childField(field, i), format_settings, repair_variants);
                 changed |= c.get() != col_tup.getColumnPtr(i).get() || t.get() != from_elems[i].get();
                 new_cols[i] = std::move(c);
                 new_types[i] = std::move(t);
@@ -798,12 +659,21 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
             std::make_shared<DataTypeTuple>(DataTypes{from_map->getKeyType(), from_map->getValueType()}));
         auto to_nested = std::make_shared<DataTypeArray>(entries_target);
         auto [new_nested, new_nested_type] = reinterpretRawBytes(
-            col_map.getNestedColumnPtr(), from_nested, to_nested, ancestor_nulls, case_insensitive, field, format_settings);
+            col_map.getNestedColumnPtr(), from_nested, to_nested, ancestor_nulls, case_insensitive, field, format_settings,
+            repair_variants);
         if (new_nested.get() == col_map.getNestedColumnPtr().get() && new_nested_type.get() == from_nested.get())
             return {col, from_type};
         const auto & new_tuple = assert_cast<const DataTypeTuple &>(*assert_cast<const DataTypeArray &>(*new_nested_type).getNestedType());
         auto new_map_type = std::make_shared<DataTypeMap>(new_tuple.getElement(0), new_tuple.getElement(1));
         return {ColumnMap::create(new_nested), std::move(new_map_type)};
+    }
+
+    if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(from_no_null.get()))
+    {
+        const auto * to_variant = typeid_cast<const DataTypeVariant *>(ArrowIPC::stripHint(to_type).get());
+        if (!to_variant || !repair_variants)
+            return {col, from_type};
+        return repairVariantElements(col, from_type, *from_variant, *to_variant, case_insensitive, format_settings);
     }
 
     /// Leaf. The target is the innermost requested type, `Nullable`/`LowCardinality`-transparent like
@@ -871,7 +741,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
 
     MutableColumnPtr typed;
     if (const auto * fixed = typeid_cast<const ColumnFixedString *>(&nested))
-        typed = reinterpretFixedStringLeaf(*fixed, to_leaf);
+        typed = ArrowIPC::reinterpretFixedStringLeaf(*fixed, to_leaf);
     else if (const auto * str = typeid_cast<const ColumnString *>(&nested))
         typed = ArrowIPC::reinterpretStringLeaf(*str, undefined_rows(), to_leaf);
     if (!typed)
@@ -883,19 +753,104 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     return {std::move(result), with_source_nullability(to_leaf)};
 }
 
+/// Rebuild a decoded `Variant` column with each element under the alternative the requested `Variant`
+/// forces on it, or return the input unchanged. A `Variant` -> `Variant` cast only appends alternatives.
+std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
+    const ColumnPtr & col, const DataTypePtr & from_type, const DataTypeVariant & from_variant,
+    const DataTypeVariant & to_variant, bool case_insensitive, const FormatSettings & format_settings)
+{
+    const DataTypes & elements = from_variant.getVariants();
+    const DataTypes targets = variantElementTargets(from_variant, to_variant);
+    bool any_change = false;
+    for (size_t g = 0; g < elements.size() && !any_change; ++g)
+        any_change = targets[g] && targets[g]->getName() != elements[g]->getName();
+    if (!any_change)
+        return {col, from_type};
+
+    /// Repairing helps only when every element ends up under an alternative the request names, matched by
+    /// full name as the cast matches them: otherwise the cast rejects the read whatever this walk does.
+    for (size_t g = 0; g < elements.size(); ++g)
+    {
+        if (targets[g])
+            continue;
+        bool requested = false;
+        for (const DataTypePtr & alternative : to_variant.getVariants())
+            requested |= alternative->getName() == elements[g]->getName();
+        if (!requested)
+            return {col, from_type};
+    }
+
+    const auto & variant_col = assert_cast<const ColumnVariant &>(*col);
+    const size_t num_elements = variant_col.getNumVariants();
+
+    Columns new_elements(num_elements);
+    DataTypes new_types(num_elements);
+    for (size_t local = 0; local < num_elements; ++local)
+    {
+        /// Element columns are in Arrow child order while the decoded alternatives are sorted by name.
+        const size_t global = variant_col.globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(local));
+        const DataTypePtr & from_element = elements[global];
+        ColumnPtr element = variant_col.getVariantPtrByLocalDiscriminator(local);
+        DataTypePtr element_type = from_element;
+        if (const DataTypePtr & target = targets[global])
+        {
+            /// The ordinary recursion, so a raw-byte element converts as the same bytes would in a plain
+            /// column; an element holds only its rows' values, so no undefined values and no ancestor nulls.
+            /// No field: a union is decoded without consulting its children's `clickhouse.opaque` tags.
+            std::tie(element, element_type) = reinterpretRawBytes(
+                element, from_element, target, /*ancestor_nulls=*/nullptr, case_insensitive, /*field=*/nullptr,
+                format_settings, /*repair_variants=*/true);
+            /// By name, not `equals`: `Bool` and `UInt8` compare equal yet the element must end up under
+            /// exactly the requested one.
+            if (element_type->getName() != target->getName())
+            {
+                element = castColumn({element, element_type, ""}, target);
+                element_type = target;
+            }
+        }
+        new_elements[local] = std::move(element);
+        new_types[local] = std::move(element_type);
+    }
+
+    auto new_variant_type = std::make_shared<DataTypeVariant>(new_types);
+    const DataTypes & new_alternatives = new_variant_type->getVariants();
+    chassert(new_alternatives.size() == new_types.size());
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> new_local_to_global(num_elements);
+    for (size_t local = 0; local < num_elements; ++local)
+        for (size_t global = 0; global < new_alternatives.size(); ++global)
+            if (new_alternatives[global]->getName() == new_types[local]->getName())
+                new_local_to_global[local] = static_cast<ColumnVariant::Discriminator>(global);
+
+    auto new_column = ColumnVariant::create(
+        variant_col.getLocalDiscriminatorsPtr(), variant_col.getOffsetsPtr(), new_elements, new_local_to_global);
+    return {std::move(new_column), std::move(new_variant_type)};
 }
 
-void ArrowIPCBlockInputFormat::reinterpretRawByteColumns(
-    ColumnWithTypeAndName & column, const DataTypePtr & to_type, const ArrowIPC::ArrowField * field) const
+}
+
+namespace
+{
+
+void reinterpretRawByteColumnsImpl(
+    ColumnWithTypeAndName & column, const DataTypePtr & to_type, const ArrowIPC::ArrowField * field, const FormatSettings & format_settings,
+    bool repair_variants)
 {
     const auto * constant = typeid_cast<const ColumnConst *>(column.column.get());
     auto [new_column, new_type] = reinterpretRawBytes(
         constant ? constant->getDataColumnPtr() : column.column, column.type, to_type,
-        /*ancestor_nulls=*/nullptr, format_settings.arrow.case_insensitive_column_matching, field, format_settings);
+        /*ancestor_nulls=*/nullptr, format_settings.arrow.case_insensitive_column_matching, field, format_settings, repair_variants);
     if (constant)
         new_column = ColumnConst::create(new_column, constant->size());
     column.column = std::move(new_column);
     column.type = std::move(new_type);
+}
+
+}
+
+void ArrowIPCBlockInputFormat::reinterpretRawByteColumns(
+    ColumnWithTypeAndName & column, const DataTypePtr & to_type, const ArrowIPC::ArrowField * field, bool repair_variants) const
+{
+    reinterpretRawByteColumnsImpl(column, to_type, field, format_settings, repair_variants);
 }
 
 ColumnPtr ArrowIPCBlockInputFormat::decodeGeoColumn(const ColumnPtr & source, const GeoColumnMetadata & geo_metadata, bool precise_float_parsing)
@@ -940,65 +895,88 @@ ColumnPtr ArrowIPCBlockInputFormat::decodeGeoColumn(const ColumnPtr & source, co
 
 Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::DecodedColumns & decoded, size_t num_rows)
 {
-    const Block & header = getPort().getHeader();
+    return ArrowIPC::buildChunk(
+        getPort().getHeader(),
+        decoded,
+        num_rows,
+        format_settings,
+        format_settings.arrow.allow_missing_columns,
+        geo_columns,
+        format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr);
+}
 
-    /// Map decoded column name -> index (lower-cased when case-insensitive matching is on).
+Chunk ArrowIPC::buildChunk(
+    const Block & header,
+    RecordBatchDecoder::DecodedColumns & decoded,
+    size_t num_rows,
+    const FormatSettings & format_settings,
+    bool allow_missing_columns,
+    const UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> & geo_columns,
+    BlockMissingValues * block_missing_values_ptr)
+{
     const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
-    BlockMissingValues * block_missing_values_ptr
-        = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
     UnorderedMapWithMemoryTracking<String, size_t> name_to_index;
+    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<size_t>> lowercase_name_to_indices;
     name_to_index.reserve(decoded.size());
     for (size_t i = 0; i < decoded.size(); ++i)
     {
-        String key = decoded[i].name;
+        name_to_index.emplace(decoded[i].name, i);
         if (case_insensitive)
-            boost::to_lower(key);
-        /// With case-insensitive matching, names like `A` and `a` fold to the same key. Keep the last
-        /// occurrence (`insert_or_assign`, not `emplace`) so the native reader selects the same column the
-        /// Apache Arrow library path did for the same schema and setting.
-        name_to_index.insert_or_assign(std::move(key), i);
+            lowercase_name_to_indices[boost::to_lower_copy(decoded[i].name)].push_back(i);
     }
+    /// The decoded column spelled like `name`, else, with case-insensitive matching, the only one that differs from it only by case.
+    auto find_decoded = [&](const String & name) -> std::optional<size_t>
+    {
+        if (auto it = name_to_index.find(name); it != name_to_index.end())
+            return it->second;
+        if (!case_insensitive)
+            return {};
+        auto it = lowercase_name_to_indices.find(boost::to_lower_copy(name));
+        if (it == lowercase_name_to_indices.end())
+            return {};
+        if (it->second.size() > 1)
+            DataTypeTuple::throwAmbiguousCaseInsensitiveName(name, decoded[it->second[0]].name, decoded[it->second[1]].name);
+        return it->second.front();
+    };
 
-    /// Cache of `Nested`/struct table extractors keyed by the (possibly lower-cased) nested table name.
+    /// Cache of `Nested`/struct table extractors keyed by the decoded column of the nested table.
     /// The backing block must outlive the extractor (it holds a reference into it), so keep both.
-    UnorderedMapWithMemoryTracking<String, std::pair<std::shared_ptr<Block>, std::shared_ptr<NestedColumnExtractHelper>>> nested_extractors;
+    UnorderedMapWithMemoryTracking<size_t, std::pair<std::shared_ptr<Block>, std::shared_ptr<NestedColumnExtractHelper>>> nested_extractors;
+
+    const RequestedTypeCastSettings cast_settings{
+        .null_as_default = format_settings.null_as_default,
+        .case_insensitive = case_insensitive,
+        .null_tuple_as_default = !format_settings.schema_inference_allow_nullable_tuple_type,
+    };
 
     Columns columns;
     columns.reserve(header.columns());
     for (size_t i = 0; i < header.columns(); ++i)
     {
         const ColumnWithTypeAndName & header_column = header.getByPosition(i);
-        String search_name = header_column.name;
-        if (case_insensitive)
-            boost::to_lower(search_name);
 
         ColumnWithTypeAndName column;
         /// Set only for a column taken whole from the batch. A column extracted out of a flattened Nested
         /// table below is a piece of another field, so it has no field of its own to read metadata from.
         const ArrowIPC::ArrowField * src_field = nullptr;
-        auto it = name_to_index.find(search_name);
-        if (it == name_to_index.end())
+        const auto decoded_index = find_decoded(header_column.name);
+        if (!decoded_index)
         {
             bool read_from_nested = false;
 
             /// A subcolumn of a `Nested`/struct field: `table.a` is extracted from the Arrow field `table`.
             const String nested_table_name = Nested::extractTableName(header_column.name);
-            String search_nested = nested_table_name;
-            if (case_insensitive)
-                boost::to_lower(search_nested);
-
-            auto nested_it = name_to_index.find(search_nested);
-            if (nested_it != name_to_index.end())
+            if (const auto nested_index = find_decoded(nested_table_name))
             {
-                auto extractor_it = nested_extractors.find(search_nested);
+                auto extractor_it = nested_extractors.find(*nested_index);
                 if (extractor_it == nested_extractors.end())
                 {
-                    auto & src = decoded[nested_it->second];
+                    auto & src = decoded[*nested_index];
                     ColumnWithTypeAndName nested_column(src.column, src.type, nested_table_name);
 
                     auto block = std::make_shared<Block>(Block({std::move(nested_column)}));
                     auto helper = std::make_shared<NestedColumnExtractHelper>(*block, case_insensitive);
-                    extractor_it = nested_extractors.emplace(search_nested, std::make_pair(block, helper)).first;
+                    extractor_it = nested_extractors.emplace(*nested_index, std::make_pair(block, helper)).first;
                 }
                 /// The requested spelling, not the lower-cased one: the helper matches names
                 /// case-insensitively itself, and an exact element name outranks a folded match.
@@ -1013,22 +991,13 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
 
             if (!read_from_nested)
             {
-                if (!format_settings.arrow.allow_missing_columns)
-                    throw Exception(
-                        ErrorCodes::THERE_IS_NO_COLUMN,
-                        "Column '{}' is not present in the Arrow IPC data", header_column.name);
-
-                auto missing = header_column.type->createColumn();
-                missing->insertManyDefaults(num_rows);
-                if (block_missing_values_ptr)
-                    block_missing_values_ptr->setBits(i, num_rows);
-                columns.push_back(std::move(missing));
+                columns.push_back(createMissingColumn(header_column, num_rows, allow_missing_columns, i, block_missing_values_ptr));
                 continue;
             }
         }
         else
         {
-            auto & src = decoded[it->second];
+            auto & src = decoded[*decoded_index];
             column = ColumnWithTypeAndName(src.column, src.type, src.name);
             src_field = src.field;
         }
@@ -1044,56 +1013,24 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
         if (geo_it != geo_columns.end() && geo_it->second.encoding == GeoEncoding::Native)
         {
             const DataTypePtr geo_type = getGeoDataType(geo_it->second.type);
-            reinterpretRawByteColumns(column, geo_type, src_field);
-            try
-            {
-                column = prepareArrowColumnForCast(column, geo_type, format_settings, i, block_missing_values_ptr);
-                if (format_settings.null_as_default)
-                    insertNullAsDefaultIfNeeded(column, {geo_type->createColumn(), geo_type, header_column.name}, i, block_missing_values_ptr);
-                column.column = castColumn(column, geo_type);
-                column.type = geo_type;
-            }
-            catch (Exception & e)
-            {
-                e.addMessage(fmt::format(
-                    "while converting GeoParquet column {} from type {} to type {}",
-                    backQuote(header_column.name), column.type->getName(), geo_type->getName()));
-                throw;
-            }
+            reinterpretRawByteColumnsImpl(column, geo_type, src_field, format_settings, /*repair_variants=*/true);
+            castColumnToRequestedType(column, geo_type, cast_settings, i, block_missing_values_ptr);
         }
         else if (geo_it != geo_columns.end())
         {
-            column.column = decodeGeoColumn(column.column, geo_it->second, format_settings.precise_float_parsing);
+            column.column = ArrowIPCBlockInputFormat::decodeGeoColumn(column.column, geo_it->second, format_settings.precise_float_parsing);
             column.type = getGeoDataType(geo_it->second.type);
         }
         else if (format_settings.parquet.allow_geoparquet_parser && header_column.type->getName() == "Geometry")
         {
             const GeoColumnMetadata mixed{.encoding = GeoEncoding::WKB, .type = GeoType::Mixed, .covering_bbox = std::nullopt};
-            column.column = decodeGeoColumn(column.column, mixed, format_settings.precise_float_parsing);
+            column.column = ArrowIPCBlockInputFormat::decodeGeoColumn(column.column, mixed, format_settings.precise_float_parsing);
             column.type = getGeoDataType(GeoType::Mixed);
         }
         else
-            reinterpretRawByteColumns(column, header_column.type, src_field);
+            reinterpretRawByteColumnsImpl(column, header_column.type, src_field, format_settings, /*repair_variants=*/true);
 
-        /// Match differently-cased struct field names against the requested type when case-insensitive
-        /// column matching is enabled, so the named-tuple CAST below does not turn them into defaults.
-        if (case_insensitive)
-            column.type = alignStructFieldNamesCaseInsensitive(column.type, header_column.type);
-
-        try
-        {
-            column = prepareArrowColumnForCast(column, header_column.type, format_settings, i, block_missing_values_ptr);
-            if (format_settings.null_as_default)
-                insertNullAsDefaultIfNeeded(column, header_column, i, block_missing_values_ptr);
-            column.column = castColumn(column, header_column.type);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(fmt::format(
-                "while converting column {} from type {} to type {}",
-                backQuote(header_column.name), column.type->getName(), header_column.type->getName()));
-            throw;
-        }
+        castColumnToRequestedType(column, header_column.type, cast_settings, i, block_missing_values_ptr);
         columns.push_back(std::move(column.column));
     }
 

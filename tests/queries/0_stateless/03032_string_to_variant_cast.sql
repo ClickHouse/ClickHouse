@@ -1,4 +1,3 @@
-set allow_experimental_variant_type=1;
 select CAST('42', 'Variant(String, UInt64)') as v, variantType(v);
 select CAST('abc', 'Variant(String, UInt64)') as v, variantType(v);
 select CAST('null', 'Variant(String, UInt64)') as v, variantType(v);

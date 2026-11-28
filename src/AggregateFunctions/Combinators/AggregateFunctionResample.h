@@ -102,30 +102,6 @@ public:
         return nested_function->getName() + "Resample";
     }
 
-    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        const size_t rhs_align_of_data = rhs_nested->alignOfData();
-        const size_t rhs_size_of_data = ::Memory::alignUp(rhs_nested->sizeOfData(), rhs_align_of_data);
-
-        for (size_t i = 0; i < total; ++i)
-            nested_function->mergeStateFromDifferentVariant(place + i * size_of_data, *rhs_nested, rhs_place + i * rhs_size_of_data, arena);
-    }
-
     [[nodiscard]] bool isState() const override
     {
         return nested_function->isState();
@@ -327,8 +303,8 @@ public:
                 {
                     auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
                     col_offsets.getData().resize_assume_reserved(offsets_before);
-                    for (size_t i = transferred; i-- > 0;)
-                        nested_function->rollbackInsertResult(place + i * size_of_data, col.getData());
+                    for (size_t i = transferred; i > 0; --i)
+                        nested_function->rollbackInsertResult(place + (i - 1) * size_of_data, col.getData());
                     throw;
                 }
 
@@ -355,8 +331,8 @@ public:
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
 
         col_offsets.getData().resize_assume_reserved(col_offsets.size() - 1);
-        for (size_t i = total; i-- > 0;)
-            nested_function->rollbackInsertResult(place + i * size_of_data, col.getData());
+        for (size_t i = total; i > 0; --i)
+            nested_function->rollbackInsertResult(place + (i - 1) * size_of_data, col.getData());
     }
 
     [[nodiscard]] AggregateFunctionPtr getNestedFunction() const override { return nested_function; }

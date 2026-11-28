@@ -1,0 +1,10 @@
+overlap, lazy final plan	1
+overlap	64	7002016
+overlap_non_key	57	1806
+overlap_global_row_index	2	10
+single, no final read in plan	1
+single	64	2016
+05830_overlap	1	1
+05830_overlap_global_row_index	1	1
+05830_overlap_non_key	1	1
+05830_single	1	1

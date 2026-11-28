@@ -91,6 +91,11 @@ private:
 
     QueueWithMemoryTracking<detail::SharedChunkPtr> to_be_emitted;   /// To save chunks when using skipping final
 
+    /// Vertical FINAL: rows selected so far and the selections of chunks still being merged that waited too long.
+    size_t num_selected_rows = 0;
+    size_t next_waiting_selections_check = 0;
+    QueueWithMemoryTracking<Chunk> waiting_selections;
+
     using RowRef = detail::RowRefWithOwnedChunk;
     static constexpr size_t max_row_refs = 2; /// last, current.
     RowRef selected_row; /// Last row with maximum version for current primary key, may extend lifetime of chunk in input source
@@ -113,6 +118,9 @@ private:
     /// When changing current `selected_row`, if selected_row is the last owner of an input chunk and that chunk
     /// has selected rows, we also keep it
     void saveChunkForSkippingFinalFromSelectedRow();
+    /// Emit the rows selected so far from the chunks that waited longer than a merge of their input should take.
+    void emitLongWaitingSelections();
+    Status popWaitingSelection();
 };
 
 }

@@ -646,6 +646,9 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         return;
     }
 
+    auth_frame = {};
+    auth_password = {};
+
     /// Create the session context here rather than in the embedded client thread, so that the
     /// same limits as for other interfaces apply before any PTY or thread is allocated:
     /// `max_sessions_for_user` is checked by `makeSessionContext`, and the user's

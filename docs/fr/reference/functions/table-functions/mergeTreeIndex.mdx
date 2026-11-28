@@ -11,17 +11,13 @@ doc_type: 'reference'
 
 Représente le contenu des fichiers d’index et de marks des tables MergeTree. Il peut être utilisé à des fins d’introspection.
 
-<div id="syntax">
-  ## Syntaxe
-</div>
+## Syntaxe {#syntax}
 
 ```sql
 mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 ```
 
-<div id="arguments">
-  ## Arguments
-</div>
+## Arguments {#arguments}
 
 | Argument      | Description                                                             |
 | ------------- | ----------------------------------------------------------------------- |
@@ -30,9 +26,9 @@ mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 | `with_marks`  | Indique s’il faut inclure dans le résultat les colonnes avec des marks. |
 | `with_minmax` | Indique s’il faut inclure l’index min-max dans le résultat.             |
 
-<div id="returned-value">
-  ## Valeur renvoyée
-</div>
+Pour déterminer la structure du résultat, par exemple avec `DESCRIBE`, le privilège `SHOW COLUMNS` sur la table source est nécessaire ; pour lire ce résultat, il faut le privilège `SELECT` sur les colonnes lues.
+
+## Valeur renvoyée {#returned-value}
 
 Un objet table avec des colonnes contenant les valeurs de l’index primaire et de l’index min-max (s’il est activé) de la table source, des colonnes contenant les valeurs des marks (s’ils sont activés) pour tous les fichiers possibles dans les parties de données de la table source, ainsi que des colonnes virtuelles :
 
@@ -42,9 +38,7 @@ Un objet table avec des colonnes contenant les valeurs de l’index primaire et 
 
 La colonne des marks peut contenir la valeur `(NULL, NULL)` si la colonne est absente de la partie de données ou si les marks de l’un de ses sous-flux ne sont pas écrits (par exemple dans les parties compactes).
 
-<div id="usage-example">
-  ## Exemple d’utilisation
-</div>
+## Exemple d’utilisation {#usage-example}
 
 ```sql
 CREATE TABLE test_table

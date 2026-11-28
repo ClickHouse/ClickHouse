@@ -5,16 +5,12 @@ date: 2024-11-06
 tags: ['تنسيقات البيانات', 'إدخال البيانات']
 ---
 
-<div id="kafka-and-the-json-data-type">
-  ## Kafka ونوع بيانات JSON
-</div>
+## Kafka ونوع بيانات JSON {#kafka-and-the-json-data-type}
 
 مع طرح نوع البيانات الجديد [`JSON`](/ar/reference/data-types/newjson)، أصبح ClickHouse خيارًا مناسبًا [كقاعدة بيانات لتحليلات JSON](https://clickhouse.com/engineering-resources/json-database).
 في هذا الدليل، سنتعلّم كيفية تحميل رسائل JSON من Apache Kafka مباشرةً إلى عمود `JSON` واحد في ClickHouse.
 
-<div id="setup-kafka">
-  ## إعداد Kafka
-</div>
+## إعداد Kafka {#setup-kafka}
 
 لنبدأ بتشغيل broker لـ Kafka على جهازنا. وسنربط أيضًا المنفذ 9092 بالمنفذ 9092 على نظام التشغيل المضيف لدينا لتسهيل التفاعل مع Kafka:
 
@@ -22,9 +18,7 @@ tags: ['تنسيقات البيانات', 'إدخال البيانات']
 docker run --name broker -p 9092:9092 apache/kafka:3.8.1
 ```
 
-<div id="ingest-data-into-kafka">
-  ## إدخال البيانات إلى Kafka
-</div>
+## إدخال البيانات إلى Kafka {#ingest-data-into-kafka}
 
 بمجرد تشغيل ذلك، نحتاج إلى إدخال بعض البيانات.
 يُعد موجز أحدث التغييرات من Wikimedia مصدرًا جيدًا للبيانات المتدفقة، لذا لنُدخل هذه البيانات إلى الموضوع `wiki_events`:
@@ -49,16 +43,13 @@ kcat -C -b localhost:9092  -t wiki_events
 
 حتى الآن، كل شيء على ما يرام.
 
-<div id="ingest-data-into-clickhouse">
-  ## إدخال البيانات إلى ClickHouse
-</div>
+## إدخال البيانات إلى ClickHouse {#ingest-data-into-clickhouse}
 
 بعد ذلك، سنُدخل البيانات إلى ClickHouse.
-أولًا، لنفعّل نوع JSON (وهو حاليًا تجريبي)، وذلك بضبط الخاصية التالية:
 
-```sql
-SET allow_experimental_json_type = 1;
-```
+<Note>
+  في الإصدارات من 24.8 إلى 25.2، فعّل نوع `JSON` باستخدام `SET allow_experimental_json_type = 1;` قبل إنشاء الجداول أدناه.
+</Note>
 
 الآن، سننشئ جدول `wiki_queue` الذي يستخدم [محرك جدول `Kafka`](/ar/integrations/connectors/data-ingestion/kafka/kafka-table-engine).
 
@@ -90,7 +81,7 @@ ENGINE = MergeTree
 ORDER BY id;
 ```
 
-أخيرًا، لنُنشئ عرضًا مُجسَّدًا لتعبئة جدول `wiki`:
+أخيرًا، لنُنشئ عرضًا مُجسَّدًا لتعبئة جدول `wiki`:
 
 ```sql
 CREATE MATERIALIZED VIEW wiki_mv TO wiki AS 
@@ -98,9 +89,7 @@ SELECT json
 FROM wiki_queue;
 ```
 
-<div id="querying-json-data-in-clickhouse">
-  ## الاستعلام عن بيانات JSON في ClickHouse
-</div>
+## الاستعلام عن بيانات JSON في ClickHouse {#querying-json-data-in-clickhouse}
 
 يمكننا بعد ذلك إجراء استعلامات على جدول `wiki`.
 على سبيل المثال، يمكننا إحصاء عدد الروبوتات التي أدخلت تعديلات:

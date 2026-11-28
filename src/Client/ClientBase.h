@@ -25,6 +25,8 @@
 #include <atomic>
 #include <filesystem>
 #include <functional>
+#include <algorithm>
+#include <array>
 #include <optional>
 #include <string_view>
 #include <string>
@@ -39,12 +41,17 @@ namespace DB
 
 static constexpr std::string_view DEFAULT_CLIENT_NAME = "client";
 
-static const NameSet exit_strings
+constexpr std::array<std::string_view, 20> exit_strings
 {
     "exit", "quit", "logout", "учше", "йгше", "дщпщге",
     "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж",
     "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
 };
+
+inline bool isExitString(std::string_view text)
+{
+    return std::ranges::find(exit_strings, text) != exit_strings.end();
+}
 
 namespace ErrorCodes
 {
@@ -112,6 +119,8 @@ public:
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements, const char * raw_query_begin = nullptr);
     /// Returns true if query succeeded
     bool processTextAsSingleQuery(const String & full_query);
+    /// The session settings: command-line options and the `SET` queries that succeeded
+    const Settings & getClientSettings() const { return client_context->getSettingsRef(); }
 
     virtual bool tryToReconnect(const uint32_t, const uint32_t)
     {

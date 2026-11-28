@@ -1,0 +1,25 @@
+---
+slug: /clickstack/observability/migration/elastic
+title: 'Migración de Elastic a ClickHouse Observability'
+sidebarTitle: 'Descripción general'
+description: 'Migre de Elastic Stack a ClickHouse Observability, totalmente gestionado, con instrucciones específicas para implementaciones autogestionadas.'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'landing-page'
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="Oferta Beta" />
+
+Planifique su migración de Elastic Stack a **ClickHouse Observability totalmente gestionado**, la experiencia predeterminada recomendada. Comience por la introducción y la comparación de búsqueda y, a continuación, siga las guías de migración de datos, agentes y SDK. Cuando los pasos difieran, utilice las pestañas de autogestionado para las implementaciones autogestionadas.
+
+| Sección                                                                              | Descripción                                                                                |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| [Introducción](/es/clickstack/observability/migration/elastic/intro)                    | Consideraciones sobre la migración y diferencias entre ambas plataformas                   |
+| [Búsqueda](/es/clickstack/observability/migration/elastic/search)                       | Traduzca consultas de búsqueda y comprenda las diferencias de esquema y de campos ausentes |
+| [Migración de datos](/es/clickstack/observability/migration/elastic/migrating-data)     | Planifique la ingestión en paralelo, la retención y la migración de datos históricos       |
+| [Migración de agentes](/es/clickstack/observability/migration/elastic/migrating-agents) | Elija una ruta de migración para Beats, Elastic Agent o recolectores de OpenTelemetry      |
+| [Migración de SDK](/es/clickstack/observability/migration/elastic/migrating-sdks)       | Migre la instrumentación de aplicaciones de Elastic APM a OpenTelemetry                    |
+
+ClickHouse Observability totalmente gestionado se encarga de los esquemas subyacentes y de la configuración de almacenamiento por usted. Si gestiona usted mismo estos componentes internos, consulte los [conceptos equivalentes](/es/clickstack/self-configured/migration/elastic/concepts) y las [correspondencias de tipos](/es/clickstack/self-configured/migration/elastic/types).
