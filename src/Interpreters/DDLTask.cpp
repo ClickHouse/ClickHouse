@@ -81,6 +81,13 @@ HostID HostID::fromString(const String & host_port_str)
 }
 
 
+String HostID::bracketIPv6Host(const String & host)
+{
+    if (host.contains(':') && !host.starts_with('['))
+        return '[' + host + ']';
+    return host;
+}
+
 bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 {
     auto address = DNSResolver::instance().resolveAddress(host_name, port);
@@ -499,11 +506,26 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
                 *config_host_name);
     }
 
+    /// The cluster of a Replicated DB lists a bare IPv6 literal in brackets, while `host_name`, `replica_host` and
+    /// the hosts of a cluster from the configuration may have either form. Compare the names in one form,
+    /// otherwise `host_name` = `::1` does not match the entry host `[::1]` and the task is skipped.
+    String self_host_name;
+    if (config_host_name)
+        self_host_name = HostID::bracketIPv6Host(*config_host_name);
+
+    /// `replica_host` replaces the interserver IO host in the host IDs that Replicated DBs publish, so the cluster
+    /// of a Replicated DB lists this server under that name and not under `host_name`. Accept it as a configured
+    /// self-name too.
+    String advertised_replica_host;
+    if (config_host_name && global_context->hasReplicaHost())
+        advertised_replica_host = HostID::bracketIPv6Host(global_context->getReplicaHost());
+
     for (const HostID & host : entry.hosts)
     {
         if (config_host_name)
         {
-            if (config_host_name != host.host_name)
+            const String entry_host_name = HostID::bracketIPv6Host(host.host_name);
+            if (self_host_name != entry_host_name && advertised_replica_host != entry_host_name)
                 continue;
 
             if (maybe_secure_port != host.port && port != host.port)
