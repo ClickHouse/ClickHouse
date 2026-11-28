@@ -15,7 +15,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
+#include <DataTypes/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
 
 
 namespace DB
@@ -46,7 +46,7 @@ public:
             auto & last = buffer.back();
             if (timestamp == last.first)
             {
-                last.second = timeseriesMaxValueForDuplicateTimestamp(last.second, value);
+                last.second = TimeSeriesDuplicateTimestampRule::floatSampleWinner(last.second, value);
                 return;
             }
             if (isSorted())
@@ -229,7 +229,8 @@ private:
     /// A lambda and not a function, so the comparison is inlined into the algorithms it is passed to.
     static constexpr auto lessByTimestamp = [](const Sample & lhs, const Sample & rhs) { return lhs.first < rhs.first; };
 
-    /// Collapses each run of adjacent samples with equal timestamps into one sample with `timeseriesMaxValueForDuplicateTimestamp`.
+    /// Collapses each run of adjacent samples with equal timestamps into one sample with
+    /// `TimeSeriesDuplicateTimestampRule::floatSampleWinner`.
     /// Samples before `start_pos` are already unique.
     static void deduplicateSorted(Buffer & buf, size_t start_pos = 0)
     {
@@ -238,7 +239,7 @@ private:
         for (size_t i = last_unique + 1; i < buf.size(); ++i)
         {
             if (buf[i].first == buf[last_unique].first)
-                buf[last_unique].second = timeseriesMaxValueForDuplicateTimestamp(buf[last_unique].second, buf[i].second);
+                buf[last_unique].second = TimeSeriesDuplicateTimestampRule::floatSampleWinner(buf[last_unique].second, buf[i].second);
             else
                 buf[++last_unique] = buf[i];
         }

@@ -1,0 +1,13 @@
+-- UInt32 timestamps: the histograms are sorted and split into the buckets with the float samples, the time range covers both kinds
+60	70	80	[(70,1.5)]	[80]	[1]	['unknown']
+120	125	130	[]	[125,130]	[2,3]	['unknown','not_reset']
+-- the outer columns and the selector
+[80]	[1]
+[125,130]	[2,3]
+[]	[(80,1)]
+[]	[(125,2)]
+70	1.5
+-- the rows of a bucket are merged by timestamp
+[80]	[1]
+[125,130,140]	[2,3,4]
+[(80,1),(125,2),(130,3),(140,4)]

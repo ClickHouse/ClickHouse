@@ -12,7 +12,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
-#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
+#include <DataTypes/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
 
 
 namespace DB
@@ -44,7 +44,7 @@ struct AggregateFunctionTimeseriesFirstToGridTraits
         return return_timestamp ? "timeSeriesTimestampOfFirstToGrid" : "timeSeriesFirstToGrid";
     }
 
-    /// The earliest sample. Samples at the same timestamp are collapsed by `timeseriesMaxValueForDuplicateTimestamp`.
+    /// The earliest sample. Samples at the same timestamp are collapsed by `TimeSeriesDuplicateTimestampRule::floatSampleWinner`.
     struct Summary
     {
         TimestampType timestamp{};
@@ -63,7 +63,7 @@ struct AggregateFunctionTimeseriesFirstToGridTraits
             }
             else if (sample_timestamp == timestamp)
             {
-                value = timeseriesMaxValueForDuplicateTimestamp(value, sample_value);
+                value = TimeSeriesDuplicateTimestampRule::floatSampleWinner(value, sample_value);
             }
         }
 

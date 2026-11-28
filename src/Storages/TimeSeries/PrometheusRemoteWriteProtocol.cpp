@@ -4,17 +4,14 @@
 #if USE_PROMETHEUS_PROTOBUFS
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <IO/Progress.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Context.h>
@@ -26,11 +23,16 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/timeSeriesTimestampToMilliseconds.h>
+#include <Storages/TimeSeries/makePrometheusHistogramsBlock.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 #include <chrono>
+#include <span>
+#include <vector>
 
 
 namespace ProfileEvents
@@ -76,16 +78,8 @@ std::string_view metricTypeToString(prometheus::MetricMetadata::MetricType metri
     return "";
 }
 
-void insertTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
-{
-    if (typeid_cast<ColumnDecimal<DateTime64> *>(&column))
-        column.insert(DecimalUtils::convertTo<DateTime64>(scale, DateTime64{timestamp_ms}, 3));
-    else
-        column.insert(DecimalUtils::convertTo<UInt32>(DateTime64{timestamp_ms}, 3));
-}
-
 Block makeTimeSeriesBlock(
-    const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
+    std::span<const prometheus::TimeSeries * const> time_series,
     size_t num_metadata_rows,
     const StorageInMemoryMetadata & metadata,
     const String & samples_column_name)
@@ -113,13 +107,12 @@ Block makeTimeSeriesBlock(
     auto values = value_type->createColumn();
     auto time_series_offsets = ColumnArray::ColumnOffsets::create();
     time_series_offsets->reserve(num_rows);
-    const UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_type).value_or(0);
 
-    for (const auto & element : time_series)
+    for (const auto * element : time_series)
     {
         std::string_view metric_name;
         bool has_metric_name = false;
-        for (const auto & label : element.labels())
+        for (const auto & label : element->labels())
         {
             if (!has_metric_name && label.name() == TimeSeriesTagNames::MetricName && !label.value().empty())
             {
@@ -140,9 +133,9 @@ Block makeTimeSeriesBlock(
         metric_name_column->insertData(metric_name.data(), metric_name.size());
         tags_offsets->insert(tags_names->size());
 
-        for (const auto & sample : element.samples())
+        for (const auto & sample : element->samples())
         {
-            insertTimestamp(sample.timestamp(), timestamp_scale, *timestamps);
+            insertMillisecondsAsTimeSeriesTimestamp(sample.timestamp(), *timestamps);
             values->insert(sample.value());
         }
         time_series_offsets->insert(timestamps->size());
@@ -223,7 +216,7 @@ void appendBlock(Block & block, Block block_to_append)
 }
 
 Block makeBlock(
-    const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
+    std::span<const prometheus::TimeSeries * const> time_series,
     const google::protobuf::RepeatedPtrField<prometheus::MetricMetadata> & metrics_metadata,
     const StorageInMemoryMetadata & metadata,
     const String & samples_column_name)
@@ -242,6 +235,23 @@ Block makeBlock(
             makeMetricsMetadataBlock(metrics_metadata, time_series.size(), metadata));
     }
     return block;
+}
+
+/// The time series of a request to write, one row each: those with a sample the table stores. A series without one would
+/// get a row of the "tags" table only - a phantom series discoverable through `timeSeriesTags` and the labels API with
+/// nothing to read. That is a series with histograms only when the table stores no histograms (a version before
+/// `TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS`, see `dropPrometheusHistograms`), or a series sent without any sample.
+std::vector<const prometheus::TimeSeries *> selectTimeSeriesToWrite(
+    const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series, bool store_histograms)
+{
+    std::vector<const prometheus::TimeSeries *> selected;
+    selected.reserve(time_series.size());
+    for (const auto & element : time_series)
+    {
+        if (element.samples_size() || (store_histograms && element.histograms_size()))
+            selected.push_back(&element);
+    }
+    return selected;
 }
 
 /// Calls `on_accepted` once the block is stored; for an async insert that is when its flush succeeds.
@@ -339,9 +349,19 @@ void PrometheusRemoteWriteProtocol::write(
         metrics_metadata.size());
 
     auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
-    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
-    auto block = makeBlock(time_series, metrics_metadata, *metadata, samples_column_name);
+    const auto version = time_series_storage->getVersion();
+    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(version);
+    const bool store_histograms = time_series_storage->getStorageSettings()->hasHistogramsInSamples();
+    if (!store_histograms)
+        dropPrometheusHistograms(time_series, *time_series_storage);
 
+    const auto selected_time_series = selectTimeSeriesToWrite(time_series, store_histograms);
+    auto block = makeBlock(selected_time_series, metrics_metadata, *metadata, samples_column_name);
+    if (store_histograms)
+        appendBlock(block, makePrometheusHistogramsBlock(selected_time_series, metrics_metadata.size(), *metadata));
+
+    /// Exemplars are dropped from every series of the request: Prometheus sends each one in a series of its own without samples,
+    /// which is not among the selected ones.
     size_t num_exemplars = 0;
     for (const auto & element : time_series)
         num_exemplars += element.exemplars_size();

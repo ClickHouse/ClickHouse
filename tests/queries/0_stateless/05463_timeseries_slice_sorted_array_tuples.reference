@@ -1,0 +1,5 @@
+-- a tuple of three named elements
+[(110,2,'b'),(120,3,'c')]	Array(Tuple(ts UInt32, value Float64, label String))
+-- a tuple of one element
+[(110),(120)]	Array(Tuple(UInt32))
+-- the first element must be a timestamp

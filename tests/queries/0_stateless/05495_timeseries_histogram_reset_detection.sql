@@ -1,0 +1,163 @@
+SET enable_time_series_table = 1;
+SET session_timezone = 'UTC';
+-- The hints are checked as the sink wrote them, before any merge by `timeSeriesGroupArray` (05494 covers the merges).
+SET optimize_on_insert = 0;
+
+DROP TABLE IF EXISTS ts_reset_detection;
+DROP TABLE IF EXISTS histogram_reset_cases;
+
+-- Each row is one input series. Run every case with both integer and float histograms. `MergeTree`, not `Memory`: with parallel
+-- replicas, a joined `Memory` table is sent to the replicas as an external table, and then cancelling the replicas that got no
+-- ranges to read logs a `NETWORK_ERROR`.
+CREATE TABLE histogram_reset_cases
+(
+    name String,
+    timestamps Array(DateTime64(3)) DEFAULT [toDateTime64('2026-01-01 00:01:40', 3), toDateTime64('2026-01-01 00:01:41', 3)],
+    hints Array(UInt8) DEFAULT [0, 2],
+    schemas Array(Int8) DEFAULT [0, 0],
+    thresholds Array(Float64) DEFAULT [0, 0],
+    sums Array(Float64) DEFAULT [1, 1],
+    zeros Array(Int64) DEFAULT [0, 0],
+    positive Array(Array(Tuple(index Int32, count Int64))) DEFAULT [[], []],
+    negative Array(Array(Tuple(index Int32, count Int64))) DEFAULT [[], []],
+    bounds Array(Array(Float64)) DEFAULT [[], []],
+    expected Array(UInt8)
+) ENGINE = MergeTree ORDER BY name;
+
+INSERT INTO histogram_reset_cases (name, zeros, expected) VALUES
+    ('total_count_decrease', [10, 9], [0, 1]);
+-- Total count increases, but a zero, positive, or negative bucket decreases.
+INSERT INTO histogram_reset_cases (name, zeros, positive, expected) VALUES
+    ('zero_bucket_decrease', [2, 1], [[(0, 1)], [(0, 3)]], [0, 1]);
+INSERT INTO histogram_reset_cases (name, positive, expected) VALUES
+    ('positive_bucket_decrease', [[(-1, 7), (2, 3)], [(-1, 6), (2, 5)]], [0, 1]),
+    ('positive_bucket_disappears', [[(-1, 1), (0, 2), (1, 3)], [(-1, 2), (1, 5)]], [0, 1]),
+    ('last_positive_bucket_disappears', [[(0, 7), (1, 3)], [(0, 11)]], [0, 1]);
+INSERT INTO histogram_reset_cases (name, negative, expected) VALUES
+    ('negative_bucket_decrease', [[(-1, 7), (2, 3)], [(-1, 6), (2, 5)]], [0, 1]);
+
+INSERT INTO histogram_reset_cases (name, schemas, positive, bounds, expected) VALUES
+    ('custom_bounds_change', [-53, -53], [[(0, 1)], [(0, 1)]], [[1], [2]], [0, 1]),
+    ('custom_bounds_length_change', [-53, -53], [[(0, 1)], [(0, 1)]], [[1], [1, 2]], [0, 1]),
+    -- The bounds are compared by value, as Prometheus does: -0.0 and 0.0 are the same bound.
+    ('custom_bounds_signed_zero_same', [-53, -53], [[(0, 1)], [(0, 1)]], [[-0.0], [0.0]], [0, 2]);
+-- A reset the sender reported but the data doesn't show is not kept: the hint is detected from the data, as Prometheus does for the
+-- first sample of every chunk.
+INSERT INTO histogram_reset_cases (name, hints, zeros, expected) VALUES
+    ('explicit_reset_without_decrease', [0, 1], [1, 2], [0, 2]);
+
+-- Schema and threshold changes are unknown unless the count decrease already established a reset.
+INSERT INTO histogram_reset_cases (name, schemas, zeros, expected) VALUES
+    ('schema_change', [0, 1], [1, 2], [0, 0]),
+    ('count_decrease_before_schema_change', [0, 1], [2, 1], [0, 1]);
+INSERT INTO histogram_reset_cases (name, thresholds, zeros, expected) VALUES
+    ('zero_threshold_change', [0.001, 0.01], [1, 2], [0, 0]);
+
+-- These changes are not resets. In particular, negative observations can decrease the sum.
+INSERT INTO histogram_reset_cases (name, hints, zeros, expected) VALUES
+    ('unknown_becomes_no_reset', [0, 0], [1, 2], [0, 2]);
+INSERT INTO histogram_reset_cases (name, sums, zeros, expected) VALUES
+    ('sum_decrease', [10, -10], [1, 2], [0, 2]);
+INSERT INTO histogram_reset_cases (name, positive, expected) VALUES
+    ('empty_positive_bucket_disappears', [[(0, 1), (1, 0)], [(0, 1)]], [0, 2]),
+    ('new_positive_buckets', [[(1, 1)], [(0, 1), (1, 1), (3, 1)]], [0, 2]);
+INSERT INTO histogram_reset_cases (name, hints, zeros, expected) VALUES
+    ('gauge_decrease', [3, 3], [10, 1], [3, 3]),
+    ('gauge_to_counter', [3, 2], [10, 1], [3, 0]),
+    ('counter_to_gauge', [0, 3], [10, 1], [0, 3]);
+
+-- Stale markers have unknown hints, also one sent as a gauge, and so does the sample after one unless it is a gauge.
+-- Only the exact NaN payload marks staleness; ordinary NaNs still allow reset detection.
+INSERT INTO histogram_reset_cases (name, sums, zeros, expected)
+SELECT 'stale_current', [1., reinterpretAsFloat64(toUInt64(9218868437227405314))], [10, 0], [0, 0]
+UNION ALL
+SELECT 'stale_previous', [reinterpretAsFloat64(toUInt64(9218868437227405314)), 1.], [10, 0], [0, 0]
+UNION ALL
+SELECT 'ordinary_nan', [nan, nan], [2, 1], [0, 1];
+INSERT INTO histogram_reset_cases (name, hints, sums, zeros, expected)
+SELECT 'gauge_on_stale', [3, 3], [1., reinterpretAsFloat64(toUInt64(9218868437227405314))], [10, 0], [3, 0]
+UNION ALL
+SELECT 'first_stale_gauge', [3, 2], [reinterpretAsFloat64(toUInt64(9218868437227405314)), 1.], [10, 0], [0, 0]
+UNION ALL
+SELECT 'gauge_after_stale', [0, 3], [reinterpretAsFloat64(toUInt64(9218868437227405314)), 1.], [10, 0], [0, 3];
+
+-- Detect against the final sorted neighbours, whatever hint the sample was sent with. The first sample of every row gets an unknown
+-- hint, also when its predecessor in the same insert is in the previous bucket.
+INSERT INTO histogram_reset_cases (name, timestamps, hints, zeros, expected) VALUES
+    ('unsorted_decrease', ['2026-01-01 00:01:41', '2026-01-01 00:01:40'], [2, 2], [1, 2], [0, 1]),
+    ('bucket_boundary', ['2026-01-01 00:01:59', '2026-01-01 00:02:00'], [0, 2], [2, 1], [0, 0]);
+
+-- The hint is detected against the winner of the deduplication of equal timestamps (the sample with the greatest count), which need
+-- not be the predecessor the sender saw: the counts don't decrease, so a reported reset isn't kept.
+INSERT INTO histogram_reset_cases (name, timestamps, hints, schemas, thresholds, sums, zeros, positive, negative, bounds, expected) VALUES
+    ('explicit_reset_after_duplicates', ['2026-01-01 00:01:40', '2026-01-01 00:01:40', '2026-01-01 00:01:41'],
+     [0, 0, 1], [0, 0, 0], [0, 0, 0], [1, 1, 1], [5, 1, 6], [[], [], []], [[], [], []], [[], [], []], [0, 2]);
+
+-- The first sample of a series gets an unknown hint, also when it was sent with an explicit reset.
+INSERT INTO histogram_reset_cases (name, hints, zeros, expected) VALUES
+    ('first_sample_explicit_reset', [1, 2], [1, 2], [0, 2]);
+
+-- Duplicates of the first sample with the same payload: its hint is unknown whatever their hints, so it doesn't depend on which one
+-- was kept. A gauge marker is part of the payload and wins over a counter hint; the sample after a gauge is unknown.
+INSERT INTO histogram_reset_cases (name, timestamps, hints, schemas, thresholds, sums, zeros, positive, negative, bounds, expected) VALUES
+    ('first_sample_duplicates_differ', ['2026-01-01 00:01:40', '2026-01-01 00:01:40', '2026-01-01 00:01:41'],
+     [2, 1, 0], [0, 0, 0], [0, 0, 0], [1, 1, 1], [1, 1, 2], [[], [], []], [[], [], []], [[], [], []], [0, 2]),
+    ('first_sample_duplicate_gauge_wins', ['2026-01-01 00:01:40', '2026-01-01 00:01:40', '2026-01-01 00:01:41'],
+     [2, 3, 0], [0, 0, 0], [0, 0, 0], [1, 1, 1], [1, 1, 2], [[], [], []], [[], [], []], [[], [], []], [3, 0]);
+
+-- The recent samples table is disabled because its TTL would drop the old samples; its hints are covered by
+-- 05498_timeseries_histograms_recent_samples_step.
+CREATE TABLE ts_reset_detection ENGINE = TimeSeries SETTINGS samples_bucket_step_seconds = 60, recent_samples_ttl_seconds = 0;
+INSERT INTO ts_reset_detection (metric_name, tags, histograms)
+WITH arrayMap((z, p, n) -> z + arraySum(x -> x.2, p) + arraySum(x -> x.2, n), zeros, positive, negative) AS counts
+SELECT 'reset_test', map('case', name, 'flavour', toString(is_float)),
+       CAST(arrayZip(timestamps, arrayMap(t -> is_float, timestamps), hints, schemas, thresholds, sums,
+                     arrayMap(c -> if(is_float, 0, c), counts), arrayMap(c -> if(is_float, 0, c), zeros),
+                     arrayMap(p -> if(is_float, [], p), positive), arrayMap(n -> if(is_float, [], n), negative),
+                     arrayMap(c -> if(is_float, toFloat64(c), 0.), counts), arrayMap(c -> if(is_float, toFloat64(c), 0.), zeros),
+                     arrayMap(p -> if(is_float, arrayMap(x -> (x.1, toFloat64(x.2)), p), []), positive),
+                     arrayMap(n -> if(is_float, arrayMap(x -> (x.1, toFloat64(x.2)), n), []), negative), bounds),
+            'Array(Tuple(timestamp DateTime64(3), is_float Bool, counter_reset_hint UInt8, schema Int8, zero_threshold Float64, sum Float64,
+                         count_int Int64, zero_count_int Int64, positive_int Array(Tuple(Int32, Int64)), negative_int Array(Tuple(Int32, Int64)),
+                         count_float Float64, zero_count_float Float64, positive_float Array(Tuple(Int32, Float64)),
+                         negative_float Array(Tuple(Int32, Float64)), custom_values Array(Float64)))')
+FROM histogram_reset_cases CROSS JOIN (SELECT arrayJoin([toUInt8(0), toUInt8(1)]) AS is_float) AS flavours;
+
+-- Report individual cases on failure, including the actual and expected hints. Concatenate buckets without another aggregation
+-- of histograms, which would itself clear boundary hints. Every case must be present in both flavours.
+SELECT count() = (SELECT count() * 2 FROM histogram_reset_cases),
+       arraySort(groupArrayIf((name, flavour, actual, expected), actual != expected)) AS mismatches
+FROM
+(
+    SELECT c.name, t.tags['flavour'] AS flavour, c.expected,
+           arrayFlatten(arrayMap(x -> x.2, arraySort(x -> x.1, groupArray((s.bucket, s.histograms.counter_reset_hint))))) AS actual
+    FROM
+    (
+        SELECT id, bucket, histograms FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_reset_detection)
+    ) AS s
+    INNER JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts_reset_detection) AS t ON s.id = t.id
+    INNER JOIN histogram_reset_cases AS c ON t.tags['case'] = c.name
+    GROUP BY c.name, flavour, c.expected
+);
+
+-- Integer reset checks must not round counts to Float64; fractional float decreases must also be detected.
+INSERT INTO ts_reset_detection (metric_name, histograms)
+SELECT 'large_integer_count',
+    CAST([('2026-01-01 00:01:40', 9007199254740993, 9007199254740993, 'unknown'), ('2026-01-01 00:01:41', 9007199254740992, 9007199254740992, 'not_reset')],
+         'Array(Tuple(timestamp DateTime64(3), count_int Int64, zero_count_int Int64, counter_reset_hint String))');
+INSERT INTO ts_reset_detection (metric_name, histograms)
+SELECT 'fractional_float_count',
+    CAST([('2026-01-01 00:01:40', true, 1.5, 1.5, 'unknown'), ('2026-01-01 00:01:41', true, 1.25, 1.25, 'not_reset')],
+         'Array(Tuple(timestamp DateTime64(3), is_float Bool, count_float Float64, zero_count_float Float64, counter_reset_hint String))');
+-- A representation change starts a new history, even if the counts decrease.
+INSERT INTO ts_reset_detection (metric_name, histograms)
+SELECT * FROM values('metric_name String, histograms Array(Tuple(timestamp DateTime64(3), is_float Bool, count_int Int64, zero_count_int Int64,
+                                                                     count_float Float64, zero_count_float Float64, counter_reset_hint String))',
+    ('integer_to_float', [('2026-01-01 00:01:40', false, 10, 10, 0, 0, 'unknown'), ('2026-01-01 00:01:41', true, 0, 0, 1, 1, 'not_reset')]),
+    ('float_to_integer', [('2026-01-01 00:01:40', true, 0, 0, 10, 10, 'unknown'), ('2026-01-01 00:01:41', false, 1, 1, 0, 0, 'not_reset')]));
+SELECT t.metric_name, s.histograms.counter_reset_hint
+FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts_reset_detection) AS s INNER JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts_reset_detection) AS t ON s.id = t.id
+WHERE t.metric_name != 'reset_test' ORDER BY t.metric_name;
+
+DROP TABLE ts_reset_detection;
+DROP TABLE histogram_reset_cases;

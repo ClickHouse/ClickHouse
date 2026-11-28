@@ -1,0 +1,7 @@
+-- timeSeriesGroupArray: two arrays, and one unsorted array, each in either order
+['7FF8000000000001']	['7FF8000000000001']	['7FF8000000000001','3FF0000000000000']	['7FF8000000000001','3FF0000000000000']
+-- timeSeriesLastToGrid, one of the other aggregate functions: two samples in either order
+['7FF8000000000001']	['7FF8000000000001']
+-- the sink: both orders within one INSERT
+stale_first	['7FF8000000000001']
+stale_last	['7FF8000000000001']

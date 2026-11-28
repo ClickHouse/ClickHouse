@@ -7,14 +7,14 @@
 namespace DB
 {
 
-/// Table function timeSeriesSelector('mydb', 'my_ts_table', 'instant_selector', min_time, max_time, return_columns) reads time series
-/// from a specified TimeSeries table corresponding to a specified instant selector and with timestamps in a specified interval [min_time, max_time].
-/// Here instant_selector should be written in PromQL syntax, for example 'http_requests{job="prometheus"}',
-/// and table can be specified either as two arguments 'mydb', 'my_ts_table', or one argument mydb.my_ts_table, or just 'my_ts_table'.
-/// The argument `return_columns` chooses the returned columns besides `id`: 'samples' returns the column `samples` (an array of tuples
-/// (timestamp, value) sorted by timestamp; a time series can be returned in multiple rows, e.g. one per bucket of the samples table),
-/// 'timestamp_and_value' returns the columns `timestamp` and `value` with one sample per row. The samples are converted when
-/// the samples table stores them the other way (see `TimeSeriesSettings::hasBucketedSamples`).
+/// Table function timeSeriesSelector('mydb', 'my_ts_table', 'instant_selector', min_time, max_time, return_columns) reads the time
+/// series of a TimeSeries table matching an instant selector in PromQL syntax, e.g. 'http_requests{job="prometheus"}', with timestamps
+/// in [min_time, max_time]. The table is given as 'mydb', 'my_ts_table', or mydb.my_ts_table, or just 'my_ts_table'.
+/// `return_columns` names the columns besides `id`: 'samples' returns the column `samples` (an array of (timestamp, value) sorted by
+/// timestamp; a series can come in several rows, e.g. one per bucket of the samples table), 'histograms' the column `histograms` of
+/// a table storing native histograms (the stored tuples, see TimeSeriesHistogramsColumns), 'samples_and_histograms' both of the same
+/// rows, 'timestamp_and_value' the columns `timestamp` and `value` with one float sample per row. Returned rows have samples in
+/// the range, of a returned kind for a range shorter than a bucket. The samples are converted when the table stores them the other way.
 class TableFunctionTimeSeriesSelector : public ITableFunction
 {
 public:

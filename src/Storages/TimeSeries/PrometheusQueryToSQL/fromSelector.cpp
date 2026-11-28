@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
 
+#include <DataTypes/TimeSeries/PrometheusStaleMarker.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -16,14 +17,12 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    constexpr UInt64 STALE_NAN_BITS = 0x7ff0000000000002ULL;
-
     ASTPtr isStaleMarker(ASTPtr value)
     {
         return makeASTFunction(
             "equals",
             makeASTFunction("reinterpretAsUInt64", std::move(value)),
-            make_intrusive<ASTLiteral>(STALE_NAN_BITS));
+            make_intrusive<ASTLiteral>(PROMETHEUS_STALE_MARKER_BITS));
     }
 
     SQLQueryPiece fromRangeSelector(std::string_view instant_selector_text,
@@ -47,6 +46,11 @@ namespace
         /// or
         /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
         /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'timestamp_and_value')
+        ///
+        /// The PromQL functions evaluate the float samples only, so a table storing native histogram samples (version
+        /// MIN_WITH_NATIVE_HISTOGRAMS or later) is read with 'samples' too: the table function doesn't read its histograms. For a
+        /// range of at least a bucket it also returns the rows with only histogram samples, with empty `samples`: they add no
+        /// samples, and `finalizeSQL` drops the series left without any.
         SelectQueryBuilder builder;
 
         builder.select_list.push_back(makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(ColumnNames::ID)));

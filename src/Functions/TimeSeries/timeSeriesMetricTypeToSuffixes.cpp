@@ -27,9 +27,10 @@ std::span<const std::string_view> suffixesForType(std::string_view type)
     /// The empty suffix for `counter` and `info` supports the classic exposition format, where the family name
     /// already includes the type suffix (e.g. a counter family `http_requests_total` with a series of the same
     /// name), while the OpenMetrics format appends the suffix to the family name (`http_requests` + `_total`).
+    /// The empty suffix for the histogram types is a native histogram, which is one series named like its family.
     static constexpr std::string_view counter[] = {"", "_total"};
-    static constexpr std::string_view histogram[] = {"_bucket", "_count", "_sum"};
-    static constexpr std::string_view gauge_histogram[] = {"_bucket", "_gcount", "_gsum"};
+    static constexpr std::string_view histogram[] = {"", "_bucket", "_count", "_sum"};
+    static constexpr std::string_view gauge_histogram[] = {"", "_bucket", "_gcount", "_gsum"};
     static constexpr std::string_view summary[] = {"", "_count", "_sum"};
     static constexpr std::string_view info[] = {"", "_info"};
     static constexpr std::string_view empty[] = {""};
@@ -102,6 +103,7 @@ REGISTER_FUNCTION(TimeSeriesMetricTypeToSuffixes)
 {
     FunctionDocumentation::Description description = R"(
 Returns the metric-name suffixes for a metric family of the given Prometheus type.
+The empty suffix of the types `histogram` and `gaugehistogram` is a native histogram, which is one series named like its family.
 )";
     FunctionDocumentation::Syntax syntax = "timeSeriesMetricTypeToSuffixes(type)";
     FunctionDocumentation::Arguments arguments = {
@@ -117,9 +119,9 @@ Returns the metric-name suffixes for a metric family of the given Prometheus typ
 SELECT timeSeriesMetricTypeToSuffixes('histogram') AS suffixes;
             )",
             R"(
-┌─suffixes────────────────────┐
-│ ['_bucket','_count','_sum'] │
-└─────────────────────────────┘
+┌─suffixes───────────────────────┐
+│ ['','_bucket','_count','_sum'] │
+└────────────────────────────────┘
             )"
         }
     };
