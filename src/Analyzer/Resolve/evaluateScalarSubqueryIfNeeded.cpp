@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace Setting
@@ -99,6 +100,18 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                                 || (union_node != nullptr && union_node->isCorrelated());
     if (is_correlated_subquery)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate correlated scalar subquery");
+
+    /// A scalar subquery is evaluated once, during analysis, while the tables of a `USING KEY` recursive CTE
+    /// are still empty. Reject reads of them instead of folding a constant that ignores the iterations.
+    for (const auto & [recursive_cte_storage, recursive_cte_table_name] : keyed_recursive_cte_tables_in_resolve_process)
+    {
+        if (isStorageUsedInTree(recursive_cte_storage, node.get()))
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Scalar subquery or EXISTS cannot read the table {} of a recursive CTE with USING KEY, "
+                "because it is evaluated once before the recursion starts. Use a JOIN or IN instead. In scope {}",
+                recursive_cte_table_name,
+                scope.scope_node->formatASTForErrorMessage());
+    }
 
     /// The subquery is executed now, so decide here whether its replaced tables read with parallel replicas.
     restoreReplacedTableStoragesIfNeeded(node);
