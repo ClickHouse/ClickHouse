@@ -55,6 +55,7 @@ namespace DB::Setting
 {
     extern const SettingsUInt64 iceberg_manifest_min_count_to_compact;
     extern const SettingsBool iceberg_insert_single_manifest_for_all_partitions;
+    extern const SettingsNonZeroUInt64 iceberg_metadata_previous_versions_max;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -92,6 +93,7 @@ struct DataFilePlan
     Iceberg::IcebergPathFromMetadata patched_path;
     UInt64 new_records_count = 0;
     UInt64 new_bytes_count = 0;
+    Iceberg::PositionDeleteMatchKey match_key; /// positionDeleteMatchKey of the data file path
 };
 
 /// Compaction plan: all data files, the delete files applied to them, and prior metadata.
@@ -228,6 +230,7 @@ static Plan getPlan(
     /// next_row_id).
     if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) != 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compaction is supported only for format_version 2.");
+    persistent_table_components.schema_processor->registerMetadata(initial_metadata_object);
 
     auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     auto schemas = initial_metadata_object->getArray(Iceberg::f_schemas);
@@ -245,7 +248,7 @@ static Plan getPlan(
 
     /// A snapshot's manifest list also lists the manifests of the earlier snapshots.
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
-    std::unordered_set<Iceberg::IcebergPathFromMetadata> seen_position_delete_files;
+    std::unordered_set<String> seen_position_delete_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<ManifestFilePlan>> manifest_files;
     for (const auto & snapshot : snapshots_info)
     {
@@ -267,7 +270,9 @@ static Plan getPlan(
             }
             manifest_files[manifest_file.manifest_file_path]->manifest_lists_path.push_back(snapshot.manifest_list_path);
             for (const auto & pos_delete_file : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
-                if (seen_position_delete_files.insert(pos_delete_file->parsed_entry->file_path_key).second)
+                if (seen_position_delete_files
+                        .insert(persistent_table_components.path_resolver.storageIdentity(pos_delete_file->parsed_entry->file_path_key))
+                        .second)
                     all_positional_delete_files.push_back(pos_delete_file);
 
             for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
@@ -295,7 +300,8 @@ static Plan getPlan(
                         .data_object_info = data_object_info,
                         .manifest_list = manifest_files[manifest_file.manifest_file_path],
                         .partition_specification = data_file->common_partition_specification,
-                        .patched_path = plan.generator.generateDataFileName()});
+                        .patched_path = plan.generator.generateDataFileName(),
+                        .match_key = persistent_table_components.path_resolver.positionDeleteMatchKey(data_file->parsed_entry->file_path_key)});
                     plan.path_to_data_file[data_file_path] = data_file_ptr;
                     plan.partitions[partition_index].push_back(data_file_ptr);
                 }
@@ -321,6 +327,8 @@ static Plan getPlan(
         /// so a data file outside them has no deleted rows recorded in this delete file.
         const auto & lower = delete_file->parsed_entry->lower_reference_data_file_path;
         const auto & upper = delete_file->parsed_entry->upper_reference_data_file_path;
+        const auto lower_key = lower ? persistent_table_components.path_resolver.positionDeleteMatchKey(*lower) : Iceberg::PositionDeleteMatchKey{};
+        const auto upper_key = upper ? persistent_table_components.path_resolver.positionDeleteMatchKey(*upper) : Iceberg::PositionDeleteMatchKey{};
         const auto & delete_file_specification = *delete_file->common_partition_specification;
 
         for (auto & data_file : plan.partitions[partition_index])
@@ -334,10 +342,9 @@ static Plan getPlan(
                 continue;
 
             const auto & data_file_path = data_file->data_object_info->info.data_object_file_path_key;
-            bool can_contain_data_file_deletes
-                = (!lower.has_value() || *lower <= data_file_path)
-                && (!upper.has_value() || *upper >= data_file_path);
-            if (!can_contain_data_file_deletes)
+            const auto scope = persistent_table_components.path_resolver.matchPositionDeleteBounds(
+                lower, lower_key, upper, upper_key, data_file_path, data_file->match_key);
+            if (scope == Iceberg::PositionDeleteScope::None)
                 continue;
 
             /// Compaction reads the data files under the current schema, which the ORC and Avro readers resolve by name, not by field id.
@@ -352,7 +359,9 @@ static Plan getPlan(
                     delete_file_format);
 
             data_file->data_object_info->addPositionDeleteFile(
-                delete_file, persistent_table_components.path_resolver.resolve(delete_file->parsed_entry->file_path_key));
+                delete_file,
+                persistent_table_components.path_resolver.resolve(delete_file->parsed_entry->file_path_key),
+                scope == Iceberg::PositionDeleteScope::ThisFile);
         }
     }
     plan.history = std::move(snapshots_info);
@@ -400,6 +409,7 @@ static void writeDataFiles(
                 sample_block,
                 data_file->data_object_info,
                 object_storage,
+                path_resolver,
                 iceberg_format_settings,
                 // todo make compaction using same FormatParserSharedResources
                 std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), 1),
@@ -843,7 +853,7 @@ static bool writeConsolidatedManifestFile(
         write_format);
     generator.setBaseMetadataFile(metadata_version, metadata_file_path);
 
-    MetadataGenerator metadata_generator(metadata_object);
+    MetadataGenerator metadata_generator(metadata_object, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
     auto generated_metadata_info = generator.generateMetadataPathWithInfo();
 
     // Manifest-only rewrite: use a snapshot type that carries all total-* counters forward unchanged, since passing deltas would inflate the totals.
@@ -1152,8 +1162,10 @@ static bool writeMetadataFiles(
     ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block_->getNamesAndTypes());
     auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(table_path, columns_description, nullptr, nullptr, context);
     /// The rewritten data files, manifests and manifest list use the source table's field ids and partition specs, so the new metadata must define them.
+    /// The table properties, such as `write.metadata.previous-versions-max`, are carried over as well.
     for (const auto * key : {Iceberg::f_schemas, Iceberg::f_current_schema_id, Iceberg::f_last_column_id,
-                             Iceberg::f_partition_specs, Iceberg::f_default_spec_id, Iceberg::f_last_partition_id})
+                             Iceberg::f_partition_specs, Iceberg::f_default_spec_id, Iceberg::f_last_partition_id,
+                             Iceberg::f_properties})
         if (plan.initial_metadata_object->has(key))
             metadata_object->set(key, plan.initial_metadata_object->get(key));
     metadata_object->set(Iceberg::f_last_column_id, getLastAssignedFieldId(metadata_object));
@@ -1170,7 +1182,7 @@ static bool writeMetadataFiles(
         }
     }
 
-    MetadataGenerator metadata_generator(metadata_object);
+    MetadataGenerator metadata_generator(metadata_object, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]);
     std::vector<MetadataGenerator::NextMetadataResult> new_snapshots;
     auto generated_metadata_info = plan.generator.generateMetadataPathWithInfo();
     std::unordered_map<Int64, Poco::JSON::Object::Ptr> snapshot_id_to_snapshot;
@@ -1612,6 +1624,7 @@ void compactIcebergManifests(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "OPTIMIZE TABLE ... MANIFEST is not yet supported for Iceberg format-version 3: "
                 "row-lineage 'first_row_id' round-trip is not implemented");
+        persistent_table_components.schema_processor->registerMetadata(metadata_object);
 
         /// Cheap pre-check: read just the current manifest list to decide whether the table is above the configured threshold.
         if (!isCurrentManifestListAboveThreshold(

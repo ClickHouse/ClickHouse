@@ -351,26 +351,26 @@ SELECT cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list');
 
 ## cutToFirstSignificantSubdomainCustomWithWWW {#cutToFirstSignificantSubdomainCustomWithWWW}
 
-Introduzido na versão: v21.1.0
+Introduzido em: v21.1.0
 
 Retorna a parte do domínio que inclui os subdomínios de nível superior até o primeiro subdomínio significativo, sem remover &#39;www&#39;. Aceita o nome de uma lista personalizada de TLDs. Pode ser útil se você precisar de uma lista de TLDs mais atualizada ou se tiver uma lista personalizada.
 
 **Exemplo de configuração**
 
-````yaml
+```yaml
 <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
 <top_level_domains_lists>
     <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
     <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-    <!-- NOTE: o path está dentro de top_level_domains_path -->
+    <!-- NOTE: path is under top_level_domains_path -->
 </top_level_domains_lists>
-    
+```
 
-**Syntax**
+**Sintaxe**
 
 ```sql
 cutToFirstSignificantSubdomainCustomWithWWW(url, tld_list_name)
-````
+```
 
 **Argumentos**
 
@@ -394,7 +394,7 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_lis
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## cutToFirstSignificantSubdomainCustomWithWWWRFC {#cutToFirstSignificantSubdomainRFC}
+## cutToFirstSignificantSubdomainCustomWithWWWRFC {#cutToFirstSignificantSubdomainCustomWithWWWRFC}
 
 Introduzido em: v22.10.0
 
@@ -405,20 +405,20 @@ Semelhante a [cutToFirstSignificantSubdomainCustomWithWWW](#cutToFirstSignifican
 
 **Exemplo de configuração**
 
-````xml
-{/* <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> */}
+```xml
+<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
 <top_level_domains_lists>
-    {/* https://publicsuffix.org/list/public_suffix_list.dat */}
+    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
     <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-    {/* NOTE: path is under top_level_domains_path */}
+    <!-- NOTE: path is under top_level_domains_path -->
 </top_level_domains_lists>
-    
+```
 
-**Syntax**
+**Sintaxe**
 
 ```sql
 cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld_list_name)
-````
+```
 
 **Argumentos**
 
@@ -440,7 +440,7 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWWRFC('https://www.subdomain.exa
 example.custom
 ```
 
-## cutToFirstSignificantSubdomainRFC {#cutToFirstSignificantSubdomainWithWWW}
+## cutToFirstSignificantSubdomainRFC {#cutToFirstSignificantSubdomainRFC}
 
 Introduzido em: v22.10.0
 
@@ -476,7 +476,7 @@ SELECT
 └─────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## cutToFirstSignificantSubdomainWithWWW {#cutToFirstSignificantSubdomainWithWWWRFC}
+## cutToFirstSignificantSubdomainWithWWW {#cutToFirstSignificantSubdomainWithWWW}
 
 Introduzido em: v20.12.0
 
@@ -515,7 +515,7 @@ SELECT
 └──────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────┴─────────────────────────────────────────────┘
 ```
 
-## cutToFirstSignificantSubdomainWithWWWRFC {#cutURLParameter}
+## cutToFirstSignificantSubdomainWithWWWRFC {#cutToFirstSignificantSubdomainWithWWWRFC}
 
 Introduzido em: v22.10.0
 
@@ -551,7 +551,7 @@ SELECT
 └───────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## cutURLParameter {#cutWWW}
+## cutURLParameter {#cutURLParameter}
 
 Introduzido em: v1.1.0
 
@@ -590,7 +590,7 @@ SELECT
 └──────────────────────────────┴───────────────────────────┘
 ```
 
-## cutWWW {#decodeURLComponent}
+## cutWWW {#cutWWW}
 
 Introduzido em: v1.1.0
 
@@ -624,7 +624,7 @@ SELECT cutWWW('http://www.example.com/path?query=value#fragment');
 └────────────────────────────────────────────────────────────┘
 ```
 
-## decodeURLComponent {#decodeURLFormComponent}
+## decodeURLComponent {#decodeURLComponent}
 
 Introduzido em: v1.1.0
 
@@ -658,7 +658,7 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 └────────────────────────────────────────┘
 ```
 
-## decodeURLFormComponent {#domain}
+## decodeURLFormComponent {#decodeURLFormComponent}
 
 Introduzido em: v1.1.0
 
@@ -694,7 +694,7 @@ SELECT decodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT%201+2%2B3') A
 └───────────────────────────────────────────┘
 ```
 
-## domain {#domainRFC}
+## domain {#domain}
 
 Introduzido em: v1.1.0
 
@@ -730,7 +730,7 @@ SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk');
 └────────────────────────────────────────────────────────┘
 ```
 
-## domainRFC {#domainWithoutWWW}
+## domainRFC {#domainRFC}
 
 Introduzido em: v22.10.0
 
@@ -769,7 +769,7 @@ SELECT
 └───────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## domainWithoutWWW {#domainWithoutWWWRFC}
+## domainWithoutWWW {#domainWithoutWWW}
 
 Introduzido em: v1.1.0
 
@@ -803,7 +803,7 @@ SELECT domainWithoutWWW('http://paul@www.example.com:80/');
 └─────────────────────────────────────────────────────┘
 ```
 
-## domainWithoutWWWRFC {#encodeURLComponent}
+## domainWithoutWWWRFC {#domainWithoutWWWRFC}
 
 Introduzido em: v1.1.0
 
@@ -839,7 +839,7 @@ SELECT
 └─────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## encodeURLComponent {#encodeURLFormComponent}
+## encodeURLComponent {#encodeURLComponent}
 
 Introduzido em: v22.3.0
 
@@ -873,7 +873,7 @@ SELECT encodeURLComponent('http://127.0.0.1:8123/?query=SELECT 1;') AS EncodedUR
 └──────────────────────────────────────────────────────────┘
 ```
 
-## encodeURLFormComponent {#extractURLParameter}
+## encodeURLFormComponent {#encodeURLFormComponent}
 
 Introduzido em: v22.3.0
 
@@ -909,7 +909,7 @@ SELECT encodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT 1 2+3') AS En
 └───────────────────────────────────────────────────────────┘
 ```
 
-## extractURLParameter {#extractURLParameterNames}
+## extractURLParameter {#extractURLParameter}
 
 Introduzido em: v1.1.0
 
@@ -946,7 +946,7 @@ SELECT extractURLParameter('http://example.com/?param1=value1&param2=value2', 'p
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## extractURLParameterNames {#extractURLParameters}
+## extractURLParameterNames {#extractURLParameterNames}
 
 Introduzido em: v1.1.0
 
@@ -981,7 +981,7 @@ SELECT extractURLParameterNames('http://example.com/?param1=value1&param2=value2
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## extractURLParameters {#firstSignificantSubdomain}
+## extractURLParameters {#extractURLParameters}
 
 Introduzido em: v1.1.0
 
@@ -1016,7 +1016,7 @@ SELECT extractURLParameters('http://example.com/?param1=value1&param2=value2');
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## firstSignificantSubdomain {#firstSignificantSubdomainCustom}
+## firstSignificantSubdomain {#firstSignificantSubdomain}
 
 Introduzido em: v1.1.0
 
@@ -1055,7 +1055,7 @@ SELECT firstSignificantSubdomain('https://news.clickhouse.com/')
 └───────────────────────────────────────────────────────────┘
 ```
 
-## firstSignificantSubdomainCustom {#firstSignificantSubdomainCustomRFC}
+## firstSignificantSubdomainCustom {#firstSignificantSubdomainCustom}
 
 Introduzido em: v21.1.0
 
@@ -1088,7 +1088,7 @@ SELECT firstSignificantSubdomainCustom('https://news.example.com', 'public_suffi
 example
 ```
 
-## firstSignificantSubdomainCustomRFC {#firstSignificantSubdomainRFC}
+## firstSignificantSubdomainCustomRFC {#firstSignificantSubdomainCustomRFC}
 
 Introduzido na versão: v22.10.0
 
@@ -1121,7 +1121,7 @@ SELECT firstSignificantSubdomainCustomRFC('https://news.example.com', 'public_su
 example
 ```
 
-## firstSignificantSubdomainRFC {#fragment}
+## firstSignificantSubdomainRFC {#firstSignificantSubdomainRFC}
 
 Introduzido em: v22.10.0
 
@@ -1141,7 +1141,7 @@ firstSignificantSubdomainRFC(url)
 
 **Exemplos**
 
-## fragment {#netloc}
+## fragment {#fragment}
 
 Introduzido em: v1.1.0
 
@@ -1175,7 +1175,7 @@ SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## netloc {#path}
+## netloc {#netloc}
 
 Introduzido em: v20.5.0
 
@@ -1209,7 +1209,7 @@ SELECT netloc('http://paul@www.example.com:80/');
 └───────────────────────────────────────────┘
 ```
 
-## path {#pathFull}
+## path {#path}
 
 Introduzido em: v1.1.0
 
@@ -1243,7 +1243,7 @@ SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/u
 └─────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## pathFull {#port}
+## pathFull {#pathFull}
 
 Introduzido em: v1.1.0
 
@@ -1277,7 +1277,7 @@ SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functio
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## port {#portRFC}
+## port {#port}
 
 Introduzido em: v20.5.0
 
@@ -1312,7 +1312,7 @@ SELECT port('https://clickhouse.com:8443/docs'), port('https://clickhouse.com/do
 └──────────────────────────────────────────┴──────────────────────────────────────────┘
 ```
 
-## portRFC {#protocol}
+## portRFC {#portRFC}
 
 Introduzido em: v22.10.0
 
@@ -1348,7 +1348,7 @@ SELECT port('http://user:password@example.com:8080/'), portRFC('http://user:pass
 └────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
 ```
 
-## protocol {#queryString}
+## protocol {#protocol}
 
 Introduzido em: v1.1.0
 
@@ -1386,7 +1386,7 @@ SELECT protocol('https://clickhouse.com/');
 └─────────────────────────────────────┘
 ```
 
-## queryString {#queryStringAndFragment}
+## queryString {#queryString}
 
 Introduzido em: v1.1.0
 
@@ -1420,7 +1420,7 @@ SELECT queryString('https://clickhouse.com/docs?query=value&param=123#section');
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-## queryStringAndFragment {#topLevelDomain}
+## queryStringAndFragment {#queryStringAndFragment}
 
 Introduzido em: v1.1.0
 
@@ -1454,7 +1454,7 @@ SELECT queryStringAndFragment('https://clickhouse.com/docs?query=value&param=123
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## topLevelDomain {#topLevelDomainRFC}
+## topLevelDomain {#topLevelDomain}
 
 Introduzido em: v1.1.0
 
@@ -1499,7 +1499,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-## topLevelDomainRFC
+## topLevelDomainRFC {#topLevelDomainRFC}
 
 Introduzido em: v22.10.0
 

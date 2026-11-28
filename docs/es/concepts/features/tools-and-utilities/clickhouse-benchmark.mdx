@@ -39,9 +39,7 @@ Luego, pasa este archivo a la entrada estándar de `clickhouse-benchmark`:
 clickhouse-benchmark [keys] < queries_file;
 ```
 
-<div id="clickhouse-benchmark-command-line-options">
-  ## Opciones de línea de comandos
-</div>
+## Opciones de línea de comandos {#clickhouse-benchmark-command-line-options}
 
 * `--query=QUERY` — Consulta que se va a ejecutar. Si no se pasa este parámetro, `clickhouse-benchmark` leerá las consultas desde la entrada estándar.
 * `--query_id=ID` — ID de consulta.
@@ -54,6 +52,10 @@ clickhouse-benchmark [keys] < queries_file;
 * `-h HOST`, `--host=HOST` — Host del servidor. Valor predeterminado: `localhost`. Para el [modo de comparación](#clickhouse-benchmark-comparison-mode) puede usar varias opciones `-h`.
 * `-i N`, `--iterations=N` — Número total de consultas. Valor predeterminado: 0 (repetir indefinidamente).
 * `-r`, `--randomize` — Ejecuta las consultas en orden aleatorio si hay más de una consulta de entrada.
+* `--arrival-rate=R` — Habilita el [modo de bucle abierto](#clickhouse-benchmark-open-loop-mode): las consultas llegan en momentos aleatorios a una tasa media de `R` consultas por segundo. Una lista de tasas separadas por comas, como `--arrival-rate=5,10,20`, ejecuta el benchmark con cada tasa, una tras otra, y genera un informe por tasa; requiere `--iterations` o `--timelimit`.
+* `--max-in-flight=N` — Número máximo de consultas que se ejecutan simultáneamente en el modo de bucle abierto. Valor predeterminado: 256.
+* `--seed=N` — Semilla del generador aleatorio para los tiempos de llegada, el orden de las consultas con `--randomize` y la elección del servidor en el modo de bucle abierto. Con la misma semilla y las mismas opciones se reproduce la misma ejecución. Los tiempos de llegada dependen únicamente de la semilla y de la tasa, no de las consultas ni de los servidores, por lo que es posible comparar distintas combinaciones de consultas o servidores con el mismo calendario de llegadas. Valor predeterminado: una semilla aleatoria, que se muestra al inicio en el modo de bucle abierto.
+* `--per-query` — Muestra al final estadísticas de cada consulta: el número de consultas y errores, QPS, percentiles de latencia, la latencia máxima y el tiempo medio de CPU de una consulta en el servidor.
 * `-s`, `--secure` — Usa una conexión `TLS`.
 * `-t N`, `--timelimit=N` — Límite de tiempo en segundos. `clickhouse-benchmark` deja de enviar consultas cuando se alcanza el límite de tiempo especificado. Valor predeterminado: 0 (límite de tiempo deshabilitado).
 * `--port=N` — Puerto del servidor. Valor predeterminado: 9000. Para el [modo de comparación](#clickhouse-benchmark-comparison-mode) puede usar varias opciones `--port`.
@@ -75,16 +77,12 @@ clickhouse-benchmark [keys] < queries_file;
 
 Si desea aplicar algunas [configuraciones](/es/concepts/features/configuration/settings/overview) a las consultas, páselas como una opción `--<session setting name>= SETTING_VALUE`. Por ejemplo, `--max_memory_usage=1048576`.
 
-<div id="clickhouse-benchmark-environment-variable-options">
-  ## Opciones de variables de entorno
-</div>
+## Opciones de variables de entorno {#clickhouse-benchmark-environment-variable-options}
 
 El nombre de usuario, la contraseña y el host pueden configurarse mediante las variables de entorno `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` y `CLICKHOUSE_HOST`.
 Los argumentos de la línea de comandos `--user`, `--password` o `--host` tienen prioridad sobre las variables de entorno.
 
-<div id="clickhouse-benchmark-output">
-  ## Salida
-</div>
+## Salida {#clickhouse-benchmark-output}
 
 De forma predeterminada, `clickhouse-benchmark` muestra resultados para cada intervalo `--delay`.
 
@@ -127,17 +125,58 @@ En el informe puede encontrar:
 
 * Percentiles del tiempo de ejecución de las consultas.
 
-<div id="clickhouse-benchmark-comparison-mode">
-  ## Modo de comparación
-</div>
+## Modo de bucle abierto {#clickhouse-benchmark-open-loop-mode}
+
+De forma predeterminada, `clickhouse-benchmark` funciona en bucle cerrado: cada uno de los client indicados por `--concurrency` envía la siguiente consulta cuando la anterior termina. Cuando el servidor se ralentiza, recibe menos consultas, por lo que la carga se adapta al servidor.
+
+Con `--arrival-rate`, la carga no depende del servidor. Las consultas llegan en momentos aleatorios a una tasa media fija, como las solicitudes de muchos usuarios independientes: el tiempo entre dos llegadas es un valor aleatorio con distribución exponencial y media `1 / R` (un proceso de Poisson). Cada consulta se envía en su momento de llegada, aunque las consultas anteriores sigan en ejecución.
+
+Como máximo se ejecutan simultáneamente `--max-in-flight` consultas. Si en el momento de una llegada están todas ocupadas, esta espera en una cola client-side hasta que alguna de ellas finalice. La latencia de una consulta se mide del mismo modo que en el bucle cerrado (consulte `--client-side-time`), por lo que no incluye el tiempo de espera en la cola. El número de llegadas encoladas se indica por separado.
+
+La opción `--iterations` establece el número de llegadas; `clickhouse-benchmark` espera a que todas finalicen. La opción `--timelimit` detiene las llegadas una vez alcanzado el límite de tiempo; las consultas en curso terminan y las llegadas que quedan en la cola se indican como no enviadas.
+
+El informe incluye dos líneas adicionales, por ejemplo:
+
+```text
+Arrivals: 1061, target rate: 100.000/s, achieved rate: 106.100/s, queued: 0 (max queue size 0).
+In flight: mean 0.223, max 4 of 256.
+```
+
+* `Arrivals`: El número de llegadas.
+* `target rate`: La tasa indicada en `--arrival-rate`.
+* `achieved rate`: El número de llegadas dividido entre la duración del proceso de llegadas. Difiere de la tasa objetivo en un error aleatorio, que es menor cuanto más larga es la ejecución.
+* `queued`: El número de llegadas que encontraron ocupadas todas las posiciones de `--max-in-flight` y esperaron en la cola client-side, junto con la longitud máxima de dicha cola.
+* `not sent`: El número de llegadas que seguían en la cola cuando se detuvo la ejecución. Solo se muestra si es distinto de cero.
+* `In flight`: La media ponderada en el tiempo y el número máximo de consultas ejecutándose simultáneamente.
+
+Con llegadas en bucle abierto, las QPS siguen la tasa de llegadas, por lo que dicen poco sobre el coste de la carga. En el modo de bucle abierto, la cadena de estado de cada servidor incluye además:
+
+* `CPU`: El tiempo de CPU por segundo de las consultas en el servidor, expresado en núcleos.
+* `CPU per query`: El tiempo de CPU medio de una consulta en el servidor, en segundos.
+
+Ambos incluyen las consultas que fallaron durante la ejecución (con `--ignore-error`), ya que también suponen carga para el servidor.
+
+El tiempo de CPU es la suma de los eventos de perfilado `UserTimeMicroseconds` y `SystemTimeMicroseconds` que el servidor envía para cada consulta, por lo que abarca los thread que ejecutan la consulta y constituye una aproximación de su coste total de CPU. En una consulta distribuida, se suma para todos los servidores en los que se ejecuta la consulta, ya que el initiator reenvía los eventos de perfilado de los servidores remotos. Si el servidor no envía eventos de perfilado (por ejemplo, con `--send_profile_events=0`), la cadena de estado muestra `CPU: not reported by the server`.
+
+Para ejecutar un workload mixto, lance varios procesos de `clickhouse-benchmark` simultáneamente, uno por cada clase de consultas. Cada proceso informa de las estadísticas de su propia clase. Asigne a cada proceso su propia `--seed`, o ninguna: los procesos con la misma semilla generan la misma secuencia aleatoria, por lo que sus llegadas coinciden (o, con tasas distintas, son copias escaladas unas de otras). Con semillas independientes, las llegadas combinadas de todos los procesos también forman un proceso de Poisson.
+
+Ejemplos:
+
+```bash
+# 100 queries per second for 10 seconds; the lines above are from this run.
+$ clickhouse-benchmark --arrival-rate=100 --seed=42 --timelimit=10 --query "SELECT sum(number) FROM numbers(1000000)"
+
+# A sweep over four rates, 60 seconds each, with per-query statistics.
+$ clickhouse-benchmark --arrival-rate=5,10,20,40 --timelimit=60 --randomize --per-query < queries.tsv
+```
+
+## Modo de comparación {#clickhouse-benchmark-comparison-mode}
 
 `clickhouse-benchmark` puede comparar el rendimiento de dos servidores ClickHouse en ejecución.
 
 Para usar el modo de comparación, especifique los endpoints de ambos servidores mediante dos pares de opciones `--host`, `--port`. Las opciones se emparejan según su posición en la lista de argumentos: el primer `--host` se empareja con el primer `--port`, y así sucesivamente. `clickhouse-benchmark` establece conexiones con ambos servidores y luego envía consultas. Cada consulta se envía a un servidor seleccionado aleatoriamente. Los resultados se muestran en una tabla.
 
-<div id="clickhouse-benchmark-example">
-  ## Ejemplo
-</div>
+## Ejemplo {#clickhouse-benchmark-example}
 
 ```bash
 $ echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark --host=localhost --port=9001 --host=localhost --port=9000 -i 10

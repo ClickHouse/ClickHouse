@@ -10,7 +10,7 @@ doc_type: 'guide'
 يوضح هذا الدليل كيفية إجراء مصادقة آمنة مع Google Cloud Storage ‏(GCS) والوصول إلى بياناتك عبر ClickHouse Cloud.
 
 <div id="introduction">
-  ## المقدمة
+  ## المقدمة {#introduction}
 </div>
 
 يتصل ClickHouse Cloud بخدمة GCS باستخدام مفاتيح HMAC ‏(Hash-based Message Authentication Code) المرتبطة بحساب خدمة في Google Cloud.
@@ -26,7 +26,7 @@ doc_type: 'guide'
 يتيح لك هذا النهج إدارة جميع عمليات الوصول إلى حاويات تخزين GCS عبر سياسات IAM على حساب الخدمة، مما يسهّل منح حق الوصول أو سحبه من دون تعديل سياسات كل حاوية تخزين على حدة.
 
 <div id="prerequisites">
-  ## المتطلبات الأساسية
+  ## المتطلبات الأساسية {#prerequisites}
 </div>
 
 لمتابعة هذا الدليل، ستحتاج إلى:
@@ -36,7 +36,7 @@ doc_type: 'guide'
 * أذونات لإنشاء حسابات خدمة وإنشاء مفاتيح HMAC في مشروع GCP الخاص بك
 
 <div id="setup">
-  ## الإعداد
+  ## الإعداد {#setup}
 </div>
 
 <Steps>
@@ -44,25 +44,17 @@ doc_type: 'guide'
     1. في Google Cloud Console، انتقل إلى IAM &amp; Admin → Service Accounts
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![](/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp)
+      </Frame>
     </div>
 
     2. انقر على `Service accounts` في القائمة الجانبية اليسرى، ثم انقر على `Create service account`:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![](/images/cloud/guides/accessing-data/GCS/create_service_account.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/create_service_account.webp)
+      </Frame>
     </div>
 
     أدخل اسمًا ووصفًا لحساب الخدمة، على سبيل المثال:
@@ -75,25 +67,17 @@ doc_type: 'guide'
     انقر على `Create and continue`
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![](/images/cloud/guides/accessing-data/GCS/create_and_continue.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/create_and_continue.webp)
+      </Frame>
     </div>
 
     امنح حساب الخدمة دور `Storage Object User`:
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![](/images/cloud/guides/accessing-data/GCS/storage_object_user.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/storage_object_user.webp)
+      </Frame>
     </div>
 
     يوفّر هذا الدور إذن القراءة والكتابة لكائنات GCS
@@ -108,27 +92,23 @@ doc_type: 'guide'
     دوّن عنوان البريد الإلكتروني الخاص بحساب الخدمة:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![](/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="منح حساب الخدمة إذن الوصول إلى حاوية التخزين" id="grant-bucket-access-to-service-account">
     يمكنك منح الإذن إمّا على مستوى المشروع أو على مستوى حاوية تخزين فردية.
 
-    #### الخيار 1: منح الإذن إلى حاويات تخزين محددة (موصى به)
+#### الخيار 1: منح الإذن إلى حاويات تخزين محددة (موصى به) {#option-1}
 
     1. انتقل إلى `Cloud Storage` → `Buckets`
     2. انقر على حاوية التخزين التي تريد منح الإذن لها
     3. انتقل إلى علامة التبويب `Permissions`
     4. ضمن &quot;Permissions&quot;، انقر على `Grant access` للهوية التي أُنشئت في الخطوات السابقة
     5. في حقل &quot;New principals&quot;، أدخل البريد الإلكتروني لحساب الخدمة
-    6. حدِّد الدور المناسب:
+    6. حدِّد الدور المناسب:
 
     * Storage Object User للوصول للقراءة والكتابة
     * Storage Object Viewer للوصول للقراءة فقط
@@ -136,12 +116,12 @@ doc_type: 'guide'
     7. انقر على `Save`
     8. كرر ذلك لأي حاويات تخزين إضافية
 
-    #### الخيار 2: منح الإذن على مستوى المشروع
+#### الخيار 2: منح الإذن على مستوى المشروع {#option-2}
 
     1. انتقل إلى `IAM & Admin` → `IAM`
     2. انقر على `Grant access`
     3. أدخل البريد الإلكتروني لحساب الخدمة في حقل `New principals`
-    4. حدِّد Storage Object User (أو Storage Object Viewer لوصول القراءة فقط)
+    4. حدِّد Storage Object User (أو Storage Object Viewer لوصول القراءة فقط)
     5. انقر على SAVE
 
     <Warning>
@@ -155,13 +135,9 @@ doc_type: 'guide'
     انتقل إلى `Cloud Storage` → `Settings` → `Interoperability`:
 
     <div className="ch-image-sm">
-
-    <Frame>
-
-    ![](/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp)
+      </Frame>
     </div>
 
     إذا لم يظهر قسم &quot;Access keys&quot;، فانقر على `Enable interoperability access`
@@ -169,13 +145,9 @@ doc_type: 'guide'
     ضمن &quot;Access keys for service accounts&quot;، انقر على `Create a key for a service account`:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![](/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp)
+      </Frame>
     </div>
 
     حدّد حساب الخدمة الذي أنشأته سابقًا (على سبيل المثال clickhouse-gcs-access@your-project.iam.gserviceaccount.com)
@@ -183,13 +155,9 @@ doc_type: 'guide'
     انقر على `Create key`:
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![](/images/cloud/guides/accessing-data/GCS/create_a_key.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/create_a_key.webp)
+      </Frame>
     </div>
 
     سيُعرَض مفتاح HMAC.
@@ -210,7 +178,7 @@ doc_type: 'guide'
       ستحتاج إلى إنشاء مفاتيح جديدة إذا فقدت السر.
     </Danger>
 
-    ## استخدام HMAC keys مع ClickHouse Cloud
+## استخدام HMAC keys مع ClickHouse Cloud {#use-hmac-keys-with-clickhouse-cloud}
 
     يمكنك الآن استخدام بيانات اعتماد HMAC للوصول إلى GCS من ClickHouse Cloud.
     ولهذا، استخدم table function الخاصة بـ GCS:
@@ -237,23 +205,19 @@ doc_type: 'guide'
     );
     ```
 
-    ## مصادقة HMAC في ClickPipes for GCS
+## مصادقة HMAC في ClickPipes for GCS {#hmac-authentication-clickpipes-for-gcs}
 
     تستخدم ClickPipes مفاتيح HMAC ‏(Hash-based Message Authentication Code) للمصادقة مع Google Cloud Storage.
 
     عند [إعداد ClickPipe لـ GCS](/ar/integrations/clickpipes/object-storage/google-cloud-storage/get-started):
 
-    1. حدِّد `Credentials` ضمن `Authentication method` أثناء إعداد ClickPipe
+    1. حدِّد `Credentials` ضمن `Authentication method` أثناء إعداد ClickPipe
     2. أدخِل بيانات اعتماد HMAC التي حصلت عليها في الخطوات السابقة
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![](/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp)
-
-    </Frame>
-
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp)
+      </Frame>
     </div>
 
     <Note>
@@ -269,11 +233,11 @@ doc_type: 'guide'
 </Steps>
 
 <div id="best-practices">
-  ## أفضل الممارسات
+  ## أفضل الممارسات {#best-practices}
 </div>
 
 <div id="separate-service-accounts">
-  ### استخدم حسابات خدمة منفصلة لبيئات مختلفة
+  ### استخدم حسابات خدمة منفصلة لبيئات مختلفة {#separate-service-accounts}
 </div>
 
 أنشئ حسابات خدمة منفصلة لبيئات التطوير وstaging والإنتاج. على سبيل المثال:
@@ -285,7 +249,7 @@ doc_type: 'guide'
 يتيح لك ذلك إلغاء الوصول بسهولة لبيئة محددة من دون التأثير على البيئات الأخرى.
 
 <div id="apply-least-privilege-access">
-  ### طبّق مبدأ أقل الامتيازات
+  ### طبّق مبدأ أقل الامتيازات {#apply-least-privilege-access}
 </div>
 
 امنح فقط الحد الأدنى المطلوب من الأذونات:
@@ -295,7 +259,7 @@ doc_type: 'guide'
 * فكّر في استخدام شروط على مستوى حاوية التخزين لتقييد الوصول إلى مسارات محددة
 
 <div id="rotate-hmac-keys">
-  ### دوِّر مفاتيح HMAC بانتظام
+  ### دوِّر مفاتيح HMAC بانتظام {#rotate-hmac-keys}
 </div>
 
 نفِّذ جدولًا زمنيًا لتدوير المفاتيح:
@@ -310,7 +274,7 @@ doc_type: 'guide'
 </Tip>
 
 <div id="monitor-access">
-  ### راقب الوصول باستخدام Cloud Audit Logs
+  ### راقب الوصول باستخدام Cloud Audit Logs {#monitor-access}
 </div>
 
 فعِّل Cloud Audit Logs وراقبها لـ Cloud Storage:

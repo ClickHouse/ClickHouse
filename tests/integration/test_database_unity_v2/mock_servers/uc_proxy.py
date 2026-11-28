@@ -12,10 +12,10 @@ It also emulates Databricks authentication:
   requires `scope=all-apis` as Databricks service principals do;
 - every proxied route requires `Authorization: Bearer <token>`, where the token
   is either `PAT_TOKEN` or a minted OAuth token, and replies 401 otherwise;
-- `/control/*` endpoints let the test expire tokens.
+- `/control/*` endpoints let the test expire tokens and change the vended credentials.
 
-It vends the MinIO credentials from the command line on
-`POST temporary-table-credentials`, and records the requested `operation`.
+It vends the MinIO credentials from the command line, or the ones set by
+`/control/vend`, on `POST temporary-table-credentials`, and records the requested `operation`.
 """
 import json
 import re
@@ -146,8 +146,14 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(200, json.dumps(body).encode())
 
     def _handle_control(self):
-        global PAT_VALID, ICEBERG_REST_DENIED
-        if self.path == "/control/expire":
+        global PAT_VALID, ICEBERG_REST_DENIED, STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY
+        url = urllib.parse.urlsplit(self.path)
+        if url.path == "/control/vend":
+            params = urllib.parse.parse_qs(url.query)
+            STORAGE_ACCESS_KEY = params["access_key"][0]
+            STORAGE_SECRET_KEY = params["secret_key"][0]
+            self._reply(200, b"OK")
+        elif self.path == "/control/expire":
             VALID_TOKENS.clear()
             self._reply(200, b"OK")
         elif self.path == "/control/revoke_pat":

@@ -108,23 +108,34 @@ hyperdx:
 
 ### Using an external secret {#using-external-secret}
 
-For production deployments where you want to keep credentials separate from Helm values, use an external Kubernetes secret:
+To keep the HyperDX API key out of your Helm values, store it in your own Kubernetes secret:
 
 ```bash
-# Create your secret
 kubectl create secret generic my-clickstack-secrets \
-  --from-literal=HYPERDX_API_KEY=my-secret-api-key \
-  --from-literal=CLICKHOUSE_PASSWORD=my-ch-password \
-  --from-literal=CLICKHOUSE_APP_PASSWORD=my-ch-app-password \
-  --from-literal=MONGODB_PASSWORD=my-mongo-password
+  --from-literal=HYPERDX_API_KEY=my-secret-api-key
 ```
 
-Then reference it in your values:
+Then remove it from the chart's secret and read it from yours:
 ```yaml
 hyperdx:
-  useExistingConfigSecret: true
-  existingConfigSecret: "my-clickstack-secrets"
+  secrets:
+    HYPERDX_API_KEY: null
+  deployment:
+    env:
+      - name: HYPERDX_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: my-clickstack-secrets
+            key: HYPERDX_API_KEY
 ```
+
+Any other HyperDX environment variable can be read from a secret the same way.
+
+The ClickHouse and MongoDB passwords must stay in `hyperdx.secrets` while the bundled components are enabled. The chart uses them to set up the bundled ClickHouse and MongoDB users, and the OTel collector reads them from the chart's secret.
+
+<Note>
+`hyperdx.deployment.useExistingConfigSecret` only loads the default connections and sources (`connections.json` and `sources.json`) from a secret. It does not read the API key or passwords. See [External ClickHouse](/clickstack/deployment/helm-deployment-options#external-clickhouse-secret).
+</Note>
 
 ## Ingress setup {#ingress-setup}
 

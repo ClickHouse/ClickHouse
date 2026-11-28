@@ -14,9 +14,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="parallel_distributed_insert_select">
-  ## parallel_distributed_insert_select
-</div>
+## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -37,32 +35,37 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 * `parallel_distributed_insert_select = 2`
 * `enable_parallel_replicas = 1`
 
-<div id="parallel_hash_join_threshold">
-  ## parallel_hash_join_threshold
-</div>
+<Note>
+  Переписанный запрос, включая каждое выражение в `SELECT` (подзапросы, пользовательские функции (UDF) и т. д.), выполняется на сегментах с учётными данными из конфигурации кластера — по той же модели доверия, что и другая обработка на стороне сегментов, например подзапросы в `IN` без `GLOBAL`. Если операции чтения на стороне сегментов должны авторизоваться от имени вызывающего пользователя, настройте межсерверный секрет (элемент `secret` в конфигурации кластера).
+</Note>
+
+## parallel_hash_join_threshold {#parallel_hash_join_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "100000"},{"label": "новая настройка"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "новая настройка"}]}, {"id": "row-3","items": [{"label": "25.3"},{"label": "0"},{"label": "новая настройка"}]}]} />
 
-Когда используется алгоритм JOIN на основе `hash`, этот порог помогает выбрать между `hash` и `parallel_hash` (только если доступна оценка размера правой таблицы).
-Первый вариант используется, когда известно, что размер правой таблицы меньше порогового значения.
+Для hash JOIN типа `INNER`, `LEFT`, `RIGHT` или `FULL` этот порог определяет способ построения хеш-таблицы.
+Если оценочное число строк в правой таблице меньше порога, JOIN строит хеш-таблицу целиком, одной частью в одном потоке.
+Если оценка равна порогу или превышает его, а также если оценки нет, JOIN разбивает хеш-таблицу на части, которые одновременно заполняются не более чем `max_threads` потоками (одним потоком при `max_threads = 1`).
+При значении `0` хеш-таблица разбивается всегда.
+Если `hash_join_layout` имеет значение `serial` или `parallel`, этот порог не используется: JOIN строит одну часть или разбивает хеш-таблицу независимо от оценки.
+Оценка берётся из плана запроса или из статистики предыдущих выполнений того же JOIN (см. `collect_hash_table_stats_during_joins`).
+Для правой таблицы, которая заведомо пуста (например, таблицы `MergeTree` без частей данных), план запроса даёт оценку в 0 строк.
+Для соединений `ASOF` оценка никогда не вычисляется, а при `query_plan_optimize_join_order_limit = 0` её не получает ни один JOIN.
 
-<div id="parallel_non_joined_rows_processing">
-  ## parallel_non_joined_rows_processing
-</div>
+## parallel_non_joined_rows_processing {#parallel_non_joined_rows_processing}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "Новая настройка для включения параллельной обработки строк без совпадений в RIGHT/FULL JOIN с алгоритмом parallel_hash."}]}]} />
 
 Позволяет нескольким потокам параллельно обрабатывать строки без совпадений из правой таблицы при RIGHT и FULL JOIN.
-Это может ускорить этап обработки строк без совпадений при использовании алгоритма JOIN `parallel_hash` с большими таблицами.
-Если настройка отключена, строки без совпадений обрабатываются одним потоком.
+Это может ускорить этап обработки строк без совпадений в хеш-соединениях с большими правыми таблицами, если хеш-таблица строится в нескольких потоках (см. `parallel_hash_join_threshold`).
+Если настройка отключена или хеш-таблица строится в одном потоке, строки без совпадений обрабатываются одним потоком.
+В любом случае строки без совпадений возвращаются в произвольном порядке. Используйте `ORDER BY`, если запросу нужен детерминированный порядок.
 
-<div id="parallel_replica_offset">
-  ## parallel_replica_offset
-</div>
+## parallel_replica_offset {#parallel_replica_offset}
 
 <BetaBadge />
 
@@ -70,9 +73,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Это внутренний параметр, который не следует использовать напрямую; он относится к деталям реализации режима «параллельных реплик». Этот параметр автоматически задается сервером-инициатором для распределенных запросов и содержит индекс реплики, участвующей в обработке запроса в режиме параллельных реплик.
 
-<div id="parallel_view_processing">
-  ## parallel_view_processing
-</div>
+## parallel_view_processing {#parallel_view_processing}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

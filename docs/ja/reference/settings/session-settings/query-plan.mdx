@@ -184,6 +184,18 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
   これは開発者がデバッグ目的でのみ使用すべき、上級者向けの設定です。この設定は将来、後方互換性のない変更が加えられたり、削除されたりする可能性があります。
 </Note>
 
+## query_plan_join_order_use_interesting_orders {#query_plan_join_order_use_interesting_orders}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "新しい設定。デフォルトで有効。DPsub 結合順序アルゴリズムが、入力のソート順に基づいてハッシュ結合とソートマージ結合のいずれかを選択します。"}]}]} />
+
+`dpsub` 結合順序アルゴリズムにのみ影響します。この設定により、`dpsub` は結合対象テーブルのソート順を考慮するようになります。具体的には、各内部等価結合についてコストに基づいてハッシュ結合と `full_sorting_merge` のいずれかを選択し、さらに後続の結合で利用可能な結合キーで結果がソートされている部分実行計画を保持します。
+
+入力が結合キーでソート済みとみなされるのは、`optimize_read_in_order` によって `MergeTree` テーブルからそのキーの順序で読み取れる場合、またはその入力がそのキーによる `full_sorting_merge` 結合の結果である場合です。`full_sorting_merge` で実行すると選択された結合では、まず `full_sorting_merge` が試行され、`join_algorithm` のリストがフォールバックとして使用されます。この選択が行われるのは `join_algorithm` がデフォルト値の場合のみです。それ以外のリストは優先度リストとして扱われ、そのまま使用されます。`enable_join_transitive_predicates` を有効にする必要があります。
+
 ## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -262,11 +274,10 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "arrayJoin 関数を実際の ARRAY JOIN ステップに変換する新しい最適化。デフォルトでは無効。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "query_plan_lower_array_join_function をデフォルトで有効化。"}]}]} />
 
-式内の `arrayJoin` 関数を実際の `ARRAY JOIN` ステップに変換するクエリプランレベルの最適化を有効または無効にします。これにより、遅延実行レプリケーションやフィルタ融合を含む、`ARRAY JOIN` 句と同じ実行機構で処理されます。
-設定 [query&#95;plan&#95;enable&#95;optimizations](/ja/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
+`arrayJoin` 関数を `ARRAY JOIN` 句と同じ方法、すなわちクエリプラン内の独立した `ARRAY JOIN` ステップとして実行します。無効の場合は、以前のバージョンと同様に、関数はそれを含む式の内部で計算されます。
 
 <Note>
-  これは開発者によるデバッグ目的に限って使用すべき、上級者向けの設定です。この設定は今後、後方互換性のない変更が加えられたり、削除されたりする可能性があります。
+  これは開発者によるデバッグ目的に限って使用すべき、上級者向け設定です。この設定は今後、後方互換性のない変更が加えられたり、削除されたりする可能性があります。
 </Note>
 
 ## query_plan_max_limit_for_join_lazy_indexing {#query_plan_max_limit_for_join_lazy_indexing}
@@ -468,7 +479,7 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`file` テーブル関数および `File` テーブルエンジンでローカル Parquet ファイルを読み取る `ORDER BY ... LIMIT n` クエリで遅延マテリアライゼーションを使用するための新しい設定。"}]}]} />
 
-`file` テーブル関数および `File` テーブルエンジンを使用してローカル Parquet ファイルを読み取る際に、遅延マテリアライゼーションの最適化を使用します。`ORDER BY ... LIMIT n` クエリでは、ソートとフィルタリングに不要なカラムは、`LIMIT` 後に残る `n` 行に対してのみ読み取られます。`query_plan_optimize_lazy_materialization` が有効な場合にのみ有効です。
+`file` テーブル関数および `File` テーブルエンジンを使用してローカル Parquet ファイルおよび Vortex ファイルを読み取る際に、遅延マテリアライゼーションの最適化を使用します。`ORDER BY ... LIMIT n` クエリでは、ソートとフィルタリングに不要なカラムは、`LIMIT` 後に残る `n` 行に対してのみ読み取られます。`query_plan_optimize_lazy_materialization` が有効な場合にのみ有効です。
 
 ## query_plan_optimize_lazy_materialization_for_object_storage {#query_plan_optimize_lazy_materialization_for_object_storage}
 
@@ -476,7 +487,7 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "オブジェクトストレージから Parquet ファイル（Iceberg テーブルを含む）を読み取る `ORDER BY ... LIMIT n` クエリで遅延マテリアライゼーションを使用するための新しい設定。"}]}]} />
 
-オブジェクトストレージから Parquet ファイル (Iceberg テーブルを含む) を読み取る際に、遅延マテリアライゼーションの最適化を使用します。`ORDER BY ... LIMIT n` クエリでは、ソートやフィルタリングに不要なカラムは、`LIMIT` の結果として残った `n` 行についてのみ読み取られます。`query_plan_optimize_lazy_materialization` が有効な場合にのみ有効です。
+オブジェクトストレージから Parquet および Vortex ファイル (Iceberg テーブルを含む) を読み取る際に、遅延マテリアライゼーションの最適化を使用します。`ORDER BY ... LIMIT n` クエリでは、ソートやフィルタリングに不要なカラムは、`LIMIT` の結果として残った `n` 行についてのみ読み取られます。`query_plan_optimize_lazy_materialization` が有効な場合にのみ有効です。
 
 ## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
 
@@ -663,6 +674,20 @@ JOIN演算において左テーブルからの順序に従った読み取りを�
 
 クエリプランで、転置テキスト索引から構築されるフィルタリングに対するヒント (追加の述語) を追加できるようにします。
 
+## query_plan_top_k_through_array_join {#query_plan_top_k_through_array_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "ソートキーが展開されたカラムに依存しない場合に、件数制限付きのソートを `ARRAY JOIN` の下に移動する新しい設定。"}]}]} />
+
+ソートキーが結合されたカラムを読み取らない場合に、`ORDER BY ... LIMIT n` を `ARRAY JOIN` の下に移動するクエリプランレベルの最適化を有効または無効にします。内部 `ARRAY JOIN` の場合、この最適化では移動したソートの下にフィルタも追加されます。配列がすべて空である行は出力を生成しないため、このフィルタによって除去されます。
+設定 [query&#95;plan&#95;enable&#95;optimizations](/ja/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
+
+設定可能な値:
+
+* 0 - 無効化
+* 1 - 有効化
+
 ## query_plan_top_k_through_join {#query_plan_top_k_through_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -687,7 +712,29 @@ JOIN演算において左テーブルからの順序に従った読み取りを�
 この設定は、[`query_plan_enable_optimizations`](/ja/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
 
 <Note>
-  これはエキスパート向けの設定であり、開発者がデバッグ目的でのみ使用することを想定しています。この設定は今後、後方互換性のない形で変更されたり、削除されたりする可能性があります。
+  これは上級者向け設定であり、開発者がデバッグ目的でのみ使用することを想定しています。この設定は今後、後方互換性のない形で変更されたり、削除されたりする可能性があります。
+</Note>
+
+設定可能な値:
+
+* 0 - 無効
+* 1 - 有効
+
+## query_plan_use_shuffle_for_order_by_rand {#query_plan_use_shuffle_for_order_by_rand}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "`ORDER BY rand()` を、行をソートする代わりにシャッフルして実行する新しい設定。"}]}]} />
+
+`ORDER BY rand()` および `ORDER BY rand64()` を、行をソートする代わりに (`SHUFFLE` 句と同じ方法で) シャッフルして実行するクエリプランレベルの最適化を切り替えます。
+これにより、処理時間は O(n * log(n)) ではなく O(n) になります。
+結果の分布は変わりません。`rand()` カラムの値は、ソート順に並んだ別のランダムな値に置換されます。
+`rand()` の値が他の式で使用されておらず、かつ `LIMIT` が指定されているか外部ソートが無効になっている場合に適用されます
+(シャッフルはディスクにスピルしないため) 。
+この設定は、[`query_plan_enable_optimizations`](/ja/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
+
+<Note>
+  これは上級者向け設定であり、開発者がデバッグ目的でのみ使用することを想定しています。この設定は今後、後方互換性のない形で変更されたり、削除されたりする可能性があります。
 </Note>
 
 設定可能な値:

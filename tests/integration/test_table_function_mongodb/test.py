@@ -726,7 +726,8 @@ def malformed_cursor_batch_server(started_cluster):
 
 def test_malformed_cursor_batch(started_cluster, malformed_cursor_batch_server):
     # A MongoDB server that returned a malformed document in a cursor batch used to abort the ClickHouse server
-    # (`BSON_ASSERT` in `_mongoc_cursor_response_read` of the C driver). Now the query fails with an exception.
+    # (`BSON_ASSERT` in `_mongoc_cursor_response_read` of the C driver). Now the query fails with an exception
+    # (upstream CDRIVER-6559 since 2.5.10).
     # The fake MongoDB server answers `find` and `getMore` with hand-encoded replies.
     # The collection name selects the reply.
     node = started_cluster.instances["node"]
@@ -751,5 +752,5 @@ def test_malformed_cursor_batch(started_cluster, malformed_cursor_batch_server):
         "next_batch",
     ]:
         error = node.query_and_get_error(select(collection))
-        assert "Invalid BSON document in cursor reply." in error, (collection, error)
+        assert "Invalid server reply: element of cursor batch is" in error, (collection, error)
         assert node.query("SELECT 1") == "1\n", collection
