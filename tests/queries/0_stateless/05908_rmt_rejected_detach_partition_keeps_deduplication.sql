@@ -36,6 +36,7 @@ SELECT p, id, v FROM t_detach_dedup_r1 ORDER BY ALL;
 
 -- DETACH PARTITION ALL must keep the deduplication blocks of the partitions processed before the rejected one.
 DROP TABLE IF EXISTS t_detach_dedup_all SYNC;
+DROP TABLE IF EXISTS t_detach_dedup_all_target;
 CREATE TABLE t_detach_dedup_all (p Int64, id Int64, v Int64)
 ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_detach_dedup_all', 'r1') PARTITION BY p ORDER BY id
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
@@ -49,7 +50,13 @@ INSERT INTO t_detach_dedup_all VALUES (5, 5, 100);
 INSERT INTO t_detach_dedup_all VALUES (6, 6, 100);
 INSERT INTO t_detach_dedup_all VALUES (7, 7, 100);
 INSERT INTO t_detach_dedup_all VALUES (8, 8, 100);
-UPDATE t_detach_dedup_all SET v = 200 WHERE p = 1;
+-- Patch the partition that Keeper lists last, so that DETACH PARTITION ALL processes the other partitions before it.
+CREATE TABLE t_detach_dedup_all_target (p Int64) ENGINE = Memory;
+INSERT INTO t_detach_dedup_all_target
+SELECT toInt64(groupArray(name)[-1]) FROM system.zookeeper
+WHERE path = '/zookeeper/' || currentDatabase() || '/t_detach_dedup_all/block_numbers';
+SET allow_nondeterministic_mutations = 1;
+UPDATE t_detach_dedup_all SET v = 200 WHERE p IN (SELECT p FROM t_detach_dedup_all_target);
 
 ALTER TABLE t_detach_dedup_all DETACH PARTITION ALL; -- { serverError SUPPORT_IS_DISABLED }
 
@@ -62,8 +69,9 @@ INSERT INTO t_detach_dedup_all VALUES (6, 6, 100);
 INSERT INTO t_detach_dedup_all VALUES (7, 7, 100);
 INSERT INTO t_detach_dedup_all VALUES (8, 8, 100);
 
-SELECT p, id, v FROM t_detach_dedup_all ORDER BY ALL;
+SELECT p, count() FROM t_detach_dedup_all GROUP BY p ORDER BY p;
 DROP TABLE t_detach_dedup_all SYNC;
+DROP TABLE t_detach_dedup_all_target;
 
 DROP TABLE t_detach_dedup_r1 SYNC;
 DROP TABLE t_detach_dedup_r2 SYNC;
