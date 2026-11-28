@@ -128,6 +128,13 @@ void ASTTableOverride::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
     table_name = r.getString("table_name");
     is_standalone = r.getBool("is_standalone", true);
+    /// The parser produces a standalone override only as `TABLE OVERRIDE name (...)`, so the name is
+    /// never empty. `formatImpl` renders it through `ASTIdentifier(table_name)`, whose constructor
+    /// asserts a non-empty name: an empty one would fail the assertion in debug and sanitizer
+    /// builds and format as the unparsable `TABLE OVERRIDE `` ()` otherwise.
+    if (is_standalone && table_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A standalone TableOverride must have a non-empty 'table_name' during AST JSON deserialization");
     /// `columns` (`ASTColumns`) and `storage` (`ASTStorage`) are concrete typed members; restoring them
     /// generically would let a wrong node type reach `IAST::set` as a `LOGICAL_ERROR` cast failure.
     auto columns_child = r.readChildOfType<ASTColumns>("columns");

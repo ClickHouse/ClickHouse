@@ -1,4 +1,12 @@
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -175,43 +183,6 @@ ASTPtr JSONObjectReader::readPartitionListChild(const char * key) const
 
 namespace
 {
-
-/// Compute the maximum bracket nesting depth of a `Field::restoreFromDump` payload.
-/// `restoreFromDump` recursively parses `Array_[...]`, `Tuple_(...)`, `Map_(...)` and
-/// `AggregateFunctionState_(...)` payloads; without a depth bound, a hostile JSON
-/// `value` string can drive unbounded recursion regardless of the JSON object depth.
-/// Quoted strings (single quotes, with backslash escapes) are skipped so that brackets
-/// inside string literals do not count.
-size_t computeFieldDumpNestingDepth(std::string_view dump)
-{
-    size_t depth = 0;
-    size_t max_depth = 0;
-    bool in_string = false;
-    bool escaped = false;
-    for (char c : dump)
-    {
-        if (in_string)
-        {
-            if (escaped)
-                escaped = false;
-            else if (c == '\\')
-                escaped = true;
-            else if (c == '\'')
-                in_string = false;
-            continue;
-        }
-        if (c == '\'')
-            in_string = true;
-        else if (c == '[' || c == '(')
-        {
-            ++depth;
-            max_depth = std::max(max_depth, depth);
-        }
-        else if ((c == ']' || c == ')') && depth > 0)
-            --depth;
-    }
-    return max_depth;
-}
 
 }
 
@@ -401,15 +372,12 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
             "Expected a string 'value' (Field dump) for field type '{}' during AST JSON deserialization", field_type);
     String dump_str = obj.getValue<String>("value");
 
-    /// `Field::restoreFromDump` recursively parses nested `Array_`/`Tuple_`/`Map_` dumps
-    /// without an internal depth limit, so a hostile JSON payload could trigger unbounded
-    /// recursion even when the JSON object itself is shallow. Reject overly deep payloads
-    /// against the same depth bound used for AST node construction.
-    if (size_t max_depth = getJSONDeserializationMaxDepth();
-        computeFieldDumpNestingDepth(dump_str) > max_depth)
+    /// Every dump-encoded type is written by `FieldVisitorDump` as `<type name>_<payload>`, so a
+    /// payload of a different type (or plain garbage) is rejected here with `BAD_ARGUMENTS` instead
+    /// of by whichever text reader `Field::restoreFromDump` happens to pick for it.
+    if (!dump_str.starts_with(field_type) || dump_str.size() <= field_type.size() || dump_str[field_type.size()] != '_')
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Field dump payload exceeds maximum AST depth limit ({}) during JSON AST deserialization",
-            max_depth);
+            "Field 'value' dump must start with '{}_' for field type '{}' during AST JSON deserialization", field_type, field_type);
 
     Field result = Field::restoreFromDump(dump_str);
     /// `field_type` is `Field::getTypeName()` of the original value, and the dump string embeds
@@ -420,6 +388,14 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
             "Field 'value' dump of type '{}' does not match declared field_type '{}' during AST JSON deserialization",
             result.getTypeName(), field_type);
     return result;
+}
+
+bool JSONObjectReader::isExpressionNode(const IAST & node)
+{
+    return node.as<ASTFunction>() || node.as<ASTIdentifier>() || node.as<ASTLiteral>() || node.as<ASTAsterisk>()
+        || node.as<ASTQualifiedAsterisk>() || node.as<ASTColumnsRegexpMatcher>() || node.as<ASTColumnsListMatcher>()
+        || node.as<ASTQualifiedColumnsRegexpMatcher>() || node.as<ASTQualifiedColumnsListMatcher>() || node.as<ASTSubquery>()
+        || node.as<ASTQueryParameter>();
 }
 
 }

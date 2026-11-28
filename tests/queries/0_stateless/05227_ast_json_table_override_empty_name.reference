@@ -1,0 +1,2 @@
+EXPLAIN TABLE OVERRIDE mysql(\'host\', \'db\', \'t\', \'u\', \'p\') PARTITION BY toYYYYMM(d)
+CREATE DATABASE db ENGINE = MaterializedMySQL(\'host:3306\', \'db\', \'user\', \'pass\') TABLE OVERRIDE t (PARTITION BY x ORDER BY x)

@@ -1,0 +1,26 @@
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+SELECT (__table1.number IN (0, 2, 3)) OR (intDiv(1, __table1.number) != 0) AS `or(equals(number, 0), notEquals(intDiv(1, number), 0), equals(number, 2), equals(number, 3))`
+FROM numbers(4) AS __table1
+SELECT (intDiv(1, __table1.number) != 0) OR (__table1.number IN (0, 2, 3)) OR (toString(__table1.number) IN (\'5\', \'6\', \'7\')) AS `or(notEquals(intDiv(1, number), 0), equals(number, 0), equals(number, 2), equals(toString(number), \'5\'), equals(number, 3), equals(toString(number), \'6\'), equals(toString(number), \'7\'))`
+FROM numbers(4) AS __table1
+1
+1
+1
+1
+1
+1
+1
+1
+SELECT (__table1.number IN (0, 2, 3)) OR (intDiv(1, __table1.number - 2) != 0) AS `or(equals(number, 0), notEquals(intDiv(1, minus(number, 2)), 0), equals(number, 2), equals(number, 3))`
+FROM numbers(4) AS __table1

@@ -9,3 +9,7 @@ target_link_libraries(create_parser_fuzzer PRIVATE clickhouse_parsers clickhouse
 
 add_subdirectory(codegen_fuzzer)
 
+
+if (TARGET ch_contrib::protobuf_mutator)
+    add_subdirectory(json_ast_sql_parser_fuzzer)
+endif()

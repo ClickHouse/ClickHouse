@@ -158,8 +158,9 @@ void ASTTupleDataType::readJSON(const Poco::JSON::Object & json)
 
     element_names = r.readStringArray("element_names");
 
-    /// A named tuple names every element (mirrors `DataTypeFactory::createTupleFromAST`); reject a
-    /// partial/oversized or empty-named list that the parser could never produce.
+    /// The list is either empty or has one entry per element; an empty entry is an unnamed element.
+    /// The parser accepts partially named tuples such as `Tuple(a, b Int64)` (`DataTypeFactory` rejects
+    /// them later), and `writeJSON` writes them with empty names, so the reader must accept them too.
     if (!element_names.empty())
     {
         const size_t num_args = args ? args->children.size() : 0;
@@ -167,10 +168,6 @@ void ASTTupleDataType::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ASTTupleDataType has {} element names but {} element types during AST JSON deserialization",
                 element_names.size(), num_args);
-        for (const auto & elem_name : element_names)
-            if (elem_name.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "ASTTupleDataType element name must not be empty during AST JSON deserialization");
     }
 }
 

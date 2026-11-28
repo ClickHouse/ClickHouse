@@ -113,12 +113,12 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
     destination_name = r.getString("destination_name");
     if_exists = r.getBool("if_exists");
 
-    auto ttl_child = r.readExpressionChild("ttl_expr");
+    auto ttl_child = r.readExpressionNodeChild("ttl_expr");
     if (!ttl_child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required field 'ttl_expr' is missing in JSON AST for TTLElement");
     setTTL(std::move(ttl_child));
 
-    auto where_child = r.readExpressionChild("where_expr");
+    auto where_child = r.readExpressionNodeChild("where_expr");
     if (where_child)
     {
         /// `ParserTTLElement` accepts `WHERE` only after `DELETE`, the only mode that applies it.
@@ -185,16 +185,11 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'destination_type'/'destination_name' are only valid for TTL MOVE during AST JSON deserialization");
 
-    /// `GROUP BY` is the only mode that carries `group_by_key`/`group_by_assignments`, and
-    /// `ParserTTLElement` sets it only after parsing at least one grouping key. Reject the
-    /// parser-impossible shapes: a `GROUP_BY` without keys (`formatImpl` would emit `GROUP BY ` with no
-    /// expressions) or these fields on `DELETE`/`MOVE`/`RECOMPRESS` (where `formatImpl` drops them).
-    if (mode == TTLMode::GROUP_BY)
-    {
-        if (group_by_key.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TTL GROUP BY requires a non-empty 'group_by_key' during AST JSON deserialization");
-    }
-    else if (!group_by_key.empty() || !group_by_assignments.empty())
+    /// `GROUP BY` is the only mode that carries `group_by_key`/`group_by_assignments`; reject these fields
+    /// on `DELETE`/`MOVE`/`RECOMPRESS` (where `formatImpl` drops them). An empty key list is accepted:
+    /// `ParserTTLElement` parses `TTL expr GROUP BY` with no keys (`ParserExpressionList` allows an empty
+    /// list) and the table engine accepts it, so `writeJSON` produces it for a parsed query.
+    if (mode != TTLMode::GROUP_BY && (!group_by_key.empty() || !group_by_assignments.empty()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'group_by_key'/'group_by_assignments' are only valid for TTL GROUP BY during AST JSON deserialization");
 }

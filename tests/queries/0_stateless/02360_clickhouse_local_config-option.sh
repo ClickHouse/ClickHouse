@@ -49,6 +49,7 @@ echo        "<clickhouse>
 
 local_opts=(
     "--config-file=$SAFE_DIR/config.xml"
+    "--log-level=none"
     "--send_logs_level=none")
 
 ${CLICKHOUSE_LOCAL} "${local_opts[@]}" --query 'Select 1' |& grep -v -e 'Processing configuration file'

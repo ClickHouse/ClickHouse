@@ -377,7 +377,7 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
         frame_type = parseFrameType(r.getString("frame_type"));
         frame_begin_type = parseBoundaryType(r.getString("frame_begin_type"));
 
-        child = r.readChild("frame_begin_offset");
+        child = r.readExpressionNodeChild("frame_begin_offset");
         if (child)
         {
             frame_begin_offset = child;
@@ -398,7 +398,7 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
 
         frame_end_type = parseBoundaryType(r.getString("frame_end_type"));
 
-        child = r.readChild("frame_end_offset");
+        child = r.readExpressionNodeChild("frame_end_offset");
         if (child)
         {
             frame_end_offset = child;

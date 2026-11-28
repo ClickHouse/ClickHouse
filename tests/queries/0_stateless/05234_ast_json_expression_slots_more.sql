@@ -1,0 +1,17 @@
+-- More expression slots that accepted foreign node types (formatting as empty text that does not parse
+-- back), and an INSERT without SELECT, FROM INFILE or FORMAT. Found by json_ast_sql_parser_fuzzer (strict mode).
+
+-- Window frame offset, ORDER BY expression, JOIN ON expression, column default: a WindowDefinition / SelectQuery node instead of an expression.
+SELECT formatQueryFromJSON('{"type":"SelectWithUnionQuery","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Function","name":"count","arguments":{"type":"ExpressionList"},"is_window_function":true,"kind":"WINDOW_FUNCTION","window_definition":{"type":"WindowDefinition","frame_type":"ROWS","frame_is_default":false,"frame_begin_type":"Offset","frame_begin_preceding":true,"frame_begin_offset":{"type":"WindowDefinition"},"frame_end_type":"Current"}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SelectWithUnionQuery","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"}]},"order_by":{"type":"ExpressionList","children":[{"type":"OrderByElement","direction":1,"nulls_direction":1,"expression":{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"}]}}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SelectWithUnionQuery","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Asterisk"}]},"tables":{"type":"TablesInSelectQuery","children":[{"type":"TablesInSelectQueryElement","table_expression":{"type":"TableExpression","database_and_table_name":{"type":"TableIdentifier","name":"t1"}}},{"type":"TablesInSelectQueryElement","table_join":{"type":"TableJoin","kind":"INNER","on_expression":{"type":"ViewTargets"}},"table_expression":{"type":"TableExpression","database_and_table_name":{"type":"TableIdentifier","name":"t2"}}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"CreateQuery","table":"t","table_ast":{"type":"Identifier","name":"t"},"columns_list":{"type":"Columns definition","columns":{"type":"ExpressionList","children":[{"type":"ColumnDeclaration","name":"a","data_type":{"type":"DataType","name":"UInt8"},"default_specifier":"DEFAULT","default_expression":{"type":"ViewTargets"}}]}},"storage":{"type":"Storage","engine":{"type":"Function","name":"Memory","no_empty_args":true}}}'); -- { serverError BAD_ARGUMENTS }
+
+-- INSERT with neither SELECT nor FROM INFILE nor FORMAT.
+SELECT formatQueryFromJSON('{"type":"InsertQuery","table":{"type":"Identifier","name":"t"}}'); -- { serverError BAD_ARGUMENTS }
+
+-- Parser-produced shapes still round-trip.
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT count() OVER (ORDER BY b ROWS BETWEEN 1 PRECEDING AND CURRENT ROW), a FROM t1 INNER JOIN t2 ON t1.k = t2.k ORDER BY a WITH FILL FROM 1 TO 10 STEP 2 INTERPOLATE (b AS b + 1)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (`a` UInt8 DEFAULT 1 TTL d + INTERVAL 1 DAY, `d` Date) ENGINE = MergeTree ORDER BY a TTL d + INTERVAL 1 MONTH DELETE WHERE a > 0'));
+SELECT formatQueryFromJSON(parseQueryToJSON('INSERT INTO t FORMAT Values'));
+SELECT formatQueryFromJSON(parseQueryToJSON('INSERT INTO t FROM INFILE ''f.csv'''));

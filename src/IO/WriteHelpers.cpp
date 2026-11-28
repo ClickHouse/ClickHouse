@@ -151,7 +151,9 @@ static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer
         /// `interval AS DAY` parses as INTERVAL literal
         && !isCaseInsensitiveEqual(s, "interval")
         /// `EXCEPT strict` parses as EXCEPT STRICT modifier
-        && !isCaseInsensitiveEqual(s, "strict"))
+        && !isCaseInsensitiveEqual(s, "strict")
+        /// `INSERT INTO function SELECT ...` is read as `INSERT INTO FUNCTION`.
+        && !isCaseInsensitiveEqual(s, "function"))
     {
         writeString(s, buf);
     }

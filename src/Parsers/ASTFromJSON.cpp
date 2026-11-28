@@ -40,6 +40,8 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTKillQueryQuery.h>
+#include <Parsers/ASTObjectTypeArgument.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTOptimizeQuery.h>
@@ -209,6 +211,9 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"ShowColumnsQuery", [] { return make_intrusive<ASTShowColumnsQuery>(); }},
         {"ShowIndexesQuery", [] { return make_intrusive<ASTShowIndexesQuery>(); }},
         {"KillQueryQuery", [] { return make_intrusive<ASTKillQueryQuery>(); }},
+        {"DescribeQuery", [] { return make_intrusive<ASTDescribeQuery>(); }},
+        {"ObjectTypeArgument", [] { return make_intrusive<ASTObjectTypeArgument>(); }},
+        {"ObjectTypedPathArgument", [] { return make_intrusive<ASTObjectTypedPathArgument>(); }},
         {"OptimizeQuery", [] { return make_intrusive<ASTOptimizeQuery>(); }},
         {"DeleteQuery", [] { return make_intrusive<ASTDeleteQuery>(); }},
         {"UpdateQuery", [] { return make_intrusive<ASTUpdateQuery>(); }},
@@ -229,6 +234,9 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"Assignment", [] { return make_intrusive<ASTAssignment>(); }},
         {"TableOverride", [] { return make_intrusive<ASTTableOverride>(); }},
         {"TableOverrideList", [] { return make_intrusive<ASTTableOverrideList>(); }},
+        /// `ASTForeignKeyDeclaration` is deliberately absent: `ParserCreateQuery` drops `FOREIGN KEY`
+        /// clauses, so the node never occurs in a parser-produced AST and has no `formatImpl`.
+        /// Deserializing it would build an AST whose formatting fails with a `LOGICAL_ERROR`.
         {"IdentifierTypePair", [] { return make_intrusive<ASTIdentifierTypePair>(); }},
     };
 
@@ -456,6 +464,11 @@ ASTPtr IAST::createFromJSON(const Poco::JSON::Object & json)
 
     if (!json.has("type"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "JSON object missing 'type' field for AST deserialization");
+
+    /// `getValue<String>` would throw a bare `Poco::Exception` for `null` and coerce numbers and
+    /// booleans to text; the node type must be a JSON string.
+    if (!json.get("type").isString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "JSON object 'type' field must be a string for AST deserialization");
 
     String type = json.getValue<String>("type");
 

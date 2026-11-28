@@ -28,6 +28,9 @@ cp $SRC/tests/queries/0_stateless/*.sql $BIN/tests/fuzz/lexer_fuzzer.in/
 cp $SRC/tests/queries/0_stateless/*.sql $BIN/tests/fuzz/select_parser_fuzzer.in/
 cp $SRC/tests/queries/0_stateless/*.sql $BIN/tests/fuzz/create_parser_fuzzer.in/
 
+# the execution fuzzer consumes the same protobuf inputs as the parser fuzzer (copied above with the other committed seeds)
+cp -r $SRC/tests/fuzz/json_ast_sql_parser_fuzzer.in $BIN/tests/fuzz/json_ast_sql_execution_fuzzer.in
+
 # build corpus archives
 cd $BIN/tests/fuzz
 for dir in *_fuzzer.in; do
