@@ -15,7 +15,6 @@ CASE_STDERR=$(mktemp -p "$CLICKHOUSE_TMP" 03008_dedup_stderr_XXXXXX)
 trap 'rm -f "$CASE_STDERR"' EXIT
 
 RUN_ONLY=""
-#RUN_ONLY="Test case 20: engine=ReplicatedMergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=True"
 
 i=0
 for insert_method in "InsertSelect" "InsertValues"; do

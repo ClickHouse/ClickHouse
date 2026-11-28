@@ -478,14 +478,12 @@ def test_rename(test_cluster):
     # system stop distributed sends does not affect inserts into local shard,
     # so some ids in range (10, 20) will be inserted into rename_shard
     assert instance.query("select count(id), sum(id) from rename").rstrip() == "25\t360"
-    # assert instance.query("select count(id), sum(id) from rename").rstrip() == "20\t290"
     assert (
         instance.query(
             "select count(id), sum(id) from rename where sid like 'old%'"
         ).rstrip()
         == "15\t115"
     )
-    # assert instance.query("select count(id), sum(id) from rename where sid like 'old%'").rstrip() == "10\t45"
     assert (
         instance.query(
             "select count(id), sum(id) from rename where sid like 'new%'"

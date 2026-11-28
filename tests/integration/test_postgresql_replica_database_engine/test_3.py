@@ -332,7 +332,6 @@ def test_too_many_parts(started_cluster):
         instance2, "test_table", postgres_database=pg_manager2.get_default_database()
     )
 
-    # assert "200" == instance.query("SELECT count FROM test_database.test_table").strip()
     pg_manager2.drop_materialized_db()
 
 

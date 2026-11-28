@@ -123,8 +123,4 @@ def test_read_after_cache_is_wiped(
     select_query = "SELECT * FROM s3_test order by id FORMAT Values"
     assert node.query(select_query) == "(0,'data'),(1,'data')"
 
-    # With async reads profile events are not updated because reads are done in a separate thread.
-    # stat = get_query_stat(node, select_query)
-    # assert stat["S3ReadRequestsCount"] == bin_files
-
     node.query("DROP TABLE IF EXISTS s3_test SYNC")

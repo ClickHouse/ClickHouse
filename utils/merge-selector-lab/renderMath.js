@@ -66,6 +66,4 @@ export function renderMath(inputString)
     return container;
 }
 
-// Example usage:
-// const input = "Here is some math: $E = mc^2$ and a block formula: $$a^2 + b^2 = c^2$$";
-// document.body.appendChild(renderMath(input));
+// Example usage: `document.body.appendChild(renderMath("Here is some math: $E = mc^2$ and a block formula: $$a^2 + b^2 = c^2$$"))`.

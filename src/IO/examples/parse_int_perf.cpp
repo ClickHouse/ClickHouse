@@ -71,9 +71,7 @@ int mainEntryExampleParseIntPerf(int argc, char ** argv)
 
             for (size_t i = 0; i < n; ++i)
             {
-                //writeIntTextTable(data[i], wb);
                 DB::writeIntText(data[i], wb);
-                //DB::writeIntText(data[i], wb);
                 DB::writeChar('\t', wb);
             }
 

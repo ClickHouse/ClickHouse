@@ -111,19 +111,6 @@ GTEST_TEST(MultiEnum, SetValueOnDifferentTypes)
     ASSERT_EQ(4, multi_enum);
 }
 
-// shouldn't compile
-//GTEST_TEST(MultiEnum, WithOtherEnumType)
-//{
-//    MultiEnum<TestEnum> multi_enum;
-
-//    enum FOO {BAR, FOOBAR};
-//    MultiEnum<TestEnum> multi_enum2(BAR);
-//    MultiEnum<TestEnum> multi_enum3(BAR, FOOBAR);
-//    multi_enum.setValue(FOO::BAR);
-//    multi_enum == FOO::BAR;
-//    FOO::BAR == multi_enum;
-//}
-
 GTEST_TEST(MultiEnum, SetSameValueMultipleTimes)
 {
     // Setting same value is idempotent.

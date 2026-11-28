@@ -7,7 +7,6 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1", main_configs=["configs/config_with_check_table_structure_completely.xml"]
 )
-# node1 = cluster.add_instance("node1")
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/config_without_check_table_structure_completely.xml"],
@@ -23,8 +22,6 @@ def start_cluster():
         cluster.shutdown()
 
 
-# def test_setting_check_table_structure_completely(start_cluster):
-#     assert node1.query("""select value from system.merge_tree_settings where name='enforce_index_structure_match_on_partition_manipulation';""") == "0\n"
 def test_check_completely_attach_with_different_indices(start_cluster):
     node1.query(
         """

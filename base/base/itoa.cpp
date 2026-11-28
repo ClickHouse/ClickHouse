@@ -137,9 +137,6 @@ inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
         /// For small numbers the extra branch to call outOneDigit() is worth it as it saves some instructions
         /// and a memory access (no need to read digits.fd[n])
         /// This is not true for pure random numbers, but that's not the common use case of a database
-        /// Original jeaii code
-        //      *reinterpret_cast<pair *>(b) = digits.fd[n];
-        //      return n < 10 ? b + 1 : b + 2;
         return n < 10 ? outOneDigit(b, static_cast<uint8_t>(n)) : outTwoDigits(b, static_cast<uint8_t>(n));
     }
     if (n < UInt32(1e6))

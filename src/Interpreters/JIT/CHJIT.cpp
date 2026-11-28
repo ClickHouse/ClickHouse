@@ -441,31 +441,6 @@ private:
     std::unordered_map<std::string, void *> symbol_name_to_symbol_address;
 };
 
-/// GDB JITEventListener. Can be used if result machine code need to be debugged.
-// class JITEventListener
-// {
-// public:
-//     JITEventListener()
-//         : gdb_listener(llvm::JITEventListener::createGDBRegistrationListener())
-//     {}
-
-//     void notifyObjectLoaded(
-//         llvm::JITEventListener::ObjectKey object_key,
-//         const llvm::object::ObjectFile & object_file,
-//         const llvm::RuntimeDyld::LoadedObjectInfo & loaded_object_Info)
-//     {
-//         gdb_listener->notifyObjectLoaded(object_key, object_file, loaded_object_Info);
-//     }
-
-//     void notifyFreeingObject(llvm::JITEventListener::ObjectKey object_key)
-//     {
-//         gdb_listener->notifyFreeingObject(object_key);
-//     }
-
-// private:
-//     llvm::JITEventListener * gdb_listener = nullptr;
-// };
-
 CHJIT::CHJIT()
     : machine(JITAllocationScope::run([] { return getTargetMachine(); }))
     , layout(JITAllocationScope::run([this] { return machine->createDataLayout(); }))

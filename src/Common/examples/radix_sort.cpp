@@ -2,10 +2,7 @@
 #include <pcg_random.hpp>
 #include <base/bit_cast.h>
 
-//#if defined(NDEBUG)
-//#undef NDEBUG
 #include <Common/RadixSort.h>
-//#endif
 
 #include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>

@@ -5,7 +5,6 @@ export CH_PATH=$(realpath ../../clickhouse2410)
 export DATA_DIR="/home/nik/chdata"
 set -e
 
-#CH_PATH=../../clickhouse2412
 ./env/replicated.sh /home/nik/work/clickhouse-private1/
 
 $CH_PATH client --query "
@@ -18,16 +17,7 @@ $CH_PATH client --query "
 
 head -c 1000 /dev/zero | $CH_PATH client --insert_deduplicate=0 --max_insert_block_size=1 --min_insert_block_size_rows=1 --min_insert_block_size_bytes=1 -q "INSERT INTO x.src FORMAT RowBinary"
 echo 'insert done'
-#$CH_PATH client --query "
-#  ALTER TABLE x.src MODIFY SETTING shared_merge_tree_disable_merges_and_mutations_assignment=0;
-#  SYSTEM START MERGES ON CLUSTER default x.src;
-#"
 echo 'alter done'
-#
-#for ((i = 1; i <= 1000; i++)); do
-#  head -c 1000 /dev/zero | $CH_PATH client --insert_deduplicate=0 --max_insert_block_size=1 --min_insert_block_size_rows=1 --min_insert_block_size_bytes=1 -q "INSERT INTO x.src FORMAT RowBinary"
-#done
-#echo 'insert done'
 
 wait
 exit 1

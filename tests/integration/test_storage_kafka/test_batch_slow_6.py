@@ -92,7 +92,6 @@ def test_kafka_handling_commit_failure(kafka_cluster):
     with kafka_cluster.pause_container("kafka1"):
         instance.wait_for_log_line("timeout", timeout=60)
 
-    # kafka_cluster.open_bash_shell('instance')
     instance.wait_for_log_line(f"{kafka_table}.*Committed offset 22")
 
     uniq_and_max = instance.query(f"SELECT uniqExact(key), max(key) FROM test.{kafka_table}_view")

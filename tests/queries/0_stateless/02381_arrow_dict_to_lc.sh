@@ -22,7 +22,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # writer.write_batch(batch)
 # writer.close()
 
-# cat data.arrow | gzip | base64
+# The data below is the output of `cat data.arrow | gzip | base64`.
 
 cat <<EOF | base64 --decode | gunzip | $CLICKHOUSE_LOCAL --query='SELECT * FROM table FORMAT TSVWithNamesAndTypes' --input-format=ArrowStream
 H4sIAAAAAAAAA5VTsU7DQAz1pZc2giBaFFAGkBgYMjIyMOQD+gHdCqWpiBQlqErhZzowMvIB/Ft4

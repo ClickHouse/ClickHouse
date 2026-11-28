@@ -465,7 +465,6 @@ def test_many_concurrent_queries(started_cluster):
                 table_name, n[0]
             )
         )
-        # cursor.execute("UPDATE {table}_{} SET key=key%100000+100000*{} WHERE key%{}=0".format(table_id, table_id+1, table_id+1))
 
     for thread in threads:
         thread.join()

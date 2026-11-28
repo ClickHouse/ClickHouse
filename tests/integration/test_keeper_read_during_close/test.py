@@ -196,8 +196,6 @@ def test_read_not_dropped_on_session_close(started_cluster):
                 # Kill the TCP socket without sending Close.
                 # The session will expire after session_timeout_ms (3s).
                 writer_zk.sock.close()
-
-                # assert writer_zk.recv_set_response()["err"] == 0
         except:
             errors.put(traceback.format_exc())
             fail_event.set()

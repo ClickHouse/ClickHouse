@@ -211,18 +211,6 @@ class MergeTreeVisualizer {
             .attr("text-anchor", "middle")
             .attr("font-size", "14px")
             .text("Log(PartSize)");
-
-        // This does not work with updating, switched to formatBytes
-        // this.yAxisGroup.selectAll(".tick text")
-        //     .each(function(d) {
-        //         const exponent = Math.log2(d);
-        //         const self = d3.select(this);
-        //         self.text("");
-        //         self.append("tspan").text("2");
-        //         self.append("tspan")
-        //             .attr("dy", "-0.7em")
-        //             .attr("font-size", "70%").text(exponent);
-        //     });
     }
 
     createYAxisLinear() {
@@ -518,7 +506,6 @@ class MergeTreeTimeVisualizer extends MergeTreeVisualizer {
     processData(mt) {
         this.processMerges(mt);
         this.processParts(mt);
-        // this.processPartMarks(mt);
     }
 
     constructor(mt, container) {

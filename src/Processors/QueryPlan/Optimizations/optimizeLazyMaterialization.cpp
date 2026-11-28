@@ -316,10 +316,6 @@ static SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expr
     }
     addRequiredInputDependenciesIntoNodesSet(expression, split_nodes);
 
-    // std::cerr << "split nodes: " << split_nodes.size() << std::endl;
-    // for (const auto * node : split_nodes)
-    //     std::cerr << "  " << node->result_name << std::endl;
-
     auto split_result = expression.split(split_nodes, true, true);
 
     VectorWithMemoryTracking<bool> new_required_inputs(expression_step.getOutputHeader()->columns(), false);
@@ -595,11 +591,6 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         PlanStepWithRequiredDAGPositions step_to_split;
         step_to_split.step = step;
 
-        // std::cerr << "::: req columns (" << required_columns.size() << ") [";
-        // for (auto && required_column : required_columns)
-        //     std::cerr << required_column << " ";
-        // std::cerr << "]\n";
-
         if (const auto * expr_step = typeid_cast<ExpressionStep *>(step))
         {
             const auto & expr = expr_step->getExpression();
@@ -750,11 +741,6 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     for (const auto & step_to_split : steps_to_split | std::views::reverse)
     {
-        // std::cerr << " req columns (" << required_columns.size() << ") [";
-        // for (auto && required_column : required_columns)
-        //     std::cerr << required_column << " ";
-        // std::cerr << "]\n";
-
         if (const auto * expr_step = typeid_cast<ExpressionStep *>(step_to_split.step))
         {
             // std::cerr << "split_s: " << expr_step->getExpression().dumpDAG() << std::endl;
@@ -870,25 +856,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     result_plan.unitePlans(std::move(join_lazy_columns), {std::move(plans)});
 
-    // {
-    //     WriteBufferFromOwnString out;
-    //     result_plan.explainPlan(out, {.header=true, .actions=true});
-    //     std::cerr << out.str() << std::endl;
-    // }
-
     convertLogicalJoinToPhysical(*result_plan.getRootNode(), nodes, settings);
-
-    // {
-    //     WriteBufferFromOwnString out;
-    //     result_plan.explainPlan(out, {.header=true, .actions=true});
-    //     std::cerr << out.str() << std::endl;
-    // }
-
-    // {
-    //     WriteBufferFromOwnString out;
-    //     result_plan.explainPlan(out, {.header=true, .actions=true});
-    //     std::cerr << out.str() << std::endl;
-    // }
 
     while (!lazy_steps.empty())
     {

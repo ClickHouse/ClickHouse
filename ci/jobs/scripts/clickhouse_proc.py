@@ -1433,9 +1433,6 @@ fi
         # Increase timeout to 10 minutes (max-tries * 2 seconds) to give gdb time to collect stack traces
         # (if safeExit breakpoint is hit after the server's internal shutdown timeout is reached).
 
-        # # Remove all limits to avoid TOO_MANY_ROWS_OR_BYTES while gathering system.*_log tables
-        # Shell.check("rm /etc/clickhouse-server/users.d/limits.yaml", verbose=True)
-        # Shell.check("clickhouse-client -q \"system reload config\" ||:", verbose=True)
         TABLES = [
             "query_log",
             "zookeeper_log",
@@ -1451,7 +1448,6 @@ fi
         ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT = 20_000_000
 
         command_args = self.LOGS_SAVER_CLIENT_OPTIONS
-        # command_args += f" --config-file={self.ch_config_dir}/config.xml"
         command_args += " --only-system-tables --stacktrace"
         # we need disk definitions for S3 configurations, but it is OK to always use server config
 

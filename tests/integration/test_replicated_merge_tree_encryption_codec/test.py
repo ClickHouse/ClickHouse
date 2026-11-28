@@ -103,10 +103,6 @@ def test_different_keys():
     assert "OPENSSL_ERROR" in node1.query_and_get_error("SELECT * FROM tbl")
     assert "OPENSSL_ERROR" in node2.query_and_get_error("SELECT * FROM tbl")
 
-    # Hang?
-    # optimize_table()
-    # check_table()
-
 
 def test_different_current_key_ids():
     copy_keys(node1, "key_a_and_b_current_a")

@@ -2472,7 +2472,6 @@ deltaLake(
 
     upload_directory(minio_client, bucket, path, "")
 
-    # spark.read.table(table_name).printSchema()
     check_schema(
         [
             ["a", "Nullable(String)"],

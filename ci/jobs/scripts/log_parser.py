@@ -1083,7 +1083,6 @@ if __name__ == "__main__":
     fuzzer_log = "./fuzzer.log"
     server_log = "./server.log"
     FTG = FuzzerLogParser(server_log, fuzzer_log, "none")
-    # FTG2 = FuzzerLogParser("", "", stack_trace_str="...")
     result_name, info, files = FTG.parse_failure()
     print("Result name:", result_name)
     print("Info:\n", info)

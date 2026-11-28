@@ -205,9 +205,7 @@ ThreadName getThreadName()
 #elif defined(OS_WASM)
     // Emscripten has no `pthread_getname_np`; the cached thread-local name is all there is.
 #elif defined(OS_FREEBSD)
-// TODO: make test. freebsd will have this function soon https://freshbsd.org/commit/freebsd/r337983
-//    if (pthread_get_name_np(pthread_self(), thread_name, THREAD_NAME_SIZE))
-//        throw DB::Exception(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with pthread_get_name_np()");
+    // TODO: use `pthread_get_name_np` when FreeBSD has it: https://freshbsd.org/commit/freebsd/r337983
 #else
     if (0 != prctl(PR_GET_NAME, tmp_thread_name, 0, 0, 0))
         if (errno != ENOSYS && errno != EPERM)    /// It's ok if the syscall is unsupported or not allowed in some environments.

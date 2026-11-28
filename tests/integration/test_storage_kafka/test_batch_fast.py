@@ -474,8 +474,6 @@ def test_kafka_consumer_hang(kafka_cluster):
     # logging.debug("Attempt to drop")
     instance.query(f"DROP TABLE test.{kafka_table}")
 
-    # kafka_cluster.open_bash_shell('instance')
-
     instance.query(f"""
         DROP TABLE test.{kafka_table}_consumer;
         DROP TABLE test.{kafka_table}_view;
@@ -543,9 +541,6 @@ def test_kafka_consumer_hang2(kafka_cluster):
     # second consumer do the same leading to rebalance in the first
     # consumer, try to poll some data
     instance.query(f"SELECT * FROM test.{kafka_table}_2")
-
-    # echo 'SELECT * FROM test.{kafka_table}; SELECT * FROM test.{kafka_table}2; DROP TABLE test.{kafka_table};' | clickhouse client -mn &
-    #    kafka_cluster.open_bash_shell('instance')
 
     # first consumer has pending rebalance callback unprocessed (no poll after select)
     # one of those queries was failing because of
@@ -1818,9 +1813,6 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
             instance.wait_for_log_line(log_line, repetitions=4)
 
             k.describe_consumer_group(kafka_cluster, consumer_group)
-            # pprint.pprint(members)
-            # members[0]['client_id'] = 'ClickHouse-instance-test-kafka-0'
-            # members[1]['client_id'] = 'ClickHouse-instance-test-kafka-1'
 
             result = instance.query(
                 f"SELECT * FROM test.{kafka_table}_view ORDER BY value", ignore_error=True
@@ -2581,8 +2573,6 @@ def test_kafka_no_holes_when_write_suffix_failed(
         )
         logging.debug(result)
 
-        # kafka_cluster.open_bash_shell('instance')
-
         instance.query(f"""
             DROP TABLE test.{kafka_table}_consumer SYNC;
             DROP TABLE test.{kafka_table}_view SYNC;
@@ -2618,7 +2608,6 @@ def test_exception_from_destructor(kafka_cluster):
     """)
     instance.query(f"DROP TABLE test.{kafka_table}")
 
-    # kafka_cluster.open_bash_shell('instance')
     assert TSV(instance.query("SELECT 1")) == TSV("1")
 
 
@@ -2713,9 +2702,6 @@ def test_commits_of_unprocessed_messages_on_drop(kafka_cluster, create_query_gen
     instance.query(new_create_query)
 
     cancel.set()
-
-    # kafka_cluster.open_bash_shell('instance')
-    # SELECT key, _timestamp, _offset FROM test.{kafka_table}_destination where runningDifference(key) <> 1 ORDER BY key;
 
     result = instance.query_with_retry(
         f"SELECT count(), uniqExact(key), max(key) FROM test.{kafka_table}_destination",

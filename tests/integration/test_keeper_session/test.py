@@ -10,8 +10,6 @@ from kazoo.exceptions import NoNodeError, NodeExistsError
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
 
-# from kazoo.protocol.serialization import Connect, read_buffer, write_buffer
-
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1", main_configs=["configs/keeper_config1.xml"], stay_alive=True

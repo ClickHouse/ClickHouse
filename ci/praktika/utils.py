@@ -149,17 +149,6 @@ class ContextManager:
         :param to:
         :return:
         """
-        # if not to:
-        #     try:
-        #         to = Shell.get_output_or_raise("git rev-parse --show-toplevel")
-        #     except:
-        #         pass
-        #     if not to:
-        #         if Path(_Settings.DOCKER_WD).is_dir():
-        #             to = _Settings.DOCKER_WD
-        #     if not to:
-        #         assert False, "FIX IT"
-        #     assert to
         old_pwd = os.getcwd()
         if to:
             os.chdir(to)

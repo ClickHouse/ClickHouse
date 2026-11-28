@@ -20,8 +20,6 @@ function thread()
     [[ $SECONDS -gt $TIMEOUT ]] && break
     I=$((I+1))
 
-    #rm "${CLICKHOUSE_DATABASE}_${I}/backup0.tar.zst"
-
     $CLICKHOUSE_CLIENT --query="
     SET allow_suspicious_low_cardinality_types = 1;
 

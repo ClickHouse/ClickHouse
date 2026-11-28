@@ -7,8 +7,6 @@ from helpers import keeper_utils
 from helpers.cluster import ClickHouseCluster
 from helpers.retry_decorator import retry
 
-# from kazoo.protocol.serialization import Connect, read_buffer, write_buffer
-
 cluster = ClickHouseCluster(__file__)
 
 # Disable `with_remote_database_disk` as the test does not use the default Keeper.

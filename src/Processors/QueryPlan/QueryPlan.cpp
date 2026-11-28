@@ -1366,36 +1366,6 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
     }
 }
 
-// static void validatePlan(QueryPlan::Node * root, QueryPlan::Nodes & nodes)
-// {
-//     std::unordered_set<const QueryPlan::Node *> used;
-//     std::stack<const QueryPlan::Node *> stack;
-
-//     std::unordered_set<const QueryPlan::Node *> known;
-//     for (const auto & node : nodes)
-//         known.emplace(&node);
-
-//     stack.push(root);
-//     while (!stack.empty())
-//     {
-//         const auto * node = stack.top();
-//         used.insert(node);
-//         stack.pop();
-
-//         if (!known.contains(node))
-//             throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} {} is not known", node->step->getName(), reinterpret_cast<const void *>(node));
-
-//         for (auto * child : node->children)
-//         {
-//             stack.push(child);
-//         }
-//     }
-
-//     for (const auto * node : known)
-//         if (!used.contains(node))
-//             throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} {} is not used", node->step->getName(), reinterpret_cast<const void *>(node));
-// }
-
 QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes, const QueryPlan & source_plan)
 {
     auto new_plan = extractSubplan(root, nodes);
@@ -1442,14 +1412,6 @@ QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
         if (used.contains(&*curr))
             new_plan.nodes.splice(new_plan.nodes.end(), nodes, curr);
     }
-
-    // {
-    //     WriteBufferFromOwnString buf;
-    //     new_plan.explainPlan(buf, {.header=true, .actions=true});
-    //     std::cerr << buf.stringView() << std::endl;
-    // }
-
-    // validatePlan(new_plan.root, new_plan.nodes);
 
     return new_plan;
 }

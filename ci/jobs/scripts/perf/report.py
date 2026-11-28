@@ -181,7 +181,6 @@ def advanceRowAnchor():
 
 
 def tr(x, anchor=None):
-    # return '<tr onclick="location.href=\'#{a}\'" id={a}>{x}</tr>'.format(a=a, x=str(x))
     anchor = anchor if anchor else advanceRowAnchor()
     return f"<tr id={anchor}>{x}</tr>"
 

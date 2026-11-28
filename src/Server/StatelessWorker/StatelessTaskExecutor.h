@@ -75,8 +75,6 @@ public:
 private:
     static void executeTask();
 
-//    std::atomic<bool> shutdown_called{false};
-
     /// The failure of a task, known as soon as the task fails and before it frees its resources.
     class FailureSlot
     {

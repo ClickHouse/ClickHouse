@@ -24,13 +24,6 @@ int mainEntryExampleMergeSelector(int, char **)
     PartsRanges ranges(1);
     PartsRange & parts = ranges.back();
 
-    // PartitionsStatistics statistics; /// Must be refreshed from `parts` before each select call - see merge_selector2.cpp.
-    // SimpleMergeSelector::Settings settings;
-    // settings.base = 2;
-    // settings.max_parts_to_merge_at_once = 10;
-    // settings.partitions_stats = &statistics;
-    // SimpleMergeSelector selector(settings);
-
     TrivialMergeSelector selector;
 
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
@@ -67,11 +60,6 @@ int mainEntryExampleMergeSelector(int, char **)
 
         if (selected_ranges.empty())
         {
-            // std::cout << '.';
-            // for (auto & part : parts)
-            //     ++part.age;
-            // continue;*/
-
             break;
         }
 

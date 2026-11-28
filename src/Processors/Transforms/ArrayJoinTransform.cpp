@@ -32,9 +32,6 @@ ArrayJoinTransform::ArrayJoinTransform(
     : IInflatingTransform(header_, std::make_shared<const Block>(transformHeaderImpl(*header_, array_join_->columns)))
     , array_join(std::move(array_join_))
 {
-    /// TODO
-//    if (on_totals_)
-//        throw Exception(ErrorCodes::LOGICAL_ERROR, "ARRAY JOIN is not supported for totals");
 }
 
 void ArrayJoinTransform::consume(Chunk chunk)

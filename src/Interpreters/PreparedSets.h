@@ -329,8 +329,6 @@ public:
     [[nodiscard]] bool hasSubqueries() const { return !sets_from_subqueries.empty(); }
 
     [[nodiscard]] const SetsFromTuple & getSetsFromTuple() const { return sets_from_tuple; }
-    // const SetsFromStorage & getSetsFromStorage() const { return sets_from_storage; }
-    // const SetsFromSubqueries & getSetsFromSubquery() const { return sets_from_subqueries; }
 
     static String toString(const Hash & key, const DataTypes & types);
 

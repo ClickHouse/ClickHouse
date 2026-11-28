@@ -76,7 +76,6 @@ int mainEntryExampleHashMap(int argc, char ** argv)
     using Value = std::vector<const IAggregateFunction*>;
 
     size_t n = argc < 2 ? 10000000 : std::stol(argv[1]);
-    //size_t m = std::stol(argv[2]);
 
     AggregateFunctionFactory factory;
     DataTypes data_types_empty;

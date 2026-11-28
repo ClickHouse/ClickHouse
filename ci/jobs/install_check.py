@@ -430,7 +430,6 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> List[Result]:
         )
         test_script_path = TEMP_PATH / "install.sh"
         test_script_path.write_text(command)
-        # Shell.check(f"chmod +x {test_script_path}")
         install_command = f"docker exec {container_id} bash -ex /packages/install.sh"
         test_results.append(
             Result.from_commands_run(

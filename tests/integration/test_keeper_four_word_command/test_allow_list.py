@@ -46,7 +46,6 @@ def wait_node(node):
         zk = None
         try:
             zk = get_fake_zk(node.name, timeout=30.0)
-            # zk.create("/test", sequence=True)
             print("node", node.name, "ready")
             break
         except Exception as ex:

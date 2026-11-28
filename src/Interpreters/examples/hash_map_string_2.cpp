@@ -241,7 +241,6 @@ inline bool compare_byFloatSSE(const char * p1, const char * p2)
 template <bool compare(const char *, const char *)>
 inline bool memequal(const char * p1, const char * p2, size_t size)
 {
-//    const char * p1_end = p1 + size;
     const char * p1_end_16 = p1 + size / 16 * 16;
 
     while (p1 < p1_end_16)
@@ -291,7 +290,6 @@ inline bool memequal(const char * p1, const char * p2, size_t size)
 
 inline bool memequal_sse41(const char * p1, const char * p2, size_t size)
 {
-//    const char * p1_end = p1 + size;
     const char * p1_end_16 = p1 + size / 16 * 16;
 
     __m128i zero16 = _mm_setzero_si128();
@@ -346,7 +344,6 @@ inline bool memequal_sse41(const char * p1, const char * p2, size_t size)
 inline bool memequal_sse41_wide(const char * p1, const char * p2, size_t size)
 {
     __m128i zero16 = _mm_setzero_si128();
-//    const char * p1_end = p1 + size;
 
     while (size >= 64)
     {

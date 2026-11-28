@@ -374,7 +374,7 @@ llvm::Value * nativeCastWithDecimalScale(llvm::IRBuilderBase & b, const ValueWit
 
 llvm::Value * compileIntegerComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, bool is_signed)
 {
-    // a > b ? 1 : (a < b ? -1 : 0);
+    /// Computes `a > b ? 1 : (a < b ? -1 : 0)`.
 
     auto * lhs_greater_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 1);
     auto * lhs_less_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), -1);

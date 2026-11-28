@@ -270,9 +270,9 @@ Note: You can use Doxygen to generate documentation from these comments. But Dox
 
 **9.** Multi-line comments must not have empty lines at the beginning and end (except the line that closes a multi-line comment).
 
-**10.** For commenting out code, use basic comments, not "documenting" comments.
+**10.** Commented-out code is forbidden. Delete it before committing: code is either live or deleted, and Git remembers the deleted code. A commented-out fragment is not compiled, not tested and not reviewed again, so a "temporary" one quietly becomes permanent. The only exception is a short fragment (up to three lines) of debug logging, such as `// LOG_TRACE(log, "...");`; use basic comments for it, not "documenting" comments. If a workaround must be switchable, make it a setting or a named constant with a comment explaining why it exists and when to remove it.
 
-**11.** Delete the commented out parts of the code before committing.
+**11.** If an explanation needs a piece of code, write it as a sentence with the code in backticks, not as a bare line of code. The `commented_out_code` style check enforces this and the previous rule for C++, Python, shell and JavaScript.
 
 **12.** Do not use profanity in comments or code.
 

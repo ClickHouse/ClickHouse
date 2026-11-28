@@ -129,9 +129,6 @@ export class Chart {
             // Add the new point to the series data array
             newSeries.data.push(newPoint);
 
-            // Sort the data by x values
-            //newSeries.data.sort((a, b) => a.x - b.x);
-
             // Update scales
             const xDomain = [
                 d3.min(this.series.flatMap(s => s.data), d => d.x),

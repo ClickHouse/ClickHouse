@@ -70,14 +70,6 @@ def error(s):
     sys.stderr.write(f"error: {s}\n")
     sys.exit(1)
 
-# This is too slow, and doesn't seem important.
-#def getFingerprint(text):
-#    words = re.findall(r'\b\w{4,}\b', text.decode()) # doesn't exactly match the JS code, but it doesn't have to
-#    triplets = [''.join(words[i:i+3]) for i in range(len(words) - 2)]
-#    uniq = set(triplets)
-#    hashes = [sipHash128(s.encode())[:8] for s in uniq]
-#    hashes.append('ffffffff')
-#    return min(hashes)
 
 def load(url):
     r = re.match(r"^(?:(?:(?:(?:(?:https?:)?//)?pastila\.nl)?/)?\?)?([a-f0-9]+)/([a-f0-9]+)(?:#(.+))?$", url)
@@ -89,7 +81,6 @@ def load(url):
 
     j = json.loads(response.content)
     if j['rows'] != 1: error("paste not found")
-    #if 'statistics' in j: sys.stderr.write(f"{j['statistics']}")
     content, is_encrypted = j['data'][0]['content'], j['data'][0]['is_encrypted']
 
     if is_encrypted:

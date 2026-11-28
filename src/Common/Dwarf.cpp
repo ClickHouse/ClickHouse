@@ -773,7 +773,6 @@ Dwarf::AttributeSpec Dwarf::readAttributeSpec(std::string_view & sp)
 
 Dwarf::CompilationUnit Dwarf::getCompilationUnit(uint64_t offset) const
 {
-    // SAFE_CHECK(offset < info_.size(), "unexpected offset");
     CompilationUnit cu;
     std::string_view chunk(info_);
     cu.offset = offset;
@@ -867,7 +866,6 @@ Dwarf::CompilationUnit Dwarf::getCompilationUnit(uint64_t offset) const
 // Finds the Compilation Unit starting at offset.
 Dwarf::CompilationUnit Dwarf::findCompilationUnit(uint64_t targetOffset) const
 {
-    // SAFE_CHECK(targetOffset < info_.size(), "unexpected target address");
     uint64_t offset = 0;
     while (offset < info_.size())
     {

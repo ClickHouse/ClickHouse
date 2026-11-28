@@ -6,8 +6,6 @@ from kazoo.exceptions import BadVersionError
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
 
-# from kazoo.protocol.serialization import Connect, read_buffer, write_buffer
-
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",

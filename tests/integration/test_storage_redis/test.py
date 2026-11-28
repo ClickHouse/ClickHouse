@@ -48,7 +48,6 @@ def serialize_binary_for_string(x):
     buf = bytearray()
     # write length
     length = len(x)
-    # length = (length << 1) ^ (length >> 63)
     if length > var_uint_max:
         raise ValueError("Value too large for varint encoding")
     for i in range(9):

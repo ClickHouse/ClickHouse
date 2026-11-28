@@ -1328,7 +1328,6 @@ class ClusterPropertiesGroup(PropertiesGroup):
         cluster: ClickHouseCluster,
         is_private_binary: bool,
     ):
-        # remote_server_config = ET.SubElement(root, "remote_servers")
         existing_nodes = [f"node{i}" for i in range(0, len(args.replica_values))]
 
         # Remove default clusters
@@ -1795,7 +1794,6 @@ class CachePropertiesGroup(PropertiesGroup):
         cluster: ClickHouseCluster,
         is_private_binary: bool,
     ):
-        # filesystem_caches_config = ET.SubElement(root, "filesystem_caches")
         lower_bound, upper_bound = args.number_caches
         number_caches = random.randint(lower_bound, upper_bound)
         for i in range(0, number_caches):
@@ -2060,18 +2058,6 @@ class LogTablePropertiesGroup(PropertiesGroup):
             # Created only with this `schema_type`; the default ("bucketed") makes the section a no-op
             schema_type_xml = ET.SubElement(property_element, "schema_type")
             schema_type_xml.text = "transposed"
-        # Can't use this without the engine parameter?
-        # number_policies = 0
-        # storage_configuration_xml = top_root.find("storage_configuration")
-        # if storage_configuration_xml is not None:
-        #    policies_xml = storage_configuration_xml.find("policies")
-        #    if policies_xml is not None:
-        #        number_policies = len([c for c in policies_xml])
-        # if number_policies > 0 and random.randint(1, 100) <= 75:
-        #    policy_choices = [f"policy{i}" for i in range(0, number_policies)]
-        #    log_table_properties["storage_policy"] = lambda: random.choice(
-        #        policy_choices
-        #    )
         apply_properties_recursively(property_element, log_table_properties, 0)
         # max_size_rows (default 1048576) cannot be smaller than reserved_size_rows (default 8192)
         max_size_rows_xml = property_element.find("max_size_rows")

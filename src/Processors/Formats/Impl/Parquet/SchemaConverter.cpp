@@ -202,7 +202,6 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
     {
         /// Does iceberg require that parquet files have field ids?
         /// Our iceberg writer currently doesn't write them.
-        //throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Missing field_id for column {}", element.name);
         return element.name;
     }
     auto it = map.find(element.field_id);

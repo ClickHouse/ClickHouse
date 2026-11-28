@@ -1359,11 +1359,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
                 identifier_lookup.dump(),
                 scope.scope_node->formatASTForErrorMessage());
 
-        /// If columns from left or right table were missed Object(Nullable('json')) subcolumns, they will be replaced
-        /// to ConstantNode(NULL), which can't be cast to ColumnNode, so we resolve it here.
-        // if (auto missed_subcolumn_identifier = checkIsMissedObjectJSONSubcolumn(left_resolved_identifier, right_resolved_identifier))
-        //     return missed_subcolumn_identifier;
-
         if (resolve_result.resolved_identifier->isEqual(*identifier.resolved_identifier, IQueryTreeNode::CompareOptions{.compare_aliases = false}))
         {
             const auto & identifier_path_part = identifier_lookup.identifier.front();
@@ -2036,10 +2031,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     /// to ConstantNode(NULL), which can't be cast to ColumnNode, so we resolve it here.
     if (auto missed_subcolumn_identifier = checkIsMissedObjectJSONSubcolumn(left_resolved_identifier, right_resolved_identifier))
         return { .resolved_identifier = missed_subcolumn_identifier, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
-
-
-    // for (const auto & [k, v] : join_using_column_name_to_column_node)
-    //     std::cerr << k << " -> " << v->dumpTree() << std::endl;
 
     if (left_resolved_identifier && right_resolved_identifier)
     {

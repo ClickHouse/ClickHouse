@@ -84,24 +84,6 @@ public:
         return static_pointer_cast<LambdaArgumentsNode>(children[arguments_child_index]);
     }
 
-    // /// Get arguments
-    // ListNode & getArguments()
-    // {
-    //     return children[arguments_child_index]->as<ListNode &>();
-    // }
-
-    /// Get arguments node
-    // const QueryTreeNodePtr & getArgumentsNode() const
-    // {
-    //     return children[arguments_child_index];
-    // }
-
-    // /// Get arguments node
-    // QueryTreeNodePtr & getArgumentsNode()
-    // {
-    //     return children[arguments_child_index];
-    // }
-
     /// Get expression
     [[nodiscard]] const QueryTreeNodePtr & getExpression() const
     {

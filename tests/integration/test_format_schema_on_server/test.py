@@ -162,8 +162,6 @@ struct MessageTmp {
     )
     instance.query("INSERT INTO test.new_simple VALUES (1, 'abc'), (2, 'def')")
 
-    # instance.query("SYSTEM CLEAR FORMAT SCHEMA CACHE FOR CapnProto")
-
     # Tets works with new scheme
     assert instance.http_query(
         "SELECT * FROM test.new_simple FORMAT CapnProto SETTINGS format_schema='message_tmp:MessageTmp'"

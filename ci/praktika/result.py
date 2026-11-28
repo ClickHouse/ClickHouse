@@ -805,7 +805,6 @@ class Result(MetaClasses.Serializable):
                     print(f"NOTE: Job [{result.name}] has completed status [{result_.status}] - do not switch status to [{result.status}]")
                     continue
                 if drop_nested_results:
-                    # self.results[i] = self._filter_out_ok_results(result)
                     self.results[i] = copy.deepcopy(result)
                     self.results[i].results = self._flat_failed_leaves(result, path=[self.name])
                     self.results[i].ext = {

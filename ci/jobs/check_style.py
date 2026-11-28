@@ -20,6 +20,7 @@ from ci.jobs.scripts.settings_history import (
     violations as settings_history_violations,
 )
 from ci.jobs.scripts.check_style.check_broken_links import check_pr as check_pr_links
+from ci.jobs.scripts.check_style.commented_code import check_commented_code
 from ci.jobs.scripts.check_style.clickhouse_spelling import (
     CLICKHOUSE_ANY_SPELLING,
     CLICKHOUSE_CORRECT_SPELLINGS,
@@ -920,15 +921,6 @@ def check_embedded_doc_snippets():
     return out
 
 
-def check_mypy():
-    res, out, err = Shell.get_res_stdout_stderr(
-        "./ci/jobs/scripts/check_style/check-mypy"
-    )
-    if err:
-        out += err
-    return out
-
-
 def check_pylint():
     res, out, err = Shell.get_res_stdout_stderr(
         "./ci/jobs/scripts/check_style/check-pylint"
@@ -1732,6 +1724,12 @@ if __name__ == "__main__":
     # Markdown is checked only in the documentation (elsewhere it does not load into a browser).
     web_files = [f for f in web_files if f.startswith("./docs/") or not f.endswith((".md", ".mdx"))]
 
+    # Third-party code keeps its upstream form.
+    commented_code_files = [f for f in cpp_files if not f.startswith("./base/poco/")] + Utils.traverse_paths(
+        include_paths=["./src", "./base", "./programs", "./utils", "./ci", "./tests", "./docker", "./.claude"],
+        exclude_paths=["./base/poco", "./ci/docker/integration/hive_server", "./**/vendor/**"],
+        file_suffixes=[".py", ".sh", ".js", ".mjs"],
+    )
     testname = "whitespace_check"
     if testpattern.lower() in testname.lower():
         results.append(
@@ -1851,6 +1849,15 @@ if __name__ == "__main__":
                 files=web_files,
             )
         )
+    testname = "commented_out_code"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_commented_code,
+                files=commented_code_files,
+            )
+        )
     testname = "compose_images_from_dockerhub"
     if testpattern.lower() in testname.lower():
         results.append(
@@ -1917,12 +1924,4 @@ if __name__ == "__main__":
             )
         )
 
-    # testname = "mypy"
-    # if testpattern.lower() in testname.lower():
-    #     results.append(
-    #         Result.from_commands_run(
-    #             name=testname,
-    #             command=check_mypy,
-    #         )
-    #     )
     Result.create_from(results=results).complete_job()

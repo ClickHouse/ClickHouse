@@ -131,8 +131,5 @@ median=$($CH_PATH client -q "SELECT median(query_duration_ms) FROM system.query_
 echo $first
 echo $median
 
-#if (( median > 2000 )); then
-#    exit 1
-#fi
 
 )

@@ -1457,7 +1457,6 @@ def test_replicated_table_structure_alter(started_cluster):
 
     competing_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
     competing_node.query("SYSTEM SYNC REPLICA table_structure.rmt")
-    # time.sleep(600)
     assert "mem" in competing_node.query("SHOW TABLES FROM table_structure")
     assert "1\t2\t3\n" == competing_node.query("SELECT * FROM table_structure.rmt")
 

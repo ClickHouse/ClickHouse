@@ -285,9 +285,6 @@ public:
                         active_set.insert(dest);
                 }
 
-                // std::cerr << "Added : " << graph.nodes[node].table_node->dumpTree() << std::endl;
-                // if (auto conj = makeConjunction(equi_conditions))
-                //     std::cerr << "Cond : " << conj->dumpTree() << std::endl;
                 res.emplace_back(graph.nodes[node].table_node, std::move(equi_conditions), graph.nodes[node].join_type);
             }
         }

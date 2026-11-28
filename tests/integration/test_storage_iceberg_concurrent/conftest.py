@@ -1,7 +1,6 @@
 import pytest
 import logging
 import pyspark
-import subprocess
 
 
 from helpers.cluster import ClickHouseCluster, minio_access_key, minio_secret_key
@@ -9,37 +8,6 @@ from helpers.s3_tools import (
     prepare_s3_bucket,
 )
 from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
-
-def check_spark(spark):
-    p = subprocess.run(["echo", "hello world!"], capture_output=True, text=True)
-    logging.info(f"Java version: {p.stdout}")
-
-
-    spark.sql(
-        """
-        DROP DATABASE IF EXISTS spark_catalog.db CASCADE
-        """
-    )
-
-    spark.sql(
-        """
-        CREATE DATABASE spark_catalog.db
-        """
-    )
-
-    spark.sql(
-    """
-        CREATE TABLE IF NOT EXISTS spark_catalog.db.lol2 (order_number bigint) USING iceberg OPTIONS ('format-version'='1');
-    """
-    )
-
-    spark.sql(
-    """
-        INSERT INTO spark_catalog.db.lol2 (order_number) VALUES (123), (456), (789);
-    """
-    )
-
-    logging.info(f"Dataframe: {spark.sql('SELECT * FROM spark_catalog.db.lol2').show()}")
 
 def get_spark(cluster : ClickHouseCluster):
 
@@ -89,8 +57,6 @@ def started_cluster_iceberg():
         prepare_s3_bucket(cluster)
 
         cluster.spark_session = ResilientSparkSession(lambda: get_spark(cluster))
-
-        # check_spark(cluster.spark_session)
 
         yield cluster
 

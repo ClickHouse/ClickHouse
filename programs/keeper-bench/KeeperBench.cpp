@@ -39,10 +39,6 @@ int mainEntryClickHouseKeeperBench(int argc, char ** argv)
 
     bool print_stacktrace = true;
 
-    //Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
-    //Poco::Logger::root().setChannel(channel);
-    //Poco::Logger::root().setLevel("trace");
-
     /// Join global-pool threads before the statics they may have accessed are destroyed.
     /// That way, accesses happen-before destruction.
     SCOPE_EXIT_SAFE({

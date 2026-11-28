@@ -1003,9 +1003,6 @@ String reportResults(const std::vector<FunctionStats> & function_stats, size_t s
         else if (stats.get(S_EXEC_ROW_OK) == 0)
             function_lists["no successful execution"].push_back(name);
 
-        //if (stats.get(S_NONDEFAULT_NULL) != 0)
-        //    function_lists["nondefault values behind NULLs"].push_back(name);
-
         by_time_max.emplace_back(stats.get(S_TIME_MAX_NS), name);
         by_time_total.emplace_back(stats.get(S_TIME_TOTAL_NS), name);
 

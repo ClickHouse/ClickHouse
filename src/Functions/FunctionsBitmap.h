@@ -678,7 +678,7 @@ struct BitmapAndCardinalityImpl
     using ReturnType = UInt64;
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        // roaring_bitmap_and_cardinality( rb1, rb2 );
+        /// The same as `roaring_bitmap_and_cardinality(rb1, rb2)`.
         return bitmap_data_1.roaring_bitmap_with_small_set.rb_and_cardinality(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
@@ -690,7 +690,7 @@ struct BitmapOrCardinalityImpl
     using ReturnType = UInt64;
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        // return roaring_bitmap_or_cardinality( rb1, rb2 );
+        /// The same as `roaring_bitmap_or_cardinality(rb1, rb2)`.
         return bitmap_data_1.roaring_bitmap_with_small_set.rb_or_cardinality(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
@@ -701,7 +701,7 @@ struct BitmapXorCardinalityImpl
     using ReturnType = UInt64;
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        // return roaring_bitmap_xor_cardinality( rb1, rb2 );
+        /// The same as `roaring_bitmap_xor_cardinality(rb1, rb2)`.
         return bitmap_data_1.roaring_bitmap_with_small_set.rb_xor_cardinality(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
@@ -712,7 +712,7 @@ struct BitmapAndnotCardinalityImpl
     using ReturnType = UInt64;
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        // roaring_bitmap_andnot_cardinality( rb1, rb2 );
+        /// The same as `roaring_bitmap_andnot_cardinality(rb1, rb2)`.
         return bitmap_data_1.roaring_bitmap_with_small_set.rb_andnot_cardinality(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };

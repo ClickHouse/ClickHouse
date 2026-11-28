@@ -368,7 +368,5 @@ PROJECTS = [
                 vpc_name="macos-us-east-1",
             ),
         ],
-        # TODO: make self-contained component SlackApp
-        # lambda_functions=[*CloudInfrastructure.SLACK_APP_LAMBDAS],
     )
 ]

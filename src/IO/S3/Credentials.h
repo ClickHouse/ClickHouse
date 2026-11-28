@@ -75,7 +75,6 @@ public:
 
 private:
     std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const Aws::String & user_agent_string) const;
-    // static String getAvailabilityZoneOrException(bool is_zone_id = false);
     static String getAWSZoneID();
     static String getAWSZoneName();
 

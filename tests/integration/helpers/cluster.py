@@ -1465,13 +1465,6 @@ class ClickHouseCluster:
         # We used to remove unused images, but it is too aggressive and causes issues in
         # CI because of races between pulling and pruning.
         # https://github.com/ClickHouse/ClickHouse/issues/80470#issuecomment-3631989064
-        # try:
-        #     logging.debug("Trying to prune unused images...")
-
-        #     run_and_check(["docker", "image", "prune", "-f"])
-        #     logging.debug("Images pruned")
-        # except:
-        #     pass
 
         # Remove unused volumes
         try:
@@ -2910,8 +2903,6 @@ class ClickHouseCluster:
     def get_instance_ip(self, instance_name):
         logging.debug("get_instance_ip instance_name={}".format(instance_name))
         docker_id = self.get_instance_docker_id(instance_name)
-        # for cont in self.docker_client.containers.list():
-        # logging.debug("CONTAINERS LIST: ID={} NAME={} STATUS={}".format(cont.id, cont.name, cont.status))
         handle = self.docker_client.containers.get(docker_id)
         return list(handle.attrs["NetworkSettings"]["Networks"].values())[0][
             "IPAddress"
@@ -2920,8 +2911,6 @@ class ClickHouseCluster:
     def get_instance_global_ipv6(self, instance_name):
         logging.debug("get_instance_ip instance_name={}".format(instance_name))
         docker_id = self.get_instance_docker_id(instance_name)
-        # for cont in self.docker_client.containers.list():
-        # logging.debug("CONTAINERS LIST: ID={} NAME={} STATUS={}".format(cont.id, cont.name, cont.status))
         handle = self.docker_client.containers.get(docker_id)
         return list(handle.attrs["NetworkSettings"]["Networks"].values())[0][
             "GlobalIPv6Address"
@@ -2929,9 +2918,6 @@ class ClickHouseCluster:
 
     def get_container_id(self, instance_name):
         return self.get_instance_docker_id(instance_name)
-        # docker_id = self.get_instance_docker_id(instance_name)
-        # handle = self.docker_client.containers.get(docker_id)
-        # return handle.attrs['Id']
 
     def get_container_logs(self, instance_name):
         container_id = self.get_container_id(instance_name)

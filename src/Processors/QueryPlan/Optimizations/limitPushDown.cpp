@@ -143,8 +143,6 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     /// Now we should decide if pushing down limit possible for this step.
 
     const auto & transform_traits = transforming->getTransformTraits();
-    // const auto & data_stream_traits = transforming->getDataStreamTraits();
-
     /// Cannot push down if child changes the number of rows.
     if (!transform_traits.preserves_number_of_rows)
         return 0;

@@ -531,7 +531,6 @@ static SortDescription getSortDescriptionForOutputHeader(
 
     if (input_order_info && !enable_vertical_final)
     {
-        // output_stream.sort_scope = DataStream::SortScope::Stream;
         const size_t used_prefix_of_sorting_key_size = input_order_info->used_prefix_of_sorting_key_size;
         if (sort_description.size() > used_prefix_of_sorting_key_size)
             sort_description.resize(used_prefix_of_sorting_key_size);

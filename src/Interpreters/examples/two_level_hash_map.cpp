@@ -98,7 +98,6 @@ int mainEntryExampleTwoLevelHashMap(int argc, char ** argv)
         Stopwatch watch;
 
         using Map = TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key>>, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator>;
-        //using Map = HashMap<Key, Value, UniquesHashSetDefaultHash>;
 
         Map map;
         Map::LookupResult it = {};

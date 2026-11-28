@@ -408,8 +408,6 @@ TEST_F(AITestFixture, SchemaExploration)
     else
     {
         std::cout << "WARNING: AI returned empty response for schema query" << std::endl;
-        // Skip this assertion as the AI might be having issues
-        // EXPECT_FALSE(result.empty()) << "Should get a response for schema query";
     }
     
     std::string output_str = output.str();
