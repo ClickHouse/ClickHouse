@@ -16,4 +16,21 @@
     <query>SELECT sum(h), sum(h32) FROM file('test_parquet_prewhere_plain_columns.parquet', Parquet) PREWHERE cityHash64(k) % 2 = 0 FORMAT Null</query>
     <query>SELECT sum(h), sum(h32) FROM file('test_parquet_prewhere_plain_columns.parquet', Parquet) PREWHERE f != 7 FORMAT Null</query>
     <query>SELECT sum(h), sum(h32) FROM file('test_parquet_prewhere_plain_columns.parquet', Parquet) PREWHERE f = 7 FORMAT Null</query>
+
+    <!-- The same kind of columns read from a file with a page index, plus a nullable column with NULLs. -->
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_parquet_prewhere_page_index.parquet', Parquet)
+        SELECT
+            number AS k,
+            cityHash64(number) AS h,
+            toUInt32(cityHash64(number, 1)) AS h32,
+            if(cityHash64(number, 3) % 10 = 0, NULL, toInt64(number)) AS n,
+            toUInt8(cityHash64(number, 2) % 100) AS f
+        FROM numbers(50000000)
+    ]]></fill_query>
+
+    <query>SELECT sum(h), sum(h32), sum(n) FROM file('test_parquet_prewhere_page_index.parquet', Parquet) PREWHERE f &lt; 50 FORMAT Null</query>
+    <query>SELECT sum(h), sum(h32), sum(n) FROM file('test_parquet_prewhere_page_index.parquet', Parquet) PREWHERE f &lt; 20 FORMAT Null</query>
+    <query>SELECT sum(h), sum(h32), sum(n) FROM file('test_parquet_prewhere_page_index.parquet', Parquet) PREWHERE f != 7 FORMAT Null</query>
+    <query>SELECT sum(h), sum(h32), sum(n) FROM file('test_parquet_prewhere_page_index.parquet', Parquet) PREWHERE intDiv(k, 1000) % 2 = 0 AND f &lt; 50 FORMAT Null</query>
 </test>
