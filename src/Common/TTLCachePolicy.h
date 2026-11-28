@@ -2,7 +2,10 @@
 
 #include <Common/ICachePolicy.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <base/UUID.h>
+#include <base/defines.h>
+#include <base/scope_guard.h>
 
 #include <limits>
 #include <map>
@@ -85,6 +88,7 @@ public:
 
 
 /// TTLCachePolicy evicts entries for which IsStaleFunction returns true.
+///
 /// The cache size (in bytes and number of entries) can be changed at runtime. It is expected to set both sizes explicitly after construction.
 template <typename Key, typename Mapped, typename HashFunction, typename WeightFunction, typename IsStaleFunction>
 class TTLCachePolicy : public ICachePolicy<Key, Mapped, HashFunction, WeightFunction>
@@ -152,11 +156,8 @@ public:
         auto it = cache.find(key);
         if (it == cache.end())
             return;
-        size_t sz = weight_function(*it->second);
-        if (it->first.user_id.has_value())
-            Base::user_quotas->decreaseActual(*it->first.user_id, sz);
-        cache.erase(it);
-        size_in_bytes -= sz;
+        size_t sz = weight_function(*it->second.mapped);
+        eraseEntry(it);
 
         CurrentMetrics::sub(size_in_bytes_metric, sz);
         CurrentMetrics::sub(count_metric);
@@ -169,14 +170,8 @@ public:
 
         for (auto it = cache.begin(); it != cache.end();)
         {
-            if (predicate(it->first, it->second))
-            {
-                size_t sz = weight_function(*it->second);
-                if (it->first.user_id.has_value())
-                    Base::user_quotas->decreaseActual(*it->first.user_id, sz);
-                it = cache.erase(it);
-                size_in_bytes -= sz;
-            }
+            if (predicate(it->first, it->second.mapped))
+                it = eraseEntry(it);
             else
                 ++it;
         }
@@ -190,7 +185,7 @@ public:
         auto it = cache.find(key);
         if (it == cache.end())
             return {};
-        return it->second;
+        return it->second.mapped;
     }
 
     [[nodiscard]] bool contains(const Key & key) const override
@@ -203,7 +198,7 @@ public:
         auto it = cache.find(key);
         if (it == cache.end())
             return std::nullopt;
-        return std::make_optional<KeyMapped>({it->first, it->second});
+        return std::make_optional<KeyMapped>({it->first, it->second.mapped});
     }
 
     /// Evicts on a best-effort basis. If there are too many non-stale entries, the new entry may not be cached at all!
@@ -220,6 +215,15 @@ public:
         const size_t old_size = cache.size();
         const size_t entry_size_in_bytes = weight_function(*mapped);
 
+        /// The metrics have to follow the cache also if the insert below throws after entries were removed.
+        SCOPE_EXIT({
+            /// Both operands have to be cast: with an unsigned right-hand side the subtraction happens
+            /// in `size_t` and only the conversion of the wrapped result back to `Int64` makes a shrinking
+            /// cache report a negative delta.
+            CurrentMetrics::add(size_in_bytes_metric, static_cast<Int64>(size_in_bytes) - static_cast<Int64>(old_size_in_bytes));
+            CurrentMetrics::add(count_metric, static_cast<Int64>(cache.size()) - static_cast<Int64>(old_size));
+        });
+
         /// Checks against per-cache limits
         auto sufficient_space_in_cache = [&]()
         {
@@ -235,64 +239,58 @@ public:
         };
 
         if (!sufficient_space_in_cache() || !sufficient_space_in_cache_for_user())
-        {
-            /// Remove stale entries
-            for (auto it = cache.begin(); it != cache.end();)
-            {
-                if (is_stale_function(it->first))
-                {
-                    size_t sz = weight_function(*it->second);
-                    if (it->first.user_id.has_value())
-                        Base::user_quotas->decreaseActual(*it->first.user_id, sz);
-                    it = cache.erase(it);
-                    size_in_bytes -= sz;
-                }
-                else
-                    ++it;
-            }
-        }
+            removeStaleEntries();
 
         if (sufficient_space_in_cache() && sufficient_space_in_cache_for_user())
         {
-            /// Insert or replace key
+            /// Insert or replace key. An existing entry is removed explicitly instead of overwriting its value: the key of the new entry
+            /// compares equal to the key of the existing entry but it carries different data, e.g. another expiry time.
             if (auto it = cache.find(key); it != cache.end())
+                eraseEntry(it);
+
+            auto expiry_it = expiry_index.emplace(key.expires_at, nullptr);
+            try
             {
-                size_t sz = weight_function(*it->second);
-                if (it->first.user_id.has_value())
-                    Base::user_quotas->decreaseActual(*it->first.user_id, sz);
-                cache.erase(it); // stupid bug: (*) doesn't replace existing entries (likely due to custom hash function), need to erase explicitly
-                size_in_bytes -= sz;
+                auto it = cache.emplace(key, Cell{mapped, expiry_it}).first;
+                expiry_it->second = &it->first; /// the address of a key in `std::unordered_map` is stable
+            }
+            catch (...)
+            {
+                expiry_index.erase(expiry_it);
+                throw;
             }
 
-            cache[key] = std::move(mapped); // (*)
             size_in_bytes += entry_size_in_bytes;
             if (key.user_id.has_value())
                 Base::user_quotas->increaseActual(*key.user_id, entry_size_in_bytes);
         }
-
-        /// Both operands have to be cast: with an unsigned right-hand side the subtraction happens
-        /// in `size_t` and only the conversion of the wrapped result back to `Int64` makes a shrinking
-        /// cache report a negative delta.
-        CurrentMetrics::add(size_in_bytes_metric, static_cast<Int64>(size_in_bytes) - static_cast<Int64>(old_size_in_bytes));
-        CurrentMetrics::add(count_metric, static_cast<Int64>(cache.size()) - static_cast<Int64>(old_size));
     }
 
     [[nodiscard]] std::vector<KeyMapped> dump() const override
     {
         std::vector<KeyMapped> res;
         res.reserve(cache.size());
-        for (const auto & [key, mapped] : cache)
-            res.push_back({key, mapped});
+        for (const auto & [key, cell] : cache)
+            res.push_back({key, cell.mapped});
         return res;
     }
 
 private:
-    using Cache = std::unordered_map<Key, MappedPtr, HashFunction>;
+    /// Additionally index the entries sorted by their expiry time (`Key::expires_at`).
+    /// This allows to find stale entries faster than iterating `cache`.
+    using ExpiresAt = std::remove_const_t<decltype(Key::expires_at)>;
+    using ExpiryIndex = MultiMapWithMemoryTracking<ExpiresAt, const Key *>;
+
+    struct Cell
+    {
+        MappedPtr mapped;
+        typename ExpiryIndex::iterator expiry_it;
+    };
+
+    using Cache = std::unordered_map<Key, Cell, HashFunction>;
     Cache cache;
 
-    /// TODO To speed up removal of stale entries, we could also add another container sorted on expiry times which maps keys to iterators
-    /// into the cache. To insert an entry, add it to the cache + add the iterator to the sorted container. To remove stale entries, do a
-    /// binary search on the sorted container and erase all left of the found key.
+    ExpiryIndex expiry_index;
 
     size_t size_in_bytes = 0;
     size_t max_size_in_bytes;
@@ -305,12 +303,38 @@ private:
     IsStaleFunction is_stale_function;
     /// TODO support OnRemoveEntryFunction callback
 
+    /// Remove an entry from the cache + the expiry index.
+    /// Returns an iterator to the next cache entry.
+    typename Cache::iterator eraseEntry(typename Cache::iterator it)
+    {
+        size_t sz = weight_function(*it->second.mapped);
+        if (it->first.user_id.has_value())
+            Base::user_quotas->decreaseActual(*it->first.user_id, sz);
+        size_in_bytes -= sz;
+        expiry_index.erase(it->second.expiry_it);
+        return cache.erase(it);
+    }
+
+    void removeStaleEntries()
+    {
+        while (!expiry_index.empty())
+        {
+            const Key & oldest_entry = *expiry_index.begin()->second;
+            if (!is_stale_function(oldest_entry))
+                break;
+            auto it = cache.find(oldest_entry);
+            chassert(it != cache.end());
+            eraseEntry(it);
+        }
+    }
+
     void clearImpl()
     {
         CurrentMetrics::sub(size_in_bytes_metric, size_in_bytes);
         CurrentMetrics::sub(count_metric, cache.size());
 
         cache.clear();
+        expiry_index.clear();
         Base::user_quotas->clear();
 
         size_in_bytes = 0;
