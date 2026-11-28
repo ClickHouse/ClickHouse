@@ -1,0 +1,68 @@
+serial fits	1000000	1499998500000
+serial spills	1000000	1499998500000
+parallel fits	1000000	1499998500000
+parallel spills	1000000	1499998500000
+parallel spills, 16 threads	1000000	1499998500000
+parallel fits, 1 thread	1000000	1499998500000
+parallel spills, 1 thread	1000000	1499998500000
+grace_hash fits	1000000	1499998500000
+grace_hash spills	1000000	1499998500000
+grace_hash splits several times	4000000	23999994000000
+grace_hash at the bucket limit	600000	179999700000
+right fits	1000000	1499998500000	499999500000
+right spills	1000000	1499998500000	499999500000
+full, right condition, spills	1500000	1499998500000	499999500000
+full, mixed condition, fits	1000001	1499998500000	499999500000
+full, mixed condition, spills	1000001	1499998500000	499999500000
+duplicate keys spill	1000000	499999500000
+repeated keys fit	1000	0
+repeated String keys fit	1000	0
+repeated FixedString keys fit	1000	0
+repeated blocks fit	1000	0
+repeated blocks fit, grace_hash	1000	0
+repeated blocks fit, full table	2048	0
+one key, any left	1	0
+one key, left semi	1	0
+one key, grace_hash	1000000	499999500000
+one key, then NULL keys	1000000	499999500000	65409
+NULL keys, then one key	1000000	499999500000	934591
+NULL keys, then one key, left semi	1
+serial_fits	0	0
+serial_spills	1	1
+parallel_fits	0	0
+parallel_spills	1	1
+parallel16_spills	1	1
+parallel1_fits	0	0
+parallel1_spills	1	1
+grace_fits	0	0
+grace_spills	0	1
+grace_splits	0	1
+grace_bucket_limit	0	0
+right_fits	0	0
+right_spills	1	1
+full_right_cond_spills	1	1
+full_mixed_cond_fits	0	0
+full_mixed_cond_spills	1	1
+duplicate_keys_spills	1	1
+repeated_keys_fits	0	0
+repeated_string_keys_fits	0	0
+repeated_fixed_string_keys_fits	0	0
+repeated_blocks_fits	0	0
+repeated_blocks_grace_fits	0	0
+repeated_blocks_full_table_fits	0	0
+one_key_then_nulls	0	1
+nulls_then_one_key	0	1
+nulls_then_one_key_semi	0	0
+serial_spills	1	1
+parallel_spills	1	1
+parallel16_spills	1	1
+parallel1_spills	1	1
+right_spills	1	1
+full_right_cond_spills	1	1
+full_mixed_cond_spills	1	1
+serial_spills	1
+grace_spills	1
+repeated_blocks_fits	1
+repeated_blocks_grace_fits	1
+repeated_blocks_full_table_fits	1
+grace_splits	1

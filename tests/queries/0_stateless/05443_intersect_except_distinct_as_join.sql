@@ -70,17 +70,17 @@ SELECT '-- A join that spills gives the same result.';
 -- Keys repeat across blocks on the left and within a block on the right.
 -- The left side is a single stream, so the other probe streams are empty while the spilled buckets are joined.
 SELECT count(), sum(x) FROM (SELECT number % 10000 AS x FROM numbers(30000) INTERSECT DISTINCT SELECT intDiv(number, 2) + 2000 FROM numbers(12000))
-SETTINGS max_bytes_before_external_join = 400000, query_plan_join_swap_table = 'false', log_comment = '05443_spill_intersect';
+SETTINGS max_bytes_before_external_join = 150000, query_plan_join_swap_table = 'false', log_comment = '05443_spill_intersect';
 SELECT count(), sum(x) FROM (SELECT number % 10000 AS x FROM numbers(30000) INTERSECT DISTINCT SELECT intDiv(number, 2) + 2000 FROM numbers(12000))
-SETTINGS max_bytes_before_external_join = 400000, query_plan_join_swap_table = 'false', hash_join_layout = 'parallel', log_comment = '05443_spill_intersect_parallel';
+SETTINGS max_bytes_before_external_join = 150000, query_plan_join_swap_table = 'false', hash_join_layout = 'parallel', log_comment = '05443_spill_intersect_parallel';
 
 SELECT count(), sum(x) FROM (SELECT number % 10000 AS x FROM numbers(30000) EXCEPT DISTINCT SELECT intDiv(number, 2) + 2000 FROM numbers(12000))
-SETTINGS max_bytes_before_external_join = 400000, query_plan_join_swap_table = 'false', log_comment = '05443_spill_except';
+SETTINGS max_bytes_before_external_join = 150000, query_plan_join_swap_table = 'false', log_comment = '05443_spill_except';
 SELECT count(), sum(x) FROM (SELECT number % 10000 AS x FROM numbers(30000) EXCEPT DISTINCT SELECT intDiv(number, 2) + 2000 FROM numbers(12000))
-SETTINGS max_bytes_before_external_join = 400000, query_plan_join_swap_table = 'false', hash_join_layout = 'parallel', log_comment = '05443_spill_except_parallel';
+SETTINGS max_bytes_before_external_join = 150000, query_plan_join_swap_table = 'false', hash_join_layout = 'parallel', log_comment = '05443_spill_except_parallel';
 
 SELECT count(), sum(x) FROM (SELECT number % 10000 AS x FROM numbers(30000) EXCEPT DISTINCT SELECT intDiv(number, 2) + 2000 FROM numbers(12000))
-SETTINGS max_bytes_before_external_join = 400000, query_plan_join_swap_table = 'true', log_comment = '05443_spill_except_swapped';
+SETTINGS max_bytes_before_external_join = 150000, query_plan_join_swap_table = 'true', log_comment = '05443_spill_except_swapped';
 
 SELECT '-- The joins that spill switched to grace hash join.';
 SYSTEM FLUSH LOGS query_log;

@@ -310,6 +310,7 @@ public:
 
     /// Whether the hash table is sufficiently full. You need to increase the size of the hash table, or remove something unnecessary from it.
     [[nodiscard]] bool overflow(size_t elems) const { return elems > precalculated_max_fill; }
+    [[nodiscard]] size_t maxFill() const { return precalculated_max_fill; }
 
     /// Increase the size of the hash table.
     void increaseSize() { increaseSizeDegree(size_degree >= max_size_degree ? 1 : 2); }
@@ -408,6 +409,7 @@ public:
 
     /// Whether the hash table is sufficiently full. You need to increase the size of the hash table, or remove something unnecessary from it.
     [[nodiscard]] bool overflow(size_t elems) const { return elems > precalculated_max_fill; }
+    [[nodiscard]] size_t maxFill() const { return precalculated_max_fill; }
 
     /// Increase the size of the hash table, or switch it to the Robin Hood mode without changing the size.
     void increaseSize()
@@ -1848,7 +1850,9 @@ public:
     /// its replacement before releasing the old buffer's accounting, even when allocation grows in place.
     /// Capacity gained by preceding resizes remains charged throughout subsequent resizes.
     /// Saturates at the maximum of `size_t` when the projected capacity or memory is not representable.
-    [[nodiscard]] size_t estimateGrowthMemory(size_t additional_keys) const noexcept
+    /// `reserve_elements` adds a `reserve` of that many elements before the inserts. Unless it saturates, `net_bytes` gets
+    /// the growth left after the last resize; the rest of the peak is the buffer that resize replaced.
+    [[nodiscard]] size_t estimateGrowthMemory(size_t additional_keys, size_t reserve_elements = 0, size_t * net_bytes = nullptr) const noexcept
     {
         auto projected_grower = grower;
         const size_t initial_bytes = getBufferSizeInBytes();
@@ -1858,6 +1862,35 @@ public:
             return max_size;
         size_t buffer_bytes = initial_bytes;
         size_t peak_extra_bytes = 0;
+
+        auto grow_to = [&](const Grower & next_grower)
+        {
+            size_t next_bytes = 0;
+            size_t extra_bytes = 0;
+            if (common::mulOverflow(next_grower.bufSize(), sizeof(Cell), next_bytes)
+                || common::addOverflow(buffer_bytes - initial_bytes, next_bytes, extra_bytes))
+                return false;
+            peak_extra_bytes = std::max(peak_extra_bytes, extra_bytes);
+            buffer_bytes = next_bytes;
+            return true;
+        };
+
+        if (reserve_elements > 1)
+        {
+            if (reserve_elements > max_size / 4)
+                return max_size;
+            auto reserved_grower = projected_grower;
+            reserved_grower.set(reserve_elements);
+            if (reserved_grower.bufSize() > projected_grower.bufSize())
+            {
+                if (!grow_to(reserved_grower))
+                    return max_size;
+                projected_grower = reserved_grower;
+            }
+            else if (reserved_grower.bufSize() == projected_grower.bufSize())
+                projected_grower = reserved_grower;
+        }
+
         while (projected_grower.overflow(projected_size))
         {
             /// The largest representable power-of-two capacity cannot grow further.
@@ -1868,15 +1901,20 @@ public:
             /// Switching to the Robin Hood mode does not allocate.
             if (projected_grower.bufSize() == prev_buf_size)
                 continue;
-            size_t next_bytes = 0;
-            size_t extra_bytes = 0;
-            if (common::mulOverflow(projected_grower.bufSize(), sizeof(Cell), next_bytes)
-                || common::addOverflow(buffer_bytes - initial_bytes, next_bytes, extra_bytes))
+            if (!grow_to(projected_grower))
                 return max_size;
-            peak_extra_bytes = std::max(peak_extra_bytes, extra_bytes);
-            buffer_bytes = next_bytes;
         }
+        if (net_bytes)
+            *net_bytes = buffer_bytes - initial_bytes;
         return peak_extra_bytes;
+    }
+
+    /// How many more keys the table takes before an insert resizes it (or only switches it to the Robin Hood mode).
+    /// The zero key is counted in `m_size` without the resize check, so `m_size` can be above `maxFill`.
+    [[nodiscard]] size_t keysBeforeResize() const noexcept
+    {
+        const size_t max_fill = grower.maxFill();
+        return m_size < max_fill ? max_fill - m_size : 0;
     }
 
     [[nodiscard]] size_t getBufferSizeInCells() const

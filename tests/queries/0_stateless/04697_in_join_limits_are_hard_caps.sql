@@ -37,7 +37,7 @@ FROM (SELECT number AS k FROM numbers(200000)) AS t1
 INNER JOIN (SELECT number AS k FROM numbers(200000)) AS t2
 USING (k);
 
--- The cap is above what the in-memory phase holds (it switches at half of 1M), so we only hit it after spilling.
+-- The cap is above what the in-memory phase holds (it switches before 1M), so we only hit it after spilling.
 SELECT 'hash: max_bytes_in_join stops the join after it spilled';
 SET join_algorithm = 'hash';
 SET max_bytes_in_join = '2M';

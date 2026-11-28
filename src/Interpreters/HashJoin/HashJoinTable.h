@@ -3,11 +3,13 @@
 #include <Interpreters/HashJoin/AddedColumns.h>
 #include <Interpreters/HashJoin/BuildSlots.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/JoinSpillBudget.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/JoinUtils.h>
 #include <Columns/IColumn.h>
 #include <Common/Arena.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/Prefetching.h>
 #include <Common/ProfileEvents.h>
 #include <base/scope_guard.h>
@@ -16,9 +18,11 @@
 
 #include <algorithm>
 #include <any>
+#include <array>
 #include <functional>
 #include <optional>
 #include <span>
+#include <tuple>
 #include <unordered_set>
 
 namespace ProfileEvents
@@ -539,13 +543,43 @@ public:
         ASOFJoinInequality asof_inequality;
     };
 
+    /// With a spill budget, each slot reserves the growth of its buckets before it inserts; a refused slot stops the block.
+    struct InsertBudget
+    {
+        InsertBudget(JoinSpillBudget & budget_, absl::FunctionRef<size_t()> held_bytes_, bool checked_, bool block_reserved_)
+            : budget(budget_), held_bytes(held_bytes_), checked(checked_), block_reserved(block_reserved_)
+        {
+        }
+
+        JoinSpillBudget & budget;
+        absl::FunctionRef<size_t()> held_bytes;
+        /// Otherwise the budget only counts the rows and never refuses them.
+        bool checked;
+        /// Otherwise the stored block does not fit, and the insert is refused as soon as the map would keep the block.
+        bool block_reserved;
+
+        [[nodiscard]] std::optional<size_t> reserve(size_t bytes) const
+        {
+            if (!checked)
+                return budget.reserveUnchecked(bytes);
+            if (!budget.tryReserve(bytes, held_bytes))
+                return {};
+            return bytes;
+        }
+    };
+
     /// Routes `rows` over the slots and inserts the rows of each slot under its lock. Keys and row lists go to the arena of
     /// build stream `stream`, which no other call uses at the same time. Calls `add_bytes` under the lock with the growth of
     /// the slot's buffers, and again after the insert with the growth of the arena.
     template <typename Maps>
-    BuildResult insert(const InsertSettings & settings, const InsertRows & rows, size_t stream, absl::FunctionRef<void(size_t)> add_bytes)
+    BuildResult insert(
+        const InsertSettings & settings,
+        const InsertRows & rows,
+        size_t stream,
+        absl::FunctionRef<void(size_t)> add_bytes,
+        const InsertBudget * budget = nullptr)
     {
-        return dispatchType([&]<Type TYPE>() { return insertTyped<TYPE, Maps>(settings, rows, arena(stream), add_bytes); });
+        return dispatchType([&]<Type TYPE>() { return insertTyped<TYPE, Maps>(settings, rows, arena(stream), add_bytes, budget); });
     }
 
     /// Each slot reserves its share of `keys_to_reserve` at its first insert.
@@ -768,12 +802,110 @@ private:
 
     [[noreturn]] static void throwKeysNotRecoverable(Type type);
 
+    /// The growth of a bucket that stays after its inserts, and the buffer its last resize replaces, which is allocated only
+    /// during that resize. One thread inserts the rows of a slot, so its buckets resize one at a time.
+    template <typename Table>
+    static std::pair<size_t, size_t> bucketGrowth(const Table & table, size_t keys, size_t reserve = 0)
+    {
+        size_t net = std::numeric_limits<size_t>::max();
+        const size_t peak = table.estimateGrowthMemory(keys, reserve, &net);
+        return {net, peak - std::min(peak, net)};
+    }
+
+    /// The most the buckets of `slot` allocate while `slot_rows` rows are inserted, `bucket_rows[b]` of them into bucket `b`,
+    /// or split in any way if `bucket_rows` is empty, including the first-insert reserve of the slot (then every row into each bucket).
+    template <typename Map>
+    size_t estimateSlotGrowth(const Map & map, size_t slot, size_t slot_rows, const std::vector<UInt32> & bucket_rows) const
+    {
+        if constexpr (is_partitioned_fixed_table<Map>)
+            return 0;
+        else
+        {
+            const size_t reserve = slots.keysToReservePerBucket<Map>(slot);
+            if (bucket_rows.empty() && !reserve)
+                return estimateAnySplitGrowth(map, slot, slot_rows);
+            size_t net = 0;
+            size_t replaced = 0;
+            for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size())
+            {
+                const size_t bucket_keys = bucket_rows.empty() ? slot_rows : bucket_rows[bucket];
+                if (bucket_keys || reserve)
+                {
+                    const auto [bucket_net, bucket_replaced] = bucketGrowth(map.impls[bucket], bucket_keys, reserve);
+                    net = JoinSpillBudget::add(net, bucket_net);
+                    replaced = std::max(replaced, bucket_replaced);
+                }
+            }
+            return JoinSpillBudget::add(net, replaced);
+        }
+    }
+
+    /// A bucket allocates only once it gets more than `keysBeforeResize()` new keys, so at most `growing` buckets allocate,
+    /// each at most what it would with all the rows.
+    template <typename Map>
+    size_t estimateAnySplitGrowth(const Map & map, size_t slot, size_t slot_rows) const
+    {
+        std::array<size_t, Map::NUM_BUCKETS> free_keys{};
+        std::array<size_t, Map::NUM_BUCKETS> net{};
+        size_t replaced = 0;
+        size_t num_buckets = 0;
+        for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size(), ++num_buckets)
+        {
+            free_keys[num_buckets] = map.impls[bucket].keysBeforeResize();
+            size_t bucket_replaced = 0;
+            std::tie(net[num_buckets], bucket_replaced) = bucketGrowth(map.impls[bucket], slot_rows);
+            replaced = std::max(replaced, bucket_replaced);
+        }
+        std::sort(free_keys.begin(), free_keys.begin() + num_buckets);
+        size_t growing = 0;
+        for (size_t keys_left = slot_rows; growing < num_buckets && free_keys[growing] < keys_left; ++growing)
+            keys_left -= free_keys[growing] + 1;
+        if (!growing)
+            return 0;
+        std::nth_element(net.begin(), net.begin() + growing, net.begin() + num_buckets, std::greater<>());
+        size_t bound = replaced;
+        for (size_t i = 0; i < growing; ++i)
+            bound = JoinSpillBudget::add(bound, net[i]);
+        return bound;
+    }
+
+    /// The most new keys, up to `max_keys`, that the buckets of `slot` take in any split while their growth fits in `budget`.
+    /// Zero while the first-insert reserve of the slot is pending.
+    template <typename Map>
+    size_t keysWithinBudget(const Map & map, size_t slot, size_t max_keys, const InsertBudget & budget) const
+    {
+        if (slots.keysToReservePerBucket<Map>(slot))
+            return 0;
+        size_t keys = max_keys;
+        for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size())
+            keys = std::min(keys, map.impls[bucket].keysBeforeResize());
+        if (keys)
+            return keys;
+
+        const size_t headroom = budget.budget.headroom(budget.held_bytes());
+        size_t low = 0;
+        size_t high = max_keys;
+        while (low < high)
+        {
+            const size_t mid = high - (high - low) / 2;
+            if (estimateAnySplitGrowth(map, slot, mid) <= headroom)
+                low = mid;
+            else
+                high = mid - 1;
+        }
+        return low;
+    }
+
     /// Kept out of line: with the libc++ 23 headers the inliner folds every instantiation into `insertFromBlockImpl`
     /// (5 KB to 43 KB), and the build loop then overlaps fewer of its independent cache misses with join software
     /// prefetch on (TPC-H Q9 1.3x slower at 4 to 16 threads on aarch64). The call runs once per block.
     template <Type TYPE, typename Maps>
     NO_INLINE BuildResult insertTyped(
-        const InsertSettings & settings, const InsertRows & rows, Arena & arena, absl::FunctionRef<void(size_t)> add_bytes)
+        const InsertSettings & settings,
+        const InsertRows & rows,
+        Arena & arena,
+        absl::FunctionRef<void(size_t)> add_bytes,
+        const InsertBudget * budget)
     {
         using HashMap = JoinMapOf<TYPE, Maps>;
         using KeyGetter = typename KeyGetterForType<TYPE, HashMap>::Type;
@@ -783,17 +915,46 @@ private:
 
         HashMap & map = typedMap<TYPE, Maps>(*this);
 
+        BuildResult result;
+        const bool block_unreserved = budget && !budget->block_reserved;
+        /// ALL, ASOF and take-last-row maps keep every block.
+        if (block_unreserved && !is_set && (!mapped_one || is_asof_join || settings.any_take_last_row))
+        {
+            result.refused = true;
+            return result;
+        }
+        /// The map keeps the block from its first new key on.
+        const bool stop_at_new_key = block_unreserved && (!is_set || settings.must_keep_right_blocks);
+
         std::vector<ScatteredBlock::Selector> scattered;
         std::span<const ScatteredBlock::Selector> per_slot(&rows.selector, 1);
         /// If the key getter can build its keys ahead, the scatter builds them here once, for the inserts of all slots.
         PaddedPODArray<UInt128> prebuilt_keys;
+        std::vector<UInt32> bucket_rows;
+        /// A two-level map has one slot only with one build stream, so its bound over any split of the rows is reserved before
+        /// the slot lock; the rows are counted per bucket only if that bound does not fit.
+        std::optional<size_t> worst_case_reserved;
+        SCOPE_EXIT({
+            if (worst_case_reserved)
+                budget->budget.release(*worst_case_reserved);
+        });
         /// Only the parallel layout has more than one slot, and only its maps have more than one bucket.
         if constexpr (HashMap::NUM_BUCKETS > 1)
         {
             if (slots.size() > 1)
             {
-                scattered = scatterBySlot<TYPE, is_asof_join>(map, rows, prebuilt_keys);
+                scattered = scatterBySlot<TYPE, is_asof_join>(map, rows, prebuilt_keys, budget ? &bucket_rows : nullptr);
                 per_slot = scattered;
+            }
+            else if (budget)
+            {
+                const size_t worst_case = estimateSlotGrowth(map, 0, stop_at_new_key ? 1 : rows.selector.size(), {});
+                worst_case_reserved = budget->reserve(worst_case);
+                if (!worst_case_reserved)
+                {
+                    scattered = scatterBySlot<TYPE, is_asof_join>(map, rows, prebuilt_keys, &bucket_rows);
+                    per_slot = scattered;
+                }
             }
         }
         else
@@ -819,24 +980,81 @@ private:
         const size_t arena_bytes_before = arena.allocatedBytes();
         SCOPE_EXIT({ add_bytes(arena.allocatedBytes() - arena_bytes_before); });
 
-        BuildResult result;
         /// For ALL and ASOF join always insert values. The other maps keep the block only if a slot needs it.
         if constexpr (!is_set)
             result.is_inserted = !mapped_one || is_asof_join;
-        auto insert_slot = [&](size_t slot)
+        auto insert_slot = [&](size_t slot) -> bool
         {
             const ScatteredBlock::Selector & selector = per_slot[slot];
-            const size_t bytes_before = slots.slotBytes(map, slot);
+            size_t growth_reserved = 0;
+            size_t key_limit = stop_at_new_key ? 1 : std::numeric_limits<size_t>::max();
+            if (budget)
+            {
+                if (worst_case_reserved)
+                {
+                    growth_reserved = *worst_case_reserved;
+                    worst_case_reserved.reset();
+                }
+                else if (stop_at_new_key)
+                {
+                    auto reserved = budget->reserve(estimateSlotGrowth(map, slot, 1, {}));
+                    /// At its fill limit a bucket resizes for one new key, so the block goes in only if it has none.
+                    if constexpr (!is_partitioned_fixed_table<HashMap>)
+                    {
+                        if (!reserved)
+                        {
+                            const auto new_keys = selector.isContinuousRange()
+                                ? countNewKeys<TYPE, is_asof_join>(map, rows, selector.getRange())
+                                : countNewKeys<TYPE, is_asof_join>(map, rows, selector.getIndexes());
+                            if (std::ranges::all_of(new_keys, [](UInt32 keys) { return keys == 0; }))
+                                reserved = budget->reserve(0);
+                        }
+                    }
+                    if (!reserved)
+                        return false;
+                    growth_reserved = *reserved;
+                }
+                else
+                {
+                    auto reserved = budget->reserve(estimateSlotGrowth(map, slot, selector.size(), bucket_rows));
+                    /// The estimate takes every row for a new key, so a block of repeated keys goes in up to the new keys that fit.
+                    if constexpr (!is_partitioned_fixed_table<HashMap>)
+                    {
+                        if (!reserved)
+                        {
+                            key_limit = keysWithinBudget(map, slot, selector.size(), *budget);
+                            if (key_limit)
+                                reserved = budget->reserve(estimateSlotGrowth(map, slot, key_limit, {}));
+                            else
+                            {
+                                key_limit = std::numeric_limits<size_t>::max();
+                                const auto new_keys = selector.isContinuousRange()
+                                    ? countNewKeys<TYPE, is_asof_join>(map, rows, selector.getRange())
+                                    : countNewKeys<TYPE, is_asof_join>(map, rows, selector.getIndexes());
+                                reserved = budget->reserve(estimateSlotGrowth(map, slot, 0, new_keys));
+                            }
+                        }
+                    }
+                    if (!reserved)
+                        return false;
+                    growth_reserved = *reserved;
+                }
+            }
+            size_t bytes_before = slots.slotBytes(map, slot);
             /// Under the slot lock so a concurrent limit check cannot miss this slot. Also when an insert throws: the
-            /// rows before it stay in the map, and `StorageJoin` keeps serving them.
-            SCOPE_EXIT({ add_bytes(slots.slotBytes(map, slot) - bytes_before); });
+            /// rows before it stay in the map, and `StorageJoin` keeps serving them. The reservation goes after the bytes.
+            SCOPE_EXIT({
+                add_bytes(slots.slotBytes(map, slot) - bytes_before);
+                if (budget)
+                    budget->budget.release(growth_reserved);
+            });
 
             if (const size_t reserved = slots.reserveOnFirstInsert(map, slot))
                 ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserved);
 
-            auto insert_rows = [&](const auto & slot_rows)
+            auto insert_some = [&](const auto & slot_rows, size_t & next_row)
             {
-                return insertSlotRows<Maps>(
+                const BuildResult slot_result = insertSlotRows<Maps>(
                     settings,
                     map,
                     key_getter,
@@ -847,16 +1065,58 @@ private:
                     rows.join_mask,
                     arena,
                     prebuilt_keys.empty() ? nullptr : &prebuilt_keys,
-                    skip);
+                    skip,
+                    key_limit,
+                    next_row);
+                result.is_inserted |= slot_result.is_inserted;
+                result.all_values_unique &= slot_result.all_values_unique;
             };
-            const BuildResult slot_result
-                = selector.isContinuousRange() ? insert_rows(selector.getRange()) : insert_rows(selector.getIndexes());
+            /// After `key_limit` new keys, the rest of the rows goes in only if its own new keys fit.
+            auto insert_rest = [&](const auto & rest)
+            {
+                add_bytes(slots.slotBytes(map, slot) - bytes_before);
+                bytes_before = slots.slotBytes(map, slot);
+                budget->budget.release(growth_reserved);
+                growth_reserved = 0;
 
-            result.is_inserted |= slot_result.is_inserted;
-            result.all_values_unique &= slot_result.all_values_unique;
+                auto reserved = budget->reserve(estimateSlotGrowth(map, slot, 0, countNewKeys<TYPE, is_asof_join>(map, rows, rest)));
+                if (!reserved)
+                    return false;
+                growth_reserved = *reserved;
+                key_limit = std::numeric_limits<size_t>::max();
+                size_t next_row = 0;
+                insert_some(rest, next_row);
+                return true;
+            };
+            auto insert_rows = [&](const auto & slot_rows)
+            {
+                size_t next_row = 0;
+                insert_some(slot_rows, next_row);
+                if (next_row != ScatteredBlock::Selector::size(slot_rows))
+                {
+                    if (stop_at_new_key)
+                        return false;
+                    if constexpr (!is_partitioned_fixed_table<HashMap>)
+                    {
+                        if constexpr (std::is_same_v<std::decay_t<decltype(slot_rows)>, ScatteredBlock::Selector::Range>)
+                            return insert_rest(ScatteredBlock::Selector::Range{slot_rows.first + next_row, slot_rows.second});
+                        else
+                        {
+                            const auto & indexes = slot_rows.getData();
+                            return insert_rest(*ScatteredBlock::Selector::Indexes::create(indexes.begin() + next_row, indexes.end()));
+                        }
+                    }
+                }
+                return true;
+            };
+            return selector.isContinuousRange() ? insert_rows(selector.getRange()) : insert_rows(selector.getIndexes());
         };
 
-        slots.insert(per_slot, insert_slot);
+        if (!slots.insert(per_slot, insert_slot))
+        {
+            result.refused = true;
+            return result;
+        }
 
         /// `insertSlotRows` takes a key getter that is not trivially copyable by reference, so these counts cover all slots.
         if constexpr (requires { key_getter.hashed_keys; })
@@ -870,6 +1130,7 @@ private:
     /// Inserts the rows of one slot. The `is_inserted` it returns comes from these rows only.
     /// If set, `prebuilt_keys[row]` is the key of each row that the slot scatter routed, built with the key getter's
     /// `buildAllKeys`. `skip` is the skip bytes of the block for a prepared key getter.
+    /// Stops after the row that adds the `key_limit`-th new key; `next_row` is the position after the last row it took.
     template <typename Maps, typename KeyGetter, typename HashMap, typename Selector>
     BuildResult insertSlotRows(
         const InsertSettings & settings,
@@ -882,7 +1143,9 @@ private:
         const JoinCommon::JoinMask & join_mask,
         Arena & pool,
         [[maybe_unused]] const PaddedPODArray<UInt128> * prebuilt_keys,
-        [[maybe_unused]] const UInt8 * skip)
+        [[maybe_unused]] const UInt8 * skip,
+        size_t key_limit,
+        size_t & next_row)
     {
         [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename Maps::MappedType, RowRef>;
         constexpr bool is_set = SetJoinMaps<Maps>;
@@ -954,6 +1217,7 @@ private:
                 }
             });
 
+        next_row = rows;
         for (size_t i = 0; i < rows; ++i)
         {
             if constexpr (can_prefetch)
@@ -994,6 +1258,12 @@ private:
             else
                 result.all_values_unique
                     &= Inserter<HashMap, KeyGetter>::insertAll(map, key_getter, stored_block_no, ind, pool, new_keys);
+
+            if (unlikely(new_keys == key_limit))
+            {
+                next_row = i + 1;
+                break;
+            }
         }
 
         /// A set map needs the block only for another algorithm, and only when the block added a key.
@@ -1002,10 +1272,49 @@ private:
         return result;
     }
 
+    /// The keys of `slot_rows` that are not in `map` yet, each counted once, per bucket. Call under the slot lock.
+    template <Type TYPE, bool is_asof_join, typename Map, typename SlotRows>
+    std::vector<UInt32> countNewKeys(const Map & map, const InsertRows & rows, const SlotRows & slot_rows) const
+    {
+        using KeyGetter = KeyGetterForType<TYPE, Map>::Type;
+        using KeySet = HashSet<typename Map::key_type, DefaultHash<typename Map::key_type>>;
+
+        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(rows.key_columns, key_sizes);
+        IColumn::Filter skip_buffer;
+        const UInt8 * skip = buildRowSkipData(rows.null_map, rows.join_mask, skip_buffer, 0, rows.key_columns.at(0)->size());
+        Arena scratch_pool;
+        KeySet new_keys;
+        std::vector<UInt32> bucket_keys(Map::NUM_BUCKETS, 0);
+        const size_t num_rows = ScatteredBlock::Selector::size(slot_rows);
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            const size_t row = selectorIndexAt(slot_rows, i);
+            if (skip && skip[row])
+                continue;
+
+            auto key_holder = key_getter.getKeyHolder(row, scratch_pool);
+            const auto & key = keyHolderGetKey(key_holder);
+            const size_t hash = map.hash(key);
+            const size_t bucket = getBucketOfKey<Map>(key, hash);
+            if (map.impls[bucket].find(key, hash))
+                continue;
+
+            typename KeySet::LookupResult it;
+            bool inserted = false;
+            new_keys.emplace(key, it, inserted);
+            bucket_keys[bucket] += inserted;
+        }
+        return bucket_keys;
+    }
+
     /// Routes each row the way `map` places its key: by `map.hash` and `getBucketOfKey`.
+    /// If `bucket_rows` is set, it gets the number of rows of each bucket.
     template <Type TYPE, bool is_asof_join, typename Map>
     std::vector<ScatteredBlock::Selector> scatterBySlot(
-        const Map & map, const InsertRows & rows, [[maybe_unused]] PaddedPODArray<UInt128> & prebuilt_keys) const
+        const Map & map,
+        const InsertRows & rows,
+        [[maybe_unused]] PaddedPODArray<UInt128> & prebuilt_keys,
+        std::vector<UInt32> * bucket_rows = nullptr) const
     {
         using KeyGetter = KeyGetterForType<TYPE, Map>::Type;
 
@@ -1029,6 +1338,8 @@ private:
 
         PODArray<UInt32> row_to_slot(num_rows);
         std::vector<size_t> counts(num_slots, 0);
+        if (bucket_rows)
+            bucket_rows->assign(Map::NUM_BUCKETS, 0);
         for (size_t i = 0; i < num_rows; ++i)
         {
             auto key_holder = key_getter.getKeyHolder(selector[i], scratch_pool);
@@ -1039,6 +1350,8 @@ private:
             const auto slot = static_cast<UInt32>(bucket & (num_slots - 1));
             row_to_slot[i] = slot;
             ++counts[slot];
+            if (bucket_rows)
+                ++(*bucket_rows)[bucket];
         }
 
         std::vector<ScatteredBlock::Selector::IndexesPtr> indexes;

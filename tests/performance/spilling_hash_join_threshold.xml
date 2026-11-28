@@ -1,0 +1,16 @@
+<test>
+    <settings>
+        <max_threads>16</max_threads>
+        <join_algorithm>hash</join_algorithm>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+    </settings>
+
+    <!-- The right side takes 2.28 GiB in memory, mostly stored blocks: it fits, and spilled at half of the threshold. -->
+    <query>SELECT count(), sum(length(r.s)) FROM (SELECT number AS k FROM numbers_mt(8000000)) AS l INNER JOIN (SELECT number AS k, repeat(toString(number % 10), 200) AS s FROM numbers_mt(8000000)) AS r USING (k) SETTINGS max_bytes_before_external_join = 3400000000 FORMAT Null</query>
+    <!-- The right side takes 317 MiB in memory, mostly the hash table: it fits, and spilled at half of the threshold. -->
+    <query>SELECT count() FROM (SELECT number AS k FROM numbers_mt(8000000)) AS l INNER JOIN (SELECT number AS k FROM numbers_mt(8000000)) AS r USING (k) SETTINGS max_bytes_before_external_join = 480000000 FORMAT Null</query>
+    <!-- 1000 long keys in 10M right rows: only the first block adds keys, the join holds 14 MB and fits in 30 MB. -->
+    <query>SELECT count(), sum(r.v) FROM (SELECT concat(toString(number), repeat('x', 200)) AS k FROM numbers(1000)) AS l ANY LEFT JOIN (SELECT concat(toString(number % 1000), repeat('x', 200)) AS k, intDiv(number, 10000000) AS v FROM numbers(10000000)) AS r USING (k) SETTINGS hash_join_layout = 'serial', max_threads = 1, max_block_size = 65409, max_bytes_before_external_join = 30000000, enable_packed_string_keys_in_hash_join = 1, collect_hash_table_stats_during_joins = 0, query_plan_join_swap_table = 'false' FORMAT Null</query>
+    <!-- One long key in 10M right rows of a grace hash join: every block has the bucket's one hash, and it fits in 40 MB. -->
+    <query>SELECT count(), sum(r.v) FROM (SELECT concat(toString(number % 1), repeat('x', 200)) AS k FROM numbers(1)) AS l ANY LEFT JOIN (SELECT concat(toString(number % 1), repeat('x', 200)) AS k, intDiv(number, 10000000) AS v FROM numbers(10000000)) AS r USING (k) SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 1, max_threads = 1, max_block_size = 65409, max_bytes_before_external_join = 40000000, collect_hash_table_stats_during_joins = 0, query_plan_join_swap_table = 'false' FORMAT Null</query>
+</test>

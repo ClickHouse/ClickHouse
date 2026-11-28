@@ -49,6 +49,7 @@
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/HashJoinTable.h>
+#include <Interpreters/HashJoin/JoinSpillBudget.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/gatherJoinOutputColumns.h>
 
@@ -123,7 +124,7 @@ size_t capReserveAtSpillBudget(size_t keys, size_t max_reserve_bytes, size_t cel
 {
     /// `HashTableGrowerWithPrecalculation::set` keeps a buffer at most half full and rounds its size up to a power of two.
     static constexpr size_t max_cells_per_key = 4;
-    /// `SpillingHashJoin` switches to `GraceHashJoin` at half of the budget, so the reserve stays under that half.
+    /// The reserve takes at most half of the budget, which leaves the other half to the stored blocks.
     static constexpr size_t budget_divisor = 2;
 
     if (!keys || !max_reserve_bytes)
@@ -995,10 +996,61 @@ Block HashJoin::prepareRightBlock(const Block & block) const
     return prepareRightBlock(block, savedBlockSample());
 }
 
-bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */, JoinBuildContext context)
+size_t HashJoin::getRawByteCount() const
 {
     if (!data)
+        return 0;
+    return data->total_bytes.load(std::memory_order_relaxed);
+}
+
+size_t HashJoin::spillHeldBytes() const
+{
+    size_t held = getRawByteCount();
+    if (spill_held_elsewhere)
+        held = JoinSpillBudget::add(held, spill_held_elsewhere());
+    return held;
+}
+
+void HashJoin::setSpillBudget(JoinSpillBudget * budget, std::function<size_t()> held_elsewhere)
+{
+    if (!budget || from_storage_join || strictness == JoinStrictness::Asof || !table_join->oneDisjunct())
+        return;
+
+    spill_budget = budget;
+    spill_held_elsewhere = std::move(held_elsewhere);
+}
+
+void HashJoin::reserveCountedKeys(size_t keys)
+{
+    for (auto & table : data->tables)
+        table->reserve(keys);
+}
+
+bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */, JoinBuildContext context)
+{
+    bool refused = false;
+    /// A caller of this overload does not look at `refused`, so the budget only counts the block.
+    return addBlockToJoin(source_block, context, refused, /*checked=*/false);
+}
+
+bool HashJoin::addBlockToJoin(const Block & source_block, JoinBuildContext context, bool & refused, bool checked)
+{
+    refused = false;
+    if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
+
+    size_t reserved_bytes = 0;
+    SCOPE_EXIT({
+        if (reserved_bytes)
+            spill_budget->release(reserved_bytes);
+    });
+    auto release_reserved = [&](size_t bytes)
+    {
+        bytes = std::min(bytes, reserved_bytes);
+        if (bytes)
+            spill_budget->release(bytes);
+        reserved_bytes -= bytes;
+    };
 
     const Block block = materializeColumnsFromRightBlock(source_block);
     ScatteredBlock::Selector selector(block.rows());
@@ -1109,11 +1161,59 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
         new_block.emplace_back(std::move(columns), std::move(selector), std::move(row_store));
         auto * stored_columns = &new_block.back();
         size_t data_allocated_bytes = stored_columns->allocatedBytes();
+        size_t reserved_nullmaps = 0;
+        bool block_reserved = true;
+        if (spill_budget)
+        {
+            const auto & clause = table_join->getOnlyClause();
+            const size_t block_rows = block.rows();
+            if (isRightOrFull(kind) && !needUsedFlagsForPerRightTableRow(table_join))
+            {
+                if (std::ranges::any_of(clause.key_names_right, [&](const auto & name) { return all_key_columns.at(name)->isNullable(); }))
+                    reserved_nullmaps = JoinSpillBudget::paddedPodArrayBytes<UInt8>(block_rows);
+                if (!clause.condColumnNames().second.empty())
+                    reserved_nullmaps = JoinSpillBudget::add(reserved_nullmaps, JoinSpillBudget::paddedPodArrayBytes<UInt8>(block_rows));
+            }
+
+            const size_t bytes = JoinSpillBudget::add(data_allocated_bytes, reserved_nullmaps);
+            if (!checked)
+                reserved_bytes = spill_budget->reserveUnchecked(bytes);
+            else if (spill_budget->tryReserve(bytes, [this] { return spillHeldBytes(); }))
+                reserved_bytes = bytes;
+            else
+            {
+                /// A block of keys that the map already has is dropped after the insert, so it still goes in, neither stored nor
+                /// counted, and is refused if the map keeps it.
+                LOG_TRACE(
+                    log,
+                    "{}The spill budget has no room for a block of {} rows: {} bytes, {} held, {} reserved",
+                    instance_log_id, rows, bytes, spillHeldBytes(), spill_budget->getReserved());
+                block_reserved = false;
+                data_allocated_bytes = 0;
+            }
+        }
         stored_columns->block_no = data->stored_columns_index->add(stored_columns);
         data->addBytes(data->allocated_size, data_allocated_bytes);
+        release_reserved(data_allocated_bytes);
         data->rows_to_join.fetch_add(rows, std::memory_order_relaxed);
-        build_stream.columns.splice(build_stream.columns.end(), new_block);
+        if (block_reserved)
+            build_stream.columns.splice(build_stream.columns.end(), new_block);
         doDebugAsserts();
+
+        /// Takes the block out again, as if it was never added. Nothing may reference it.
+        auto undo_block = [&]
+        {
+            doDebugAsserts();
+            data->subBytes(data->allocated_size, data_allocated_bytes);
+            /// Nothing was inserted, so no refs to this block exist; null the index entry so
+            /// that a stale ref trips the chassert in `StoredColumnsIndex::at` in debug builds
+            /// (and dereferences nullptr deterministically in release builds) instead of
+            /// silently reading freed memory.
+            data->stored_columns_index->clearEntry(stored_columns->block_no);
+            if (block_reserved)
+                build_stream.columns.pop_back();
+            doDebugAsserts();
+        };
 
         bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
         const auto & onexprs = table_join->getClauses();
@@ -1177,6 +1277,8 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
             }
 
             bool is_inserted = false;
+            /// An unstored block may go in only if just the map can keep it.
+            bool slot_refused = !block_reserved && (flag_per_row || has_right_not_joined);
 
             dispatchJoinShape(
                 kind,
@@ -1184,11 +1286,20 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
                 maps_kind,
                 [&]<JoinKind kind_, JoinStrictness strictness_, typename Maps>()
                 {
+                    if (slot_refused)
+                        return;
                     const BuildResult result = HashJoinMethods<kind_, strictness_, Maps>::insertFromBlockImpl(
                         *this,
                         *data->tables[onexpr_idx],
                         {key_columns, stored_columns->selector, stored_columns->block_no, null_map, join_mask_col},
-                        context.getStream());
+                        context.getStream(),
+                        checked,
+                        block_reserved);
+                    if (result.refused)
+                    {
+                        slot_refused = true;
+                        return;
+                    }
                     is_inserted = result.is_inserted;
                     if (!result.all_values_unique)
                         all_values_unique.store(false, std::memory_order_relaxed);
@@ -1200,6 +1311,17 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
                         per_row_flags_initialized = true;
                     }
                 });
+
+            /// The rows that slots inserted before the refusal reference the block, but the caller frees the maps
+            /// before anything reads them (only one disjunct has a budget).
+            if (slot_refused || (!block_reserved && is_inserted))
+            {
+                LOG_TRACE(log, "{}The spill budget refused a block with {} rows", instance_log_id, rows);
+                undo_block();
+                data->rows_to_join.fetch_sub(rows, std::memory_order_relaxed);
+                refused = true;
+                return true;
+            }
 
             if (!flag_per_row && save_nullmap && is_inserted)
             {
@@ -1226,21 +1348,16 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
 
             if (!block_is_referenced && last_clause)
             {
-                doDebugAsserts();
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
-                data->subBytes(data->allocated_size, data_allocated_bytes);
+                undo_block();
                 /// A set map references no block at all, so every block is dropped here even though its
                 /// rows did take part in the join and must stay counted.
                 if (maps_kind != JoinMapsKind::Set)
                     data->rows_to_join.fetch_sub(rows, std::memory_order_relaxed);
-                /// Nothing was inserted, so no refs to this block exist; null the index entry so
-                /// that a stale ref trips the chassert in `StoredColumnsIndex::at` in debug builds
-                /// (and dereferences nullptr deterministically in release builds) instead of
-                /// silently reading freed memory.
-                data->stored_columns_index->clearEntry(stored_columns->block_no);
-                build_stream.columns.pop_back();
-                doDebugAsserts();
             }
+
+            if (last_clause)
+                release_reserved(reserved_nullmaps);
 
             if (context.joinChecksLimits())
             {
@@ -1997,24 +2114,6 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     return restored_blocks;
 }
 
-BlocksList HashJoin::releaseBuildStreamBlocks(size_t stream)
-{
-    auto & build_stream = data->build_streams[stream];
-    StoredBlocksList right_columns = std::move(build_stream.columns);
-    /// Other threads may still be draining the lists of other build streams, and the sample block is shared, so `data`
-    /// stays alive. Its byte counts drop with the released blocks.
-    for (const auto & columns : right_columns)
-        data->subBytes(data->allocated_size, columns.allocatedBytes());
-    for (const auto & nullmap : build_stream.nullmaps)
-        data->subBytes(data->nullmaps_allocated_size, nullmap.allocatedBytes());
-    build_stream.nullmaps.clear();
-
-    BlocksList result;
-    for (auto & columns : right_columns)
-        result.emplace_back(data->sample_block.cloneWithColumns(materializeStoredBlock(columns, data->column_access_indexes)));
-    return result;
-}
-
 void HashJoin::releaseJoinMaps()
 {
     for (auto & table : data->tables)
@@ -2023,6 +2122,63 @@ void HashJoin::releaseJoinMaps()
         table->releaseArenas();
     }
     data->setBytes(data->bucket_bytes, 0);
+
+    /// The used flags and the index of the stored blocks serve only the probe of these maps.
+    for (auto & pending : used_flags->pending_per_build_stream)
+        JoinStuff::JoinUsedFlags::PendingPerRowFlags{}.swap(pending);
+    data->stored_columns_index = std::make_shared<StoredColumnsIndex>();
+}
+
+HashJoin::StoredBlocksList HashJoin::takeBuildStreamBlock(size_t stream)
+{
+    auto & build_stream = data->build_streams[stream];
+    /// Only the probe reads the null maps, so they go at the first take.
+    for (const auto & nullmap : build_stream.nullmaps)
+        data->subBytes(data->nullmaps_allocated_size, nullmap.allocatedBytes());
+    build_stream.nullmaps.clear();
+
+    StoredBlocksList taken;
+    if (build_stream.columns.empty())
+        return taken;
+    taken.splice(taken.end(), build_stream.columns, build_stream.columns.begin());
+    /// `total_bytes` keeps counting the block.
+    const size_t bytes = taken.front().allocatedBytes();
+    data->handed_over_size.fetch_add(bytes, std::memory_order_relaxed);
+    data->allocated_size.fetch_sub(bytes, std::memory_order_relaxed);
+    return taken;
+}
+
+size_t HashJoin::takenBlockBytes(const StoredBlocksList & taken)
+{
+    return taken.empty() ? 0 : taken.front().allocatedBytes();
+}
+
+Block HashJoin::materializeTakenBlock(StoredBlocksList && taken) const
+{
+    StoredBlocksList block = std::move(taken);
+    return data->sample_block.cloneWithColumns(materializeStoredBlock(block.front(), data->column_access_indexes));
+}
+
+void HashJoin::releaseTakenBlock(size_t stored_bytes)
+{
+    data->subBytes(data->handed_over_size, stored_bytes);
+}
+
+HashJoin::StoredBlocksList HashJoin::takeStoredBlocks()
+{
+    releaseJoinMaps();
+    fiu_do_on(FailPoints::hash_join_throw_after_data_release,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the join data was released");
+    });
+    data->spliceBuildStreamLists();
+    auto & stored = data->build_streams.front();
+    stored.nullmaps.clear();
+    data->setBytes(data->nullmaps_allocated_size, 0);
+    StoredBlocksList res = std::move(stored.columns);
+    stored.columns.clear();
+    data->setBytes(data->allocated_size, 0);
+    return res;
 }
 
 const ColumnWithTypeAndName & HashJoin::rightAsofKeyColumn() const
@@ -2255,6 +2411,23 @@ void HashJoin::freezeMapsForProbing()
 {
     for (auto & table : data->tables)
         table->freezeForProbing();
+}
+
+size_t HashJoin::usedFlagsBytesAfterBuild() const
+{
+    if (!data || needUsedFlagsForPerRightTableRow(table_join))
+        return 0;
+    size_t bytes = 0;
+    dispatchJoinShape(
+        kind,
+        strictness,
+        getMapsKind(),
+        [&]<JoinKind kind_, JoinStrictness strictness_, typename Maps>()
+        {
+            if constexpr (MapGetter<kind_, strictness_, mapsKindOf<Maps>()>::flagged)
+                bytes = data->tables.front()->bufferSizeInCells() + 1;
+        });
+    return bytes;
 }
 
 void HashJoin::reinitUsedFlags()

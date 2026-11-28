@@ -813,20 +813,63 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
     }
 }
 
-template <Fn<size_t(size_t)> Sharder>
-static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Block & block, size_t num_shards, Sharder sharder)
+static PaddedPODArray<UInt32> hashKeysForScatter(const Strings & key_columns_names, const Block & block)
 {
-    size_t num_rows = block.rows();
-    size_t num_cols = block.columns();
-
-    PaddedPODArray<UInt32> hash(num_rows, WEAK_HASH32_INITIAL_VALUE);
+    PaddedPODArray<UInt32> hash(block.rows(), WEAK_HASH32_INITIAL_VALUE);
     for (const auto & key_name : key_columns_names)
     {
         /// `-0.` and `0.` are equal keys, so they have to land in the same bucket.
         ColumnPtr key_col = replaceNegativeZeros(materializeColumn(block, key_name));
-        key_col->computeHashInto(0, num_rows, hash.data(), false);
+        key_col->computeHashInto(0, block.rows(), hash.data(), false);
     }
-    auto selector = hashToSelector(hash, sharder);
+    return hash;
+}
+
+template <Fn<bool(size_t)> InShard>
+static std::optional<UInt32> sharedHash(const PaddedPODArray<UInt32> & hash, InShard in_shard)
+{
+    size_t first = 0;
+    while (first < hash.size() && !in_shard(first))
+        ++first;
+    if (first == hash.size())
+        return {};
+
+    /// Branch-free within a chunk, so that rows of one hash vectorize, while different hashes stop after a chunk.
+    static constexpr size_t chunk = 64;
+    UInt32 diff = 0;
+    for (size_t begin = first; begin < hash.size() && !diff; begin += chunk)
+    {
+        const size_t end = std::min(begin + chunk, hash.size());
+        for (size_t row = begin; row < end; ++row)
+            diff |= in_shard(row) ? hash[row] ^ hash[first] : 0;
+    }
+    if (diff)
+        return {};
+    return hash[first];
+}
+
+std::optional<UInt32> oneScatterHash(const Strings & key_columns_names, const Block & block)
+{
+    return sharedHash(hashKeysForScatter(key_columns_names, block), [](size_t) { return true; });
+}
+
+template <bool owned, Fn<size_t(size_t)> Sharder>
+static Blocks scatterBlockByHashImpl(
+    const Strings & key_columns_names,
+    std::conditional_t<owned, Block &, const Block &> block,
+    size_t num_shards,
+    Sharder sharder,
+    ShardHash * shard_hash)
+{
+    size_t num_cols = block.columns();
+
+    const auto hash = hashKeysForScatter(key_columns_names, block);
+    IColumn::Selector selector = hashToSelector(hash, sharder);
+    if (shard_hash)
+    {
+        shard_hash->hashed = true;
+        shard_hash->hash = sharedHash(hash, [&](size_t row) { return selector[row] == shard_hash->shard; });
+    }
 
     Blocks result;
     result.reserve(num_shards);
@@ -837,7 +880,13 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
 
     for (size_t i = 0; i < num_cols; ++i)
     {
-        auto dispatched_columns = block.getByPosition(i).column->scatter(num_shards, selector);
+        ColumnPtr column;
+        if constexpr (owned)
+            column = std::move(block.getByPosition(i).column);
+        else
+            column = block.getByPosition(i).column;
+        auto dispatched_columns = column->scatter(num_shards, selector);
+        column.reset();
         chassert(result.size() == dispatched_columns.size());
         for (size_t block_index = 0; block_index < num_shards; ++block_index)
         {
@@ -847,26 +896,37 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
     return result;
 }
 
-static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Block & block, size_t num_shards)
-{
-    size_t mask = num_shards - 1;
-    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [mask](size_t hash) { return hash & mask; });
-}
-
-static Blocks scatterBlockByHashGeneric(const Strings & key_columns_names, const Block & block, size_t num_shards)
-{
-    /// Use the "fastrange" method from Daniel Lemire:
-    return scatterBlockByHashImpl(key_columns_names, block, num_shards,
-        [num_shards](size_t hash) { return ((hash & 0xFFFFFFFF) * num_shards) >> 32; });
-}
-
-Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards)
+template <bool owned>
+static Blocks scatterBlockByHashDispatch(
+    const Strings & key_columns_names, std::conditional_t<owned, Block &, const Block &> block, size_t num_shards, ShardHash * shard_hash)
 {
     if (num_shards == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of shards must be positive");
     if (likely(isPowerOf2(num_shards)))
-        return scatterBlockByHashPow2(key_columns_names, block, num_shards);
-    return scatterBlockByHashGeneric(key_columns_names, block, num_shards);
+    {
+        size_t mask = num_shards - 1;
+        return scatterBlockByHashImpl<owned>(
+            key_columns_names, block, num_shards, [mask](size_t hash) { return hash & mask; }, shard_hash);
+    }
+    /// Use the "fastrange" method from Daniel Lemire:
+    return scatterBlockByHashImpl<owned>(key_columns_names, block, num_shards,
+        [num_shards](size_t hash) { return ((hash & 0xFFFFFFFF) * num_shards) >> 32; }, shard_hash);
+}
+
+Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards, ShardHash * shard_hash)
+{
+    return scatterBlockByHashDispatch<false>(key_columns_names, block, num_shards, shard_hash);
+}
+
+Blocks scatterBlockByHash(const Strings & key_columns_names, Block && block, size_t num_shards, ShardHash * shard_hash)
+{
+    if (num_shards == 1)
+    {
+        Blocks result;
+        result.emplace_back(std::move(block));
+        return result;
+    }
+    return scatterBlockByHashDispatch<true>(key_columns_names, block, num_shards, shard_hash);
 }
 
 template<typename T>

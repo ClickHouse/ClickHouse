@@ -4,6 +4,7 @@
 #include <atomic>
 #include <bit>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -40,6 +41,7 @@ using Sizes = std::vector<size_t>;
 
 class MatchedRowsStats;
 class HashJoinTable;
+class JoinSpillBudget;
 
 namespace JoinStuff
 {
@@ -99,6 +101,7 @@ struct BuildResult
 {
     bool is_inserted = false;
     bool all_values_unique = true;
+    bool refused = false;
 };
 
 /** Data structure for implementation of hash JOIN.
@@ -240,6 +243,19 @@ public:
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
     bool addBlockToJoin(const Block & source_block_, size_t num_rows, JoinBuildContext context) override;
+
+    /// `refused`: the spill budget refused the block, which is then not in the join. `checked = false` admits it anyway.
+    bool addBlockToJoin(const Block & source_block_, JoinBuildContext context, bool & refused, bool checked = true);
+
+    /// Every insert is admitted against `budget`; `held_elsewhere` is what the owner holds outside this join. Call before the first insert.
+    void setSpillBudget(JoinSpillBudget * budget, std::function<size_t()> held_elsewhere = {});
+    /// Reserves `keys` at the first insert like `reserve_num`, but not capped at the spill budget: a count, not an estimate.
+    void reserveCountedKeys(size_t keys);
+
+    /// `getTotalByteCount` without the debug checks, which walk the block lists that other threads may be changing.
+    size_t getRawByteCount() const;
+    /// The used flags that `onBuildPhaseFinish` allocates, one byte per cell of the map.
+    size_t usedFlagsBytesAfterBuild() const;
 
     void checkTypesOfKeys(const Block & block) const override;
 
@@ -639,14 +655,16 @@ public:
 
         std::atomic<size_t> allocated_size = 0;
         std::atomic<size_t> nullmaps_allocated_size = 0;
+        /// The stored blocks that `takeBuildStreamBlock` handed over and `releaseTakenBlock` did not release yet.
+        std::atomic<size_t> handed_over_size = 0;
         /// Number of rows of right table to join
         std::atomic<size_t> rows_to_join = 0;
         /// A running total: summing the buckets would read what other build threads are mutating.
         /// `bucket_bytes` accumulates deltas, so a post-build step that swaps maps must recompute it.
         std::atomic<size_t> bucket_bytes = 0;
 
-        /// `allocated_size + nullmaps_allocated_size + bucket_bytes` in one atomic: summing the three while build threads
-        /// update them can under-count `max_bytes_in_join`. Size-limit checks and `peak_build_bytes` read only this.
+        /// `allocated_size + nullmaps_allocated_size + handed_over_size + bucket_bytes` in one atomic: summing them while
+        /// build threads update them can under-count `max_bytes_in_join`. Size-limit checks and `peak_build_bytes` read only this.
         std::atomic<size_t> total_bytes = 0;
 
         /// Add `total_bytes` first so a concurrent size-limit check cannot under-count.
@@ -707,8 +725,19 @@ public:
 
     RightTableDataPtr getJoinedData() const { return data; }
     BlocksList releaseJoinedBlocks(bool restructure = false);
-    BlocksList releaseBuildStreamBlocks(size_t stream);
+    /// Frees the maps and what only they need. The join can then only hand its stored blocks over.
     void releaseJoinMaps();
+
+    /// The hand-over of the stored blocks, one at a time, after `releaseJoinMaps`: `takeBuildStreamBlock` moves the first
+    /// block of a build stream out (empty when there is none) and keeps counting its bytes until `releaseTakenBlock`.
+    StoredBlocksList takeBuildStreamBlock(size_t stream);
+    static size_t takenBlockBytes(const StoredBlocksList & taken);
+    /// The block with the columns of `savedBlockSample`. Frees the row store as it rebuilds the columns.
+    Block materializeTakenBlock(StoredBlocksList && taken) const;
+    void releaseTakenBlock(size_t stored_bytes);
+
+    /// All the stored blocks, with the maps freed. The join can only materialize them after that.
+    StoredBlocksList takeStoredBlocks();
 
     /// Modify right block (update structure according to sample block) to save it in block list
     static Block prepareRightBlock(const Block & block, const Block & saved_block_sample_);
@@ -805,6 +834,12 @@ private:
 
     /// Peak of bytes observed in the hash table during the build phase
     std::atomic<size_t> peak_build_bytes = 0;
+
+    /// Not owned. Null when the join does not spill, see `setSpillBudget`.
+    JoinSpillBudget * spill_budget = nullptr;
+    std::function<size_t()> spill_held_elsewhere;
+
+    size_t spillHeldBytes() const;
 
     void updatePeakBuildBytes(size_t bytes)
     {

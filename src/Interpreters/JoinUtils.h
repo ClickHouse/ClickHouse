@@ -202,9 +202,24 @@ IColumn::Selector hashToSelector(const PaddedPODArray<UInt32> & hashes, Sharder 
     return selector;
 }
 
-Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards);
+/// The hash `scatterBlockByHash` gives every row of one shard, if they all have one.
+struct ShardHash
+{
+    explicit ShardHash(size_t shard_) : shard(shard_) {}
+
+    size_t shard;
+    /// False if the scatter did not hash the rows: it moves a block into its only shard as it is.
+    bool hashed = false;
+    std::optional<UInt32> hash;
+};
+
+Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards, ShardHash * shard_hash = nullptr);
+/// Frees each column of `block` once it is scattered. One shard is `block` itself.
+Blocks scatterBlockByHash(const Strings & key_columns_names, Block && block, size_t num_shards, ShardHash * shard_hash = nullptr);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & blocks, size_t num_shards);
+/// The hash `scatterBlockByHash` gives every row of `block`, if they all have one: no number of shards splits them.
+std::optional<UInt32> oneScatterHash(const Strings & key_columns_names, const Block & block);
 
 constexpr bool hasNonJoinedBlocks(JoinKind kind, JoinStrictness strictness)
 {
