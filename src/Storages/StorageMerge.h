@@ -295,12 +295,12 @@ private:
     {
         String name;       /// "size" in  "size String Alias formatReadableSize(size_bytes)"
         DataTypePtr type;  /// String in "size String Alias formatReadableSize(size_bytes)", or something different came from query
-        ASTPtr expression; /// formatReadableSize(size_bytes) in "size String Alias formatReadableSize(size_bytes)"
     };
 
     using Aliases = std::vector<AliasData>;
 
     SelectQueryInfo getModifiedQueryInfo(const ContextMutablePtr & modified_context,
+        const ContextPtr & column_name_resolution_context,
         const StorageWithLockAndName & storage_with_lock_and_name,
         const StorageSnapshotPtr & storage_snapshot,
         Names required_column_names,

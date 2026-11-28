@@ -14,7 +14,6 @@
 #include <Analyzer/ListNode.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Common/Logger.h>
@@ -115,6 +114,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
@@ -223,6 +223,18 @@ std::optional<std::pair<String, String>> tryGetSubcolumnOfAliasColumn(const Colu
 bool isSubcolumnOfAliasColumn(const ColumnsDescription & storage_columns, const String & name)
 {
     return tryGetSubcolumnOfAliasColumn(storage_columns, name).has_value();
+}
+
+/// A child's column name is resolved in the scope of its table expression, where it must not be qualified
+/// by the table alias: `__table1.x` is the subcolumn `x` of the column `__table1` of a table aliased `__table1`.
+ContextPtr getColumnNameResolutionContext(const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn])
+        return context;
+
+    auto resolution_context = Context::createCopy(context);
+    resolution_context->setSetting("analyzer_compatibility_prefer_alias_over_subcolumn", false);
+    return resolution_context;
 }
 
 }
@@ -1488,6 +1500,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             }
 
             SelectQueryInfo modified_query_info;
+            ContextPtr column_name_resolution_context = modified_context;
 
             /// Try to reuse cached modified_query_info for tables with the same column structure.
             /// Skip caching for:
@@ -1554,8 +1567,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             }
             else
             {
-                modified_query_info
-                    = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases);
+                column_name_resolution_context = getColumnNameResolutionContext(modified_context);
+                modified_query_info = getModifiedQueryInfo(
+                    modified_context, column_name_resolution_context, table, nested_storage_snapshot, real_column_names,
+                    column_names_as_aliases, is_smallest_column_requested, aliases);
 
                 if (can_cache)
                 {
@@ -1631,6 +1646,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 current_streams);
 
             child.plan.addInterpreterContext(modified_context);
+            if (column_name_resolution_context != modified_context)
+                child.plan.addInterpreterContext(column_name_resolution_context);
 
             /// Bucket numbers depend on the aggregation key types, and the merging step merges the children's buckets as they are.
             if (child.plan.isInitialized() && common_processed_stage == QueryProcessingStage::WithMergeableState && query_info.need_aggregate)
@@ -1878,6 +1895,7 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
 }
 
 SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & modified_context,
+    const ContextPtr & column_name_resolution_context,
     const StorageWithLockAndName & storage_with_lock_and_name,
     const StorageSnapshotPtr & storage_snapshot_,
     Names required_column_names,
@@ -1990,7 +2008,17 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         bool with_aliases = /* common_processed_stage == QueryProcessingStage::FetchColumns && */ !storage_columns.getAliases().empty();
         if (with_aliases)
         {
-            auto filter_actions_dag = std::make_shared<ActionsDAG>();
+            struct ColumnToRead
+            {
+                String name;
+                std::optional<NameAndTypePair> resolved_pair;
+                bool is_alias_like;
+                bool is_subcolumn_of_alias;
+            };
+            std::vector<ColumnToRead> columns_to_read;
+            columns_to_read.reserve(required_column_names.size());
+            auto alias_identifiers = std::make_shared<ListNode>();
+
             for (const auto & required_column_name : required_column_names)
             {
                 String column = required_column_name;
@@ -2022,20 +2050,42 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 if (!resolved_pair && !is_subcolumn_of_alias)
                     continue;
 
+                bool is_alias_like = is_alias || is_subcolumn_of_alias;
+                if (is_alias_like)
+                    alias_identifiers->getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{column}));
+                columns_to_read.push_back({std::move(column), std::move(resolved_pair), is_alias_like, is_subcolumn_of_alias});
+            }
+
+            /// Resolved in one pass: a pass per column is quadratic in their number.
+            const size_t num_alias_identifiers = alias_identifiers->getNodes().size();
+            QueryTreeNodePtr resolved_aliases = std::move(alias_identifiers);
+            if (num_alias_identifiers > 0)
+            {
+                QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
+                query_analysis_pass.run(resolved_aliases, column_name_resolution_context);
+
+                size_t num_resolved = resolved_aliases->as<ListNode &>().getNodes().size();
+                if (num_resolved != num_alias_identifiers)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} resolved alias columns, got {}", num_alias_identifiers, num_resolved);
+            }
+
+            auto column_nodes = std::make_shared<ListNode>();
+            column_nodes->getNodes().reserve(columns_to_read.size());
+            size_t alias_index = 0;
+            for (const auto & column_to_read : columns_to_read)
+            {
+                const auto & column = column_to_read.name;
                 QueryTreeNodePtr column_node;
 
                 // Replace all references to ALIAS columns in the query by expressions.
-                if (is_alias || is_subcolumn_of_alias)
+                if (column_to_read.is_alias_like)
                 {
-                    QueryTreeNodePtr fake_node = std::make_shared<IdentifierNode>(Identifier{column});
-
-                    QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
-                    query_analysis_pass.run(fake_node, modified_context);
+                    QueryTreeNodePtr fake_node = resolved_aliases->as<ListNode &>().getNodes()[alias_index++];
 
                     /// An ALIAS column resolves to a ColumnNode carrying its expression, a subcolumn
                     /// of one to a FunctionNode that owns no expression of its own.
                     auto * resolved_column = fake_node->as<ColumnNode>();
-                    if (is_subcolumn_of_alias ? !fake_node->as<FunctionNode>() : (!resolved_column || !resolved_column->getExpression()))
+                    if (column_to_read.is_subcolumn_of_alias ? !fake_node->as<FunctionNode>() : (!resolved_column || !resolved_column->getExpression()))
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Alias column {} is not resolved", column);
 
                     auto column_type = fake_node->getResultType();
@@ -2045,21 +2095,25 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                     visitor.visit(column_node);
 
                     column_name_to_node.emplace(column, column_node);
-                    aliases.push_back({ .name = column, .type = column_type, .expression = column_node->toAST() });
+                    aliases.push_back({ .name = column, .type = column_type });
                 }
                 else
                 {
-                    column_node = std::make_shared<ColumnNode>(*resolved_pair, modified_query_info.table_expression);
+                    column_node = std::make_shared<ColumnNode>(*column_to_read.resolved_pair, modified_query_info.table_expression);
                 }
 
                 /// The set registry of the freshly derived planner context is empty, and
                 /// `PlannerActionsVisitor` resolves `IN` through it.
                 collectSets(column_node, *modified_query_info.planner_context);
 
-                ColumnNodePtrWithHashSet empty_correlated_columns_set;
-                PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
-                actions_visitor.visit(*filter_actions_dag, column_node);
+                column_nodes->getNodes().push_back(std::move(column_node));
             }
+
+            auto filter_actions_dag = std::make_shared<ActionsDAG>();
+            ColumnNodePtrWithHashSet empty_correlated_columns_set;
+            PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
+            actions_visitor.visit(*filter_actions_dag, column_nodes);
+
             column_names_as_aliases = filter_actions_dag->getRequiredColumnsNames();
             if (column_names_as_aliases.empty())
             {
@@ -2828,31 +2882,68 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     auto pipe_columns = before_block_header->getNamesAndTypesList();
 
+    if (!aliases.empty())
     {
+        ActionsDAG actions_dag(pipe_columns);
+
+        auto alias_identifiers = std::make_shared<ListNode>();
+        alias_identifiers->getNodes().reserve(aliases.size());
+        for (const auto & alias : aliases)
+            alias_identifiers->getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{alias.name}));
+
+        /// One pass and one step for all aliases: one per alias is quadratic in their number.
+        QueryTreeNodePtr resolved_aliases = std::move(alias_identifiers);
+        auto column_name_resolution_context = getColumnNameResolutionContext(local_context);
+        if (column_name_resolution_context != local_context)
+            child.plan.addInterpreterContext(column_name_resolution_context);
+        QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
+        query_analysis_pass.run(resolved_aliases, column_name_resolution_context);
+
+        auto & resolved_nodes = resolved_aliases->as<ListNode &>().getNodes();
+        if (resolved_nodes.size() != aliases.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} resolved alias columns, got {}", aliases.size(), resolved_nodes.size());
+
+        ApplyAliasColumnExpressionsVisitor visitor(modified_query_info.table_expression);
+        for (auto & resolved_node : resolved_nodes)
+            visitor.visit(resolved_node);
+
+        /// On the query info cache path nothing registered these expressions' sets.
+        collectSets(resolved_aliases, *modified_query_info.planner_context);
+
+        ColumnNodePtrWithHashSet empty_correlated_columns_set;
+        PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
+        const auto & [nodes, _] = actions_visitor.visit(actions_dag, resolved_aliases);
+
+        if (nodes.size() != aliases.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have {} outputs but got {}", aliases.size(), nodes.size());
+
+        /// The outputs of one `addOrReplaceInOutputs` call per alias, in order, without rescanning them per alias.
+        std::unordered_map<std::string_view, const ActionsDAG::Node *> name_to_last_node;
+        for (size_t i = 0; i < aliases.size(); ++i)
+        {
+            const auto & alias_node = actions_dag.addAlias(*nodes[i], aliases[i].name);
+            name_to_last_node.insert_or_assign(alias_node.result_name, &alias_node);
+        }
+
+        auto & outputs = actions_dag.getOutputs();
+        for (auto & output : outputs)
+            if (auto it = name_to_last_node.find(output->result_name); it != name_to_last_node.end())
+                output = it->second;
+
+        for (const auto * output : outputs)
+            name_to_last_node.erase(output->result_name);
+
         for (const auto & alias : aliases)
         {
-            ActionsDAG actions_dag(pipe_columns);
-
-            QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);
-            query_tree->setAlias(alias.name);
-
-            QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
-            query_analysis_pass.run(query_tree, local_context);
-
-            /// On the query info cache path nothing registered this expression's sets.
-            collectSets(query_tree, *modified_query_info.planner_context);
-
-            ColumnNodePtrWithHashSet empty_correlated_columns_set;
-            PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
-            const auto & [nodes, _] = actions_visitor.visit(actions_dag, query_tree);
-
-            if (nodes.size() != 1)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have 1 output but got {}", nodes.size());
-
-            actions_dag.addOrReplaceInOutputs(actions_dag.addAlias(*nodes.front(), alias.name));
-            auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(actions_dag));
-            child.plan.addStep(std::move(expression_step));
+            if (auto it = name_to_last_node.find(alias.name); it != name_to_last_node.end())
+            {
+                outputs.push_back(it->second);
+                name_to_last_node.erase(it);
+            }
         }
+
+        auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(actions_dag));
+        child.plan.addStep(std::move(expression_step));
     }
 
     /// This is the filter for the individual source table, that's why filtering has to be done before all structure adaptations.
