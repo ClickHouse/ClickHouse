@@ -1050,7 +1050,7 @@ KeeperDigest KeeperStorage::getNodesDigest(bool committed, bool lock_transaction
 int64_t KeeperStorage::getSessionID(int64_t session_timeout_ms)
 {
     auto result = session_id_counter++;
-    session_and_timeout.emplace(result, session_timeout_ms);
+    session_and_timeout.insert_or_assign(result, session_timeout_ms);
     session_expiry_queue.addNewSessionOrUpdate(result, session_timeout_ms);
     return result;
 }
@@ -1058,7 +1058,7 @@ int64_t KeeperStorage::getSessionID(int64_t session_timeout_ms)
 /// Add session id. Used when restoring KeeperStorage from snapshot.
 void KeeperStorage::addSessionID(int64_t session_id, int64_t session_timeout_ms)
 {
-    session_and_timeout.emplace(session_id, session_timeout_ms);
+    session_and_timeout.insert_or_assign(session_id, session_timeout_ms);
     session_expiry_queue.addNewSessionOrUpdate(session_id, session_timeout_ms);
 }
 

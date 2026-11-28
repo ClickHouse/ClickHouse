@@ -584,7 +584,12 @@ static bool deserializeTxn(KeeperMemoryStorage & storage, ReadBuffer & in, Logge
         if (request->getOpNum() == Coordination::OpNum::SessionID)
         {
             const Coordination::ZooKeeperSessionIDRequest & session_id_request = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request);
-            storage.getSessionID(session_id_request.session_timeout_ms);
+            /// Register the session under the id ZooKeeper gave it (the txn author), like we do for sessions
+            /// from a snapshot. The following transactions of this session refer to it by this id, and
+            /// the storage does not add unknown sessions on its own, so with a newly generated id
+            /// the ephemeral nodes of this session would have no known owner and would never be removed.
+            storage.addSessionID(session_id, session_id_request.session_timeout_ms);
+            storage.session_id_counter = std::max(storage.session_id_counter, session_id + 1);
         }
         else
         {

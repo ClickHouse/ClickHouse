@@ -136,6 +136,54 @@ TEST_P(CoordinationTest, TestSessionIDBatchZxid)
     ASSERT_EQ(storage.getZXID(), 10);
 }
 
+/// Requests for a session that is unknown to the storage (not yet committed on a lagging follower,
+/// or already closed) must not add it to the active sessions with zero timeout.
+TEST_P(CoordinationTest, TestRequestsForUnknownSessionDoNotAddIt)
+{
+    using namespace Coordination;
+
+    this->keeper_context->setServerState(KeeperContext::Phase::RUNNING);
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+
+    const auto local_read = [&](int64_t session_id)
+    {
+        auto request = std::make_shared<ZooKeeperExistsRequest>();
+        request->path = "/";
+        DB::KeeperRequestsForSessions requests{DB::KeeperRequestForSession{.session_id = session_id, .request = request}};
+        auto responses = storage.processLocalRequests(requests, /*check_acl=*/true);
+        ASSERT_EQ(responses.size(), 1);
+    };
+
+    int64_t zxid = 1;
+    const auto write = [&](const ZooKeeperRequestPtr & request, int64_t session_id)
+    {
+        storage.preprocessRequest(request, session_id, 0, zxid, /*check_acl=*/true, /*log_idx=*/0);
+        storage.processRequest(request, session_id, zxid);
+        ++zxid;
+    };
+
+    /// A local read on a follower that has not yet committed the session.
+    ASSERT_NO_FATAL_FAILURE(local_read(1));
+    EXPECT_TRUE(storage.getActiveSessions().empty());
+
+    /// The session is committed later and must get its real timeout.
+    const int64_t session_id = storage.getSessionID(120000);
+    ASSERT_EQ(session_id, 1);
+    EXPECT_EQ(storage.getActiveSessions(), (DB::SessionAndTimeout{{session_id, 120000}}));
+
+    auto close_request = std::make_shared<ZooKeeperCloseRequest>();
+    close_request->xid = CLOSE_XID;
+    write(close_request, session_id);
+    EXPECT_TRUE(storage.getActiveSessions().empty());
+
+    /// Late requests for the closed session must not resurrect it.
+    ASSERT_NO_FATAL_FAILURE(local_read(session_id));
+    write(std::make_shared<ZooKeeperHeartbeatRequest>(), session_id);
+    EXPECT_TRUE(storage.getActiveSessions().empty());
+    EXPECT_TRUE(storage.getDeadSessions().empty());
+}
+
 TEST_P(CoordinationTest, TestCheckNotExistsRequest)
 {
     using namespace DB;
