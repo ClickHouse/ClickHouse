@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
 #include <Common/Exception.h>
 
@@ -73,6 +74,17 @@ void FileNamesGenerator::setBaseMetadataFile(Int32 base_version, const String & 
     base_metadata_file_name = std::filesystem::path(base_metadata_path).filename();
 }
 
+String FileNamesGenerator::uuidMetadataFileName(Int32 version, bool version_prefixed, CompressionMethod compression_method)
+{
+    /// Not random and not derived from the base: every writer of a version must aim at the same name, see the class comment.
+    auto uuid_str = Poco::UUIDGenerator::defaultGenerator().createFromName(Poco::UUID::uri(), fmt::format("metadata/{}", version)).toString();
+    auto compression_suffix = toIcebergMetadataCompressionExtension(compression_method);
+    if (!compression_suffix.empty())
+        compression_suffix = "." + compression_suffix;
+    return version_prefixed ? fmt::format("v{}-{}{}.metadata.json", version, uuid_str, compression_suffix)
+                            : fmt::format("{:05}-{}{}.metadata.json", version, uuid_str, compression_suffix);
+}
+
 Iceberg::IcebergPathFromMetadata FileNamesGenerator::generateDataFileName()
 {
     auto uuid_str = uuid_generator.createRandom().toString();
@@ -107,9 +119,18 @@ GeneratedMetadataFileWithInfo FileNamesGenerator::generateMetadataPathWithInfo()
     auto used_version = initial_version++;
     if (!use_uuid_in_metadata)
     {
+        if (base_metadata_file_name.empty() || Iceberg::isVersionNumberedCommitScheme(base_metadata_file_name))
+        {
+            return GeneratedMetadataFileWithInfo{
+                .path = Iceberg::IcebergPathFromMetadata(
+                    fmt::format("{}metadata/v{}{}.metadata.json", table_location, used_version, compression_suffix)),
+                .version = used_version,
+                .compression_method = compression_method};
+        }
+
+        auto file_name = uuidMetadataFileName(used_version, base_metadata_file_name.starts_with('v'), compression_method);
         return GeneratedMetadataFileWithInfo{
-            .path = Iceberg::IcebergPathFromMetadata(
-                fmt::format("{}metadata/v{}{}.metadata.json", table_location, used_version, compression_suffix)),
+            .path = Iceberg::IcebergPathFromMetadata(fmt::format("{}metadata/{}", table_location, file_name)),
             .version = used_version,
             .compression_method = compression_method};
     }

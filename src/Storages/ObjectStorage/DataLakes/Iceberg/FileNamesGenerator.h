@@ -28,8 +28,10 @@ struct GeneratedMetadataFileWithInfo
 
 /// Generates Iceberg metadata paths (IcebergPathFromMetadata) for new files.
 ///
-/// Metadata files of a table without a catalog are named `v<N>.metadata.json`: the name is the commit lock, since writing
-/// an existing name is refused. Metadata files of a catalog-backed table (`use_uuid_in_metadata`) are named
+/// Metadata files of a table without a catalog are named in the scheme of the metadata file the commit is based on,
+/// `v<N>.metadata.json` without one. The name is the commit lock, since writing an existing name is refused, so in the
+/// `<N>-<uuid>` and `v<N>-<uuid>` schemes the UUID is derived from `N` alone.
+/// Metadata files of a catalog-backed table (`use_uuid_in_metadata`) are named
 /// `<N>-<uuid>.metadata.json` with `N` zero-padded to 5 digits, as the Iceberg spec (section "Metastore Tables") and
 /// Iceberg Java require. Iceberg Java and pyiceberg parse `N` only from this form, so other writers keep increasing it.
 /// The UUID is derived from the name of the metadata file the commit is based on and from `N`, so the name is unique
@@ -67,8 +69,10 @@ public:
     void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
 
     /// The next metadata file is a successor of the metadata file `base_metadata_path`, which has version `base_version`.
-    /// Required with `use_uuid_in_metadata`.
+    /// Required with `use_uuid_in_metadata`. Without it, the next file is named in the scheme of the base.
     void setBaseMetadataFile(Int32 base_version, const String & base_metadata_path);
+    /// The name a commit without a catalog gives `version` in the `<N>-<uuid>` or `v<N>-<uuid>` scheme.
+    static String uuidMetadataFileName(Int32 version, bool version_prefixed, CompressionMethod compression_method);
     void setCompressionMethod(CompressionMethod compression_method_) { compression_method = compression_method_; }
 
     void setDataLocation(String data_location_)

@@ -1,6 +1,7 @@
 import glob
 import json
 import os
+import re
 import tempfile
 
 import pyarrow as pa
@@ -403,18 +404,18 @@ def test_spark_gzip_metadata_ch_write_spark_read(started_cluster_iceberg):
 
 
 def latest_metadata_file(table_dir):
-    """Newest `vN.metadata.json` of a table, by `N`.
+    """Newest `vN.metadata.json` or `N-<uuid>.metadata.json` of a table, by `N`.
 
     The documents are numbered in write order, and two of them can carry the same
     `last-updated-ms`, so the number decides rather than the timestamp. That is also
-    how ClickHouse itself resolves the table by default. `N` is not zero padded, so
+    how ClickHouse itself resolves the table by default. `vN` is not zero padded, so
     the name itself does not sort.
     """
-    candidates = glob.glob(os.path.join(table_dir, "metadata", "v*.metadata.json"))
+    candidates = glob.glob(os.path.join(table_dir, "metadata", "*.metadata.json"))
     assert candidates, f"no metadata file under {table_dir}"
 
     def version(path):
-        return int(os.path.basename(path).split(".", 1)[0][1:])
+        return int(re.match(r"v?(\d+)", os.path.basename(path)).group(1))
 
     return max(candidates, key=version)
 
@@ -586,7 +587,6 @@ def test_pyiceberg_v1_schema_evolution_ch_read(started_cluster_iceberg):
         settings=ch_settings,
     )
 
-    # pyiceberg names its metadata files `<N>-<uuid>.metadata.json`, so the only `v<N>` one is ClickHouse's.
     latest = latest_metadata_file(table_path)
     with open(latest) as f:
         metadata = json.load(f)

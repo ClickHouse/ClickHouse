@@ -63,4 +63,24 @@ TEST(IcebergMetadataFileNames, TableWithoutCatalogKeepsVersionedNames)
     EXPECT_EQ(generator.generateMetadataPathWithInfo().path.serialize(), "s3://bucket/table/metadata/v3.metadata.json");
 }
 
+/// Without a catalog the name is the commit lock, so every writer of a version must aim at the same name.
+TEST(IcebergMetadataFileNames, TableWithoutCatalogContinuesTheNamingOfTheBase)
+{
+    auto next_name = [](const String & base)
+    {
+        FileNamesGenerator generator("s3://bucket/table", /* use_uuid_in_metadata */ false, CompressionMethod::None, "Parquet");
+        generator.setBaseMetadataFile(4, "s3://bucket/table/metadata/" + base);
+        return String(std::filesystem::path(generator.generateMetadataPathWithInfo().path.serialize()).filename());
+    };
+    EXPECT_EQ(next_name("v4.metadata.json"), "v5.metadata.json");
+    const String numbered = next_name("00004-3f2b6c1e-8a43-4d5e-9b7f-0c1d2e3f4a5b.metadata.json");
+    EXPECT_TRUE(numbered.starts_with("00005-") && numbered.ends_with(".metadata.json") && numbered.size() == 56) << numbered;
+    EXPECT_FALSE(Iceberg::isVersionNumberedCommitScheme(numbered));
+    EXPECT_EQ(numbered, next_name("00004-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.metadata.json"));
+    const String versioned = next_name("v4-3f2b6c1e-8a43-4d5e-9b7f-0c1d2e3f4a5b.metadata.json");
+    EXPECT_TRUE(versioned.starts_with("v5-") && versioned.ends_with(".metadata.json") && versioned.size() == 53) << versioned;
+    EXPECT_FALSE(Iceberg::isVersionNumberedCommitScheme(versioned));
+    EXPECT_EQ(versioned, next_name("v4-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.metadata.json"));
+}
+
 #endif
