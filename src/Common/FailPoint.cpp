@@ -585,6 +585,8 @@ static struct InitFiu
     REGULAR(marks_loader_hold_task_until_canceled) \
     REGULAR(whatif_projection_scan_cut_short) \
     REGULAR(http_connection_socket_inode_unavailable) \
+    ONCE(query_result_cache_herd_registration_fail) \
+    ONCE(query_result_cache_herd_key_copy_fail) \
     PAUSEABLE(silk_fiber_socket_send_timeout_expires_after_write)
 
 namespace FailPoints
