@@ -937,6 +937,13 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(std
     return VectorWithMemoryTracking<String>(unique_tokens.begin(), unique_tokens.end());
 }
 
+/// A preprocessor such as `toValidUTF8` can make a needle valid UTF-8, while the scan still matches its raw bytes.
+static bool isValidUTF8Needle(std::string_view raw, std::string_view processed)
+{
+    auto is_valid = [](std::string_view s) { return UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size()); };
+    return is_valid(raw) && is_valid(processed);
+}
+
 VectorWithMemoryTracking<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const
 {
     VectorWithMemoryTracking<String> tokens;
@@ -945,7 +952,7 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::substringToTokens(
     const String processed_storage = has_preprocessor ? preprocessor->processConstant(raw) : String{};
     const String & input = has_preprocessor ? processed_storage : raw;
 
-    if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(input.data()), input.size()))
+    if (!isValidUTF8Needle(raw, input))
         return tokens;
 
     tokenizer->substringToTokens(input.data(), input.size(), tokens, is_prefix, is_suffix);
@@ -1010,7 +1017,7 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringLikeToTokens
 
     /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
     /// granule holding matching rows. No tokens means "cannot prune", as for a pattern like `LIKE '%a%'`.
-    if (likePatternHasUnknownBackslashEscape(pattern))
+    if (likePatternHasUnknownBackslashEscape(pattern) || (tokenizer->requiresValidUTF8() && !isValidUTF8Needle(raw, pattern)))
         return tokens;
 
     tokenizer->stringLikeToTokens(pattern.data(), pattern.size(), tokens);
