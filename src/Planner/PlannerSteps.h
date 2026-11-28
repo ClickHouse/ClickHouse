@@ -129,7 +129,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
 void addWindowSteps(QueryPlan & query_plan,
     const PlannerContextPtr & planner_context,
     WindowAnalysisResult & window_analysis_result,
-    size_t max_step_description_length);
+    const SelectQueryOptions & select_query_options);
 
 void addLimitStep(
     QueryPlan & query_plan,

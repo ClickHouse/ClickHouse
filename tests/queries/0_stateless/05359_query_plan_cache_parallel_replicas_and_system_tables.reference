@@ -1,0 +1,12 @@
+-- 1. local query without parallel replicas: the repeat is a hit
+6
+-- hits (must be 0 1): 0 1
+-- 2. same local query with allow_experimental_parallel_reading_from_replicas = 1: both runs miss
+6
+-- hits (must be 0 0): 0 0
+-- 3. query over system.one: the repeat is a hit
+1
+-- hits (must be 0 1): 0 1
+-- 4. query over another system table (system.numbers): both runs miss
+3
+-- hits (must be 0 0): 0 0

@@ -1,0 +1,9 @@
+-- row policy passing a SQL UDF by name
+1
+2
+1
+hits: 0
+-- query passing a SQL UDF by name
+[1,0,0]
+[1,1,0]
+hits: 0

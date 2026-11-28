@@ -1,0 +1,5 @@
+one	6
+two	6
+three	6
+-- plan cache hits and misses (must be 0)
+0	0

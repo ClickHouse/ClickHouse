@@ -1,0 +1,10 @@
+-- 1. set limits
+1
+1
+SET_SIZE_LIMIT_EXCEEDED
+1
+1
+SET_SIZE_LIMIT_EXCEEDED
+-- 2. result limits apply to system.one
+TOO_MANY_ROWS_OR_BYTES
+TOO_MANY_ROWS_OR_BYTES

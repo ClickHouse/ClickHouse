@@ -118,12 +118,10 @@ void stripNamesFromSetQuery(ASTSetQuery & set_query, std::span<const std::string
     stripMatchingNamesFromSetQuery(set_query, [&](std::string_view name) { return isNameIn(name, setting_names); });
 }
 
-void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_view> setting_names)
+void removeSettingsFromQuery(const ASTPtr & ast, const std::function<bool(std::string_view)> & should_remove)
 {
     if (!ast)
         return;
-
-    auto is_stripped = [&](std::string_view name) { return isNameIn(name, setting_names); };
 
     /// Strip the named settings from each SETTINGS clause and, if a clause becomes empty, detach it from
     /// its owner. The strip alone is not enough: the owner formatters print `SETTINGS ` whenever the slot
@@ -150,7 +148,7 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                 if (auto settings = select_query->settings())
                     if (auto * set_query = settings->as<ASTSetQuery>())
                     {
-                        stripMatchingNamesFromSetQuery(*set_query, is_stripped);
+                        stripMatchingNamesFromSetQuery(*set_query, should_remove);
                         if (isEmptySetQuery(*set_query))
                             select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
                     }
@@ -162,7 +160,7 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                 if (insert_query->settings_ast)
                     if (auto * set_query = insert_query->settings_ast->as<ASTSetQuery>())
                     {
-                        stripMatchingNamesFromSetQuery(*set_query, is_stripped);
+                        stripMatchingNamesFromSetQuery(*set_query, should_remove);
                         if (isEmptySetQuery(*set_query))
                             detachChild(*insert_query, insert_query->settings_ast);
                     }
@@ -188,7 +186,7 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                     if (auto owning = findOwningChild(*storage, storage->settings))
                     {
                         auto & set_query = owning->as<ASTSetQuery &>();
-                        stripMatchingNamesFromSetQuery(set_query, is_stripped);
+                        stripMatchingNamesFromSetQuery(set_query, should_remove);
                         if (isEmptySetQuery(set_query))
                             detachChild(*storage, storage->settings);
                     }
@@ -210,7 +208,7 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                 if (query_with_output->settings_ast)
                     if (auto * set_query = query_with_output->settings_ast->as<ASTSetQuery>())
                     {
-                        stripMatchingNamesFromSetQuery(*set_query, is_stripped);
+                        stripMatchingNamesFromSetQuery(*set_query, should_remove);
                         if (isEmptySetQuery(*set_query))
                             detachChild(*query_with_output, query_with_output->settings_ast);
                     }
@@ -225,11 +223,21 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                 if (backup_query->settings)
                     if (auto * set_query = backup_query->settings->as<ASTSetQuery>())
                     {
-                        stripMatchingNamesFromSetQuery(*set_query, is_stripped);
+                        stripMatchingNamesFromSetQuery(*set_query, should_remove);
                         if (isEmptySetQuery(*set_query))
                             backup_query->settings.reset();
                     }
             }
+        });
+}
+
+void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_view> setting_names)
+{
+    removeSettingsFromQuery(
+        ast,
+        [&](std::string_view name)
+        {
+            return isNameIn(name, setting_names);
         });
 }
 

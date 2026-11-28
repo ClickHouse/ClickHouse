@@ -111,23 +111,35 @@ void InterpreterFactory::registerInterpreter(const std::string & name, CreatorFn
         throw Exception(ErrorCodes::LOGICAL_ERROR, "InterpreterFactory: the interpreter name '{}' is not unique", name);
 }
 
-InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
+void InterpreterFactory::incrementQueryProfileEvents(const IAST & query, const ContextPtr & context)
 {
     ProfileEvents::increment(ProfileEvents::Query);
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         ProfileEvents::increment(ProfileEvents::InitialQuery);
-         if (!query || query->as<ASTSelectQuery>() || query->as<ASTSelectWithUnionQuery>())
+        if (query.as<ASTSelectQuery>() || query.as<ASTSelectWithUnionQuery>())
             ProfileEvents::increment(ProfileEvents::InitialSelectQuery);
     }
     /// SELECT and INSERT query will handle QueriesWithSubqueries on their own.
-    if (!(query->as<ASTSelectQuery>() ||
-        query->as<ASTSelectWithUnionQuery>() ||
-        query->as<ASTSelectIntersectExceptQuery>() ||
-        query->as<ASTInsertQuery>()))
+    if (!(query.as<ASTSelectQuery>() ||
+        query.as<ASTSelectWithUnionQuery>() ||
+        query.as<ASTSelectIntersectExceptQuery>() ||
+        query.as<ASTInsertQuery>()))
     {
         ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
     }
+
+    if (query.as<ASTSelectWithUnionQuery>())
+        ProfileEvents::increment(ProfileEvents::SelectQuery);
+    else if (query.as<ASTInsertQuery>())
+        ProfileEvents::increment(ProfileEvents::InsertQuery);
+}
+
+InterpreterFactory::InterpreterPtr InterpreterFactory::get(
+    ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options, bool increment_query_profile_events)
+{
+    if (increment_query_profile_events)
+        incrementQueryProfileEvents(*query, context);
 
     Arguments arguments
     {
@@ -144,7 +156,6 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     }
     else if (query->as<ASTSelectWithUnionQuery>())
     {
-        ProfileEvents::increment(ProfileEvents::SelectQuery);
         interpreter_name = "InterpreterSelectQueryAnalyzer";
     }
     else if (query->as<ASTSelectIntersectExceptQuery>())
@@ -153,7 +164,6 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     }
     else if (query->as<ASTInsertQuery>())
     {
-        ProfileEvents::increment(ProfileEvents::InsertQuery);
         bool allow_materialized = static_cast<bool>(context->getSettingsRef()[Setting::insert_allow_materialized_columns]);
         arguments.allow_materialized = allow_materialized;
         interpreter_name = "InterpreterInsertQuery";

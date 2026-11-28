@@ -1,0 +1,4 @@
+TOO_MANY_ROWS_OR_BYTES
+TOO_MANY_ROWS_OR_BYTES
+-- both queries hit the temporary data limit, the second one with the cached plan
+2	1
