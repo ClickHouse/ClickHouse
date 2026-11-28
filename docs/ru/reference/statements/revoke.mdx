@@ -10,37 +10,29 @@ doc_type: 'reference'
 
 Отзывает привилегии у пользователей или ролей.
 
-<div id="syntax">
-  ## Синтаксис
-</div>
+## Синтаксис {#syntax}
 
-**Отзыв привилегий у пользователей**
+**Отзыв привилегий**
 
 ```sql
-REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
+REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | role | CURRENT_USER} [,...]
 ```
 
-**Отзыв ролей у пользователей**
+**Отзыв ролей**
 
 ```sql
 REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
 ```
 
-<div id="description">
-  ## Описание
-</div>
+## Описание {#description}
 
 Чтобы отозвать привилегию, можно использовать привилегию более широкого уровня, чем та, которую нужно отозвать. Например, если у пользователя есть привилегия `SELECT (x,y)`, администратор может выполнить запрос `REVOKE SELECT(x,y) ...`, `REVOKE SELECT * ...` или даже `REVOKE ALL PRIVILEGES ...`, чтобы отозвать эту привилегию.
 
-<div id="partial-revokes">
-  ### Частичный отзыв привилегий
-</div>
+### Частичный отзыв привилегий {#partial-revokes}
 
 Можно отозвать часть привилегии. Например, если у пользователя есть привилегия `SELECT *.*`, у него можно отозвать привилегию читать данные из определённой таблицы или базы данных.
 
-<div id="examples">
-  ## Примеры
-</div>
+## Примеры {#examples}
 
 Предоставьте учётной записи пользователя `john` привилегию выполнять `select` во всех базах данных, кроме `accounts`:
 

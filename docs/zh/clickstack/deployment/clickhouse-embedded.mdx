@@ -1,15 +1,15 @@
 ---
 slug: /use-cases/observability/clickstack/deployment/clickhouse-embedded
-title: '内嵌于 ClickHouse'
-description: '在 ClickHouse 服务器中使用内嵌式 ClickStack - ClickHouse 可观测性栈'
+title: '嵌入式 ClickHouse'
+description: '在 ClickHouse 服务器中使用嵌入式 ClickStack - ClickHouse 可观测性栈'
 doc_type: 'guide'
-keywords: ['内嵌式 ClickStack', '内嵌式 ClickHouse', 'ClickStack ClickHouse 服务器', '内置可观测性']
+keywords: ['嵌入式 ClickStack', '嵌入式 ClickHouse', 'ClickStack ClickHouse 服务器', '内置可观测性']
 ---
 
-ClickStack 直接集成在 ClickHouse 服务器二进制文件中。这意味着你无需部署任何额外组件，即可从你的 ClickHouse 实例访问 ClickStack UI (HyperDX) 。这种部署方式类似于公开演示 [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)，但它运行的是你自己的 ClickHouse 实例和数据。
+ClickStack 直接集成在 ClickHouse 服务器二进制文件中。这意味着你无需部署任何额外组件，即可从你的 ClickHouse 实例访问 ClickStack UI。这种部署方式类似于公开演示 [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)，但它运行的是你自己的 ClickHouse 实例和数据。
 
 <div id="suitable-for">
-  ### 适用场景
+  ### 适用场景 {#suitable-for}
 </div>
 
 * 以最少配置试用 ClickStack
@@ -17,7 +17,7 @@ ClickStack 直接集成在 ClickHouse 服务器二进制文件中。这意味着
 * 演示和评估
 
 <div id="limitations">
-  ### 局限性
+  ### 局限性 {#limitations}
 </div>
 
 此嵌入式版本**不适用于生产环境**。与[可用于生产环境的 OSS 部署](/zh/clickstack/deployment/oss)相比，以下功能不可用：
@@ -27,9 +27,7 @@ ClickStack 直接集成在 ClickHouse 服务器二进制文件中。这意味着
 * 可自定义的查询设置
 * [事件模式](/zh/clickstack/features/event-patterns)
 
-<div id="deployment-steps">
-  ## 部署步骤
-</div>
+## 部署步骤 {#deployment-steps}
 
 <Tabs>
   <Tab title="Docker">
@@ -58,13 +56,9 @@ ClickStack 直接集成在 ClickHouse 服务器二进制文件中。这意味着
         输入用户名 `default` 和密码 `password`，连接到本地实例。
 
         <div className="ch-image-lg">
-
-        <Frame>
-
-        ![身份验证](/images/clickstack/deployment/embedded/authenticate.webp)
-
-        </Frame>
-
+          <Frame>
+            ![身份验证](/images/clickstack/deployment/embedded/authenticate.webp)
+          </Frame>
         </div>
       </Step>
 
@@ -74,13 +68,9 @@ ClickStack 直接集成在 ClickHouse 服务器二进制文件中。这意味着
         在全新安装中，系统会提示你创建数据源。请在 **Table** 字段中填写相应的表名 (例如 `otel_logs`) ，然后点击 **Save New Source**。
 
         <div className="ch-image-lg">
-
-        <Frame>
-
-        ![创建数据源](/images/clickstack/deployment/embedded/inferred-source.webp)
-
-        </Frame>
-
+          <Frame>
+            ![创建数据源](/images/clickstack/deployment/embedded/inferred-source.webp)
+          </Frame>
         </div>
 
         如果你还没有数据，请参阅 [摄取数据](/zh/clickstack/ingesting-data/overview) 了解可用选项。
@@ -155,13 +145,9 @@ ClickStack 直接集成在 ClickHouse 服务器二进制文件中。这意味着
         如果你还没有数据，请参阅 [摄取数据](/zh/clickstack/ingesting-data/overview) 了解可用选项。
 
         <div className="ch-image-lg">
-
-        <Frame>
-
-        ![创建数据源](/images/clickstack/deployment/embedded/inferred-source.webp)
-
-        </Frame>
-
+          <Frame>
+            ![创建数据源](/images/clickstack/deployment/embedded/inferred-source.webp)
+          </Frame>
         </div>
       </Step>
     </Steps>
@@ -169,7 +155,7 @@ ClickStack 直接集成在 ClickHouse 服务器二进制文件中。这意味着
 </Tabs>
 
 <div id="next-steps">
-  ## 后续步骤
+  ## 后续步骤 {#next-steps}
 </div>
 
 如果你已准备好从评估转向正式使用，可以考虑以下适用于生产环境的部署方式：
@@ -177,4 +163,4 @@ ClickStack 直接集成在 ClickHouse 服务器二进制文件中。这意味着
 * [All-in-One](/zh/clickstack/deployment/all-in-one) — 单容器方案，包含所有组件，并支持持久化和身份验证
 * [Docker Compose](/zh/clickstack/deployment/docker-compose) — 各组件独立部署，便于获得更高的控制度
 * [Helm](/zh/clickstack/deployment/helm) — 推荐用于生产环境中的 Kubernetes 部署
-* [Managed ClickStack](/zh/clickstack/getting-started/managed) — 在 ClickHouse Cloud 上的全托管方案
+* [Self-managed ClickHouse Observability](/zh/clickstack/self-configured/getting-started/managed) — 在 ClickHouse Cloud 上自行管理数据摄取和 schema

@@ -132,10 +132,10 @@ check_incorrect_data largelist_huge_child_length \
     $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/largelist_huge_child_length.arrow', Arrow)"
 
 check_incorrect_data binary_json_huge_length \
-    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/binary_json_huge_length.arrow', Arrow) FORMAT Null SETTINGS allow_experimental_json_type=1"
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/binary_json_huge_length.arrow', Arrow) FORMAT Null"
 
 check_incorrect_data largebinary_json_huge_length \
-    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/largebinary_json_huge_length.arrow', Arrow) FORMAT Null SETTINGS allow_experimental_json_type=1"
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${TMP_DIR}/largebinary_json_huge_length.arrow', Arrow) FORMAT Null"
 
 # The 8 MB memory limit is below the 16 MB UUID-column reserve but above the 1 MB input, so an
 # implementation that reserves before checking byte_width fails with MEMORY_LIMIT_EXCEEDED; the

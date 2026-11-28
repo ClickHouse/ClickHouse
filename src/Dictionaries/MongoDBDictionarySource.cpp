@@ -76,14 +76,16 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
                 validateNamedCollection(*named_collection, {"host", "db", "collection"}, {"port", "user", "password", "options"});
                 String user = named_collection->get<String>("user");
                 String auth_string;
+                String escaped_user;
                 String escaped_password;
+                Poco::URI::encode(user, "!?#/'\",;:$&()[]*+=@", escaped_user);
                 Poco::URI::encode(named_collection->get<String>("password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
                 if (!user.empty())
-                    auth_string = fmt::format("{}:{}@", user, escaped_password);
+                    auth_string = fmt::format("{}:{}@", escaped_user, escaped_password);
                 configuration->uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
                                                                                  auth_string,
                                                                                  named_collection->get<String>("host"),
-                                                                                 named_collection->getOrDefault<String>("port", "27017"),
+                                                                                 named_collection->getOrDefault<UInt64>("port", 27017),
                                                                                  named_collection->get<String>("db"),
                                                                                  named_collection->getOrDefault<String>("options", "")));
             }

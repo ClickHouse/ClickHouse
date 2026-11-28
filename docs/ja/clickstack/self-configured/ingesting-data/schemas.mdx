@@ -1,0 +1,59 @@
+---
+slug: /clickstack/self-configured/ingesting-data/schemas
+description: 'Self-managed ClickHouse Observability で使用されるテーブルとスキーマ'
+sidebarTitle: 'テーブルとスキーマ'
+title: 'テーブルとスキーマ'
+doc_type: 'reference'
+keywords: ['clickstack', 'schema', 'data model', 'table design', 'logs']
+---
+
+import OtelLogsSchema from '/snippets/ja/clickstack/_schema_otel_logs.mdx';
+import OtelTracesSchema from '/snippets/ja/clickstack/_schema_otel_traces.mdx';
+import OtelMetricsGaugeSchema from '/snippets/ja/clickstack/_schema_otel_metrics_gauge.mdx';
+import OtelMetricsSumSchema from '/snippets/ja/clickstack/_schema_otel_metrics_sum.mdx';
+import OtelMetricsHistogramSchema from '/snippets/ja/clickstack/_schema_otel_metrics_histogram.mdx';
+import OtelMetricsExponentialHistogramSchema from '/snippets/ja/clickstack/_schema_otel_metrics_exponential_histogram.mdx';
+import OtelMetricsSummarySchema from '/snippets/ja/clickstack/_schema_otel_metrics_summary.mdx';
+import HyperdxSessionsSchema from '/snippets/ja/clickstack/_schema_hyperdx_sessions.mdx';
+
+<Note>
+  このページでは **Self-managed ClickHouse Observability** について説明します。推奨される完全マネージド型のサービスについては、[こちら](/ja/clickstack/observability/overview)のドキュメントを参照してください。
+</Note>
+
+ClickHouse Observability Collector は、[ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md) を使用して ClickHouse にテーブルを作成し、データを挿入します。
+
+データ型ごとに、`default` データベースに以下のテーブルが作成されます。この出力先データベースは、collector をホストするイメージの環境変数 `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE` を変更することで変更できます。
+
+## ログ {#logs}
+
+<OtelLogsSchema />
+
+## トレース {#traces}
+
+<OtelTracesSchema />
+
+## メトリクス {#metrics}
+
+### Gauge メトリクス {#gauge}
+
+<OtelMetricsGaugeSchema />
+
+### 合計メトリクス {#sum}
+
+<OtelMetricsSumSchema />
+
+### ヒストグラムメトリクス {#histogram}
+
+<OtelMetricsHistogramSchema />
+
+### 指数ヒストグラム {#exponential-histograms}
+
+<OtelMetricsExponentialHistogramSchema />
+
+### Summary テーブル {#summary-table}
+
+<OtelMetricsSummarySchema />
+
+## セッション {#sessions}
+
+<HyperdxSessionsSchema />

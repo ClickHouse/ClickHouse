@@ -1,0 +1,10 @@
+use_unity_catalog_v2 = 0
+s.t
+upper.t
+loop_schemas: twice while listing the schemas DATALAKE_DATABASE_ERROR
+loop_tables: twice while listing the tables DATALAKE_DATABASE_ERROR
+use_unity_catalog_v2 = 1
+s.t
+upper.t
+loop_schemas: twice while listing the schemas DATALAKE_DATABASE_ERROR
+loop_tables: twice while listing the tables DATALAKE_DATABASE_ERROR

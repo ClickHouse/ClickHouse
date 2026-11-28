@@ -16,5 +16,6 @@ INSERT INTO foo VALUES (1, 0.5, 0.2, 0.3, 0.8);
 
 SELECT divide(sum(a) + sum(b), nullIf(sum(c) + sum(d), 0)) FROM foo;
 SELECT divide(sum(a) + sum(b), nullIf(sum(c) + sum(d), 0)) FROM foo;
+SELECT divide(a + b, nullIf(c + d, 0)) FROM foo SETTINGS min_count_to_compile_expression = 0;
 
 DROP TABLE foo;

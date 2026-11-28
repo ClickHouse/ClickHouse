@@ -65,16 +65,12 @@ precise_datetime:      2025-03-12 11:39:07.196
 very_precise_datetime: 2025-03-12 11:39:07.196724000
 ```
 
-<div id="time-series-time-types">
-  ## Tipos Time e Time64
-</div>
+## Tipos Time e Time64 {#time-series-time-types}
 
 Para cenários em que você precisa armazenar valores de horário sem componentes de data, o ClickHouse fornece os tipos [`Time`](/pt-BR/reference/data-types/time) e [`Time64`](/pt-BR/reference/data-types/time64), introduzidos na versão 25.6. Eles são úteis para representar agendas recorrentes, padrões diários ou situações em que faz sentido separar os componentes de data e hora.
 
 <Note>
-  Para usar `Time` e `Time64`, é necessário ativar a configuração: `SET enable_time_time64_type = 1;`
-
-  Esses tipos foram introduzidos na versão 25.6
+  `Time` e `Time64` estão habilitados por padrão desde a versão 25.12. Nas versões 25.6 a 25.11, habilite-os com `SET enable_time_time64_type = 1;`
 </Note>
 
 O tipo `Time` armazena horas, minutos e segundos com precisão de segundos. Internamente, ele é armazenado como um inteiro com sinal de 32 bits e oferece suporte a um intervalo de `[-999:59:59, 999:59:59]`, permitindo valores que excedem 24 horas. Isso pode ser útil ao acompanhar o tempo decorrido ou realizar operações aritméticas que resultem em valores fora de um único dia.
@@ -104,7 +100,7 @@ Podemos inserir valores de tempo usando literais de string ou valores numéricos
 INSERT INTO time_examples VALUES 
     (1, '14:30:25', '14:30:25.123'),
     (2, 52225, 52225.456),
-    (3, '26:11:10', '26:11:10.789');  -- Valores normalizados além de 24 horas
+    (3, '26:11:10', '26:11:10.789');  -- Values normalize beyond 24 hours
 
 SELECT * FROM time_examples ORDER BY event_id;
 ```
@@ -123,9 +119,7 @@ Os valores de tempo podem ser filtrados de forma natural:
 SELECT * FROM time_examples WHERE basic_time = '14:30:25';
 ```
 
-<div id="time-series-timezones">
-  ## Fusos horários
-</div>
+## Fusos horários {#time-series-timezones}
 
 Muitos casos de uso também exigem o armazenamento de fusos horários. Podemos definir o fuso horário como o último argumento dos tipos `DateTime` ou `DateTime64`:
 
@@ -191,9 +185,7 @@ Na primeira linha, inserimos todos os valores usando o fuso horário `America/Ne
 Na segunda linha, inserimos todos os valores sem especificar um fuso horário, então o fuso horário local do servidor foi usado.
 Assim como na primeira linha, `dt_1` e `dt64_1` são convertidos para `Europe/Berlin`, enquanto `dt_2` e `dt64_2` usam o fuso horário local do servidor.
 
-<div id="time-series-date-time-functions">
-  ## Funções de data e hora
-</div>
+## Funções de data e hora {#time-series-date-time-functions}
 
 O ClickHouse também conta com um conjunto de funções que nos permite converter entre diferentes tipos de dados.
 

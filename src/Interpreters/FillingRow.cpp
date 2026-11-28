@@ -302,6 +302,38 @@ void FillingRow::checkFillingTowardsConstraintFitsColumnType(size_t i)
         checkGeneratedValueFitsColumnType(next_value, i);
 }
 
+bool FillingRow::resetKeysAfter(size_t pos, const FillingRow & next_original_row)
+{
+    bool is_less = false;
+    for (size_t i = pos + 1; i < size(); ++i)
+    {
+        const auto & descr = getFillDescription(i);
+        if (!descr.fill_from.isNull())
+            row[i] = descr.fill_from;
+        else
+            row[i] = next_original_row[i];
+
+        is_less |= (
+            (next_original_row[i].isNull() || less(row[i], next_original_row[i], getDirection(i))) &&
+            (constraints[i].isNull() || less(row[i], constraints[i], getDirection(i)))
+        );
+    }
+
+    /// The first differing later key decides, except for NULL and NaN: `less` does not order them as the sort does.
+    for (size_t i = 0; i < size(); ++i)
+    {
+        if (equals(row[i], next_original_row[i]))
+            continue;
+
+        if (i < pos || row[i].isNaN() || next_original_row[i].isNull() || next_original_row[i].isNaN())
+            return is_less;
+
+        return is_less && less(row[i], next_original_row[i], getDirection(i));
+    }
+
+    return false;
+}
+
 bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
 {
 
@@ -427,20 +459,7 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     row[pos] = next_value;
     if (equals(row[pos], next_original_row[pos]))
     {
-        bool is_less = false;
-        for (size_t i = pos + 1; i < row_size; ++i)
-        {
-            const auto & descr = getFillDescription(i);
-            if (!descr.fill_from.isNull())
-                row[i] = descr.fill_from;
-            else
-                row[i] = next_original_row[i];
-
-            is_less |= (
-                (next_original_row[i].isNull() || less(row[i], next_original_row[i], getDirection(i))) &&
-                (constraints[i].isNull() || less(row[i], constraints[i], getDirection(i)))
-            );
-        }
+        bool is_less = resetKeysAfter(pos, next_original_row);
 
         value_changed = true;
         return is_less;
@@ -470,20 +489,7 @@ bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed
 
         if (equals(row[pos], next_original_row[pos]))
         {
-            bool is_less = false;
-            for (size_t i = pos + 1; i < size(); ++i)
-            {
-                const auto & descr = getFillDescription(i);
-                if (!descr.fill_from.isNull())
-                    row[i] = descr.fill_from;
-                else
-                    row[i] = next_original_row[i];
-
-                is_less |= (
-                    (next_original_row[i].isNull() || less(row[i], next_original_row[i], getDirection(i))) &&
-                    (constraints[i].isNull() || less(row[i], constraints[i], getDirection(i)))
-                );
-            }
+            bool is_less = resetKeysAfter(pos, next_original_row);
 
             logDebug("is less: {}", is_less);
 
