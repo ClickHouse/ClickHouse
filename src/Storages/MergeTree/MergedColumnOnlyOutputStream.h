@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -27,7 +28,10 @@ public:
         WrittenOffsetSubstreams * written_offset_substreams,
         bool try_adaptive_codec,
         class PackedFilesWriter * external_packed_skip_indices_writer,
-        StreamBaseManifestPtr stream_base_manifest);
+        StreamBaseManifestPtr stream_base_manifest,
+        /// The context whose settings and write settings the per-column writer resolves (see the same
+        /// parameter of MergedBlockOutputStream); an empty pointer means the table's live context.
+        const ContextPtr & writer_context = nullptr);
 
     void write(const Block & block) override;
     void finalizeIndexGranularity();

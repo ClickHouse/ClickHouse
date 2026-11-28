@@ -119,12 +119,18 @@ WriteBufferFromHDFS::WriteBufferFromHDFS(
         size_t buf_size_,
         int flags_,
         BlobStorageLogWriterPtr blob_log_)
-    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
+    : WriteBufferFromFileBase(
+        adaptiveBufferInitialSize(write_settings_.use_adaptive_write_buffer, write_settings_.adaptive_write_buffer_initial_size, buf_size_),
+        nullptr,
+        0)
     , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, replication_, write_settings_, flags_))
     , hdfs_uri(hdfs_uri_)
     , filename(hdfs_file_path_)
     , blob_log(std::move(blob_log_))
 {
+    /// Honor the adaptive buffer sizing like a local file writer does: a merge writes one such buffer per
+    /// column stream of a wide part and reserves memory for them up front at the adaptive initial size.
+    enableAdaptiveBufferGrowth(write_settings_.use_adaptive_write_buffer, buf_size_);
 }
 
 
@@ -142,6 +148,8 @@ void WriteBufferFromHDFS::nextImpl()
 
     total_bytes_written += bytes_written;
     total_time_microseconds += stopwatch.elapsedMicroseconds();
+
+    growAdaptiveBufferAfterFlush();
 }
 
 
@@ -154,6 +162,7 @@ void WriteBufferFromHDFS::sync()
 
 void WriteBufferFromHDFS::finalizeImpl()
 {
+    use_adaptive_buffer_size = false;
     WriteBufferFromFileBase::finalizeImpl();
 
     if (blob_log)
