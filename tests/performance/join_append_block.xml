@@ -1,4 +1,11 @@
 <test>
+    <!-- Measures copying the right-side columns of matched rows into the join result. The join runtime filter is
+         switched off: it drops only probe rows that match nothing, so it changes neither the matched rows nor that
+         copy, and only adds the cost of its own check. -->
+    <settings>
+        <enable_join_runtime_filters>0</enable_join_runtime_filters>
+    </settings>
+
     <query tag='INNER'>SELECT count(c) FROM numbers_mt(100000000) AS a INNER JOIN (SELECT number, toString(number) AS c FROM numbers(2000000)) AS b ON (a.number % 10000000) = b.number settings join_algorithm='hash', hash_join_layout='serial'</query>
     <query tag='INNER'>SELECT count(c) FROM numbers_mt(100000000) AS a INNER JOIN (SELECT number, toString(number) AS c FROM numbers(2000000)) AS b ON (a.number % 10000000) = b.number settings join_algorithm='parallel_hash'</query>
 </test>
