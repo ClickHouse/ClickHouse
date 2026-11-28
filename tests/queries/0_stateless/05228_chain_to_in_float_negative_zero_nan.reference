@@ -1,0 +1,43 @@
+ground truth
+1	0	0	1
+equals chain
+-0	1
+0	1
+1	1
+2.5	0
+nan	0
+-0	0
+0	0
+1	1
+2.5	0
+nan	0
+not equals chain
+-0	0
+0	0
+1	0
+2.5	1
+nan	1
+-0	1
+0	1
+1	0
+2.5	1
+nan	1
+in where
+3
+2
+1
+4
+other float carriers
+3
+3
+3
+2
+3
+2
+2
+not rewritten
+0
+0
+0
+still rewritten
+1
