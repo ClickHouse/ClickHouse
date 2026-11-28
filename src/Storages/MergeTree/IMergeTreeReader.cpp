@@ -26,6 +26,7 @@
 #include <Common/ServerOwnedMemory.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -438,6 +439,8 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 
         if (dag)
         {
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(additional_columns, dag->getRequiredColumnsNames(), context_copy);
+            dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*dag));
             dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
             auto actions = std::make_shared<ExpressionActions>(
                 std::move(*dag),
