@@ -22,6 +22,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/FieldFromAST.h>
+#include <Parsers/QueryParameterVisitor.h>
 #include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
@@ -99,7 +100,7 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
             for (const auto & [name, value] : settings->query_parameters)
                 scoped_parameters.insert_or_assign(name, value);
 
-        ReplaceQueryParameterVisitor scoped_visitor(scoped_parameters);
+        ReplaceQueryParameterVisitor scoped_visitor(scoped_parameters, alias_parameterizes_view);
         scoped_visitor.visitChildren(ast);
         num_replaced_parameters += scoped_visitor.getNumberOfReplacedParameters();
     }
@@ -115,7 +116,12 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         }
         else if (auto * create_query = dynamic_cast<ASTCreateQuery *>(ast.get()))
         {
-            if (create_query->isParameterizedView())
+            /// Checked before `isParameterizedView`, which memoizes its answer: the substitution makes it false.
+            const bool ordinary_view_with_alias_parameters = !alias_parameterizes_view && create_query->is_ordinary_view
+                && create_query->select
+                && analyzeReceiveQueryParams(create_query->select, /*include_deferred_expressions=*/ true, /*include_parametrised_aliases=*/ false).empty();
+
+            if (!ordinary_view_with_alias_parameters && create_query->isParameterizedView())
             {
                 /// For a parameterized view the SELECT body contains query parameters that
                 /// form the view's parameterizable interface; they are substituted at
@@ -392,6 +398,9 @@ void ReplaceQueryParameterVisitor::resolveParameterizedAlias(ASTPtr & ast)
         return;
 
     if (ast_with_alias->parametrised_alias)
+    {
         setAlias(ast, getParamValue(ast_with_alias->parametrised_alias->name));
+        ast_with_alias->parametrised_alias.reset();
+    }
 }
 }

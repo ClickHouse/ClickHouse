@@ -351,6 +351,8 @@ TEST(TreeHashCompleteness, FormatRoundTripHashesEqual)
         "CREATE TABLE t (a UInt64, INDEX i a TYPE minmax GRANULARITY 4, CONSTRAINT c CHECK a > 0, CONSTRAINT d ASSUME a < 10, "
             "PROJECTION p (SELECT a ORDER BY a)) ENGINE = MergeTree ORDER BY a",
         "SELECT 1 INTO OUTFILE 'x' APPEND AND STDOUT",
+        "SELECT number AS {a:Identifier}, (number + 1) AS {b:Identifier} FROM numbers(2) AS {t:Identifier} WHERE number < {n:UInt64}",
+        "SELECT 1 LIMIT AFTER `settings` = 1 AS {p:Identifier}",
     };
 
     for (const auto & query : queries)
@@ -366,6 +368,15 @@ TEST(TreeHashCompleteness, FormatRoundTripHashesEqual)
 
     /// The specifier must not be silently dropped from a formatted ALTER.
     EXPECT_TRUE(parse("ALTER TABLE t ADD COLUMN x UInt64 PRIMARY KEY")->formatWithSecretsOneLine().contains("PRIMARY KEY"));
+}
+
+TEST(TreeHashCompleteness, ParametrisedAliasIsSignificant)
+{
+    /// `ASTWithAlias::parametrised_alias` is kept outside `children`.
+    EXPECT_NE(hashOf("SELECT 1 AS {a:Identifier}"), hashOf("SELECT 1"));
+    EXPECT_NE(hashOf("SELECT 1 AS {a:Identifier}"), hashOf("SELECT 1 AS {b:Identifier}"));
+    EXPECT_EQ(parse("SELECT 1 AS {a:Identifier}")->getTreeHash(/*ignore_aliases=*/ true), parse("SELECT 1")->getTreeHash(/*ignore_aliases=*/ true));
+    EXPECT_EQ(hashOfJSONRoundTrip("SELECT 1 AS {a:Identifier}"), hashOf("SELECT 1 AS {a:Identifier}"));
 }
 
 TEST(TreeHashCompleteness, MemberOnlyClausesAreSignificant)

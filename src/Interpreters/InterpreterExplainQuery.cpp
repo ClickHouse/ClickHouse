@@ -374,7 +374,7 @@ namespace
     void hideWholeNode(ASTPtr & node)
     {
         auto hidden = make_intrusive<ASTLiteral>(Field(String(HIDDEN_SECRET)));
-        hidden->setAlias(node->tryGetAlias());
+        hidden->copyAliasesFrom(*node);
         node = std::move(hidden);
     }
 

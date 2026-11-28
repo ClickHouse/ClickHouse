@@ -442,8 +442,7 @@ private:
             return;
 
         auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, identifier.name());
-        if (!identifier.alias.empty())
-            qualified_identifier->setAlias(identifier.alias);
+        qualified_identifier->copyAliasesFrom(identifier);
         ast = qualified_identifier;
     }
 
@@ -596,7 +595,9 @@ private:
             /// The `updatePointerToChild` function replaces the old address with the new one without access, so it is safe to invalidate it in place.
             /// However, just for safety, let's store the old node for a little longer.
             ASTPtr old_node = node;
-            node = make_intrusive<ASTLiteral>(database_name);
+            auto literal = make_intrusive<ASTLiteral>(database_name);
+            literal->copyAliasesFrom(function);
+            node = literal;
 
             if (parent)
             {

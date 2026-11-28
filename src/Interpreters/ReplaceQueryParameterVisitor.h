@@ -17,8 +17,11 @@ class SettingsChanges;
 class ReplaceQueryParameterVisitor
 {
 public:
-    explicit ReplaceQueryParameterVisitor(const NameToNameMap & parameters)
+    /// `alias_parameterizes_view`: whether a view whose only query parameters are aliases, `expr AS {name:Identifier}`,
+    /// is parameterized, see the setting `parameterize_view_by_alias_parameter`.
+    explicit ReplaceQueryParameterVisitor(const NameToNameMap & parameters, bool alias_parameterizes_view_ = true)
         : query_parameters(parameters)
+        , alias_parameterizes_view(alias_parameterizes_view_)
     {}
 
     void visit(ASTPtr & ast);
@@ -32,6 +35,7 @@ public:
 
 private:
     const NameToNameMap & query_parameters;
+    const bool alias_parameterizes_view;
     size_t num_replaced_parameters = 0;
 
     const String & getParamValue(const String & name);

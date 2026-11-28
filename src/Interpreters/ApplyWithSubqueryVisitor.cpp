@@ -205,7 +205,7 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
             auto subquery_it = data.subqueries.find(table_id.table_name);
             if (subquery_it != data.subqueries.end())
             {
-                auto old_alias = table.database_and_table_name->tryGetAlias();
+                auto old_table_name = table.database_and_table_name;
                 /// The table name is still part of the query here, as `replace` expects: it may count the query
                 /// for the first time and then refund the table name, which must not be refunded if it was never counted.
                 auto new_subquery = data.budget->replace(table.database_and_table_name, subquery_it->second);
@@ -213,8 +213,7 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
                 table.database_and_table_name.reset();
                 table.subquery = new_subquery;
                 table.subquery->as<ASTSubquery &>().cte_name = table_id.table_name;
-                if (!old_alias.empty())
-                    table.subquery->setAlias(old_alias);
+                table.subquery->as<ASTSubquery &>().copyAliasesFrom(*old_table_name);
                 table.children.emplace_back(table.subquery);
             }
         }
@@ -237,21 +236,20 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                 auto subquery_it = data.subqueries.find(name);
                 if (subquery_it != data.subqueries.end())
                 {
-                    auto old_alias = func.arguments->children[1]->tryGetAlias();
+                    auto old_argument = func.arguments->children[1];
                     func.arguments->children[1] = data.budget->replace(func.arguments->children[1], subquery_it->second);
                     func.arguments->children[1]->as<ASTSubquery>()->cte_name = name;
-                    if (!old_alias.empty())
-                        func.arguments->children[1]->setAlias(old_alias);
+                    func.arguments->children[1]->as<ASTSubquery>()->copyAliasesFrom(*old_argument);
                 }
                 else
                 {
                     auto literal_it = data.literals.find(name);
                     if (literal_it != data.literals.end())
                     {
-                        auto old_alias = func.arguments->children[1]->tryGetAlias();
+                        auto old_argument = func.arguments->children[1];
                         func.arguments->children[1] = data.budget->replace(func.arguments->children[1], literal_it->second);
-                        if (!old_alias.empty())
-                            func.arguments->children[1]->setAlias(old_alias);
+                        if (auto * argument_with_alias = dynamic_cast<ASTWithAlias *>(func.arguments->children[1].get()))
+                            argument_with_alias->copyAliasesFrom(*old_argument);
                     }
                 }
             }

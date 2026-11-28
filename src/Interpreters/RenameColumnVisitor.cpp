@@ -32,7 +32,7 @@ void RenameColumnData::visit(ASTIdentifier & identifier, ASTPtr & ast) const
             auto name_parts = identifier.name_parts;
             name_parts[0] = rename_to;
             auto renamed = make_intrusive<ASTIdentifier>(std::move(name_parts));
-            renamed->setAlias(identifier.tryGetAlias());
+            renamed->copyAliasesFrom(identifier);
             ast = std::move(renamed);
         }
         else

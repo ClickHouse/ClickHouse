@@ -523,7 +523,7 @@ public:
                 /// `__table1.nested.field` are normalized to `nested.field`, not just `nested`.
                 std::vector<String> trimmed_parts(identifier->name_parts.begin() + 1, identifier->name_parts.end());
                 auto new_identifier = make_intrusive<ASTIdentifier>(std::move(trimmed_parts));
-                new_identifier->setAlias(identifier->tryGetAlias());
+                new_identifier->copyAliasesFrom(*identifier);
                 ast = std::move(new_identifier);
             }
         }
