@@ -304,6 +304,10 @@ void registerStorageExecutable(StorageFactory & factory)
         .description = R"DOCS_MD(
 The `Executable` and `ExecutablePool` table engines allow you to define a table whose rows are generated from a script that you define (by writing rows to **stdout**). The executable script is stored in the `user_scripts` directory and can read data from any source.
 
+<Note>
+With the server setting [`filesystem_isolation`](/reference/settings/server-settings/settings/other#filesystem_isolation), which the `config.xml` installed by the packages enables, the script runs in the isolated filesystem of the server. It can be started from `user_scripts_path`, but its interpreter, the libraries it needs, and the files it reads must be made visible with `filesystem_isolation_paths`. The default Docker image, built `FROM scratch`, has no shell and no interpreter. See [Executable UDFs with filesystem isolation](/reference/functions/regular-functions/udf#filesystem-isolation).
+</Note>
+
 - `Executable` tables: the script is run on every query
 - `ExecutablePool` tables: maintains a pool of persistent processes, and takes processes from the pool for reads
 
@@ -529,6 +533,10 @@ ClickHouse will maintain 4 processes on-demand when your client queries the `sen
     Documentation{
         .description = R"DOCS_MD(
 The `Executable` and `ExecutablePool` table engines allow you to define a table whose rows are generated from a script that you define (by writing rows to **stdout**). The executable script is stored in the `user_scripts` directory and can read data from any source.
+
+<Note>
+With the server setting [`filesystem_isolation`](/reference/settings/server-settings/settings/other#filesystem_isolation), which the `config.xml` installed by the packages enables, the script runs in the isolated filesystem of the server. It can be started from `user_scripts_path`, but its interpreter, the libraries it needs, and the files it reads must be made visible with `filesystem_isolation_paths`. The default Docker image, built `FROM scratch`, has no shell and no interpreter. See [Executable UDFs with filesystem isolation](/reference/functions/regular-functions/udf#filesystem-isolation).
+</Note>
 
 - `Executable` tables: the script is run on every query
 - `ExecutablePool` tables: maintains a pool of persistent processes, and takes processes from the pool for reads
