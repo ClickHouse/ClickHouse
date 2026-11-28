@@ -3,6 +3,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/Context.h>
@@ -56,6 +57,14 @@ MutateFromLogEntryTask::~MutateFromLogEntryTask()
     zero_copy_lock.reset();
 }
 
+ContextMutablePtr MutateFromLogEntryTask::createTaskContext() const
+{
+    auto context = Context::createCopy(storage.getContext()->getBackgroundContext());
+    context->makeQueryContextForMutate(*storage.getSettings());
+    context->setCurrentQueryId(getQueryId());
+    return context;
+}
+
 ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 {
     const String & source_part_name = entry.source_parts.at(0);
@@ -75,7 +84,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     auto part_log_writer = [this](const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
             PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
             entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),
@@ -259,14 +268,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         }
     }
 
-    task_context = Context::createCopy(storage.getContext()->getBackgroundContext());
-    task_context->makeQueryContextForMutate(*storage.getSettings());
-    task_context->setCurrentQueryId(getQueryId());
-
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_mutated_part,
-        task_context);
+        task_context,
+        thread_group);
 
     storage.writePartLog(
         PartLogElement::MUTATE_PART_START, {}, 0,

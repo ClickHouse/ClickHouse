@@ -127,8 +127,8 @@ public:
         best_destination = dest;
         best_size = size;
     }
-    char * getBestDestination() const { return best_destination; }
-    UInt32 getBestSize() const { return best_size; }
+    [[nodiscard]] char * getBestDestination() const { return best_destination; }
+    [[nodiscard]] UInt32 getBestSize() const { return best_size; }
 
 private:
     bool isFree(const char * buffer, const char * in_use) const { return buffer != best_destination && buffer != in_use; }

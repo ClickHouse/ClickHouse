@@ -133,7 +133,7 @@ ReachableFilesResult collectReachableFiles(
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const String & table_identifier)
 {
-    auto [version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+    auto [version, metadata_path, compression_method, _] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
         table_identifier,
@@ -177,6 +177,7 @@ ReachableFilesResult collectReachableFiles(
     }
 
     Int32 current_schema_id = metadata->getValue<Int32>(f_current_schema_id);
+    persistent_table_components.schema_processor->registerMetadata(metadata);
 
     auto snapshot_files = collectSnapshotReferencedFiles(
         snapshots, object_storage, persistent_table_components, context, log, current_schema_id);

@@ -2,11 +2,11 @@
 title: Navigate Managed
 ---
 
-选择“Launch ClickStack”以访问 ClickStack UI (HyperDX) 。系统会自动完成身份验证并将你重定向到相应页面。
+选择“Launch ClickStack”以访问 ClickStack UI。系统会自动完成身份验证并将你重定向到相应页面。
 
 <Tabs>
   <Tab title="OpenTelemetry">
-    系统会为所有 OpenTelemetry 数据预先创建数据源。
+    ClickStack 会自动检测使用标准 OpenTelemetry schema 的表，并创建相应的数据源。无需确认对话框，也无需手动创建 source。
 
     <img src="/images/clickstack/getting-started/clickstack_managed_ui.webp" alt="" />
   </Tab>
@@ -22,7 +22,7 @@ title: Navigate Managed
 
     在上面的示例中，数据里并不存在 `Body` 列。相反，它是通过一个 SQL 表达式定义的，用于根据现有字段重建一行 Nginx 日志。
 
-    有关其他可选配置，请参阅[配置参考](/zh/clickstack/managing/config)。
+    有关其他可选配置，请参阅[配置参考](/zh/clickstack/self-configured/managing/config)。
 
     创建完成后，你将进入搜索视图，并可立即开始探索你的数据。
 

@@ -1,10 +1,14 @@
 ---
 title: 'How ClickHouse executes JOINs'
 sidebarTitle: 'Execution'
-description: 'Build and probe phases, and query-planner optimizations for JOINs.'
-keywords: ['JOIN execution', 'build side', 'probe side', 'JOIN planner', 'JOIN reordering', 'filter pushdown']
+description: 'Build and probe phases, cost-based JOIN order optimization, and query-planner optimizations for JOINs.'
+keywords: ['JOIN execution', 'build side', 'probe side', 'JOIN planner', 'JOIN reordering', 'cost-based optimizer', 'conflict detector', 'runtime filters', 'filter pushdown']
 doc_type: 'guide'
 ---
+
+This page explains how ClickHouse plans and executes a JOIN. It covers execution phases, cost-based JOIN order optimization, query-planner optimizations, and runtime filtering.
+
+## Build and probe phases {#build-and-probe-phases}
 
 Most JOIN algorithms execute in two phases:
 
@@ -13,29 +17,363 @@ Most JOIN algorithms execute in two phases:
 
 The probe phase starts only after the build phase finishes. The memory that a JOIN needs is therefore determined mostly by the size of the build side.
 
-By default, the right-hand side of the JOIN is the build side, and the left-hand side is the probe side. Some algorithms differ from this model. The [`direct` algorithm](/concepts/features/operations/select/join-algorithms#direct) has no build phase, because the right-hand side already exists as a key-value structure. The [`full_sorting_merge` algorithm](/concepts/features/operations/select/join-algorithms#full-sorting-merge) sorts both inputs and merges them. The [`ie_join` algorithm](/concepts/features/operations/select/join-algorithms#ie-join) accumulates both inputs before it joins them.
+By default, the right-hand side of the JOIN is the build side, and the left-hand side is the probe side. Some algorithms differ from this model. The [`direct` algorithm](/concepts/features/operations/select/join-algorithms#direct) has no build phase, because the right-hand side already exists as a key-value structure. The [`full_sorting_merge` algorithm](/concepts/features/operations/select/join-algorithms#full-sorting-merge) sorts both inputs and merges them. The [`inequality` algorithm](/concepts/features/operations/select/join-algorithms#inequality) accumulates both inputs before it joins them.
 
 ## Query planner behavior {#query-planner-behavior}
 
-The query planner can change the inputs of a JOIN before an algorithm runs. The following optimizations apply.
+The query planner transforms a query plan in two passes before an algorithm runs. The first pass applies local bottom-up rules repeatedly until no rule applies, removes unused columns globally across the plan, and runs the local rules again. The second pass runs plan-wide analyses and transformations in a fixed sequence.
 
-### Automatic build-side selection {#automatic-build-side-selection}
+When enabled by settings and applicable to the query, the planner can apply the following JOIN-related optimizations in order.
+
+**First pass:**
+
+1. Short-circuiting a JOIN whose `ON` condition folds to constant false.
+2. Splitting filter expressions and extracting logical `JOIN` `ON` conditions, followed by expression and filter merging.
+3. Filter pushdown below JOINs, including partial pushdown of `OR`-connected `JOIN` conditions.
+4. Converting an outer JOIN to an `INNER` JOIN when a filter directly above the JOIN always rejects unmatched rows.
+5. Converting an eligible `INNER` JOIN to an `IN` subquery.
+6. Merging equality filters above a JOIN into the `JOIN` condition, including converting a `CROSS` JOIN or comma JOIN to an `INNER` JOIN.
+7. Converting an `ANY` JOIN to a `SEMI` JOIN or an `ANTI` JOIN based on a post-JOIN filter.
+8. Pushing `ORDER BY ... LIMIT` top-K operations below a `LEFT` JOIN or `RIGHT` JOIN when the sort key references only columns of the preserved side.
+
+**Second pass:**
+
+1. Transitive conversion of outer JOINs to `INNER` JOINs based on filters higher in the plan or conditions of enclosing JOINs.
+2. Propagating filter predicates across equi-JOIN keys to the other input.
+3. Primary key and limit analysis, query condition cache setup, and text index analysis.
+4. JOIN order optimization and automatic build-side selection.
+5. Inserting runtime JOIN filters, removing newly unused columns, pushing runtime filters down toward reading steps, and registering them for read-time index analysis.
+6. `PREWHERE` optimization, which can move pushed-down filters and runtime filters into `PREWHERE`.
+7. Lazy materialization for `LIMIT` queries over JOINs, reading in order through JOINs, and distributed JOIN planning.
+8. Converting logical JOIN steps into physical JOIN algorithms, followed by lazy column indexing on physical JOIN steps.
+9. Sharding eligible `MergeTree` JOINs by primary key ranges, marking seal-gated probe reads for runtime filter range pruning, and sharding `parallel_full_sorting_merge` JOINs.
+
+## JOIN order optimization {#multi-table-join-reordering}
+
+For a query that joins several tables in the same subquery, the cost-based JOIN order optimizer chooses the execution order of the tables.
+
+### Why JOIN order matters {#why-join-order-matters}
+
+Different JOIN orders over the same tables produce the same final result, while generating very different intermediate result sizes and build-side hash table sizes. Joining large tables before applying a selective table produces large intermediate results that must be hashed and probed by subsequent JOIN steps. Joining the selective table first reduces intermediate row counts early.
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Comparison of two JOIN orders on a four-table TPC-H SF10 query over lineitem, orders, customer, and filtered nation: joining large tables first produces 60.0M-row intermediate results, whereas joining the filtered nation table first produces 60K and 602K intermediate rows for the same 2,407,146-row final result](/images/guides/join-execution/tpch-join-orders.png)
+
+</Frame>
+
+</div>
+
+The number of possible JOIN trees grows rapidly with the number of tables. For `n` tables, there are `n!` left-deep JOIN orders and `(2n - 2)! / (n - 1)!` bushy JOIN trees. With 10 tables, that amounts to 3,628,800 left-deep orders and more than 17.6 billion bushy trees. With 12 tables, the bushy search space approaches 28 trillion trees.
+
+A cost-based JOIN optimizer separates the problem into three components:
+
+- **Search space:** the set of logically equivalent JOIN trees that preserve the semantics of the query.
+- **Cost model:** a function that estimates intermediate row counts and assigns a numeric cost to each candidate plan.
+- **Search strategy:** an algorithm that enumerates candidate plans in the search space to select a low-cost tree.
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Diagram of query optimization from a SQL query through a query optimizer composed of a search space, a cost model, and a search strategy to a physical plan with HashJoin probe and build inputs](/images/guides/join-execution/query-to-physical-plan.png)
+
+</Frame>
+
+</div>
+
+### Cost model and cardinality estimates {#cost-model-and-cardinality-estimates}
+
+For each candidate JOIN node, the cost model computes the cumulative cost as the sum of the costs of its two inputs plus the estimated output cardinality of the JOIN step itself.
+
+To estimate output cardinality, the optimizer first estimates the selectivity of the `JOIN` condition:
+
+- When column statistics provide the number of distinct values for both keys of an equality predicate, selectivity is estimated as `1 / max(NDV_left, NDV_right)`. When multiple equality predicates connect the two inputs, the optimizer uses the minimum selectivity across them.
+- When reliable distinct-value statistics are unavailable for an equi-JOIN and both input row counts are known, the optimizer assumes a foreign-key to primary-key match and estimates the joined row count as `max(left_rows, right_rows)`.
+- When no equality predicate connects the two inputs, the optimizer estimates the Cartesian product `left_rows * right_rows`.
+
+The output cardinality then adjusts for the JOIN kind:
+
+- `INNER` JOIN uses the joined row estimate, with a floor of 1.
+- `LEFT`, `RIGHT`, and `FULL` JOINs floor the estimate at the left input size, the right input size, or the sum of both input sizes, respectively.
+- `SEMI` and `ANTI` JOINs do not floor at the preserved side. They estimate a match fraction from the equi-JOIN selectivity and the non-preserved input size, scaling the preserved input by that match fraction for `SEMI` JOIN and by its complement for `ANTI` JOIN.
+
+Since version 26.10, when joined tables can be read in the order of the JOIN key and [`query_plan_join_order_use_interesting_orders`](/reference/settings/session-settings/query-plan#query_plan_join_order_use_interesting_orders) is enabled, `dpsub` models `hash` build and probe work against `full_sorting_merge` sort and merge work to choose between them by cost, and prefers plans whose sorted output can be reused by a later JOIN.
+
+### Search algorithms {#search-algorithms}
+
+The [`query_plan_optimize_join_order_algorithm`](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_algorithm) setting accepts a comma-separated list of search algorithms that the planner tries in order. Since version 26.10, the default is `dpsub,greedy`.
+
+- **`dpsub`:** a bottom-up dynamic programming algorithm over table subsets. Starting from individual tables, it enumerates table subsets in increasing size, splits each subset into disjoint non-empty pairs connected by a valid JOIN edge, evaluates each candidate with the cost model, and retains the cheapest plan per subset until it constructs a plan for all tables. `dpsub` considers both bushy and left-deep trees and supports non-inner JOINs when paired with a conflict detector. It has a hard limit of 12 tables per JOIN graph.
+- **`greedy`:** a heuristic algorithm that starts with individual tables and repeatedly combines the cheapest valid pair without revisiting earlier decisions. It runs in polynomial time and scales up to the maximum JOIN graph size of 64 tables.
+
+The [`query_plan_optimize_join_order_limit`](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) setting caps the number of tables flattened into a single JOIN group, up to a maximum of 64. A query that joins more tables than this limit is split into groups that are optimized separately. Setting it to `0` disables JOIN order optimization and build-side selection entirely. Setting it to `1` disables multi-table reordering while still allowing two-table build-side selection. With the default limit of `10`, each group contains at most 10 tables, so `dpsub` optimizes all eligible groups up to 10 tables. Raising `query_plan_optimize_join_order_limit` to `12` allows `dpsub` to optimize groups of up to 12 tables; raising it above 12 causes groups of more than 12 tables to fall back to `greedy`.
+
+**Fallback behavior:**
+
+- If a flattened JOIN graph exceeds the 12-table cap of `dpsub` or if an algorithm encounters a JOIN kind it does not support, the planner falls back to the next algorithm in `query_plan_optimize_join_order_algorithm`, which is `greedy` by default.
+- When `query_plan_optimize_join_order_limit` is raised above 12 and flattening non-inner JOINs for the conflict detector would yield more than 12 tables, the planner disables conflict-detector flattening so that `greedy` can still optimize the remaining inner-JOIN subgraphs.
+- If no algorithm in `query_plan_optimize_join_order_algorithm` succeeds, the query fails with an error.
+
+### Reordering non-inner JOINs and the conflict detector {#reordering-non-inner-joins}
+
+An `INNER` JOIN is both commutative and associative, so any parenthesization of connected `INNER` JOINs produces the same result. Outer JOINs, `SEMI` JOINs, and `ANTI` JOINs do not satisfy all associative and commutative identities, so reordering them without validity checks can return wrong results.
+
+To reorder non-inner JOINs safely, ClickHouse uses a conflict detector selected by [`query_plan_optimize_join_order_conflict_detector`](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_conflict_detector). Accepted values are `''` to disable the detector, `a` for CD-A, which is correct but omits some valid plans, and `c` for CD-C, which is correct and complete and is the default since version 26.10. The conflict detector implements the algorithm from [On the Correct and Complete Enumeration of the Core Search Space](https://dl.acm.org/doi/10.1145/2463676.2465314), SIGMOD 2013.
+
+Before enumeration begins, the detector analyzes adjacent operators in the original JOIN tree against four algebraic properties. From every identity that does not hold for a pair of operators, the detector generates conflict rules that specify which tables must already be joined before another JOIN operator can be applied. During `dpsub` enumeration, any candidate split that violates a conflict rule is discarded.
+
+**Supported JOIN types and exclusions:**
+
+- With `dpsub` and a conflict detector enabled, `INNER`, `CROSS`, comma, `LEFT`, `RIGHT`, and `FULL` JOINs with `ALL` strictness, together with `LEFT` and `RIGHT` `SEMI` and `ANTI` JOINs, participate in multi-table reordering, including both sides of outer, `SEMI`, and `ANTI` JOINs.
+- Without a conflict detector, or when `greedy` plans the graph, only `INNER`, `CROSS`, comma, and `LEFT` or `RIGHT` JOINs with `ALL` strictness and single-table non-preserved sides are reordered across three or more tables. In that mode, `FULL`, `SEMI`, and `ANTI` JOINs act as optimization barriers that cap the graph to two tables.
+- `ANY` JOIN is limited to two-table build-side selection and does not participate in multi-table reordering.
+- `ASOF` JOIN, `PASTE` JOIN, `GLOBAL` and `LOCAL` JOINs, JOINs with residual filters, and outer JOINs that change non-`Nullable` columns to `Nullable` under `join_use_nulls = 1` do not participate in multi-table reordering.
+
+**Role of null-rejecting conditions:**
+
+Some identities for outer JOINs hold only when a predicate rejects `NULL` values on the null-supplied side. For example, two adjacent `LEFT` JOINs can be reassociated only if the second `ON` predicate cannot evaluate to true when columns from the middle table are `NULL`. With `join_use_nulls = 0`, unmatched rows receive type default values instead of `NULL`, so null-rejection rules apply only when the relevant columns have `Nullable` types.
+
+**Invalid and valid reordering example:**
+
+Consider a query over `customers`, `orders`, and `payments` with `join_use_nulls = 1`:
+
+```sql
+SELECT customers.id, orders.id, payments.order_id
+FROM customers
+LEFT JOIN orders ON customers.id = orders.customer_id
+INNER JOIN payments ON orders.id = payments.order_id
+SETTINGS join_use_nulls = 1;
+```
+
+The following simplified logical plans show the written order in Plan A and a candidate reordering in Plan B.
+
+Plan A, original:
+
+```text
+Inner join [orders.id = payments.order_id]
+├── Left outer join [customers.id = orders.customer_id]
+│   ├── Scan customers
+│   └── Scan orders
+└── Scan payments
+```
+
+Plan B, invalid reordering of Plan A:
+
+```text
+Left outer join [customers.id = orders.customer_id]
+├── Scan customers
+└── Inner join [orders.id = payments.order_id]
+    ├── Scan orders
+    └── Scan payments
+```
+
+For a customer with no orders, Plan A produces a row with `NULL` values in the `orders` columns and then removes that row at the `INNER` JOIN because `NULL` does not match any payment. Plan B joins `orders` and `payments` first and then preserves that customer at the `LEFT` JOIN. Because associativity does not hold for `LEFT` JOIN followed by `INNER` JOIN, the conflict detector rejects Plan B.
+
+When the JOIN types are written in the reverse order, the reordering is valid:
+
+```sql
+SELECT customers.id, orders.id, payments.order_id
+FROM customers
+INNER JOIN orders ON customers.id = orders.customer_id
+LEFT JOIN payments ON orders.id = payments.order_id
+SETTINGS join_use_nulls = 1;
+```
+
+Plan C, original:
+
+```text
+Left outer join [orders.id = payments.order_id]
+├── Inner join [customers.id = orders.customer_id]
+│   ├── Scan customers
+│   └── Scan orders
+└── Scan payments
+```
+
+Plan D, valid reordering of Plan C:
+
+```text
+Inner join [customers.id = orders.customer_id]
+├── Scan customers
+└── Left outer join [orders.id = payments.order_id]
+    ├── Scan orders
+    └── Scan payments
+```
+
+Because associativity holds for `INNER` JOIN followed by `LEFT` JOIN, Plan C and Plan D produce the same rows, and the conflict detector permits Plan D.
+
+**SEMI JOIN reordering example:**
+
+Consider a query where `big` and `mid` share many matching keys and `tiny` contains only a small set of keys:
+
+```sql
+SELECT sum(big.v + mid.v)
+FROM big
+INNER JOIN mid ON big.k = mid.k
+LEFT SEMI JOIN tiny ON big.k = tiny.k;
+```
+
+Without a conflict detector, the `LEFT SEMI` JOIN stays pinned above `big INNER JOIN mid`, so ClickHouse evaluates the full `INNER` JOIN of `big` and `mid` before filtering by `tiny`. With the conflict detector enabled, `dpsub` moves the `LEFT SEMI` JOIN below the `INNER` JOIN to filter `big` first.
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Comparison of SEMI JOIN execution plans without and with the conflict detector: without the detector, big and mid are joined first producing 503,768,186 intermediate rows before the SEMI JOIN with tiny; with the detector, big is semi-joined with tiny first producing 1,015,092 intermediate rows, approximately 496 times smaller](/images/guides/join-execution/semi-join-reordering.png)
+
+</Frame>
+
+</div>
+
+On a benchmark dataset where `big` and `mid` share high-multiplicity keys and `tiny` selects a small fraction of keys, pushing the `LEFT SEMI` JOIN below the `INNER` JOIN reduces the largest intermediate result by approximately 496 times:
+
+| Configuration | Plan | Largest intermediate result |
+| --- | --- | --- |
+| Without conflict detector | `(big ⋈ mid) ⋉ tiny` | 503,768,186 rows |
+| With conflict detector | `mid ⋈ (big ⋉ tiny)` | 1,015,092 rows |
+
+The following `EXPLAIN actions = 1` plans were captured on ClickHouse 26.10.11 over sample `MergeTree` tables with 3,000,000 rows in `big` and `mid`, 100,000 distinct keys, and 100 rows in `tiny`, with `enable_join_runtime_filters = 0` to isolate the JOIN order.
+
+Without the conflict detector, setting `query_plan_optimize_join_order_conflict_detector = ''`:
+
+```text
+Output: sum(v + v)
+
+Aggregating
+│  Keys:
+│  Aggregates: sum(v + v)
+│  Skip merging: 0
+└──Join (JOIN FillRightFirst)
+   │  big[3000000] ⋈ mid[3000000] ⋉ tiny[100]
+   │  Type: left | Strictness: semi | Algorithm: SpillingHashJoin(HashJoin)
+   │  Cost: estimated 93.41 thousand
+   │  Selectivity: estimated (NDV) 1.019e-05
+   │  Output rows: estimated 91.69 million
+   │  Left: rows estimated 91.69 million
+   │  Right: rows estimated 100.00
+   │  Join conditions: k = k
+   │  Input (left): k, v, v
+   │  Input (right): k
+   ├──Join (JOIN FillRightFirst)
+   │  │  big[3000000] ⋈ mid[3000000]
+   │  │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(ConcurrentHashJoin)
+   │  │  Cost: estimated 91.69 million
+   │  │  Selectivity: estimated (NDV) 1.019e-05
+   │  │  Output rows: estimated 91.69 million
+   │  │  Left: rows estimated 3.00 million
+   │  │  Right: rows estimated 3.00 million
+   │  │  Join conditions: k = k
+   │  │  Input (left): k, v
+   │  │  Input (right): k, v
+   │  ├──ReadFromMergeTree (default.big)
+   │  │     Read type: Default
+   │  │     Parts: 3 | Granules: 367
+   │  │     Output: v, k
+   │  └──ReadFromMergeTree (default.mid)
+   │        Read type: Default
+   │        Parts: 3 | Granules: 367
+   │        Output: v, k
+   └──ReadFromMergeTree (default.tiny)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: k
+```
+
+With the default conflict detector `c`:
+
+```text
+Output: sum(v + v)
+
+Aggregating
+│  Keys:
+│  Aggregates: sum(v + v)
+│  Skip merging: 0
+└──Join (JOIN FillRightFirst)
+   │  mid[3000000] ⋈ (big[3000000] ⋉ tiny[100])
+   │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+   │  Cost: estimated 96.45 thousand
+   │  Selectivity: estimated (NDV) 1.019e-05
+   │  Output rows: estimated 93.40 thousand
+   │  Left: rows estimated 3.00 million
+   │  Right: rows estimated 3.06 thousand
+   │  Join conditions: k = k
+   │  Input (left): k, v
+   │  Input (right): k, v
+   ├──ReadFromMergeTree (default.mid)
+   │     Read type: Default
+   │     Parts: 3 | Granules: 367
+   │     Output: v, k
+   └──Join (JOIN FillRightFirst)
+      │  big[3000000] ⋉ tiny[100]
+      │  Type: left | Strictness: semi | Algorithm: SpillingHashJoin(HashJoin)
+      │  Cost: estimated 3.06 thousand
+      │  Selectivity: estimated (NDV) 1.019e-05
+      │  Output rows: estimated 3.06 thousand
+      │  Left: rows estimated 3.00 million
+      │  Right: rows estimated 100.00
+      │  Join conditions: k = k
+      │  Input (left): k, v
+      │  Input (right): k
+      ├──ReadFromMergeTree (default.big)
+      │     Read type: Default
+      │     Parts: 3 | Granules: 367
+      │     Output: v, k
+      └──ReadFromMergeTree (default.tiny)
+            Read type: Default
+            Parts: 1 | Granules: 1
+            Output: k
+```
+
+### CROSS JOIN placement {#cross-join-placement}
+
+A `CROSS` JOIN has no equality condition and adds no predicate edge to the JOIN graph. To keep the graph connected during reordering, the optimizer adds an explicit edge with selectivity `1` between the two sides of a `CROSS` JOIN. This allows `dpsub` to place the cross product where its intermediate cost is lowest, while ClickHouse still executes and reports the operation as a `CROSS` JOIN.
+
+### Transitive predicates {#transitive-predicates}
+
+When [`enable_join_transitive_predicates`](/reference/settings/session-settings/enable-join#enable_join_transitive_predicates) is enabled, the optimizer infers transitive equality predicates from equivalence classes of `ON` conditions before searching for a JOIN order. For example, from `a.k = b.k` and `b.k = c.k`, it derives `a.k = c.k`, allowing the search strategy to consider joining `a` and `c` directly instead of treating that pair as a cross product. This setting was introduced in version 26.4 and enabled by default in version 26.6.
+
+## Automatic build-side selection {#automatic-build-side-selection}
 
 Since version 24.12, the planner can swap the two inputs of a JOIN so that the smaller input becomes the build side. It compares the estimated row counts of both inputs and swaps them for a hash-based JOIN when the left input is estimated to be smaller. The [`query_plan_join_swap_table`](/reference/settings/session-settings/query-plan#query_plan_join_swap_table) setting controls this behavior.
 
 When the inputs are swapped, a `LEFT` JOIN is executed as a `RIGHT` JOIN, and the reverse. The swapped order is visible in `EXPLAIN` output.
 
-### Multi-table JOIN reordering {#multi-table-join-reordering}
+Because the `dpsub` cost model assigns the same cost to a JOIN regardless of which input is on the left or right, build-side orientation is assigned after JOIN reordering selects the tree structure. For hash JOINs over `INNER`, `CROSS`, and `ALL` outer JOINs, `dpsub` places the input with the smaller estimated row count on the right side as the build table and mirrors `LEFT` and `RIGHT` JOINs accordingly. When row estimates are equal or unavailable, it places the input that spans more tables on the left side.
 
-For a query that joins several tables in the same subquery, the planner can change the order in which the tables are joined. The [`query_plan_optimize_join_order_limit`](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) setting sets the maximum number of tables that the planner reorders. The default value is `10`. The value `1` disables reordering.
+For `ANY`, `SEMI`, and `ANTI` JOINs, the post-search orientation step inside `dpsub` does not flip the inputs and restores the written direction of `SEMI` and `ANTI` JOINs. Immediately afterward, when the planner builds the logical JOIN steps from the chosen tree, the build-side selection pass can still swap `ANY`, `SEMI`, and `ANTI` JOIN inputs to place the smaller input on the right, reversing `LEFT` to `RIGHT` and `RIGHT` to `LEFT`. That swap is skipped when [`join_any_take_last_row`](/reference/settings/session-settings/join#join_any_take_last_row) is enabled for an `ANY` JOIN, when [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) includes a merge algorithm such as `partial_merge` that does not support both the original and reversed direction, when the optimizer chose `full_sorting_merge`, or when `query_plan_join_swap_table` is set to `false`.
 
-### Use of column statistics {#use-of-column-statistics}
+## Cardinality estimation and statistics {#use-of-column-statistics}
 
-Build-side selection and JOIN reordering depend on row-count estimates. Without column statistics, the planner derives estimates from the primary index, and these estimates can be imprecise. With [column statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), the planner uses statistics to estimate the selectivity of filters and the cardinality of JOIN keys.
+The cost-based optimizer uses row-count and selectivity estimates to make four decisions:
 
-The [`use_statistics`](/reference/settings/session-settings/use-statistics#use_statistics) setting controls whether the optimizer uses statistics. The [`materialize_statistics_on_insert`](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) setting controls whether statistics are built for newly inserted data.
+- **JOIN order:** chooses the lowest-cost JOIN order for groups of up to 10 tables by default under [`query_plan_optimize_join_order_limit`](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit), splitting larger queries into groups optimized separately, and falling back to `greedy` when the limit is raised above 12 and a group exceeds 12 tables.
+- **JOIN build side:** places the smaller estimated input on the build side of a hash JOIN under [`query_plan_join_swap_table`](/reference/settings/session-settings/query-plan#query_plan_join_swap_table).
+- **JOIN algorithm:** when joined tables can be read in JOIN key order, chooses between `hash` and `full_sorting_merge` by cost and prefers plans whose sorted output can be reused by a later JOIN under [`query_plan_join_order_use_interesting_orders`](/reference/settings/session-settings/query-plan#query_plan_join_order_use_interesting_orders).
+- **Filter order:** moves `WHERE` conditions to [`PREWHERE`](/optimize/prewhere) and orders them by compressed column size and estimated selectivity so cheaper and more selective conditions run first.
 
-### Filter pushdown {#filter-pushdown}
+Without column statistics, the planner derives row-count estimates from the primary index, and these estimates can be imprecise. With [column statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), the planner estimates both filter selectivity and JOIN key cardinality.
+
+### Automatic statistics collection and default types {#automatic-statistics-collection}
+
+`MergeTree` tables collect column statistics automatically for each data part when parts are merged. When [`materialize_statistics_on_insert`](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) is enabled, statistics are also collected on insert for tables whose size does not exceed [`materialize_statistics_on_insert_max_table_size`](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert_max_table_size), so manual `ANALYZE` runs are not required. The [`use_statistics`](/reference/settings/session-settings/use-statistics#use_statistics) setting controls whether the optimizer uses these statistics.
+
+The [`auto_statistics_types`](/reference/settings/merge-tree-settings/other#auto_statistics_types) table setting controls which statistics types are collected automatically on suitable columns. Since version 26.7, it defaults to `basic` and `uniq_v2`, replacing `minmax` and `uniq`, which became automatic in version 26.4:
+
+- **`basic`:** tracks minimum and maximum values on numeric and temporal columns, counts of default and `NULL` values, total byte length of strings, and exact sums on non-`Nullable` integer and `Decimal` columns.
+- **`uniq_v2`:** estimates the number of distinct values in a column.
+
+For declaration syntax, `ALTER TABLE` commands, and supported data types, see [Column statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics).
+
+### Other estimate sources {#other-estimate-sources}
+
+Besides `MergeTree` column statistics and primary index estimates, the JOIN order optimizer can use two additional cardinality estimate sources:
+
+- **Collected hash table statistics:** controlled by [`use_hash_table_stats_for_join_reordering`](/reference/settings/session-settings/use#use_hash_table_stats_for_join_reordering), available since version 26.1. When [`collect_hash_table_stats_during_joins`](/reference/settings/session-settings/collect-hash#collect_hash_table_stats_during_joins) is enabled, ClickHouse caches the measured build-side row counts of executed JOIN subplans. On subsequent runs of matching subplans, if the cached count is smaller than the static estimate, the planner uses the measured count for reordering.
+- **Data lake metadata statistics:** controlled by [`use_datalake_metadata_statistics`](/reference/settings/session-settings/use#use_datalake_metadata_statistics), available since version 26.11 for Apache Iceberg tables when `use_statistics` is enabled. The planner reads row counts, value bounds, and null fractions from Iceberg manifest files remaining after partition and min-max pruning. When [`use_iceberg_table_statistics_ndv`](/reference/settings/session-settings/use-iceberg#use_iceberg_table_statistics_ndv) is also enabled, distinct-value counts are read from Iceberg table statistics in `metadata.json`.
+
+## Filter pushdown {#filter-pushdown}
 
 When [`query_plan_filter_push_down`](/reference/settings/session-settings/query-plan#query_plan_filter_push_down) is enabled, the planner moves `WHERE` conditions below the JOIN so that each input is filtered before the build and probe phases.
 
@@ -44,6 +382,43 @@ When [`query_plan_filter_push_down`](/reference/settings/session-settings/query-
 - A condition on a JOIN key of one input can also be applied to the other input, because the key columns of both inputs are equal for every matched row.
 - Conditions are not pushed into a right-hand side that is already filled, such as a dictionary, or into the right-hand side of an `ASOF` JOIN.
 
+Two additional optimizations extend filter pushdown around JOINs:
+
+- **Predicate propagation across equi-JOINs:** controlled by [`query_plan_propagate_predicate_across_join`](/reference/settings/session-settings/query-plan#query_plan_propagate_predicate_across_join), available since version 26.9 for `MergeTree` primary keys and extended to Parquet reads in version 26.11. Before index analysis, the planner copies constant-comparison filter conjuncts on a JOIN key from one side of an equi-JOIN to the other side, enabling primary key or Parquet row-group pruning on both inputs.
+- **Disjunction pushdown:** controlled by [`use_join_disjunctions_push_down`](/reference/settings/session-settings/use#use_join_disjunctions_push_down), introduced in version 25.10 and enabled by default in version 26.1. For `OR`-connected `JOIN` conditions where every branch contains at least one deterministic predicate over the same input, the planner extracts a side-specific disjunctive filter and pushes it down to that input before the JOIN.
+
+## Runtime JOIN filters {#runtime-join-filters}
+
+When [`enable_join_runtime_filters`](/reference/settings/session-settings/enable-join#enable_join_runtime_filters) is enabled, ClickHouse uses the keys collected during the build phase to filter the probe side before rows reach the JOIN. This feature was enabled by default in version 26.2.
+
+For eligible hash-based JOINs, including `INNER`, `RIGHT`, `SEMI`, and `ANTI` JOINs, ClickHouse builds a runtime filter from the build-side equality keys as the hash table is populated. The planner attaches the filter to the probe subtree and pushes it down as close to the probe-side storage read as possible, including into `PREWHERE`, so non-matching probe rows are eliminated before probing the hash table. For `LEFT ANTI` JOIN, the filter excludes rows whose keys appear in the build side while passing rows with `NULL` keys.
+
+A runtime filter adapts its internal representation to the number and type of distinct build-side keys:
+
+- **Exact set:** the filter starts as an exact set of distinct key values. Empty sets evaluate to a constant mask, and single-value non-`Nullable` sets optimize to a direct equality comparison.
+- **Dense bitset or bloom filter:** when the number of distinct keys or bytes exceeds the exact-set limit, a positive filter switches to a dense bitset for 8-bit and 16-bit integer keys, or to a bloom filter for other contiguous key types. A `LEFT ANTI` JOIN filter does not switch to an approximate bloom filter because false positives would drop rows that should be kept.
+- **Disabling:** a runtime filter is permanently disabled if a positive exact set overflows without a bloom-filter fallback, or if a bloom filter exceeds or is predicted to exceed its maximum set-bit ratio. During probing, if the fraction of rows passing the filter exceeds the pass-ratio threshold, ClickHouse temporarily skips the filter for a configured number of blocks before re-evaluating it. ClickHouse also skips creating a runtime filter when the estimated probe-side row count is at or below the minimum probe row threshold.
+
+**Granule pruning:**
+
+When [`enable_join_runtime_filters_index_analysis`](/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis) and [`use_skip_indexes_on_data_read`](/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_on_data_read) are enabled, ClickHouse uses completed runtime filters to prune granules on `MergeTree` probe reads. This setting was enabled by default in version 26.10. When the runtime filter retained an exact set of keys, ClickHouse constructs an `IN` predicate; otherwise it constructs a minimum-to-maximum key range predicate. Pruning applies to probe keys that are part of the primary key, covered by a `minmax`, `set`, or `bloom_filter` skip index, or equal to the global row index `_part_starting_offset + _part_offset`. For Apache Iceberg tables, runtime filters can also prune data files, Parquet row groups, and Parquet pages.
+
+For the full list of runtime filter tuning settings, see the [query planner section of JOIN settings](/concepts/features/operations/select/join-settings#query-planner).
+
+## Inspecting the JOIN plan {#inspecting-the-join-plan}
+
+Run `EXPLAIN actions = 1` on a query to inspect the JOIN order, kind, strictness, build side, row estimates, and selected algorithm. Since version 26.7, plain `EXPLAIN` renders the pretty action-annotated format by default; writing `EXPLAIN actions = 1` explicitly works on both older and current versions.
+
+In the `EXPLAIN actions = 1` output, each `Join (JOIN FillRightFirst)` step displays:
+
+- A symbolic expression summarizing the execution order and estimated row count of each table.
+- A `Type`, `Strictness`, and `Algorithm` line showing the executed JOIN kind after any build-side swap or rewrite, the strictness, and the physical algorithm.
+- Estimated cost, selectivity, output rows, and left and right input row counts.
+- Two child branches, where the first child is the left probe input and the second child is the right build input.
+- `BuildRuntimeFilter` steps and `Runtime filters` annotations showing where runtime filters are built and applied.
+
+To compare the optimizer's estimates against actual execution, run [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze). `EXPLAIN ANALYZE` executes the query and reports per-step runtime metrics. For JOIN steps, it [compares estimated and actual metrics](/reference/statements/explain#explain-analyze-join-estimation), including estimated and actual cost, selectivity, output row counts with q-error, and left and right input row counts.
+
 ## Related pages {#related-pages}
 
 - [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables)
@@ -51,3 +426,4 @@ When [`query_plan_filter_push_down`](/reference/settings/session-settings/query-
 - [JOIN memory management and spilling](/concepts/features/operations/select/join-memory-management)
 - [JOIN settings](/concepts/features/operations/select/join-settings)
 - [Minimize and optimize JOINs](/concepts/best-practices/minimize-optimize-joins)
+- [The new cost-based join optimizer with reordering support for non-inner joins](https://clickhouse.com/blog/the-new-cost-based-join-optimizer-with-reordering-support-for-non-inner-joins)

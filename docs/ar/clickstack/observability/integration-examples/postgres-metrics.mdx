@@ -1,0 +1,289 @@
+---
+slug: /clickstack/observability/integration-examples/postgres-metrics
+title: 'مراقبة مقاييس PostgreSQL باستخدام ClickHouse Observability'
+sidebarTitle: 'مقاييس PostgreSQL'
+description: 'اجمع مقاييس PostgreSQL باستخدام مُجمِّع OpenTelemetry وأرسلها إلى ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['PostgreSQL', 'Postgres', 'metrics', 'OTEL', 'ClickHouse Observability', 'database monitoring']
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+اجمع مقاييس PostgreSQL باستخدام مستقبِل PostgreSQL في OpenTelemetry، ثم أرسلها إلى ClickHouse Observability. ويمكنك استخدام [مجموعة البيانات التجريبية](#demo-dataset) لتجربة هذا التكامل دون الحاجة إلى تثبيت PostgreSQL.
+
+## المتطلبات المسبقة {#prerequisites}
+
+* خدمة ClickHouse Observability
+* Docker و`curl`
+* لجمع مقاييسك الخاصة: PostgreSQL 14 أو إصدار أحدث يمكن الوصول إليه من جامع البيانات، ومستخدم مخصص للمراقبة
+
+### بيانات الاتصال {#connection-details}
+
+<Tabs>
+  <Tab title="مُدار بالكامل">
+    <BetaBadge label="خدمة في المرحلة التجريبية" />
+
+    افتح ClickHouse Observability وانتقل إلى **إعدادات الفريق → Data → بيانات القياس عن بُعد المُدارة**. انسخ نقطة نهاية OTLP عبر HTTP ومفتاح API الخاصين بك. يمكنك استخدام **Copy connection details** لنسخ التهيئة، أو **Reveal key** لإظهار المفتاح المحجوب.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![بيانات الاتصال في قسم بيانات القياس عن بُعد المُدارة](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    لاستخدام أمثلة مُصدِّر OTLP أدناه، اضبط هذه المتغيرات في الطرفية التي ستشغّل منها جامع البيانات:
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    استبدل العناصر النائبة بنقطة النهاية الدقيقة لخدمتك، بما فيها المنفذ، وبمفتاح API الخاص بها. استخدم نقطة نهاية HTTP الأساسية دون اللاحقة `/v1/metrics`؛ إذ يُلحق المُصدِّر مسار الإشارة تلقائيًا.
+  </Tab>
+
+  <Tab title="مُدار ذاتيًا">
+    استخدم نقطة نهاية OTLP عبر HTTP الخاصة بجامع البيانات، على أن يكون الوصول إليها ممكنًا (مثل `http://YOUR_COLLECTOR_HOST:4318`)، إلى جانب إعدادات المصادقة. إذا كان جامع البيانات لا يتطلب المصادقة، فاحذف كتلة `headers` الخاصة بالمُصدِّر من التهيئات أدناه. راجع [دليل البدء للإصدار المُدار ذاتيًا](/ar/clickstack/self-configured/getting-started/managed) للاطلاع على إرشادات الإعداد.
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+يجب أن يكون الوصول إلى نقطة النهاية ممكنًا من حاوية جامع البيانات. إذا كان جامع البيانات الوجهة يعمل على هذا الحاسوب نفسه، فاستخدم `http://host.docker.internal:4318`. تتضمن أوامر Docker أدناه مطابقة المضيف.
+
+## التكامل مع خادم PostgreSQL قائم {#existing-postgres}
+
+<Steps>
+  <Step title="تهيئة مستخدم المراقبة" id="monitoring-permissions">
+    بصفتك مسؤولاً عن PostgreSQL، أنشئ مستخدماً للمراقبة إن لم يكن لديك واحد بالفعل، وامنحه صلاحية الوصول إلى الإحصاءات:
+
+    ```sql
+    CREATE USER otel_monitor WITH PASSWORD 'REPLACE_WITH_A_STRONG_PASSWORD';
+    GRANT pg_monitor TO otel_monitor;
+    GRANT CONNECT ON DATABASE postgres TO otel_monitor;
+    ```
+
+    امنح صلاحية `CONNECT` على كل قاعدة بيانات تريد مراقبتها. وتأكد من أن PostgreSQL يقبل الاتصالات الواردة من جامع البيانات، وذلك عبر إعدادات الشبكة وملف `pg_hba.conf`.
+
+    اضبط متغيرات الاتصال بقاعدة البيانات في الطرفية نفسها التي ضبطت فيها متغيرات اتصال OTLP:
+
+    ```bash
+    export POSTGRES_ENDPOINT='YOUR_POSTGRES_HOST:5432'
+    export POSTGRES_USERNAME='otel_monitor'
+    export POSTGRES_PASSWORD='YOUR_MONITORING_PASSWORD'
+    ```
+
+    إذا كان PostgreSQL يعمل على مضيف Docker، فاستخدم `host.docker.internal:5432`. أما إذا كانت الحاويات على شبكة Docker مشتركة، فاستخدم اسم مضيف حاوية قاعدة البيانات وأضف `--network YOUR_NETWORK` إلى أمر تشغيل جامع البيانات.
+  </Step>
+
+  <Step title="تهيئة جامع البيانات" id="configure-collector">
+    احفظ ما يلي باسم `postgres-metrics.yaml`، واستبدل قائمة `databases` بأسماء قواعد البيانات لديك:
+
+    ```yaml
+    receivers:
+      postgresql:
+        endpoint: ${env:POSTGRES_ENDPOINT}
+        transport: tcp
+        username: ${env:POSTGRES_USERNAME}
+        password: ${env:POSTGRES_PASSWORD}
+        databases:
+          - postgres
+        collection_interval: 30s
+        tls:
+          insecure: false
+          insecure_skip_verify: false
+    processors:
+      resource/postgres:
+        attributes:
+          - key: service.name
+            value: postgresql-service
+            action: upsert
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        metrics/postgres:
+          receivers: [postgresql]
+          processors: [resource/postgres, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    تُفعّل هذه التهيئة TLS وتتحقق من شهادة الخادم. إذا كنت تستخدم CA خاصة، فاضبط `tls.ca_file` واربط ملف CA داخل حاوية جامع البيانات. أما إذا كان خادم PostgreSQL محلياً ويعمل دون تفعيل TLS، فاضبط `tls.insecure: true`، علماً بأن ذلك يعطّل TLS في الاتصال بقاعدة البيانات. للمزيد، راجع [تهيئة مستقبِل PostgreSQL](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.161.0/receiver/postgresqlreceiver#configuration).
+  </Step>
+
+  <Step title="تشغيل جامع البيانات" id="run-collector">
+    ```bash
+    docker run --rm --name postgres-metrics-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -e POSTGRES_ENDPOINT \
+      -e POSTGRES_USERNAME \
+      -e POSTGRES_PASSWORD \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/postgres-metrics.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    اترك الطرفية مفتوحة وانتظر مرور فاصلين زمنيين للجمع على الأقل. وعند الانتهاء من الاختبار، أوقف جامع البيانات بالضغط على **Ctrl+C**.
+  </Step>
+
+  <Step title="التحقق من المقاييس" id="verify-metrics">
+    افتح **مستكشف المخططات**، واختر مصدر **Metrics** الخاص بك، ثم صفِّ النتائج حسب `ServiceName:postgresql-service`، واختر **Last 15 minutes**. ابحث عن `postgresql.backends` أو `postgresql.commits` أو `postgresql.db_size`.
+  </Step>
+</Steps>
+
+## مجموعة بيانات تجريبية {#demo-dataset}
+
+تحتوي العينة على 8,928 نقطة من نوعي المقياس (gauge) والمجموع (sum)، أُخذت كل خمس دقائق على مدار 24 ساعة. وتحافظ على ما تتضمنه مجموعة البيانات الأصلية من ارتفاعات مفاجئة في عدد الاتصالات، ونشاط ذاكرة التخزين المؤقت، وعمليات التراجع (rollbacks)، وحالات الجمود (deadlocks). تتضمن العينة مقاييس على مستوى قاعدة البيانات، في حين يوفر الجمع المباشر أيضًا مقاييس الجداول والفهارس.
+
+اضبط [متغيرات الاتصال](#connection-details) قبل البدء.
+
+<Steps>
+  <Step title="تنزيل عينة المقاييس" id="download-sample">
+    [نزّل حزمة العينة](/ar/assets/postgres-metrics-demo.zip) (نحو 64 KB) واستخرج الملف `postgres-metrics-demo.json` إلى دليل العمل.
+  </Step>
+
+  <Step title="تهيئة جامع البيانات التجريبي" id="configure-demo-collector">
+    احفظ ما يلي باسم `postgres-metrics-demo.yaml`:
+
+    ```yaml
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      resource/demo:
+        attributes:
+          - key: service.name
+            value: postgresql-demo
+            action: upsert
+      transform/demo_timestamps:
+        error_mode: propagate
+        metric_statements:
+          - context: datapoint
+            statements:
+              - set(cache["interval_ns"], time_unix_nano - start_time_unix_nano)
+              - set(time, Now() - Duration("2m") - (Time("2025-11-11T05:55:00Z", "%Y-%m-%dT%H:%M:%SZ") - time))
+              - set(start_time_unix_nano, time_unix_nano - cache["interval_ns"])
+      batch:
+        timeout: 5s
+        send_batch_size: 500
+        send_batch_max_size: 500
+    exporters:
+      otlp_http/managed:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+    service:
+      pipelines:
+        metrics:
+          receivers: [otlp]
+          processors: [resource/demo, transform/demo_timestamps, batch]
+          exporters: [otlp_http/managed]
+    ```
+
+    <Note>
+      يُحدِّث هذا التحويل، المخصص للعرض التوضيحي فقط، الطوابع الزمنية مع الحفاظ على قيم المقاييس وعلى الفاصل الزمني بين طابعَي البداية والنهاية لكل نقطة. احذفه عند جمع مقاييس PostgreSQL الفعلية. ويُبقي حد الدفعة حجم عمليات الرفع صغيرًا بما يكفي ليستوعبه جامع البيانات في الوجهة.
+    </Note>
+  </Step>
+
+  <Step title="تشغيل جامع البيانات التجريبي" id="run-demo-collector">
+    من الدليل الذي يحتوي على ملف التهيئة، شغّل جامع البيانات واترك هذه الطرفية مفتوحة:
+
+    ```bash
+    docker run --rm --name postgres-metrics-demo-collector \
+      --add-host=host.docker.internal:host-gateway \
+      --memory=512m \
+      -p 127.0.0.1:14318:4318 \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/postgres-metrics-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+  </Step>
+
+  <Step title="إرسال العينة" id="load-metrics">
+    في طرفية أخرى، شغّل هذا الأمر من دليل التنزيل:
+
+    ```bash
+    curl --fail-with-body -sS http://localhost:14318/v1/metrics \
+      -H 'Content-Type: application/json' \
+      --data-binary @postgres-metrics-demo.json
+    ```
+
+    تدل استجابة مثل `{}` أو `{"partialSuccess":{}}` على أن جامع البيانات المحلي قد قبل الطلب. راجع طرفية جامع البيانات بحثًا عن أخطاء التصدير، وانتظر بضع ثوانٍ حتى تكتمل إعادة التوجيه. بعد التحقق من البيانات، أوقفه بالضغط على **Ctrl+C**. قد تؤدي إعادة إرسال العينة إلى تكرار النقاط.
+  </Step>
+
+  <Step title="التحقق من المقاييس" id="verify-demo-metrics">
+    استورد لوحة المعلومات الواردة في [القسم التالي](#dashboards)، وصفِّ النتائج باستخدام `ServiceName:postgresql-demo`، ثم اختر **آخر يومين**. تتضمن العينة مقاييس من نوعي المقياس (gauge) والمجموع (sum)، دون الحاجة إلى الوصول المباشر إلى قاعدة البيانات.
+  </Step>
+</Steps>
+
+## لوحات المعلومات والتصور المرئي {#dashboards}
+
+<Steps>
+  <Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json" download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">تنزيل ملف تهيئة لوحة المعلومات</TrackedLink>} id="download-dashboard" />
+
+  <Step title="استيراد لوحة المعلومات" id="import-dashboard">
+    1. افتح **Dashboards** وانقر على **Import** في الزاوية العلوية اليمنى.
+    2. حمّل الملف `postgres-metrics-dashboard.json`.
+    3. اربط الرسوم البيانية بمصدر **Metrics** لديك، ثم انقر على **Finish Import**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![زر استيراد لوحة المعلومات](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="عرض لوحة المعلومات" id="view-dashboard">
+    بالنسبة إلى العينة، يمكنك اختياريًا التصفية حسب `ServiceName:postgresql-demo` واختيار **آخر يومين**. أما لمقاييسك الخاصة، فاستخدم `ServiceName:postgresql-service` و**Last 15 minutes**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![لوحة معلومات مقاييس PostgreSQL تعرض الاتصالات النشطة والمعاملات وعمليات التراجع وحجم قاعدة البيانات وعمليات الصفوف وكتل القرص المقروءة](/images/clickstack/observability-postgres-metrics-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+
+### تعذُّر بدء تشغيل جامع البيانات {#collector-fails-to-start}
+
+افحص إخراج جامع البيانات بحثًا عن أخطاء في التهيئة. وتأكّد من ربط ملف التهيئة، ومن تعيين متغيرات الاتصال في الطرفية التي يعمل فيها Docker.
+
+### عدم ظهور المقاييس {#no-metrics}
+
+راجِع إخراج جامع البيانات بحثًا عن أخطاء في الاتصال بقاعدة البيانات أو أخطاء التصدير. تأكد من إمكانية الوصول إلى اسم المضيف الخاص بقاعدة البيانات من الحاوية، ومن صحة أسماء قواعد البيانات، ومن أن PostgreSQL يسمح باتصال مستخدم المراقبة. تحقق كذلك من مصدر **Metrics** وعامل تصفية اسم الخدمة والنطاق الزمني.
+
+### أخطاء المصادقة أو TLS {#authentication-errors}
+
+تأكّد من أن مستخدم المراقبة يمتلك صلاحيتَي `pg_monitor` و`CONNECT`. اختبر بيانات اعتماد قاعدة البيانات باستخدام `psql` من مضيف يمكنه الوصول إلى PostgreSQL:
+
+```bash
+psql -h YOUR_POSTGRES_HOST -U otel_monitor -d postgres -W -c 'SELECT 1;'
+```
+
+اضبط إعدادات TLS الخاصة بالمستقبِل بما يتوافق مع الخادم لديك، واربط أي شهادة مرجع مصدق مطلوبة. أما عند حدوث أخطاء التصدير، فتحقق من تطابق نقطة نهاية OTLP وبيانات التفويض مع بيانات الاتصال الخاصة بخدمتك.
+
+## الخطوات التالية {#next-steps}
+
+* اضبط [التنبيهات](/ar/clickstack/observability/features/alerts) لمراقبة حدود الاتصال، أو معدلات التراجع، أو أداء ذاكرة التخزين المؤقت.
+* اجمع [سجلات PostgreSQL](/ar/clickstack/observability/integration-examples/postgres-logs) إلى جانب مقاييسك.
+* راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/observability/ingesting-data/opentelemetry) للاطلاع على إرشادات نشر جامع البيانات.

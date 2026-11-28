@@ -7,10 +7,6 @@ keywords: ['faq do managed postgres', 'perguntas sobre postgres', 'métricas', '
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.faq-beta" />
-
 ## Monitoramento e métricas {#monitoring-and-metrics}
 
 ### Como posso acessar as métricas da minha instância do ClickHouse Managed Postgres? {#metrics-access}
@@ -27,11 +23,23 @@ O ClickHouse Managed Postgres inclui backups automáticos diários com arquivame
 
 Para obter detalhes completos sobre a frequência dos backups, a retenção e como realizar a recuperação para um ponto no tempo, consulte a documentação de [Backup e restauração](/pt-BR/products/managed-postgres/backup-and-restore).
 
+## Faturamento {#billing}
+
+### Quanto custa o Managed Postgres e o que está incluído? {#billing-what-is-included}
+
+Na AWS, o armazenamento de backup equivalente ao seu disco provisionado está incluído, e o armazenamento de backup adicional é cobrado pelo preço de armazenamento do ClickHouse Cloud na sua região. A transferência de dados é cobrada pelas tarifas do ClickHouse Cloud. O ClickPipes e o WalShadow são gratuitos para replicar dados do Managed Postgres para o ClickHouse. No GCP, o uso é gratuito durante a prévia privada. Consulte [Preços do Managed Postgres](/pt-BR/products/managed-postgres/pricing#cloud-provider-pricing).
+
+### O que acontece com meu serviço se o faturamento da minha organização não for pago? {#service-deactivation}
+
+O serviço é desativado, o que equivale a pará-lo. Tanto as conexões existentes quanto as novas são bloqueadas, e o serviço deixa de ser cobrado. Seus dados e backups são mantidos, e não excluídos. Para informações sobre a retenção de dados e de backups, consulte [conformidade de faturamento](/pt-BR/products/cloud/reference/billing/billing-compliance).
+
+Para restaurar o acesso, quite o saldo pendente e clique em **Start** na aba **Settings** do serviço. O botão só aparece quando o serviço está desativado e permanece desabilitado até que o pagamento seja efetuado. Para os prazos de pagamento, consulte [conformidade de faturamento](/pt-BR/products/cloud/reference/billing/billing-compliance). Veja também [Desativação do serviço](/pt-BR/products/managed-postgres/pricing#service-deactivation).
+
 ## Infraestrutura e automação {#infrastructure-and-automation}
 
 ### Quais provedores de Cloud são suportados? {#supported-cloud-providers}
 
-O ClickHouse Managed Postgres está disponível na AWS em public beta. O GCP está em Private Preview. Você pode entrar na lista de espera do Private Preview do GCP [aqui](https://clickhouse.com/cloud/postgres#gcp-waitlist) e ler o [anúncio](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview) para saber mais. Consulte [Provedores de Cloud suportados](/pt-BR/products/managed-postgres/overview#supported-cloud-providers) para mais detalhes.
+O ClickHouse Managed Postgres está geralmente disponível na AWS. O GCP está em prévia privada. Você pode entrar na lista de espera da prévia privada do GCP [aqui](https://clickhouse.com/cloud/postgres#gcp-waitlist) e ler o [anúncio](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview) para saber mais. Consulte [Provedores de Cloud suportados](/pt-BR/products/managed-postgres/overview#supported-cloud-providers) para mais detalhes.
 
 ### O ClickHouse Managed Postgres tem suporte ao Terraform? {#terraform-support}
 

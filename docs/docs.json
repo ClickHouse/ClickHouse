@@ -105,12 +105,21 @@
                 ]
               },
               {
+                "item": "Private",
+                "pages": [
+                  "products/cloud/guides/infrastructure/deployment-options/clickhouse-private"
+                ]
+              },
+              {
                 "href": "#",
                 "icon": "/images/icons/section-header.svg",
                 "item": "Applications"
               },
               {
                 "$ref": "./clickstack/navigation.json"
+              },
+              {
+                "$ref": "./agents/navigation.json"
               },
               {
                 "href": "https://langfuse.com/docs",

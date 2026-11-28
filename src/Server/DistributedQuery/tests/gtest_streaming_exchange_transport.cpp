@@ -63,9 +63,11 @@
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
 #include <Server/DistributedQuery/tests/FakeExchangePeer.h>
+#include <base/sanitizer_defs.h>
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/StreamSocket.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace ProfileEvents
 {
@@ -110,7 +112,8 @@ Chunk makeChunk(size_t first_value, size_t rows)
 }
 
 /// Pseudo-random values that do not compress; `state` carries the generator from chunk to chunk.
-Chunk makeIncompressibleChunk(size_t rows, UInt64 & state)
+/// A linear congruential generator; it wraps by design.
+Chunk NO_SANITIZE_UNSIGNED_OVERFLOW makeIncompressibleChunk(size_t rows, UInt64 & state)
 {
     auto column = ColumnUInt64::create();
     for (size_t row = 0; row < rows; ++row)
@@ -264,7 +267,8 @@ size_t countRows(const Chunks & chunks)
     return rows;
 }
 
-UInt64 sumOfValues(const Chunks & chunks)
+/// The checksum is a plain modulo-2^64 sum.
+UInt64 NO_SANITIZE_UNSIGNED_OVERFLOW sumOfValues(const Chunks & chunks)
 {
     UInt64 sum = 0;
     for (const auto & chunk : chunks)
@@ -1385,7 +1389,7 @@ public:
         : bucket(std::move(bucket_))
     {
     }
-    Field getParameter(const String &) const override { return Field(bucket); }
+    [[nodiscard]] Field getParameter(const String &) const override { return Field(bucket); }
 
 private:
     const String bucket;
@@ -1490,7 +1494,7 @@ QueryPipeline makeMergeTaskPipeline(
     ExchangeConnectionsPtr connections,
     LoopbackExchange & child_exchange,
     const ExchangeStreamId & child,
-    std::vector<MergeRuntimeFiltersStep::Output> outputs)
+    VectorWithMemoryTracking<MergeRuntimeFiltersStep::Output> outputs)
 {
     ExchangeStreamSources sources;
     sources.stream_hosts[child.toString()] = StreamSourceAddress{.host = "127.0.0.1", .port = child_exchange.server.port()};
@@ -1517,7 +1521,7 @@ TEST(RuntimeFilterMergeTask, TakesThePartialWhileNoReceiverConnects)
 {
     MainThreadStatus::getInstance();
 
-    const std::vector<std::pair<const char *, std::vector<MergeRuntimeFiltersStep::Output>>> shapes = {
+    const std::vector<std::pair<const char *, VectorWithMemoryTracking<MergeRuntimeFiltersStep::Output>>> shapes = {
         {"a root with one receiver", {{"exchange_2", {"0"}}}},
         {"a root with two receivers", {{"exchange_2", {"0", "1"}}}},
     };

@@ -7,10 +7,6 @@ keywords: ['managed postgres', 'fastapi', 'sqlalchemy', 'asyncpg', 'alembic', 'p
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-fastapi-beta" />
-
 يُعدّ [FastAPI](https://fastapi.tiangolo.com/) إطار عمل ويب غير متزامن بلغة بايثون، في حين تُعدّ [SQLAlchemy](https://www.sqlalchemy.org/) أكثر أدوات ربط الكائنات بقواعد البيانات انتشارًا في بايثون. ستُعرّف في هذا الدليل نموذج SQLAlchemy محدد الأنواع، ثم تُنشئ جدوله باستخدام عملية ترحيل عبر [Alembic](https://alembic.sqlalchemy.org/)، وبعد ذلك تُوفّر عبر FastAPI نقاط نهاية لعمليات الإنشاء والقراءة والتحديث والحذف. يستخدم التطبيق المشغّل [asyncpg](https://magicstack.github.io/asyncpg/)، ويُشفَّر كل اتصال باستخدام TLS مع التحقق الكامل من الشهادة.
 
 ## المتطلبات الأساسية {#prerequisites}

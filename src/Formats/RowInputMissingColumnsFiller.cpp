@@ -1,6 +1,8 @@
 #include <Common/Exception.h>
 #include <Formats/RowInputMissingColumnsFiller.h>
 #include <Columns/ColumnArray.h>
+#include <Common/assert_cast.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <boost/range/adaptor/map.hpp>
 
@@ -14,10 +16,8 @@ namespace ErrorCodes
 }
 
 
-RowInputMissingColumnsFiller::RowInputMissingColumnsFiller() = default;
-
 RowInputMissingColumnsFiller::RowInputMissingColumnsFiller(const NamesAndTypesList & names_and_types_)
-  : names_and_types(names_and_types_)
+  : names_and_types(names_and_types_), types(names_and_types_.getTypes())
 {
     std::unordered_map<std::string_view, std::vector<size_t>> nested_groups; /// Nested prefix -> column indices.
     size_t i = 0;
@@ -34,7 +34,8 @@ RowInputMissingColumnsFiller::RowInputMissingColumnsFiller(const NamesAndTypesLi
     setNestedGroups(std::move(nested_groups), names_and_types_.size());
 }
 
-RowInputMissingColumnsFiller::RowInputMissingColumnsFiller(const Names & names, const DataTypes & types)
+RowInputMissingColumnsFiller::RowInputMissingColumnsFiller(const Names & names, const DataTypes & types_)
+  : types(types_)
 {
     std::unordered_map<std::string_view, std::vector<size_t>> nested_groups; /// Nested prefix -> column indices.
     for (size_t i = 0; i != names.size(); ++i)
@@ -50,12 +51,13 @@ RowInputMissingColumnsFiller::RowInputMissingColumnsFiller(const Names & names, 
     setNestedGroups(std::move(nested_groups), names.size());
 }
 
-RowInputMissingColumnsFiller::RowInputMissingColumnsFiller(size_t count, const std::string_view * names, const DataTypePtr * types)
+RowInputMissingColumnsFiller::RowInputMissingColumnsFiller(size_t count, const std::string_view * names, const DataTypePtr * types_, bool check_nested)
+  : types(types_, types_ + count)
 {
     std::unordered_map<std::string_view, std::vector<size_t>> nested_groups; /// Nested prefix -> column indices.
     for (size_t i = 0; i != count; ++i)
     {
-        if (isArray(types[i]))
+        if (check_nested && isArray(types[i]))
         {
             auto split = Nested::splitName(names[i]);
             if (!split.second.empty()) /// Is it really a column of Nested data structure?
@@ -97,7 +99,7 @@ void RowInputMissingColumnsFiller::addDefaults(MutableColumns & columns, size_t 
 
         if ((i >= column_infos.size()) || !column_infos[i].nested_group)
         {
-            column.insertDefault();
+            types[i]->insertDefaultInto(column);
             continue;
         }
 
@@ -115,7 +117,7 @@ void RowInputMissingColumnsFiller::addDefaults(MutableColumns & columns, size_t 
                                     "Column with Array type is not represented by ColumnArray column: {}",
                                     column_j->dumpStructure());
                 const auto & offsets = column_array->getOffsets();
-                size_of_array = offsets[row_num] - offsets[row_num - 1];
+                size_of_array = offsets[row_num] - offsets[static_cast<ssize_t>(row_num) - 1];
                 break;
             }
         }
@@ -137,8 +139,7 @@ void RowInputMissingColumnsFiller::addDefaults(MutableColumns & columns, size_t 
 
                 auto & data = column_array->getData();
                 auto & offsets = column_array->getOffsets();
-                for (size_t k = 0; k != size_of_array; ++k)
-                    data.insertDefault();
+                assert_cast<const DataTypeArray &>(*types[j]).getNestedType()->insertManyDefaultsInto(data, size_of_array);
                 offsets.push_back(data.size());
             }
         }

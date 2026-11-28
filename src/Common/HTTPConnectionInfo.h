@@ -10,8 +10,10 @@ namespace DB
 /// Written by the pooled session right after the request goes out, then taken — once — by
 /// whoever logs that request (currently `system.blob_storage_log`), inside an
 /// `HTTPConnectionInfoScope` that the logging code opens around both. The handoff is a
-/// thread-local because Poco's HTTP client is synchronous: the request and the log entry
-/// describing it always run on the same thread, one right after the other.
+/// fiber-local (thread-local outside of fibers) because Poco's HTTP client is synchronous: the request
+/// and the log entry describing it always run on the same thread or fiber, one right after the other.
+/// A fiber may resume on another thread in the middle of a request, and fibers that share a thread
+/// must not see each other's scopes.
 ///
 /// The point of recording this is that a keep-alive connection is not equally fast over its
 /// whole life. Two requests to the same object storage, issued at the same moment from the

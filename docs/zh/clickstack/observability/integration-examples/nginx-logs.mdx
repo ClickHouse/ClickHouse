@@ -1,0 +1,355 @@
+---
+slug: /clickstack/observability/integration-examples/nginx-logs
+title: '使用 ClickHouse Observability 监控 Nginx 日志'
+sidebarTitle: 'Nginx 日志'
+description: '借助 OpenTelemetry 采集器，在 ClickHouse Observability 中采集、搜索 Nginx 访问日志并进行可视化。'
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+使用 OpenTelemetry 采集器从 Nginx 收集 JSON 格式的访问日志，并将其发送到 ClickHouse Observability。即使尚未安装 Nginx，也可以使用[演示数据集](#demo-dataset)试用此集成。
+
+## 前置条件 {#prerequisites}
+
+* 一个 ClickHouse Observability 服务
+* 用于运行下方采集器命令的 Docker，或已部署的 OpenTelemetry Collector Contrib
+* 如需采集您自己的日志：已安装的 Nginx、编辑其配置的权限，并确保采集器能够访问其日志文件
+
+如果想在不配置 Nginx、也不采集自有日志的情况下试用该集成，请使用[演示数据集](#demo-dataset)。其中包含一份适用于样本数据的独立采集器配置。
+
+### 连接详情 {#demo-connection-details}
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 版服务" />
+
+    打开 ClickHouse Observability，进入 **团队设置 → Data → Managed Telemetry**，复制您的 OTLP HTTP 端点和 API key。您可以点击 **Copy connection details** 复制整个配置，或点击 **Reveal key** 查看被遮盖的密钥。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Managed Telemetry 连接详情](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    为配合下文的 OTLP 导出器示例，请在将要运行采集器的终端中设置以下变量：
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+    ```
+
+    将占位符替换为您服务的实际端点 (含端口) 和 API key。请使用不带 `/v1/logs` 后缀的基础 HTTP 端点，导出器会自动追加信号路径。
+  </Tab>
+
+  <Tab title="自管理">
+    请使用采集器可访问的 OTLP HTTP 端点 (例如 `http://YOUR_COLLECTOR_HOST:4318`) 及相应的身份验证设置。如果您的采集器无需身份验证，请在下文配置中省略导出器的 `headers` 块。有关设置说明，请参阅[自管理入门指南](/zh/clickstack/self-configured/getting-started/managed)。
+
+    ```bash
+    export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+    export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+    ```
+  </Tab>
+</Tabs>
+
+采集器容器必须能够访问该端点。如果采集器运行在 Docker Desktop 主机上，请使用 `host.docker.internal` 而非 `localhost`。在 Linux 上，请使用共享的 Docker 网络和目标端容器名称，或其他可访问的主机地址。
+
+## 与现有 Nginx 集成 {#existing-nginx}
+
+在可以读取 Nginx 访问日志的主机上运行采集器。采集器会解析这些日志，并将其转发到你的服务的 OTLP HTTP 端点。
+
+<Steps>
+  <Step title="配置 Nginx 日志格式" id="configure-nginx">
+    在 `nginx.conf` 中配置 Nginx，使其以 JSON 格式写入访问日志。
+
+    `nginx.conf` 文件通常位于：
+
+    * **Linux (apt/yum)**：`/etc/nginx/nginx.conf`
+    * **macOS (Homebrew)**：`/usr/local/etc/nginx/nginx.conf` 或 `/opt/homebrew/etc/nginx/nginx.conf`
+    * **Docker**：配置文件通常以卷的形式挂载
+
+    在现有的 `http` 块中添加以下指令。其余配置保持不变；如果已有指向同一文件的 `access_log` 指令，请将其替换：
+
+    ```nginx
+    log_format json_combined escape=json
+    '{'
+      '"time_local":"$time_local",'
+      '"remote_addr":"$remote_addr",'
+      '"remote_user":"$remote_user",'
+      '"request":"$request",'
+      '"status":$status,'
+      '"body_bytes_sent":$body_bytes_sent,'
+      '"request_time":$request_time,'
+      '"upstream_response_time":"$upstream_response_time",'
+      '"http_referer":"$http_referer",'
+      '"http_user_agent":"$http_user_agent",'
+      '"http_x_forwarded_for":"$http_x_forwarded_for",'
+      '"http_host":"$http_host"'
+    '}';
+
+    access_log /var/log/nginx/access.log json_combined;
+    ```
+
+    此格式使用与演示数据集相同的字段名，其中 `request` 字段包含请求方法、URI 和 HTTP 版本。`upstream_response_time` 保留为字符串类型，因为 [Nginx 可能会报告多个上游耗时](https://nginx.org/en/docs/http/ngx_http_upstream_module.html#var_upstream_response_time)。而在演示数据集中，该字段仅包含单个数值。
+
+    使用 `nginx -t` 验证配置，然后按照部署环境的常规流程重新加载 Nginx。如果某个 `server` 或 `location` 块覆盖了 `access_log`，请将该指令也改为使用 `json_combined`。
+  </Step>
+
+  <Step title="配置采集器" id="custom-otel">
+    获取[连接详情](#demo-connection-details)，然后在用于运行采集器的终端中设置端点和 API 密钥的环境变量。将以下完整配置保存为 `nginx-monitoring.yaml`：
+
+    ```yaml
+    receivers:
+      filelog/nginx:
+        include:
+          - /var/log/nginx/access.log
+        start_at: end
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+          - type: time_parser
+            parse_from: attributes.time_local
+            layout: '%d/%b/%Y:%H:%M:%S %z'
+          - type: add
+            field: attributes.source
+            value: nginx
+          - type: add
+            field: resource["service.name"]
+            value: nginx
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: "${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+
+    service:
+      pipelines:
+        logs/nginx:
+          receivers: [filelog/nginx]
+          processors: [memory_limiter, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    此配置会读取新增的 JSON 格式访问日志条目，保留其原始时间戳，并将 `service.name` 设置为 `nginx`。随后，它使用上述身份验证设置将日志转发到您的 OTLP HTTP 端点。Nginx 错误日志需要单独的解析器，不在此配置范围内。
+  </Step>
+
+  <Step title="运行采集器" id="load-custom">
+    以下命令假定 Docker 主机上的日志目录为 `/var/log/nginx`。如果您的日志文件位于其他位置，请相应调整日志挂载中主机端的路径。如果 Nginx 以容器方式运行，请改为将其共享日志卷挂载到采集器中。
+
+    在 `nginx-monitoring.yaml` 所在目录中运行：
+
+    ```bash
+    docker run --rm --name nginx-collector \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/nginx-monitoring.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v /var/log/nginx:/var/log/nginx:ro \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    采集器在前台运行，且必须具有读取已挂载日志文件的权限。请保持其运行，然后在另一个终端或浏览器中向 Nginx 发送几个请求，使其写入新的访问日志条目。
+  </Step>
+
+  <Step title="在 ClickHouse Observability 中验证日志" id="verifying-logs">
+    1. 在 UI 中打开 **搜索**，然后选择 **Logs**。
+    2. 按 `ServiceName:nginx` 进行过滤，并选择覆盖这些请求的时间范围。
+    3. 展开一个条目并选择 **Column Values**，查看 `LogAttributes` 下的 `request`、`request_time` 和 `upstream_response_time` 等字段。
+
+    以下示例展示了使用演示数据集 (`ServiceName:nginx-demo`) 时的相同视图：
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![按服务名称过滤的 Nginx 演示日志，展开的条目中显示了已解析的日志属性](/images/clickstack/observability-nginx-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 演示数据集 {#demo-dataset}
+
+该样本数据集包含 14,743 条 JSON 格式的访问日志条目，涵盖成功请求、错误以及上游响应耗时。您需要准备 Docker 和一个 ClickHouse Observability 服务。开始之前，请先设置[连接环境变量](#demo-connection-details)，并将下载的文件与配置文件放在同一目录中。
+
+<Steps>
+  <Step title="下载样本数据集" id="download-sample">
+    ```bash
+    # 下载日志
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/access.log
+    ```
+  </Step>
+
+  <Step title="创建测试采集器配置" id="test-config">
+    将以下完整配置保存为 `nginx-demo.yaml`。采集器会读取下载的访问日志，并将其转发到您的 OTLP 端点。
+
+    ```yaml
+    receivers:
+      filelog/nginx:
+        include:
+          - /var/log/nginx-demo/access.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+          - type: time_parser
+            parse_from: attributes.time_local
+            layout: '%d/%b/%Y:%H:%M:%S %z'
+          - type: add
+            field: attributes.source
+            value: nginx-demo
+          - type: add
+            field: resource["service.name"]
+            value: nginx-demo
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+      transform/demo_timestamps:
+        error_mode: propagate
+        log_statements:
+          - >-
+            set(log.time,
+              Now() - Duration("2m") -
+              (Time("2025-10-21T16:34:27Z", "%Y-%m-%dT%H:%M:%SZ") - log.time)
+            )
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+
+    exporters:
+      otlp_http/observability:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        headers:
+          authorization: "${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+
+    service:
+      pipelines:
+        logs/nginx-demo:
+          receivers: [filelog/nginx]
+          processors: [memory_limiter, transform/demo_timestamps, batch]
+          exporters: [otlp_http/observability]
+    ```
+
+    <Note>
+      `transform/demo_timestamps` 处理器仅用于演示，它会将样本数据的时间戳整体平移至大约过去 24 小时内 (截止于摄取前两分钟) ，同时保留原有的流量模式。原始的 `time_local` 属性和日志正文均保持不变。处理您自己的 Nginx 日志时，请移除此处理器，以保留原始时间戳。
+    </Note>
+
+    独立采集器示例使用 OpenTelemetry Collector Contrib `0.161.0`，这些配置均已在该版本上验证。
+  </Step>
+
+  <Step title="运行演示采集器" id="run-demo">
+    在包含 `access.log` 和 `nginx-demo.yaml` 的目录中，运行 OpenTelemetry Collector Contrib 镜像：
+
+    ```bash
+    docker run --rm --name nginx-demo-collector \
+      --memory=512m \
+      -e OTEL_EXPORTER_OTLP_ENDPOINT \
+      -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+      -v "$(pwd)/nginx-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+      -v "$(pwd)/access.log:/var/log/nginx-demo/access.log:ro" \
+      otel/opentelemetry-collector-contrib:0.161.0 \
+      --config=/etc/otelcol-contrib/config.yaml
+    ```
+
+    验证摄取期间，请保持此终端处于打开状态。两个挂载的文件均须对容器可读。日志出现后，按 **Ctrl+C** 停止演示采集器。由于此演示不会持久化文件偏移量，再次运行时将重新摄取该数据集，并使用重新平移后的时间戳。
+  </Step>
+
+  <Step title="在 ClickHouse Observability 中验证日志" id="verify-demo-logs">
+    采集器运行后：
+
+    1. 打开您的 UI。
+    2. 进入 **Search**，选择 **日志**，并按 `ServiceName:nginx-demo` 进行过滤。
+    3. 将时间范围设置为 **最近 2 天**，以涵盖平移后的完整数据集。
+
+    展开一条日志条目并选择 **Column Values**，即可查看 `LogAttributes` 下已解析的字段。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![按服务名称过滤的 Nginx 演示日志，其中展开的条目显示了已解析的日志属性](/images/clickstack/observability-nginx-demo-logs.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 仪表盘与可视化 {#dashboards}
+
+导入一个仪表盘，用于展示请求计数、错误、状态码以及平均上游响应时间。
+
+<Steps>
+  <Step title="下载仪表盘配置" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-logs-dashboard.json'} download="nginx-logs-dashboard.json" eventName="docs.nginx_logs_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
+  </Step>
+
+  <Step title="导入预构建仪表盘" id="import-dashboard">
+    1. 打开 ClickHouse Observability，进入 **仪表盘** 页面。
+    2. 点击右上角的 **Import**。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![仪表盘 页面，Import 按钮已高亮显示](/images/clickstack/observability-import-dashboard.png)
+      </Frame>
+    </div>
+
+    3. 上传 `nginx-logs-dashboard.json`。确认全部五个图表均已映射到 **日志** 数据源，然后点击 **Finish Import**。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Nginx 仪表盘导入界面，全部五个图表均已映射到 日志 数据源](/images/clickstack/observability-finish-nginx-logs-import.png)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="查看仪表盘" id="created-dashboard">
+    使用演示数据集时，将仪表盘过滤条件设为 `ServiceName:nginx-demo`；使用您自己的日志时，则设为 `ServiceName:nginx`。将时间范围设置为能覆盖已摄取记录的区间。演示场景下，选择 **最近 2 天**。
+
+    下图为基于演示数据集的仪表盘：
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouse Observability 中的 Nginx 日志仪表盘，展示请求、错误、状态码和平均上游响应时间](/images/clickstack/observability-nginx-logs-dashboard.png)
+      </Frame>
+    </div>
+  </Step>
+</Steps>
+
+## 故障排查 {#troubleshooting}
+
+### 采集器无法启动 {#troubleshooting-not-loading}
+
+查看采集器的终端输出中是否有配置错误。确认 YAML 文件位于已挂载的路径下。如果使用 OTLP 导出器配置，请检查运行 Docker 的终端中是否已设置端点变量及所需的身份验证变量。
+
+### 未显示日志 {#no-logs}
+
+* 检查采集器输出中是否有身份验证错误或导出错误。如果使用 OTLP 导出器，请对照您的[连接详情](#demo-connection-details)核实端点和授权请求头。
+* 确认 Nginx 正在写入 JSON 格式的访问日志，且采集器能够读取这些日志。使用 `start_at: end` 时，请在采集器启动后再产生新的请求。
+* 检查所选的 **日志** source 和服务名称过滤器：演示数据集应使用 `ServiceName:nginx-demo`，您自己的日志应使用 `ServiceName:nginx`。
+* 确保所设置的时间范围涵盖这些日志。对于演示数据，请确认管道中已包含 `transform/demo_timestamps`，并选择 **最近 2 天**。
+
+对于您自己的 Nginx 日志，请检查主机上的日志文件，并查看采集器容器的挂载情况。确认挂载的目标路径与接收器配置一致。将 `CONTAINER_NAME` 替换为您的采集器容器名称，并根据需要调整主机路径：
+
+```bash
+tail -f /var/log/nginx/access.log
+docker inspect --format '{{json .Mounts}}' CONTAINER_NAME
+```
+
+## 后续步骤 {#next-steps}
+
+* 针对错误率或延迟阈值设置[告警](/zh/clickstack/observability/features/alerts)。
+* 创建更多[仪表盘](/zh/clickstack/observability/features/dashboards/overview)。
+* 如需了解更多采集器配置指南，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/observability/ingesting-data/opentelemetry)。

@@ -40,13 +40,13 @@ public:
 
     explicit FunctionVisibleWidth(ContextPtr context) { behavior = context->getSettingsRef()[Setting::function_visible_width_behavior]; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Get the name of the function.
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
@@ -54,20 +54,20 @@ public:
     /// The setting decides the width for the same arguments, see `IFunctionBase::updateHash`.
     void updateHash(SipHash & hash) const override { hash.update(behavior); }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Any) -> UInt64";
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     /// Execute the function on the columns.
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & src = arguments[0];
 

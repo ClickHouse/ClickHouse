@@ -61,7 +61,7 @@ struct AsynchronousMetricValue
         , documentation(documentation_), source(source_.file_name()) {}
     AsynchronousMetricValue() = default; /// For std::unordered_map::operator[].
 
-    bool isMap() const { return key_label != nullptr; }
+    [[nodiscard]] bool isMap() const { return key_label != nullptr; }
 };
 
 using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
@@ -201,6 +201,8 @@ private:
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_quota TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_max TSA_GUARDED_BY(data_mutex);
     std::optional<std::string> cgroupcpu_max_dir TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> cgroupcpuset TSA_GUARDED_BY(data_mutex);
+    std::optional<std::string> cgroupcpuset_dir TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_stat TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpuacct_stat TSA_GUARDED_BY(data_mutex);
 

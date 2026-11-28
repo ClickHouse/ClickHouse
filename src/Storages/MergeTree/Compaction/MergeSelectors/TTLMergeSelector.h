@@ -22,17 +22,17 @@ class ITTLMergeSelector : public IMergeSelector
 public:
     ITTLMergeSelector(const PartitionIdToTTLs * merge_due_times_, time_t current_time_, size_t max_parts_to_merge_at_once_ = 0);
 
-    PartsRanges select(
+    [[nodiscard]] PartsRanges select(
         const PartsRanges & parts_ranges,
         const MergeConstraints & merge_constraints,
         const RangeFilter & range_filter) const override;
 
 protected:
     /// Get TTL value for part, may depend on child type and some settings in constructor.
-    virtual time_t getTTLForPart(const PartProperties & part) const = 0;
+    [[nodiscard]] virtual time_t getTTLForPart(const PartProperties & part) const = 0;
 
     /// Returns true if part can be used during ranges building process.
-    virtual bool canConsiderPart(const PartProperties & part) const = 0;
+    [[nodiscard]] virtual bool canConsiderPart(const PartProperties & part) const = 0;
 
 private:
     struct CenterPosition
@@ -42,9 +42,9 @@ private:
         time_t ttl{};
     };
 
-    bool needToPostponePartition(const std::string & partition_id) const;
+    [[nodiscard]] bool needToPostponePartition(const std::string & partition_id) const;
 
-    std::vector<CenterPosition> findCenters(const PartsRanges & parts_ranges) const;
+    [[nodiscard]] std::vector<CenterPosition> findCenters(const PartsRanges & parts_ranges) const;
 
     PartsIterator findLeftRangeBorder(
         const CenterPosition & center_position,
@@ -72,10 +72,10 @@ public:
     explicit TTLPartDropMergeSelector(time_t current_time_, size_t max_parts_to_drop_at_once_);
 
 private:
-    time_t getTTLForPart(const PartProperties & part) const override;
+    [[nodiscard]] time_t getTTLForPart(const PartProperties & part) const override;
 
     /// Actually does not check anything. Allows to use any part.
-    bool canConsiderPart(const PartProperties & part) const override;
+    [[nodiscard]] bool canConsiderPart(const PartProperties & part) const override;
 };
 
 /// Select parts that have some expired row ttls.
@@ -85,11 +85,11 @@ public:
     explicit TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_);
 
 private:
-    time_t getTTLForPart(const PartProperties & part) const override;
+    [[nodiscard]] time_t getTTLForPart(const PartProperties & part) const override;
 
     /// Checks that part has at least one unfinished row ttl. Because if all ttls
     /// are finished for part - it will be considered by TTLPartDropMergeSelector.
-    bool canConsiderPart(const PartProperties & part) const override;
+    [[nodiscard]] bool canConsiderPart(const PartProperties & part) const override;
 };
 
 /// Select parts that have some expired column ttls.
@@ -105,9 +105,9 @@ public:
 private:
     /// Returns the earliest due time among the unfinished column TTLs of the part, so that a row TTL
     /// that expires earlier does not make the part eligible before a column TTL is actually due.
-    time_t getTTLForPart(const PartProperties & part) const override;
+    [[nodiscard]] time_t getTTLForPart(const PartProperties & part) const override;
 
-    bool canConsiderPart(const PartProperties & part) const override;
+    [[nodiscard]] bool canConsiderPart(const PartProperties & part) const override;
 };
 
 /// Select parts to merge using information about recompression TTL and compression codec of existing parts.
@@ -118,11 +118,11 @@ public:
 
 private:
     /// Return part min recompression TTL.
-    time_t getTTLForPart(const PartProperties & part) const override;
+    [[nodiscard]] time_t getTTLForPart(const PartProperties & part) const override;
 
     /// Checks that part's codec is not already equal to required codec
     /// according to recompression TTL. It doesn't make sense to assign such merge.
-    bool canConsiderPart(const PartProperties & part) const override;
+    [[nodiscard]] bool canConsiderPart(const PartProperties & part) const override;
 };
 
 }

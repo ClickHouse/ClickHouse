@@ -1,3 +1,4 @@
+SET allow_reserved_column_names = 1;
 -- { echo ON }
 
 DROP TABLE IF EXISTS test;

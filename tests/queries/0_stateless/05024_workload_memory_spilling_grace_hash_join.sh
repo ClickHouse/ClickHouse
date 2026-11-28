@@ -22,6 +22,8 @@ settings=(
   --max_rows_to_read 0
   --grace_hash_join_initial_buckets 1
   --min_bytes_to_spill 20Mi
+  --max_bytes_ratio_before_external_join 0
+  --max_bytes_before_external_join 1Ti
 )
 $CLICKHOUSE_CLIENT -nm "${settings[@]}" -q "
 CREATE OR REPLACE RESOURCE memory (MEMORY RESERVATION);

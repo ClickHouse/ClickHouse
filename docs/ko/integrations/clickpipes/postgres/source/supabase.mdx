@@ -10,17 +10,13 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickPipes에서 사용할 수 있도록 Supabase Postgres를 설정하는 방법을 안내하는 가이드입니다.
 
 <Note>
   ClickPipes는 원활한 복제를 위해 Supabase의 IPv6를 네이티브로 지원합니다.
 </Note>
 
-<div id="creating-a-user-with-permissions-and-replication-slot">
-  ## 권한과 replication slot을 갖는 사용자 생성하기
-</div>
+## 권한과 replication slot을 갖는 사용자 생성하기 {#creating-a-user-with-permissions-and-replication-slot}
 
 관리자 사용자로 Supabase 인스턴스에 연결한 후 다음 명령을 실행하십시오:
 
@@ -56,16 +52,16 @@ ClickPipes에서 사용할 수 있도록 Supabase Postgres를 설정하는 방�
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * 특정 스키마의 모든 테이블에 대한 publication을 생성하려면:
+* 특정 스키마의 모든 테이블에 대한 publication을 생성하려면:
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 `clickpipes` publication은 변경 이벤트가 ClickPipes로 스트리밍될 테이블 집합을 정의합니다. 모든 테이블을 복제할 의도가 없다면 `FOR ALL TABLES` 사용은 권장하지 않습니다. 불필요한 테이블을 포함하면 Postgres에서 ClickPipes로 전달되는 WAL 트래픽이 증가하고 전체 복제 효율이 저하되기 때문입니다.
 
 <div id="increase-max_slot_wal_keep_size">
-  ## `max_slot_wal_keep_size` 늘리기
+  ## `max_slot_wal_keep_size` 늘리기 {#increase-max_slot_wal_keep_size}
 </div>
 
 <Warning>
@@ -76,22 +72,24 @@ ClickPipes에서 사용할 수 있도록 Supabase Postgres를 설정하는 방�
   이 값에 대한 더 적절한 권장 사항이 필요하면 ClickPipes 팀에 문의하십시오.
 </Warning>
 
-<div id="connection-details-to-use-for-supabase">
-  ## Supabase에 사용할 연결 정보
-</div>
+## Supabase에 사용할 연결 정보 {#connection-details-to-use-for-supabase}
 
 Supabase 프로젝트의 `Project Settings` -&gt; `Database`(`Configuration` 아래)로 이동하십시오.
 
 **중요**: 이 페이지에서 `Display connection pooler`를 비활성화한 다음, `Connection parameters` 섹션으로 이동하여 매개변수를 확인하고 복사해 두십시오.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/supabase/supabase-connection-details.jpg" size="lg" border alt="Supabase 연결 정보 찾기" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Supabase 연결 정보 찾기](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/supabase/supabase-connection-details.jpg)
+  </Frame>
+</div>
 
 <Info>
   연결 풀러는 CDC 기반 복제를 지원하지 않으므로 비활성화해야 합니다.
 </Info>
 
 <div id="note-on-rls">
-  ## RLS 관련 참고 사항
+  ## RLS 관련 참고 사항 {#note-on-rls}
 </div>
 
 ClickPipes Postgres 사용자는 RLS 정책의 적용을 받지 않아야 합니다. 그렇지 않으면 데이터가 누락될 수 있습니다. 아래 명령을 실행하여 해당 사용자의 RLS 정책을 비활성화할 수 있습니다.
@@ -101,7 +99,7 @@ ALTER USER clickpipes_user BYPASSRLS;
 ```
 
 <div id="whats-next">
-  ## 다음 단계는 무엇인가요?
+  ## 다음 단계는 무엇인가요? {#whats-next}
 </div>
 
 이제 [ClickPipe를 생성](/ko/integrations/clickpipes/postgres/index)하고 Postgres 인스턴스의 데이터를 ClickHouse Cloud로 수집하기 시작할 수 있습니다.

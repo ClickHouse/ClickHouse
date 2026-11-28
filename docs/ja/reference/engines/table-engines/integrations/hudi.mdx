@@ -11,9 +11,7 @@ doc_type: 'reference'
 
 このエンジンは、Amazon S3 上の既存の Apache [Hudi](https://hudi.apache.org/) テーブルに対する読み取り専用のインテグレーションを提供します。
 
-<div id="create-table">
-  ## テーブルの作成
-</div>
+## テーブルの作成 {#create-table}
 
 HudiテーブルはあらかじめS3上に存在している必要があります。このコマンドでは、新しいテーブルを作成するためのDDLパラメータは指定できません。
 
@@ -54,9 +52,11 @@ CREATE TABLE hudi_table ENGINE=Hudi('http://mars-doc-test.s3.amazonaws.com/click
 CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
 ```
 
-<div id="see-also">
-  ## 関連項目
-</div>
+## 制限事項 {#limitations}
+
+Merge-on-Read は実装されていないため、Merge-on-Read テーブルのログファイルは読み取られません。そのため、最新のファイルスライスにログファイル (つまり、直近のコンパクション以降に書き込まれた変更) が含まれるテーブルを読み取ると、それらの変更前の値が返されるのではなく、`NOT_IMPLEMENTED` 例外がスローされます。このようなテーブルでは、スキーマ推論でも同様に例外がスローされます。Copy-on-Write テーブル、およびこのようなログファイルを持たない Merge-on-Read テーブル (たとえば Hudi でコンパクションを実行した直後のテーブル) は通常どおり読み取られます。
+
+## 関連項目 {#see-also}
 
 * [Hudi テーブル関数](/ja/reference/functions/table-functions/hudi)
 

@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <boost/math/special_functions/sign.hpp>
@@ -10,41 +11,11 @@
 #include <unordered_map>
 
 
-namespace DB::ErrorCodes
-{
-    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
-}
-
-
 namespace DB::PrometheusQueryToSQL
 {
 
 namespace
 {
-    /// Checks if the types of the specified arguments are valid for a math function.
-    void checkArgumentTypes(
-        const PrometheusQueryTree::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
-    {
-        const auto & function_name = function_node->function_name;
-
-        if (arguments.size() != 1)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Function '{}' expects {} arguments, but was called with {} arguments",
-                            function_name, 1, arguments.size());
-        }
-
-        const auto & argument = arguments[0];
-
-        if (argument.type != ResultType::INSTANT_VECTOR)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Function '{}' expects an argument of type {}, but expression {} has type {}",
-                            function_name, ResultType::INSTANT_VECTOR,
-                            getPromQLText(argument, context), argument.type);
-        }
-    }
-
     struct ImplInfo
     {
         std::string_view ch_function_name;
@@ -100,7 +71,8 @@ SQLQueryPiece applyOneArgumentMathFunction(
     const auto * impl_info = getImplInfo(function_name);
     chassert(impl_info);
 
-    checkArgumentTypes(function_node, arguments, context);
+    checkNumberOfArguments(function_node, arguments, 1);
+    checkArgumentType(function_node, arguments, 0, ResultType::INSTANT_VECTOR, context);
 
     auto apply_function_to_ast = [&](ASTs args) -> ASTPtr
     {

@@ -59,8 +59,7 @@ public:
     Field getDefault() const override;
 
     /// Compares name, state version, parameters, and argument types.
-    /// When ignore_variant is false (default), also compares the state variant (Aggregation vs Window).
-    static bool strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type, bool ignore_variant = false);
+    static bool strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type);
 
     /// Spells a parameter list as a state type name does: `(p1, p2)`, empty when there are none.
     /// A value gets a `::Type` suffix where its type has one and a bare literal would reparse as a
@@ -72,12 +71,6 @@ public:
     /// while the declared type keeps it, so `AggregateFunction(argMax, LowCardinality(String), DateTime)`
     /// and `AggregateFunction(argMax, String, DateTime)` describe the very same state.
     static bool nameMatchesState(const String & state_type_name, const AggregateFunctionPtr & function, size_t version);
-
-    /// Throws if `function` only works as a window function: its state cannot be used as a data type.
-    static void checkSupportedFunctions(const AggregateFunctionPtr & function);
-
-    /// Same as equals() but ignores the state variant (Aggregation vs Window).
-    bool equalsIgnoringVariant(const IDataType & rhs) const;
 
     bool equals(const IDataType & rhs) const override;
     void updateHashImpl(SipHash & hash) const override;

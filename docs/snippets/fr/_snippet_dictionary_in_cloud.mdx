@@ -2,7 +2,10 @@
 title: Extrait Dictionary dans Cloud
 ---
 
-<Tip>
-  Si vous utilisez un dictionary avec ClickHouse Cloud, utilisez l’option DDL query pour créer vos dictionaries, et créez votre dictionary en tant qu’utilisateur `default`.
-  Vérifiez également la liste des dictionary sources prises en charge dans le [guide de compatibilité Cloud](/fr/products/cloud/guides/cloud-compatibility).
-</Tip>
+<Note title="ClickHouse Cloud">
+  Utilisez [`CREATE DICTIONARY`](/fr/reference/statements/create/dictionary#creating-a-dictionary-with-a-ddl-query) pour créer des dictionnaires.
+
+  Lorsque vous créez un dictionnaire qui lit les données d’une table ClickHouse, indiquez le nom d’utilisateur et le mot de passe d’un utilisateur dédié dans la clause `SOURCE`. Cet utilisateur doit disposer de la permission `SELECT` sur la table source. Consultez l’[exemple de source de dictionnaire ClickHouse](/fr/reference/statements/create/dictionary/sources/clickhouse).
+
+  Vérifiez la liste des sources de dictionnaires prises en charge dans le [guide de compatibilité Cloud](/fr/products/cloud/guides/cloud-compatibility).
+</Note>

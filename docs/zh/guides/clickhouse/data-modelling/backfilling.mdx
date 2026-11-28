@@ -6,8 +6,6 @@ keywords: ['materialized views', '数据回填', '插入数据', '可靠数据�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 无论你是刚开始接触 ClickHouse，还是负责现有部署，都会不可避免地需要用历史数据回填表。在某些情况下，这项工作相对简单；但如果还需要填充 materialized view，复杂度就会增加。本指南整理了完成这项任务的一些流程，你可以根据自己的使用场景加以应用。
 
 <Note>
@@ -15,7 +13,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Note>
 
 <div id="example-dataset">
-  ## 示例数据集
+  ## 示例数据集 {#example-dataset}
 </div>
 
 在本指南中，我们使用一个 PyPI 数据集。该数据集中的每一行都表示一次通过 `pip` 等工具下载 Python 软件包的记录。
@@ -72,7 +70,7 @@ SETTINGS describe_compact_output = 1
 </Note>
 
 <div id="backfilling-scenarios">
-  ## 回填场景
+  ## 回填场景 {#backfilling-scenarios}
 </div>
 
 当从某一时间点开始进行流式消费时，通常需要进行回填。这些数据会被插入 ClickHouse 表中，并在插入时按块触发 [增量materialized view](/zh/concepts/features/materialized-views/incremental-materialized-view)。这些视图可能会在插入前转换数据，或计算聚合结果并将其写入目标表，供下游应用后续使用。
@@ -87,7 +85,7 @@ SETTINGS describe_compact_output = 1
 我们建议从对象存储回填历史数据。在可能的情况下，应将数据导出为 Parquet，以获得最佳读取性能和压缩效果 (减少网络传输) 。通常建议文件大小控制在 150MB 左右，但 ClickHouse 支持超过 [70 种文件格式](/zh/reference/formats/index)，并且能够处理各种大小的文件。
 
 <div id="using-duplicate-tables-and-views">
-  ## 使用副本表与视图
+  ## 使用副本表与视图 {#using-duplicate-tables-and-views}
 </div>
 
 在所有场景中，我们都依赖&quot;副本表与视图&quot;的概念。这些表和视图是实时流式数据所用对象的副本，可在隔离环境中执行回填操作，并在发生故障时提供便捷的恢复手段。例如，以下是主 `pypi` 表和 materialized view，用于计算每个 Python 项目的下载次数：
@@ -301,7 +299,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-
 </Note>
 
 <div id="scenario-1-backfilling-data-with-existing-data-ingestion">
-  ## 场景 1：在现有数据持续摄取时回填数据
+  ## 场景 1：在现有数据持续摄取时回填数据 {#scenario-1-backfilling-data-with-existing-data-ingestion}
 </div>
 
 在此场景中，我们假设需要回填的数据不在独立的存储桶中，因此需要进行过滤。数据已经在持续插入，并且可以识别出某个时间戳或单调递增的列，以此确定需要回填的历史数据范围。
@@ -372,7 +370,7 @@ ALTER TABLE pypi_downloads_v2 MOVE PARTITION () TO pypi_downloads
 </Info>
 
 <div id="scenario-2-adding-materialized-views-to-existing-tables">
-  ## 场景 2：向现有表添加 materialized views
+  ## 场景 2：向现有表添加 materialized views {#scenario-2-adding-materialized-views-to-existing-tables}
 </div>
 
 对于已经写入了大量数据且仍在持续插入数据的系统，新增 materialized views 是很常见的需求。此时，如果有一个时间戳或单调递增的列可用于标识 stream 中的某个位置，就会很有帮助，并且可以避免暂停数据摄取。在下面的示例中，我们假设这两种情况都存在，并优先采用无需暂停摄取的方法。
@@ -384,7 +382,7 @@ ALTER TABLE pypi_downloads_v2 MOVE PARTITION () TO pypi_downloads
 </Info>
 
 <div id="timestamp-or-monotonically-increasing-column-available">
-  ### 时间戳或单调递增列可用
+  ### 时间戳或单调递增列可用 {#timestamp-or-monotonically-increasing-column-available}
 </div>
 
 在这种情况下，我们建议新的 materialized view 包含一个过滤条件，将行限制为仅包含大于未来某个任意时间点的那些行。随后可以使用主表中的历史数据，从该日期开始对该 materialized view 进行回填。具体采用哪种回填方法，取决于数据规模以及相关查询的复杂程度。
@@ -470,15 +468,17 @@ materialized view 的查询通常会更复杂 (这并不少见，否则用户也
 
 下面将进一步介绍 (2)。
 
-<div id="using-a-null-table-engine-for-filling-materialized-views">
-  #### 使用 Null 表引擎填充 materialized view
-</div>
+#### 使用 Null 表引擎填充 materialized view {#using-a-null-table-engine-for-filling-materialized-views}
 
 [Null 表引擎](/zh/reference/engines/table-engines/special/null) 提供了一种不会持久化数据的存储引擎 (可以把它看作表引擎世界里的 `/dev/null`) 。虽然这看起来有些矛盾，但 materialized view 仍会基于插入到该表引擎中的数据执行。这使我们能够在不持久化原始数据的情况下构建 materialized view，从而避免 I/O 以及相关的存储开销。
 
 需要注意的是，任何关联到该表引擎的 materialized views 在数据插入时仍会按数据块执行，并将结果发送到目标表。这些块的大小可以配置。更大的块虽然可能更高效 (处理速度也更快) ，但也会消耗更多资源 (主要是内存) 。使用这种表引擎意味着我们可以以增量方式构建 materialized view，即一次处理一个块，从而避免将整个聚合保存在内存中。
 
-<Image img="/images/data-modeling/null_table_mv.webp" size="md" alt="ClickHouse 中的反规范化" />
+<div className="ch-image-md">
+  <Frame>
+    ![ClickHouse 中的反规范化](/images/data-modeling/null_table_mv.webp)
+  </Frame>
+</div>
 
 <br />
 
@@ -506,7 +506,7 @@ GROUP BY
 这里，我们创建一个 Null 表 `pypi_v2,`，用于接收将被用来构建 materialized view 的行。请注意，我们将 schema 限制为仅包含所需的列。我们的 materialized view 会对插入到该表中的行执行聚合 (一次处理一个块) ，并将结果发送到目标表 `pypi_downloads_per_day`。
 
 <Note>
-  这里我们使用 `pypi_downloads_per_day` 作为目标表。为了提高弹性，用户可以创建一个副本表 `pypi_downloads_per_day_v2`，并像前面的示例所示那样将其用作该视图的目标表。插入完成后，`pypi_downloads_per_day_v2` 中的分区随后可以移动到 `pypi_downloads_per_day`。这样一来，如果插入因内存问题或服务器中断而失败，我们就能够进行恢复；也就是说，只需 TRUNCATE `pypi_downloads_per_day_v2`、调整 settings，然后重试即可。
+  这里我们使用 `pypi_downloads_per_day` 作为目标表。为了提高弹性，用户可以创建一个副本表 `pypi_downloads_per_day_v2`，并像前面的示例所示那样将其用作该视图的目标表。插入完成后，`pypi_downloads_per_day_v2` 中的分区随后可以移动到 `pypi_downloads_per_day`。这样一来，如果插入因内存问题或服务器中断而失败，我们就能够进行恢复；也就是说，只需截断 `pypi_downloads_per_day_v2`、调整设置，然后重试即可。
 </Note>
 
 要填充这个 materialized view，我们只需将 `pypi` 中用于回填的相关数据插入到 `pypi_v2` 中。
@@ -523,7 +523,7 @@ Peak memory usage: 639.47 MiB.
 请注意，这里的内存占用为 `639.47 MiB`。
 
 <div id="tuning-performance--resources">
-  ##### 性能与资源调优
+  ##### 性能与资源调优 {#tuning-performance--resources}
 </div>
 
 上述场景中的性能和资源消耗受多种因素影响。在尝试调优之前，建议读者先了解 [Optimizing for S3 Insert and Read Performance guide](/zh/integrations/connectors/data-ingestion/AWS/performance) 中 [Using Threads for Reads](/zh/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) 部分详细介绍的插入机制。概括如下：
@@ -595,7 +595,7 @@ Peak memory usage: 218.64 MiB.
 最后，请注意，减小块大小会产生更多的 parts，并带来更大的合并压力。如[此处](/zh/integrations/connectors/data-ingestion/AWS/performance#be-aware-of-merges)所述，应谨慎调整这些设置。
 
 <div id="no-timestamp-or-monotonically-increasing-column">
-  ### 没有时间戳或单调递增列
+  ### 没有时间戳或单调递增列 {#no-timestamp-or-monotonically-increasing-column}
 </div>
 
 上述流程依赖用户具备时间戳列或单调递增列。但在某些情况下，这类列并不存在。此时，我们建议采用以下流程：它利用了前文介绍的许多步骤，但需要用户暂停摄取。

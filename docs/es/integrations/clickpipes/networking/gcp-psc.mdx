@@ -11,12 +11,10 @@ integration:
   - category: "clickpipes"
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Puede usar [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect) de GCP para establecer una conexión segura entre ClickPipes y una fuente de datos alojada en GCP. ClickPipes crea un **endpoint privado inverso (RPE)** en su VPC y lo vincula a un servicio de endpoint privado publicado para su fuente de datos, de modo que el tráfico nunca queda expuesto a Internet público.
 
 <Check>
-  ClickPipes admite conectividad PSC **entre regiones** mediante [acceso global](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access). El acceso global es obligatorio para los endpoints ubicados en una región distinta de aquella donde se ejecuta la infraestructura de ClickPipes. Consulte la [documentación sobre las regiones de GCP de ClickPipes](/es/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips) para obtener más información.
+  ClickPipes admite conectividad PSC **entre regiones** mediante [acceso global](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access). El acceso global es obligatorio para los puntos de conexión ubicados en una región distinta de aquella donde se ejecuta la infraestructura de ClickPipes. Consulte la [documentación sobre las regiones de GCP de ClickPipes](/es/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips) para obtener más información.
 </Check>
 
 ## Patrones compatibles {#supported-patterns}

@@ -96,6 +96,6 @@ parquet/external/arrow-testing/fuzzing/clusterfuzz-testcase-parquet-arrow-fuzz-6
 parquet/external/arrow-testing/fuzzing/clusterfuzz-testcase-parquet-arrow-fuzz-6196357887557632.fuzz read	CANNOT_EXTRACT_TABLE_STRUCTURE
 parquet/external/arrow-testing/fuzzing/clusterfuzz-testcase-parquet-arrow-fuzz-6246447962652672 read	CANNOT_EXTRACT_TABLE_STRUCTURE
 parquet/external/arrow-testing/fuzzing/clusterfuzz-testcase-parquet-arrow-fuzz-6268365762199552 read	CANNOT_EXTRACT_TABLE_STRUCTURE
-parquet/external/arrow-testing/fuzzing/clusterfuzz-testcase-parquet-arrow-fuzz-6307367001784320 read	CANNOT_EXTRACT_TABLE_STRUCTURE
+parquet/external/arrow-testing/fuzzing/clusterfuzz-testcase-parquet-arrow-fuzz-6307367001784320 read	INCORRECT_DATA
 parquet/external/arrow-testing/fuzzing/clusterfuzz-testcase-parquet-arrow-fuzz-6702965604876288 read	INCORRECT_DATA
 parquet/external/arrow-testing/fuzzing/crash-649c71a618ae2fd80cec177a9676eb3e280fc1fa read	7	4216518521813337916

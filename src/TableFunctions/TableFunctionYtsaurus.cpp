@@ -132,8 +132,6 @@ void registerTableFunctionYTsaurus(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionYTsaurus>(
     {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
 <ExperimentalBadge/>
 
 The table function allows to read data from the YTsaurus cluster.

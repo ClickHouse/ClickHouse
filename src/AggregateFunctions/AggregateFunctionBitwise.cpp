@@ -14,6 +14,7 @@
 #include <Common/assert_cast.h>
 #include <Common/TargetSpecific.h>
 #include <base/extended_types.h>
+#include <base/sanitizer_defs.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -145,7 +146,7 @@ private:
     MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(
     template <bool add_if_zero>
-    static void NO_INLINE
+    static void NO_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW
     ), addManyConditionalImpl, MULTITARGET_FUNCTION_BODY((Data & data, const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end) /// NOLINT
     {
         /// The flag is applied as an arithmetic all-ones/all-zeros mask: unlike a branch or a
@@ -192,14 +193,14 @@ public:
         : IAggregateFunctionDataHelper<Data, AggregateFunctionBitwise<T, Data>>({type}, {}, createResultType())
     {}
 
-    String getName() const override { return Data::name(); }
+    [[nodiscard]] String getName() const override { return Data::name(); }
 
     static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeNumber<T>>();
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -276,7 +277,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         auto return_type = this->getResultType();
         return canBeNativeType(*return_type);
