@@ -94,6 +94,7 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -7367,6 +7368,10 @@ void StorageReplicatedMergeTree::alter(
 
     std::optional<ReplicatedMergeTreeLogEntryData> alter_entry;
     std::optional<String> mutation_znode;
+    StorageMetadataHandle current_metadata;
+    std::optional<StorageInMemoryMetadata> metadata_copy;
+    bool settings_are_changed = false;
+    bool comment_is_changed = false;
 
     while (true)
     {
@@ -7399,7 +7404,7 @@ void StorageReplicatedMergeTree::alter(
         alter_entry.emplace();
         mutation_znode.reset();
 
-        auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+        current_metadata = getInMemoryMetadataPtr(query_context, false);
 
         ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this, current_metadata);
         if (ast_to_str(future_metadata.sorting_key.definition_ast) != ast_to_str(current_metadata->sorting_key.definition_ast))
@@ -7465,47 +7470,30 @@ void StorageReplicatedMergeTree::alter(
                     "its value may differ between replicas, see allow_nondeterministic_mutations setting", *virtual_column_name);
         }
 
-        bool settings_are_changed = (ast_to_str(current_metadata->getSettingsChanges()) != ast_to_str(future_metadata.getSettingsChanges()));
-        bool comment_is_changed = (current_metadata->comment != future_metadata.comment);
+        settings_are_changed = (ast_to_str(current_metadata->getSettingsChanges()) != ast_to_str(future_metadata.getSettingsChanges()));
+        comment_is_changed = (current_metadata->comment != future_metadata.comment);
 
+        metadata_copy.reset();
         if (settings_are_changed || comment_is_changed)
         {
-            StorageInMemoryMetadata metadata_copy = *current_metadata;
+            metadata_copy = *current_metadata;
 
             if (settings_are_changed)
-                metadata_copy.setSettingsChanges(future_metadata.getSettingsChanges());
+                metadata_copy->setSettingsChanges(future_metadata.getSettingsChanges());
             if (comment_is_changed)
-                metadata_copy.setComment(future_metadata.comment);
+                metadata_copy->setComment(future_metadata.comment);
 
             /// metadata_copy keeps the current columns and only applies the local setting/comment change,
             /// so it can be larger than future_metadata (e.g. a mixed DROP COLUMN + MODIFY COMMENT shrinks
             /// future_metadata while metadata_copy grows). Check its size before mutating any in-memory state.
-            checkMetadataDoesNotExceedMaxQuerySize(table_id, metadata_copy, query_context);
+            checkMetadataDoesNotExceedMaxQuerySize(table_id, *metadata_copy, query_context);
 
-            /// Just change settings
-            if (settings_are_changed)
-                changeSettings(metadata_copy.getSettingsChanges(), table_lock_holder);
-
-            /// The comment is not replicated as of today, but we can implement it later.
-            if (comment_is_changed)
+            /// The settings are applied after the commit to Keeper, with this check done here instead.
+            if (const auto new_settings_ast = settings_are_changed ? metadata_copy->getSettingsChanges() : nullptr)
             {
-                /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
-                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-                setInMemoryMetadata(metadata_copy);
-            }
-
-            try
-            {
-                DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy, /*validate_new_create_query=*/true);
-            }
-            catch (...)
-            {
-                /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
-                if (settings_are_changed)
-                    changeSettings(current_metadata->getSettingsChanges(), table_lock_holder);
-                if (comment_is_changed)
-                    setInMemoryMetadata(*current_metadata);
-                throw;
+                auto new_settings = getDefaultSettings();
+                new_settings->applyChangesLeavingDiskUnresolved(new_settings_ast->as<const ASTSetQuery &>().changes);
+                new_settings->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount(), getContext()->wasBackgroundPoolAutoLowered());
             }
         }
 
@@ -7632,6 +7620,36 @@ void StorageReplicatedMergeTree::alter(
         }
 
         throw Coordination::Exception::fromMessage(rc, "Alter cannot be assigned because of Zookeeper error");
+    }
+
+    /// Applied only after the commit to Keeper, so a failed ALTER does not change them.
+    if (metadata_copy)
+    {
+        /// Just change settings
+        if (settings_are_changed)
+            changeSettings(metadata_copy->getSettingsChanges(), table_lock_holder, /*run_sanity_checks=*/false);
+
+        /// The comment is not replicated as of today, but we can implement it later.
+        if (comment_is_changed)
+        {
+            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+            setInMemoryMetadata(*metadata_copy);
+        }
+
+        try
+        {
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, *metadata_copy, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
+            if (settings_are_changed)
+                changeSettings(current_metadata->getSettingsChanges(), table_lock_holder);
+            if (comment_is_changed)
+                setInMemoryMetadata(*current_metadata);
+            throw;
+        }
     }
 
     table_lock_holder.unlock();

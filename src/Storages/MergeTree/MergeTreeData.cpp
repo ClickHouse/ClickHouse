@@ -2609,6 +2609,14 @@ void MergeTreeData::checkStoragePolicy(const StoragePolicyPtr & new_storage_poli
                     getStorageID().getNameForLogs(), disk->getName());
         }
     }
+
+    for (const auto & disk : new_storage_policy->getDisks())
+    {
+        if (!old_storage_policy->tryGetDiskByName(disk->getName()) && containsTableDataOnNewDisk(disk))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "New storage policy contain disks which already contain data of a table with the same name");
+    }
 }
 
 
@@ -8044,16 +8052,6 @@ void MergeTreeData::changeSettings(
                         all_diff_disk_names.insert(disk->getName());
                     for (const auto & disk : old_storage_policy->getDisks())
                         all_diff_disk_names.erase(disk->getName());
-
-                    for (const String & disk_name : all_diff_disk_names)
-                    {
-                        auto disk = new_storage_policy->getDiskByName(disk_name);
-
-                        if (containsTableDataOnNewDisk(disk))
-                            throw Exception(
-                                ErrorCodes::BAD_ARGUMENTS,
-                                "New storage policy contain disks which already contain data of a table with the same name");
-                    }
 
                     for (const String & disk_name : all_diff_disk_names)
                     {
