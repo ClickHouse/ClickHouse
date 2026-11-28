@@ -26,6 +26,7 @@
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/Context.h>
@@ -1473,8 +1474,13 @@ bool isJSONTypeHintOnlyChange(const IDataType * from_type, const IDataType * to_
 /// True metadata-only conversion: identical on-disk bytes, only the logical type changes
 /// (e.g. `Date`<->`UInt16`, enum widening). Safe everywhere, including positionally-persisted
 /// values. Recurses through `Array`/`Nullable`.
-bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to)
+/// @reinterprets_values is set when the stored values are read as another type (`Enum8` -> `Int8`), not
+/// when the types are equal or an Enum only gains values.
+bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to, bool * reinterprets_values = nullptr)
 {
+    if (reinterprets_values)
+        *reinterprets_values = false;
+
     auto is_compatible_enum_types_conversion = [](const IDataType * from_type, const IDataType * to_type)
     {
         if (const auto * from_enum8 = typeid_cast<const DataTypeEnum8 *>(from_type))
@@ -1518,7 +1524,11 @@ bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to)
         for (auto it = it_range.first; it != it_range.second; ++it)
         {
             if (it->second == typeid(*to))
+            {
+                if (reinterprets_values)
+                    *reinterprets_values = true;
                 return true;
+            }
         }
 
         const auto * arr_from = typeid_cast<const DataTypeArray *>(from);
@@ -1722,8 +1732,25 @@ MutationStageDecision AlterCommand::getMutationStageDecision(
         if (column.name != column_name)
             continue;
 
-        if (isTrueMetadataOnlyConversion(column.type.get(), data_type.get()))
+        bool reinterprets_values = false;
+        if (isTrueMetadataOnlyConversion(column.type.get(), data_type.get(), &reinterprets_values))
+        {
+            if (!reinterprets_values)
+                return decision;
+
+            /// The stored bytes do not change, but a MATERIALIZED column computed from this one can
+            /// (`toString` of an `Enum8` converted to `Int8`), so run a mutation that recalculates it.
+            MaterializedColumnDependencies materialized_dependencies(metadata.columns, context);
+            for (const auto & materialized : metadata.columns.getMaterialized())
+            {
+                if (!materialized_dependencies.findColumnsToRecalculate(materialized.name, {column_name}).empty())
+                {
+                    decision.requires_mutation = true;
+                    break;
+                }
+            }
             return decision;
+        }
 
         decision.lazy_settings = getLazyMetadataConversionSettings(column.type.get(), data_type.get(), context);
         decision.requires_mutation = decision.lazy_settings.empty();

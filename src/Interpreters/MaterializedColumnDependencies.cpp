@@ -1,6 +1,6 @@
 #include <Interpreters/MaterializedColumnDependencies.h>
 
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/expressionSourceColumns.h>
 #include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnsDescription.h>
@@ -68,9 +68,7 @@ MaterializedColumnDependencies::findNode(const String & column_name) const
     /// subcolumn must be reported as depending on `t`, not on `t.a`.
     replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized.expression, source_columns_);
 
-    /// `analyze` rewrites in place, so keep `materialized.expression` pristine for callers.
-    auto query = materialized.expression->clone();
-    materialized.dependencies = TreeRewriter(context).analyze(query, source_columns_)->requiredSourceColumns();
+    materialized.dependencies = expressionSourceColumnsInStorage(materialized.expression, columns, context);
     materialized.reads_ephemeral = std::ranges::any_of(
         materialized.dependencies, [&](const auto & dependency) { return ephemeral_columns.contains(dependency); });
 
@@ -125,6 +123,33 @@ bool MaterializedColumnDependencies::willBeRecalculated(const String & column_na
     /// Not through `it`: the recursion above can rehash the map, which invalidates iterators.
     will_be_recalculated[column_name] = result;
     return result;
+}
+
+bool MaterializedColumnDependencies::dependsOn(const String & column_name, const String & source_column) const
+{
+    const auto * source = columns.tryGet(source_column);
+    const bool source_is_alias = source && source->default_desc.kind == ColumnDefaultKind::Alias;
+
+    NameSet visited;
+    auto walk = [&](const String & name, auto && self) -> bool
+    {
+        if (!visited.insert(name).second)
+            return false;
+
+        const auto * materialized = findNode(name);
+        if (!materialized)
+            return false;
+
+        /// The dependencies have aliases expanded, so an alias is looked for in the original expression.
+        if (source_is_alias && expressionReadsColumn(columns.get(name).default_desc.expression, columns, source_column, context))
+            return true;
+
+        return std::ranges::any_of(materialized->dependencies, [&](const auto & dependency)
+        {
+            return dependency == source_column || self(dependency, self);
+        });
+    };
+    return walk(column_name, walk);
 }
 
 }

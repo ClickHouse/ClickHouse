@@ -20,7 +20,7 @@ class ColumnsDescription;
 /// resolves the same defaults, so the two must agree: a dependency they spell differently leaves the
 /// pending mutation unapplied for that read task and returns the stale stored value.
 ///
-/// Analysing a default costs a `TreeRewriter` run, and this graph is built per read task per part, so
+/// Analysing a default costs a query analyzer run, and this graph is built per read task per part, so
 /// nothing is analysed until it is asked for.
 ///
 /// Must not outlive the `ColumnsDescription` it was built from.
@@ -50,6 +50,11 @@ public:
     /// be recalculated. Also empty for a column reading an EPHEMERAL one, which is never recalculated.
     /// Answers are memoised for one @changed_columns set; passing a different one starts over.
     const Names & findColumnsToRecalculate(const String & column_name, const NameSet & changed_columns) const;
+
+    /// Whether the expression of @column_name reads @source_column, directly or through other MATERIALIZED
+    /// columns. Unlike findColumnsToRecalculate, also true for a column that reads an EPHEMERAL one, and
+    /// @source_column may be an ALIAS column.
+    bool dependsOn(const String & column_name, const String & source_column) const;
 
 private:
     /// The memo must already be keyed on @changed_columns; the only walk starts above.
