@@ -82,13 +82,15 @@ CODECS_MAPPING = {
 
 
 def test_default_codec_single(start_cluster):
+    # Adaptive codec selection is off because the test reads the codec of the first block after a merge.
     for i, node in enumerate([node1, node2]):
         node.query(
             """
         CREATE TABLE compression_table (
             key UInt64,
             data1 String CODEC(Default)
-        ) ENGINE = ReplicatedMergeTree('/t', '{}') ORDER BY tuple() PARTITION BY key;
+        ) ENGINE = ReplicatedMergeTree('/t', '{}') ORDER BY tuple() PARTITION BY key
+        SETTINGS enable_adaptive_codec_selection = 0;
         """.format(
                 i
             )

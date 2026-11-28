@@ -73,10 +73,11 @@ ${CLICKHOUSE_CLIENT} -q "
 ${CLICKHOUSE_CLIENT} -q "
   DROP TABLE IF EXISTS t_steps_sibling;
 
+  -- enable_adaptive_codec_selection = 0: the order of the conditions follows the compressed column sizes.
   CREATE TABLE t_steps_sibling (id UInt64, t Tuple(safe String, val String))
   ENGINE = MergeTree ORDER BY id
   SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0,
-           ratio_of_defaults_for_sparse_serialization = 1.0;
+           ratio_of_defaults_for_sparse_serialization = 1.0, enable_adaptive_codec_selection = 0;
 
   INSERT INTO t_steps_sibling
   SELECT number, if(number % 3 = 0, ('', 'n/a'), (hex(sipHash128(toString(number))), toString(number % 100))) FROM numbers(100000);
