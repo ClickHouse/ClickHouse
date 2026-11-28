@@ -110,6 +110,11 @@ public:
       */
     [[nodiscard]] TableExpressionNodePtr getColumnSourceOrNull() const;
 
+    /** Get the weak pointer to the column source.
+      * It identifies the column source also after the column source is destroyed.
+      */
+    [[nodiscard]] const TableExpressionNodeWeakPtr & getColumnSourceWeak() const { return source; }
+
     /** Name of the virtual column that `GroupingFunctionsResolvePass` prepends to the arguments of the
       * specialized `GROUPING` functions (`groupingForRollup`, `groupingForCube`, `groupingForGroupingSets`).
       * It does not come from any table expression, it is materialized by the aggregation step itself.

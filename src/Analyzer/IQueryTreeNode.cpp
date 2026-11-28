@@ -2,6 +2,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/IQueryTreeNode.h>
 
+#include <optional>
 #include <typeinfo>
 #include <unordered_map>
 
@@ -129,9 +130,47 @@ private:
     bool is_identity = true;
 };
 
+using NodesSet = UnorderedSetWithMemoryTracking<const IQueryTreeNode *>;
+
+/// The nodes of the tree: the root and everything that is reachable from it through the children.
+/// A column source is not a child of a column, so it is in the set only if it is a part of the tree.
+NodesSet collectTreeNodes(const IQueryTreeNode * root)
+{
+    NodesSet nodes;
+    VectorWithMemoryTracking<const IQueryTreeNode *> nodes_to_process = {root};
+
+    while (!nodes_to_process.empty())
+    {
+        const auto * node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (!nodes.emplace(node).second)
+            continue;
+
+        for (const auto & child : node->getChildren())
+        {
+            if (child)
+                nodes_to_process.push_back(child.get());
+        }
+    }
+
+    return nodes;
+}
+
 }
 
 bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options) const
+{
+    return isEqualWithColumnSources(rhs, compare_options, ColumnSourcesComparison::ByContent);
+}
+
+bool IQueryTreeNode::isEqualLocal(const IQueryTreeNode & rhs, CompareOptions compare_options) const
+{
+    return isEqualWithColumnSources(rhs, compare_options, ColumnSourcesComparison::ByIdentity);
+}
+
+bool IQueryTreeNode::isEqualWithColumnSources(
+    const IQueryTreeNode & rhs, CompareOptions compare_options, ColumnSourcesComparison column_sources_comparison) const
 {
     if (this == &rhs)
         return true;
@@ -150,6 +189,14 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
       */
     VectorWithMemoryTracking<const IQueryTreeNode *> shared_nodes;
 
+    /** For the comparison of column sources by identity: the nodes of each of the two trees.
+      * Two different column sources can be paired only if each of them is inside of its tree:
+      * a lambda, or a table expression of a subquery that is used as an expression.
+      * The sets are collected only when such a pair is found, it is not so in the usual case.
+      */
+    std::optional<NodesSet> lhs_tree_nodes;
+    std::optional<NodesSet> rhs_tree_nodes;
+
     nodes_to_process.emplace_back(this, &rhs);
 
     while (!nodes_to_process.empty())
@@ -165,6 +212,16 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
 
         if (equals_pairs.contains(std::make_pair(lhs_node_to_compare, rhs_node_to_compare)))
             continue;
+
+        /** A table expression that is a part of the tree is paired with the table expression at the same position
+          * of the other tree. The columns that refer to it must agree with this pairing. Otherwise, the subqueries
+          * `SELECT l.x FROM t AS l JOIN t AS r` and `SELECT r.x FROM t AS l JOIN t AS r` are equal without
+          * the comparison of aliases: the column sources `l` of the first one and `r` of the second one
+          * have the same content.
+          */
+        if (lhs_node_to_compare->asTableExpression()
+            && column_sources.add(lhs_node_to_compare, rhs_node_to_compare) == ColumnSourcesBijection::AddResult::Conflict)
+            return false;
 
         if (lhs_node_to_compare == rhs_node_to_compare)
         {
@@ -210,6 +267,31 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
 
             if (bool(lhs_source) != bool(rhs_source))
                 return false;
+
+            if (column_sources_comparison == ColumnSourcesComparison::ByIdentity)
+            {
+                if (!lhs_source)
+                {
+                    /// Both column sources are destroyed, or the columns have no source.
+                    /// The weak pointers still identify the column sources.
+                    const auto & lhs_weak_source = lhs_column_node->getColumnSourceWeak();
+                    const auto & rhs_weak_source = rhs_column_node->getColumnSourceWeak();
+
+                    if (lhs_weak_source.owner_before(rhs_weak_source) || rhs_weak_source.owner_before(lhs_weak_source))
+                        return false;
+                }
+                else if (lhs_source != rhs_source)
+                {
+                    if (!lhs_tree_nodes)
+                    {
+                        lhs_tree_nodes = collectTreeNodes(this);
+                        rhs_tree_nodes = collectTreeNodes(&rhs);
+                    }
+
+                    if (!lhs_tree_nodes->contains(lhs_source.get()) || !rhs_tree_nodes->contains(rhs_source.get()))
+                        return false;
+                }
+            }
 
             if (lhs_source && rhs_source)
             {
@@ -274,6 +356,17 @@ size_t & getTreeHashWorkCounter()
 
 IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options) const
 {
+    return getTreeHashWithColumnSources(compare_options, ColumnSourcesComparison::ByContent);
+}
+
+IQueryTreeNode::Hash IQueryTreeNode::getTreeHashLocal(CompareOptions compare_options) const
+{
+    return getTreeHashWithColumnSources(compare_options, ColumnSourcesComparison::ByIdentity);
+}
+
+IQueryTreeNode::Hash IQueryTreeNode::getTreeHashWithColumnSources(
+    CompareOptions compare_options, ColumnSourcesComparison column_sources_comparison) const
+{
     /** Compute tree hash with this node as root.
       *
       * Some nodes can contain weak pointers to other nodes. Such weak nodes are not necessary
@@ -283,6 +376,12 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
       * For each node in tree we update hash state with their content.
       * For weak nodes there is special handling. If we visit weak node first time we update hash state with weak node content and register
       * identifier for this node, for subsequent visits of this weak node we hash weak node identifier instead of content.
+      *
+      * A table expression that is a part of the tree has the identifier too, and the identifier is hashed at the position
+      * of the table expression in the tree. So the hash depends on which of the table expressions of the tree a column refers to:
+      * the hashes of `SELECT l.x FROM t AS l JOIN t AS r` and `SELECT r.x FROM t AS l JOIN t AS r` are different without
+      * the comparison of aliases, although the column sources `l` and `r` have the same content.
+      * The hash is used as the identity of a subquery, for example, in the name of a set for the `IN` function.
       */
     size_t & hashed_nodes = getTreeHashWorkCounter();
 
@@ -326,6 +425,12 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
 
             weak_node_to_identifier.emplace(node_to_process, weak_node_to_identifier.size());
         }
+        else if (column_sources_comparison == ColumnSourcesComparison::ByContent && node_to_process->asTableExpression())
+        {
+            /// The identifier is new, or it is from a column that was visited before this table expression.
+            auto node_identifier_it = weak_node_to_identifier.emplace(node_to_process, weak_node_to_identifier.size()).first;
+            hash_state.update(node_identifier_it->second);
+        }
 
         hash_state.update(static_cast<size_t>(node_to_process->getNodeType()));
         if (compare_options.compare_aliases && !node_to_process->alias.empty())
@@ -345,6 +450,11 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
 
             nodes_to_process.emplace_back(node_to_process_child.get(), false);
         }
+
+        /// With the comparison by identity, the column sources are not hashed: equal columns refer to the same
+        /// column source, or to column sources that are parts of the trees and so are hashed as children.
+        if (column_sources_comparison == ColumnSourcesComparison::ByIdentity)
+            continue;
 
         if (const auto * column_node = node_to_process->as<ColumnNode>())
         {
