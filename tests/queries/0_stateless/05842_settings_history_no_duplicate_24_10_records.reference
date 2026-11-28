@@ -1,0 +1,12 @@
+azure_check_objects_after_upload	['24.11']
+backup_restore_failure_after_host_disconnected_for_seconds	['24.11','26.10']
+backup_restore_finish_timeout_after_error_sec	['24.11','26.10']
+backup_restore_keeper_max_retries	['24.11']
+backup_restore_keeper_max_retries_while_handling_error	['24.11','26.10']
+backup_restore_keeper_max_retries_while_initializing	['24.11','26.10']
+distributed_cache_discard_connection_if_unread_data	['24.11']
+parallel_replicas_local_plan	['24.11','24.9']
+azure_check_objects_after_upload	0
+backup_restore_keeper_max_retries	20
+azure_check_objects_after_upload	0
+backup_restore_keeper_max_retries	20
