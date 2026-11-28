@@ -142,6 +142,25 @@ bool injectRequiredColumnsRecursively(
             add_column(column_name);
             return true;
         }
+
+        /// A column the part does not store is materialized on read from its `DEFAULT` expression, but a
+        /// patch part (a lightweight `UPDATE`) may supply its value. Read it, so that the patch is applied
+        /// to it, instead of substituting its own default into the expression of the column that reads it.
+        /// The column is not physical in this part, so this does not count as a column to read the row
+        /// count from.
+        if (alter_conversions && alter_conversions->getColumnsUpdatedInPatches().contains(column_in_storage->getNameInStorage()))
+            add_column(column_name);
+
+        /// A sort-key column the part does not store keeps the value its `DEFAULT` gave before patches, as the rows
+        /// of the part are sorted by it (see `IMergeTreeReader::getDefaultsDependingOn`). When a patch overwrites
+        /// a column its expression reads, the `DEFAULT` columns reading it are evaluated again, and they must read
+        /// that kept value, not one evaluated anew from the patched column. Read it, so that it is filled once,
+        /// before the patches, exactly as if it was requested, whatever other columns are selected.
+        else if (alter_conversions && alter_conversions->hasPatches())
+        {
+            if (getSortingKeyColumnsInStorage(*storage_snapshot->metadata).contains(column_in_storage->getNameInStorage()))
+                add_column(column_name);
+        }
     }
 
     /// Column doesn't have default value and don't exist in part
@@ -171,6 +190,20 @@ bool injectRequiredColumnsRecursively(
     return result;
 }
 
+}
+
+NameSet getSortingKeyColumnsInStorage(const StorageInMemoryMetadata & metadata)
+{
+    NameSet result;
+    const auto & columns = metadata.getColumns();
+    for (const auto & name : metadata.getColumnsRequiredForSortingKey())
+    {
+        if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+            result.insert(column->getNameInStorage());
+        else
+            result.insert(name);
+    }
+    return result;
 }
 
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)
@@ -579,7 +612,18 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         }
 
         /// Add results of the step to the list of already "known" columns so that we don't read or compute them again.
-        if (step.actions)
+        if (step.actions && step.project_inputs)
+        {
+            /// A step that projects its inputs (an on-fly mutation step) keeps in the block only the outputs of its
+            /// actions. Every other column, read in this step or in an earlier one, is gone after it, e.g. a subcolumn
+            /// `b.x` read to evaluate `z DEFAULT b.x + 1` while the mutation outputs only its parent `b`. Such a column
+            /// is not "known" to the later steps: the ones that need it, including the last one when the query selects
+            /// it, read it again.
+            columns_from_previous_steps.clear();
+            for (const auto * output : step.actions->getActionsDAG().getOutputs())
+                columns_from_previous_steps.insert(output->result_name);
+        }
+        else if (step.actions)
         {
             for (const auto & name : step.actions->getActionsDAG().getNames())
                 columns_from_previous_steps.insert(name);

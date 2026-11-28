@@ -1,0 +1,66 @@
+v1, both columns in one reader
+0	1
+1	1
+2	1
+3	1
+v1, columns on the opposite sides of PREWHERE
+0	1
+1	1
+2	1
+3	1
+0	1
+1	1
+2	1
+3	1
+v1, the intermediate is requested after PREWHERE
+0	1	1
+1	1	1
+2	1	1
+3	1	1
+v1, partially patched column before PREWHERE
+0	1	0
+1	1	0
+2	0	1
+3	0	1
+0	1	0	1
+1	1	0	1
+2	0	1	1
+3	0	1	1
+v1, partially patched column after PREWHERE
+0	1	0
+1	1	0
+2	0	1
+3	0	1
+v2, both columns in one reader
+0	1
+1	1
+2	1
+3	1
+v2, columns on the opposite sides of PREWHERE
+0	1
+1	1
+2	1
+3	1
+0	1
+1	1
+2	1
+3	1
+v2, the intermediate is requested after PREWHERE
+0	1	1
+1	1	1
+2	1	1
+3	1	1
+v2, partially patched column before PREWHERE
+0	1	0
+1	1	0
+2	0	1
+3	0	1
+0	1	0	1
+1	1	0	1
+2	0	1	1
+3	0	1	1
+v2, partially patched column after PREWHERE
+0	1	0
+1	1	0
+2	0	1
+3	0	1

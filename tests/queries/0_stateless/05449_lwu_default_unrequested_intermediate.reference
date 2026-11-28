@@ -1,0 +1,12 @@
+patches, one row per block
+0	0	999
+1	1	100
+patches, one block
+0	0	999
+1	1	100
+pending mutation, one row per block
+0	0	999	8
+1	1	100	8
+pending mutation, one block
+0	0	999	8
+1	1	100	8

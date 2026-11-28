@@ -432,6 +432,9 @@ void MergeTreeRangeReader::ReadResult::clear()
     columns.clear();
     additional_columns.clear();
     columns_for_patches.clear();
+    rows_filled_by_defaults.clear();
+    default_intermediates.clear();
+    default_intermediates_rows.clear();
 }
 
 void MergeTreeRangeReader::ReadResult::shrink(Columns & old_columns, const NumRows & rows_per_granule_previous) const
@@ -496,6 +499,21 @@ void MergeTreeRangeReader::ReadResult::checkInternalConsistency() const
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Number of rows in columns for patches {} is not equal to number of rows in result columns {}",
             columns_for_patches.rows(), num_rows);
+
+    if (!rows_filled_by_defaults.empty() && rows_filled_by_defaults.rows() != num_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Number of rows in the masks of rows filled by defaults {} is not equal to number of rows in result columns {}",
+            rows_filled_by_defaults.rows(), num_rows);
+
+    if (!default_intermediates.empty() && default_intermediates.rows() != num_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Number of rows in the intermediate columns evaluated from their defaults {} is not equal to number of rows in result columns {}",
+            default_intermediates.rows(), num_rows);
+
+    if (!default_intermediates_rows.empty() && default_intermediates_rows.rows() != num_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Number of rows in the masks of the intermediate columns evaluated from their defaults {} is not equal to number of rows in result columns {}",
+            default_intermediates_rows.rows(), num_rows);
 
     for (const auto & column : columns)
     {
@@ -682,6 +700,9 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
     filterBlock(additional_columns, filter);
     filterBlock(columns_for_patches, filter);
     filterBlock(patch_versions_block, filter);
+    filterBlock(rows_filled_by_defaults, filter);
+    filterBlock(default_intermediates, filter);
+    filterBlock(default_intermediates_rows, filter);
 
     num_rows = filter.countBytesInFilter();
 
@@ -771,6 +792,9 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
             shrink(additional_columns, rows_per_granule_previous);
             shrink(columns_for_patches, rows_per_granule_previous);
             shrink(patch_versions_block, rows_per_granule_previous);
+            shrink(rows_filled_by_defaults, rows_per_granule_previous);
+            shrink(default_intermediates, rows_per_granule_previous);
+            shrink(default_intermediates_rows, rows_per_granule_previous);
 
             num_rows = total_rows_per_granule;
 
@@ -1920,6 +1944,12 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         result.additional_columns.clear();
 
+        /// Additional columns are needed by the later steps of the chain, and after the last one by
+        /// `MergeTreeReadersChain::applyPatchesAfterReader`: a `DEFAULT` column of the result is
+        /// evaluated again when a patch part overwrites a column its expression reads, and that
+        /// column may be one the step projected out. The caller tells whether they are needed.
+        /// A column the action outputs is in `block` and is not stored here, so the stored columns
+        /// are exactly the ones the action passed through unchanged or dropped.
         if (keep_additional_columns)
         {
             const bool filter_column_is_removed = prewhere_info->type == PrewhereExprStep::Filter && prewhere_info->remove_filter_column;

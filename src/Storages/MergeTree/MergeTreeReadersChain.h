@@ -65,11 +65,15 @@ private:
         size_t num_read_rows) const;
 
     /// Evaluates default expressions for columns that are absent in part.
+    /// The columns of `result.default_intermediates` are read as they are; the ones that hold a value only in some rows
+    /// are evaluated in the other rows first, if they are read. With `keep_intermediates`, the missing
+    /// columns evaluated here are added to it, so that the next evaluations give or read the same values.
     void evaluateMissingDefaults(
         MergeTreeRangeReader & range_reader,
-        const ReadResult & result,
+        ReadResult & result,
         const Block & previous_header,
-        Columns & columns) const;
+        Columns & columns,
+        bool keep_intermediates) const;
 
     void executePrewhereActions(
         MergeTreeRangeReader & reader,
@@ -89,7 +93,63 @@ private:
     void applyPatchesAfterReader(ReadResult & result, size_t reader_index);
     [[nodiscard]] ColumnsForPatches getColumnsForPatches(const Block & header, const Columns & columns) const;
 
-    void applyPatches(
+    /// Removes the columns the step's action recomputes from `result.columns_filled_by_defaults`:
+    /// their value is the action's, not their `DEFAULT`'s, and must not be evaluated again.
+    static void forgetColumnsOverwrittenByStep(ReadResult & result, const MergeTreeRangeReader & range_reader);
+
+    /// Removes from `result.default_intermediates` the columns whose `DEFAULT` reads one of `changed_columns`,
+    /// directly or not, and `changed_columns` themselves: their values are stale.
+    static void forgetDefaultIntermediatesDependingOn(ReadResult & result, const IMergeTreeReader & reader, const NameSet & changed_columns);
+
+    /// Takes the rows of `patched_rows` (see `applyPatches`) out of `result.rows_filled_by_defaults`:
+    /// a patched row keeps its patched value. A column none of whose rows holds its `DEFAULT` any more
+    /// leaves `result.columns_filled_by_defaults`.
+    static void forgetPatchedRows(ReadResult & result, const Block & patched_rows);
+
+    /// Evaluates the `DEFAULT` expressions of `columns_to_evaluate`, present in `block`, once more and replaces
+    /// their values in `block`; the other columns of `block` are the inputs. The expression of a column is executed
+    /// only in its rows of `result.rows_filled_by_defaults` (in every row if it has none there); the patched rows keep
+    /// their values. A column is evaluated after the others of `columns_to_evaluate` its expression reads.
+    /// Adds to `columns_to_evaluate` the columns of `candidates` (the `DEFAULT` columns in `block` that may be evaluated
+    /// again) that read a missing column through which the expressions of `columns_to_evaluate` read, as that column
+    /// is evaluated anew.
+    /// The missing columns the expressions read through that are evaluated here are kept in `result.default_intermediates`,
+    /// with the rows they were evaluated in (`result.default_intermediates_rows`): a column evaluated by a later step
+    /// reads the same values.
+    static void evaluateDefaultsInRowsFilledByDefaults(
+        const IMergeTreeReader & reader,
+        ReadResult & result,
+        Block & block,
+        const NamesAndTypesList & candidates,
+        NamesAndTypesList & columns_to_evaluate);
+
+    /// Evaluates the `DEFAULT` expressions of the columns `batch`, present in `block`, in the rows of `filter_column`
+    /// (a `UInt8` column; in every row if it is null). The other rows keep their values, and the expressions are not
+    /// executed on them. The other columns of `block` are the inputs.
+    static void evaluateDefaultsInRows(
+        const IMergeTreeReader & reader,
+        Block & block,
+        const NamesAndTypesList & batch,
+        const ColumnPtr & filter_column);
+
+    /// Evaluates the columns of `result.default_intermediates` that hold a value only in some rows
+    /// (see `ReadResult::default_intermediates_rows`) in their other rows, if the `DEFAULT` expressions of `missing_columns`
+    /// read them or they are among `missing_columns`, and adds them to `block`, which holds the inputs.
+    static void completeDefaultIntermediates(
+        const IMergeTreeReader & reader,
+        ReadResult & result,
+        Block & block,
+        const NamesAndTypesList & missing_columns);
+
+    /// Evaluates the `DEFAULT` expressions of the columns in `result.columns_filled_by_defaults`
+    /// once more, after patches were applied to `patched_columns` of the result accumulated up to
+    /// the reader `reader_index`. The rows a patch overwrote, already taken out by `forgetPatchedRows`,
+    /// keep their patched value.
+    void reevaluateDefaultsAfterPatches(ReadResult & result, size_t reader_index, const NameSet & patched_columns) const;
+
+    /// Returns the names of the columns to which a patch was applied. For those of them in `columns_to_track`,
+    /// adds to `patched_rows` a `UInt8` column with the same name and 1 in the rows a patch overwrote.
+    NameSet applyPatches(
         const Block & result_header,
         Columns & result_columns,
         Block & versions_block,
@@ -97,7 +157,18 @@ private:
         std::optional<UInt64> max_version,
         const ColumnsForPatches & columns_for_patches,
         const std::set<ColumnForPatch::Order> & suitable_orders,
-        const Block & additional_columns) const;
+        const Block & additional_columns,
+        const NameSet & columns_to_track,
+        Block & patched_rows) const;
+
+    /// Whether a patch part may overwrite a column that the `DEFAULT` expression of a column the part does not store
+    /// reads. Only then a `DEFAULT` column may have to be evaluated again after the patches are applied, and only then
+    /// the state needed for that is kept in `ReadResult`: `columns_filled_by_defaults`, `rows_filled_by_defaults`,
+    /// `default_intermediates` and the columns projected out by the last step. Otherwise the patches are applied
+    /// as if the part had no `DEFAULT` columns to evaluate, and that state is not filtered along with the result.
+    /// The exception is `default_intermediates` of a block for which `executeSortingKeyExpressions` evaluated
+    /// the defaults early: those are kept regardless of this, as the ordinary pass evaluates the defaults again.
+    bool mayReevaluateDefaultsAfterPatches() const;
 
     RangeReaders range_readers;
     /// The readers of `range_readers` that read columns, not only a filter: see `MergeTreeRangeReader::startReadingChain`.
@@ -108,6 +179,10 @@ private:
     /// For every reader, the names of the columns produced by the previous steps of the chain.
     /// They don't change between blocks, so they are collected once.
     std::vector<NameSet> previous_steps_columns;
+
+    /// See `mayReevaluateDefaultsAfterPatches`. Computed when the part turns out to lack a `DEFAULT` column,
+    /// as it requires analyzing the `DEFAULT` expressions of the table.
+    mutable std::optional<bool> may_reevaluate_defaults_after_patches;
 
     /// The last reader that may evaluate defaults of columns missing in the part, 0 if none.
     /// Only the steps before it keep the columns they project out.

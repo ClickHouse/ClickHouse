@@ -53,6 +53,10 @@ struct PrewhereExprStep
     /// Version of mutation if step is a part of on-fly mutation.
     std::optional<UInt64> mutation_version;
 
+    /// Whether `actions` were built to project their inputs (an on-fly mutation step): after the step, the block holds
+    /// only the outputs of the actions, and every other column, including the ones read in this step, is gone.
+    bool project_inputs = false;
+
     /// True only for a step that evaluates the query's `PREWHERE` predicate. A `Filter` step may instead
     /// be a row-level-security filter, a lightweight-delete `_row_exists` mask, or an on-fly mutation
     /// (`UPDATE`/`DELETE`) filter, all of which look identical here. The PREWHERE effect ProfileEvents
@@ -456,6 +460,34 @@ public:
 
         /// Contains columns with data versions for each column updated by patch parts.
         Block patch_versions_block;
+
+        /// Names of the columns the part does not store whose value is, so far, the one their
+        /// `DEFAULT` expression gave. A column leaves the set when a patch part overwrites it or a
+        /// chain step's action recomputes it. After every pass that applies patches, the ones whose
+        /// `DEFAULT` reads a patched column are evaluated again, so that they see the patched value.
+        /// See `MergeTreeReadersChain::reevaluateDefaultsAfterPatches`.
+        NameSet columns_filled_by_defaults;
+
+        /// For a column of `columns_filled_by_defaults` in some rows of which a patch part wrote a value:
+        /// a `UInt8` column with its name, with 1 in the rows that still hold the value of its `DEFAULT`.
+        /// Only those rows are evaluated again; a column absent here holds its `DEFAULT` in every row.
+        Block rows_filled_by_defaults;
+
+        /// The columns the part does not store that were evaluated from their `DEFAULT`, including the unrequested
+        /// ones a requested `DEFAULT` reads, e.g. `b` of `b DEFAULT rand64()` read by `z DEFAULT a + b` and by
+        /// a sort-key column `k DEFAULT b`. Kept only when a patch part may overwrite a column a missing `DEFAULT`
+        /// reads, or when the defaults were evaluated early to fill a missing sort-key column for the patches: when `z`
+        /// is evaluated again after a patch to `a`, or `b` is evaluated by a later step, it reads or gets this value of `b`
+        /// rather than a new one, and so agrees with the columns that keep their values. A column leaves it when a column its `DEFAULT` reads is patched or
+        /// recomputed by a step. See `MergeTreeReadersChain::forgetDefaultIntermediatesDependingOn`.
+        Block default_intermediates;
+
+        /// For a column of `default_intermediates` evaluated only in some rows: a `UInt8` column with its name, with 1
+        /// in the rows that hold a value of its `DEFAULT`. A column evaluated again after patches is evaluated only in
+        /// the rows the columns reading it need (its expression must not be executed on the values of the other rows),
+        /// and is kept with those rows, so that a column evaluated by a later step reads the same value in them.
+        /// The other rows are evaluated when a column needs them. A column absent here holds a value in every row.
+        Block default_intermediates_rows;
 
         /// Track newly initiated granule ranges during startReadingChain. Does not contain the range started in previous read.
         /// Used to compute _part_offset and align continueReadingChain streams accordingly.
