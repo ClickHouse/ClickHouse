@@ -184,7 +184,8 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
 {
     const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
-    if (function_name != rhs_typed.function_name || kind != rhs_typed.kind || nulls_action != rhs_typed.nulls_action)
+    if (function_name != rhs_typed.function_name || kind != rhs_typed.kind || nulls_action != rhs_typed.nulls_action
+        || use_null_as_unknown_semantics_for_in != rhs_typed.use_null_as_unknown_semantics_for_in)
         return false;
 
     /// is_operator is ignored here because it affects only AST formatting, except for the function
@@ -219,6 +220,8 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*c
     hash_state.update(kind == FunctionKind::AGGREGATE);
     hash_state.update(kind == FunctionKind::WINDOW);
     hash_state.update(nulls_action);
+    if (use_null_as_unknown_semantics_for_in)
+        hash_state.update(true);
 
     /// is_operator is ignored here because it affects only AST formatting, except for the function
     /// composition operator, see `isEqualImpl`.
@@ -243,6 +246,7 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
     result_function->kind = kind;
     result_function->nulls_action = nulls_action;
     result_function->wrap_with_nullable = wrap_with_nullable;
+    result_function->use_null_as_unknown_semantics_for_in = use_null_as_unknown_semantics_for_in;
     result_function->is_operator = is_operator;
 
     return result_function;

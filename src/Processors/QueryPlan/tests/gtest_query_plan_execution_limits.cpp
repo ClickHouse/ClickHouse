@@ -1,12 +1,22 @@
 #include <gtest/gtest.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/tests/gtest_global_register.h>
 
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
+#include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/PreparedSets.h>
+#include <Functions/FunctionFactory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
@@ -18,6 +28,13 @@ using namespace DB;
 namespace DB
 {
 void registerReadNothingStep(QueryPlanStepRegistry & registry);
+void registerExpressionStep(QueryPlanStepRegistry & registry);
+}
+
+namespace DB::ErrorCodes
+{
+extern const int SUPPORT_IS_DISABLED;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -40,6 +57,17 @@ void tryRegisterReadNothingStep()
     } registered;
 }
 
+void tryRegisterExpressionStep()
+{
+    static struct Register
+    {
+        Register()
+        {
+            registerExpressionStep(QueryPlanStepRegistry::instance());
+        }
+    } registered;
+}
+
 /// Smallest plan that owns a root node: a single source step.
 QueryPlan makeSourcePlan()
 {
@@ -49,6 +77,37 @@ QueryPlan makeSourcePlan()
 
     QueryPlan plan;
     plan.addStep(std::make_unique<ReadNothingStep>(makeHeader()));
+    return plan;
+}
+
+QueryPlan makeSetPlan(bool source_has_null, bool captured_in_mode = false)
+{
+    tryRegisterExpressionStep();
+
+    auto type = std::make_shared<DataTypeUInt8>();
+    ColumnsWithTypeAndName values{
+        {ColumnUInt8::create(1, UInt8{1}), type, "value"}};
+    auto future_set = std::make_shared<FutureSetFromTuple>(
+        FutureSet::Hash{}, nullptr, std::move(values), false, SizeLimits{}, false, source_has_null);
+
+    ActionsDAG actions(NamesAndTypesList{{"k", std::make_shared<DataTypeUInt64>()}});
+    auto set_column = ColumnConst::create(ColumnSet::create(1, future_set), 0);
+    const auto & set_node = actions.addColumn(std::move(set_column), std::make_shared<DataTypeSet>(), "set");
+    actions.getOutputs().push_back(&set_node);
+    if (captured_in_mode)
+    {
+        tryRegisterFunctions();
+        auto context = Context::createCopy(getContext().context);
+        context->setSetting("in_null_as_unknown", Field(UInt64{1}));
+        const auto & nullable_probe = actions.addFunction(
+            FunctionFactory::instance().get("toNullable", context), {actions.getInputs().front()}, {});
+        const auto & membership = actions.addFunction(
+            FunctionFactory::instance().get("in", context), {&nullable_probe, &set_node}, {});
+        actions.getOutputs().push_back(&membership);
+    }
+
+    auto plan = makeSourcePlan();
+    plan.addStep(std::make_unique<ExpressionStep>(makeHeader(), std::move(actions)));
     return plan;
 }
 
@@ -103,6 +162,55 @@ TEST(QueryPlanExecutionLimits, SerializationPreservesLimits)
 
     EXPECT_EQ(restored.getMaxThreads(), 4u);
     EXPECT_TRUE(restored.getConcurrencyControl());
+}
+
+TEST(QueryPlanExecutionLimits, SetSourceStateRequiresVersion22)
+{
+    auto ordinary_set = makeSetPlan(false);
+    WriteBufferFromOwnString old_format;
+    ASSERT_NO_THROW(ordinary_set.serialize(old_format, 21));
+
+    ReadBufferFromString old_input(old_format.str());
+    auto old_plan_and_sets = QueryPlan::deserialize(old_input, getContext().context, 0);
+    EXPECT_EQ(old_plan_and_sets.sets_from_tuple.size(), 1);
+    ASSERT_NO_THROW(QueryPlan::makeSets(std::move(old_plan_and_sets), getContext().context));
+
+    auto null_source_set = makeSetPlan(true);
+    WriteBufferFromOwnString incompatible;
+    try
+    {
+        null_source_set.serialize(incompatible, 21);
+        FAIL() << "Version 21 accepted logical NULL source state that its set keys omit";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::SUPPORT_IS_DISABLED);
+    }
+
+    WriteBufferFromOwnString new_format;
+    ASSERT_NO_THROW(null_source_set.serialize(new_format, 22));
+    ReadBufferFromString new_input(new_format.str());
+    auto new_plan_and_sets = QueryPlan::deserialize(new_input, getContext().context, 0);
+    EXPECT_EQ(new_plan_and_sets.sets_from_tuple.size(), 1);
+    ASSERT_NO_THROW(QueryPlan::makeSets(std::move(new_plan_and_sets), getContext().context));
+}
+
+TEST(QueryPlanExecutionLimits, CapturedMembershipModeRequiresVersion22)
+{
+    auto plan = makeSetPlan(false, true);
+    WriteBufferFromOwnString old_format;
+    try
+    {
+        plan.serialize(old_format, 21);
+        FAIL() << "Version 21 accepted a captured membership mode that its reader ignores";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    WriteBufferFromOwnString new_format;
+    ASSERT_NO_THROW(plan.serialize(new_format, 22));
 }
 
 TEST(QueryPlanExecutionLimits, ReplaceNodeWithPlanMergesConcurrencyControl)

@@ -41,6 +41,7 @@ namespace Setting
 {
     extern const SettingsBool external_table_strict_query;
     extern const SettingsBool external_storage_push_down_limit;
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsUInt64 parallel_replicas_count;
 }
 
@@ -607,7 +608,8 @@ bool isCompatible(
     const NamesAndTypesList & available_columns,
     RowValueContext row_value_context,
     const NameSet & unsupported_functions,
-    bool require_dialect_neutral_literals)
+    bool require_dialect_neutral_literals,
+    bool in_null_as_unknown)
 {
     /// The AST comes from a user query, so its depth is unbounded - fail with `TOO_DEEP_RECURSION`
     /// instead of exhausting the stack.
@@ -622,6 +624,11 @@ bool isCompatible(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "function->arguments is not set");
 
         String name = function->name;
+
+        /// External databases may use different `NULL` membership semantics, and the
+        /// literal-list renderer below discards `NULL` members. Keep these filters local.
+        if (in_null_as_unknown && (name == "in" || name == "notIn"))
+            return false;
 
         if (unsupported_functions.contains(name))
             return false;
@@ -686,7 +693,7 @@ bool isCompatible(
         for (size_t i = 0; i < arguments.size(); ++i)
             if (!isCompatible(arguments[i], literal_escaping_style, available_columns,
                               argumentRowValueContext(name, i, row_value_context), unsupported_functions,
-                              require_dialect_neutral_literals))
+                              require_dialect_neutral_literals, in_null_as_unknown))
                 return false;
 
         /// Normalize a single-row multi-column IN set so it does not collapse to scalars when
@@ -1105,7 +1112,7 @@ String transformQueryForExternalDatabaseImpl(
         ReplaceLiteralToExprVisitor(replace_literal_to_expr_data).visit(original_where);
 
         if (isCompatible(original_where, literal_escaping_style, pushdown_columns, RowValueContext::BooleanPredicate, unsupported_functions,
-                         require_dialect_neutral_literals))
+                         require_dialect_neutral_literals, context->getSettingsRef()[Setting::in_null_as_unknown]))
         {
             if (limit_push_down_allowed && original_where->dumpTree() == dumped_original_where)
                 where_fully_copied = true;
@@ -1131,7 +1138,8 @@ String transformQueryForExternalDatabaseImpl(
                     for (auto & elem : func->arguments->children)
                     {
                         if (isCompatible(elem, literal_escaping_style, pushdown_columns, RowValueContext::BooleanPredicate,
-                                         unsupported_functions, require_dialect_neutral_literals))
+                                         unsupported_functions, require_dialect_neutral_literals,
+                                         context->getSettingsRef()[Setting::in_null_as_unknown]))
                             new_function_and->arguments->children.push_back(elem);
                         else if (const auto * child = elem->as<ASTFunction>(); child && (child->name == "and" || child->name == "tuple"))
                             predicates.push(child);

@@ -1,5 +1,6 @@
 #pragma once
 #include <Interpreters/PreparedSets.h>
+#include <Core/ProtocolDefines.h>
 #include <Common/ListWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
@@ -23,6 +24,9 @@ struct SerializedSetsRegistry
     /// `ActionsDAG::serialize` (skips large constant values), that one drives the step's own
     /// `serialize`. Set both or neither.
     bool for_cache_key = false;
+    /// Standalone DAG serialization uses this binary's format; a transmitted
+    /// query plan overrides it with the negotiated peer version.
+    UInt64 query_plan_version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
 };
 
 class ColumnSet;

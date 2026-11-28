@@ -54,7 +54,7 @@ ColumnPtr convertColumnToTypeOrNull(
     bool convert_inexact_floats = false);
 ColumnPtr convertColumnToTypeOrNull(const IColumn & value, const DataTypePtr & from, const DataTypePtr & to);
 
-/// Same, but also returns `ColumnPtr{}` if conversion throws (twin of `tryConvertFieldToType`).
+/// Same, but also returns `ColumnPtr{}` for semantic conversion errors. Resource and unexpected errors propagate.
 ColumnPtr tryConvertColumnToTypeOrNull(
     const IColumn & value,
     const DataTypePtr & from,

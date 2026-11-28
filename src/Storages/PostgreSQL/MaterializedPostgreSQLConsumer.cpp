@@ -670,6 +670,8 @@ void MaterializedPostgreSQLConsumer::preserveUnchangedToastValues(StorageData & 
         auto select_context = Context::createCopy(context);
         select_context->makeQueryContext();
         select_context->setInternalQuery(true);
+        /// The generated key lookup must retain its established tuple membership semantics.
+        select_context->setSetting("in_null_as_unknown", false);
 
         InterpreterSelectQueryAnalyzer interpreter(
             select,

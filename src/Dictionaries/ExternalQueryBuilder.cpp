@@ -2,12 +2,19 @@
 
 #include <boost/range/join.hpp>
 
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
+
+#include <cmath>
+#include <cstring>
 
 namespace DB
 {
@@ -398,6 +405,9 @@ std::string ExternalQueryBuilder::composeLoadKeysQuery(
 
         composeKeysCondition(key_columns, requested_rows, method, partition_key_prefix, out);
 
+        if (!where.empty() && method != CASSANDRA_SEPARATE_PARTITION_KEY)
+            writeString(")", out);
+
         writeString(";", out);
 
         return out.str();
@@ -422,14 +432,14 @@ std::string ExternalQueryBuilder::composeLoadKeysQuery(
     const auto & condition_value = condition_value_buffer.str();
 
     auto query_copy = query;
-    query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), condition_value);
+    query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), "(" + condition_value + ")");
 
     return query_copy;
 }
 
 
 void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, size_t row, WriteBuffer & out,
-                                               size_t beg, size_t end) const
+                                               size_t beg, size_t end, bool handle_nan) const
 {
     auto first = true;
     for (size_t i = beg; i < end; ++i)
@@ -440,6 +450,23 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, size
         first = false;
 
         const auto & key_description = (*dict_struct.key)[i];
+
+        if (handle_nan && key_columns[i]->isNullAt(row))
+        {
+            writeString("isNull(", out);
+            writeQuoted(key_description.name, out);
+            writeChar(')', out);
+            continue;
+        }
+
+        if (handle_nan && isFloat(removeNullable(removeLowCardinality(key_description.type)))
+            && std::isnan(key_columns[i]->getFloat64(row)))
+        {
+            writeString("isNaN(", out);
+            writeQuoted(key_description.name, out);
+            writeChar(')', out);
+            continue;
+        }
 
         /// key_i=value_i
         writeQuoted(key_description.name, out);
@@ -469,7 +496,7 @@ void ExternalQueryBuilder::composeInWithTuples(const Columns & key_columns, cons
 }
 
 
-void ExternalQueryBuilder::composeKeyTupleDefinition(WriteBuffer & out, size_t beg, size_t end) const
+void ExternalQueryBuilder::composeKeyTupleDefinition(WriteBuffer & out, size_t beg, size_t end, bool reinterpret_float_keys) const
 {
     if (!dict_struct.key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Composite key required for method");
@@ -483,14 +510,30 @@ void ExternalQueryBuilder::composeKeyTupleDefinition(WriteBuffer & out, size_t b
             writeString(", ", out);
 
         first = false;
-        writeQuoted((*dict_struct.key)[i].name, out);
+        const auto & key = (*dict_struct.key)[i];
+        if (reinterpret_float_keys)
+        {
+            const auto type = removeNullable(removeLowCardinality(key.type));
+            switch (type->getTypeId())
+            {
+                case TypeIndex::BFloat16: writeString("reinterpretAsUInt16(", out); break;
+                case TypeIndex::Float32: writeString("reinterpretAsUInt32(", out); break;
+                case TypeIndex::Float64: writeString("reinterpretAsUInt64(", out); break;
+                default: break;
+            }
+            writeQuoted(key.name, out);
+            if (isFloat(type))
+                writeChar(')', out);
+        }
+        else
+            writeQuoted(key.name, out);
     }
 
     writeChar(')', out);
 }
 
 
-void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, size_t row, WriteBuffer & out, size_t beg, size_t end) const
+void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, size_t row, WriteBuffer & out, size_t beg, size_t end, bool reinterpret_float_keys) const
 {
     writeString("(", out);
 
@@ -501,8 +544,45 @@ void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, size_t r
             writeString(", ", out);
 
         first = false;
-        auto serialization = (*dict_struct.key)[i].type_serialization;
-        serialization->serializeTextQuoted(*key_columns[i], row, out, format_settings);
+        const auto & key = (*dict_struct.key)[i];
+        const auto type = removeNullable(removeLowCardinality(key.type));
+        if (reinterpret_float_keys && isFloat(type) && !key_columns[i]->isNullAt(row))
+        {
+            const auto data = key_columns[i]->getDataAt(row);
+            switch (type->getTypeId())
+            {
+                case TypeIndex::BFloat16:
+                {
+                    if (data.size() != sizeof(UInt16))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected BFloat16 dictionary key size: {}", data.size());
+                    UInt16 bits = 0;
+                    std::memcpy(&bits, data.data(), sizeof(bits));
+                    writeIntText(bits, out);
+                    break;
+                }
+                case TypeIndex::Float32:
+                {
+                    if (data.size() != sizeof(UInt32))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected Float32 dictionary key size: {}", data.size());
+                    UInt32 bits = 0;
+                    std::memcpy(&bits, data.data(), sizeof(bits));
+                    writeIntText(bits, out);
+                    break;
+                }
+                case TypeIndex::Float64:
+                {
+                    if (data.size() != sizeof(UInt64))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected Float64 dictionary key size: {}", data.size());
+                    UInt64 bits = 0;
+                    std::memcpy(&bits, data.data(), sizeof(bits));
+                    writeIntText(bits, out);
+                    break;
+                }
+                default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected floating dictionary key type");
+            }
+        }
+        else
+            key.type_serialization->serializeTextQuoted(*key_columns[i], row, out, format_settings);
     }
 
     writeString(")", out);
@@ -535,9 +615,65 @@ void ExternalQueryBuilder::composeIdsCondition(const VectorWithMemoryTracking<UI
 
 void ExternalQueryBuilder::composeKeysCondition(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix, WriteBuffer & out) const
 {
+    if (requested_rows.empty())
+    {
+        writeChar('0', out);
+        return;
+    }
+
     bool first = true;
 
-    if (method == AND_OR_CHAIN)
+    if (method == CLICKHOUSE_NULL_IN_WITH_TUPLES)
+    {
+        VectorWithMemoryTracking<size_t> regular_rows;
+        VectorWithMemoryTracking<size_t> nullable_rows;
+        for (const auto row : requested_rows)
+        {
+            bool has_null = false;
+            for (const auto & key_column : key_columns)
+            {
+                if (key_column->isNullAt(row))
+                    has_null = true;
+            }
+            (has_null ? nullable_rows : regular_rows).push_back(row);
+        }
+
+        if (regular_rows.empty() && nullable_rows.empty())
+        {
+            writeChar('0', out);
+            return;
+        }
+
+        auto write_null_in = [&](const VectorWithMemoryTracking<size_t> & rows, bool requires_null_policy)
+        {
+            if (rows.empty())
+                return;
+            if (!first)
+                writeString(" OR ", out);
+            if (requires_null_policy)
+                writeString("(getSetting('transform_null_in') AND ", out);
+            writeString("nullIn(", out);
+            composeKeyTupleDefinition(out, 0, key_columns.size(), true);
+            writeString(", (", out);
+            for (size_t index = 0; index < rows.size(); ++index)
+            {
+                if (index)
+                    writeString(", ", out);
+                composeKeyTuple(key_columns, rows[index], out, 0, key_columns.size(), true);
+            }
+            writeString("))", out);
+            if (requires_null_policy)
+                writeChar(')', out);
+            first = false;
+        };
+
+        write_null_in(regular_rows, false);
+        write_null_in(nullable_rows, true);
+
+        return;
+    }
+
+    if (method == AND_OR_CHAIN || method == CLICKHOUSE_AND_OR_CHAIN)
     {
         first = true;
         for (const auto row : requested_rows)
@@ -548,7 +684,7 @@ void ExternalQueryBuilder::composeKeysCondition(const Columns & key_columns, con
             first = false;
 
             writeString("(", out);
-            composeKeyCondition(key_columns, row, out, 0, key_columns.size());
+            composeKeyCondition(key_columns, row, out, 0, key_columns.size(), method == CLICKHOUSE_AND_OR_CHAIN);
             writeString(")", out);
         }
     }
@@ -572,10 +708,6 @@ void ExternalQueryBuilder::composeKeysCondition(const Columns & key_columns, con
             composeInWithTuples(key_columns, requested_rows, out, partition_key_prefix, key_columns.size());
     }
 
-    if (!where.empty() && method != CASSANDRA_SEPARATE_PARTITION_KEY)
-    {
-        writeString(")", out);
-    }
 }
 
 }

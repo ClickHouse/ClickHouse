@@ -1,0 +1,16 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <enable_database_materialized_postgresql>1</enable_database_materialized_postgresql>
+            <enable_materialized_postgresql_table>1</enable_materialized_postgresql_table>
+            <in_null_as_unknown>1</in_null_as_unknown>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+            <named_collection_control>1</named_collection_control>
+        </default>
+    </users>
+</clickhouse>

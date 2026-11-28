@@ -748,6 +748,23 @@ Block ProjectionDescription::calculateByQuery(
     if (block.rows() == 0)
         return sample_block.cloneEmpty();
 
+    auto mut_context = Context::createCopy(context);
+    /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.
+    /// Projection metadata uses the default `IN` semantics, so stored values must use them too.
+    mut_context->setSetting("aggregate_functions_null_for_empty", Field(0));
+    mut_context->setSetting("transform_null_in", Field(0));
+    mut_context->setSetting("in_null_as_unknown", Field(0));
+    /// The projection is calculated locally from the block, see `getProjectionFromAST`.
+    mut_context->setSetting("enable_parallel_replicas", Field(0));
+    /// Building the metadata analyzes `query_ast` in place, which already replaces its positional arguments,
+    /// so resolving them again would re-interpret the integer literals they were replaced with.
+    mut_context->setSetting("enable_positional_arguments", false);
+    /// A projection column is the stored `IN` expression, not a join it may be rewritten to.
+    mut_context->setSetting("rewrite_in_to_join", false);
+    /// Analyze the projection query as an initial one, as its metadata is built, also when the data
+    /// comes from a remote `INSERT`, which is executed as a `SECONDARY_QUERY`.
+    mut_context->setQueryKindInitial();
+
     /// Only keep required columns
     Block source_block;
     for (const auto & column : required_columns)
@@ -808,12 +825,12 @@ Block ProjectionDescription::calculateByQuery(
     }
 
     /// `_part_offset` is added above, so it is an ordinary column of the source block.
-    ProjectionPlanner planner(query_ast, ColumnsDescription(source_block.getNamesAndTypesList()), context);
+    ProjectionPlanner planner(query_ast, ColumnsDescription(source_block.getNamesAndTypesList()), mut_context);
     auto plan = type == ProjectionDescription::Type::Aggregate
         ? planner.buildPlanForAggregateProjection(std::move(source_block))
         : planner.buildPlanForNormalProjection(std::move(source_block));
 
-    auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+    auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(mut_context), BuildQueryPipelineSettings(mut_context));
     builder->resize(1);
 
     // Generate aggregated blocks with rows less or equal than the original block.

@@ -284,7 +284,12 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
                 auto block_key = block_keys_extractor.extractCurrentKey();
 
                 const auto * it = requested_key_to_index.find(block_key);
-                chassert(it);
+                if (!it)
+                {
+                    /// The source predicate may return keys equal in SQL but distinct in the dictionary's byte representation.
+                    block_keys_extractor.rollbackCurrentKey();
+                    continue;
+                }
 
                 auto & result_data_found_indexes = it->getMapped();
                 for (size_t result_data_found_index : result_data_found_indexes)

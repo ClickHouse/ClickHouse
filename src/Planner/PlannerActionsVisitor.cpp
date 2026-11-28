@@ -15,7 +15,9 @@
 #include <Analyzer/WindowNode.h>
 
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 
 #include <Common/FieldVisitorToString.h>
@@ -312,7 +314,11 @@ public:
                 {
                     const auto & in_first_argument_node = function_node.getArguments().getNodes().at(0);
                     const auto & in_second_argument_node = function_node.getArguments().getNodes().at(1);
-                    in_function_second_argument_node_name = PlannerContext::createSetKey(in_first_argument_node->getResultType(), in_second_argument_node);
+                    in_function_second_argument_node_name = PlannerContext::createSetKey(
+                        in_first_argument_node->getResultType(),
+                        in_second_argument_node,
+                        function_node.useNullAsUnknownSemanticsForIn()
+                            || function_node.getFunctionOrThrow()->useNullAsUnknownSemanticsForIn());
                 }
 
                 WriteBufferFromOwnString buffer;
@@ -1074,6 +1080,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     const auto & function_node = node->as<FunctionNode &>();
     auto in_first_argument = function_node.getArguments().getNodes().at(0);
     auto in_second_argument = function_node.getArguments().getNodes().at(1);
+    const bool use_null_as_unknown = function_node.useNullAsUnknownSemanticsForIn()
+        || function_node.getFunctionOrThrow()->useNullAsUnknownSemanticsForIn();
 
     DataTypes set_element_types;
 
@@ -1093,22 +1101,29 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
 
     if (!subquery_or_table)
     {
-        set_element_types = {in_first_argument->getResultType()};
+        set_key = PreparedSets::distinguishNullMode(set_key, use_null_as_unknown);
+        auto set_element_type = in_first_argument->getResultType();
+        const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+        if (use_null_as_unknown)
+            set_element_type = makeNullableOrLowCardinalityNullableSafe(set_element_type);
+
+        set_element_types = {std::move(set_element_type)};
         const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
 
         /// Do not unpack if empty tuple or single element tuple
         if (left_tuple_type && left_tuple_type->getElements().size() > 1)
             set_element_types = left_tuple_type->getElements();
 
-        set_element_types
-            = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef()[Setting::transform_null_in]);
+        set_element_types = Set::getElementTypes(
+            std::move(set_element_types), settings[Setting::transform_null_in] || use_null_as_unknown);
         set = planner_context->getPreparedSets().findTuple(set_key, set_element_types);
     }
     else
     {
+        set_key = PreparedSets::distinguishNullMode(set_key, use_null_as_unknown);
         set = planner_context->getPreparedSets().findSubquery(set_key);
         if (!set)
-            set = planner_context->getPreparedSets().findStorage(set_key);
+            set = planner_context->getPreparedSets().findStorage(in_second_argument->getTreeHash({ .ignore_cte = true }));
     }
 
     if (!set)
@@ -1116,7 +1131,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             "No set is registered for key {}",
             PreparedSets::toString(set_key, set_element_types));
 
-    auto name = DB::PlannerContext::createSetKey(in_first_argument->getResultType(), in_second_argument);
+    auto name = DB::PlannerContext::createSetKey(in_first_argument->getResultType(), in_second_argument, use_null_as_unknown);
     auto type = std::make_shared<DataTypeSet>();
     ColumnConstPtr column = ColumnConst::create(ColumnSet::create(1, std::move(set)), 0);
 

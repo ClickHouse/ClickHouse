@@ -29,8 +29,10 @@
 #include <Interpreters/Set.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/SetSerialization.h>
+#include <Functions/IFunction.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Base64.h>
 
@@ -40,6 +42,7 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <vector>
 
 
 namespace ProfileEvents
@@ -56,6 +59,7 @@ namespace Setting
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsString cluster_table_function_pushed_down_filter;
     extern const SettingsBool parallel_replicas_local_plan;
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
 }
@@ -138,6 +142,47 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
         predicate = filter->getOutputs().at(0);
 
     pushed_down_filter.clear();
+    if (filter)
+    {
+        bool has_ordinary_in = false;
+        bool unsafe_in_filter = false;
+        for (const auto & node : filter->getNodes())
+        {
+            if (!node.function_base)
+                continue;
+            const auto & name = node.function_base->getName();
+            if (name != "in" && name != "notIn" && name != "globalIn" && name != "globalNotIn")
+                continue;
+            has_ordinary_in = true;
+            unsafe_in_filter |= node.function_base->useNullAsUnknownSemanticsForIn();
+        }
+
+        if (has_ordinary_in && context->getSettingsRef()[Setting::in_null_as_unknown])
+            unsafe_in_filter = true;
+        if (has_ordinary_in && !unsafe_in_filter)
+        {
+            std::vector<const IAST *> pending{query_to_send.get()};
+            while (!pending.empty())
+            {
+                const auto * ast = pending.back();
+                pending.pop_back();
+                if (const auto * set_query = ast->as<ASTSetQuery>())
+                    for (const auto & change : set_query->changes)
+                        if (change.name == "in_null_as_unknown")
+                            unsafe_in_filter = true;
+                for (const auto & child : ast->children)
+                    pending.push_back(child.get());
+            }
+        }
+        if (unsafe_in_filter)
+        {
+            /// The filter's function and ready set were built under the outer mode.
+            /// A worker can rebuild the set under the inner mode, changing its NULL keys.
+            createExtension(nullptr, false);
+            return;
+        }
+    }
+
     const auto * select = query_to_send->as<ASTSelectQuery>();
     /// Only then is the header the select list: otherwise it holds the aggregation keys and states,
     /// the arguments of the window functions, or the columns read.
@@ -166,14 +211,14 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
     createExtension(predicate);
 }
 
-void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
+void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate, bool use_filter)
 {
     if (extension)
         return;
 
     extension = storage->getTaskIteratorExtension(
         predicate,
-        filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get(),
+        use_filter ? (filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get()) : nullptr,
         context,
         cluster,
         getStorageSnapshot()->metadata);

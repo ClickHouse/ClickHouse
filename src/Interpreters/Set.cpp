@@ -391,6 +391,8 @@ size_t NO_INLINE Set::insertFromBlockImplCase(
         {
             if ((*null_map)[i])
             {
+                if (i == 0)
+                    has_input_rows.store(true);
                 if constexpr (build_filter)
                 {
                     (*out_filter)[i] = false;
@@ -400,6 +402,16 @@ size_t NO_INLINE Set::insertFromBlockImplCase(
         }
 
         auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+
+        if (i == 0)
+            has_input_rows.store(true);
+
+        /// Publish the null marker only after its key was accepted. A later row
+        /// can throw while the already inserted keys remain visible.
+        if (transform_null_in && keys_size == 1 && key_columns[0]->isNullAt(i))
+            contains_null_row.store(true);
+        else if (transform_null_in && keys_size == 1)
+            contains_non_null_row.store(true);
 
         if constexpr (build_filter)
             (*out_filter)[i] = emplace_result.isInserted();
@@ -594,7 +606,22 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder,
     {
         auto keys = compute_disk_set_keys(holder.key_columns, key_sizes, rows, null_map);
         if (!keys->empty())
+        {
             disk_set_builder->add(std::move(keys));
+            has_input_rows.store(true);
+            if (transform_null_in && keys_size == 1)
+            {
+                for (size_t row = 0; row < rows; ++row)
+                {
+                    if (holder.key_columns[0]->isNullAt(row))
+                        contains_null_row.store(true);
+                    else
+                        contains_non_null_row.store(true);
+                }
+            }
+        }
+        else if (rows != 0)
+            has_input_rows.store(true);
         return true;
     }
 
@@ -865,21 +892,15 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
 bool Set::hasNull() const
 {
-    checkIsCreated();
+    /// Observe the marker and inserted keys after the same critical section.
+    std::shared_lock lock(rwlock);
+    return transform_null_in && contains_null_row.load();
+}
 
-    if (!transform_null_in)
-        return false;
-
-    if (data_types.size() != 1)
-        return false;
-
-    if (!data_types[0]->isNullable())
-        return false;
-
-    auto col = data_types[0]->createColumn();
-    col->insert(Field());
-    auto res = execute({ColumnWithTypeAndName(std::move(col), data_types[0], std::string())}, false);
-    return res->getBool(0);
+bool Set::hasOnlyNull() const
+{
+    std::shared_lock lock(rwlock);
+    return transform_null_in && contains_null_row.load() && !contains_non_null_row.load();
 }
 
 bool Set::empty() const

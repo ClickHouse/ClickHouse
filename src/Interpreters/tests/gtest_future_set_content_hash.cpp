@@ -233,3 +233,18 @@ TEST(FutureSetContentHash, NullsFilteredWhenTransformNullInDisabled)
     EXPECT_EQ(contentHash(makeBlockWithNull({"a", std::nullopt})),
               contentHash(makeBlockWithNull({"a"})));
 }
+
+TEST(FutureSetContentHash, SemanticSourceState)
+{
+    auto makeHash = [](ColumnsWithTypeAndName block, bool source_is_empty, bool source_has_null)
+    {
+        auto future_set = std::make_shared<FutureSetFromTuple>(
+            FutureSet::Hash{}, nullptr, std::move(block), false, SizeLimits{}, source_is_empty, source_has_null);
+        return future_set->getContentHash();
+    };
+
+    EXPECT_NE(makeHash(makeUInt64Block({}), true, false),
+              makeHash(makeUInt64Block({}), false, false));
+    EXPECT_NE(makeHash(makeUInt64Block({2}), false, false),
+              makeHash(makeUInt64Block({2}), false, true));
+}

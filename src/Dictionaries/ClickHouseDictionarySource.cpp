@@ -142,7 +142,11 @@ BlockIO ClickHouseDictionarySource::loadIds(const VectorWithMemoryTracking<UInt6
 
 BlockIO ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
-    String query = query_builder->composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
+    /// Evaluate the source user's `transform_null_in` policy where the generated
+    /// query runs; a remote source can have a different profile from this context.
+    const auto method = ExternalQueryBuilder::CLICKHOUSE_NULL_IN_WITH_TUPLES;
+    String query = query_builder->composeLoadKeysQuery(
+        key_columns, requested_rows, method);
     return createStreamForQuery(query);
 }
 
@@ -209,7 +213,6 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
     auto empty_sample_block = std::make_shared<const Block>(sample_block.cloneEmpty());
 
     auto context_copy = createQueryContext();
-
     checkQueryIsSelect(query, "Query for ClickHouse dictionary", "Only SELECT query can be used as a dictionary source");
 
     if (configuration.is_local)

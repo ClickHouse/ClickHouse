@@ -84,6 +84,7 @@ namespace Setting
     extern const SettingsBool analyze_index_with_multiple_key_columns_per_condition;
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsTimezone session_timezone;
     extern const SettingsBool validate_enum_literals_in_operators;
 }
@@ -1608,7 +1609,21 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     && !(need_inversion && isFloatComparison(name, children)))
                 {
                     const auto & func_name = need_inversion ? it->second : it->first;
-                    auto function_builder = FunctionFactory::instance().get(func_name, context);
+                    ContextPtr function_context = context;
+                    if (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn"
+                        || name == "nullIn" || name == "notNullIn" || name == "globalNullIn" || name == "globalNullNotIn")
+                    {
+                        /// Internal set predicates can capture different `NULL` semantics from the query.
+                        /// Keep those semantics when rebuilding the function for index analysis.
+                        const bool original_null_semantics = node.function_base->useNullAsUnknownSemanticsForIn();
+                        if (original_null_semantics != context->getSettingsRef()[Setting::in_null_as_unknown])
+                        {
+                            auto modified_context = Context::createCopy(context);
+                            modified_context->setSetting("in_null_as_unknown", Field(original_null_semantics));
+                            function_context = modified_context;
+                        }
+                    }
+                    auto function_builder = FunctionFactory::instance().get(func_name, function_context);
                     res = &inverted_dag.addFunction(function_builder, children, "");
                     /// `res` is a non-inverted condition over wrapper-free arguments; rewrite it so a later pass keeps the same RPN layout.
                     if (boolean_context)
@@ -3237,47 +3252,6 @@ static bool executeDeterministicDag(
 }
 
 
-/// Applies a deterministic key-transform DAG to `in_column` and writes the transformed column/type to
-/// `out_column`/`out_type`.
-/// Intended for transforming constants (or IN-set elements) into "key space", so that the transformed
-/// values can be compared against key marks directly.
-///
-/// The function is intentionally conservative and returns false if the transformation cannot be proven
-/// safe for all values in `in_column`. In particular, it will fail if:
-/// - A required type conversion cannot be applied accurately for all values (casts that would produce NULLs).
-/// - Executing the DAG throws for some value from `in_column`.
-/// - The output contains NULLs (Nullable output is allowed only if it contains no NULLs; it is then unwrapped).
-///
-/// If `in_type` differs from `dag.input_type`, `in_column` is cast to `dag.input_type` (without introducing
-/// NULLs) before the DAG is executed.
-///
-/// Examples:
-/// - DAG `p -> cityHash64(p)`:
-///   input:  `['abc']`  type `String`
-///   output: `[cityHash64('abc')]`  type `UInt64`
-/// - DAG `p -> CAST(p, 'UInt8')`:
-///   input:  `['123']`  type `String`
-///   output: `[123]`  type `UInt8`
-static bool applyDeterministicDagToColumn(
-    const ColumnPtr & in_column,
-    const DataTypePtr & in_type,
-    const String & input_name,
-    const DeterministicKeyTransformDag & dag,
-    ColumnPtr & out_column,
-    DataTypePtr & out_type,
-    bool & out_cast_is_exact)
-{
-    ColumnPtr transform_input_column;
-    DataTypePtr transform_input_type;
-
-    if (!convertColumnForDeterministicDag(
-            in_column, in_type, dag, transform_input_column, transform_input_type, out_cast_is_exact))
-        return false;
-
-    return executeDeterministicDag(dag, transform_input_column, transform_input_type, input_name, out_column, out_type);
-}
-
-
 /// Whether a value of `input_type`, the column a deterministic key expression consumes, may hold a `NULL`
 /// that the key value of `key_type` no longer reveals: a top-level `NULL` mapped to a non-`Nullable` key,
 /// or a `NULL` nested in a `Tuple`. `toString` of a `Tuple(Nullable(Int32), Int32)` turns `(NULL, 1)`
@@ -3740,6 +3714,7 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
     DataTypes & set_types,
     const SetAtomCandidate & candidate,
     bool membership_compares_carriers,
+    bool zero_signs_can_match,
     bool & out_is_exact)
 {
     out_is_exact = true;
@@ -3859,14 +3834,36 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
                 return false;
 
             bool dag_cast_is_exact = true;
-            if (!applyDeterministicDagToColumn(
-                    set_column,
-                    set_element_type,
-                    set_transforming_dag.input_name,
-                    set_transforming_dag,
-                    transformed_set_column,
-                    transformed_set_type,
-                    dag_cast_is_exact))
+            ColumnPtr transform_input_column;
+            DataTypePtr transform_input_type;
+            if (!convertColumnForDeterministicDag(
+                    set_column, set_element_type, set_transforming_dag,
+                    transform_input_column, transform_input_type, dag_cast_is_exact))
+                return false;
+
+            /// A matching float zero may have the opposite sign from the retained
+            /// set element. A key transform that distinguishes the signs cannot
+            /// safely prune on just the transformed retained value.
+            if (zero_signs_can_match)
+            {
+                bool contains_float_zero = false;
+                for (size_t row = 0; row < transform_input_column->size(); ++row)
+                {
+                    if (anyFieldSatisfies((*transform_input_column)[row], isFloatZeroField))
+                    {
+                        contains_float_zero = true;
+                        break;
+                    }
+                }
+                if (contains_float_zero
+                    && !deterministicTransformMapsFloatZerosAlike(
+                        set_transforming_dag, transform_input_type, set_transforming_dag.input_name))
+                    return false;
+            }
+
+            if (!executeDeterministicDag(
+                    set_transforming_dag, transform_input_column, transform_input_type,
+                    set_transforming_dag.input_name, transformed_set_column, transformed_set_type))
                 return false;
 
             if (!dag_cast_is_exact)
@@ -4270,7 +4267,9 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
     /// `IN` asks the `Set`, which compares value carriers, while `has` compares values.
     const bool membership_compares_carriers = !has_element_type;
     bool set_is_exact = true;
-    if (!tryPrepareSetColumnsForIndex(atom_set_columns, atom_set_types, candidate, membership_compares_carriers, set_is_exact))
+    const bool zero_signs_can_match = membership_compares_carriers && source_set && source_set->transformNullIn();
+    if (!tryPrepareSetColumnsForIndex(
+            atom_set_columns, atom_set_types, candidate, membership_compares_carriers, zero_signs_can_match, set_is_exact))
         return std::nullopt;
 
     if (setElementsContainNaN(atom_set_columns, candidate))
@@ -4423,6 +4422,17 @@ void KeyCondition::prepareSetAtomsForIn(
     /// The index can be prepared if the elements of the set were saved in advance.
     if (!prepared_set->hasExplicitSetElements())
         return;
+
+    const auto & function_name = func.getFunctionName();
+    const bool is_negative = function_name == "notIn" || function_name == "globalNotIn"
+        || function_name == "notNullIn" || function_name == "globalNotNullIn";
+    if (is_negative && func.getFunctionBase()->useNullAsUnknownSemanticsForIn() && prepared_set->hasNull())
+    {
+        /// With standard NULL semantics, a match makes `NOT IN` false and a miss makes it NULL.
+        /// Therefore a set containing NULL cannot make a negative predicate true for any key.
+        group.atoms.emplace_back(RPNElement::ALWAYS_FALSE);
+        return;
+    }
 
     /** Try to convert set columns to primary key columns.
       * Example: SELECT id FROM test_table WHERE id IN (SELECT 1);

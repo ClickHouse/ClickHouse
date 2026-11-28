@@ -73,6 +73,8 @@ public:
     }
 
     void updateHash(SipHash & hash) const override { function->updateHash(hash); }
+    [[nodiscard]] bool useNullAsUnknownSemanticsForIn() const override { return function->useNullAsUnknownSemanticsForIn(); }
+    [[nodiscard]] bool isInMembershipFunction() const override { return function->isInMembershipFunction(); }
 
     const DataTypes & getArgumentTypes() const override { return arguments; }
     const DataTypePtr & getResultType() const override { return result_type; }
@@ -178,6 +180,9 @@ public:
 
     String getName() const override { return function->getName(); }
     void checkAccessOnBuild() const override { function->checkAccessOnBuild(); }
+    void updateHash(SipHash & hash) const override { function->updateHash(hash); }
+    bool useNullAsUnknownSemanticsForIn() const override { return function->useNullAsUnknownSemanticsForIn(); }
+    bool isInMembershipFunction() const override { return function->isInMembershipFunction(); }
     bool isStateful() const override { return function->isStateful(); }
     bool isVariadic() const override { return function->isVariadic(); }
     bool isServerConstant() const override { return function->isServerConstant(); }

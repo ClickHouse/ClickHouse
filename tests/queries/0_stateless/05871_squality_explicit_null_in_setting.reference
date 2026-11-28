@@ -1,0 +1,12 @@
+0	1	0	1
+UInt8	UInt8	UInt8	UInt8
+1	0
+0	1
+Nullable(UInt8)	\N	0	UInt8
+0	\N
+\N	0
+Nullable(UInt8)	\N	0	UInt8
+0	\N
+\N	0
+0	\N
+\N	0

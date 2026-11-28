@@ -230,10 +230,13 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
     return table_expression_data->getColumnIdentifierOrNull(column_name);
 }
 
-PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node)
+PlannerContext::SetKey PlannerContext::createSetKey(
+    const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node, bool use_null_as_unknown)
 {
     /// Here and in other places, ignore the CTE name to make the distributed header compatible (we substitute CTE with a subquery).
-    const auto set_source_hash = set_source_node->getTreeHash({ .compare_aliases = false, .ignore_cte = true });
+    const auto set_source_hash = PreparedSets::distinguishNullMode(
+        set_source_node->getTreeHash({ .compare_aliases = false, .ignore_cte = true }),
+        use_null_as_unknown);
     if (set_source_node->as<ConstantNode>())
     {
         /* We need to hash the type of the left operand because we can build different sets for different types.

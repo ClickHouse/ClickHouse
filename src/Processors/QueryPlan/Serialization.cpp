@@ -145,6 +145,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
     }
 
     SerializedSetsRegistry registry;
+    registry.query_plan_version = flags.version;
 
     struct Frame
     {

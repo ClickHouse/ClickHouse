@@ -200,16 +200,20 @@ private:
         QueryTreeNodePtr element_arg,
         bool is_not_in,
         bool compare_nulls,
+        bool use_standard_null_semantics,
         const ProjectionNames & arguments_projection_names,
         const ProjectionNames & parameters_projection_names,
-        IdentifierResolveScope & scope);
+        IdentifierResolveScope & scope,
+        std::optional<bool> source_is_empty,
+        QueryTreeNodePtr source_null_predicate,
+        QueryTreeNodePtr extra_match_predicate = nullptr);
 
     QueryTreeNodePtr convertTupleToArray(
-        const QueryTreeNodes & tuple_args,
+        const QueryTreeNodes & array_elements,
         const QueryTreeNodePtr & in_first_argument,
         IdentifierResolveScope & scope,
-        bool expand_single_tuple_value,
-        bool compare_nulls);
+        bool compare_nulls,
+        bool use_standard_null_semantics);
 
     QueryTreeNodes getArrayElementsForInTupleArguments(
         const QueryTreeNodes & tuple_args,
