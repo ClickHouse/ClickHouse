@@ -1,0 +1,111 @@
+---
+slug: /clickstack/observability/ingesting-data/sdks/instrument-with-ai
+title: 'AI でインストルメントする'
+sidebarTitle: 'AI でインストルメントする'
+description: 'コーディングアシスタントと各言語の SDK ガイドを活用して、ClickHouse オブザーバビリティ向けにアプリケーションをインストルメントします。'
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+コーディングアシスタントを使用し、アプリケーションの言語またはフレームワークに対応するガイドに沿ってインストルメンテーションを追加します。アシスタントは、エントリーポイントの特定、適切な SDK のインストール、テレメトリーのエクスポート設定を行えます。
+
+自動計装では、サポート対象のライブラリやフレームワークのテレメトリーが取得されます。ただし、言語やアプリケーションによっては、ビジネス上の操作を捕捉するためにコードの変更やカスタムスパンが必要になる場合があります。生成された変更内容は、デプロイ前に必ず確認してください。
+
+## 始める前に {#before-you-begin}
+
+アプリケーションのソースコード、リポジトリへのアクセス権を持つコーディングアシスタント、および ClickHouse オブザーバビリティの宛先を用意してください。アプリケーションに応じて適切な[言語別 SDK ガイド](/ja/clickstack/observability/ingesting-data/sdks)を選択します。このガイドには、使用する SDK パッケージ、サポートされているシグナル、エクスポーターの設定が記載されています。
+
+## 宛先を設定する {#configure-your-destination}
+
+<Tabs>
+  <Tab title="完全マネージド型">
+    <BetaBadge label="ベータ版" />
+
+    **チーム設定 → Data → Managed Telemetry** を開き、OTLP HTTP エンドポイントとインジェスト API key をコピーします。これらは、バージョン管理の対象外にした環境ファイルか、シークレットストアに保存してください。
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![マスクされた OTLP HTTP エンドポイントと APIキーが表示された Managed Telemetry](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    サービスに **はじめに** ページが表示されている場合は、代わりに **AI でインストルメントする** の下にある **Copy prompt** を選択することもできます。**Set it up with an AI agent** からプロンプトをコピーし、そのダイアログに表示される `CLICKSTACK_OTLP_ENDPOINT` と `CLICKSTACK_API_KEY` の変数を設定します。その後、以下の残りの確認および所有権確認の手順を実施してください。
+  </Tab>
+
+  <Tab title="セルフマネージド">
+    ClickHouse Cloud サービスに接続された、稼働中の OpenTelemetry collector が必要です。collector の設定方法については、[OpenTelemetry によるデータの取り込み](/ja/clickstack/observability/ingesting-data/opentelemetry#self-managed) を参照してください。
+
+    collector の OTLP エンドポイントと、設定済みのインジェストキーを使用します。認証フォーマットとエクスポーターの設定については、各言語の SDK ガイドにある **セルフマネージド** タブを参照してください。
+  </Tab>
+</Tabs>
+
+## アシスタントに言語ガイドを渡す {#give-your-assistant-the-language-guide}
+
+Claude Code、Cursor、Codex などのコーディングアシスタントで、アプリケーションのリポジトリを開きます。次のプロンプトをコピーし、プレースホルダーを言語ガイドの URL、デプロイメントの種類、サービス名に置き換えてください。認証情報はプロンプトに直接貼り付けず、代わりに環境変数の名前を指定してください。
+
+```text wrap
+Instrument this application to send telemetry to ClickHouse Observability.
+
+Language or framework guide: <LANGUAGE_SDK_GUIDE_URL>
+Destination: <fully managed or self-managed>
+Service name: <SERVICE_NAME>
+Endpoint environment variable: <ENDPOINT_VARIABLE_NAME>
+Ingestion key environment variable: <API_KEY_VARIABLE_NAME>
+
+Read the linked guide and use the instructions for my destination.
+Inspect the application's language, framework, dependencies, and startup
+commands before making changes. If you cannot read the guide, ask me for
+its contents rather than guessing SDK names or configuration.
+
+Reuse existing OpenTelemetry instrumentation where present. Otherwise,
+install the SDK and supported automatic instrumentation described in the
+guide. Initialize instrumentation at the point required by that SDK.
+Use the guide's protocol, endpoint, and authentication format, reading
+connection values from the environment. Do not hardcode or print secrets.
+
+Preserve the application's existing behavior. Check for duplicate SDK
+initialization, exporters, and logging handlers, including those installed
+by automatic instrumentation. If logs are supported, check both the
+application's logging level and the SDK's export level so the test log
+is captured once. Use the language guide's settings for these checks.
+
+Explain which signals are supported and any operations that need manual
+instrumentation. Do not assume every SDK exports logs, metrics, traces,
+or session replay.
+
+Update the startup command and document the required environment variables.
+Run the application's existing checks and a local startup check. Exercise
+an instrumented operation with a unique test marker. If logs are supported,
+emit one test log during that operation at an enabled severity. Allow time
+for batched export or flush telemetry before shutting down.
+
+When you have destination access, find the test events there and verify
+the service name, marker, and absence of duplicates. If log-to-trace
+correlation is supported, check that the test log references the operation's
+trace and span. Distinguish local export, endpoint acceptance, and events
+stored in ClickHouse Observability; startup or an HTTP success response
+alone does not prove storage.
+
+Summarize the changes, tests performed, and results. Clearly state which
+checks you could not run and give me the remaining verification steps.
+```
+
+このプロンプト内の変数名は、接続値の保存場所を示すものです。SDK が必要とする変数の代わりになるものではありません。アシスタントは、これらの変数を各言語ガイドに記載されている設定に対応付ける必要があります。ブラウザーアプリケーションの場合は、ブラウザー固有のエンドポイントとキーの設定も含め、[ブラウザー SDK ガイド](/ja/clickstack/observability/ingesting-data/sdks/browser)に従ってください。
+
+## アプリケーションの確認と実行 {#review-and-run-the-application}
+
+依存関係、初期化、起動に関する変更内容を確認します。アシスタントが正しい宛先と認証フォーマットを選択していること、既存のインストルメンテーションが維持されていること、コミット済みのファイルにシークレットが含まれていないことを確認してください。
+
+アプリケーションの既存のテストを実行してから、更新されたコマンドと環境でアプリケーションを起動します。続いて、計装済みのライブラリが処理するリクエストを送信するか、該当する操作を実行します。自動計装では収集されない操作のテレメトリーが必要な場合は、SDK の API を使用してカスタムスパンを追加するようアシスタントに依頼してください。
+
+## テレメトリーを確認する {#verify-telemetry}
+
+1. ClickHouse オブザーバビリティで[検索](/ja/clickstack/observability/features/search)を開きます。
+2. 該当するログまたはトレースのログソースを選択し、テスト時のアクティビティを含む時間範囲を指定します。
+3. サービス名でフィルタし、生成されたイベントを確認します。想定したリクエストまたは操作が表示されていることを確認してください。
+4. SDK がメトリクスをエクスポートしている場合は、[Chart Explorer](/ja/clickstack/observability/features/dashboards/overview#navigate-chart-explorer) で確認します。
+
+アプリケーションが正常に起動したからといって、テレメトリーが送信されているとは限りません。イベントが表示されない場合は、アプリケーションのエクスポーターのエラー、エンドポイント、プロトコル、認証設定を確認してください。セルフマネージドのデプロイメントでは、collector のログも確認してください。
+
+アプリケーションの完全な例については、[HackerNews Analyzer のデモ](/ja/clickstack/observability/example-datasets/instrument-application)を参照してください。

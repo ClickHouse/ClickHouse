@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'Entra ID', 'Azure AD', 'Microsoft', 'OAuth', 'OIDC', 'app roles', 'authentication', 'identity provider']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import { EnterprisePlanFeatureBadge } from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 import { VersionBadge } from "/snippets/fr/components/VersionBadge/VersionBadge.jsx";
@@ -50,15 +48,19 @@ Vous aurez besoin des éléments suivants :
 
 <Steps>
   <Step title="Créer l’inscription d’application" id="create-app-registration">
-    Dans le centre d’administration Microsoft Entra, ouvrez **App registrations** et sélectionnez **New registration** :
+    Dans le centre d’administration Microsoft Entra, ouvrez **App registrations** et sélectionnez **New registration** :
 
-    * **Name** : un nom d’affichage, par exemple `clickhouse-cloud-production`.
-    * **Supported account types** : locataire unique. Selon la version du portail, cette option s’intitule **Single tenant only** ou **Accounts in this organizational directory only**.
-    * **Redirect URI** : laissez ce champ vide. Les utilisateurs se connectent via le flux de code d’appareil (device code flow), qui n’utilise pas d’URI de redirection.
+    * **Name** : un nom d’affichage, par exemple `clickhouse-cloud-production`.
+    * **Supported account types** : locataire unique. Selon la version du portail, cette option s’intitule **Single tenant only** ou **Accounts in this organizational directory only**.
+    * **Redirect URI** : laissez ce champ vide. Les utilisateurs se connectent via le flux de code d’appareil (device code flow), qui n’utilise pas d’URI de redirection.
 
-    <Image img="/images/cloud/security/jwt/entra-register-application.webp" size="lg" alt="Formulaire d’inscription d’une application dans le centre d’administration Microsoft Entra, avec un type de compte à locataire unique et sans URI de redirection" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Formulaire d’inscription d’une application dans le centre d’administration Microsoft Entra, avec un type de compte à locataire unique et sans URI de redirection](/images/cloud/security/jwt/entra-register-application.webp)
+      </Frame>
+    </div>
 
-    Sélectionnez **Register**. Sur la page **Overview**, copiez les valeurs suivantes :
+    Sélectionnez **Register**. Sur la page **Overview**, copiez les valeurs suivantes :
 
     * **Application (client) ID**, désigné ci-après par `<CLIENT_ID>`. Il devient la revendication `aud` des jetons.
     * **Directory (tenant) ID**, désigné ci-après par `<TENANT_ID>`. Il entre dans la composition de l’émetteur et de l’URL JWKS.
@@ -72,7 +74,11 @@ Vous aurez besoin des éléments suivants :
     * Format Microsoft Graph : `requestedAccessTokenVersion` dans la section `api`.
     * Format Azure AD Graph : la propriété de premier niveau `accessTokenAcceptedVersion`, comme dans la capture d’écran ci-dessous.
 
-    <Image img="/images/cloud/security/jwt/entra-manifest-token-version.webp" size="lg" alt="Éditeur du manifest de l’application avec accessTokenAcceptedVersion défini sur 2" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Éditeur du manifest de l’application avec accessTokenAcceptedVersion défini sur 2](/images/cloud/security/jwt/entra-manifest-token-version.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Exposer une API" id="expose-an-api">
@@ -80,7 +86,11 @@ Vous aurez besoin des éléments suivants :
 
     1. À côté de **Application ID URI**, sélectionnez **Add**, acceptez la valeur par défaut `api://<CLIENT_ID>`, puis enregistrez. Les clients utilisent cet URI pour demander des jetons pour ClickHouse. Il ne modifie pas la revendication `aud` des jetons v2.0, qui reste l&#39;ID client.
 
-       <Image img="/images/cloud/security/jwt/entra-application-id-uri.webp" size="lg" alt="Page Expose an API avec le panneau Application ID URI affichant la valeur api:// par défaut" />
+       <div className="ch-image-lg">
+         <Frame>
+           ![Page Expose an API avec le panneau Application ID URI affichant la valeur api:// par défaut](/images/cloud/security/jwt/entra-application-id-uri.webp)
+         </Frame>
+       </div>
 
     2. Sélectionnez **Add a scope** et remplissez le formulaire. Les utilisateurs demandent cette portée lors de leur connexion. Les applications qui s&#39;authentifient en leur propre nom ne l&#39;utilisent pas.
 
@@ -92,7 +102,11 @@ Vous aurez besoin des éléments suivants :
        | **Admin consent description**  | Description au choix                                   |
        | **State**                      | **Enabled**                                            |
 
-       <Image img="/images/cloud/security/jwt/entra-add-scope.webp" size="lg" alt="Panneau Add a scope avec la portée access_as_application, le consentement réservé aux administrateurs et l'état défini sur Enabled" />
+       <div className="ch-image-lg">
+         <Frame>
+           ![Panneau Add a scope avec la portée access_as_application, le consentement réservé aux administrateurs et l'état défini sur Enabled](/images/cloud/security/jwt/entra-add-scope.webp)
+         </Frame>
+       </div>
   </Step>
 
   <Step title="Autoriser une application cliente à connecter les utilisateurs" id="authorize-client-application">
@@ -100,7 +114,11 @@ Vous aurez besoin des éléments suivants :
 
     Dans **Expose an API**, sous **Authorized client applications**, sélectionnez **Add a client application**. Saisissez `04b07795-8ddb-461a-bbee-02f9e1bf7b46`, sélectionnez la portée `api://<CLIENT_ID>/access_as_application`, puis sélectionnez **Add application**.
 
-    <Image img="/images/cloud/security/jwt/entra-authorize-client-application.webp" size="lg" alt="Panneau Add a client application avec l'ID client d'Azure CLI et la portée access_as_application sélectionnée" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Panneau Add a client application avec l'ID client d'Azure CLI et la portée access_as_application sélectionnée](/images/cloud/security/jwt/entra-authorize-client-application.webp)
+      </Frame>
+    </div>
 
     <Note>
       Pour utiliser votre propre application cliente plutôt qu&#39;Azure CLI, enregistrez une application distincte, définissez **Allow public client flows** sur **Yes** sous **Authentication**, puis pré-autorisez son ID client ici. Transmettez ensuite cet ID client via `--oauth-client-id` lorsque vous [vous connectez avec clickhouse-client](#sign-in-with-clickhouse-client). Si votre locataire n&#39;autorise pas le consentement des utilisateurs, un administrateur doit également donner son consentement pour les autorisations `openid`, `profile` et `offline_access` de cette application.
@@ -122,19 +140,31 @@ Vous aurez besoin des éléments suivants :
 
     L’exemple suivant définit trois rôles d’application dont les valeurs sont des noms de rôles ClickHouse :
 
-    <Image img="/images/cloud/security/jwt/entra-app-roles.webp" size="lg" alt="Page App roles répertoriant ClickHouse Admin, ClickHouse Analyst DB et ClickHouse Read Only avec les valeurs ch_admin, ch_analyst et ch_readonly" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Page App roles répertoriant ClickHouse Admin, ClickHouse Analyst DB et ClickHouse Read Only avec les valeurs ch_admin, ch_analyst et ch_readonly](/images/cloud/security/jwt/entra-app-roles.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Exiger une attribution" id="require-assignment">
     Par défaut, tout utilisateur de votre locataire peut obtenir un jeton pour l&#39;application. Pour réserver l&#39;émission de jetons aux utilisateurs, groupes et applications que vous affectez à un rôle d&#39;application, ouvrez **Enterprise applications**, sélectionnez l&#39;application portant le même nom que votre inscription d&#39;application, ouvrez **Properties**, définissez **Assignment required?** sur **Yes**, puis sélectionnez **Save**.
 
-    <Image img="/images/cloud/security/jwt/entra-assignment-required.webp" size="lg" alt="Propriétés de l'application d'entreprise avec Assignment required défini sur Yes" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Propriétés de l'application d'entreprise avec Assignment required défini sur Yes](/images/cloud/security/jwt/entra-assignment-required.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Affecter des utilisateurs et des groupes aux rôles de l’application" id="assign-users-and-groups">
     Dans la même application d’entreprise, ouvrez **Users and groups** et sélectionnez **Add user/group**. Sélectionnez un utilisateur ou un groupe, choisissez un rôle d’application, puis sélectionnez **Assign**. Répétez l’opération pour chaque utilisateur ou groupe.
 
-    <Image img="/images/cloud/security/jwt/entra-assign-users-and-groups.webp" size="lg" alt="Page Users and groups de l’application d’entreprise montrant un utilisateur assigné au rôle d’application ClickHouse Read Only" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Page Users and groups de l’application d’entreprise montrant un utilisateur assigné au rôle d’application ClickHouse Read Only](/images/cloud/security/jwt/entra-assign-users-and-groups.webp)
+      </Frame>
+    </div>
 
     Un utilisateur auquel plusieurs rôles d’application sont assignés, directement ou via des groupes, les reçoit tous dans la revendication `roles`.
 

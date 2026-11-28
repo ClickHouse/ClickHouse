@@ -2,11 +2,11 @@
 title: "Профилирование ClickHouse с помощью XRay из LLVM"
 date: 2024-11-13
 description: "Узнайте, как профилировать ClickHouse с помощью профилировщика XRay из LLVM на основе инструментирования, визуализировать трассировки и анализировать производительность."
-tags: ['Производительность и оптимизация', 'Инструменты и утилиты']
+tags: ['Performance and Optimizations', 'Tools and Utilities']
 ---
 
 <div id="types-of-profilers">
-  ## Типы профилировщиков
+  ## Типы профилировщиков {#types-of-profilers}
 </div>
 
 В LLVM уже есть инструмент, который добавляет в код инструментацию и позволяет выполнять [инструментальное
@@ -21,9 +21,7 @@ tags: ['Производительность и оптимизация', 'Инс
 создания снимка. [perf](https://en.wikipedia.org/wiki/Perf_%28Linux%29) — очень известный
 статистический профилировщик.
 
-<div id="profiling-clickhouse-using-xray-integration">
-  ## Профилирование ClickHouse с помощью интеграции XRay
-</div>
+## Профилирование ClickHouse с помощью интеграции XRay {#profiling-clickhouse-using-xray-integration}
 
 В ClickHouse 25.12 XRay интегрирован так, чтобы можно было без проблем добавлять новые точки инструментирования в функции.
 Поэтому в любом официальном релизе эта возможность уже доступна и ее можно включать по мере необходимости, не
@@ -50,25 +48,19 @@ SYSTEM INSTRUMENT REMOVE ALL
 Мы преобразуем данные, собранные в system.trace&#95;log, [в формат Chrome](/ru/reference/system-tables/trace_log#chrome-event-trace-format), чтобы визуализировать их в [Perfetto](https://ui.perfetto.dev). Обратите внимание на query&#95;id, cpu&#95;id и трассировку стека для каждой записи.
 
 <div className="ch-image-md">
-
-<Frame>
-
-![по времени](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
-
-</Frame>
-
+  <Frame>
+    ![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
+  </Frame>
 </div>
 
 <div id="profiling-a-native-application-using-xray">
-  ## Профилирование нативного приложения с помощью XRay
+  ## Профилирование нативного приложения с помощью XRay {#profiling-a-native-application-using-xray}
 </div>
 
 Следующий раздел оставлен в качестве справочного материала, чтобы показать, как XRay работает на низком уровне и как его можно
 использовать из коробки для профилирования нативного приложения.
 
-<div id="instrument-the-code">
-  ### Добавьте инструментацию в код
-</div>
+### Инструментируйте код {#instrument-the-code}
 
 Представьте себе следующий исходный код:
 
@@ -127,7 +119,7 @@ Idx Name          Size      VMA               LMA               File off  Algn
 ```
 
 <div id="run-the-process-with-proper-env-var-values-to-collect-the-trace">
-  ### Запустите процесс с корректными значениями переменных окружения, чтобы собрать трассировку
+  ### Запустите процесс с корректными значениями переменных окружения, чтобы собрать трассировку {#run-the-process-with-proper-env-var-values-to-collect-the-trace}
 </div>
 
 По умолчанию сбор данных профилирования не выполняется, если он не запрошен явно. Иными словами,
@@ -143,7 +135,7 @@ Finish
 ```
 
 <div id="convert-the-trace">
-  ### Преобразование трассировки
+  ### Преобразование трассировки {#convert-the-trace}
 </div>
 
 Трассировки XRay можно преобразовать в несколько форматов. Формат `trace_event` очень полезен, потому что
@@ -154,7 +146,7 @@ llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xra
 ```
 
 <div id="visualize-the-trace">
-  ### Визуализируйте трассировку
+  ### Визуализируйте трассировку {#visualize-the-trace}
 </div>
 
 Можно использовать веб-интерфейсы, такие как [speedscope.app](https://www.speedscope.app/) или
@@ -163,50 +155,32 @@ llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xra
 Хотя Perfetto упрощает визуализацию нескольких потоков и выполнение запросов к данным, speedscope лучше
 подходит для построения флеймграфа и представления данных в режиме «сэндвич».
 
-<div id="time-order">
-  #### Хронологический порядок
-</div>
+#### Хронологический порядок {#time-order}
 
 <div className="ch-image-md">
-
-<Frame>
-
-![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
-
-</Frame>
-
+  <Frame>
+    ![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
+  </Frame>
 </div>
 
-<div id="left-heavy">
-  #### Перекос влево
-</div>
+#### Left Heavy {#left-heavy}
 
 <div className="ch-image-md">
-
-<Frame>
-
-![перекос влево](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
-
-</Frame>
-
+  <Frame>
+    ![left-heavy](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
+  </Frame>
 </div>
 
-<div id="sandwitch">
-  #### Сэндвич
-</div>
+#### Сэндвич {#sandwitch}
 
 <div className="ch-image-md">
-
-<Frame>
-
-![сэндвич](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
-
-</Frame>
-
+  <Frame>
+    ![сэндвич](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
+  </Frame>
 </div>
 
 <div id="check-out-the-docs">
-  ## Ознакомьтесь с документацией
+  ## Ознакомьтесь с документацией {#check-out-the-docs}
 </div>
 
 * [SYSTEM INSTRUMENT](/ru/reference/statements/system#instrument) — Добавьте

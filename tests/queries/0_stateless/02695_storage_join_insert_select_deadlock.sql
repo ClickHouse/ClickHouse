@@ -1,3 +1,5 @@
+SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
+
 DROP TABLE IF EXISTS test_table_join;
 
 CREATE TABLE test_table_join

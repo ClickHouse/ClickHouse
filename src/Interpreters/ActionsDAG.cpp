@@ -4385,18 +4385,13 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
         /// The whole predicate was split.
         if (removes_filter)
         {
-            /// If filter column is not needed, remove it from output nodes.
-            std::erase_if(outputs, [&](const Node * node) { return node == predicate; });
+            /// Like `FilterStep`, remove only the first output of the filter column's name.
+            outputs.erase(std::ranges::find(outputs, predicate));
         }
-        else
-        {
-            /// The whole predicate was pushed down, but the filter column is still
-            /// needed in the output (e.g. it appears in SELECT). Keep the original
-            /// expression so the output values are correct.  The caller will convert
-            /// the FilterStep into an ExpressionStep, which still evaluates the
-            /// expression but no longer filters.
-            is_filter_const = true;
-        }
+
+        /// An output of that name may remain: the filter column itself (e.g. used in SELECT) or a passed-through column.
+        /// Callers resolve the filter column by name, so they then turn the FilterStep into a non-filtering ExpressionStep.
+        is_filter_const = tryFindInOutputs(predicate->result_name) != nullptr;
     }
     else
     {

@@ -157,7 +157,6 @@ private:
     {
         auto & offsets_data = column_offsets_input.getData();
         offsets_data.resize(input_rows_count);
-        size_t tokens_count = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -173,7 +172,6 @@ private:
                 while (cur < length && tokenizer_.nextInStringLike(data, length, cur, token))
                 {
                     column_result.insertData(token.data(), token.size());
-                    ++tokens_count;
                 }
             }
             else
@@ -181,12 +179,11 @@ private:
                 forEachToken(tokenizer_, input.data(), input.size(), [&](const char * token_start, size_t token_len)
                 {
                     column_result.insertData(token_start, token_len);
-                    ++tokens_count;
                     return false;
                 });
             }
 
-            offsets_data[i] = tokens_count;
+            offsets_data[i] = column_result.size();
         }
     }
 

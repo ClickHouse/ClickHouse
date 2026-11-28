@@ -22,36 +22,28 @@ keywords: ['журнал аудита']
     В ClickHouse Cloud перейдите к сведениям о своей организации.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Вкладка активности ClickHouse Cloud](/images/cloud/security/activity_log1.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Вкладка активности ClickHouse Cloud](/images/cloud/security/activity_log1.webp)
+      </Frame>
     </div>
 
     <br />
   </Step>
 
   <Step title="Выберите аудит" id="select-audit">
-    Выберите вкладку **Audit** в левом меню, чтобы увидеть, какие изменения были внесены в вашей организации ClickHouse Cloud, включая то, кто и когда их внес.
+    Выберите вкладку **Аудит** в левом меню, чтобы увидеть, какие изменения были внесены в вашей организации ClickHouse Cloud, включая то, кто и когда их внес.
 
-    На странице **Activity** отображается таблица со списком событий, зарегистрированных для вашей организации. По умолчанию этот список отсортирован в обратном хронологическом порядке (самое новое событие сверху). Чтобы изменить порядок сортировки, нажмите на заголовки столбцов. Каждый элемент таблицы содержит следующие поля:
+    На странице **Активность** отображается таблица со списком событий, зарегистрированных для вашей организации. По умолчанию этот список отсортирован в обратном хронологическом порядке (самое новое событие сверху). Чтобы изменить порядок сортировки, нажмите на заголовки столбцов. Каждый элемент таблицы содержит следующие поля:
 
-    * **Activity:** Текстовое описание события
+    * **Активность:** Текстовое описание события
     * **User:** Пользователь, инициировавший событие
     * **IP Address:** Если применимо, в этом поле указан IP-адрес пользователя, инициировавшего событие
     * **Time:** Временная метка события
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Таблица активности ClickHouse Cloud](/images/cloud/security/activity_log2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Таблица активности ClickHouse Cloud](/images/cloud/security/activity_log2.webp)
+      </Frame>
     </div>
 
     <br />
@@ -64,18 +56,14 @@ keywords: ['журнал аудита']
 
 <div class="eighty-percent">
   <div className="ch-image-lg">
-
-  <Frame>
-
-  ![Экспорт CSV активности ClickHouse Cloud](/images/cloud/security/activity_log3.webp)
-
-  </Frame>
-
+    <Frame>
+      ![Экспорт CSV активности ClickHouse Cloud](/images/cloud/security/activity_log3.webp)
+    </Frame>
   </div>
 </div>
 
 <div id="console-audit-log-api">
-  ## Доступ к журналу аудита консоли через API
+  ## Доступ к журналу аудита консоли через API {#console-audit-log-api}
 </div>
 
 Вы можете использовать конечную точку `activity` ClickHouse Cloud API, чтобы получить экспорт
@@ -86,3 +74,7 @@ keywords: ['журнал аудита']
 Вы можете использовать API для интеграции с выбранной вами платформой логирования. Ниже приведены поддерживаемые готовые коннекторы:
 
 * [Дополнение ClickHouse Cloud Audit для Splunk](/ru/integrations/connectors/data-integrations/integrations/splunk)
+
+## Срок хранения журнала аудита {#audit-log-retention}
+
+ClickHouse Cloud не задаёт time-to-live (TTL) для записей журнала аудита консоли. Записи не удаляются автоматически по истечении какого-либо срока.

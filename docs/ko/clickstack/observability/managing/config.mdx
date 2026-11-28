@@ -1,0 +1,112 @@
+---
+slug: /clickstack/observability/managing/config
+title: '구성 옵션'
+description: '완전 관리형 ClickHouse Observability에서 서비스 액세스, 텔레메트리 소스, API 및 에이전트 연결을 관리합니다.'
+keywords: ['ClickHouse Observability', '관리형 구성', '소스', 'Managed Telemetry']
+doc_type: 'guide'
+sidebarTitle: '구성 옵션'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge label="베타 서비스" />
+
+ClickHouse Observability의 **팀 설정**에서 데이터 액세스, API 및 에이전트 연결, 통합, 쿼리 설정(query settings)을 관리할 수 있습니다. 아래 섹션은 애플리케이션의 탭 순서를 따릅니다. 수집, 스키마(schemas), 인프라, 스케일링은 ClickHouse가 관리합니다.
+
+## 데이터 {#data}
+
+**팀 설정 → 데이터**에서 소스와 텔레메트리 전송에 필요한 연결 정보를 확인할 수 있습니다.
+
+### 소스 {#datasource-settings}
+
+**소스** 섹션에는 관리형 서비스에서 제공하는 소스 목록이 표시됩니다.
+
+| 소스           | 데이터                           |
+| ------------ | ----------------------------- |
+| **Logs**     | 로그 이벤트                        |
+| **Traces**   | 분산 추적(distributed tracing) 스팬 |
+| **Metrics**  | 메트릭 데이터                       |
+| **Sessions** | 브라우저 세션 리플레이 데이터              |
+
+각 소스에는 연결된 읽기 연결과, 해당하는 경우 테이블 이름이 표시됩니다. 소스 오른쪽의 스위치로 소스를 활성화하거나 비활성화할 수 있습니다. 소스를 비활성화하면 구성은 유지되지만 소스 선택기에 표시되지 않으며 자동으로 선택되지도 않습니다. 단, 텔레메트리 수집이 중단되거나 저장된 데이터가 삭제되지는 않습니다. 다시 활성화하면 선택기에서 해당 소스를 다시 사용할 수 있습니다.
+
+### Managed Telemetry {#managed-telemetry}
+
+**소스** 아래의 **Managed Telemetry** 섹션에는 스토리지 및 OpenTelemetry collector 상태와 함께 서비스로 데이터를 전송하는 데 필요한 연결 정보가 표시됩니다.
+
+* **URL**, **Collector config**, **Env vars** 중 하나를 선택하면 필요한 포맷으로 연결 정보를 확인할 수 있습니다.
+* **Copy connection details**를 클릭하여 구성을 복사하세요. 마스킹된 자격 증명을 확인하려면 **Reveal key**를 선택하세요.
+* **Send a Test Log**를 클릭하면 서비스에 샘플 로그를 전송할 수 있습니다.
+
+애플리케이션과 collector 구성 방법은 [데이터 수집](/ko/clickstack/observability/ingesting-data/overview)을 참조하십시오.
+
+### IP 액세스 목록 {#ip-access-list}
+
+**Managed Telemetry**에서 **IP 액세스 목록 → 편집**을 선택하여 collector 엔드포인트에 액세스할 수 있는 IP 주소 또는 CIDR 범위를 지정하십시오.
+
+### 프라이빗 엔드포인트 {#private-endpoints}
+
+collector에 대한 프라이빗 연결을 구성하려면 **프라이빗 엔드포인트 설정**을 사용하십시오. AWS 배포에서는 AWS PrivateLink를 사용합니다. **프라이빗 엔드포인트** 링크를 클릭하면 클라우드 콘솔에서 해당 조직의 프라이빗 엔드포인트 페이지가 열립니다.
+
+### 위험 구역 {#service-settings}
+
+**Delete warehouse**를 실행하면 Observability 웨어하우스(warehouse)와 이에 속한 모든 서비스가 삭제됩니다. 읽기 서비스가 먼저 삭제되고, 이어서 기본 서비스가 삭제됩니다. 웨어하우스나 해당 데이터가 더 이상 필요하지 않을 때만 사용하십시오.
+
+## 멤버 및 역할 {#members-and-roles}
+
+**팀 설정 → 멤버 및 역할**을 열어 RBAC 역할과 신규 사용자의 기본 역할을 확인하십시오. ClickHouse Cloud의 팀 멤버십은 **콘솔에서 관리**를 클릭하여 관리합니다. 자세한 내용은 [역할 기반 접근 제어](/ko/clickstack/observability/managing/rbac)를 참조하십시오.
+
+## API 및 에이전트 {#api-and-agents}
+
+수집 키 관리, 서비스 식별자 확인, 에이전트 연결, AI 기능 구성은 **팀 설정 → API 및 에이전트**에서 할 수 있습니다.
+
+### 수집 API 키 {#ingestion-api-keys}
+
+**API keys** 섹션에는 **Team ID**, **서비스 ID** 및 수집 키가 표시됩니다. 수집 키는 OpenTelemetry collector로 전송되는 텔레메트리를 인증하는 데 사용됩니다.
+
+소스 또는 환경별로 키를 발급하려면 이름을 입력한 후 **Create key**를 선택하십시오. 기존 키에서는 **Reveal key**, **Copy key**, **Freeze**, **Revoke** 기능을 사용할 수 있습니다. 변경 사항은 약 1분 이내에 적용됩니다.
+
+별도로 제공되는 **Manage API Keys** 링크를 클릭하면 ClickHouse Cloud 조직 설정이 열리며, 여기에서 관리 API에 사용되는 키를 관리할 수 있습니다.
+
+### 에이전트 연결 {#connect-an-agent}
+
+**Connect your AI agents** 아래의 **Enable MCP for this service**로 원격 MCP 서버를 켜거나 끌 수 있습니다. 클라이언트를 선택한 후 생성된 구성을 복사하십시오. 이 구성에는 서비스 ID가 포함되어 있으므로 에이전트의 요청이 해당 서비스로 전달됩니다. **Manage sessions**를 클릭하면 클라우드 콘솔이 열리며, 이곳에서 MCP 세션(Sessions)을 확인할 수 있습니다. Cloud MCP 엔드포인트는 OAuth를 사용하므로, 클라이언트에서 로그인을 요청하면 ClickHouse Cloud 계정으로 로그인하십시오. 설정 방법과 지원되는 클라이언트는 [MCP 클라이언트 연결](/ko/clickstack/observability/mcp#managed-connecting-a-client)을 참조하십시오.
+
+### API 사용 {#use-the-api}
+
+[ClickHouse Observability API](/ko/clickstack/observability/api-reference)를 사용하면 대시보드, 알림 및 기타 리소스를 프로그래밍 방식으로 관리할 수 있습니다. API 요청은 ClickHouse Cloud API 키 ID와 시크릿을 사용하는 HTTP 기본 인증으로 인증됩니다. 필요한 권한과 키 설정 방법은 [API 인증](/ko/clickstack/observability/api-reference#authentication)을 참조하십시오.
+
+이 API 인증 정보는 **데이터 → Managed Telemetry**에 있는 수집 API key와는 별개입니다. MCP 클라이언트는 두 API Key 중 어느 것도 사용하지 않고 OAuth를 사용합니다.
+
+### Terraform으로 내보내기 {#export-to-terraform}
+
+**Terraform으로 내보내기**는 **실험적** 기능입니다. 포함할 리소스 유형을 선택한 다음 **Download import file**을 사용하여 Terraform 프로젝트에 추가하십시오. UI에서는 ClickHouse provider로 리소스 구성을 생성하는 명령을 제공합니다. 플랫폼에서 관리하는 연결은 참조 전용 locals로 내보내집니다.
+
+### 생성형 AI 구성 {#generative-ai}
+
+**생성형 AI 구성**에서 서비스의 생성형 AI 기능을 활성화하거나 비활성화할 수 있습니다. 이 기능에는 차트 탐색기의 차트 AI 어시스턴트와 [AI 노트북](/ko/clickstack/observability/notebooks)이 포함됩니다.
+
+## 통합 {#integrations}
+
+웹훅을 관리하려면 **팀 설정 → 통합**을 여십시오. 경보 알림용 통합을 추가하려면 **Add Webhook**을 선택하십시오. 알림 구성에 대한 자세한 내용은 [알림](/ko/clickstack/observability/features/alerts)을 참조하십시오.
+
+## 쿼리 설정(query settings) {#query-settings}
+
+애플리케이션이 ClickHouse에 쿼리하는 방식을 조정하려면 **팀 설정 → 쿼리 설정(query settings)**을 여십시오. 설정을 변경하려면 해당 설정 옆의 **편집**을 선택하십시오. 이 탭은 UI에서 **실험적**으로 표시됩니다.
+
+| 설정                                    | 용도                                                                       |
+| ------------------------------------- | ------------------------------------------------------------------------ |
+| **Search Row Limit**                  | **검색** 페이지와 검색 대시보드 타일에서 쿼리당 반환되는 행 수를 제한합니다.                            |
+| **Query Timeout (seconds)**           | 쿼리의 최대 실행 시간을 설정합니다.                                                     |
+| **Max Rows to Read (METADATA ONLY)**  | 메타데이터 쿼리가 스캔하는 테이블 행 수를 제한합니다.                                           |
+| **Filter Keys Fetch Limit**           | **검색** 페이지에서 **More filters**를 선택할 때 가져오는 필터 키의 개수를 지정합니다.               |
+| **Field Metadata Queries**            | 애플리케이션이 ClickHouse에서 필드 메타데이터를 가져올지 여부를 지정합니다.                           |
+| **Parallelize Queries When Possible** | 조건을 충족하는 윈도우 쿼리를 병렬로 실행할 수 있도록 합니다. 이로 인해 ClickHouse의 최대 부하가 증가할 수 있습니다. |
+
+이 탭에는 검색 히스토그램의 소프트 블록 임계값과 검색 윈도우 기간을 조정하는 항목도 있습니다. 쿼리 설정(query settings)을 기본값으로 되돌리려면 **Reset to default**를 사용하십시오.
+
+## 스키마 마이그레이션(Schema Migrations) {#schema-migrations}
+
+마이그레이션 이력을 확인하려면 **팀 설정 → 스키마 마이그레이션(Schema Migrations)** 페이지를 여십시오.
+
+자가 관리형 소스 및 스키마 설정에 대해서는 [자가 관리형 소스 및 스키마 설정](/ko/clickstack/self-configured/managing/config)을 참조하십시오.

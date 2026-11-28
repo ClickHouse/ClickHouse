@@ -8,10 +8,10 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
-#include <Common/logger_useful.h>
 
 #include <algorithm>
-#include <span>
+#include <limits>
+#include <utility>
 
 namespace ProfileEvents
 {
@@ -31,268 +31,225 @@ namespace DB::GPU
 namespace
 {
 
-constexpr size_t max_batch_rows = (1UL << 31) - 1;
-
-/// A variable-width column counts as one byte per row.
-size_t rowBytesOf(const DataTypes & types)
-{
-    size_t bytes = 0;
-    for (const auto & type : types)
-    {
-        const GPUElementType element_type = uploadTypeOrThrow(*type);
-        bytes += columnKindOf(element_type) == GPUColumnKind::Variable ? 1 : sizeOf(element_type);
-    }
-    return bytes;
-}
-
-size_t batchRowsFor(size_t batch_bytes, const DataTypes & types)
-{
-    return std::clamp(batch_bytes / std::max<size_t>(rowBytesOf(types), 1), size_t{1}, max_batch_rows);
-}
-
-std::vector<ColumnUploadPipe> pipesFor(const DataTypes & types, size_t batch_rows, cuda::stream_ref stream)
-{
-    std::vector<ColumnUploadPipe> pipes;
-    pipes.reserve(types.size());
-    for (const auto & type : types)
-    {
-        const GPUElementType column_type = uploadTypeOrThrow(*type);
-        const size_t stage_bytes = columnKindOf(column_type) == GPUColumnKind::Fixed
-            ? std::min(batch_rows * sizeOf(column_type), GPUBatchUploader::max_stage_bytes)
-            : GPUBatchUploader::max_stage_bytes;
-        pipes.emplace_back(*type, stage_bytes, stream);
-    }
-    return pipes;
-}
-
-std::shared_ptr<StreamPtr> sharedStream()
-{
-    return std::make_shared<StreamPtr>(createStream());
-}
-
 GPUElementType resultTypeFor(GPUElementType element_type, GPUAggregationKind aggregation)
 {
     return aggregation == GPUAggregationKind::Sum ? sumResultTypeFor(element_type) : element_type;
 }
 
-std::vector<GPUElementType> valueTypesOrThrow(const DataTypes & value_types)
+bool isVariable(GPUElementType type)
 {
-    std::vector<GPUElementType> element_types;
-    element_types.reserve(value_types.size());
-    for (const auto & type : value_types)
-        element_types.push_back(columnTypeOrThrow(*type));
-    return element_types;
+    return columnKindOf(type) == GPUColumnKind::Variable;
 }
 
-std::vector<GPUGroupByAggregate> aggregatesOrThrow(size_t num_columns, std::vector<GPUGroupByAggregate> aggregates)
+std::vector<GPUElementType> typesAt(const std::vector<GPUElementType> & column_types, const std::vector<size_t> & positions)
 {
-    if (aggregates.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation without aggregates");
+    std::vector<GPUElementType> types;
+    types.reserve(positions.size());
+    for (const size_t position : positions)
+    {
+        if (position >= column_types.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of a GPU batch of {} columns", position, column_types.size());
+        types.push_back(column_types[position]);
+    }
+    return types;
+}
+
+std::vector<DeviceColumnView> columnsAt(const GPUDeviceBatch & batch, const std::vector<size_t> & positions)
+{
+    const auto & columns = batch.columns();
+    std::vector<DeviceColumnView> result;
+    result.reserve(positions.size());
+    for (const size_t position : positions)
+    {
+        if (position >= columns.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of a GPU batch of {} columns", position, columns.size());
+        result.push_back(columns[position].view());
+    }
+    return result;
+}
+
+std::vector<DeviceFixedColumn> fixedColumnsAt(const GPUDeviceBatch & batch, const std::vector<size_t> & positions)
+{
+    std::vector<DeviceFixedColumn> result;
+    result.reserve(positions.size());
+    for (const DeviceColumnView & column : columnsAt(batch, positions))
+        result.push_back(fixedOrThrow(column));
+    return result;
+}
+
+std::vector<GPUGroupByAggregate> aggregatesOrThrow(size_t num_values, std::vector<GPUGroupByAggregate> aggregates, bool keyed)
+{
+    if (keyed && aggregates.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation with keys and without aggregates");
 
     for (const auto & aggregate : aggregates)
     {
-        if (aggregate.column != GPUGroupByAggregate::no_column && aggregate.column >= num_columns)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregate of value {} of {}", aggregate.column, num_columns);
+        if (aggregate.column != GPUGroupByAggregate::no_column && aggregate.column >= num_values)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregate of value {} of {}", aggregate.column, num_values);
     }
     return aggregates;
 }
 
-size_t maskBytes(size_t rows)
+std::vector<GPUComputedArgument> computedArgumentsOrThrow(const std::vector<GPUElementType> & values, std::vector<GPUComputedArgument> computed)
 {
-    return (rows + 31) / 32 * sizeof(uint32_t);
-}
-
-std::vector<GPUExpressionInput> inputsOf(const GPUExpression & expression, std::span<const DeviceColumnView> columns, size_t rows)
-{
-    if (columns.size() != expression.num_columns)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU predicate of {} columns over {}", expression.num_columns, columns.size());
-
-    std::vector<GPUExpressionInput> inputs;
-    inputs.reserve(columns.size());
-    for (const auto & column : columns)
+    for (const auto & value : computed)
     {
-        const DeviceFixedColumn & fixed = fixedOrThrow(column);
-        if (fixed.rows != rows)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "A column of a GPU predicate of {} rows among {}", fixed.rows, rows);
-        inputs.push_back({.data = fixed.data, .type = fixed.element_type});
+        const GPUExpression & expression = value.expression.expression;
+        if (expression.result != GPUExpressionResult::Value)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "An argument of a GPU aggregate computed by a predicate");
+        if (value.columns.size() != expression.num_columns)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "An argument of a GPU aggregate computed by an expression of {} columns from {}", expression.num_columns, value.columns.size());
+        for (const uint32_t column : value.columns)
+        {
+            if (column >= values.size() || columnKindOf(values[column]) != GPUColumnKind::Fixed)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "An argument of a GPU aggregate computed from value {} of {}", column, values.size());
+        }
     }
-    return inputs;
+    return computed;
 }
 
-}
-
-GPUDeviceBatch::~GPUDeviceBatch()
-{
-    if (!consumed || !consumer || !upload_stream)
-        return;
-
-    /// The uploader's stream frees the memory, so it must wait for the consumer's stream.
-    try
-    {
-        checkCuda(cudaEventRecord(consumed.get(), consumer), "Cannot mark a point in the stream of a GPU batch's consumer");
-        checkCuda(cudaStreamWaitEvent(upload_stream->get(), consumed.get(), 0), "Cannot make an upload stream wait for a GPU batch's consumer");
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        cudaStreamSynchronize(consumer);
-    }
-}
-
-void GPUDeviceBatch::moveTo(cuda::stream_ref stream)
-{
-    if (consumer)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU batch handed to a stream twice");
-
-    checkCuda(cudaStreamWaitEvent(stream.get(), ready.get(), 0), "Cannot make a stream wait for a GPU batch");
-    consumed = createEvent();
-    consumer = stream.get();
-}
-
-GPUBatchUploader::GPUBatchUploader(const DataTypes & types, size_t batch_bytes)
-    : stream(sharedStream())
-    , batch_rows(batchRowsFor(batch_bytes, types))
-    , pipes(pipesFor(types, batch_rows, cuda::stream_ref{stream->get()}))
-{
-    if (types.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation of no columns");
-}
-
-size_t GPUBatchUploader::stagedVariableBytes() const
-{
-    size_t bytes = 0;
-    for (const auto & pipe : pipes)
-    {
-        if (columnKindOf(pipe.type()) == GPUColumnKind::Variable)
-            bytes += pipe.stagedBytes();
-    }
-    return bytes;
-}
-
-bool GPUBatchUploader::wouldOverflow(const Columns & columns) const
-{
-    const size_t staged = stagedRows();
-    if (staged == 0 || columns.empty())
-        return false;
-
-    const size_t rows = columns.front()->size();
-    if (staged + rows > batch_rows)
-        return true;
-
-    size_t variable_bytes = 0;
-    for (size_t i = 0; i < columns.size() && i < pipes.size(); ++i)
-    {
-        if (columnKindOf(pipes[i].type()) == GPUColumnKind::Variable)
-            variable_bytes += columns[i]->byteSize();
-    }
-    return variable_bytes != 0 && stagedVariableBytes() + variable_bytes > max_stage_bytes;
-}
-
-void GPUBatchUploader::add(const Columns & columns)
-{
-    if (columns.size() != pipes.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A block of {} columns for a GPU aggregation of {}", columns.size(), pipes.size());
-
-    const size_t rows = columns.front()->size();
-    if (stagedRows() + rows > max_batch_rows)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU batch of more than {} rows", max_batch_rows);
-
-    for (size_t i = 0; i < columns.size(); ++i)
-        pipes[i].stage(*columns[i]);
-}
-
-std::optional<GPUDeviceBatch> GPUBatchUploader::send()
-{
-    const size_t rows = stagedRows();
-    if (rows == 0)
-        return std::nullopt;
-
-    GPUDeviceBatch batch;
-    batch.upload_stream = stream;
-    batch.num_rows = rows;
-    batch.buffers.reserve(pipes.size());
-    batch.views.reserve(pipes.size());
-    for (auto & pipe : pipes)
-    {
-        pipe.sendWithoutWaiting();
-        batch.buffers.push_back(pipe.takeDeviceColumn());
-        batch.views.push_back(std::visit([](const auto & column) { return column.view(); }, batch.buffers.back()));
-        if (batch.views.back().rows() != rows)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU batch of {} rows with a column of {}", rows, batch.views.back().rows());
-    }
-    checkCuda(cudaEventRecord(batch.ready.get(), stream->get()), "Cannot mark a point in an upload stream");
-    return batch;
 }
 
 GPUGroupingLane::GPUGroupingLane(
-    const DataTypes & key_types,
-    const DataTypes & value_types,
+    const std::vector<GPUElementType> & column_types,
+    GPUBatchColumns columns_,
     std::vector<GPUGroupByAggregate> aggregates_,
+    std::vector<GPUComputedArgument> computed_,
     std::optional<CompiledGPUExpression> where_,
     size_t num_parts)
-    : group_keys(groupByKeysOrThrow(key_types))
-    , values(valueTypesOrThrow(value_types))
-    , aggregates(aggregatesOrThrow(values.size(), std::move(aggregates_)))
+    : batch_columns(std::move(columns_))
+    , keys(typesAt(column_types, batch_columns.keys))
+    , values(typesAt(column_types, batch_columns.values))
+    , aggregates(aggregatesOrThrow(values.size() + computed_.size(), std::move(aggregates_), !keys.empty()))
+    , computed(computedArgumentsOrThrow(values, std::move(computed_)))
     , where(std::move(where_))
-    , stream(createStream())
-    , group_by(group_keys, values, aggregates, num_parts, cuda::stream_ref{stream.get()})
-    , kept(cuda::stream_ref{stream.get()})
+    , lane_stream(createStream())
 {
     if (where && where->expression.result != GPUExpressionResult::Bitmask)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A `WHERE` of a GPU aggregation that is not a predicate");
-}
 
-void GPUGroupingLane::add(GPUDeviceBatch batch)
-{
-    const size_t num_keys = group_keys.size();
-    const size_t num_values = values.size();
     const size_t num_where_columns = where ? where->columns.size() : 0;
-    const std::vector<DeviceColumnView> & columns = batch.columns();
-    if (columns.size() != num_keys + num_values + num_where_columns)
+    if (batch_columns.where.size() != num_where_columns)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "A GPU batch of {} columns for a lane of {} keys, {} values and {} filter columns",
-            columns.size(),
-            num_keys,
-            num_values,
-            num_where_columns);
-
-    const cuda::stream_ref own{stream.get()};
-    batch.moveTo(own);
-
-    Stopwatch watch;
-    const std::vector<DeviceColumnView> keys(columns.begin(), columns.begin() + num_keys);
-    const std::vector<DeviceColumnView> batch_values(columns.begin() + num_keys, columns.begin() + num_keys + num_values);
-
-    DeviceBitmask mask;
-    if (where)
+            ErrorCodes::LOGICAL_ERROR, "A `WHERE` of {} columns over {} columns of a GPU batch", num_where_columns, batch_columns.where.size());
+    for (const GPUElementType type : typesAt(column_types, batch_columns.where))
     {
-        const size_t rows = batch.rows();
-        const std::vector<GPUExpressionInput> inputs = inputsOf(where->expression, std::span(columns).subspan(num_keys + num_values), rows);
-        kept.clear();
-        char * const bits = kept.grow(maskBytes(rows));
-        evaluateGPUExpression(where->expression, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, rows, bits, own);
-        mask = {.words = reinterpret_cast<const uint32_t *>(bits), .rows = rows};
+        if (isVariable(type))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A `WHERE` on the GPU over a column of varying width");
     }
 
-    group_by.addBatch(keys, batch_values, mask);
+    if (aggregates.empty())
+    {
+        if (!computed.empty() || !where)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows filtered on the GPU with computed arguments or without a `WHERE`");
+        row_filter = std::make_unique<CudfRowFilter>(values, where->expression, stream());
+        return;
+    }
+
+    std::vector<GPUElementType> all_values = values;
+    computed_values.reserve(computed.size());
+    for (const auto & argument : computed)
+    {
+        all_values.push_back(argument.expression.expression.value_type);
+        computed_values.emplace_back(stream());
+    }
+    group_by = std::make_unique<CudfGroupBy>(keys, all_values, aggregates, num_parts, stream());
+}
+
+CudfGroupBy & GPUGroupingLane::groupByOrThrow() const
+{
+    if (!group_by)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The groups of a GPU lane that filters rows");
+    return *group_by;
+}
+
+void GPUGroupingLane::add(GPUFuture<GPUDeviceBatch> future)
+{
+    CudfGroupBy & groups = groupByOrThrow();
+    const GPUDeviceBatch batch = takeOn(std::move(future), stream());
+    const std::vector<DeviceColumnView> key_columns = columnsAt(batch, batch_columns.keys);
+    const std::vector<DeviceColumnView> value_columns = columnsAt(batch, batch_columns.values);
+    const std::vector<DeviceFixedColumn> filter_columns = fixedColumnsAt(batch, batch_columns.where);
+    const size_t rows = batch.rows();
+    const GPUExpression * const filter = where ? &where->expression : nullptr;
+
+    Stopwatch watch;
+    if (computed.empty())
+        groups.addBatch(key_columns, value_columns, filter_columns, filter);
+    else
+        groups.addBatch(key_columns, withComputedArguments(value_columns, rows), filter_columns, filter);
+
+    ProfileEvents::increment(ProfileEvents::GPUAggregationRows, rows);
+    ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
+    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
+}
+
+std::vector<DeviceColumnView> GPUGroupingLane::withComputedArguments(const std::vector<DeviceColumnView> & value_columns, size_t rows)
+{
+    std::vector<DeviceColumnView> all_values = value_columns;
+    std::vector<GPUExpressionInput> inputs;
+    for (size_t i = 0; i < computed.size(); ++i)
+    {
+        const GPUExpression & expression = computed[i].expression.expression;
+        inputs.clear();
+        for (const uint32_t column : computed[i].columns)
+            inputs.push_back({.data = value_columns[column].fixed.data, .type = value_columns[column].fixed.element_type});
+
+        DeviceBuffer & out = computed_values[i];
+        out.clear();
+        char * const result = out.grow(rows * sizeOf(expression.value_type));
+        evaluateGPUExpression(expression, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, rows, result, stream());
+        all_values.emplace_back(DeviceFixedColumn{.element_type = expression.value_type, .data = result, .rows = rows});
+    }
+    return all_values;
+}
+
+MutableColumns GPUGroupingLane::filterRows(GPUFuture<GPUDeviceBatch> future, const DataTypes & types)
+{
+    if (!row_filter)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows filtered by a GPU lane that groups them");
+    if (types.size() != values.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} types of {} columns filtered on the GPU", types.size(), values.size());
+
+    const GPUDeviceBatch batch = takeOn(std::move(future), stream());
+    const std::vector<DeviceColumnView> value_columns = columnsAt(batch, batch_columns.values);
+    const std::vector<DeviceFixedColumn> where_columns = fixedColumnsAt(batch, batch_columns.where);
+
+    Stopwatch watch;
+    MutableColumns kept;
+    const size_t rows = row_filter->filter(value_columns, where_columns);
+    if (rows != 0)
+    {
+        std::vector<DeviceColumnView> from;
+        std::vector<IColumn *> to;
+        kept.reserve(types.size());
+        for (size_t i = 0; i < types.size(); ++i)
+        {
+            from.push_back(row_filter->value(i));
+            kept.push_back(types[i]->createColumn());
+            to.push_back(kept.back().get());
+        }
+        copyDeviceToHost(from, to, stream());
+    }
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationRows, batch.rows());
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
+    return kept;
 }
 
 void GPUGroupingLane::absorbPart(const GPUGroupingLane & other, size_t part)
 {
     Stopwatch watch;
-    group_by.absorbPart(other.group_by, part);
+    groupByOrThrow().absorbPart(other.groupByOrThrow(), part);
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
 }
 
 size_t GPUGroupingLane::finalize()
 {
     Stopwatch watch;
-    num_groups = group_by.finalize();
+    num_groups = groupByOrThrow().finalize();
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
     return *num_groups;
 }
@@ -308,29 +265,9 @@ size_t GPUGroupingLane::filterGroups(const CompiledGPUExpression & having, const
 
     Stopwatch watch;
 
-    std::vector<DeviceColumnView> group_columns;
-    group_columns.reserve(columns.size());
-    for (const size_t column : columns)
-    {
-        if (column < group_keys.size())
-            group_columns.push_back(group_by.key(column));
-        else if (column - group_keys.size() < aggregates.size())
-            group_columns.push_back(group_by.value(column - group_keys.size()));
-        else
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "A `HAVING` over column {} of {} keys and {} aggregates", column, group_keys.size(), aggregates.size());
-    }
-
-    const cuda::stream_ref own{stream.get()};
-    const std::vector<GPUExpressionInput> inputs = inputsOf(having.expression, group_columns, *num_groups);
+    const cuda::stream_ref own = stream();
     /// The caller holds the kernel only for this call, so the stream is drained before it returns, on an exception too.
-    waitOnFailure(own, [&]
-    {
-        kept.clear();
-        char * const bits = kept.grow(maskBytes(*num_groups));
-        evaluateGPUExpression(having.expression, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, *num_groups, bits, own);
-        num_groups = group_by.keepGroups({.words = reinterpret_cast<const uint32_t *>(bits), .rows = *num_groups});
-    });
+    waitOnFailure(own, [&] { num_groups = groupByOrThrow().filterGroups(having.expression, columns); });
     synchronizeStream(own);
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
@@ -342,13 +279,13 @@ void GPUGroupingLane::copyGroupsTo(MutableColumns & key_columns, MutableColumns 
     if (!num_groups)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The groups of a GPU aggregation were asked for before it was finalized");
 
-    if (key_columns.size() != group_keys.size() || aggregate_columns.size() != aggregates.size())
+    if (key_columns.size() != keys.size() || aggregate_columns.size() != aggregates.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "{} key and {} aggregate columns for the groups of a GPU aggregation of {} keys and {} aggregates",
             key_columns.size(),
             aggregate_columns.size(),
-            group_keys.size(),
+            keys.size(),
             aggregates.size());
 
     const size_t rows = *num_groups;
@@ -357,14 +294,15 @@ void GPUGroupingLane::copyGroupsTo(MutableColumns & key_columns, MutableColumns 
 
     Stopwatch watch;
 
+    const CudfGroupBy & groups = groupByOrThrow();
     std::vector<DeviceColumnView> from;
     std::vector<IColumn *> to;
-    from.reserve(group_keys.size() + aggregates.size());
-    to.reserve(group_keys.size() + aggregates.size());
+    from.reserve(keys.size() + aggregates.size());
+    to.reserve(keys.size() + aggregates.size());
 
-    for (size_t i = 0; i < group_keys.size(); ++i)
+    for (size_t i = 0; i < keys.size(); ++i)
     {
-        const DeviceColumnView key = group_by.key(i);
+        const DeviceColumnView key = groups.key(i);
         if (key.rows() != rows)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The device holds {} rows of key {} of {} groups", key.rows(), i, rows);
         from.push_back(key);
@@ -373,14 +311,14 @@ void GPUGroupingLane::copyGroupsTo(MutableColumns & key_columns, MutableColumns 
 
     for (size_t i = 0; i < aggregates.size(); ++i)
     {
-        const DeviceColumnView value = group_by.value(i);
+        const DeviceColumnView value = groups.value(i);
         if (value.rows() != rows)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The device holds {} rows of aggregate {} of {} groups", value.rows(), i, rows);
         from.push_back(value);
         to.push_back(aggregate_columns[i].get());
     }
 
-    copyDeviceToHost(from, to, cuda::stream_ref{stream.get()});
+    copyDeviceToHost(from, to, stream());
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
 }
@@ -402,17 +340,17 @@ GPUAccumulator::GPUAccumulator(
     }
 }
 
-void GPUAccumulator::add(GPUDeviceBatch batch)
+void GPUAccumulator::add(GPUFuture<GPUDeviceBatch> future)
 {
-    const std::vector<DeviceColumnView> & columns = batch.columns();
+    const GPUDeviceBatch batch = takeOn(std::move(future), cuda::stream_ref{reduce_stream.get()});
+    const std::vector<GPUDeviceColumn> & columns = batch.columns();
     if (columns.size() != reductions.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU batch of {} columns for {} reductions", columns.size(), reductions.size());
 
-    batch.moveTo(cuda::stream_ref{reduce_stream.get()});
 
     Stopwatch watch;
     for (size_t i = 0; i < columns.size(); ++i)
-        reductions[i]->addBatch(columns[i]);
+        reductions[i]->addBatch(columns[i].view());
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationRows, batch.rows());
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);

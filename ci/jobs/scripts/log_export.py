@@ -15,7 +15,9 @@ performance comparison runs two servers side by side), and a job that runs more
 than one server tells them apart with `check_name_suffix`.
 """
 
+import math
 import os
+import time
 from pathlib import Path
 
 from ci.jobs.scripts.log_cluster import LogCluster
@@ -60,6 +62,10 @@ SENDER_TABLES_QUERY = (
     "SELECT database || '.' || name FROM system.tables "
     f"WHERE database = '{LOG_EXPORT_DATABASE}' AND endsWith(name, '_sender') AND engine = 'Distributed'"
 )
+
+# The drop of the export database in a `stop` with a deadline gets at least this long. One file send
+# in progress per `_sender` table holds it, for at most the send timeouts of the `ci_logs_sender` profile.
+EXPORT_DROP_SEC = 60
 
 _credentials = None
 
@@ -172,7 +178,7 @@ def start(
     )
 
 
-def stop(port=None):
+def stop(port=None, deadline=None):
     """Flush everything that is still local and drop the views.
 
     The last system log records are flushed into the log tables first, and the
@@ -180,9 +186,15 @@ def stop(port=None):
     (the `ci_logs_sender` profile), so that queue is flushed as well - whatever
     is still in it when the `_sender` tables below are flushed and dropped is
     lost.
+
+    With a `deadline` (a `time.monotonic()` value), the same statements run
+    without `setup_log_cluster.sh`, each bounded by the time left: a flush that
+    has no time left is skipped, and the export database is dropped in any case.
     """
     print(f"Stop log export{f' of the server on port {port}' if port else ''}")
     port_arg = _set_server_port(port)
+    if deadline is not None:
+        return _stop_by(port_arg, deadline)
     Shell.check(
         f'clickhouse-client {port_arg} --query "SYSTEM FLUSH LOGS"',
         verbose=True,
@@ -193,6 +205,38 @@ def stop(port=None):
     )
     return Shell.check(
         f"{SETUP_SCRIPT} --stop-log-replication",
+        verbose=True,
+    )
+
+
+def _bounded(seconds):
+    """A `timeout` prefix. It signals its own process group, so the command and
+    everything the command started end within `seconds + 5`."""
+    return f"timeout --verbose -k 5 {max(1, math.ceil(seconds))}"
+
+
+def _stop_by(port_arg, deadline):
+    client = f"clickhouse-client {port_arg}"
+    flush_end = deadline - EXPORT_DROP_SEC
+    tables = None
+    # The sends stay stopped: `SYSTEM FLUSH DISTRIBUTED` sends the held files anyway.
+    for query in ("SYSTEM FLUSH LOGS", "SYSTEM FLUSH ASYNC INSERT QUEUE", SENDER_TABLES_QUERY, "SYSTEM FLUSH DISTRIBUTED {}"):
+        seconds = flush_end - time.monotonic()
+        if seconds <= 0:
+            print("WARNING: no time left to send the system logs of this server, the export is dropped without them")
+            break
+        if query == SENDER_TABLES_QUERY:
+            tables = Shell.get_output(f'{_bounded(seconds)} {client} --query "{query}"', verbose=True)
+            if not tables:
+                break
+        elif tables:
+            command = f'xargs -n1 -P10 -r -i {client} --query "{query}"'
+            Shell.check(f"{_bounded(min(300, seconds))} {command}", verbose=True, stdin_str=tables)
+        else:
+            Shell.check(f'{_bounded(seconds)} {client} --query "{query}"', verbose=True)
+    return Shell.check(
+        f"{_bounded(max(EXPORT_DROP_SEC, deadline - time.monotonic()))} {client} "
+        f'--query "DROP DATABASE IF EXISTS {LOG_EXPORT_DATABASE}"',
         verbose=True,
     )
 
