@@ -91,6 +91,7 @@ const PaddedPODArray<UInt64> & getColumnUInt64Data(const Block & block, const St
 PaddedPODArray<UInt64> & getColumnUInt64Data(Block & block, const String & column_name);
 bool canApplyPatchInplace(const IColumn & column);
 IColumn::Versions & addDataVersionForColumn(Block & block, const String & column_name, UInt64 num_rows, UInt64 data_version);
+void removeDataVersionForColumn(Block & block, const String & column_name);
 Block getUpdatedHeader(const PatchesIndices & patches);
 
 /// Applies each patch as-is, without combining row indices across patches.
