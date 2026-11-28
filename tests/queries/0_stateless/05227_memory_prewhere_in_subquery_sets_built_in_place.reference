@@ -18,8 +18,14 @@ DelayedPorts 2 → 1
     (ReadFromMemoryStorage)
 -- moved to PREWHERE by the optimizer, after applyFilters already ran
 (CreatingSets)
+DelayedPorts 2 → 1
   (Expression)
   ExpressionTransform
+    (Expression)
+    ExpressionTransform
+      (ReadFromMemoryStorage)
+  (CreatingSet)
+  CreatingSetsTransform
     (Expression)
     ExpressionTransform
       (ReadFromMemoryStorage)
