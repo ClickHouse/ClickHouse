@@ -32,7 +32,8 @@ echo -ne 'd\tunknown\tstr\tmore\tu\tfields\n2019-04-18\tblahblah\tLine12\t\t1\t\
 echo -ne 'd\tu\n2019-04-18\t1\n2019-04-18\t2\n'            | eval "$INSERT_QUERY" $USE_HEADER
 echo -ne 'str\tu\nLine16\t1\nLine17\t2\n'                  | eval "$INSERT_QUERY" $USE_HEADER
 echo -ne 'd\tstr\n2019-04-18\tLine18\n2019-04-18\tLine19\n'| eval "$INSERT_QUERY" $USE_HEADER
-echo -ne 'unknown\n\n\n'                                   | eval "$INSERT_QUERY" $USE_HEADER $SKIP_UNKNOWN
+# A header without any column of the table: most likely the data is wrong.
+echo -ne 'unknown\n\n\n'                                   | eval "$INSERT_QUERY" $USE_HEADER $SKIP_UNKNOWN 2>&1 | grep -o -m1 'INCORRECT_DATA'
 
 $CLICKHOUSE_CLIENT --query="SELECT * FROM tsv ORDER BY ALL"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS tsv"

@@ -11,7 +11,7 @@ echo -n $'key\r\nbar\r\n' | ${CLICKHOUSE_LOCAL} --input-format CSVWithNames -S '
 echo 'TSVWithNames'
 echo -n $'key\r\nbar\r\n' | ${CLICKHOUSE_LOCAL} --input-format TSVWithNames -S 'key String' -q 'select * from table' >& /dev/null
 echo $?
-echo -n $'key\\r\nbar\n' | ${CLICKHOUSE_LOCAL} --input_format_skip_unknown_fields=1 --input-format TSVWithNames -S 'key String' -q 'select * from table'
+echo -n $'key\\r\nbar\n' | ${CLICKHOUSE_LOCAL} --input_format_skip_unknown_fields=1 --input_format_with_names_throw_if_no_column_matches=0 --input-format TSVWithNames -S 'key String' -q 'select * from table'
 
 echo 'TSV'
 echo -n $'key\r\nbar\r\n' | ${CLICKHOUSE_LOCAL} --input-format TSV -S 'key String' -q 'select * from table' >& /dev/null
