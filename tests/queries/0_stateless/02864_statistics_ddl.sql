@@ -315,7 +315,7 @@ CREATE TABLE tab (a UInt64 STATISTICS(tdigest), b UInt64) Engine = MergeTree() O
 INSERT INTO tab VALUES (1, 1);
 SYSTEM STOP MERGES tab;
 ALTER TABLE tab MATERIALIZE STATISTICS b SETTINGS mutations_sync = 0;
-ALTER TABLE tab MODIFY COLUMN b UInt64 ALIAS a + 1 SETTINGS mutations_sync = 0;
+ALTER TABLE tab MODIFY COLUMN b UInt64 ALIAS a + 1 SETTINGS mutations_sync = 0, alter_sync = 0;
 SYSTEM START MERGES tab;
 ALTER TABLE tab MATERIALIZE STATISTICS a SETTINGS mutations_sync = 2;
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'tab' AND NOT is_done;

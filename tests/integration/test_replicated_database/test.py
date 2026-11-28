@@ -2728,3 +2728,43 @@ def test_attach_mv_replays_on_replica_without_source(started_cluster):
     for node in [main_node, dummy_node]:
         node.query("DROP DATABASE attach_mv_db SYNC")
     main_node.query("DROP DATABASE attach_mv_src SYNC")
+
+
+def test_alias_conversion_replay_keeps_last_stored_column(started_cluster):
+    # The initiator refuses a conversion that would empty one of its parts, a follower keeps the column's data.
+    for i, node in enumerate([main_node, dummy_node]):
+        node.query(
+            f"CREATE DATABASE alias_conversion_db ENGINE = Replicated('/test/alias_conversion_db', 'shard1', 'replica{i + 1}')"
+        )
+    main_node.query(
+        "CREATE TABLE alias_conversion_db.t (q UInt32) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA alias_conversion_db")
+    # Not replicated: the follower's part stores only `q`.
+    dummy_node.query("INSERT INTO alias_conversion_db.t VALUES (42)")
+    main_node.query("ALTER TABLE alias_conversion_db.t ADD COLUMN id UInt64")
+    main_node.query("INSERT INTO alias_conversion_db.t VALUES (42, 1)")
+    main_node.query(
+        "ALTER TABLE alias_conversion_db.t MODIFY COLUMN q UInt32 ALIAS toUInt32(id + 7)"
+    )
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA alias_conversion_db", timeout=60)
+
+    stored_columns = "SELECT arraySort(groupArray(column)) FROM system.parts_columns WHERE database = 'alias_conversion_db' AND active"
+    mutations = "SELECT count(), sum(is_done) FROM system.mutations WHERE database = 'alias_conversion_db'"
+    assert main_node.query(stored_columns) == "['id']\n"
+    assert main_node.query(mutations) == "1\t1\n"
+    assert dummy_node.query(stored_columns) == "['q']\n"
+    assert dummy_node.query(mutations) == "0\t0\n"
+    for node in [main_node, dummy_node]:
+        assert (
+            node.query(
+                "SELECT name, default_kind FROM system.columns WHERE database = 'alias_conversion_db' ORDER BY name"
+            )
+            == "id\t\nq\tALIAS\n"
+        )
+        assert not node.contains_in_log(
+            "DDLWorker(alias_conversion_db): Unexpected error"
+        )
+
+    for node in [main_node, dummy_node]:
+        node.query("DROP DATABASE alias_conversion_db SYNC")

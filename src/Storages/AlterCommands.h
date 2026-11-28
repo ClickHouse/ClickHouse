@@ -232,6 +232,10 @@ struct AlterCommand
     /// `CLEAR COLUMN` of the virtual column `_block_number` or `_block_offset` stored in parts, see `DB::isClearOfBlockColumns`.
     [[nodiscard]] bool isClearOfBlockColumns(const StorageInMemoryMetadata & metadata) const;
 
+    /// Turns a stored column into `ALIAS` or `EPHEMERAL`, no key, skip index or projection reads it, and the table
+    /// has no `UNIQUE KEY`.
+    [[nodiscard]] bool stopsStoringUnreferencedColumn(const StorageInMemoryMetadata & metadata) const;
+
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
     /// metadata changes.
@@ -292,7 +296,8 @@ public:
     /// share_nested_offsets is threaded to tryConvertToMutationCommand -> AlterCommand::apply so the
     /// intermediate metadata built while planning mutations matches the real commands.apply() for
     /// IF NOT EXISTS nested adds (see AlterCommand::apply).
-    [[nodiscard]] MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false, bool share_nested_offsets = true) const;
+    /// drop_stored_data = false omits the DROP COLUMN of the columns that stopsStoringUnreferencedColumn reports.
+    [[nodiscard]] MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false, bool share_nested_offsets = true, bool drop_stored_data = true) const;
 
     /// Check if commands have a text index
     static bool hasTextIndex(const StorageInMemoryMetadata & metadata);

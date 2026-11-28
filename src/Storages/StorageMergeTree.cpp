@@ -22,6 +22,7 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -615,6 +616,29 @@ void StorageMergeTree::alter(
     const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
 
     auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context, /*with_alters*/ false, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
+
+    /// A secondary replica of a `Replicated` database cannot refuse a committed `ALTER`, so it keeps the data of a column turned
+    /// into `ALIAS` or `EPHEMERAL` when dropping it would leave one of its parts without columns.
+    if (isSecondaryDDLReplay(local_context))
+    {
+        NameSet dropped_columns;
+        for (const auto & command : maybe_mutation_commands)
+        {
+            if (command.type != MutationCommand::DROP_COLUMN)
+                continue;
+            if (old_metadata.columns.has(command.column_name))
+                dropped_columns.emplace(command.column_name);
+            else
+                for (const auto & nested_column : old_metadata.columns.getNested(command.column_name))
+                    dropped_columns.emplace(nested_column.name);
+        }
+
+        if (!dropped_columns.empty() && !findPartLeftWithoutColumns(dropped_columns, old_metadata, local_context).empty())
+            maybe_mutation_commands = commands.getMutationCommands(
+                new_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context, /*with_alters*/ false,
+                (*old_storage_settings)[MergeTreeSetting::share_nested_offsets], /*drop_stored_data=*/ false);
+    }
+
     if (!maybe_mutation_commands.empty())
     {
         stopDelayingMergesAfterStartup();
