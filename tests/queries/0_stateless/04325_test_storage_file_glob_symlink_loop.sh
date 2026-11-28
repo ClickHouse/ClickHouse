@@ -303,14 +303,8 @@ ln -s .. "$TEST_DIR_ABS/latematch/root/aaa/back"
 printf "row1\n" > "$TEST_DIR_ABS/latematch/root/mmm/zzz.txt"
 
 # How many symlinks one lookup may follow: 40 on Linux, 32 on macOS. The link counts below are for 40.
-mkdir -p "$TEST_DIR_ABS/limit"
-touch "$TEST_DIR_ABS/limit/l0"
-SYMLINK_LIMIT=0
-for i in $(seq 1 100); do
-    ln -s "l$((i - 1))" "$TEST_DIR_ABS/limit/l$i"
-    [ -e "$TEST_DIR_ABS/limit/l$i" ] || break
-    SYMLINK_LIMIT=$i
-done
+SYMLINK_LIMIT=40
+[ "$(uname -s)" = Darwin ] && SYMLINK_LIMIT=32
 
 # Three names for one directory with different symlink budgets: `budget/root/a` and `root/b`
 # resolve through 40 links (the Linux limit), so `child` below them fails with `ELOOP`, while
@@ -540,6 +534,34 @@ ln -s ../data "$TEST_DIR_ABS/dotdotmatch/root/w"
 
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
+# Linux sometimes fails a lookup through more than 20 symlinks with ELOOP: an abandoned lock-free walk is repeated with
+# its links still counted. So each query over the 37- to 40-link chains below prints what two runs in a row agree on.
+stable() {
+    local previous current
+    previous=$("$@" 2>&1; echo .)
+    for _ in $(seq 9); do
+        current=$("$@" 2>&1; echo .)
+        [ "$current" = "$previous" ] && break
+        previous=$current
+    done
+    printf '%s' "${previous%.}"
+}
+
+# Writes through the pattern `$2` into a fresh copy of the `$1` fixture, prints `$3` if refused, counts the rows of `$4`.
+write_to_copy() {
+    local copy
+    copy="$1_$(random_str 8)"
+    cp -a "$TEST_DIR_ABS/$1" "$TEST_DIR_ABS/$copy"
+    $CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/$copy/$2', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+        | grep -qF "readonly mode because of globs" && echo "$3"
+    $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/$copy/$4', 'TSV', 'val String')"
+}
+
+fails_on_symlink_limit() {
+    $CLICKHOUSE_CLIENT --query "$1" 2>&1 \
+        | grep -qE "Cannot expand the glob: (Too many levels of symbolic links|Symbolic link loop)" && echo "fails"
+}
+
 # Ancestor-loop symlink: `loop/dir1/dir2/loop_to_root` points back at `loop/dir1`,
 # so following `dir2/loop_to_root` recreates the same `dir1/dir2/loop_to_root`
 # infinitely. The kernel would surface this as `Too many levels of symbolic
@@ -731,13 +753,9 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/alia
 $CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/aliasdotdot/root/**/{..}/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
     | grep -qF "readonly mode because of globs" && echo "unexpectedly refused"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/aliasdotdot/root/f.txt', 'TSV', 'val String')"
-$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/aliasdotdotretry/root/*/**/{..}/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
-    | grep -qF "readonly mode because of globs" && echo "unexpectedly refused"
-$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/aliasdotdotretry/root/f.txt', 'TSV', 'val String')"
+stable write_to_copy aliasdotdotretry 'root/*/**/{..}/f.txt' "unexpectedly refused" root/f.txt
 echo "aliases-folded-to-two-paths-insert-stays-readonly"
-$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/aliasdotdotretrybelow/root/*/**/{..}/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
-    | grep -qF "readonly mode because of globs" && echo "refused"
-$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/aliasdotdotretrybelow/root/g.txt', 'TSV', 'val String')"
+stable write_to_copy aliasdotdotretrybelow 'root/*/**/{..}/f.txt' refused root/g.txt
 $CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/aliasdotdotbelow/root/*/**/{..}/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
     | grep -qF "readonly mode because of globs" && echo "refused"
 $CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/aliasdotdotparents/root/*/a/**/{..}/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
@@ -766,21 +784,19 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/latematch/r
 # A walk that skipped an entry on `ELOOP` must not prune a name with fewer symlinks, even after a
 # second name that fails the same way: both files are found.
 echo "shorter-alias-after-symlink-budget-skip"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget/root/**/child/missing.txt', 'TSV', 'val String')"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget/root/**/child/missing.txt', 'TSV', 'val String')"
 # Only `root/z` reaches `missing.txt`, so the two names that cannot are not second names for it and
 # the write is allowed, as through `root/z` alone. The row count afterwards shows it landed.
-$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/budget/root/**/missing.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
-    | grep -qF "readonly mode because of globs" && echo "unexpectedly refused"
-$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/budget/data/B/missing.txt', 'TSV', 'val String')"
+stable write_to_copy budget 'root/**/missing.txt' "unexpectedly refused" data/B/missing.txt
 
 echo "further-alias-after-incomplete-retry"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget2/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget2/root/z/**/*.txt', 'TSV', 'val String') ORDER BY val"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget2/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget2/root/z/**/*.txt', 'TSV', 'val String') ORDER BY val"
 
 echo "further-alias-after-skip-into-incomplete-frame"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget3/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget3/root/z/**/*.txt', 'TSV', 'val String') ORDER BY val"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget3/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget3/root/z/**/*.txt', 'TSV', 'val String') ORDER BY val"
 
 echo "shorter-alias-after-path-max-size-lookup"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/longname/root/**/*.txt', 'TSV', 'val String')"
@@ -793,43 +809,39 @@ $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/longliteral_lon
     | grep -qE "Cannot expand the glob: (File name too long|Filename too long)" && echo "fails"
 
 echo "alias-resolving-a-later-skip"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/siblings/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/siblings/root/b/**/*.txt', 'TSV', 'val String') ORDER BY val"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/siblings/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/siblings/root/b/**/*.txt', 'TSV', 'val String') ORDER BY val"
 
 # A file only names over the symlink limit reach fails the glob, as any other unreadable path does.
 echo "skip-no-name-returns"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/unreachable/root/**/*.txt', 'TSV', 'val String')" 2>&1 \
-    | grep -qE "Cannot expand the glob: (Too many levels of symbolic links|Symbolic link loop)" && echo "fails"
+stable fails_on_symlink_limit "SELECT val FROM file('$TEST_DIR_NAME/unreachable/root/**/*.txt', 'TSV', 'val String')"
 
 echo "skip-below-finite-glob-returned-through-another-parent"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/*/*/**/*.txt', 'TSV', 'val String') ORDER BY val"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/z/*/**/*.txt', 'TSV', 'val String') ORDER BY val"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/*/*/x/**/*.txt', 'TSV', 'val String')"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents_swapped/root/*/*/**/*.txt', 'TSV', 'val String') ORDER BY val"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/*/*/**/*.txt', 'TSV', 'val String') ORDER BY val"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/z/*/**/*.txt', 'TSV', 'val String') ORDER BY val"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/*/*/x/**/*.txt', 'TSV', 'val String')"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents_swapped/root/*/*/**/*.txt', 'TSV', 'val String') ORDER BY val"
 
 echo "skip-in-bounded-tail-returned-through-another-parent"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/**/child/*.txt', 'TSV', 'val String')"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/**/child/*/*.txt', 'TSV', 'val String')"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/**/*/f.txt', 'TSV', 'val String')"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents_swapped/root/**/child/*.txt', 'TSV', 'val String')"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents_lone/root/**/child/*.txt', 'TSV', 'val String')" 2>&1 \
-    | grep -qE "Cannot expand the glob: (Too many levels of symbolic links|Symbolic link loop)" && echo "fails"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/**/child/*.txt', 'TSV', 'val String')"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/**/child/*/*.txt', 'TSV', 'val String')"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/**/*/f.txt', 'TSV', 'val String')"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents_swapped/root/**/child/*.txt', 'TSV', 'val String')"
+stable fails_on_symlink_limit "SELECT val FROM file('$TEST_DIR_NAME/parents_lone/root/**/child/*.txt', 'TSV', 'val String')"
 
 echo "skip-into-incomplete-frame-returned-through-a-shorter-alias"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/incomplete/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/incomplete/root/c/**/*.txt', 'TSV', 'val String') ORDER BY val"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/incomplete/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/incomplete/root/c/**/*.txt', 'TSV', 'val String') ORDER BY val"
 
 echo "brace-expanded-dotdot-folded-against-each-alias"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdot/root/*/alias/**/{..}/f.txt', 'TSV', 'val String') ORDER BY val"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdot/root/*/alias/{..}/**/f.txt', 'TSV', 'val String') ORDER BY val"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdotloop/root/**/{..}/f.txt', 'TSV', 'val String') ORDER BY val"
 echo "skip-folded-against-another-spelling-fails"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdotskip/root/**/child/*/{..}/{..}/f.txt', 'TSV', 'val String')" 2>&1 \
-    | grep -qE "Cannot expand the glob: (Too many levels of symbolic links|Symbolic link loop)" && echo "fails"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdotmatch/root/*/alias/{..}/**/l', 'TSV', 'val String')" 2>&1 \
-    | grep -qE "Cannot expand the glob: (Too many levels of symbolic links|Symbolic link loop)" && echo "fails"
+stable fails_on_symlink_limit "SELECT val FROM file('$TEST_DIR_NAME/dotdotskip/root/**/child/*/{..}/{..}/f.txt', 'TSV', 'val String')"
+stable fails_on_symlink_limit "SELECT val FROM file('$TEST_DIR_NAME/dotdotmatch/root/*/alias/{..}/**/l', 'TSV', 'val String')"
 echo "skip-whose-fold-stays-below-the-directory-returned-through-another-parent"
-$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdotskip/root/**/child/*/{..}/f.txt', 'TSV', 'val String')"
+stable $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdotskip/root/**/child/*/{..}/f.txt', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"
