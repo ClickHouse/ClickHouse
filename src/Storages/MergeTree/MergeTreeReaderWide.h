@@ -180,7 +180,8 @@ private:
     struct ColumnKind;
 
     /// Open the streams of a column that is read, and classify it in `kind`.
-    void addStreams(
+    /// Returns true for a sparse column that has only default values in the part; it gets no streams.
+    bool addStreams(
         const NameAndTypePair & name_and_type,
         const SerializationPtr & serialization,
         ColumnKind & kind);
@@ -254,6 +255,9 @@ private:
     clockid_t clock_type;
     bool read_without_marks = false;
     LoggerPtr log;
+
+    /// By position, set for a sparse column with only defaults in the part: the row its next read starts from.
+    std::vector<std::optional<size_t>> only_defaults_next_row;
 
     /// Whether the column at `pos` is read from the part even when the rest of the granule is
     /// served from the cache: a partially read column - only some of its streams are in the part,

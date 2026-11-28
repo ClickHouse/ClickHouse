@@ -15,7 +15,8 @@ CREATE TABLE test_s3 (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a
 SETTINGS disk = 's3_disk', min_bytes_for_wide_part = 0;
 
-INSERT INTO test_s3 SELECT number, number FROM numbers_mt(1);
+-- Non-default values: an all-default sparse column of a Wide part is not read from the disk.
+INSERT INTO test_s3 SELECT number + 1, number + 1 FROM numbers_mt(1);
 "
 
 # This (reusing connections from the pool) is not guaranteed to always happen,
