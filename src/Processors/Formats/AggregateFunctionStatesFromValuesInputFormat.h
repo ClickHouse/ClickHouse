@@ -53,6 +53,8 @@ public:
     bool isTopKFilterApplied() const override { return underlying->isTopKFilterApplied(); }
     [[nodiscard]] bool isJoinRuntimeFilterApplied() const override { return underlying->isJoinRuntimeFilterApplied(); }
     bool isMinMaxFromStatisticsApplied() const override { return underlying->isMinMaxFromStatisticsApplied(); }
+    std::optional<VectorWithMemoryTracking<bool>> getMatchedRowBlocks() const override { return underlying->getMatchedRowBlocks(); }
+    void setRowBlocksToRead(std::shared_ptr<const VectorWithMemoryTracking<bool>> row_blocks) override { underlying->setRowBlocksToRead(std::move(row_blocks)); }
     void cacheFilterColumnStatistics() override { underlying->cacheFilterColumnStatistics(); }
 
 protected:

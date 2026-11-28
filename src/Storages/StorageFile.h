@@ -368,6 +368,8 @@ private:
         /// describe this version only, so every source checks that it reads this version.
         String file_cache_version;
         VectorWithMemoryTracking<FileBucketInfoPtr> buckets;
+        /// Read by every source, see `IInputFormat::setRowBlocksToRead`. `nullptr` to read all row blocks.
+        std::shared_ptr<const VectorWithMemoryTracking<bool>> row_blocks_to_read;
         std::atomic<size_t> next_bucket = 0;
 
         /// Every source reads only the row groups of the buckets it takes, so the query condition cache entry
@@ -377,6 +379,8 @@ private:
         bool can_write_query_condition_cache TSA_GUARDED_BY(mutex) = true;
         size_t total_row_groups TSA_GUARDED_BY(mutex) = 0;
         std::unordered_set<size_t> matched_row_groups TSA_GUARDED_BY(mutex);
+        bool can_write_row_blocks TSA_GUARDED_BY(mutex) = true;
+        VectorWithMemoryTracking<bool> matched_row_blocks TSA_GUARDED_BY(mutex);
     };
     using SplitFilePtr = std::shared_ptr<SplitFile>;
 

@@ -94,8 +94,9 @@ QUERY="SELECT count() FROM url('http://127.0.0.1:${HTTP_PORT}/data/*.parquet', P
 ${CLICKHOUSE_LOCAL} --send_logs_level=test --query "${QUERY}" 2> "${WORKING_FOLDER}/stderr" \
     || cat "${WORKING_FOLDER}/stderr"
 
-# The cache logs every access with its key (`-a`: the key contains a NUL). The lookup and the entry use
-# the path without the token, and the token is nowhere in the keys.
+# The cache logs every access with its key (`-a`: the key contains a NUL). The file has two entries, one
+# for its row groups and one for its row blocks. Both lookups and both entries use the path without the
+# token, and the token is nowhere in the keys.
 grep -a 'QueryConditionCache' "${WORKING_FOLDER}/stderr" | grep -a -c 'Could not find entry for table_uuid: .*part: .*data/data.parquet#storage='
 grep -a 'QueryConditionCache' "${WORKING_FOLDER}/stderr" | grep -a -c 'Inserted entry for table_id: .*part_name: .*data/data.parquet#storage='
 grep -a 'QueryConditionCache' "${WORKING_FOLDER}/stderr" | grep -a -c 'very_secret_token'
