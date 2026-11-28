@@ -182,6 +182,8 @@ if (OS_LINUX)
         # Fold identical code and data sections to reduce binary size.
         # `all` also folds the functions whose address is taken (`safe` keeps them distinct, as C and C++ require).
         # This only matters for code that compares the addresses of two different functions with identical bodies.
+        # zlib-ng did so (`zfree == zcfree`, and gRPC's `zfree_gpr` is folded with `zcfree`), which corrupted the heap
+        # in gRPC compression; our fork of zlib-ng no longer compares the allocation callbacks.
         # Most of what `all` adds are instances of one template whose address is stored and called, never compared
         # (`IAggregateFunctionHelper<T>::addFree`, the type-erased thunks of `std::function`), and the whole Rust
         # library, whose address-significance table is lost when its symbols are stripped. Data is not affected:
