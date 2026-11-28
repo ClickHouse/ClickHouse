@@ -1,0 +1,10 @@
+ATTACH PART
+1_0_0_0
+1_0_0_0_1
+ATTACH PARTITION
+1_0_0_0_1
+inactive_1_0_0_0
+ATTACH PART FROM
+1_0_0_0_1
+inactive_1_0_0_0
+2	400
