@@ -1017,6 +1017,10 @@ The oldest supported serialization version is `21`. A sender does not serialize 
 
 Inside the plan stream, every step carries its settings as a settings list in the same encoding as the [Query packet's settings list](#setting) in the `STRINGS_WITH_FLAGS` form: zero or more `(String name, VarUInt flags, String value)` triples, terminated by an empty name. Only the settings that the step changed from their defaults are written. The writer sets only the `Important` flag (`0x01`), for a plan setting declared important. A receiver that does not know a setting name skips the entry with a warning if `Important` is not set, and rejects the plan with `UNKNOWN_SETTING` (code `115`) if it is set.
 
+Every step also carries its own step version, a `VarUInt` written after the step name. The sender writes the highest step version that the plan's `serialization_version` permits. A receiver rejects a step version that it does not know with `INCORRECT_DATA` (code `117`).
+
+The `ReadFromTable` step is a read of a table that the receiver resolves in its own catalog. Its step version `1` is written from plan version `22`. Version `1` adds bit `0x10` to the flags byte of the step. When this bit is set, the row policy filter of the read is the last field of the step: the serialized filter actions, then `String column_name` (the filter column), then `Bool do_remove_column`. The output header of the step is the header after this filter. The receiver applies the filter in the read; if its table cannot apply it there, the query fails with `ILLEGAL_PREWHERE` (code `182`). A sender does not send a read with a row policy filter to a peer whose `query_plan_serialization_version` is below `22`, because step version `0` cannot carry the filter and that peer would return the rows that the policy excludes: the query fails with `SUPPORT_IS_DISABLED` (code `344`). A read without a row policy filter does not set the bit and goes to a peer at either version.
+
 ## Configuration {#configuration}
 
 This section covers the tunables that shape native protocol connections:
