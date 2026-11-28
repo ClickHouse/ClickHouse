@@ -112,9 +112,10 @@ inline std::string_view textBetween(TokenIterator begin, TokenIterator end)
     return {begin->begin, static_cast<size_t>(end->end - begin->begin)};
 }
 
-/// Returns positions of unmatched parentheses. The walk stops at the first semicolon at or after `statement_end`
-/// where every bracket is closed: what follows can only add brackets of later statements.
 using UnmatchedParentheses = std::vector<Token>;
-UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin, const char * statement_end);
+
+/// Returns positions of unmatched parentheses. With `stop_at_semicolon`, the walk stops at the first semicolon.
+/// Otherwise it stops at the first semicolon at or after `statement_end` where every bracket is closed.
+UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin, const char * statement_end, bool stop_at_semicolon);
 
 }

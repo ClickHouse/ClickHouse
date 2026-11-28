@@ -27,16 +27,16 @@ const Token & Tokens::lexUntil(size_t index)
     }
 }
 
-UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin, const char * statement_end)
+UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin, const char * statement_end, bool stop_at_semicolon)
 {
     /// We have just two kind of parentheses: () and [].
     UnmatchedParentheses stack;
 
-    /// We have to iterate through all tokens until the end to avoid false positive "Unmatched parentheses" error
-    /// when parser failed in the middle of the query.
     for (TokenIterator it = begin; it.isValid(); ++it)
     {
-        if (it->type == TokenType::Semicolon && stack.empty() && it->begin >= statement_end)
+        /// In multi-query mode, the first semicolon ends the scan even if brackets remain open.
+        /// Otherwise, scan through the parsed statement and any open brackets to avoid reporting false mismatches.
+        if (it->type == TokenType::Semicolon && (stop_at_semicolon || (stack.empty() && it->begin >= statement_end)))
             break;
 
         if (it->type == TokenType::OpeningRoundBracket || it->type == TokenType::OpeningSquareBracket)

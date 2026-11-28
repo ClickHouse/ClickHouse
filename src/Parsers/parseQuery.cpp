@@ -617,19 +617,18 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
-    /// Unmatched parentheses. Skipped for raw-text parsers: `TokenIterator::isValid()` stops at
+    /// Unmatched parentheses. Skipped for raw-text parsers: `TokenIterator::isValid` stops at
     /// the first error token, so a lexer-rejected token before a later `)` reads as unmatched.
-    /// Only the parens inside the current statement are reported, so the walk stops after it once every
-    /// bracket is closed: walking the rest of a multi-statement input for each statement is quadratic.
+    /// In multi-statement mode, stop at the first semicolon token even if a bracket is still open.
+    /// This keeps later statements from balancing brackets in the current statement.
     UnmatchedParentheses unmatched_parens;
     if (!consumes_raw_text && !(brackets_match_until && last_token.begin <= brackets_match_until))
-        unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), last_token.end);
+        unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), last_token.end, allow_multi_statements);
     if (!unmatched_parens.empty())
     {
-        /// `checkUnmatchedParentheses` can walk past the current statement, so it can
-        /// report parens that live in later statements. Restrict to parens inside
-        /// the current statement; otherwise the highlight loop in
-        /// `writeQueryWithHighlightedErrorPositions` asserts on positions past `end`.
+        /// In single-statement mode, `checkUnmatchedParentheses` can walk past the current statement.
+        /// Keep diagnostics within the statement so that `writeQueryWithHighlightedErrorPositions`
+        /// never receives positions past `end`.
         const char * statement_end = current_statement_end(last_token.end);
         UnmatchedParentheses scoped_parens;
         for (const auto & paren : unmatched_parens)

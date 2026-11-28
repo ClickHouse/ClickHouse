@@ -13,7 +13,7 @@ SELECT [[1, [2, x]], [3]], [[1, 2], [3]], CAST(\'(1, (2, (3, 4)))\', \'Tuple(UIn
 SELECT [1, [1, [1, 2]]], (1, (1, (1, 2))), (1, (1, 2))
 [[[2],[3]],[[4]]]	Array(Array(Array(UInt8)))	(1,(1,(1,2)))	Tuple(UInt8, Tuple(UInt8, Tuple(UInt8, UInt8)))	(1,(1,2))	Tuple(UInt8, Tuple(UInt8, UInt8))
 258
-SELECT (1; SELECT 2): Code: 62 failed at position 10 
+SELECT (1; SELECT 2): Code: 62 failed at position 10 Unmatched parentheses: '(' at position 8 is never closed 
 SELECT 1; SELECT (2: Code: 62 failed at position 10 Unmatched parentheses: '(' at position 8 is never closed 
 SELECT (1; SELECT 2]: Code: 62 failed at position 10 Unmatched parentheses: '(' at position 8 is never closed 
 SELECT 1); SELECT (2: Code: 62 failed at position 9 Unmatched parentheses: ')' at position 9 has no matching opening bracket 
