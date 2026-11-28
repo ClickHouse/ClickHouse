@@ -37,6 +37,9 @@ public:
     [[nodiscard]] bool isSerializable() const override { return true; }
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// Returns true when arguments or limit pushdown bound the read.
+    [[nodiscard]] bool hasBoundedRead() const;
+
 private:
     Pipe makePipe();
 

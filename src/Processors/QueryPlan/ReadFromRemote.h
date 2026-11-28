@@ -58,7 +58,9 @@ public:
 
     bool hasSerializedPlan() const;
 
+    [[nodiscard]] bool hasBoundedRead() const;
     [[nodiscard]] bool hasTotals() const;
+    [[nodiscard]] bool hasExtremes() const;
 
     void allowReadingShardFromSeveralReplicas(bool allow) { allow_reading_shard_from_several_replicas = allow; }
 
@@ -143,6 +145,8 @@ public:
     void enforceAggregationInOrder(const SortDescription & sort_description);
     /// See `distributed_group_by_top_k`.
     void enableGroupByTopK(size_t top_k_limit);
+
+    [[nodiscard]] bool hasBoundedRead() const;
 
     [[nodiscard]] StorageID getStorageID() const { return storage_id; }
     [[nodiscard]] ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }

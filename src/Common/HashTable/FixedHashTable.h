@@ -242,8 +242,8 @@ public:
         std::swap(buf, rhs.buf);
         this->setSize(rhs.size());
 
-        Allocator::operator=(std::move(rhs));
-        Cell::State::operator=(std::move(rhs));
+        Allocator::operator=(std::move(rhs)); ///NOLINT
+        Cell::State::operator=(std::move(rhs)); ///NOLINT
 
         return *this;
     }
@@ -531,8 +531,8 @@ public:
         memset(static_cast<void *>(buf), 0, NUM_CELLS * sizeof(*buf));
     }
 
-    /// After executing this function, the table can only be destroyed,
-    ///  and also you can use the methods `size`, `empty`, `begin`, `end`.
+    /// After executing this function, the table can only be destroyed or inspected through
+    /// `size`, `empty`, `begin`, `end`, and `getBufferSizeInBytes`.
     void clearAndShrink()
     {
         destroyElements();
@@ -540,7 +540,7 @@ public:
         free();
     }
 
-    [[nodiscard]] size_t getBufferSizeInBytes() const { return NUM_CELLS * sizeof(Cell); }
+    [[nodiscard]] size_t getBufferSizeInBytes() const { return buf ? NUM_CELLS * sizeof(Cell) : 0; }
 
     [[nodiscard]] size_t getBufferSizeInCells() const { return NUM_CELLS; }
 

@@ -38,6 +38,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_MANY_ROWS;
+    extern const int TOO_MANY_BYTES;
+}
+
 class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using Arenas = std::vector<ArenaPtr>;
@@ -141,6 +147,23 @@ public:
         const bool overflow_row = false;
         size_t max_rows_to_group_by = 0;
         OverflowMode group_by_overflow_mode = OverflowMode::THROW;
+
+        /// An internal limit on the bytes of the hash tables and arenas that all the threads of the
+        /// aggregation hold. Zero disables the accounting. Exceeding it throws, whatever the row overflow
+        /// mode and the spill threshold are. The adaptive path does not run under it, because it keeps
+        /// rows staged outside the tables (see `AggregatingStep::adaptiveAggregatorRejectionReason`).
+        size_t max_bytes_to_group_by = 0;
+
+        struct LimitErrors
+        {
+            String description = "GROUP BY";
+            int rows = ErrorCodes::TOO_MANY_ROWS;
+            int bytes = ErrorCodes::TOO_MANY_BYTES;
+
+            bool operator==(const LimitErrors &) const = default;
+        };
+
+        LimitErrors limit_errors;
 
         /// Two-level aggregation settings (used for a large number of keys).
         /// With how many keys or the size of the aggregation state in bytes,
@@ -878,6 +901,13 @@ private:
     Int64 memory_usage_before_aggregation = 0;
     /// Track memory held by the aggreagation state during execution.
     std::unique_ptr<MemoryTracker> memory_tracker;
+
+    /// The bytes that `Params::max_bytes_to_group_by` limits, summed over the threads of the aggregation.
+    /// Input and output chunks are not part of the aggregation state, so they are not counted.
+    mutable std::atomic<Int64> aggregation_state_bytes = 0;
+    void updateAndCheckMemoryUsage(AggregatedDataVariants & variants) const;
+    void updateAndCheckMemoryUsage(Int64 delta) const;
+    bool checkLimits(AggregatedDataVariants & variants, bool & no_more_keys) const;
 
     /// Redirects the thread's accounting to the per-table tracker (created on demand under the
     /// aggregator tracker). Returns the aggregator tracker, nullptr when there is none to switch to.

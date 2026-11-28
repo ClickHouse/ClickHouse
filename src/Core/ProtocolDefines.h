@@ -279,6 +279,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_S
 /// First query-plan serialization version that carries the set operation of `Join` and the `skip_deduplication` and
 /// `deduplicates_except_join` flags of `Distinct`. Below it, the join of a set operation is not sent.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_OPERATION_AS_JOIN = 21;
+/// First global query-plan version that writes version 2 of `Aggregating`, which adds the byte limit of the
+/// aggregation state and the errors that the limits of the aggregation throw.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_LIMITS = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

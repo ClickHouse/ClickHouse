@@ -239,6 +239,19 @@ ReadFromRemote::ReadFromRemote(
 {
 }
 
+bool ReadFromRemote::hasBoundedRead() const
+{
+    return std::ranges::all_of(shards, [](const auto & shard)
+    {
+        return shard.query_tree && hasBoundedInput(shard.query_tree);
+    });
+}
+
+bool ReadFromRemote::hasExtremes() const
+{
+    return stage == QueryProcessingStage::Complete && context->getSettingsRef()[Setting::extremes];
+}
+
 void ReadFromRemote::enableMemoryBoundMerging()
 {
     DB::enableMemoryBoundMerging(stage, &shards, *context);
@@ -1229,6 +1242,11 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
 
     auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast), fmt::join(replicas, ", "));
     setStepDescription(std::move(description), context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
+}
+
+bool ReadFromParallelRemoteReplicasStep::hasBoundedRead() const
+{
+    return query_tree && hasBoundedInput(query_tree);
 }
 
 void ReadFromParallelRemoteReplicasStep::enableMemoryBoundMerging()

@@ -477,6 +477,11 @@ QueryPlanStepPtr ReadFromSystemNumbersStep::clone() const
     return std::make_unique<ReadFromSystemNumbersStep>(column_names, getQueryInfo(), getStorageSnapshot(), getContext(), storage, max_block_size, num_streams);
 }
 
+bool ReadFromSystemNumbersStep::hasBoundedRead() const
+{
+    return limit.has_value() || storage->hasBoundedRead();
+}
+
 
 void ReadFromSystemNumbersStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {

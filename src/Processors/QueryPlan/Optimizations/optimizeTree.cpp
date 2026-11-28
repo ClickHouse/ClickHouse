@@ -798,6 +798,8 @@ void optimizeTreeSecondPass(
                     local_optimization_settings.enable_join_runtime_filters = false;
             }
 
+            /// Choose blocking deduplication after the fragment is attached to its consumers.
+            local_optimization_settings.convert_distinct_to_aggregation = false;
             auto local_plan = read_from_local->extractQueryPlan();
             local_plan->optimize(local_optimization_settings);
 
@@ -1039,7 +1041,7 @@ void optimizeTreeSecondPass(
         optimizeLimitForAggregationInOrder(root);
 
     /// Propagate stream disjointness so that DISTINCT / LIMIT BY / GROUP BY can skip merging streams.
-    applyStreamDisjointness(optimization_settings, root);
+    applyStreamDisjointness(optimization_settings, root, nodes);
 
     /// Before the sharding, which splits all inputs of the multiway join by the same ranges.
     if (optimization_settings.query_plan_join_multiway_merge && !optimization_settings.make_distributed_plan)

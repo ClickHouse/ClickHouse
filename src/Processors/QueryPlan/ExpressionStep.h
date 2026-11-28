@@ -33,6 +33,10 @@ public:
 
     void disableCompilation() { can_compile_expressions = false; }
 
+    /// Return whether all output columns with the same name are proven to contain identical values.
+    /// Return true when output names are unique, and false when equality cannot be established.
+    [[nodiscard]] bool hasIdenticalDuplicateOutputColumns() const;
+
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
     void serialize(Serialization & ctx) const override;

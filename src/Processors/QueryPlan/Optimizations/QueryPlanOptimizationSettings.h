@@ -178,6 +178,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_prewhere_after_pushdown;
     bool read_in_order;
     bool distinct_in_order;
+    bool convert_distinct_to_aggregation;
     bool limit_by_in_order;
     bool optimize_sorting_by_input_stream_properties;
     bool aggregation_in_order;
@@ -235,6 +236,24 @@ struct QueryPlanOptimizationSettings
     size_t max_step_description_length = 0;
 
     size_t max_block_size = 0;
+
+    struct DistinctAggregationSettings
+    {
+        size_t group_by_two_level_threshold = 0;
+        size_t group_by_two_level_threshold_bytes = 0;
+        float min_hit_rate_to_use_consecutive_keys_optimization = 0;
+        bool enable_prefetch = false;
+        bool serialize_string_with_zero_byte = false;
+        bool enable_parallel_single_level_merge = false;
+        bool enable_parallel_single_level_merge_by_index = false;
+        bool enable_packed_string_keys = false;
+        bool enable_fixed_and_packed_string_keys = false;
+        bool enable_adaptive_aggregator = false;
+        UInt64 adaptive_aggregator_freeze_threshold = 0;
+        UInt64 adaptive_aggregator_freeze_threshold_bytes = 0;
+        bool adaptive_aggregator_disable_thaw = false;
+        bool use_aggregation_memory_tracker = false;
+    } distinct_aggregation_settings;
 
     bool optimize_use_implicit_projections;
     bool force_use_projection;

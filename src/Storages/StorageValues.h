@@ -30,6 +30,9 @@ public:
 
     std::string getName() const override { return "Values"; }
 
+    /// A stored block is finite; an arbitrary prepared pipe may be unbounded.
+    bool hasBoundedRead() const override { return !res_block.empty(); }
+
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

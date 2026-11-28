@@ -458,6 +458,11 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (params.max_rows_to_group_by != 0 && params.group_by_overflow_mode != OverflowMode::THROW)
         return "a dropping group-by limit mode is set";
 
+    /// The byte limit counts the hash tables and arenas of the ordinary path, while the adaptive path keeps rows
+    /// staged outside them.
+    if (params.max_bytes_to_group_by != 0)
+        return "a byte limit of the aggregation state is set";
+
     if (params.overflow_row)
         return "the overflow row is set";
 
@@ -1545,6 +1550,15 @@ void AggregatingStep::serialize(Serialization & ctx) const
             writeIntBinary(static_cast<Int8>(top_k.nulls_directions[i]), ctx.out);
         }
     }
+
+    /// Step version 2 appends the byte limit of the aggregation state and the errors of the limits.
+    if (ctx.step_version < 2)
+        return;
+
+    writeVarUInt(params.max_bytes_to_group_by, ctx.out);
+    writeStringBinary(params.limit_errors.description, ctx.out);
+    writeIntBinary(params.limit_errors.rows, ctx.out);
+    writeIntBinary(params.limit_errors.bytes, ctx.out);
 }
 
 QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
@@ -1752,6 +1766,14 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
 
     params.top_k = std::move(top_k);
 
+    if (ctx.step_version >= 2)
+    {
+        readVarUInt(params.max_bytes_to_group_by, ctx.in);
+        readStringBinary(params.limit_errors.description, ctx.in);
+        readIntBinary(params.limit_errors.rows, ctx.in);
+        readIntBinary(params.limit_errors.bytes, ctx.in);
+    }
+
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),
         std::move(params),
@@ -1831,7 +1853,9 @@ void registerAggregatingStep(QueryPlanStepRegistry & registry)
     registry.registerStep(
         "Aggregating",
         AggregatingStep::deserialize,
-        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K}});
+        {{0, 0},
+         {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K},
+         {2, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_LIMITS}});
 }
 
 

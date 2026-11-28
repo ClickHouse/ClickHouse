@@ -103,7 +103,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
-    extern const int TOO_MANY_ROWS;
     extern const int EMPTY_DATA_PASSED;
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
     extern const int LOGICAL_ERROR;
@@ -2786,7 +2785,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         result.convertToTwoLevel();
 
     /// Checking the constraints.
-    if (!checkLimits(result_size, no_more_keys))
+    if (!checkLimits(result, no_more_keys))
         return false;
 
     bool reached_spill_floor = reachedSpillFloor(params.min_bytes_before_external_group_by, result);
@@ -2883,6 +2882,9 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
         createAggregateStates(place);
         data_variants.without_key = place;
     }
+
+    if (params.max_bytes_to_group_by)
+        updateAndCheckMemoryUsage(data_variants);
 
     auto stat = out_stream.finishWriting();
 
@@ -3165,18 +3167,23 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
 
     const bool allow_having_prefilter = final && params.having_prefilter_op != Params::HavingPrefilterOp::Disabled;
 
+    auto & table = method.data.impls[bucket];
+    const bool check_bytes = params.max_bytes_to_group_by;
+    const auto bytes_before = check_bytes ? table.getBufferSizeInBytes() : 0;
     auto result = convertToBlockImpl(
         method,
-        method.data.impls[bucket],
+        table,
         arena,
         *pools_for_output,
         final,
-        method.data.impls[bucket].size(),
+        table.size(),
         return_single_block,
         /*max_rows_per_block=*/0,
         allow_having_prefilter,
         allow_having_prefilter ? untruncated_keys : nullptr,
         keep_table_buffer);
+    if (check_bytes)
+        updateAndCheckMemoryUsage(static_cast<Int64>(table.getBufferSizeInBytes()) - static_cast<Int64>(bytes_before));
     Chunk chunk = std::move(result[0]);
 
     return AggregatedChunk{std::move(chunk), bucket};
@@ -3645,6 +3652,7 @@ void Aggregator::writeToTemporaryFileImpl(
 {
     size_t max_temporary_block_size_rows = 0;
     size_t max_temporary_block_size_bytes = 0;
+    const size_t buffer_bytes_before = params.max_bytes_to_group_by ? method.data.getBufferSizeInBytes() : 0;
 
     auto update_max_sizes = [&](const Block & block)
     {
@@ -3708,6 +3716,17 @@ void Aggregator::writeToTemporaryFileImpl(
         data_variants.kept_keys_seed = std::make_shared<const Block>(std::move(seed));
     }
 
+    /// Bucket conversion updates the shared byte count directly. Keep the checkpoint in sync
+    /// so resetting the variants after writing does not release the same buffers twice.
+    if (params.max_bytes_to_group_by)
+    {
+        const size_t buffer_bytes_after = method.data.getBufferSizeInBytes();
+        chassert(buffer_bytes_after <= buffer_bytes_before);
+        const size_t released_buffer_bytes = buffer_bytes_before - buffer_bytes_after;
+        chassert(released_buffer_bytes <= data_variants.accounted_bytes);
+        data_variants.accounted_bytes -= released_buffer_bytes;
+    }
+
     /// Pass ownership of the aggregate functions states:
     /// `data_variants` will not destroy them in the destructor, they are now owned by ColumnAggregateFunction objects.
     data_variants.aggregator = nullptr;
@@ -3715,6 +3734,33 @@ void Aggregator::writeToTemporaryFileImpl(
     LOG_DEBUG(log, "Max size of temporary block: {} rows, {}.", max_temporary_block_size_rows, ReadableSize(max_temporary_block_size_bytes));
 }
 
+
+void Aggregator::updateAndCheckMemoryUsage(AggregatedDataVariants & variants) const
+{
+    const size_t bytes = variants.allocatedBytes();
+    const Int64 delta = static_cast<Int64>(bytes) - static_cast<Int64>(variants.accounted_bytes);
+    variants.accounted_bytes = bytes;
+    updateAndCheckMemoryUsage(delta);
+}
+
+void Aggregator::updateAndCheckMemoryUsage(Int64 delta) const
+{
+    if (!delta)
+        return;
+
+    const auto bytes = aggregation_state_bytes.fetch_add(delta, std::memory_order_relaxed) + delta;
+    chassert(bytes >= 0);
+    if (delta > 0)
+        SizeLimits(0, params.max_bytes_to_group_by, OverflowMode::THROW).check(
+            0, static_cast<UInt64>(bytes), params.limit_errors.description.c_str(), params.limit_errors.bytes);
+}
+
+bool Aggregator::checkLimits(AggregatedDataVariants & variants, bool & no_more_keys) const
+{
+    if (params.max_bytes_to_group_by)
+        updateAndCheckMemoryUsage(variants);
+    return checkLimits(variants.sizeWithoutOverflowRow(), no_more_keys);
+}
 
 bool Aggregator::spillAllowedUnderKeptKeysCutoff(bool no_more_keys, const AggregatedDataVariants & result) const
 {
@@ -3780,8 +3826,8 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
         {
             case OverflowMode::THROW:
                 ProfileEvents::increment(ProfileEvents::OverflowThrow);
-                throw Exception(ErrorCodes::TOO_MANY_ROWS, "Limit for rows to GROUP BY exceeded: has {} rows, maximum: {}",
-                    result_size, params.max_rows_to_group_by);
+                throw Exception(params.limit_errors.rows, "Limit for rows to {} exceeded: has {} rows, maximum: {}",
+                    params.limit_errors.description, result_size, params.max_rows_to_group_by);
 
             case OverflowMode::BREAK:
                 ProfileEvents::increment(ProfileEvents::OverflowBreak);
@@ -3907,6 +3953,19 @@ Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionsAndConvertToCh
 
     if (is_cancelled.load(std::memory_order_seq_cst))
         return {};
+
+    size_t partition_bytes = 0;
+    SCOPE_EXIT({
+        if (partition_bytes)
+            aggregation_state_bytes.fetch_sub(static_cast<Int64>(partition_bytes), std::memory_order_relaxed);
+    });
+    if (params.max_bytes_to_group_by)
+    {
+        partition_bytes = dst.allocatedBytes();
+        for (const auto & pool : first->aggregates_pools)
+            partition_bytes -= pool->allocatedBytes();
+        updateAndCheckMemoryUsage(static_cast<Int64>(partition_bytes));
+    }
 
     auto agg_chunk = prepareChunkAndFillSingleLevel<true /* return_single_block */>(dst, final);
 
@@ -5809,6 +5868,8 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 {
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     bool no_more_keys = false;
+    auto & table_dst = getDataVariant<Method>(*res).data;
+    const bool check_bytes = params.max_bytes_to_group_by;
 
     /// The merge inserts into the first table, which may move its cells, so its cell index goes.
     res->dropCellIndex();
@@ -5817,7 +5878,7 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
     /// `has_cheap_key_holder` does not apply here.
     const bool prefetch = params.enable_prefetch
-        && (getDataVariant<Method>(*res).data.getBufferSizeInBytes()
+        && (table_dst.getBufferSizeInBytes()
             > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
 
     DeferredMerges deferred;
@@ -5834,6 +5895,10 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
                 break;
 
             AggregatedDataVariants & current = *non_empty_data[result_num];
+            auto & table_src = getDataVariant<Method>(current).data;
+            const auto bytes_before = check_bytes
+                ? table_dst.getBufferSizeInBytes() + table_src.getBufferSizeInBytes() + res->aggregates_pool->allocatedBytes()
+                : 0;
 
             if (!no_more_keys)
             {
@@ -5841,33 +5906,29 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
                 if (compiled_aggregate_functions_holder)
                 {
                     mergeDataImpl<Method>(
-                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, true, prefetch,
-                        is_cancelled, nullptr, deferred_ptr);
+                        table_dst, table_src, res->aggregates_pool, true, prefetch, is_cancelled, nullptr, deferred_ptr);
                 }
                 else
 #endif
                 {
                     mergeDataImpl<Method>(
-                        getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, false, prefetch,
-                        is_cancelled, nullptr, deferred_ptr);
+                        table_dst, table_src, res->aggregates_pool, false, prefetch, is_cancelled, nullptr, deferred_ptr);
                 }
             }
             else if (res->without_key)
             {
-                mergeDataNoMoreKeysImpl<Method>(
-                    getDataVariant<Method>(*res).data,
-                    res->without_key,
-                    getDataVariant<Method>(current).data,
-                    res->aggregates_pool,
-                    deferred_ptr);
+                mergeDataNoMoreKeysImpl<Method>(table_dst, res->without_key, table_src, res->aggregates_pool, deferred_ptr);
             }
             else
             {
-                mergeDataOnlyExistingKeysImpl<Method>(
-                    getDataVariant<Method>(*res).data,
-                    getDataVariant<Method>(current).data,
-                    res->aggregates_pool,
-                    deferred_ptr);
+                mergeDataOnlyExistingKeysImpl<Method>(table_dst, table_src, res->aggregates_pool, deferred_ptr);
+            }
+
+            if (check_bytes)
+            {
+                const auto bytes_after
+                    = table_dst.getBufferSizeInBytes() + table_src.getBufferSizeInBytes() + res->aggregates_pool->allocatedBytes();
+                updateAndCheckMemoryUsage(static_cast<Int64>(bytes_after) - static_cast<Int64>(bytes_before));
             }
 
             /// `current` will not destroy the states of aggregate functions in the destructor
@@ -5882,6 +5943,10 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 
     if (deferred_ptr)
         mergeDeferredLargeStates(deferred, res->aggregates_pool, is_cancelled, /*destroy_sources=*/ true);
+
+    /// The last source can take the merged cardinality over the row limit.
+    if (params.group_by_overflow_mode == OverflowMode::THROW)
+        checkLimits(res->sizeWithoutOverflowRow(), no_more_keys);
 }
 
 #define M(NAME) \
@@ -5921,6 +5986,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
 {
     /// We merge all aggregation results to the first.
     AggregatedDataVariantsPtr & res = data[0];
+    const bool check_bytes = params.max_bytes_to_group_by;
 
     /// Enabled for all key types: unlike `executeImplBatch`, the merge path prefetches by the hash
     /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
@@ -5949,9 +6015,15 @@ void NO_INLINE Aggregator::mergeBucketImpl(
         const auto seen_result_keys = static_cast<double>(res->merged_buckets_result_keys.load(std::memory_order_acquire));
         const UInt64 seen_input_keys = res->merged_buckets_input_keys.load(std::memory_order_relaxed);
         if (seen_input_keys)
+        {
+            const auto bytes_before_reserve = check_bytes ? dst.getBufferSizeInBytes() : 0;
             dst.reserve(std::min(
                 input_keys,
                 static_cast<size_t>(seen_result_keys / static_cast<double>(seen_input_keys) * static_cast<double>(input_keys))));
+            /// The conversion of the bucket releases the reserved buffer, so it is charged as well.
+            if (check_bytes)
+                updateAndCheckMemoryUsage(static_cast<Int64>(dst.getBufferSizeInBytes()) - static_cast<Int64>(bytes_before_reserve));
+        }
     }
 
     DeferredMerges deferred;
@@ -5967,25 +6039,23 @@ void NO_INLINE Aggregator::mergeBucketImpl(
                 break;
 
             AggregatedDataVariants & current = *data[result_num];
+            auto & src = getDataVariant<Method>(current).data.impls[bucket];
+            const auto bytes_before = check_bytes ? dst.getBufferSizeInBytes() + src.getBufferSizeInBytes() + arena->allocatedBytes() : 0;
 #if USE_EMBEDDED_COMPILER
             if (compiled_aggregate_functions_holder)
             {
-                mergeDataImpl<Method>(
-                    getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena, true, prefetch,
-                    is_cancelled, nullptr, deferred_ptr);
+                mergeDataImpl<Method>(dst, src, arena, true, prefetch, is_cancelled, nullptr, deferred_ptr);
             }
             else
 #endif
             {
-                mergeDataImpl<Method>(
-                    getDataVariant<Method>(*res).data.impls[bucket],
-                    getDataVariant<Method>(current).data.impls[bucket],
-                    arena,
-                    false,
-                    prefetch,
-                    is_cancelled,
-                    nullptr,
-                    deferred_ptr);
+                mergeDataImpl<Method>(dst, src, arena, false, prefetch, is_cancelled, nullptr, deferred_ptr);
+            }
+
+            if (check_bytes)
+            {
+                const auto bytes_after = dst.getBufferSizeInBytes() + src.getBufferSizeInBytes() + arena->allocatedBytes();
+                updateAndCheckMemoryUsage(static_cast<Int64>(bytes_after) - static_cast<Int64>(bytes_before));
             }
         }
     }
@@ -6112,6 +6182,12 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
             for (auto * variant : variants_to_convert)
                 variant->convertToTwoLevel();
         }
+    }
+
+    if (params.max_bytes_to_group_by)
+    {
+        for (const auto & variant : non_empty_data)
+            updateAndCheckMemoryUsage(*variant);
     }
 
     /// The adaptive merge drains the staged records and folds the cells of every table, the largest one's included,
@@ -6544,7 +6620,7 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
         result.convertToTwoLevel();
 
     /// Checking the constraints.
-    if (!checkLimits(result_size, no_more_keys))
+    if (!checkLimits(result, no_more_keys))
         return false;
 
     /** Flush data to disk if too much RAM is consumed.

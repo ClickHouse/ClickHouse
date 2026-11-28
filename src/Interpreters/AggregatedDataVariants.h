@@ -499,6 +499,10 @@ struct AggregatedDataVariants : private boost::noncopyable
     };
     Type type = Type::EMPTY;
     bool top_k_heap_ever_rejected = false;
+    /// The byte count used by whole-variant updates during accumulation, spilling, and merge preparation.
+    /// Spilling keeps this checkpoint synchronized with bucket releases. Final merging updates only
+    /// the shared counter, since different buckets can be processed concurrently.
+    size_t accounted_bytes = 0;
 
     /// The table admits no key outside the set `kept_keys_seed` holds, under
     /// `group_by_overflow_mode = ANY`. Only such a table may be flushed to a temporary file

@@ -46,13 +46,26 @@ namespace Setting
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool make_distributed_plan;
     extern const SettingsBool serialize_query_plan;
+    extern const SettingsBool serialize_string_in_memory_with_zero_byte;
     extern const SettingsBool enable_group_by_top_k_optimization;
+    extern const SettingsBool enable_software_prefetch_in_aggregation;
+    extern const SettingsBool enable_parallel_single_level_merge;
+    extern const SettingsBool enable_parallel_single_level_merge_by_index;
+    extern const SettingsBool enable_packed_string_keys_in_aggregation;
+    extern const SettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
+    extern const SettingsBool enable_adaptive_aggregator;
+    extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
+    extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
+    extern const SettingsBool adaptive_aggregator_disable_thaw;
+    extern const SettingsBool use_aggregation_memory_tracker;
     extern const SettingsBool enable_group_by_top_k_dynamic_filtering;
     extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
     extern const SettingsUInt64 distributed_group_by_top_k;
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsBool group_by_top_k_optimization_shared_boundary;
     extern const SettingsBool distributed_plan_fallback_to_local_execution;
+    extern const SettingsUInt64 group_by_two_level_threshold;
+    extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_distinct_in_order;
@@ -73,6 +86,7 @@ namespace Setting
     extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsBool query_plan_execute_functions_after_sorting;
+    extern const SettingsBool query_plan_convert_distinct_to_aggregation;
     extern const SettingsBool query_plan_filter_push_down;
     extern const SettingsBool query_plan_filter_push_down_below_limit_by;
     extern const SettingsBool query_plan_propagate_predicate_across_join;
@@ -172,6 +186,7 @@ namespace Setting
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
     extern const SettingsUInt64 max_bytes_for_lazy_final;
     extern const SettingsFloat min_filtered_ratio_for_lazy_final;
+    extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const SettingsUInt64 max_rows_for_lazy_final;
     extern const SettingsUInt64 query_plan_max_limit_for_lazy_materialization;
     extern const SettingsUInt64 query_plan_max_limit_for_join_lazy_indexing;
@@ -341,6 +356,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_prewhere_after_pushdown = optimize_prewhere && from[Setting::optimize_prewhere_after_pushdown];
     read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order];
     distinct_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_distinct_in_order];
+    convert_distinct_to_aggregation = from[Setting::query_plan_enable_optimizations]
+        && from[Setting::query_plan_convert_distinct_to_aggregation];
     limit_by_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_limit_by_in_order];
     limit_by_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_limit_by_partitions_independently];
     distinct_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_distinct_partitions_independently];
@@ -444,6 +461,23 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     network_transfer_limits = SizeLimits(from[Setting::max_rows_to_transfer], from[Setting::max_bytes_to_transfer], from[Setting::transfer_overflow_mode]);
     max_block_size = from[Setting::max_block_size];
+    distinct_aggregation_settings =
+    {
+        .group_by_two_level_threshold = from[Setting::group_by_two_level_threshold],
+        .group_by_two_level_threshold_bytes = from[Setting::group_by_two_level_threshold_bytes],
+        .min_hit_rate_to_use_consecutive_keys_optimization = from[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
+        .enable_prefetch = from[Setting::enable_software_prefetch_in_aggregation],
+        .serialize_string_with_zero_byte = from[Setting::serialize_string_in_memory_with_zero_byte],
+        .enable_parallel_single_level_merge = from[Setting::enable_parallel_single_level_merge],
+        .enable_parallel_single_level_merge_by_index = from[Setting::enable_parallel_single_level_merge_by_index],
+        .enable_packed_string_keys = from[Setting::enable_packed_string_keys_in_aggregation],
+        .enable_fixed_and_packed_string_keys = from[Setting::enable_fixed_and_packed_string_keys_in_aggregation],
+        .enable_adaptive_aggregator = from[Setting::enable_adaptive_aggregator],
+        .adaptive_aggregator_freeze_threshold = from[Setting::adaptive_aggregator_freeze_threshold],
+        .adaptive_aggregator_freeze_threshold_bytes = from[Setting::adaptive_aggregator_freeze_threshold_bytes],
+        .adaptive_aggregator_disable_thaw = from[Setting::adaptive_aggregator_disable_thaw],
+        .use_aggregation_memory_tracker = from[Setting::use_aggregation_memory_tracker],
+    };
     set_settings = FutureSetSettings(from);
     use_skip_indexes_for_top_k = from[Setting::use_skip_indexes_for_top_k];
     use_top_k_dynamic_filtering = from[Setting::use_top_k_dynamic_filtering];

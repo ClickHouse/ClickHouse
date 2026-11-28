@@ -468,9 +468,22 @@ void convertOuterJoinToInnerJoinTransitively(const QueryPlanOptimizationSettings
 /// A separate tree traverse to apply sorting properties after *InOrder optimizations.
 void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
+/// Finds the `DISTINCT` steps whose ancestors and inputs permit replacement by blocking aggregation.
+/// The conditions of the step itself, such as the order of its input, are checked when it is converted.
+UnorderedSetWithMemoryTracking<const QueryPlan::Node *> collectDistinctToAggregationCandidates(const QueryPlan::Node & root);
+
+/// Replaces an unordered final `DISTINCT` with aggregation over its nonconstant keys. Runs from
+/// `applyStreamDisjointness`, after `applyOrder` marked the steps that must keep the order of their input.
+/// The caller guarantees that the step is a final `DISTINCT` that merges its input streams and does not
+/// keep their order.
+bool tryConvertDistinctToAggregation(
+    QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings);
+
 /// A separate tree traverse that propagates the stream-disjointness property (no two output streams
-/// carry the same key value).
-void applyStreamDisjointness(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
+/// carry the same key value). It also chooses how a final `DISTINCT` deduplicates its streams: each on
+/// its own when they are disjoint, through aggregation (`tryConvertDistinctToAggregation`), or by a hash
+/// scatter.
+void applyStreamDisjointness(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
 /// Lets an offset based parallel replicas read use several replicas of a shard only if no consumer needs stream order.
 void allowReadingShardsFromSeveralReplicas(QueryPlan::Node & root);
