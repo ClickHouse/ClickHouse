@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/Context.h>
+#include <Interpreters/StreamingCursor.h>
 #include <Processors/IProcessor.h>
 
 namespace DB

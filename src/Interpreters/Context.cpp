@@ -5391,6 +5391,8 @@ StreamingCursor::PendingReport::PendingReport(std::shared_ptr<StreamingCursor> h
 StreamingCursor::PendingReport::PendingReport(PendingReport && other) noexcept
     : holder(std::move(other.holder))
 {
+    if (other.finished.test())
+        finished.test_and_set();
 }
 
 StreamingCursor::PendingReport & StreamingCursor::PendingReport::operator=(PendingReport && other) noexcept
@@ -5399,6 +5401,10 @@ StreamingCursor::PendingReport & StreamingCursor::PendingReport::operator=(Pendi
     {
         finish();
         holder = std::move(other.holder);
+        if (other.finished.test())
+            finished.test_and_set();
+        else
+            finished.clear();
     }
     return *this;
 }
@@ -5410,23 +5416,23 @@ StreamingCursor::PendingReport::~PendingReport()
 
 void StreamingCursor::PendingReport::finish() noexcept
 {
-    if (!holder)
+    /// Only the first call finishes the read, also among concurrent ones.
+    if (!holder || finished.test_and_set())
         return;
 
-    auto finished_holder = std::exchange(holder, nullptr);
-    std::lock_guard lock(finished_holder->mutex);
-    chassert(finished_holder->pending_reports > 0);
-    if (--finished_holder->pending_reports == 0)
+    std::lock_guard lock(holder->mutex);
+    chassert(holder->pending_reports > 0);
+    if (--holder->pending_reports == 0)
     {
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-        for (const auto & event : finished_holder->no_pending_reports_waiters)
+        for (const auto & event : holder->no_pending_reports_waiters)
         {
             /// Writing to an eventfd fails only on a counter overflow, which cannot happen for a single write.
             [[maybe_unused]] const bool written = event->write();
             chassert(written);
         }
 #endif
-        finished_holder->no_pending_reports_waiters.clear();
+        holder->no_pending_reports_waiters.clear();
     }
 }
 
