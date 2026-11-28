@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <base/unaligned.h>
 
 
 namespace DB
@@ -66,6 +67,17 @@ public:
 
     static constexpr UInt8 NULL_DISCRIMINATOR = std::numeric_limits<Discriminator>::max(); /// 255
     static constexpr size_t MAX_NESTED_COLUMNS = std::numeric_limits<Discriminator>::max(); /// 255
+
+    static constexpr size_t DISCRIMINATORS_BLOCK_SIZE = 32;
+
+    /// Whether the DISCRIMINATORS_BLOCK_SIZE discriminators starting at `data` are all NULL_DISCRIMINATOR.
+    static bool isBlockOfNullDiscriminators(const Discriminator * data)
+    {
+        static_assert(NULL_DISCRIMINATOR == 0xFF && DISCRIMINATORS_BLOCK_SIZE == 4 * sizeof(UInt64));
+        UInt64 all_bits = unalignedLoad<UInt64>(data) & unalignedLoad<UInt64>(data + 8)
+            & unalignedLoad<UInt64>(data + 16) & unalignedLoad<UInt64>(data + 24);
+        return all_bits == std::numeric_limits<UInt64>::max();
+    }
 
     struct ComparatorBase;
 
