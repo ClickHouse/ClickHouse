@@ -309,10 +309,11 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
     {
         ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
 
-        if (!quorum_entry.replicas.contains(storage.replica_name)
+        if ((!quorum_entry.replicas.contains(storage.replica_name)
+             || quorum_entry.replicas.size() >= quorum_entry.required_number_of_replicas)
             && storage.getActiveContainingPart(quorum_entry.part_name))
         {
-            LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", quorum_entry.part_name);
+            LOG_WARNING(log, "We have part {} with an unacknowledged or already-satisfied pending quorum. Updating quorum.", quorum_entry.part_name);
             storage.updateQuorum(quorum_entry.part_name, false);
         }
     }
@@ -326,10 +327,11 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
             if (zookeeper->tryGet(fs::path(parallel_quorum_parts_path) / part_name, quorum_str))
             {
                 ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
-                if (!quorum_entry.replicas.contains(storage.replica_name)
+                if ((!quorum_entry.replicas.contains(storage.replica_name)
+                     || quorum_entry.replicas.size() >= quorum_entry.required_number_of_replicas)
                     && storage.getActiveContainingPart(part_name))
                 {
-                    LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", part_name);
+                    LOG_WARNING(log, "We have part {} with an unacknowledged or already-satisfied pending quorum. Updating quorum.", part_name);
                     storage.updateQuorum(part_name, true);
                 }
             }
