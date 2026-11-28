@@ -1,113 +1,24 @@
 before	[1,3]
--- a column the policy mentions cannot be dropped or renamed
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
--- other columns are free
 after	[1,3]
--- a new type of a column the policy mentions is refused, the same type and CLEAR are allowed
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
 after modify	[1,3]
 after clear	[]
 after reinsert	[4]
--- IF EXISTS on a missing column stays a no-op even if a stale policy mentions it
--- the names inside a subquery belong to the tables the subquery reads
-ALTER_OF_COLUMN_IS_FORBIDDEN
 subquery policy after rename	[1]
--- table-qualified names count
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
--- a subcolumn counts as a mention of its column
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
--- so does a Nested child
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
--- a column mentioned inside a SQL function body
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
--- so is a SQL function passed by name as a lambda
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
--- a column with the name of a called SQL function is not read
 function name policy after drop	[1]
-ALTER_OF_COLUMN_IS_FORBIDDEN
--- a lambda parameter is not a column, the body is still read
 lambda policy after drop	[1]
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
--- a name binds as written first, exact column or subcolumn, a table name or an alias is removed first with analyzer_compatibility_prefer_alias_over_subcolumn, both count
 subcolumn first	[2]
 column first	[1]
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
 exact qualified column policy after alters	[1]
--- a column cannot get a name that a policy reads as another column, the table name included
-ALTER_OF_COLUMN_IS_FORBIDDEN
 qualifier policy after rename	[1]
--- a column of its own with a dot in the name is not a subcolumn of the shorter name
 dotted column policy after alters	[1]
-ALTER_OF_COLUMN_IS_FORBIDDEN
--- a subquery over a same-named table of another database reads that table
--- a column named like a SQL function is the column, the function body is not read
-ALTER_OF_COLUMN_IS_FORBIDDEN
--- a read through an Alias applies the policies of the alias and of its target
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
--- a policy of an Alias can read the target in a subquery, those names count
-ALTER_OF_COLUMN_IS_FORBIDDEN
--- a name in that subquery can have the qualifier of the target or of its alias
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
--- the names of a subquery count only when it, or a subquery around it, reads the target
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
 nested subquery policy after drop	[1]
--- a derived table or a CTE that reads the target qualifies the names of the target with its own name
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
 derived table policy after drop	[1,3]
--- so does a table function that reads the target
-ALTER_OF_COLUMN_IS_FORBIDDEN
 table function policy after drop	[1,3]
--- a SQL function can read the target in a subquery inside a subquery over another table
-ALTER_OF_COLUMN_IS_FORBIDDEN
 function in subquery policy after drop	[2]
--- a CTE over another table hides the target of the same name
-ALTER_OF_COLUMN_IS_FORBIDDEN
 hidden target policy after rename	[2]
--- a qualifier binds in its own subquery, an alias of another table there hides the policy table and the outer aliases
-ALTER_OF_COLUMN_IS_FORBIDDEN
 scoped alias policy after rename	[1,2]
--- a CTE binds in its own subquery and in the subqueries inside, where a CTE of the same name hides it, and it can read a later CTE
-ALTER_OF_COLUMN_IS_FORBIDDEN
 scoped CTE policy after rename and drop	[1,2]
--- a table qualifier that is also a column name is removed when the subcolumn does not exist
-ALTER_OF_COLUMN_IS_FORBIDDEN
 qualifier column policy after drop	[1]
--- a flattened Nested group reads all of its children
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
--- a column read as a subcolumn, through a function or next to a scalar subquery cannot get a new type
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ALTER_OF_COLUMN_IS_FORBIDDEN
 modified columns policy	[1]
--- the policy pins an ALIAS column, the alias pins its base column
-ALTER_OF_COLUMN_IS_FORBIDDEN
-ILLEGAL_COLUMN
 alias policy after base rename	[1]
--- an ALIAS column the policy reads pins the type of its base columns
-ALTER_OF_COLUMN_IS_FORBIDDEN
 alias over a modified column	[1]
--- a database-wide policy counts too
-ALTER_OF_COLUMN_IS_FORBIDDEN
