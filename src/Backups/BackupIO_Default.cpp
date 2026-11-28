@@ -1,16 +1,20 @@
 #include <Backups/BackupIO_Default.h>
 
+#include <Core/UUID.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/FailPoint.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 #include <Poco/Exception.h>
 
 #include <fcntl.h>
@@ -244,6 +248,14 @@ bool BackupWriterDefault::copyFileFromBlobPath(
 {
     /// Default implementation: no native blob copy support
     return false;
+}
+
+bool BackupWriterDefault::probeCaseInsensitivity()
+{
+    const String probe_name = fmt::format("clickhouse_case_sensitivity_check_{}", toString(UUIDHelpers::generateV4()));
+    SCOPE_EXIT_SAFE(removeFile(probe_name));
+    writeFile(probe_name)->finalize();
+    return fileExists(toUpperCopyASCII(probe_name));
 }
 
 void BackupWriterDefault::removeFiles(const Strings & file_names)
