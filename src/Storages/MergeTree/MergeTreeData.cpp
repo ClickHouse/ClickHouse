@@ -6640,11 +6640,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         /// From defaults plus the final settings_changes, as changeSettings and the next load do. A delta on
         /// top of the current settings would keep the old value for RESET SETTING, which reload reverts.
         auto settings_for_check = getDefaultSettings();
-        if (metadata_for_check.settings_changes)
+        if (metadata_for_check.hasSettingsChanges())
+        {
+            const auto settings_changes_ast = metadata_for_check.getSettingsChanges();
             settings_for_check->applyChanges(
-                metadata_for_check.settings_changes->as<const ASTSetQuery &>().changes,
+                settings_changes_ast->as<const ASTSetQuery &>().changes,
                 local_context,
                 /*is_loading_from_existing_metadata=*/true);
+        }
 
         for (const auto & engine : engines_to_validate)
         {
