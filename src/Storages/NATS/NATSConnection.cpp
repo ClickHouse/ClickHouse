@@ -1,8 +1,11 @@
 #include <Storages/NATS/NATSConnection.h>
 
-#include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+
+#include <cstdlib>
 
 namespace DB
 {
@@ -10,257 +13,146 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_CONNECT_NATS;
+    extern const int LOGICAL_ERROR;
 }
 
-void loadNATSCertificates(natsOptions * options, const NATSConfiguration & configuration)
+namespace
 {
-    if (!configuration.ca_file.empty())
+
+NATSClient::TLSSettings getTLSSettings(const NATSConfiguration & configuration)
+{
+    NATSClient::TLSSettings tls;
+    tls.secure = configuration.secure;
+    tls.ca_file = configuration.ca_file;
+    tls.client_cert_file = configuration.client_cert_file;
+    tls.client_key_file = configuration.client_key_file;
+
+    /// Use `CLICKHOUSE_NATS_TLS_SECURE=0` to skip the verification of the server certificate.
+    const char * value = std::getenv("CLICKHOUSE_NATS_TLS_SECURE"); // NOLINT(concurrency-mt-unsafe) // this is safe on Linux glibc/Musl, but potentially not safe on other platforms
+    tls.verify_server = !(value && std::string_view(value) == "0");
+    return tls;
+}
+
+}
+
+NATSClient::ConnectionSettings NATSConfiguration::getConnectionSettings() const
+{
+    NATSClient::ConnectionSettings settings;
+
+    /// Every address is validated and rebuilt by `StorageNATS` as a single one, so it is not split here:
+    /// a password may contain a comma.
+    if (!url.empty())
     {
-        auto status = natsOptions_LoadCATrustedCertificates(options, configuration.ca_file.c_str());
-        if (status != NATS_OK)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot load NATS trusted CA certificates from {}. Nats status text: {}. Last error message: {}",
-                configuration.ca_file, natsStatus_GetText(status), getNATSLastError());
+        settings.servers.push_back(NATSClient::ServerAddress::parse(url));
+    }
+    else
+    {
+        for (const auto & server : servers)
+            if (!server.empty())
+                settings.servers.push_back(NATSClient::ServerAddress::parse(server));
+    }
+    if (settings.servers.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No NATS server is specified: set `nats_url` or `nats_server_list`");
+
+    if (!username.empty() && !password.empty())
+    {
+        settings.authentication.user = username;
+        settings.authentication.password = password;
+    }
+    settings.authentication.token = token;
+    if (!credentials.empty())
+    {
+        settings.authentication.credentials = credentials;
+    }
+    else if (!credential_file.empty())
+    {
+        ReadBufferFromFile file(credential_file);
+        String content;
+        readStringUntilEOF(content, file);
+        settings.authentication.credentials = SecretString(content);
     }
 
-    if (!configuration.client_cert_file.empty())
-    {
-        auto status = natsOptions_LoadCertificatesChain(
-            options, configuration.client_cert_file.c_str(), configuration.client_key_file.c_str());
-        if (status != NATS_OK)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot load NATS client certificate chain from {} with key {}. Nats status text: {}. Last error message: {}",
-                configuration.client_cert_file, configuration.client_key_file,
-                natsStatus_GetText(status), getNATSLastError());
-    }
+    settings.tls = getTLSSettings(*this);
+    return settings;
 }
 
 void validateNATSCertificates(const NATSConfiguration & configuration)
 {
-    natsOptions * options = nullptr;
-    auto status = natsOptions_Create(&options);
-    if (status != NATS_OK)
-        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Can not initialize NATS options. Nats error: {}", natsStatus_GetText(status));
-
-    NATSOptionsPtr holder(options, &natsOptions_Destroy);
-    loadNATSCertificates(options, configuration);
+    NATSClient::validateTLSSettings(getTLSSettings(configuration));
 }
 
-/// disconnectedCallback may be called after connection destroy
-LoggerPtr NATSConnection::callback_logger = getLogger("NATSConnection callback");
-
-NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerPtr log_, NATSOptionsPtr options_)
+NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerPtr log_)
     : configuration(configuration_)
     , log(std::move(log_))
-    , options(std::move(options_))
-    , statistics(nullptr, &natsStatistics_Destroy)
-    , connection(nullptr, &natsConnection_Destroy)
 {
-    natsStatistics * new_statistics = nullptr;
-    auto status = natsStatistics_Create(&new_statistics);
-    if (status != NATS_OK)
-        throw Exception(
-            ErrorCodes::CANNOT_CONNECT_NATS,
-            "Can not create NATS statistics. Nats error: {}", natsStatus_GetText(status));
-    statistics.reset(new_statistics);
-
-    if (!configuration.username.empty() && !configuration.password.empty())
-        natsOptions_SetUserInfo(options.get(), configuration.username.c_str(), String(configuration.password).c_str());
-    if (!configuration.token.empty())
-        natsOptions_SetToken(options.get(), String(configuration.token).c_str());
-    if (!configuration.credentials.empty())
-        natsOptions_SetUserCredentialsFromMemory(options.get(), String(configuration.credentials).c_str());
-    else if (!configuration.credential_file.empty())
-        natsOptions_SetUserCredentialsFromFiles(options.get(), configuration.credential_file.c_str(), nullptr);
-
-    if (configuration.secure)
-    {
-        natsOptions_SetSecure(options.get(), true);
-        loadNATSCertificates(options.get(), configuration);
-    }
-
-    // use CLICKHOUSE_NATS_TLS_SECURE=0 env var to skip TLS verification of server cert
-    const char * val = std::getenv("CLICKHOUSE_NATS_TLS_SECURE"); // NOLINT(concurrency-mt-unsafe) // this is safe on Linux glibc/Musl, but potentially not safe on other platforms
-    std::string tls_secure = val == nullptr ? std::string("1") : std::string(val);
-    if (tls_secure == "0")
-    {
-        natsOptions_SkipServerVerification(options.get(), true);
-    }
-
-    if (!configuration.url.empty())
-    {
-        natsOptions_SetURL(options.get(), configuration.url.c_str());
-    }
-    else
-    {
-        std::vector<const char *> servers(configuration.servers.size());
-        for (size_t i = 0; i < configuration.servers.size(); ++i)
-        {
-            servers[i] = configuration.servers[i].c_str();
-        }
-        natsOptions_SetServers(options.get(), servers.data(), static_cast<int>(configuration.servers.size()));
-    }
-
-    static constexpr int infinite_reconnect_count = -1;
-    natsOptions_SetMaxReconnect(options.get(), infinite_reconnect_count);
-
-    // On connections with significant traffic, the client will often figure out there is a problem between PINGS,
-    // and as a result the default ping interval is typically on the order of minutes.
-    // To close an unresponsive connection after 3m, set the ping interval to 60'000 milliseconds and the maximum pings outstanding to 3
-    natsOptions_SetPingInterval(options.get(), 60'000);
-    natsOptions_SetMaxPingsOut(options.get(), 3);
-
-    natsOptions_SetReconnectWait(options.get(), configuration.reconnect_wait);
-    natsOptions_SetDisconnectedCB(options.get(), disconnectedCallback, this);
-    natsOptions_SetReconnectedCB(options.get(), reconnectedCallback, this);
-    /// Without this the library reports asynchronous errors - a rejected authentication, most
-    /// notably - by printing them to `stderr`, which leaves a table that has stopped consuming
-    /// without an explanation in the server log. The handler knows only the connection, not the
-    /// table: `StorageNATS` names the table when it replaces the connection the library closed,
-    /// and reports the error recorded on it, see `lastErrorForLog`.
-    natsOptions_SetErrorHandler(options.get(), errorCallback, this);
 }
+
 NATSConnection::~NATSConnection()
 {
     disconnect();
 }
 
-
 String NATSConnection::connectionInfoForLog() const
 {
     if (!configuration.url.empty())
-    {
         return "url: [hidden]";
-    }
     return "cluster: [hidden]";
 }
 
-String NATSConnection::lastErrorForLog()
+String NATSConnection::lastErrorForLog() const
 {
-    std::lock_guard lock(mutex);
-    if (!connection)
-        return "none";
-
-    const char * last_error = nullptr;
-    natsConnection_GetLastError(connection.get(), &last_error);
-    return last_error && *last_error ? last_error : "none";
+    if (connection && !connection->getError().empty())
+        return connection->getError();
+    return last_error.empty() ? "none" : last_error;
 }
 
 bool NATSConnection::isConnected()
 {
-    std::lock_guard lock(mutex);
-    return isConnectedImpl(lock);
-}
-
-bool NATSConnection::isDisconnected()
-{
-    std::lock_guard lock(mutex);
-    return isDisconnectedImpl(lock);
-}
-
-bool NATSConnection::isClosed()
-{
-    std::lock_guard lock(mutex);
-    return isClosedImpl(lock);
-}
-
-UInt64 NATSConnection::getReconnectCount()
-{
-    std::lock_guard lock(mutex);
     if (!connection)
-        return 0;
-
-    auto status = natsConnection_GetStats(connection.get(), statistics.get());
-    if (status != NATS_OK)
-        throw Exception(
-            ErrorCodes::CANNOT_CONNECT_NATS,
-            "Can not get statistics of connection to {}. Nats error: {}", connectionInfoForLog(), natsStatus_GetText(status));
-
-    uint64_t reconnects = 0;
-    status = natsStatistics_GetCounts(statistics.get(), nullptr, nullptr, nullptr, nullptr, &reconnects);
-    if (status != NATS_OK)
-        throw Exception(
-            ErrorCodes::CANNOT_CONNECT_NATS,
-            "Can not read statistics of connection to {}. Nats error: {}", connectionInfoForLog(), natsStatus_GetText(status));
-
-    return reconnects;
+        return false;
+    if (connection->isUsable())
+        return true;
+    last_error = connection->getError();
+    return false;
 }
 
-bool NATSConnection::connect()
+void NATSConnection::connect()
 {
-    std::lock_guard lock(mutex);
-    connectImpl(lock);
-    return isConnectedImpl(lock);
+    disconnect();
+    try
+    {
+        connection = std::make_unique<NATSClient::Connection>(configuration.getConnectionSettings(), log);
+        last_error.clear();
+    }
+    catch (...)
+    {
+        last_error = getCurrentExceptionMessage(false);
+        throw;
+    }
 }
 
 void NATSConnection::disconnect()
 {
-    std::lock_guard lock(mutex);
-    disconnectImpl(lock);
-}
-
-bool NATSConnection::isConnectedImpl(const Lock &) const
-{
-    return connection && (natsConnection_Status(connection.get()) == NATS_CONN_STATUS_CONNECTED || natsConnection_IsDraining(connection.get()));
-}
-
-bool NATSConnection::isDisconnectedImpl(const Lock &) const
-{
-    return !connection || (natsConnection_Status(connection.get()) == NATS_CONN_STATUS_DISCONNECTED || natsConnection_IsClosed(connection.get()));
-}
-
-bool NATSConnection::isClosedImpl(const Lock &) const
-{
-    return !connection || natsConnection_IsClosed(connection.get());
-}
-
-
-void NATSConnection::connectImpl(const Lock &)
-{
-    natsConnection * new_conection = nullptr;
-    natsStatus status = natsConnection_Connect(&new_conection, options.get());
-    if (status != NATS_OK)
-    {
-        LOG_DEBUG(log, "New connection to {} failed. Nats status text: {}. Last error message: {}",
-                  connectionInfoForLog(), natsStatus_GetText(status), getNATSLastError());
+    if (!connection)
         return;
-    }
-    connection.reset(new_conection);
-
-    LOG_DEBUG(log, "New connection is connected to {}", connectionInfoForLog());
+    if (!connection->getError().empty())
+        last_error = connection->getError();
+    connection->close();
+    connection.reset();
 }
 
-void NATSConnection::disconnectImpl(const Lock & connection_lock)
+DequeWithMemoryTracking<NATSClient::Message> NATSConnection::takeReceived()
 {
-    if (isDisconnectedImpl(connection_lock))
-        return;
-
-    natsConnection_Close(connection.get());
+    if (!connection)
+        return {};
+    return connection->takeReceived();
 }
 
-void NATSConnection::reconnectedCallback(natsConnection *, void *)
+NATSClient::Connection & NATSConnection::get()
 {
-    LOG_DEBUG(callback_logger, "Connection got reconnected to NATS server");
-}
-
-void NATSConnection::disconnectedCallback(natsConnection *, void *)
-{
-    LOG_DEBUG(callback_logger, "Connection got disconnected from NATS server");
-}
-
-void NATSConnection::errorCallback(natsConnection * nats_connection, natsSubscription *, natsStatus status, void *)
-{
-    const char * last_error = nullptr;
-    natsConnection_GetLastError(nats_connection, &last_error);
-
-    LOG_ERROR(
-        callback_logger,
-        "Connection got an asynchronous error from the NATS client. Nats status text: {}. Last error message: {}",
-        natsStatus_GetText(status),
-        last_error && *last_error ? last_error : "none");
+    if (!connection)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no connection to NATS");
+    return *connection;
 }
 
 }

@@ -21,7 +21,7 @@ arm() { # arm <name> <statement>
     $CLICKHOUSE_CLIENT --query_id="${PREFIX}_$1" --log_queries=1 -q "$2" > /dev/null 2>&1
 }
 
-# `nats_url`: libnats ends the userinfo at the last '@' of the whole value, with the scheme optional
+# `nats_url`: the NATS client ends the userinfo at the last '@' of the whole value, with the scheme optional
 # and the value trimmed, so a password containing '/' and a scheme-less address both authenticate.
 arm a1_nats_slash_password   "SET nats_url = 'nats://u:pa/leak05233nats@h:4222'"
 arm a2_nats_no_scheme        "SET nats_url = 'u:leak05233noscheme@h:4222'"

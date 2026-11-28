@@ -145,7 +145,6 @@ Chunk NATSSource::generateImpl()
 
         if (consumer && !consumer->isSubscribed())
         {
-            consumer->dropBuffered();
             consumer->subscribe();
             unsubscribe_on_destroy = true;
         }
@@ -209,7 +208,7 @@ Chunk NATSSource::generateImpl()
         }
 
         /// A direct read holds its consumer until it ends, so a subscription that stopped consuming
-        /// is recovered here rather than by `StorageNATS::resubscribeStaleConsumers`. Only a
+        /// is recovered here rather than by `StorageNATS::maintainIdleConsumers`. Only a
         /// consumer that holds no message which may still owe rows is recovered, because the
         /// recovery returns everything it holds to the broker. A skipped message owes nothing:
         /// a streaming cycle acknowledges it, as its skip is final, while a direct `SELECT` has not

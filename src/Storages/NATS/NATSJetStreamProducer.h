@@ -5,16 +5,14 @@
 namespace DB
 {
 
+/// Publishes to a JetStream stream and waits for the acknowledgement of the stream for every message.
 class NATSJetStreamProducer : public INATSProducer
 {
 public:
-    NATSJetStreamProducer(NATSConnectionPtr connection_, String subject_, std::atomic<bool> & shutdown_called_, LoggerPtr log_);
+    using INATSProducer::INATSProducer;
 
 private:
-    natsStatus publishMessage(const String & message) override;
-
-    std::unique_ptr<jsCtx, decltype(&jsCtx_Destroy)> jet_stream_ctx;
-    jsOptions jet_stream_options{};
+    PublishStatus publishMessage(const String & message, String & error) override;
 };
 
 }
