@@ -132,6 +132,20 @@ void IdentifierResolveScope::popExpressionNode()
     expressions_in_resolve_process_stack.pop();
 }
 
+bool IdentifierResolveScope::isInAggregateOrGroupingFunctionScope() const
+{
+    for (const auto * scope_ptr = this; scope_ptr; scope_ptr = scope_ptr->parent_scope)
+    {
+        if (scope_ptr->expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction())
+            return true;
+
+        if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
+            break;
+    }
+
+    return false;
+}
+
 namespace
 {
 
