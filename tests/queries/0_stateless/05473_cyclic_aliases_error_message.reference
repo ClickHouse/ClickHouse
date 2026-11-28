@@ -1,0 +1,41 @@
+SELECT number % 3 AS h3_3, h3_3 + 1 AS number FROM numbers(3)
+Cyclic aliases: `h3_3` -> `number` -> `h3_3`
+(CYCLIC_ALIASES)
+SELECT h3_3 + 1 AS number, number % 3 AS h3_3 FROM numbers(3)
+Cyclic aliases: `h3_3` -> `number` -> `h3_3`
+(CYCLIC_ALIASES)
+SELECT x + 1 AS y, y + 1 AS x
+Cyclic aliases: `y` -> `x` -> `y`
+(CYCLIC_ALIASES)
+WITH a + 1 AS b, b + 1 AS a SELECT a
+Cyclic aliases: `a` -> `b` -> `a`
+(CYCLIC_ALIASES)
+SELECT b + 1 AS a, c + 1 AS b, a + 1 AS c
+Cyclic aliases: `a` -> `b` -> `c` -> `a`
+(CYCLIC_ALIASES)
+SELECT b AS a, a AS b
+Cyclic aliases: `a` -> `b` -> `a`
+(CYCLIC_ALIASES)
+SELECT a + 1 AS z, b + 1 AS a, a + 1 AS b
+Cyclic aliases: `a` -> `b` -> `a`
+(CYCLIC_ALIASES)
+SELECT arrayMap(y -> y + a, [1]) AS b, b AS a
+Cyclic aliases: `b` -> `a` -> `b`
+(CYCLIC_ALIASES)
+SELECT (SELECT a) AS b, b AS a
+Cyclic aliases: `b` -> `a` -> `b`
+(CYCLIC_ALIASES)
+SELECT arrayMap(y -> b, [1]) AS a, a + 1 AS b
+Cyclic aliases: `a` -> `b` -> `a`
+(CYCLIC_ALIASES)
+SELECT ((unknown_column + 1) AS y) + 1 AS unknown_column
+Unknown expression or function identifier `unknown_column`
+(UNKNOWN_IDENTIFIER)
+SELECT unknown_column + 1 AS unknown_column
+Unknown expression or function identifier `unknown_column`
+(UNKNOWN_IDENTIFIER)
+1
+0	1
+SELECT number AS num, num * 1 AS num FROM numbers(1)
+Multiple expressions with the same alias `num`
+(MULTIPLE_EXPRESSIONS_FOR_ALIAS)
