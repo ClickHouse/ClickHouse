@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="use_skip_indexes">
-  ## use_skip_indexes
-</div>
+## use_skip_indexes {#use_skip_indexes}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -26,9 +24,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * 0 — 無効。
 * 1 — 有効。
 
-<div id="use_skip_indexes_for_disjunctions">
-  ## use_skip_indexes_for_disjunctions
-</div>
+## use_skip_indexes_for_disjunctions {#use_skip_indexes_for_disjunctions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -42,9 +38,24 @@ AND と OR が混在する WHERE フィルター条件を、スキップ索引�
 * 0 — 無効。
 * 1 — 有効。
 
-<div id="use_skip_indexes_for_top_k">
-  ## use_skip_indexes_for_top_k
-</div>
+## use_skip_indexes_for_disjunctions_max_rpn_elements {#use_skip_indexes_for_disjunctions_max_rpn_elements}
+
+<SettingsInfoBlock type="UInt64" default_value="128" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "128"},{"label": "新しい設定。以前は上限が 32 にハードコードされていました"}]}]} />
+
+`use_skip_indexes_for_disjunctions` を適用する WHERE フィルタについて、その内部表現 (RPN) に含まれる要素数の上限です。
+おおまかには、各条件および各 `AND`、`OR`、`NOT` がそれぞれ 1 要素として数えられます。例えば、`A = 5 OR B = 5 OR C = 5` は 5 要素です。
+要素数は、索引解析のためにフィルタが書き換えられた後に数えられます。例えば、`A = 1 OR A = 2 OR A = 3` は `A IN (1, 2, 3)` に変換されて 1 要素となり (`optimize_min_equality_disjunction_chain_length` を参照)、`coalesce(A, B) = 5` は複数の条件に展開されます (`allow_key_condition_coalesce_rewrite` を参照)。
+要素数がこれを超えるフィルタでは、各スキップ索引が個別に評価されるため、`OR` で結合された異なるカラムに対する条件ではグラニュールをスキップできません。
+索引解析中、部分的な結果は各データパーツのグラニュールごと・要素ごとに 1 ビットを消費し、それらの結合にはグラニュールごとに要素数に比例した時間がかかります。0 (無制限) を設定する場合はこの点に留意してください。
+
+設定可能な値:
+
+* 0 — 無制限。
+* 正の整数 — 要素数の上限。
+
+## use_skip_indexes_for_top_k {#use_skip_indexes_for_top_k}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -59,9 +70,7 @@ TopK フィルタリングでデータスキッピングインデックスを使
 * 0 — 無効。
 * 1 — 有効。
 
-<div id="use_skip_indexes_if_final">
-  ## use_skip_indexes_if_final
-</div>
+## use_skip_indexes_if_final {#use_skip_indexes_if_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -76,9 +85,7 @@ FINAL 修飾子を使用するクエリの実行時に、スキップ索引を�
 * 0 — 無効。
 * 1 — 有効。
 
-<div id="use_skip_indexes_if_final_exact_mode">
-  ## use_skip_indexes_if_final_exact_mode
-</div>
+## use_skip_indexes_if_final_exact_mode {#use_skip_indexes_if_final_exact_mode}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -93,17 +100,15 @@ FINAL修飾子を指定してクエリを実行する際に、正しい結果を
 * 0 — 無効。
 * 1 — 有効。
 
-<div id="use_skip_indexes_on_data_read">
-  ## use_skip_indexes_on_data_read
-</div>
+## use_skip_indexes_on_data_read {#use_skip_indexes_on_data_read}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "テキスト索引が GA になりました"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "デフォルトで有効"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1"},{"label": "デフォルトで有効"}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
 データ読み取り時にデータスキッピングインデックスを使用できるようにします。
 
-有効にすると、スキップ索引はクエリ実行の開始前に事前解析されるのではなく、各データ granule の読み取り時に動的に評価されます。これにより、クエリ開始時のレイテンシを低減できます。
+有効にすると、スキップ索引はクエリ実行の開始前に事前解析されるのではなく、各データグラニュールの読み取り時に動的に評価されます。これにより、クエリ開始時のレイテンシを低減できます。
 
 設定可能な値:
 

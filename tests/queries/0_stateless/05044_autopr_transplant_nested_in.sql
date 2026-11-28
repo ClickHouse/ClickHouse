@@ -33,7 +33,6 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1, parallel
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     automatic_parallel_replicas_min_bytes_per_replica = 0,
     merge_tree_min_bytes_per_task_for_remote_reading = 1024, max_threads = 4;
-SET enable_analyzer = 1;
 
 -- The first run only collects the statistics the cost model needs; the second is the one that can
 -- pick replicas and reach the transplant. Both must return 1496910000.

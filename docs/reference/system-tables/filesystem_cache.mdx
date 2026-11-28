@@ -19,7 +19,7 @@ Contains information about all entries inside filesystem cache for remote object
 - `key` ([String](/reference/data-types/string)) — Cache key of the file segment
 - `file_segment_range_begin` ([UInt64](/reference/data-types/int-uint)) — Offset corresponding to the beginning of the file segment range
 - `file_segment_range_end` ([UInt64](/reference/data-types/int-uint)) — Offset corresponding to the (including) end of the file segment range
-- `size` ([UInt64](/reference/data-types/int-uint)) — Size of the file segment
+- `size` ([UInt64](/reference/data-types/int-uint)) — Size of the file segment: the logical size of its range. It is not affected by the `use_real_disk_size` cache setting, which only changes how reservations are accounted in the cache size metrics. Use `downloaded_size` for the number of bytes actually written for this segment
 - `state` ([String](/reference/data-types/string)) — File segment state (DOWNLOADED, DOWNLOADING, PARTIALLY_DOWNLOADED, ...)
 - `finished_download_time` ([DateTime](/reference/data-types/datetime)) — Time when file segment finished downloading.
 - `cache_hits` ([UInt64](/reference/data-types/int-uint)) — Number of cache hits of corresponding file segment

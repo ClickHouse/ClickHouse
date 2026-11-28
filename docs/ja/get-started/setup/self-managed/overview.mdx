@@ -8,19 +8,17 @@ keywords: ['インストール', 'セルフマネージド', 'linux', 'macos', '
 
 ご自身で運用するプラットフォームに ClickHouse をインストールします。
 
-<div id="local-development">
-  ## ローカル開発
-</div>
+## ローカル開発 {#local-development}
 
 自分のマシンで ClickHouse を実行して、開発、テスト、検証を行います。
 
 <CardGroup cols={2}>
   <Card title="クイックインストール" href="/ja/get-started/setup/self-managed/quick-install" icon="bolt">
-    単一の ClickHouse バイナリをダウンロードする、1 行の `curl` スクリプトです。
+    単一の ClickHouse バイナリをダウンロードし、`clickhousectl` をインストールする、1 行の `curl` スクリプトです。
   </Card>
 
   <Card title="clickhousectl (CLI)" href="/ja/get-started/setup/self-managed/clickhousectl" icon="terminal">
-    ClickHouse CLI を使用して、ローカルの ClickHouse バージョンとサーバーをインストールおよび管理します。
+    ClickHouse CLI を使用して、各バージョンの ClickHouse をインストールし、ローカルで ClickHouse サーバーや Postgres サーバーを実行します。
   </Card>
 
   <Card title="Docker" href="/ja/get-started/setup/self-managed/docker" icon="docker">
@@ -32,9 +30,7 @@ keywords: ['インストール', 'セルフマネージド', 'linux', 'macos', '
   </Card>
 </CardGroup>
 
-<div id="production-server">
-  ## 本番サーバー
-</div>
+## 本番サーバー {#production-server}
 
 長期間稼働させる環境向けに、パッケージまたはバイナリから ClickHouse Server をインストールします。
 

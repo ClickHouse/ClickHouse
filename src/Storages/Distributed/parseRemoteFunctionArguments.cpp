@@ -1,5 +1,9 @@
 #include <Storages/Distributed/parseRemoteFunctionArguments.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -13,6 +17,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/parseAddress.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Defines.h>
@@ -30,8 +35,30 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_FUNCTION;
 }
 
+namespace
+{
+
+/// In the table function position a call to no function can only be a table function.
+void throwIfUnknownTableFunction(const ASTPtr & ast, const ContextPtr & context)
+{
+    const auto * function = ast->as<ASTFunction>();
+    if (!function)
+        return;
+    const String & name = function->name;
+    /// `untuple` and `grouping` are implemented by the analyzer and registered in no factory.
+    if (name == "untuple" || name == "grouping")
+        return;
+    if (TableFunctionFactory::instance().isTableFunctionName(name) || FunctionFactory::instance().has(name)
+        || AggregateFunctionFactory::instance().isAggregateFunctionName(name)
+        || UserDefinedSQLFunctionFactory::instance().has(name) || UserDefinedExecutableFunctionFactory::has(name, context))
+        return;
+    throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}{}", name, TableFunctionFactory::instance().getHintsMessage(name));
+}
+
+}
 
 ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     ASTs & all_args,
@@ -40,7 +67,9 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     bool is_cluster_function,
     bool secure,
     const PreformattedMessage & help_message,
-    const StorageID * dependent_table_id)
+    const StorageID * dependent_table_id,
+    const RemoteDescriptionCaller & caller,
+    bool limit_total_addresses)
 {
     ParsedRemoteFunctionArguments result;
     ClusterPtr & cluster = result.cluster;
@@ -93,9 +122,28 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     /// call fall through and be reparsed positionally, which can only misinterpret it.
     const auto * second_arg_function = args.size() >= 2 ? args[1]->as<ASTFunction>() : nullptr;
     const bool throw_unknown_collection = second_arg_function && second_arg_function->name == "equals";
-    if (!is_cluster_function
-        && (named_collection
-            = tryGetNamedCollectionWithOverrides(args, context, throw_unknown_collection, &complex_args, dependent_table_id)))
+    if (!is_cluster_function)
+    {
+        /// Reading the named collection evaluates each override on its own, so check the table function slot first.
+        for (size_t i = 1; i < args.size(); ++i)
+        {
+            const auto * equals = args[i]->as<ASTFunction>();
+            if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
+                continue;
+            const auto & key = equals->arguments->children[0];
+            String key_name;
+            if (const auto * literal = key->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+                key_name = literal->value.safeGet<String>();
+            /// Outside the named collection form the argument can be a sharding key such as `rand() % 2 = 0`, which is not a constant.
+            else if (!tryGetIdentifierNameInto(key, key_name) && throw_unknown_collection)
+                key_name = checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(key, context), "key");
+            if (key_name == "database" || key_name == "db")
+                throwIfUnknownTableFunction(equals->arguments->children[1], context);
+        }
+        named_collection = tryGetNamedCollectionWithOverrides(args, context, throw_unknown_collection, &complex_args, dependent_table_id);
+    }
+
+    if (named_collection)
     {
         /// Simple literal overrides are already merged into `named_collection` by
         /// tryGetNamedCollectionWithOverrides; only the complex (non-literal) overrides arrive in
@@ -114,8 +162,11 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
                 if (function && TableFunctionFactory::instance().isTableFunctionName(function->name))
                     remote_table_function_ptr = arg_ast;
                 else
+                {
+                    throwIfUnknownTableFunction(arg_ast, context);
                     database = checkAndGetLiteralArgument<String>(
                         evaluateConstantExpressionForDatabaseName(arg_ast, context), "database");
+                }
             }
             else if (arg_name == "sharding_key")
                 sharding_key = arg_ast;
@@ -239,6 +290,7 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
             }
             else
             {
+                throwIfUnknownTableFunction(args[arg_num], context);
                 args[arg_num] = evaluateConstantExpressionForDatabaseName(args[arg_num], context);
                 database = checkAndGetLiteralArgument<String>(args[arg_num], "database");
 
@@ -337,16 +389,16 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     {
         /// Create new cluster from the scratch
         size_t max_addresses = context->getSettingsRef()[Setting::table_function_remote_max_addresses];
-        Strings shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
+        /// The limit applies to the total number of addresses, over both the shards and their replicas.
+        auto shards = parseRemoteDescriptionWithFailover(cluster_description, max_addresses, caller, limit_total_addresses);
 
         HostsByShard names;
         names.reserve(shards.size());
-        for (const auto & shard : shards)
+        for (auto & shard : shards)
         {
-            auto replicas = parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses);
-            if (replicas.empty())
+            if (shard.replicas.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard contains zero number of replicas");
-            names.push_back(std::move(replicas));
+            names.push_back(std::move(shard.replicas));
         }
 
         if (names.empty())
@@ -354,18 +406,21 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
 
         auto maybe_secure_port = context->getTCPPortSecure();
 
-        /// Check host and port on affiliation allowed hosts.
+        const UInt16 default_port
+            = secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort();
+
+        /// Check host and port against the allowed hosts filter. The address is split with `parseAddress`,
+        /// the same helper that `Cluster` uses, because a naive split at the first `:` would tear a
+        /// bracketed IPv6 literal such as `[2001:db8::1]:9440` apart and check the nonsensical host `[2001`.
+        /// The brackets are stripped, so the filter sees the bare address, as it does for a URL.
         for (const auto & hosts : names)
         {
             for (const auto & host : hosts)
             {
-                size_t colon = host.find(':');
-                if (colon == String::npos)
-                    context->getRemoteHostFilter().checkHostAndPort(
-                        host,
-                        toString((secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort())));
-                else
-                    context->getRemoteHostFilter().checkHostAndPort(host.substr(0, colon), host.substr(colon + 1));
+                auto [host_name, port] = parseAddress(host, default_port);
+                if (host_name.size() >= 2 && host_name.front() == '[' && host_name.back() == ']')
+                    host_name = host_name.substr(1, host_name.size() - 2);
+                context->getRemoteHostFilter().checkHostAndPort(host_name, toString(port));
             }
         }
 
@@ -374,7 +429,7 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
         ClusterConnectionParameters params{
             username,
             password,
-            static_cast<UInt16>(secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort()),
+            default_port,
             treat_local_as_remote,
             treat_local_port_as_remote,
             secure,

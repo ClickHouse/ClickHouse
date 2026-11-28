@@ -38,7 +38,7 @@ struct IcebergObjectSerializableInfo
     std::optional<UInt64> first_row_id;
     std::vector<std::pair<String, Field>> identity_partition_columns;
 
-    bool hasPositionDeletes() const { return deletion_vector.has_value() || !position_deletes_objects.empty(); }
+    [[nodiscard]] bool hasPositionDeletes() const { return deletion_vector.has_value() || !position_deletes_objects.empty(); }
 
     void serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const;
     void deserializeForClusterFunctionProtocol(ReadBuffer & in, size_t protocol_version);
@@ -81,28 +81,47 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
 
     std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
         ObjectStoragePtr object_storage,
+        const Iceberg::IcebergPathResolver & path_resolver,
         const SharedHeader & header,
         const std::optional<FormatSettings> & format_settings,
         FormatParserSharedResourcesPtr parser_shared_resources,
         ContextPtr context_);
 
+    /// Whether the position deletes of this file are applied by `IcebergStreamingPositionDeleteTransform`,
+    /// which requires the rows of the data file and of its delete files in order of increasing row number.
+    bool usesStreamingPositionDeletes(const ContextPtr & context_) const;
+
     std::optional<String> getFileFormat() const override { return info.file_format; }
+
+    VectorWithMemoryTracking<UInt64> getSplitOffsetsHint() const override { return split_offsets; }
+
+    std::shared_ptr<ObjectInfo> clone() const override { return std::make_shared<IcebergDataObjectInfo>(*this); }
 
     std::optional<size_t> getFileSizeHint() const override
     {
-        if (info.file_size_in_bytes.has_value())
+        if (info.file_size_in_bytes.has_value() && *info.file_size_in_bytes > 0)
             return static_cast<size_t>(*info.file_size_in_bytes);
         return std::nullopt;
     }
 
-    /// Attach a V2 position delete file (Parquet).
-    void addPositionDeleteFile(const Iceberg::ProcessedManifestFileEntryPtr & position_delete_file, const String & resolved_storage_path);
+    std::optional<size_t> getNumRowsHint() const override
+    {
+        if (info.record_count.has_value() && *info.record_count >= 0)
+            return static_cast<size_t>(*info.record_count);
+        return std::nullopt;
+    }
+
+    /// Attach a V2 position delete file (Parquet). `this_file_only`: see `PositionDeleteScope::ThisFile`.
+    void addPositionDeleteFile(
+        const Iceberg::ProcessedManifestFileEntryPtr & position_delete_file, const String & resolved_storage_path, bool this_file_only);
 
     /// Attach a V3 deletion vector (a blob inside a Puffin file).
     void addDeletionVector(const Iceberg::ProcessedManifestFileEntryPtr & deletion_vector, const String & resolved_storage_path);
 
     void addEqualityDeleteObject(const Iceberg::ProcessedManifestFileEntryPtr & equality_delete_object, const String & resolved_storage_path);
     Iceberg::IcebergObjectSerializableInfo info;
+
+    VectorWithMemoryTracking<UInt64> split_offsets;
 };
 
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;

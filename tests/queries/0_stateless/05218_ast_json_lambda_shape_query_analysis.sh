@@ -48,9 +48,9 @@ run_json NUMBER_OF_ARGUMENTS_DOESNT_MATCH "$INDEX_JSON_ARITY"
 INDEX_JSON_TUPLE=$(${CLICKHOUSE_LOCAL} -q "SELECT replace(parseQueryToJSON('CREATE TABLE t (a UInt8, INDEX idx lambda(tuple(a), a) TYPE set(0) GRANULARITY 1) ENGINE = MergeTree ORDER BY a'), '\"name\":\"tuple\",\"arguments\":{\"type\":\"ExpressionList\",\"children\":[{\"type\":\"Identifier\",\"name\":\"a\"}]}', '\"name\":\"tuple\"') FORMAT TSVRaw")
 run_json BAD_ARGUMENTS "$INDEX_JSON_TUPLE"
 
-# 5. `CREATE FUNCTION` restores its core through the untyped `readChild`, and the validation that
-#    registration performs on it tests nothing about the node beyond `as<ASTFunction>()`, so neither
-#    the `is_lambda_function` boundary check nor a name test guards the argument list it then reads.
+# 5. `CREATE FUNCTION` restores its core as an expression, so a core with no `arguments` list is
+#    refused there. Behind that, the validation registration performs tests nothing about the node
+#    beyond `as<ASTFunction>()`: no `is_lambda_function` check and no name test guard what it reads.
 run_json BAD_ARGUMENTS '{"type":"CreateSQLFunctionQuery","function_name":{"type":"Identifier","name":"udf_shape"},"function_core":{"type":"Function","name":"lambda"}}'
 
 # 6. A core that is well formed in every respect the validator checks except its own name. Registration

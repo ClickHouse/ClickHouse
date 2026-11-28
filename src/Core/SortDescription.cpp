@@ -1,7 +1,9 @@
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
+#include <Analyzer/TableQualifiers.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/JSONBuilder.h>
@@ -16,7 +18,9 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/TypeTree.h>
 
+#include <algorithm>
 #include <string_view>
 #include <unordered_set>
 
@@ -97,12 +101,6 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
     return res;
 }
 
-namespace
-{
-
-/// Values that comparison declares equal while hash equality - the equality of `GROUP BY`, `DISTINCT`,
-/// `LIMIT BY` and `IN` - keeps apart: `-0.0` and `0.0`, and the `NaN` payloads. `Dynamic`, `Variant`
-/// and `Object` are only known at run time and may hold such a value.
 bool comparisonCanMergeDistinctValues(const IDataType & type)
 {
     auto is_ambiguous = [](const IDataType & subtype)
@@ -111,14 +109,7 @@ bool comparisonCanMergeDistinctValues(const IDataType & type)
         return which.isFloat() || which.isDynamic() || which.isVariant() || which.isObject();
     };
 
-    if (is_ambiguous(type))
-        return true;
-
-    bool result = false;
-    type.forEachChild([&](const IDataType & child) { result = result || is_ambiguous(child); });
-    return result;
-}
-
+    return anyInTypeTree(type, is_ambiguous);
 }
 
 SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns, const Block & header)
@@ -144,10 +135,24 @@ SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & des
         if (!column_in_header || !column_in_header->type || comparisonCanMergeDistinctValues(*column_in_header->type))
             break;
 
-        prefix.emplace_back(sort_column_desc);
+        /// A repeated column must not count twice in the size of the prefix.
+        if (std::ranges::none_of(prefix, [&](const auto & desc) { return desc.column_name == sort_column_desc.column_name; }))
+            prefix.emplace_back(sort_column_desc);
     }
 
     return prefix;
+}
+
+bool sortDescriptionIsAllConstant(const SortDescription & description, const Block & header)
+{
+    for (const auto & column_description : description)
+    {
+        const auto * column = header.findByName(column_description.column_name);
+        if (!column || !column->column || !isColumnConst(*column->column))
+            return false;
+    }
+
+    return true;
 }
 
 #if USE_EMBEDDED_COMPILER
@@ -349,6 +354,19 @@ bool isFillArithmeticValue(const Field & value)
     }
 }
 
+/// No `WITH FILL` parameter is usable as `NaN` or `Inf`, and each fails in its own way. `NaN` compares
+/// greater than every value in the totalized `Field` order, so a `TO` bound of `NaN`, or of the infinity
+/// the fill runs towards, leaves the loop's termination test in `FillingRow::next` always true: the query
+/// generated fill rows until it hit a time limit, and forever without one. A `TO` bound the fill runs
+/// away from is passed at once and nothing is filled. A non-finite `FROM` or `STEP` makes the cursor
+/// itself non-finite, which is where the guards inside `FillingRow::next` stop the fill on their own, so
+/// nothing is filled either - and for `FROM` the bound has by then been emitted as a row, replacing the
+/// fill that a perfectly good `TO` asked for.
+bool isNonFiniteFillValue(const Field & value)
+{
+    return value.isNaN() || value.isInf();
+}
+
 }
 
 String checkFillDescription(const FillColumnDescription & fill, int direction)
@@ -369,6 +387,20 @@ String checkFillDescription(const FillColumnDescription & fill, int direction)
 
     if (!fill.fill_staleness.isNull() && !fill.fill_from.isNull())
         return "WITH FILL STALENESS cannot be used together with WITH FILL FROM";
+
+    if (isNonFiniteFillValue(fill.fill_from))
+        return "WITH FILL FROM value must be finite";
+
+    if (isNonFiniteFillValue(fill.fill_to))
+        return "WITH FILL TO value must be finite";
+
+    if (isNonFiniteFillValue(fill.fill_step))
+        return "WITH FILL STEP value must be finite";
+
+    /// `STALENESS` reaches the same fill loop as `TO`: `updateConstraintsWithStalenessRow` derives the
+    /// loop constraint from it exactly like from `TO`, and writes it into the same `constraints` array.
+    if (isNonFiniteFillValue(fill.fill_staleness))
+        return "WITH FILL STALENESS value must be finite";
 
     if (direction > 0)
     {
@@ -471,12 +503,21 @@ void deserializeFillColumnDescription(FillColumnDescription & fill, ReadBuffer &
 
 }
 
-void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out, UInt64 version)
+void serializeSortDescription(
+    const SortDescription & sort_description,
+    WriteBuffer & out,
+    UInt64 version,
+    bool for_cache_key,
+    const Block * input_header)
 {
     writeVarUInt(sort_description.size(), out);
     for (const auto & desc : sort_description)
     {
-        writeStringBinary(desc.column_name, out);
+        /// A sort column is a plan-build-local name in a cache key; see `writeCacheKeyColumnName`.
+        if (for_cache_key)
+            writeCacheKeyColumnName(desc.column_name, input_header, out);
+        else
+            writeStringBinary(desc.column_name, out);
 
         UInt8 flags = 0;
         if (desc.direction > 0)

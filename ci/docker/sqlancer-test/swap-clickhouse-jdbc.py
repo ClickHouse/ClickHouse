@@ -52,6 +52,21 @@
    branches then drop exactly the unreadable view, so it no longer reaches the
    cross-join size probe, which is called outside the per-oracle
    `catch (AssertionError)` and so killed the run.
+6. Make `GeneratorInfoTable.calcAverageScore` in `GeneralErrorHandler.java`
+   synchronize on `GeneralErrorHandler.class`. It updates and iterates the
+   static `all*` success/count maps shared by every worker thread, but its
+   `synchronized` locked the per-database handler's own table, so concurrent
+   calls threw `ConcurrentModificationException`.
+7. Close the JDBC result set before its statement in `SQLancerResultSet.close`,
+   and skip the iteration (`IgnoreMeException`) when that fails. When ClickHouse
+   hits an error after it has started sending rows, it ends the HTTP response
+   without the closing chunk; the driver only notices when the result set is
+   closed (`Premature end of chunk coded message body`), and `Statement.close`,
+   which upstream calls first, logs and swallows that ("Failed to close previous
+   result set"). The rows read so far were then compared as a complete result,
+   so a query that failed mid-stream showed up as a QUERY_PARTITIONING
+   cardinality mismatch. The server error itself is still collected from the
+   server log by the job.
 """
 
 import argparse
@@ -195,6 +210,69 @@ def patch_view_validity_probe(repo: pathlib.Path) -> None:
     src.write_text(text.replace(anchor, replacement))
 
 
+def patch_average_score_lock(repo: pathlib.Path) -> None:
+    src = repo / "src" / "sqlancer" / "general" / "GeneralErrorHandler.java"
+    text = src.read_text()
+    anchor = (
+        "        public synchronized <N> Map<N, Double> calcAverageScore(Map<N, Integer> success, Map<N, Integer> count,\n"
+        "                Map<N, Integer> allSuccess, Map<N, Integer> allCount, int minCnt, boolean quickStart) {\n"
+        "            Map<N, Double> average = new HashMap<>();\n"
+    )
+    replacement = (
+        "        public <N> Map<N, Double> calcAverageScore(Map<N, Integer> success, Map<N, Integer> count,\n"
+        "                Map<N, Integer> allSuccess, Map<N, Integer> allCount, int minCnt, boolean quickStart) {\n"
+        "            // ClickHouse patch: allSuccess and allCount are static maps shared by every worker thread.\n"
+        "            synchronized (GeneralErrorHandler.class) {\n"
+        "                return calcAverageScoreLocked(success, count, allSuccess, allCount, minCnt, quickStart);\n"
+        "            }\n"
+        "        }\n"
+        "\n"
+        "        private <N> Map<N, Double> calcAverageScoreLocked(Map<N, Integer> success, Map<N, Integer> count,\n"
+        "                Map<N, Integer> allSuccess, Map<N, Integer> allCount, int minCnt, boolean quickStart) {\n"
+        "            Map<N, Double> average = new HashMap<>();\n"
+    )
+    if anchor not in text:
+        sys.exit(f"failed to locate GeneratorInfoTable.calcAverageScore in {src}")
+    if text.count(anchor) != 1:
+        sys.exit(f"expected exactly one GeneratorInfoTable.calcAverageScore in {src}")
+    src.write_text(text.replace(anchor, replacement))
+
+
+def patch_result_set_close(repo: pathlib.Path) -> None:
+    src = repo / "src" / "sqlancer" / "common" / "query" / "SQLancerResultSet.java"
+    text = src.read_text()
+    # `Statement.close` swallows the error of closing a response that was cut short by a
+    # server error in the middle of the result, so the partial rows looked complete.
+    anchor = (
+        "            rs.getStatement().close();\n"
+        "            rs.close();\n"
+        "        } catch (SQLException e) {\n"
+        "            throw new AssertionError(e);\n"
+        "        }\n"
+    )
+    replacement = (
+        "            // ClickHouse patch: a response that ended without its closing chunk (the server failed\n"
+        "            // in the middle of the result) is reported only by ResultSet.close, and Statement.close\n"
+        "            // would swallow it. The rows read so far are incomplete, so skip this iteration.\n"
+        "            java.sql.Statement statement = rs.getStatement();\n"
+        "            try {\n"
+        "                rs.close();\n"
+        "            } catch (SQLException e) {\n"
+        "                statement.close();\n"
+        "                throw new sqlancer.IgnoreMeException();\n"
+        "            }\n"
+        "            statement.close();\n"
+        "        } catch (SQLException e) {\n"
+        "            throw new AssertionError(e);\n"
+        "        }\n"
+    )
+    if anchor not in text:
+        sys.exit(f"failed to locate SQLancerResultSet.close in {src}")
+    if text.count(anchor) != 1:
+        sys.exit(f"expected exactly one SQLancerResultSet.close in {src}")
+    src.write_text(text.replace(anchor, replacement))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("repo", help="Path to the SQLancer++ checkout")
@@ -214,6 +292,8 @@ def main() -> None:
     patch_norec_oracle(repo)
     patch_where_oracle(repo)
     patch_view_validity_probe(repo)
+    patch_average_score_lock(repo)
+    patch_result_set_close(repo)
 
 
 if __name__ == "__main__":

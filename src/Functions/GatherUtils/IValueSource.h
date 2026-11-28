@@ -23,7 +23,7 @@ struct IValueSource
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Accept not implemented for {}", demangle(typeid(*this).name()));
     }
 
-    virtual bool isConst() const { return false; }
+    [[nodiscard]] virtual bool isConst() const { return false; }
 };
 
 template <typename Derived>

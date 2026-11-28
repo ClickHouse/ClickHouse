@@ -366,7 +366,10 @@ def test_memory_reservation_concurrency():
 
     # Release reservations by killing all running queries.
     for qid in query_ids:
-        node.query(f"kill query where query_id = '{qid}' sync")
+        node.query(
+            f"kill query where query_id = '{qid}' sync "
+            "settings kill_throw_if_noop = false"
+        )
 
     for t in threads:
         t.join()
@@ -484,7 +487,7 @@ def test_admission_timeout_shared_budget_across_slot_and_memory():
     # acquire a CONTENDED memory reservation with only the REMAINING budget, so it times out on
     # memory near the ORIGINAL deadline (~T total). A regression that recomputed the deadline before
     # constructing MemoryReservation would instead give the memory wait a fresh full T, so the query
-    # would fail at ~slot_wait + T — which the elapsed-time bound below rejects.
+    # would fail at ~slot_wait + T — which the server-side duration bound below rejects.
     node.query(
         """
         create resource query (query);
@@ -511,10 +514,10 @@ def test_admission_timeout_shared_budget_across_slot_and_memory():
 
     def hold_slot():
         try:
-            # Holds the single 'production' query slot for ~3s, then releases it (well within the 5s
+            # Holds the single 'production' query slot for ~4s, then releases it (still within the 5s
             # budget) so the waiter acquires the slot with budget to spare and reaches the memory wait.
             node.query(
-                "select sleepEachRow(1) from numbers(3) "
+                "select sleepEachRow(1) from numbers(4) "
                 "settings max_block_size=1, workload='production'",
                 query_id="shared_budget_slot_holder",
             )
@@ -544,26 +547,38 @@ def test_admission_timeout_shared_budget_across_slot_and_memory():
         ):
             time.sleep(0.1)
 
-        start = time.time()
         error = node.query_and_get_error(
             "select count(*) from numbers(100) "
             f"settings workload='production', reserve_memory='80Mi', workload_admission_timeout_ms={T_MS}",
             query_id="shared_budget_waiter",
         )
-        elapsed = time.time() - start
 
         # Reached the memory phase (the slot wait did NOT consume a separate full budget) and timed
         # out there...
         assert "MEMORY_RESERVATION_ACQUISITION_TIMEOUT" in error, error
+        # The client process around the query takes over a second under sanitizers, so time it on the server.
+        node.query("SYSTEM FLUSH LOGS")
+        waited_ms = node.query(
+            "select query_duration_ms from system.query_log "
+            "where query_id = 'shared_budget_waiter' and type = 'ExceptionBeforeStart' "
+            "order by query_start_time_microseconds desc limit 1"
+        ).strip()
+        assert waited_ms != "", "shared_budget_waiter not found in query_log"
+        waited_ms = int(waited_ms)
         # ...within ONE shared budget (~5s). A per-resource deadline would give ~slot_wait + T (~8s).
-        assert elapsed < 6.5, (
-            f"admission budget not shared across resources: waited {elapsed:.1f}s "
-            f"(one shared budget is ~{T_MS / 1000}s; a per-resource deadline would be ~8s)"
+        assert waited_ms < T_MS + 1000, (
+            f"admission budget not shared across resources: waited {waited_ms} ms "
+            f"(one shared budget is {T_MS} ms; a per-resource deadline would be ~8000 ms)"
         )
-        assert elapsed > 4.0, f"timed out too early to have used the shared budget: {elapsed:.1f}s"
+        assert waited_ms > T_MS - 1000, f"timed out too early to have used the shared budget: {waited_ms} ms"
     finally:
-        node.query("kill query where query_id = 'shared_budget_mem_holder' sync")
-        node.query("kill query where query_id = 'shared_budget_slot_holder' sync")
+        node.query(
+            "kill query where query_id = 'shared_budget_mem_holder' sync "
+            "settings kill_throw_if_noop = false"
+        )
+        node.query(
+            "kill query where query_id = 'shared_budget_slot_holder' sync "
+            "settings kill_throw_if_noop = false"
+        )
         mem.join()
         slot.join()
-

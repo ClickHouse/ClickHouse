@@ -11,6 +11,10 @@ doc_type: 'guide'
 
 Automatic idling pauses a ClickHouse Cloud service after a period without user-submitted queries, subject to the [adaptive idling conditions](#adaptive-idling). You can enable automatic idling and configure the inactivity duration on the service's **Settings** page.
 
+<Note>
+[Gen 2 compute](/products/cloud/features/compute-generations) does not support automatic idling during Private Preview.
+</Note>
+
 ## What is billed while the service is paused? {#billing-while-paused}
 
 You aren't billed for compute resources while the service is paused. Storage and backups continue to be billed; idling does not remove your stored data. See [pricing](/products/cloud/reference/billing/billing-overview) for billing details.

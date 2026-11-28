@@ -7,7 +7,6 @@ CREATE TABLE t1 (c0 UInt64, c1 UInt64) ENGINE = MergeTree() ORDER BY (c0);
 INSERT INTO t1 VALUES (1, 10);
 
 SET query_plan_join_swap_table = 0;
-SET enable_analyzer = 1;
 
 SELECT
     *

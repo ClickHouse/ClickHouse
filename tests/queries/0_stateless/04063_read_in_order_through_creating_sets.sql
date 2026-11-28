@@ -45,7 +45,7 @@ INSERT INTO data_b SELECT 'x', generateUUIDv4(), toDate('2024-01-01') + number %
 INSERT INTO data_b SELECT 'x', generateUUIDv4(), toDate('2024-01-01') + number % 365, toString(3000 + number % 1000), number FROM numbers(1000000);
 INSERT INTO data_b SELECT 'x', generateUUIDv4(), toDate('2024-01-01') + number % 365, toString(4000 + number % 1000), number FROM numbers(1000000);
 
-SET max_threads = 4, query_plan_read_in_order = 1, optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1;
+SET max_threads = 4, optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1;
 
 -- full_sorting_merge JOIN with IN subqueries: data tables must NOT use ReadPool/Thread
 SELECT

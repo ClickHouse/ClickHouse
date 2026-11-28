@@ -10,7 +10,10 @@
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Functions/FunctionHelpers.h>
+#include <Common/BitHelpers.h>
+#include <Common/PODArray.h>
 #include <Common/iota.h>
+#include <base/arithmeticOverflow.h>
 
 namespace DB
 {
@@ -50,7 +53,7 @@ struct PartialSortingLessImpl
 
     explicit PartialSortingLessImpl(const ColumnsWithSortDescriptions & columns_) : columns(columns_) { }
 
-    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
+    [[nodiscard]] ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = 0;
 
@@ -265,7 +268,8 @@ bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limi
         UInt64 different = base ^ i;
 
         for (size_t j = 0; j < block_size; ++j)
-            different |= (permutation[i + j] - base) ^ j;
+            /// A value below `base` wraps, which is what makes `different` non-zero for it.
+            different |= common::subIgnoreOverflow(permutation[i + j], base) ^ j;
 
         if (different)
             return false;
@@ -363,6 +367,20 @@ void checkSortedWithPermutation(const Block & block, const SortDescription & des
 }
 #endif
 
+}
+
+size_t estimateSortingWorkspace(size_t rows)
+{
+    /// A sorting permutation stores each row's original index. Include array padding and the
+    /// power-of-two capacity rounding, rather than counting only the indices themselves.
+    using Permutation = IColumn::Permutation;
+    const size_t permutation_bytes = roundUpToPowerOfTwoOrZero(PODArrayDetails::minimum_memory_for_elements(
+        rows, sizeof(Permutation::value_type), Permutation::pad_left, Permutation::pad_right));
+
+    /// Numeric radix sorting holds two value-index arrays alongside the permutation. Each pair can
+    /// occupy twice an index's size, and the histograms need up to 8 KiB. This allowance also covers
+    /// the equal-key ranges used by comparison sorting and duplicate removal.
+    return 5 * permutation_bytes + (8 << 10);
 }
 
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit, IColumn::PermutationSortStability stability)

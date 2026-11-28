@@ -10,15 +10,11 @@ integration:
   - category: 'sql_client'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
-<div id="open-the-tablumio-startup-page">
-  ## افتح صفحة البدء الخاصة بـ TABLUM.IO
-</div>
+## افتح صفحة البدء الخاصة بـ TABLUM.IO {#open-the-tablumio-startup-page}
 
 <Note>
   يمكنك تثبيت إصدار مُستضاف ذاتيًا من TABLUM.IO على خادم Linux لديك باستخدام Docker.
@@ -28,7 +24,11 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
   <Step title="سجّل أو سجّل الدخول إلى الخدمة" id="1-sign-up-or-sign-in-to-the-service">
     أولاً، سجّل في TABLUM.IO باستخدام بريدك الإلكتروني أو استخدم تسجيل الدخول السريع عبر حسابات Google أو Facebook.
 
-    <Image img="/images/integrations/sql-clients/tablum-ch-0.webp" size="md" border alt="صفحة تسجيل الدخول إلى TABLUM.IO" />
+    <div className="ch-image-md">
+      <Frame>
+        ![صفحة تسجيل الدخول إلى TABLUM.IO](/images/integrations/sql-clients/tablum-ch-0.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="أضِف موصل ClickHouse" id="2-add-a-clickhouse-connector">
@@ -42,13 +42,21 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
       عادةً ما يكون المنفذ 8443 عند استخدام TLS، أو 8123 عند عدم استخدام TLS.
     </Tip>
 
-    <Image img="/images/integrations/sql-clients/tablum-ch-1.webp" size="lg" border alt="إضافة موصل ClickHouse في TABLUM.IO" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![إضافة موصل ClickHouse في TABLUM.IO](/images/integrations/sql-clients/tablum-ch-1.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="حدّد الموصّل" id="3-select-the-connector">
     انتقل إلى علامة التبويب **Dataset**. حدّد موصل ClickHouse الذي أُنشئ مؤخرًا من القائمة المنسدلة. في اللوحة اليمنى، سترى قائمة بالجداول والمخططات المتاحة.
 
-    <Image img="/images/integrations/sql-clients/tablum-ch-2.webp" size="lg" border alt="تحديد موصل ClickHouse في TABLUM.IO" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![تحديد موصل ClickHouse في TABLUM.IO](/images/integrations/sql-clients/tablum-ch-2.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="أدخل استعلام SQL وشغّله" id="4-input-a-sql-query-and-run-it">
@@ -58,7 +66,11 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
       انقر بزر الماوس الأيمن على اسم العمود لفتح القائمة المنسدلة التي تحتوي على خيارات الفرز والتصفية وإجراءات أخرى.
     </Tip>
 
-    <Image img="/images/integrations/sql-clients/tablum-ch-3.webp" size="lg" border alt="تشغيل استعلام SQL في TABLUM.IO" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![تشغيل استعلام SQL في TABLUM.IO](/images/integrations/sql-clients/tablum-ch-3.webp)
+      </Frame>
+    </div>
 
     <Note>
       باستخدام TABLUM.IO، يمكنك
@@ -71,7 +83,7 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 </Steps>
 
 <div id="learn-more">
-  ## تعرّف على المزيد
+  ## تعرّف على المزيد {#learn-more}
 </div>
 
 يمكنك العثور على مزيد من المعلومات حول TABLUM.IO على https://tablum.io.

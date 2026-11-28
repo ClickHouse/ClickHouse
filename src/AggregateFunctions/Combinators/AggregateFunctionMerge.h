@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/typeid_cast.h>
@@ -9,6 +10,11 @@
 namespace DB
 {
 struct Settings;
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 
 /** Not an aggregate function, but an adapter of aggregate functions,
@@ -21,11 +27,18 @@ class AggregateFunctionMerge final : public IAggregateFunctionHelper<AggregateFu
 {
 private:
     AggregateFunctionPtr nested_func;
-    AggregateFunctionPtr argument_func;
-    bool merge_state_from_different_variant = false;
 
 public:
-    AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_);
+    AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_)
+        : IAggregateFunctionHelper<AggregateFunctionMerge>({argument}, params_, createResultType(nested_))
+        , nested_func(nested_)
+    {
+        const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(argument.get());
+
+        if (!data_type || !nested_func->haveSameStateRepresentation(*data_type->getFunction()))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}, "
+                            "expected {} or equivalent type", argument->getName(), getName(), getStateType()->getName());
+    }
 
     String getName() const override
     {
@@ -45,6 +58,22 @@ public:
     bool isVersioned() const override
     {
         return nested_func->isVersioned();
+    }
+
+    /** `Merge` was the one combinator that forwarded `isVersioned` and `getDefaultVersion` but not
+      * this, so it answered the base class's `0` for every revision while claiming to be versioned.
+      * No shape of `...MergeState...` was found where that is observable - the state type carries
+      * the version through the chain on its own, and a round trip of `uniqMergeState` /
+      * `uniqMergeStateIf` over `remote()` was verified to announce `AggregateFunction(1, uniq, ...)`
+      * and to write a byte-identical payload either way - but a function that reports a version
+      * independent of the revision it is asked about is a trap for the next caller of it.
+      */
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        /// Older servers write `-Merge` states at version 0 and do not announce it.
+        if (revision < DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION)
+            return 0;
+        return nested_func->getVersionFromRevision(revision);
     }
 
     size_t getDefaultVersion() const override
@@ -95,6 +124,13 @@ public:
     }
 
     bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
+    bool isParallelizeMergePrepareNeeded() const override { return nested_func->isParallelizeMergePrepareNeeded(); }
+    size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override { return nested_func->getEstimatedMergeWork(place); }
+
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
+    {
+        return nested_func->isLargeMergePair(place, rhs);
+    }
     bool canOptimizeEqualKeysRanges() const override { return nested_func->canOptimizeEqualKeysRanges(); }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
@@ -115,6 +151,16 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         nested_func->serialize(place, buf, version);
+    }
+
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
+    {
+        return nested_func->getSerializedSizeBound(version);
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        return nested_func->serializeToMemory(place, dst, version);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override

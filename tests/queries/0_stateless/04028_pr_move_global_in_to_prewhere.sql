@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- derivative from 03457_move_global_in_to_prewhere
 
 DROP TABLE IF EXISTS 04028_data;

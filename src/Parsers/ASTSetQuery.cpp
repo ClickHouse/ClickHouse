@@ -4,21 +4,15 @@
 #include <Parsers/ASTFromJSON.h>
 
 #include <Core/SettingsSecrets.h>
-#include <Databases/DataLake/DataLakeConstants.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Parsers/SecretArguments.h>
 #include <Parsers/formatSettingName.h>
-#include <Storages/Kafka/Kafka_fwd.h>
-#include <Storages/NATS/NATS_fwd.h>
-#include <Storages/ObjectStorageQueue/AzureQueue_fwd.h>
-#include <Storages/ObjectStorageQueue/S3Queue_fwd.h>
-#include <Storages/RabbitMQ/RabbitMQ_fwd.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 
-#include <array>
 
 namespace DB
 {
@@ -28,47 +22,20 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// Each engine namespace declares its own identical `ValueMaskingFunc` alias, hence the spelled-out
-/// type. Unrelated to `CoreSettings::ValueMaskingFunc`, which rewrites a value string in place.
-using EngineSettingsToHide = std::unordered_map<String, std::function<std::optional<std::string>(const Field &)>>;
-
-/// The table and database engine settings whose value is a secret, and how each one is masked.
-///
-/// Every engine's map is consulted whatever the engine of the statement being formatted, because
-/// `FormatStateStacked::create_engine_name` is only set when a `SETTINGS` clause is formatted as part
-/// of `ENGINE = ...`. Gating on it printed the value of
-/// `ALTER TABLE t MODIFY SETTING kafka_sasl_password = '...'` in cleartext. The setting names are
-/// engine-prefixed, so there is nothing for a different engine to collide with.
-///
-/// `formatImpl` and `hasSecretParts` both read this list, so they cannot disagree on what is secret.
-static std::array<const EngineSettingsToHide *, 6> engineSettingsToHide()
-{
-    return {
-        &DataLake::SETTINGS_TO_HIDE,
-        &RabbitMQ::SETTINGS_TO_HIDE,
-        &NATS::SETTINGS_TO_HIDE,
-        &Kafka::SETTINGS_TO_HIDE,
-        &AzureQueue::SETTINGS_TO_HIDE,
-        &S3Queue::SETTINGS_TO_HIDE,
-    };
-}
-
 /// Renders a change whose value is a secret as the SQL text that hides it, and returns `nullopt` for
 /// a change that carries none. `formatImpl` and `hasSecretParts` both go through this, so they cannot
 /// disagree on what is secret.
-static std::optional<String> renderSecretChangeValue(const SettingChange & change)
+std::optional<String> renderSecretChangeValue(const SettingChange & change)
 {
-    if (auto masked = CoreSettings::renderSecretSettingValue(change.name, change.value))
+    /// The queue engines also take every setting, a format setting included, with the legacy `s3queue_` prefix.
+    static constexpr std::string_view s3queue_prefix = "s3queue_";
+    const String setting_name = change.name.starts_with(s3queue_prefix) ? change.name.substr(s3queue_prefix.size()) : change.name;
+
+    if (auto masked = CoreSettings::renderSecretSettingValue(setting_name, change.value))
         return masked;
 
-    for (const auto * settings_to_hide : engineSettingsToHide())
-    {
-        auto it = settings_to_hide->find(change.name);
-        if (it != settings_to_hide->end())
-            return it->second(change.value);
-    }
-
-    return {};
+    /// The table and database engine settings, declared by each engine in its `SecretArgumentsSpec`.
+    return getSecretArgumentsFinder().renderSecretSetting(setting_name, change.value);
 }
 
 

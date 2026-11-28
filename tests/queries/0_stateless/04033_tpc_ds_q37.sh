@@ -18,4 +18,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./04033_tpc_ds.lib
 . "$CURDIR"/04033_tpc_ds.lib
 
-{ echo "USE tpcds;"; cat "$CURDIR/../../benchmarks/tpc-ds/queries/query_37.sql"; } | $CLICKHOUSE_CLIENT "${SETTINGS[@]}"
+# These tables carry no statistics, so `dpsub` ranks join orders on unknown cardinalities and leaves
+# the 61-row `date_dim` at the top of the tree, joining `catalog_sales` unrestricted below it. That
+# intermediate takes 1.67x the memory greedy's order does, enough to reach `max_bytes_in_join`.
+# Pin greedy until we can estimate these properly.
+{ echo "USE tpcds;"; cat "$CURDIR/../../benchmarks/tpc-ds/queries/query_37.sql"; } | $CLICKHOUSE_CLIENT "${SETTINGS[@]}" --query_plan_optimize_join_order_algorithm greedy

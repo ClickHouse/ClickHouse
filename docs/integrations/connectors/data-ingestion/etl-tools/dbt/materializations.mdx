@@ -24,7 +24,7 @@ The following table shows configurations shared by some of the available materia
 | partition_by   | A partition is a logical combination of records in a table by a specified criterion. The partition key can be any expression from the table columns.                             |                |
 | primary_key    | Like order_by, a ClickHouse primary key expression.  If not specified, ClickHouse will use the order by expression as the primary key                                            |                |
 | settings       | A map/dictionary of "TABLE" settings to be used to DDL statements like 'CREATE TABLE' with this model                                                                            |                |
-| query_settings | A map/dictionary of ClickHouse user level settings to be used with `INSERT` or `DELETE` statements in conjunction with this model                                                |                |
+| query_settings | A map/dictionary of user level settings added as a `SETTINGS` clause to the model's `INSERT`/`DELETE` statements and, for views and materialized views, to the stored view query |                |
 | ttl            | A TTL expression to be used with the table.  The TTL expression is a string that can be used to specify the TTL for the table.                                                   |                |
 | sql_security   | The ClickHouse user to use when executing the view's underlying query. [Accepted values](/reference/statements/create/view#sql_security): `definer`, `invoker`.              |                |
 | definer        | If `sql_security` was set to `definer`, you have to specify any existing user or `CURRENT_USER` in the `definer` clause.                                                         |                |
@@ -55,15 +55,12 @@ issue [here](https://github.com/ClickHouse/dbt-clickhouse/issues).
 ### A note on model settings {#a-note-on-model-settings}
 
 ClickHouse has several types/levels of "settings". In the model configuration above, two types of these are
-configurable.  `settings` means the `SETTINGS`
-clause used in `CREATE TABLE/VIEW` types of DDL statements, so this is generally settings that are specific to the
-specific ClickHouse table engine. The new
-`query_settings` is use to add a `SETTINGS` clause to the `INSERT` and `DELETE` queries used for model materialization (
-including incremental materializations).
-There are hundreds of ClickHouse settings, and it's not always clear which is a "table" setting and which is a "user"
-setting (although the latter are generally
-available in the `system.settings` table.)  In general the defaults are recommended, and any use of these properties
-should be carefully researched and tested.
+configurable.
+
+- `settings` means the `SETTINGS` clause used in `CREATE TABLE/VIEW` types of DDL statements, so this is generally settings that are specific to the specific ClickHouse table engine. 
+- `query_settings` is used to add a `SETTINGS` clause to the `INSERT` and `DELETE` queries used for model materialization (including incremental materializations). For views and materialized views, the `SETTINGS` clause is also added to the stored view query, so a materialized view applies these settings on every insert into its source table or refresh.
+
+There are hundreds of ClickHouse settings, and it's not always clear which is a "table" setting and which is a "user" setting (although the latter are generally available in the `system.settings` table.)  In general the defaults are recommended, and any use of these properties should be carefully researched and tested.
 
 ### Column Configuration {#column-configuration}
 
@@ -245,7 +242,6 @@ models:
     +engine: <engine-type>
     +partition_by: [ <column-name>, ... ]
     +unique_key: [ <column-name>, ... ]
-    +inserts_only: [ True|False ]
 ```
 
 Or config block in `models/<model_name>.sql`:
@@ -256,7 +252,6 @@ Or config block in `models/<model_name>.sql`:
     order_by = [ "<column-name>", ... ],
     partition_by = [ "<column-name>", ... ],
     unique_key = [ "<column-name>", ... ],
-    inserts_only = [ True|False ],
       ...
     ]
 ) }}
@@ -267,10 +262,10 @@ Configurations that are specific for this materialization type are listed below:
 
 | Option                   | Description                                                                                                                                                                                                                                                       | Required?                                                                            |
 |--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
-| `unique_key`             | A tuple of column names that uniquely identify rows. For more details on uniqueness constraints, see [here](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional).                                                                                       | Required. If not provided altered rows will be added twice to the incremental table. |
-| `inserts_only`           | It has been deprecated in favor of the `append` incremental `strategy`, which operates in the same way. If set to True for an incremental model, incremental updates will be inserted directly to the target table without creating intermediate table. . If `inserts_only` is set, `incremental_strategy` is ignored. | Optional (default: `False`)                                                          |
-| `incremental_strategy`   | The strategy to use for incremental materialization.  `delete+insert`, `append`, `insert_overwrite`, or `microbatch` are supported.  For additional details on strategies, see [here](#incremental-model-strategies) | Optional (default: 'default')                                                        |
-| `incremental_predicates` | Additional conditions to be applied to the incremental materialization (only applied to `delete+insert` strategy                                                                                                                                                                                    | Optional
+| `unique_key`             | A tuple of column names that uniquely identify rows. For more details on uniqueness constraints, see [here](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional).                                                                                       | Required by `legacy`, `delete+insert` and `microbatch`. Without it, the default strategy is `append`. |
+| `inserts_only`           | It has been deprecated in favor of the `append` incremental `strategy`, which operates in the same way. If set to True for an incremental model, incremental updates will be inserted directly to the target table without creating intermediate table. If `inserts_only` is set, `incremental_strategy` is ignored. Setting it logs a deprecation warning, which fails the run under `--warn-error`. | Optional (default: `False`)                                                          |
+| `incremental_strategy`   | The strategy to use for incremental materialization.  `delete+insert`, `append`, `insert_overwrite`, or `microbatch` are supported.  For additional details on strategies, see [here](#incremental-model-strategies) | Optional (default: `append` without `unique_key`, otherwise `delete+insert` if `use_lw_deletes` is set, else `legacy`) |
+| `incremental_predicates` | Additional conditions to be applied to the incremental materialization. Only supported by the `delete+insert` and `microbatch` strategies; any other strategy fails when it is set, including the `append` default for models without a `unique_key`. | Optional |
 
 ### Incremental Model Strategies {#incremental-model-strategies}
 
@@ -278,9 +273,10 @@ Configurations that are specific for this materialization type are listed below:
 
 #### The Default (Legacy) Strategy {#default-legacy-strategy}
 
+This is the default strategy for models with a `unique_key` (see [`incremental_strategy`](#incremental-configurations)).
 Historically ClickHouse has had only limited support for updates and deletes, in the form of asynchronous "mutations."
 To emulate expected dbt behavior,
-dbt-clickhouse by default creates a new temporary table containing all unaffected (not deleted, not changed) "old"
+dbt-clickhouse creates a new temporary table containing all unaffected (not deleted, not changed) "old"
 records, plus any new or updated records,
 and then swaps or exchanges this temporary table with the existing incremental model relation. This is the only strategy
 that preserves the original relation if something
@@ -289,7 +285,7 @@ expensive and slow to execute.
 
 #### The Delete+Insert Strategy {#delete-insert-strategy}
 
-The `delete+insert` strategy uses [lightweight deletes](/concepts/features/operations/delete/lightweight-delete) to remove the affected rows and then inserts the new ones. Because it doesn't copy the whole table, it performs significantly better than the "legacy" strategy. Setting `use_lw_deletes: true` in your profile makes `delete+insert` the default incremental strategy.
+The `delete+insert` strategy uses [lightweight deletes](/concepts/features/operations/delete/lightweight-delete) to remove the affected rows and then inserts the new ones. Because it doesn't copy the whole table, it performs significantly better than the "legacy" strategy. Setting `use_lw_deletes: true` in your profile makes `delete+insert` the default incremental strategy for models with a `unique_key`.
 
 There are important caveats to using this strategy:
 
@@ -317,6 +313,8 @@ Beyond handling large transformations, microbatch provides the ability to:
 - Eliminate the need for complex conditional logic in [backfilling](https://docs.getdbt.com/docs/build/incremental-microbatch#backfills).
 
 For detailed microbatch usage, refer to the [official documentation](https://docs.getdbt.com/docs/build/incremental-microbatch).
+
+Batch boundaries are in UTC, regardless of the server's or the `event_time` column's time zone.
 
 ##### Available Microbatch Configurations {#available-microbatch-configurations}
 
@@ -565,6 +563,94 @@ select * from {{ ref('<model-name>') }}
 ```
 
 For a worked example on the Jaffle Shop, see the [snapshot section of the guides](/integrations/connectors/data-ingestion/etl-tools/dbt/guides#snapshot). For all options, check out the [snapshot configs](https://docs.getdbt.com/docs/build/snapshots#snapshot-configs) reference page.
+
+
+## Functions (UDFs) {#functions}
+
+dbt [functions](https://docs.getdbt.com/docs/build/udfs) are added with `dbt-core v1.11+` and allow users to define and reference UDFs directly within dbt.
+The ClickHouse adapter supports defining SQL UDFs of `scalar` and `aggregate` types (see [type spec](https://docs.getdbt.com/reference/resource-configs/type?version=1)), though internally both types are handled the same in ClickHouse.
+
+The following are two examples for creating and referencing `scalar` or `aggregate` type functions:
+
+```yaml
+# functions/schema.yml
+functions:
+  - name: price_for_xlarge
+    description: Doubles the price of a standard item
+    arguments:
+      - name: price
+        data_type: Float64  # required by dbt, not enforced by ClickHouse
+    returns:
+      data_type: Float64
+  - name: sum_squared
+    description: Sums all values, then squares the result
+    config:
+      type: aggregate
+    arguments:
+      - name: value
+        data_type: Float64
+    returns:
+      data_type: Float64
+```
+
+The function body is a single expression over the arguments, not a `SELECT`:
+
+```sql
+-- functions/price_for_xlarge.sql
+price * 2
+```
+
+```sql
+-- functions/sum_squared.sql
+pow(sum(value), 2)
+```
+
+dbt creates them as `CREATE OR REPLACE FUNCTION price_for_xlarge AS (price) -> price * 2`. Models call them with
+`function()`:
+
+```sql
+select
+    category,
+    {{ function('sum_squared') }}({{ function('price_for_xlarge') }}(price)) as xlarge_total_squared
+from {{ ref('items') }}
+group by category
+```
+
+ClickHouse expands UDFs inline into the calling query, so aggregate combinators (such as `-If` or `-State`) and window clauses (`OVER (...)`) cannot be applied to aggregate UDFs.
+
+Refer to the [function property docs](https://docs.getdbt.com/reference/function-properties?version=1) for a full list of configurations.
+Be aware that some configurations might not apply or break in the ClickHouse adapter (see [unsupported function configurations section](#unsupported-function-configurations)).
+
+### Functions Scope {#functions-scope}
+
+UDFs are not part of a database: a name is shared by every database on the same ClickHouse service or cluster. If you need to distinguish between environments that share one, use `alias`, such as:
+
+```yaml
+functions:
+  - name: price_for_xlarge
+    config:
+      alias: "price_for_xlarge_{{ target.name }}"
+```
+
+`{{ function('price_for_xlarge') }}` then resolves to `price_for_xlarge_dev`, `price_for_xlarge_prod`, and so on.
+
+### Python and JavaScript UDFs {#python-and-javascript-udfs}
+
+Python and JavaScript UDFs are currently not supported with the ClickHouse adapter.
+
+### Unsupported Function Configurations {#unsupported-function-configurations}
+
+The following function properties are not supported in ClickHouse:
+
+- `overloads`: A UDF can only have one signature. Setting `overloads` fails the build.
+- argument `default_value`: Cannot be set in ClickHouse UDFs. Setting `default_value` fails the build.
+- `volatility`: Cannot be set in ClickHouse UDFs. Ignored with a warning.
+- argument and return `data_type`: Required by dbt, but ClickHouse UDFs are untyped, so they are not enforced. Cast in the function body if you need a fixed type.
+
+Furthermore, the following model configurations are unsupported in ClickHouse:
+- `grants`: There are no UDF usage grants in ClickHouse. Any user can call UDFs. Setting `grants` fails the build.
+- `persist_docs`: Descriptions cannot be persisted into UDFs and are silently skipped. They still appear in dbt docs.
+
 
 ## Contracts and Constraints {#contracts-and-constraints}
 

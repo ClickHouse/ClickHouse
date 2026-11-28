@@ -245,7 +245,7 @@ List of available tags:
 | `no-release` | Disables tests in Release builds ||
 | `no-darwin` | Disables test on macOS (Darwin) | Test relies on Linux-specific features such as distributed queries, `procfs`, or HTTP server |
 
-The following options are also supported: `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-backward-compatibility-check`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
+The following options are also supported: `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
 
 In addition to above settings, you can use `USE_*` flags from `system.build_options` to define usage of particular ClickHouse features.
 For example, if your test uses a MySQL table, you should add a tag `use-mysql`.
@@ -476,6 +476,14 @@ We run functional, integration, stress and unit tests under MSan on per-commit b
 
 We run functional, integration, stress and unit tests under UBSan on per-commit basis.
 The code of some third-party libraries is not sanitized for UB.
+
+We additionally enable the `unsigned-integer-overflow` check, which is not a part of
+`-fsanitize=undefined`, because overflow of an unsigned integer is well-defined behaviour - it wraps
+around modulo 2<sup>N</sup>. An *unintended* wraparound is nevertheless a bug, so the places that
+wrap around on purpose - hash functions, checksums, pseudo-random number generators, the semantics of
+ClickHouse arithmetic over unsigned types - are annotated with the `NO_SANITIZE_UNSIGNED_OVERFLOW`
+attribute (see `base/base/sanitizer_defs.h`). For whole files, and for third-party header-only code,
+the check is switched off in `tests/ubsan_ignorelist.txt` instead.
 
 ### Valgrind (memcheck) {#valgrind-memcheck}
 

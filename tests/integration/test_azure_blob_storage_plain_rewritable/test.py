@@ -14,9 +14,12 @@ OTHER_NODE = "other_node"
 
 
 def generate_cluster_def(port, node_name):
+    # One file per xdist worker: each worker's cluster has its own azurite port.
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
+    suffix = f"_{worker_id}" if worker_id else ""
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
-        "./_gen/disk_storage_conf.xml",
+        f"./_gen/disk_storage_conf{suffix}.xml",
     )
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
@@ -186,11 +189,13 @@ def test_insert_select(cluster, storage_policy, min_bytes_for_wide_part):
         other_node,
         "SYSTEM ENABLE FAILPOINT plain_rewritable_object_storage_azure_not_found_on_init",
     )
+    # A second writer on the location of node: it must not write the snapshot of that location.
     azure_query(
         other_node,
         """CREATE TABLE table (id Int64, data String) ENGINE=MergeTree() ORDER BY id SETTINGS disk=disk(
         type = object_storage,
         metadata_type = plain_rewritable,
+        metadata_snapshot_enabled = 0,
         object_storage_type = azure_blob_storage,
         endpoint = 'http://azurite1:{port}/devstoreaccount1/cont',
         endpoint_subpath = '{node}',

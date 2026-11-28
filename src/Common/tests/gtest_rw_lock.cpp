@@ -207,7 +207,7 @@ TEST(Common, RWLockDeadlock)
             if (!holder2)
             {
                 throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-                        "Locking attempt timed out! Possible deadlock avoided. Client should retry.");
+                        "Locking attempt timed out. Possible deadlock avoided. Client should retry.");
             }
         }
         catch (const Exception & e)
@@ -237,7 +237,7 @@ TEST(Common, RWLockDeadlock)
             if (!holder1)
             {
                 throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-                        "Locking attempt timed out! Possible deadlock avoided. Client should retry.");
+                        "Locking attempt timed out. Possible deadlock avoided. Client should retry.");
             }
         }
         catch (const Exception & e)

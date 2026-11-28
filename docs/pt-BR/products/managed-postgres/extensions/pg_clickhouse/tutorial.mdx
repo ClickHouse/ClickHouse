@@ -7,9 +7,7 @@ doc_type: 'guide'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', 'extension', 'tutorial', 'taxi']
 ---
 
-<div id="overview">
-  ## Visão geral
-</div>
+## Visão geral {#overview}
 
 Este tutorial segue o [tutorial do ClickHouse], mas executa todas as consultas via
 pg&#95;clickhouse.
@@ -20,9 +18,7 @@ Escolha como deseja configurar o `pg_clickhouse`:
 * [Pelo PSQL](#from-psql) se estiver instalando e configurando a extensão
   por conta própria.
 
-<div id="start-clickhouse">
-  ## Inicie o ClickHouse
-</div>
+## Inicie o ClickHouse {#start-clickhouse}
 
 Primeiro, crie um banco de dados no ClickHouse, caso ainda não tenha um. Uma forma rápida
 de começar é usar a imagem Docker:
@@ -32,9 +28,7 @@ docker run -d --network host --name clickhouse -p 8123:8123 -p9000:9000 --ulimit
 docker exec -it clickhouse clickhouse-client
 ```
 
-<div id="create-a-table">
-  ## Criar uma tabela
-</div>
+## Criar uma tabela {#create-a-table}
 
 Vamos usar o [tutorial do ClickHouse] como base para criar um banco de dados simples com o conjunto de dados de táxis da cidade de
 Nova York:
@@ -99,9 +93,7 @@ PARTITION BY toYYYYMM(pickup_date)
 ORDER BY pickup_datetime;
 ```
 
-<div id="add-the-data-set">
-  ## Adicione o conjunto de dados
-</div>
+## Adicione o conjunto de dados {#add-the-data-set}
 
 Depois, importe os dados:
 
@@ -109,6 +101,7 @@ Depois, importe os dados:
 INSERT INTO taxi.trips
 SELECT * FROM s3(
     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{1..2}.gz',
+    'NOSIGN',
     'TabSeparatedWithNames', "
     trip_id UInt32,
     vendor_id Enum8(
@@ -170,9 +163,7 @@ SELECT count() FROM taxi.trips;
 quit
 ```
 
-<div id="from-console">
-  ## Pelo console
-</div>
+## Pelo console {#from-console}
 
 Se você usa o ClickHouse Managed Postgres, pode configurar o
 `pg_clickhouse` e conectar-se a um serviço ClickHouse pelo console do ClickHouse Cloud.
@@ -182,17 +173,29 @@ Abra seu serviço Managed Postgres, selecione **Settings** e localize a seção
 No formulário de configuração, informe um nome para o servidor externo. Selecione o
 serviço ClickHouse, o banco de dados e o usuário a serem usados na conexão. Informe a
 senha do ClickHouse e selecione o banco de dados Postgres e o schema de destino para o qual as
-tabelas do ClickHouse deverão ser importadas. Clique em **Connect** para criar o servidor externo
+tabelas do ClickHouse deverão ser importadas. Clique em **Conectar** para criar o servidor externo
 e importar o schema.
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="Formulário de configuração do pg_clickhouse para o banco de dados de táxis no console do ClickHouse Cloud" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Formulário de configuração do pg_clickhouse para o banco de dados de táxis no console do ClickHouse Cloud](/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp)
+  </Frame>
+</div>
 
 Quando a configuração for concluída, o console exibirá uma confirmação, e o servidor externo
 aparecerá na lista de servidores.
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="Configuração concluída do pg_clickhouse para o banco de dados de táxis no console do ClickHouse Cloud" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Configuração concluída do pg_clickhouse para o banco de dados de táxis no console do ClickHouse Cloud](/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp)
+  </Frame>
+</div>
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="Lista de servidores externos mostrando a conexão pg_clickhouse de táxis" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Lista de servidores externos mostrando a conexão pg_clickhouse de táxis](/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp)
+  </Frame>
+</div>
 
 Agora você pode abrir o **SQL console** do Postgres e consultar as tabelas importadas:
 
@@ -203,13 +206,9 @@ SELECT * FROM <schema>.<table>;
 Para acompanhar os exemplos de táxi deste tutorial, selecione o banco de dados `taxi` no ClickHouse
 e importe-o para um schema de destino chamado `taxi`.
 
-<div id="from-psql">
-  ## A partir do PSQL
-</div>
+## A partir do PSQL {#from-psql}
 
-<div id="install-pg_clickhouse">
-  ### Instale o pg_clickhouse
-</div>
+### Instale o pg_clickhouse {#install-pg_clickhouse}
 
 Faça a compilação e instale o pg&#95;clickhouse a partir do [PGXN] ou do [GitHub]. Ou inicie um
 container Docker usando a [imagem do pg&#95;clickhouse], que simplesmente adiciona
@@ -220,9 +219,7 @@ docker run -d --network host --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
        -d ghcr.io/clickhouse/pg_clickhouse:18
 ```
 
-<div id="connect-pg_clickhouse">
-  ### Conectar pg_clickhouse
-</div>
+### Conectar pg_clickhouse {#connect-pg_clickhouse}
 
 Agora conecte-se ao Postgres:
 
@@ -341,11 +338,11 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 Agora, consulte a tabela:
 
 ```pgsql
- SELECT count(*) FROM taxi.trips;
-   count
- ---------
-  1999657
- (1 row)
+SELECT count(*) FROM taxi.trips;
+  count
+---------
+ 1999657
+(1 row)
 ```
 
 Observe como a consulta foi executada rapidamente. O pg&#95;clickhouse envia toda a
@@ -353,20 +350,18 @@ consulta, incluindo a agregação `COUNT()`, para que ela seja executada no Clic
 retorne apenas uma única linha ao Postgres. Use [EXPLAIN] para ver isso:
 
 ```pgsql
- EXPLAIN select count(*) from taxi.trips;
-                    QUERY PLAN
- -------------------------------------------------
-  Foreign Scan  (cost=1.00..-0.90 rows=1 width=8)
-    Relations: Aggregate on (trips)
- (2 rows)
+EXPLAIN select count(*) from taxi.trips;
+                   QUERY PLAN
+-------------------------------------------------
+ Foreign Scan  (cost=1.00..-0.90 rows=1 width=8)
+   Relations: Aggregate on (trips)
+(2 rows)
 ```
 
 Observe que &quot;Foreign Scan&quot; aparece na raiz do plano, o que significa que a
 consulta inteira foi executada no ClickHouse.
 
-<div id="analyze-the-data">
-  ## Analise os dados
-</div>
+## Analise os dados {#analyze-the-data}
 
 Execute algumas consultas para analisar os dados. Explore os exemplos a seguir ou experimente
 sua própria consulta SQL.
@@ -522,15 +517,13 @@ sua própria consulta SQL.
   Time: 17.450 ms
   ```
 
-<div id="create-a-dictionary">
-  ## Crie um dicionário
-</div>
+## Crie um dicionário {#create-a-dictionary}
 
 Crie um dicionário associado a uma tabela no seu serviço ClickHouse. A
 tabela e o dicionário se baseiam em um arquivo CSV que contém uma linha para cada
 bairro da cidade de Nova York.
 
-Os bairros são mapeados para os nomes dos cinco boroughs da cidade de Nova York
+Os bairros são mapeados para os nomes dos cinco distritos administrativos da cidade de Nova York
 (Bronx, Brooklyn, Manhattan, Queens e Staten Island), bem como para o
 aeroporto de Newark (EWR).
 
@@ -592,8 +585,8 @@ coluna `LocationID` no arquivo é mapeada para as colunas `pickup_nyct2010_gid` 
    ```
 
    4. Excelente. Agora use a função `dictGet` para recuperar o
-      nome de um distrito em uma consulta. A consulta a seguir soma o número de corridas de táxi
-      por distrito que terminam no aeroporto LaGuardia ou no JFK:
+      nome de um distrito administrativo em uma consulta. A consulta a seguir soma o número de corridas de táxi
+      por distrito administrativo que terminam no aeroporto LaGuardia ou no JFK:
 
    ```pgsql
    taxi=# SELECT
@@ -620,15 +613,13 @@ coluna `LocationID` no arquivo é mapeada para as colunas `pickup_nyct2010_gid` 
    Time: 66.245 ms
    ```
 
-   Esta consulta soma o número de corridas de táxi por borough que terminam em
+   Esta consulta soma o número de corridas de táxi por distrito administrativo que terminam em
    um dos aeroportos, LaGuardia ou JFK. Observe que há várias corridas em que o
    bairro de origem é desconhecido.
 
-<div id="perform-a-join">
-  ## Faça um JOIN
-</div>
+## Faça uma junção {#perform-a-join}
 
-Escreva algumas consultas que façam um JOIN entre `taxi_zone_dictionary` e sua
+Escreva algumas consultas que façam uma junção entre `taxi_zone_dictionary` e sua
 tabela `trips`.
 
 1. Comece com um `JOIN` simples que funciona de forma semelhante à consulta de
@@ -686,7 +677,7 @@ tabela `trips`.
    ```
 
 2. Esta consulta retorna as linhas das 1000 viagens com o maior valor
-   de gorjeta e, em seguida, faz um inner join entre cada linha e o dicionário:
+   de gorjeta e, em seguida, faz uma junção interna entre cada linha e o dicionário:
 
    ```sql
    taxi=# SELECT *
@@ -703,7 +694,7 @@ tabela `trips`.
   deve recuperar apenas as colunas de que realmente precisa.
 </Note>
 
-[tutorial do ClickHouse]: /pt-BR/get-started/sample-datasets/nyc-taxi "Tutorial avançado do ClickHouse"
+[ClickHouse tutorial]: /get-started/sample-datasets/nyc-taxi "Dados de táxi de Nova York"
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "Aplicativos cliente do PostgreSQL: psql"
 
@@ -719,4 +710,4 @@ tabela `trips`.
 
 [Postgres image]: https://hub.docker.com/_/postgres "Imagem OCI do Postgres no Docker Hub"
 
-[Atualização de dados de dicionário usando LIFETIME]: /reference/statements/create/dictionary/lifetime "Documentação do ClickHouse: Atualização de dados de dicionário usando LIFETIME"
+[Refreshing dictionary data using LIFETIME]: /reference/statements/create/dictionary/lifetime "Documentação do ClickHouse: Atualização de dados de dicionário usando LIFETIME"

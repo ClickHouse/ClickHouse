@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 SELECT grouping(num1), num1,
        any(num1), min(num1), max(num1), sum(num1), avg(num1), count(num1),

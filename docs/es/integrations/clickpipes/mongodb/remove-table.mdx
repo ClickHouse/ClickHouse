@@ -10,13 +10,9 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 En algunos casos, tiene sentido excluir tablas específicas de un ClickPipe de MongoDB; por ejemplo, si una tabla no es necesaria para sus análisis, omitirla puede reducir los costos de almacenamiento y replicación en ClickHouse.
 
-<div id="remove-tables-steps">
-  ## Pasos para eliminar tablas específicas
-</div>
+## Pasos para eliminar tablas específicas {#remove-tables-steps}
 
 El primer paso es eliminar la tabla del pipe. Para ello, sigue estos pasos:
 
@@ -27,7 +23,11 @@ El primer paso es eliminar la tabla del pipe. Para ello, sigue estos pasos:
 
 <br />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![](/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp)
+  </Frame>
+</div>
 
 5. Haz clic en Update.
 6. Tras actualizar correctamente, en la pestaña **Metrics** el estado será **Running**. Esta tabla dejará de replicarse mediante este ClickPipe.

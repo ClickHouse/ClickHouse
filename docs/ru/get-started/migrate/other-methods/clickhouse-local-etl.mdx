@@ -7,11 +7,13 @@ description: 'Руководство по миграции в ClickHouse с ис
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import AddARemoteSystem from '/snippets/ru/_add_remote_ip_access_list_detail.mdx';
 
-<Image img="/images/integrations/migration/ch-local-01.webp" size="lg" alt="Миграция самоуправляемого ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Миграция самостоятельно управляемого ClickHouse](/images/integrations/migration/ch-local-01.webp)
+  </Frame>
+</div>
 
 Вы можете использовать ClickHouse, а точнее [`clickhouse-local`](/ru/concepts/features/tools-and-utilities/clickhouse-local)
 как ETL-инструмент для миграции данных из вашей текущей системы баз данных в ClickHouse Cloud, если для этой системы баз данных доступен либо
@@ -23,11 +25,13 @@ import AddARemoteSystem from '/snippets/ru/_add_remote_ip_access_list_detail.mdx
 ClickHouse предоставляет движки интеграции и табличные функции (которые на лету создают движки интеграции) для [MySQL](/ru/reference/engines/table-engines/integrations/mysql), [PostgreSQL](/ru/reference/engines/table-engines/integrations/postgresql), [MongoDB](/ru/reference/engines/table-engines/integrations/mongodb) и [SQLite](/ru/reference/engines/table-engines/integrations/sqlite).
 Для всех остальных популярных систем баз данных у их поставщиков доступны JDBC driver или ODBC driver.
 
-<div id="what-is-clickhouse-local">
-  ## Что такое clickhouse-local?
-</div>
+## Что такое clickhouse-local? {#what-is-clickhouse-local}
 
-<Image img="/images/integrations/migration/ch-local-02.webp" size="lg" alt="Миграция самоуправляемого ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Миграция самостоятельно управляемого ClickHouse](/images/integrations/migration/ch-local-02.webp)
+  </Frame>
+</div>
 
 Обычно ClickHouse запускается в виде кластера, где несколько экземпляров движка базы данных ClickHouse работают в распределённом режиме на разных серверах.
 
@@ -36,12 +40,12 @@ ClickHouse предоставляет движки интеграции и та�
 Инструмент `clickhouse-local` позволяет использовать движок базы данных ClickHouse изолированно как утилиту командной строки для сверхбыстрой обработки SQL-данных с большим объёмом входных и выходных данных без необходимости настраивать и запускать сервер ClickHouse.
 
 <div id="installing-clickhouse-local">
-  ## Установка clickhouse-local
+  ## Установка clickhouse-local {#installing-clickhouse-local}
 </div>
 
-Вам понадобится хост для `clickhouse-local` с сетевым доступом как к вашей текущей исходной базе данных, так и к целевому сервису ClickHouse Cloud.
+Вам понадобится хост-машина для `clickhouse-local` с сетевым доступом как к вашей текущей исходной базе данных, так и к целевому сервису ClickHouse Cloud.
 
-На этом хосте загрузите подходящую сборку `clickhouse-local` в зависимости от операционной системы вашего компьютера:
+На этой хост-машине загрузите подходящую сборку `clickhouse-local` в зависимости от операционной системы вашего компьютера:
 
 <Tabs>
   <Tab title="Linux">
@@ -88,33 +92,31 @@ ClickHouse предоставляет движки интеграции и та�
 
 <AddARemoteSystem />
 
-<div id="example-1-migrating-from-mysql-to-clickhouse-cloud-with-an-integration-engine">
-  ## Пример: миграция из MySQL в ClickHouse Cloud с использованием движка Integration
-</div>
+## Пример: миграция из MySQL в ClickHouse Cloud с использованием движка интеграции {#example-1-migrating-from-mysql-to-clickhouse-cloud-with-an-integration-engine}
 
-Мы будем использовать [движок интеграции](/ru/reference/engines/table-engines/integrations/mysql) (динамически создаваемый с помощью [табличной функции mysql](/ru/reference/functions/table-functions/mysql)) для чтения данных из исходной базы данных MySQL, а [табличную функцию remoteSecure](/ru/reference/functions/table-functions/remote)
+Мы будем использовать [движок интеграции](/ru/reference/engines/table-engines/integrations/mysql) (на лету создаваемый с помощью [табличной функции mysql](/ru/reference/functions/table-functions/mysql)) для чтения данных из исходной базы данных MySQL, а [табличную функцию remoteSecure](/ru/reference/functions/table-functions/remote)
 — для записи данных в целевую таблицу в вашем сервисе ClickHouse Cloud.
 
-<Image img="/images/integrations/migration/ch-local-03.webp" size="lg" alt="Миграция с самоуправляемого ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Миграция самостоятельно управляемого ClickHouse](/images/integrations/migration/ch-local-03.webp)
+  </Frame>
+</div>
 
 <div id="on-the-destination-clickhouse-cloud-service">
-  ### На целевом сервисе ClickHouse Cloud:
+  ### На целевом сервисе ClickHouse Cloud: {#on-the-destination-clickhouse-cloud-service}
 </div>
 
-<div id="create-the-destination-database">
-  #### Создайте базу данных в пункте назначения:
-</div>
+#### Создайте целевую базу данных: {#create-the-destination-database}
 
 ```sql
-  CREATE DATABASE db
+CREATE DATABASE db
 ```
 
-<div id="create-a-destination-table-that-has-a-schema-equivalent-to-the-mysql-table">
-  #### Создайте целевую таблицу со схемой, соответствующей таблице MySQL:
-</div>
+#### Создайте целевую таблицу со схемой, соответствующей таблице MySQL: {#create-a-destination-table-that-has-a-schema-equivalent-to-the-mysql-table}
 
 ```sql
-  CREATE TABLE db.table ...
+CREATE TABLE db.table ...
 ```
 
 <Note>
@@ -122,15 +124,13 @@ ClickHouse предоставляет движки интеграции и та�
 </Note>
 
 <div id="on-the-clickhouse-local-host-machine">
-  ### На хост-машине с clickhouse-local:
+  ### На хост-машине с clickhouse-local: {#on-the-clickhouse-local-host-machine}
 </div>
 
-<div id="run-clickhouse-local-with-the-migration-query">
-  #### Запустите clickhouse-local с запросом для миграции:
-</div>
+#### Запустите clickhouse-local с запросом для миграции: {#run-clickhouse-local-with-the-migration-query}
 
 ```sql
-  ./clickhouse-local --query "
+./clickhouse-local --query "
 INSERT INTO FUNCTION
 remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table', 'default', 'PASS')
 SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password');"

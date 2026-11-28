@@ -1,6 +1,9 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <algorithm>
 #include <Common/Exception.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -42,12 +45,16 @@ struct CallbackRunnerTask
 {
     std::promise<Result> promise;
     ThreadGroupPtr thread_group;
-    ThreadName thread_name;
     Callback callback;
+    ThreadName thread_name;
     bool was_run = false;
 
+    /// The query thread allocates the promise state and the pool thread may free it after detaching, so it is the server's.
     CallbackRunnerTask(ThreadGroupPtr thread_group_, ThreadName thread_name_, Callback && callback_)
-        : thread_group(std::move(thread_group_)), thread_name(thread_name_), callback(std::move(callback_))
+        : promise(std::allocator_arg, ServerOwnedAllocator<char>{})
+        , thread_group(std::move(thread_group_))
+        , callback(std::move(callback_))
+        , thread_name(thread_name_)
     {
     }
 
@@ -59,20 +66,20 @@ struct CallbackRunnerTask
             if constexpr (std::is_void_v<Result>)
             {
                 {
-                    ThreadGroupSwitcher switcher(thread_group, thread_name);
+                    ThreadGroupSwitcher switcher(std::move(thread_group), thread_name);
                     SCOPE_EXIT_SAFE({ [[maybe_unused]] auto tmp = std::move(callback); });
                     callback();
                 }
-                /// The ThreadGroupSwitcher is destroyed (thread group detached) and the callback is
-                /// released before satisfying the promise, otherwise the waiter could race with the
-                /// detaching thread (see "Destroy ThreadGroupSwitcher before set value in std::future").
+                /// The ThreadGroupSwitcher (which took the task's group reference) is destroyed and the callback
+                /// released before satisfying the promise: otherwise the waiter could race with the detaching
+                /// thread, or end the query and free what the group's trackers point to.
                 promise.set_value();
             }
             else
             {
                 std::optional<Result> res;
                 {
-                    ThreadGroupSwitcher switcher(thread_group, thread_name);
+                    ThreadGroupSwitcher switcher(std::move(thread_group), thread_name);
                     SCOPE_EXIT_SAFE({ [[maybe_unused]] auto tmp = std::move(callback); });
                     res.emplace(callback());
                 }
@@ -90,15 +97,15 @@ struct CallbackRunnerTask
         if (was_run)
             return;
 
-        /// Release the callback under the task's thread group and BEFORE satisfying the promise, so a
-        /// woken waiter cannot tear down state the captures reference (same ordering as run()).
+        /// Release the callback (under the task's thread group) and the group reference BEFORE satisfying the
+        /// promise, so a woken waiter cannot tear down state they reference (same ordering as run()).
         /// When scheduleOrThrowOnError() throws synchronously, this destructor runs during stack
         /// unwinding on the SCHEDULING thread, which is usually a query thread already attached to its
         /// own group; only then allow borrowing it (the switcher saves and restores that group, instead
         /// of the LOGICAL_ERROR that would abort debug/sanitizer builds). A drop that is not an unwind
         /// (e.g. shutdown drain) runs on a group-less pool worker and must keep asserting.
         {
-            ThreadGroupSwitcher switcher(thread_group, thread_name, /*allow_existing_group=*/ std::uncaught_exceptions() > 0);
+            ThreadGroupSwitcher switcher(std::move(thread_group), thread_name, /*allow_existing_group=*/ std::uncaught_exceptions() > 0);
             SCOPE_EXIT_SAFE({ [[maybe_unused]] auto released = std::move(callback); });
         }
 
@@ -142,13 +149,15 @@ ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(
         /// otherwise the accounting will be incorrect
         auto thread_group = getCurrentThreadGroup();
 
-        auto task = std::make_shared<detail::CallbackRunnerTask<Result, Callback>>(thread_group, thread_name, std::move(callback));
+        /// The pool thread frees the task after detaching from the query, so it is the server's.
+        using Task = detail::CallbackRunnerTask<Result, Callback>;
+        auto task = std::allocate_shared<Task>(ServerOwnedAllocator<Task>{}, std::move(thread_group), thread_name, std::move(callback));
 
         auto future = task->promise.get_future();
 
         /// Note: calling method scheduleOrThrowOnError in intentional, because we don't want to throw exceptions
         /// in critical places where this callback runner is used (e.g. loading or deletion of parts)
-        my_pool->scheduleOrThrowOnError([my_task = std::move(task)]{ my_task->run(); }, priority);
+        my_pool->scheduleOrThrowOnError(makeServerOwnedJob([my_task = std::move(task)]{ my_task->run(); }), priority);
 
         return future;
     };
@@ -204,6 +213,54 @@ private:
         "Scheduling tasks directly on GlobalThreadPool is not allowed because it doesn't set up CurrentThread. Create a new ThreadPool "
         "(local or in SharedThreadPools.h) or use ThreadFromGlobalPool.");
 
+    /// What a job needs, in one server-owned block.
+    struct JobState
+    {
+        std::shared_ptr<Task> task;
+        ThreadGroupPtr thread_group;
+        Callback callback;
+        ThreadName thread_name{};
+        std::promise<Result> promise{std::allocator_arg, ServerOwnedAllocator<char>{}};
+        bool was_run = false;
+
+        ~JobState()
+        {
+            if (was_run)
+                return;
+
+            /// Not run (cancelled, dropped by the pool, or not scheduled): what the callback captured is the query's, so
+            /// release it there, unless the thread has no `ThreadStatus` to attach. Then satisfy the promise with an
+            /// ordinary error instead of leaving it broken, like `CallbackRunnerTask` does.
+            if (thread_group && hasThreadStatus())
+            {
+                ThreadGroupSwitcher switcher(std::move(thread_group), thread_name, /*allow_existing_group=*/ true);
+                callback = {};
+            }
+            callback = {};
+
+            /// If making the exception throws, store that one, so that the promise is never left broken.
+            std::exception_ptr eptr;
+            try
+            {
+                eptr = std::make_exception_ptr(
+                    Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Task was dropped before execution (thread pool is shutting down)"));
+            }
+            catch (...)
+            {
+                eptr = std::current_exception();
+            }
+
+            try
+            {
+                promise.set_exception(eptr);
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+                /// Ok: the promise was already satisfied, when scheduling failed.
+            }
+        }
+    };
+
     PoolT & pool;
     ThreadName thread_name{};
 
@@ -229,15 +286,15 @@ private:
         {
             FunctionResult res;
             {
-                ThreadGroupSwitcher switcher(thread_group, thread_name);
+                ThreadGroupSwitcher switcher(std::move(thread_group), thread_name);
+                /// Also when it throws: what it captured is the query's.
+                SCOPE_EXIT_SAFE({ callback = {}; });
                 res = callback();
-                callback = {};
             }
             promise.set_value(std::move(res));
         }
         catch (...)
         {
-            callback = {};
             promise.set_exception(std::current_exception());
         }
     }
@@ -251,15 +308,15 @@ private:
         try
         {
             {
-                ThreadGroupSwitcher switcher(thread_group, thread_name);
+                ThreadGroupSwitcher switcher(std::move(thread_group), thread_name);
+                /// Also when it throws: what it captured is the query's.
+                SCOPE_EXIT_SAFE({ callback = {}; });
                 callback();
-                callback = {};
             }
             promise.set_value();
         }
         catch (...)
         {
-            callback = {};
             promise.set_exception(std::current_exception());
         }
     }
@@ -295,29 +352,32 @@ public:
     /// Otherwise, the task's lambda may reference a destroyed pool state, leading to undefined behavior.
     [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(Callback && callback, Priority priority = {}, std::optional<Int64> wait_microseconds = {})
     {
-        auto promise = std::make_shared<std::promise<Result>>();
-        auto task = std::make_shared<Task>();
-        task->future = promise->get_future();
+        /// The pool thread may free these after detaching from the query, so they are the server's.
+        auto task = std::allocate_shared<Task>(ServerOwnedAllocator<Task>{});
+        auto state = std::allocate_shared<JobState>(ServerOwnedAllocator<JobState>{}, task, getCurrentThreadGroup(), std::move(callback), thread_name);
+        task->future = state->promise.get_future();
 
-        auto task_func = [this, task, thread_group = getCurrentThreadGroup(), my_callback = std::move(callback), promise]() mutable -> void
+        auto task_func = makeServerOwnedJob([state]
         {
+            auto & task_state = state->task->state;
             TaskState expected = SCHEDULED;
-            if (!task->state.compare_exchange_strong(expected, RUNNING))
+            if (!task_state.compare_exchange_strong(expected, RUNNING))
             {
                 if (expected == CANCELLED)
                     return;
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when running a task in {}", expected, thread_name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when running a task in {}", expected, state->thread_name);
             }
+            state->was_run = true;
 
             SCOPE_EXIT_SAFE(
             {
                 expected = RUNNING;
-                if (!task->state.compare_exchange_strong(expected, FINISHED))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when finishing a task in {}", expected, thread_name);
+                if (!task_state.compare_exchange_strong(expected, FINISHED))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when finishing a task in {}", expected, state->thread_name);
             });
 
-            executeCallback(*promise, std::move(my_callback), std::move(thread_group), thread_name);
-        };
+            executeCallback(state->promise, std::move(state->callback), std::move(state->thread_group), state->thread_name);
+        });
 
         try
         {
@@ -330,7 +390,7 @@ public:
         }
         catch (...)
         {
-            promise->set_exception(std::current_exception());
+            state->promise.set_exception(std::current_exception());
             throw;
         }
 
@@ -346,6 +406,9 @@ public:
 
     void enqueueAndKeepTrack(Callback && callback, Priority priority = {}, std::optional<Int64> wait_microseconds = {})
     {
+        /// Grow before scheduling: a task the pool accepted has to be tracked, so that it is waited for.
+        if (tasks.size() == tasks.capacity())
+            tasks.reserve(std::max<size_t>(1, tasks.size() * 2));
         tasks.emplace_back(enqueueAndGiveOwnership(std::move(callback), priority, wait_microseconds));
     }
 
@@ -380,6 +443,25 @@ public:
     }
 
     void waitForAllToFinishAndRethrowFirstError() { waitForAllToFinishAndRethrowFirstError(tasks); }
+
+    /// Cancel the tasks that have not started yet, wait for the started ones and rethrow the first error.
+    /// Useful when the caller also does the work itself (e.g. takes work items from a shared counter until
+    /// there are none left): when the pool is busy, it should not wait for the tasks to be picked up
+    /// only to find nothing to do.
+    void cancelScheduledAndWaitForStartedAndRethrowFirstError()
+    {
+        cancelScheduledTasks();
+        waitForAllToFinish(tasks);
+
+        for (auto & task : tasks)
+        {
+            /// The future of a cancelled task is never set.
+            if (task->state != CANCELLED && task->future.valid())
+                task->future.get();
+        }
+
+        tasks.clear();
+    }
 };
 
 /// Has a task queue and a set of threads from ThreadPool.
@@ -421,7 +503,7 @@ public:
 
     void operator()(std::function<void()> f);
 
-    void bulkSchedule(std::vector<std::function<void()>> fs);
+    void bulkSchedule(VectorWithMemoryTracking<std::function<void()>> fs);
 
     /// Returns true if a task was run, false if queue is empty.
     bool runTaskInline();

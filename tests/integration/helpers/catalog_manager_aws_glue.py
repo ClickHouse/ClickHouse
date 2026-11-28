@@ -219,6 +219,23 @@ class AwsGlueCatalogManager(CatalogManager):
         log.info("Created Glue Iceberg table '%s'", table_identifier)
         return table_name
 
+    def create_namespace_with_location(self) -> str:
+        namespace = f"{NAMESPACE_PREFIX}{uuid.uuid4().hex[:10]}"
+        self.catalog.create_namespace(
+            namespace,
+            {"location": f"s3://{self.config.bucket}/{self.config.prefix}/{namespace}"},
+        )
+        self._namespaces_created.append(namespace)
+        log.info("Created Glue namespace '%s' with a location", namespace)
+        return namespace
+
+    def track_table(self, namespace: str, table_name: str) -> None:
+        self._tables_created.append((namespace, table_name))
+
+    def metadata_location(self, namespace: str, table_name: str) -> str:
+        table_info = self._glue.get_table(DatabaseName=namespace, Name=table_name)["Table"]
+        return table_info["Parameters"]["metadata_location"]
+
     def _namespace_for(self, table_name: str) -> Optional[str]:
         # Each create_table() puts the table in its own namespace; use the
         # most recent matching entry.

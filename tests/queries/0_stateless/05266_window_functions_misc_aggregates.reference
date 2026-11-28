@@ -1,0 +1,56 @@
+-- Moments and dispersion over the whole partition
+1	1	7.1875	9.583333	2.680951	0.656808	1.901021	13.09375	0.998568
+1	2	7.1875	9.583333	2.680951	0.656808	1.901021	13.09375	0.998568
+1	3	7.1875	9.583333	2.680951	0.656808	1.901021	13.09375	0.998568
+1	4	7.1875	9.583333	2.680951	0.656808	1.901021	13.09375	0.998568
+2	1	2	3	1.414214	0.707107	1.5	2.666667	1
+2	2	2	3	1.414214	0.707107	1.5	2.666667	1
+2	3	2	3	1.414214	0.707107	1.5	2.666667	1
+-- The same over a sliding frame of three rows
+1	1	0.5	0	0.25	1
+1	2	1.247219	0.381802	0.666667	0.995567
+1	3	2.494438	0.381802	0.666667	1
+1	4	2	0	0.25	1
+2	1	0	nan	nan	nan
+2	2	1.414214	0.707107	0.666667	1
+2	3	1.5	0	0.25	1
+-- Regression over the partition
+1	1	1.821739	0.543478
+1	2	1.821739	0.543478
+1	3	1.821739	0.543478
+1	4	1.821739	0.543478
+2	1	1.333333	-1
+2	2	1.333333	-1
+2	3	1.333333	-1
+-- Bit aggregates and min/max over Bool act as AND/OR over the frame
+1	1	true	true	true	1	1	1	1
+1	2	true	true	true	1	1	0	2
+1	3	false	false	true	0	1	0	2
+1	4	true	false	true	0	1	1	3
+2	1	false	false	false	0	0	0	0
+2	2	false	false	false	0	0	0	0
+2	3	true	false	true	0	1	1	1
+-- topK, entropy and uniq over a growing frame
+1	1	a	['a']	0	1	1
+1	2	a	['a']	0	1	1
+1	3	b	['a','b']	0.918296	2	2
+1	4	a	['a','b']	0.811278	2	2
+2	1	q	['q']	0	1	1
+2	2	q	['q']	0	1	1
+2	3	r	['q','r']	0.918296	2	2
+-- argMin and argMax over the partition and over a sliding frame
+1	1	1	4	1	a
+1	2	2	4	1	b
+1	3	4	4	2	a
+1	4	8	4	3	a
+2	1	3	3	1	q
+2	2	3	3	1	r
+2	3	6	3	2	r
+-- count over a Nullable column counts non-NULL values only
+1	1	10	1	1	1	1	10	10
+1	2	\N	2	1	2	1	10	10
+1	3	30	3	2	3	2	40	20
+1	4	30	4	3	4	2	70	23.333333333333332
+2	1	\N	1	0	1	0	\N	\N
+2	2	\N	2	0	2	0	\N	\N
+2	3	5	3	1	3	1	5	5

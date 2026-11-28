@@ -52,32 +52,27 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t fetch_limit) const
         return ServeFromMemory{ByteRange{offset, end - offset}, &memory};
     }
 
-    /// fastest tier that covers `offset`
-    for (const auto & tier : tiers)
-    {
-        const CacheResolution * cell = cellCovering(tier, offset);
-        if (!cell)
-            continue;
-        if (cell->kind == CacheResolution::Kind::Hit && cell->reader)
-            return ServeFromReader{ByteRange{offset, cell->range.end() - offset}, cell->reader.get()};
-        if (cell->kind == CacheResolution::Kind::Miss && cell->writer)
-        {
-            const size_t committed = cell->writer->committed();
-            if (offset < committed)
-                return ServeFromWriter{ByteRange{offset, committed - offset}, cell->writer.get()};
-        }
-    }
-
-    /// Fetch end: the first byte any tier can already serve, or `fetch_limit` out if sooner.
-    /// Fetch start: down to the write frontier of a populating segment over `offset`.
+    /// Read each covering writer's `committed` once: a concurrent downloader moves it, and a second read disagreeing
+    /// with the serve check would size an empty fetch. Hence the servable scan starts after the covering cell.
     size_t fetch_end = range_end;
     size_t fetch_start = offset;
     for (const auto & tier : tiers)
     {
-        fetch_end = std::min(fetch_end, firstServableAtOrAfter(tier, offset, range_end));
-        const CacheResolution * cell = cellCovering(tier, offset);
-        if (cell && cell->kind == CacheResolution::Kind::Miss && cell->writer)
-            fetch_start = std::min(fetch_start, cell->writer->committed());
+        size_t scan_from = offset;
+        if (const CacheResolution * cell = cellCovering(tier, offset))
+        {
+            if (cell->kind == CacheResolution::Kind::Hit && cell->reader)
+                return ServeFromReader{ByteRange{offset, cell->range.end() - offset}, cell->reader.get()};
+            if (cell->kind == CacheResolution::Kind::Miss && cell->writer)
+            {
+                const size_t committed = cell->writer->committed();
+                if (offset < committed)
+                    return ServeFromWriter{ByteRange{offset, committed - offset}, cell->writer.get()};
+                fetch_start = std::min(fetch_start, committed);
+            }
+            scan_from = cell->range.end();
+        }
+        fetch_end = std::min(fetch_end, firstServableAtOrAfter(tier, scan_from, range_end));
     }
     if (fetch_limit < range_end - offset)
         fetch_end = std::min(fetch_end, offset + fetch_limit);
@@ -111,6 +106,19 @@ VectorWithMemoryTracking<CacheWriter *> ReadPlan::writersFor(ByteRange range) co
                 writers.push_back(cell.writer.get());
     }
     return writers;
+}
+
+std::optional<size_t> ReadPlan::missSegmentEndFor(size_t offset) const
+{
+    std::optional<size_t> end;
+    for (const auto & tier : tiers)
+    {
+        for (const auto & cell : tier.cells)
+            if (cell.kind == CacheResolution::Kind::Miss && cell.writer && !cell.writer->fillsWholeSegment()
+                && cell.range.offset < offset && offset < cell.range.end())
+                end = std::max(end.value_or(0), cell.range.end());
+    }
+    return end;
 }
 
 void ReadPlan::hold(ChainedBuffers bytes)

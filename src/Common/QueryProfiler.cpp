@@ -26,6 +26,10 @@
 #include <pthread.h>
 #include <mach/mach.h>
 #include <mach/thread_act.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
+#include <algorithm>
+#include <cstring>
 #endif
 
 #include "config.h"
@@ -278,9 +282,11 @@ namespace
     }
 
     /// macOS has neither timer_create nor SIGEV_THREAD_ID, so per-thread periodic sampling is driven
-    /// by a single background thread that delivers the pause signal to each registered thread via
-    /// pthread_kill. This is the centralized equivalent of the Linux per-thread POSIX timer: the
-    /// signal handler is identical, only the "who fires it" mechanism differs.
+    /// by a single background thread. It does not signal the sampled threads: a signal delivered to a
+    /// thread waiting on a Darwin psynch lock can make the lock lose the wakeup and deadlock the process
+    /// (Apple FB24027930). Instead the sampler stops each due thread (StackTrace::SuspendedThread),
+    /// walks its frame-pointer chain, resumes it, and sends the trace on its behalf. This is the
+    /// centralized equivalent of the Linux per-thread POSIX timer plus signal handler.
     class ProfilerSampler
     {
     public:
@@ -290,14 +296,23 @@ namespace
             return sampler;
         }
 
-        void addThread(pthread_t thread, int clock_type, UInt64 period_ns, int signal)
+        /// Called on the thread being registered: the registration snapshots the calling thread's
+        /// identity, so the sampler can attribute traces without touching its thread-locals.
+        void addThread(pthread_t thread, UInt64 thread_id, int clock_type, UInt64 period_ns, int signal)
         {
             std::lock_guard lock(mutex);
             auto & reg = registrations[{reinterpret_cast<uintptr_t>(thread), signal}];
             reg.thread = thread;
-            reg.mach_thread = pthread_mach_thread_np(thread);
+            reg.handle = StackTrace::ThreadHandle::current();
+            reg.mach_thread = reg.handle.mach_thread;
             reg.signal = signal;
             reg.is_cpu = (clock_type == CLOCK_THREAD_CPUTIME_ID);
+            reg.thread_id = thread_id;
+            reg.thread_name = &getThreadNameRef();
+            /// The thread's own counters, not CurrentThread::getProfileEvents(): that may be a
+            /// ProfileEventsScope of shorter life than this registration.
+            reg.thread_status = CurrentThread::isInitialized() ? &CurrentThread::get() : nullptr;
+            reg.counters = reg.thread_status ? &reg.thread_status->performance_counters : &ProfileEvents::global_counters;
             armRegistration(reg, period_ns);
             ensureThreadStarted();
             cond.notify_all();
@@ -337,9 +352,17 @@ namespace
         struct Registration
         {
             pthread_t thread{};
+            StackTrace::ThreadHandle handle;
             mach_port_t mach_thread = 0;
             int signal = 0;
             bool is_cpu = false;
+            UInt64 thread_id = 0;
+            /// Of the sampled thread; all outlive its QueryProfiler. The name and the query id are read
+            /// while the thread is stopped: both change after the profiler is created (ThreadGroupSwitcher
+            /// sets the name afterwards; a global profiler's thread runs many queries).
+            const ThreadName * thread_name = nullptr;
+            ThreadStatus * thread_status = nullptr;
+            ProfileEvents::Counters * counters = nullptr;
             UInt64 period_ns = 0;
             UInt64 next_deadline_ns = 0; /// wall-clock: next fire (real) or next poll (cpu)
             UInt64 last_cpu_ns = 0;      /// cpu time at the last poll (cpu only)
@@ -378,6 +401,42 @@ namespace
             }
             else
                 reg.next_deadline_ns = nowMonotonicNs() + randomizedOffset(reg.period_ns);
+        }
+
+        /// Runs with `mutex` held, so the sampled thread cannot deregister (and exit) meanwhile.
+        static void sample(const Registration & reg)
+        {
+            StackTrace stack_trace{NoCapture{}};
+            ThreadName thread_name = ThreadName::UNKNOWN;
+            char query_id[TraceSender::QUERY_ID_MAX_LEN];
+            size_t query_id_size = 0;
+            {
+                StackTrace::SuspendedThread suspended(reg.handle);
+                stack_trace = suspended.captureStackTrace();
+                if (suspended.isSuspended())
+                {
+                    thread_name = *reg.thread_name;
+                    if (reg.thread_status)
+                    {
+                        /// Guarded by is_query_id_usable like the signal handler's read on Linux.
+                        std::string_view id = reg.thread_status->getQueryId();
+                        query_id_size = std::min(id.size(), sizeof(query_id));
+                        memcpy(query_id, id.data(), query_id_size);
+                    }
+                }
+            }
+            if (stack_trace.getSize() == 0)
+            {
+                reg.counters->incrementNoTrace(ProfileEvents::QueryProfilerErrors);
+                return;
+            }
+
+            TraceSender::send(
+                reg.is_cpu ? TraceType::CPU : TraceType::Real,
+                stack_trace,
+                {},
+                {.query_id = {query_id, query_id_size}, .thread_id = reg.thread_id, .thread_name = thread_name});
+            reg.counters->incrementNoTrace(ProfileEvents::QueryProfilerRuns);
         }
 
         void ensureThreadStarted()
@@ -446,10 +505,8 @@ namespace
                             reg.next_deadline_ns = now + reg.period_ns; /// real timer fires every period
                         }
 
-                        /// pthread_kill returns ESRCH if the thread is already gone; the owning
-                        /// QueryProfiler removes its registration before the thread exits, so this is benign.
                         if (fire)
-                            pthread_kill(reg.thread, reg.signal);
+                            sample(reg);
                     }
 
                     sleep_ns = std::min(sleep_ns, reg.next_deadline_ns > now ? reg.next_deadline_ns - now : UInt64(0));
@@ -522,8 +579,10 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
         timer.createIfNecessary(thread_id, clock_type, pause_signal);
         timer.set(period);
 #else
-        /// macOS: a shared background thread delivers the signal via pthread_kill (see ProfilerSampler).
-        ProfilerSampler::instance().addThread(pthread_self(), clock_type, period, pause_signal);
+        /// macOS: a shared background thread samples the registered threads (see ProfilerSampler); the
+        /// handler installed above is never reached by it, and stays only so that a stray SIGUSR1/SIGUSR2
+        /// keeps the same disposition as on Linux instead of terminating the server.
+        ProfilerSampler::instance().addThread(pthread_self(), thread_id, clock_type, period, pause_signal);
 #endif
         signal_handler_disarmed = false;
     }

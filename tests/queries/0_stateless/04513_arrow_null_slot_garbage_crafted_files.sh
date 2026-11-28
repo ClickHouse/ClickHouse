@@ -133,7 +133,7 @@ write_query()
     # The raw-byte targets need an explicit structure: `binary` carries no type of its own.
     echo "SELECT '=== struct_json_garbage_bytes_under_null';"
     write_query "SELECT * FROM file('$CUR_DIR/data_arrow/struct_json_garbage_bytes_under_null.arrow', 'Arrow', 's Nullable(Tuple(j JSON))')
-        SETTINGS enable_nullable_tuple_type = 1, enable_json_type = 1"
+        SETTINGS enable_nullable_tuple_type = 1"
     echo "SELECT '=== struct_ipv6_binary_garbage_under_null';"
     write_query "SELECT * FROM file('$CUR_DIR/data_arrow/struct_ipv6_binary_garbage_under_null.arrow', 'Arrow', 's Nullable(Tuple(v IPv6))')
         SETTINGS enable_nullable_tuple_type = 1"

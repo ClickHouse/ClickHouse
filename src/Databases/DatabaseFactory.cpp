@@ -59,8 +59,8 @@ static void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const Stri
     /// Between 20.7 and 22.7 metadata/db_name.sql was created in this case as well.
     /// Since 20.7 `default` database is created with Atomic engine on the very first server run.
     /// The problem is that if server crashed during the very first run and metadata/db_name/ -> store/whatever symlink was created
-    /// then it's considered as Ordinary database. And it even works somehow
-    /// until background task tries to remove unused dir from store/...
+    /// then it's considered as Ordinary database. And it even worked somehow
+    /// until the background task (which no longer exists) tried to remove the unused dir from store/...
     throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE,
                     "Metadata directory {} for Ordinary database {} is a symbolic link to {}. "
                     "It may be a result of manual intervention, crash on very first server start or a bug. "
@@ -70,6 +70,11 @@ static void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const Stri
                     metadata_path, database_name, target_path,
                     quoteString(path_to_remove.string()), quoteString(target_path), quoteString(path_to_remove.string()));
 
+}
+
+bool DatabaseFactory::Arguments::isLoadingFromExistingMetadata() const
+{
+    return DB::isLoadingFromExistingMetadata(mode) || is_metadata_replay;
 }
 
 void DatabaseFactory::validate(const ASTCreateQuery & create_query) const
@@ -125,13 +130,14 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
     return impl;
 }
 
-void DatabaseFactory::registerDatabase(const std::string & name, CreatorFn creator_fn, EngineFeatures features, Documentation documentation)
+void DatabaseFactory::registerDatabase(
+    const std::string & name, CreatorFn creator_fn, SecretArgumentsSpec secret_arguments, EngineFeatures features, Documentation documentation)
 {
     if (features.supports_settings && !features.has_builtin_setting_fn)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "DatabaseFactory: Database engine '{}' supports settings but has_builtin_setting_fn is not provided", name);
-    if (!database_engines.emplace(name, Creator{std::move(creator_fn), features, std::move(documentation)}).second)
+    if (!database_engines.emplace(name, Creator{std::move(creator_fn), features, std::move(documentation), std::move(secret_arguments)}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DatabaseFactory: the database engine name '{}' is not unique", name);
 }
 
@@ -141,6 +147,12 @@ const DatabaseFactory::EngineFeatures * DatabaseFactory::tryGetDatabaseEngineFea
     if (it == database_engines.end())
         return nullptr;
     return &it->second.features;
+}
+
+const SecretArgumentsSpec * DatabaseFactory::tryGetSecretArgumentsSpec(const String & engine_name) const
+{
+    auto it = database_engines.find(engine_name);
+    return it == database_engines.end() ? nullptr : &it->second.secret_arguments;
 }
 
 DatabaseFactory & DatabaseFactory::instance()

@@ -97,6 +97,21 @@ using ArrayAggregateResult = typename ArrayAggregateResultImpl<ArrayElement, ope
 template<AggregateOperation aggregate_operation>
 struct ArrayAggregateImpl
 {
+    /// Authoritative declarative signature — reduces the array (optionally transformed by a
+    /// lambda) with the aggregate operation. `min` / `max` preserve the (possibly lambda-mapped)
+    /// element type for any orderable type; `average` / `product` always widen to `Float64`
+    /// (numeric, `Enum` or `Interval` input, as `getReturnType` and `executeType` support); `sum` widens the running total via the `arraySumResult` type function.
+    static constexpr const char * chooseSignature()
+    {
+        if constexpr (aggregate_operation == AggregateOperation::min || aggregate_operation == AggregateOperation::max)
+            return "(Function((Any, ...), R : Any), Array, ...) -> R OR (Array(T : Any)) -> T";
+        else if constexpr (aggregate_operation == AggregateOperation::average || aggregate_operation == AggregateOperation::product)
+            return "(Function((Any, ...), Number | Enum | Interval), Array, ...) -> Float64 OR (Array(Number | Enum | Interval)) -> Float64";
+        else
+            return "(Function((Any, ...), T : Number), Array, ...) -> arraySumResult(T) OR (Array(T : Number)) -> arraySumResult(T)";
+    }
+    static constexpr auto signature = chooseSignature();
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -151,22 +166,37 @@ struct ArrayAggregateImpl
         return result;
     }
 
-    /// Vectorized fast path for plain numeric arrays: reduce each array slice with findExtremeMin/Max
-    /// (branchless SIMD horizontal min/max) instead of a per-element compareAt.
-    /// The result is bitwise-identical to the generic path: the extreme value is unique up to representation,
-    /// and the only value classes with multiple representations (NaN payloads and 0.0/-0.0) are fixed up below
-    /// to return the first occurrence, which is what compareAt-based selection returns.
+    /// Reduce each supported fixed-width array slice directly with findExtreme* instead of per-element compareAt.
+    /// Decimal and DateTime64 columns use their native representation and preserve the source scale in the result.
     template <typename Element>
-    requires(has_find_extreme_implementation<Element>)
-    static bool executeMinOrMaxNumeric(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
+    requires(has_find_extreme_implementation<Element> || underlying_has_find_extreme_implementation<Element>)
+    static bool executeMinOrMaxFindExtreme(
+        const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, const IDataType & result_type, ColumnPtr & res_ptr)
     {
-        const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
+        using ColVecType = ColumnVectorOrDecimal<Element>;
+
+        const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
         if (!column)
             return false;
 
+        /// An Enum (an Int8 or Int16 column here) defaults to its lowest member, not to the column zero.
+        Element default_value{};
+        if (!result_type.isDefaultInsertTrivial())
+        {
+            auto default_column = result_type.createColumn();
+            result_type.insertDefaultInto(*default_column);
+            default_value = assert_cast<const ColVecType &>(*default_column).getData()[0];
+        }
+
         const Element * data = column->getData().data();
-        auto res_column = ColumnVector<Element>::create(offsets.size());
-        typename ColumnVector<Element>::Container & res = res_column->getData();
+
+        typename ColVecType::MutablePtr res_column;
+        if constexpr (is_decimal<Element>)
+            res_column = ColVecType::create(offsets.size(), column->getScale());
+        else
+            res_column = ColVecType::create(offsets.size());
+
+        typename ColVecType::Container & res = res_column->getData();
 
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -176,7 +206,7 @@ struct ArrayAggregateImpl
             /// Array is empty
             if (pos == end_of_array)
             {
-                res[i] = Element{};
+                res[i] = default_value;
                 continue;
             }
 
@@ -216,8 +246,11 @@ struct ArrayAggregateImpl
 
     template <AggregateOperation op = aggregate_operation>
     requires(op == AggregateOperation::min || op == AggregateOperation::max)
-    static void executeMinOrMax(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
+    static void executeMinOrMax(
+        const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, const IDataType & result_type, ColumnPtr & res_ptr)
     {
+        const bool trivial_default = result_type.isDefaultInsertTrivial();
+
         const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(&*mapped);
         if (const_column)
         {
@@ -232,7 +265,10 @@ struct ArrayAggregateImpl
                 {
                     if (first_non_empty < i)
                         res_column->insertMany(field, i - first_non_empty);
-                    res_column->insertDefault();
+                    if (trivial_default)
+                        res_column->insertDefault();
+                    else
+                        result_type.insertDefaultInto(*res_column);
 
                     first_non_empty = i + 1;
                 }
@@ -247,20 +283,25 @@ struct ArrayAggregateImpl
             return;
         }
 
-        if (executeMinOrMaxNumeric<UInt8>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<UInt16>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<UInt32>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<UInt64>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Int8>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Int16>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Int32>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Int64>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<UInt128>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<UInt256>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Int128>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Int256>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Float32>(mapped, offsets, res_ptr)
-            || executeMinOrMaxNumeric<Float64>(mapped, offsets, res_ptr))
+        if (executeMinOrMaxFindExtreme<UInt8>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt16>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt32>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt64>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Int8>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Int16>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Int32>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Int64>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt128>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<UInt256>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Int128>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Int256>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Float32>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Float64>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal32>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal64>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal128>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<Decimal256>(mapped, offsets, result_type, res_ptr)
+            || executeMinOrMaxFindExtreme<DateTime64>(mapped, offsets, result_type, res_ptr))
             return;
 
         MutableColumnPtr res_column = mapped->cloneEmpty();
@@ -274,7 +315,10 @@ struct ArrayAggregateImpl
             /// Array is empty
             if (start_of_array == end_of_array)
             {
-                res_column->insertDefault();
+                if (trivial_default)
+                    res_column->insertDefault();
+                else
+                    result_type.insertDefaultInto(*res_column);
                 continue;
             }
 
@@ -496,14 +540,14 @@ struct ArrayAggregateImpl
         return true;
     }
 
-    static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
+    static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped, const DataTypePtr & result_type)
     {
         const IColumn::Offsets & offsets = array.getOffsets();
         ColumnPtr res;
 
         if constexpr (aggregate_operation == AggregateOperation::min || aggregate_operation == AggregateOperation::max)
         {
-            executeMinOrMax(mapped, offsets, res);
+            executeMinOrMax(mapped, offsets, *result_type, res);
             return res;
         }
         else

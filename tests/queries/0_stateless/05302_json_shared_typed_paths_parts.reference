@@ -1,0 +1,47 @@
+-- the substreams and files of the typed shared data, no per-path stream
+t_c	['json.object_typed_shared_data.header','json.object_typed_shared_data.paths_data','json.object_typed_shared_data.paths_marks']	[]	0	1
+t_plain	[]	[]	1	1
+t_w	['json.object_typed_shared_data.header','json.object_typed_shared_data.paths_data','json.object_typed_shared_data.paths_marks']	['json.object_typed_shared_data.header','json.object_typed_shared_data.paths_data','json.object_typed_shared_data.paths_marks']	0	1
+t_w	1	1	1
+t_plain	[('a',1,1),('b',1,1),('c',1,1)]
+t_w	[('a',1,1),('b',1,1),('c',1,1)]
+t_w	1
+1
+1
+-- the object serialization versions write the same typed shared data
+v1	1	1
+v2	1	1
+v3	1	1
+-- Native through clickhouse-local, the RowBinary bytes of the SHARED and the plain type, a Native dump inserted back
+JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8))	20	1900	30
+read as the plain type	JSON(a UInt64, b String, c Array(UInt8))	20	1900
+RowBinary bytes equal: 1
+inserted back	20	1900	30
+-- the binary type encoding: a SHARED path carries a flag byte, the version is checked on decoding
+RowBinary	JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8))	20	1900
+Native	JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8))	20	1900
+mixed	JSON(max_dynamic_paths=3, a UInt64, SHARED b String)	5	10	b
+Unexpected version of JSON type binary encoding
+Unknown flags 2 of typed path 'a'
+JSON(SHARED a UInt64)	0
+-- remote()
+remote	1	JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8))	UInt64
+-- packed part storage
+Packed	Wide
+packed	1	1	1
+1
+-- codecs
+CODEC(ZSTD(1))	1
+1
+CODEC(NONE)	1
+1
+CODEC(LZ4HC(3))	1
+1
+-- the engines that store the type outside parts: Memory, Buffer, Merge, file()
+Memory	1
+Buffer	40	7800
+Buffer flushed	40	7800	60
+Merge	60	9700	90	2
+Code: 44
+file()	20	1900	30	JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8))
+file() inferred	JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8))

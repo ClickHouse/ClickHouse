@@ -1,0 +1,138 @@
+---
+title: 'ClickPipes용 GCP Workload Identity'
+sidebarTitle: 'GCP Workload Identity'
+slug: /integrations/clickpipes/security/gcp-workload-identity
+description: 'GCP Workload Identity를 사용하여 ClickPipes가 지원되는 Google Cloud 데이터 소스에 키 없이 액세스하도록 구성합니다.'
+doc_type: 'guide'
+keywords: ['clickpipes', 'gcp', 'workload identity', 'iam', 'service account', 'keyless authentication']
+---
+
+<Note>
+  GCP Workload Identity 인증은 베타 단계입니다.
+</Note>
+
+GCP Workload Identity를 사용하면 고객의 서비스 계정 키를 저장하지 않고도 ClickPipes가 지원되는 Google Cloud 소스에 액세스할 수 있습니다. 이 가이드에서는 ClickPipes가 관리하는 Google 서비스 계정을 확인하고, 이 계정에 소스 액세스 권한을 부여한 다음, 단기 자격 증명을 사용하는 ClickPipe를 생성하는 방법을 설명합니다.
+
+## 시작하기 전에 {#before-you-begin}
+
+다음 사항이 필요합니다.
+
+* GCP에서 실행되는 ClickHouse Cloud 서비스가 있어야 합니다. 해당 서비스의 ClickPipes 배포도 GCP에서 실행되어야 합니다.
+* 해당 서비스의 ClickPipes를 관리할 수 있는 권한(permission)이 있는 ClickHouse Cloud API 키가 있어야 합니다.
+* Google Cloud 소스 리소스에 IAM 역할을 부여할 수 있는 권한이 있어야 합니다.
+* Terraform을 사용하는 경우 `clickhouse_clickpipes_service_context` 데이터 소스가 포함된 ClickHouse provider 릴리스가 필요합니다. 버전을 선택하기 전에 [provider 변경 로그](https://github.com/ClickHouse/terraform-provider-clickhouse/releases)를 확인하십시오.
+
+## 작동 방식 {#how-it-works}
+
+1. ClickPipes가 ClickHouse Cloud 서비스용 Google 서비스 계정을 생성하고 관리합니다.
+2. ClickPipes 서비스 컨텍스트에서 해당 서비스 계정을 조회합니다.
+3. 서비스 계정에 Google Cloud 소스 리소스에 대한 액세스 권한을 부여합니다.
+4. ClickPipes는 Workload Identity를 사용해 서비스 계정의 단기 자격 증명을 발급받아 소스에 액세스합니다.
+
+서비스 계정은 ClickHouse Cloud 서비스마다 고유하게 할당됩니다. 리소스에 대한 서비스 계정의 액세스는 Google Cloud IAM에서 제어하며, 언제든지 철회할 수 있습니다. 프라이빗 연결을 포함한 네트워크 연결은 별도로 구성해야 합니다.
+
+## ClickPipes 서비스 계정 조회 {#retrieve-service-account}
+
+OpenAPI 또는 Terraform을 사용하여 서비스 컨텍스트를 조회하십시오. 컨텍스트에서 Workload Identity가 지원되고 준비된 상태로 표시되기 전에는 ClickPipe를 생성하지 마십시오.
+
+<Tabs>
+  <Tab title="OpenAPI" id="openapi">
+    API 인증 정보와 리소스 ID를 설정하세요:
+
+    ```bash
+    export KEY_ID=<your_key_id>
+    export KEY_SECRET=<your_key_secret>
+    export ORG_ID=<your_organization_id>
+    export SERVICE_ID=<your_service_id>
+    ```
+
+    서비스 컨텍스트를 조회합니다:
+
+    ```bash
+    curl -u "$KEY_ID:$KEY_SECRET" \
+      "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipes/context"
+    ```
+
+    아이덴티티가 준비되면 응답의 `principal`에 관리형 서비스 계정이 포함됩니다:
+
+    ```json
+    {
+      "result": {
+        "gcpWorkloadIdentity": {
+          "supported": true,
+          "ready": true,
+          "principal": "ch-example@clickpipes-production.iam.gserviceaccount.com"
+        }
+      }
+    }
+    ```
+
+    ClickHouse 서비스에서 ClickPipes를 사용한 적이 없다면 처음에는 응답에 `principal` 없이 `ready: false`가 반환될 수 있습니다. `ready`가 `true`가 되고 `principal` 값이 채워질 때까지 다시 시도하십시오.
+
+    전체 응답 스키마(schema)는 [서비스 컨텍스트 API 참조](/ko/products/cloud/api-reference/clickpipes/click-pipes-service-context-get)를 참고하십시오.
+  </Tab>
+
+  <Tab title="Terraform" id="terraform">
+    `clickhouse_clickpipes_service_context` 데이터 소스를 사용하세요:
+
+    ```hcl
+    data "clickhouse_clickpipes_service_context" "service" {
+      service_id    = var.service_id
+      ready_timeout = "2m"
+    }
+
+    output "clickpipes_gcp_service_account" {
+      value = data.clickhouse_clickpipes_service_context.service.gcp_workload_identity.principal
+    }
+    ```
+
+    기본적으로 이 데이터 소스는 Workload Identity가 지원되지 않으면 실패하며, 아이덴티티가 준비되고 `principal` 값이 채워질 때까지 최대 `ready_timeout` 동안 대기합니다. 대기 없이 현재 케이퍼빌리티 상태의 스냅샷만 필요한 경우에만 `wait_for_identity = false`를 설정하십시오.
+  </Tab>
+</Tabs>
+
+서비스 컨텍스트 필드의 의미는 다음과 같습니다:
+
+| 필드          | 의미                                                                                       |
+| ----------- | ---------------------------------------------------------------------------------------- |
+| `supported` | ClickPipes 배포에서 GCP Workload Identity를 지원하는지 여부입니다.                                             |
+| `ready`     | 관리형 아이덴티티와 해당 가장(impersonation) 구성이 준비되었는지 여부입니다. Workload Identity가 지원되지 않으면 이 필드는 생략될 수 있습니다. |
+| `principal` | 소스 리소스에 대한 권한을 부여할 Google 서비스 계정 이메일입니다. 아이덴티티가 준비되기 전까지는 이 필드가 생략될 수 있습니다.              |
+
+## 소스에 대한 액세스 권한 부여 {#grant-source-access}
+
+`serviceAccount:<principal>`을 IAM 멤버로 사용하십시오. 여기서 `<principal>`은 서비스 컨텍스트에서 반환된 이메일입니다. 각 소스의 권한 섹션에 설명된 대로, 해당 소스에 필요한 역할만 부여하십시오.
+
+* [BigQuery](/ko/integrations/clickpipes/bigquery/overview#permissions)
+* [Cloud SQL for Postgres](/ko/integrations/clickpipes/postgres/source/google-cloudsql#iam-database-authentication)
+* [Cloud SQL for MySQL](/ko/integrations/clickpipes/mysql/source/gcp#iam-database-authentication)
+* [Google Managed Service for Apache Kafka](/ko/integrations/clickpipes/kafka/reference#gcp-workload-identity)
+* [Google Cloud Storage](/ko/integrations/clickpipes/object-storage/gcs/overview#permissions)
+* [Google Cloud Pub/Sub](/ko/integrations/clickpipes/pubsub/auth#use-workload-identity)
+
+ClickPipes는 Google Cloud 프로젝트에 IAM 바인딩을 생성할 수 없습니다. 따라서 ClickPipe를 생성하기 전에 권한 부여를 먼저 완료하십시오. 권한 부여와 ClickPipe를 동일한 Terraform 구성에서 관리하는 경우, `depends_on`을 사용하여 이 순서가 보장되도록 하십시오.
+
+## ClickPipe 생성 {#create-clickpipe}
+
+소스의 인증 메서드를 `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`로 설정하십시오. Workload Identity를 사용할 때는 서비스 계정 키, 액세스 키, 연결 문자열(Connection String) 또는 IAM role을 함께 구성하지 마십시오.
+
+소스별 프로그래밍 방식 예시는 다음을 참조하십시오.
+
+* [Terraform을 사용한 Google Managed Kafka](/ko/integrations/clickpipes/programmatic-access/terraform#gcmk-workload-identity)
+* [Terraform을 사용한 Google Cloud Storage](/ko/integrations/clickpipes/programmatic-access/terraform#gcs-workload-identity)
+* [Terraform을 사용한 Google Cloud Pub/Sub](/ko/integrations/clickpipes/programmatic-access/terraform#pubsub)
+* [Terraform을 사용한 BigQuery](/ko/integrations/clickpipes/programmatic-access/terraform#bigquery-workload-identity)
+* [OpenAPI 예시](/ko/integrations/clickpipes/programmatic-access/openapi#creating-clickpipes)
+
+## 문제 해결 {#troubleshooting}
+
+<Accordion title="Workload Identity가 지원되지 않음">
+  ClickHouse Cloud 서비스와 해당 서비스의 ClickPipes 배포가 모두 GCP에서 실행되고 있는지 확인하십시오. 서비스가 이러한 요구 사항을 충족하는데도 `supported`가 `false`이면 ClickHouse 지원팀에 문의하십시오.
+</Accordion>
+
+<Accordion title="아이덴티티가 준비되지 않음">
+  아이덴티티 프로비저닝이 아직 진행 중일 수 있습니다. 서비스 컨텍스트 요청을 재시도하거나, Terraform을 사용하는 경우 `ready_timeout` 값을 늘리십시오. `ready`가 `true`가 되고 `principal` 값이 채워질 때까지 ClickPipe를 생성하지 마십시오.
+</Accordion>
+
+<Accordion title="소스가 액세스를 거부함">
+  IAM 멤버가 서비스 컨텍스트에 표시된 주체를 그대로 사용하여 `serviceAccount:<principal>` 형식으로 지정되어 있는지 확인하십시오. 또한 역할이 올바른 프로젝트, 데이터셋, 버킷, subscription 또는 클러스터 범위에서 부여되었는지 확인하십시오. Google Managed Kafka를 사용하는 경우 브로커 측 Kafka 접근 제어 목록(ACLs)과 TLS 구성도 함께 확인하십시오.
+</Accordion>

@@ -15,7 +15,7 @@ class MockReader : public CacheReader
 {
 public:
     explicit MockReader(ByteRange r_) : r(r_) {}
-    ByteRange range() const override { return r; }
+    [[nodiscard]] ByteRange range() const override { return r; }
     ChainedBuffers read(ByteRange) override { return {}; }
 private:
     ByteRange r;
@@ -27,9 +27,9 @@ class MockWriter : public CacheWriter
 public:
     explicit MockWriter(ByteRange r_, bool whole_ = false) : r(r_), frontier(r_.offset), whole(whole_) {}
     void commit(ByteRange c) { frontier = c.end(); }   /// a prefix `[r.offset, c.end())`
-    ByteRange range() const override { return r; }
-    size_t committed() const override { return frontier; }
-    bool fillsWholeSegment() const override { return whole; }
+    [[nodiscard]] ByteRange range() const override { return r; }
+    [[nodiscard]] size_t committed() const override { return frontier; }
+    [[nodiscard]] bool fillsWholeSegment() const override { return whole; }
     size_t write(ChainedBuffers, const FillRole &) override { return 0; }
     ChainedBuffers read(ByteRange) override { return {}; }
 private:
@@ -438,4 +438,36 @@ TEST(ReadPlan, MemoryHoldServedFirstAndFreedOnDrop)
     /// Drop past the hold frees it; the offset is then a plain miss again.
     plan.dropBefore(3);
     EXPECT_EQ(as<ReadPlan::ServeFromMemory>(plan.runAt(3, NO_LIMIT)), nullptr);
+}
+
+TEST(ReadPlan, FrontierAdvancingDuringRunAtNeverYieldsEmptyFetch)
+{
+    /// A concurrent downloader commits past the offset between the serve check and the fetch sizing.
+    class AdvancingWriter : public CacheWriter
+    {
+    public:
+        explicit AdvancingWriter(ByteRange r_) : r(r_) {}
+        ByteRange range() const override { return r; }
+        size_t committed() const override { return calls++ == 0 ? r.offset : r.end(); }
+        size_t write(ChainedBuffers, const FillRole &) override { return 0; }
+        ChainedBuffers read(ByteRange) override { return {}; }
+    private:
+        ByteRange r;
+        mutable size_t calls = 0;
+    };
+
+    CacheResolution cell;
+    cell.kind = CacheResolution::Kind::Miss;
+    cell.range = {0, 4};
+    cell.writer = std::make_unique<AdvancingWriter>(ByteRange{0, 4});
+    std::vector<CacheResolution> cells;
+    cells.push_back(std::move(cell));
+
+    ReadPlan plan;
+    plan.reset(0);
+    plan.extend(4, tiers(tier(CacheTier::FilesystemCache, std::move(cells))));
+
+    auto run = plan.runAt(0, NO_LIMIT);
+    const auto * fetch = as<ReadPlan::Fetch>(run);
+    ASSERT_TRUE(fetch == nullptr || fetch->range.size > 0);
 }

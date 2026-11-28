@@ -1,4 +1,6 @@
 #include <Common/Scheduler/WorkloadResourceManager.h>
+#include <Common/Scheduler/ResourceSchedulingContext.h>
+#include <Common/Stopwatch.h>
 
 #include <Common/Scheduler/Nodes/SpaceShared/SpaceSharedScheduler.h>
 #include <Common/Scheduler/Nodes/TimeShared/TimeSharedScheduler.h>
@@ -85,9 +87,15 @@ WorkloadResourceManager::Resource::~Resource()
 
 void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
 {
+    // The node of the root workload entity is the implicit root, which always exists. It has no parent, priority or
+    // precedence, so `updateNode` sets its settings in place.
     if (info.name.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Workload must have a name in resource '{}'",
-            resource_name);
+    {
+        NodeInfo defaults = info;
+        defaults.settings = {};
+        updateNode(defaults, info);
+        return;
+    }
 
     if (info.name == info.parent)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Self-referencing workload '{}' is not allowed in resource '{}'",
@@ -115,6 +123,14 @@ void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
 
 void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
 {
+    if (info.name.empty())
+    {
+        NodeInfo defaults = info;
+        defaults.settings = {};
+        updateNode(info, defaults);
+        return;
+    }
+
     if (!node_for_workload.contains(info.name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Node for removing workload '{}' does not exist in resource '{}'",
             info.name, resource_name);
@@ -133,6 +149,10 @@ void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
     {
         // A parentless workload has parent == "", which maps to the implicit root in node_for_workload.
         node_for_workload[info.parent]->detachWorkloadChild(n);
+
+        // Fail the queue's requests while the node is fully alive: query threads may still reach the queue through
+        // older versions, and the queue's error messages read the workload's name.
+        n->purgeQueue();
 
         node_for_workload.erase(info.name);
 
@@ -353,6 +373,16 @@ void WorkloadResourceManager::deleteResource(const String & resource_name)
 
 WorkloadResourceManager::Classifier::Classifier(const ClassifierSettings & settings_)
     : settings(settings_)
+    // One context per classifier (i.e. per query), built from the query's scheduling settings; get()
+    // stamps it onto every link so the query-aware schedulers always have it.
+    , scheduling_context(std::make_shared<ResourceSchedulingContext>(
+          clock_gettime_ns(),
+          settings.weight,
+          settings.weight_lowering_factor,
+          settings.weight_lowering_age_seconds,
+          settings.weight_lowering_cpu_seconds,
+          settings.weight_lowering_io_bytes,
+          settings.priority))
 {
 }
 
@@ -416,7 +446,9 @@ ResourceLink WorkloadResourceManager::Classifier::get(const String & resource_na
     std::unique_lock lock{mutex};
     if (auto iter = attachments.find(resource_name); iter != attachments.end())
     {
-        return iter->second.link;
+        ResourceLink link = iter->second.link;
+        link.scheduling_context = scheduling_context.get();
+        return link;
     }
     else
     {
@@ -444,6 +476,15 @@ void WorkloadResourceManager::Classifier::attach(const ResourcePtr & resource, c
     std::unique_lock lock{mutex};
     chassert(!attachments.contains(resource->getName()));
     attachments[resource->getName()] = Attachment{.resource = resource, .version = version, .link = node.getLink(), .settings = node.getSettings()};
+}
+
+void WorkloadResourceManager::Classifier::finalizeResourceStates()
+{
+    std::unique_lock lock{mutex};
+    scheduling_context->initResourceStates(attachments.size());
+    size_t index = 0;
+    for (auto & item : attachments)
+        item.second.link.scheduling_state = scheduling_context->resourceState(index++);
 }
 
 void WorkloadResourceManager::Resource::updateResource(const ASTPtr & new_resource_entity)
@@ -507,6 +548,12 @@ ClassifierPtr WorkloadResourceManager::acquire(const String & workload_name, con
     for (auto & future : futures)
         future.get();
 
+    // All resources are attached now; size the per-resource scheduling state (one slot per attached
+    // leaf) and stamp each link with a direct pointer to its slot. Done on the acquiring
+    // (query-setup) thread, before the classifier is handed out, so the scheduler and enqueue hot
+    // paths only ever read an already-resolved pointer and never allocate.
+    classifier->finalizeResourceStates();
+
     return classifier;
 }
 
@@ -551,7 +598,8 @@ void WorkloadResourceManager::topologicallySortedWorkloadsImpl(Workload * worklo
     if (!parent.empty())
     {
         auto parent_iter = workloads.find(parent);
-        chassert(parent_iter != workloads.end()); // validations check that all parents exist
+        if (parent_iter == workloads.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parent workload '{}' of workload '{}' does not exist", parent, getEntityName(workload->workload_entity));
         topologicallySortedWorkloadsImpl(parent_iter->second.get(), visited, sorted_workloads);
     }
 

@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: asserts on `PatchesReadRows` of the initial query, but with parallel replicas the patch may be read on a remote replica
 -- Redundant parentheses must not turn a unique sorting key into an empty effective patch key.
 SET enable_lightweight_update = 1, apply_patch_parts = 1, max_threads = 1;
 SET log_queries = 1, log_queries_probability = 1, log_profile_events = 1;

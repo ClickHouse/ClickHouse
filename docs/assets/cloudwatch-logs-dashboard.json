@@ -1,0 +1,104 @@
+{
+  "version": "0.1.0",
+  "name": "CloudWatch Logs",
+  "tiles": [
+    {
+      "id": "xm28p",
+      "x": 0,
+      "y": 0,
+      "w": 8,
+      "h": 10,
+      "config": {
+        "name": "Log volume by log group",
+        "source": "Logs",
+        "displayType": "line",
+        "granularity": "auto",
+        "select": [
+          {
+            "aggFn": "count",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": ""
+          }
+        ],
+        "where": "",
+        "whereLanguage": "lucene",
+        "groupBy": "ResourceAttributes['cloudwatch.log.group.name']"
+      }
+    },
+    {
+      "id": "yy8xa",
+      "x": 8,
+      "y": 0,
+      "w": 8,
+      "h": 10,
+      "config": {
+        "name": "Logs by severity",
+        "source": "Logs",
+        "displayType": "stacked_bar",
+        "granularity": "auto",
+        "select": [
+          {
+            "aggFn": "count",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": ""
+          }
+        ],
+        "where": "",
+        "whereLanguage": "lucene",
+        "groupBy": "SeverityText"
+      }
+    },
+    {
+      "id": "jcy4x",
+      "x": 0,
+      "y": 10,
+      "w": 24,
+      "h": 9,
+      "config": {
+        "name": "Error messages (severity 'error' or 'fatal')",
+        "source": "Logs",
+        "displayType": "table",
+        "granularity": "auto",
+        "select": [
+          {
+            "aggFn": "count",
+            "aggCondition": "SeverityText IN ('error', 'fatal')",
+            "aggConditionLanguage": "sql",
+            "valueExpression": "",
+            "alias": "Message Count"
+          }
+        ],
+        "where": "",
+        "whereLanguage": "lucene",
+        "groupBy": "Body"
+      }
+    },
+    {
+      "id": "mh7aa",
+      "x": 16,
+      "y": 0,
+      "w": 8,
+      "h": 10,
+      "config": {
+        "name": "Error distribution by log group",
+        "source": "Logs",
+        "displayType": "stacked_bar",
+        "granularity": "auto",
+        "select": [
+          {
+            "aggFn": "count",
+            "aggCondition": "SeverityText IN ('error', 'fatal')",
+            "aggConditionLanguage": "sql",
+            "valueExpression": ""
+          }
+        ],
+        "where": "",
+        "whereLanguage": "lucene",
+        "groupBy": "ResourceAttributes['cloudwatch.log.group.name']"
+      }
+    }
+  ],
+  "filters": []
+}

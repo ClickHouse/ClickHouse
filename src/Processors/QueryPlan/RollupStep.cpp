@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -18,6 +19,7 @@ namespace DB
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
+    extern const QueryPlanSerializationSettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
@@ -86,7 +88,7 @@ QueryPlanStepPtr RollupStep::clone() const
     return std::make_unique<RollupStep>(*this);
 }
 
-void RollupStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void RollupStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
     /// Only the parameters the transform's block merge reads; the reader rebuilds merge-only
     /// `Aggregator::Params` from them, like `MergingAggregatedStep` does.
@@ -96,6 +98,15 @@ void RollupStep::serializeSettings(QueryPlanSerializationSettings & settings, UI
     /// Every version that can read a `Rollup` step also knows this setting name (see the gate in
     /// `serialize`), so unlike `AggregatingStep` no old-peer narrowing applies.
     settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = params.enable_packed_string_keys;
+    /// A later name: a peer that knows it merges with the method of the aggregation that feeds this
+    /// step. A peer below the setting's version uses the serialized method for both (see
+    /// `AggregatingStep::serializeSettings`). The plan default `false` is that method too, so the name goes
+    /// on the wire only when the setting is on and the keys can take the method: a peer at the setting's
+    /// version that predates the name throws on it, because the setting is `IMPORTANT`.
+    if (params.enable_fixed_and_packed_string_keys
+        && version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FIXED_AND_PACKED_STRING_KEYS_SETTING
+        && aggregationCanUseFixedAndPackedStringKeys(*input_headers.front(), params.keys, {}))
+        settings[QueryPlanSerializationSetting::enable_fixed_and_packed_string_keys_in_aggregation] = true;
 }
 
 void RollupStep::serialize(Serialization & ctx) const
@@ -119,12 +130,12 @@ void RollupStep::serialize(Serialization & ctx) const
 
     writeVarUInt(params.keys.size(), ctx.out);
     for (const auto & key : params.keys)
-        writeStringBinary(key, ctx.out);
+        ctx.writeColumnName(key);
 
     /// The planner builds the rollup aggregates without argument names (the transform only merges
     /// states, so the argument columns do not exist in its input), which the generic
     /// `serializeAggregateDescriptions` rejects.
-    serializeAggregateDescriptionsWithoutArguments(params.aggregates, ctx.out);
+    serializeAggregateDescriptionsWithoutArguments(params.aggregates, ctx.out, ctx.for_cache_key, ctx.input_header);
 }
 
 QueryPlanStepPtr RollupStep::deserialize(Deserialization & ctx)
@@ -154,6 +165,7 @@ QueryPlanStepPtr RollupStep::deserialize(Deserialization & ctx)
 
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptionsWithoutArguments(aggregates, ctx.in, ctx.max_type_complexity);
+    checkDeserializedGroupByModifierInput(keys, aggregates, final, *ctx.input_headers.front());
 
     const auto & query_settings = ctx.context->getSettingsRef();
 
@@ -165,7 +177,8 @@ QueryPlanStepPtr RollupStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
         ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
         ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte],
-        ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation]);
+        ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
+        ctx.settings[QueryPlanSerializationSetting::enable_fixed_and_packed_string_keys_in_aggregation]);
 
     /// The transform's `group_by_use_nulls` path builds an `Aggregator` over a finalized header;
     /// with `only_merge` set, the aggregate state types would be read from that header's finalized

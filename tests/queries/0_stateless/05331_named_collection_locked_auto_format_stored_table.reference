@@ -1,0 +1,39 @@
+-- locked 'auto': S3, HDFS and AzureBlobStorage
+azure	1
+hdfs	1
+s3	1
+-- the stored definitions load, also with a short ATTACH
+azure
+hdfs
+s3
+attached	azure
+attached	hdfs
+attached	s3
+-- a format written by the user is refused
+Override not allowed for 'format'
+Override not allowed for 'format'
+Override not allowed for 'format'
+-- a locked value that is not 'auto' stays locked on load
+created	1
+Override not allowed for 'format'
+-- a locked 'auto' of another key stays locked on load
+created	1
+Override not allowed for 'compression_method'
+-- 'structure' locked after the CREATE
+created	1
+attached	t
+Override not allowed for 'structure'
+-- 'auto' locked after the CREATE, url resolved through s3_base on load
+created	1
+loaded	b
+-- 'auto' locked after the CREATE: URL and S3
+s	1
+u	1
+s
+u
+attached	u
+Override not allowed for 'format'
+-- 'auto' locked after the CREATE: URL dispatched to File
+f	1
+1	a
+attached	1	a

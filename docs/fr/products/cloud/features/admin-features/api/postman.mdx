@@ -7,128 +7,172 @@ doc_type: 'guide'
 keywords: ['api', 'postman', 'api rest', 'gestion du Cloud', 'intégration']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Ce guide vous aidera à tester l’API ClickHouse Cloud à l’aide de [Postman](https://www.postman.com/product/what-is-postman/).
 L’application Postman peut être utilisée dans un navigateur web ou téléchargée sur un ordinateur.
 
-<div id="create-an-account">
-  ### Créer un compte
-</div>
+### Créer un compte {#create-an-account}
 
 * Des comptes gratuits sont disponibles sur [https://www.postman.com](https://www.postman.com).
 
-<Image img="/images/cloud/manage/postman/postman1.webp" size="md" alt="Site Postman" border />
-
-<div id="create-a-workspace">
-  ### Créer un espace de travail
+<div className="ch-image-md">
+  <Frame>
+    ![Site de Postman](/images/cloud/manage/postman/postman1.webp)
+  </Frame>
 </div>
+
+### Créer un espace de travail {#create-a-workspace}
 
 * Nommez votre espace de travail et définissez son niveau de visibilité.
 
-<Image img="/images/cloud/manage/postman/postman2.webp" size="md" alt="Créer un espace de travail" border />
-
-<div id="create-a-collection">
-  ### Créer une collection
+<div className="ch-image-md">
+  <Frame>
+    ![Créer un espace de travail](/images/cloud/manage/postman/postman2.webp)
+  </Frame>
 </div>
 
-* Dans le menu en haut à gauche, sous « Explore », cliquez sur « Import » :
+### Créer une collection {#create-a-collection}
 
-<Image img="/images/cloud/manage/postman/postman3.webp" size="md" alt="Explore > Import" border />
+* Dans le menu en haut à gauche, sous « Explore », cliquez sur « Import » :
 
-* Une fenêtre modale s’ouvre :
-
-<Image img="/images/cloud/manage/postman/postman4.webp" size="md" alt="Saisie de l’URL de l’API" border />
-
-* Saisissez l’adresse de l’API : &quot;https://api.clickhouse.cloud/v1&quot;, puis appuyez sur &#39;Entrée&#39; :
-
-* Sélectionnez « Postman Collection » en cliquant sur le bouton « Import » :
-
-<Image img="/images/cloud/manage/postman/postman6.webp" size="md" alt="Collection > Import" border />
-
-<div id="interface-with-the-clickhouse-cloud-api-spec">
-  ### Utiliser la spécification de l’API ClickHouse Cloud
+<div className="ch-image-md">
+  <Frame>
+    ![Explore > Import](/images/cloud/manage/postman/postman3.webp)
+  </Frame>
 </div>
 
-* « API spec for ClickHouse Cloud » apparaît désormais dans « Collections » (navigation de gauche).
+* Une fenêtre modale s’ouvre :
 
-<Image img="/images/cloud/manage/postman/postman7.webp" size="md" alt="Importez votre API" border />
-
-* Cliquez sur « API spec for ClickHouse Cloud ». Dans le volet central, sélectionnez l’onglet « Authorization » :
-
-<Image img="/images/cloud/manage/postman/postman8.webp" size="md" alt="Importation terminée" border />
-
-<div id="set-authorization">
-  ### Configurer l’authentification
+<div className="ch-image-md">
+  <Frame>
+    ![Saisie de l’URL de l’API](/images/cloud/manage/postman/postman4.webp)
+  </Frame>
 </div>
 
-* Dans le menu déroulant, sélectionnez « Basic Auth » :
+* Saisissez l’adresse de l’API : &quot;https://api.clickhouse.cloud/v1&quot;, puis appuyez sur &#39;Entrée&#39; :
 
-<Image img="/images/cloud/manage/postman/postman9.webp" size="md" alt="Basic Auth" border />
+* Sélectionnez « Postman Collection » en cliquant sur le bouton « Import » :
 
-* Saisissez le nom d’utilisateur et le mot de passe reçus lors de la configuration de vos clés API ClickHouse Cloud :
+<div className="ch-image-md">
+  <Frame>
+    ![Collection > Import](/images/cloud/manage/postman/postman6.webp)
+  </Frame>
+</div>
 
-<Image img="/images/cloud/manage/postman/postman10.webp" size="md" alt="données d’authentification" border />
+### Utiliser la spécification de l’API ClickHouse Cloud {#interface-with-the-clickhouse-cloud-api-spec}
+
+* « API spec for ClickHouse Cloud » apparaît désormais dans « Collections » (navigation de gauche).
+
+<div className="ch-image-md">
+  <Frame>
+    ![Importez votre API](/images/cloud/manage/postman/postman7.webp)
+  </Frame>
+</div>
+
+* Cliquez sur « API spec for ClickHouse Cloud ». Dans le volet central, sélectionnez l’onglet « Authorization » :
+
+<div className="ch-image-md">
+  <Frame>
+    ![Importation terminée](/images/cloud/manage/postman/postman8.webp)
+  </Frame>
+</div>
+
+### Configurer l’authentification {#set-authorization}
+
+* Dans le menu déroulant, sélectionnez « Basic Auth » :
+
+<div className="ch-image-md">
+  <Frame>
+    ![Basic Auth](/images/cloud/manage/postman/postman9.webp)
+  </Frame>
+</div>
+
+* Saisissez le nom d’utilisateur et le mot de passe reçus lors de la configuration de vos clés API ClickHouse Cloud :
+
+<div className="ch-image-md">
+  <Frame>
+    ![identifiants](/images/cloud/manage/postman/postman10.webp)
+  </Frame>
+</div>
 
 <div id="enable-variables">
-  ### Activer les variables
+  ### Activer les variables {#enable-variables}
 </div>
 
 * Les [variables](https://learning.postman.com/docs/sending-requests/variables/) permettent de stocker et de réutiliser des valeurs dans Postman, afin de faciliter les tests d’API.
 
-<div id="set-the-organization-id-and-service-id">
-  #### Définissez l’ID de l’organisation et l’ID du service
+#### Définissez l’identifiant de l’organisation et l’identifiant de service {#set-the-organization-id-and-service-id}
+
+* Dans la « Collection », cliquez sur l’onglet « Variable » dans le panneau central (l’URL de base aura été définie lors de l’importation précédente de l’API) :
+* Sous `baseURL`, cliquez sur le champ vide « Add new value », puis remplacez-le par l’identifiant de votre organisation et l’identifiant de votre service :
+
+<div className="ch-image-md">
+  <Frame>
+    ![Identifiant de l’organisation et identifiant de service](/images/cloud/manage/postman/postman11.webp)
+  </Frame>
 </div>
-
-* Dans la « Collection », cliquez sur l’onglet « Variable » dans le panneau central (l’URL de base aura été définie lors de l’importation précédente de l’API) :
-* Sous `baseURL`, cliquez sur le champ vide « Add new value », puis remplacez-le par l’ID de votre organisation et l’ID de votre service :
-
-<Image img="/images/cloud/manage/postman/postman11.webp" size="md" alt="ID de l’organisation et ID du service" border />
 
 <div id="test-the-clickhouse-cloud-api-functionalities">
-  ## Tester les fonctionnalités de l’API ClickHouse Cloud
+  ## Tester les fonctionnalités de l’API ClickHouse Cloud {#test-the-clickhouse-cloud-api-functionalities}
 </div>
 
-<div id="test-get-list-of-available-organizations">
-  ### Tester « GET list of available organizations »
+### Tester « GET list of available organizations » {#test-get-list-of-available-organizations}
+
+* Sous « OpenAPI spec for ClickHouse Cloud », développez le dossier &gt; V1 &gt; organizations
+* Cliquez sur « GET list of available organizations », puis sur le bouton bleu « Send » à droite :
+
+<div className="ch-image-md">
+  <Frame>
+    ![Tester la récupération des organisations](/images/cloud/manage/postman/postman12.webp)
+  </Frame>
 </div>
 
-* Sous « OpenAPI spec for ClickHouse Cloud », développez le dossier &gt; V1 &gt; organizations
-* Cliquez sur « GET list of available organizations », puis sur le bouton bleu « Send » à droite :
+* Les résultats renvoyés doivent afficher les détails de votre organisation avec &quot;statut&quot;: 200. (Si vous obtenez un &quot;statut&quot; 400 sans information sur l’organisation, votre configuration n’est pas correcte).
 
-<Image img="/images/cloud/manage/postman/postman12.webp" size="md" alt="Tester la récupération des organisations" border />
-
-* Les résultats renvoyés doivent afficher les détails de votre organisation avec &quot;status&quot;: 200. (Si vous obtenez un &quot;status&quot; 400 sans information sur l’organisation, votre configuration n’est pas correcte).
-
-<Image img="/images/cloud/manage/postman/postman13.webp" size="md" alt="Statut" border />
-
-<div id="test-get-organizational-details">
-  ### Tester &quot;GET organizational details&quot;
+<div className="ch-image-md">
+  <Frame>
+    ![Statut](/images/cloud/manage/postman/postman13.webp)
+  </Frame>
 </div>
+
+### Tester &quot;GET organizational details&quot; {#test-get-organizational-details}
 
 * Dans le dossier `organizationid`, accédez à &quot;GET organizational details&quot; :
 * Dans le menu du panneau central, sous Params, un `organizationid` est requis.
 
-<Image img="/images/cloud/manage/postman/postman14.webp" size="md" alt="Tester la récupération des détails de l’organisation" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Tester la récupération des détails de l’organisation](/images/cloud/manage/postman/postman14.webp)
+  </Frame>
+</div>
 
 * Remplacez cette valeur par `orgid` entre accolades, `{{orgid}}` (si vous avez déjà défini cette valeur auparavant, un menu apparaîtra avec cette valeur) :
 
-<Image img="/images/cloud/manage/postman/postman15.webp" size="md" alt="Soumettre le test" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Soumettre le test](/images/cloud/manage/postman/postman15.webp)
+  </Frame>
+</div>
 
 * Après avoir cliqué sur le bouton &quot;Save&quot;, cliquez sur le bouton bleu &quot;Send&quot; en haut à droite de l’écran.
 
-<Image img="/images/cloud/manage/postman/postman16.webp" size="md" alt="Valeur renvoyée" border />
-
-* Les résultats renvoyés doivent afficher les détails de votre organisation avec &quot;status&quot;: 200. (Si vous recevez un &quot;status&quot; 400 sans information sur l’organisation, votre configuration n’est pas correcte).
-
-<div id="test-get-service-details">
-  ### Tester &quot;GET service details&quot;
+<div className="ch-image-md">
+  <Frame>
+    ![Valeur renvoyée](/images/cloud/manage/postman/postman16.webp)
+  </Frame>
 </div>
+
+* Les résultats renvoyés doivent afficher les détails de votre organisation avec &quot;statut&quot;: 200. (Si vous recevez un &quot;statut&quot; 400 sans information sur l’organisation, votre configuration n’est pas correcte).
+
+### Tester &quot;GET service details&quot; {#test-get-service-details}
 
 * Cliquez sur &quot;GET service details&quot;
 * Modifiez les valeurs de `organizationid` et `serviceid` en utilisant respectivement `{{orgid}}` et `{{serviceid}}`.
 * Cliquez sur &quot;Save&quot;, puis sur le bouton bleu &quot;Send&quot; à droite.
 
-<Image img="/images/cloud/manage/postman/postman17.webp" size="md" alt="Liste des services" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Liste des services](/images/cloud/manage/postman/postman17.webp)
+  </Frame>
+</div>
 
-* Les résultats renvoyés devraient afficher la liste de vos services et leurs détails avec &quot;status&quot;: 200. (Si vous obtenez un &quot;status&quot; 400 sans aucune information sur les services, votre configuration n&#39;est pas correcte.)
+* Les résultats renvoyés devraient afficher la liste de vos services et leurs détails avec &quot;statut&quot;: 200. (Si vous obtenez un &quot;statut&quot; 400 sans aucune information sur les services, votre configuration n&#39;est pas correcte.)

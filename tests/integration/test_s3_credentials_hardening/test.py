@@ -436,6 +436,16 @@ def test_backup_named_collection_does_not_inherit_server_keys():
     )
     assert "403" in error or "Access Denied" in error or "AccessDenied" in error, error
 
+    # The same holds for RESTORE, which builds its own S3 client. The backup at the collection's location is
+    # written with the server keys, so a RESTORE through the URL-only collection could read it only with them.
+    node_with_server_keys.query(
+        "BACKUP TABLE t_backup_keys TO S3('http://minio1:9001/root/backup_nc_url_only/b_restore')"
+    )
+    error = node_with_server_keys.query_and_get_error(
+        "RESTORE TABLE t_backup_keys AS t_restored_keys FROM S3(nc_backup_url_only, 'b_restore')"
+    )
+    assert "403" in error or "Access Denied" in error or "AccessDenied" in error, error
+
     # A backup named collection with only a role_arn has no base key pair of its own, so the server static
     # keys must not be used as the STS base to assume the role. The role cannot be assumed and the backup
     # fails (unsigned -> rejected) instead of authenticating with the server's keys.
@@ -589,6 +599,32 @@ def test_dynamic_disk_include_locations_child_is_restricted():
         settings={"dynamic_disk_allow_include": 1},
     )
     assert "ACCESS_DENIED" in error or "must provide its credentials explicitly" in error, error
+
+
+def test_dynamic_disk_include_locations_child_local_path_is_fenced():
+    # The same shape, for the local filesystem rather than S3: an `include` can inject a
+    # `locations.<name>` child whose backend is `local` and whose `path` is outside
+    # `custom_local_disks_base_directory`. A disk root that names no local path of its own must not let
+    # that child through -- `RegisterDiskObjectStorage` builds one object storage per child, each with
+    # its own `path`.
+    # A `type = object_storage` disk with an `include` and no literal `object_storage_type` may resolve to S3,
+    # so the credentials restriction rejects it before the disk is created; lift it to reach the path check.
+    node_with_includes.query("DROP TABLE IF EXISTS t_loc_local SYNC")
+    error = node_with_includes.query_and_get_error(
+        "CREATE TABLE t_loc_local (x UInt8) ENGINE = MergeTree ORDER BY tuple() "
+        "SETTINGS disk = disk(type = object_storage, include = 'evil_locations_local_path')",
+        settings={
+            "dynamic_disk_allow_include": 1,
+            "s3_allow_server_credentials_in_user_queries": 1,
+        },
+    )
+    assert "must be inside" in error, error
+    assert (
+        node_with_includes.query(
+            "SELECT count() FROM system.disks WHERE path = '/etc/clickhouse-server/'"
+        ).strip()
+        == "0"
+    )
 
 
 def test_persistent_table_does_not_reuse_credentialed_client_across_sessions():

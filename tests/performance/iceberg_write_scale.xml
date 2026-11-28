@@ -1,0 +1,50 @@
+<!--
+    Bulk Iceberg writes into the job-local S3, each run into a fresh table: the whole SF10 `lineitem` (60 M rows) into a
+    month-partitioned table (84 partitions, 4 insert streams with one commit each), and the 6 M-row slice `l_orderkey % 10 = 0`
+    into files of about 10 K rows (about 565 files: per-file Parquet writer setup and S3 PUT). 4 streams, because with the default
+    `max_insert_threads` every stream keeps 84 Parquet writers with their own encoding threads and exhausted the global thread pool
+    on a 24-core host. The setup runs both writes once with the timed settings and compares the stored rows with the source;
+    every run checks its layout, as bounds because the split over the streams is not deterministic (every partition written and
+    at most one file per stream and partition; files under 20000 rows, under 10000 only for the last file of a stream).
+    Per server and invocation, into the job-local S3: 2.6 GB by the setup, 2.3 GB per run of the partitioned and 0.27 GB per run
+    of the small-file insert (about 19 GB with prewarm and 5-7 runs each); nothing on local disk.
+-->
+<test requires_s3="1" run_all_queries="1" max_query_seconds="300">
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+    <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
+    <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+</settings>
+
+<create_query>CREATE TABLE iws_part (l_orderkey Int32, l_partkey Int32, l_suppkey Int32, l_linenumber Int32, l_quantity Float64, l_extendedprice Float64, l_discount Float64, l_tax Float64, l_returnflag String, l_linestatus String, l_shipdate Date, l_commitdate Date, l_receiptdate Date, l_shipinstruct String, l_shipmode String, l_comment String) ENGINE = IcebergS3(perf_s3, filename = 'iceberg_write_scale_part_' || toString(toUnixTimestamp64Micro(now64(6))) || '/') PARTITION BY toMonthNumSinceEpoch(l_shipdate)</create_query>
+<create_query>CREATE TABLE iws_files AS iws_part ENGINE = IcebergS3(perf_s3, filename = 'iceberg_write_scale_files_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')</create_query>
+<fill_query>INSERT INTO iws_part SELECT * FROM tpch10.lineitem SETTINGS max_insert_threads = 4, iceberg_insert_max_rows_in_data_file = 1000000</fill_query>
+<fill_query>INSERT INTO iws_files SELECT * FROM tpch10.lineitem WHERE l_orderkey % 10 = 0 SETTINGS max_insert_threads = 4, max_block_size = 10000, min_insert_block_size_rows = 10000, min_insert_block_size_bytes = 0, iceberg_insert_max_rows_in_data_file = 10000</fill_query>
+<fill_query>SELECT throwIf(sum(record_count) != (SELECT count() FROM tpch10.lineitem) OR uniqExact(partition) != 84 OR count() > 4 * 84) FROM system.iceberg_files WHERE database = 'default' AND table = 'iws_part'</fill_query>
+<fill_query>SELECT throwIf(sum(record_count) != (SELECT count() FROM tpch10.lineitem WHERE l_orderkey % 10 = 0) OR max(record_count) >= 20000 OR countIf(record_count &lt; 10000) > 4) FROM system.iceberg_files WHERE database = 'default' AND table = 'iws_files'</fill_query>
+<fill_query>SELECT throwIf((SELECT count(), sum(cityHash64(*)) FROM iws_part) != (count(), sum(cityHash64(* REPLACE (toFloat64(l_quantity) AS l_quantity, toFloat64(l_extendedprice) AS l_extendedprice, toFloat64(l_discount) AS l_discount, toFloat64(l_tax) AS l_tax))))) FROM tpch10.lineitem</fill_query>
+<fill_query>SELECT throwIf((SELECT count(), sum(cityHash64(*)) FROM iws_files) != (count(), sum(cityHash64(* REPLACE (toFloat64(l_quantity) AS l_quantity, toFloat64(l_extendedprice) AS l_extendedprice, toFloat64(l_discount) AS l_discount, toFloat64(l_tax) AS l_tax))))) FROM tpch10.lineitem WHERE l_orderkey % 10 = 0</fill_query>
+
+<query type="shell"><![CDATA[
+    t=iws_part_$(date +%s%N)
+    ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg 1 --max_insert_threads 4 --iceberg_insert_max_rows_in_data_file 1000000 --query "
+        DROP TABLE IF EXISTS iws_part_run SYNC;
+        CREATE TABLE iws_part_run AS iws_part ENGINE = IcebergS3(perf_s3, filename = '${t}/') PARTITION BY toMonthNumSinceEpoch(l_shipdate);
+        INSERT INTO iws_part_run SELECT * FROM tpch10.lineitem;
+        SELECT throwIf(sum(record_count) != (SELECT count() FROM tpch10.lineitem) OR uniqExact(partition) != 84 OR count() > 4 * 84) FROM system.iceberg_files WHERE database = 'default' AND table = 'iws_part_run';
+        DROP TABLE iws_part_run SYNC"
+]]></query>
+<query type="shell"><![CDATA[
+    t=iws_files_$(date +%s%N)
+    ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg 1 --max_insert_threads 4 --max_block_size 10000 --min_insert_block_size_rows 10000 --min_insert_block_size_bytes 0 --iceberg_insert_max_rows_in_data_file 10000 --query "
+        DROP TABLE IF EXISTS iws_files_run SYNC;
+        CREATE TABLE iws_files_run AS iws_part ENGINE = IcebergS3(perf_s3, filename = '${t}/');
+        INSERT INTO iws_files_run SELECT * FROM tpch10.lineitem WHERE l_orderkey % 10 = 0;
+        SELECT throwIf(sum(record_count) != (SELECT count() FROM tpch10.lineitem WHERE l_orderkey % 10 = 0) OR max(record_count) >= 20000 OR countIf(record_count < 10000) > 4) FROM system.iceberg_files WHERE database = 'default' AND table = 'iws_files_run';
+        DROP TABLE iws_files_run SYNC"
+]]></query>
+
+<drop_query>DROP TABLE IF EXISTS iws_part, iws_files, iws_part_run, iws_files_run SYNC</drop_query>
+</test>

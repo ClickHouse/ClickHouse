@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="logger.async">
-  ## logger.async
-</div>
+## logger.async {#logger.async}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Lorsque `<true>` (par défaut), la journalisation est asynchrone (un thread d’arrière-plan par canal de sortie). Sinon, elle s’effectue dans le thread qui appelle LOG.
 
-<div id="logger.async_queye_max_size">
-  ## logger.async_queye_max_size
-</div>
+## logger.async_queue_max_size {#logger.async_queue_max_size}
 
 <SettingsInfoBlock type="UInt64" default_value="65536" changeable_without_restart="No" />Lors de l’utilisation de la journalisation asynchrone, il s’agit du nombre maximal de messages conservés dans la file d’attente avant d’être vidée. Les messages excédentaires seront abandonnés. Arrondi à la puissance de deux supérieure suivante (par ex. `100000` devient `131072`).
 

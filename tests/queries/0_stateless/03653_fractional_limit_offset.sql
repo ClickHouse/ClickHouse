@@ -1,4 +1,3 @@
-SET enable_analyzer=1;
 SELECT 'Analyzer';
 
 SELECT 'Fractional Limit Only:';

@@ -6,6 +6,9 @@
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/Types.h>
 #include <filesystem>
+#include <optional>
+#include <utility>
+#include <vector>
 
 namespace Poco
 {
@@ -50,15 +53,15 @@ struct HostID
 
     static HostID fromString(const String & host_port_str);
 
-    String toString() const
+    [[nodiscard]] String toString() const
     {
         return Cluster::Address::toString(host_name, port);
     }
 
-    String readableString() const;
+    [[nodiscard]] String readableString() const;
 
-    bool isLocalAddress(UInt16 clickhouse_port) const;
-    bool isLoopbackHost() const;
+    [[nodiscard]] bool isLocalAddress(UInt16 clickhouse_port) const;
+    [[nodiscard]] bool isLoopbackHost() const;
 
     static String applyToString(const HostID & host_id)
     {
@@ -69,8 +72,7 @@ struct HostID
 
 struct DDLLogEntry
 {
-    static constexpr const UInt64 OLDEST_VERSION = 1;
-    static constexpr const UInt64 SETTINGS_IN_ZK_VERSION = 2;
+    /// The oldest supported version.
     static constexpr const UInt64 NORMALIZE_CREATE_ON_INITIATOR_VERSION = 3;
     static constexpr const UInt64 OPENTELEMETRY_ENABLED_VERSION = 4;
     static constexpr const UInt64 PRESERVE_INITIAL_QUERY_ID_VERSION = 5;
@@ -82,7 +84,8 @@ struct DDLLogEntry
     /// Remember to update the value below once new version is added
     static constexpr const UInt64 DDL_ENTRY_FORMAT_MAX_VERSION = 8;
 
-    UInt64 version = 1;
+    /// Servers that wrote version 3 as 2 reject version 3 in a mixed-version cluster.
+    UInt64 version = OPENTELEMETRY_ENABLED_VERSION;
     String query;
     std::vector<HostID> hosts;
     String initiator; // optional
@@ -98,7 +101,7 @@ struct DDLLogEntry
     Strings initiator_user_roles;
 
     void setSettingsIfRequired(ContextPtr context);
-    String toString() const;
+    [[nodiscard]] String toString() const;
     void parse(const String & data);
     void assertVersion() const;
 };
@@ -120,6 +123,11 @@ struct DDLTaskBase
     bool is_circular_replicated = false;
     bool execute_on_single_replica = false;
 
+    /// Set when the initial query runs as the submitting user, see `QueryFlags::run_as_submitting_user`.
+    ContextPtr submitting_user_context;
+
+    QueryExecutionStartedCallback query_execution_started_callback;
+
     Coordination::Requests ops;
     ExecutionStatus execution_status;
     bool was_executed = false;
@@ -131,6 +139,12 @@ struct DDLTaskBase
     virtual ~DDLTaskBase() = default;
 
     virtual void parseQueryFromEntry(ContextPtr context);
+
+    /// The initiator's user and its roles, resolved on this host, when
+    /// `distributed_ddl_use_initial_user_and_roles` preserves them for the execution of the entry.
+    /// `std::nullopt` when that server setting is disabled, when the entry carries no user, or - only if
+    /// `throw_if_not_found` is false - when the user or one of the roles does not exist on this host.
+    std::optional<std::pair<UUID, std::vector<UUID>>> resolveInitiatorUserAndRoles(ContextPtr from_context, bool throw_if_not_found) const;
     void formatRewrittenQuery(ContextPtr context);
 
     virtual String getShardID() const = 0;
@@ -185,6 +199,12 @@ struct DatabaseReplicatedTask : public DDLTaskBase
     ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
     Coordination::RequestPtr getOpToUpdateLogPointer() override;
     void createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper) override;
+
+    /// The node that `SYSTEM STOP REPLICATED DDL QUERIES` creates in the replica path of every `Replicated` database
+    /// to fence the initial DDL entries of this server that are already queued. It is located in the replica path,
+    /// because it belongs to this server, and the server already has write access to it, while it may have no access
+    /// to other paths in Keeper.
+    static String getStopReplicatedDDLQueriesFlagPath(const DatabaseReplicated & database);
 
     DatabaseReplicated * database;
 };
@@ -290,6 +310,10 @@ public:
     ///      is called with std::uncaught_exceptions() == 0.)
     ~ZooKeeperMetadataTransaction() = default;
 };
+
+/// Whether the query re-executes a DDL that its initiator already validated and committed: an entry of a `Replicated`
+/// database queue, or a Shared Catalog replay (marked in the client info, not in a metadata transaction).
+bool isSecondaryDDLReplay(const ContextPtr & context);
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);
 

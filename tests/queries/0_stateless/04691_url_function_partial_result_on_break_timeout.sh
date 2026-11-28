@@ -70,6 +70,9 @@ QUERY="SELECT x FROM url('http://127.0.0.1:$HTTP_PORT/{good,bad}', 'CSV', 'x UIn
 # On a loaded machine the timeout can legitimately fire before the first file has streamed anything,
 # leaving a valid but empty partial result, so retry until the rows make it through - the guarantees
 # under test (the query succeeds and returns quickly) must hold on every attempt.
+# With one thread, the rows of the first file are handed to the client before the second file is
+# opened. With a thread per file, a query granted a single thread (all it gets when the CPU slots of
+# the server are taken) can spend it in the backoff of the second file and return no rows.
 ERROR_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.err")
 
 for _ in {1..10}; do
@@ -79,6 +82,7 @@ for _ in {1..10}; do
         --http_retry_initial_backoff_ms 1000 \
         --http_retry_max_backoff_ms 2000 \
         --max_execution_time 1 \
+        --max_threads 1 \
         --timeout_overflow_mode break \
         --query "$QUERY" 2>"$ERROR_FILE")
     CLIENT_STATUS=$?

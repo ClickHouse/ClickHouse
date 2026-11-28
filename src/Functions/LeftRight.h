@@ -23,8 +23,6 @@ using namespace GatherUtils;
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 enum class SubstringDirection : uint8_t
@@ -46,30 +44,33 @@ public:
         return std::make_shared<FunctionLeftRight>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool isVariadic() const override { return false; }
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isVariadic() const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// A row whose result is NULL, or an unused dictionary entry of a `LowCardinality` argument, may hold a UInt64 that
+    /// does not fit Int64, and `executeImpl` would throw for it
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
     {
-        if ((is_utf8 && !isString(arguments[0])) || !isStringOrFixedString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-
-        if (!isNativeNumber(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
-                    arguments[1]->getName(), getName());
-
-        return std::make_shared<DataTypeString>();
+        return !uint64ArgumentMayHoldUnusedValues(arguments);
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] String getSignatureString() const override
+    {
+        if constexpr (is_utf8)
+            return "(String, NativeNumber) -> String";
+        else
+            return "(StringOrFixedString, NativeNumber) -> String";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
@@ -100,11 +101,9 @@ public:
                 // According to the docs, if length_value < 0, we need to take a suffix of the string starting from the position abs(length_value)
                 else
                 {
-                    Int64 abs_length_value = 0;
-                    if (common::subOverflow(Int64(0), length_value, abs_length_value))
-                        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                            "Argument of function {} is out of bound: {}", getName(), length_value);
-                    sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), static_cast<size_t>(abs_length_value));
+                    /// Unsigned negation, so INT64_MIN gives 2^63 instead of overflowing; it skips the whole string.
+                    const UInt64 abs_length_value = common::negateIgnoreOverflow(static_cast<UInt64>(length_value));
+                    sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), abs_length_value);
                 }
             }
             else
@@ -124,14 +123,11 @@ public:
                     const Int64 length = column_length->getInt(row);
                     typename std::decay_t<decltype(source)>::Slice slice;
                     if (length > 0)
-                        slice = source.getSliceFromRight(static_cast<UInt64>(length), static_cast<UInt64>(length));
+                        slice = source.getSliceFromRight(static_cast<UInt64>(length));
                     else if (length < 0)
                     {
-                        Int64 abs_length = 0;
-                        if (common::subOverflow(Int64(0), length, abs_length))
-                            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                                "Argument of function {} is out of bound: {}", getName(), length);
-                        slice = source.getSliceFromLeft(static_cast<size_t>(abs_length));
+                        const UInt64 abs_length = common::negateIgnoreOverflow(static_cast<UInt64>(length));
+                        slice = source.getSliceFromLeft(abs_length);
                     }
                     if (length != 0)
                         writeSlice(slice, sink);
@@ -144,10 +140,14 @@ public:
         return col_res;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr column_string = arguments[0].column;
         ColumnPtr column_length = arguments[1].column;
+
+        /// The length is read with IColumn::getInt() below, so a UInt64 value that does not fit
+        /// Int64 must be rejected here rather than read as a negative length.
+        checkIntegerArgumentFitsInt64(*column_length, name, "length");
 
         const ColumnConst * column_length_const = checkAndGetColumn<ColumnConst>(column_length.get());
 

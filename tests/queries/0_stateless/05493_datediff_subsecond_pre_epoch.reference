@@ -1,0 +1,35 @@
+between the epoch and one tick before it (was 0)
+1
+1
+1
+1
+-1
+both arguments before the epoch (was 0)
+1
+1
+age across the epoch (was 0)
+1
+-1
+1
+control: unit equal to the scale, after the epoch, whole seconds
+1
+1
+1
+age with different scales, 300 microseconds apart
+0
+0
+0
+0
+age with different scales, other units (was 1 and -1)
+0
+0
+0
+0
+0
+0
+sweep around the epoch, DateTime64(6), rows that disagree
+0	0
+sweep around the epoch, DateTime64(9), rows that disagree
+0	0	0	0
+sweep around the epoch, DateTime64(4) against DateTime64(6), rows that disagree
+0	0	0	0	0

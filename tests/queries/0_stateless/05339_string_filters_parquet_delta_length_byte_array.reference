@@ -1,0 +1,23 @@
+3000	9185227557800184136
+3000	9185227557800184136
+1000	2937764599818699091
+1000	2937764599818699091
+2769	18031096777504820811
+0	value with needle 0	\N
+10	value with needle 10	nullable needle 10
+20	value with needle 20	nullable needle 20
+3000	9185227557800184136
+3000	9185227557800184136
+1000	2937764599818699091
+1000	2937764599818699091
+2769	18031096777504820811
+0	value with needle 0	\N
+10	value with needle 10	nullable needle 10
+20	value with needle 20	nullable needle 20
+the filter is applied
+StringValueFilterValuesChecked: 30000
+StringValueFilterValuesReplaced: 27000
+StringValueFilterValuesChecked: 10000
+StringValueFilterValuesReplaced: 9000
+StringValueFilterValuesChecked: 10000
+StringValueFilterValuesReplaced: 9000

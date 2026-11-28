@@ -1,5 +1,6 @@
 -- `toDayOfWeek(key, mode)` is monotonic inside a Monday-based week only for the Monday-first modes 0 and 1.
--- With a Sunday-first mode the index analysis must not prune granules that hold matching rows.
+-- With a Sunday-first mode the index analysis must not prune granules that hold matching rows. The factor
+-- of `toDayOfWeek` pairs the Monday-week with the Sunday-week, so the claim is sound in every mode.
 
 DROP TABLE IF EXISTS t_dow_date;
 CREATE TABLE t_dow_date (d Date) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 1;
@@ -23,25 +24,26 @@ INSERT INTO t_dow_datetime SELECT toDateTime('2026-08-03 00:00:00', 'UTC') + num
 SELECT count() FROM t_dow_datetime WHERE toDayOfWeek(dt, 3) >= 5;
 SELECT countIf(toDayOfWeek(dt, 3) >= 5) FROM t_dow_datetime;
 
--- The 3-argument overload `toDayOfWeek(dt, mode, timezone)` never enters a monotonic function chain at all:
--- both chain builders in `KeyCondition` reject functions of arity greater than two, so no pruning is claimed
--- for it in either numbering. Guard that with the Sunday-first mode, where an unsound claim would drop rows.
+-- The three-argument overload `toDayOfWeek(dt, mode, timezone)` cannot enter a monotonic function chain:
+-- both chain builders in `KeyCondition` reject functions with more than two arguments. Both numbering
+-- conventions must retain every mark, including Sunday-first numbering with its discontinuity on Sunday.
 SELECT count() FROM t_dow_datetime WHERE toDayOfWeek(dt, 2, 'UTC') >= 5;
 SELECT countIf(toDayOfWeek(dt, 2, 'UTC') >= 5) FROM t_dow_datetime;
 SELECT count() FROM t_dow_datetime WHERE toDayOfWeek(dt, 1, 'UTC') >= 5;
 SELECT countIf(toDayOfWeek(dt, 1, 'UTC') >= 5) FROM t_dow_datetime;
--- Neither numbering of the 3-argument form prunes: both read every mark, while the 2-argument Monday-first
--- form does prune. This is what makes the guard above unnecessary for the 3-argument overload.
+-- Neither numbering of the three-argument form prunes: both read every mark, while the two-argument
+-- Monday-first form retains its pruning ability.
 SELECT
     (SELECT marks FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dow_datetime WHERE toDayOfWeek(dt, 2, 'UTC') >= 5)) AS three_arg_mode_2,
     (SELECT marks FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dow_datetime WHERE toDayOfWeek(dt, 1, 'UTC') >= 5)) AS three_arg_mode_1,
     three_arg_mode_2 = three_arg_mode_1 AS three_arg_never_prunes,
     three_arg_mode_1 > (SELECT marks FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dow_datetime WHERE toDayOfWeek(dt, 1) >= 5)) AS two_arg_monday_prunes;
 
--- The Monday-first modes keep pruning granules, the Sunday-first ones read the whole table.
+-- Both numberings keep pruning granules: neither reads all 14 marks of the table, and the counts above show
+-- that no matching row is lost.
 SELECT
-    (SELECT marks FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 1) >= 5))
-    < (SELECT marks FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 2) >= 5)) AS monday_mode_prunes;
+    (SELECT marks FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 1) >= 5)) < 14
+    AND (SELECT marks FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 2) >= 5)) < 14 AS both_modes_prune;
 
 DROP TABLE t_dow_date;
 DROP TABLE t_dow_datetime;

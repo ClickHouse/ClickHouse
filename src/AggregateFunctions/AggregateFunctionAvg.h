@@ -169,7 +169,7 @@ struct AvgFraction
 
     /// Allow division by zero as sometimes we need to return NaN.
     /// Invoked only is either Numerator or Denominator are Decimal.
-    Float64 NO_SANITIZE_UNDEFINED divideIfAnyDecimal(UInt32 num_scale, UInt32 denom_scale [[maybe_unused]]) const
+    [[nodiscard]] Float64 NO_SANITIZE_UNDEFINED divideIfAnyDecimal(UInt32 num_scale, UInt32 denom_scale [[maybe_unused]]) const
     {
         Float64 numerator_float = 0;
         if constexpr (is_decimal<Numerator>)
@@ -186,7 +186,7 @@ struct AvgFraction
         return numerator_float / denominator_float;
     }
 
-    Float64 NO_SANITIZE_UNDEFINED divide() const
+    [[nodiscard]] Float64 NO_SANITIZE_UNDEFINED divide() const
     {
         if constexpr (DecimalOrExtendedInt<Denominator>) /// if extended int
             return static_cast<Float64>(numerator) / static_cast<Float64>(denominator);
@@ -224,9 +224,9 @@ public:
         , denom_scale(denom_scale_)
     {}
 
-    DataTypePtr createResultType() const { return std::make_shared<DataTypeNumber<Float64>>(); }
+    [[nodiscard]] DataTypePtr createResultType() const { return std::make_shared<DataTypeNumber<Float64>>(); }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void NO_SANITIZE_UNDEFINED mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
@@ -242,6 +242,25 @@ public:
             writeVarUInt(this->data(place).denominator, buf);
         else /// Floating point denominator type can be used
             writeBinary(this->data(place).denominator, buf);
+    }
+
+    /// final: AggregateFunctionAvg is not final (AggregateFunctionSumCount derives from it), so the
+    /// batch loop can only devirtualize these if the methods themselves are.
+    [[nodiscard]] std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const final
+    {
+        return sizeof(Numerator) + (std::is_unsigned_v<Denominator> ? VAR_UINT_MAX_SIZE : sizeof(Denominator));
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> /* version */) const final
+    {
+        writeBinaryLittleEndian(this->data(place).numerator, dst);
+
+        if constexpr (std::is_unsigned_v<Denominator>)
+            dst = writeVarUInt(this->data(place).denominator, dst);
+        else
+            writeBinary(this->data(place).denominator, dst);
+
+        return dst;
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
@@ -321,7 +340,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         if constexpr (!canBeNativeType<Numerator>() || !canBeNativeType<Denominator>())
             return false;
@@ -537,7 +556,16 @@ public:
         increment(place, sum_data.get());
     }
 
-    String getName() const override { return "avg"; }
+    void setSumAndCount(AggregateDataPtr __restrict place, const Field & sum, UInt64 count) const override
+    {
+        if constexpr (is_decimal<Numerator>)
+            increment(place, sum.safeGet<DecimalField<Numerator>>().getValue());
+        else
+            increment(place, sum.safeGet<Numerator>());
+        this->data(place).denominator += count;
+    }
+
+    [[nodiscard]] String getName() const override { return "avg"; }
 
 #if USE_EMBEDDED_COMPILER
 

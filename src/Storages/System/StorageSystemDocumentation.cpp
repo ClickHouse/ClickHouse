@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Columns/IColumn.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/CurrentMetrics.h>
@@ -31,7 +32,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/IAST.h>
-#include <Parsers/StatementFactory.h>
+#include <Parsers/ParserRegistry.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -84,6 +85,7 @@ enum class EntityType : int8_t
     AsynchronousMetric = 19,
     SystemTable = 20,
     Statement = 21,
+    WindowFunction = 22,
 };
 
 std::vector<std::pair<String, Int8>> getTypeEnumValues()
@@ -110,6 +112,7 @@ std::vector<std::pair<String, Int8>> getTypeEnumValues()
         {"Asynchronous Metric", static_cast<Int8>(EntityType::AsynchronousMetric)},
         {"System Table", static_cast<Int8>(EntityType::SystemTable)},
         {"Statement", static_cast<Int8>(EntityType::Statement)},
+        {"Window Function", static_cast<Int8>(EntityType::WindowFunction)},
     };
 }
 
@@ -431,7 +434,7 @@ std::string_view aliasSource(const std::unordered_map<String, String> & source_b
     return it != source_by_name.end() ? std::string_view(it->second) : std::string_view{};
 }
 
-/// For function-like factories (regular and aggregate functions) which carry `FunctionDocumentation` and have aliases.
+/// For function-like factories (regular, aggregate and window functions) which carry `FunctionDocumentation` and have aliases.
 template <typename Factory>
 void addFunctionLike(MutableColumns & res_columns, EntityType type, const Factory & factory)
 {
@@ -987,6 +990,16 @@ String renderSystemTableColumns(const String & table_name, const ColumnsDescript
     {
         if (column.default_desc.expression && column.default_desc.kind == ColumnDefaultKind::Alias)
         {
+            const String alias_comment = boost::algorithm::trim_copy(column.comment);
+            if (!alias_comment.empty())
+            {
+                /// An alias with its own comment documents a value rather than a spelling of another column
+                /// (the per-metric aliases of `system.metric_log`), so it is rendered like an ordinary column.
+                aliases += "- `" + column.name + "` (" + formatSystemTableType(column.type->getName()) + ") — "
+                    + indentMarkdownContinuation(alias_comment) + "\n";
+                continue;
+            }
+
             String description;
             if (table_name == "trace_log" && column.name == "build_id")
                 description = "Alias for the build ID of the running ClickHouse server binary.";
@@ -1231,6 +1244,7 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
 {
     addFunctionLike(res_columns, EntityType::Function, FunctionFactory::instance());
     addFunctionLike(res_columns, EntityType::AggregateFunction, AggregateFunctionFactory::instance());
+    addFunctionLike(res_columns, EntityType::WindowFunction, WindowFunctionFactory::instance());
 
     {
         const auto & factory = TableFunctionFactory::instance();
@@ -1313,8 +1327,10 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
                 makeRepoRelative(value.source));
     }
 
-    /// SQL statements are documented by the parsers which parse them; the registry is filled by `registerStatements`.
-    addDocumented(res_columns, EntityType::Statement, StatementFactory::instance());
+    /// SQL statement documentation is stored in the parsers which parse them
+    for (const auto & creator : ParserRegistry::instance().getCreators())
+        for (const auto & [name, documentation] : creator()->getDocumentation())
+            addRow(res_columns, EntityType::Statement, name, renderDoc(documentation), makeRepoRelative(documentation.source));
 
     /// System-table documentation is stored in each attached table's metadata comment. A structured comment uses
     /// section markers such as `.description` and `.examples`; an ordinary comment remains a concise fallback.

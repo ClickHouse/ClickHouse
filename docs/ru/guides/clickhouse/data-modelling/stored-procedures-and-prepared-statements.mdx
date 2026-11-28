@@ -10,9 +10,7 @@ doc_type: 'guide'
 Если вы переходите с традиционной реляционной базы данных, возможно, вы ищете в ClickHouse хранимые процедуры и подготовленные операторы.
 В этом руководстве объясняется подход ClickHouse к этим концепциям и приводятся рекомендуемые альтернативы.
 
-<div id="alternatives-to-stored-procedures">
-  ## Альтернативы хранимым процедурам в ClickHouse
-</div>
+## Альтернативы хранимым процедурам в ClickHouse {#alternatives-to-stored-procedures}
 
 ClickHouse не поддерживает традиционные хранимые процедуры с логикой управления потоком выполнения (`IF`/`ELSE`, циклы и т. д.).
 Это осознанное решение, обусловленное архитектурой ClickHouse как аналитической базы данных.
@@ -26,15 +24,11 @@ ClickHouse оптимизирован для:
 
 Хранимые процедуры с процедурной логикой идут вразрез с этими принципами оптимизации. Вместо них ClickHouse предлагает альтернативы, которые лучше соответствуют его сильным сторонам.
 
-<div id="user-defined-functions">
-  ### Пользовательские функции (UDFs)
-</div>
+### Пользовательские функции (UDFs) {#user-defined-functions}
 
 Пользовательские функции позволяют инкапсулировать повторно используемую логику без использования конструкций управления потоком. ClickHouse поддерживает два типа:
 
-<div id="lambda-based-udfs">
-  #### UDF на основе лямбда-выражений
-</div>
+#### UDF на основе лямбда-выражений {#lambda-based-udfs}
 
 Создавайте функции с помощью SQL-выражений и синтаксиса лямбда-выражений:
 
@@ -107,9 +101,7 @@ SELECT format_phone('5551234567');
 
 Полный синтаксис см. в [`CREATE FUNCTION`](/ru/reference/statements/create/function).
 
-<div id="executable-udfs">
-  #### Исполняемые UDF
-</div>
+#### Исполняемые UDF {#executable-udfs}
 
 Для более сложной логики используйте исполняемые UDF, которые вызывают внешние программы:
 
@@ -141,9 +133,7 @@ FROM customer_reviews;
 
 Подробности см. в разделе [Исполняемые UDF](/ru/reference/functions/regular-functions/udf).
 
-<div id="parameterized-views">
-  ### Параметризованные представления
-</div>
+### Параметризованные представления {#parameterized-views}
 
 Параметризованные представления работают как функции, возвращающие наборы данных.
 Они идеально подходят для повторно используемых запросов с динамической фильтрацией:
@@ -198,9 +188,7 @@ FROM sales_by_date(start_date='2024-01-01', end_date='2024-01-31')
 WHERE product_id = 12345;
 ```
 
-<div id="common-use-cases">
-  #### Распространённые варианты использования
-</div>
+#### Распространённые варианты использования {#common-use-cases}
 
 * Динамическая фильтрация по диапазону дат
 * Сегментация данных по пользователям
@@ -245,9 +233,7 @@ SELECT * FROM top_products_by_category(
 
 Дополнительные сведения см. в разделе [Параметризованные представления](/ru/reference/statements/create/view#parameterized-view).
 
-<div id="materialized-views">
-  ### Materialized views
-</div>
+### Materialized views {#materialized-views}
 
 Materialized views идеально подходят для предварительного вычисления ресурсоёмких агрегаций, которые в традиционных базах данных обычно выполняются в хранимых процедурах. Если вы привыкли к традиционным базам данных, воспринимайте materialized view как **INSERT trigger**, который автоматически преобразует и агрегирует данные по мере их вставки в исходную таблицу:
 
@@ -300,9 +286,7 @@ WHERE date BETWEEN '2024-01-01' AND '2024-01-31'
 GROUP BY user_id;
 ```
 
-<div id="refreshable-materialized-views">
-  #### Refreshable materialized views
-</div>
+#### Refreshable materialized views {#refreshable-materialized-views}
 
 Для пакетной обработки по расписанию (например, для ночных хранимых процедур):
 
@@ -328,16 +312,12 @@ WHERE month = toStartOfMonth(today());
 
 См. [Каскадные materialized view](/ru/concepts/features/materialized-views/cascading-materialized-views) для более сложных сценариев.
 
-<div id="external-orchestration">
-  ### Внешняя оркестрация
-</div>
+### Внешняя оркестрация {#external-orchestration}
 
 Для сложной бизнес-логики, ETL-процессов или многоэтапных процессов логику всегда можно реализовать вне ClickHouse,
 используя клиентские библиотеки.
 
-<div id="using-application-code">
-  #### Использование прикладного кода
-</div>
+#### Использование прикладного кода {#using-application-code}
 
 Ниже приведено наглядное сравнение того, как хранимая процедура MySQL реализуется в виде прикладного кода при работе с ClickHouse:
 
@@ -569,9 +549,7 @@ WHERE month = toStartOfMonth(today());
 
 <br />
 
-<div id="key-differences">
-  #### Ключевые различия
-</div>
+#### Ключевые различия {#key-differences}
 
 1. **Управление потоком выполнения** - Хранимые процедуры MySQL используют `IF/ELSE` и циклы `WHILE`. В ClickHouse эту логику следует реализовывать в прикладном коде (Python, Java и т. д.)
 2. **Транзакции** - MySQL поддерживает `BEGIN/COMMIT/ROLLBACK` для ACID-транзакций. ClickHouse — аналитическая база данных, оптимизированная для рабочих нагрузок с добавлением данных, а не для транзакционных обновлений
@@ -582,14 +560,12 @@ WHERE month = toStartOfMonth(today());
 <Tip>
   **Когда использовать каждый подход:**
 
-  * **OLTP-нагрузки** (заказы, платежи, учетные записи пользователей) → Используйте MySQL/PostgreSQL с хранимыми процедурами
+  * **OLTP-нагрузки** (заказы, платежи, учетные записи пользователей) → Используйте MySQL или PostgreSQL для транзакций приложения и хранимых процедур. [ClickHouse Managed Postgres](/ru/products/managed-postgres/overview) доступен в ClickHouse Cloud.
   * **Аналитические нагрузки** (отчетность, агрегации, временные ряды) → Используйте ClickHouse с оркестрацией на уровне приложения
-  * **Гибридная архитектура** → Используйте оба варианта! Передавайте транзакционные данные из OLTP в ClickHouse для аналитики
+  * **Гибридная архитектура** → Держите транзакции приложения в Postgres и реплицируйте зафиксированные изменения в ClickHouse для аналитики. См. [как Postgres и ClickHouse работают вместе](/ru/products/managed-postgres/overview#transactions-and-analytics) и [краткое руководство по интеграции](/ru/products/managed-postgres/quickstart#part-2).
 </Tip>
 
-<div id="using-workflow-orchestration-tools">
-  #### Использование инструментов оркестрации рабочих процессов
-</div>
+#### Использование инструментов оркестрации рабочих процессов {#using-workflow-orchestration-tools}
 
 * **Apache Airflow** - Планирование и мониторинг сложных DAG с запросами ClickHouse
 * **dbt** - Преобразование данных с помощью SQL-ориентированных рабочих процессов
@@ -605,21 +581,15 @@ WHERE month = toStartOfMonth(today());
 * Мониторинг и оповещения
 * Более гибкое планирование
 
-<div id="alternatives-to-prepared-statements-in-clickhouse">
-  ## Альтернативы подготовленным операторам в ClickHouse
-</div>
+## Альтернативы подготовленным операторам в ClickHouse {#alternatives-to-prepared-statements-in-clickhouse}
 
 Хотя в ClickHouse нет традиционных «подготовленных операторов» в смысле СУБД, он поддерживает **параметры запроса**, которые выполняют ту же задачу: позволяют создавать безопасные параметризованные запросы и предотвращать SQL-инъекции.
 
-<div id="query-parameters-syntax">
-  ### Синтаксис
-</div>
+### Синтаксис {#query-parameters-syntax}
 
 Существует два способа задать параметры запроса:
 
-<div id="method-1-using-set">
-  #### Способ 1: с помощью `SET`
-</div>
+#### Способ 1: с помощью `SET` {#method-1-using-set}
 
 <Accordion title="Пример таблицы и данных">
   ```sql
@@ -669,9 +639,7 @@ WHERE user_id = {user_id: UInt64}
 GROUP BY event_name;
 ```
 
-<div id="method-2-using-cli-parameters">
-  #### Метод 2: с использованием параметров CLI
-</div>
+#### Метод 2: с использованием параметров CLI {#method-2-using-cli-parameters}
 
 ```bash
 clickhouse-client \
@@ -683,18 +651,14 @@ clickhouse-client \
              AND event_date BETWEEN {start_date: Date} AND {end_date: Date}"
 ```
 
-<div id="parameter-syntax">
-  ### Синтаксис параметров
-</div>
+### Синтаксис параметров {#parameter-syntax}
 
 Для обращения к параметрам используется запись: `{parameter_name: DataType}`
 
 * `parameter_name` - имя параметра (без префикса `param_`)
 * `DataType` - тип данных ClickHouse, к которому нужно привести параметр
 
-<div id="data-type-examples">
-  ### Примеры типов данных
-</div>
+### Примеры типов данных {#data-type-examples}
 
 <Accordion title="Таблицы и тестовые данные для примера">
   ```sql
@@ -809,9 +773,7 @@ clickhouse-client \
 О том, как использовать параметры запроса в [клиентских библиотеках](/ru/integrations/language-clients/index), см. документацию
 для конкретного клиента, который вас интересует.
 
-<div id="limitations-of-query-parameters">
-  ### Ограничения параметров запроса
-</div>
+### Ограничения параметров запроса {#limitations-of-query-parameters}
 
 Параметры запроса — **не универсальные текстовые подстановки**. У них есть определённые ограничения:
 
@@ -851,9 +813,7 @@ ALTER TABLE {table: Identifier} ADD COLUMN new_col String;  -- НЕ ПОДДЕР
 {statements: String};  -- НЕ ПОДДЕРЖИВАЕТСЯ
 ```
 
-<div id="security-best-practices">
-  ### Рекомендации по безопасности
-</div>
+### Рекомендации по безопасности {#security-best-practices}
 
 **Всегда используйте параметры запроса для данных, вводимых пользователем:**
 
@@ -889,9 +849,7 @@ def get_user_orders(user_id: int, start_date: str):
     )
 ```
 
-<div id="mysql-protocol-prepared-statements">
-  ### Подготовленные операторы в протоколе MySQL
-</div>
+### Подготовленные операторы в протоколе MySQL {#mysql-protocol-prepared-statements}
 
 [Интерфейс MySQL](/ru/concepts/features/interfaces/mysql) в ClickHouse поддерживает подготовленные операторы (`COM_STMT_PREPARE`, `COM_STMT_EXECUTE`, `COM_STMT_CLOSE`) лишь в минимальном объёме — в первую очередь чтобы обеспечить совместимость с такими инструментами, как Tableau Online, которые оборачивают запросы в подготовленные операторы.
 
@@ -921,13 +879,9 @@ EXECUTE stmt USING @user_id;  -- Привязка параметров не по
 
 Подробнее см. [документацию по интерфейсу MySQL](/ru/concepts/features/interfaces/mysql) и [статью в блоге о поддержке MySQL](https://clickhouse.com/blog/mysql-support-in-clickhouse-the-journey).
 
-<div id="summary">
-  ## Кратко
-</div>
+## Кратко {#summary}
 
-<div id="summary-stored-procedures">
-  ### Альтернативы хранимым процедурам в ClickHouse
-</div>
+### Альтернативы хранимым процедурам в ClickHouse {#summary-stored-procedures}
 
 | Традиционный шаблон хранимых процедур      | Альтернатива в ClickHouse                                                 |
 | ------------------------------------------ | ------------------------------------------------------------------------- |
@@ -938,9 +892,7 @@ EXECUTE stmt USING @user_id;  -- Привязка параметров не по
 | Сложный многоэтапный ETL                   | Цепочки materialized views или внешняя оркестрация (Python, Airflow, dbt) |
 | Бизнес-логика с управляющими конструкциями | Прикладной код                                                            |
 
-<div id="summary-query-parameters">
-  ### Использование параметров запроса
-</div>
+### Использование параметров запроса {#summary-query-parameters}
 
 Параметры запроса можно использовать для:
 
@@ -949,9 +901,7 @@ EXECUTE stmt USING @user_id;  -- Привязка параметров не по
 * Динамической фильтрации в приложениях
 * Повторного использования шаблонов запросов
 
-<div id="related-documentation">
-  ## Сопутствующая документация
-</div>
+## Сопутствующая документация {#related-documentation}
 
 * [`CREATE FUNCTION`](/ru/reference/statements/create/function) - Пользовательские функции
 * [`CREATE VIEW`](/ru/reference/statements/create/view) - Представления, включая параметризованные и materialized view
