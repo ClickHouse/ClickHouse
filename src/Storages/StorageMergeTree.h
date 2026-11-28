@@ -160,6 +160,8 @@ private:
     /// Parts that currently participate in merge or mutation.
     /// This set have to be used with `currently_processing_in_background_mutex`.
     DataParts currently_merging_mutating_parts;
+    /// Incremented under `currently_processing_in_background_mutex` each time parts stop being merged or mutated.
+    UInt64 finished_background_operations = 0;
 
     /// currently mutating parts with future version
     std::map<DataPartPtr, Int64> currently_mutating_part_future_versions;
