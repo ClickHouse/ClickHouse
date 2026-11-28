@@ -1478,3 +1478,40 @@ TEST(AccessRightsElementsSerialization, PreciseAvoidsBackwardCompatibleWidening)
     ASSERT_EQ(deny_all.toStringPrecise(), "USAGE ON *.*");
     ASSERT_NE(deny_all.toStringPrecise(), read_file.toStringPrecise());
 }
+
+TEST(AccessRights, OperationsOnDeepTrees)
+{
+    /// Each column name is a prefix of the next one, so the tree is as deep as the longest name.
+    Strings all_columns;
+    Strings even_columns;
+    for (size_t i = 1; i <= 32; ++i)
+    {
+        all_columns.push_back(String(i, 'a'));
+        if (i % 2 == 0)
+            even_columns.push_back(all_columns.back());
+    }
+
+    AccessRights lhs;
+    lhs.grant(AccessType::SELECT, "db", "tb", all_columns);
+    AccessRights rhs;
+    rhs.grant(AccessType::SELECT, "db", "tb", even_columns);
+    rhs.grant(AccessType::INSERT, "db", "tb", all_columns);
+
+    AccessRights union_rights = lhs;
+    union_rights.makeUnion(rhs);
+    AccessRights intersection = lhs;
+    intersection.makeIntersection(rhs);
+    AccessRights difference = lhs;
+    difference.makeDifference(rhs);
+
+    for (size_t i = 1; i <= 32; ++i)
+    {
+        String column(i, 'a');
+        ASSERT_TRUE(union_rights.isGranted(AccessType::SELECT, "db", "tb", column));
+        ASSERT_TRUE(union_rights.isGranted(AccessType::INSERT, "db", "tb", column));
+        ASSERT_EQ(intersection.isGranted(AccessType::SELECT, "db", "tb", column), i % 2 == 0);
+        ASSERT_FALSE(intersection.isGranted(AccessType::INSERT, "db", "tb", column));
+        ASSERT_EQ(difference.isGranted(AccessType::SELECT, "db", "tb", column), i % 2 == 1);
+        ASSERT_FALSE(difference.isGranted(AccessType::INSERT, "db", "tb", column));
+    }
+}

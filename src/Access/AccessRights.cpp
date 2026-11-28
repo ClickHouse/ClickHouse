@@ -1225,12 +1225,9 @@ private:
     {
         if (rhs.children)
         {
+            /// Only adds the children of `rhs` to `this`: the loop below merges each pair of children once.
             for (auto & rhs_child : *rhs.children)
-            {
-                auto & result_child = result.getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
-                auto & lhs_child = getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
-                lhs_child.makeUnionRec(result_child, rhs_child);
-            }
+                getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
         }
 
         if (children)
@@ -1251,12 +1248,9 @@ private:
     {
         if (rhs.children)
         {
+            /// Only adds the children of `rhs` to `this`: the loop below merges each pair of children once.
             for (auto & rhs_child : *rhs.children)
-            {
-                auto & result_child = result.getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
-                auto & lhs_child = getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
-                lhs_child.makeIntersectionRec(result_child, rhs_child);
-            }
+                getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
         }
 
         if (children)
@@ -1278,12 +1272,9 @@ private:
     {
         if (rhs.children)
         {
+            /// Only adds the children of `rhs` to `this`: the loop below merges each pair of children once.
             for (auto & rhs_child : *rhs.children)
-            {
-                auto & result_child = result.getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
-                auto & lhs_child = getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
-                lhs_child.makeDifferenceRec(result_child, rhs_child);
-            }
+                getLeaf(rhs_child.node_name, rhs_child.level, !rhs_child.isLeaf());
         }
 
         if (children)
