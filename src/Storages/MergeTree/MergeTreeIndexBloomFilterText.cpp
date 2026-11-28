@@ -162,7 +162,7 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     const Block & index_sample_block,
     const BloomFilterParameters & params_,
     TokenizerPtr token_extactor_,
-    IsShadowingColumn is_column_shadowing_map_subcolumn_,
+    StorageMetadataPtr metadata_snapshot_,
     JSONIndexArgumentTypes json_argument_types_)
     : index_columns(index_sample_block.getNames())
     , json_argument_types(std::move(json_argument_types_))
@@ -170,7 +170,7 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     , params(params_)
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : token_extactor_)
-    , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
+    , metadata_snapshot(std::move(metadata_snapshot_))
 {
     if (!predicate)
     {
@@ -687,9 +687,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
     if (!key_index)
     {
-        if (auto parsed = tryParseMapSubcolumnName(column_name, is_column_shadowing_map_subcolumn))
+        if (auto parsed = tryParseMapSubcolumnName(column_name))
         {
             auto & [map_column_name, serialized_key] = *parsed;
+
+            if (!metadata_snapshot || !isKeySubcolumnOfMap(metadata_snapshot->getColumns(), column_name, map_column_name))
+                return false;
 
             /// Same as arrayElement: skip when comparing with default value because
             /// the subcolumn returns default for keys that don't exist in the map.
@@ -1055,7 +1058,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeConditionBloomFilterText>(
-        predicate, context, index.sample_block, params, tokenizer.get(), getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression));
+        predicate, context, index.sample_block, params, tokenizer.get(), metadata_snapshot, collectJSONIndexArgumentTypes(*index.expression));
 }
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)

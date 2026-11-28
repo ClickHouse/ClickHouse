@@ -577,13 +577,16 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
     const String & column_name,
     const Block & header,
     const ActionsDAG::NodeRawConstPtrs & index_nodes,
-    const IsShadowingColumn & is_shadowing_column)
+    const StorageMetadataPtr & metadata_snapshot)
 {
-    auto parsed = tryParseMapSubcolumnName(column_name, is_shadowing_column);
+    auto parsed = tryParseMapSubcolumnName(column_name);
     if (!parsed)
         return std::nullopt;
 
     auto & [map_column_name, serialized_key] = *parsed;
+
+    if (!metadata_snapshot || !isKeySubcolumnOfMap(metadata_snapshot->getColumns(), column_name, map_column_name))
+        return std::nullopt;
 
     auto keys_position = findMapIndexPosition(header, index_nodes, "mapKeys", map_column_name, nullptr);
     if (!keys_position)
@@ -610,7 +613,7 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
     const RPNBuilderTreeNode & key_node,
     const Block & header,
     const ActionsDAG::NodeRawConstPtrs & index_nodes,
-    const IsShadowingColumn & is_shadowing_column)
+    const StorageMetadataPtr & metadata_snapshot)
 {
     if (key_node.isFunction())
     {
@@ -637,7 +640,7 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
         }
     }
 
-    return tryParseMapSubcolumn(key_node.getColumnName(), header, index_nodes, is_shadowing_column);
+    return tryParseMapSubcolumn(key_node.getColumnName(), header, index_nodes, metadata_snapshot);
 }
 
 }
@@ -647,14 +650,14 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     ContextPtr context_,
     const Block & header_,
     size_t hash_functions_,
-    IsShadowingColumn is_column_shadowing_map_subcolumn_,
+    StorageMetadataPtr metadata_snapshot_,
     JSONIndexArgumentTypes json_argument_types_,
     IsShadowingJSONSubcolumn is_shadowing_json_subcolumn_,
     ActionsDAG::NodeRawConstPtrs index_nodes_)
     : WithContext(context_)
     , header(header_)
     , hash_functions(hash_functions_)
-    , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
+    , metadata_snapshot(std::move(metadata_snapshot_))
     , json_argument_types(std::move(json_argument_types_))
     , is_shadowing_json_subcolumn(std::move(is_shadowing_json_subcolumn_))
     , index_nodes(std::move(index_nodes_))
@@ -1102,7 +1105,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     }
 
     /// Handle both `arrayElement(map, 'key') IN (set)` and `map.key_<serialized_key> IN (set)`.
-    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, is_column_shadowing_map_subcolumn))
+    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, metadata_snapshot))
     {
         /** It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
           * we return the default value for arrayElement.
@@ -1689,7 +1692,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     /// Handle both `arrayElement(map, 'key') = value` and `map.key_<serialized_key> = value`.
     if (function_name == "equals")
     {
-        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, is_column_shadowing_map_subcolumn))
+        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, metadata_snapshot))
         {
             /** It is important to ignore keys like column_map['Key'] = '' because if the key does not exist in the map
               * we return the default value for arrayElement.
@@ -1827,7 +1830,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() c
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(
-        predicate, context, index.sample_block, hash_functions, getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression),
+        predicate, context, index.sample_block, hash_functions, metadata_snapshot, collectJSONIndexArgumentTypes(*index.expression),
         getJSONSubcolumnShadowingCheck(),
         index.expression->getActionsDAG().getOutputs());
 }

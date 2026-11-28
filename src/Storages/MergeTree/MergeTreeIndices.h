@@ -375,12 +375,6 @@ struct IMergeTreeIndex
     [[nodiscard]] Names getColumnsRequiredForIndexCalc() const;
     [[nodiscard]] const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
 
-    /// Tells whether a name shaped like a Map key subcolumn `<map>.key_<k>` belongs to a column or a
-    /// subcolumn of the table instead. It looks the name up in the metadata snapshot on demand rather
-    /// than collecting such names: an index condition is built per query (and per partition), and
-    /// the table may have thousands of columns.
-    [[nodiscard]] IsShadowingColumn getMapSubcolumnShadowingCheck() const;
-
     /// Tells whether a name that looks like a subcolumn of a `JSON` column can belong to another column.
     [[nodiscard]] IsShadowingJSONSubcolumn getJSONSubcolumnShadowingCheck() const;
 
@@ -480,4 +474,10 @@ bool indexFileExistsInChecksums(
     const std::string & path_prefix,
     const std::string & extension,
     const IDataPartStorage * storage = nullptr);
+
+/// Whether @column_name resolves to a key subcolumn of the Map @map_column_name. The `<map>.key_<key>`
+/// spelling cannot tell: names are flat and resolve through the shortest column prefix, so a column, a
+/// Tuple element or a JSON path can claim it, and only substream paths identify the key and its map.
+bool isKeySubcolumnOfMap(
+    const ColumnsDescription & columns, const String & column_name, const String & map_column_name);
 }

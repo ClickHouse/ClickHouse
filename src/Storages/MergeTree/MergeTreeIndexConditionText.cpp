@@ -259,7 +259,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_,
-    IsShadowingColumn is_column_shadowing_map_subcolumn_,
+    StorageMetadataPtr metadata_snapshot_,
     JSONIndexArgumentTypes json_argument_types_,
     TextIndexAutomatonBudgetPtr automaton_budget_)
     : WithContext(context_)
@@ -267,7 +267,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , json_argument_types(std::move(json_argument_types_))
     , indexed_fixed_string_size(tryGetIndexedFixedStringSize(header))
     , normalized_index_column_name(normalized_index_column_name_)
-    , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
+    , metadata_snapshot(std::move(metadata_snapshot_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
     , preprocessor(preprocessor_)
@@ -2221,12 +2221,16 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     else
     {
         /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
-        auto parsed = tryParseMapSubcolumnName(required_column.name, is_column_shadowing_map_subcolumn);
+        auto parsed = tryParseMapSubcolumnName(required_column.name);
         if (!parsed)
             return false;
 
         auto & [map_column_name, serialized_key] = *parsed;
         if (!header.has(fmt::format("mapKeys({})", map_column_name)))
+            return false;
+
+        if (!metadata_snapshot
+            || !isKeySubcolumnOfMap(metadata_snapshot->getColumns(), required_column.name, map_column_name))
             return false;
 
         key_const_value = std::move(serialized_key);
@@ -2271,12 +2275,16 @@ std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForIndexCo
     }
 
     /// `m['key']` after the subcolumn rewrite (`optimize_functions_to_subcolumns`).
-    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), is_column_shadowing_map_subcolumn);
+    auto column_name = node.getColumnName();
+    auto parsed = tryParseMapSubcolumnName(column_name);
     if (!parsed)
         return std::nullopt;
 
     auto & [map_column_name, serialized_key] = *parsed;
     if (!hasIndexForColumn(map_column_name))
+        return std::nullopt;
+
+    if (!metadata_snapshot || !isKeySubcolumnOfMap(metadata_snapshot->getColumns(), column_name, map_column_name))
         return std::nullopt;
 
     /// `serializeText` is the identity for the String keys this index requires, so this is the raw key.
@@ -2438,10 +2446,13 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
     }
 
     /// Handle `map.key_<serialized_key>` subcolumn form.
-    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), is_column_shadowing_map_subcolumn);
+    auto column_name = node.getColumnName();
+    auto parsed = tryParseMapSubcolumnName(column_name);
     if (!parsed)
         return false;
     auto & [map_column_name, serialized_key] = *parsed;
+    if (!metadata_snapshot || !isKeySubcolumnOfMap(metadata_snapshot->getColumns(), column_name, map_column_name))
+        return false;
     return hasIndexForColumn(fmt::format("mapValues({})", map_column_name));
 }
 
