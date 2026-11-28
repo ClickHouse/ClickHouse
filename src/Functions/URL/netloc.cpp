@@ -72,25 +72,13 @@ struct ExtractNetloc
         bool has_identification = false;
         bool has_open_bracket = false;
         Pos hostname_end = end;
-        Pos question_mark_pos = end;
-        Pos slash_pos = end;
         Pos start_of_host = pos;
         for (; pos < end; ++pos)
         {
             switch (*pos) // NOLINT(bugprone-switch-missing-default-case)
             {
                 case '/':
-                    if (has_identification)
-                        return std::string_view(start_of_host, pos - start_of_host);
-                    else
-                        slash_pos = pos;
-                    break;
                 case '?':
-                    if (has_identification)
-                        return std::string_view(start_of_host, pos - start_of_host);
-                    else
-                        question_mark_pos = pos;
-                    break;
                 case '#':
                     return std::string_view(start_of_host, pos - start_of_host);
                 case '@': /// foo:bar@example.ru
@@ -120,7 +108,8 @@ struct ExtractNetloc
                     /// registered).
                     if (!has_identification)
                     {
-                        hostname_end = pos;
+                        if (hostname_end == end)
+                            hostname_end = pos;
                         break;
                     }
                     [[fallthrough]];
@@ -134,14 +123,14 @@ struct ExtractNetloc
                 case '\\':
                 case '^':
                     return pos > start_of_host
-                        ? std::string_view(start_of_host, std::min({pos, question_mark_pos, slash_pos}) - start_of_host)
+                        ? std::string_view(start_of_host, std::min(pos, hostname_end) - start_of_host)
                         : std::string_view();
             }
         }
 
         if (has_identification)
             return std::string_view(start_of_host, pos - start_of_host);
-        return std::string_view(start_of_host, std::min({pos, question_mark_pos, slash_pos, hostname_end}) - start_of_host);
+        return std::string_view(start_of_host, std::min(pos, hostname_end) - start_of_host);
     }
 
     static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
