@@ -310,6 +310,10 @@ public:
                 column_node->formatASTForErrorMessage(),
                 query_node->formatASTForErrorMessage());
 
+        /// A lambda parameter is bound by the lambda, not read from a table expression.
+        if (column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
+            return;
+
         auto * table_column_source = column_source->as<TableNode>();
         auto * table_function_column_source = column_source->as<TableFunctionNode>();
 
@@ -362,8 +366,7 @@ public:
     {
         auto child_node_type = child_node->getNodeType();
         return child_node_type != QueryTreeNodeType::QUERY &&
-               child_node_type != QueryTreeNodeType::UNION &&
-               child_node_type != QueryTreeNodeType::LAMBDA;
+               child_node_type != QueryTreeNodeType::UNION;
     }
 
 private:
