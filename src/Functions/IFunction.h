@@ -143,6 +143,9 @@ protected:
     /// The same for these arguments, for a function that throws on the default value of only some argument types.
     [[nodiscard]] virtual bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return canBeExecutedOnDefaultArguments(); }
 
+    /// True if the result does not depend on the values of the non-constant arguments, e.g. `length` of a `FixedString(N)`.
+    [[nodiscard]] virtual bool isResultIndependentOfArgumentValues(const ColumnsWithTypeAndName & /*arguments*/) const { return false; }
+
     /** True if function might throw an exception during execution.
       */
     [[nodiscard]] virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
@@ -749,6 +752,7 @@ public:
 
     [[nodiscard]] virtual bool canBeExecutedOnDefaultArguments() const { return true; }
     [[nodiscard]] virtual bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return canBeExecutedOnDefaultArguments(); }
+    [[nodiscard]] virtual bool isResultIndependentOfArgumentValues(const ColumnsWithTypeAndName & /*arguments*/) const { return false; }
 
     /// Properties from IFunctionBase (see IFunction.h)
     [[nodiscard]] virtual bool isSuitableForConstantFolding() const { return true; }

@@ -1,4 +1,5 @@
 #pragma once
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
@@ -78,6 +79,11 @@ public:
     }
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+
+    [[nodiscard]] bool isResultIndependentOfArgumentValues(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return Impl::is_fixed_to_constant && isFixedString(removeLowCardinality(arguments[0].type));
+    }
 
     [[nodiscard]] bool hasInformationAboutMonotonicity() const override
     {

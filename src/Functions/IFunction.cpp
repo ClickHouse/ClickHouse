@@ -6,6 +6,8 @@
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/Block.h>
@@ -97,6 +99,32 @@ bool anyArgumentHasNullRows(const ColumnsWithTypeAndName & args, size_t input_ro
     return false;
 }
 
+/// Average size of the String values the rows use, counted once per row; 0 for other types.
+size_t bytesPerRowOfUsedValues(const ColumnLowCardinality & column)
+{
+    const auto * strings = typeid_cast<const ColumnString *>(column.getDictionary().getNestedNotNullableColumn().get());
+    const IColumn & positions = column.getIndexes();
+    if (!strings || positions.empty())
+        return 0;
+
+    size_t bytes = 0;
+    auto add = [&](const auto & data)
+    {
+        for (const auto position : data)
+            bytes += strings->byteSizeAt(position);
+    };
+    if (const auto * positions8 = typeid_cast<const ColumnUInt8 *>(&positions))
+        add(positions8->getData());
+    else if (const auto * positions16 = typeid_cast<const ColumnUInt16 *>(&positions))
+        add(positions16->getData());
+    else if (const auto * positions32 = typeid_cast<const ColumnUInt32 *>(&positions))
+        add(positions32->getData());
+    else
+        for (size_t row = 0; row < positions.size(); ++row)
+            bytes += strings->byteSizeAt(positions.getUInt(row));
+    return bytes / positions.size();
+}
+
 /// If the single-dictionary fast path applies (exactly one full LowCardinality argument and every
 /// other argument constant), replace that column with its nested dictionary, resize the constants
 /// to the dictionary size and return the dictionary indexes for the result. Otherwise return
@@ -104,7 +132,7 @@ bool anyArgumentHasNullRows(const ColumnsWithTypeAndName & args, size_t input_ro
 /// constness that was lost at a pipeline boundary (e.g. a merged aggregation key), and the caller
 /// falls back to full materialization.
 ColumnPtr replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
-    ColumnsWithTypeAndName & args, bool can_be_executed_on_default_arguments)
+    ColumnsWithTypeAndName & args, bool can_be_executed_on_default_arguments, bool result_is_independent_of_values)
 {
     /// Scan first, mutate after: a second LowCardinality column may be discovered after the first
     /// one, and args must stay intact for the caller's fallback.
@@ -131,8 +159,19 @@ ColumnPtr replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
     if (!low_cardinality_type)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Incompatible type for LowCardinality column: {}", column.type->getName());
 
+    /// A block can carry a dictionary much larger than itself; then only the keys its rows use are evaluated, unless the
+    /// result does not depend on the values. That hashes the indexes and copies the used values. The ratio is where the
+    /// cheapest functions break even (measured in #134030): `=` on short values at about 16 times the block's rows,
+    /// `empty` at one more per 16 bytes of value, taken both as the dictionary's average and as the average over the rows.
+    const size_t block_rows = low_cardinality_column->size();
+    const auto & dictionary = low_cardinality_column->getDictionary();
+    auto is_much_larger_than_block = [&](size_t value_bytes) { return dictionary.size() > (16 + value_bytes / 16) * block_rows; };
+    const bool dictionary_is_much_larger_than_block = !result_is_independent_of_values && block_rows != 0
+        && is_much_larger_than_block(dictionary.byteSize() / dictionary.size())
+        && is_much_larger_than_block(bytesPerRowOfUsedValues(*low_cardinality_column));
+
     ColumnPtr indexes;
-    if (can_be_executed_on_default_arguments)
+    if (can_be_executed_on_default_arguments && !dictionary_is_much_larger_than_block)
     {
         /// Normal case, when function can be executed on values' default.
         indexes = low_cardinality_column->getIndexesPtr();
@@ -140,9 +179,9 @@ ColumnPtr replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
     }
     else
     {
-        /// Special case when default value can't be used. Example: 1 % LowCardinality(Int).
+        /// Large dictionary, or default value can't be used. Example: 1 % LowCardinality(Int).
         /// LowCardinality always contains default, so 1 % 0 will throw exception in normal case.
-        auto dict_encoded = low_cardinality_column->getMinimalDictionaryEncodedColumn(0, low_cardinality_column->size());
+        auto dict_encoded = low_cardinality_column->getMinimalDictionaryEncodedColumn(0, block_rows);
         indexes = dict_encoded.indexes;
         column.column = dict_encoded.dictionary;
     }
@@ -605,7 +644,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             ColumnPtr indexes;
             if (isDeterministicInScopeOfQuery())
                 indexes = replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
-                    columns_without_low_cardinality, can_be_executed_on_default_arguments);
+                    columns_without_low_cardinality, can_be_executed_on_default_arguments, isResultIndependentOfArgumentValues(arguments));
 
             /// Fast path: the row count comes from the (resized) nested dictionary column. Fallback:
             /// the constants keep their original row counts, so it is the original input_rows_count,
