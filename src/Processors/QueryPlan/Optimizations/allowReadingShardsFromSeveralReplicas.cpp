@@ -1,6 +1,12 @@
+#include <Interpreters/IJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/IntersectOrExceptStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
@@ -26,10 +32,22 @@ enum class StreamOrderUse : uint8_t
     Required,
 };
 
-StreamOrderUse getStreamOrderUse(const IQueryPlanStep & step)
+StreamOrderUse getStreamOrderUse(const IQueryPlanStep & step, size_t child)
 {
-    if (typeid_cast<const ExpressionStep *>(&step) || typeid_cast<const FilterStep *>(&step) || typeid_cast<const UnionStep *>(&step))
+    if (typeid_cast<const ExpressionStep *>(&step) || typeid_cast<const FilterStep *>(&step) || typeid_cast<const UnionStep *>(&step)
+        || typeid_cast<const ArrayJoinStep *>(&step) || typeid_cast<const FilledJoinStep *>(&step))
         return StreamOrderUse::PassedOn;
+
+    if (const auto * build_runtime_filter = typeid_cast<const BuildRuntimeFilterStep *>(&step))
+        return build_runtime_filter->hasFilterExchanges() ? StreamOrderUse::Required : StreamOrderUse::PassedOn;
+
+    if (const auto * join = typeid_cast<const JoinStep *>(&step))
+    {
+        if (join->swap_streams || join->getJoin()->pipelineType() == JoinPipelineType::YShaped || !join->primary_key_sharding.empty())
+            return StreamOrderUse::Required;
+        /// The right input fills the join, the left one is joined block by block.
+        return child == 1 ? StreamOrderUse::Ignored : StreamOrderUse::PassedOn;
+    }
 
     if (const auto * merging_aggregated = typeid_cast<const MergingAggregatedStep *>(&step))
     {
@@ -45,6 +63,19 @@ StreamOrderUse getStreamOrderUse(const IQueryPlanStep & step)
 
     if (const auto * sorting = typeid_cast<const SortingStep *>(&step))
         return sorting->getType() == SortingStep::Type::Full ? StreamOrderUse::Ignored : StreamOrderUse::Required;
+
+    /// Merges every branch into one stream and keeps a set of rows.
+    if (typeid_cast<const IntersectOrExceptStep *>(&step))
+        return StreamOrderUse::Ignored;
+
+    if (const auto * distinct = typeid_cast<const DistinctStep *>(&step))
+    {
+        if (!distinct->getSortDescription().empty())
+            return StreamOrderUse::Required;
+        if (distinct->isPreliminary())
+            return StreamOrderUse::PassedOn;
+        return distinct->preservesInputOrder() ? StreamOrderUse::Required : StreamOrderUse::Ignored;
+    }
 
     return StreamOrderUse::Required;
 }
@@ -66,7 +97,8 @@ void allowReadingShardsFromSeveralReplicas(QueryPlan::Node & root)
         bool allow = false;
         for (size_t i = stack.size() - 1; i > 0; --i)
         {
-            const auto use = getStreamOrderUse(*stack[i - 1].node->step);
+            const auto & parent = stack[i - 1];
+            const auto use = getStreamOrderUse(*parent.node->step, parent.next_child - 1);
             if (use == StreamOrderUse::PassedOn)
                 continue;
             allow = use == StreamOrderUse::Ignored;

@@ -3,6 +3,7 @@
 
 DROP TABLE IF EXISTS t_offset_pr_key;
 DROP TABLE IF EXISTS t_offset_pr_sample;
+DROP TABLE IF EXISTS t_offset_pr_join_storage;
 
 CREATE TABLE t_offset_pr_key (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_offset_pr_key SELECT number FROM numbers(30000);
@@ -100,5 +101,81 @@ GROUP BY initial.log_comment
 ORDER BY initial.log_comment
 SETTINGS enable_parallel_replicas = 0;
 
+-- INTERSECT, EXCEPT and a hash DISTINCT keep sets of rows, so the replicas still share the shard.
+SELECT count() FROM ((SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample)) INTERSECT DISTINCT (SELECT number FROM numbers(10000)))
+SETTINGS parallel_replicas_mode = 'sampling_key', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_intersect';
+
+SELECT count() FROM ((SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample)) EXCEPT ALL (SELECT number FROM numbers(10000)))
+SETTINGS parallel_replicas_mode = 'sampling_key', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_except';
+
+SELECT count() FROM ((SELECT k FROM cluster('test_cluster_two_shard_three_replicas_localhost', currentDatabase(), t_offset_pr_key)) INTERSECT DISTINCT (SELECT number FROM numbers(10000)))
+SETTINGS parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'k', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_intersect_custom_key';
+
+SELECT count() FROM (SELECT DISTINCT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample))
+SETTINGS parallel_replicas_mode = 'sampling_key', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_distinct';
+
+-- The preliminary DISTINCT of an outer query is looked through.
+SELECT count() FROM (SELECT DISTINCT k FROM (SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample)))
+SETTINGS parallel_replicas_mode = 'sampling_key', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_distinct_subquery';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT initial.log_comment, count()
+FROM system.query_log AS secondary
+INNER JOIN
+(
+    SELECT query_id, log_comment FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish'
+        AND log_comment IN ('offset_pr_intersect', 'offset_pr_except', 'offset_pr_intersect_custom_key', 'offset_pr_distinct', 'offset_pr_distinct_subquery')
+) AS initial ON secondary.initial_query_id = initial.query_id
+WHERE secondary.event_date >= yesterday() AND NOT secondary.is_initial_query AND secondary.type = 'QueryFinish'
+GROUP BY initial.log_comment
+ORDER BY initial.log_comment
+SETTINGS enable_parallel_replicas = 0;
+
+-- A hash join fills its right input and joins its left input block by block, so its consumer decides for the left input.
+CREATE TABLE t_offset_pr_join_storage (k UInt64) ENGINE = Join(ANY, LEFT, k);
+INSERT INTO t_offset_pr_join_storage SELECT number FROM numbers(10000);
+
+SELECT count() FROM (SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample)) AS l INNER JOIN (SELECT number AS k FROM numbers(10000)) AS r USING (k)
+SETTINGS parallel_replicas_mode = 'sampling_key', query_plan_join_swap_table = 'false', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_join_left';
+
+-- The right input is read from several replicas even under the plan root, also through a runtime filter.
+SELECT count() FROM (EXPLAIN SELECT l.k FROM (SELECT number AS k FROM numbers(10000)) AS l INNER JOIN (SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample)) AS r USING (k)
+    SETTINGS parallel_replicas_mode = 'sampling_key', query_plan_join_swap_table = 'false', enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0)
+WHERE explain ILIKE '%BuildRuntimeFilter%';
+
+SELECT l.k FROM (SELECT number AS k FROM numbers(10000)) AS l INNER JOIN (SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample)) AS r USING (k)
+SETTINGS parallel_replicas_mode = 'sampling_key', query_plan_join_swap_table = 'false', enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0,
+    use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_join_right'
+FORMAT Null;
+
+SELECT count() FROM (SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample)) AS l ANY LEFT JOIN t_offset_pr_join_storage AS r USING (k)
+SETTINGS parallel_replicas_mode = 'sampling_key', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_join_storage';
+
+SELECT sum(x) FROM (SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample)) ARRAY JOIN [k, k + 1] AS x
+SETTINGS parallel_replicas_mode = 'sampling_key', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_array_join';
+
+-- The left input of a join under the plan root is read from one replica.
+SELECT k FROM (SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample)) AS l INNER JOIN (SELECT number AS k FROM numbers(10000)) AS r USING (k)
+SETTINGS parallel_replicas_mode = 'sampling_key', query_plan_join_swap_table = 'false', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_join_root'
+FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT initial.log_comment, count()
+FROM system.query_log AS secondary
+INNER JOIN
+(
+    SELECT query_id, log_comment FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish'
+        AND log_comment IN ('offset_pr_join_left', 'offset_pr_join_right', 'offset_pr_join_storage', 'offset_pr_array_join', 'offset_pr_join_root')
+) AS initial ON secondary.initial_query_id = initial.query_id
+WHERE secondary.event_date >= yesterday() AND NOT secondary.is_initial_query AND secondary.type = 'QueryFinish'
+GROUP BY initial.log_comment
+ORDER BY initial.log_comment
+SETTINGS enable_parallel_replicas = 0;
+
+DROP TABLE t_offset_pr_join_storage;
 DROP TABLE t_offset_pr_sample;
 DROP TABLE t_offset_pr_key;
