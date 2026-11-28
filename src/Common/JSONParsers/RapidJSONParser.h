@@ -191,7 +191,9 @@ struct RapidJSONParser /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-m
     bool parse(std::string_view json, Element & result)
     {
         value_pool.Clear();
-        rapidjson::MemoryStream ms(json.data(), json.size());
+        /// `alignas` realigns this frame, so the reader that `ParseStream` creates has the same offset within a cache line
+        /// for every caller: its `stackTop_` and `stackEnd_`, loaded together per character, do not straddle a line.
+        alignas(64) rapidjson::MemoryStream ms(json.data(), json.size());
         rapidjson::EncodedInputStream<rapidjson::UTF8<>, rapidjson::MemoryStream> is(ms);
         document.ParseStream(is);
         if (document.HasParseError() || (ms.Tell() != json.size()))

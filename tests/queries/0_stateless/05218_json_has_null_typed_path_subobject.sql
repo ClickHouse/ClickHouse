@@ -41,11 +41,11 @@ CREATE TABLE t_json_both_typed_null (json JSON(a Nullable(Int64), a.b Nullable(I
 INSERT INTO t_json_both_typed_null VALUES ('{"a": 1}'), ('{"a.b": 42}'), ('{"a": null, "a.b": null}'), ('{}');
 
 SELECT 'both typed JSONHas with setting';
-SELECT JSONHas(json, 'a'), JSONHas(json, 'a.b') FROM t_json_both_typed_null ORDER BY rowNumberInAllBlocks()
+SELECT JSONHas(json, 'a'), JSONHas(json, 'a.b'), JSONHas(json, 'a', 'b') FROM t_json_both_typed_null ORDER BY rowNumberInAllBlocks()
 SETTINGS type_json_skip_null_typed_paths = 1;
 
 SELECT 'both typed JSONExtractRaw with setting';
-SELECT JSONExtractRaw(json, 'a'), JSONExtractRaw(json, 'a.b') FROM t_json_both_typed_null ORDER BY rowNumberInAllBlocks()
+SELECT JSONExtractRaw(json, 'a'), JSONExtractRaw(json, 'a.b'), JSONExtractRaw(json, 'a', 'b') FROM t_json_both_typed_null ORDER BY rowNumberInAllBlocks()
 SETTINGS type_json_skip_null_typed_paths = 1;
 
 SELECT 'both typed has with setting';
