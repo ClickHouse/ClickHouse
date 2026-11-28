@@ -1,0 +1,48 @@
+exact_on	50	251225
+exact_off	50	251225
+range_on	50	251225
+disjoint_all_pruned	0
+empty_build	0
+refiner_on	50	251225
+refiner_off	50	251225
+cold_high_threshold	1	100
+cold_zero_threshold	1	100
+comp_pk_non_leading	50	251225
+pk_before_stats	0
+nullable_num_on	25	625
+nullable_num_off	25	625
+nullable_str_on	25	625
+nullable_str_off	25	625
+cast_u32_u64	50	1225
+float_nan_zero_parity	1
+deprecated_minmax	50	251225
+final_on	1000
+final_off	1000
+pending_mutation	100
+patch_part	100
+killed_modify_parity	1000	1000
+pending_drop_add_col	10000
+finished_drop_col	50
+row_policy	50	251225
+rf_stats_05876_cast_u32	1	1	1
+rf_stats_05876_cold_high_threshold	1	1	0
+rf_stats_05876_cold_zero_threshold	1	1	1
+rf_stats_05876_comp_pk	1	1	1
+rf_stats_05876_deprecated_minmax	1	1	1
+rf_stats_05876_disjoint_all_pruned	1	1	1
+rf_stats_05876_exact_off	0	0	0
+rf_stats_05876_exact_on	1	1	1
+rf_stats_05876_final	0	0	0
+rf_stats_05876_finished_drop_col	1	1	1
+rf_stats_05876_nullable_num	1	1	1
+rf_stats_05876_nullable_str	1	1	1
+rf_stats_05876_patch_part	0	0	0
+rf_stats_05876_pending_drop_add_col	0	0	0
+rf_stats_05876_pending_mut	0	0	0
+rf_stats_05876_pk_before_stats	1	1	1
+rf_stats_05876_range_on	1	1	1
+rf_stats_05876_refiner_off	1	1	1
+rf_stats_05876_refiner_on	1	1	1
+rf_stats_05876_row_policy	0	0	0
+read_rows_checks	1	1	1
+pk_before_stats_no_load	1

@@ -295,6 +295,23 @@ public:
         ReadFromMergeTree::IndexStats & index_stats,
         bool check_index_usage = true);
 
+    /// Whether part pruning by column statistics is allowed for this query and storage snapshot.
+    static bool canUseStatisticsForPartPruning(
+        const MergeTreeData & data,
+        const SelectQueryInfo & query_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ContextPtr & context);
+
+    /// Check if a single part can match `filter_node` according to its column statistics.
+    /// Loads estimates from memory when present, or from disk if `num_marks` reaches `min_marks_per_part_to_load_statistics`.
+    static bool canPartMatchFilterByStatistics(
+        const MergeTreeData::DataPartPtr & part,
+        size_t num_marks,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ActionsDAG::Node & filter_node,
+        const ContextPtr & context,
+        LoggerPtr log);
+
     /// Filter parts using column statistics.
     /// Returns filtered parts and updates index_stats with statistics pruning info.
     /// Parts whose statistics are in memory are always pruned. Loading statistics costs a few reads per part,

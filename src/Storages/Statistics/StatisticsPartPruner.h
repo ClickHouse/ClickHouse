@@ -7,6 +7,8 @@
 namespace DB
 {
 
+struct ColumnDescription;
+
 /// Part pruner based on column statistics (min/max and NULL count from `Basic` statistics,
 /// plus the deprecated `MinMax` statistics).
 /// Similar to PartitionPruner but uses per-column statistics instead of partition keys.
@@ -16,6 +18,9 @@ class StatisticsPartPruner
 {
 public:
     StatisticsPartPruner(const StorageMetadataPtr & metadata, const ActionsDAG::Node & filter_node, ContextPtr context);
+
+    /// Whether the column has statistics that can be used for part pruning.
+    static bool hasStatisticsForPartPruning(const ColumnDescription * column);
 
     /// Check if the part can potentially match the filter condition based on statistics.
     /// Returns BoolMask with the same semantics as KeyCondition::checkInHyperrectangle:

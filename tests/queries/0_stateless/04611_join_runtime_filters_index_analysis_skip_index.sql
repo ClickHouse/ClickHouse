@@ -62,18 +62,16 @@ INNER JOIN bf_dim_cap AS d ON f.k = d.k
 WHERE d.tag = 'hot'
 GROUP BY d.tag
 FORMAT Null
-SETTINGS log_comment = '04490_pe_bf_cap', join_runtime_filter_exact_values_limit = 100;
+SETTINGS log_comment = '04490_pe_bf_cap', join_runtime_filter_exact_values_limit = 100, use_statistics_for_part_pruning = 0;
 
--- A skip index disabled by name via `ignore_data_skipping_indices` must stay disabled on the
--- runtime join-pruning path too: `k` is not the primary key here, so with `idx_k` ignored there
--- is nothing left to prune with.
+-- `ignore_data_skipping_indices` stays in force here: `k` is not the primary key, and statistics pruning is off.
 SELECT d.tag, sum(f.v)
 FROM bf_fact AS f
 INNER JOIN bf_dim AS d ON f.k = d.k
 WHERE d.tag = 'hot'
 GROUP BY d.tag
 FORMAT Null
-SETTINGS log_comment = '04490_pe_bf_ignore', ignore_data_skipping_indices = 'idx_k';
+SETTINGS log_comment = '04490_pe_bf_ignore', ignore_data_skipping_indices = 'idx_k', use_statistics_for_part_pruning = 0;
 
 -- join_algorithm='hash' + external-join disabled forces the single-level in-memory HashJoin
 -- that converts to a FixedHashMap and publishes it as the runtime filter
