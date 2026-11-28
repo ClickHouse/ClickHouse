@@ -4,12 +4,15 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Common/checkStackSize.h>
+
+#include <Poco/String.h>
 
 namespace DB
 {
@@ -63,11 +66,26 @@ bool normalize(IAST & ast, bool exact, const ContextPtr & context)
         changed = true;
     }
 
+    /// The `EXPRESSION` of a dictionary attribute is not evaluated by this server: it is pasted as it is into the
+    /// query that the source of the dictionary runs, so it is written in the language of the source. Only a
+    /// `CLICKHOUSE` source has `divideExact`; for any other source (`MYSQL`, `POSTGRESQL`, `ODBC` and so on) the
+    /// expression is left as the user wrote it, and `/` means what it means there.
+    const IAST * attributes_of_external_dictionary = nullptr;
+    if (const auto * create = ast.as<ASTCreateQuery>(); create && create->dictionary_attributes_list)
+    {
+        const auto * source = create->dictionary ? create->dictionary->source : nullptr;
+        if (!source || Poco::toLower(source->name) != "clickhouse")
+            attributes_of_external_dictionary = create->dictionary_attributes_list;
+    }
+
     const auto * storage = ast.as<ASTStorage>();
     const auto * select = ast.as<ASTSelectQuery>();
     const IAST * select_list = select ? select->select().get() : nullptr;
     for (const auto & child : ast.children)
     {
+        if (child.get() == attributes_of_external_dictionary)
+            continue;
+
         if (storage && child.get() == storage->engine)
         {
             for (const auto & argument : child->children)
