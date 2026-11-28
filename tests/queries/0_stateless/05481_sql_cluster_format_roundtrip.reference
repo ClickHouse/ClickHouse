@@ -1,0 +1,7 @@
+CREATE CLUSTER c (user = {}, SHARD (host = \'127.0.0.1\', port = 9000))
+CREATE CLUSTER c (`shard` = 1, SHARD (host = \'127.0.0.1\', port = 9000))
+CREATE CLUSTER c (SHARD (`replica` = 1, host = \'127.0.0.1\', port = 9000))
+CREATE CLUSTER c (`shard.x` = 1, SHARD (host = \'127.0.0.1\', port = 9000))
+CREATE CLUSTER c (SHARD (`replica.x` = 1, host = \'127.0.0.1\', port = 9000))
+CREATE CLUSTER c (`shard.x` = 1, SHARD (host = \'127.0.0.1\', port = 9000))
+CreateSQLClusterQuery

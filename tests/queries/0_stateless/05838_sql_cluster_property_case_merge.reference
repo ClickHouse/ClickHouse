@@ -1,0 +1,6 @@
+1	1	127.0.0.1	replica_user
+1	2	127.0.0.2	shard_user
+2	1	127.0.0.3	inline_user
+1
+1	1	127.0.0.4	replica_user_2
+1

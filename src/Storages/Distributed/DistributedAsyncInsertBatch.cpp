@@ -8,6 +8,7 @@
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/formatReadable.h>
@@ -40,6 +41,11 @@ namespace Setting
 namespace DistributedSetting
 {
     extern const DistributedSettingsBool fsync_after_insert;
+}
+
+namespace FailPoints
+{
+    extern const char distributed_async_insert_batch_pause_after_first_file[];
 }
 
 namespace ErrorCodes
@@ -271,6 +277,14 @@ bool DistributedAsyncInsertBatch::recoverBatch()
 
 void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_changes)
 {
+    /// `IConnectionPool::Entry` does not keep the pool alive: releasing the connection calls back into
+    /// the pool through a raw pointer. Hold the pool this batch borrowed for the whole function, and
+    /// declare it before `connection` and `remote` so it is destroyed after them on every exit,
+    /// including exceptions. A concurrent `ALTER CLUSTER` may swap the queue's pool via `updatePool`;
+    /// that swap must not free the pool while this send still uses it. The next `sendBatch` calls
+    /// `getPool` again and observes the new secret.
+    const auto pool = parent.getPool();
+
     IConnectionPool::Entry connection;
     std::unique_ptr<RemoteInserter> remote;
     bool compression_expected = false;
@@ -299,8 +313,8 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
                 insert_settings.applyChanges(settings_changes);
 
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-                auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-                auto result = parent.pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
+                auto results = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
+                auto result = pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
                 connection = std::move(result.entry);
                 compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
@@ -317,6 +331,11 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
                 remote->initialize();
             }
             writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
+
+            /// The connection stays borrowed for every remaining file and for `onFinish`.
+            /// A test rotates the cluster secret here, after the old scope would have released the pool.
+            if (tracing_contexts.size() == 1)
+                FailPointInjection::pauseFailPoint(FailPoints::distributed_async_insert_batch_pause_after_first_file);
         }
 
         if (remote)
@@ -372,8 +391,9 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
                     parent.storage.getContext()->getOpenTelemetrySpanLog());
 
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-                auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-                auto result = parent.pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
+                const auto pool = parent.getPool();
+                auto results = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
+                auto result = pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
                 auto connection = std::move(result.entry);
                 bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 

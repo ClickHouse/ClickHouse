@@ -234,10 +234,11 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     ddl_worker.updateHostIDs(entry.hosts);
     String node_path = ddl_worker.enqueueQuery(entry, params.retries_info);
 
-    return getDDLOnClusterStatus(node_path, ddl_worker.getReplicasDir(), entry, context);
+    return getDDLOnClusterStatus(node_path, ddl_worker.getReplicasDir(), entry, context, query_ptr);
 }
 
-BlockIO getDDLOnClusterStatus(const String & node_path, const String & replicas_path, const DDLLogEntry & entry, ContextPtr context)
+BlockIO getDDLOnClusterStatus(
+    const String & node_path, const String & replicas_path, const DDLLogEntry & entry, ContextPtr context, const ASTPtr & query)
 {
     BlockIO io;
     if (context->getSettingsRef()[Setting::distributed_ddl_task_timeout] == 0)
@@ -246,7 +247,7 @@ BlockIO getDDLOnClusterStatus(const String & node_path, const String & replicas_
     for (const HostID & host : entry.hosts)
         hosts_to_wait.push_back(host.toString());
 
-    auto source = std::make_shared<DDLOnClusterQueryStatusSource>(node_path, replicas_path, context, hosts_to_wait);
+    auto source = std::make_shared<DDLOnClusterQueryStatusSource>(node_path, replicas_path, context, hosts_to_wait, query);
     io.pipeline = QueryPipeline(std::move(source));
 
     if (context->getSettingsRef()[Setting::distributed_ddl_output_mode] == DistributedDDLOutputMode::NONE

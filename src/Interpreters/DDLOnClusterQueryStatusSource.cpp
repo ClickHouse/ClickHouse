@@ -7,7 +7,9 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DDLOnClusterQueryStatusSource.h>
 #include <Interpreters/Context.h>
+#include <Parsers/IAST.h>
 #include <Common/DNSResolver.h>
+#include <Common/HiddenSecret.h>
 #include <Common/isLocalAddress.h>
 
 namespace DB
@@ -23,7 +25,11 @@ extern const int TIMEOUT_EXCEEDED;
 }
 
 DDLOnClusterQueryStatusSource::DDLOnClusterQueryStatusSource(
-    const String & zk_node_path, const String & zk_replicas_path, ContextPtr context_, const Strings & hosts_to_wait)
+    const String & zk_node_path,
+    const String & zk_replicas_path,
+    ContextPtr context_,
+    const Strings & hosts_to_wait,
+    const ASTPtr & query)
     : DistributedQueryStatusSource(
           "default",
           zk_node_path,
@@ -33,7 +39,20 @@ DDLOnClusterQueryStatusSource::DDLOnClusterQueryStatusSource(
           hosts_to_wait,
           "DDLOnClusterQueryStatusSource")
     , output_mode(context_->getSettingsRef()[Setting::distributed_ddl_output_mode])
+    , hide_worker_error_text(query && query->hasSecretParts())
 {
+}
+
+String DDLOnClusterQueryStatusSource::publishedWorkerError(const ExecutionStatus & status) const
+{
+    /// A worker that cannot parse the entry (an older server during a rolling upgrade) quotes
+    /// `entry.query` in `status.message`. Constructing `Exception` from that text registers it in
+    /// `system.errors`, and `logQueryException` copies it into `system.query_log`. Neither table checks
+    /// `displaySecretsInShowAndSelect`. Hide the text before either of those, and in the result column.
+    /// The status code is unchanged. A finished host with code 0 keeps its empty message.
+    if (hide_worker_error_text && status.code != 0)
+        return String(HIDDEN_SECRET);
+    return status.message;
 }
 
 ExecutionStatus DDLOnClusterQueryStatusSource::checkStatus(const String & host_id)
@@ -122,8 +141,10 @@ void DDLOnClusterQueryStatusSource::handleNonZeroStatusCode(const ExecutionStatu
     if (!first_exception && context->getSettingsRef()[Setting::distributed_ddl_output_mode] != DistributedDDLOutputMode::NEVER_THROW)
     {
         auto [host, port] = parseHostAndPort(host_id);
-        first_exception
-            = std::make_unique<Exception>(Exception(status.code, "There was an error on [{}:{}]: {}", host, port, status.message));
+        /// Substitute before `Exception` is constructed: its constructor publishes `system.errors`.
+        const String message = publishedWorkerError(status);
+        first_exception = std::make_unique<Exception>(
+            Exception(status.code, "There was an error on [{}:{}]: {}", host, port, message));
     }
 }
 void DDLOnClusterQueryStatusSource::fillHostStatus(const String & host_id, const ExecutionStatus & status, MutableColumns & columns)
@@ -133,7 +154,7 @@ void DDLOnClusterQueryStatusSource::fillHostStatus(const String & host_id, const
     columns[num++]->insert(host);
     columns[num++]->insert(port);
     columns[num++]->insert(status.code);
-    columns[num++]->insert(status.message);
+    columns[num++]->insert(publishedWorkerError(status));
     columns[num++]->insert(waiting_hosts.size() - num_hosts_finished);
     columns[num++]->insert(current_active_hosts.size());
 }

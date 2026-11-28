@@ -1,0 +1,16 @@
+created
+t05569_foo	SQL
+first_reload
+collision
+after_first
+0
+second_reload
+collision
+after_second
+0
+drop_dns_cache
+ok
+after_drop
+t05569_aaa	CONFIG
+t05569_foo	CONFIG
+t05569_zzz	CONFIG

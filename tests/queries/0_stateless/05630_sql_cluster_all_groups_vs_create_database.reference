@@ -1,0 +1,4 @@
+create cluster: 0
+create database: CLUSTER_ALREADY_EXISTS
+0
+SQL

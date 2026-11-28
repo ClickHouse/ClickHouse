@@ -1,0 +1,5 @@
+<clickhouse>
+    <cluster_metadata>
+        <path>/clickhouse/cluster_metadata</path>
+    </cluster_metadata>
+</clickhouse>

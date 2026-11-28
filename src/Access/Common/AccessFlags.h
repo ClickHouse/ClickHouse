@@ -144,7 +144,7 @@ public:
     /// The same as allColumnFlags().
     static AccessFlags allFlagsGrantableOnColumnLevel();
 
-    static constexpr size_t SIZE = 256;
+    static constexpr size_t SIZE = 512;
 private:
     using Flags = std::bitset<SIZE>;
     Flags flags;

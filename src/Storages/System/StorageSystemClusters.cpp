@@ -1,6 +1,9 @@
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
+#include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -21,6 +24,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool format_display_secrets_in_show_and_select;
+}
 
 ColumnsDescription StorageSystemClusters::getColumnsDescription()
 {
@@ -43,6 +51,8 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
         {"estimated_recovery_time", std::make_shared<DataTypeUInt32>(), "Seconds remaining until the replica error count is zeroed and it is considered to be back to normal."},
         {"database_shard_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database shard (for clusters that belong to a `Replicated` database)."},
         {"database_replica_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database replica (for clusters that belong to a `Replicated` database)."},
+        {"source", std::make_shared<DataTypeString>(), "The cluster source: `CONFIG`, `SQL`, `DISCOVERY` (cluster discovery), `REPLICATED_DATABASE` (`Replicated` database), or empty for ephemeral clusters (e.g. `remote`)."},
+        {"create_query", std::make_shared<DataTypeString>(), "The `CREATE CLUSTER` query for SQL-managed clusters. Empty for clusters defined in the configuration file."},
         {"replica_group", std::make_shared<DataTypeString>(), "The replica group of the node (for clusters that belong to a `Replicated` database), published by the database replica from the `replica_group_name` server configuration."},
         {"is_shared_catalog_cluster", std::make_shared<DataTypeUInt8>(), "Bool indicating if the cluster belongs to shared catalog."},
         {"is_active", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "The status of the Replicated database replica (for clusters that belong to a Replicated database): 1 means 'replica is online', 0 means 'replica is offline', NULL means 'unknown'."},
@@ -94,8 +104,11 @@ void writeCluster(
     const std::vector<UInt8> & columns_mask,
     const String & cluster_name,
     const Cluster & cluster,
-    const ReplicasInfo & replicas_info)
+    const ReplicasInfo & replicas_info,
+    bool access_secrets)
 {
+    const String source = Cluster::formatSourceIdForSystemTable(cluster.getSourceId());
+    const String create_query = cluster.getCreateStatement(access_secrets);
     const auto & shards_info = cluster.getShardsInfo();
     const auto & addresses_with_failover = cluster.getShardsAddresses();
     const auto & replicas = replicas_info.replicas;
@@ -150,6 +163,10 @@ void writeCluster(
                 res_columns[res_index++]->insert(address.database_shard_name);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(address.database_replica_name);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(source);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(create_query);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(address.replica_group);
 
@@ -236,6 +253,11 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
     auto component_guard = Coordination::setCurrentComponent("StorageSystemClusters::fillData");
     const bool with_replicas_info = needsReplicasInfo(columns_mask, context);
 
+    const auto & access = context->getAccess();
+    bool access_secrets = access->isGranted(AccessType::displaySecretsInShowAndSelect);
+    access_secrets &= context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select];
+    access_secrets &= context->displaySecretsInShowAndSelect();
+
     /// The filter is applied to the names before the clusters are built: for a `Replicated` database whose
     /// cluster is not cached yet, `tryGetCluster` has to read the topology from Keeper.
     const auto configured_clusters = context->getClusters();
@@ -260,8 +282,19 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
     std::vector<ClusterEntry> entries;
     for (const auto & [name, cluster] : configured_clusters)
     {
-        if (selected_names.contains(name))
-            entries.push_back({.name = name, .cluster = cluster});
+        if (!selected_names.contains(name))
+            continue;
+
+        /// A SQL-managed cluster shadowed by a cluster of another source with the same name is not reachable, skip it.
+        /// This includes a `Replicated` database which cannot build its cluster at the moment, as it still owns the name.
+        if (cluster->getSourceId() == Cluster::SourceId::SQL)
+        {
+            auto resolved = context->tryGetCluster(name);
+            if (!resolved || resolved->getSourceId() != Cluster::SourceId::SQL)
+                continue;
+        }
+
+        entries.push_back({.name = name, .cluster = cluster});
     }
     for (const auto & [database_name, replicated] : replicated_databases)
     {
@@ -291,7 +324,8 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
     {
         const bool has_replicas_info = with_replicas_info && entry.replicated;
         writeCluster(res_columns, columns_mask, entry.name, *entry.cluster,
-            has_replicas_info ? replicas_info[next_replicas_info++] : no_replicas_info);
+            has_replicas_info ? replicas_info[next_replicas_info++] : no_replicas_info,
+            access_secrets);
     }
 
 #if CLICKHOUSE_CLOUD
@@ -311,7 +345,8 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
                     columns_mask,
                     name,
                     *catalog_cluster,
-                    with_replicas_info ? SharedDatabaseCatalog::instance().tryGetReplicasInfo(catalog_cluster) : ReplicasInfo{});
+                    with_replicas_info ? SharedDatabaseCatalog::instance().tryGetReplicasInfo(catalog_cluster) : ReplicasInfo{},
+                    access_secrets);
         }
     }
 #endif

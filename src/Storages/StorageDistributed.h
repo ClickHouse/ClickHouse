@@ -190,8 +190,9 @@ private:
     /// Used for the INSERT into Distributed in case of distributed_foreground_insert==1, from DistributedSink.
     std::shared_ptr<DistributedAsyncInsertDirectoryQueue> getDirectoryQueue(const DiskPtr & disk, const std::string & name);
 
-    /// Parse the address corresponding to the directory name of the directory queue
-    Cluster::Addresses parseAddresses(const std::string & name) const;
+    /// Parse the address corresponding to the directory name of the directory queue.
+    /// `cluster` is the snapshot to read; this does not call `getCluster` again.
+    Cluster::Addresses parseAddresses(const std::string & name, const Cluster & cluster) const;
 
     /// Return list of metrics for all created monitors
     /// (note that monitors are created lazily, i.e. until at least one INSERT executed)

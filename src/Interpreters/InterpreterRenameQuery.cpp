@@ -307,6 +307,8 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
         /// Views from the same database are checked too: their stored query keeps the old database name.
         StorageMaterializedView::checkDatabaseHasNoIncrementalRefreshSources(*db, old_name, getContext(), /*is_drop_database*/ false);
 
+        if (typeid_cast<const DatabaseReplicated *>(db.get()))
+            getContext()->checkReplicatedDatabaseNameIsNotSQLCluster(new_name);
         db->renameDatabase(getContext(), new_name);
     }
 

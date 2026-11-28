@@ -916,6 +916,7 @@ bool ContextAccess::checkAccessImplHelper(QueryPrivilegesInfo & privileges_info,
         const AccessFlags resource_ddl = AccessType::CREATE_RESOURCE | AccessType::DROP_RESOURCE;
         const AccessFlags named_collection_ddl = AccessType::CREATE_NAMED_COLLECTION | AccessType::DROP_NAMED_COLLECTION | AccessType::ALTER_NAMED_COLLECTION;
         const AccessFlags handler_ddl = AccessType::CREATE_HANDLER | AccessType::ALTER_HANDLER | AccessType::DROP_HANDLER;
+        const AccessFlags cluster_ddl = AccessType::CREATE_CLUSTER | AccessType::ALTER_CLUSTER | AccessType::DROP_CLUSTER;
         const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
         const AccessFlags table_and_dictionary_and_function_ddl = table_ddl | dictionary_ddl | function_ddl;
         const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
@@ -923,10 +924,10 @@ bool ContextAccess::checkAccessImplHelper(QueryPrivilegesInfo & privileges_info,
         /// A temporary table with an engine other than `Memory`, without the child `CREATE_TEMPORARY_TABLE` that `readonly = 2` allows.
         const AccessFlags arbitrary_temporary_table = AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE - AccessType::CREATE_TEMPORARY_TABLE;
 
-        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | workload_ddl | resource_ddl | named_collection_ddl | handler_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY | AccessType::KILL_TRANSACTION | arbitrary_temporary_table;
+        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | workload_ddl | resource_ddl | named_collection_ddl | handler_ddl | cluster_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY | AccessType::KILL_TRANSACTION | arbitrary_temporary_table;
         const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE | AccessType::CREATE_TEMPORARY_VIEW;
 
-        const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl | workload_ddl | resource_ddl | named_collection_ddl | handler_ddl;
+        const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl | workload_ddl | resource_ddl | named_collection_ddl | handler_ddl | cluster_ddl;
         const AccessFlags introspection_flags = AccessType::INTROSPECTION;
 
         const AccessFlags role_management_flags
