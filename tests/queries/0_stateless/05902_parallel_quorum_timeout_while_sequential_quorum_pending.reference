@@ -1,0 +1,13 @@
+status
+all_1_1_0
+all_1_1_0
+0
+status
+parallel
+noquorum
+t_r1	parallel
+t_r1	sequential
+t_r2	parallel
+t_r2	sequential
+t_r3	parallel
+t_r3	sequential

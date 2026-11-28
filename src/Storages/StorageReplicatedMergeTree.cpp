@@ -2900,17 +2900,16 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                     String quorum_path;
                     ReplicatedMergeTreeQuorumEntry quorum_entry;
 
-                    if (zookeeper->tryGet(quorum_unparallel_path, quorum_str, &quorum_stat))
-                        quorum_path = quorum_unparallel_path;
-                    else
-                    {
-                        quorum_str = zookeeper->get(quorum_parallel_path, &quorum_stat);
+                    /// /quorum/status may belong to another (sequential) insert while this part has a parallel quorum.
+                    if (zookeeper->tryGet(quorum_parallel_path, quorum_str, &quorum_stat))
                         quorum_path = quorum_parallel_path;
-                    }
+                    else if (zookeeper->tryGet(quorum_unparallel_path, quorum_str, &quorum_stat))
+                        quorum_path = quorum_unparallel_path;
 
-                    quorum_entry.fromString(quorum_str);
+                    if (!quorum_path.empty())
+                        quorum_entry.fromString(quorum_str);
 
-                    if (quorum_entry.part_name == entry.new_part_name)
+                    if (!quorum_path.empty() && quorum_entry.part_name == entry.new_part_name)
                     {
                         ops.emplace_back(zkutil::makeRemoveRequest(quorum_path, quorum_stat.version));
                         auto part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
@@ -2958,10 +2957,9 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                     }
                     else
                     {
-                        LOG_WARNING(log, "No active replica has part {}, "
-                                         "but that part needs quorum and /quorum/status contains entry about another part {}. "
+                        LOG_WARNING(log, "No active replica has part {}, but that part needs quorum and there is no quorum node for it. "
                                          "It means that part was successfully written to {} replicas, but then all of them goes offline. "
-                                         "Or it is a bug.", entry.new_part_name, quorum_entry.part_name, entry.quorum);
+                                         "Or it is a bug.", entry.new_part_name, entry.quorum);
                     }
                 }
             }
