@@ -66,37 +66,25 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
     1. 在 ClickHouse Cloud 控制台中，进入你的 ClickHouse Cloud 服务。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ClickPipes 服务](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickPipes 服务](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+      </Frame>
     </div>
 
     2. 在左侧菜单中选择 `Data Sources` 按钮，然后点击 &quot;Set up a ClickPipe&quot;
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![选择导入](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
-
-    </Frame>
-
+      <Frame>
+        ![选择导入](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+      </Frame>
     </div>
 
     3. 选择 `Postgres CDC` 卡片
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![选择 Postgres](/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp)
-
-       </Frame>
-
+         <Frame>
+           ![选择 Postgres](/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp)
+         </Frame>
        </div>
 
 ### 添加源 Postgres 数据库连接 {#adding-your-source-postgres-database-connection}
@@ -109,13 +97,9 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
     </Info>
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![填写连接信息](/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg)
-
-    </Frame>
-
+      <Frame>
+        ![填写连接信息](/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg)
+      </Frame>
     </div>
 
 #### (可选) 设置 AWS Private Link {#optional-setting-up-aws-private-link}
@@ -136,13 +120,9 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
     2. 填写 SSH 连接信息。
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![SSH 隧道](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
-
-       </Frame>
-
+         <Frame>
+           ![SSH 隧道](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+         </Frame>
        </div>
 
     3. 若要使用基于密钥的身份验证，请点击 &quot;Revoke and generate key pair&quot; 生成新的密钥对，并将生成的公钥复制到 SSH 服务器的 `~/.ssh/authorized_keys` 中。
@@ -160,13 +140,9 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
     5. 请务必从下拉列表中选择你在前置条件步骤中创建的 replication slot。
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![选择 replication slot](/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg)
-
-       </Frame>
-
+         <Frame>
+           ![选择 replication slot](/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg)
+         </Frame>
        </div>
 
 #### 高级设置 {#advanced-settings}
@@ -184,13 +160,9 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
     6. 在这里你可以为 ClickPipe 选择目标数据库。你可以选择已有的数据库，也可以新建一个数据库。
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![选择目标数据库](/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg)
-
-       </Frame>
-
+         <Frame>
+           ![选择目标数据库](/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg)
+         </Frame>
        </div>
 
     7. 你可以选择要从源 Postgres 数据库复制的表。在选择表时，你还可以为目标端 ClickHouse 数据库中的表重命名，并排除特定的列。
@@ -206,13 +178,9 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
     9. 在权限下拉列表中选择 &quot;Full access&quot; 角色，然后点击 &quot;Complete Setup&quot;。
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![查看权限](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
-
-       </Frame>
-
+         <Frame>
+           ![查看权限](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+         </Frame>
        </div>
 
 ## 后续步骤 {#whats-next}

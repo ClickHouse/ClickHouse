@@ -74,7 +74,7 @@ DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
 
 ## データカタログの使用 {#iceberg-writes-catalogs}
 
-Iceberg テーブルは、[REST Catalog](https://iceberg.apache.org/rest-catalog-spec/)、[AWS Glue Data Catalog](https://docs.aws.amazon.com/prescriptive-guidance/latest/serverless-etl-aws-glue/aws-glue-data-catalog.html)、[Unity Catalog](https://www.unitycatalog.io/) など、さまざまなデータカタログと組み合わせて使用することもできます。
+Iceberg テーブルは、[REST カタログ](https://iceberg.apache.org/rest-catalog-spec/)、[AWS Glue Data Catalog](https://docs.aws.amazon.com/prescriptive-guidance/latest/serverless-etl-aws-glue/aws-glue-data-catalog.html)、[Unity Catalog](https://www.unitycatalog.io/) など、さまざまなデータカタログと組み合わせて使用することもできます。
 
 <Warning>
   カタログを使用する場合、多くのユーザーは `DataLakeCatalog` データベースエンジンを使うことになるでしょう。これは、ClickHouse をカタログに接続し、テーブルを検出するためのものです。`IcebergS3` テーブルエンジンを使って個々のテーブルを手動で作成する代わりに、このデータベースエンジンを使用できます。
@@ -82,7 +82,7 @@ Iceberg テーブルは、[REST Catalog](https://iceberg.apache.org/rest-catalog
 
 これらを使用するには、`IcebergS3` エンジンでテーブルを作成し、必要な設定を指定します。
 
-たとえば、MinIO ストレージで REST Catalog を使用する場合は次のとおりです。
+たとえば、MinIO ストレージで REST カタログ を使用する場合は次のとおりです。
 
 ```sql
 CREATE TABLE `database_name.table_name`
@@ -96,7 +96,7 @@ ENGINE = IcebergS3(
 または、S3 と AWS Glue Data Catalog を併用する場合:
 
 ```sql
-CREATE TABLE `my_database.my_table`  
+CREATE TABLE `my_database.my_table`
 ENGINE = IcebergS3(
   's3://my-data-bucket/warehouse/my_database/my_table/',
   'aws_access_key',
@@ -131,12 +131,12 @@ ClickHouse は [削除ベクター](https://iceberg.apache.org/spec/#deletion-ve
 ### 基本的な使い方 {#basic-usage}
 
 ```sql
-SELECT * FROM example_table ORDER BY 1 
+SELECT * FROM example_table ORDER BY 1
 SETTINGS iceberg_timestamp_ms = 1714636800000
 ```
 
 ```sql
-SELECT * FROM example_table ORDER BY 1 
+SELECT * FROM example_table ORDER BY 1
 SETTINGS iceberg_snapshot_id = 3547395809148285433
 ```
 
@@ -163,37 +163,30 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
 ```sql
 -- Create a table with two columns
  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
- order_number bigint, 
+ order_number bigint,
  product_code string
- ) 
- USING iceberg 
- OPTIONS ('format-version'='2')
+)
+USING iceberg
+OPTIONS ('format-version'='2')
 
-- - Insert data into the table
- INSERT INTO spark_catalog.db.time_travel_example VALUES 
+-- Insert data into the table
+INSERT INTO spark_catalog.db.time_travel_example VALUES
    (1, 'Mars')
 
  ts1 = now() // A piece of pseudo code
 
-- - Alter table to add a new column
- ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
+-- Alter table to add a new column
+ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
 
  ts2 = now()
 
-- - Insert data into the table
- INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+-- Insert data into the table
+INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
 
-  ts3 = now()
+ ts3 = now()
 
-- - Query the table at each timestamp
- SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
-
-+------------+------------+
-|order_number|product_code|
-+------------+------------+
-|           1|        Mars|
-+------------+------------+
- SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+-- Query the table at each timestamp
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
 
 +------------+------------+
 |order_number|product_code|
@@ -201,7 +194,15 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
 |           1|        Mars|
 +------------+------------+
 
- SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+
+SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
 
 +------------+------------+-----+
 |order_number|product_code|price|
@@ -221,25 +222,25 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
 現時点でタイムトラベルクエリを実行すると、現在のテーブルとは異なるスキーマが表示されることがあります：
 
 ```sql
--- テーブルを作成する
+-- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
-  order_number bigint, 
+  order_number bigint,
   product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2')
+)
+USING iceberg
+OPTIONS ('format-version'='2')
 
--- テーブルに初期データを挿入する
-  INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
+-- Insert initial data into the table
+INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
 
--- テーブルを変更して新しいカラムを追加する
-  ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
+-- Alter table to add a new column
+ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
 
   ts = now();
 
--- タイムスタンプ構文を使用して現時点のテーブルをクエリする
+-- Query the table at a current moment but using timestamp syntax
 
-  SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
+SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
 
     +------------+------------+
     |order_number|product_code|
@@ -247,9 +248,11 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
     |           2|       Venus|
     +------------+------------+
 
--- 現時点のテーブルをクエリする
-  SELECT * FROM spark_catalog.db.time_travel_example_2;
-    +------------+------------+-----+
+-- Query the table at a current moment
+
+SELECT * FROM spark_catalog.db.time_travel_example_2;
+
++------------+------------+-----+
     |order_number|product_code|price|
     +------------+------------+-----+
     |           2|       Venus| NULL|
@@ -265,16 +268,16 @@ SETTINGS iceberg_snapshot_id = 3547395809148285433
 ```sql
 -- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
-  order_number bigint, 
+  order_number bigint,
   product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2');
+)
+USING iceberg
+OPTIONS ('format-version'='2');x
 
   ts = now();
 
 -- Query the table at a specific timestamp
-  SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
+SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finishes with error: Cannot find a snapshot older than ts.
 ```
 
 ClickHouse では、この挙動は Spark と同様です。Spark の Select クエリを ClickHouse の Select クエリに読み替えれば、同じように機能します。
@@ -317,7 +320,7 @@ ClickHouseで`iceberg`テーブル関数を使用する場合、システムはI
 **注**: ここで言及している設定は、`iceberg_list_only_v_prefixed_metadata_files` を除きすべてテーブル関数の設定 (グローバル設定やクエリレベルの設定ではありません) であり、以下に示すとおりに指定する必要があります。
 
 ```sql
-SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
+SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table',
     SETTINGS iceberg_metadata_table_uuid = 'a90eed4c-f74b-4e5b-b630-096fb9d09021');
 ```
 
@@ -420,7 +423,7 @@ y: 993
 
 この操作を使用するには、`allow_insert_into_iceberg` を有効にしてください。
 
-この操作は、パーティション仕様が 1 つだけで、その仕様が変更されていない Iceberg形式 `format-version` 2 のテーブルでのみサポートされます。対象のパーティションを含む各マニフェストには、ほかのパーティションのファイルが含まれていてはなりません。対象のパーティションと別のパーティションでマニフェストが共有されている場合、テーブルは変更されず、操作は失敗します。また、対象のマニフェストにequality delete ファイルが含まれている場合も、操作は拒否されます。
+この操作は、パーティション仕様が 1 つだけで、その仕様が変更されていない Iceberg形式 `format-version` 2 のテーブルでのみサポートされます。対象のパーティションを含む各マニフェストには、ほかのパーティションのファイルが含まれていてはなりません。対象のパーティションと別のパーティションでマニフェストが共有されている場合、テーブルは変更されず、操作は失敗します。`iceberg_insert_single_manifest_for_all_partitions` が有効な場合、`INSERT` の各挿入ストリームは、受け取ったすべてのパーティションのファイルを 1 つのマニフェストにまとめて書き込みます (`max_insert_threads = 1` の場合、マニフェストは `INSERT` ごとに 1 つだけになります)。そのため、ほかのパーティションと同じ `INSERT` で書き込まれたパーティションは削除できません。また、対象のマニフェストにequality delete ファイルが含まれている場合も、操作は拒否されます。
 
 パーティションの値には、`MergeTree` と同じ規則が適用されます。単一カラムのパーティションにはスカラーリテラルを、複数カラムのパーティションには値のタプルを指定します:
 
@@ -666,9 +669,9 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 
 <Note>
   * サポートされるのは Iceberg format version 2 のテーブルのみです (v1 の スナップショット では `manifest-list` が保証されず、クリーンアップ対象のファイルを安全に特定するためにこれが必要です)
-  * 指定した timestamp より古い場合でも、現在の スナップショット は常に保持されます
+  * 指定した タイムスタンプ より古い場合でも、現在の スナップショット は常に保持されます
   * `allow_insert_into_iceberg` 設定を有効にする必要があります
-  * `allow_experimental_expire_snapshots` 設定を有効にする必要があります
+  * `allow_expire_snapshots` 設定を有効にする必要があります
   * ClickHouse がメタデータを更新する際は、カタログ自体の認可 (REST カタログ認証、AWS Glue IAM など) が別途適用されます
 </Note>
 

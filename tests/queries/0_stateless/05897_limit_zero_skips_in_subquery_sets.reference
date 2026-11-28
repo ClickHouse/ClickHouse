@@ -1,0 +1,9 @@
+in_projection
+where_order_by
+limit_offset
+limit_in_subquery
+nested_set
+result_filter
+with_extremes
+on_shards
+10	1

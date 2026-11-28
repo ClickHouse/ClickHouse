@@ -5,7 +5,6 @@
 #include <string_view>
 #include <span>
 #include <cstring>
-#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
@@ -155,6 +154,17 @@ inline bool isControlASCII(char c)
     return static_cast<unsigned char>(c) <= 31;
 }
 
+inline bool isControlOrDeleteASCII(char c)
+{
+    return isControlASCII(c) || c == 0x7F;
+}
+
+/// A character allowed in an HTTP token, such as a header name (RFC 9110, section 5.6.2).
+inline bool isHTTPTokenChar(char c)
+{
+    return isAlphaNumericASCII(c) || std::string_view("!#$%&'*+-.^_`|~").contains(c);
+}
+
 inline bool isPrintableASCII(char c)
 {
     uint8_t uc = c;
@@ -213,7 +223,7 @@ inline char toUpperIfAlphaASCII(char c)
     return c & (~0x20);
 }
 
-inline char alternateCaseIfAlphaASCII(char c)
+constexpr char alternateCaseIfAlphaASCII(char c)
 {
     return c ^ 0x20;
 }
@@ -281,12 +291,12 @@ inline const char * skipWhitespacesUTF8(const char * pos, const char * end)
     return pos;
 }
 
-inline bool equalsCaseInsensitive(char a, char b)
+constexpr bool equalsCaseInsensitive(const char a, const char b)
 {
     return a == b || (isAlphaASCII(a) && alternateCaseIfAlphaASCII(a) == b);
 }
 
-inline bool equalsCaseInsensitive(std::string_view a, std::string_view b)
+constexpr bool equalsCaseInsensitive(std::string_view a, std::string_view b)
 {
     return a.size() == b.size()
         && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) { return equalsCaseInsensitive(x, y); });

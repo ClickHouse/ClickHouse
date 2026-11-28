@@ -138,15 +138,15 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 أُضيف في: v26.7.0
 
-يقسّم النص إلى n-grams باستخدام أسلوب tokenization نفسه المستخدم في قاموس Naive Bayes (تخطيط [`NAIVE_BAYES`](/ar/reference/statements/create/dictionary/layouts/naive-bayes)): وضع `byte` أو `codepoint` أو `token`، مع حشو اختياري للحدود. استخدمه لإنشاء بيانات التدريب المجمّعة مسبقًا `(ngram, class_id, count)` التي يستهلكها هذا النوع من القواميس، بحيث تتطابق n-grams الخاصة بالتدريب تمامًا مع ما ينتجه [`naiveBayesClassifier`](/ar/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier) وقت تنفيذ الاستعلام.
+يقسّم النص إلى n-grams باستخدام أسلوب التقسيم إلى رموز نفسه المستخدم في قاموس Naive Bayes (تخطيط [`NAIVE_BAYES`](/ar/reference/statements/create/dictionary/layouts/naive-bayes)): وضع `byte` أو `codepoint` أو `token`، مع حشو اختياري للحدود. استخدمه لإنشاء بيانات التدريب المجمّعة مسبقًا `(ngram, class_id, count)` التي يستهلكها هذا النوع من القواميس، بحيث تتطابق n-grams الخاصة بالتدريب تمامًا مع ما ينتجه [`naiveBayesClassifier`](/ar/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifier) وقت تنفيذ الاستعلام.
 
-**البنية**
+**الصيغة**
 
 ```sql
 naiveBayesNgrams(text, n, mode[, start_token, end_token])
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `text` — النص المراد تقسيمه إلى مقاطع n-gram. [`String`](/ar/reference/data-types/string)
 * `n` — حجم n-gram، من 1 إلى 1024. [`const UInt`](/ar/reference/data-types/int-uint)
@@ -170,7 +170,7 @@ SELECT naiveBayesNgrams('the cat sat', 2, 'token');
 ['the cat','cat sat']
 ```
 
-**ثنائيات التوكنات مع الحشو عند الحدود**
+**ثنائيات الرموز مع الحشو عند الحدود**
 
 ```sql title=Query
 SELECT naiveBayesNgrams('cat', 2, 'token', '<s>', '</s>');
@@ -424,10 +424,10 @@ SELECT splitByNonAlpha('user@domain.com');
 * إذا كانت السلسلة الأصلية فارغة بينما التعبير النمطي غير فارغ.
 
 <Note>
-  يحدّد الإعداد [`splitby_max_substrings_includes_remaining_string`](/ar/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (الافتراضي: `0`) ما إذا كانت السلسلة المتبقية ستُدرج في العنصر الأخير من المصفوفة الناتجة عندما تكون قيمة `max_substrings > 0`.
+  يحدّد الإعداد [`splitby_max_substrings_includes_remaining_string`](/ar/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (الافتراضي: `0`) ما إذا كانت السلسلة النصية المتبقية ستُدرج في العنصر الأخير من مصفوفة النتائج عندما تكون قيمة `max_substrings > 0`.
 </Note>
 
-**البنية**
+**الصيغة**
 
 ```sql
 splitByRegexp(regexp, s[, max_substrings])

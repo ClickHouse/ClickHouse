@@ -2,14 +2,14 @@
 slug: /clickstack/observability/faq
 title: 'ClickHouse Observability FAQ'
 sidebarTitle: 'FAQ'
-description: 'Frequently asked questions about fully managed and self-managed ClickHouse Observability, data collection, alerting, dashboards, and metrics discovery.'
+description: 'Frequently asked questions about fully managed and self-managed ClickHouse Observability, data collection, billing, alerting, dashboards, and metrics discovery.'
 doc_type: 'guide'
-keywords: ['ClickHouse Observability', 'FAQ', 'alerting', 'dashboards', 'drill-downs', 'metrics discovery']
+keywords: ['ClickHouse Observability', 'FAQ', 'billing', 'pricing', 'alerting', 'dashboards', 'drill-downs', 'metrics discovery']
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-This page explains the fully managed and self-managed modes of ClickHouse Observability and answers common questions about data collection, alerting, dashboards, and metrics discovery.
+This page explains the fully managed and self-managed modes of ClickHouse Observability and answers common questions about data collection, billing, alerting, dashboards, and metrics discovery.
 
 ## Deployment and data collection {#data-collection}
 
@@ -39,6 +39,12 @@ You may still need a collector in your own environment to read log files or gath
 **Self-managed:** Use the OTLP endpoint of the collector you operate and any authentication token configured on its receiver. For the ClickStack collector, if you enable `OTLP_AUTH_TOKEN`, send that token in the `authorization` header. These are separate from the ClickHouse Cloud database endpoint and credentials that the collector uses to write data. See [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#sending-data-to-collector-managed-self-configured) for examples.
 
 Follow the endpoint format required by the tool you are using. The [sample data and demos](/clickstack/observability/example-datasets) include configuration examples for each tool.
+</Accordion>
+
+<Accordion title="How is ClickHouse Observability billed?">
+**Fully managed:** You pay for the telemetry you send, not for compute and storage. Logs and traces are billed on their uncompressed volume, and metrics on the number of data points rather than per time series. During the public beta, data is retained for 30 days. For current rates, see [ClickHouse pricing](https://clickhouse.com/pricing).
+
+**Self-managed:** You pay for the compute and storage of your ClickHouse Cloud service. Pricing is unchanged from Managed ClickStack, the former name of this option. See [ClickHouse Cloud pricing](/products/cloud/reference/billing/billing-overview).
 </Accordion>
 
 ## Alerting {#alerting}
