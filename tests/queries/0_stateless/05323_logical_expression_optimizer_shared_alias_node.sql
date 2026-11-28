@@ -29,4 +29,7 @@ SELECT (y AND s = '1') AS a, (n <= 3 AND n != 3 AND length(s) <= n) AS x, x AS y
 SELECT (x AND s = '1') AS a, (n <= 3 AND n != 3 AND length(s) <= n) AS x FROM t_shared_alias GROUP BY x, a ORDER BY x, a;
 WITH (n <= 3 AND n != 3 AND length(s) <= n) AS x SELECT (x AND s = '1') AS a, x FROM t_shared_alias GROUP BY x, a ORDER BY x, a;
 
+-- GROUP BY and ORDER BY still share one rewritten node (the same id).
+SELECT trim(explain) FROM (EXPLAIN QUERY TREE SELECT (n = 1 OR n = 2 OR n = 3) AS r FROM t_shared_alias GROUP BY r ORDER BY r) WHERE explain ILIKE '%function_name: in,%';
+
 DROP TABLE t_shared_alias;
