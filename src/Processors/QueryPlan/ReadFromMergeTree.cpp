@@ -7396,47 +7396,105 @@ ReadFromMergeTree::PartsForPrewhere ReadFromMergeTree::getPartsForPrewhere(const
     return res;
 }
 
-IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
+ReadFromMergeTree::ColumnSizesForPrewhere ReadFromMergeTree::getColumnSizesForPrewhere(
     const Names & columns, const RangesInDataParts & parts) const
 {
     const bool calculate_subcolumn_sizes
         = getContext()->getSettingsRef()[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
 
-    /// Filtering and index analysis only ever remove whole parts from the snapshot, so an equal count means
-    /// the same part set. Nothing was pruned: keep the table-wide estimate the storage already caches instead
-    /// of measuring every part and column again, exactly as before pruned parts were taken into account.
-    const size_t parts_before_pruning = analyzed_result_ptr ? analyzed_result_ptr->total_parts : prepared_parts->size();
-    if (parts.size() == parts_before_pruning)
-        return data.getColumnSizes(columns, calculate_subcolumn_sizes);
-
-    IStorage::ColumnSizeByName result;
-    if (calculate_subcolumn_sizes)
+    /// The sizes and the rows are measured on the same parts, so that they describe the same data. The sizes that the
+    /// storage caches are of its current active parts, which a merge or an insert can change after the query took
+    /// its snapshot (or between two separate reads of the cache and of the active parts), and dividing them by the
+    /// rows of other parts changes the column term but not the function term.
+    auto measure = [&](const MergeTreeData::DataPartsVector & data_parts)
     {
-        MergeTreeData::DataPartsVector data_parts;
-        data_parts.reserve(parts.size());
-        for (const auto & part : parts)
-            data_parts.push_back(part.data_part);
-        MergeTreeData::addColumnSizesOfParts(
-            data_parts, columns, /* with_columns = */ true, getContext()->getSettingsRef()[Setting::max_threads], result);
-    }
-    else
-    {
-        for (const auto & part : parts)
+        ColumnSizesForPrewhere result;
+        if (calculate_subcolumn_sizes)
         {
-            for (const auto & column_name : columns)
+            MergeTreeData::addColumnSizesOfParts(
+                data_parts, columns, /* with_columns = */ true, getContext()->getSettingsRef()[Setting::max_threads], result.sizes);
+        }
+        else
+        {
+            for (const auto & part : data_parts)
             {
-                if (const auto column = part.data_part->tryGetColumn(column_name))
-                    result[column_name].add(part.data_part->getColumnSize(column->getNameInStorage()));
+                for (const auto & column_name : columns)
+                {
+                    if (const auto column = part->tryGetColumn(column_name))
+                        result.sizes[column_name].add(part->getColumnSize(column->getNameInStorage()));
+                }
             }
         }
+
+        /// `Compact` parts publish no per-column sizes.
+        for (const auto & part : data_parts)
+            if (!isCompactPart(part))
+                result.rows += part->rows_count;
+
+        /// A column that no part stores (e.g. the virtual column of a text index) gets a zero size, which counts as unknown,
+        /// so that the sizes are empty only when there are no parts, as those the storage caches.
+        if (!std::empty(data_parts))
+            for (const auto & column_name : columns)
+                result.sizes.try_emplace(column_name);
+        return result;
+    };
+
+    /// Filtering and index analysis only ever remove whole parts from the snapshot, so an equal count means the same
+    /// part set. Nothing was pruned: take the sizes the storage caches for its active parts together with their rows,
+    /// read under one lock, instead of measuring every part and column again during planning.
+    const size_t parts_before_pruning = analyzed_result_ptr ? analyzed_result_ptr->total_parts : prepared_parts->size();
+    if (!parts.empty() && parts.size() == parts_before_pruning)
+    {
+        auto [cached_sizes, cached_rows] = data.getColumnSizesAndRowsOfSizedParts();
+        const auto & storage_columns = getStorageMetadata()->getColumns();
+
+        ColumnSizesForPrewhere cached;
+        cached.rows = cached_rows;
+        bool needs_subcolumn_sizes = false;
+        for (const auto & column_name : columns)
+        {
+            if (auto it = cached_sizes.find(column_name); it != cached_sizes.end())
+            {
+                cached.sizes[column_name] = it->second;
+                continue;
+            }
+
+            const auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+            if (column && column->isSubcolumn())
+            {
+                /// Exact subcolumn sizes are known only to the parts.
+                if (calculate_subcolumn_sizes)
+                {
+                    needs_subcolumn_sizes = true;
+                    break;
+                }
+                if (auto it = cached_sizes.find(column->getNameInStorage()); it != cached_sizes.end())
+                {
+                    cached.sizes[column_name] = it->second;
+                    continue;
+                }
+            }
+
+            /// A column that no part stores (e.g. the virtual column of a text index) counts as unknown, as in `measure`.
+            cached.sizes.try_emplace(column_name);
+        }
+
+        if (!needs_subcolumn_sizes)
+            return cached;
     }
+
+    MergeTreeData::DataPartsVector data_parts;
+    data_parts.reserve(parts.size());
+    for (const auto & part : parts)
+        data_parts.push_back(part.data_part);
+    auto result = measure(data_parts);
 
     /// `Compact` parts do not publish per-column sizes, so a selection made only of them measures nothing,
     /// while the wide parts that were pruned away would still describe the relative column sizes.
-    /// Keep the table-wide estimate in that case, exactly as when no parts are pruned.
-    const bool nothing_measured = std::ranges::all_of(result, [](const auto & entry) { return entry.second.data_compressed == 0; });
+    /// Measure all active parts in that case, taken in one snapshot.
+    const bool nothing_measured = std::ranges::all_of(result.sizes, [](const auto & entry) { return entry.second.data_compressed == 0; });
     if (!parts.empty() && nothing_measured)
-        return data.getColumnSizes(columns, calculate_subcolumn_sizes);
+        return measure(data.getDataPartsVectorForInternalUsage());
 
     return result;
 }

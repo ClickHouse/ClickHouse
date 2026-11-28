@@ -224,16 +224,17 @@ first_prewhere_function() {
     | sed -n 's/.*Prewhere filter column: and(\([a-zA-Z0-9]*\)(.*/\1/p'
 }
 
+# The guard reads all of t.safe, not only its sizes, so the condition on t.val is the cheaper one.
 order_sibling_safe=$(first_prewhere_function "
   EXPLAIN actions = 1, pretty = 0 SELECT count() FROM t_steps_sibling WHERE t.safe != '' AND startsWith(t.val, '5')
   SETTINGS optimize_move_to_prewhere = 1, allow_reorder_prewhere_conditions = 1, move_all_conditions_to_prewhere = 1,
-           use_statistics = 0
+           use_statistics = 0, optimize_functions_to_subcolumns = 0, optimize_empty_string_comparisons = 0
 ")
 
 order_sibling_throwing=$(first_prewhere_function "
   EXPLAIN actions = 1, pretty = 0 SELECT count() FROM t_steps_sibling WHERE t.safe != '' AND toUInt64(t.val) > 50
   SETTINGS optimize_move_to_prewhere = 1, allow_reorder_prewhere_conditions = 1, move_all_conditions_to_prewhere = 1,
-           use_statistics = 0
+           use_statistics = 0, optimize_functions_to_subcolumns = 0, optimize_empty_string_comparisons = 0
 ")
 
 ${CLICKHOUSE_CLIENT} -q "
