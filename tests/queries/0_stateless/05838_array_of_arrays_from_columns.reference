@@ -1,0 +1,13 @@
+[[],[],[0]]
+[[],[0],[1]]
+[[],[0,1],[2]]
+[[],[0,1,2],[3]]
+UInt8	0
+UInt64	0
+Decimal128	0
+FixedString	0
+String	0
+Nullable	0
+Array	0
+Tuple	0
+Const	0
