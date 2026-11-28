@@ -791,8 +791,10 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
     catch (...)
     {
         /// Rollback partial writes.
-        file_checker.repair();
+        /// Remove excessive indices first: it cannot fail, unlike the truncation of files below. If the truncation
+        /// fails, the next writer finishes it, and it must not find the indices of this write in memory.
         removeUnsavedIndices(lock);
+        file_checker.repair();
         throw;
     }
 }

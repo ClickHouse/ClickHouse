@@ -1443,8 +1443,10 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
     catch (...)
     {
         /// Rollback partial writes.
-        file_checker.repair();
+        /// Remove excessive marks first: it cannot fail, unlike the truncation of files below. If the truncation
+        /// fails, the next writer finishes it, and it must not find the marks of this write in memory.
         removeUnsavedMarks(lock);
+        file_checker.repair();
         throw;
     }
 }

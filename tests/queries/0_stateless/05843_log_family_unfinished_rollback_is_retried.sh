@@ -67,6 +67,31 @@ for engine in Log TinyLog StripeLog; do
         CHECK TABLE $tbl SETTINGS check_query_single_value_result = 1"
     show "after the second reload"
 
+    # The same for a failed RESTORE into the table: its marks and indices are already in memory when
+    # the commit of the sizes fails. They have to go even though the truncation of the files fails,
+    # otherwise the insert that finishes the rollback would save them along with its own.
+    backup="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_${engine}')"
+    $CLICKHOUSE_CLIENT -q "BACKUP TABLE $tbl TO $backup" | grep -o BACKUP_CREATED
+    $CLICKHOUSE_CLIENT -q "
+        SYSTEM ENABLE FAILPOINT file_checker_update_and_save_fail_persisting;
+        SYSTEM ENABLE FAILPOINT file_checker_repair_fail_truncating"
+    $CLICKHOUSE_CLIENT -q "RESTORE TABLE $tbl FROM $backup SETTINGS allow_non_empty_tables = 1" 2>&1 \
+        | grep -q -F "FAULT_INJECTED" && echo "failed restore was rejected: 1" || echo "failed restore was rejected: 0"
+    $CLICKHOUSE_CLIENT -q "
+        SYSTEM DISABLE FAILPOINT file_checker_update_and_save_fail_persisting;
+        SYSTEM DISABLE FAILPOINT file_checker_repair_fail_truncating"
+    show "after the failed restore"
+
+    $CLICKHOUSE_CLIENT -q "INSERT INTO $tbl SELECT number, [[number]] FROM numbers(20000, 20)"
+    show "after the insert that follows the failed restore"
+
+    $CLICKHOUSE_CLIENT -q "
+        CHECK TABLE $tbl SETTINGS check_query_single_value_result = 1;
+        DETACH TABLE $tbl;
+        ATTACH TABLE $tbl;
+        CHECK TABLE $tbl SETTINGS check_query_single_value_result = 1"
+    show "after the third reload"
+
     $CLICKHOUSE_CLIENT -q "DROP TABLE $tbl"
 done
 

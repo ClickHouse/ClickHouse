@@ -14,6 +14,16 @@ arrays readable: 10
 1
 after the second reload: 140	365730	0
 arrays readable: 10
+BACKUP_CREATED
+failed restore was rejected: 1
+after the failed restore: 140	365730	0
+arrays readable: 10
+after the insert that follows the failed restore: 160	765920	0
+arrays readable: 10
+1
+1
+after the third reload: 160	765920	0
+arrays readable: 10
 --- TinyLog
 failed insert was rejected: 1
 after the failed rollback: 100	4950	0
@@ -30,6 +40,16 @@ arrays readable: 10
 1
 after the second reload: 140	365730	0
 arrays readable: 10
+BACKUP_CREATED
+failed restore was rejected: 1
+after the failed restore: 140	365730	0
+arrays readable: 10
+after the insert that follows the failed restore: 160	765920	0
+arrays readable: 10
+1
+1
+after the third reload: 160	765920	0
+arrays readable: 10
 --- StripeLog
 failed insert was rejected: 1
 after the failed rollback: 100	4950	0
@@ -45,4 +65,14 @@ arrays readable: 10
 1
 1
 after the second reload: 140	365730	0
+arrays readable: 10
+BACKUP_CREATED
+failed restore was rejected: 1
+after the failed restore: 140	365730	0
+arrays readable: 10
+after the insert that follows the failed restore: 160	765920	0
+arrays readable: 10
+1
+1
+after the third reload: 160	765920	0
 arrays readable: 10
