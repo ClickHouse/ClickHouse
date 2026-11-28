@@ -14,7 +14,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
-
+struct FunctionExecutionProfile;
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
@@ -64,7 +64,7 @@ public:
     size_t allocatedBytes() const override;
 
     void appendArguments(const ColumnsWithTypeAndName & columns);
-    ColumnWithTypeAndName reduce(bool dry_run = false) const;
+    ColumnWithTypeAndName reduce(bool dry_run = false, FunctionExecutionProfile * profile = nullptr) const;
 
     Field operator[](size_t n) const override;
 
@@ -252,7 +252,9 @@ private:
     /// The positions of the replaced columns, with the new columns.
     using Replacements = VectorWithMemoryTracking<std::pair<size_t, ColumnWithTypeAndName>>;
 
-    ColumnWithTypeAndName reduceImpl(bool dry_run, ReducedColumns & reduced) const;
+    /// `profile` is used only if `with_profile`.
+    template <bool with_profile>
+    ColumnWithTypeAndName reduceImpl(bool dry_run, ReducedColumns & reduced, FunctionExecutionProfile * profile) const;
     /// Returns the replacements of the arguments of `function` that are already reduced, and of those inside its lazy executed arguments.
     /// A lazy executed argument of a short-circuit function stays lazy, because the function executes it only on some rows. One of
     /// `and`/`or` is not replaced: they execute the arguments that are not lazy first, so the lazy ones before it would get fewer rows.

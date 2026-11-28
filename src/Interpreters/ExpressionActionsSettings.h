@@ -34,6 +34,8 @@ struct ExpressionActionsSettings
     bool short_circuit_function_evaluation_reorder_arguments = false;
 
     bool enable_lazy_columns_replication = false;
+
+    bool enable_adaptive_short_circuit_lazy_execution = false;
 };
 
 }

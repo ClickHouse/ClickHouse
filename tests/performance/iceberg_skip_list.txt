@@ -1,6 +1,7 @@
 # The performance tests that the Iceberg configuration (`perf.py --table-engine`) does not run,
 # with the reason. See the "Iceberg configuration" section of README.md.
 ColumnMap.xml                                            # type UInt64 in CREATE ... AS SELECT
+adaptive_short_circuit_execution.xml                     # a function needs the original narrow type
 aggregate_functions_deserialization.xml                  # AggregateFunction column
 aggregate_state_serialization.xml                        # AggregateFunction column
 aggregating_merge_tree.xml                               # AggregateFunction column

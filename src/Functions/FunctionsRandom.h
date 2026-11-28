@@ -62,6 +62,7 @@ public:
 
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isNoExcept() const override { return true; }
 
     [[nodiscard]] String getSignatureString() const override
     {

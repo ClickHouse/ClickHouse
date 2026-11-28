@@ -189,7 +189,13 @@ InequalityJoinAlgorithm::InequalityJoinAlgorithm(
 
     if (residual)
     {
+        /// `IEJoinAlgorithm` is instantiated per pipeline stream. Do not share adaptive
+        /// profiling state with another algorithm instance created from the same plan step.
+        if (residual->actions->isAdaptive())
+            residual->actions = residual->actions->clone();
+
         set_spillables.add(residual->actions->getActionsDAG());
+
         const auto & sample = residual->actions->getSampleBlock();
         if (sample.columns() != 1 || !sample.getByPosition(0).type->canBeUsedInBooleanContext())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "InequalityJoin residual condition must have a single boolean output, got {}",

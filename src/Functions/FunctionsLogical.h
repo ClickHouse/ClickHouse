@@ -209,7 +209,14 @@ public:
         settings.arguments_are_commutative = true;
         return name == NameAnd::name || name == NameOr::name;
     }
-    ColumnPtr executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool eager_arguments_reordered) const;
+
+    [[nodiscard]] bool isNoExcept() const override { return true; }
+    template <bool with_profile>
+    [[nodiscard]] ColumnPtr executeShortCircuit(
+        ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        bool eager_arguments_reordered,
+        FunctionExecutionProfile * profile) const;
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     [[nodiscard]] bool isNameInsensitive() const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
@@ -250,6 +257,7 @@ public:
     }
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    [[nodiscard]] ColumnPtr executeImplWithProfile(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecutionProfile * profile) const override;
 
     [[nodiscard]] ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override;
 
