@@ -1,0 +1,32 @@
+cuckoo_filter
+String key, UInt64 set
+[1]
+[1]
+Map String values, UInt64 set
+[1]
+[1]
+Array(UInt64) key, Array(Nullable(UInt64)) set
+[]
+[]
+[1]
+[1]
+Same type and integer sets still use the index
+[1]
+[2]
+[1]
+binary_fuse_filter
+String key, UInt64 set
+[1]
+[1]
+Map String values, UInt64 set
+[1]
+[1]
+Array(UInt64) key, Array(Nullable(UInt64)) set
+[]
+[]
+[1]
+[1]
+Same type and integer sets still use the index
+[1]
+[2]
+[1]

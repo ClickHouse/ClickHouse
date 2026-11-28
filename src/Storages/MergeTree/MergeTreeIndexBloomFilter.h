@@ -10,6 +10,8 @@
 namespace DB
 {
 
+class RPNBuilderTreeNode;
+
 class Set;
 using ConstSetPtr = std::shared_ptr<const Set>;
 
@@ -43,6 +45,24 @@ private:
 
     void fillingBloomFilter(BloomFilterPtr & bf, const HashSet<UInt64> & hashes) const;
 };
+
+/// The position in `header` of the index column computed by the same expression as `node`. A name
+/// alone does not identify it: a table column can be named like an expression, e.g. `lower(s)`.
+/// `index_nodes` are the outputs of the index expression, by position in `header`.
+std::optional<size_t> findIndexPosition(
+    const Block & header, const ActionsDAG::NodeRawConstPtrs & index_nodes, const RPNBuilderTreeNode & node);
+
+/// Names of `header`, with all but `JSONAllPaths` of a table column left empty.
+Names collectJSONIndexColumns(const Block & header, const ActionsDAG::NodeRawConstPtrs & index_nodes);
+
+/// The position in `header` of `function_name(map)` (`mapKeys` or `mapValues`) over the same map.
+/// `map_node` is nullptr for the table column `map_column_name` itself.
+std::optional<size_t> findMapIndexPosition(
+    const Block & header,
+    const ActionsDAG::NodeRawConstPtrs & index_nodes,
+    const String & function_name,
+    const String & map_column_name,
+    const ActionsDAG::Node * map_node);
 
 class MergeTreeIndexConditionBloomFilter final : public IMergeTreeIndexCondition, WithContext
 {
