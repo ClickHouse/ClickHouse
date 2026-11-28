@@ -307,6 +307,7 @@ TEST(ColumnStatsProvenance, StableDiagnosticString)
     EXPECT_EQ(provenance(ColumnStatsOrigin::Unknown).toString(), "unknown");
     EXPECT_EQ(provenance(ColumnStatsOrigin::MeasuredStatistics).toString(), "measured-statistics");
     EXPECT_EQ(provenance(ColumnStatsOrigin::SyntheticFallback).toString(), "synthetic-fallback");
+    EXPECT_EQ(provenance(ColumnStatsOrigin::EstimatedFromMetadata).toString(), "estimated-from-metadata");
     EXPECT_EQ(provenance(ColumnStatsOrigin::SyntheticOverride).toString(), "synthetic-override");
 
     constexpr UInt16 all_transformations = RowSubset | EstimatedRowCountClamp | NDVBoundExpression | PartialStatisticsCoverage | Unmodeled;
@@ -356,7 +357,11 @@ TEST(ColumnStatsProvenance, GuaranteesKeptByEachTransformation)
 
 TEST(ColumnStatsProvenance, GuaranteesRequireTheirOrigins)
 {
-    for (const auto origin : {ColumnStatsOrigin::Unknown, ColumnStatsOrigin::SyntheticFallback, ColumnStatsOrigin::SyntheticOverride})
+    for (const auto origin :
+         {ColumnStatsOrigin::Unknown,
+          ColumnStatsOrigin::SyntheticFallback,
+          ColumnStatsOrigin::EstimatedFromMetadata,
+          ColumnStatsOrigin::SyntheticOverride})
     {
         SCOPED_TRACE(provenance(origin).toString());
         auto stats = measuredColumnStats();
@@ -501,7 +506,11 @@ TEST(ColumnStatsProvenance, KeepOnlyEnclosingValueRangeClearsRangesWithoutSupers
     }
 
     /// A range that was not measured, e.g. a test-only statistics hint, is not enclosing either.
-    for (const auto origin : {ColumnStatsOrigin::Unknown, ColumnStatsOrigin::SyntheticFallback, ColumnStatsOrigin::SyntheticOverride})
+    for (const auto origin :
+         {ColumnStatsOrigin::Unknown,
+          ColumnStatsOrigin::SyntheticFallback,
+          ColumnStatsOrigin::EstimatedFromMetadata,
+          ColumnStatsOrigin::SyntheticOverride})
     {
         SCOPED_TRACE(provenance(origin).toString());
         auto stats = measuredColumnStats();

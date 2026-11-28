@@ -1,0 +1,10 @@
+Self-joins on `k`: 1 when the selectivity is estimated from the compressed size, 0 when the join is taken as a join with a unique key.
+table default ZSTD	1
+adaptive codec	0
+table default Delta	0
+column Delta	0
+sorting key	0
+The key of a nested join takes the estimate of the foreign key: the outer join stays as large as the foreign key side.
+1
+The same with the Cascades optimizer: the join is not estimated larger than its inputs.
+1

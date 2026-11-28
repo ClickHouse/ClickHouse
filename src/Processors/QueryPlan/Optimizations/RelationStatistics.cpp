@@ -61,10 +61,24 @@ void updateJoinKeyDistinctCounts(
     }
 
     const UInt64 minimum = std::min(left_stats.num_distinct_values, right_stats.num_distinct_values);
+    /// When both are equal, either may be the estimate from metadata; take its origin then, as it only makes the
+    /// estimate of a join on this key more conservative.
+    const auto is_minimum_from_metadata = [&](const ColumnStats & stats)
+    {
+        return stats.num_distinct_values == minimum && stats.ndv_provenance.origin == ColumnStatsOrigin::EstimatedFromMetadata;
+    };
+    const bool minimum_from_metadata = is_minimum_from_metadata(left_stats) || is_minimum_from_metadata(right_stats);
+
+    const auto update = [&](ColumnStats & stats)
+    {
+        stats.num_distinct_values = minimum;
+        if (minimum_from_metadata)
+            stats.ndv_provenance.origin = ColumnStatsOrigin::EstimatedFromMetadata;
+    };
     if (update_left)
-        left_stats.num_distinct_values = minimum;
+        update(left_stats);
     if (update_right)
-        right_stats.num_distinct_values = minimum;
+        update(right_stats);
 }
 
 void remapColumnStats(UnorderedMapWithMemoryTracking<String, ColumnStats> & mapped, const ActionsDAG & actions)

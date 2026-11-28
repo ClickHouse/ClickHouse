@@ -12,10 +12,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CLICKHOUSE_CLIENT_TRACE=${CLICKHOUSE_CLIENT/"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"/"--send_logs_level=trace"}
 
-# The trace line is printed by join reordering, which the randomized settings can turn off.
+# The trace line is printed by join reordering, which the randomized settings can turn off. The numbers of distinct
+# values are not estimated from the sizes of the columns (`estimate_distinct_values_from_metadata`), which
+# 05636_iceberg_ndv_from_column_sizes tests.
 PINS="--query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_order_limit=10
     --use_hash_table_stats_for_join_reordering=0 --enable_join_runtime_filters=0 --enable_parallel_replicas=0
-    --use_datalake_metadata_statistics=1 --use_statistics=1 --max_insert_threads=1 --allow_insert_into_iceberg=1"
+    --use_datalake_metadata_statistics=1 --use_statistics=1 --max_insert_threads=1 --allow_insert_into_iceberg=1
+    --estimate_distinct_values_from_metadata=0"
 
 LAKE="${CLICKHOUSE_USER_FILES_UNIQUE}"
 rm -rf "${LAKE}"
