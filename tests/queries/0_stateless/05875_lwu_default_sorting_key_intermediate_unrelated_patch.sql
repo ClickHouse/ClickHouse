@@ -4,11 +4,13 @@ DROP TABLE IF EXISTS t_lwu_default_key_unrelated;
 -- The lightweight `UPDATE` patches `a`, which no `DEFAULT` reads, so no `DEFAULT` column is evaluated again after the patch.
 -- Still, `k` is evaluated early, to match the rows with the patch, and `z` later: both must read the same value of `b`,
 -- whether or not the patched column is requested, and the merge that applies the patch must store equal values.
+-- The vertical merge algorithm is disabled: it reads the key columns and every other column with separate readers,
+-- each of which evaluates `b` on its own, with or without patch parts.
 
 SET allow_experimental_lightweight_update = 1;
 
 CREATE TABLE t_lwu_default_key_unrelated (id UInt32) ENGINE = MergeTree ORDER BY id
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0, patch_parts_version = 'v2';
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0, patch_parts_version = 'v2', enable_vertical_merge_algorithm = 0;
 
 INSERT INTO t_lwu_default_key_unrelated VALUES (0), (1);
 SYSTEM STOP MERGES t_lwu_default_key_unrelated;
