@@ -6,8 +6,14 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Common/Exception.h>
 #include <Common/SettingsChanges.h>
+#include <Common/quoteString.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/Context.h>
 #include <Core/Joins.h>
 #include <Core/Names.h>
@@ -21,6 +27,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
@@ -29,10 +36,16 @@
 
 #include <optional>
 #include <string_view>
+#include <unordered_map>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_IDENTIFIER;
+}
 
 namespace TimeSeriesSetting
 {
@@ -817,6 +830,163 @@ SettingsChanges getSettingsForSelectFromTimeSeries(const TimeSeriesSettings & st
     changes.emplace_back("aggregate_functions_null_for_empty", Field{false});
     changes.emplace_back("optimize_aggregation_in_order", Field{true});
     return changes;
+}
+
+
+namespace
+{
+
+/// A dedicated tags-table column used as written when it is a non-Nullable String (so a primary-key
+/// comparison on `metric_name` stays a primary-key comparison); otherwise `toString(ifNull(col, ''))`
+/// matches the outer tag value the policy was written against.
+ASTPtr makeASTForDedicatedTagColumn(const String & column_name, const ColumnsDescription & tags_columns)
+{
+    if (auto column = tags_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
+    {
+        const DataTypePtr & type = column->type;
+        if (!type->isNullable() && isString(removeLowCardinality(type)))
+            return make_intrusive<ASTIdentifier>(column_name);
+    }
+
+    return makeASTFunction(
+        "toString",
+        makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(String{})));
+}
+
+
+ASTPtr makeASTForOuterTagsMap(const std::unordered_map<String, String> & columns_by_tags)
+{
+    ASTs args;
+    args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags));
+    for (const auto & [tag_name, column_name] : columns_by_tags)
+    {
+        args.push_back(make_intrusive<ASTLiteral>(tag_name));
+        args.push_back(make_intrusive<ASTIdentifier>(column_name));
+    }
+    return makeASTFunction("timeSeriesTagsToMap", std::move(args));
+}
+
+
+/// Throws UNKNOWN_IDENTIFIER when a bare identifier is not a tags-table column. The rewritten
+/// expression is injected into a nested tags subquery; unbound names would otherwise resolve as
+/// correlated outer references (for example `samples`) instead of failing closed.
+void assertIdentifiersExistOnTagsTable(const ASTPtr & node, const ColumnsDescription & tags_columns)
+{
+    if (!node)
+        return;
+
+    if (const auto * identifier = node->as<ASTIdentifier>())
+    {
+        if (!identifier->compound() && !tags_columns.has(identifier->shortName()))
+            throw Exception(
+                ErrorCodes::UNKNOWN_IDENTIFIER,
+                "Unknown expression or function identifier {}",
+                backQuote(identifier->name()));
+    }
+
+    for (const auto & child : node->children)
+        assertIdentifiersExistOnTagsTable(child, tags_columns);
+}
+
+/// Rewrites a policy expression written against the outer TimeSeries columns so it evaluates over the
+/// tags target table: `tags['<k>']` becomes the dedicated column for `__name__` and `tags_to_columns`
+/// tags (or stays a Map access otherwise), a bare `tags` becomes `timeSeriesTagsToMap(...)`, and every
+/// other identifier is checked against the tags table (so a policy on `samples` fails with
+/// UNKNOWN_IDENTIFIER).
+ASTPtr rewriteRowPolicyExpressionForTagsTable(
+    const ASTPtr & node,
+    const std::unordered_map<String, String> & columns_by_tags,
+    const ColumnsDescription & tags_columns)
+{
+    if (!node)
+        return nullptr;
+
+    if (const auto * function = node->as<ASTFunction>())
+    {
+        if (function->name == "arrayElement" && function->arguments && function->arguments->children.size() == 2)
+        {
+            const auto * tags_id = function->arguments->children[0]->as<ASTIdentifier>();
+            const auto * key = function->arguments->children[1]->as<ASTLiteral>();
+            if (tags_id && tags_id->name() == TimeSeriesColumnNames::Tags && !tags_id->compound()
+                && key && key->value.getType() == Field::Types::String)
+            {
+                const String & tag_name = key->value.safeGet<String>();
+                if (auto it = columns_by_tags.find(tag_name); it != columns_by_tags.end())
+                    return makeASTForDedicatedTagColumn(it->second, tags_columns);
+                return node->clone();
+            }
+        }
+
+        /// Rebuild the function so `arguments` stays wired to `children` after rewriting.
+        auto result = make_intrusive<ASTFunction>(*function);
+        result->children.clear();
+        result->arguments.reset();
+        result->parameters.reset();
+        result->window_definition.reset();
+
+        if (function->arguments)
+        {
+            auto new_arguments = make_intrusive<ASTExpressionList>();
+            for (const auto & argument : function->arguments->children)
+                new_arguments->children.push_back(
+                    rewriteRowPolicyExpressionForTagsTable(argument, columns_by_tags, tags_columns));
+            result->arguments = std::move(new_arguments);
+            result->children.push_back(result->arguments);
+        }
+        if (function->parameters)
+        {
+            auto new_parameters = make_intrusive<ASTExpressionList>();
+            for (const auto & parameter : function->parameters->children)
+                new_parameters->children.push_back(
+                    rewriteRowPolicyExpressionForTagsTable(parameter, columns_by_tags, tags_columns));
+            result->parameters = std::move(new_parameters);
+            result->children.push_back(result->parameters);
+        }
+        if (function->window_definition)
+        {
+            result->window_definition = rewriteRowPolicyExpressionForTagsTable(
+                function->window_definition, columns_by_tags, tags_columns);
+            result->children.push_back(result->window_definition);
+        }
+        return result;
+    }
+
+    if (const auto * identifier = node->as<ASTIdentifier>())
+    {
+        if (identifier->name() == TimeSeriesColumnNames::Tags && !identifier->compound())
+            return makeASTForOuterTagsMap(columns_by_tags);
+        return node->clone();
+    }
+
+    auto result = node->clone();
+    for (auto & child : result->children)
+        child = rewriteRowPolicyExpressionForTagsTable(child, columns_by_tags, tags_columns);
+    return result;
+}
+
+}
+
+
+ASTPtr makeRowPolicyFilterForTagsTable(const StorageTimeSeries & storage, const ContextPtr & context)
+{
+    auto filter = getEffectiveRowPolicyFilter(storage, context);
+    if (!filter)
+        return nullptr;
+
+    if (context->hasQueryContext())
+    {
+        for (const auto & policy : filter->policies)
+            context->getQueryContext()->addUsedRowPolicy(policy->getFullName().toString());
+    }
+
+    const auto columns_by_tags = getColumnsByTags(*storage.getStorageSettings());
+    const auto tags_table_metadata
+        = storage.getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
+    const auto & tags_columns = tags_table_metadata->columns;
+
+    auto rewritten = rewriteRowPolicyExpressionForTagsTable(filter->expression, columns_by_tags, tags_columns);
+    assertIdentifiersExistOnTagsTable(rewritten, tags_columns);
+    return rewritten;
 }
 
 }
