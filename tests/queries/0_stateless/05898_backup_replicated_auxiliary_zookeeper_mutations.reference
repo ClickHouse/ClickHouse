@@ -1,0 +1,2 @@
+commands: (UPDATE y = y + 10 WHERE 1)
+commands: (DELETE WHERE x = 2)
