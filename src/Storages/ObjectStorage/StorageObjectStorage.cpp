@@ -1407,6 +1407,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
+    validateSupportedColumns(new_metadata.columns, *configuration);
 
     /// The stored definition of a data lake table gets its `PARTITION BY` and `ORDER BY` with the renamed columns.
     auto rename_columns = [&](const ASTPtr & ast) -> ASTPtr

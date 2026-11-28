@@ -327,6 +327,7 @@ void StorageObjectStorageCluster::alter(const AlterCommands & params, ContextPtr
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
+    validateSupportedColumns(new_metadata.columns, *configuration);
 
     checkMetadataDoesNotExceedMaxQuerySize(getStorageID(), new_metadata, context);
 

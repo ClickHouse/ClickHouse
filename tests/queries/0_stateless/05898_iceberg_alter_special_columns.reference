@@ -1,0 +1,5 @@
+id	Int64					
+d	Decimal(5, 0)					
+s	String					
+1	12345	a
+1	12345	Decimal(14, 0)
