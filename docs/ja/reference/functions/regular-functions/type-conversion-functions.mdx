@@ -19,31 +19,41 @@ ClickHouse は通常、[C++ プログラムと同じ動作](https://en.cpprefere
 
 例:
 
-```sql
+```sql title="Query"
 SELECT
     toTypeName(toLowCardinality('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
+```
 
+```text title="Response"
 ┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
 │ LowCardinality(String) │ LowCardinality(String) │ String           │
 └────────────────────────┴────────────────────────┴──────────────────┘
+```
 
+```sql title="Query"
 SELECT
     toTypeName(toNullable('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
+```
 
+```text title="Response"
 ┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
 │ Nullable(String) │ Nullable(String)    │ String           │
 └──────────────────┴─────────────────────┴──────────────────┘
+```
 
+```sql title="Query"
 SELECT
     toTypeName(toNullable('') AS val) AS source_type,
     toTypeName(toString(val)) AS to_type_result_type,
     toTypeName(CAST(val, 'String')) AS cast_result_type
 SETTINGS cast_keep_nullable = 1
+```
 
+```text title="Response"
 ┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
 │ Nullable(String) │ Nullable(String)    │ Nullable(String) │
 └──────────────────┴─────────────────────┴──────────────────┘
@@ -120,6 +130,51 @@ LIMIT 10
 `reinterpret` 関数とは異なり、CAST は変換先の型でも同じ値になるように変換を試みます。
 それが不可能な場合は、例外が送出されます。
 
+`CAST` は `LowCardinality` ラッパーを除去します。一方、`to<Type>` 関数はこれを保持します。
+`to<Type>` 関数は `Nullable` ラッパーも保持します。`CAST` はデフォルトでは `Nullable` を除去しますが、
+[`cast_keep_nullable`](/ja/reference/settings/session-settings/cast#cast_keep_nullable)
+設定が有効な場合は保持します。
+
+```sql title="Query"
+SELECT
+    toTypeName(toLowCardinality('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
+│ LowCardinality(String) │ LowCardinality(String) │ String           │
+└────────────────────────┴────────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ String           │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+SETTINGS cast_keep_nullable = 1
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ Nullable(String) │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
+
 `x` が数値として記述され、`T` が `Decimal` または 64 ビットより大きい整数型の場合、数値の各桁は
 `T` を使って直接読み取られるため、変換の途中で精度が失われることはありません。この仕組みがなければ、
 `CAST(0.1 AS Decimal256(76))` はまず `0.1` を `Float64` として読み取り、
@@ -144,7 +199,7 @@ or x::T
 
 **戻り値**
 
-変換先のデータ型に変換された値を返します。[`Any`](/ja/reference/data-types/index)
+変換先のデータ型に変換された値を返します。 [`Any`](/ja/reference/data-types/index)
 
 **例**
 
@@ -2728,7 +2783,7 @@ toBFloat16('42.7'):            42.5
 導入バージョン: v1.1.0
 
 String 型の入力値を BFloat16 型の値に変換します。
-文字列が浮動小数点数値を表していない場合、この関数は NULL を返します。
+文字列が浮動小数点値を表していない場合、この関数は NULL を返します。
 
 サポートされる引数:
 

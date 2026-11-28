@@ -117,6 +117,10 @@ Temps passé, en secondes, dans les opérations d’écriture demandées à chaq
 
 Le nombre maximal de cœurs CPU selon les CGroups.
 
+### CGroupMemoryInactiveFile {#cgroupmemoryinactivefile}
+
+Quantité de mémoire, en octets, occupée par le cache de pages inactif adossé à des fichiers, dans le même cgroup que celui dont est lu CGroupMemoryUsed. Il s&#39;agit de mémoire récupérable : le noyau peut la libérer en cas de pression mémoire. Kubernetes et cAdvisor calculent la taille de l&#39;ensemble de travail (WSS) en soustrayant cette valeur de l&#39;utilisation brute de la mémoire du cgroup (memory.current sur cgroup v2, memory.usage&#95;in&#95;bytes sur cgroup v1). Notez que CGroupMemoryUsed ne correspond pas à cette utilisation brute, car il exclut déjà le cache de pages adossé à des fichiers. La valeur correspond à celle qu&#39;utilise l&#39;agent de nœud Kubernetes pour le conteneur sur cgroup v2, ainsi que sur cgroup v1 lorsque le serveur s&#39;exécute dans un conteneur dont le point de montage du contrôleur de mémoire est le propre cgroup du conteneur. Sur cgroup v1, la valeur est lue à la racine du point de montage du contrôleur de mémoire ; par conséquent, sur un hôte où le serveur s&#39;exécute dans un cgroup v1 imbriqué, elle couvre toute la hiérarchie sous cette racine et non le seul cgroup du serveur. La métrique est absente lorsque le noyau n&#39;expose pas cette statistique dans memory.stat.
+
 ### Mémoire totale du CGroup {#cgroupmemorytotal}
 
 La quantité totale de mémoire du cgroup, en octets. Si elle est égale à zéro, la limite est la même que celle de OSMemoryTotal.
@@ -161,9 +165,37 @@ La fréquence actuelle de chaque cœur de CPU, en MHz, indexée au numéro du c�
 
 Nombre estimé de blobs en attente de suppression du stockage d’objets sur disque (la file d’attente des blobs supprimés du gestionnaire de blobs), indexé par nom de disque. Les disques sans réplication de blobs signalent 0.
 
+### DictionaryFailedCount {#dictionaryfailedcount}
+
+Nombre de dictionnaires actuellement en échec (y compris l&#39;état transitoire FAILED&#95;AND&#95;RELOADING).
+
+### DictionaryLoadedCount {#dictionaryloadedcount}
+
+Nombre de dictionnaires actuellement à l&#39;état chargé (y compris l&#39;état transitoire LOADED&#95;AND&#95;RELOADING).
+
+### DictionaryLoadingCount {#dictionaryloadingcount}
+
+Nombre de dictionnaires en cours de chargement pour la première fois (hors rechargements de dictionnaires déjà chargés ou en échec).
+
+### DictionaryMaxQueryCount {#dictionarymaxquerycount}
+
+Nombre maximal de requêtes parmi les dictionnaires chargés, comptabilisé depuis le dernier chargement de chaque dictionnaire.
+
 ### DictionaryMaxUpdateDelay {#dictionarymaxupdatedelay}
 
 Le délai maximal (en secondes) de mise à jour du dictionnaire
+
+### DictionaryTotalBytesAllocated {#dictionarytotalbytesallocated}
+
+Nombre total d&#39;octets alloués par l&#39;ensemble des dictionnaires actuellement chargés (somme des valeurs de `getBytesAllocated` pour chaque instance de dictionnaire).
+
+### DictionaryTotalCount {#dictionarytotalcount}
+
+Nombre total de dictionnaires connus du serveur (quel que soit leur état de chargement).
+
+### DictionaryTotalElementCount {#dictionarytotalelementcount}
+
+Nombre total de clés stockées dans l&#39;ensemble des dictionnaires actuellement chargés.
 
 ### DictionaryTotalFailedUpdates {#dictionarytotalfailedupdates}
 

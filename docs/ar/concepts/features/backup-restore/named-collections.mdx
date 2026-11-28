@@ -1,0 +1,121 @@
+---
+description: 'كيفية تعامل BACKUP وRESTORE مع المجموعات المسمّاة المُنشأة عبر SQL، والإعدادات والامتيازات التي تتحكم فيها.'
+sidebarTitle: 'المجموعات المسمّاة'
+slug: /operations/backup/named-collections
+title: 'النسخ الاحتياطي للمجموعات المسمّاة واستعادتها'
+keywords: ['backup', 'restore', 'named collections', 'backup_named_collections', 'restore_named_collections', 'create_named_collection']
+doc_type: 'reference'
+---
+
+يمكن تصدير [المجموعات المسمّاة](/ar/concepts/features/configuration/server-config/named-collections) المُنشأة عبر SQL
+إلى نسخة احتياطية واستعادتها منها من خلال الجدول `system.named_collections`.
+وتتضمّن المجموعة المُصدَّرة قيمها كاملةً، بما فيها القيم السرية، ولذلك يخضع النسخ الاحتياطي للمجموعات
+واستعادتها لامتيازات وإعدادات خاصة بها، نوثّقها في هذه الصفحة.
+
+أما المجموعات المعرّفة في ملفات تكوين الخادم، فيجري تصييرها من التهيئة ولا تُضمَّن
+في النسخة الاحتياطية مطلقًا؛ كما أن استعادة مجموعة من نسخة احتياطية لا تستبدل مجموعةً معرّفة في التهيئة
+تحمل الاسم نفسه.
+
+## تحديد المجموعات {#selecting-the-collections}
+
+يُصدِّر استعلام `BACKUP` المجموعات المسمّاة عندما يشمل جدول `system.named_collections`:
+
+* صراحةً: `BACKUP TABLE system.named_collections`. وفي هذه الحالة تكون الامتيازات المطلوبة (انظر أدناه)
+  إلزامية.
+* ضمنيًا، من خلال عنصر `DATABASE system` أو `ALL`. وافتراضيًا، لا تُصدِّر هذه النسخة الاحتياطية
+  المجموعات إلا إذا كان المستخدم مخوّلًا بقراءة قيمها، وإلا فإنها تتخطاها مع إصدار تحذير، وذلك
+  كي يظل `BACKUP ALL` يعمل لدى المستخدم المخوّل بنسخ كل شيء احتياطيًا وإن لم يكن مخوّلًا بقراءة
+  القيم.
+
+أما التحديد الذي يستثني بيانات الجدول - `BACKUP TABLE system.named_collections EXCEPT DATA FROM
+TABLE system.named_collections`، أو عنصر يحتوي على حرف بدل مع `EXCEPT DATA FROM TABLES
+system.named_collections` - فلا يحتفظ في النسخة الاحتياطية إلا بتعريف الجدول، فلا يُصدِّر أي
+مجموعة، ولا يتطلب أيًّا من الامتيازات الواردة أدناه.
+
+## الامتيازات المطلوبة {#required-privileges}
+
+يؤدي تصدير المجموعات إلى كتابة قيمها في النسخة الاحتياطية، ولذلك يتطلب الامتيازات نفسها
+المطلوبة لقراءة القيم من `system.named_collections`:
+[`SHOW NAMED COLLECTIONS`](/ar/reference/statements/grant#named-collection-admin)
+و`SHOW NAMED COLLECTIONS SECRETS`
+و[`displaySecretsInShowAndSelect`](/ar/reference/statements/grant#displaysecretsinshowandselect).
+وينطبق ذلك أيضًا على تخزين المجموعات المسمّاة المشفّر: فالعناصر تُنسخ في صورة نص مشفر،
+لكن أي خادم يملك المفتاح نفسه يستعيدها إلى مجموعات يمكن بعدئذٍ قراءة قيمها.
+
+تتطلب استعادة المجموعات امتياز
+[`CREATE NAMED COLLECTION`](/ar/reference/statements/grant#named-collection-admin)، ولا
+تتطلب الامتيازات المذكورة أعلاه: إذ يمكن للمشغّل استعادة نسخة احتياطية دون أن يتمكن من
+قراءتها، ولا تذكر الأخطاء والسجلات الناتجة عن هذه الاستعادة اسم أي مجموعة إطلاقًا.
+
+في حالة `BACKUP ON CLUSTER` و`RESTORE ON CLUSTER`، يجري التحقق من الامتيازات بناءً على المستخدم
+المُبادِر وعلى المضيف المُبادِر قبل توجيه الاستعلام إلى المضيفات الأخرى. وفي أثناء الترقية
+المتدرجة، لا يُصدِّر المضيف الذي يعمل بإصدار يدعم هذه الميزة المجموعاتِ ولا يستعيدها مطلقًا عند تنفيذ
+استعلام وجّهه إليه مُبادِر يعمل بإصدار لا يدعمها، لأن هذا المُبادِر لا يستطيع
+التحقق من الامتيازات: فيُتجاهَل التصدير (أو يُرفض في حالة التحديد الصريح)، وتُرفض
+استعادة عناصر المجموعات.
+
+## `backup_named_collections` {#backup-named-collections}
+
+النوع: `Bool`. اختياري؛ غير مُعيَّن افتراضيًا.
+
+يحدد ما إذا كان استعلام `BACKUP` يُصدِّر المجموعات المسمّاة:
+
+* غير مُعيَّن (القيمة الافتراضية): يُصدِّرها العنصر الصريح `TABLE system.named_collections` ويتطلب
+  الامتيازات اللازمة؛ أما العنصر `DATABASE system` أو `ALL` فلا يُصدِّرها إلا إذا كان المستخدم
+  يملك الامتيازات، وإلا فيتخطاها مع إصدار تحذير.
+* `true`: تُصدِّر النسخة الاحتياطية المجموعات كلما شمل الاستعلام هذا الجدول، ويُعدّ نقص
+  الامتيازات error حتى عند التحديد الضمني.
+* `false`: لا تُصدِّر النسخة الاحتياطية المجموعات مطلقًا، حتى عند تحديد الجدول
+  `system.named_collections` صراحةً بالاسم، ولا تتطلب أيًّا من الامتيازات.
+
+```sql
+-- Fails instead of skipping the collections when the privileges are missing:
+BACKUP ALL TO Disk('backups', 'everything') SETTINGS backup_named_collections = 1
+
+-- Never exports the collections:
+BACKUP ALL TO Disk('backups', 'no_collections') SETTINGS backup_named_collections = 0
+```
+
+## `restore_named_collections` {#restore-named-collections}
+
+النوع: `Bool`. القيمة الافتراضية: `true`.
+
+يحدد ما إذا كان استعلام `RESTORE` يستعيد المجموعات المسمّاة المحفوظة في النسخة الاحتياطية. وخلافًا لـ
+[`restore_table_data`](/ar/concepts/features/backup-restore/restore-settings) والإعدادات المشابهة له، تبقى القيمة الافتراضية
+`true` عند استخدام `structure_only`، إذ إن المجموعات تعريفات، ولا يمكن إنشاء جدول يشير محركه
+إلى مجموعة (مثل `ENGINE = URL(collection)`) من دونها.
+
+```sql
+-- Restores everything except the named collections:
+RESTORE ALL FROM Disk('backups', 'everything') SETTINGS restore_named_collections = 0
+```
+
+## `create_named_collection` {#create-named-collection}
+
+النوع: `String`. القيمة الافتراضية: `'if-not-exists'`.
+
+كيفية تعامل `RESTORE` مع مجموعة مسمّاة موجودة مسبقًا:
+
+* `'if-not-exists'` (القيمة الافتراضية): يُحتفَظ بالمجموعة الموجودة، وتُتجاهَل المجموعة
+  المحفوظة في النسخة الاحتياطية.
+* `'create'`: يؤدي وجود المجموعة مسبقًا إلى فشل عملية الاستعادة.
+* `'replace'`: تُستبدَل المجموعة الموجودة بالمجموعة المحفوظة في النسخة الاحتياطية. أما المجموعة المعرَّفة في
+  تكوين الخادم، فلا يمكن استبدالها، ويؤدي ذلك إلى فشل عملية الاستعادة.
+
+```sql
+RESTORE TABLE system.named_collections FROM Disk('backups', 'everything')
+SETTINGS create_named_collection = 'replace'
+```
+
+## التخزين المشفّر للمجموعات المسمّاة {#encrypted-storage}
+
+عند استخدام [تخزين مشفّر للمجموعات المسمّاة](/ar/concepts/features/configuration/server-config/named-collections)
+(`local_encrypted` أو `zookeeper_encrypted`)، تُنسخ العناصر إلى النسخة الاحتياطية كما هي في صورة
+النص المشفر المحفوظ في التخزين، ويتبعها رمز مصادقة: فلا تظهر أي قيمة بنص صريح
+في أي موضع من النسخة الاحتياطية، وأي إدخال جرى تعديله يُفشل عملية الاستعادة قبل فك تشفير أي شيء.
+
+تتطلب استعادة نسخة احتياطية كهذه خادمًا يكون تخزين المجموعات المسمّاة فيه مشفّرًا أيضًا
+ويحتفظ بالمفتاح الذي شُفّرت به المجموعات. ويُعاد تشفير العناصر المستعادة باستخدام
+مفتاح الخادم الذي يُجري الاستعادة. ولا يمكن استعادة نسخة احتياطية تحتوي على عناصر مشفّرة إلى تخزين
+غير مشفّر؛ لذا إما أن تهيّئ تخزينًا مشفّرًا يحتفظ بالمفتاح، أو أن تتخطى المجموعات باستخدام
+`restore_named_collections = 0`.

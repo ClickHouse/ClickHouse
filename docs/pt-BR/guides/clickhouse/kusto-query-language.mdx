@@ -11,7 +11,7 @@ O ClickHouse pode interpretar um subconjunto da [Kusto Query Language](https://l
 em vez de SQL. O dialeto está em **beta** e vem desativado por padrão:
 
 ```sql
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 StormEvents

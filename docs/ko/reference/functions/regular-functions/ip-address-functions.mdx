@@ -1080,7 +1080,7 @@ SELECT
 도입 버전: v20.1.0
 
 문자열 또는 IPv6 주소를 나타내는 `UInt128` 형식을 [`IPv6`](/ko/reference/data-types/ipv6) 타입으로 변환합니다.
-문자열의 경우 IPv6 주소 형식이 잘못되면 빈 값을 반환합니다.
+문자열의 경우 IPv6 주소 포맷이 잘못되면 빈 값을 반환합니다.
 IPv6 주소를 바이너리 형식(즉, `FixedString(16)`)으로 변환하거나, 바이너리 형식에서 IPv6 주소로 변환하는 [`IPv6StringToNum`](/ko/reference/functions/regular-functions/ip-address-functions#IPv6StringToNum) 및 [`IPv6NumToString`](/ko/reference/functions/regular-functions/ip-address-functions#IPv6NumToString) 함수와 유사합니다.
 
 입력 문자열에 유효한 IPv4 주소가 포함되어 있으면 해당 IPv4 주소에 해당하는 IPv6 값을 반환합니다.

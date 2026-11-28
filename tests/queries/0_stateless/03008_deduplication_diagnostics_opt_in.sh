@@ -20,7 +20,7 @@ ARGS_MIXED=(--insert-method InsertSelect --table-engine MergeTree --use-insert-t
 # and a diagnostics run reporting a value the failing run never used would pass unnoticed.
 # Only the ARGS shape needs a pattern; the ARGS_MIXED shape's values are pinned literally by
 # the statement dump below.
-SETTINGS_RE_ST='SET max_insert_threads=1;|SET update_insert_deduplication_token_in_dependent_materialized_views=1;|SET deduplicate_blocks_in_dependent_materialized_views=1;|SET max_block_size=1;'
+SETTINGS_RE_ST='SET max_insert_threads=1;|SET deduplicate_blocks_in_dependent_materialized_views=1;|SET max_block_size=1;'
 
 # One row per statement: join lines, split on the statement terminator, collapse whitespace so
 # the result is insensitive to the generator's indentation only. Shared by the statement dump

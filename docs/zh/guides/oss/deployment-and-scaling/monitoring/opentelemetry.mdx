@@ -8,11 +8,11 @@ doc_type: 'guide'
 
 [OpenTelemetry](https://opentelemetry.io/) 是一种开放标准，用于从分布式应用程序中收集链路追踪和指标。ClickHouse 对 OpenTelemetry 提供了一定的支持。
 
-## 向 ClickHouse 传递 trace 上下文 {#supplying-trace-context-to-clickhouse}
+## 向 ClickHouse 传递追踪上下文 {#supplying-trace-context-to-clickhouse}
 
-ClickHouse 接受 W3C [Trace Context 建议](https://www.w3.org/TR/trace-context/)中定义的 trace 上下文 HTTP 请求头。它也接受通过原生协议传递的 trace 上下文，该协议用于 ClickHouse 服务器之间或客户端与服务器之间的通信。进行手动测试时，可以使用 `--opentelemetry-traceparent` 和 `--opentelemetry-tracestate` 标志，向 `clickhouse-client` 传入符合 Trace Context 建议的 trace 上下文请求头。
+ClickHouse 接受 W3C [Trace Context 建议](https://www.w3.org/TR/trace-context/)中定义的追踪上下文 HTTP 请求头。它也接受通过原生协议传递的追踪上下文，该协议用于 ClickHouse 服务器之间或客户端与服务器之间的通信。Prometheus 协议的 HTTP 处理程序 (指标暴露、远程写入、远程读取以及查询 API) 同样接受追踪上下文 HTTP 请求头。进行手动测试时，可以使用 `--opentelemetry-traceparent` 和 `--opentelemetry-tracestate` 标志，向 `clickhouse-client` 传入符合 Trace Context 建议的追踪上下文请求头。
 
-如果未提供父 trace 上下文，或者提供的 trace 上下文不符合上述 W3C 标准，ClickHouse 可以启动一个新的 trace，其概率由 [opentelemetry&#95;start&#95;trace&#95;probability](/zh/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability) 设置控制。
+如果未提供父追踪上下文，或者提供的追踪上下文不符合上述 W3C 标准，ClickHouse 可以启动一个新的 trace，其概率由 [opentelemetry&#95;start&#95;trace&#95;probability](/zh/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability) 设置控制。
 
 ## 传播 trace 上下文 {#propagating-the-trace-context}
 

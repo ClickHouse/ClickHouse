@@ -202,7 +202,7 @@ Configurações de compressão de dados para tabelas do motor [MergeTree](/pt-BR
 * Se uma parte de dados corresponder a vários conjuntos de condições, o ClickHouse usará o último conjunto de condições correspondente (as seções `<case>` são verificadas em ordem, e cada uma que corresponder substitui a escolha anterior).
 
 <Note>
-  Se nenhuma condição for atendida para uma parte de dados, o ClickHouse usará o padrão interno sensível ao tamanho: `LZ4` abaixo de 100 MB e `ZSTD(3)` a partir desse valor. Assim como nas condições de `min_part_size` acima, o tamanho considerado é aquele conhecido no momento em que o codec precisa ser escolhido, antes de os dados serem gravados: `0` para uma parte recém-inserida e o tamanho das partes de origem para um merge ou uma mutação. Portanto, uma reescrita que reduz sua entrada, como um `TTL DELETE` ou um merge de collapsing, é classificada pelo tamanho da entrada e pode produzir uma parte abaixo do limite que ainda assim usa `ZSTD(3)`.
+  Se nenhuma condição for atendida para uma parte de dados, o ClickHouse usará o padrão interno sensível ao tamanho: `LZ4` abaixo de 100 MB e `ZSTD(3)` a partir desse valor. Assim como nas condições de `min_part_size` acima, o tamanho considerado é aquele conhecido no momento em que o codec precisa ser escolhido, antes de os dados serem gravados: o tamanho não comprimido do bloco inserido para uma parte recém-inserida e o tamanho das partes de origem para um merge ou uma mutação. Assim, inserts pequenos são gravados com `LZ4`, e inserts grandes já são gravados com `ZSTD(3)` logo de início. Portanto, uma reescrita que reduz sua entrada, como um `TTL DELETE` ou um merge de collapsing, é classificada pelo tamanho da entrada e pode produzir uma parte abaixo do limite que ainda assim usa `ZSTD(3)`.
 </Note>
 
 **Exemplo**
@@ -552,11 +552,11 @@ O valor padrão é &quot;Ok.&quot; (com uma quebra de linha no final)
 
 **Exemplo**
 
-Abre `https://tabix.io/` ao acessar `http://localhost: http_port`.
+Abre a interface web integrada (`/play`) ao acessar `http://localhost: http_port`.
 
 ```xml
 <http_server_default_response>
-  <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
+  <![CDATA[<html><head><meta http-equiv="refresh" content="0; url=/play"></head><body><a href="/play">ClickHouse Web UI</a></body></html>]]>
 </http_server_default_response>
 ```
 
@@ -1532,9 +1532,9 @@ Configurações da [tabela de sistema text&#95;log](/pt-BR/reference/system-tabl
 
 Além disso:
 
-| Configuração | Descrição                                                                     | Valor padrão |
-| ------------ | ----------------------------------------------------------------------------- | ------------ |
-| `level`      | Nível máximo de mensagem (por padrão, `Trace`) que será armazenado na tabela. | `Trace`      |
+| Configuração | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                     | Valor padrão                                                      |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `level`      | Nível máximo de mensagem armazenado na tabela. Quando definido explicitamente, o nível do logger raiz é elevado para, no mínimo, esse valor, de modo que o `text_log` pode ser mais detalhado do que o arquivo de log do servidor (`logger.level`). Quando não definido, são armazenadas as mensagens até o nível mais detalhado entre as saídas de log configuradas (`logger.level`, `console_log_level`, `errorlog_level`, `syslog_level`). | `Trace` (limitado pelas demais saídas de log quando não definido) |
 
 **Exemplo**
 

@@ -4,7 +4,7 @@ description: 'Tabela do sistema que contém informações sobre o uso de QUOTA p
 keywords: ['tabela do sistema', 'quota_usage']
 slug: /operations/system-tables/quota_usage
 title: 'system.quota_usage'
-doc_type: 'referência'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '/snippets/pt-BR/_system_table_cloud.mdx';
@@ -50,6 +50,8 @@ Uso da QUOTA pelo usuário atual: quanto já foi usado e quanto ainda resta.
 * `max_failed_sequential_authentications` ([Nullable(UInt64)](/pt-BR/reference/data-types/nullable)) — Número máximo permitido de falhas consecutivas de autenticação no período especificado.
 * `queries_per_normalized_hash` ([Nullable(UInt64)](/pt-BR/reference/data-types/nullable)) — Número máximo atual de execuções de uma mesma consulta normalizada no período atual.
 * `max_queries_per_normalized_hash` ([Nullable(UInt64)](/pt-BR/reference/data-types/nullable)) — Número máximo permitido de execuções de uma mesma consulta normalizada no período especificado.
+* `profile_events` ([Map(String, UInt64)](/pt-BR/reference/data-types/map)) — Consumo atual de cada evento de criação de perfil sobre o qual a quota define um limite.
+* `max_profile_events` ([Map(String, UInt64)](/pt-BR/reference/data-types/map)) — Consumo máximo permitido de cada evento de criação de perfil sobre o qual a quota define um limite. Um valor igual a 0 significa que o evento é apenas monitorado, sem limite.
 
 ## Veja também {#see-also}
 

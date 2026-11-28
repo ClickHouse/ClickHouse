@@ -30,7 +30,6 @@
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <fmt/ranges.h>
-#include <Common/StackWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -399,26 +398,8 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
         return {};
 
     /// Non-trivial atoms from left to right.
-    VectorWithMemoryTracking<const ActionsDAG::Node *> atoms;
-    StackWithMemoryTracking<const ActionsDAG::Node *> nodes;
-    nodes.push(filter);
-    while (!nodes.empty())
-    {
-        const auto * node = nodes.top();
-        nodes.pop();
-
-        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
-        {
-            /// The order is important. We should take the left-most atom, so put conditions on stack in reverse order.
-            for (const auto * child : node->children | std::ranges::views::reverse)
-                nodes.push(child);
-
-            continue;
-        }
-
-        if (!isTrivialSubtree(node))
-            atoms.push_back(node);
-    }
+    auto atoms = ActionsDAG::extractConjunctionAtomsInWrittenOrder(filter);
+    std::erase_if(atoms, isTrivialSubtree);
 
     /// Do not split subtree if it's the last non-trivial one.
     if (atoms.size() < 2)
