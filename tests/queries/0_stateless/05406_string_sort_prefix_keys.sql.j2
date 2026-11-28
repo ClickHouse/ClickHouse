@@ -1,0 +1,71 @@
+-- String sorts compare 8-byte prefix keys first, taken after the common prefix of the strings, and compare whole strings
+-- only on ties. Each check compares a sort that uses them with the order of byte arrays, which does not.
+-- The strings have lengths around 8 bytes, zero bytes and bytes >= 0x80, and many of them tie in their first 8 bytes.
+-- With a prefix, all strings share 14 bytes, so the keys are taken after them; some strings end exactly there.
+-- Ranges and arrays of at least 16 strings, and partial sorts of at least 1/16 of them, use the keys.
+
+{% for prefix in ['', 'common_prefix_'] -%}
+
+SELECT '--- prefix: {{ prefix }}';
+
+DROP VIEW IF EXISTS strings;
+CREATE VIEW strings AS
+SELECT
+    toUInt32(number) AS i,
+    concat(
+        '{{ prefix }}',
+        ['', 'abcdefgh', 'abcdefg', 'abcdefghi'][1 + cityHash64(number, 'p') % 4],
+        arrayStringConcat(arrayMap(j -> ['\0', 'a', '\xFF'][1 + cityHash64(number, j) % 3], range(cityHash64(number) % 10)))) AS s,
+    if(i % 11 = 0, NULL, s) AS ns,
+    toFixedString(s, 40) AS fs,
+    arrayMap(k -> reinterpretAsUInt8(substring(s, k, 1)), range(1, length(s) + 1)) AS bytes
+FROM numbers(5000);
+
+-- `ColumnString` and `ColumnFixedString`: `getPermutation`, its partial sort, and `updatePermutation`.
+SELECT (SELECT groupArray(s) FROM (SELECT s FROM strings ORDER BY s)) = (SELECT groupArray(s) FROM (SELECT s FROM strings ORDER BY bytes));
+SELECT (SELECT groupArray(s) FROM (SELECT s FROM strings ORDER BY s DESC)) = (SELECT groupArray(s) FROM (SELECT s FROM strings ORDER BY bytes DESC));
+SELECT (SELECT groupArray(s) FROM (SELECT s FROM strings ORDER BY s LIMIT 1000)) = (SELECT groupArray(s) FROM (SELECT s FROM strings ORDER BY bytes LIMIT 1000));
+SELECT (SELECT groupArray((i % 7, s)) FROM (SELECT i, s FROM strings ORDER BY i % 7, s)) = (SELECT groupArray((i % 7, s)) FROM (SELECT i, s FROM strings ORDER BY i % 7, bytes));
+SELECT (SELECT groupArray(fs) FROM (SELECT fs FROM strings ORDER BY fs)) = (SELECT groupArray(fs) FROM (SELECT fs FROM strings ORDER BY bytes));
+
+-- `arraySort` family and `arrayTopK` on `String`, `FixedString` and `LowCardinality` strings.
+SELECT DISTINCT
+    arraySort(arr) = ref,
+    arrayReverseSort(arr) = arrayReverse(ref),
+    arraySlice(arrayPartialSort(100, arr), 1, 100) = arraySlice(ref, 1, 100),
+    arraySort(arrayPartialSort(100, arr)) = ref,
+    arraySlice(arrayPartialReverseSort(100, arr), 1, 100) = arraySlice(arrayReverse(ref), 1, 100),
+    arrayBottomK(100, arr) = arraySlice(ref, 1, 100),
+    arrayTopK(100, arr) = arraySlice(arrayReverse(ref), 1, 100),
+    arrayMap(x -> toString(x), arraySort(arrayMap(x -> toFixedString(x, 40), arr))) = arrayMap(x -> toString(toFixedString(x, 40)), ref),
+    arrayMap(x -> toString(x), arraySort(arrayMap(x -> toLowCardinality(x), arr))) = ref
+FROM (SELECT groupArray(s) AS arr, arrayMap(x -> x.2, arraySort(x -> x.1, groupArray((bytes, s)))) AS ref FROM strings GROUP BY i % 10);
+
+-- `Nullable` strings: `NULL`s go last in both directions.
+SELECT DISTINCT
+    arraySort(arr) = arrayConcat(ref, arrayResize([NULL], length(arr) - length(ref))),
+    arrayReverseSort(arr) = arrayConcat(arrayReverse(ref), arrayResize([NULL], length(arr) - length(ref)))
+FROM
+(
+    SELECT
+        arrayMap(x -> x.1, groupArray(tuple(ns))) AS arr,
+        arrayMap(x -> x.2, arraySort(x -> x.1, groupArrayIf((bytes, s), ns IS NOT NULL))) AS ref
+    FROM strings GROUP BY i % 10
+);
+
+-- `mapSort` sorts key-value tuples, whose first element is a string.
+SELECT DISTINCT mapKeys(mapSort(m)) = ref, mapKeys(mapReverseSort(m)) = arrayReverse(ref)
+FROM
+(
+    SELECT mapFromArrays(groupArray(s), groupArray(i)) AS m, arrayMap(x -> x.2, arraySort(x -> x.1, groupArray((bytes, s)))) AS ref
+    FROM (SELECT any(i) AS i, s, any(bytes) AS bytes FROM strings GROUP BY s)
+    GROUP BY i % 10
+);
+
+-- `groupArraySorted` rejects strings that are not less than the maximum of the full heap.
+SELECT DISTINCT groupArraySorted(100)(s) = arraySlice(arrayMap(x -> x.2, arraySort(x -> x.1, groupArray((bytes, s)))), 1, 100)
+FROM strings GROUP BY i % 10;
+
+DROP VIEW strings;
+
+{% endfor -%}
