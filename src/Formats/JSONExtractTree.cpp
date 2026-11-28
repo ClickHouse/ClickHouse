@@ -6,6 +6,7 @@
 #include <Formats/SchemaInferenceUtils.h>
 
 #include <Core/AccurateComparison.h>
+#include <Common/StringUtils.h>
 #include <Common/checkStackSize.h>
 #if USE_SIMDJSON
 #include <Common/JSONParsers/SimdJSONParser.h>
@@ -237,6 +238,19 @@ bool tryGetNumericValueFromJSONElement(
             {
                 if (tryReadIntText(value, rb) && rb.eof())
                     break;
+
+                if constexpr (is_signed_v<NumberType>)
+                {
+                    /// `tryReadIntText` rejects a decimal integer literal only when it is out of range.
+                    std::string_view digits = element.getString();
+                    if (!digits.empty() && (digits.front() == '-' || digits.front() == '+'))
+                        digits.remove_prefix(1);
+                    if (!digits.empty() && std::all_of(digits.begin(), digits.end(), isNumericASCII))
+                    {
+                        error = fmt::format("value {} is out of bounds of type {}", element.getString(), TypeName<NumberType>);
+                        return false;
+                    }
+                }
 
                 /// Try to parse float and convert it to integer.
                 Float64 tmp_float = 0;
