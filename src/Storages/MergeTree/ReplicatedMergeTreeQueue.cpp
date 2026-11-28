@@ -2415,7 +2415,6 @@ MutationCommands getMetadataMutationCommands(const MutationCommands & commands)
     return result;
 }
 
-/// The commands of an ALTER without its CLEAR commands, for a part whose data is newer than the ALTER's mutation.
 MutationCommands getCommandsWithoutClear(const MutationCommands & commands)
 {
     MutationCommands result;
