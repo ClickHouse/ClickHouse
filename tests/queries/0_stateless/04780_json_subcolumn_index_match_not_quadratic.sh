@@ -6,8 +6,8 @@
 # name embeds the text of a folded constant, so a large dotted constant made index analysis
 # quadratic in the constant's length.
 # Each arm compares a dotted constant against a no-dots constant of the same length. The oracle is
-# the allocated-bytes counter rather than wall clock: it is exactly reproducible, whereas the
-# ~2.6s planning delta is smaller than debug-build client startup jitter.
+# the query's peak memory rather than wall clock, because the ~2.6s planning delta is smaller than
+# debug-build client startup jitter.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,9 +16,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 REPEATS=100000
-# Measured on a debug build: pre-fix the dotted arm allocates 2.8x-3.0x the control in every arm,
-# post-fix 1.0003x. 1.5 sits an order of magnitude away from the fixed behavior and ~1.9x below
-# the regression, so it discriminates with margin on both sides.
+# Measured on a debug build: pre-fix the dotted query peaks at 2.6x-2.7x the control on every
+# table, post-fix 1.0000x. 1.5 sits an order of magnitude away from the fixed behavior and ~1.7x
+# below the regression, so it discriminates with margin on both sides.
 MAX_RATIO_PERCENT=150
 
 LONG_SUFFIX=$(printf 'a%.0s' $(seq 1 170))
@@ -54,9 +54,8 @@ $CLICKHOUSE_CLIENT -nm -q "
     INSERT INTO tokens SELECT 'v' || toString(number % 10) FROM numbers(1000);
 "
 
-# Sets ALLOC_BYTES to the minimum bytes the server allocated while planning one query, over
-# several identical runs. EXPLAIN runs index analysis without reading data, so the measurement
-# is the matcher's cost.
+# Sets ALLOC_BYTES to the minimum peak memory of one planning query, over several identical runs.
+# EXPLAIN runs index analysis without reading data, so the measurement is the matcher's cost.
 # A single run is not a stable oracle: whichever query happens to be the first to touch a cache
 # or spin up a thread pool absorbs a transient multi-megabyte allocation, and the dotted arm
 # always runs first in the loop below, so such a one-off inflates the ratio arbitrarily
@@ -68,7 +67,9 @@ alloc_bytes_for() {
     local query_id_prefix="04780-${CLICKHOUSE_DATABASE}-${table}-${unit}-${RANDOM}"
     local run
     for run in $(seq 1 $ALLOC_RUNS); do
-        $CLICKHOUSE_CLIENT --query_id "${query_id_prefix}-${run}" --max_query_size 1048576 --max_execution_time 300 -q "
+        # With max_untracked_memory = 0 every allocation reaches the query's tracker immediately, so
+        # the peak does not depend on when other threads on the same CPU make it flush.
+        $CLICKHOUSE_CLIENT --query_id "${query_id_prefix}-${run}" --max_untracked_memory 0 --max_query_size 1048576 --max_execution_time 300 -q "
             SELECT count() FROM (
                 EXPLAIN indexes = 1
                 SELECT count() FROM ${table} WHERE position(repeat('${unit}', ${REPEATS}), s) = 1
@@ -76,7 +77,7 @@ alloc_bytes_for() {
     done
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log" >/dev/null
     ALLOC_BYTES=$($CLICKHOUSE_CLIENT -q "
-        SELECT min(ProfileEvents['MemoryAllocatedWithoutCheckBytes'])
+        SELECT min(memory_usage)
         FROM system.query_log
         WHERE current_database = currentDatabase() AND startsWith(query_id, '${query_id_prefix}-') AND type = 'QueryFinish'
         HAVING count() = ${ALLOC_RUNS}")
@@ -91,7 +92,7 @@ for table in plain longidx withjson tokens; do
     control=$ALLOC_BYTES
 
     if [ $((dotted * 100)) -gt $((control * MAX_RATIO_PERCENT)) ]; then
-        echo "FAIL: $table index analysis over a constant with ${REPEATS} dots allocated ${dotted} bytes," \
+        echo "FAIL: $table index analysis over a constant with ${REPEATS} dots peaked at ${dotted} bytes," \
              "more than ${MAX_RATIO_PERCENT}% of the no-dots control (${control} bytes)" >&2
         exit 1
     fi
