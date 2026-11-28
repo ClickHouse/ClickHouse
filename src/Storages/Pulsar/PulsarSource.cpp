@@ -21,6 +21,41 @@ namespace Setting
     extern const SettingsMilliseconds pulsar_max_wait_ms;
 }
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int STD_EXCEPTION;
+    extern const int TIMEOUT_EXCEEDED;
+}
+
+namespace
+{
+
+/// Whether the exception thrown while parsing a message was caused by the state of the server or of the query
+/// (a memory limit, a failed allocation, a timeout, a cancellation, an internal error) rather than by the message.
+/// Such a failure says nothing about the message, so the message must be neither skipped nor turned into an
+/// error row: it has to stay unacknowledged and be redelivered. The list is narrow on purpose: every other
+/// exception is attributed to the message, otherwise a message that a format rejects with an error code
+/// outside of `isParseError` would be redelivered forever with `pulsar_handle_error_mode = 'stream'`.
+bool isNotCausedByMessage(const Exception & e)
+{
+    const int code = e.code();
+    if (code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+        || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY
+        || code == ErrorCodes::TIMEOUT_EXCEEDED
+        || code == ErrorCodes::QUERY_WAS_CANCELLED
+        || code == ErrorCodes::LOGICAL_ERROR)
+        return true;
+
+    /// `StreamingFormatExecutor` wraps a `std::exception` with its type name in front of the message.
+    return code == ErrorCodes::STD_EXCEPTION && e.message().starts_with("std::bad_alloc");
+}
+
+}
+
 PulsarSource::PulsarSource(
     StoragePulsar & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
@@ -143,8 +178,14 @@ Chunk PulsarSource::generateImpl()
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e) -> size_t
     {
-        /// Only genuine input errors may be skipped. Resource and internal failures (such as `MEMORY_LIMIT_EXCEEDED`)
-        /// are not caused by the message, so skipping them would acknowledge and lose a valid message.
+        /// Resource and internal failures (such as `MEMORY_LIMIT_EXCEEDED`) are not caused by the message.
+        /// Neither recovery below applies to them: skipping the message, or replacing it with an error row
+        /// of default values, would acknowledge and lose a valid message. Fail the read instead, so that
+        /// the message is redelivered.
+        if (isNotCausedByMessage(e))
+            throw std::move(e);
+
+        /// Only genuine input errors may be skipped.
         if (isParseError(e.code()) && skipped_broken_messages < skip_broken_messages)
         {
             ++skipped_broken_messages;

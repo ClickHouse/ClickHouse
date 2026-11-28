@@ -108,7 +108,7 @@ public:
     {
     }
 
-    String getName() const override { return "ReadFromStoragePulsar"; }
+    [[nodiscard]] String getName() const override { return "ReadFromStoragePulsar"; }
 
 private:
     Pipe makePipe() final
@@ -389,12 +389,17 @@ void StoragePulsar::startup()
 void StoragePulsar::shutdown(bool /* is_drop */)
 {
     shutdown_called.store(true);
-    init_task->deactivate();
-    streamer->deactivate();
 
+    /// Close the client before waiting for the background tasks: a task may be blocked inside the client,
+    /// subscribing or polling an idle topic for up to `pulsar_poll_timeout_ms`, and the client does not look
+    /// at `shutdown_called`. `Pulsar::Client::close` may be called from another thread; it interrupts these
+    /// calls, and every later call fails right away.
     LOG_TRACE(log, "Closing Pulsar client");
     pulsar_client.close();
     LOG_TRACE(log, "Pulsar client closed");
+
+    init_task->deactivate();
+    streamer->deactivate();
 }
 
 
@@ -984,6 +989,25 @@ void registerStoragePulsar(StorageFactory & factory)
                 return fully_expanded;
             return expanded;
         };
+
+        /// A repeated setting is applied in order, so its last occurrence wins, while `SettingsChanges::setSetting`
+        /// (which stores the unfolded value below) replaces the first one. The stored definition would then keep
+        /// the macros in the effective occurrence, and a renamed table would move to another topic or subscription
+        /// on the next load. The settings that identify the broker side of the table must be unambiguous.
+        if (is_fresh_definition && args.storage_def->settings)
+        {
+            for (const auto & setting_name : broker_identity_setting_names)
+            {
+                const auto occurrences = std::ranges::count_if(
+                    args.storage_def->settings->changes, [&](const SettingChange & change) { return change.name == setting_name; });
+                if (occurrences > 1)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The setting `{}` is specified {} times in the definition of the `Pulsar` table, it must be specified once",
+                        setting_name,
+                        occurrences);
+            }
+        }
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
         {

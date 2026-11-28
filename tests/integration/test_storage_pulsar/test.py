@@ -1947,3 +1947,134 @@ def test_repeated_reads_with_zero_wait_finish(pulsar_cluster):
         timeout=60,
     )
     assert result.strip() == ""
+
+
+def test_stream_error_mode_does_not_swallow_resource_errors(pulsar_cluster):
+    # `pulsar_handle_error_mode = 'stream'` turns a message that cannot be parsed into
+    # a row of default values with the error in `_error`. A valid message whose parsing
+    # failed for a reason unrelated to it (here `MEMORY_LIMIT_EXCEEDED`) must fail the
+    # query instead, so it stays unacknowledged and is redelivered.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    for table in ["test.pulsar_stream_reader", "test.pulsar_stream_writer"]:
+        instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        """
+        CREATE TABLE test.pulsar_stream_reader (a Array(UInt256))
+        ENGINE = Pulsar
+        SETTINGS pulsar_service_url = 'pulsar://pulsar1:6650',
+                 pulsar_topic_list = 'stream_resource_error_topic',
+                 pulsar_group_name = 'stream_resource_error_group',
+                 pulsar_format = 'JSONEachRow',
+                 pulsar_handle_error_mode = 'stream',
+                 pulsar_commit_on_select = 1
+        """
+    )
+    instance.query(
+        """
+        CREATE TABLE test.pulsar_stream_writer (data String)
+        ENGINE = Pulsar
+        SETTINGS pulsar_service_url = 'pulsar://pulsar1:6650',
+                 pulsar_topic_list = 'stream_resource_error_topic',
+                 pulsar_group_name = 'stream_resource_error_writer_group',
+                 pulsar_format = 'RawBLOB'
+        """
+    )
+
+    # The message is small (two bytes per element), while the parsed column takes
+    # 32 bytes per element, so the memory limit is hit by the parser.
+    num_elements = 200000
+    instance.query(
+        "INSERT INTO test.pulsar_stream_writer "
+        f"""SELECT '{{"a":[' || arrayStringConcat(arrayMap(x -> '1', range({num_elements})), ',') || ']}}'"""
+    )
+
+    query = "SELECT length(a), _error FROM test.pulsar_stream_reader"
+    deadline = time.monotonic() + 120
+    failed = False
+    while time.monotonic() < deadline and not failed:
+        answer, error = instance.query_and_get_answer_with_error(
+            query,
+            settings={"max_memory_usage": 3000000, "max_untracked_memory": 0},
+        )
+        # The message must never come out as an error row of default values.
+        assert answer.strip() == ""
+        failed = "MEMORY_LIMIT_EXCEEDED" in error
+        if not failed:
+            time.sleep(0.2)
+    assert failed, "The query with a low memory limit never failed on the message"
+
+    # The message was not acknowledged, so it is redelivered intact.
+    deadline = time.monotonic() + 240
+    result = ""
+    while time.monotonic() < deadline and not result.strip():
+        result = instance.query(query)
+        if not result.strip():
+            time.sleep(1)
+    assert TSV(result) == TSV(f"{num_elements}\t")
+
+    for table in ["test.pulsar_stream_reader", "test.pulsar_stream_writer"]:
+        instance.query(f"DROP TABLE {table} SYNC")
+
+
+def test_repeated_broker_identity_setting_rejected(pulsar_cluster):
+    # The last occurrence of a repeated setting wins, while the value unfolded from
+    # the {database}/{table} macros replaces the first one in the stored definition.
+    # The stored definition would keep the macros, and a renamed table would switch
+    # to another topic or subscription on the next load, so this is rejected.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    for setting, value in [
+        ("pulsar_topic_list", "{table}_repeated_topic"),
+        ("pulsar_group_name", "{table}_repeated_group"),
+    ]:
+        error = instance.query_and_get_error(
+            pulsar_table(
+                "test.pulsar_reader",
+                "repeated_setting_topic",
+                "repeated_setting_group",
+                extra_settings=f", {setting} = '{value}'",
+            )
+        )
+        assert "BAD_ARGUMENTS" in error
+        assert f"`{setting}` is specified 2 times" in error
+
+
+def test_shutdown_interrupts_long_poll(pulsar_cluster):
+    # The streaming task of an idle topic is blocked in the client for up to
+    # `pulsar_poll_timeout_ms`. Shutting the table down must interrupt that poll
+    # instead of waiting for it to time out.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query("DROP TABLE IF EXISTS test.pulsar_long_poll SYNC")
+    instance.query(
+        pulsar_table(
+            "test.pulsar_long_poll",
+            "long_poll_topic",
+            "long_poll_group",
+            extra_settings=", pulsar_poll_timeout_ms = 600000",
+        )
+    )
+    instance.query(pulsar_table("test.pulsar_writer", "long_poll_topic", "long_poll_writer_group"))
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+        ENGINE = MergeTree ORDER BY key
+        """
+    )
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT key, value FROM test.pulsar_long_poll
+        """
+    )
+
+    # After the only message of the topic is polled, the streaming task polls again
+    # and stays there: the block is not full and there is nothing more to receive.
+    instance.query("INSERT INTO test.pulsar_writer VALUES (1, 1)")
+    instance.wait_for_log_line(
+        r"Storage Pulsar\(pulsar_long_poll\).*Polled messages: 1",
+        timeout=120,
+    )
+
+    instance.query("DROP TABLE test.consumer SYNC")
+    instance.query("DETACH TABLE test.pulsar_long_poll SYNC", timeout=60)
+    instance.query("ATTACH TABLE test.pulsar_long_poll")
+    instance.query("DROP TABLE test.pulsar_long_poll SYNC", timeout=60)
