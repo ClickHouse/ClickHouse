@@ -13,6 +13,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -252,9 +253,9 @@ struct FilterNames
                 return;
             }
         }
-        /// a body can read a checked table in a subquery also where the caller does not
+        /// a body can read a checked table in a subquery also where the caller does not, the name of the function is not a read
         if (auto body = UserDefinedSQLFunctionFactory::instance().tryGet(name); body && visited_udfs.emplace(name, scope, record, in_reader).second)
-            collect(body, scope, {}, record, in_reader);
+            collect(body->as<ASTCreateSQLFunctionQuery &>().function_core, scope, {}, record, in_reader);
 
         for (const auto & child : ast->children)
             collect(child, scope, bound, record, in_reader);
