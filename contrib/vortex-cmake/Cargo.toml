@@ -21,6 +21,11 @@ parking = "2"
 # lock only spins, and under TSan its unlock can starve behind the spinners (Cargo applies the
 # feature to every user of the crate).
 kanal = { version = "0.1", features = ["std-mutex"] }
+# Vortex checks the zone of a timestamp with `jiff`, which on Linux only reads the host's time zone
+# database. Without one, as in a container built from `scratch`, every zone but `UTC` is unknown
+# and a file with such a column cannot be read. The bundled copy is used only when the host has no
+# database. Same version as `vortex` uses, so that the feature applies to its copy.
+jiff = { version = "0.2.46", default-features = false, features = ["tzdb-bundle-always"] }
 vortex = { version = "0.84.0", default-features = false, features = ["files", "zstd"] }
 
 [build-dependencies]
