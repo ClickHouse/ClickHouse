@@ -96,7 +96,7 @@ PRIMARY KEY Id
 
 ### Composite Key {#composite-key}
 
-The key can be a `tuple` from any types of fields. The [layout](/reference/statements/create/dictionary/layouts/overview) in this case must be `complex_key_hashed` or `complex_key_cache`.
+The key can be a `tuple` from any types of fields. Choose a `complex_key_*` [layout](/reference/statements/create/dictionary/layouts/overview) for general composite keys.
 
 <Tip>
 A composite key can consist of a single element. This makes it possible to use a string as the key, for instance.
@@ -136,6 +136,12 @@ PRIMARY KEY field1, field2
 For a query to the `dictGet*` function, a tuple is passed as the key. Example: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
 When the composite key consists of a single attribute, the key value can be passed directly, without wrapping it in `tuple`. For example, both `dictGetString('dict_name', 'attr_name', 'key')` and `dictGetString('dict_name', 'attr_name', tuple('key'))` are valid.
+
+Composite keys are matched by their serialized bytes, not by SQL floating-point equality. For `Float32` and `Float64` key components, positive and negative zero are distinct keys, as are NaNs with different bit patterns. For example, if a dictionary stores only `0.0`, `dictHas` for `tuple(-0.0)` returns `0`, and `dictGetOrDefault` returns its supplied default. This applies to the `complex_key_*` layouts, including `complex_key_direct`.
+
+A `direct` join against a dictionary uses these dictionary key-matching semantics. Other join algorithms may match floating-point keys differently.
+
+If these distinctions are unwanted, normalize the keys consistently in both the dictionary source and lookup expressions, or use a non-floating-point key. For `direct` and `cache` layouts, source-side comparisons and conversions also affect which rows can be fetched.
 
 ## Attributes {#attributes}
 
