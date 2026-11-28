@@ -524,6 +524,9 @@ public:
     bool isGoingToBeDropped(const MergeTreePartInfo & part_info, MergeTreePartInfo * out_drop_range_info = nullptr) const;
     bool isGoingToBeDroppedImpl(const MergeTreePartInfo & part_info, MergeTreePartInfo * out_drop_range_info) const;
 
+    /// Parts this replica has according to the executed entries, and the parts of every queued entry, including those a covering entry hides.
+    std::vector<MergeTreePartInfo> getCurrentAndQueuedPartInfos() const;
+
     /// Check that part produced by some entry in queue and get source parts for it.
     /// If there are several entries return largest source_parts set. This rarely possible
     /// for example after replica clone.

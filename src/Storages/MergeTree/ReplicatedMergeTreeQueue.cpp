@@ -141,6 +141,16 @@ bool ReplicatedMergeTreeQueue::isGoingToBeDropped(const MergeTreePartInfo & part
     return isGoingToBeDroppedImpl(part_info, out_drop_range_info);
 }
 
+std::vector<MergeTreePartInfo> ReplicatedMergeTreeQueue::getCurrentAndQueuedPartInfos() const
+{
+    std::shared_lock lock(state_mutex);
+    auto infos = current_parts.getPartInfos();
+    for (const auto & entry : queue)
+        for (const auto & part_name : entry->getVirtualPartNames(format_version))
+            infos.push_back(MergeTreePartInfo::fromPartName(part_name, format_version));
+    return infos;
+}
+
 bool ReplicatedMergeTreeQueue::isGoingToBeDroppedImpl(const MergeTreePartInfo & part_info, MergeTreePartInfo * out_drop_range_info) const
 {
     String covering_virtual = virtual_parts.getContainingPart(part_info);

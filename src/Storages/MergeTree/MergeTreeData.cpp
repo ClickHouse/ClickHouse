@@ -5821,15 +5821,25 @@ size_t MergeTreeData::clearUnusedPatchParts()
         return 0;
 
     auto regular_parts = getDataPartsVectorForInternalUsage();
+    auto queued_parts = getQueuedPartInfos();
     std::unordered_map<std::string_view, UInt64> min_data_version_by_partition;
 
-    for (const auto & part : regular_parts)
+    auto update_min_data_version = [&](const MergeTreePartInfo & info)
     {
-        UInt64 data_version = part->info.getDataVersion();
-        auto [it, inserted] = min_data_version_by_partition.emplace(part->info.getPartitionId(), data_version);
+        UInt64 data_version = info.getDataVersion();
+        auto [it, inserted] = min_data_version_by_partition.emplace(info.getPartitionId(), data_version);
 
         if (!inserted)
             it->second = std::min(it->second, data_version);
+    };
+
+    for (const auto & part : regular_parts)
+        update_min_data_version(part->info);
+
+    for (const auto & info : queued_parts)
+    {
+        if (!info.isPatch() && !info.isFakeDropRangePart())
+            update_min_data_version(info);
     }
 
     Names patch_names_to_drop;

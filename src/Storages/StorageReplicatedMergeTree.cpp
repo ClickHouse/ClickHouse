@@ -7881,6 +7881,11 @@ void StorageReplicatedMergeTree::dropPartNoWaitNoThrow(const String & part_name)
     dropPartImpl(zookeeper, part_name, entry, /*detach=*/ false, /*throw_if_noop=*/ false);
 }
 
+std::vector<MergeTreePartInfo> StorageReplicatedMergeTree::getQueuedPartInfos() const
+{
+    return queue.getCurrentAndQueuedPartInfos();
+}
+
 void StorageReplicatedMergeTree::dropPart(const String & part_name, bool detach, ContextPtr query_context)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::dropPart");

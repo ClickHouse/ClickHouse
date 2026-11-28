@@ -1,0 +1,9 @@
+fetch of the base part of partition 1 still fails on t_r1: 1
+t_r1 has no regular part of partition 1: 1
+t_r1 keeps the patch part of partition 1: 1
+data on t_r1:
+1	1	999
+2	2	222
+data on t_r2:
+1	1	999
+2	2	222

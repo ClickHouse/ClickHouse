@@ -916,6 +916,8 @@ private:
     void dropPartNoWaitNoThrow(const String & part_name) override;
     void dropPart(const String & part_name, bool detach, ContextPtr query_context) override;
 
+    std::vector<MergeTreePartInfo> getQueuedPartInfos() const override;
+
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context) override;
     PartitionCommandsResultInfo attachPartition(const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) override;
