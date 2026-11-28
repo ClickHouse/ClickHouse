@@ -195,6 +195,7 @@ public:
     bool detach = false;        /// true for DETACH PARTITION
 
     bool part = false;          /// true for ATTACH PART, DROP DETACHED PART and MOVE
+    bool part_like = false;     /// Match detached part names with LIKE instead of an exact name.
 
     bool clear_column = false;  /// for CLEAR COLUMN (do not drop column from metadata)
 
