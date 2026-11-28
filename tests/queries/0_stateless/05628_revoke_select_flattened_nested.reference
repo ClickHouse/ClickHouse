@@ -1,0 +1,22 @@
+s	['nt.a']
+t	['id','nt.public','nt.secret']
+t0	['id','nt']
+tn	['nt.public','nt.secret']
+no grants: - - - - - - -
+GRANT(nt): - - - - - - -
+GRANT(nt.public): - - + - - - +
+GRANT table, REVOKE(nt): + - - - - - +
+GRANT table, REVOKE(nt.secret): + - + - - - +
+role: GRANT table, REVOKE(nt): + - - - - - +
+t0 GRANT table, REVOKE(nt): - - -
+carriers, no revoke: + + + + + +
+carriers, REVOKE(nt): - - - - - -
+td GRANT table, REVOKE(n.name): + - -
+td GRANT table, REVOKE(n): + - -
+mv, no revoke: + + +
+mv, definer REVOKE(nt), REVOKE(x): + - +
+mv, definer REVOKE(nt), REVOKE(x), source dropped: + - +
+mv over a URL source, definer REVOKE(nt): + -
+mv over a URL source, definer REVOKE(nt), source failing: + -
+0
+mv over a URL source, definer REVOKE source, source failing: - -
