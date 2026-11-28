@@ -1331,6 +1331,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         direct_read_mode = TextIndexDirectReadMode::None;
     }
 
+    /// An index column named like `blockSize()` stores its own values, not the result of the call.
+    if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(index_column_node.getDAGNode()))
+        return false;
+
     auto index_column_name = index_column_node.getColumnName();
     bool has_index_column = hasIndexForColumn(index_column_name);
     bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
@@ -2251,6 +2255,9 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
 
 std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const
 {
+    if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(node.getDAGNode()))
+        return std::nullopt;
+
     /// `m['key']` before the subcolumn rewrite.
     if (node.isFunction())
     {
@@ -2388,7 +2395,8 @@ bool MergeTreeIndexConditionText::traverseMapContainsKeyValueNode(
     if (tokenizer->getType() != ITokenizer::Type::KeyValuePairs)
         return false;
 
-    if (!hasIndexForColumn(function_node.getArgumentAt(0).getColumnName()))
+    const auto map_argument = function_node.getArgumentAt(0);
+    if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(map_argument.getDAGNode()) || !hasIndexForColumn(map_argument.getColumnName()))
         return false;
 
     /// FixedString excluded: its padding is compared away by the function but not stored in the token,
@@ -2425,6 +2433,9 @@ bool MergeTreeIndexConditionText::traverseMapContainsKeyValueNode(
 
 bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const
 {
+    if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(node.getDAGNode()))
+        return false;
+
     /// Handle `arrayElement(map_col, 'key')` form (i.e., `map['key']`).
     if (node.isFunction())
     {
@@ -2582,6 +2593,8 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
 std::optional<RPNBuilderTreeNode> MergeTreeIndexConditionText::getIndexedArrayJoinArgument(const RPNBuilderTreeNode & node, bool & padded) const
 {
     auto argument = node.getArrayJoinArgument();
+    if (argument && !VirtualColumnUtils::isDeterministicInScopeOfQuery(argument->getDAGNode()))
+        return std::nullopt;
     if (!argument || hasIndexForColumn(argument->getColumnName()))
         return argument;
     if (!argument->isFunction() || argument->toFunctionNode().getFunctionName() != "emptyArrayToSingle")
@@ -2625,6 +2638,8 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// `arrayJoin(arr) IN (set)` needs an element in the set, like `hasAny(arr, set)`
         if (getIndexedArrayJoinArgument(node, padded))
             return true;
+        if (!VirtualColumnUtils::isDeterministicInScopeOfQuery(node.getDAGNode()))
+            return false;
         return hasIndexForColumn(node.getColumnName())
             || tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types);
     };
