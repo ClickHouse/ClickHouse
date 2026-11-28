@@ -23,6 +23,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/MetadataChangeLog.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -323,6 +324,18 @@ void DatabaseOnDisk::createTable(
 
     commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, statement, local_context);
     removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, false);
+
+    if (!create.attach)
+    {
+        MetadataChangeLog::logTableEvent(
+            local_context,
+            MetadataChangeLogElement::TABLE_CREATE,
+            table->getStorageID(),
+            getUUID(),
+            table,
+            /*metadata=*/nullptr,
+            query);
+    }
 }
 
 /// If the table was detached permanently we will have a flag file with
@@ -453,6 +466,13 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
         disk->removeRecursive(table_data_path_relative);
     }
     db_disk->removeFileIfExists(table_metadata_path_drop);
+
+    MetadataChangeLog::logTableEvent(
+        local_context,
+        MetadataChangeLogElement::TABLE_DROP,
+        table ? table->getStorageID() : StorageID{getDatabaseName(), table_name},
+        getUUID(),
+        table);
 }
 
 void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_name) const
@@ -634,6 +654,18 @@ void DatabaseOnDisk::renameTable(
         DatabaseCatalog::instance().removeUUIDMappingFinally(prev_uuid);
         atomic_db.setDetachedTableNotInUseForce(prev_uuid);
     }
+
+    ASTPtr renamed_create_query = to_database.tryGetCreateTableQuery(to_table_name, local_context);
+    MetadataChangeLog::logTableEvent(
+        local_context,
+        MetadataChangeLogElement::TABLE_RENAME,
+        table->getStorageID(),
+        to_database.getUUID(),
+        table,
+        /*metadata=*/nullptr,
+        renamed_create_query,
+        getDatabaseName(),
+        table_name);
 }
 
 

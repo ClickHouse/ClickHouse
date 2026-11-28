@@ -1,0 +1,17 @@
+--- event sequence ---
+DatabaseCreate	db_mcl				Atomic	analytics db
+TableCreate	db_mcl	orders			MergeTree	orders v1
+TableAlter	db_mcl	orders			MergeTree	orders v1
+TableAlter	db_mcl	orders			MergeTree	orders v2
+TableRename	db_mcl	orders_v2	db_mcl	orders	MergeTree	orders v2
+TableDrop	db_mcl	orders_v2			MergeTree	orders v2
+DatabaseRename	db_mcl_renamed		db_mcl		Atomic	
+DatabaseDrop	db_mcl_renamed				Atomic	
+--- rename includes normalized CREATE query ---
+1
+--- columns after alter ---
+['id','org_id','amount','amount_cents','created_at','currency']	['UInt64','UInt64','Decimal(10, 2)','Int64','DateTime','LowCardinality(String)']	['','','DEFAULT','MATERIALIZED','','DEFAULT']	['order id','','','','','iso currency']
+--- uuid preserved across rename ---
+1	1
+--- internal databases excluded ---
+1

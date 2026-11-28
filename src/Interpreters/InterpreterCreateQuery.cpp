@@ -9,6 +9,7 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/MetadataChangeLog.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
@@ -394,7 +395,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                         "Enable setting `enable_database_materialized_postgresql` to use it");
     }
 
-    bool need_write_metadata = !create.attach || !default_db_disk->existsFile(metadata_file_path);
+    const bool is_attach = create.attach;
+    bool need_write_metadata = !is_attach || !default_db_disk->existsFile(metadata_file_path);
     bool need_lock_uuid = internal || need_write_metadata;
     auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false);
 
@@ -475,6 +477,18 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             DatabaseCatalog::instance().detachDatabase(getContext(), database_name, false, false);
 
         throw;
+    }
+
+    if (!is_attach)
+    {
+        MetadataChangeLog::logDatabaseEvent(
+            getContext(),
+            MetadataChangeLogElement::DATABASE_CREATE,
+            database_name,
+            database->getUUID(),
+            database->getEngineName(),
+            create.comment ? create.comment->as<ASTLiteral &>().value.safeGet<String>() : String{},
+            database->getCreateDatabaseQuery());
     }
 
     return {};

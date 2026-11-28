@@ -34,6 +34,7 @@
 #include <Interpreters/PeriodicLog.h>
 #include <Interpreters/DeadLetterQueue.h>
 #include <Interpreters/PredicateStatisticsLog.h>
+#include <Interpreters/MetadataChangeLog.h>
 #include <Common/BlobStorageLogWriter.h>
 
 #include <Common/DimensionalMetrics.h>

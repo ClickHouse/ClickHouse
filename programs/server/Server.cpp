@@ -97,6 +97,7 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/MetadataChangeLog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
@@ -3172,6 +3173,9 @@ try
 
                 if (global_context->isServerCompletelyStarted())
                 {
+                    if (auto metadata_change_log = global_context->getMetadataChangeLog())
+                        metadata_change_log->reloadConfig(config());
+
                     std::lock_guard lock(servers_lock);
                     updateServers(config(), new_server_settings, server_pool, *async_metrics, servers, servers_to_start_before_tables);
                 }
@@ -4201,6 +4205,9 @@ try
 
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
+
+            if (auto metadata_change_log = global_context->getMetadataChangeLog())
+                metadata_change_log->reloadConfig(config());
         }
 
         startup_watch.stop();
