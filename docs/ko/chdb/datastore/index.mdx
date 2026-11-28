@@ -7,12 +7,10 @@ keywords: ['chdb', 'datastore', 'pandas', 'dataframe', 'sql', 'lazy evaluation']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
-DataStore는 chDB의 pandas-compatible API로, 익숙한 pandas DataFrame 인터페이스에 SQL 쿼리 최적화 기능을 결합해 pandas 스타일의 코드를 작성하면서도 ClickHouse의 성능을 활용할 수 있게 합니다.
+DataStore는 chDB의 pandas 호환 API로, 익숙한 pandas DataFrame 인터페이스에 SQL 쿼리 최적화 기능을 결합해 pandas 스타일의 코드를 작성하면서도 ClickHouse의 성능을 활용할 수 있게 합니다.
 
 <div id="key-features">
-  ## 주요 기능
+  ## 주요 기능 {#key-features}
 </div>
 
 * **Pandas 호환성**: 209개의 Pandas 데이터프레임 메서드, 56개의 `.str` 메서드, 42개 이상의 `.dt` 메서드
@@ -21,11 +19,13 @@ DataStore는 chDB의 pandas-compatible API로, 익숙한 pandas DataFrame 인터
 * **630개 이상의 API 메서드**: 데이터 조작을 위한 포괄적인 API 제공 범위
 * **ClickHouse 확장 기능**: pandas에는 없는 추가 Accessor(`.arr`, `.json`, `.url`, `.ip`, `.geo`)
 
-<div id="architecture">
-  ## 아키텍처
-</div>
+## 아키텍처 {#architecture}
 
-<Image size="md" img="/images/chdb/datastore_architecture.png" alt="DataStore 아키텍처" />
+<div className="ch-image-md">
+  <Frame>
+    ![DataStore 아키텍처](/images/chdb/datastore_architecture.png)
+  </Frame>
+</div>
 
 DataStore는 **지연 실행**과 **이중 엔진 실행**을 사용합니다:
 
@@ -36,7 +36,7 @@ DataStore는 **지연 실행**과 **이중 엔진 실행**을 사용합니다:
 자세한 내용은 [실행 모델](/ko/chdb/datastore/execution-model)을 참조하십시오.
 
 <div id="migration">
-  ## Pandas에서 한 줄로 마이그레이션
+  ## Pandas에서 한 줄로 마이그레이션 {#migration}
 </div>
 
 ```python
@@ -54,7 +54,7 @@ result = df[df['age'] > 25].groupby('city')['salary'].mean()
 기존 pandas 코드는 수정 없이 그대로 작동하지만, 이제 ClickHouse 엔진에서 실행됩니다.
 
 <div id="performance">
-  ## 성능 비교
+  ## 성능 비교 {#performance}
 </div>
 
 DataStore는 pandas보다 훨씬 뛰어난 성능을 제공하며, 특히 집계와 복잡한 파이프라인 작업에서 그 차이가 두드러집니다:
@@ -69,7 +69,7 @@ DataStore는 pandas보다 훨씬 뛰어난 성능을 제공하며, 특히 집계
 *1,000만 행 기준 벤치마크입니다. 자세한 내용은 [벤치마크 스크립트](https://github.com/chdb-io/chdb/blob/main/refs/benchmark_datastore_vs_pandas.py)와 [성능 가이드](/ko/chdb/guides/pandas-performance)를 참조하십시오.*
 
 <div id="when-to-use">
-  ## DataStore를 사용해야 하는 경우
+  ## DataStore를 사용해야 하는 경우 {#when-to-use}
 </div>
 
 **다음과 같은 경우 DataStore를 사용하세요:**
@@ -87,7 +87,7 @@ DataStore는 pandas보다 훨씬 뛰어난 성능을 제공하며, 특히 집계
 * pandas API에서 제공하지 않는 ClickHouse 전용 기능으로 작업하는 경우
 
 <div id="comparison">
-  ## 기능 비교
+  ## 기능 비교 {#comparison}
 </div>
 
 | 기능                       | Pandas | Polars | DuckDB | DataStore      |
@@ -102,7 +102,7 @@ DataStore는 pandas보다 훨씬 뛰어난 성능을 제공하며, 특히 집계
 | 클라우드 스토리지 지원             | 미지원    | 제한적    | 지원     | **지원**         |
 
 <div id="api-stats">
-  ## API 통계
+  ## API 통계 {#api-stats}
 </div>
 
 | 범주                   | 개수       | 지원 범위                       |
@@ -118,18 +118,18 @@ DataStore는 pandas보다 훨씬 뛰어난 성능을 제공하며, 특히 집계
 | **총 API 메서드 수**      | **630+** | -                           |
 
 <div id="navigation">
-  ## 문서 탐색
+  ## 문서 탐색 {#navigation}
 </div>
 
 <div id="getting-started">
-  ### 시작하기
+  ### 시작하기 {#getting-started}
 </div>
 
 * [Quickstart](/ko/chdb/datastore/quickstart) - 설치 및 기본 사용법
 * [Pandas에서 마이그레이션](/ko/chdb/guides/migration-from-pandas) - 단계별 마이그레이션 가이드
 
 <div id="api-reference">
-  ### API 참조
+  ### API 참조 {#api-reference}
 </div>
 
 * [팩터리 메서드](/ko/chdb/datastore/factory-methods) - 다양한 소스에서 DataStore 생성
@@ -140,14 +140,14 @@ DataStore는 pandas보다 훨씬 뛰어난 성능을 제공하며, 특히 집계
 * [I/O 작업](/ko/chdb/datastore/io) - 데이터 읽기 및 쓰기
 
 <div id="advanced-topics">
-  ### 고급 주제
+  ### 고급 주제 {#advanced-topics}
 </div>
 
 * [실행 모델](/ko/chdb/datastore/execution-model) - 지연 실행과 캐싱
 * [클래스 참조](/ko/chdb/datastore/class-reference) - 전체 API 참조
 
 <div id="configuration-debugging">
-  ### 구성 및 디버깅
+  ### 구성 및 디버깅 {#configuration-debugging}
 </div>
 
 * [구성](/ko/chdb/configuration/index) - 모든 구성 옵션
@@ -155,7 +155,7 @@ DataStore는 pandas보다 훨씬 뛰어난 성능을 제공하며, 특히 집계
 * [디버깅](/ko/chdb/debugging/index) - Explain, 프로파일링 및 로깅
 
 <div id="pandas-user-guides">
-  ### Pandas 사용자 가이드
+  ### Pandas 사용자 가이드 {#pandas-user-guides}
 </div>
 
 * [Pandas Cookbook](/ko/chdb/guides/pandas-cookbook) - 자주 사용하는 패턴
@@ -164,7 +164,7 @@ DataStore는 pandas보다 훨씬 뛰어난 성능을 제공하며, 특히 집계
 * [SQL for Pandas Users](/ko/chdb/guides/pandas-to-sql) - pandas 작업의 기반이 되는 SQL 이해하기
 
 <div id="quick-example">
-  ## 간단한 예시
+  ## 간단한 예시 {#quick-example}
 </div>
 
 ```python
@@ -191,10 +191,8 @@ print(result.to_sql())
 df = result.to_df()  # Returns pandas DataFrame
 ```
 
-<div id="next-steps">
-  ## 다음 단계
-</div>
+## 다음 단계 {#next-steps}
 
-* **DataStore가 처음이신가요?** [빠른 시작 가이드](/ko/chdb/datastore/quickstart)부터 확인하세요
-* **pandas에서 전환하시나요?** [마이그레이션 가이드](/ko/chdb/guides/migration-from-pandas)를 읽어보세요
-* **더 알아보고 싶으신가요?** [API 참조](/ko/chdb/datastore/class-reference)를 살펴보세요
+* **DataStore를 처음 사용하시나요?** [빠른 시작 가이드](/ko/chdb/datastore/quickstart)부터 시작하세요
+* **pandas에서 전환하시나요?** [마이그레이션(migration) 가이드](/ko/chdb/guides/migration-from-pandas)를 참고하세요
+* **더 자세히 알아보고 싶으신가요?** [API 참조](/ko/chdb/datastore/class-reference)를 살펴보세요

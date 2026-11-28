@@ -47,6 +47,7 @@ void ProgressIndication::resetProgress()
         watch.restart();
         cpu_usage_meter.reset(static_cast<double>(getElapsedNanoseconds()));
         waited_meter.reset(static_cast<double>(getElapsedNanoseconds()));
+        io_meter.reset(static_cast<double>(getElapsedNanoseconds()));
         hosts_data.clear();
     }
 }
@@ -69,15 +70,18 @@ void ProgressIndication::updateThreadEventData(HostToTimesMap & new_hosts_data)
 
     UInt64 total_cpu_ns = 0;
     UInt64 total_waited_ns = 0;
+    UInt64 total_io_bytes = 0;
     for (auto & new_host : new_hosts_data)
     {
         total_cpu_ns += us_to_ns * new_host.second.time();
         total_waited_ns += us_to_ns * new_host.second.waited_us;
+        total_io_bytes += new_host.second.io_bytes;
         hosts_data[new_host.first] = new_host.second;
     }
     double now = static_cast<double>(getElapsedNanoseconds());
     cpu_usage_meter.add(now, static_cast<double>(total_cpu_ns));
     waited_meter.add(now, static_cast<double>(total_waited_ns));
+    io_meter.add(now, static_cast<double>(total_io_bytes));
 }
 
 ProgressIndication::MemoryUsage ProgressIndication::sumMemoryUsage(const HostToTimesMap & hosts)
@@ -108,6 +112,8 @@ ProgressIndication::ProfileSnapshot ProgressIndication::getProfileSnapshot()
     return ProfileSnapshot{
         .cpu_usage = cpu_usage_meter.rate(now),
         .waited = waited_meter.rate(now),
+        /// The meter yields bytes per nanosecond; scale to bytes per second.
+        .io_rate = io_meter.rate(now) * 1e9,
         .memory = sumMemoryUsage(hosts_data),
         .temp_data_on_disk = sumTempDataOnDiskUsage(hosts_data),
     };
@@ -149,9 +155,13 @@ void ProgressIndication::writeFinalProgress()
 
 void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &)
 {
+    /// The terminal may be gone, e.g. a closed session of the client embedded into the server:
+    /// a failed write cancels the buffer and reports the error, and a write into it after that is a logical error.
+    if (message.isCanceled())
+        return;
+
     std::lock_guard lock(progress_mutex);
 
-    static size_t increment = 0;
     static const char * indicators[8] = {
         "\033[1;30m→\033[0m",
         "\033[1;31m↘\033[0m",
@@ -163,7 +173,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
         "\033[1m↗\033[0m",
     };
 
-    const char * indicator = indicators[increment % 8];
+    const char * indicator = indicators[indicator_frame % 8];
 
     auto [terminal_width, terminal_height] = getTerminalSize(in_fd, err_fd);
 
@@ -203,13 +213,15 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
     const ProfileSnapshot profile = getProfileSnapshot();
     double cpu_usage = std::max(profile.cpu_usage, 0.);
     double waited = std::max(profile.waited, 0.);
+    /// A small rate is mostly the progress packets themselves, so it is not shown.
+    double io_rate = profile.io_rate >= 1'000'000 ? profile.io_rate : 0;
     auto [memory_usage, max_host_usage, peak_usage] = profile.memory;
     auto [temp_data_on_disk_usage, max_host_temp_data_on_disk_usage] = profile.temp_data_on_disk;
 
     /// Mostly waiting instead of working: yellow instead of green.
     bool stalled = waited > cpu_usage;
 
-    if (cpu_usage > 0 || waited > 0 || memory_usage > 0 || temp_data_on_disk_usage > 0)
+    if (cpu_usage > 0 || waited > 0 || memory_usage > 0 || temp_data_on_disk_usage > 0 || io_rate > 0)
     {
         WriteBufferFromOwnString profiling_msg_builder;
 
@@ -225,12 +237,14 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(temp_data_on_disk_usage) << " disk";
         if (max_host_temp_data_on_disk_usage < temp_data_on_disk_usage)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(max_host_temp_data_on_disk_usage) << " max/host";
+        if (io_rate > 0)
+            profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(io_rate) << "/s IO";
 
         profiling_msg_builder << ")";
         profiling_msg = profiling_msg_builder.str();
     }
 
-    int64_t remaining_space = static_cast<int64_t>(terminal_width) - written_progress_chars;
+    int64_t remaining_space = static_cast<int64_t>(terminal_width) - static_cast<int64_t>(written_progress_chars);
 
     /// `Progress` is updated concurrently and only piecewise atomically, so the counts are taken from
     /// one snapshot: otherwise a total number of rows published between two loads could make the
@@ -332,7 +346,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
             if (show_progress_bar)
             {
                 /// We will display profiling info only if there is enough space for it.
-                int64_t width_of_progress_bar = remaining_space - strlen(" 99%");
+                int64_t width_of_progress_bar = remaining_space - static_cast<int64_t>(strlen(" 99%"));
 
                 /// We need at least twice the space, because it will be displayed either
                 /// at right after progress bar or at left on top of the progress bar.
@@ -430,13 +444,18 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
     }
 
     message << CLEAR_TO_END_OF_LINE;
-    ++increment;
+    ++indicator_frame;
 
     message.next();
 }
 
 void ProgressIndication::clearProgressOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &)
 {
+    /// The terminal may be gone, e.g. a closed session of the client embedded into the server:
+    /// a failed write cancels the buffer and reports the error, and a write into it after that is a logical error.
+    if (message.isCanceled())
+        return;
+
     std::lock_guard lock(progress_mutex);
 
     if (written_progress_chars)

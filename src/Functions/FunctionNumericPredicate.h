@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -29,37 +28,36 @@ public:
         return std::make_shared<FunctionNumericPredicate>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return false;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (!(isNativeNumber(arguments.front()) || WhichDataType(arguments.front()).isBFloat16()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be a number", getName());
+        /// `BFloat16` is not a `NativeNumber` but is accepted by these predicates (matches the
+        /// legacy `isNativeNumber(arg) || isBFloat16(arg)` check); `Decimal` / wide integers stay rejected.
+        return "(NativeNumber | BFloat16) -> UInt8";
+    }
 
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeUInt8>();
-    }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * in = arguments.front().column.get();
 

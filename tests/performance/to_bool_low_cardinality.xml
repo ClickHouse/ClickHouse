@@ -1,0 +1,18 @@
+<test>
+    <!--
+        `toBool` on a `LowCardinality` argument must convert the dictionary once and remap the
+        indexes instead of converting every row and encoding the result into a new dictionary.
+    -->
+    <settings>
+        <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
+    </settings>
+
+    <create_query>CREATE TABLE test_to_bool_lc (n LowCardinality(UInt64), s LowCardinality(String)) ENGINE = Memory</create_query>
+
+    <fill_query>INSERT INTO test_to_bool_lc SELECT number % 2, number % 2 ? 'true' : 'false' FROM numbers(20000000)</fill_query>
+
+    <query>SELECT sum(toBool(n)) FROM test_to_bool_lc SETTINGS max_threads = 1</query>
+    <query>SELECT sum(toBool(s)) FROM test_to_bool_lc SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_to_bool_lc</drop_query>
+</test>

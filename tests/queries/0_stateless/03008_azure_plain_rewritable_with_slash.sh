@@ -22,6 +22,7 @@ create table test_azure_mt (a Int32, b Int64, c Int64) engine = MergeTree() part
 settings disk = disk(
     type = object_storage,
     metadata_type = plain_rewritable,
+    enable_hard_links = 0,
     object_storage_type = azure_blob_storage,
     name = '${container}',
     endpoint = 'http://localhost:10000/devstoreaccount1/${container}/plain-tables/',

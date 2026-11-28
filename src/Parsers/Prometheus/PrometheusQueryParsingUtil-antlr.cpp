@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/checkStackSize.h>
 #include <Common/isValidUTF8.h>
 
 #include "config.h"
@@ -70,9 +71,9 @@ namespace
             }
         }
 
-        bool hasError() const { return !error_message.empty(); }
-        size_t getErrorPos() const { return error_pos; }
-        const String & getErrorMessage() const { return error_message; }
+        [[nodiscard]] bool hasError() const { return !error_message.empty(); }
+        [[nodiscard]] size_t getErrorPos() const { return error_pos; }
+        [[nodiscard]] const String & getErrorMessage() const { return error_message; }
 
     protected:
         void syntaxError(antlr4::Recognizer * /* recognizer */, antlr4::Token * offending_symbol,
@@ -101,7 +102,7 @@ namespace
 
         /// ANTLR4's lexer returns the position of an error as a line number and a position in that line;
         /// we need to convert them to a byte offset.
-        size_t convertLineAndPositionInLine(size_t line, size_t position_in_line) const
+        [[nodiscard]] size_t convertLineAndPositionInLine(size_t line, size_t position_in_line) const
         {
             size_t char_index = 0;
             if (line != 1)
@@ -146,6 +147,92 @@ namespace
             antlr4::CharStream * stream = getInputStream();
             stream->seek(stream->size());
             hitEOF = true;
+        }
+    };
+
+    /// A simulator that throws `TOO_DEEP_RECURSION` instead of overflowing the stack while it looks ahead to choose an alternative.
+    class ParserATNSimulatorCheckingStackSize : public antlr4::atn::ParserATNSimulator
+    {
+    public:
+        using antlr4::atn::ParserATNSimulator::ParserATNSimulator;
+
+    protected:
+        void closureCheckingStopState(
+            const std::shared_ptr<antlr4::atn::ATNConfig> & config,
+            antlr4::atn::ATNConfigSet * configs,
+            antlr4::atn::ATNConfig::Set & closure_busy,
+            bool collect_predicates,
+            bool full_ctx,
+            int depth,
+            bool treat_eof_as_epsilon) override
+        {
+            /// The lookahead leaves the rules ending at the same token one by one, each in a nested call, and it
+            /// does so before the parser enters any of those rules, so the checks of the parser don't help.
+            /// The grammar has no decision that looks ahead through nested rules; this guards against adding one.
+            checkStackSize();
+            antlr4::atn::ParserATNSimulator::closureCheckingStopState(
+                config, configs, closure_busy, collect_predicates, full_ctx, depth, treat_eof_as_epsilon);
+        }
+    };
+
+    /// An error strategy that reports a syntax error as the stock one does, and then stops the parser instead of recovering.
+    /// Any syntax error fails the parse and only the first one is reported, so the recovery is wasted work. And it is
+    /// quadratic in the nesting depth: for every rule it leaves, the stock strategy walks all the enclosing rules,
+    /// e.g. once per unclosed parenthesis of `((...((1`.
+    class ErrorStrategyBailingOutOnError : public antlr4::DefaultErrorStrategy
+    {
+    public:
+        void reportError(antlr4::Parser * recognizer, const antlr4::RecognitionException & e) override
+        {
+            antlr4::DefaultErrorStrategy::reportError(recognizer, e);
+            throw antlr4::ParseCancellationException();
+        }
+
+    protected:
+        void reportUnwantedToken(antlr4::Parser * recognizer) override
+        {
+            antlr4::DefaultErrorStrategy::reportUnwantedToken(recognizer);
+            throw antlr4::ParseCancellationException();
+        }
+
+        bool singleTokenInsertion(antlr4::Parser * /* recognizer */) override
+        {
+            /// The stock function finds the tokens which can follow the missing one before it reports anything, and for that
+            /// it leaves the enclosing rules one by one, each in a nested call, in a function that has no place for a stack
+            /// check. So `---...---(1` overflowed the stack there, though the parser itself had passed its checks.
+            return false;
+        }
+    };
+
+    /// A parser that throws `TOO_DEEP_RECURSION` on a deeply nested query instead of overflowing the stack.
+    class PromQLParserCheckingStackSize : public antlr4_grammars::PromQLParser
+    {
+    public:
+        explicit PromQLParserCheckingStackSize(antlr4::TokenStream * input) : antlr4_grammars::PromQLParser(input)
+        {
+            setErrorHandler(std::make_shared<ErrorStrategyBailingOutOnError>());
+
+            /// The new simulator works on the same automaton and caches as the stock one:
+            /// they belong to the grammar, and `setInterpreter` destroys only the stock simulator.
+            const auto * const stock_simulator = getInterpreter<antlr4::atn::ParserATNSimulator>();
+            setInterpreter(new ParserATNSimulatorCheckingStackSize(
+                this, stock_simulator->atn, stock_simulator->decisionToDFA, stock_simulator->getSharedContextCache()));
+        }
+
+        using antlr4_grammars::PromQLParser::enterRecursionRule;
+
+        /// The generated code enters every rule through one of these two functions,
+        /// so any recursion of the parser on nested rules passes a check.
+        void enterRule(antlr4::ParserRuleContext * localctx, size_t state, size_t rule_index) override
+        {
+            checkStackSize();
+            antlr4_grammars::PromQLParser::enterRule(localctx, state, rule_index);
+        }
+
+        void enterRecursionRule(antlr4::ParserRuleContext * localctx, size_t state, size_t rule_index, int precedence) override
+        {
+            checkStackSize();
+            antlr4_grammars::PromQLParser::enterRecursionRule(localctx, state, rule_index, precedence);
         }
     };
 
@@ -456,7 +543,7 @@ namespace
             return matcher;
         }
 
-        bool matcherMatchesEmptyString(const Matcher & matcher) const
+        [[nodiscard]] bool matcherMatchesEmptyString(const Matcher & matcher) const
         {
             switch (matcher.matcher_type)
             {
@@ -824,7 +911,17 @@ namespace
         Node * makeFunction(antlr4_grammars::PromQLParser::Function_Context * ctx, const std::vector<Node *> & arguments)
         {
             if (auto * function_name_ctx = ctx->FUNCTION())
-                return makeFunction(getText(function_name_ctx), arguments);
+            {
+                const auto function_name = getText(function_name_ctx);
+                if ((function_name == "step" || function_name == "range") && !arguments.empty())
+                {
+                    error_listener.setError(
+                        fmt::format("Function '{}' expects no arguments", function_name),
+                        getStartPos(function_name_ctx));
+                    return nullptr;
+                }
+                return makeFunction(function_name, arguments);
+            }
             if (ctx->START())
                 return makeFunction("start", arguments);
             if (ctx->END())
@@ -888,6 +985,22 @@ namespace
         }
 
         /// ANTLR visitors:
+
+        /// The check in the parser doesn't limit the depth of the parse tree: a chain of left-associative
+        /// operators like `1+1+...+1` is parsed in a loop, and its tree is as deep as the chain is long.
+        /// A visitor descends into a child through one of these two functions.
+        std::any visit(antlr4::tree::ParseTree * tree) override
+        {
+            checkStackSize();
+            return antlr4_grammars::PromQLParserBaseVisitor::visit(tree);
+        }
+
+        std::any visitChildren(antlr4::tree::ParseTree * node) override
+        {
+            checkStackSize();
+            return antlr4_grammars::PromQLParserBaseVisitor::visitChildren(node);
+        }
+
         std::any visitLiteral(antlr4_grammars::PromQLParser::LiteralContext * ctx) override
         {
             if (auto * number_ctx = ctx->NUMBER())
@@ -921,7 +1034,7 @@ namespace
             if (!res_node)
             {
                 chassert(error_listener.hasError());
-                return nullptr;
+                return {};
             }
 
             auto * offset_op_ctx = ctx->offsetOp();
@@ -1106,13 +1219,28 @@ bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view
 
     antlr4::CommonTokenStream token_stream{&promql_lexer};
 
-    antlr4_grammars::PromQLParser promql_parser{&token_stream};
+    PromQLParserCheckingStackSize promql_parser{&token_stream};
     promql_parser.removeErrorListeners();
     promql_parser.addErrorListener(&error_listener);
 
     antlr4_grammars::PromQLParser::ExpressionContext * expression = nullptr;
     if (!error_listener.hasError())
-        expression = promql_parser.expression();
+    {
+        try
+        {
+            expression = promql_parser.expression();
+        }
+        catch (const antlr4::ParseCancellationException &)
+        {
+            /// The parser stopped at a syntax error, which `error_listener` has already recorded.
+            chassert(error_listener.hasError());
+            if (error_message)
+                *error_message = error_listener.getErrorMessage();
+            if (error_pos)
+                *error_pos = error_listener.getErrorPos();
+            return false;
+        }
+    }
 
     if (!expression)
         error_listener.setError("Couldn't get an expression after parsing promql query", 0);

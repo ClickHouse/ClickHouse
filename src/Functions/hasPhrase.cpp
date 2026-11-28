@@ -166,8 +166,8 @@ void executeMatchPhrase(
     }
 }
 
-/// The elements of an array input are tokenized as the index tokenizes them, and their tokens form one
-/// sequence per row, so a phrase may span two elements.
+/// The elements of an array input are tokenized as the index tokenizes them, and a phrase must lie within one
+/// element. With the `array` tokenizer every element is one token, so a phrase spans elements instead.
 template <typename StringColumn>
 requires std::same_as<StringColumn, ColumnString> || std::same_as<StringColumn, ColumnFixedString>
 void executeMatchPhraseOnArray(
@@ -182,6 +182,7 @@ void executeMatchPhraseOnArray(
 {
     MatchPhraseMatcher matcher(phrase_tokens, failure_table);
     const auto & offsets = col_input.getOffsets();
+    const bool phrase_spans_elements = tokenizer->getType() == ITokenizer::Type::Array;
 
     col_result.resize(input_rows_count);
 
@@ -198,6 +199,9 @@ void executeMatchPhraseOnArray(
             if (elements_nullable && elements_nullable->isNullAt(element_index))
                 continue;
 
+            if (!phrase_spans_elements)
+                matcher.reset();
+
             std::string_view element = col_elements.getDataAt(element_index);
             forEachToken(*tokenizer, element.data(), element.size(), matcher([&] { col_result[i] = 1; }));
         }
@@ -209,26 +213,6 @@ void executeMatchPhraseOnArray(
 
 FunctionHasPhraseOverloadResolver::FunctionHasPhraseOverloadResolver(ContextPtr)
 {
-}
-
-DataTypePtr FunctionHasPhraseOverloadResolver::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
-{
-    FunctionArgumentDescriptors mandatory_args{
-        {"input",
-         static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedStringOrArrayOfStringOrFixedString),
-         nullptr,
-         "String, FixedString, Array(String) or Array(FixedString)"},
-        {"phrase",
-         static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrArrayOfStringType),
-         isColumnConst,
-         "const String or const Array(String)"}};
-
-    FunctionArgumentDescriptors optional_args{
-        {"tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}};
-
-    validateFunctionArguments(name, arguments, mandatory_args, optional_args);
-
-    return std::make_shared<DataTypeNumber<UInt8>>();
 }
 
 FunctionBasePtr
@@ -353,7 +337,7 @@ Prior to searching, the function tokenizes the `input` and, when it is a `String
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
 The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `array`, `ngrams`, `asciiCJK`, or `icu`.
 
-If `input` is an [Array(String)](/reference/data-types/array), its elements are tokenized like any other input and their tokens form a single sequence per row, so a phrase may span two elements. With the `array` tokenizer each element is one token, which is how a column of already tokenized values is searched.
+If `input` is an [Array(String)](/reference/data-types/array), its elements are tokenized like any other input and a phrase must lie within a single element. With the `array` tokenizer each element is one token and a phrase spans consecutive elements, which is how a column of already tokenized values is searched.
 If `phrase` is an [Array(String)](/reference/data-types/array), its elements are the tokens to search for, in order and
 including duplicates. Empty phrase elements are ignored, because no tokenizer produces an empty token.
 
@@ -398,19 +382,19 @@ because "brown" appears between "quick" and "fox".
 │                                                   0 │
 └─────────────────────────────────────────────────────┘
         )"},
-           {"Token sequence given as arrays",
-            "SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])",
+           {"Already tokenized values with the `array` tokenizer",
+            "SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'], 'array')",
             R"(
-┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'])─┐
-│                                                               1 │
-└─────────────────────────────────────────────────────────────────┘
+┌─hasPhrase(['the', 'quick', 'brown', 'fox'], ['quick', 'brown'], 'array')─┐
+│                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────┘
         )"},
-           {"Phrase spanning two elements",
-            "SELECT hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])",
+           {"A phrase does not span two elements",
+            "SELECT hasPhrase(['the quick', 'brown fox'], 'quick brown')",
             R"(
-┌─hasPhrase(['the quick', 'brown fox'], ['quick', 'brown'])─┐
-│                                                         1 │
-└───────────────────────────────────────────────────────────┘
+┌─hasPhrase(['the quick', 'brown fox'], 'quick brown')─┐
+│                                                    0 │
+└──────────────────────────────────────────────────────┘
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;

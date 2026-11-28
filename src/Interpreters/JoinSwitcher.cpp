@@ -18,9 +18,8 @@ JoinSwitcher::JoinSwitcher(
     , table_join(table_join_)
     , right_sample_block(right_sample_block_->cloneEmpty())
 {
-    join = std::make_shared<HashJoin>(
-        table_join, right_sample_block_, any_take_last_row_, /*reserve_num_=*/0, /*instance_id_=*/"",
-        /*is_concurrent_hash_join_=*/false, stats_collecting_params_);
+    join = HashJoin::create(
+        table_join, right_sample_block_, HashJoinBuildLayout::oneBucket(1), any_take_last_row_, stats_collecting_params_);
     /// Until the build phase ends this join may have to hand its right blocks to `MergeJoin`.
     assert_cast<HashJoin *>(join.get())->keepRightBlocksForAnotherAlgorithm();
 

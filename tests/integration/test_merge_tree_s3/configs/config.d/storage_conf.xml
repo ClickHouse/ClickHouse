@@ -56,6 +56,7 @@
             <hdd_blob>
                 <type>local_blob_storage</type>
                 <path>/</path>
+                <persistent_removal_log>true</persistent_removal_log>
             </hdd_blob>
             <s3_with_cache>
                 <type>cache</type>
@@ -68,7 +69,8 @@
                 <disk>s3</disk>
                 <path>/test_merge_tree_s3_jbod1/</path>
                 <max_size>1000000</max_size>
-                <max_file_segment_size>1Gi</max_file_segment_size>
+                <max_file_segment_size>262144</max_file_segment_size>
+                <boundary_alignment>262144</boundary_alignment>
                 <cache_policy>slru</cache_policy>
             </s3_with_cache_and_jbod>
             <s3_r>
@@ -170,8 +172,4 @@
         <vertical_merge_algorithm_min_rows_to_activate>131072</vertical_merge_algorithm_min_rows_to_activate>
         <vertical_merge_algorithm_min_columns_to_activate>11</vertical_merge_algorithm_min_columns_to_activate>
     </merge_tree>
-
-    <database_catalog_unused_dir_hide_timeout_sec>0</database_catalog_unused_dir_hide_timeout_sec>
-    <database_catalog_unused_dir_rm_timeout_sec>60</database_catalog_unused_dir_rm_timeout_sec>
-    <database_catalog_unused_dir_cleanup_period_sec>1</database_catalog_unused_dir_cleanup_period_sec>
 </clickhouse>

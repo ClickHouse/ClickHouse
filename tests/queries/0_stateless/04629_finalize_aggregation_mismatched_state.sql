@@ -4,7 +4,6 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/111193
 
 -- Repro 1: states of different functions brought together by a UNION (materialized branch).
--- Reproduces under both the analyzer and `enable_analyzer = 0`.
 SELECT finalizeAggregation(s) FROM
 (
     SELECT quantileState(number) AS s FROM numbers(7)
@@ -13,15 +12,13 @@ SELECT finalizeAggregation(s) FROM
 ); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Repro 2 (from the issue): the non-UNION `arrayReduce`/`DISTINCT` path, which exercises different
--- plumbing (the const aggregate-state / header path). It only reproduces with the analyzer, so it is
--- pinned to `enable_analyzer = 1` to stay deterministic under the old-analyzer and random-settings jobs.
+-- plumbing (the const aggregate-state / header path).
 SELECT DISTINCT finalizeAggregation(s) FROM
 (
     SELECT DISTINCT *, arrayReduce('quantilesState(0.9)', [65537]) AS s
     FROM (SELECT DISTINCT arrayReduce('quantileState(0.5)', [1048577]) AS s, 5e-324)
     LIMIT 1
-)
-SETTINGS enable_analyzer = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Positive cases: legitimate finalization still works.
 SELECT '-- single homogeneous state';

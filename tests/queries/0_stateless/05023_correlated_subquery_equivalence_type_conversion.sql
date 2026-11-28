@@ -13,7 +13,6 @@
 --                      assumeNotNull / accurateCastOrNull conversions, absent for lossless ones
 -- and then the query results.
 
-SET enable_analyzer = 1;
 SET allow_correlated_subqueries = 1;
 SET correlated_subqueries_substitute_equivalent_expressions = 1;
 SET explain_query_plan_default = 'legacy';

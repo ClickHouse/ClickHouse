@@ -102,7 +102,8 @@ def _wf_completed(sha: str) -> bool:
     completed (the commit is not a release candidate) rather than as done."""
     out = GH.get_output_with_retries(
         f"gh api --paginate repos/{{owner}}/{{repo}}/commits/{sha}/check-runs"
-        f" --jq '.check_runs[].status'"
+        f" --jq '.check_runs[].status'",
+        strict=True,
     )
     statuses = [s for s in out.splitlines() if s.strip()]
     if not statuses:
@@ -176,13 +177,19 @@ def _release_build_artifacts_ready(release_branch: str, commit_sha: str) -> bool
     version = _release_version_for_commit(commit_sha)
     with_signed_macos = release_packages.commit_has_macos_signing(commit_sha)
     print(f"   signed macOS artifacts expected: {with_signed_macos}")
+    with_illumos = release_packages.commit_has_illumos_build(commit_sha)
+    print(f"   illumos artifacts expected: {with_illumos}")
+    packages = release_packages.commit_packages(commit_sha)
+    print(f"   packages expected: {', '.join(packages)}")
     return release_packages.release_build_artifacts_ready(
         S3,
         os.getenv("S3_BUILDS_BUCKET", Settings.S3_ARTIFACT_BUCKET),
         release_branch,
         commit_sha,
         version,
+        packages,
         with_signed_macos,
+        with_illumos,
     )
 
 

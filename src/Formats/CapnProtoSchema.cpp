@@ -15,6 +15,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <boost/algorithm/string/join.hpp>
+#include <capnp/compiler/compiler.h>
 #include <capnp/schema.h>
 #include <capnp/schema-parser.h>
 #include <kj/parse/char.h>
@@ -182,6 +183,9 @@ void checkCapnProtoSchemaNestingDepth(const String & schema_directory, const Str
 
 capnp::StructSchema CapnProtoSchemaParser::getMessageSchema(const FormatSchemaInfo & schema_info)
 {
+    /// Bounds the compiler's recursion over chains of declarations, which the text check cannot see.
+    [[maybe_unused]] static const bool stack_check_installed = (capnp::compiler::setStackCheck(&checkStackSize), true);
+
     checkCapnProtoSchemaNestingDepth(schema_info.schemaDirectory(), schema_info.schemaPath());
 
     capnp::ParsedSchema schema;
@@ -197,6 +201,9 @@ capnp::StructSchema CapnProtoSchemaParser::getMessageSchema(const FormatSchemaIn
         /// That's not good to determine the type of error by its description, but
         /// this is the only way to do it here, because kj doesn't specify the type of error.
         auto description = std::string_view(e.getDescription().cStr());
+        if (e.getType() == kj::Exception::Type::OVERLOADED && description.contains("nested too deeply"))
+            throw Exception(ErrorCodes::CANNOT_PARSE_CAPN_PROTO_SCHEMA, "The CapnProto schema is nested too deeply");
+
         if (description.contains("No such file or directory") || description.contains("no such directory") || description.contains("no such file"))
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot open CapnProto schema, file {} doesn't exists", schema_info.absoluteSchemaPath());
 

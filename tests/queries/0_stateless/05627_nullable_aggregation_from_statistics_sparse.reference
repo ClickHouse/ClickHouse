@@ -1,0 +1,22 @@
+all_1_1_0	a	Sparse
+all_1_1_0	d	Sparse
+all_1_1_0	e	Sparse
+all_1_1_0	z	Sparse
+all_2_2_0	a	Sparse
+all_2_2_0	d	Sparse
+all_2_2_0	e	Sparse
+all_2_2_0	z	Sparse
+answered from statistics, the same as without them
+-500	50000150000	16499.67	\N	-5	250000750	(16499.67,100)	100	200	0	1010
+-500	50000150000	16499.67	\N	-5	250000750	(16499.67,100)	100	200	0	1010
+-500	490	0	995002985	0	330	\N	\N
+-500	490	0	995002985	0	330	\N	\N
+1	0
+the merged part has the sum and the NULL count of the merged parts
+a	Sparse
+d	Sparse
+e	Sparse
+z	Sparse
+-500	50000150000	16499.67	-5	200	0	0	330
+-500	50000150000	16499.67	-5	200	0	0	330
+1	0

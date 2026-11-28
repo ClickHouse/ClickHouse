@@ -66,6 +66,17 @@ LIFETIME(0);
 SELECT predictXGBoost('model_05048_unknown', 1.0, 2.0); -- { serverError BAD_ARGUMENTS }
 DROP DICTIONARY model_05048_unknown;
 
+SELECT 'Debug verbosity is rejected';
+
+DROP DICTIONARY IF EXISTS model_05048_verbosity;
+CREATE DICTIONARY model_05048_verbosity (x1 Float64, x2 Float64, y Float64)
+PRIMARY KEY (x1, x2)
+SOURCE(CLICKHOUSE(TABLE 'training_05048'))
+LAYOUT(XGBOOST(num_iterations 10 verbosity 3))
+LIFETIME(0);
+SELECT predictXGBoost('model_05048_verbosity', 1.0, 2.0); -- { serverError BAD_ARGUMENTS }
+DROP DICTIONARY model_05048_verbosity;
+
 SELECT 'A negative parameter value cannot be expressed in the dictionary DDL';
 
 -- The dictionary DDL accepts only UInt64, Float64 and String layout parameter values, so a negative

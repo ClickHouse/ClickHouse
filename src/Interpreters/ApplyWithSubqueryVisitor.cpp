@@ -6,6 +6,7 @@
 #include <Interpreters/misc.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -34,18 +35,32 @@ namespace
 /// A name is looked up in an enclosing scope only while `enable_global_with_statement` holds in the
 /// subquery's own context, so a CTE name that a subquery does not see is a table name there.
 /// The clause is clamped rather than rejected, so a subquery cannot widen the reader's constraints,
-/// and it is applied to a copy, so the AST keeps the clause as written.
-ContextPtr getSubqueryContext(const ASTSelectQuery & select, const ContextPtr & context)
+/// and it is applied to a copy, so the AST keeps the clause as written. This mirrors
+/// `applyQueryLevelSettings` in `QueryTreeBuilder`, including `SETTINGS name = DEFAULT`, which is
+/// parsed into `default_settings` rather than `changes`.
+ContextPtr getSubqueryContext(const ASTPtr & settings_ast, const ContextPtr & context)
 {
-    auto settings_ast = select.settings();
     if (!settings_ast)
         return context;
 
-    auto changes = settings_ast->as<const ASTSetQuery &>().changes;
+    const auto & set_query = settings_ast->as<const ASTSetQuery &>();
     auto subquery_context = Context::createCopy(context);
-    subquery_context->clampToSettingsConstraints(changes, SettingSource::QUERY);
-    subquery_context->applySettingsChanges(changes);
+    subquery_context->applyNestedQuerySettingsClamped(set_query.changes, set_query.default_settings);
     return subquery_context;
+}
+
+/// A trailing `SETTINGS` clause of a set operation with several operands is query-level: it applies
+/// to every operand, not only to the last one, where `ParserSelectQuery` leaves it. This mirrors
+/// `QueryTreeBuilder::buildSelectWithUnionExpression`, so an element is substituted into an operand
+/// exactly when the analyzer resolves the name there as that element.
+ContextPtr getSetOperationContext(const ASTs & operands, const ASTPtr & settings_ast, const ContextPtr & context)
+{
+    ContextPtr result = getSubqueryContext(settings_ast, context);
+    /// The clause may be nested into `INTERSECT` / `EXCEPT` nodes as the last operand of each, but not into
+    /// a parenthesized operand, which keeps its clause to itself.
+    if (operands.size() > 1)
+        result = getSubqueryContext(ASTSelectIntersectExceptQuery::getTrailingSettings(operands.back()), result);
+    return result;
 }
 
 }
@@ -93,6 +108,16 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 
     if (auto * node_select = ast->as<ASTSelectQuery>())
         visit(*node_select, data);
+    else if (auto * node_union = ast->as<ASTSelectWithUnionQuery>())
+        visit(*node_union, data);
+    else if (auto * node_intersect_except = ast->as<ASTSelectIntersectExceptQuery>())
+    {
+        Data operand_data = data;
+        if (data.context)
+            operand_data.context = getSetOperationContext(node_intersect_except->getListOfSelects(), nullptr, data.context);
+        for (auto & child : ast->children)
+            visit(child, operand_data);
+    }
     else
     {
         for (auto & child : ast->children)
@@ -112,7 +137,7 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
     if (data.context)
     {
         scope_data = data;
-        scope_data->context = getSubqueryContext(ast, data.context);
+        scope_data->context = getSubqueryContext(ast.settings(), data.context);
         const auto & scope_settings = scope_data->context->getSettingsRef();
         /// A common table expression is reached by looking into an enclosing scope, so a select that does
         /// not look there cannot name one. An expression alias declared with scopes disabled is instead
@@ -163,8 +188,11 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
 
 void ApplyWithSubqueryVisitor::visit(ASTSelectWithUnionQuery & ast, const Data & data)
 {
+    Data operand_data = data;
+    if (data.context && ast.list_of_selects)
+        operand_data.context = getSetOperationContext(ast.list_of_selects->children, ast.settings_ast, data.context);
     for (auto & child : ast.children)
-        visit(child, data);
+        visit(child, operand_data);
 }
 
 void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & data)

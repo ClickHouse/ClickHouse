@@ -1,4 +1,5 @@
 #include <Server/StatelessWorker/StatelessWorkerClient.h>
+#include <Server/StatelessWorker/StatelessWorkerTaskSerialization.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
@@ -44,7 +45,7 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
     if (!credentials->getUser().empty())
     {
         creds.setUsername(credentials->getUser());
-        creds.setPassword(credentials->getPassword());
+        creds.setPassword(String(credentials->getPassword()));
     }
 
     ConnectionTimeouts timeouts;
@@ -89,9 +90,6 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
 
 }
 
-void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out);
-
-
 String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
 {
     /// The dispatch request is the trace hop to the worker, so the worker's spans hang under it.
@@ -131,7 +129,7 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
     if (!credentials->getUser().empty())
     {
         creds.setUsername(credentials->getUser());
-        creds.setPassword(credentials->getPassword());
+        creds.setPassword(String(credentials->getPassword()));
     }
 
     ConnectionTimeouts timeouts;
@@ -186,7 +184,7 @@ void cancelTask(const String & endpoint_uri, const String & task_id, const Conte
     if (!credentials->getUser().empty())
     {
         creds.setUsername(credentials->getUser());
-        creds.setPassword(credentials->getPassword());
+        creds.setPassword(String(credentials->getPassword()));
     }
 
     /// Short timeouts for cancel — it's best-effort. Workers will
@@ -225,7 +223,7 @@ void forgetTask(const String & endpoint_uri, const String & task_id, const Conte
     if (!credentials->getUser().empty())
     {
         creds.setUsername(credentials->getUser());
-        creds.setPassword(credentials->getPassword());
+        creds.setPassword(String(credentials->getPassword()));
     }
 
     ConnectionTimeouts timeouts;

@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="392" viewBox="0 0 720 392" role="img" aria-labelledby="title desc" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title id="title">Fully managed ClickHouse Observability</title>
+  <desc id="desc">Your app SDKs, collectors, and log shippers send telemetry to managed OTLP and Datadog endpoints. ClickHouse Observability provides the ClickStack UI and handles schema optimization, workload isolation, and automatic scaling, so ingestion, schemas, compute, and performance are managed for you.</desc>
+  <defs><marker id="ah" markerWidth="8" markerHeight="8" refX="6.5" refY="4" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M1.5 1.5 6.5 4 1.5 6.5" fill="none" stroke="#8A8A86" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+  <rect x="0.8" y="24.8" width="222.5" height="350.5" rx="14" fill="none" stroke="#3A3A36" stroke-width="1.5"/>
+  <text x="16" y="50" fill="#A3A3A0" font-size="10" font-weight="700" text-anchor="start" letter-spacing="0.06em">YOUR INFRASTRUCTURE</text>
+  <rect x="16" y="81" width="192" height="72" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <text x="112" y="121.7" fill="#FFFFFF" font-size="13" font-weight="500" text-anchor="middle">App SDKs</text>
+  <rect x="16" y="177" width="192" height="72" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <text x="112" y="217.7" fill="#FFFFFF" font-size="13" font-weight="500" text-anchor="middle">Collectors</text>
+  <rect x="16" y="273" width="192" height="72" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <text x="112" y="313.7" fill="#FFFFFF" font-size="13" font-weight="500" text-anchor="middle">Log shippers</text>
+  <path d="M224 200 H247" fill="none" stroke="#8A8A86" stroke-width="1.5" stroke-dasharray="4 4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah)"/>
+  <rect x="248.8" y="24.8" width="470.5" height="350.5" rx="14" fill="#FAFF69" fill-opacity="0.05" stroke="#FAFF69" stroke-width="1.5"/>
+  <text x="264" y="50" fill="#FAFF69" font-size="10" font-weight="700" text-anchor="start" letter-spacing="0.06em">CLICKHOUSE OBSERVABILITY</text>
+  <text x="704" y="50" fill="#A3A3A0" font-size="10" font-weight="700" text-anchor="end" letter-spacing="0.06em">FULLY MANAGED</text>
+  <text x="300" y="80" fill="#A3A3A0" font-size="9.5" font-weight="700" text-anchor="middle" letter-spacing="0.06em">INGESTION</text>
+  <rect x="264" y="92" width="72" height="124" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <image x="285" y="118" width="30" height="30" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHJvbGU9ImltZyIgdmlld0JveD0iLTEyLjcwIC0xMi43MCAxMDI0LjQwIDEwMjQuNDAiPjxwYXRoIGZpbGw9IiNGRkZGRkYiIGQ9Ik01MjguNyA1NDUuOWMtNDIgNDItNDIgMTEwLjEgMCAxNTIuMXMxMTAuMSA0MiAxNTIuMSAwIDQyLTExMC4xIDAtMTUyLjEtMTEwLjEtNDItMTUyLjEgMHptMTEzLjcgMTEzLjhjLTIwLjggMjAuOC01NC41IDIwLjgtNzUuMyAwLTIwLjgtMjAuOC0yMC44LTU0LjUgMC03NS4zIDIwLjgtMjAuOCA1NC41LTIwLjggNzUuMyAwIDIwLjggMjAuNyAyMC44IDU0LjUgMCA3NS4zem0zNi42LTY0M2wtNjUuOSA2NS45Yy0xMi45IDEyLjktMTIuOSAzNC4xIDAgNDdsMjU3LjMgMjU3LjNjMTIuOSAxMi45IDM0LjEgMTIuOSA0NyAwbDY1LjktNjUuOWMxMi45LTEyLjkgMTIuOS0zNC4xIDAtNDdMNzI1LjkgMTYuN2MtMTIuOS0xMi45LTM0LTEyLjktNDYuOSAwek0yMTcuMyA4NTguOGMxMS43LTExLjcgMTEuNy0zMC44IDAtNDIuNWwtMzMuNS0zMy41Yy0xMS43LTExLjctMzAuOC0xMS43LTQyLjUgMEw3Mi4xIDg1MmwtLjEuMS0xOS0xOWMtMTAuNS0xMC41LTI3LjYtMTAuNS0zOCAwLTEwLjUgMTAuNS0xMC41IDI3LjYgMCAzOGwxMTQgMTE0YzEwLjUgMTAuNSAyNy42IDEwLjUgMzggMHMxMC41LTI3LjYgMC0zOGwtMTktMTkgLjEtLjEgNjkuMi02OS4yem0zNDguNi02NTIuOUw0MTkuNSAzNTIuM2MtMTMgMTMtMTMgMzQuNCAwIDQ3LjRsOTAuNCA5MC40YzYzLjktNDYgMTUzLjUtNDAuMyAyMTEgMTcuMmw3My4yLTczLjJjMTMtMTMgMTMtMzQuNCAwLTQ3LjRMNjEzLjMgMjA1LjljLTEzLTEzLjEtMzQuNC0xMy4xLTQ3LjQgMHptLTk0IDMyMi4zbC01My40LTUzLjRjLTEyLjUtMTIuNS0zMy0xMi41LTQ1LjUgMEwxODQuNyA2NjMuMmMtMTIuNSAxMi41LTEyLjUgMzMgMCA0NS41bDEwNi43IDEwNi43YzEyLjUgMTIuNSAzMyAxMi41IDQ1LjUgMEw0NTggNjk0LjFjLTI1LjYtNTIuOS0yMS0xMTYuOCAxMy45LTE2NS45eiIvPjwvc3ZnPg=="/>
+  <text x="300" y="170" fill="#FFFFFF" font-size="10.5" font-weight="600" text-anchor="middle">OTLP</text>
+  <text x="300" y="184" fill="#A3A3A0" font-size="9" font-weight="400" text-anchor="middle">endpoint</text>
+  <rect x="264" y="228" width="72" height="124" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <rect x="285" y="254" width="30" height="30" rx="7" fill="#3A3A36" stroke="none" stroke-width="1"/>
+  <text x="300" y="273.5" fill="#FFFFFF" font-size="11" font-weight="700" text-anchor="middle">DD</text>
+  <text x="300" y="306" fill="#FFFFFF" font-size="10.5" font-weight="600" text-anchor="middle">Datadog</text>
+  <text x="300" y="320" fill="#A3A3A0" font-size="9" font-weight="400" text-anchor="middle">endpoint</text>
+  <rect x="352" y="66" width="352" height="56" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <g transform="translate(368 77) scale(0.08119) translate(-34 -19)"><path d="M225.999 74.4258V185.277L130 240.702L34 185.277V74.4258L130 19L225.999 74.4258Z" fill="#FAFF69"/><path d="M153.974 55.5749C155.469 56.6697 156.167 58.9177 155.658 60.9989L142.26 115.806H166.983C168.467 115.806 169.809 116.916 170.398 118.63C170.987 120.345 170.709 122.336 169.692 123.696L110.173 203.289C108.987 204.875 107.089 205.222 105.593 204.128C104.098 203.032 103.4 200.785 103.908 198.703L117.307 143.897H92.5839C91.0999 143.897 89.7576 142.787 89.1691 141.072C88.5802 139.358 88.8578 137.367 89.8749 136.006L149.394 56.4132C150.58 54.8275 152.478 54.4801 153.974 55.5749Z" fill="#1F1F1C"/></g>
+  <text x="392" y="90" fill="#FFFFFF" font-size="13" font-weight="600" text-anchor="start">ClickStack UI</text>
+  <text x="368" y="110" fill="#B4B4B0" font-size="10.5" font-weight="400" text-anchor="start">Logs · Traces · Metrics · Dashboards · Alerts · Notebooks</text>
+  <rect x="352" y="138" width="110" height="134" rx="10" fill="#FAFF69" stroke="none" stroke-width="1"/>
+  <text x="364" y="164" fill="#1C1C1C" font-size="13" font-weight="700" text-anchor="start">Schema</text>
+  <text x="364" y="180" fill="#1C1C1C" font-size="13" font-weight="700" text-anchor="start">optimization</text>
+  <text x="364" y="198" fill="#3F3F2E" font-size="10.5" font-weight="400" text-anchor="start">Layout, indexes,</text>
+  <text x="364" y="211" fill="#3F3F2E" font-size="10.5" font-weight="400" text-anchor="start">and compression</text>
+  <text x="364" y="224" fill="#3F3F2E" font-size="10.5" font-weight="400" text-anchor="start">tuned to your</text>
+  <text x="364" y="237" fill="#3F3F2E" font-size="10.5" font-weight="400" text-anchor="start">telemetry.</text>
+  <rect x="473" y="138" width="110" height="134" rx="10" fill="#FAFF69" stroke="none" stroke-width="1"/>
+  <text x="485" y="164" fill="#1C1C1C" font-size="13" font-weight="700" text-anchor="start">Workload</text>
+  <text x="485" y="180" fill="#1C1C1C" font-size="13" font-weight="700" text-anchor="start">isolation</text>
+  <text x="485" y="198" fill="#3F3F2E" font-size="10.5" font-weight="400" text-anchor="start">Separate</text>
+  <text x="485" y="211" fill="#3F3F2E" font-size="10.5" font-weight="400" text-anchor="start">compute for</text>
+  <text x="485" y="224" fill="#3F3F2E" font-size="10.5" font-weight="400" text-anchor="start">reads, writes,</text>
+  <text x="485" y="237" fill="#3F3F2E" font-size="10.5" font-weight="400" text-anchor="start">alerting, and</text>
+  <text x="485" y="250" fill="#3F3F2E" font-size="10.5" font-weight="400" text-anchor="start">agents.</text>
+  <rect x="594" y="138" width="110" height="134" rx="10" fill="#FAFF69" stroke="none" stroke-width="1"/>
+  <text x="606" y="164" fill="#1C1C1C" font-size="13" font-weight="700" text-anchor="start">Automatic</text>
+  <text x="606" y="180" fill="#1C1C1C" font-size="13" font-weight="700" text-anchor="start">scaling</text>
+  <text x="606" y="198" fill="#3F3F2E" font-size="10.5" font-weight="400" text-anchor="start">Sized to the</text>
+  <text x="606" y="211" fill="#3F3F2E" font-size="10.5" font-weight="400" text-anchor="start">workload,</text>
+  <text x="606" y="224" fill="#3F3F2E" font-size="10.5" font-weight="400" text-anchor="start">monitored, and</text>
+  <text x="606" y="237" fill="#3F3F2E" font-size="10.5" font-weight="400" text-anchor="start">adjusted.</text>
+  <text x="352" y="300" fill="#FAFF69" font-size="10" font-weight="700" text-anchor="start" letter-spacing="0.06em">MANAGED FOR YOU</text>
+  <clipPath id="pill0"><rect x="352" y="316" width="82" height="36" rx="8"/></clipPath>
+  <rect x="352" y="316" width="82" height="36" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <rect x="352" y="316" width="4" height="36" fill="#FAFF69" clip-path="url(#pill0)"/>
+  <text x="395" y="338" fill="#FFFFFF" font-size="11" font-weight="600" text-anchor="middle">Ingestion</text>
+  <clipPath id="pill1"><rect x="442" y="316" width="82" height="36" rx="8"/></clipPath>
+  <rect x="442" y="316" width="82" height="36" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <rect x="442" y="316" width="4" height="36" fill="#FAFF69" clip-path="url(#pill1)"/>
+  <text x="485" y="338" fill="#FFFFFF" font-size="11" font-weight="600" text-anchor="middle">Schemas</text>
+  <clipPath id="pill2"><rect x="532" y="316" width="82" height="36" rx="8"/></clipPath>
+  <rect x="532" y="316" width="82" height="36" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <rect x="532" y="316" width="4" height="36" fill="#FAFF69" clip-path="url(#pill2)"/>
+  <text x="575" y="338" fill="#FFFFFF" font-size="11" font-weight="600" text-anchor="middle">Compute</text>
+  <clipPath id="pill3"><rect x="622" y="316" width="82" height="36" rx="8"/></clipPath>
+  <rect x="622" y="316" width="82" height="36" rx="8" fill="#1F1F1C" stroke="#3A3A36" stroke-width="1"/>
+  <rect x="622" y="316" width="4" height="36" fill="#FAFF69" clip-path="url(#pill3)"/>
+  <text x="665" y="337.4" fill="#FFFFFF" font-size="9.5" font-weight="600" text-anchor="middle">Performance</text>
+</svg>

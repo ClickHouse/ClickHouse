@@ -4,6 +4,7 @@
 
 #if USE_SSH && defined(OS_LINUX)
 
+#include <fcntl.h>
 #include <optional>
 #include <unistd.h>
 
@@ -87,7 +88,7 @@ public:
         ::ssh::libsshLogger::initialize();
         ::ssh::SSHSession session;
         session.disableDefaultConfig();
-        int duplicated_fd = dup(socket.sockfd());
+        int duplicated_fd = ::fcntl(socket.sockfd(), F_DUPFD_CLOEXEC, 0);
         if (duplicated_fd == -1)
             throw Exception(ErrorCodes::SSH_EXCEPTION, "Failed to duplicate socket file descriptor");
         ssh_bind.acceptFd(session, duplicated_fd);

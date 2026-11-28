@@ -37,6 +37,7 @@ class MergeTreeData;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
 /// Versioned persistence and lookup of the delete bitmaps of a unique-key table.
+/// Under any parts lock only stamped csns are read (`isPinned`): the reads that resolve one assert none is held.
 class DeleteBitmapStore
 {
 public:
@@ -183,22 +184,12 @@ private:
     PartEntryPtr findEntry(const MergeTreePartInfo & part) const;
 
     /// The part in {Active, Outdated}, or null. The returned pointer IS the pin on its directory.
-    /// `lock` is the caller's parts lock where it holds one -- taking a second is a self-deadlock.
-    DataPartPtr findPart(const MergeTreePartInfo & info, const DataPartsAnyLock * lock = nullptr) const;
-
-    /// What a caller wants done with a link whose holder has left the part set. The read path
-    /// says the index is corrupt; the pin says let go, because throwing would hold the part for
-    /// good. Not derivable from `lock`: those two happen to differ there as well, today.
-    enum class OnMissingHolder
-    {
-        Throw,
-        Skip,
-    };
+    DataPartPtr findPart(const MergeTreePartInfo & info) const;
 
     /// Give each link with no csn yet the one its holder committed at, and move it into place.
     /// Runs before every ordered search: a link left at the top is one a reader above its
-    /// version misses.
-    void resolveUnknownVersions(PartEntry & entry, const DataPartsAnyLock * lock, OnMissingHolder on_missing) const;
+    /// version misses. Skips a holder that is not Active or Outdated.
+    void resolveUnknownVersions(PartEntry & entry) const;
 
     static void addInwardLink(PartEntry & entry, const HeldBy & link);
 
@@ -216,8 +207,7 @@ private:
         const DataPartsAnyLock & lock) const;
 
     /// One version of one part, and a live handle on the part holding the bytes. The handle is
-    /// the point: `removePartsFinally` takes a part out of the set BEFORE `dropUniqueKeyBitmaps`
-    /// drops its links, so a winner chosen without one can be retired before it is read.
+    /// the point: `grabOldParts` takes only parts nobody holds, so the holder stays readable.
     struct Version
     {
         CSN csn = Tx::UnknownCSN;
@@ -226,7 +216,7 @@ private:
 
         /// Where the bytes are filed: a carried name records its version, a staged one leaves it
         /// to whoever holds the file.
-        DeleteBitmapFileOps::BitmapFile fileFor(const String & target_name) const
+        [[nodiscard]] DeleteBitmapFileOps::BitmapFile fileFor(const String & target_name) const
         {
             return {carried ? csn : 0, target_name};
         }
@@ -236,9 +226,12 @@ private:
     /// not yet a committed one.
     static std::optional<Version> resolveOwnVersion(const DataPartPtr & holder);
 
-    /// Every version <= `snapshot_csn`, oldest first. A version is a delta, so the read owes the
-    /// union of all of them and not just the newest.
-    std::vector<Version> versionsUpTo(const MergeTreePartInfo & part, CSN snapshot_csn) const;
+    /// The csn of every version <= `snapshot_csn`, oldest first. A version is a delta, so the read
+    /// owes the union of all of them and not just the newest.
+    std::vector<CSN> versionsUpTo(PartEntry & entry, CSN snapshot_csn) const;
+
+    /// Grab the parts holding the specified versions.
+    std::vector<Version> pinVersions(const MergeTreePartInfo & part, PartEntry & entry, const std::vector<CSN> & csns) const;
 
     /// Read one version's bytes, from whichever of the two names its writer filed it under.
     DeleteBitmapPtr readVersion(const IMergeTreeDataPart & part, const Version & version) const;

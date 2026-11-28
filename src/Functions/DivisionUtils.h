@@ -1,10 +1,13 @@
 #pragma once
 
+#include "config.h"
+
 #include <cmath>
 #include <type_traits>
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -129,6 +132,9 @@ struct DivideIntegralImpl
     /// 384 B (x86-64-v2) to 1088 B (x86-64-v3) before this flag was added.
     static constexpr bool no_vectorize = true;
 
+    /// Documentation-only — see `PlusImpl::signature_documentation`.
+    static constexpr auto signature_documentation = "(Any, Any) -> Any";
+
     template <typename Result = ResultType>
     static Result apply(A a, B b)
     {
@@ -207,7 +213,12 @@ struct ModuloImpl
     /// vectorizes well (divpd/roundpd are 2x throughput of divsd/roundsd).
     static constexpr bool no_vectorize = !is_floating_point<typename NumberTraits::ResultOfModulo<A, B>::Type>;
 
+    /// Documentation-only — see `PlusImpl::signature_documentation`.
+    /// Covers `modulo`, `moduloLegacy`, `moduloOrNull` (via inheritance).
+    static constexpr auto signature_documentation = "(Any, Any) -> Any";
+
     template <typename Result = ResultType>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static Result apply(A a, B b)
     {
         if constexpr (is_floating_point<ResultType>)
@@ -387,6 +398,7 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
     using ResultType = typename NumberTraits::ResultOfPositiveModulo<A, B>::Type;
 
     template <typename Result = ResultType>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static Result apply(A a, B b)
     {
         auto res = ModuloImpl<A, B>::template apply<OriginResultType>(a, b);

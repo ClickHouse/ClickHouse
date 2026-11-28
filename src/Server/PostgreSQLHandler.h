@@ -111,7 +111,7 @@ private:
     void cancelRequest();
 
     /// The query id the current statement runs under, which a cancel request resolves to.
-    String currentQueryId() const;
+    [[nodiscard]] String currentQueryId() const;
     static String queryIdFor(Int32 connection_id_, UInt32 query_id_token_);
 
     /// Give the statement that is about to run its own query id, and point cancellation at it.

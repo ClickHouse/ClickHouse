@@ -69,8 +69,8 @@ public:
         return task;
     }
 
-    size_t size() const { return num_tasks; }
-    bool empty() const { return num_tasks == 0; }
+    [[nodiscard]] size_t size() const { return num_tasks; }
+    [[nodiscard]] bool empty() const { return num_tasks == 0; }
 
 private:
     using Queue = QueueWithMemoryTracking<Task *>;

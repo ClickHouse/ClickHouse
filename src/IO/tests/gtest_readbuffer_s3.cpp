@@ -113,7 +113,7 @@ public:
     {
     }
 
-    bool supportsExternalBufferMode() const override { return true; }
+    [[nodiscard]] bool supportsExternalBufferMode() const override { return true; }
 
     /// Like the body of a real response, reads straight into the memory of the caller: this
     /// buffer has no memory of its own, so the default `readBig` would see an empty buffer.
@@ -193,7 +193,7 @@ public:
     {
     }
 
-    bool supportsExternalBufferMode() const override { return true; }
+    [[nodiscard]] bool supportsExternalBufferMode() const override { return true; }
 
 private:
     bool nextImpl() override
@@ -208,6 +208,13 @@ private:
 
 using GetObjectFn = std::function<Aws::S3::Model::GetObjectOutcome(const Aws::S3::Model::GetObjectRequest & request)>;
 
+/// The configuration holds the filter by reference, so the filter must outlive every client built from it.
+static const DB::RemoteHostFilter & allowAnyHost()
+{
+    static const DB::RemoteHostFilter filter;
+    return filter;
+}
+
 struct ClientFake : DB::S3::Client
 {
     explicit ClientFake()
@@ -217,13 +224,13 @@ struct ClientFake : DB::S3::Client
               std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("test_access_key", "test_secret"),
               DB::S3::ClientFactory::instance().createClientConfiguration(
                   "test_region",
-                  DB::RemoteHostFilter(),
+                  allowAnyHost(),
                   1,
                   DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
                   true,
                   true,
                   true,
-                  false,
+                  DB::HTTPConnectionGroupType::STORAGE,
                   {},
                   /* request_throttler = */ {},
                   "http"),
@@ -255,7 +262,7 @@ struct ClientFake : DB::S3::Client
                 std::make_unique<FakeResponseBody>(body, weak_session_ptr.lock()),
                 body.size()));
             Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(
-                std::move(response_stream), Aws::Http::HeaderValueCollection{{"content-length", std::to_string(body.size())}});
+                std::move(response_stream), Aws::Http::HeaderValueCollection{{"content-length", Aws::Utils::StringUtils::to_string(body.size())}});
             DB::S3::Model::GetObjectResult result(std::move(aws_result));
             return DB::S3::Model::GetObjectOutcome(std::move(result));
         };
@@ -270,7 +277,7 @@ struct ClientFake : DB::S3::Client
             size_t end = body.size();
             if (request.RangeHasBeenSet())
             {
-                const std::string & range = request.GetRange();
+                const std::string range(request.GetRange());
                 const size_t prefix = std::string_view("bytes=").size();
                 const size_t dash = range.find('-');
                 begin = std::stoull(range.substr(prefix, dash - prefix));
@@ -283,7 +290,7 @@ struct ClientFake : DB::S3::Client
                 std::make_unique<FakeResponseBody>(body.substr(begin, size), std::make_shared<CountedSession>()),
                 size));
             Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(
-                std::move(response_stream), Aws::Http::HeaderValueCollection{{"content-length", std::to_string(size)}});
+                std::move(response_stream), Aws::Http::HeaderValueCollection{{"content-length", Aws::Utils::StringUtils::to_string(size)}});
             return DB::S3::Model::GetObjectOutcome(DB::S3::Model::GetObjectResult(std::move(aws_result)));
         };
     }
@@ -298,8 +305,8 @@ struct ClientFake : DB::S3::Client
     {
         last_start_after = request.GetStartAfter().c_str();
         list_requests.emplace_back(ListRequest{
-            .start_after = request.GetStartAfter(),
-            .continuation_token = request.GetContinuationToken(),
+            .start_after = String(request.GetStartAfter()),
+            .continuation_token = String(request.GetContinuationToken()),
             .start_after_has_been_set = request.StartAfterHasBeenSet()});
 
         if (listObjectsV2Impl)
@@ -413,7 +420,7 @@ TEST_F(ReadBufferFromS3Test, ReadBigAtReleasesSessionBeforeRetryBackoff)
         auto response_stream = Aws::Utils::Stream::ResponseStream(
             Aws::New<DB::StdStreamFromReadBuffer>("test response stream", std::move(response_body), body.size()));
         Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(
-            std::move(response_stream), Aws::Http::HeaderValueCollection{{"content-length", std::to_string(body.size())}});
+            std::move(response_stream), Aws::Http::HeaderValueCollection{{"content-length", Aws::Utils::StringUtils::to_string(body.size())}});
         return DB::S3::Model::GetObjectOutcome(DB::S3::Model::GetObjectResult(std::move(aws_result)));
     };
 

@@ -11,6 +11,7 @@
 -- scan, point lookup, range, string column), and proves the executor path was
 -- taken via `system.text_log` — on local disk and on object storage.
 
+SET use_statistics_for_sum_avg_aggregation = 0;
 DROP TABLE IF EXISTS t_reader_executor;
 
 CREATE TABLE t_reader_executor
@@ -61,7 +62,7 @@ SYSTEM FLUSH LOGS query_log, text_log;
 
 SELECT count() > 0
 FROM system.text_log
-WHERE logger_name = 'ReadPipeline'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'ReadPipeline'
   AND message LIKE '%using ReaderExecutor%'
   AND query_id IN (
       SELECT query_id

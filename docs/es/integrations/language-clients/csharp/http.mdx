@@ -11,15 +11,13 @@ integration:
   - website: 'https://github.com/ClickHouse/clickhouse-cs'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 El Client oficial de C# para conectarse a ClickHouse.
 El código fuente del Client está disponible en el [repositorio de GitHub](https://github.com/ClickHouse/clickhouse-cs).
 Desarrollado originalmente por [Oleg V. Kozlyuk](https://github.com/DarkWanderer).
 
 La biblioteca ofrece dos API principales:
 
-* **`ClickHouseClient`** (recomendado): Un Client de alto nivel, seguro para subprocesos y diseñado para utilizarse como instancia única. Ofrece una API asíncrona sencilla para realizar consultas e inserciones masivas. Es la mejor opción para la mayoría de las aplicaciones.
+* **`ClickHouseClient`** (recomendado): Un Client de alto nivel, seguro para subprocesos y diseñado para utilizarse como singleton. Ofrece una API asíncrona sencilla para realizar consultas e inserciones masivas. Es la mejor opción para la mayoría de las aplicaciones.
 
 * **ADO.NET** (`ClickHouseDataSource`, `ClickHouseConnection`, `ClickHouseCommand`): Abstracciones estándar de .NET para bases de datos. Son necesarias para integrar ORM (Dapper, Linq2db) y cuando se requiere compatibilidad con ADO.NET. `ClickHouseBulkCopy` es una clase auxiliar que permite insertar datos de forma eficiente mediante una conexión ADO.NET. `ClickHouseBulkCopy` está obsoleta y se eliminará en una versión futura; utilice `ClickHouseClient.InsertBinaryAsync` en su lugar.
 
@@ -310,11 +308,19 @@ Los datos de conexión de su servicio de ClickHouse Cloud están disponibles en 
 
 Seleccione un servicio y haga clic en **Conectar**:
 
-<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="Botón Conectar de un servicio de ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Botón Conectar de un servicio de ClickHouse Cloud](/images/_snippets/cloud-connect-button.webp)
+  </Frame>
+</div>
 
 Elija **C#**. Los datos de conexión aparecerán debajo.
 
-<Image img="/images/_snippets/connection-details-csharp.webp" size="md" alt="Datos de conexión de C# para ClickHouse Cloud" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Datos de conexión de C# para ClickHouse Cloud](/images/_snippets/connection-details-csharp.webp)
+  </Frame>
+</div>
 
 Si utiliza ClickHouse autogestionado, el administrador de ClickHouse establece los datos de conexión.
 
@@ -1907,7 +1913,7 @@ Al insertar datos, el controlador convierte los tipos de .NET en sus tipos corre
 
 #### Tipos de fecha y hora {#type-map-writing-datetime}
 
-| Tipo de ClickHouse | Tipos de .NET aceptados                                                       | Notas                                                                                             |
+| Tipo de ClickHouse | Tipos .NET Aceptados                                                       | Notas                                                                                             |
 | ------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | Date               | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos de NodaTime                   | Se convierten a días Unix como UInt16; rango admitido `[1970-01-01, 2149-06-06]`                  |
 | Date32             | `DateTime`, `DateTimeOffset`, `DateOnly`, tipos de NodaTime                   | Se convierten a días Unix como Int32; rango admitido `[1900-01-01, 2299-12-31]`                   |
@@ -1925,10 +1931,10 @@ Al insertar datos, el controlador convierte los tipos de .NET en sus tipos corre
 
 El controlador tiene en cuenta `DateTime.Kind` al escribir valores:
 
-| DateTime.Kind | Parámetros HTTP                                                                                         | Escritura masiva                                                  |
-| ------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Utc           | Se conserva el instante                                                                                 | Se conserva el instante                                           |
-| Local         | Se conserva el instante                                                                                 | Se conserva el instante                                           |
+| DateTime.Kind | Parámetros HTTP                                                                                      | Escritura masiva                                               |
+| ------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Utc           | Se conserva el instante                                                                              | Se conserva el instante                                        |
+| Local         | Se conserva el instante                                                                              | Se conserva el instante                                        |
 | Unspecified   | Se interpreta como hora local en la zona horaria del tipo de parámetro (UTC de forma predeterminada) | Se interpreta como hora local en la zona horaria de la columna |
 
 Los valores de `DateTimeOffset` siempre conservan el instante exacto.

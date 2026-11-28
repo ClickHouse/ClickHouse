@@ -97,6 +97,7 @@ TotalsHavingTransform::TotalsHavingTransform(
     /// via a different code path in defaultImplementationForNulls at 0 rows.
     if (expression)
     {
+        set_spillables.add(expression->getActionsDAG());
         /// Use updateHeader (dry-run evaluation) instead of expression->execute(),
         /// because sets from subqueries may not be ready yet at this point.
         auto totals_header = expression->getActionsDAG().updateHeader(finalized_header);
@@ -157,6 +158,51 @@ IProcessor::Status TotalsHavingTransform::prepare()
     return Status::Finished;
 }
 
+IProcessor::Status TotalsHavingTransform::prepareOnOutputFinished()
+{
+    /// The totals cover every input row, so keep reading the input after the main output was closed early.
+    if (getTotalsPort().isFinished() || isCancelled())
+        return ISimpleTransform::prepareOnOutputFinished();
+
+    /// A consumer that discards the totals never requests the port: read on only once it is needed.
+    if (!getTotalsPort().isNeeded())
+    {
+        input.setNotNeeded();
+        return Status::PortFull;
+    }
+
+    draining = true;
+
+    /// The main output is finished: what `transform` produced is not needed, only its effect on the totals.
+    if (has_output)
+    {
+        if (output_data.exception)
+            return Status::Ready; /// `work` rethrows it
+        output_data = {};
+        has_output = false;
+    }
+
+    if (no_more_data_needed)
+    {
+        input.close();
+        return Status::Finished;
+    }
+
+    if (has_input)
+        return Status::Ready;
+
+    if (input.isFinished())
+        return Status::Finished;
+
+    input.setNeeded();
+    if (!input.hasData())
+        return Status::NeedData;
+
+    input_data = input.pullData(true);
+    has_input = true;
+    return Status::Ready;
+}
+
 void TotalsHavingTransform::work()
 {
     if (finished_transform)
@@ -166,7 +212,13 @@ void TotalsHavingTransform::work()
         prepareTotals();
     }
     else
+    {
+        if (draining && has_output && output_data.exception)
+            std::rethrow_exception(output_data.exception);
         ISimpleTransform::work();
+        if (draining && has_output && output_data.exception)
+            std::rethrow_exception(output_data.exception);
+    }
 }
 
 void TotalsHavingTransform::onCancel() noexcept
@@ -210,7 +262,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
 
     auto finalized = chunk.clone();
     if (final)
-        finalizeChunk(finalized, aggregates_mask);
+        finalizeChunk(finalized, aggregates_mask, finalized_header);
 
     total_keys += finalized.getNumRows();
 
@@ -417,7 +469,7 @@ void TotalsHavingTransform::prepareTotals()
     }
 
     totals = Chunk(std::move(current_totals), 1);
-    finalizeChunk(totals, aggregates_mask);
+    finalizeChunk(totals, aggregates_mask, finalized_header);
 
     if (isCancelled())
     {

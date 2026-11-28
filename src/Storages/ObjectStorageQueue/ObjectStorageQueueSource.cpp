@@ -51,6 +51,7 @@ namespace DimensionalMetrics
 {
     extern MetricFamily & ObjectStorageQueueFailures;
     extern MetricFamily & ObjectStorageQueuePermanentlyFailedFiles;
+    extern MetricFamily & ObjectStorageQueueProcessedFiles;
 }
 
 namespace DB
@@ -707,11 +708,15 @@ void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
     }
 }
 
-void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
+void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets(const std::vector<size_t> & processors)
 {
     std::lock_guard lock(mutex);
-    for (auto & [processor, holders] : bucket_holders)
+    for (const size_t processor : processors)
     {
+        auto holders_it = bucket_holders.find(processor);
+        if (holders_it == bucket_holders.end())
+            continue;
+        auto & holders = holders_it->second;
         std::string buckets_str;
         size_t released_holders = 0;
         for (auto it = holders->begin(); it != holders->end();)
@@ -1242,6 +1247,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             reader = StorageObjectStorageSource::createReader(
                 processor_id,
                 storage_id,
+                /* query_condition_cache_table_id */ UUIDHelpers::Nil,
                 file_iterator,
                 configuration,
                 object_storage,
@@ -1283,6 +1289,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             LOG_TEST(log, "Will process file: {}", file_metadata->getPath());
 
             processed_files.emplace_back(file_metadata);
+            ++progress->acquired_files;
 
             if (auto object_metadata = reader.getObjectInfo()->getObjectMetadata();
                 object_metadata && object_metadata->is_last_modified_known)
@@ -1720,6 +1727,9 @@ void ObjectStorageQueueSource::finalizeCommit(
 
     bool respect_post_processing_failed_paths = mode == ObjectStorageQueueMode::EXCLUSIVE;
 
+    /// Files finalized as processed by this call, for the per-table metric.
+    size_t finalized_processed_files = 0;
+
     std::exception_ptr finalize_exception;
     for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code_, last_modified] : processed_files)
     {
@@ -1742,6 +1752,8 @@ void ObjectStorageQueueSource::finalizeCommit(
                         else
                         {
                             file_metadata->finalizeProcessed();
+
+                            ++finalized_processed_files;
 
                             if (last_modified)
                                 files_metadata->updateNewestCommittedTimestamp(last_modified, storage_id);
@@ -1828,6 +1840,13 @@ void ObjectStorageQueueSource::finalizeCommit(
                 finalize_exception = std::current_exception();
         }
     }
+
+    if (finalized_processed_files)
+        DimensionalMetrics::add(
+            DimensionalMetrics::ObjectStorageQueueProcessedFiles,
+            {storage_id.getDatabaseName(), storage_id.getTableName()},
+            static_cast<DimensionalMetrics::Value>(finalized_processed_files));
+
     if (finalize_exception)
         std::rethrow_exception(finalize_exception);
 }
@@ -1868,6 +1887,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
                 configuration->getType(),
                 object_storage,
                 getName(),
+                storage_id,
                 files_metadata->getTableMetadata(),
                 after_processing_settings);
             postProcessor.process(successful_objects, post_processing_failed_paths);

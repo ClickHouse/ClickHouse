@@ -18,6 +18,7 @@
 #include <boost/range/algorithm_ext/push_back.hpp>
 #include <Common/SettingConstraintWritability.h>
 #include <base/range.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

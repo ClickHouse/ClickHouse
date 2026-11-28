@@ -42,7 +42,7 @@ public:
     bool tryDeserializeFromString(const std::string & data) noexcept;
 
     void serialize(WriteBuffer & buf) const;
-    std::string serializeToString() const;
+    [[nodiscard]] std::string serializeToString() const;
 };
 
 using DiskObjectStorageMetadataPtr = std::unique_ptr<DiskObjectStorageMetadata>;

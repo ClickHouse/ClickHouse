@@ -1,4 +1,3 @@
-set enable_analyzer=1;
 
 select tupleElement('{"a" : 42}'::JSON, 'a');
 select tupleElement('{"a" : 42}'::JSON(a UInt32), 'a');

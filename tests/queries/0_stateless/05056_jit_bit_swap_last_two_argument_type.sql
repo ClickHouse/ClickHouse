@@ -8,14 +8,14 @@ INSERT INTO t_bit_swap_last_two VALUES (230), (250);
 -- `__bitSwapLastTwo` accepts only `UInt8`. `toFloat64` is the compilable child that makes the
 -- shape compilable at all: a lone `__bitSwapLastTwo(c0)` is never compiled.
 SELECT __bitSwapLastTwo(toFloat64(c0)) FROM t_bit_swap_last_two
-    SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError BAD_ARGUMENTS }
+    SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT __bitSwapLastTwo(toFloat64(c0)) FROM t_bit_swap_last_two
-    SETTINGS compile_expressions = 0; -- { serverError BAD_ARGUMENTS }
+    SETTINGS compile_expressions = 0; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- An integral argument is lowered differently (`trunc`, not `fptoui`), so it is a separate case.
 -- `bitNot` is the compilable child here, as `toFloat64` is above.
 SELECT __bitSwapLastTwo(bitNot(toUInt16(c0))) FROM t_bit_swap_last_two
-    SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError BAD_ARGUMENTS }
+    SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- `UInt8` is the accepted argument type: the compiled and the interpreted path agree.
 SELECT (SELECT groupArray(__bitSwapLastTwo(bitNot(c0))) FROM t_bit_swap_last_two

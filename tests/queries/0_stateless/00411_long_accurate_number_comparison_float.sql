@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-msan
 
 -- The results are different than in Python. That's why this file is genearated and the reference is edited instead of using the Python script.
 -- Example: in ClickHouse, 9223372036854775808.0 != 9223372036854775808.

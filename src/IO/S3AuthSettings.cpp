@@ -15,7 +15,6 @@
 namespace DB
 {
 
-
 #define CLIENT_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, "", 0) \
     DECLARE(UInt64, request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, "", 0) \
@@ -28,14 +27,15 @@ namespace DB
     DECLARE(Bool, use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, "", 0) \
     DECLARE(Bool, is_virtual_hosted_style, false, "", 0) \
     DECLARE(Bool, gcs_issue_compose_request, false, "", 0) \
+    DECLARE(S3RequestPayer, request_payer, S3RequestPayer::NONE, "", 0) \
     DECLARE(S3UriStyle, uri_style, S3UriStyle::AUTO, "", 0)
 
 #define AUTH_SETTINGS(DECLARE, ALIAS) \
     DECLARE(String, access_key_id, "", "", 0) \
-    DECLARE(String, secret_access_key, "", "", 0) \
-    DECLARE(String, session_token, "", "", 0) \
+    DECLARE(SecretString, secret_access_key, "", "", 0) \
+    DECLARE(SecretString, session_token, "", "", 0) \
     DECLARE(String, region, "", "", 0) \
-    DECLARE(String, server_side_encryption_customer_key_base64, "", "", 0) \
+    DECLARE(SecretString, server_side_encryption_customer_key_base64, "", "", 0) \
     DECLARE(String, role_arn, "", "", 0) \
     DECLARE(String, role_session_name, "", "", 0) \
     DECLARE(String, external_id, "", "", 0) \
@@ -44,8 +44,9 @@ namespace DB
     DECLARE(String, metadata_service, "", "", 0) \
     DECLARE(String, request_token_path, "", "", 0) \
     DECLARE(String, google_adc_client_id, "", "", 0) \
-    DECLARE(String, google_adc_client_secret, "", "", 0) \
-    DECLARE(String, google_adc_refresh_token, "", "", 0) \
+    DECLARE(SecretString, google_adc_client_secret, "", "", 0) \
+    DECLARE(SecretString, google_adc_refresh_token, "", "", 0) \
+    DECLARE(SecretString, google_service_account_key, "", "", 0) \
 
 /// `max_connections` used to bound the per-endpoint session pool of the S3 client, which was
 /// removed in 21.4; the global pool that replaced it is bounded by the `disk_connections_*`,
@@ -62,6 +63,9 @@ namespace DB
 
 DECLARE_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST, S3AUTH_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST, S3AuthSettings, S3AuthSetting)
+
+/// The settings are serialized with `writeChangedBinary` (see `serialize`), including by code outside of this repository.
+CLIENT_SETTINGS_LIST(ASSERT_SETTING_SUPPORTS_BINARY_SERIALIZATION, ASSERT_SETTING_SUPPORTS_BINARY_SERIALIZATION)
 
 namespace S3
 {
@@ -111,6 +115,7 @@ S3AuthSettings::S3AuthSettings(const S3AuthSettings & settings)
     , access_headers(settings.access_headers)
     , users(settings.users)
     , server_side_encryption_kms_config(settings.server_side_encryption_kms_config)
+    , google_credentials_explicit(settings.google_credentials_explicit)
     , impl(std::make_unique<S3AuthSettingsImpl>(*settings.impl))
 {
 }
@@ -177,6 +182,21 @@ bool S3AuthSettings::hasUpdates(const S3AuthSettings & other) const
 
 void S3AuthSettings::updateIfChanged(const S3AuthSettings & settings)
 {
+    /// The Google credential mechanisms (the ADC triple and `google_service_account_key`) are mutually exclusive, so a
+    /// layer that supplies one of them replaces the other one of this base as well, instead of leaving an ambiguous
+    /// pair: a key of an endpoint section replaces the ADC triple of the general `<s3>` section, and a key that takes
+    /// the place of the ADC triple in the server config replaces, on reload, the triple an existing table kept from
+    /// the previous config. A single layer that supplies both is still refused when the client is built.
+    if (settings.impl->isChanged("google_service_account_key"))
+    {
+        impl->set("google_adc_client_id", "");
+        impl->set("google_adc_client_secret", "");
+        impl->set("google_adc_refresh_token", "");
+    }
+    if (settings.impl->isChanged("google_adc_client_id") || settings.impl->isChanged("google_adc_client_secret")
+        || settings.impl->isChanged("google_adc_refresh_token"))
+        impl->set("google_service_account_key", "");
+
     for (auto & setting : settings.impl->all())
     {
         if (setting.isValueChanged())
@@ -224,6 +244,7 @@ void S3AuthSettings::clearServerManagedGcpOAuth()
     impl->set("google_adc_client_id", "");
     impl->set("google_adc_client_secret", "");
     impl->set("google_adc_refresh_token", "");
+    impl->set("google_service_account_key", "");
 }
 
 NormalizedHTTPHeaderEntries S3AuthSettings::getHeaders() const
@@ -236,6 +257,14 @@ NormalizedHTTPHeaderEntries S3AuthSettings::getHeaders() const
     result.append(access_headers);
 
     return result;
+}
+
+HTTPHeaderEntries S3AuthSettings::getRequestPayerHeaders() const
+{
+    if ((*this)[S3AuthSetting::request_payer] == S3RequestPayer::NONE)
+        return {};
+
+    return {{"x-amz-request-payer", "requester"}};
 }
 
 

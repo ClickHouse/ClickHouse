@@ -158,7 +158,7 @@ std::optional<String> tryGetExactDecimalText(const String & text)
     return sign + result;
 }
 
-const std::vector<std::string_view> field_name_stop_tokens = {":"};
+[[clang::no_destroy]] const std::vector<std::string_view> field_name_stop_tokens = {":"};
 
 }
 
@@ -1496,8 +1496,8 @@ ASTPtr LogsQLParser::parseFilterStream()
             if (!checked_regexp.ok())
                 throwSyntaxError(fmt::format("invalid regexp {} for the stream label {}: {}", value, label, checked_regexp.error()));
 
-            /// Stream label regexps are anchored, like in PromQL.
-            condition = makeASTFunction("match", columnExpr(label), make_intrusive<ASTLiteral>(Field("^(?:" + value + ")$")));
+            /// Stream label regexps are anchored, like in PromQL, which is what `fullMatch` does.
+            condition = makeASTFunction("fullMatch", columnExpr(label), make_intrusive<ASTLiteral>(Field(value)));
             if (negative)
                 condition = makeNot(condition);
         }
@@ -1759,11 +1759,11 @@ ASTPtr LogsQLParser::makeValueLiteral(const String & text, bool quoted)
 ASTPtr LogsQLParser::makeIntervalAST(Int64 ns)
 {
     if (ns % 1'000'000'000 == 0)
-        return makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(Field(static_cast<Int64>(ns / 1'000'000'000))));
+        return makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(Field(ns / 1'000'000'000)));
     if (ns % 1'000'000 == 0)
-        return makeASTFunction("toIntervalMillisecond", make_intrusive<ASTLiteral>(Field(static_cast<Int64>(ns / 1'000'000))));
+        return makeASTFunction("toIntervalMillisecond", make_intrusive<ASTLiteral>(Field(ns / 1'000'000)));
     if (ns % 1'000 == 0)
-        return makeASTFunction("toIntervalMicrosecond", make_intrusive<ASTLiteral>(Field(static_cast<Int64>(ns / 1'000))));
+        return makeASTFunction("toIntervalMicrosecond", make_intrusive<ASTLiteral>(Field(ns / 1'000)));
     return makeASTFunction("toIntervalNanosecond", make_intrusive<ASTLiteral>(Field(ns)));
 }
 

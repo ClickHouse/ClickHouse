@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 set optimize_rewrite_array_exists_to_has = false;
 EXPLAIN QUERY TREE run_passes = 1  select arrayExists(x -> x = 5 , materialize(range(10))) from numbers(10);

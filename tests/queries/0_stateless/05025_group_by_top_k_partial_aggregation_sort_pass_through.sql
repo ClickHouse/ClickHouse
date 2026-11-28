@@ -13,7 +13,6 @@ SET query_plan_max_limit_for_top_k_optimization = 1000;
 -- pin the text path, which is the one this test covers.
 SET serialize_query_plan = 0;
 -- The partial pushdown is derived in the analyzer's Planner.
-SET enable_analyzer = 1;
 
 SELECT 'alias shadowing the grouped key';
 SELECT -k AS k, count() FROM remote('127.0.0.1,localhost', view(

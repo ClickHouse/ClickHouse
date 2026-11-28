@@ -146,13 +146,13 @@ struct SocketInterruptablePollWrapper
         return pipe.fds_rw[1];
     }
 
-    PollResult poll(Poco::Timespan remaining_time, const ReadBufferFromPocoSocket & in)
+    PollResult poll(Poco::Timespan remaining_time, ReadBuffer & in)
     {
 
         bool socket_ready = false;
         bool fd_ready = false;
 
-        if (in.available() != 0)
+        if (in.poll(0))
             socket_ready = true;
 
         if (response_in.available() != 0)
@@ -469,6 +469,16 @@ void KeeperTCPHandler::runImpl()
             client_timeout = Poco::Timespan(Coordination::DEFAULT_SESSION_TIMEOUT_MS * Poco::Timespan::MILLISECONDS);
         session_timeout = std::max(client_timeout, min_session_timeout);
         session_timeout = std::min(session_timeout, max_session_timeout);
+        if (session_timeout != client_timeout)
+            LOG_INFO(
+                log,
+                "Client requested session timeout {} ms was adjusted to {} ms by keeper settings "
+                "(min_session_timeout_ms={}, session_timeout_ms={}). "
+                "If this is unintended, adjust keeper_server.coordination_settings on the server side",
+                client_timeout.totalMilliseconds(),
+                session_timeout.totalMilliseconds(),
+                min_session_timeout.totalMilliseconds(),
+                max_session_timeout.totalMilliseconds());
     }
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.
     {
@@ -595,7 +605,7 @@ void KeeperTCPHandler::runImpl()
         {
             using namespace std::chrono_literals;
 
-            PollResult result = poll_wrapper->poll(session_timeout, *in);
+            PollResult result = poll_wrapper->poll(session_timeout, getReadBuffer());
 
             if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
             {
@@ -609,7 +619,7 @@ void KeeperTCPHandler::runImpl()
             logging_stopwatch.restart();
             if (result.has_requests && !close_received)
             {
-                if (in->eof())
+                if (getReadBuffer().eof())
                 {
                     LOG_DEBUG(log, "Client closed connection, session id #{}", session_id);
                     break;
@@ -1029,7 +1039,7 @@ KeeperTCPHandler::~KeeperTCPHandler()
 }
 
 std::mutex KeeperTCPHandler::conns_mutex;
-std::unordered_set<KeeperTCPHandler *> KeeperTCPHandler::connections;
+[[clang::no_destroy]] std::unordered_set<KeeperTCPHandler *> KeeperTCPHandler::connections;
 
 void KeeperTCPHandler::registerConnection(KeeperTCPHandler * conn)
 {

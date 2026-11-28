@@ -47,19 +47,11 @@ def test_cancel_backup():
 
     freeze = node.get_query_request("ALTER TABLE tbl FREEZE WITH NAME 'test'")
 
+    # Poll over SQL only: `docker exec` can stall for longer than the whole FREEZE on a busy runner.
     for _ in range(100):
-        shadow_dir_exists = (
-            len(
-                node.exec_in_container(
-                    ["bash", "-c", "ls /var/lib/clickhouse/shadow/"], nothrow=True
-                )
-            )
-            > 0
-        )
         if (
-            shadow_dir_exists
-            and node.query(
-                "SELECT count() FROM system.processes WHERE query_kind == 'Alter' AND query LIKE '%FREEZE%'"
+            node.query(
+                "SELECT count() FROM system.processes WHERE query_kind == 'Alter' AND query LIKE '%FREEZE%' AND peak_threads_usage > 1"
             )
             == "1\n"
         ):

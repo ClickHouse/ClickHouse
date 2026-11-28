@@ -1,7 +1,7 @@
 ---
 title: '命令行客户端参考'
 sidebarTitle: '命令行客户端'
-description: 'clicklink clctl 命令参考：init、preflight、支持会话、gateway trust、审计、访问凭据预配、托管服务和平台审批'
+description: 'clicklink clctl 命令参考：init、preflight、支持会话、gateway trust、审计、访问凭据预配、托管服务、平台审批、上下文和连接器升级'
 keywords: ['BYOC', 'cloud', '自备 Cloud', '连接器', 'CLI']
 doc_type: 'reference'
 ---
@@ -12,9 +12,9 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 
 连接器 以名为 `clicklink` 的单个二进制文件形式提供；可通过 `clicklink clctl` 运行相关命令。本页介绍安装和日常运维中使用的命令。对任意命令运行 `--help`，即可查看完整帮助文本。
 
-`troubleshoot`、`scraper`、`preflight`、`executor`、`instances create` 和 `platform` 子树中的 标志，以及全局 `--endpoint` 和 `--cluster`，还可通过 `CLCTL_*` 环境变量 (名称见各 标志 的帮助输出) 或 `~/.clicklink/clctl.yaml` 提供。全局 `-v` 会记录命令发出的 admin API 请求；`-vv` 还会记录请求 bodies。
+`troubleshoot`、`scraper`、`preflight`、`executor`、`instances create`、`platform` 和 `connector upgrade` 子树中的 标志，以及全局 `--endpoint`、`--cluster` 和 `--infra-context`，还可通过 `CLCTL_*` 环境变量 (名称见各 标志 的帮助输出) 或 `~/.clicklink/clctl.yaml` 提供。全局 `-v` 会记录命令发出的 admin API 请求；`-vv` 还会记录请求 bodies。
 
-`instances` 和 `commands` 命令以及 `executor teardown` 会读取 executor 的本地 API。有两个全局 标志 用于指定该 API：`--endpoint <url>` (默认 `http://127.0.0.1:9999`，环境变量 `CLCTL_ENDPOINT`) 和 `--cluster <name>` (环境变量 `CLCTL_CLUSTER`)，后者用于在命令需要时指定受管 cluster 的名称。在 Kubernetes 上，请先对 executor Deployment 开启 `kubectl port-forward`；参见 [managed services](/zh/products/bring-your-own-cloud/connector/managed-services#status)。
+`instances` 和 `commands` 命令以及 `executor teardown` 会读取 executor 的本地 API。有两个全局 标志 用于指定该 API：`--endpoint <url>` (默认 `http://127.0.0.1:9999`，环境变量 `CLCTL_ENDPOINT`) 和 `--cluster <name>` (环境变量 `CLCTL_CLUSTER`)，后者用于在命令需要时指定受管 集群 的名称。在 Kubernetes 上，请先对 executor Deployment 开启 `kubectl port-forward`；参见 [managed service](/zh/products/bring-your-own-cloud/connector/managed-services#status)。
 
 ## clicklink clctl init {#init}
 
@@ -411,6 +411,34 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--output-dir <path>`                            | 要移除其 `_platform` 支持包的访问根目录 (默认 `/etc/clicklink/access/executor`) 。             |
 | `--secret-namespace <ns>`、`--secret-name <name>` | Kubernetes 安装方式：改为移除连接器命名空间中的平台支持包 Secret (默认名称 `clicklink-platform-bundle`) 。 |
 | `--dry-run`                                      | 检查是否存在 service 并打印重置 plan，但不会更改 cluster。                                       |
+
+## clicklink clctl context {#context}
+
+`clctl` 通过命名上下文查找已注册的连接器：在 Kubernetes 上，即其运行时所用的 Kubeconfig 上下文；在 VM 上，则是主机上的配置文件。`context add` 用于保存上下文 (首个保存的上下文将成为当前上下文) ，`context use <name>` 用于切换上下文，`context list` 和 `context current` 用于查看上下文，`context remove <name>` 用于删除指定上下文。`--infra-context <name>` (对应环境变量 `CLCTL_INFRA_CONTEXT`) 可在单次运行中覆盖当前上下文。对于支持 `--context`、`--config` 和 `--cluster` 的命令，当前上下文会为这些选项提供默认值；但显式指定的标志和 `CLCTL_*` 变量的优先级更高。`connector upgrade` 必须指定上下文。
+
+```bash
+clicklink clctl context add <name> --kube-context <kubectl context>
+```
+
+| 标志                           | 描述                                                                                |
+| ---------------------------- | --------------------------------------------------------------------------------- |
+| `--kube-context <name>`      | `kubectl config get-contexts` 中列出的 Kubeconfig 上下文的确切名称，将在本地进行验证。用于 Kubernetes 安装。 |
+| `--config <path>`            | 本主机上的连接器配置文件。用于 VM 安装。`--kube-context` 与 `--config` 必须指定其一。                       |
+| `--connector-namespace <ns>` | 连接器 Helm chart 所在的命名空间 (不是 `clicklink` 时需指定) 。                                    |
+| `--use`                      | 即使当前已有其他上下文，也将此上下文设为当前上下文。                                                        |
+
+## clicklink clctl connector upgrade {#connector-upgrade}
+
+使用 `context add` 保存的 Kubeconfig 上下文，从公共 chart 代码仓库升级 Kubernetes 安装。该命令会先显示当前及目标的 chart 和镜像，然后请求确认。它会保留该发行版的配置值 (并清除过时的 `image.tag`) ，通过内置的 Helm 客户端执行升级，等待滚动发布完成，并检查每个已启用组件的 Pod (容器组) 是否均已运行新镜像。如果 Kubernetes 上下文对应的集群、账户或区域与连接器的配置不一致，或者发行版的镜像代码仓库并非公共代码仓库 (例如[私有 mirror](/zh/products/bring-your-own-cloud/connector/configuration#private-mirrors)) ，该命令将拒绝执行。请参阅[操作](/zh/products/bring-your-own-cloud/connector/operations#upgrades-kubernetes)。
+
+| 标志                  | 描述                                                               |
+| ------------------- | ---------------------------------------------------------------- |
+| `--version <X.Y.Z>` | 要安装的 chart 版本，即去掉开头 `v` 的发行版标签。必须指定 `--version` 或 `--latest` 之一。 |
+| `--latest`          | 解析并安装最新发布的 chart。                                                |
+| `--set <key=value>` | 覆盖 Helm 配置值，可多次指定。仅更改发行版，不会更新 `clicklink-values.yaml`。           |
+| `--dry-run`         | 在 Helm 服务端模拟完成后即停止，不做任何更改。                                       |
+| `--yes`, `-y`       | 跳过确认提示。                                                          |
+| `--timeout <dur>`   | 滚动发布的时间上限，同时也单独作为镜像验证的时间上限 (默认 `15m`) 。                          |
 
 ## 远程通道标志 {#channel-flags}
 

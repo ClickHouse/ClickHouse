@@ -1,0 +1,184 @@
+---
+slug: /clickstack/observability/migration/datadog
+title: 'Datadog에서 마이그레이션'
+sidebarTitle: 'Datadog에서 마이그레이션'
+description: '기존 Datadog 에이전트에서 수집한 로그, trace, 메트릭을 관리형 또는 자가 관리형 ClickHouse Observability로 전송합니다.'
+show_related_blogs: true
+doc_type: 'guide'
+keywords: ['Datadog', 'Datadog 에이전트', '마이그레이션(migration)', 'ClickHouse Observability']
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+기존 Datadog 에이전트에서 로그, trace, 메트릭을 ClickHouse Observability로 전송합니다. 애플리케이션에서는 기존 Datadog SDK를 그대로 사용할 수 있습니다. 관리형 엔드포인트를 선택하거나 자체 collector에 Datadog 수신기를 구성한 후, 아래에 나오는 에이전트 구성 단계를 동일하게 진행하십시오.
+
+## 사전 요구 사항 {#prerequisites}
+
+* 관리형 또는 자가 관리형 ClickHouse Observability 서비스
+* 마이그레이션할 신호를 수집하고 있는 실행 중인 Datadog 에이전트. trace를 마이그레이션하려면 애플리케이션이 이미 Datadog SDK를 통해 해당 에이전트로 trace를 전송하고 있어야 합니다.
+* 에이전트에서 Datadog 수신기 엔드포인트로의 네트워크 접근
+
+## 대상 설정 {#connection-details}
+
+<Tabs>
+  <Tab title="완전 관리형">
+    <BetaBadge label="베타 제공" />
+
+    서비스를 열고 **Team Settings → Data → Managed Telemetry**로 이동합니다. **OTLP HTTP 엔드포인트**와 **API key**를 복사하십시오.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![마스킹된 OTLP HTTP 엔드포인트와 API Key를 표시하는 Managed Telemetry 화면](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    Datadog 엔드포인트는 동일한 호스트명에 포트 `8126`을 사용합니다. 별도의 collector는 필요하지 않습니다. 아래 에이전트 구성에서 다음 값을 사용하십시오.
+
+    | 설정                       | 값                             |
+    | ------------------------ | ----------------------------- |
+    | `YOUR_API_KEY`           | 서비스의 수집용 API Key              |
+    | `YOUR_DATADOG_URL`       | `https://YOUR_OTEL_HOST:8126` |
+    | `YOUR_DATADOG_HOST_PORT` | `YOUR_OTEL_HOST:8126`         |
+    | `logs_no_ssl`            | `false`                       |
+  </Tab>
+
+  <Tab title="자가 관리형" id="self-managed">
+    [ClickStack OpenTelemetry 수집기](/ko/clickstack/self-configured/ingesting-data/collector)에는 [Datadog 수신기](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver)가 포함되어 있습니다. 수신기를 구성하고 로그, trace, 메트릭 파이프라인에 연결하십시오.
+
+    다음 구성 오버레이를 `datadog-collector.yaml`로 저장하십시오. 이 오버레이는 OTLP 수신기를 그대로 유지하면서 collector의 기존 로그, trace, 메트릭 파이프라인에 Datadog 수신기를 추가합니다.
+
+    ```yaml
+    receivers:
+      datadog:
+        endpoint: 0.0.0.0:8126
+
+    service:
+      pipelines:
+        logs/in:
+          receivers: [otlp/hyperdx, datadog]
+        traces:
+          receivers: [otlp/hyperdx, datadog]
+        metrics:
+          receivers: [otlp/hyperdx, datadog]
+    ```
+
+    ClickHouse 연결 정보를 설정하고 collector를 시작하십시오. collector가 정상적으로 시작되면 `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`에 지정된 데이터베이스에 텔레메트리 스키마가 생성되므로, ClickHouse 사용자에게 데이터베이스와 테이블 생성 권한이 있어야 합니다. 이미 사용 중인 텔레메트리 데이터베이스가 있다면 해당 이름을 지정하십시오.
+
+    이 예시는 Docker가 필요하며, collector 버전 `2.40.0`을 사용하고, Datadog 수신기를 로컬 호스트에만 공개합니다.
+
+    ```shell
+    export CLICKHOUSE_ENDPOINT='https://YOUR_CLICKHOUSE_HOST:8443'
+    export CLICKHOUSE_USER='YOUR_CLICKHOUSE_USER'
+    export CLICKHOUSE_PASSWORD='YOUR_CLICKHOUSE_PASSWORD'
+    export HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE='default'
+
+    docker run --rm --name datadog-collector \
+      -e CLICKHOUSE_ENDPOINT \
+      -e CLICKHOUSE_USER \
+      -e CLICKHOUSE_PASSWORD \
+      -e HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/datadog-collector.yaml \
+      -v "$(pwd)/datadog-collector.yaml:/etc/datadog-collector.yaml:ro" \
+      -p 127.0.0.1:18126:8126 \
+      clickhouse/clickstack-otel-collector:2.40.0
+    ```
+
+    에이전트를 구성하고 확인하는 동안 이 터미널에서 collector를 계속 실행해 두십시오. 나머지 명령은 별도의 터미널에서 실행하십시오.
+
+    같은 호스트에서 실행되는 에이전트에는 다음 값을 사용하십시오.
+
+    | 설정                       | 값                                                          |
+    | ------------------------ | ---------------------------------------------------------- |
+    | `YOUR_API_KEY`           | `local-test`와 같이 비어 있지 않은 임의의 값. 이 로컬 수신기는 해당 값을 검증하지 않습니다 |
+    | `YOUR_DATADOG_URL`       | `http://localhost:18126`                                   |
+    | `YOUR_DATADOG_HOST_PORT` | `localhost:18126`                                          |
+    | `logs_no_ssl`            | `true`                                                     |
+
+    호스트 포트 `18126`을 사용하면 이 대상이 포트 `8126`의 에이전트 애플리케이션 트레이스 리스너와 겹치지 않습니다. 에이전트를 컨테이너로 실행하는 경우 두 컨테이너를 동일한 Docker 네트워크에 연결하고 대상 값으로 `http://datadog-collector:8126`과 `datadog-collector:8126`을 사용하십시오.
+
+    이 예시에서는 로컬 호스트로 접근이 제한된, 인증 없는 HTTP 리스너를 사용합니다. 다른 호스트의 에이전트에서 데이터를 받으려면 수신기를 외부에 노출하기 전에 보호된 네트워크 경로를 마련하고 인그레스에서 TLS와 인증을 구성하십시오. `OTLP_AUTH_TOKEN`은 collector의 OTLP 인증만 구성하며, 이 Datadog 리스너를 보호하지는 않습니다.
+  </Tab>
+</Tabs>
+
+## Datadog 에이전트 구성 {#configure-datadog-agent}
+
+Datadog 에이전트의 [`datadog.yaml` 설정 파일](https://docs.datadoghq.com/agent/configuration/agent-configuration-files/)을 수정하십시오. 이 파일은 일반적으로 Linux에서는 `/etc/datadog-agent/datadog.yaml`, macOS에서는 `/opt/datadog-agent/etc/datadog.yaml`에 있습니다.
+
+위 탭에 표시된 대상 값을 사용하여 다음 설정을 기존 구성에 병합하십시오.
+
+```yaml
+api_key: "YOUR_API_KEY"
+
+# Metrics destination
+dd_url: "YOUR_DATADOG_URL"
+
+# Use the v2 metrics intake.
+use_v3_api:
+  series:
+    enabled: false
+
+# Trace destination
+apm_config:
+  enabled: true
+  apm_dd_url: "YOUR_DATADOG_URL"
+  features:
+    - disable-convert-traces
+
+# Log destination
+logs_enabled: true
+logs_config:
+  logs_dd_url: "YOUR_DATADOG_HOST_PORT"
+  force_use_http: true
+  logs_no_ssl: false # Set to true for the local HTTP receiver.
+
+remote_updates: false
+remote_configuration:
+  enabled: false
+```
+
+`YOUR_DATADOG_URL`은 전체 대상 URL로, `YOUR_DATADOG_HOST_PORT`는 인증 방식(scheme)을 제외한 `hostname:port` 형식으로 대체하십시오. `logs_no_ssl`은 대상에 지정된 값으로 설정하십시오.
+
+<Note>
+  `disable-convert-traces`는 에이전트의 트레이스 페이로드가 Datadog 수신기와 호환되도록 유지합니다. Datadog 에이전트 7.85.2와 collector core 0.155.0 환경에서 에이전트의 기본 인덱싱 페이로드는 HTTP 200으로 수락되었지만 스팬이 생성되지 않았습니다. 트레이스 전달에는 위 설정을 사용하고, 기존 `apm_config.features` 목록의 다른 엔트리는 그대로 유지하십시오.
+</Note>
+
+기존 로그 수집 통합과 애플리케이션 추적 구성은 그대로 유지하십시오. 이 설정은 에이전트가 텔레메트리를 전송하는 위치만 변경하며, 개별 애플리케이션의 로그 수집을 활성화하거나 instrumentation을 추가하지는 않습니다. [환경 변수](https://docs.datadoghq.com/agent/guide/environment-variables/)로 에이전트를 구성하는 경우 `DD_API_KEY`를 포함한 해당 설정도 함께 업데이트하십시오.
+
+이 구성을 적용하면 에이전트의 로그, 트레이스, 메트릭이 Datadog 대신 ClickHouse Observability로 리디렉션됩니다. 사전 검증이 필요하다면 전체 배포를 업데이트하기 전에 테스트용 에이전트에 먼저 적용하십시오.
+
+## 재시작 및 확인 {#restart-and-verify}
+
+구성을 적용하려면 에이전트를 재시작하십시오. Linux에서는 다음 명령을 실행합니다:
+
+```shell
+sudo systemctl restart datadog-agent
+sudo datadog-agent status
+```
+
+macOS의 경우:
+
+```shell
+sudo launchctl kickstart -k system/com.datadoghq.agent
+```
+
+컨테이너화된 에이전트는 구성을 업데이트한 후 컨테이너를 다시 배포하십시오.
+
+애플리케이션에서 새로운 활동을 발생시킨 다음, ClickHouse Observability를 열고 최근 시간 범위를 선택하십시오.
+
+* **로그:** 로그 소스를 선택하고 애플리케이션의 `ServiceName`으로 필터링하십시오.
+* **trace:** trace 소스를 선택하고 애플리케이션의 `ServiceName`으로 필터링하십시오.
+* **메트릭:** 애플리케이션 또는 에이전트가 내보내는 메트릭을 검색하십시오. DogStatsD로 테스트하는 경우 이름을 지정한 게이지를 내보낸 후 해당 값을 확인하십시오.
+
+데이터가 표시되지 않으면 에이전트 상태에서 전송 오류가 있는지 확인하십시오. 호스트명, 포트, API Key, 그리고 서비스의 네트워크 접근 설정을 확인하십시오. 에이전트가 해당 신호를 수집하고 있는지, 그리고 환경 변수 재정의가 모두 동일한 대상을 사용하는지 확인하십시오.
+
+trace는 에이전트의 전송 성공 카운터에만 의존하지 말고, 알려진 트레이스 ID를 직접 확인하십시오. 서비스 필터 때문에 트레이스가 보이지 않으면 `TraceId`로 검색하십시오. 수신기는 트레이서의 기본 서비스를 리소스 서비스 이름으로 사용하면서, 스팬별 서비스 재정의는 `service.name` 스팬 속성에 그대로 유지할 수 있습니다. 기본 서비스 이름을 지정하려면 애플리케이션의 추적 구성에서 `DD_SERVICE`를 설정하십시오.
+
+## 지원되는 신호 {#supported-signals}
+
+Datadog 수신기는 실험적 기능입니다. 이 수신기는 Datadog 로그, trace 및 지원되는 메트릭을 ClickHouse Observability에서 사용하는 OpenTelemetry 데이터 모델로 변환합니다. 위 구성은 v2 메트릭 수집(intake)을 사용하도록 지정하며, 그 밖의 Datadog 백엔드 기능은 이 마이그레이션(migration) 흐름에서 다루지 않습니다.
+
+기존 Datadog instrumentation을 그대로 유지하면서 애플리케이션을 OpenTelemetry로 점진적으로 마이그레이션할 수 있습니다.

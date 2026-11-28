@@ -1,7 +1,6 @@
 -- Tags: long
 -- Test which plan steps a null-rejecting constraint may cross on its way down to the outer join.
 
-SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 0;

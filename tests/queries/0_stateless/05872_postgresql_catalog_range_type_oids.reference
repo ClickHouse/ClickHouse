@@ -1,0 +1,44 @@
+--- format_type: range types, their arrays and multirange types; 3914 is not a type
+3904	int4range
+3905	int4range[]
+3906	numrange
+3907	numrange[]
+3908	tsrange
+3909	tsrange[]
+3910	tstzrange
+3911	tstzrange[]
+3912	daterange
+3913	daterange[]
+3914	text
+3926	int8range
+3927	int8range[]
+4451	int4multirange
+4532	nummultirange
+4533	tsmultirange
+4534	tstzmultirange
+4535	datemultirange
+4536	int8multirange
+--- format_type: the internal one-byte type and the blank-padded character type
+"char"	character	bpchar	character	character(1)	character(10)
+--- pg_type: range and multirange types
+3904|int4range|r
+3906|numrange|r
+3908|tsrange|r
+3910|tstzrange|r
+3912|daterange|r
+3926|int8range|r
+4451|int4multirange|m
+4532|nummultirange|m
+4533|tsmultirange|m
+4534|tstzmultirange|m
+4535|datemultirange|m
+4536|int8multirange|m
+--- pg_range
+3904|23|4451
+3906|1700|4532
+3908|1114|4533
+3910|1184|4534
+3912|1082|4535
+3926|20|4536
+--- format_type gives the name that pg_type has for each of them
+0

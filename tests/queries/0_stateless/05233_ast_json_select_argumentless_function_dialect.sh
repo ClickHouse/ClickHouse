@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-replicated-database
 # Tag no-replicated-database: a DDL entry is executed with the `dialect` of the session, so `clickhouse_json` fails to parse the SQL text, https://github.com/ClickHouse/ClickHouse/issues/123323
-# `EXPLAIN AST optimize = 1` is the one route that still reaches the pre-analyzer select interpreter:
-# `InterpreterFactory` turns the analyzer off for `ParsedAST`, and the legacy visitors dereference
-# `ASTFunction::arguments` with no arity check in front of them. Without the boundary screen the server
+# `EXPLAIN AST optimize = 1` analyzes every `SELECT` of the explained query, and the analysis dereferences
+# `ASTFunction::arguments` with no arity check in front of it. Without the boundary screen the server
 # does not fail these payloads, it dies on them (`Assertion 'px != 0' failed`), so the closing liveness
 # query is part of the assertion. The payloads go over HTTP rather than through
 # `clickhouse client --dialect clickhouse_json`, because the client deserializes the JSON itself and
@@ -69,9 +68,9 @@ send "$(payload "EXPLAIN AST optimize = 1 SELECT a FROM (SELECT 1 AS a) ORDER BY
 send "$(payload "EXPLAIN AST optimize = 1 SELECT * APPLY(x -> x + 3) FROM (SELECT 1 AS a)" "$ARGS_X_3")"
 send "$(payload "EXPLAIN AST optimize = 1 SELECT * APPLY(quantile(1 IN (6))) FROM (SELECT 1 AS a)" "$ARGS_1_6")"
 
-# A SQL UDF body is not written into the SELECT it breaks: the DDL persists the node, and
-# `UserDefinedSQLFunctionVisitor` splices it into a caller during `TreeRewriter::normalize`, after
-# deserialization has finished. The name carries the test database because a SQL UDF is server-wide.
+# A SQL UDF body is not written into the SELECT it breaks: the DDL persists the node, and the analysis
+# splices it into a caller after deserialization has finished. The name carries the test database
+# because a SQL UDF is server-wide.
 UDF="${CLICKHOUSE_DATABASE}_udf_argumentless"
 ${CLICKHOUSE_CLIENT} --query "DROP FUNCTION IF EXISTS ${UDF}"
 send "$(payload "CREATE FUNCTION ${UDF} AS (x) -> x IN (9)" "$ARGS_X_9")"
@@ -82,7 +81,7 @@ ${CLICKHOUSE_CLIENT} --query "EXPLAIN AST optimize = 1 SELECT ${UDF}(1)" 2>&1 | 
 ${CLICKHOUSE_CURL} -sS "$JSON_URL" --data-binary \
     "$(${CLICKHOUSE_CLIENT} --query "SELECT parseQueryToJSON('CREATE FUNCTION ${UDF} AS (x) -> x IN (9)') FORMAT TSVRaw")"
 ${CLICKHOUSE_CLIENT} --query "EXPLAIN AST optimize = 1 SELECT ${UDF}(1)" |
-    grep -oE "Function in \(children 1\)|Literal UInt64_9"
+    grep -oE "Function in \(|Literal UInt64_9"
 ${CLICKHOUSE_CLIENT} --query "DROP FUNCTION IF EXISTS ${UDF}"
 
 # A projection body carries its own copy of the select slots, and unlike every row above it needs no

@@ -85,7 +85,7 @@ rows, err := conn.Query(ctx, "SELECT ...")
 | Option | Type | Default | DSN param | Description | Best practice | When misconfigured |
 |--------|------|---------|-----------|-------------|---------------|-------------------|
 | `Auth.Username` | `string` | `"default"` | `username` or URL user portion | Username for ClickHouse authentication | Never use `default` in production. Create dedicated users with minimal permissions. | Wrong username: `"Code: 516. DB::Exception: Authentication failed"`. Empty string: silently uses `"default"`. |
-| `Auth.Password` | `string` | `""` | `password` or URL password portion | Password for ClickHouse authentication | Use env vars or secret managers in production. URL-encode special characters in DSN. | Wrong password: `"Code: 516. DB::Exception: Authentication failed"`. Special chars not URL-encoded: parsing errors. |
+| `Auth.Password` | `string` | `""` | `password` or URL password portion | Password for ClickHouse authentication | Use env vars or secret managers in production. URL-encode special characters in DSN. | Wrong password: `"Code: 516. DB::Exception: Authentication failed"`. Special chars not URL-encoded: DSN parsing errors, with the password shown as `xxxxx` (see [DSN parse errors](#dsn-parse-errors)). |
 | `Auth.Database` | `string` | `""` (server default) | `database` or URL path (`/mydb`) | Default database for the connection | Always specify explicitly. Use dedicated databases per application in production. | Non-existent: `"Code: 81. DB::Exception: Database xyz doesn't exist"`. Empty in multi-tenant setup: queries hit wrong database. |
 | `GetJWT` | `func(ctx) (string, error)` | `nil` | (programmatic only) | Callback returning JWT for ClickHouse Cloud auth. Overridable per query with `WithJWT(token)`. *(Since v2.35.0)* | Implement token caching/refresh - called per connection/request. | Expired token: auth errors. Blocking callback: timeouts. JWT takes precedence over user/pass. Requires TLS - without it, falls back to user/pass silently. |
 
@@ -451,6 +451,27 @@ Try the following steps in order, and diagnose the root cause before tuning knob
 - Verify credentials against `system.users` table
 - Check for URL-encoding issues with special characters in DSN passwords
 - Confirm the user has access to the specified database
+
+### DSN parse errors {#dsn-parse-errors}
+
+**Cause:** The DSN is not a valid URL. Often, a password has special characters (for example `/`, `?`, `#`, `@`, `:` or `&`) that are not URL-encoded.
+
+DSN parse errors do not show credentials. The error replaces the userinfo password, the `password` query parameter and the password in the `http_proxy` query parameter with `xxxxx`:
+
+```text
+parse "clickhouse://user:xxxxx@127.0.0.1:abc/db": invalid port ":abc" after host
+```
+
+If the parser error can contain a part of the credentials, the driver hides the detail:
+
+```text
+parse "clickhouse://user:xxxxx@127.0.0.1:9000/db": invalid URL (details hidden because they may contain credentials; URL-encode the username, password and http_proxy values)
+```
+
+**Fix:**
+- URL-encode the username and password in the DSN, for example with `url.UserPassword("user", password).String()` or `url.QueryEscape(password)` for the `password` query parameter.
+- URL-encode the full proxy URL in the `http_proxy` query parameter.
+- If the error still shows `details hidden`, set `Options` in code with `clickhouse.Open` instead of a DSN.
 
 ### TLS certificate errors {#tls-errors}
 

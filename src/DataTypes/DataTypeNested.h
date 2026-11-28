@@ -19,10 +19,10 @@ public:
     {
     }
 
-    String getName() const override;
-    DataTypeCustomDescPtr rederiveFor(const DataTypePtr & rebuilt, const RewriteNestedFn & rewrite_nested) const override;
-    const DataTypes & getElements() const { return elems; }
-    const Names & getNames() const { return names; }
+    [[nodiscard]] String getName() const override;
+    [[nodiscard]] DataTypeCustomDescPtr rederiveFor(const DataTypePtr & rebuilt, const RewriteNestedFn & rewrite_nested) const override;
+    [[nodiscard]] const DataTypes & getElements() const { return elems; }
+    [[nodiscard]] const Names & getNames() const { return names; }
 };
 
 DataTypePtr createNested(const DataTypes & types, const Names & names);

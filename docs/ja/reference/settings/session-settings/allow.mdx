@@ -23,6 +23,16 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 パーティションキーが GROUP BY キーに適している場合、パーティションごとに別スレッドで独立して集約できるようにします。これは、パーティション数がコア数に近く、各パーティションのサイズがほぼ同じ場合に有効です。`ReadFromMergeTree` のヒューリスティックは、レイアウトが不利な場合 (パーティション数が少なすぎる、多すぎる、またはパーティションサイズの偏りが大きい場合) には、この最適化を自動的に無効化します。これらのチェックを回避するには、`force_aggregate_partitions_independently` を参照してください。
 
+## allow_ai_functions {#allow_ai_functions}
+
+**別名**: `allow_experimental_ai_functions`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "AI関数はベータとなり、デフォルトで有効になりました。当時この設定の名前は `allow_experimental_ai_functions` でしたが、現在はこの設定の別名となっています。`compatibility` の値にかかわらず、デフォルト値は維持されます。"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "新しい設定。当時この設定の名前は `allow_experimental_ai_functions` でしたが、現在はこの設定の別名となっています。"}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "1"},{"label": "設定の別名 `allow_experimental_ai_functions` を追加しました。"}]}]} />
+
+AI関数 (`aiGenerate`、`aiClassify`、`aiFilter`、`aiExtract`、`aiTranslate`、`aiRedact`、`aiEmbed`、`aiSimilarity`) の使用を許可します。無効の場合、これらの関数を使用するクエリは例外をスローします。
+
 ## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -149,18 +159,6 @@ Cloud でのデフォルト値: `1`。
 
 true に設定すると、ユーザーは DDL クエリを実行できます。
 
-## allow_delta_kernel_rs {#allow_delta_kernel_rs}
-
-<BetaBadge />
-
-**別名**: `allow_experimental_delta_kernel_rs`
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`allow_experimental_delta_kernel_rs` の新しい名前です。実験的な機能ではなくなりましたが、同名は別名として維持されます。デフォルト値は変更されていません。"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "新しい設定。`allow_experimental_delta_kernel_rs` という名前で導入され、現在はその別名となっています。履歴全体を維持するため、この行は正規名のもとに引き継がれています。"}]}]} />
-
-Delta Lake テーブルの読み取りに `delta-kernel-rs` 実装を使用できるようにします。
-
 ## allow_delta_lake_create_table {#allow_delta_lake_create_table}
 
 <ExperimentalBadge />
@@ -191,7 +189,7 @@ delta-kernel の書き込み機能を有効にします。
 
 パーティション式が `DISTINCT` カラムの決定論的関数である場合、ストリーム間のマージを省略し、パーティションごとの `DISTINCT` を別スレッドで独立して評価します。パーティション数がコア数に近く、各パーティションのサイズがほぼ同じ場合に有効です。それ以外の場合は、コストヒューリスティックによりこの最適化は省略されます。[max&#95;number&#95;of&#95;partitions&#95;for&#95;independent&#95;distinct](/ja/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) および [force&#95;distinct&#95;partitions&#95;independently](/ja/reference/settings/session-settings/force#force_distinct_partitions_independently) を参照してください。`FINAL` または並列レプリカでは適用されません。
 
-[max&#95;rows&#95;in&#95;distinct](/ja/reference/settings/session-settings/max-rows#max_rows_in_distinct) または [max&#95;bytes&#95;in&#95;distinct](/ja/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) が設定されている場合は適用されません。これらの上限は、マージ後の結果全体を対象とする単一の `DISTINCT` 変換によって適用されるため、グローバルな意味を維持するためにストリーム間のマージは保持されます。
+ストリームが分離されている間、[max&#95;rows&#95;in&#95;distinct](/ja/reference/settings/session-settings/max-rows#max_rows_in_distinct) および [max&#95;bytes&#95;in&#95;distinct](/ja/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) は、全パーティションの集合を合計したサイズに対して適用されます。
 
 ## allow_distributed_ddl {#allow_distributed_ddl}
 
@@ -228,6 +226,18 @@ JOIN キーで Dynamic 型を使用できるようにします。互換性のた
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 multiIf 関数の列指向実行を許可する
+
+## allow_expire_snapshots {#allow_expire_snapshots}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_expire_snapshots`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "新しい設定"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "設定の別名 `allow_experimental_expire_snapshots` を追加しました。"}]}]} />
+
+Iceberg のコマンド `ALTER TABLE ... EXECUTE expire_snapshots` の実行を許可します。
 
 ## allow_fuzz_query_functions {#allow_fuzz_query_functions}
 
@@ -450,6 +460,20 @@ ClickHouse は、サーバー起動時に読み込まれたこの設定値を使
 `SET` またはクエリレベルの `SETTINGS` による変更では、抽出されたサブカラムの動作は変わりません。
 抽出されたサブカラムの動作を変更するには、起動時プロファイル設定 (たとえば users.xml) で `allow_nullable_tuple_in_extracted_subcolumns` を更新し、サーバーを再起動してください。
 
+## allow_parallel_distinct {#allow_parallel_distinct}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "ハッシュパーティション化を使用して最終的な `DISTINCT` を並列に評価するための新しい設定。"}]}]} />
+
+入力ストリームを `DISTINCT` カラムのハッシュでパーティション化し、最終的な `DISTINCT` を複数のスレッドで評価します。同じキーは必ず同じストリームに振り分けられるため、各パーティションで独立して重複を排除できます。
+
+[allow&#95;distinct&#95;partitions&#95;independently](/ja/reference/settings/session-settings/allow#allow_distinct_partitions_independently) とは異なり、この設定ではテーブルのパーティションキーと `DISTINCT` カラムの間に関連がある必要はありません。ブロックの分割とストリームの接続にかかるコストを抑えるため、入力ストリーム数とハッシュパーティション数には、`max_threads` とは別に上限が設けられています。
+
+グローバルにソート済みの入力については、`DISTINCT` がその順序を保持するため、ハッシュパーティション化は適用されません。[max&#95;rows&#95;in&#95;distinct](/ja/reference/settings/session-settings/max-rows#max_rows_in_distinct) と [max&#95;bytes&#95;in&#95;distinct](/ja/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) は、すべてのハッシュパーティションを合計したサイズに対して適用されます。
+
+`ORDER BY` を伴わない `DISTINCT` では行の順序が定義されていないため、この最適化により、同じ異なる値が異なる順序で返される場合があります。そのため、順序付けされていない `DISTINCT` の結果に `LIMIT`、`OFFSET`、または `LIMIT BY` を適用すると、選択される行の部分集合が変わる可能性があります。
+
 ## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -494,6 +518,14 @@ SQL 標準では、`RANK` および `DENSE_RANK` は引数を取りません。�
 デフォルトでは、これは許可されていません。要求されたパーティションにデータがないソースから `REPLACE PARTITION` を実行すると、例外が発生します。これは、この操作が実質的に宛先に対するサイレントな `DROP PARTITION` になるためです (宛先のデータは削除されますが、それを置き換えるデータはありません) 。これは、意図しないデータ損失の一般的な原因です ([#23727](https://github.com/ClickHouse/ClickHouse/issues/23727) を参照) 。
 
 たとえば、宛先のデータを消去するために意図的に空のソースパーティションを使う場合は、この設定を有効にすると従来の動作に戻せます。無条件に削除したい場合は、代わりに `ALTER TABLE ... DROP PARTITION ...` を使用してください。
+
+## allow_reserved_column_names {#allow_reserved_column_names}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "MergeTreeテーブルの仮想カラムと同じ名前のカラムを拒否するように変更"}]}]} />
+
+`CREATE TABLE`、完全な定義を指定した `ATTACH TABLE`、および `ALTER TABLE ... ADD COLUMN` と `RENAME COLUMN` において、`MergeTree` ファミリーのテーブルのカラムに、そのテーブルの仮想カラム (例: `_part`、`_part_offset`、`_table`) と同じ名前を付けることを許可します。このようなカラムは、同名の仮想カラムを隠蔽します。このようなカラムをすでに持つテーブルは、この設定に関係なく読み込まれます。永続仮想カラムの名前は常に拒否されます。
 
 ## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 
