@@ -1,6 +1,10 @@
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
 
+#include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTViewTargets.h>
@@ -10,6 +14,16 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char time_series_inner_table_fail_after_create[];
+}
 
 namespace
 {
@@ -46,8 +60,11 @@ void createTimeSeriesInnerTable(
     boost::intrusive_ptr<ASTStorage> inner_storage_def,
     const StorageID & time_series_storage_id,
     UInt64 version,
-    ContextPtr context)
+    ContextPtr context,
+    bool & created)
 {
+    created = false;
+
     auto create_context = Context::createCopy(context);
     /// The generated codecs of the samples and recent samples tables are declared for the elements
     /// of the tuples in the `samples` column (subcolumn codecs) independently of the query settings.
@@ -58,9 +75,39 @@ void createTimeSeriesInnerTable(
         inner_table_kind, inner_table_uuid, inner_columns,
         inner_storage_def, time_series_storage_id, version);
 
-    InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
-    create_interpreter.setInternal(true);
-    create_interpreter.execute();
+    /// The DDL guard of the inner table is held across its `CREATE`, so no other query can create or drop a table with its name
+    /// meanwhile: a table with this name that exists after the `CREATE` and did not exist before it was published by this `CREATE`,
+    /// whatever the `CREATE` throws. The error code cannot tell it: e.g. column defaults are checked before the existence check.
+    /// The inner `CREATE` is never replicated on its own (in a `Replicated` database it runs inside the replicated `CREATE` of the
+    /// `TimeSeries` table), so it does not reach the branch of `InterpreterCreateQuery` that takes this guard regardless.
+    const auto & database_name = manual_create_query->getDatabase();
+    const auto & table_name = manual_create_query->getTable();
+    auto database = DatabaseCatalog::instance().getDatabase(database_name);
+    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, table_name, database.get());
+    bool existed = database->isTableExist(table_name, context);
+
+    try
+    {
+        InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
+        create_interpreter.setInternal(true);
+        create_interpreter.setDontNeedDDLGuard(); /// It is held above.
+        create_interpreter.execute();
+
+        /// Simulates an error after the inner table is published, such as one from its `startup`.
+        fiu_do_on(FailPoints::time_series_inner_table_fail_after_create,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint time_series_inner_table_fail_after_create");
+        });
+    }
+    catch (...)
+    {
+        /// An exception from this check would replace the error of the `CREATE` and leave a published table behind.
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+        created = !existed && database->isTableExist(table_name, context);
+        throw;
+    }
+
+    created = true;
 }
 
 
