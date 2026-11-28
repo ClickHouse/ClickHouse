@@ -11,6 +11,8 @@
             <operation_timeout_ms>5000</operation_timeout_ms>
             <session_timeout_ms>10000</session_timeout_ms>
             <raft_logs_level>trace</raft_logs_level>
+            <election_timeout_lower_bound_ms>5000</election_timeout_lower_bound_ms>
+            <election_timeout_upper_bound_ms>10000</election_timeout_upper_bound_ms>
         </coordination_settings>
 
         <raft_configuration>

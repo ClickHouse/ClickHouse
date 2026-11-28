@@ -46,6 +46,7 @@ namespace ErrorCodes
     DECLARE(Bool, auto_forwarding, true, "Allow to forward write requests from followers to leader. Has no effect if use_new_dispatcher = true as the new dispatcher has its own forwarding that's always enabled.", 0) \
     DECLARE(Milliseconds, shutdown_timeout, 5000, "How much time we will wait until RAFT shutdown", 0) \
     DECLARE(Milliseconds, session_shutdown_timeout, 10000, "How much time we will wait until sessions are closed during shutdown", 0) \
+    DECLARE(Milliseconds, yield_leadership_on_shutdown_timeout_ms, 5000, "If the server is the leader when it is shut down and at least one follower is in sync, it hands leadership over to another server and waits up to this long for the new leader to be elected, so that the cluster does not stay without a leader for an election timeout. 0 disables the handover.", 0) \
     DECLARE(Milliseconds, startup_timeout, 180000, "How much time we will wait until RAFT to start.", 0) \
     DECLARE(Milliseconds, sleep_before_leader_change_ms, 8000, "How much time we will wait before removing leader (so as leader could commit accepted but non-committed commands and they won't be lost -- leader removal is not synchronized with committing)", 0) \
     DECLARE(LogsLevel, raft_logs_level, LogsLevel::information, "Log internal RAFT logs into main server log level. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'", 0) \
