@@ -101,3 +101,99 @@ CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server'
 ### Passing session settings {#passing-session-settings}
 
 If a response body from HTTP authentication server has JSON format and contains `settings` sub-object, ClickHouse will try parse its key: value pairs as string values and set them as session settings for authenticated user's current session. If parsing is failed, a response body from server will be ignored.
+
+## HTTP user directory {#http-user-directory}
+
+An HTTP authentication server can also serve as a user directory, similar to the `ldap` one: unlike with `IDENTIFIED WITH HTTP`, no `CREATE USER` is needed. A user that is not defined in ClickHouse authenticates with HTTP Basic against the service and is materialized as an in-memory user without any grants. The service can also return session settings and a list of roles for this login.
+
+### Configuration {#http-user-directory-configuration}
+
+Add an `http` section to `user_directories` in `config.xml`. It refers to a server defined in `http_authentication_servers`.
+
+```xml
+<clickhouse>
+    <user_directories>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+        <http>
+            <server>basic_auth_server</server>
+            <allowed_roles>
+                <reader/>
+                <writer/>
+            </allowed_roles>
+            <allowed_role_prefix>tenant_</allowed_role_prefix>
+            <authentication_cache_ttl>30</authentication_cache_ttl>
+        </http>
+        <local_directory>
+            <path>/var/lib/clickhouse/access/</path>
+        </local_directory>
+    </user_directories>
+</clickhouse>
+```
+
+Parameters:
+- `server` - Name of the server from `http_authentication_servers`. Required.
+- `allowed_roles` - Roles the service may return. Element names are role names. Optional.
+- `allowed_role_prefix` - Roles whose names start with this prefix may be returned. Optional.
+- `authentication_cache_ttl` - Time in seconds to reuse a successful response. Default: `0` (disabled).
+
+The parameters of the `http` section are read at startup, so changing them requires a restart. The parameters of the server itself (`uri`, timeouts, `forward_headers`) follow config reload. If `server` does not name an entry of `http_authentication_servers`, every authentication through the directory fails.
+
+### Response format {#http-user-directory-response}
+
+The service receives a GET request with Basic credentials and the configured forwarded headers.
+
+- `200` - Success. The body is optional; if present, it must be JSON.
+- `404` - The user is not known to this service. Authentication continues with the next user directory.
+- Any other status (`401`, `403`, `5xx`) - Authentication fails, the next directories are not tried.
+
+Parsing is strict: a malformed body, a body that is not a JSON object, a `roles` value that is not an array, a non-string role, or an unknown or unparsable setting fails the authentication. The `settings` are applied as [session settings](#passing-session-settings) and are subject to constraints.
+
+```json
+{"settings": {"max_threads": "4"}, "roles": ["reader", "tenant_a"]}
+```
+
+### Roles {#http-user-directory-roles}
+
+Every returned role must exist in ClickHouse and be listed in `allowed_roles` or start with `allowed_role_prefix`. Otherwise the authentication fails. If neither is configured, any returned role is rejected.
+
+Roles belong to the authentication, not to the user: two logins of one user name may get different roles. The roles are enabled in the session without being granted: `currentRoles` shows them, `SHOW GRANTS` does not, `SET ROLE NONE` does not remove them, and `SET ROLE` with a returned role fails.
+
+<Note>
+Anyone who can run `CREATE ROLE` can create a role with a name matching `allowed_role_prefix`, which the service may then return. Restrict `CREATE ROLE`, or prefer `allowed_roles`.
+</Note>
+
+### Authentication cache {#http-user-directory-cache}
+
+By default (`authentication_cache_ttl` is `0`), every new authentication makes a request to the HTTP service, which is expensive for clients that open a new connection or send a separate HTTP request for every query.
+
+With `authentication_cache_ttl` greater than zero, a successful validated response, including its roles and settings, is reused for the same user name, password, and forwarded headers until the TTL expires. There is one entry per user name, and the password and header values are kept only as a hash. `404`, rejected credentials, an invalid response, or any other failure is never cached. The constraints on the returned `settings` are checked later, when the session is created, on every login: a response whose settings violate them is cached like any other, and the login fails again until the TTL expires. After the TTL expires, ClickHouse contacts the service again, and the authentication fails if the service cannot be reached. Existence and the allow-list of the roles are checked again on every hit, so changes on the ClickHouse side take effect immediately.
+
+**Keep the TTL short.** While an entry is valid, ClickHouse does not ask the service, so a user who was disabled, whose password was revoked, or whose roles or settings were changed at the service keeps authenticating with the old result for up to the TTL. The TTL is therefore the maximum delay of a revocation for new authentications. Use 30-60 seconds when such a delay is acceptable, not hours, and keep `0` when every authentication must be verified by the service.
+
+The TTL does not affect sessions that are already established. A native protocol connection authenticates once and keeps the roles and settings it got until it is closed, with or without the cache.
+
+### Distributed queries {#http-user-directory-distributed}
+
+Configure the directory and create the roles on every node. The cluster must define a `<secret>`. The initiator pushes the user and its roles to shards, which materialize the user and apply the roles without calling the service. Define the roles identically on all nodes.
+
+### Limitations {#http-user-directory-limitations}
+
+- Settings and settings profiles of returned roles, including their constraints such as `readonly`, are not applied at login, so a login that gets a role with settings or settings profiles (its own, of the roles granted to it, or assigned to it with `TO`) fails. Use the `settings` of the response instead. This check runs only on the node where the user authenticates, and settings of a role on a shard are not applied to the roles pushed by the initiator.
+- `INSERT` into a `Distributed` table on a cluster with `<secret>`, both foreground and background, does not carry the roles to shards.
+- `ON CLUSTER` queries with `distributed_ddl_use_initial_user_and_roles` fail with `UNKNOWN_USER` on hosts that have not seen the user.
+- Such users should not be used as `DEFINER`, because a definer has no session roles.
+- Settings returned by the service are applied when a named session (`session_id`) is created, and the session can be reused only by an authentication that returns the same roles and settings.
+- Settings returned by the service are not applied to the jobs of a `QueryRunner` table.
+- Materialized users stay in memory (`system.users`) until restart, or until a login with a name that has appeared in another user directory.
+- The directory is read-only: `GRANT`, `ALTER USER` and `DROP USER` do not work for its users, so privileges can come only from the returned roles. A materialized user gets a new id after a restart and a different id on every node, so a row policy, a quota or a settings profile assigned to such a user by name stops applying after a restart. Assign row policies and query quotas to the returned roles, and pass settings in the `settings` of the response.
+- A quota on `failed_sequential_authentications` assigned to a returned role does not throttle these users: authentication quotas are evaluated before the directory authenticates, when the roles of the login are not known yet. Such a quota also does not apply to a name that has not logged in successfully since the restart, so every failed attempt for it reaches the service. Assign the quota independently of roles (e.g. `TO ALL`), and throttle failed logins at the service.
+- A connection that authenticates once, such as a native protocol connection, keeps its roles and settings until it is closed. Changes at the service apply only to new authentications.
+- A user of this directory cannot make its first login through the MySQL or PostgreSQL wire protocol: these protocols need the authentication methods of the user before authenticating, and the user does not exist until it logs in through another interface. The same applies to the `ldap` user directory.
+- A user name that exists in another user directory is never authenticated by this one.
+- Do not combine this directory with an `ldap` user directory on a cluster with `<secret>`. On a shard, the first of the two directories materializes the user of every distributed query, whichever directory it belongs to. With `ldap` listed first, a user of this directory then cannot log in to that shard directly until restart.
+- Only one `http` user directory can be configured. A second `http` section in `user_directories` is rejected at startup.
+- Only a user name with a password (HTTP Basic) is supported. A login with other credentials, such as a TLS certificate, Kerberos or an SSH key, is not handled by this directory.
+- A user name containing `:` is never authenticated by this directory, because HTTP Basic credentials cannot carry it.
+- With several external directories, the order in `user_directories` decides. Every login with an unknown name costs a request, so the service must answer `404` for names it does not own. List `http` after the other user directories, so that names defined elsewhere always take precedence for both authentication and name resolution (e.g. in `GRANT ... TO`): otherwise a user materialized by this directory hides a user with the same name added later to another directory until someone authenticates with that name, which drops the materialized user.
