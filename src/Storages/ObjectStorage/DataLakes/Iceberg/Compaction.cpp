@@ -250,6 +250,7 @@ static Plan getPlan(
     /// A snapshot's manifest list also lists the manifests of the earlier snapshots.
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
     std::unordered_set<String> seen_position_delete_files;
+    std::optional<Iceberg::IcebergPathFromMetadata> live_equality_delete_file;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<ManifestFilePlan>> manifest_files;
     for (const auto & snapshot : snapshots_info)
     {
@@ -270,6 +271,12 @@ static Plan getPlan(
                 manifest_files[manifest_file.manifest_file_path]->path = manifest_file.manifest_file_path;
             }
             manifest_files[manifest_file.manifest_file_path]->manifest_lists_path.push_back(snapshot.manifest_list_path);
+            if (!live_equality_delete_file)
+            {
+                const auto & equality_delete_files = files_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE);
+                if (!equality_delete_files.empty())
+                    live_equality_delete_file = equality_delete_files.front()->parsed_entry->file_path_key;
+            }
             for (const auto & pos_delete_file : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
                 if (seen_position_delete_files
                         .insert(persistent_table_components.path_resolver.storageIdentity(pos_delete_file->parsed_entry->file_path_key))
@@ -380,6 +387,17 @@ static Plan getPlan(
     }
     plan.history = std::move(snapshots_info);
     plan.need_optimize = !all_positional_delete_files.empty();
+
+    /// The rewrite reads the data files applying only position deletes, and writes no replacement for an equality delete
+    /// manifest, so the rows removed by a live equality delete file would reappear in the rewritten table, while the
+    /// original files are removed. The snapshot summaries cannot prove the absence of such files (e.g. after the snapshot
+    /// which added one was expired), so check the manifest entries themselves and fail before anything is written.
+    if (plan.need_optimize && live_equality_delete_file)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Iceberg compaction does not support equality deletes, but the table has a live equality delete file {}. "
+            "The table is left unchanged.",
+            live_equality_delete_file->serialize());
     return plan;
 }
 
