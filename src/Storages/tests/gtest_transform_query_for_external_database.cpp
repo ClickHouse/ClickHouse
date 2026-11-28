@@ -1208,6 +1208,57 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
         IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular));
 }
 
+/// The bugfix validation CI job compiles this test against the merge-base sources, where
+/// `LiteralEscapingStyle::MySQL` does not exist yet, so the reference to it depends on a template parameter.
+template <typename Style = LiteralEscapingStyle>
+static std::optional<LiteralEscapingStyle> literalEscapingStyleOfMySQL()
+{
+    if constexpr (requires { Style::MySQL; })
+        return Style::MySQL;
+    else
+        return std::nullopt;
+}
+
+TEST(TransformQueryForExternalDatabase, FormFeedForMySQL)
+{
+    const State & state = State::instance();
+    state.context->setSetting("external_table_strict_query", false);
+
+    const auto mysql = literalEscapingStyleOfMySQL();
+    ASSERT_TRUE(mysql.has_value());
+
+    /// MySQL reads `\f` as the letter `f`, so a form feed is sent as is in a pushed-down predicate ...
+    check(state, 1, {"field"},
+          R"(SELECT field FROM test.table WHERE field = 'a\fb')",
+          "SELECT \"field\" FROM \"test\".\"table\" WHERE \"field\" = 'a\fb'",
+          "",
+          *mysql);
+    check(state, 1, {"field"},
+          R"(SELECT field FROM test.table WHERE field IN ('\f', 'plain'))",
+          "SELECT \"field\" FROM \"test\".\"table\" WHERE \"field\" IN ('\f', 'plain')",
+          "",
+          *mysql);
+    /// ... and in a query passed as the table argument.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            R"((SELECT field FROM test.table WHERE field = 'a\fb'))",
+            IdentifierQuotingStyle::BackticksMySQL, *mysql),
+        "SELECT field FROM test.`table` WHERE field = 'a\fb'");
+
+    /// The other escape sequences are the ones MySQL reads back, a NUL byte included: such a predicate is
+    /// still pushed down, unlike for PostgreSQL and SQLite.
+    check(state, 1, {"field"},
+          R"(SELECT field FROM test.table WHERE field = 'it\'s\0a\\b\n')",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" = 'it\'s\0a\\b\n')",
+          "",
+          *mysql);
+
+    /// A literal with no MySQL text form is rejected in a query passed as the table argument, as before.
+    EXPECT_ANY_THROW(formatQueryTableArgument(state,
+        "(SELECT field FROM test.table WHERE field IN ['foo', 'bar'])",
+        IdentifierQuotingStyle::BackticksMySQL, *mysql));
+}
+
 TEST(TransformQueryForExternalDatabase, QueryTableArgumentForSQLite)
 {
     const State & state = State::instance();

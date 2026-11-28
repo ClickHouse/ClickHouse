@@ -298,6 +298,23 @@ public:
     }
 };
 
+/// Like `FieldVisitorToString`, but strings are written as MySQL string literals (`writeQuotedStringMySQL`).
+/// MySQL reads a NUL byte written as `\0` back, so there is nothing to reject here.
+class FieldVisitorToStringMySQL : public FieldVisitorToStringForDialect<FieldVisitorToStringMySQL>
+{
+public:
+    static constexpr const char * dialect_name = "MySQL";
+
+    using FieldVisitorToStringForDialect<FieldVisitorToStringMySQL>::operator();
+
+    String operator() (const String & x) const
+    {
+        WriteBufferFromOwnString wb;
+        writeQuotedStringMySQL(x, wb);
+        return wb.str();
+    }
+};
+
 namespace
 {
 
@@ -364,23 +381,32 @@ void formatWrappedField(
 void ASTLiteral::formatImplWithoutAlias(
     WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
-    if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
+    switch (settings.literal_escaping_style)
     {
-        /// The alias is written right after the literal, so it has to fit on the line too.
-        String alias_text;
-        if (state.formatting && !alias.empty())
+        case LiteralEscapingStyle::Regular:
         {
-            WriteBufferFromOwnString out;
-            out << " AS ";
-            settings.writeIdentifier(out, alias, /*ambiguous=*/false);
-            alias_text = std::move(out.str());
+            /// The alias is written right after the literal, so it has to fit on the line too.
+            String alias_text;
+            if (state.formatting && !alias.empty())
+            {
+                WriteBufferFromOwnString out;
+                out << " AS ";
+                settings.writeIdentifier(out, alias, /*ambiguous=*/false);
+                alias_text = std::move(out.str());
+            }
+            formatWrappedField(value, ostr, state, frame, alias_text);
+            break;
         }
-        formatWrappedField(value, ostr, state, frame, alias_text);
+        case LiteralEscapingStyle::PostgreSQL:
+            ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
+            break;
+        case LiteralEscapingStyle::SQLite:
+            ostr << applyVisitor(FieldVisitorToStringSQLite(), value);
+            break;
+        case LiteralEscapingStyle::MySQL:
+            ostr << applyVisitor(FieldVisitorToStringMySQL(), value);
+            break;
     }
-    else if (settings.literal_escaping_style == LiteralEscapingStyle::PostgreSQL)
-        ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
-    else
-        ostr << applyVisitor(FieldVisitorToStringSQLite(), value);
 }
 
 }
