@@ -1392,9 +1392,9 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
             state->event.set();
     };
 
-    auto watch = createWatchFromRawCallback("ZooKeeper::waitForDisappear::" + path, [&]() -> Coordination::WatchCallback
-    {
-        return [state](const Coordination::WatchResponse & response)
+    /// One callback per call: it captures this call's state.
+    Coordination::WatchCallbackPtrOrEventPtr watch(std::make_shared<Coordination::WatchCallback>(
+        [state](const Coordination::WatchResponse & response)
         {
             if (!state->code)
             {
@@ -1403,8 +1403,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
                     state->event_type = response.type;
                 state->event.set();
             }
-        };
-    });
+        }));
     watch.setTriggeredEvent(triggered_event);
 
     /// do-while control structure to allow using this function in non-blocking
