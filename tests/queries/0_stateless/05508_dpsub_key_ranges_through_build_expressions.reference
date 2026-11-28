@@ -6,10 +6,10 @@ uses a merge join
 uses a merge join
 -- a build side over a tenth of the probe range, read directly: its range is used, a merge join reads that tenth
 uses a merge join
--- the same build side behind GROUP BY, ORDER BY LIMIT and LIMIT: its hinted range is dropped, as with an alias over the whole range
-uses a merge join
-uses a merge join
-uses a merge join
+-- the same build side behind GROUP BY, ORDER BY LIMIT and LIMIT: unsorted, but its range is used, a hash join reads that tenth
+hash joins only
+hash joins only
+hash joins only
 -- a sorted build side over a hundredth of the probe range, runtime filters disabled: a merge join reads that hundredth
 merge join
 -- the results do not depend on the plan

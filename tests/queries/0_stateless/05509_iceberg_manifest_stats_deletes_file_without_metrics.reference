@@ -7,5 +7,5 @@ live rows, min and max of x: 1000 1001 1999
 __table1.x: (ndv: synthetic-fallback[row-subset,partial-statistics-coverage], range: measured-statistics[row-subset,partial-statistics-coverage])
 --- control: k has metrics in both files, so its range only drops rows
 __table1.k: (ndv: synthetic-fallback[row-subset], range: measured-statistics[row-subset])
---- behind GROUP BY, which keeps only enclosing ranges
+--- behind GROUP BY, which keeps the provenance of the ranges
 __table1.x: (ndv: synthetic-fallback[row-subset,partial-statistics-coverage], range: measured-statistics[row-subset,partial-statistics-coverage])

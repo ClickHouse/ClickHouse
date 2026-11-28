@@ -2,6 +2,7 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
+#include <limits>
 
 #include <Core/Settings.h>
 #include <Functions/indexHint.h>
@@ -116,9 +117,6 @@ estimateAggregatingStepStats(const Aggregator::Params & aggregator_params, bool 
     if (aggregator_params.max_rows_to_group_by && aggregator_params.group_by_overflow_mode != OverflowMode::THROW)
         aggregation_stats.addTransformation(RowSubset);
 
-    /// Grouping keys used to come without a value range. They keep one only while it encloses the output keys, which
-    /// the annotations above decide, so this comes after them.
-    keepOnlyEnclosingValueRanges(aggregation_stats.column_stats);
     return aggregation_stats;
 }
 
@@ -289,8 +287,6 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
             const auto & limit_step = static_cast<const LimitStep &>(step);
             if (applyRowLimit(input_stats, limit_step.getLimit(), limit_step.getOffset(), limit_step.withTies()))
                 input_stats.addTransformation(RowSubset);
-            /// A limit used to erase the value ranges, also when it cannot drop a row. It keeps only enclosing ones.
-            keepOnlyEnclosingValueRanges(input_stats.column_stats);
             return input_stats;
         }
         case UnaryStepStatsKind::Expression:
@@ -349,10 +345,6 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
             }
             if (may_drop_rows)
                 input_stats.addTransformation(RowSubset);
-            /// A sort with a limit used to erase the value ranges, also when it cannot drop a row. It keeps only
-            /// enclosing ones. A sort without a limit never erased them.
-            if (sorting_step.getLimit())
-                keepOnlyEnclosingValueRanges(input_stats.column_stats);
             return input_stats;
         }
         case UnaryStepStatsKind::LogicalExchange:
@@ -818,7 +810,28 @@ StatsUnderFilter estimateMergeTreeReadStats(const ReadFromMergeTree & reading, F
         }
     }
     if (auto stats_hint = parseTableStatsHint(reading.getContext(), table_display_name); !stats_hint.table_name.empty())
-        return {std::move(stats_hint)};
+    {
+        /// Hints stand in for the measured statistics of the table, so the coverage of the read is recorded in them as in
+        /// those. The attribution knows which stored columns the predicates read, and measured statistics exist only for
+        /// stored columns. A hint can name any column, e.g. a subcolumn of a column that a predicate reads, so such a
+        /// column counts as read by the predicates.
+        std::optional<NameSet> columns_read_by_predicates;
+        if (coverage.onlyPredicatesMayDropRows())
+            columns_read_by_predicates = getColumnsReadByPredicates(reading, filter.parentPredicate());
+        if (columns_read_by_predicates)
+        {
+            const auto & columns = reading.getStorageMetadata()->getColumns();
+            for (const auto & [column_name, _] : stats_hint.column_stats)
+                if (!columns.hasPhysical(column_name))
+                    columns_read_by_predicates->insert(column_name);
+        }
+        /// The hinted cardinality stands for the rows that the read selects; without one, a top-K read may drop rows.
+        const UInt64 hinted_rows = stats_hint.estimated_rows.value_or(std::numeric_limits<UInt64>::max());
+        stats_hint.rows_exact = stats_hint.estimated_rows && !coverage.mayDropRows(hinted_rows);
+        coverage.recordIn(stats_hint, hinted_rows, columns_read_by_predicates ? &*columns_read_by_predicates : nullptr);
+        /// The coverage counts the predicate of a parent `FilterStep` among the predicates of the read.
+        return {std::move(stats_hint), /*records_parent_filter=*/filter.parentPredicate() != nullptr};
+    }
 
     if (!analyzed_result)
         return {RelationStats{

@@ -1,0 +1,32 @@
+-- runtime filters disabled: the probe read as it is, the merge join reads the hundredth of it that the build side covers
+merge join
+-- the probe filtered on another column: its keys stay spread over its range, assuming independent columns
+merge join
+-- the same with optimize_move_to_prewhere
+merge join
+-- the same written as PREWHERE
+merge join
+-- the probe filtered on its key: its keys need not be spread over its range, the merge is charged the whole probe
+hash join
+-- the same with optimize_move_to_prewhere
+hash join
+-- the same written as PREWHERE
+hash join
+-- a read limit that stops the read instead of failing the query: it may drop rows of any column, the merge is charged the whole probe
+hash join
+-- the build side filtered on its key: its keys still lie in its range, the merge reads that hundredth
+merge join
+-- with the runtime filter: the probe read as it is, a hash join reads a tenth of it
+hash joins only
+-- the probe filtered on another column: a hash join reads a tenth of it
+hash joins only
+-- the probe filtered on its key: the hash join is charged the whole probe, which is merge-joined with the sorted build side
+uses a merge join
+-- the build side filtered on its key: it still bounds the probe, a hash join reads a tenth of it
+hash joins only
+-- a build side over the same tenth read with FINAL, which may rewrite values: it does not bound the probe, which is merge-joined
+uses a merge join
+-- a build side with measured statistics, runtime filters disabled: the merge join reads the few probe keys it covers
+merge join
+-- statistics that miss a part: the range need not enclose the keys, the merge is charged the whole probe
+hash join

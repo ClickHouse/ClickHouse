@@ -23,20 +23,6 @@ ColumnStats makeGroupingKeyStats(const ColumnStats & input, const RelationStats 
     return result;
 }
 
-void keepOnlyEnclosingValueRange(ColumnStats & stats)
-{
-    if (stats.valueRange(ValueRangeGuarantee::Superset))
-        return;
-    stats.min_value.reset();
-    stats.max_value.reset();
-}
-
-void keepOnlyEnclosingValueRanges(UnorderedMapWithMemoryTracking<String, ColumnStats> & column_stats)
-{
-    for (auto & [_, stats] : column_stats)
-        keepOnlyEnclosingValueRange(stats);
-}
-
 void updateJoinKeyDistinctCounts(
     ColumnStats & left_stats,
     ColumnStats & right_stats,
@@ -95,11 +81,10 @@ void remapColumnStats(UnorderedMapWithMemoryTracking<String, ColumnStats> & mapp
             stats.num_distinct_values += output_lineage.input->ndv_delta;
         if (output_lineage.input->kind == ActionsDAGLineageKind::DistinctValuesBound)
         {
-            /// The measured range does not describe the values of a function that may change them (e.g. `negate(k)`),
-            /// and `NDVBoundExpression` keeps no value-range guarantee, so this clears the range. The NULL fraction
-            /// stays with its provenance: a `CAST` can turn NULL rows into values, which the provenance records.
+            /// The measured range and NULL fraction do not describe the values of a function that may change them (e.g.
+            /// `negate(k)`, or a `CAST` that turns NULL rows into values): `NDVBoundExpression` keeps no value-range
+            /// guarantee.
             stats.addTransformation(NDVBoundExpression);
-            keepOnlyEnclosingValueRange(stats);
         }
         /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes, so drop the
         /// width to unknown.

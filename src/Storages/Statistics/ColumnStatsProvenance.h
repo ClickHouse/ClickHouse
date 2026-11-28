@@ -12,12 +12,9 @@ namespace DB
 /// with the NULL fraction. They are independent because `basic` statistics may exist without a distinct-count sketch,
 /// and because transformations affect them differently: a clamp to the row count changes only the distinct count.
 ///
-/// A transformation records itself in the provenance rather than erasing the fact, with one exception: where the
-/// estimator used to erase value ranges (value-changing expressions, limits, sorts with a limit and grouping keys) a
-/// range survives only while it still encloses the produced values, see `keepOnlyEnclosingValueRange` in
-/// `RelationStatistics.h`, because not every reader of a range consults its provenance. Consumers that rely on a fact
-/// ask for the guarantee they need through `ColumnStats::distinctCount` or `ColumnStats::valueRange`, which give the fact
-/// only if no recorded transformation can have broken that guarantee. A step whose effect is not modeled records
+/// The facts stay as measured: a transformation records itself in the provenance rather than erasing the fact.
+/// Consumers ask for the guarantee they need through `ColumnStats::distinctCount` or `ColumnStats::valueRange`, which give
+/// the fact only if no recorded transformation can have broken that guarantee. A step whose effect is not modeled records
 /// `Unmodeled`, which breaks every guarantee, so estimation fails closed.
 ///
 /// The guarantees each transformation keeps:
@@ -31,8 +28,7 @@ namespace DB
 ///     PartialStatisticsCoverage   no      no                 no      no         no
 ///     Unmodeled                   no      no                 no      no         no
 ///
-/// The distinct-count guarantees also require the origin `MeasuredStatistics` or `SyntheticOverride`, the value-range
-/// guarantees the origin `MeasuredStatistics`.
+/// Every guarantee also requires the origin `MeasuredStatistics` or `SyntheticOverride`.
 
 /// Source of a column fact before the plan transforms it.
 enum class ColumnStatsOrigin : UInt8
@@ -45,8 +41,8 @@ enum class ColumnStatsOrigin : UInt8
     MeasuredStatistics,
     /// A heuristic distinct count, guessed in the absence of a distinct-count statistic.
     SyntheticFallback,
-    /// A fact from test-only statistics hints or randomization. A distinct count of this origin is trusted as if
-    /// measured; a value range of this origin gives no guarantee, so only readers that ignore provenance use it.
+    /// A fact from test-only statistics hints or randomization, trusted as if measured: hints stand in for the measured
+    /// statistics of tables too small to plan as the ones they describe.
     SyntheticOverride,
 };
 

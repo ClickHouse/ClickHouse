@@ -5,7 +5,8 @@
 # Deleted rows must not hide a data file without metrics. The statistics of a column count the rows of the files that
 # have its metrics, deleted rows included, and cover only part of the table when they count fewer rows than the files
 # hold. Compared with the rows left after the deletes instead, a delete of as many rows as the file without metrics
-# has made the bounds of the other files look enclosing, so they survived `GROUP BY` for DPsub's range costing.
+# has made the bounds of the other files look enclosing, so DPsub's range costing took them for bounds of the keys, also
+# behind `GROUP BY`.
 # Fixture of `05339_iceberg_manifest_stats_null_counts` (Spark 3.5.5 / Iceberg 1.10): 2 data files of 1000 rows, `k`
 # 0..999 in the first and 1000..1999 in the second, `x` NULL in every other row and without metrics in the second
 # file. The DELETE removes every row of the first file, the only one with bounds of `x`, by a position delete file
@@ -55,7 +56,7 @@ READ="EXPLAIN SELECT metrics_none.x FROM metrics_none JOIN dim10 ON metrics_none
 provenance metrics_none x "${READ}"
 echo '--- control: k has metrics in both files, so its range only drops rows'
 provenance metrics_none k "${READ}"
-echo '--- behind GROUP BY, which keeps only enclosing ranges'
+echo '--- behind GROUP BY, which keeps the provenance of the ranges'
 provenance g x "EXPLAIN SELECT g.x FROM (SELECT x, any(k) AS k FROM metrics_none GROUP BY x) AS g JOIN dim10 ON g.k = dim10.k"
 
 rm -rf "${LAKE}"
