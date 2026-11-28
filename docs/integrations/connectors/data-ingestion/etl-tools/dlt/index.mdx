@@ -1,0 +1,49 @@
+---
+sidebarTitle: 'Overview'
+slug: /integrations/dlt
+title: 'dltHub and ClickHouse'
+description: 'Use dlt and dltHub to load data from APIs, databases, files and SaaS sources into ClickHouse.'
+keywords: ['clickhouse', 'dltHub', 'dlt', 'agents', 'ClickHouse Agents', 'MCP', 'clickhousectl', 'ontology', 'etl', 'data ingestion']
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_ingestion'
+  - website: 'https://dlthub.com/'
+---
+
+import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge/>
+
+## Overview {#overview}
+
+<a href="https://dlthub.com/docs/intro" target="_blank">dlt</a> is an open-source Python library that loads data from APIs, databases, files and SaaS sources into a destination such as ClickHouse. It infers the schema, creates the tables and handles incremental loading.
+
+<a href="https://dlthub.com/" target="_blank">dltHub</a> provides managed infrastructure and agentic tooling for your data warehouse. Its agent toolkits build a dlt pipeline from a plain-English request, and a managed runtime deploys, schedules and monitors it.
+
+ClickHouse is a <a href="https://dlthub.com/docs/dlt-ecosystem/destinations/clickhouse" target="_blank">destination supported by dlt</a>, so you can use either option with ClickHouse Cloud or a self-managed ClickHouse.
+
+## Why use dltHub with ClickHouse {#why-dlthub}
+
+- **Pipelines from a prompt**: the toolkits build REST API, SQL database and filesystem pipelines into ClickHouse.
+- **Laptop to production**: run on a local ClickHouse, then ClickHouse Cloud, then deploy on the dltHub runtime. The `dlthub` CLI follows the same pattern as [`clickhousectl`](/concepts/features/connect-to-clickhouse/native-tools/clickhousectl).
+- **Secrets stay out of the agent**: a skill provisions or reuses a ClickHouse service from a one-time token and passes the credentials to the pipeline.
+- **Better ClickHouse Agents answers**: the toolkits map your data to an ontology and canonical data model stored in your repository, and write it into `COMMENT`s on every table and column on each run. ClickHouse Agents read these before writing a query.
+- **Shared definitions**: the comments live in ClickHouse, so every user and tool can read them. The source files stay in your repository, so they survive a dropped table.
+- **Pipeline health checks**: install the toolkits as skills in ClickHouse Agents and use the dltHub MCP server to check the last load and any failed runs.
+
+## Get started {#get-started}
+
+<CardGroup cols={2}>
+  <Card title="Tutorial: deploy a pipeline on dltHub" href="/integrations/dlt/tutorial">
+    Load an API into ClickHouse Cloud, then schedule and run it on the dltHub runtime.
+  </Card>
+  <Card title="dlt OSS" href="/integrations/dlt/dlt-oss">
+    Use the open-source dlt Python library to load data into ClickHouse.
+  </Card>
+</CardGroup>
+
+## Related pages {#related-pages}
+
+- <a href="https://dlthub.com/docs/hub/ai-harness/introduction" target="_blank">dltHub agent toolkits</a>
+- <a href="https://dlthub.com/docs/dlt-ecosystem/destinations/clickhouse" target="_blank">dlt ClickHouse destination reference</a>
