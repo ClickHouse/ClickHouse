@@ -46,8 +46,9 @@ function run_arm()
 {
     local query_id="$1"
     local execute_locally="$2"
+    # `count(x)`: if no column of the subquery is read, the `WHERE`, which reads none either, stays above the join.
     $CLICKHOUSE_CLIENT --query_id "$query_id" --query "
-    SELECT count() FROM
+    SELECT count(x) FROM
     (
         SELECT l.x FROM t_dp_limit_stop AS l
         INNER JOIN t_dp_limit_stop_dim AS r ON l.x % 1000 = r.x

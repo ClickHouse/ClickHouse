@@ -1,5 +1,6 @@
 -- A normal projection rejected after the table read was narrowed to the parts the projection does not cover
 -- must leave the table read with all its parts.
+-- `ORDER BY a` makes the table read `a`, which a plain `count()` of the subquery does not read.
 
 DROP TABLE IF EXISTS t_commit_order;
 CREATE TABLE t_commit_order
@@ -18,7 +19,7 @@ OPTIMIZE TABLE t_commit_order FINAL;
 SYSTEM STOP MERGES t_commit_order;
 INSERT INTO t_commit_order SELECT number FROM numbers(16);
 
-SELECT count() FROM (SELECT a FROM t_commit_order WHERE _block_number <= 255)
+SELECT count() FROM (SELECT a FROM t_commit_order WHERE _block_number <= 255 ORDER BY a)
 SETTINGS optimize_use_projections = 1, query_plan_remove_unused_columns = 0, log_comment = 'normal_projection_rejected_keeps_parent_parts';
 
 SYSTEM FLUSH LOGS query_log;
@@ -48,7 +49,7 @@ INSERT INTO t_partial SELECT number, number % 10 FROM numbers(100);
 ALTER TABLE t_partial ADD PROJECTION p (SELECT * ORDER BY b);
 INSERT INTO t_partial SELECT number, number % 10 FROM numbers(100);
 
-SELECT count() FROM (SELECT a FROM t_partial WHERE b = 5)
+SELECT count() FROM (SELECT a FROM t_partial WHERE b = 5 ORDER BY a)
 SETTINGS optimize_use_projections = 1, query_plan_remove_unused_columns = 0;
 
 DROP TABLE t_partial;

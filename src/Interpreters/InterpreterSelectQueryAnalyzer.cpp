@@ -93,6 +93,8 @@ ASTPtr createIdentifierFromColumnName(const String & column_name)
     return res;
 }
 
+}
+
 ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_names)
 {
     ASTPtr result_query;
@@ -135,6 +137,9 @@ ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_name
 
     return select_query;
 }
+
+namespace
+{
 
 /// Only `considerEnablingParallelReplicas` calls the builder, and only when the mode it reads from this same context is on.
 bool needsQueryPlanWithParallelReplicasBuilder(const Context & context)

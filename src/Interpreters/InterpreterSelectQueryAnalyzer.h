@@ -17,6 +17,9 @@ class QueryPlan;
 struct BuiltSetsByHash;
 using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 
+/// The query, wrapped as `SELECT column_names FROM (query)` unless `column_names` is empty.
+ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_names);
+
 class InterpreterSelectQueryAnalyzer : public IInterpreter
 {
 public:
