@@ -20,6 +20,10 @@
 -- `ast_fuzzer_runs` is pinned because the stress profile enables the server-side AST fuzzer for
 -- any query, and a fuzzed re-execution inherits `log_comment` and would win the `argMax` below.
 
+-- Pinned (randomized in CI): the earlier reads of the file must fill the count cache that the
+-- `05043_file_count_cache` cell is served from.
+SET use_cache_for_count_from_files = 1;
+
 DROP TABLE IF EXISTS t_file_engine;
 DROP TABLE IF EXISTS t_mergetree;
 

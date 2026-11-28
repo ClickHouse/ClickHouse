@@ -49,6 +49,7 @@ INSERT INTO t_rf_r SELECT toUInt8(number) FROM numbers(50);
 INSERT INTO t_rf_l SELECT toUInt8(number % 100) FROM numbers(5000);
 
 SET join_algorithm = 'hash';
+SET hash_join_layout = 'auto'; -- The test checks the layout the planner picks
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SET max_threads = 4;
 SET query_plan_join_swap_table = 'false';
@@ -58,6 +59,8 @@ SET query_plan_join_shard_by_pk_ranges = 0;
 SET enable_join_fixed_hash_table_conversion = 1;
 SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
+-- The `key*` queries check that the fixed-size map is published as a runtime filter; the `rf_serial` ones override it.
+SET join_runtime_filter_from_fixed_hash_table = 1;
 SET join_use_nulls = 1;
 
 SELECT '-- key8 uint8 inner';

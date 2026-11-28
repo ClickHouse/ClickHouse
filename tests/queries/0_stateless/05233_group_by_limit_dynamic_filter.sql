@@ -1,6 +1,9 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: the top-K heap needs `LimitStep` directly above `AggregatingStep` in a
 -- single-stage plan, and the dynamic filter links the aggregation to the local reading step.
+-- A frozen adaptive aggregator table that never thaws keeps the dynamic filter from skipping the granules checked
+-- below, so pin the adaptive aggregator settings that the randomizer changes to their defaults.
+SET adaptive_aggregator_freeze_threshold = 16384, adaptive_aggregator_freeze_threshold_bytes = 4194304, adaptive_aggregator_disable_thaw = 0;
 
 -- `GROUP BY key [ORDER BY key] LIMIT n` publishes the boundary of the aggregation's top-K heap to
 -- the `MergeTree` reading step (`enable_group_by_top_k_dynamic_filtering`): rows whose key lies

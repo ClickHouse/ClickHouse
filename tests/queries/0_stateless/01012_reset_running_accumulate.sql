@@ -2,6 +2,8 @@
 SET max_bytes_before_external_group_by = 0;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET allow_deprecated_error_prone_window_functions = 1;
+-- The same for the blocks of the adaptive aggregator, which CI may inject low freeze thresholds into.
+SET adaptive_aggregator_freeze_threshold = 16384, adaptive_aggregator_freeze_threshold_bytes = 4194304, adaptive_aggregator_disable_thaw = 0;
 
 SELECT grouping,
        item,

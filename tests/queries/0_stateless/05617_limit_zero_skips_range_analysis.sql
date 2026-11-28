@@ -2,6 +2,11 @@
 
 -- A `LIMIT 0` over a MergeTree read skips the analysis of its ranges, and keeps the checks that do not depend on them.
 
+-- Pinned to the default: prefer_optimize_projection=1 (from the settings randomizer) takes a projection
+-- regardless of cost and defeats the LIMIT-0 range-analysis skip this test asserts. The one query below
+-- that explicitly wants it keeps its per-query SETTINGS override.
+SET prefer_optimize_projection = 0;
+
 DROP VIEW IF EXISTS vs;
 DROP TABLE IF EXISTS t;
 DROP TABLE IF EXISTS tp;

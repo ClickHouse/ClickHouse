@@ -1,6 +1,8 @@
 -- Random settings limits: optimize_or_like_chain=(1, None)
 
 SET enable_identifier_resolve_cache = 1;
+-- Pin (randomized in CI): a higher minimum leaves the 4-pattern chains below unrewritten.
+SET optimize_or_like_chain_min_substrings = 4;
 
 DROP TABLE IF EXISTS t_or_like_shared;
 CREATE TABLE t_or_like_shared (s String, ns Nullable(String), ls LowCardinality(String), n UInt64) ENGINE = MergeTree ORDER BY n;

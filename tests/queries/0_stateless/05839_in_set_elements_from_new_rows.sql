@@ -1,5 +1,8 @@
 -- The first block of each subquery adds only new keys and every later block 1% of new keys, so the set used for index
 -- analysis collects most of its elements by row number.
+-- A spill of the set requested by the adaptive memory spill scheduler reserves a whole sort run (about 16 MiB) however
+-- small the set is, which exceeds the `max_memory_usage` of the queries below; pinned until that is fixed.
+SET enable_adaptive_memory_spill_scheduler = 0;
 DROP TABLE IF EXISTS t_in_set_new_rows;
 CREATE TABLE t_in_set_new_rows (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_in_set_new_rows SELECT number FROM numbers(200000);

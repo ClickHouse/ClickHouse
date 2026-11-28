@@ -22,6 +22,7 @@ WHERE number % 20 < [3, 12, 4, 4, 4, 8, 9, 2, 5][intDiv(number, 20) + 1];
 SET max_threads = 4, parallel_hash_join_threshold = 0, query_plan_join_swap_table = 0, joined_block_split_single_row = 1,
     min_joined_block_size_rows = 65409, min_joined_block_size_bytes = 524288, query_plan_join_shard_by_pk_ranges = 0,
     max_bytes_before_external_join = 0, query_plan_optimize_join_order_randomize = 0, enable_parallel_replicas = 0;
+SET hash_join_layout = 'auto'; -- The test checks parallel_hash squashing; the randomizer's 'serial' forces serial and skips it
 
 SELECT max(blockSize()) <= 9, count() FROM t_l JOIN t_r ON t_l.k = t_r.k
 SETTINGS join_algorithm = 'parallel_hash', max_joined_block_size_rows = 9;

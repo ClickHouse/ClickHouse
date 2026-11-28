@@ -4,6 +4,8 @@
 
 SET join_use_nulls = 0, query_plan_join_swap_table = 0, parallel_hash_join_threshold = 0, parallel_non_joined_rows_processing = 1;
 SET max_threads = 4, grace_hash_join_initial_buckets = 4;
+-- The test sets up the parallel non-joined-rows path; the randomizer's `hash_join_layout = 'serial'` would run serial instead.
+SET hash_join_layout = 'auto';
 
 {% set cases = [
     {'name': 'u8', 'cols': 'k UInt8', 'expr': 'number', 'n': 255, 'on': 'l.k = r.k', 'rk': 'r.k', 'missing': ['k != 0', 'k != 200']},

@@ -10,6 +10,9 @@
 
 SET enable_parallel_replicas = 0;
 SET optimize_trivial_group_by_limit_query = 1;
+-- Pin to default: CI randomizes min_bytes_before_external_group_by up to 16 MiB, which keeps the
+-- aggregation in memory so the external path this test exercises is never taken.
+SET min_bytes_before_external_group_by = 0;
 -- The `GROUP BY` top-K heap takes this shape over from the kept-keys cutoff wherever it applies.
 SET enable_group_by_top_k_optimization = 0;
 

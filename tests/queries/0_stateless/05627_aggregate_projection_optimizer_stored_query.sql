@@ -20,6 +20,8 @@ SETTINGS materialize_projections_on_insert = 1;
 INSERT INTO t_projection_stored_query (a, b, c, n.k, n.v) VALUES
     (1, 'x', 1, [1], ['v']), (2, 'x', NULL, [2, 3], ['v', 'w']), (3, 'y', 1, [], []), (4, 'y', 1, [1], ['v']), (5, 'y', NULL, [1], ['v']), (6, 'z', 2, [], []);
 
+-- CI may inject a set size limit too small for the projection to match, which `force_optimize_projection` rejects.
+SET query_plan_max_set_size_for_projection_match = 10000;
 SET optimize_use_projections = 1, force_optimize_projection = 1;
 
 SELECT a % 2 AS k, sum(a % 2), sum(a), count(), any(a % 2) RESPECT NULLS, quantile(0.5)(a), uniqExact(b) FROM t_projection_stored_query GROUP BY k ORDER BY k SETTINGS force_optimize_projection_name = 'p_alias';

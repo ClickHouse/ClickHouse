@@ -9,6 +9,10 @@
 
 SET use_query_condition_cache = 0;
 SET use_skip_indexes_on_data_read = 0;
+-- The boolean-rewrite sections assert pruning with the rewrite enabled and disable it per query
+-- where the negative case is tested, so the global value must stay pinned to the default against
+-- the runner's randomization.
+SET allow_key_condition_coalesce_rewrite = 1;
 -- The implicit `_exact_count_projection` hides the ReadFromMergeTree step (and its Granules line)
 -- from `EXPLAIN indexes = 1 SELECT count() ...`; disable it so the granule counts are visible.
 SET optimize_use_implicit_projections = 0;

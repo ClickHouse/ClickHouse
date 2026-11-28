@@ -15,6 +15,10 @@
 -- Every mode must return exactly the result of a local read, which is what makes the pruning safe rather
 -- than merely faster.
 
+-- Pin (randomized in CI): seal-gated reading skips the read-time index analysis by the runtime
+-- filter that this test checks.
+SET enable_join_seal_gated_reading = 0;
+
 DROP TABLE IF EXISTS rf_idx_fact SYNC;
 DROP TABLE IF EXISTS rf_idx_dim SYNC;
 

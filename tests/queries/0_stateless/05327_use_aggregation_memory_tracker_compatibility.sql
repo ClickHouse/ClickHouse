@@ -1,5 +1,8 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/123756: `compatibility` below 26.9 restores the whole-query memory measurement of the `GROUP BY` two-level decision.
 
+-- Reset (randomized in CI): an explicit value would hide what `compatibility` sets.
+SET use_aggregation_memory_tracker = DEFAULT;
+
 SELECT 'default', value FROM system.settings WHERE name = 'use_aggregation_memory_tracker';
 
 SET compatibility = '26.9';

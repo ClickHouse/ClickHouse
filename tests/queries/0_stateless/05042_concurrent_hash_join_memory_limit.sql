@@ -10,6 +10,10 @@ SET join_algorithm = 'hash';
 -- Keep the parallel layout even when an earlier run left a small row estimate.
 SET hash_join_layout = 'parallel';
 
+-- CI may inject `query_plan_optimize_join_order_algorithm` with `dpsize`, whose search over the sixteen relations alone takes
+-- about 8 MiB; the limit below is for the hash join.
+SET query_plan_optimize_join_order_algorithm = 'dpsub,greedy';
+
 SET max_memory_usage = '8Mi';
 SELECT count() > 0 FROM (
     EXPLAIN

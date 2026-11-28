@@ -8,6 +8,9 @@
 --
 -- With a real `ORDER BY` the freeze stays available, because falling back there
 -- costs nothing: the sort belongs to the query either way.
+-- The randomized freeze thresholds of the adaptive aggregator change how its tables freeze and how it emits its
+-- groups (blocks, order and the counters checked below), so pin their defaults.
+SET adaptive_aggregator_freeze_threshold = 16384, adaptive_aggregator_freeze_threshold_bytes = 4194304;
 
 -- The top-K optimization does not apply to serialized plans; pin the setting
 -- so the assertions hold in the distributed-plan suite.

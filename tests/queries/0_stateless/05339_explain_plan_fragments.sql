@@ -1,6 +1,10 @@
 -- `EXPLAIN PLAN fragments = 1`: the plan of a query distributed to stateless workers, printed per query fragment.
 -- The queries are only explained, never executed.
 
+-- Pin to default: CI randomizes distributed_plan_partial_aggregation_before_shuffle off, which changes
+-- the plan fragments this test prints.
+SET distributed_plan_partial_aggregation_before_shuffle = 1;
+
 DROP TABLE IF EXISTS small;
 DROP TABLE IF EXISTS big;
 

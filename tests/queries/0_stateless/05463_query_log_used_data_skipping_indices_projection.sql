@@ -9,6 +9,8 @@ SET optimize_trivial_count_query = 0;
 SET optimize_use_projection_filtering = 0;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET distributed_index_analysis = 0;
+-- Pin (randomized in CI): the test checks the projection the cost model picks, with the skip index ratio at its default.
+SET prefer_optimize_projection = 0, optimize_projection_skip_index_ratio = 0.5;
 -- a throwing `max_rows_to_read` turns off skip indexes on data read, the test profile sets it
 SET max_rows_to_read = 0;
 

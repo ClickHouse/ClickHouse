@@ -7,7 +7,8 @@
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SET optimize_syntax_fuse_functions = 1, optimize_arithmetic_operations_in_aggregate_functions = 1;
 -- `use_statistics_for_min_max_aggregation` and `use_statistics_for_sum_avg_aggregation` keep their defaults, because
--- `compatibility` below does not change settings that were set explicitly.
+-- `compatibility` below does not change settings that were set explicitly. `DEFAULT` undoes the runner's randomization.
+SET use_statistics_for_min_max_aggregation = DEFAULT, use_statistics_for_sum_avg_aggregation = DEFAULT;
 SET materialize_statistics_on_insert = 1, mutations_sync = 2;
 
 DROP TABLE IF EXISTS t_sum;

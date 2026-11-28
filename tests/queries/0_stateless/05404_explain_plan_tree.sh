@@ -47,6 +47,8 @@ SET
     distributed_plan_default_shuffle_join_bucket_count = 3,
     distributed_plan_default_reader_bucket_count = 3,
     distributed_plan_force_exchange_kind = 'Streaming',
+    -- Randomized in CI; a read in order adds virtual row conversions to the printed plans.
+    distributed_plan_read_in_order = 0,
     -- These queries must be distributed: a fallback to local execution is an error, not a plain plan.
     distributed_plan_fallback_to_local_execution = 0;
 

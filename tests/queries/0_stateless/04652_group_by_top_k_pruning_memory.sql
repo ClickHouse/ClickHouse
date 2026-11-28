@@ -6,6 +6,9 @@
 -- aggregate states.  `ArenaAllocBytes` is asserted instead of `memory_usage`
 -- because it measures the aggregate-state arena directly and is not perturbed
 -- by block sizes or by the sanitizer builds' allocation overhead.
+-- The randomized freeze thresholds of the adaptive aggregator change how its tables freeze and how it emits its
+-- groups (blocks, order and the counters checked below), so pin their defaults.
+SET adaptive_aggregator_freeze_threshold = 16384, adaptive_aggregator_freeze_threshold_bytes = 4194304;
 
 -- The top-K optimization does not apply to serialized plans; pin the setting
 -- so the assertions hold in the distributed-plan suite.

@@ -21,7 +21,7 @@ $CLICKHOUSE_CLIENT -q "
 
 query="SELECT count(), sum(v) FROM t_lazy_final_in_order FINAL WHERE k % 7 != 6"
 settings="max_threads = 4, max_block_size = 8192, query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000,
-    min_filtered_ratio_for_lazy_final = 0, optimize_aggregation_in_order = 1, aggregation_in_order_max_block_bytes = 50000000"
+    max_bytes_for_lazy_final = 256000000, min_filtered_ratio_for_lazy_final = 0, optimize_aggregation_in_order = 1, aggregation_in_order_max_block_bytes = 50000000"
 
 # Same result as the regular FINAL read.
 $CLICKHOUSE_CLIENT -q "$query SETTINGS query_plan_optimize_lazy_final = 0"

@@ -4,6 +4,8 @@
 
 -- Pin settings necessary for two-level conversion to trigger.
 SET max_threads = 1;
+-- The decision is taken on the aggregation's own memory tracker; without it the whole query counts.
+SET use_aggregation_memory_tracker = 1;
 -- The adaptive aggregator also takes one thread and does not convert to two-level by these thresholds.
 SET enable_adaptive_aggregator = 0;
 SET max_untracked_memory = 0;

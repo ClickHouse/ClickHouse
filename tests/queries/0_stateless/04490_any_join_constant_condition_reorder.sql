@@ -6,6 +6,10 @@
 SET join_algorithm = 'hash';
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_randomize = 0;
+-- Pin the layout: the randomizer's 'parallel' builds the hash table on several threads, so an ANY join over
+-- the tiny inputs keeps a non-deterministic right row (the flaky `2 2 7` vs `0 3 7`). 'auto' stays serial for
+-- this data, matching the reference.
+SET hash_join_layout = 'auto';
 
 SELECT '-- ANY INNER JOIN ON constant true: one row per (constant) key';
 SELECT * FROM values('l UInt8', 1, 2) AS l_tbl ANY INNER JOIN values('r UInt8', 10, 20) AS r_tbl ON 1 ORDER BY ALL;

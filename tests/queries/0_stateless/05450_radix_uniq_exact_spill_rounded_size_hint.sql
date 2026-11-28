@@ -7,6 +7,9 @@
 SET max_threads = 8, max_threads_min_free_memory_per_thread = 0, max_block_size = 8192,
     optimize_uniq_exact_radix_partitioning = 1, collect_hash_table_stats_during_aggregation = 1,
     max_bytes_ratio_before_external_group_by = 0;
+-- Pin to default: CI randomizes min_bytes_before_external_group_by up to 16 MiB, which delays spilling
+-- past the memory limit so the query exceeds it instead of allocating the rounded sets externally.
+SET min_bytes_before_external_group_by = 0;
 
 SELECT uniqExact(toUInt64(number % 131073)) FROM numbers_mt(20000000) SETTINGS max_bytes_before_external_group_by = 0;
 

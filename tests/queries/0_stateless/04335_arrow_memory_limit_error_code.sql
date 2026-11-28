@@ -5,10 +5,10 @@
 -- requires one allocation larger than the memory limit used below.
 INSERT INTO FUNCTION file(currentDatabase() || '_04335.arrow', Arrow)
     SELECT number AS x, repeat('a', 3000) AS s FROM numbers(10000)
-    SETTINGS max_block_size = 65536, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_insert_threads = 1, output_format_arrow_compression_method = 'none', engine_file_truncate_on_insert = 1;
+    SETTINGS max_block_size = 65536, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_insert_threads = 1, output_format_arrow_compression_method = 'none', output_format_arrow_max_record_batch_size_bytes = 2147483646, engine_file_truncate_on_insert = 1;
 INSERT INTO FUNCTION file(currentDatabase() || '_04335.arrows', ArrowStream)
     SELECT number AS x, repeat('a', 3000) AS s FROM numbers(10000)
-    SETTINGS max_block_size = 65536, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_insert_threads = 1, output_format_arrow_compression_method = 'none', engine_file_truncate_on_insert = 1;
+    SETTINGS max_block_size = 65536, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_insert_threads = 1, output_format_arrow_compression_method = 'none', output_format_arrow_max_record_batch_size_bytes = 2147483646, engine_file_truncate_on_insert = 1;
 INSERT INTO FUNCTION file(currentDatabase() || '_04335.orc', ORC)
     SELECT number AS x, repeat('a', 3000) AS s FROM numbers(10000)
     SETTINGS max_block_size = 65536, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_insert_threads = 1, output_format_orc_compression_method = 'none', engine_file_truncate_on_insert = 1;

@@ -12,6 +12,8 @@ set max_block_size = 10;
 set min_insert_block_size_rows = 10;
 
 set materialized_views_ignore_errors = 1;
+-- Without concurrency control every pipeline gets all `max_threads`, which is what this test tells apart.
+set use_concurrency_control = 1;
 
 drop table if exists testX;
 drop table if exists testXA;

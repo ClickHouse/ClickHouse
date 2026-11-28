@@ -1,6 +1,8 @@
 -- Tags: no-parallel-replicas, no-random-merge-tree-settings
 -- no-parallel-replicas: the test checks EXPLAIN of plans with reading steps replaced by prepared sources.
 -- no-random-merge-tree-settings: the columns must be stored with sparse serialization.
+-- The test checks the rewrites to statistics, which these settings enable; pin them against the settings randomization.
+SET use_statistics_for_min_max_aggregation = 1, use_statistics_for_sum_avg_aggregation = 1;
 
 -- `basic` statistics of a `Nullable` column with sparse serialization, whose NULLs are its defaults: `sum`, `avg`,
 -- `sumCount`, `min`, `max` and `count(column)` answered from them are the same as without them. `z` also has non-NULL

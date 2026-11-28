@@ -10,12 +10,19 @@ SET max_threads_min_free_memory_per_thread = 0;
 SET max_block_size = 65536;
 SET group_by_two_level_threshold = 100000;
 SET group_by_two_level_threshold_bytes = 50000000;
+-- Pin the adaptive aggregator freeze thresholds to their defaults: the randomizer lowers them, so a
+-- thread's local table freezes earlier and the indexed-table counters the test checks change.
+SET adaptive_aggregator_freeze_threshold = 16384;
+SET adaptive_aggregator_freeze_threshold_bytes = 4194304;
 SET collect_hash_table_stats_during_aggregation = 0;
 SET optimize_aggregation_in_order = 0;
 SET max_bytes_before_external_group_by = 0;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET enable_parallel_single_level_merge = 1;
 SET max_rows_to_group_by = 0;
+SET query_plan_aggregation_bucket_top_k = 1; -- The top-K pruning of the adaptive merge
+SET serialize_query_plan = 0; -- The bucket top-K pass refuses a serialized plan (distributed-plan suite), which changes the indexed-table counters
+SET adaptive_aggregator_disable_thaw = 0; -- The randomizer's True disables thawing, which changes the thawed-table counters the test checks
 
 -- Each lane feeds one producer, so every table holds all the keys of its lane whatever the scheduling.
 CREATE VIEW lanes AS

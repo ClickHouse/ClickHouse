@@ -12,7 +12,9 @@ CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --table_engine_read_through_distributed_
 TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
 TABLE_PATH="05407_iceberg_metadata_s3_requests/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE} (c0 Int32) ENGINE = IcebergS3(s3_conn, filename = '${TABLE_PATH}')"
+# The table picks its metadata cache when it is created, so the `SETTINGS` of the reads below come too late
+# when CI randomizes `use_iceberg_metadata_files_cache` off for the `CREATE`
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache 1 --query "CREATE TABLE ${TABLE} (c0 Int32) ENGINE = IcebergS3(s3_conn, filename = '${TABLE_PATH}')"
 
 run_query()
 {

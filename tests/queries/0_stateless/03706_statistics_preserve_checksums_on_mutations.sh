@@ -16,6 +16,8 @@ create table mt (key Int, value String) engine=MergeTree() order by key settings
   ratio_of_defaults_for_sparse_serialization=1,
   map_serialization_version='basic',
   map_serialization_version_for_zero_level_parts='basic',
+  -- adaptive codec selection picks a codec per part, so INSERT and mutation parts compress differently
+  enable_adaptive_codec_selection=0,
   -- Pin serialization_info_version to 'basic': with 'with_types', the INSERT and mutation
   -- paths may produce different serialization.json content (different type version metadata),
   -- causing checksum mismatches that are not actual data corruption.

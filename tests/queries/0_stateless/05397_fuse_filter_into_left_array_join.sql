@@ -2,6 +2,8 @@
 
 -- the planner does not fuse the filter for serialized plans
 SET serialize_query_plan = 0;
+-- the fused side of each comparison; the unfused side sets it to 0 per query
+SET query_plan_fuse_filter_into_array_join = 1;
 
 DROP TABLE IF EXISTS t_fuse_left;
 CREATE TABLE t_fuse_left (id UInt64, arr Array(UInt64), s Array(String), n Array(Nullable(String))) ENGINE = MergeTree ORDER BY id;

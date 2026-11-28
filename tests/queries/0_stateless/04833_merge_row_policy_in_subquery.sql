@@ -1,3 +1,7 @@
+-- Pin (randomized in CI): a spilled `IN` set keeps no explicit elements, so the index analysis
+-- and key lookups by the set that this test checks do not happen.
+SET max_bytes_before_external_set = 0;
+
 DROP TABLE IF EXISTS mrp_mt;
 DROP TABLE IF EXISTS mrp_pk;
 DROP TABLE IF EXISTS mrp_log;

@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-SETTINGS="max_threads = 4, max_block_size = 1000, log_processors_profiles = 1"
+SETTINGS="max_threads = 4, max_block_size = 1000, log_processors_profiles = 1, allow_parallel_distinct = 1"
 
 query_id="05043_serialized_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "

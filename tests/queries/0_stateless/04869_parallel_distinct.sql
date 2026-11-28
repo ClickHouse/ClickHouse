@@ -2,6 +2,8 @@
 -- partition independently.
 
 SET max_threads = 4;
+-- Pinned (randomized in CI): the checks below assert the parallel pipeline.
+SET allow_parallel_distinct = 1;
 
 SELECT '-- the pipeline scatters by hash and deduplicates every stream';
 SELECT countIf(explain LIKE '%ScatterByPartitionTransform%') > 0, countIf(explain LIKE '%DistinctTransform × 4%') > 0

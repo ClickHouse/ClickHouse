@@ -4,6 +4,10 @@
 -- produces no row at all for an empty array, so the groups pruned inside a bucket could be precisely
 -- the ones that would have survived, and the query silently returned fewer rows.
 
+-- The optimization under test is randomized in CI; the second arm turns it off per query to get
+-- its reference, so the session value has to be on.
+SET query_plan_aggregation_bucket_top_k = 1;
+
 SELECT count() FROM
 (
     SELECT k, c, arrayJoin(range(c % 2)) AS j

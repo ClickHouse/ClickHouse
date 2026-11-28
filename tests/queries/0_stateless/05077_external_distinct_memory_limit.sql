@@ -7,6 +7,8 @@ SET max_bytes_ratio_before_external_distinct = 0;
 -- The randomized `prefer_external_sort_block_bytes = 1` writes spill blocks of 128 rows, and reading back
 -- the tens of thousands of blocks for this input exceeds the test timeout in sanitizer builds.
 SET prefer_external_sort_block_bytes = DEFAULT;
+-- The adaptive spill scheduler would spill the first query instead of letting it hit the memory limit.
+SET enable_adaptive_memory_spill_scheduler = 0;
 
 -- Preliminary `DISTINCT` keeps deduplicating mostly unique input when spilling is disabled, preserving
 -- the memory pressure needed to distinguish the in-memory and external algorithms.

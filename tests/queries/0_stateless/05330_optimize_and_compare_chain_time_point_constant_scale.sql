@@ -1,6 +1,9 @@
 -- A `DateTime` or lower-scale `DateTime64` constant compared with a `DateTime64` expression is
 -- widened to the expression's scale, so `optimize_and_compare_chain` derives conditions through it.
 
+-- Pinned (randomized in CI): a tiny work budget stops the derivation the checks below count.
+SET optimize_and_compare_chain_max_hash_work = 5000000;
+
 SELECT 'datetime constant',
     (SELECT count() FROM (EXPLAIN QUERY TREE
         SELECT * FROM values('a DateTime64(6, \'UTC\'), b DateTime64(6, \'UTC\')', ('2020-01-01 00:00:00', '2020-01-01 00:00:01'))

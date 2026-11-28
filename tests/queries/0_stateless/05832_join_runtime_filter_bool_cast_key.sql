@@ -7,6 +7,9 @@ SET query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = '
 SET enable_parallel_replicas = 0, join_algorithm = 'hash';
 SET date_time_overflow_behavior = 'ignore';
 SET allow_suspicious_variant_types = 1;
+-- The index analysis needs the exact values of the runtime filter, whose set is bounded by both settings below
+-- (a local set also by the bloom filter size), so pin them against the settings randomization.
+SET join_runtime_filter_exact_values_limit = 10000, join_runtime_bloom_filter_bytes = 524288;
 
 DROP TABLE IF EXISTS probe_u8;
 DROP TABLE IF EXISTS probe_u8_si;

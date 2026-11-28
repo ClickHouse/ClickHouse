@@ -1,6 +1,9 @@
 -- `length(arrayFilter(f, arr, ...))` is rewritten to `arrayCount(f, arr, ...)`, which counts the
 -- matching elements instead of building an array of them only to take its size.
 
+-- Pinned (randomized in CI): the queries without `SETTINGS` assert that the rewrite fires.
+SET optimize_rewrite_array_filter_length_to_array_count = 1;
+
 SELECT '-- the rewrite fires';
 SELECT
     countIf(explain LIKE '%function_name: arrayCount%') AS array_count,

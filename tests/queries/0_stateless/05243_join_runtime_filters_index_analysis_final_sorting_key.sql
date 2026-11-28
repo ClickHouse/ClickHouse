@@ -3,6 +3,10 @@
 -- never hides the latest version of a row the join needs. A join key outside of the sorting key does not
 -- prune, even with a skip index on it: the index describes every row version, not only the latest one.
 
+-- Pin (randomized in CI): seal-gated reading skips the read-time index analysis by the runtime
+-- filter that this test checks.
+SET enable_join_seal_gated_reading = 0;
+
 DROP TABLE IF EXISTS rf_final_fact;
 DROP TABLE IF EXISTS rf_final_dim;
 

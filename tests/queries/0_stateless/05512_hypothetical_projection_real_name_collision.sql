@@ -1,6 +1,9 @@
 -- a real projection added later under the name of a hypothetical one makes the hypothetical one not applicable
 
 SET enable_parallel_replicas = 0, optimize_use_projections = 1;
+-- Pin prefer_optimize_projection: when the randomizer turns it on, EXPLAIN WHATIF serves the query from the
+-- real projection and reports that instead of the "name already exists" status the test checks.
+SET prefer_optimize_projection = 0;
 
 DROP TABLE IF EXISTS t_name;
 CREATE TABLE t_name (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;

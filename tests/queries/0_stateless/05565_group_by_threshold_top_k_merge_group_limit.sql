@@ -4,6 +4,7 @@
 -- ordinary merge would throw too, so the query log shows that the threshold merge ran.
 
 SET enable_adaptive_aggregator = 0, serialize_query_plan = 0, max_threads = 4, max_block_size = 8192;
+SET query_plan_aggregation_bucket_top_k = 1; -- The test relies on the top-K threshold merge; the randomizer's False disables it
 SET group_by_two_level_threshold = 100, group_by_two_level_threshold_bytes = 0;
 SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
 

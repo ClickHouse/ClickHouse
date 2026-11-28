@@ -7,6 +7,9 @@
 -- pinned at the plateau, nothing is ever skipped or evicted, and the heap grows
 -- until it freezes - which makes the optimization silently depend on the order
 -- rows happen to arrive in.
+-- The randomized freeze thresholds of the adaptive aggregator change how its tables freeze and how it emits its
+-- groups (blocks, order and the counters checked below), so pin their defaults.
+SET adaptive_aggregator_freeze_threshold = 16384, adaptive_aggregator_freeze_threshold_bytes = 4194304;
 
 -- The top-K optimization does not apply to serialized plans; pin the setting
 -- so the assertions hold in the distributed-plan suite.
@@ -16,6 +19,9 @@ SET max_rows_to_group_by = 0;
 -- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET enable_group_by_top_k_optimization = 1;
+-- CI randomizes group_by_top_k_optimization_observation_rows: a tiny window freezes the heap
+-- before it can prune, which is what the assertions below check does not happen.
+SET group_by_top_k_optimization_observation_rows = 65536;
 -- The assertions below count the rows the heap itself rejects. With the dynamic filter the reading
 -- step drops the rows beyond the heap boundary before they reach the aggregation, so keep it off here.
 SET enable_group_by_top_k_dynamic_filtering = 0;

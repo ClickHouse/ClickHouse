@@ -1,3 +1,6 @@
+-- The randomized freeze thresholds of the adaptive aggregator change how its tables freeze and how it emits its
+-- groups (blocks, order and the counters checked below), so pin their defaults.
+SET adaptive_aggregator_freeze_threshold = 16384, adaptive_aggregator_freeze_threshold_bytes = 4194304;
 SET max_threads_min_free_memory_per_thread = 0;
 SET group_by_two_level_threshold = 100000;
 SET group_by_two_level_threshold_bytes = 50000000;

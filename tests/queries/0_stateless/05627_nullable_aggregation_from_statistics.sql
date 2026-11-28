@@ -1,5 +1,7 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: the test checks EXPLAIN of plans with reading steps replaced by prepared sources.
+-- The test checks the rewrites to statistics, which these settings enable; pin them against the settings randomization.
+SET use_statistics_for_min_max_aggregation = 1, use_statistics_for_sum_avg_aggregation = 1;
 
 -- Over a `Nullable` column, `sum`, `avg`, `sumCount`, `min`, `max` and `count(column)` are answered from per-part
 -- `basic` statistics: the sum of the non-NULL values, their min/max, and the NULL count. A part of NULLs only

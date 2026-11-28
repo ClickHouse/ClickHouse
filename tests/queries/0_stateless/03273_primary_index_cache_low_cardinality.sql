@@ -8,7 +8,9 @@ SYSTEM CLEAR PRIMARY INDEX CACHE;
 
 CREATE TABLE t_primary_index_cache (a LowCardinality(String), b LowCardinality(String))
 ENGINE = MergeTree ORDER BY (a, b)
-SETTINGS use_primary_key_cache = 1, prewarm_primary_key_cache = 1, index_granularity = 8192, index_granularity_bytes = '10M', min_bytes_for_wide_part = 0;
+-- `getPrimaryIndexCache` also requires `primary_key_lazy_load`, which CI randomizes off; without it
+-- the index is loaded eagerly into the part and the cache this test measures stays empty.
+SETTINGS use_primary_key_cache = 1, prewarm_primary_key_cache = 1, primary_key_lazy_load = 1, index_granularity = 8192, index_granularity_bytes = '10M', min_bytes_for_wide_part = 0;
 
 -- Insert will prewarm primary index cache
 INSERT INTO t_primary_index_cache SELECT number%10, number%11 FROM numbers(10000);

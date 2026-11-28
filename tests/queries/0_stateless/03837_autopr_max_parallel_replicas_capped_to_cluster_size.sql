@@ -15,6 +15,11 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_rep
 
 SET max_threads=4;
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
+-- Without the adaptive aggregator, the output-bytes estimate of the single-level merge varies with how
+-- the keys split between threads, and its low end favors parallel replicas.
+SET enable_adaptive_aggregator=1;
+-- A threshold above the 5e5 keys never freezes the tables, which behaves like no adaptive aggregator.
+SET adaptive_aggregator_freeze_threshold=16384, adaptive_aggregator_freeze_threshold_bytes=4194304;
 
 -- To not let other heuristics interfere with the logic we test
 SET merge_tree_min_bytes_per_task_for_remote_reading=0;

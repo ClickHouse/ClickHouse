@@ -58,8 +58,9 @@ while clickhouse_test_time_left; do
     "
 
     insert_query_id="insert-$(random_str 10)"
-    # 20 seconds sleep
-    $CLICKHOUSE_CLIENT --function_sleep_max_microseconds_per_block 20000000 --max_bytes_before_external_group_by 0 --max_bytes_ratio_before_external_group_by 0 --query_id "$insert_query_id" -q "INSERT INTO ${CLICKHOUSE_DATABASE}_ordinary.data_02352 SELECT sleepEachRow(1) FROM numbers(20) GROUP BY number" &
+    # 20 seconds sleep. Low adaptive aggregator freeze thresholds merge the 20 groups by buckets in parallel, which
+    # evaluates `sleepEachRow` in parallel too and ends the INSERT in about a second, so pin them to the defaults.
+    $CLICKHOUSE_CLIENT --function_sleep_max_microseconds_per_block 20000000 --max_bytes_before_external_group_by 0 --max_bytes_ratio_before_external_group_by 0 --adaptive_aggregator_freeze_threshold 16384 --adaptive_aggregator_freeze_threshold_bytes 4194304 --query_id "$insert_query_id" -q "INSERT INTO ${CLICKHOUSE_DATABASE}_ordinary.data_02352 SELECT sleepEachRow(1) FROM numbers(20) GROUP BY number" &
     if ! wait_query_by_id_started "$insert_query_id"; then
         wait
         continue

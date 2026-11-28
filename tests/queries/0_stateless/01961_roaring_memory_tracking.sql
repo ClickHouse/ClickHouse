@@ -3,6 +3,8 @@
 
 SET max_bytes_before_external_group_by = 0;
 SET max_bytes_ratio_before_external_group_by = 0;
+-- The adaptive spill scheduler would spill the aggregation instead of letting it hit the limit.
+SET enable_adaptive_memory_spill_scheduler = 0;
 
 SET max_memory_usage = '100M', max_rows_to_read = '1G';
 SELECT cityHash64(rand() % 1000) as n, groupBitmapState(number) FROM numbers_mt(200000000) GROUP BY n FORMAT Null; -- { serverError MEMORY_LIMIT_EXCEEDED }

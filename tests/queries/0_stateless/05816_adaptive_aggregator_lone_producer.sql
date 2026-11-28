@@ -14,7 +14,7 @@ SET max_threads = 4, max_threads_min_free_memory_per_thread = 0, max_block_size 
     group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000,
     max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0,
     adaptive_aggregator_freeze_threshold = 16384, adaptive_aggregator_freeze_threshold_bytes = 4194304,
-    enable_adaptive_aggregator = 1, log_processors_profiles = 1;
+    adaptive_aggregator_disable_thaw = 0, enable_adaptive_aggregator = 1, log_processors_profiles = 1;
 
 SELECT 'one stream, unique keys', count(), sum(k), sum(c)
 FROM (SELECT toUInt64(number) AS k, count() AS c FROM numbers(100000) GROUP BY k)

@@ -1,6 +1,9 @@
 -- The indexes over all columns of an `IN` set, in their order and unconverted, share one sorted copy of the set
 -- (primary key, part pruning by statistics, projections). The others sort their own copy.
 
+-- CI may prefer a projection over the primary key, which skips the pruning checked below.
+SET prefer_optimize_projection = 0;
+
 DROP TABLE IF EXISTS t_in_shared_sort;
 DROP TABLE IF EXISTS t_in_shared_sort_tuple;
 DROP TABLE IF EXISTS t_in_shared_sort_part;

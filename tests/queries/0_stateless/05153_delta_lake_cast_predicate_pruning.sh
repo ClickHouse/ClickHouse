@@ -114,7 +114,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE results (query_id String, rows Array(String)) ENGINE = Memory;
 
     -- Only the engine predicate may skip files; NULL and overflow errors must not depend on evaluation order.
-    SET allow_delta_kernel_rs = 1, delta_lake_throw_on_engine_predicate_error = 1,
+    SET allow_delta_kernel_rs = 1, delta_lake_enable_engine_predicate = 1, delta_lake_throw_on_engine_predicate_error = 1,
         input_format_parquet_filter_push_down = 0, input_format_parquet_page_filter_push_down = 0,
         input_format_parquet_bloom_filter_push_down = 0, input_format_parquet_dictionary_filter_push_down = 0,
         optimize_move_to_prewhere = 0, convert_query_to_cnf = 0, short_circuit_function_evaluation = 'disable',

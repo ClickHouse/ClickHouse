@@ -8,6 +8,10 @@
 -- sorted by the join key prunes, a projection sorted by an unrelated column does not, and both return
 -- the same rows as the read from the base table.
 
+-- Pin (randomized in CI): seal-gated reading skips the read-time index analysis by the runtime
+-- filter that this test checks.
+SET enable_join_seal_gated_reading = 0;
+
 DROP TABLE IF EXISTS rf_proj_fact SYNC;
 DROP TABLE IF EXISTS rf_proj_dim SYNC;
 
