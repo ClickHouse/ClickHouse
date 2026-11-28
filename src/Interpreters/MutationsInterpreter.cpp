@@ -1809,6 +1809,79 @@ void MutationsInterpreter::prepare(bool dry_run)
             dependencies.emplace(name, ColumnDependency::TTL_EXPRESSION);
     }
 
+    NameSet columns_written_before_readonly_stage;
+
+    /// A Nested member the part does not store reads as defaults sized by the offsets of another member of its table.
+    auto find_nested_sizes_source = [&](const String & name) -> std::optional<String>
+    {
+        const auto * data = source.getMergeTreeData();
+        const auto & part = source.getMergeTreeDataPart();
+        if (!data || !part || !(*data->getSettings())[MergeTreeSetting::share_nested_offsets])
+            return {};
+
+        const auto table = Nested::extractTableName(name);
+        if (table == name)
+            return {};
+
+        /// Only Array columns share the offsets of their nested table: a `Map` there is either rejected by
+        /// `checkColumnFilenamesForCollision` or bucketed, with streams of its own.
+        auto shares_offsets_of_table = [&](const String & column)
+        {
+            if (Nested::extractTableName(column) != table)
+                return false;
+            auto column_in_metadata = metadata_snapshot->getColumns().tryGetPhysical(column);
+            return !column_in_metadata || isArray(column_in_metadata->type);
+        };
+
+        /// `TTLTransform` runs after every stage. It may resize a member through a GROUP BY TTL, a column TTL of a member
+        /// with a default expression (without one the member keeps its sizes), or a recompute of a `MATERIALIZED` member.
+        if (std::ranges::any_of(dependencies, is_ttl_target))
+        {
+            if (metadata_snapshot->hasAnyGroupByTTL())
+                return {};
+
+            NameSet columns_with_ttl;
+            for (const auto & [column, _] : metadata_snapshot->getColumnTTLs())
+            {
+                auto column_default = metadata_snapshot->getColumns().getDefault(column);
+                if (shares_offsets_of_table(column) && column_default && column_default->expression)
+                    return {};
+                columns_with_ttl.insert(column);
+            }
+
+            for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
+                if (shares_offsets_of_table(column.name)
+                    && !materialized_dependencies.findColumnsToRecalculate(column.name, columns_with_ttl).empty())
+                    return {};
+        }
+
+        /// A member recomputed after the readonly stage rewrites the sizes of the whole group.
+        if (std::ranges::any_of(clear_affected_materialized, shares_offsets_of_table))
+            return {};
+
+        const auto & alter_conversions = source.getAlterConversions();
+        for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
+        {
+            if (column.name == name || clear_column_names.contains(column.name) || !isArray(column.type)
+                || Nested::extractTableName(column.name) != table)
+                continue;
+
+            if (columns_written_before_readonly_stage.contains(column.name))
+                return column.name;
+
+            String name_in_part = column.name;
+            if (alter_conversions && alter_conversions->isColumnRenamed(name_in_part))
+                name_in_part = alter_conversions->getColumnOldName(name_in_part);
+
+            auto column_in_part = part->getColumnsDescription().tryGetPhysical(name_in_part);
+            if (column_in_part && isArray(column_in_part->type)
+                && !(alter_conversions && alter_conversions->isColumnDropped(name_in_part)))
+                return column.name;
+        }
+
+        return {};
+    };
+
     /// We care about affected indices and projections because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
     /// The same about columns, that are needed for calculation of TTL expressions.
@@ -1833,6 +1906,10 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         if (!unchanged_columns.empty())
         {
+            for (const auto & stage : stages)
+                for (const auto & [column_name, _] : stage.column_to_updated)
+                    columns_written_before_readonly_stage.insert(column_name);
+
             /// Special step to recalculate affected indices, projections and TTL expressions.
             stages.emplace_back(context);
             stages.back().is_readonly = true;
@@ -1840,14 +1917,22 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 if (cleared_columns_with_dependencies.contains(column))
                 {
-                    /// For columns being cleared, provide the current column DEFAULT
-                    /// expression (or the type default when no expression exists)
-                    /// instead of the original value from the source part.
+                    /// The cleared value is what a read returns after the mutation (DEFAULT, Nested-sized defaults, or the type default).
                     auto col_decl = metadata_snapshot->getColumns().getPhysical(column);
                     auto column_default = metadata_snapshot->getColumns().getDefault(column);
-                    ASTPtr cleared_value = column_default && column_default->expression
-                        ? column_default->expression->clone()
-                        : make_intrusive<ASTLiteral>(col_decl.type->getDefault());
+                    ASTPtr cleared_value = make_intrusive<ASTLiteral>(col_decl.type->getDefault());
+                    if (column_default && column_default->expression)
+                        cleared_value = column_default->expression->clone();
+                    else if (auto sizes_source = isArray(col_decl.type) ? find_nested_sizes_source(column) : std::nullopt)
+                    {
+                        auto sizes = *sizes_source + ".size0";
+                        ASTPtr sizes_ast = make_intrusive<ASTIdentifier>(sizes);
+                        if (columns_written_before_readonly_stage.contains(*sizes_source) || metadata_snapshot->getColumns().has(sizes))
+                            sizes_ast = makeASTFunction("length", make_intrusive<ASTIdentifier>(*sizes_source));
+                        cleared_value = makeASTFunction("arrayResize",
+                            makeASTFunction("_CAST", std::move(cleared_value), make_intrusive<ASTLiteral>(col_decl.type->getName())),
+                            std::move(sizes_ast));
+                    }
                     stages.back().column_to_updated.emplace(
                         column,
                         makeASTFunction("_CAST",
