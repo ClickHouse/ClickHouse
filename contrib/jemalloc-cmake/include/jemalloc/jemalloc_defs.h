@@ -47,6 +47,15 @@
 
 #define JEMALLOC_CONFIG_ENV
 
+/*
+ * Whether throwing operator new aborts on OOM instead of throwing
+ * std::bad_alloc.  This is always defined to either 0 or 1.
+ */
+/* #undef JEMALLOC_INFALLIBLE_NEW */
+#ifndef JEMALLOC_INFALLIBLE_NEW
+#  define JEMALLOC_INFALLIBLE_NEW 0
+#endif
+
 #ifdef _MSC_VER
 #  ifdef _WIN64
 #    define LG_SIZEOF_PTR_WIN 3

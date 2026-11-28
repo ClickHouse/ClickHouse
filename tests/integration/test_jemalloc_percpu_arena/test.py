@@ -52,19 +52,6 @@ def run_with_cpu_limit(cmd, *args):
         return run_command_in_container(cmd, *args)
 
 
-def run_with_cpu_possible_limit(cmd, possible, *args):
-    with NamedTemporaryFile() as possible_cpu:
-        possible_cpu.write(f"{possible}".encode())
-        possible_cpu.flush()
-
-        args += (
-            "--volume",
-            f"{possible_cpu.name}:/sys/devices/system/cpu/possible:ro",
-        )
-
-        return run_command_in_container(cmd, *args)
-
-
 def skip_if_jemalloc_disabled():
     output = run_command_in_container(
         """clickhouse local --tmp -q "
@@ -118,8 +105,9 @@ def test_jemalloc_percpu_arena():
     assert int(result) == int(1), result
 
     # Restricted affinity (cpuset) on top of the online override: percpu arenas
-    # are sized by the possible CPU count (nr_cpu_ids), so this must not abort
-    # even with abort_conf:true.
+    # are mapped from the affinity mask at boot, with any other CPU id falling
+    # back to an in-range arena, so this must not abort even with
+    # abort_conf:true.
     # NOTE: abort:false to make it compatible with debug build
     result = run_with_cpu_limit(
         'clickhouse local --tmp -q "select 1"',
@@ -145,25 +133,6 @@ def test_jemalloc_percpu_arena():
     )
 
 
-# If /sys/devices/system/cpu/possible is masked and does not cover the CPUs in
-# the affinity mask, it is lying and percpu arena cannot be sized safely:
-# jemalloc must fail close (disable percpu arena, abort with abort_conf:true)
-# instead of indexing arenas out of range.
-def test_jemalloc_percpu_arena_inconsistent_possible():
-    skip_if_jemalloc_disabled()
-
-    assert multiprocessing.cpu_count() > CPU_ID
-
-    with pytest.raises(subprocess.CalledProcessError):
-        run_with_cpu_possible_limit(
-            'clickhouse local --tmp -q "select 1"',
-            "0",
-            "--cpuset-cpus", f"{CPU_ID}",
-            "--env", "MALLOC_CONF=abort_conf:true",
-        )
-
-
 # For manual run.
 if __name__ == "__main__":
     test_jemalloc_percpu_arena()
-    test_jemalloc_percpu_arena_inconsistent_possible()

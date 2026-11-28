@@ -80,6 +80,7 @@ set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/jemalloc")
 
 set (SRCS
     "${LIBRARY_DIR}/src/arena.c"
+    "${LIBRARY_DIR}/src/arenas_management.c"
     "${LIBRARY_DIR}/src/background_thread.c"
     "${LIBRARY_DIR}/src/base.c"
     "${LIBRARY_DIR}/src/bin.c"
@@ -104,7 +105,6 @@ set (SRCS
     "${LIBRARY_DIR}/src/extent_dss.c"
     "${LIBRARY_DIR}/src/extent_mmap.c"
     "${LIBRARY_DIR}/src/fxp.c"
-    "${LIBRARY_DIR}/src/hook.c"
     "${LIBRARY_DIR}/src/hpa.c"
     "${LIBRARY_DIR}/src/hpa_central.c"
     "${LIBRARY_DIR}/src/hpa_hooks.c"
@@ -112,8 +112,11 @@ set (SRCS
     "${LIBRARY_DIR}/src/hpdata.c"
     "${LIBRARY_DIR}/src/inspect.c"
     "${LIBRARY_DIR}/src/jemalloc.c"
+    "${LIBRARY_DIR}/src/jemalloc_fork.c"
+    "${LIBRARY_DIR}/src/jemalloc_init.c"
     "${LIBRARY_DIR}/src/large.c"
     "${LIBRARY_DIR}/src/log.c"
+    "${LIBRARY_DIR}/src/malloc_dispatch.c"
     "${LIBRARY_DIR}/src/malloc_io.c"
     "${LIBRARY_DIR}/src/mutex.c"
     "${LIBRARY_DIR}/src/nstime.c"
@@ -122,12 +125,12 @@ set (SRCS
     "${LIBRARY_DIR}/src/pa_extra.c"
     "${LIBRARY_DIR}/src/pages.c"
     "${LIBRARY_DIR}/src/peak_event.c"
+    "${LIBRARY_DIR}/src/percpu_arena.c"
     "${LIBRARY_DIR}/src/prof.c"
     "${LIBRARY_DIR}/src/prof_data.c"
     "${LIBRARY_DIR}/src/prof_log.c"
     "${LIBRARY_DIR}/src/prof_recent.c"
     "${LIBRARY_DIR}/src/prof_stats.c"
-    "${LIBRARY_DIR}/src/prof_stack_range.c"
     "${LIBRARY_DIR}/src/prof_sys.c"
     "${LIBRARY_DIR}/src/psset.c"
     "${LIBRARY_DIR}/src/rtree.c"
@@ -193,26 +196,6 @@ elseif (ARCH_E2K)
     set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_e2k")
 else ()
     message (FATAL_ERROR "internal jemalloc: This arch is not supported")
-endif ()
-
-if (OS_LINUX AND ARCH_AARCH64)
-    # aarch64 kernels are built with 4KiB, 16KiB or 64KiB pages. jemalloc's page size is fixed at
-    # compile time and must not be smaller than the kernel page size, otherwise jemalloc fails to
-    # boot. 64KiB runs everywhere, at the cost of a higher memory footprint on smaller-page kernels
-    # (page-sized slabs, page-granular purging); pick a smaller size when the target kernel is known.
-    set (JEMALLOC_AARCH64_PAGE_SIZE_KIB 64 CACHE STRING "jemalloc page size on aarch64, in KiB (4, 16 or 64). Must not be less than the kernel page size.")
-    if (JEMALLOC_AARCH64_PAGE_SIZE_KIB EQUAL 4)
-        set (JEMALLOC_LG_PAGE 12)
-    elseif (JEMALLOC_AARCH64_PAGE_SIZE_KIB EQUAL 16)
-        set (JEMALLOC_LG_PAGE 14)
-    elseif (JEMALLOC_AARCH64_PAGE_SIZE_KIB EQUAL 64)
-        set (JEMALLOC_LG_PAGE 16)
-    else ()
-        message (FATAL_ERROR "Invalid JEMALLOC_AARCH64_PAGE_SIZE_KIB=${JEMALLOC_AARCH64_PAGE_SIZE_KIB}, must be 4, 16 or 64")
-    endif ()
-    # A PMD-level THP maps (page size / 8) entries of one page each: 2MiB/32MiB/512MiB for 4/16/64 KiB pages.
-    math (EXPR JEMALLOC_LG_HUGEPAGE "2 * ${JEMALLOC_LG_PAGE} - 3")
-    message (STATUS "jemalloc aarch64 page size: ${JEMALLOC_AARCH64_PAGE_SIZE_KIB}KiB (LG_PAGE=${JEMALLOC_LG_PAGE}, LG_HUGEPAGE=${JEMALLOC_LG_HUGEPAGE})")
 endif ()
 
 configure_file(${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal/jemalloc_internal_defs.h.in

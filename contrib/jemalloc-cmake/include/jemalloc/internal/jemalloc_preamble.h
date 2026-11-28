@@ -121,13 +121,6 @@ static const bool config_prof_libunwind =
     false
 #endif
     ;
-static const bool config_prof_frameptr =
-#ifdef JEMALLOC_PROF_FRAME_POINTER
-    true
-#else
-    false
-#endif
-    ;
 static const bool maps_coalesce =
 #ifdef JEMALLOC_MAPS_COALESCE
     true
@@ -228,6 +221,12 @@ static const bool config_enable_cxx =
     false
 #endif
 ;
+
+/*
+ * Whether the throwing operator new aborts on OOM instead of throwing
+ * std::bad_alloc (--enable-cxx-infallible-new).
+ */
+static const bool config_infallible_new = JEMALLOC_INFALLIBLE_NEW;
 
 #if defined(_WIN32) || defined(__APPLE__) || defined(JEMALLOC_HAVE_SCHED_GETCPU)
 /* Currently percpu_arena depends on sched_getcpu. */
