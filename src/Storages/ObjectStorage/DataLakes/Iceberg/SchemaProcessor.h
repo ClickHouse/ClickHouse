@@ -95,6 +95,7 @@ std::optional<Field> getIcebergInitialDefault(const Poco::JSON::Object::Ptr & fi
 class IcebergSchemaProcessor
 {
     static std::string default_link;
+    static Names default_path;
 
     using Node = ActionsDAG::Node;
 
@@ -124,6 +125,12 @@ public:
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
     NameAndTypePair getFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
     std::optional<NameAndTypePair> tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
+
+    /// Element path of a field from the root of its top-level column, one segment per nesting level.
+    Names getFieldPath(Int32 schema_version, Int32 source_id) const;
+
+    /// Whether exactly one column or subcolumn of this schema's ClickHouse type flattens to `flat_name`.
+    bool flatNameIdentifiesOneColumn(Int32 schema_id, const String & flat_name) const;
     NamesAndTypesList tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids) const;
     std::optional<Int32> tryGetColumnIDByName(Int32 schema_id, const std::string & name) const;
     Poco::JSON::Object::Ptr getIcebergTableSchemaById(Int32 id) const;
@@ -184,6 +191,8 @@ private:
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids TSA_GUARDED_BY(mutex);
     mutable std::map<std::pair<Int32, Int32>, NameAndTypePair> clickhouse_types_by_source_ids TSA_GUARDED_BY(mutex);
     mutable std::map<std::pair<Int32, std::string>, Int32> clickhouse_ids_by_source_names TSA_GUARDED_BY(mutex);
+    mutable std::map<std::pair<Int32, Int32>, Names> clickhouse_paths_by_source_ids TSA_GUARDED_BY(mutex);
+    mutable std::map<std::pair<Int32, String>, size_t> flat_name_counts TSA_GUARDED_BY(mutex);
     std::optional<Int32> current_schema_id TSA_GUARDED_BY(mutex) = 0;
     std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);
     std::unordered_map<Int32, Poco::JSON::Array::Ptr> partition_spec_fields_by_ids TSA_GUARDED_BY(mutex);
@@ -200,12 +209,14 @@ private:
     void dropCachedSchema(Int32 schema_id) TSA_REQUIRES(mutex);
 
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
-    DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root);
+    DataTypePtr getComplexTypeFromObject(
+        const Poco::JSON::Object::Ptr & type, String & current_full_name, Names & current_path, bool is_subfield_of_root);
     DataTypePtr getFieldType(
         const Poco::JSON::Object::Ptr & field,
         const String & type_key,
         bool required,
         String & current_full_name = default_link,
+        Names & current_path = default_path,
         bool is_subfield_of_root = false);
 
     /// Returns `new_holder[key]` in which every nested primitive changed by a legal promotion is replaced by the

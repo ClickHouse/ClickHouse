@@ -2,6 +2,7 @@
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <gtest/gtest.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
@@ -78,6 +79,16 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoRoundTrip)
     info.equality_deletes_objects = {{"s3://bucket/deletes/eq1.parquet", "PARQUET", std::vector<Int32>{1, 2, 3}, 42}};
     info.record_count = 100500;
     info.file_size_in_bytes = 999888777;
+    info.identity_partition_columns = {
+        /// A nested field, whose value may land in the flattened leaf, the intermediate tuple or the
+        /// root tuple, so it carries three sites with 2, 1 and 0 remaining segments.
+        Iceberg::IdentityPartitionColumn{
+            "s.t.c",
+            {{"s.t.c", Names{}}, {"s.t", Names{"c"}}, {"s", Names{"t", "c"}}},
+            Field("x")},
+        /// A top-level field: one whole-column site.
+        Iceberg::IdentityPartitionColumn{"n", {{"n", Names{}}}, Field(UInt64(42))},
+    };
 
     String str;
     {
@@ -104,6 +115,16 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoRoundTrip)
     ASSERT_EQ(*deserialized.record_count, 100500);
     ASSERT_TRUE(deserialized.file_size_in_bytes.has_value());
     ASSERT_EQ(*deserialized.file_size_in_bytes, 999888777);
+
+    ASSERT_EQ(deserialized.identity_partition_columns.size(), 2);
+    for (size_t i = 0; i != info.identity_partition_columns.size(); ++i)
+    {
+        const auto & expected = info.identity_partition_columns[i];
+        const auto & actual = deserialized.identity_partition_columns[i];
+        ASSERT_EQ(actual.name, expected.name);
+        ASSERT_EQ(actual.value, expected.value);
+        ASSERT_EQ(actual.injection_sites, expected.injection_sites);
+    }
 }
 
 
@@ -134,6 +155,113 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoWithoutFileStats)
     ASSERT_EQ(deserialized.data_object_file_path_key, info.data_object_file_path_key);
     ASSERT_FALSE(deserialized.record_count.has_value());
     ASSERT_FALSE(deserialized.file_size_in_bytes.has_value());
+}
+
+
+TEST(DatalakeStateSerde, IcebergObjectSerializableInfoIdentityPartitionColumnsWithoutPaths)
+{
+    Iceberg::IcebergObjectSerializableInfo info;
+    info.data_object_file_path_key = DB::Iceberg::IcebergPathFromMetadata::deserialize("s3://bucket/path/to/file.parquet");
+    info.underlying_format_read_schema_id = 1;
+    info.schema_id_relevant_to_iterator = 1;
+    info.sequence_number = 0;
+    info.file_format = "PARQUET";
+    info.identity_partition_columns = {
+        Iceberg::IdentityPartitionColumn{"s.c", {{"s.c", Names{}}, {"s", Names{"c"}}}, Field("x")},
+        Iceberg::IdentityPartitionColumn{"n", {{"n", Names{}}}, Field(UInt64(42))},
+    };
+
+    /// Serialize at protocol version 10, before the injection sites were added.
+    String str;
+    {
+        WriteBufferFromString write_buffer{str};
+        info.serializeForClusterFunctionProtocol(write_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING);
+    }
+    ReadBufferFromMemory read_buffer(str.data(), str.size());
+    Iceberg::IcebergObjectSerializableInfo deserialized;
+    deserialized.deserializeForClusterFunctionProtocol(read_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING);
+
+    ASSERT_TRUE(read_buffer.eof());
+    ASSERT_EQ(deserialized.identity_partition_columns.size(), 2);
+    /// Names and values survive, and every entry carries exactly the whole-column site the old
+    /// protocol describes implicitly, so such a read still injects top-level values.
+    ASSERT_EQ(deserialized.identity_partition_columns[0].name, "s.c");
+    ASSERT_EQ(deserialized.identity_partition_columns[0].value, Field("x"));
+    ASSERT_EQ(
+        deserialized.identity_partition_columns[0].injection_sites,
+        (std::vector<std::pair<String, Names>>{{"s.c", Names{}}}));
+    ASSERT_EQ(deserialized.identity_partition_columns[1].name, "n");
+    ASSERT_EQ(deserialized.identity_partition_columns[1].value, Field(UInt64(42)));
+    ASSERT_EQ(
+        deserialized.identity_partition_columns[1].injection_sites,
+        (std::vector<std::pair<String, Names>>{{"n", Names{}}}));
+}
+
+
+TEST(DatalakeStateSerde, IcebergObjectSerializableInfoAmbiguousColumnOmittedWithoutPaths)
+{
+    Iceberg::IcebergObjectSerializableInfo info;
+    info.data_object_file_path_key = DB::Iceberg::IcebergPathFromMetadata::deserialize("s3://bucket/path/to/file.parquet");
+    info.underlying_format_read_schema_id = 1;
+    info.schema_id_relevant_to_iterator = 1;
+    info.sequence_number = 0;
+    info.file_format = "PARQUET";
+    info.identity_partition_columns = {
+        Iceberg::IdentityPartitionColumn{"s.c", {{"s.c", Names{}}, {"s", Names{"c"}}}, Field("x")},
+        /// A field whose joined name the schema does not identify: no whole-column site, so the older
+        /// layout cannot describe it.
+        Iceberg::IdentityPartitionColumn{"s.a.b", {{"s", Names{"a.b"}}}, Field(UInt64(7))},
+    };
+
+    String str;
+    {
+        WriteBufferFromString write_buffer{str};
+        info.serializeForClusterFunctionProtocol(write_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING);
+    }
+    ReadBufferFromMemory read_buffer(str.data(), str.size());
+    Iceberg::IcebergObjectSerializableInfo deserialized;
+    deserialized.deserializeForClusterFunctionProtocol(read_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING);
+
+    ASSERT_TRUE(read_buffer.eof());
+    ASSERT_EQ(deserialized.identity_partition_columns.size(), 1);
+    ASSERT_EQ(deserialized.identity_partition_columns[0].name, "s.c");
+    ASSERT_EQ(deserialized.identity_partition_columns[0].value, Field("x"));
+    ASSERT_EQ(
+        deserialized.identity_partition_columns[0].injection_sites,
+        (std::vector<std::pair<String, Names>>{{"s.c", Names{}}}));
+}
+
+
+TEST(DatalakeStateSerde, IcebergObjectSerializableInfoTruncatedInjectionSites)
+{
+    Iceberg::IcebergObjectSerializableInfo info;
+    info.data_object_file_path_key = DB::Iceberg::IcebergPathFromMetadata::deserialize("s3://bucket/path/to/file.parquet");
+    info.underlying_format_read_schema_id = 1;
+    info.schema_id_relevant_to_iterator = 1;
+    info.sequence_number = 0;
+    info.file_format = "PARQUET";
+    info.identity_partition_columns = {Iceberg::IdentityPartitionColumn{"s.c", {{"s", Names{"c"}}}, Field("x")}};
+
+    String valid;
+    {
+        WriteBufferFromString write_buffer{valid};
+        info.serializeForClusterFunctionProtocol(write_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION);
+    }
+    /// The data ends with the sites: count 1, "s", segment count 1, "c".
+    ASSERT_TRUE(valid.ends_with(std::string_view("\x01\x01s\x01\x01" "c", 6)));
+
+    /// Replace the site count, then the segment count, with a huge count, and end the data right after it.
+    for (size_t replaced_suffix_size : {6, 3})
+    {
+        String malformed = valid.substr(0, valid.size() - replaced_suffix_size);
+        {
+            WriteBufferFromString write_buffer{malformed, AppendModeTag{}};
+            writeVarUInt(UInt64(1) << 40, write_buffer);
+        }
+        ReadBufferFromMemory read_buffer(malformed.data(), malformed.size());
+        Iceberg::IcebergObjectSerializableInfo deserialized;
+        ASSERT_THROW(deserialized.deserializeForClusterFunctionProtocol(read_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION), Exception);
+    }
 }
 
 
