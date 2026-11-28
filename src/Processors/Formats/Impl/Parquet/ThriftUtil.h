@@ -88,7 +88,6 @@ public:
     };
 
     explicit KeptOffsetIndexes(size_t max_bytes_) : max_bytes(max_bytes_) {}
-    ~KeptOffsetIndexes();
     KeptOffsetIndexes(const KeptOffsetIndexes &) = delete;
     KeptOffsetIndexes & operator=(const KeptOffsetIndexes &) = delete;
 

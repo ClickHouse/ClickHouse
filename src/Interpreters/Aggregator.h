@@ -1036,7 +1036,7 @@ private:
     };
 
     template <typename Method>
-    void trimHeapAndPruneHashTable(Method & method, std::vector<DestroyedState> * destroyed_states, size_t current_row) const;
+    [[gnu::hot]] void trimHeapAndPruneHashTable(Method & method, std::vector<DestroyedState> * destroyed_states, size_t current_row) const;
 
     /// A set method has no aggregate states: the batch only registers the keys.
     template <bool prefetch, bool top_k = false, typename Method, typename State>
@@ -1054,6 +1054,31 @@ private:
         bool use_compiled_functions,
         AggregateDataPtr overflow_row,
         AdaptiveDistinctKeyCounter * distinct_key_counter) const;
+
+    /// The map methods' batch when the only aggregate is `count()`, kept in the hash table cell.
+    template <bool prefetch, bool top_k, typename Method, typename State>
+    void executeImplBatchSimpleCount(
+        Method & method,
+        State & state,
+        const ColumnRawPtrs & key_columns,
+        Arena * aggregates_pool,
+        size_t row_begin,
+        size_t row_end,
+        bool no_more_keys,
+        bool all_keys_are_const,
+        AggregateDataPtr overflow_row,
+        AdaptiveDistinctKeyCounter * distinct_key_counter) const;
+
+    template <bool prefetch, typename Method, typename State>
+    void executeImplBatchCountPositions(
+        Method & method,
+        State & state,
+        Arena * aggregates_pool,
+        size_t row_begin,
+        size_t row_end,
+        bool no_more_keys,
+        AggregateDataPtr overflow_row,
+        size_t prefetch_look_ahead) const;
 
     /// Registers keys without building aggregate states; shared by the set methods and by the
     /// no-aggregates fast path of the map methods.

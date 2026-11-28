@@ -354,6 +354,7 @@ using Stack = VectorWithMemoryTracking<Frame>;
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 /// Register the applied `__applyFilter` conjuncts on the reading step at the top of the stack.
 void collectAppliedJoinRuntimeFilters(const Stack & stack);
+void collectDeliveredJoinRuntimeFilters(QueryPlan::Node & root, const NameSet & delivered_filter_ids);
 void processAndOptimizeTextIndexFunctions(
     const Stack & stack,
     QueryPlan::Nodes & nodes,
@@ -364,6 +365,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
 /// A full sorting without LIMIT or PARTITION BY merges all its streams in one thread, so a small read all of whose streams
 /// reach it keeps its default stream count.
 void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node);
+/// Compiling the expressions of a step cannot pay off when its input has at most one row.
+void disableCompilationOverAtMostOneRow(QueryPlan::Node & node);
 void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);
 void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &, bool before_projections);

@@ -33,6 +33,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/parseURI.h>
 #include <Interpreters/Context.h>
 #include <filesystem>
 
@@ -616,7 +617,7 @@ std::optional<std::string> OneLakeCatalog::getDefaultTableLocation(
     if (container_end == std::string_view::npos)
         return std::nullopt;
 
-    const auto catalog_host = Poco::URI(base_url.string()).getHost();
+    const auto catalog_host = DB::parseURI(base_url.string()).getHost();
     const auto account = catalog_host.substr(0, catalog_host.find('.'));
     if (account.empty())
         return std::nullopt;
@@ -886,7 +887,7 @@ AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, std:
 
     if (oauth_server_uri.empty() && !oauth_server_use_request_body)
     {
-        url = Poco::URI(base_url / oauth_tokens_endpoint);
+        url = DB::parseURI(base_url / oauth_tokens_endpoint);
 
         Poco::URI::QueryParameters params = {
             {"grant_type", "client_credentials"},
@@ -916,9 +917,9 @@ AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, std:
         }
 
         if (oauth_server_uri.empty())
-            url = Poco::URI(base_url / oauth_tokens_endpoint);
+            url = DB::parseURI(base_url / oauth_tokens_endpoint);
         else
-            url = Poco::URI(oauth_server_uri);
+            url = DB::parseURI(oauth_server_uri);
     }
 
     return requestOAuthToken(getContext(), url, body);
@@ -944,9 +945,9 @@ AccessToken OneLakeCatalog::retrieveAccessTokenViaRefreshToken(const CatalogStat
     /// are created.
     Poco::URI url;
     if (!oauth_server_uri.empty())
-        url = Poco::URI(oauth_server_uri);
+        url = DB::parseURI(oauth_server_uri);
     else
-        url = Poco::URI(fmt::format("https://login.microsoftonline.com/{}/oauth2/v2.0/token", catalog_state.tenant_id));
+        url = DB::parseURI(fmt::format("https://login.microsoftonline.com/{}/oauth2/v2.0/token", catalog_state.tenant_id));
 
     String encoded_auth_scope;
     String encoded_client_id;
@@ -1139,7 +1140,7 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromServiceAccountKey(
     const auto & context = getContext();
     auto [assertion, token_endpoint] = DB::makeGCPServiceAccountAssertion(google_service_account_key, DB::GCP_CLOUD_PLATFORM_OAUTH_SCOPE);
     /// The token endpoint comes from the user-provided key, validate it against the allowed hosts.
-    context->getRemoteHostFilter().checkURL(Poco::URI(token_endpoint));
+    context->getRemoteHostFilter().checkURL(DB::parseURI(token_endpoint));
 
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
     auto result = DB::fetchGCPOAuthTokenWithJWTAssertion(assertion, token_endpoint, timeouts);
@@ -1282,7 +1283,7 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
     const auto & context = getContext();
 
     /// enable_url_encoding=false to allow using tables with encoded sequences in names like 'foo%2Fbar'
-    Poco::URI url(base_url / endpoint, /* enable_url_encoding */ false);
+    Poco::URI url = DB::parseURI(base_url / endpoint, /* enable_url_encoding */ false);
     if (!params.empty())
         url.setQueryParameters(params);
 

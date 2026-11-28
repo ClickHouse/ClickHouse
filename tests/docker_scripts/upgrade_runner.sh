@@ -933,6 +933,10 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       them and logs this per table instead of refusing to start, which is what #115941 made it do on purpose.
 #       Requires the `StorageKeeperMap` logger AND the backquoted fixture-table prefix, so the same message on any
 #       other KeeperMap table - the shape a real metadata-compatibility regression takes - still fails this job.
+# `RefreshTask` + a `test_*_r.bad_mv` view + `Keeper server doesn't have all feature flags` is the same class for
+#       `04218_refreshable_mv_secondary_create`, whose `ATTACH`ed coordinated view a Keeper drawn without
+#       `create_if_not_exists` stops already in the stress phase; a stop of the file before its final `DROP DATABASE`
+#       leaves it to the upgraded server, which on the same flags stops it again. Any other stopped view still fails.
 # `shard_1.data` + `ReplicatedMergeTreeAttachThread` + a read-only initialization on an empty `columns` znode is
 #       `02980_dist_insert_readonly_replica` breaking it on purpose; an injected fault can stop the file before its
 #       final `DROP DATABASE`. Other tables and error codes still fail; a `columns` value cut inside its header does not.
@@ -994,6 +998,10 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       it does not match. That scope is needed because the count line carries no error text of its own and
 #       `Authentication failed` above can already remove its partner line. Removable once the previous
 #       release's copies of these tests stop deleting a topic whose table may survive.
+# `Code: 669` + a `05816_kafka_server_local_file_properties_` collection + `kafka_altered_table` or `kafka_altered_null_table`
+#       is that test's table left detached: when a statement between its `DETACH` and the last `ATTACH` does not reach the
+#       server (stress worker 1 injects memory faults), the cleanup drops the collection but not the detached table, and the
+#       upgrade restart cannot attach it. Removable once the previous release's copy of the test detaches it `PERMANENTLY`.
 # `No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed` is the unique signature of
 #       issue #102259 (`getFileNameForRenamedColumnStream` uses `substr(0, N)` instead of `substr(N)`, producing
 #       `<renamed><original>.bin` instead of `<renamed>.bin`). The fix is in PR #102689; until it lands, the
@@ -1092,11 +1100,24 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       message, AND the `TABLE_ALREADY_EXISTS` code together. So a real `LOGICAL_ERROR` UUID-mapping crash, the same
 #       collision on a non-test database, a different init failure on an `rdb_test_` DB, and unrelated
 #       `TABLE_ALREADY_EXISTS` errors all still surface.
+# `DDLWorker(rdb2_03206_replication_lag_metric_...)` + `Mapping for table with UUID=... already exists` +
+#       `TABLE_ALREADY_EXISTS` comes from `03206_replication_lag_metric`, which creates two replicas of one `Replicated`
+#       database on one server and creates its table through the first one, `rdb1_...`. Every replica creates a table
+#       with the UUID from the DDL log, so the second replica, `rdb2_...`, collides with the table of `rdb1_...`, and its
+#       DDLWorker retries every 5s, replaying the entry and then recovering the replica, until the test drops both
+#       databases. When the stress run stops the test before its `DROP DATABASE` queries, the previous release and the
+#       upgraded server both retry without end. Filtered via regex in the secondary pipe below to require the DDLWorker
+#       of the fixture's second replica, the UUID mapping message AND `TABLE_ALREADY_EXISTS` together, so the same
+#       collision on any other database, or any other error of that database, still fails this job.
 # `StorageFileLog` + `The absolute data path should be inside` is expected:
 #       `04202_filelog_attach_path_outside_user_files` has an explicit `ATTACH` query for a path outside `user_files_path`.
 # `StorageFileLog::StorageFileLog` + `neither a regular file, nor a directory` (a file path) or
 #       `The directory ... of the path ... does not exist` (a glob path) is a `FileLog` table left behind without its
 #       files by an interrupted test. Scoped to the tests that do this, so a missing path of any other table still fails.
+# `PartMovesBetweenShardsOrchestrator` + `NO_SUCH_DATA_PART` on the shard of `05565_part_move_to_shard_source_part_removed`
+#       is that test's move, whose part it removes on purpose: the stress phase can stop the file before its
+#       `KILL PART_MOVE_TO_SHARD`, and the upgraded server retries the move every 3 seconds. Requires the orchestrator, the
+#       fixture's destination shard and the code together, so a failed move of any other table still fails this job.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -1162,10 +1183,12 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Error on initialization of rdb_test_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
+    | grep -av -e "DDLWorker(rdb2_03206_replication_lag_metric_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
     | grep -av -e "Cluster: Code: 198.*Not found address of host: \(.\)\1\{63,\}" \
     | grep -av -e "getInfoIfClickHouseDictionarySource.*Code: 198\. DB::NetException: Not found address of host: \[x\. (DNS_ERROR)" \
     | grep -av -e "StorageKeeperMap (.*\.\`05024_keeper_map_parenthesized_metadata.*Failed to activate table because of invalid metadata in ZooKeeper" \
+    | grep -av -e "RefreshTask(test_[a-z0-9_]*_r\.bad_mv): Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS\. The view is stopped\." \
     | grep -av -e "<Error> shard_1\.data (ReplicatedMergeTreeAttachThread): Initialization failed, table will remain readonly\. Error: Code: 27\. DB::Exception: Cannot parse input: expected 'columns format version: 1.n' at end of stream" \
     | grep -av -e "SystemLogQueue.*Queue had been full" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
@@ -1175,6 +1198,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "StorageKafka2.*Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     | grep -av -e "StorageKafka.*\.\`[0-9]\{5\}_kafka.*Consumer error: Broker: Unknown topic or partition" \
     | grep -av -e "StorageKafka.*\.\`[0-9]\{5\}_kafka.*There were [0-9][0-9]* messages with an error" \
+    | grep -av -e "Code: 669\. DB::Exception: There is no named collection \`05816_kafka_server_local_file_properties_[^\`]*\`: Cannot attach table \`[^\`]*\`\.\`kafka_altered\(_null\)\?_table\` " \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
@@ -1192,6 +1216,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "StorageFileLog (.*): The absolute data path should be inside" \
     | grep -av -e "StorageFileLog::StorageFileLog(.*): Code: 36\. DB::Exception: The path .*/user_files/\(05316_file_log_copytruncate\|05316_file_log_error_does_not_lock_table\|05317_file_log_partial_last_line\|05318_file_log_one_bad_file\|05394_filelog_engine_file_source_grant\|05395_filelog_drop_idle_while_other_busy\)_.* neither a regular file, nor a directory" \
     | grep -av -e "StorageFileLog::StorageFileLog(.*): Code: 36\. DB::Exception: The directory .*/user_files/05316_file_log_globs_.* of the path .* does not exist" \
+    | grep -av -e "(PartMovesBetweenShardsOrchestrator): .*Code: 232\. DB::Exception: Part [^ ]* is not active on replica [^ ]*, it cannot be attached on shard /clickhouse/05565_part_move_to_shard_source_part_removed_[^/]*/dst\. (NO_SUCH_DATA_PART)" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
