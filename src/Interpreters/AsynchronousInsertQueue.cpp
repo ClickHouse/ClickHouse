@@ -152,7 +152,8 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     AsynchronousInsertQueueDataKind data_kind_,
     const String & quota_client_address_,
     const String & quota_forwarded_address_,
-    std::optional<UInt64> quota_normalized_query_hash_)
+    std::optional<UInt64> quota_normalized_query_hash_,
+    const String & current_database_)
     : query(query_->clone())
     , query_str_with_secrets(query->formatWithSecretsOneLine())
     , user_id(user_id_)
@@ -167,6 +168,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     , quota_client_address(quota_client_address_)
     , quota_forwarded_address(quota_forwarded_address_)
     , quota_normalized_query_hash(quota_normalized_query_hash_)
+    , current_database(current_database_)
     , settings(std::make_unique<Settings>(settings_))
     , data_kind(data_kind_)
 {
@@ -208,7 +210,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
 
     /// Length-prefix each field: update(String) streams only bytes and the queue is keyed
     /// by hash alone, so otherwise "a"/"a"/"aaa" and "aa"/"aa"/"a" would collide.
-    for (const String & identity_field : {current_user, initial_user, authenticated_user, quota_key, quota_client_address, quota_forwarded_address})
+    for (const String & identity_field : {current_user, initial_user, authenticated_user, quota_key, quota_client_address, quota_forwarded_address, current_database})
     {
         siphash.update(identity_field.size());
         siphash.update(identity_field);
@@ -252,6 +254,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     quota_client_address = other.quota_client_address;
     quota_forwarded_address = other.quota_forwarded_address;
     quota_normalized_query_hash = other.quota_normalized_query_hash;
+    current_database = other.current_database;
     settings = std::make_unique<Settings>(*other.settings);
     data_kind = other.data_kind;
     hash = other.hash;
@@ -277,6 +280,7 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         quota_client_address = other.quota_client_address;
         quota_forwarded_address = other.quota_forwarded_address;
         quota_normalized_query_hash = other.quota_normalized_query_hash;
+        current_database = other.current_database;
         settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
         hash = other.hash;
@@ -817,7 +821,8 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         data_kind,
         quota_client_address,
         quota_forwarded_address,
-        quota_normalized_query_hash};
+        quota_normalized_query_hash,
+        query_context->getCurrentDatabase()};
     InsertDataPtr data_to_process;
     std::future<ResultProgress> progress_future;
 
@@ -1418,6 +1423,9 @@ try
     if (!key.quota_forwarded_address.empty())
         insert_context->setForwardedFor(key.quota_forwarded_address);
 
+    /// Before `setSettings`, so the submitted `database` setting is kept even when it is empty.
+    if (!key.current_database.empty())
+        insert_context->setCurrentDatabaseUnchecked(key.current_database);
     insert_context->setSettings(*key.settings);
 
     /// Set initial_query_id, because it's used in InterpreterInsertQuery for table lock.

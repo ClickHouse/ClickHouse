@@ -274,3 +274,33 @@ TEST(AsyncInsertKey, QuotaKeyIsPartOfKey)
     EXPECT_EQ(key_a.hash, key_a_again.hash);
     EXPECT_EQ(key_a, key_a_again);
 }
+
+TEST(AsyncInsertKey, CurrentDatabaseIsPartOfKey)
+{
+    /// The flush restores one current database for the whole batch, so inserts made from different
+    /// current databases must never coalesce into one flush.
+    String query_str = "INSERT INTO test (a, b, c) VALUES (1, 2, 3)";
+    ParserInsertQuery parser(query_str.data() + query_str.size(), false);
+    ASTPtr query = parseQuery(parser, query_str, DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    Settings settings;
+    settings.set("async_insert", 1);
+
+    auto kind = AsynchronousInsertQueueDataKind::Parsed;
+
+    auto make_key = [&](const String & current_database)
+    {
+        return AsynchronousInsertQueue::InsertQuery(query, {}, {}, {}, {}, {}, {}, {}, {}, {}, settings, kind, {}, {}, {}, current_database);
+    };
+
+    /// Two different current databases must never coalesce with each other.
+    auto key_a = make_key("db_a");
+    auto key_b = make_key("db_b");
+    EXPECT_NE(key_a.hash, key_b.hash);
+    EXPECT_NE(key_a, key_b);
+
+    /// The same current database still coalesces (batching preserved within one database).
+    auto key_a_again = make_key("db_a");
+    EXPECT_EQ(key_a.hash, key_a_again.hash);
+    EXPECT_EQ(key_a, key_a_again);
+}
