@@ -1,0 +1,28 @@
+IPv4
+IPv4
+IPv4
+IPv6
+IPv6
+IPv6
+Array
+Array(Nullable(IPv4))
+Array(Nullable(IPv4))
+LowCardinality(Nullable(String))
+IPv4
+IPv4
+Shared data
+IPv4
+IPv4
+Not an address
+String
+String
+Mixed rows
+IPv4
+String
+IPv4
+IPv4
+String
+IPv4
+Inference disabled
+String
+String

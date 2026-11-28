@@ -1,0 +1,17 @@
+Without date and datetime inference
+IPv4	1.2.3.4
+IPv4	5.6.7.8
+IPv6	::1
+String	x
+IPv4	9.9.9.9
+IPv6	::2
+With date and datetime inference
+IPv4	1.2.3.4
+Date	2020-01-01
+IPv6	::1
+String	x
+IPv4	9.9.9.9
+IPv6	::2
+IP inference disabled
+String	1.2.3.4
+String	::1

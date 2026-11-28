@@ -2165,8 +2165,15 @@ DataTypePtr getPromotedTypeForDynamicImpl(const DataTypePtr & type, const Format
     {
         case TypeIndex::Int64:
         case TypeIndex::Float64:
-        case TypeIndex::String:
             return type; /// Already canonical.
+        case TypeIndex::String:
+        {
+            /// The parser infers an address from a string that looks like one and keeps any other string,
+            /// which a CAST to one type cannot follow.
+            if (format_settings.try_infer_ipv4 || format_settings.try_infer_ipv6)
+                return nullptr;
+            return type; /// Already canonical.
+        }
         case TypeIndex::UInt8:
         {
             /// Bool, and SimpleAggregateFunction(any, Bool), serialize true/false, which the parser infers as Bool.
