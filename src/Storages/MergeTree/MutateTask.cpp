@@ -61,6 +61,7 @@
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/thread_local_rng.h>
 #include <base/sleep.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -2394,6 +2395,17 @@ static NameToNameVector collectFilesForRenames(
         }
     }
 
+    /// The streams of a renamed column are moved or removed by its RENAME_COLUMN entry.
+    UnorderedSetWithMemoryTracking<String> renamed_columns;
+    for (const auto & command : commands_for_renames)
+        if (command.type == MutationCommand::Type::RENAME_COLUMN)
+            renamed_columns.insert(command.column_name);
+
+    Names updated_columns_not_renamed;
+    for (const auto & name : updated_header.getNames())
+        if (!renamed_columns.contains(name))
+            updated_columns_not_renamed.push_back(name);
+
     const auto new_part_column_names = new_part->getColumns().getNameSet();
 
     /// Remove old data
@@ -2441,7 +2453,7 @@ static NameToNameVector collectFilesForRenames(
             {
                 remove_column_streams(command.column_name);
                 if (command.clear)
-                    remove_streams_not_in_new_part(updated_header.getNames());
+                    remove_streams_not_in_new_part(updated_columns_not_renamed);
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {

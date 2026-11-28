@@ -13,6 +13,9 @@ renamed-dep	1	0	1
 1
 renamed-dep-copy	1	41	42
 1
+name-taken	1	0	1	2	hello	{"p":1}
+1
+name-taken-count	1
 packed	1	0	1	Packed
 dynamic	1	\N	\N
 1

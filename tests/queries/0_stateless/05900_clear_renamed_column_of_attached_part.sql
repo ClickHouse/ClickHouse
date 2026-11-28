@@ -66,6 +66,24 @@ CHECK TABLE t_renamed_dep_copy SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_renamed_dep SYNC;
 DROP TABLE t_renamed_dep_copy SYNC;
 
+-- Wide part, the recomputed dependents renamed while detached to the old names of other renamed columns.
+DROP TABLE IF EXISTS t_name_taken SYNC;
+CREATE TABLE t_name_taken (k UInt32, b UInt32, a UInt32 MATERIALIZED b + 1, d UInt32 MATERIALIZED b + 2, c LowCardinality(String), j JSON)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_name_taken', 'r1') ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_name_taken (k, b, c, j) VALUES (1, 41, 'hello', '{"p":1}');
+ALTER TABLE t_name_taken DETACH PARTITION tuple();
+ALTER TABLE t_name_taken RENAME COLUMN c TO u;
+ALTER TABLE t_name_taken RENAME COLUMN a TO c;
+ALTER TABLE t_name_taken RENAME COLUMN j TO v;
+ALTER TABLE t_name_taken RENAME COLUMN d TO j;
+ALTER TABLE t_name_taken ATTACH PARTITION tuple();
+ALTER TABLE t_name_taken CLEAR COLUMN b;
+SELECT 'name-taken', k, b, c, j, u, v FROM t_name_taken;
+CHECK TABLE t_name_taken SETTINGS check_query_single_value_result = 1;
+SELECT 'name-taken-count', count() FROM t_name_taken;
+DROP TABLE t_name_taken SYNC;
+
 -- Wide part with packed storage.
 DROP TABLE IF EXISTS t_packed SYNC;
 CREATE TABLE t_packed (k UInt32, b UInt32, a UInt32 MATERIALIZED b + 1)
