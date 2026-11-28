@@ -177,6 +177,21 @@ TEST(GlueSchemaColumns, CurrentSchemaSelection)
     EXPECT_TRUE(GlueCatalog::getCurrentSchema(nullptr).isNull());
 }
 
+TEST(GlueSchemaColumns, CurrentSchemaLegacyV1WithoutSchemaId)
+{
+    /// Format version 1 metadata with only the legacy `schema`, which has no `schema-id`.
+    auto metadata = parseObject(R"json({"format-version": 1,
+        "schema": {"type": "struct", "fields": [{"id": 1, "name": "ts", "required": false, "type": "timestamptz"}]}})json");
+
+    auto schema = GlueCatalog::getCurrentSchema(metadata);
+    DB::Iceberg::IcebergSchemaProcessor processor(/*allow_geo_parser=*/false);
+    processor.addIcebergTableSchema(schema);
+    auto columns = processor.getClickHouseTableSchemaById(schema->getValue<Int32>("schema-id"));
+    ASSERT_EQ(columns->size(), 1u);
+    EXPECT_EQ(columns->front().name, "ts");
+    EXPECT_FALSE(metadata->getObject("schema")->has("schema-id"));
+}
+
 /// Without a metadata location, the Glue reader can still parse ordinary nested types.
 TEST(GlueSchemaColumns, NestedTypesParseableByGlueFallback)
 {

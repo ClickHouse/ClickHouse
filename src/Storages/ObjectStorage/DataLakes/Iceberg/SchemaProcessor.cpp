@@ -22,6 +22,7 @@
 #include <Functions/IFunction.h>
 #include <base/types.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <base/scope_guard.h>
 
@@ -1170,6 +1171,32 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
     current_schema_id = std::nullopt;
 }
 
+Int32 IcebergSchemaProcessor::addIcebergTableSchemaWithoutId(Poco::JSON::Object::Ptr schema_ptr)
+{
+    Int32 schema_id = 0;
+    /// A schema without fields is a placeholder that addIcebergTableSchema does not register.
+    if (schema_ptr->isArray(f_fields) && schema_ptr->getArray(f_fields)->size() != 0)
+    {
+        bool is_schema_0 = false;
+        {
+            SharedLockGuard lock(mutex);
+            auto it = iceberg_table_schemas_by_ids.find(0);
+            is_schema_0 = it != iceberg_table_schemas_by_ids.end() && !manifest_sourced_schema_ids.contains(0)
+                && schemasAreIdentical(*it->second, *schema_ptr, {});
+        }
+        if (!is_schema_0)
+        {
+            /// A function of the fields, so that every server that reads the manifest gives the schema the same id.
+            std::stringstream fields; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            schema_ptr->getArray(f_fields)->stringify(fields);
+            schema_id = -1 - static_cast<Int32>(sipHash64(fields.str()) % std::numeric_limits<Int32>::max());
+        }
+    }
+    schema_ptr->set(f_schema_id, schema_id);
+    addIcebergTableSchema(schema_ptr, SchemaSource::ManifestFile);
+    return schema_id;
+}
+
 NameAndTypePair IcebergSchemaProcessor::getFieldCharacteristics(Int32 schema_version, Int32 source_id) const
 {
     SharedLockGuard lock(mutex);
@@ -1649,11 +1676,14 @@ std::optional<Int32> IcebergSchemaProcessor::tryGetSchemaIdForSnapshot(Int64 sna
 
 void IcebergSchemaProcessor::registerMetadata(const Poco::JSON::Object::Ptr & metadata_object)
 {
-    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
-    for (UInt32 j = 0; j < schemas->size(); ++j)
+    if (metadata_object->has(f_schemas))
     {
-        auto schema = schemas->getObject(j);
-        addIcebergTableSchema(schema);
+        auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
+        for (UInt32 j = 0; j < schemas->size(); ++j)
+        {
+            auto schema = schemas->getObject(j);
+            addIcebergTableSchema(schema);
+        }
     }
     if (metadata_object->has(f_snapshots))
     {
@@ -1661,9 +1691,9 @@ void IcebergSchemaProcessor::registerMetadata(const Poco::JSON::Object::Ptr & me
         for (size_t i = 0; i < snapshots->size(); ++i)
         {
             const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-            auto snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
-            auto snapshot_schema_id = snapshot->getValue<Int32>(f_schema_id);
-            registerSnapshotWithSchemaId(snapshot_id, snapshot_schema_id);
+            /// `schema-id` of a snapshot is optional: the data files then keep the schema of their manifest file.
+            if (snapshot->has(f_schema_id) && !snapshot->isNull(f_schema_id))
+                registerSnapshotWithSchemaId(snapshot->getValue<Int64>(f_metadata_snapshot_id), snapshot->getValue<Int32>(f_schema_id));
         }
     }
 

@@ -775,7 +775,7 @@ Poco::JSON::Object::Ptr GlueCatalog::getCurrentSchema(const Poco::JSON::Object::
 
     /// Format version 1 metadata may carry a single top-level `schema` instead.
     if (metadata_object->has(DB::Iceberg::f_schema))
-        return metadata_object->getObject(DB::Iceberg::f_schema);
+        return DB::Iceberg::parseTableSchemaV1Method(metadata_object).first;
 
     return nullptr;
 }
