@@ -14,6 +14,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/SecretArgumentsSpec.h>
 #include <Storages/Kafka/Kafka_fwd.h>
 #include <Interpreters/Context.h>
@@ -120,8 +121,8 @@ void registerStorageKafka(StorageFactory & factory)
         const bool has_settings = args.storage_def->settings;
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
-        String collection_name;
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(
+        NamedCollectionPtr named_collection;
+        if (auto collection_with_overrides = tryGetNamedCollectionWithOverrides(
             args.engine_args,
             args.getLocalContext(),
             /*throw_unknown_collection=*/ true,
@@ -133,10 +134,11 @@ void registerStorageKafka(StorageFactory & factory)
             const auto local_context = args.getLocalContext();
             if (!isLoadingFromExistingMetadata(args.mode) && !isSecondaryDDLReplay(local_context)
                 && !local_context->isRecoveryFromStoredMetadata())
-                KafkaConfigLoader::checkNamedCollection(*named_collection);
+                KafkaConfigLoader::checkNamedCollection(*collection_with_overrides);
 
-            kafka_settings->loadFromNamedCollection(named_collection);
-            collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
+            kafka_settings->loadFromNamedCollection(collection_with_overrides);
+            /// The overrides of the extended librdkafka properties are applied to the current collection when a consumer or producer is created.
+            named_collection = std::move(collection_with_overrides);
         }
 
         if (has_settings)
@@ -194,7 +196,7 @@ void registerStorageKafka(StorageFactory & factory)
 
         /* 0 = raw, 1 = evaluateConstantExpressionAsLiteral, 2=evaluateConstantExpressionOrIdentifierAsLiteral */
         /// In case of named collection we already validated the arguments.
-        if (collection_name.empty())
+        if (!named_collection)
         {
             CHECK_KAFKA_STORAGE_ARGUMENT(1, kafka_broker_list, 0, String)
             CHECK_KAFKA_STORAGE_ARGUMENT(2, kafka_topic_list, 1, String)
@@ -305,7 +307,7 @@ void registerStorageKafka(StorageFactory & factory)
                     "(requires 'kafka_keeper_path' and 'kafka_replica_name' to be set)");
 
             return std::make_shared<StorageKafka>(
-                args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
+                args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), named_collection);
         }
 
         if (args.mode <= LoadingStrictnessLevel::CREATE
@@ -372,7 +374,7 @@ void registerStorageKafka(StorageFactory & factory)
         (*kafka_settings)[KafkaSetting::kafka_replica_name].value = context->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_replica_name].value, info);
 
         return std::make_shared<StorageKafka2>(
-            args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
+            args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), named_collection);
     };
 
     factory.registerStorage(
@@ -383,6 +385,40 @@ void registerStorageKafka(StorageFactory & factory)
             /// secret and makes the collection name optional, so a named argument can be the first one.
             .secret_settings = Kafka::settingsToHide(),
             .settings_as_arguments = true,
+            /// Kafka(named_collection, `kafka.consumer.sasl_password` = '...'): a nested override sets a librdkafka
+            /// property, written with `_` or `.` and possibly in a per-topic section.
+            .custom = [](FunctionSecretArgumentsFinder & finder)
+            {
+                for (size_t i = 0; i < finder.function->arguments->size(); ++i)
+                {
+                    const auto equals_func = finder.function->arguments->at(i)->getFunction();
+                    if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments() || equals_func->arguments->size() != 2)
+                        continue;
+
+                    String raw_key;
+                    if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*equals_func->arguments->at(0), &raw_key))
+                        continue;
+                    /// `XMLConfiguration` resolves `.kafka[0].consumer.sasl_password` to the same key. An invalid key is
+                    /// rejected only after the query is formatted for logging.
+                    auto key = tryNormalizeNamedCollectionKey(raw_key);
+                    if (!key || Kafka::settingsToHide().contains(*key))
+                    {
+                        finder.markSecretArgument(i, /* argument_is_named= */ true);
+                        continue;
+                    }
+                    if (!key->starts_with("kafka."))
+                        continue;
+                    std::ranges::replace(*key, '_', '.');
+                    for (size_t dot = key->find('.'); dot != String::npos; dot = key->find('.', dot + 1))
+                    {
+                        if (KafkaConfigLoader::isSensitiveProperty(std::string_view(*key).substr(dot + 1)))
+                        {
+                            finder.markSecretArgument(i, /* argument_is_named= */ true);
+                            break;
+                        }
+                    }
+                }
+            },
         },
         StorageFactory::StorageFeatures{
             .supports_settings = true,

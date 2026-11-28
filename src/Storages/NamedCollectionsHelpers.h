@@ -9,6 +9,7 @@
 #include <Common/quoteString.h>
 #include <Common/re2.h>
 
+#include <optional>
 #include <string_view>
 
 #include <fmt/format.h>
@@ -29,6 +30,11 @@ namespace ErrorCodes
 /// `password_slot` of the explicit form, and as an override with the TLS credentials given as the contents
 /// of a certificate or a key file (see `credentialsPathKeyFor`).
 SecretArgumentsSpec mysqlPostgreSQLSecretArguments(size_t password_slot);
+
+/// The key names that `XMLConfiguration` resolves a named collection key to, without indexes, escapes and redundant dots
+/// (`.kafka[0]..consumer.sasl_password` and `kafka[0]consumer.sasl_password` are `kafka.consumer.sasl_password`),
+/// or `nullopt` if a `[` is not closed.
+std::optional<String> tryNormalizeNamedCollectionKey(std::string_view key);
 
 /// Throws `BAD_ARGUMENTS` if `key` replaces a stored key (including an alias) that is `NOT OVERRIDABLE`.
 /// Does not check privileges. Used where the override was already authorized when the object was created,

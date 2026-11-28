@@ -1,0 +1,20 @@
+consumer property set: 1
+producer property set for consumer: 0
+topic property set: 1
+other topic property set: 0
+rejected properties: 0
+overridden consumer property set: 1
+added consumer property set: 1
+overridden topic property set: 1
+stored values set: 0
+changed collection property set: 1
+changed overridden property set: 0
+secret shown: 0
+file path override rejected: 1
+override of config collection set: 1
+nested override of flat setting set: 1
+flat setting set: 0
+nested alias override of flat setting set: 1
+flat setting set with alias override: 0
+dot spelling override set: 1
+underscore spelling stored value set: 0

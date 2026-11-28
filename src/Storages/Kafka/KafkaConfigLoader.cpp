@@ -7,6 +7,7 @@
 #include <Storages/Kafka/StorageKafka2.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/System/StorageSystemStackTrace.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -16,6 +17,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/QueryProfiler.h>
 #include <Common/config_version.h>
@@ -445,8 +447,27 @@ std::string_view namedCollectionPropertyKey(std::string_view key)
     return key;
 }
 
+/// The collection from the server configuration file that `collection` is a copy of, nullptr for a collection created by SQL.
+NamedCollectionPtr getConfigCollection(const NamedCollection & collection)
+{
+    if (collection.getSourceId() != NamedCollection::SourceId::CONFIG)
+        return nullptr;
+    if (auto config_collection = NamedCollectionFactory::instance().tryGet(collection.getName());
+        config_collection && config_collection->getSourceId() == NamedCollection::SourceId::CONFIG)
+        return config_collection;
+    return nullptr;
+}
+
+/// A copy of a collection from the server configuration file can have overrides from the table definition:
+/// a value is from that file only if the file has the same value.
+bool isSetFromSQL(const NamedCollection & collection, const NamedCollectionPtr & config_collection, const String & key)
+{
+    return !config_collection || !config_collection->has(key) || config_collection->get<String>(key) != collection.get<String>(key);
+}
+
 void loadNamedCollectionConfig(cppkafka::Configuration & kafka_config, const NamedCollection & collection, const String & config_prefix)
 {
+    const auto config_collection = getConfigCollection(collection);
     for (const auto & key : collection.getKeys(-1, config_prefix))
     {
         const auto property_key = namedCollectionPropertyKey(key);
@@ -456,19 +477,20 @@ void loadNamedCollectionConfig(cppkafka::Configuration & kafka_config, const Nam
         const auto value = collection.get<String>(key);
         /// The check when the table is created or loaded is not sufficient: the collection is read again here,
         /// and `ALTER NAMED COLLECTION` can add a property while the table exists.
-        setKafkaConfigValue(kafka_config, param_name, value, collection.getSourceId() != NamedCollection::SourceId::CONFIG);
+        setKafkaConfigValue(kafka_config, param_name, value, isSetFromSQL(collection, config_collection, key));
     }
 }
 
 void loadLegacyTopicConfig(
     cppkafka::Configuration & kafka_config,
     const Poco::Util::AbstractConfiguration & config,
-    const String & collection_name,
+    const NamedCollectionPtr & collection,
     const String & config_prefix)
 {
-    if (!collection_name.empty())
+    /// For the topic `topic` the legacy section is `kafka_topic`, skip it if it is a new syntax section with `<name>`.
+    const String name_path = config_prefix + "." + KafkaConfigLoader::CONFIG_NAME_TAG;
+    if (collection)
     {
-        const auto collection = NamedCollectionFactory::instance().get(collection_name);
         /// For a topic called `topic`, the legacy section is also called `kafka_topic`.
         /// If it has a `name`, the topic selector must be matched by `loadFromConfig`.
         if (config_prefix == "kafka.kafka_topic" && collection->has(config_prefix + ".name"))
@@ -476,6 +498,9 @@ void loadLegacyTopicConfig(
         loadNamedCollectionConfig(kafka_config, *collection, config_prefix);
         return;
     }
+
+    if (config.has(name_path))
+        return;
 
     Poco::Util::AbstractConfiguration::Keys tags;
     config.keys(config_prefix, tags);
@@ -502,9 +527,8 @@ void loadTopicConfig(cppkafka::Configuration & kafka_config, const Poco::Util::A
 void loadFromConfig(
     cppkafka::Configuration & kafka_config, const KafkaConfigLoader::LoadConfigParams & params, const String & config_prefix)
 {
-    if (!params.collection_name.empty())
+    if (const auto & collection = params.collection)
     {
-        const auto collection = NamedCollectionFactory::instance().get(params.collection_name);
         loadNamedCollectionConfig(kafka_config, *collection, config_prefix);
         for (const auto & key : collection->getKeys(0, config_prefix))
         {
@@ -574,20 +598,20 @@ void loadFromConfig(
 void loadLegacyConfigSyntax(
     cppkafka::Configuration & kafka_config,
     const Poco::Util::AbstractConfiguration & config,
-    const String & collection_name,
+    const NamedCollectionPtr & collection,
     const Names & topics)
 {
     for (const auto & topic : topics)
     {
         const String kafka_topic_path = KafkaConfigLoader::CONFIG_KAFKA_TAG + "." + KafkaConfigLoader::CONFIG_KAFKA_TAG + "_" + topic;
-        loadLegacyTopicConfig(kafka_config, config, collection_name, kafka_topic_path);
+        loadLegacyTopicConfig(kafka_config, config, collection, kafka_topic_path);
     }
 }
 
 void loadConsumerConfig(cppkafka::Configuration & kafka_config, const KafkaConfigLoader::LoadConfigParams & params)
 {
     const String consumer_path = KafkaConfigLoader::CONFIG_KAFKA_TAG + "." + KafkaConfigLoader::CONFIG_KAFKA_CONSUMER_TAG;
-    loadLegacyConfigSyntax(kafka_config, params.config, params.collection_name, params.topics);
+    loadLegacyConfigSyntax(kafka_config, params.config, params.collection, params.topics);
     // A new syntax has higher priority
     loadFromConfig(kafka_config, params, consumer_path);
 }
@@ -595,9 +619,106 @@ void loadConsumerConfig(cppkafka::Configuration & kafka_config, const KafkaConfi
 void loadProducerConfig(cppkafka::Configuration & kafka_config, const KafkaConfigLoader::LoadConfigParams & params)
 {
     const String producer_path = KafkaConfigLoader::CONFIG_KAFKA_TAG + "." + KafkaConfigLoader::CONFIG_KAFKA_PRODUCER_TAG;
-    loadLegacyConfigSyntax(kafka_config, params.config, params.collection_name, params.topics);
+    loadLegacyConfigSyntax(kafka_config, params.config, params.collection, params.topics);
     // A new syntax has higher priority
     loadFromConfig(kafka_config, params, producer_path);
+}
+
+/// The name librdkafka uses: without the `topic.` prefix and with the aliases of the properties that the flat settings write.
+String canonicalKafkaPropertyName(String name)
+{
+    if (name.starts_with("topic."))
+        name.erase(0, 6);
+    if (name == "compression.type")
+        return "compression.codec";
+    if (name == "sasl.mechanisms")
+        return "sasl.mechanism";
+    return name;
+}
+
+/// The same for every spelling of a property in a section: `kafka.consumer.fetch.min.bytes` and `kafka.consumer.fetch_min_bytes`.
+String canonicalNamedCollectionKey(const String & key)
+{
+    auto normalized_key = tryNormalizeNamedCollectionKey(key).value_or(key);
+    const auto property_key = namedCollectionPropertyKey(normalized_key);
+    if (property_key.empty())
+        return normalized_key;
+    return normalized_key.substr(0, normalized_key.size() - property_key.size())
+        + canonicalKafkaPropertyName(toKafkaPropertyName(String(property_key)));
+}
+
+/// The current named collection with the overrides from the table definition, so that changes of the collection reach existing tables.
+NamedCollectionPtr getCurrentCollection(const NamedCollectionPtr & table_collection)
+{
+    if (!table_collection)
+        return nullptr;
+
+    const auto current_collection = NamedCollectionFactory::instance().get(table_collection->getName());
+    auto collection = current_collection->duplicate();
+    for (const auto & key : table_collection->getKeys())
+    {
+        if (!table_collection->isQueryOverridden(key))
+            continue;
+        checkNamedCollectionOverrideLock(*current_collection, key);
+        /// The stored key can spell the same property differently, then the override replaces it.
+        const String canonical_key = canonicalNamedCollectionKey(key);
+        for (const auto & stored_key : current_collection->getKeys())
+        {
+            if (stored_key != key && !table_collection->isQueryOverridden(stored_key) && canonicalNamedCollectionKey(stored_key) == canonical_key)
+                collection->remove(stored_key);
+        }
+        collection->setOrUpdate<String>(key, table_collection->get<String>(key), {});
+    }
+    return collection;
+}
+
+/// The properties of the client that the table definition overrides with nested keys, e.g. `kafka.consumer.sasl_username`.
+/// They take priority over the flat `kafka_*` settings of the collection.
+std::unordered_set<String> getNestedOverrides(const NamedCollectionPtr & table_collection, std::string_view client_section, const Names & topics)
+{
+    std::unordered_set<String> res;
+    if (!table_collection)
+        return res;
+    const String client_prefix = "kafka." + String(client_section) + ".";
+    for (const auto & raw_key : table_collection->getKeys())
+    {
+        if (!table_collection->isQueryOverridden(raw_key))
+            continue;
+        auto normalized_key = tryNormalizeNamedCollectionKey(raw_key);
+        if (!normalized_key)
+            continue;
+        const String & key = *normalized_key;
+        if (key.starts_with("kafka.consumer.") || key.starts_with("kafka.producer."))
+        {
+            if (!key.starts_with(client_prefix))
+                continue;
+        }
+        else if (!key.starts_with("kafka."))
+            continue;
+        const auto property_key = namedCollectionPropertyKey(key);
+        if (property_key.empty())
+            continue;
+        /// A topic section only counts when it is the one the table reads.
+        const auto section_end = key.size() - property_key.size() - 1;
+        const auto section_start = key.rfind('.', section_end - 1) + 1;
+        if (section_end < key.size() && key[section_end] == '.' && key.compare(section_start, 6, "kafka_") == 0)
+        {
+            const String section_path = key.substr(0, section_end);
+            const auto section = std::string_view(key).substr(section_start, section_end - section_start);
+            bool applies = false;
+            if (isNamedTopicSection(section))
+            {
+                const String name_key = section_path + "." + KafkaConfigLoader::CONFIG_NAME_TAG;
+                applies = table_collection->has(name_key) && std::ranges::contains(topics, table_collection->get<String>(name_key));
+            }
+            else
+                applies = std::ranges::any_of(topics, [&](const String & topic) { return section == "kafka_" + topic; });
+            if (!applies)
+                continue;
+        }
+        res.insert(canonicalKafkaPropertyName(toKafkaPropertyName(String(property_key))));
+    }
+    return res;
 }
 
 template <typename TKafkaStorage>
@@ -613,28 +734,33 @@ void updateConfigurationFromConfig(
     const KafkaConfigLoader::LoadConfigParams & params,
     IKafkaExceptionInfoSinkWeakPtr exception_info_sink_ptr = IKafkaExceptionInfoSinkWeakPtr())
 {
-    loadFromConfig(kafka_config, params, KafkaConfigLoader::CONFIG_KAFKA_TAG);
+    const auto collection = getCurrentCollection(params.collection);
+    const KafkaConfigLoader::LoadConfigParams current_params{params.config, collection, params.topics, params.log, params.context};
+    loadFromConfig(kafka_config, current_params, KafkaConfigLoader::CONFIG_KAFKA_TAG);
 
-    specific_config_updater(kafka_config, params);
+    specific_config_updater(kafka_config, current_params);
 
     auto kafka_settings = storage.getKafkaSettings();
-    if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty())
+    const auto nested_overrides = getNestedOverrides(
+        params.collection, specific_config_updater == loadConsumerConfig ? "consumer" : "producer", params.topics);
+    const auto is_overridden = [&](const char * name) { return nested_overrides.contains(name); };
+    if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty() && !is_overridden("security.protocol"))
         kafka_config.set("security.protocol", kafka_settings[KafkaSetting::kafka_security_protocol]);
-    if (!kafka_settings[KafkaSetting::kafka_sasl_mechanism].value.empty()
+    if (!kafka_settings[KafkaSetting::kafka_sasl_mechanism].value.empty() && !is_overridden("sasl.mechanism")
         && !boost::iequals(kafka_settings[KafkaSetting::kafka_sasl_mechanism].value, "AWS_MSK_IAM"))
         kafka_config.set("sasl.mechanism", kafka_settings[KafkaSetting::kafka_sasl_mechanism]);
-    if (!kafka_settings[KafkaSetting::kafka_sasl_username].value.empty())
+    if (!kafka_settings[KafkaSetting::kafka_sasl_username].value.empty() && !is_overridden("sasl.username"))
         kafka_config.set("sasl.username", kafka_settings[KafkaSetting::kafka_sasl_username]);
-    if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty())
+    if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty() && !is_overridden("sasl.password"))
         kafka_config.set("sasl.password", String(kafka_settings[KafkaSetting::kafka_sasl_password].value));
-    if (!kafka_settings[KafkaSetting::kafka_compression_codec].value.empty())
+    if (!kafka_settings[KafkaSetting::kafka_compression_codec].value.empty() && !is_overridden("compression.codec"))
         kafka_config.set("compression.codec", kafka_settings[KafkaSetting::kafka_compression_codec]);
 
-    if (kafka_settings[KafkaSetting::kafka_compression_level].changed)
+    if (kafka_settings[KafkaSetting::kafka_compression_level].changed && !is_overridden("compression.level"))
         kafka_config.set("compression.level", kafka_settings[KafkaSetting::kafka_compression_level].toString());
 
     auto autodetect_rack = kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value;
-    if (!autodetect_rack.empty())
+    if (!autodetect_rack.empty() && !is_overridden("client.rack"))
     {
         if (magic_enum::enum_contains<S3::AZFacilities>(autodetect_rack))
         {
@@ -654,7 +780,7 @@ void updateConfigurationFromConfig(
 
     /// Derive effective SASL mechanism from both table settings and server/named-collection config.
     /// Table settings take priority; fall back to whatever loadFromConfig already wrote to kafka_config.
-    String sasl_mechanism = kafka_settings[KafkaSetting::kafka_sasl_mechanism].value;
+    String sasl_mechanism = is_overridden("sasl.mechanism") ? String() : kafka_settings[KafkaSetting::kafka_sasl_mechanism].value;
     if (sasl_mechanism.empty() && kafka_config.has_property("sasl.mechanism"))
         sasl_mechanism = kafka_config.get("sasl.mechanism");
 
@@ -773,12 +899,7 @@ void updateConfigurationFromConfig(
 
 }
 
-namespace
-{
-
-/// Sensitive properties must not be logged in cleartext: the log records can reach not only the
-/// server log, but also clients that set `send_logs_level`.
-bool isSensitiveProperty(std::string_view name)
+bool KafkaConfigLoader::isSensitiveProperty(std::string_view name)
 {
     /// The properties librdkafka marks with the _RK_SENSITIVE flag or stores as pointers, plus a
     /// substring safety net for properties unknown to the vendored librdkafka version.
@@ -792,13 +913,16 @@ bool isSensitiveProperty(std::string_view name)
     return sensitive_properties.contains(name) || name.contains("password") || name.contains("secret");
 }
 
+namespace
+{
+
 /// Log all properties of a Kafka client configuration, replacing the values of sensitive
 /// properties, e.g. `sasl.password` or `sasl.oauthbearer.client.secret`, with `[HIDDEN]`.
 void logConfigProperties(const cppkafka::Configuration & conf, const LoggerPtr & log, std::string_view client_type)
 {
     for (const auto & property : conf.get_all())
         LOG_TRACE(log, "{} set property {}:{}", client_type, property.first,
-            isSensitiveProperty(property.first) ? HIDDEN_SECRET : std::string_view(property.second));
+            KafkaConfigLoader::isSensitiveProperty(property.first) ? HIDDEN_SECRET : std::string_view(property.second));
 }
 
 }
@@ -881,11 +1005,11 @@ KafkaConfigLoader::getProducerConfiguration<StorageKafka2>(StorageKafka2 & stora
 
 void KafkaConfigLoader::checkNamedCollection(const NamedCollection & collection)
 {
-    if (collection.getSourceId() == NamedCollection::SourceId::CONFIG)
-        return;
-
+    const auto config_collection = getConfigCollection(collection);
     for (const auto & key : collection.getKeys(-1, CONFIG_KAFKA_TAG))
     {
+        if (!isSetFromSQL(collection, config_collection, key))
+            continue;
         checkKafkaPropertyName(key);
         const auto property_key = namedCollectionPropertyKey(key);
         if (!property_key.empty())

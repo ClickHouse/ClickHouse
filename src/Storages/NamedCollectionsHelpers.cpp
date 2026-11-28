@@ -24,6 +24,31 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+std::optional<String> tryNormalizeNamedCollectionKey(std::string_view key)
+{
+    String normalized;
+    for (size_t i = 0; i < key.size(); ++i)
+    {
+        if (key[i] == '[')
+        {
+            auto end = key.find(']', i);
+            if (end == std::string_view::npos)
+                return std::nullopt;
+            i = end;
+            /// `XMLConfiguration` starts the next key name right after `]`, also without a dot.
+            if (!normalized.empty() && normalized.back() != '.')
+                normalized += '.';
+        }
+        else if (key[i] == '\\' && i + 1 < key.size())
+            normalized += key[++i];
+        else if (key[i] != '.' || (!normalized.empty() && normalized.back() != '.'))
+            normalized += key[i];
+    }
+    if (!normalized.empty() && normalized.back() == '.')
+        normalized.pop_back();
+    return normalized;
+}
+
 namespace
 {
     std::optional<std::string> getCollectionName(ASTs asts)
@@ -53,6 +78,9 @@ namespace
 
         auto literal_key = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[0], context);
         auto key = checkAndGetLiteralArgument<String>(literal_key, "key");
+        /// Libraries that receive the key as a C string would see only the part before the zero byte.
+        if (key.contains('\0'))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key cannot contain a zero byte");
 
         ASTPtr literal_value;
         try
@@ -85,29 +113,16 @@ namespace
     /// underlying key names so these spellings cannot disguise an override as a new key.
     String normalizeKey(std::string_view key)
     {
-        String normalized;
-        for (size_t i = 0; i < key.size(); ++i)
-        {
-            if (key[i] == '[')
-            {
-                auto end = key.find(']', i);
-                if (end == std::string_view::npos)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid named collection key '{}'", key);
-                i = end;
-            }
-            else if (key[i] == '\\' && i + 1 < key.size())
-                normalized += key[++i];
-            else if (key[i] != '.' || (!normalized.empty() && normalized.back() != '.'))
-                normalized += key[i];
-        }
-        if (!normalized.empty() && normalized.back() == '.')
-            normalized.pop_back();
-        return normalized;
+        auto normalized = tryNormalizeNamedCollectionKey(key);
+        if (!normalized)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid named collection key '{}'", key);
+        return std::move(*normalized);
     }
 
     /// The librdkafka property that a `Kafka` key sets, and whether the key is a flat `kafka_*` table setting.
-    /// `KafkaConfigLoader` sets the properties from nested collection keys (`kafka.<property>`, `kafka.consumer.<property>`
-    /// and `kafka.producer.<property>`, with `_` converted to `.`), and the non-empty flat settings overwrite them afterwards.
+    /// `KafkaConfigLoader` sets the properties from nested collection keys (`kafka.<property>`, `kafka.consumer.<property>`,
+    /// `kafka.producer.<property>` and their per-topic sections, with `_` converted to `.`), and the flat settings replace
+    /// them or are replaced by them.
     struct KafkaProperty
     {
         String name;
@@ -117,6 +132,9 @@ namespace
     std::optional<KafkaProperty> getKafkaProperty(std::string_view key)
     {
         static constexpr auto flat_settings = std::to_array<std::pair<std::string_view, std::string_view>>({
+            {"kafka_broker_list", "metadata.broker.list"},
+            {"kafka_group_name", "group.id"},
+            {"kafka_client_id", "client.id"},
             {"kafka_security_protocol", "security.protocol"},
             {"kafka_sasl_mechanism", "sasl.mechanism"},
             {"kafka_sasl_username", "sasl.username"},
@@ -138,9 +156,48 @@ namespace
                 continue;
 
             KafkaProperty property{String(key.substr(prefix.size())), false};
+            /// Per-topic sections (`kafka_topic*.<property>` and legacy `kafka_<topic>.<property>`) set the same property.
+            const auto dot = property.name.find('.');
+            const bool is_topic_section = dot != String::npos && property.name.starts_with("kafka");
+            if (is_topic_section)
+                property.name = property.name.substr(dot + 1);
             /// `log_level` is the only librdkafka property with an underscore.
             if (property.name != "log_level")
                 std::ranges::replace(property.name, '_', '.');
+            /// librdkafka strips the `topic.` prefix of topic properties.
+            if (property.name.starts_with("topic."))
+                property.name = property.name.substr(std::string_view("topic.").size());
+            /// librdkafka aliases of the properties set by the flat settings.
+            static constexpr auto aliases = std::to_array<std::pair<std::string_view, std::string_view>>({
+                {"bootstrap.servers", "metadata.broker.list"},
+                {"sasl.mechanisms", "sasl.mechanism"},
+                {"compression.type", "compression.codec"},
+            });
+            for (const auto & [alias, name] : aliases)
+            {
+                if (property.name == alias)
+                    property.name = name;
+            }
+            /// The name of a legacy topic can contain dots (`kafka_sports.football.<property>`), so the rest of
+            /// the topic name is left before the property. Match the properties of the flat settings by suffix.
+            if (is_topic_section)
+            {
+                const auto ends_with_property = [&](std::string_view name)
+                {
+                    return property.name.size() > name.size() && property.name.ends_with(name)
+                        && property.name[property.name.size() - name.size() - 1] == '.';
+                };
+                for (const auto & [setting, name] : flat_settings)
+                {
+                    if (ends_with_property(name))
+                        property.name = name;
+                }
+                for (const auto & [alias, name] : aliases)
+                {
+                    if (ends_with_property(alias))
+                        property.name = name;
+                }
+            }
             return property;
         }
         return std::nullopt;

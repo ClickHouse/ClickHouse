@@ -173,7 +173,7 @@ StorageKafka::StorageKafka(
     const ColumnsDescription & columns_,
     const String & comment,
     std::unique_ptr<KafkaSettings> kafka_settings_,
-    const String & collection_name_)
+    NamedCollectionPtr named_collection_)
     : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , kafka_settings(std::move(kafka_settings_))
@@ -194,7 +194,7 @@ StorageKafka::StorageKafka(
     , intermediate_commit((*kafka_settings)[KafkaSetting::kafka_commit_every_batch].value)
     , settings_adjustments(StorageKafkaUtils::createSettingsAdjustments(*kafka_settings, schema_name))
     , thread_per_consumer((*kafka_settings)[KafkaSetting::kafka_thread_per_consumer].value)
-    , collection_name(collection_name_)
+    , named_collection(std::move(named_collection_))
 {
     kafka_settings->sanityCheck(getContext());
 
@@ -514,7 +514,7 @@ KafkaConsumerPtr StorageKafka::createKafkaConsumer(size_t consumer_number)
 cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr)
 {
     KafkaConfigLoader::ConsumerConfigParams params{
-        {getContext()->getConfigRef(), collection_name, topics, log, getContext()},
+        {getContext()->getConfigRef(), named_collection, topics, log, getContext()},
         brokers,
         group,
         num_consumers > 1,
@@ -527,7 +527,7 @@ cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_n
 cppkafka::Configuration StorageKafka::getProducerConfiguration()
 {
     KafkaConfigLoader::ProducerConfigParams params{
-        {getContext()->getConfigRef(), collection_name, topics, log, getContext()},
+        {getContext()->getConfigRef(), named_collection, topics, log, getContext()},
         brokers,
         client_id};
     return KafkaConfigLoader::getProducerConfiguration(*this, params);
