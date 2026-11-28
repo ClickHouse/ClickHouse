@@ -280,10 +280,20 @@ bool mentions(const Strings & candidates, const String & altered, const ColumnsD
     return false;
 }
 
-/// a new name binds the names of a filter that start with it, `t.tenant` reads the subcolumn after `RENAME COLUMN payload TO t`
-bool takes(const Strings & candidates, const String & new_name)
+/// a new name binds the names of a filter that start with it, `t.tenant` reads the subcolumn after `RENAME COLUMN payload TO t`,
+/// unless a candidate before binds, in the order of `mentions`, an exact column `a.b` first (see `hasFullIdentifierName`)
+bool takes(const Strings & candidates, const String & new_name, const ColumnsDescription & columns)
 {
-    return std::ranges::any_of(candidates, [&](const auto & candidate) { return candidate == new_name || candidate.starts_with(new_name + "."); });
+    for (const auto & candidate : candidates)
+    {
+        if (columns.has(candidate))
+            return false;
+        if (candidate == new_name || candidate.starts_with(new_name + "."))
+            return true;
+        if (!storageColumns(candidate, columns).empty())
+            return false;
+    }
+    return false;
 }
 
 /// a new type of a column also changes the `ALIAS` columns that read it: `a UInt8 ALIAS n = 1` fails after `n String`
@@ -367,7 +377,7 @@ void checkRowPoliciesBeforeAlter(const StoragePtr & table, const ColumnsDescript
                 if (!changes(command))
                     continue;
                 if (command.type == AlterCommand::RENAME_COLUMN
-                    && std::ranges::any_of(filter_names.names, [&](const auto & candidates) { return takes(candidates, command.rename_to); }))
+                    && std::ranges::any_of(filter_names.names, [&](const auto & candidates) { return takes(candidates, command.rename_to, columns); }))
                     throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                         "Cannot rename column {} to {}: row policy {} mentions this name. Change or drop the policy first",
                         backQuote(command.column_name), backQuote(command.rename_to), policy->getFullName().toString());
