@@ -461,20 +461,12 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
 {
     if (!metadata_object->has(f_snapshots))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
-    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
-    for (UInt32 j = 0; j < schemas->size(); ++j)
-    {
-        auto schema = schemas->getObject(j);
-        schema_processor->addIcebergTableSchema(schema);
-    }
+    schema_processor->registerMetadata(metadata_object);
     Poco::JSON::Object::Ptr current_snapshot = nullptr;
     auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-        auto current_snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
-        auto current_schema_id = snapshot->getValue<Int32>(f_schema_id);
-        schema_processor->registerSnapshotWithSchemaId(current_snapshot_id, current_schema_id);
         if (snapshot->getValue<Int64>(f_metadata_snapshot_id) == snapshot_id)
         {
             current_snapshot = snapshot;
@@ -2256,7 +2248,7 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     chassert(object_info->getFileFormat().has_value());
     /// Only these readers resolve columns through a mapper: `Parquet` and `Avro` for the columns they read
     /// (and `Parquet` for its filters), `Vortex` for the filters it pushes into the scan, `ORC` for the columns
-    /// absent from the file.
+    /// it reads.
     const auto file_format = Poco::toLower(*object_info->getFileFormat());
     if (file_format != "parquet" && file_format != "avro" && file_format != "vortex" && file_format != "orc")
         return nullptr;

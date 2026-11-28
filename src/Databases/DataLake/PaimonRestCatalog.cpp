@@ -24,6 +24,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <IO/parseURI.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
@@ -312,7 +313,7 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
     const String & endpoint, const String & method, const Poco::URI::QueryParameters & params, const DB::HTTPHeaderEntries & headers) const
 {
     const auto & context = getContext();
-    Poco::URI url(base_url / endpoint);
+    Poco::URI url = DB::parseURI(base_url / endpoint);
     if (!params.empty())
         url.setQueryParameters(params);
 
