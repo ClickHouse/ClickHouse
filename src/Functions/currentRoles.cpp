@@ -24,6 +24,8 @@ namespace
         CURRENT_ROLES,
         ENABLED_ROLES,
         DEFAULT_ROLES,
+        CURRENT_INVOKER_ROLES,
+        ENABLED_INVOKER_ROLES,
     };
 
     String toString(Kind kind)
@@ -33,6 +35,8 @@ namespace
             case Kind::CURRENT_ROLES: return "currentRoles";
             case Kind::ENABLED_ROLES: return "enabledRoles";
             case Kind::DEFAULT_ROLES: return "defaultRoles";
+            case Kind::CURRENT_INVOKER_ROLES: return "currentInvokerRoles";
+            case Kind::ENABLED_INVOKER_ROLES: return "enabledInvokerRoles";
         }
     }
 
@@ -66,6 +70,12 @@ namespace
                         role_names = manager.tryReadNames(user->granted_roles.findGranted(user->default_roles));
                     break;
                 }
+                case Kind::CURRENT_INVOKER_ROLES:
+                    role_names = context->getInvokerRolesInfo()->getCurrentRolesNames();
+                    break;
+                case Kind::ENABLED_INVOKER_ROLES:
+                    role_names = context->getInvokerRolesInfo()->getEnabledRolesNames();
+                    break;
             }
 
             /// We sort the names because the result of the function should not depend on the order of UUIDs.
@@ -170,9 +180,72 @@ SELECT defaultRoles();
     FunctionDocumentation::Category category_defaultRoles = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation_defaultRoles = {description_defaultRoles, syntax_defaultRoles, arguments_defaultRoles, {}, returned_value_defaultRoles, examples_defaultRoles, introduced_in_defaultRoles, category_defaultRoles};
 
+    FunctionDocumentation::Description description_currentInvokerRoles = R"(
+Returns an array of the roles which are assigned to the invoker of the view whose query contains the function call.
+
+Inside the query of a view with `SQL SECURITY DEFINER` or `SQL SECURITY NONE`, the function returns the current roles
+of the user who runs the query reading from the view, while [`currentRoles`](#currentRoles) returns the roles of the definer.
+If that query is itself the query of another view with `SQL SECURITY DEFINER`, the invoker is the definer of that other view.
+Elsewhere the function returns the same as [`currentRoles`](#currentRoles).
+    )";
+    FunctionDocumentation::Syntax syntax_currentInvokerRoles = "currentInvokerRoles()";
+    FunctionDocumentation::Arguments arguments_currentInvokerRoles = {};
+    FunctionDocumentation::ReturnedValue returned_value_currentInvokerRoles = {"Returns an array of the roles which are assigned to the invoker.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples_currentInvokerRoles = {
+    {
+        "Usage example",
+        R"(
+CREATE VIEW v SQL SECURITY DEFINER DEFINER = default AS SELECT currentInvokerRoles() AS roles;
+SET ROLE r;
+SELECT * FROM v;
+        )",
+        R"(
+┌─roles─┐
+│ ['r'] │
+└───────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_currentInvokerRoles = {26, 12};
+    FunctionDocumentation::Category category_currentInvokerRoles = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_currentInvokerRoles = {description_currentInvokerRoles, syntax_currentInvokerRoles, arguments_currentInvokerRoles, {}, returned_value_currentInvokerRoles, examples_currentInvokerRoles, introduced_in_currentInvokerRoles, category_currentInvokerRoles};
+
+    FunctionDocumentation::Description description_enabledInvokerRoles = R"(
+Returns an array of the roles which are enabled for the invoker of the view whose query contains the function call.
+
+Inside the query of a view with `SQL SECURITY DEFINER` or `SQL SECURITY NONE`, the function returns the enabled roles
+of the user who runs the query reading from the view, while [`enabledRoles`](#enabledRoles) returns the roles of the definer.
+If that query is itself the query of another view with `SQL SECURITY DEFINER`, the invoker is the definer of that other view.
+Elsewhere the function returns the same as [`enabledRoles`](#enabledRoles).
+    )";
+    FunctionDocumentation::Syntax syntax_enabledInvokerRoles = "enabledInvokerRoles()";
+    FunctionDocumentation::Arguments arguments_enabledInvokerRoles = {};
+    FunctionDocumentation::ReturnedValue returned_value_enabledInvokerRoles = {"Returns an array of role names which are enabled for the invoker.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples_enabledInvokerRoles = {
+    {
+        "Usage example",
+        R"(
+GRANT inherited_role TO r;
+CREATE VIEW v SQL SECURITY DEFINER DEFINER = default AS SELECT enabledInvokerRoles() AS roles;
+SET ROLE r;
+SELECT * FROM v;
+        )",
+        R"(
+┌─roles──────────────────┐
+│ ['inherited_role','r'] │
+└────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_enabledInvokerRoles = {26, 12};
+    FunctionDocumentation::Category category_enabledInvokerRoles = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_enabledInvokerRoles = {description_enabledInvokerRoles, syntax_enabledInvokerRoles, arguments_enabledInvokerRoles, {}, returned_value_enabledInvokerRoles, examples_enabledInvokerRoles, introduced_in_enabledInvokerRoles, category_enabledInvokerRoles};
+
     factory.registerFunction("currentRoles", [](ContextPtr context){ return FunctionCurrentRoles::create(context, Kind::CURRENT_ROLES); }, documentation_currentRoles);
     factory.registerFunction("enabledRoles", [](ContextPtr context){ return FunctionCurrentRoles::create(context, Kind::ENABLED_ROLES); }, documentation_enabledRoles);
     factory.registerFunction("defaultRoles", [](ContextPtr context){ return FunctionCurrentRoles::create(context, Kind::DEFAULT_ROLES); }, documentation_defaultRoles);
+    factory.registerFunction("currentInvokerRoles", [](ContextPtr context){ return FunctionCurrentRoles::create(context, Kind::CURRENT_INVOKER_ROLES); }, documentation_currentInvokerRoles);
+    factory.registerFunction("enabledInvokerRoles", [](ContextPtr context){ return FunctionCurrentRoles::create(context, Kind::ENABLED_INVOKER_ROLES); }, documentation_enabledInvokerRoles);
 }
 
 }

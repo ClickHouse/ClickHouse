@@ -1,0 +1,14 @@
+--- no view
+['r_user']	['r_user']
+['r_some','r_user']	['r_inherited','r_some','r_user']
+--- definer view
+['r_definer']	['r_definer']	['r_user']	['r_user']
+['r_definer']	['r_definer']	['r_some','r_user']	['r_inherited','r_some','r_user']
+--- none view
+['r_some','r_user']	['r_inherited','r_some','r_user']
+--- invoker view
+['r_some','r_user']	['r_inherited','r_some','r_user']	['r_some','r_user']	['r_inherited','r_some','r_user']
+--- definer view inside definer view
+['r_definer']	['r_definer']	['r_outer']	['r_outer']
+--- invoker view inside definer view
+['r_definer']	['r_definer']	['r_definer']	['r_definer']

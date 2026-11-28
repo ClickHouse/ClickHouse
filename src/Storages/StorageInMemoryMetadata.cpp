@@ -2,6 +2,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <Access/AccessControl.h>
+#include <Access/EnabledRolesInfo.h>
 #include <Access/User.h>
 
 #include <Core/Settings.h>
@@ -166,13 +167,22 @@ void dropParallelReplicasCustomKey(Context & body_context)
 
 ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context, const ClientInfo * client_info) const
 {
-    if (!sql_security_type)
-        return Context::createCopy(context);
-
-    if (sql_security_type == SQLSecurityType::INVOKER)
-        return Context::createCopy(context);
+    if (!sql_security_type || sql_security_type == SQLSecurityType::INVOKER)
+    {
+        /// The query of the view runs as its invoker, which is the current user of `context`.
+        auto new_context = Context::createCopy(context);
+        new_context->setInvokerRolesInfo(nullptr);
+        return new_context;
+    }
 
     auto new_context = Context::createCopy(context->getGlobalContext());
+    /// For `currentInvokerRoles` and `enabledInvokerRoles`: the roles of the user who runs the query reading from the view.
+    /// If that query is itself the query of a `DEFINER` view, it is the definer of that view. Without a user (e.g. a scheduled
+    /// refresh of a materialized view), there is no invoker and so no roles.
+    if (context->getUserID())
+        new_context->setInvokerRolesInfo(context->getRolesInfo());
+    else
+        new_context->setInvokerRolesInfo(std::make_shared<EnabledRolesInfo>());
     if (client_info)
         new_context->setClientInfo(*client_info);
     else
