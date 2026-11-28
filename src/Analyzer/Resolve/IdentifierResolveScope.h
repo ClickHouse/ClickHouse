@@ -169,6 +169,15 @@ struct IdentifierResolveScope
     /// scope must not make an alias of another scope look referenced.
     std::unordered_set<std::string> used_alias_names;
 
+    /// Names that an `APPLY (f, 'prefix')` matcher gave to columns while resolving this query, including inside
+    /// its lambdas. They act as aliases, see the check of duplicated aliases in `QueryAnalyzer::resolveQuery`.
+    struct ApplyPrefixedName
+    {
+        std::string name;
+        QueryTreeNodePtr node;
+    };
+    std::vector<ApplyPrefixedName> apply_prefixed_names;
+
     /// Valid only during table ALIAS columns resolve.
     AnalysisTableExpressionData * table_expression_data_for_alias_resolution = nullptr;
 
