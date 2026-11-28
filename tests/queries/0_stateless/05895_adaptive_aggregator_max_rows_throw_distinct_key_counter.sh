@@ -65,6 +65,14 @@ check "A thawed table that takes its staged keys back" \
     SETTINGS max_rows_to_group_by = 110000, enable_software_prefetch_in_aggregation = 1, optimize_injective_functions_in_group_by = 0" drop
 echo "dropped counters: $(grep -c 'dropped the distinct key counter' "$CLICKHOUSE_TMP/05895_drop.err")"
 
+# At a limit of 150000 the counter samples one key in two. It samples by a mixed hash, because the table hash
+# `HashCRC32` of an integer is linear: the 100000 numbers below 200000 that pass this filter on the parity of
+# some of their bits share the low bit of their table hashes. A sample by that bit would hold all of them and
+# double the count, so the producer would throw under the limit.
+check "Keys whose table hashes share their low bit" \
+    "SELECT count() FROM (SELECT number AS k FROM numbers(200000) WHERE bitCount(bitAnd(number, 0x32c25)) % 2 = 1 GROUP BY k)
+    SETTINGS max_rows_to_group_by = 150000" parity
+
 # A producer over the limit by less than a sixteenth does not throw, because the error of the estimate
 # could explain the excess. The exact count of the merge throws. The thaw is off, so the frozen table never
 # takes the keys itself.

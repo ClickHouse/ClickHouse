@@ -10,5 +10,8 @@ A thawed table that takes its staged keys back: none
 100000
 thaws	1
 dropped counters: 1
+Keys whose table hashes share their low bit: none
+100000
+thaws	0
 Over the limit by less than the margin: exact
 thaws	0

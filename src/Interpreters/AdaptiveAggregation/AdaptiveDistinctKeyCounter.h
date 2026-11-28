@@ -17,29 +17,33 @@ namespace DB
 ///
 /// The counter takes the hash of a key in the thread's table, which is also the routing hash of the key's
 /// staged records, so a key counts once whether a table inserted it, a frozen table staged it, or both. It
-/// counts one hash in `sample_mask + 1`. The mask grows with `precise_count`, the count that the caller
-/// compares the estimate with, so a thread at that count has 2^16 to 2^17 sampled keys: every hash up to
-/// 131071, one in 8 at 10^6, one in 2^17 at 10^10. The estimate of such a count then has a standard error of
-/// about 0.9%: 0.8% from the 2^14 buckets of the HyperLogLog and 0.4% from the sample.
+/// mixes the hash first, because the bits of a table hash can depend on the data: `HashCRC32` of an integer
+/// is linear, so the keys that pass a filter on the parity of some of their bits can all share the low bit
+/// of their hashes. The low `sample_bits` bits of the mixed hash choose the sample, one key in
+/// 2^sample_bits, and the HyperLogLog reads the bits above them. The sample shrinks as `precise_count`, the
+/// count that the caller compares the estimate with, grows, so a thread at that count has 2^16 to 2^17
+/// sampled keys: every key up to 131071, one in 8 at 10^6, one in 2^17 at 10^10. The estimate of such a
+/// count then has a standard error of about 0.9%: 0.8% from the 2^14 buckets of the HyperLogLog and 0.4%
+/// from the sample.
 class AdaptiveDistinctKeyCounter
 {
 public:
     explicit AdaptiveDistinctKeyCounter(UInt64 precise_count)
         : error_margin(precise_count / 16)
-        , sample_mask((UInt64{1} << std::max(0, std::bit_width(precise_count) - 1 - min_sample_bits)) - 1)
+        , sample_bits(std::max(0, std::bit_width(precise_count) - 1 - min_sample_bits))
+        , sample_mask((UInt64{1} << sample_bits) - 1)
     {
     }
 
-    /// The caller passes the hash of a key in the thread's table.
+    /// The caller passes the hash of a key in the thread's table. It may be 32-bit.
     void add(UInt64 hash)
     {
-        /// The sampled hashes share their low bits and may be 32-bit, so they are mixed before the
-        /// HyperLogLog.
-        if ((hash & sample_mask) == 0)
-            sampled_keys.insert(intHash64(hash));
+        const UInt64 mixed = intHash64(hash);
+        if ((mixed & sample_mask) == 0)
+            sampled_keys.insert(mixed >> sample_bits);
     }
 
-    [[nodiscard]] UInt64 getCount() const { return sampled_keys.size() * (sample_mask + 1); }
+    [[nodiscard]] UInt64 getCount() const { return sampled_keys.size() << sample_bits; }
 
     /// The error that the estimate of a count near `precise_count` practically never exceeds: a sixteenth of
     /// the count, about seven standard errors. A count that exceeds another by more than the margin means
@@ -51,6 +55,8 @@ private:
     static constexpr int min_sample_bits = 16;
 
     const UInt64 error_margin;
+    const int sample_bits;
+    /// The low `sample_bits` bits of a mixed hash, all zero for a key in the sample.
     const UInt64 sample_mask;
     HyperLogLogCounter<14, UInt64, TrivialHash, UInt64> sampled_keys;
 };
