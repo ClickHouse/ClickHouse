@@ -16,6 +16,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/ProcessList.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
 #include <Columns/ColumnsNumber.h>
@@ -543,8 +545,16 @@ size_t MergeTreeReaderTextIndex::readRows(
     size_t fallback_offset = 0;
     std::optional<size_t> last_processed_mark;
 
+    QueryStatusPtr query_status;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        query_status = query_context->getProcessListElementSafe();
+
     while (read_rows < max_rows_to_read && from_mark < total_marks)
     {
+        /// Also fires past `max_execution_time` in throw mode: `CancellationChecker` then cancels the query.
+        if (query_status)
+            query_status->throwIfKilled();
+
         /// Postings are addressed per mark: rows past a mark's last row belong to the next mark
         /// and would resolve against the wrong posting lists.
         size_t mark_begin_row = index_granularity.getMarkStartingRow(from_mark);
