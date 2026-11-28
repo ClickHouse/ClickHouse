@@ -46,6 +46,7 @@
     M(IcebergMetadataLog,    iceberg_metadata_log, DB::SYSTEM_LOG_DOCUMENTATION_ICEBERG_METADATA_LOG) \
     M(DeltaMetadataLog,    delta_lake_metadata_log, DB::SYSTEM_LOG_DOCUMENTATION_DELTA_LAKE_METADATA_LOG) \
     M(PredicateStatisticsLog, predicate_statistics_log, DB::SYSTEM_LOG_DOCUMENTATION_PREDICATE_STATISTICS_LOG) \
+    M(MetadataChangeLog,   metadata_change_log,   DB::SYSTEM_LOG_DOCUMENTATION_METADATA_CHANGE_LOG) \
 
 #define LIST_OF_CLOUD_SYSTEM_LOGS(M) \
     M(DistributedCacheLog, distributed_cache_log, "Contains the history of all interactions with distributed cache.") \
@@ -1652,6 +1653,28 @@ LIMIT 10;
 .see_also
 - [`predicate_statistics_sample_rate`](/reference/settings/session-settings/other#predicate_statistics_sample_rate)
 - [system.query_log](/reference/system-tables/query_log)
+)DOCS_MD";
+
+inline constexpr char SYSTEM_LOG_DOCUMENTATION_METADATA_CHANGE_LOG[] = R"DOCS_MD(
+.description
+Contains a log of schema and metadata change events (create, alter, rename, drop, and undrop of tables and databases).
+
+`system.metadata_change_log` is created only when the server configuration contains a `metadata_change_log` section. Internal databases (`system`, `INFORMATION_SCHEMA`, `information_schema`, and `_temporary_and_external_tables`) are excluded. Secrets in `create_query` and default expressions are masked.
+
+.examples
+```sql
+SELECT
+    event_time_microseconds,
+    event_type,
+    database,
+    table,
+    engine,
+    columns_name,
+    columns_type
+FROM system.metadata_change_log
+ORDER BY event_time_microseconds DESC
+LIMIT 10;
+```
 )DOCS_MD";
 
 namespace ErrorCodes

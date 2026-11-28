@@ -12,6 +12,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MetadataChangeLog.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
@@ -248,6 +249,13 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, db_disk, table_metadata_path_drop, sync);
+
+    MetadataChangeLog::logTableEvent(
+        local_context,
+        MetadataChangeLogElement::TABLE_DROP,
+        table->getStorageID(),
+        getUUID(),
+        table);
 }
 
 void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
@@ -415,6 +423,43 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     attach(other_db, to_table_name, table_data_path, table);
     if (exchange)
         attach(*this, table_name, other_table_data_path, other_table);
+
+    const String old_db_name = database_name;
+    const String new_db_name = other_db.database_name;
+    const UUID old_db_uuid = getUUID();
+    const UUID new_db_uuid = other_db.getUUID();
+
+    if (db_lock.owns_lock())
+        db_lock.unlock();
+    if (other_db_lock.owns_lock())
+        other_db_lock.unlock();
+
+    ASTPtr new_create_query = other_db.tryGetCreateTableQuery(to_table_name, local_context);
+    MetadataChangeLog::logTableEvent(
+        local_context,
+        MetadataChangeLogElement::TABLE_RENAME,
+        new_table_id,
+        new_db_uuid,
+        table,
+        /*metadata=*/nullptr,
+        new_create_query,
+        old_db_name,
+        table_name);
+
+    if (exchange && other_table)
+    {
+        ASTPtr other_create_query = tryGetCreateTableQuery(table_name, local_context);
+        MetadataChangeLog::logTableEvent(
+            local_context,
+            MetadataChangeLogElement::TABLE_RENAME,
+            other_table_new_id,
+            old_db_uuid,
+            other_table,
+            /*metadata=*/nullptr,
+            other_create_query,
+            new_db_name,
+            to_table_name);
+    }
 }
 
 void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,

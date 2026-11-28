@@ -1,0 +1,8 @@
+<clickhouse>
+    <metadata_change_log>
+        <database>system</database>
+        <table>metadata_change_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </metadata_change_log>
+</clickhouse>

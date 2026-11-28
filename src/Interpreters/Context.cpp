@@ -8672,6 +8672,16 @@ std::shared_ptr<PredicateStatisticsLog> Context::getPredicateStatisticsLog() con
     return shared->system_logs->predicate_statistics_log;
 }
 
+std::shared_ptr<MetadataChangeLog> Context::getMetadataChangeLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->metadata_change_log;
+}
+
 SystemLogs Context::getSystemLogs() const
 {
     SharedLockGuard lock(shared->mutex);
