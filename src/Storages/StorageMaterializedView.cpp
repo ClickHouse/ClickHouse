@@ -5,7 +5,6 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTStreamSettings.h>
@@ -230,10 +229,11 @@ namespace
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT and OFFSET are not supported in the query of an incremental refresh");
         /// The `SETTINGS` clause of the query is not applied to the context when the view is created. Apply it to
         /// a copy of the context in the same way as the refresh does, so that a `profile` in the clause is resolved
-        /// to the settings of the profile: the query runs with them, and not with the changes as they are written.
+        /// to the settings of the profile, and a setting that the clause resets with `= DEFAULT` (e.g. after a profile)
+        /// has its default value: the query runs with them, and not with the changes as they are written.
         auto settings_context = Context::createCopy(context);
         if (const auto & select_settings = select.settings())
-            settings_context->applySettingsChanges(select_settings->as<ASTSetQuery &>().changes);
+            InterpreterSetQuery(select_settings, settings_context).executeForCurrentContext(/* ignore_setting_constraints= */ true);
         const Settings & query_settings = settings_context->getSettingsRef();
 
         if (query_settings[Setting::limit] != 0 || query_settings[Setting::offset] != 0)

@@ -40,6 +40,18 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT count() FROM tgt;
     DROP TABLE mv;
     TRUNCATE TABLE tgt;
+"
+# A setting that is reset with DEFAULT after the profile has its default value, which is `throw`.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "
+    CREATE MATERIALIZED VIEW mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO tgt EMPTY
+        AS SELECT k FROM src
+        SETTINGS profile = '${PROFILE}', read_overflow_mode = DEFAULT"
+${CLICKHOUSE_CLIENT} --query "
+    SYSTEM REFRESH VIEW mv;
+    SYSTEM WAIT VIEW mv;
+    SELECT count() FROM tgt;
+    DROP TABLE mv;
+    TRUNCATE TABLE tgt;
     DROP SETTINGS PROFILE ${PROFILE};
 "
 

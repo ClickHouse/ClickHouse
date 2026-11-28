@@ -19,9 +19,10 @@ IProcessor::Status ReadToEndTransform::prepare()
     if (output.isFinished())
     {
         /// Nobody needs the data anymore, but the source has to reach its end. A finished input may still have
-        /// the last chunk, so it is checked again after the chunk is discarded.
+        /// the last chunk, so it is checked again after the chunk is discarded. The chunk may be buffered in an input
+        /// that is not needed (see the back-pressure below), so the pull must not require it; it is needed again below.
         if (input.hasData())
-            input.pull(/*set_not_needed=*/ false);
+            input.pull(/*set_not_needed=*/ true);
 
         if (input.isFinished())
         {
