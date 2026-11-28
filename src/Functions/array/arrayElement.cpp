@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -54,6 +55,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+extern const int ARGUMENT_OUT_OF_BOUND;
 extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -96,6 +98,64 @@ bool tryEachType(TypeList<Ts...>, F && try_one)
     return (try_one.template operator()<Ts>() || ...);
 }
 
+bool isStringSource(const DataTypePtr & type)
+{
+    return isString(removeNullable(removeLowCardinality(type)));
+}
+
+/// A string position as distance and direction, so neither a UInt64 above Int64 max nor Int64 min can overflow.
+struct StringBytePosition
+{
+    UInt64 magnitude = 0;
+    bool from_end = false;
+
+    static StringBytePosition read(const IColumn & column, bool is_unsigned, size_t row)
+    {
+        if (is_unsigned)
+            return {column.getUInt(row), false};
+
+        Int64 value = column.getInt(row);
+        if (value >= 0)
+            return {static_cast<UInt64>(value), false};
+        return {static_cast<UInt64>(-(value + 1)) + 1, true};
+    }
+
+    /// The 0-based offset of the addressed byte in a string of `length` bytes, if there is such a byte.
+    [[nodiscard]] std::optional<size_t> offsetIn(size_t length) const
+    {
+        if (magnitude == 0 || magnitude > length)
+            return {};
+        return from_end ? length - magnitude : magnitude - 1;
+    }
+
+    [[nodiscard]] String toString() const { return from_end ? fmt::format("-{}", magnitude) : fmt::format("{}", magnitude); }
+};
+
+/// The values of a column that may be constant and Nullable, with its NULL rows set in `null_map`.
+ColumnPtr removeNullableAndMergeNullMap(const ColumnPtr & column, NullMap & null_map)
+{
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
+    {
+        const auto * nullable = typeid_cast<const ColumnNullable *>(&column_const->getDataColumn());
+        if (!nullable)
+            return column;
+
+        if (nullable->isNullAt(0))
+            std::fill(null_map.begin(), null_map.end(), 1);
+        return ColumnConst::create(nullable->getNestedColumnPtr(), column->size());
+    }
+
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(column.get()))
+    {
+        const auto & column_null_map = nullable->getNullMapData();
+        for (size_t row = 0; row < null_map.size(); ++row)
+            null_map[row] |= column_null_map[row];
+        return nullable->getNestedColumnPtr();
+    }
+
+    return column;
+}
+
 
 /** arrayElement(arr, i) - get the array element by index. If index is not constant and out of range - return default value of data type.
   * The index begins with 1. Also, the index can be negative - then it is counted from the end of the array.
@@ -123,15 +183,31 @@ public:
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
     [[nodiscard]] bool useDefaultImplementationForDynamic() const override { return true; }
     [[nodiscard]] bool useDefaultImplementationForVariant() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// Only the String overload throws on data, so a guard like `if(s != '', s[1], '')` must protect it.
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    {
+        return !is_null_mode && !arguments.empty() && isStringSource(arguments[0].type);
+    }
 
     /// A `Map` lookup returns the default value for a missing key, but a string key is converted to the keys of an `Enum` keyed map.
+    /// A String source throws for a position outside of the string, unless `arrayElementOrNull` gives NULL for it.
     [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
     {
         if (arguments.size() == 2)
+        {
             if (const auto * map_type = typeid_cast<const DataTypeMap *>(arguments[0].type.get()))
                 return isEnum(map_type->getKeyType());
+            if (isStringSource(arguments[0].type))
+                return !is_null_mode;
+        }
         return {};
+    }
+
+    /// The String overload throws, so it must skip values no row holds, like the key every LowCardinality dictionary reserves.
+    using IFunction::canBeExecutedOnDefaultArguments;
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return is_null_mode || arguments.empty() || !isStringSource(arguments[0].type);
     }
 
     [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
@@ -273,6 +349,9 @@ private:
 
     template <typename T>
     [[nodiscard]] ColumnPtr executeQBitWithArrayIndex(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
+    /// `s[n]` and `s[start:end]`: the byte at a position, or the bytes between two positions, inclusive.
+    [[nodiscard]] static ColumnPtr executeStringSubscript(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count);
 
     using Offsets = ColumnArray::Offsets;
 
@@ -2384,6 +2463,105 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
 }
 
 template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::executeStringSubscript(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+{
+    /// NULL rows are skipped: the defaults behind them, like the position 0, would throw.
+    auto null_map_column = ColumnUInt8::create(input_rows_count, UInt8(0));
+    NullMap & null_map = null_map_column->getData();
+
+    const ColumnPtr source = removeNullableAndMergeNullMap(arguments[0].column, null_map);
+
+    struct PositionColumn
+    {
+        ColumnPtr values;
+        bool is_unsigned = false;
+
+        [[nodiscard]] StringBytePosition read(size_t row) const { return StringBytePosition::read(*values, is_unsigned, row); }
+    };
+
+    /// A NULL slice tuple is a NULL position too, so it is unwrapped before choosing between a position and a slice.
+    const ColumnPtr index = removeNullableAndMergeNullMap(arguments[1].column, null_map);
+    const DataTypePtr index_type = removeNullable(arguments[1].type);
+
+    PositionColumn start_column;
+    std::optional<PositionColumn> end_column;
+    if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(index_type.get()))
+    {
+        Columns bounds;
+        if (const auto * tuple_const = checkAndGetColumnConst<ColumnTuple>(index.get()))
+            bounds = convertConstTupleToConstantElements(*tuple_const);
+        else
+            bounds = assert_cast<const ColumnTuple &>(*index).getColumnsCopy();
+
+        start_column = {removeNullableAndMergeNullMap(bounds[0], null_map), isNativeUInt(removeNullable(tuple_type->getElement(0)))};
+        end_column = PositionColumn{removeNullableAndMergeNullMap(bounds[1], null_map), isNativeUInt(removeNullable(tuple_type->getElement(1)))};
+    }
+    else
+    {
+        start_column = {index, isNativeUInt(index_type)};
+    }
+
+    const bool is_slice = end_column.has_value();
+    auto result = ColumnString::create();
+    result->reserve(input_rows_count);
+
+    for (size_t row = 0; row < input_rows_count; ++row)
+    {
+        if (null_map[row])
+        {
+            result->insertDefault();
+            continue;
+        }
+
+        const std::string_view value = source->getDataAt(row);
+        const auto start = start_column.read(row);
+        const auto end = is_slice ? end_column->read(row) : start;
+        const auto start_offset = start.offsetIn(value.size());
+        const auto end_offset = end.offsetIn(value.size());
+
+        if (start_offset && end_offset && *start_offset <= *end_offset)
+        {
+            result->insertData(value.data() + *start_offset, *end_offset - *start_offset + 1);
+            continue;
+        }
+
+        if constexpr (is_null_mode)
+        {
+            result->insertDefault();
+            null_map[row] = 1;
+            continue;
+        }
+
+        if (start.magnitude == 0 || end.magnitude == 0)
+            throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "String positions are 1-based");
+
+        if (!is_slice)
+            throw Exception(
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Position {} is out of bounds for a string of {} bytes", start.toString(), value.size());
+
+        if (!start_offset || !end_offset)
+            throw Exception(
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "Slice [{}:{}] is out of bounds for a string of {} bytes",
+                start.toString(),
+                end.toString(),
+                value.size());
+
+        throw Exception(
+            ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "Slice [{}:{}] starts after it ends in a string of {} bytes",
+            start.toString(),
+            end.toString(),
+            value.size());
+    }
+
+    if (!result_type->isNullable())
+        return result;
+    return ColumnNullable::create(std::move(result), std::move(null_map_column));
+}
+
+template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
@@ -3132,12 +3310,43 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
         return (is_null_mode || qbit_is_nullable || arguments[1]->isNullable()) ? makeNullable(element_type) : element_type;
     }
 
+    /// `s[n]` and `s[start:end]`, which the parser turns into `arrayElement(s, tuple(start, end))`.
+    if (isString(removeNullable(arguments[0])))
+    {
+        bool result_is_nullable = is_null_mode || arguments[0]->isNullable() || arguments[1]->isNullable();
+        const DataTypePtr index_type = removeNullable(arguments[1]);
+        bool is_valid_index = isNativeInteger(index_type);
+
+        if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(index_type.get()))
+        {
+            /// A NULL bound gives NULL, the same as a NULL position, so `s[NULL:2]` is accepted.
+            const auto & bounds = tuple_type->getElements();
+            is_valid_index = bounds.size() == 2;
+            for (const auto & bound : bounds)
+            {
+                is_valid_index = is_valid_index && (bound->onlyNull() || isNativeInteger(removeNullable(bound)));
+                result_is_nullable = result_is_nullable || bound->isNullable();
+            }
+        }
+
+        if (!is_valid_index)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function '{}' with a String first argument must be an integer or a tuple (start, end) of two "
+                "integers, got '{}' instead",
+                getName(),
+                arguments[1]->getName());
+
+        DataTypePtr string_type = std::make_shared<DataTypeString>();
+        return result_is_nullable ? makeNullable(string_type) : string_type;
+    }
+
     const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
     if (!array_type)
     {
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "First argument for function '{}' must be array, got '{}' instead",
+            "First argument for function '{}' must be array or string, got '{}' instead",
             getName(),
             arguments[0]->getName());
     }
@@ -3339,6 +3548,10 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
     /// This convention holds for every source type, QBit included.
     if (arguments[0].type->onlyNull() || arguments[1].type->onlyNull())
         return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+    /// Ahead of the generic Nullable index path below, whose nested default 0 would make a string throw.
+    if (isString(removeNullable(arguments[0].type)))
+        return executeStringSubscript(arguments, result_type, input_rows_count);
 
     if (!is_qbit)
     {
@@ -3724,14 +3937,15 @@ The first argument may also be:
 
 - a [`Map`](/reference/data-types/map): `m['key']` returns the value stored for `key`, or the default value of the value type when the key is absent.
 - a [`QBit`](/reference/data-types/qbit): `q[n]` reconstructs the n-th vector element at the full precision of the QBit element type, reading only the bit planes of the stride group that contains it.
+- a [`String`](/reference/data-types/string): `s[n]` returns the byte at position `n` as a `String`, and `s[start:end]`, which is `arrayElement(s, (start, end))`, returns the bytes from position `start` to position `end`, both inclusive. Positions count bytes, are 1-based, and count from the end when negative, like for arrays. Unlike for arrays, a position outside of the string or a slice that starts after it ends throws an `ARGUMENT_OUT_OF_BOUND` exception, and the position 0 throws a `ZERO_ARRAY_OR_TUPLE_INDEX` exception. A `NULL` string or position gives `NULL`.
 - a [`JSON`](/reference/data-types/newjson) or a `Nullable(JSON)`: `json['key']` returns the value stored at the path `key`, which must be a constant string, exactly as the dot syntax `json.key` does. For a `Nullable(JSON)` the result follows the same nullability rules as `json.key`: a path that can represent `NULL` (`Dynamic`, or a typed path that can be wrapped into `Nullable`) gives `NULL` for the outer `NULL` rows, while a non-nullable typed path such as `Array` or `Map` keeps its default value there. The key may also be a constant `Nullable(String)`; a `NULL` key gives `NULL`. Nested access can be chained: `json['a']['b']`.
     )";
     FunctionDocumentation::Syntax syntax = "arrayElement(arr, n)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The value to read an element from. [`Array(T)`](/reference/data-types/array), [`Map(K, V)`](/reference/data-types/map), [`QBit`](/reference/data-types/qbit), [`JSON`](/reference/data-types/newjson) or `Nullable(JSON)`."},
-        {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array). For a `Map` argument, a key of type `K`; for a `JSON` argument, a constant [`String`](/reference/data-types/string) path."}
+        {"arr", "The value to read an element from. [`Array(T)`](/reference/data-types/array), [`Map(K, V)`](/reference/data-types/map), [`QBit`](/reference/data-types/qbit), [`String`](/reference/data-types/string), [`JSON`](/reference/data-types/newjson) or `Nullable(JSON)`."},
+        {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array). For a `Map` argument, a key of type `K`; for a `String` argument, a position or a tuple `(start, end)` of positions; for a `JSON` argument, a constant [`String`](/reference/data-types/string) path."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"When `n` is a scalar, returns the element of type `T`. When `n` is an array, returns `Array(Nullable(T))` if the index elements are nullable and `T` can be wrapped in `Nullable`, otherwise `Array(T)`. For a `Map` returns the value of type `V`, for a `JSON` the value stored at the path.", {"Any", "Array(T)", "Array(Nullable(T))"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"When `n` is a scalar, returns the element of type `T`. When `n` is an array, returns `Array(Nullable(T))` if the index elements are nullable and `T` can be wrapped in `Nullable`, otherwise `Array(T)`. For a `Map` returns the value of type `V`, for a `String` a `String`, for a `JSON` the value stored at the path.", {"Any", "Array(T)", "Array(Nullable(T))"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT arrayElement(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElement(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
@@ -3739,6 +3953,8 @@ The first argument may also be:
         {"Index out of array bounds", "SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "0"},
         {"Array of indices", "SELECT [10, 20, 30, 40][[2, 4, 1]]", "[20,40,10]"},
         {"Map key access", "SELECT map('a', 1, 'b', 2)['b']", "2"},
+        {"String byte access", "SELECT 'ClickHouse'[-1]", "e"},
+        {"String slice", "SELECT 'ClickHouse'[-5:-1]", "House"},
         {"JSON bracket access", "SELECT json['a'] FROM (SELECT '{\"a\" : 42}'::JSON AS json)", "42"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
@@ -3764,20 +3980,22 @@ Arrays in ClickHouse are one-indexed.
 Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
 
 The first argument may also be a [`Map`](/reference/data-types/map): an absent key gives `NULL` instead of the default value of the value type, as long as that type can be wrapped in `Nullable`.
+It may also be a [`String`](/reference/data-types/string), read the same way as by `arrayElement`: a position outside of the string, the position 0 or a slice that starts after it ends gives `NULL` instead of an exception.
 [`JSON`](/reference/data-types/newjson) is not supported here, use `arrayElement` instead.
 )";
     FunctionDocumentation::Syntax syntax_null = "arrayElementOrNull(arr, n)";
     FunctionDocumentation::Arguments arguments_null = {
-        {"arr", "The value to read an element from. [`Array(T)`](/reference/data-types/array) or [`Map(K, V)`](/reference/data-types/map)."},
-        {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array). For a `Map` argument, a key of type `K`."}
+        {"arr", "The value to read an element from. [`Array(T)`](/reference/data-types/array), [`Map(K, V)`](/reference/data-types/map) or [`String`](/reference/data-types/string)."},
+        {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array). For a `Map` argument, a key of type `K`; for a `String` argument, a position or a tuple `(start, end)` of positions."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_null = {"When `n` is a scalar, returns `Nullable(T)` if `T` can be wrapped in `Nullable`, otherwise `T`. When `n` is an array, returns `Array(Nullable(T))` if `T` can be wrapped in `Nullable`, otherwise `Array(T)`. For a `Map` the same rule applies to the value type `V`.", {"Any", "Nullable(T)", "Array(T)", "Array(Nullable(T))"}};
+    FunctionDocumentation::ReturnedValue returned_value_null = {"When `n` is a scalar, returns `Nullable(T)` if `T` can be wrapped in `Nullable`, otherwise `T`. When `n` is an array, returns `Array(Nullable(T))` if `T` can be wrapped in `Nullable`, otherwise `Array(T)`. For a `Map` the same rule applies to the value type `V`. For a `String` returns `Nullable(String)`.", {"Any", "Nullable(T)", "Array(T)", "Array(Nullable(T))"}};
     FunctionDocumentation::Examples examples_null = {
         {"Usage example", "SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
         {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "\\N"},
         {"Array of indices", "SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])", "[10,NULL,20]"},
         {"Absent map key", "SELECT arrayElementOrNull(map('a', 1), 'z')", "\\N"},
+        {"String position out of bounds", "SELECT arrayElementOrNull('abc', 4)", "\\N"},
     };
     FunctionDocumentation::IntroducedIn introduced_in_null = {1, 1};
     FunctionDocumentation::Category category_null = FunctionDocumentation::Category::Array;
