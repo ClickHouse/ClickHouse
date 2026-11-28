@@ -166,6 +166,7 @@ protected:
     std::unordered_map<String, ASTPtr> lazy_replicated_create_queries TSA_GUARDED_BY(mutex);
 
 private:
+    bool canUseLazyStandIn(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const;
     bool shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const;
     void loadTableLazy(
         ContextMutablePtr local_context,
