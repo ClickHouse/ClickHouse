@@ -1,0 +1,28 @@
+iceberg_v1
+apple	1
+banana	2
+cherry	3
+3
+banana	2
+cherry	3
+iceberg_deflate_manifest
+apple	1
+banana	2
+cherry	3
+iceberg_v1_promoted_type
+apple	1
+banana	2
+cherry	3
+Nullable(Int64)
+iceberg_v1_reordered
+apple	1
+banana	2
+cherry	3
+iceberg_v1_no_field_ids
+apple	1
+banana	2
+cherry	3
+iceberg_missing_partition_column
+apple	42
+banana	42
+cherry	42

@@ -1,0 +1,31 @@
+iceberg_v2_delete
+apple	1
+cherry	3
+elderberry	5
+3
+elderberry	5
+cherry	3
+apple	1
+apple	1	00000-0-b2c3d4e5-0002-0002-0002-000000000001-00001.parquet	0
+cherry	3	00000-0-b2c3d4e5-0002-0002-0002-000000000001-00001.parquet	2
+elderberry	5	00000-0-b2c3d4e5-0002-0002-0002-000000000001-00001.parquet	4
+iceberg_snapshot_deletes
+apple	1
+cherry	3
+elderberry	5
+9
+apple	1
+banana	2
+cherry	3
+date	4
+elderberry	5
+apple	1
+cherry	3
+elderberry	5
+iceberg_v2_pos_delete_retired
+apple	1
+banana	2
+cherry	3
+date	4
+elderberry	5
+5

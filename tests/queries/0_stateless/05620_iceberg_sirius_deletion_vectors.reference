@@ -1,0 +1,14 @@
+iceberg_v3_deletion_vector
+apple	1
+cherry	3
+elderberry	5
+3
+cherry	3	00000-0-d7e8f9a0-0007-0007-0007-000000000001-00001.parquet	2
+elderberry	5	00000-0-d7e8f9a0-0007-0007-0007-000000000001-00001.parquet	4
+iceberg_v3_dv_replaced
+apple	1
+cherry	3
+elderberry	5
+iceberg_v3_dv_misbound
+ICEBERG_SPECIFICATION_VIOLATION
+ICEBERG_SPECIFICATION_VIOLATION

@@ -1,0 +1,38 @@
+conformance/append_only
+1	a
+2	b
+3	c
+conformance/drop_readd
+1	10	\N
+2	20	\N
+1	10	111
+2	20	222
+conformance/rename_col
+1	old_a
+2	old_b
+3	new_c
+4	new_d
+conformance/add_column
+1	10	\N
+2	20	\N
+3	30	300
+4	40	400
+iceberg_schema_evolution
+apple	1	\N
+banana	2	\N
+cherry	3	\N
+date	4	brown
+elderberry	5	purple
+apple	1
+banana	2
+cherry	3
+iceberg_evolved_fields_with_deletes
+1.5	1	\N	7
+\N	3	\N	7
+5.5	5	\N	7
+3	\N	\N	7	2
+5	5.5	\N	7	4
+3
+1
+2
+3

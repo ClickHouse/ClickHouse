@@ -1,0 +1,38 @@
+iceberg_v2_equality_delete
+apple	1
+cherry	3
+elderberry	5
+3
+cherry	3	00000-0-c3d4e5f6-0003-0003-0003-000000000001-00001.parquet	2
+elderberry	5	00000-0-c3d4e5f6-0003-0003-0003-000000000001-00001.parquet	4
+iceberg_v2_eq_single_col
+apple	1
+cherry	3
+elderberry	5
+iceberg_v2_eq_multi_delete_file
+apple	1
+cherry	3
+elderberry	5
+iceberg_v2_eq_all_deleted
+0
+iceberg_v2_eq_pos_combined
+banana	2	00000-0-a7b8c9d0-0007-0007-0007-000000000001-00001.parquet	1
+cherry	3	00000-0-a7b8c9d0-0007-0007-0007-000000000001-00001.parquet	2
+date	4	00000-0-a7b8c9d0-0007-0007-0007-000000000001-00001.parquet	3
+elderberry	5	00000-0-a7b8c9d0-0007-0007-0007-000000000001-00001.parquet	4
+iceberg_v2_eq_multi_data_file
+apple	1
+cherry	3
+date	4
+fig	6
+iceberg_eq_seq_number
+apple	1
+cherry	3
+banana	4
+date	5
+iceberg_v2_eq_delete_retired
+apple	1
+banana	2
+cherry	3
+date	4
+elderberry	5
