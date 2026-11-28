@@ -2,6 +2,7 @@
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
 #include <Disks/IStoragePolicy.h>
+#include <Access/Common/AccessFlags.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/ReadOnlyDiskWrapper.h>
 #include <Common/assert_cast.h>
@@ -24,6 +25,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <set>
 
 namespace DB
@@ -579,6 +581,40 @@ void DiskFromAST::ensureDiskIsNotInline(const Field & value)
             ErrorCodes::BAD_ARGUMENTS,
             "An inline disk definition in the `disk` setting is supported only by the MergeTree family table engines "
             "and the Atomic and Ordinary database engines, use a disk name instead");
+}
+
+namespace
+{
+
+std::optional<AccessTypeObjects::Source> getSourceOfObjectStorage(ObjectStorageType type)
+{
+    switch (type)
+    {
+        case ObjectStorageType::S3:
+            return AccessTypeObjects::Source::S3;
+        case ObjectStorageType::Azure:
+            return AccessTypeObjects::Source::AZURE;
+        case ObjectStorageType::HDFS:
+            return AccessTypeObjects::Source::HDFS;
+        case ObjectStorageType::Web:
+            return AccessTypeObjects::Source::URL;
+        case ObjectStorageType::None:
+        case ObjectStorageType::Local:
+        case ObjectStorageType::Max:
+            break;
+    }
+    return std::nullopt;
+}
+
+}
+
+void DiskFromAST::checkDiskSourceAccess(const DiskPtr & disk, ContextPtr context)
+{
+    if (!disk->isCustomDisk())
+        return;
+
+    if (const auto source = getSourceOfObjectStorage(disk->getDataSourceDescription().object_storage_type))
+        context->checkAccess(AccessType::READ | AccessType::WRITE, AccessTypeObjects::toStringSource(*source));
 }
 
 }

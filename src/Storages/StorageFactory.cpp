@@ -5,6 +5,7 @@
 #include <Storages/KeyDescription.h>
 #include <Interpreters/Context.h>
 #include <Disks/DiskFromAST.h>
+#include <Disks/IStoragePolicy.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/DDLTask.h>
@@ -121,7 +122,10 @@ DiskPtr StorageFactory::Arguments::getDisk(const String & name) const
     auto disk = getContext()->getDisk(name);
     /// A short `ATTACH` uses the disk of its own stored definition, so its hosts are exempt like loading at start.
     if (!isLoadingFromExistingMetadata(mode))
+    {
         DiskFromAST::ensureDiskIsAllowed(disk, getLocalContext(), /* check_remote_hosts */ !query.attach_short_syntax);
+        DiskFromAST::checkDiskSourceAccess(disk, getLocalContext());
+    }
     return disk;
 }
 
@@ -130,7 +134,11 @@ StoragePolicyPtr StorageFactory::Arguments::getStoragePolicy(const String & name
     auto storage_policy = getContext()->getStoragePolicy(name);
     /// A short `ATTACH` uses the policy of its own stored definition, so its hosts are exempt like loading at start.
     if (!isLoadingFromExistingMetadata(mode))
+    {
         DiskFromAST::ensureStoragePolicyIsAllowed(name, getLocalContext(), /* check_remote_hosts */ !query.attach_short_syntax);
+        for (const auto & disk : storage_policy->getDisks())
+            DiskFromAST::checkDiskSourceAccess(disk, getLocalContext());
+    }
     return storage_policy;
 }
 

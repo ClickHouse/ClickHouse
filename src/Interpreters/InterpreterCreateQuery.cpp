@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <memory>
 
@@ -1008,6 +1009,21 @@ void throwIfEngineIsUnknownAndNotGranted(
                         engine_name, DatabaseFactory::instance().getHintsMessage(engine_name));
     throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}{}",
                     engine_name, StorageFactory::instance().getHintsMessage(engine_name));
+}
+
+bool definesDisk(const ASTCreateQuery & create)
+{
+    auto defines_disk = [](const ASTStorage * storage)
+    {
+        return storage && storage->settings && std::ranges::any_of(storage->settings->changes, [](const SettingChange & change)
+        {
+            return change.name == "disk" && change.value.getType() != Field::Types::String;
+        });
+    };
+
+    if (defines_disk(create.storage))
+        return true;
+    return create.targets && std::ranges::any_of(create.targets->getInnerEngines(), defines_disk);
 }
 
 }
@@ -4308,6 +4324,9 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
     /// Settings that send the table's data elsewhere, e.g. the move destination of a queue, need the grants of that place.
     required_access.append_range(StorageFactory::instance().getExportAccess(create));
+
+    if (!create.cluster.empty() && definesDisk(create))
+        required_access.emplace_back(AccessType::READ | AccessType::WRITE);
 
     return required_access;
 }

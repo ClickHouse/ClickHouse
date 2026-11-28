@@ -22,6 +22,7 @@ namespace DiskFromAST
     /// `remote_url_allow_hosts` does not allow. For a table definition selecting a disk or a policy by name.
     void ensureDiskIsAllowed(const DiskPtr & disk, ContextPtr context, bool check_remote_hosts);
     void ensureStoragePolicyIsAllowed(const std::string & storage_policy_name, ContextPtr context, bool check_remote_hosts);
+    void checkDiskSourceAccess(const DiskPtr & disk, ContextPtr context);
     /// `stored_definition`: the definition was read from the metadata the server stored for the table (short `ATTACH`),
     /// so its credentials markers are kept as they are: they keep the identity of the disk, and are not honored unless `attach`.
     std::string createCustomDisk(
