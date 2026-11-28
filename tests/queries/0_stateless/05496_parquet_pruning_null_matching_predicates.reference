@@ -1,0 +1,35 @@
+-- row groups
+200
+200
+200
+200
+200
+200
+200
+10000
+10000
+10000
+-- pages
+200
+200
+200
+200
+200
+200
+10000
+10000
+10000
+-- Nullable MergeTree key: a decreasing step moves a NULL to -inf
+1
+1
+-- row groups, pages and granules are still pruned where no NULL can match
+0
+0
+05496_page_check	0	20
+05496_page_ifnull	0	10
+05496_page_null_set	0	10
+05496_prune_check	2	0
+05496_prune_ifnull	1	0
+05496_prune_null_set	1	0
+05496_mt_ifnull	1
+05496_mt_null_set	1
