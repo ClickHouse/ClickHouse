@@ -5,6 +5,8 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
@@ -17,6 +19,25 @@ static inline void writeParenthesisedString(const String & s, WriteBuffer & buf)
     writeChar('(', buf);
     writeString(s, buf);
     writeChar(')', buf);
+}
+
+/// ClickHouse parses an unquoted integer literal that does not fit into 64 bits, and a decimal literal,
+/// as `Float64`, so wide integer and `Decimal` keys may lose precision and never match.
+/// A string literal is converted to the type of the key column without loss. Other databases may compare it as a double.
+static void writeKeyValueQuoted(
+    const DictionaryAttribute & key, const IColumn & column, size_t row, WriteBuffer & out, const FormatSettings & format_settings,
+    bool quote_wide_numbers)
+{
+    WhichDataType which(removeNullable(key.type));
+    if (quote_wide_numbers && !column.isNullAt(row)
+        && (which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256() || which.isDecimal()))
+    {
+        writeChar('\'', out);
+        key.type_serialization->serializeText(column, row, out, format_settings);
+        writeChar('\'', out);
+    }
+    else
+        key.type_serialization->serializeTextQuoted(column, row, out, format_settings);
 }
 
 namespace ErrorCodes
@@ -444,7 +465,7 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, size
         /// key_i=value_i
         writeQuoted(key_description.name, out);
         writeString("=", out);
-        key_description.type_serialization->serializeTextQuoted(*key_columns[i], row, out, format_settings);
+        writeKeyValueQuoted(key_description, *key_columns[i], row, out, format_settings, quote_wide_numbers);
     }
 }
 
@@ -501,8 +522,7 @@ void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, size_t r
             writeString(", ", out);
 
         first = false;
-        auto serialization = (*dict_struct.key)[i].type_serialization;
-        serialization->serializeTextQuoted(*key_columns[i], row, out, format_settings);
+        writeKeyValueQuoted((*dict_struct.key)[i], *key_columns[i], row, out, format_settings, quote_wide_numbers);
     }
 
     writeString(")", out);

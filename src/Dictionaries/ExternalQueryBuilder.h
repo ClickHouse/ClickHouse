@@ -25,6 +25,9 @@ struct ExternalQueryBuilder
 
     IdentifierQuotingStyle quoting_style;
 
+    /// Write wide integer and `Decimal` key values as string literals. Only for ClickHouse sources.
+    bool quote_wide_numbers = false;
+
 
     ExternalQueryBuilder(
         const DictionaryStructure & dict_struct_,
