@@ -759,12 +759,12 @@ bool parseISO8601Cell(std::string_view text, bool date1904, Cell & cell)
     if (!has_date && !has_time)
         throw malformed();
 
+    if (pos < text.size() && (text[pos] == 'Z' || text[pos] == '+' || text[pos] == '-') && has_time)
+        /// Excel dates do not have a time zone, and there is no way to convert a time in UTC or with an offset to a local
+        /// time without knowing the time zone of the reader. Keep such values as strings, so the time zone is not lost.
+        return false;
     if (pos < text.size() && text[pos] == 'Z')
         ++pos;
-    else if (pos < text.size() && (text[pos] == '+' || text[pos] == '-') && has_time)
-        /// Excel dates do not have a time zone, and there is no way to convert a time with an offset to a local time
-        /// without knowing the time zone of the reader. Keep such values as strings.
-        return false;
     if (pos != text.size())
         throw malformed();
 
@@ -1144,9 +1144,11 @@ bool RangeReader::next(VectorWithMemoryTracking<Cell> & cells)
 
     /// The cells of a row are not necessarily ordered by column: the cells of `XLSX` with explicit references
     /// are in the order of the file. So the width is determined by the maximum column, not by the last cell.
+    /// The width is the last column with a value: cells without a value (that have only formatting) between the values
+    /// are kept as empty cells, but trailing ones do not add columns.
     size_t width = 0;
     for (const auto & [column, cell] : row.cells)
-        if (column >= range.first_column && (!range.last_column || column <= *range.last_column))
+        if (cell.type != CellType::Empty && column >= range.first_column && (!range.last_column || column <= *range.last_column))
             width = std::max<size_t>(width, column - range.first_column + 1);
 
     cells.resize(width);

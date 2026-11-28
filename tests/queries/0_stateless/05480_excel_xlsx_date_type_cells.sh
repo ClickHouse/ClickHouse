@@ -8,7 +8,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Cells of the date type (`t="d"`, the value is in the ISO 8601 format) are read as dates, like the dates stored as numbers.
 # The `styled_date` column has a date number format, so its values with the time `00:00:00` are dates.
-# The `unrepresentable` column has a date before 1900 and a time with a time zone offset, which are kept as strings.
+# The `unrepresentable` column has a date before 1900, a time with a time zone offset, and a time in UTC (`Z`), which are kept
+# as strings: Excel dates have no time zone, so a time zone cannot be converted without losing it.
 FILE="$CUR_DIR/data_excel/date_type_cells.xlsx"
 
 echo "--- schema inference"
