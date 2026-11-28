@@ -52,8 +52,10 @@ struct FunctionExecutionProfile
     size_t execution_elapsed = 0;
 
     /// When executing a function lazily, we filter out unprocessed rows using a bitmap and expand the
-    /// result to the original size. The lazy_executed_additional_elapsed metric includes the time for these
-    /// operations, along with the lazy_executed_additional_elapsed times of its lazily executed arguments.
+    /// result to the original size. The lazy_executed_additional_elapsed metric is the time of these
+    /// operations for this function only: it is exactly what disappears when the function is executed eagerly.
+    /// It does not include the same overhead of the lazily executed arguments, which is a part of
+    /// execution_elapsed: they stay lazy under an eager parent, so that overhead remains in its eager cost.
     size_t lazy_executed_additional_elapsed = 0;
 
     /// For short-circuit lazy executed arguments, their execution must be profiled, with the first element

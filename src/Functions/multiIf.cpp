@@ -826,16 +826,6 @@ private:
             else
                 executeColumnIfNeeded(arguments[i], true);
         }
-
-        if constexpr (with_profile)
-        {
-            size_t side_elapsed = 0;
-            for (const auto & [_, arg_profile] : profile->argument_profiles)
-            {
-                side_elapsed += arg_profile.lazy_executed_additional_elapsed;
-            }
-            profile->lazy_executed_additional_elapsed = side_elapsed;
-        }
     }
 
     const bool allow_execute_multiif_columnar;

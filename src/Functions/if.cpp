@@ -1352,17 +1352,6 @@ private:
             return nullptr;
         };
 
-        auto accumulate_arguments_elapsed = [&]
-        {
-            if constexpr (with_profile)
-            {
-                size_t side_elapsed = 0;
-                for (const auto & [_, arg_profile] : profile->argument_profiles)
-                    side_elapsed += arg_profile.lazy_executed_additional_elapsed;
-                profile->lazy_executed_additional_elapsed = side_elapsed;
-            }
-        };
-
         /// Check if condition is const or null to not create full mask from it.
         if ((isColumnConst(*arguments[0].column) || arguments[0].column->onlyNull()) && !arguments[0].column->empty())
         {
@@ -1373,7 +1362,6 @@ private:
             executeColumnIfNeeded(arguments[1], !value, then_profile);
             auto * else_profile = argument_profile(2);
             executeColumnIfNeeded(arguments[2], value, else_profile);
-            accumulate_arguments_elapsed();
             return;
         }
 
@@ -1382,7 +1370,6 @@ private:
         maskedExecute(arguments[1], mask, mask_info, argument_profile(1));
         inverseMask(mask, mask_info);
         maskedExecute(arguments[2], mask, mask_info, argument_profile(2));
-        accumulate_arguments_elapsed();
     }
 
 public:

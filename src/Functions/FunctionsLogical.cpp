@@ -869,12 +869,6 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
     {
         profile->execution_elapsed = profile_watch->elapsed();
         profile->executed_rows = res->size();
-        size_t side_elapsed = 0;
-        for (const auto & [i, arg_profile] : profile->argument_profiles)
-        {
-            side_elapsed += arg_profile.lazy_executed_additional_elapsed;
-        }
-        profile->lazy_executed_additional_elapsed = side_elapsed;
     }
 
     if (!nulls)

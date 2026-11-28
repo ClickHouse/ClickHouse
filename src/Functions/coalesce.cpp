@@ -309,14 +309,6 @@ private:
             }
         }
 
-        if (profile)
-        {
-            size_t side_elapsed = 0;
-            for (const auto & [_, arg_profile] : profile->argument_profiles)
-                side_elapsed += arg_profile.lazy_executed_additional_elapsed;
-            profile->lazy_executed_additional_elapsed = side_elapsed;
-        }
-
         ColumnPtr res;
         DataTypePtr res_type;
 

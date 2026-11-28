@@ -401,7 +401,7 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
             mut_column->expand(mask, false);
             fillUnusedRowsWithValidValues(*mut_column, *filter_after_execution.type, mask);
             auto total_elapsed = watch.elapsed();
-            profile->lazy_executed_additional_elapsed = total_elapsed - profile->execution_elapsed + profile->lazy_executed_additional_elapsed;
+            profile->lazy_executed_additional_elapsed = total_elapsed - profile->execution_elapsed;
             profile->execution_elapsed = total_elapsed;
             column.column = std::move(mut_column);
         }
@@ -455,7 +455,7 @@ static MaskInfo maskedExecuteAndUpdateMaskImpl(
         auto filtered = column_function->filter(mask, -1);
         auto result = assert_cast<const ColumnFunction &>(*filtered).reduce(/* dry_run = */ false, profile);
         auto total_elapsed = watch.elapsed();
-        profile->lazy_executed_additional_elapsed = total_elapsed - profile->execution_elapsed + profile->lazy_executed_additional_elapsed;
+        profile->lazy_executed_additional_elapsed = total_elapsed - profile->execution_elapsed;
         profile->execution_elapsed = total_elapsed;
         return extractMaskImpl<inverted, true>(mask, result.column, null_value, nullptr, nulls);
     }

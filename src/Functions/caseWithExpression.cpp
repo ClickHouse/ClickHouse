@@ -318,8 +318,6 @@ private:
                             else_profile = &profile->argument_profiles.back().second;
                         }
                         maskedExecute(transform_args.back(), unmatched, unmatched_info, else_profile);
-                        if (profile)
-                            profile->lazy_executed_additional_elapsed = else_profile->lazy_executed_additional_elapsed;
                     }
                     return function_base->execute(transform_args, result_type, input_rows_count, /* dry_run = */ false);
                 }
@@ -352,7 +350,6 @@ private:
         auto res = fun_multi_if->build(multi_if_args)->execute(multi_if_args, result_type, input_rows_count, false, &multi_if_profile);
         for (auto & [arg_pos, arg_profile] : multi_if_profile.argument_profiles)
             profile->argument_profiles.emplace_back(arg_pos + 1, std::move(arg_profile));
-        profile->lazy_executed_additional_elapsed = multi_if_profile.lazy_executed_additional_elapsed;
         return res;
     }
 

@@ -740,12 +740,9 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(bool dry_run, ReducedColumns & 
 
     if constexpr (with_profile)
     {
-        size_t total_elapsed = watch->elapsed();
-        size_t side_elapsed = 0;
-        for (const auto & arg_profile : profile->argument_profiles)
-            side_elapsed += arg_profile.second.lazy_executed_additional_elapsed;
-        profile->lazy_executed_additional_elapsed = side_elapsed;
-        profile->execution_elapsed = total_elapsed;
+        /// `lazy_executed_additional_elapsed` stays zero here: it is set only by the mask operation
+        /// which filters this column before reducing it.
+        profile->execution_elapsed = watch->elapsed();
     }
 
     if (!columnMatchesType(*res.column, *res.type))

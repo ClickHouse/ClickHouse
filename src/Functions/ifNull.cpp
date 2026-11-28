@@ -173,16 +173,6 @@ private:
             return &profile->argument_profiles.back().second;
         };
 
-        auto accumulate_arguments_elapsed = [&]
-        {
-            if (!profile)
-                return;
-            size_t side_elapsed = 0;
-            for (const auto & [_, arg_profile] : profile->argument_profiles)
-                side_elapsed += arg_profile.lazy_executed_additional_elapsed;
-            profile->lazy_executed_additional_elapsed = side_elapsed;
-        };
-
         /// The first argument is always needed, but it can still be lazily executed when `ifNull`
         /// itself is an argument of an enclosing short-circuit function.
         executeColumnIfNeeded(arguments[0]);
@@ -191,7 +181,6 @@ private:
         if (arguments[0].type->onlyNull())
         {
             executeColumnIfNeeded(arguments[1], false, alternative_profile());
-            accumulate_arguments_elapsed();
             return arguments[1].column;
         }
 
@@ -217,7 +206,6 @@ private:
             IColumn::Filter mask(input_rows_count, 1);
             MaskInfo mask_info = extractInvertedMask(mask, recursiveRemoveSparse(is_not_null_res));
             maskedExecute(arguments[1], mask, mask_info, alternative_profile());
-            accumulate_arguments_elapsed();
         }
 
         ColumnsWithTypeAndName if_columns

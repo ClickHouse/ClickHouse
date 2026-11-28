@@ -1739,6 +1739,9 @@ void AdaptiveExpressionActions::identifyNonBeneficialLazyActions() const
         if (!round_profile.executed_rows)
             continue;
 
+        /// Only the action's own filtering and expanding disappears when it is executed eagerly. The same
+        /// overhead of its lazily executed descendants is a part of `execution_elapsed` and is kept here:
+        /// they stay lazy under an eager parent (see `executeFunction`) and filter the whole block then.
         auto round_execution_elapsed = round_profile.execution_elapsed - round_profile.lazy_executed_additional_elapsed;
         auto round_per_row_elapsed = static_cast<double>(round_execution_elapsed) / static_cast<double>(round_profile.executed_rows);
 
