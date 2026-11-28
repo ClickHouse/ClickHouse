@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 StorageFromMergeTreeProjection::StorageFromMergeTreeProjection(
@@ -150,6 +151,13 @@ void StorageFromMergeTreeProjection::read(
                     "Cannot read from projection `{}` of table {} under a row policy while part {} has unmaterialized "
                     "mutations, since the projection may show stale values the policy would hide",
                     projection->name, parent_storage_id.getNameForLogs(), part.data_part->name);
+
+            if (projection->isSortingKeyStaleInPart(*part.data_part))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot read projection `{}` of part {} of table {}: it was sorted under other types of the columns its "
+                    "sorting key reads. The next merge or mutation of the part rebuilds it, as does ALTER TABLE ... "
+                    "MATERIALIZE PROJECTION {}", projection->name, part.data_part->name, parent_storage_id.getNameForLogs(),
+                    projection->name);
 
             projection_parts.push_back(
                 RangesInDataPart(it->second, part.data_part, part.part_index_in_query, part.part_starting_offset_in_query));
