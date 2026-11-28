@@ -63,6 +63,7 @@ public:
     const DB::Names & getPartitionColumns() const;
     const DB::NameToNameMap & getPhysicalNamesMap() const;
     const std::unordered_set<String> & getTimestampNtzPaths() const;
+    bool hasWriterFeature(std::string_view feature) const;
 
     DB::ObjectStoragePtr getObjectStorage() const { return object_storage; }
 private:
