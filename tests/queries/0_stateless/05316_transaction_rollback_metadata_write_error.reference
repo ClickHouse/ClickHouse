@@ -1,0 +1,6 @@
+in transaction	all_1_1_1
+store failed	1
+after rollback	all_1_1_0
+rows	1
+rows	2
+after optimize	all_1_1_0
