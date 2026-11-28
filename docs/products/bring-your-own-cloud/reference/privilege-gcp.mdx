@@ -22,7 +22,7 @@ The following table describes each custom role of the bootstrap service account,
 | `clickhouseStorageRole` | Create, change, and delete buckets. Read and set bucket IAM policies. No object read or write. | Project | Manage buckets that store ClickHouse table data, backups, and monitoring data |
 | `clickhouseStorageObjectsRole` | List, read, and delete objects | Only buckets whose names end in `_gcp_clickhouse_cloud-monitoring` | Empty the monitoring bucket before ClickHouse deletes it |
 | `clickhouseIamRole` | Read and set the project IAM policy. Create, change, disable, and delete service accounts, and set their IAM policies. Create, change, and delete custom roles. No service account key creation. | Project | Create the service accounts in the next section and give them their roles |
-| `clickhouseTdeRole` | Create and read KMS key rings and keys. Change keys. Read and set key IAM policies. No key version destruction. | Project | Used for [TDE](/products/cloud/guides/security/cmek#transparent-data-encryption-tde). Optional, off by default |
+| `clickhouseTdeRole` | Create and read KMS key rings and keys. Change keys. Read and set key IAM policies. No key version destruction. | Project | Used for [TDE](/products/bring-your-own-cloud/reference/encryption). Optional, off by default |
 
 If you use a [Shared VPC](/products/bring-your-own-cloud/onboarding/customization-gcp#shared-vpc-host-project), the module also gives these roles in the host project:
 

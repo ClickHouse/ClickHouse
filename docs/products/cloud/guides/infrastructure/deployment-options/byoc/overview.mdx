@@ -47,6 +47,7 @@ The following requirements are fundamental to how BYOC is built and operated. Th
   - Supports operations such as start, stop, and terminate.
   - View services and status.
 - **Managed backup and restore**
+- **[Transparent Data Encryption (TDE) and customer-managed encryption keys (CMEK)](/products/bring-your-own-cloud/reference/encryption)**, with keys in your cloud account.
 - **Manual vertical and horizontal scaling.**
 - **Automatic horizontal scaling:** Available only for deployments with autoscaling enabled. It adjusts replica count within configured limits while keeping each replica's size fixed. Contact support to confirm availability for your deployment.
 - **Vertical autoscaling:** Available only when enabled for your organization. Contact support to confirm availability.
@@ -68,6 +69,5 @@ The following features have limitations or are not fully supported in Bring Your
 - SQL Console: Not available for BYOC deployments, but on the roadmap.
 - ClickPipes: Not available for BYOC deployments, but on the roadmap.
 - MySQL interface
-- AWS KMS aka CMEK (customer-managed encryption keys)
 - Advanced Dashboard: The client-only UI that requires your browser to have direct access and be able to connect directly to your ClickHouse server using its endpoint. If your VPC network policies restrict inbound browser access to the ClickHouse endpoint, the advanced dashboard will not function.
 - Monitoring Dashboards: Currently, only memory allocation metrics are available in the monitoring dashboard. Support for additional metrics is in progress and expected to be available in a future release.
