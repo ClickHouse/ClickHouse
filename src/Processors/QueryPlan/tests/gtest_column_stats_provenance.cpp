@@ -308,6 +308,7 @@ TEST(ColumnStatsProvenance, StableDiagnosticString)
     EXPECT_EQ(provenance(ColumnStatsOrigin::MeasuredStatistics).toString(), "measured-statistics");
     EXPECT_EQ(provenance(ColumnStatsOrigin::SyntheticFallback).toString(), "synthetic-fallback");
     EXPECT_EQ(provenance(ColumnStatsOrigin::SyntheticOverride).toString(), "synthetic-override");
+    EXPECT_EQ(provenance(ColumnStatsOrigin::AssumedDistinct).toString(), "assumed-distinct");
 
     constexpr UInt16 all_transformations = RowSubset | EstimatedRowCountClamp | NDVBoundExpression | PartialStatisticsCoverage | Unmodeled;
     EXPECT_EQ(
@@ -356,16 +357,57 @@ TEST(ColumnStatsProvenance, GuaranteesKeptByEachTransformation)
 
 TEST(ColumnStatsProvenance, GuaranteesRequireTheirOrigins)
 {
-    for (const auto origin : {ColumnStatsOrigin::Unknown, ColumnStatsOrigin::SyntheticFallback, ColumnStatsOrigin::SyntheticOverride})
+    struct Case
     {
-        SCOPED_TRACE(provenance(origin).toString());
+        ColumnStatsOrigin origin;
+        bool exact_distinct_count;
+        bool distinct_count_upper_bound;
+    };
+    /// `AssumedDistinct` deliberately errs upward, so it gives no exact count, but it keeps the upper bound.
+    const std::vector<Case> cases{
+        {ColumnStatsOrigin::Unknown, false, false},
+        {ColumnStatsOrigin::SyntheticFallback, false, false},
+        {ColumnStatsOrigin::SyntheticOverride, true, true},
+        {ColumnStatsOrigin::AssumedDistinct, false, true},
+    };
+    for (const auto & test_case : cases)
+    {
+        SCOPED_TRACE(provenance(test_case.origin).toString());
         auto stats = measuredColumnStats();
-        stats.ndv_provenance.origin = origin;
-        stats.range_provenance.origin = origin;
-        const bool is_trusted_distinct_count = origin == ColumnStatsOrigin::SyntheticOverride;
-        EXPECT_EQ(stats.distinctCount(DistinctCountGuarantee::Exact).has_value(), is_trusted_distinct_count);
-        EXPECT_EQ(stats.distinctCount(DistinctCountGuarantee::UpperBound).has_value(), is_trusted_distinct_count);
+        stats.ndv_provenance.origin = test_case.origin;
+        stats.range_provenance.origin = test_case.origin;
+        EXPECT_EQ(stats.distinctCount(DistinctCountGuarantee::Exact).has_value(), test_case.exact_distinct_count);
+        EXPECT_EQ(stats.distinctCount(DistinctCountGuarantee::UpperBound).has_value(), test_case.distinct_count_upper_bound);
         EXPECT_FALSE(stats.valueRange(ValueRangeGuarantee::Superset).has_value());
+    }
+}
+
+TEST(ColumnStatsProvenance, AssumedDistinctKeepsOnlyTheUpperBound)
+{
+    /// The table in `ColumnStatsProvenance.h`, for the origin `AssumedDistinct`: the upper bound survives the transformations
+    /// that keep an upper bound of a measured distinct count, and it is never exact.
+    struct Case
+    {
+        std::optional<ColumnStatsTransformation> transformation;
+        bool distinct_count_upper_bound;
+    };
+    const std::vector<Case> cases{
+        {std::nullopt, true},
+        {RowSubset, true},
+        {NDVBoundExpression, true},
+        {EstimatedRowCountClamp, false},
+        {PartialStatisticsCoverage, false},
+        {Unmodeled, false},
+    };
+    for (const auto & test_case : cases)
+    {
+        auto stats = measuredColumnStats();
+        stats.ndv_provenance.origin = ColumnStatsOrigin::AssumedDistinct;
+        if (test_case.transformation)
+            stats.addTransformation(*test_case.transformation);
+        SCOPED_TRACE(stats.ndv_provenance.toString());
+        EXPECT_FALSE(stats.distinctCount(DistinctCountGuarantee::Exact).has_value());
+        EXPECT_EQ(stats.distinctCount(DistinctCountGuarantee::UpperBound).has_value(), test_case.distinct_count_upper_bound);
     }
 }
 

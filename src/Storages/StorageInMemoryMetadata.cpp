@@ -843,7 +843,7 @@ bool StorageInMemoryMetadata::hasStatistics() const
 {
     for (const auto & column : columns)
     {
-        if (!column.statistics.empty())
+        if (!column.statistics.empty() || column.statistics.assume_all_distinct)
             return true;
     }
     return false;

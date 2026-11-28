@@ -12,6 +12,7 @@ String ColumnStatsProvenance::toString() const
         case ColumnStatsOrigin::MeasuredStatistics: result = "measured-statistics"; break;
         case ColumnStatsOrigin::SyntheticFallback: result = "synthetic-fallback"; break;
         case ColumnStatsOrigin::SyntheticOverride: result = "synthetic-override"; break;
+        case ColumnStatsOrigin::AssumedDistinct: result = "assumed-distinct"; break;
     }
 
     if (!transformations)

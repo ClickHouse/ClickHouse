@@ -39,7 +39,7 @@ bool tryEstimateWithStatistics(
         if (!index_columns_set.contains(col))
             return false;
 
-    ConditionSelectivityEstimatorBuilder builder(context);
+    ConditionSelectivityEstimatorBuilder builder(context, metadata, filter_input_columns);
     bool has_any_stats = false;
 
     auto statistics_cache = context->getStatisticsCache();
@@ -55,6 +55,9 @@ bool tryEstimateWithStatistics(
                 builder.addStatistics(column_name, stat);
             has_any_stats = true;
         }
+        const auto & data_part = part.data_part;
+        has_any_stats |= builder.addRowsWithoutStatistics(
+            data_part->rows_count, [&](const String & column_name) { return data_part->getColumnPosition(column_name).has_value(); });
     }
 
     if (!has_any_stats)
