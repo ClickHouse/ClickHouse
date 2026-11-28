@@ -10,7 +10,14 @@
 3	3
 AggregateFunction(minDistinct, UInt64)	9
 0
+0	0	27	0	27
+1	1	28	1	28
+2	2	29	2	29
+0	0	27
+1	1	28
+2	2	29
 FUNCTION id: 2, function_name: min, function_type: aggregate, result_type: UInt64
 FUNCTION id: 6, function_name: max, function_type: aggregate, result_type: UInt64
 FUNCTION id: 8, function_name: maxIf, function_type: aggregate, result_type: UInt64
 FUNCTION id: 13, function_name: minDistinctState, function_type: aggregate, result_type: AggregateFunction(minDistinct, UInt64)
+FUNCTION id: 2, function_name: minDistinct, function_type: aggregate, result_type: UInt64
