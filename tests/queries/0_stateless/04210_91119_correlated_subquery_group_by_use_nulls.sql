@@ -338,14 +338,11 @@ SETTINGS group_by_use_nulls = 1;
 
 -- A correlated function that matches an outer GROUP BY key is recomputed inside the subquery from its
 -- (Nullable) arguments, so it must keep the result type inferred by the function. Declaring it Nullable
--- raised "Unexpected return type from isNull. Expected Nullable(UInt8). Got UInt8".
+-- raised "Unexpected return type from ifNull. Expected Nullable(UInt64). Got UInt64".
+-- The same shape with `isNull` is covered by `05828_correlated_subquery_null_safe_key_name_collision`
+-- (https://github.com/ClickHouse/ClickHouse/pull/132567): there the outer key `isNull(a)` also collides
+-- with the name of the null-safe join key of the decorrelated subquery, which is a separate planner issue.
 SELECT '-- correlated function matching an outer key keeps its own result type ---';
-SELECT a, (SELECT isNull(a))
-FROM (SELECT toNullable(number) AS a FROM numbers(2)) AS o
-GROUP BY a, isNull(a) WITH ROLLUP
-ORDER BY a NULLS LAST
-SETTINGS group_by_use_nulls = 1;
-
 SELECT a, (SELECT ifNull(a, toUInt64(42)))
 FROM (SELECT toNullable(number) AS a FROM numbers(2)) AS o
 GROUP BY a, ifNull(a, toUInt64(42)) WITH ROLLUP
