@@ -38,6 +38,7 @@ struct MergeTreeTemporaryPart
     scope_guard temporary_directory_lock;
 
     MergeTreeData::MutableDataPartPtr part;
+    size_t delayed_streams_weight = 0;
 
     struct Stream
     {
