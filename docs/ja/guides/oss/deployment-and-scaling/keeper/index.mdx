@@ -122,6 +122,7 @@ ClickHouse Keeper のメイン設定タグは `<keeper_server>` で、以下の�
 * `hostname` — このサーバーが配置されているホスト名。
 * `port` — このサーバーが接続を待ち受けるポート。
 * `can_become_leader` — サーバーを `learner` として構成するには `false` に設定します。省略した場合の値は `true` です。
+  少なくとも 1 つのサーバーではこの値を `true` のままにしておく必要があります。そうでない場合、Keeper は起動しません。
 
 <Note>
   ClickHouse Keeper クラスターのトポロジーが変更される場合 (たとえばサーバーの置き換え時) は、`server_id` と `hostname` の対応関係を常に一貫させ、異なるサーバーに対して既存の `server_id` を入れ替えたり再利用したりしないようにしてください (たとえば、ClickHouse Keeper のデプロイに自動化スクリプトを使っている場合に起こりえます) 。

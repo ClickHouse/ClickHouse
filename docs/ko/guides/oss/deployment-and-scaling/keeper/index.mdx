@@ -116,6 +116,7 @@ ClickHouse Keeper는 독립형 ZooKeeper 대체재로 사용하거나 ClickHouse
 * `hostname` — 이 서버가 배치된 호스트명입니다.
 * `port` — 이 서버가 연결을 수신하는 포트입니다.
 * `can_become_leader` — 서버를 `learner`로 설정하려면 `false`로 지정합니다. 생략하면 값은 `true`입니다.
+  최소 하나의 서버는 이 값을 `true`로 유지해야 하며, 그렇지 않으면 Keeper가 시작되지 않습니다.
 
 <Note>
   ClickHouse Keeper 클러스터의 토폴로지가 변경되는 경우(예: 서버 교체)에는 `server_id`와 `hostname`의 매핑을 일관되게 유지하고, 서로 다른 서버에 기존 `server_id`를 뒤섞어 사용하거나 재사용하지 않도록 하십시오(예: ClickHouse Keeper 배포에 자동화 스크립트를 사용할 경우 이런 일이 발생할 수 있습니다).

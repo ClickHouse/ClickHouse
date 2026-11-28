@@ -112,7 +112,7 @@ import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
 | `slow_member_backpressure_no_progress_timeout_ms`      | المدة التي يظل فيها القائد منتظرًا replica لا تُحرز أي Progress على الإطلاق، أثناء تفعيل الضغط العكسي بالأمر [`bpon`](#four-letter-word-commands)، قبل أن يتخلّى عنها. ويُقصد بالـ Progress هنا استجابة مقبولة — أي استلام log entries أو حفظ object لقطة — وبذلك فإن replica بطيئة فحسب تُعيد reset هذه المهلة باستمرار، ولا يتوقف الانتظار إلا لـ replica متعطّلة تمامًا. القيمة الافتراضية خمس دقائق، وهي كبيرة عن قصد: إذ قد تبقى replica تُطبّق لقطة كبيرة صامتةً لدقائق، وهي بالضبط التي يستحق الأمر انتظارها. أما replica لا يستطيع القائد الوصول إليها مطلقًا فتُستبعَد فورًا دون انتظار هذه المهلة. وتعني القيمة `0` أن القائد لا يتوقف أبدًا عن انتظار replica يمكنه الوصول إليها. | `300000`          |
 | `slow_member_backpressure_max_uncommitted_log_entries` | القيمة التي يأخذها `nuraft_max_uncommitted_log_entries` أثناء تفعيل الضغط العكسي للعضو البطيء بالأمر [`bpon`](#four-letter-word-commands). فتعليق مؤشر commit لا يمنع القائد من الإضافة، ومن ثَمّ فبدون حدّ أكثر تشديدًا يتقدّم الـ log أكثر فأكثر وتزداد الـ replica تأخّرًا بدلًا من أن تلحق بالركب. أما تشديد الحد فيجعل القائد يرفض الطلبات الجديدة بخطأ retriable إلى أن تُغلق الـ replica الفجوة. وتترك القيمة `0` الحدّ دون تغيير.                                                                                                                                                                                                                                                    | `0`               |
 
-يوجد تهيئة النصاب في القسم `<keeper_server>.<raft_configuration>`، ويحتوي على وصف الخوادم.
+توجد إعدادات النصاب في القسم `<keeper_server>.<raft_configuration>`، ويحتوي على وصف الخوادم.
 
 المعلمة الوحيدة للنصاب بأكمله هي `secure`، الذي يفعّل اتصالًا مشفّرًا للتواصل بين المشاركين في النصاب. يمكن ضبط المعلمة على `true` إذا كان اتصال SSL مطلوبًا للتواصل الداخلي بين العقد، أو تركه غير محدد بخلاف ذلك.
 
@@ -122,6 +122,7 @@ import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
 * `hostname` — hostname الذي يوجد عليه هذا الخادم.
 * `port` — المنفذ الذي يستمع عليه هذا الخادم للاتصالات.
 * `can_become_leader` — اضبطه على `false` لتهيئة الخادم كـ `learner`. وإذا لم يُذكر، تكون القيمة `true`.
+  يجب أن يُبقي خادم واحد على الأقل هذه القيمة على `true`، وإلا فسيرفض Keeper بدء التشغيل.
 
 <Note>
   عند حدوث تغيير في طوبولوجيا عنقود ClickHouse Keeper لديك (مثل استبدال خادم)، احرص على إبقاء التعيين بين `server_id` و`hostname` متسقًا، وتجنّب تبديل `server_id` الحالي بين الخوادم أو إعادة استخدامه لخوادم مختلفة (على سبيل المثال، قد يحدث ذلك إذا كنت تعتمد على نصوص برمجية للأتمتة لنشر ClickHouse Keeper)
@@ -133,7 +134,7 @@ import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
   تكون `async_replication` معطلة افتراضيًا لتجنب كسر التوافق مع الإصدارات السابقة. إذا كانت جميع مثيلات Keeper في عنقودك تعمل بإصدار يدعم `async_replication` ‏(v23.9+)، فنوصي بتمكينها لأنها قد تحسن الأداء من دون أي سلبيات.
 </Note>
 
-يمكن العثور على أمثلة لتهيئات نصاب بثلاث عقد في [اختبارات التكامل](https://github.com/ClickHouse/ClickHouse/tree/master/tests/integration) التي تحمل البادئة `test_keeper_`. وفيما يلي مثال على تهيئة الخادم رقم 1:
+يمكن العثور على أمثلة لإعدادات نصاب بثلاث عقد في [اختبارات التكامل](https://github.com/ClickHouse/ClickHouse/tree/master/tests/integration) التي تحمل البادئة `test_keeper_`. وفيما يلي مثال على إعدادات الخادم رقم 1:
 
 ```xml
 <keeper_server>

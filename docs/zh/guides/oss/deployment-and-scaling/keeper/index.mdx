@@ -106,28 +106,29 @@ ClickHouse Keeper 既可作为 ZooKeeper 的独立替代方案使用，也可作
 | `slow_member_backpressure_no_progress_timeout_ms`      | 当通过 [`bpon`](#four-letter-word-commands) 开启背压后，leader 在放弃某个完全没有任何进展的副本之前，会等待多长时间。进展指的是收到已接受的响应——即取走了日志条目，或保存了快照对象——因此仅仅是速度较慢的副本会不断重置该计时，只有真正卡住的副本才会不再被等待。默认值为五分钟，而且它有意设置得这么大：正在应用大快照的副本可能会沉默数分钟，而这恰恰是值得等待的副本。对于 leader 完全无法访问的副本，会立即被丢弃，而不会等待该超时。`0` 表示 leader 对可访问的副本永不停止等待。 | `300000`         |
 | `slow_member_backpressure_max_uncommitted_log_entries` | 通过 [`bpon`](#four-letter-word-commands) 开启慢成员背压时，`nuraft_max_uncommitted_log_entries` 所采用的值。压住提交索引并不会阻止 leader 继续追加，因此若没有更严格的限制，日志会越跑越前，副本也会越落越远，而不是追赶上来。收紧该限制会让 leader 以可重试的错误拒绝新请求，直到副本缩小差距。`0` 表示保持限制不变。                                                                   | `0`              |
 
-quorum 的配置位于 `<keeper_server>.<raft_configuration>` 部分，其中包含服务器描述。
+quorum 的配置位于 `<keeper_server>.<raft_configuration>` 部分，其中包含服务端描述。
 
 整个 quorum 唯一的参数是 `secure`，用于启用 quorum 参与者之间通信的加密连接。如果节点之间的内部通信需要 SSL 连接，可将该参数设为 `true`；否则可不指定。
 
 每个 `<server>` 的主要参数为：
 
-* `id` — quorum 中的服务器标识符。
-* `hostname` — 该服务器所在主机的主机名。
-* `port` — 该服务器监听连接的端口。
-* `can_become_leader` — 设为 `false` 可将服务器配置为 `learner`。如果省略，则默认为 `true`。
+* `id` — quorum 中的服务端标识符。
+* `hostname` — 该服务端所在主机的主机名。
+* `port` — 该服务端监听连接的端口。
+* `can_become_leader` — 设为 `false` 可将服务端配置为 `learner`。如果省略，则默认为 `true`。
+  必须至少有一台服务端将其保持为 `true`，否则 Keeper 将拒绝启动。
 
 <Note>
-  如果你的 ClickHouse Keeper 集群拓扑发生变化 (例如替换某台服务器) ，请务必保持 `server_id` 与 `hostname` 的映射一致，并避免打乱现有 `server_id` 的对应关系，或将已有 `server_id` 复用于其他服务器 (例如，在依赖自动化脚本部署 ClickHouse Keeper 时就可能发生这种情况) 。
+  如果你的 ClickHouse Keeper 集群拓扑发生变化 (例如替换某台服务端) ，请务必保持 `server_id` 与 `hostname` 的映射一致，并避免打乱现有 `server_id` 的对应关系，或将已有 `server_id` 复用于其他服务端 (例如，在依赖自动化脚本部署 ClickHouse Keeper 时就可能发生这种情况) 。
 
-  如果某个 Keeper 实例所在的主机可能发生变化，我们建议定义并使用主机名，而不是直接使用 IP 地址。更改主机名等同于移除并重新添加该服务器，而在某些情况下这可能无法做到 (例如，没有足够的 Keeper 实例来形成 quorum) 。
+  如果某个 Keeper 实例所在的主机可能发生变化，我们建议定义并使用主机名，而不是直接使用 IP 地址。更改主机名等同于移除并重新添加该服务端，而在某些情况下这可能无法做到 (例如，没有足够的 Keeper 实例来形成 quorum) 。
 </Note>
 
 <Note>
   默认禁用 `async_replication`，以避免破坏向后兼容性。如果你的集群中所有 Keeper 实例运行的版本都支持 `async_replication` (v23.9+) ，我们建议启用它，因为它可以提升性能且没有任何缺点。
 </Note>
 
-带有 `test_keeper_` 前缀的[集成测试](https://github.com/ClickHouse/ClickHouse/tree/master/tests/integration)中提供了三节点 quorum 的配置示例。下面是服务器 #1 的示例配置：
+带有 `test_keeper_` 前缀的[集成测试](https://github.com/ClickHouse/ClickHouse/tree/master/tests/integration)中提供了三节点 quorum 的配置示例。下面是服务端 #1 的示例配置：
 
 ```xml
 <keeper_server>

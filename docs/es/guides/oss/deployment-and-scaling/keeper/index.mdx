@@ -112,28 +112,29 @@ La configuración de coordinación interna se encuentra en la sección `<keeper_
 | `slow_member_backpressure_no_progress_timeout_ms`      | Cuánto tiempo sigue esperando el líder a una réplica que no avanza en absoluto, mientras la contrapresión está activada con [`bpon`](#four-letter-word-commands), antes de dejarla atrás. Avanzar significa una respuesta aceptada —entradas de log tomadas o un objeto de instantánea guardado—, de modo que una réplica que simplemente es lenta reinicia este contador y solo se deja de esperar a una que está bloqueada. El valor predeterminado es de cinco minutos, y está pensado para ser así de grande: una réplica que aplica una instantánea grande puede permanecer en silencio durante minutos y es precisamente aquella a la que merece la pena esperar. Una réplica a la que el líder no puede llegar en absoluto se descarta de inmediato, sin esperar este tiempo. `0` significa que el líder nunca deja de esperar a una réplica a la que puede llegar. | `300000`             |
 | `slow_member_backpressure_max_uncommitted_log_entries` | El valor que toma `nuraft_max_uncommitted_log_entries` mientras la contrapresión por miembro lento está activada con [`bpon`](#four-letter-word-commands). Retener el índice de commit no impide que el líder siga añadiendo entradas, por lo que, sin un límite más estricto, el log se adelanta aún más y la réplica se queda todavía más atrás en lugar de ponerse al día. Al endurecerlo, el líder rechaza nuevas solicitudes con un error reintentable hasta que la réplica cierra la brecha. `0` deja el límite sin cambios.                                                                                                                                                                                                                                                                                                                                         | `0`                  |
 
-La configuración del quórum se encuentra en la sección `<keeper_server>.<raft_configuration>` y contiene la descripción de los servidores.
+La configuración del quórum se encuentra en la sección `<keeper_server>.<raft_configuration>` y contiene la descripción de los Servidores.
 
 El único parámetro para todo el quórum es `secure`, que habilita una conexión cifrada para la comunicación entre los participantes del quórum. El parámetro puede establecerse en `true` si se requiere una conexión SSL para la comunicación interna entre nodos, o dejarse sin especificar en caso contrario.
 
 Los parámetros principales de cada `<server>` son:
 
-* `id` — Identificador del servidor en un quórum.
-* `hostname` — Nombre de host donde está ubicado este servidor.
-* `port` — Puerto en el que este servidor escucha conexiones.
-* `can_become_leader` — Establézcalo en `false` para configurar el servidor como `learner`. Si se omite, el valor es `true`.
+* `id` — Identificador del Servidor en un quórum.
+* `hostname` — Nombre de host donde está ubicado este Servidor.
+* `port` — Puerto en el que este Servidor escucha conexiones.
+* `can_become_leader` — Establézcalo en `false` para configurar el Servidor como `learner`. Si se omite, el valor es `true`.
+  Al menos un Servidor debe mantenerlo en `true`; de lo contrario, Keeper no se iniciará.
 
 <Note>
-  Si cambia la topología de su clúster de ClickHouse Keeper (por ejemplo, al sustituir un servidor), asegúrese de mantener coherente la asignación de `server_id` a `hostname` y evite reorganizar o reutilizar un `server_id` existente para servidores distintos (por ejemplo, esto puede ocurrir si utiliza scripts de automatización para desplegar ClickHouse Keeper).
+  Si cambia la topología de su clúster de ClickHouse Keeper (por ejemplo, al sustituir un Servidor), asegúrese de mantener coherente la asignación de `server_id` a `hostname` y evite reorganizar o reutilizar un `server_id` existente para Servidores distintos (por ejemplo, esto puede ocurrir si utiliza scripts de automatización para desplegar ClickHouse Keeper).
 
-  Si el host de una instancia de Keeper puede cambiar, recomendamos definir y usar un nombre de host en lugar de direcciones IP sin procesar. Cambiar el nombre de host equivale a quitar y volver a añadir el servidor, lo que en algunos casos puede ser imposible (por ejemplo, si no hay suficientes instancias de Keeper para alcanzar el quórum).
+  Si el host de una instancia de Keeper puede cambiar, recomendamos definir y usar un nombre de host en lugar de direcciones IP sin procesar. Cambiar el nombre de host equivale a quitar y volver a añadir el Servidor, lo que en algunos casos puede ser imposible (por ejemplo, si no hay suficientes instancias de Keeper para alcanzar el quórum).
 </Note>
 
 <Note>
   `async_replication` está deshabilitado de forma predeterminada para evitar romper la compatibilidad con versiones anteriores. Si todas las instancias de Keeper de su clúster ejecutan una versión compatible con `async_replication` (v23.9+), recomendamos habilitarlo, ya que puede mejorar el rendimiento sin inconvenientes.
 </Note>
 
-Puede encontrar ejemplos de configuración para un quórum de tres nodos en las [pruebas de integración](https://github.com/ClickHouse/ClickHouse/tree/master/tests/integration) con el prefijo `test_keeper_`. Configuración de ejemplo para el servidor n.º 1:
+Puede encontrar ejemplos de configuración para un quórum de tres nodos en las [pruebas de integración](https://github.com/ClickHouse/ClickHouse/tree/master/tests/integration) con el prefijo `test_keeper_`. Configuración de ejemplo para el Servidor n.º 1:
 
 ```xml
 <keeper_server>
