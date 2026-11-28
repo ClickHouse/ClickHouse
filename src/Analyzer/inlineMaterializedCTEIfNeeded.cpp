@@ -52,11 +52,6 @@ using MaterializedCTEUseCount = std::unordered_map<MaterializedCTEPtr, size_t>;
 /// an empty map means no materialized CTEs are present (driver fast-exits).
 MaterializedCTEUseCount mergeDuplicateMaterializedCTEs(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
-    /// Quirk: `UnionNode::updateTreeHashImpl`/`isEqualImpl` ignore `CompareOptions` entirely and
-    /// always hash/compare `is_cte`, `cte_name`, `is_materialized`; `QueryNode::updateTreeHashImpl`
-    /// hashes `is_materialized` unconditionally too (see `src/Analyzer/UnionNode.cpp`). Harmless
-    /// here: the hash and `isEqual` below stay consistent with each other, and merge candidates are
-    /// clones of the same `WITH` definition, so they already share those flags.
     constexpr auto compare_options = IQueryTreeNode::CompareOptions{.compare_aliases = true, .ignore_cte = true};
 
     std::unordered_map<MergeKey, std::vector<TableNode *>, MergeKeyHash> canonical_ctes;  /// vector defends hash collisions

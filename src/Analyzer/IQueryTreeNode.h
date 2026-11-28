@@ -125,8 +125,8 @@ public:
     struct CompareOptions
     {
         bool compare_aliases = true;
-        /// Do not compare the cte name or check the is_cte flag for the query node.
-        /// Calculate a hash as if is_cte is false and cte_name is empty.
+        /// Do not compare the CTE identity (`is_cte`, `is_materialized`, `cte_name`) and the `WITH RECURSIVE` markers
+        /// (`is_recursive_cte`, `is_recursive_with`) of query and union nodes; hash them as false and an empty name.
         bool ignore_cte = false;
     };
 
