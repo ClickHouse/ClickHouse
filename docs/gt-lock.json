@@ -7,42 +7,42 @@
       "versionId": "626f994624b93eb9edf478df58264b0784feb8e8423734cc7c78955f5ed4b4f7",
       "translations": {
         "zh": {
-          "updatedAt": "2026-11-28T17:26:03.064Z",
+          "updatedAt": "2026-11-28T17:45:33.522Z",
           "fileName": "docs.json",
           "postProcessHash": "a419426cd9155b32c454f2d1f30e492253adbf3a44a2f4d91c60a1ef64ed8eaf"
         },
         "es": {
-          "updatedAt": "2026-11-28T17:26:02.673Z",
+          "updatedAt": "2026-11-28T17:45:33.132Z",
           "fileName": "docs.json",
           "postProcessHash": "a419426cd9155b32c454f2d1f30e492253adbf3a44a2f4d91c60a1ef64ed8eaf"
         },
         "ja": {
-          "updatedAt": "2026-11-28T17:26:02.756Z",
+          "updatedAt": "2026-11-28T17:45:33.212Z",
           "fileName": "docs.json",
           "postProcessHash": "a419426cd9155b32c454f2d1f30e492253adbf3a44a2f4d91c60a1ef64ed8eaf"
         },
         "fr": {
-          "updatedAt": "2026-11-28T17:26:03.218Z",
+          "updatedAt": "2026-11-28T17:45:33.673Z",
           "fileName": "docs.json",
           "postProcessHash": "a419426cd9155b32c454f2d1f30e492253adbf3a44a2f4d91c60a1ef64ed8eaf"
         },
         "ru": {
-          "updatedAt": "2026-11-28T17:26:02.987Z",
+          "updatedAt": "2026-11-28T17:45:33.447Z",
           "fileName": "docs.json",
           "postProcessHash": "a419426cd9155b32c454f2d1f30e492253adbf3a44a2f4d91c60a1ef64ed8eaf"
         },
         "pt-BR": {
-          "updatedAt": "2026-11-28T17:26:02.910Z",
+          "updatedAt": "2026-11-28T17:45:33.371Z",
           "fileName": "docs.json",
           "postProcessHash": "a419426cd9155b32c454f2d1f30e492253adbf3a44a2f4d91c60a1ef64ed8eaf"
         },
         "ar": {
-          "updatedAt": "2026-11-28T17:26:03.139Z",
+          "updatedAt": "2026-11-28T17:45:33.597Z",
           "fileName": "docs.json",
           "postProcessHash": "a419426cd9155b32c454f2d1f30e492253adbf3a44a2f4d91c60a1ef64ed8eaf"
         },
         "ko": {
-          "updatedAt": "2026-11-28T17:26:02.835Z",
+          "updatedAt": "2026-11-28T17:45:33.292Z",
           "fileName": "docs.json",
           "postProcessHash": "a419426cd9155b32c454f2d1f30e492253adbf3a44a2f4d91c60a1ef64ed8eaf"
         }
