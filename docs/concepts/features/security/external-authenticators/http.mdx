@@ -100,4 +100,4 @@ CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server'
 
 ### Passing session settings {#passing-session-settings}
 
-If a response body from HTTP authentication server has JSON format and contains `settings` sub-object, ClickHouse will try parse its key: value pairs as string values and set them as session settings for authenticated user's current session. If parsing is failed, a response body from server will be ignored.
+A JSON `settings` object in an HTTP authentication response sets session settings for the authenticated user. Values may be strings, numbers, or booleans. For custom settings, strings matching the legacy dump format retain their encoded type; other strings are literal. JSON `null`, arrays, objects, or any parsing failure cause the entire settings block to be ignored.

@@ -4,11 +4,84 @@ import json
 from typing import List
 
 GOOD_PASSWORD = "good_password"
-USER_RESPONSES = {
-    "test_user_1": {"settings": {"auth_user": "'test_user'", "auth_num": "UInt64_15"}},
-    "test_user_2": {},
-    "test_user_3": "",
-    "test_user_4": "not json string",
+# See output format examples: 01418_custom_settings.sql
+TEST_CASES = {
+    "test_user_1": {
+        "response": {
+            "settings": {
+                "auth_str": "test_user",
+                "auth_int": 100,
+                "auth_signed": -100,
+                "auth_float": 100.1,
+                "auth_bool": True,
+                "auth_false": False,
+                "auth_int_min": -(1 << 63),
+                "auth_uint_max": (1 << 64) - 1,
+                "max_threads": 4,
+                "optimize_move_to_prewhere": False,
+            }
+        },
+        "dump_settings": {
+            "auth_str": "'test_user'",
+            "auth_int": "Int64_100",
+            "auth_signed": "Int64_-100",
+            "auth_float": "Float64_100.1",
+            "auth_bool": "Bool_1",
+            "auth_false": "Bool_0",
+            "auth_int_min": "Int64_-9223372036854775808",
+            "auth_uint_max": "UInt64_18446744073709551615",
+        },
+        "get_settings": {
+            "auth_str": "test_user",
+            "auth_int": "100",
+            "auth_signed": "-100",
+            "auth_float": "100.1",
+            "auth_bool": "true",
+            "auth_false": "false",
+            "auth_int_min": "-9223372036854775808",
+            "auth_uint_max": "18446744073709551615",
+            "max_threads": "4",
+            "optimize_move_to_prewhere": "false",
+        },
+    },
+    "test_user_2": {"response": {}},
+    "test_user_3": {"response": ""},
+    "test_user_4": {"response": "not json string"},
+    "test_extra_legacy": {
+        "response": {
+            "settings": {
+                "auth_str": "'legacy'",
+                "auth_num": "UInt64_15",
+                "auth_array": "Array_[Int64_1, Int64_2]",
+                "max_threads": "4",
+            }
+        },
+        "dump_settings": {
+            "auth_str": "'legacy'",
+            "auth_num": "UInt64_15",
+            "auth_array": "Array_[Int64_1, Int64_2]",
+        },
+        "get_settings": {
+            "auth_str": "legacy",
+            "auth_num": "15",
+            "auth_array": "[1,2]",
+            "max_threads": "4",
+        },
+    },
+    **{
+        user: {
+            "response": {"settings": {"auth_a": 100, key: value}},
+            "absent_settings": ["auth_a"],
+        }
+        for user, (key, value) in {
+            "test_user_5": ("auth_z", {}),
+            "test_extra_array": ("auth_z", []),
+            "test_extra_null": ("auth_z", None),
+            "test_extra_bad_setting": ("max_threads", "abc"),
+            "test_extra_uint_overflow": ("auth_z", 1 << 64),
+            "test_extra_int_underflow": ("auth_z", -(1 << 63) - 1),
+        }.items()
+    },
 }
 
 
@@ -26,7 +99,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
     def do_ACCESS_GRANTED(self, user: str) -> None:
         self.send_response(http.HTTPStatus.OK)
-        response = USER_RESPONSES.get(user)
+        response = TEST_CASES.get(user, {}).get("response")
 
         if isinstance(response, dict):
             body = json.dumps(response)
