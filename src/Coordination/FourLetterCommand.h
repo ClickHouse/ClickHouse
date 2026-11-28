@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 #include <base/types.h>
@@ -35,6 +36,8 @@ public:
 
     static String toName(int32_t code);
     static int32_t toCode(std::string_view name);
+    /// nullopt unless `name` is exactly four characters after trimming whitespace.
+    static std::optional<int32_t> tryToCode(std::string_view name);
 
 protected:
     KeeperDispatcher & keeper_dispatcher;

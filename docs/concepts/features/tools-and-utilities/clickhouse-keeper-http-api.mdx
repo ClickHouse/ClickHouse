@@ -85,6 +85,8 @@ Query parameters:
 - `command` - The command to execute
 - `cwd` - Current working directory for path-based commands, must be an absolute path (default: `/`)
 
+A four-letter word command runs only if it is in `four_letter_word_allow_list`; otherwise the request returns `403`.
+
 Examples:
 ```bash
 # Four-Letter Word command

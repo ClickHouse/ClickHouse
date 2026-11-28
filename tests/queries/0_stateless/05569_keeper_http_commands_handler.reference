@@ -5,3 +5,5 @@ get at the default cwd	200	{"result":"\n"}
 get at the given cwd	200	{"result":"hello\n"}
 ruok	200	{"result":"imok"}
 unknown four letter word	500
+four letter word not in the allow list	403	{"message":"Four letter word command mntr is not in four_letter_word_allow_list"}
+four letter word with more text	500
