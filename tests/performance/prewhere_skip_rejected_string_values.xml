@@ -1,0 +1,11 @@
+<test iceberg="0">
+    <create_query>CREATE TABLE prewhere_skip_rejected_string_values (ts DateTime, id UInt64, level LowCardinality(String), host String, message String CODEC(ZSTD(3))) ENGINE = MergeTree ORDER BY ts SETTINGS auto_statistics_types = ''</create_query>
+
+    <fill_query>INSERT INTO prewhere_skip_rejected_string_values SELECT toDateTime('2026-01-01 00:00:00') + intDiv(number, 20) AS ts, cityHash64(number) AS id, ['INFO', 'WARN', 'ERROR', 'DEBUG'][number % 4 + 1], concat('host-', toString(number % 200)), concat(toString(ts), ' req=', hex(cityHash64(number, 1)), ' user=', toString(number % 100003), ' ', randomPrintableASCII(160), ' ', arrayStringConcat(arrayMap(i -> concat('k', toString(i), '=', toString(cityHash64(number, i) % 1000)), range(80)), ' ')) FROM numbers(1500000)</fill_query>
+    <fill_query>OPTIMIZE TABLE prewhere_skip_rejected_string_values FINAL</fill_query>
+
+    <query>SELECT * FROM prewhere_skip_rejected_string_values WHERE id IN (SELECT cityHash64(number) FROM numbers(1500000) WHERE number % 10000 = 7) FORMAT Null</query>
+    <query>SELECT * FROM prewhere_skip_rejected_string_values ORDER BY id LIMIT 30 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS prewhere_skip_rejected_string_values</drop_query>
+</test>

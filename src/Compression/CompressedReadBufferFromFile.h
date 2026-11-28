@@ -59,6 +59,9 @@ public:
 
     [[nodiscard]] size_t readBig(char * to, size_t n) override;
 
+    /// The compressed blocks whose data lies wholly within the skipped bytes are read and their checksums verified, but not decompressed.
+    void ignoreBig(size_t n) override;
+
     void setProfileCallback(const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE)
     {
         file_in.setProfileCallback(profile_callback_, clock_type_);

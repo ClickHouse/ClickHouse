@@ -45,6 +45,16 @@ public:
         size_t max_rows_to_read,
         MutableColumns & res_columns, Columns & shared_columns) override;
 
+    size_t readRowsWithRejectedPrefix(
+        size_t from_mark,
+        size_t current_range_last_mark,
+        bool continue_reading,
+        size_t max_rows_to_read,
+        size_t num_rejected_rows,
+        MutableColumns & res_columns, Columns & shared_columns) override;
+
+    size_t getMinRejectedRowsToSkip() const override;
+
     bool canReadIncompleteGranules() const override { return true; }
 
     size_t getColumnsCacheStripeMarks() const override
@@ -208,7 +218,8 @@ private:
         bool continue_reading,
         size_t max_rows_to_read,
         ISerialization::SubstreamsCache & cache,
-        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache);
+        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
+        size_t num_rejected_rows);
 
     /// Make next readData more simple by calling 'prefetch' of all related ReadBuffers (column streams).
     void prefetchForColumn(
@@ -241,6 +252,7 @@ private:
     size_t readSegmentFromDisk(
         size_t from_mark,
         size_t max_rows_to_read,
+        size_t num_rejected_rows,
         MutableColumns & res_columns,
         Columns & shared_columns,
         const ColumnReadSelector & selector,
@@ -293,6 +305,10 @@ private:
     std::vector<ColumnKind> column_kinds;
     size_t num_regular_columns = 0;
     bool has_columns_read_only_from_part = false;
+
+    /// Per result column, the fewest rejected rows whose values are skipped, see `readRowsWithRejectedPrefix`; 0 for never.
+    std::vector<size_t> min_rejected_rows_by_column;
+    size_t min_rejected_rows_to_skip = 0;
 
     /// The columns cache.
     ///

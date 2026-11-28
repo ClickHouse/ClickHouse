@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/Serializations/SerializationString.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
@@ -107,6 +108,34 @@ MergeTreeReaderWide::MergeTreeReaderWide(
             data_part_info_for_read->reportBroken();
         throw;
     }
+
+    min_rejected_rows_by_column.assign(columns_to_read.size(), 0);
+    const size_t part_rows = data_part_info_for_read->getRowCount();
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+    {
+        const auto * string_serialization = typeid_cast<const SerializationString *>(serializations[pos].get());
+        if (!part_rows || !column_kinds[pos].regular || columns_to_read[pos].isSubcolumn() || !string_serialization
+            || !string_serialization->hasSizeStream())
+            continue;
+
+        /// The size stream holds one `UInt64` per row, the data stream the rest.
+        const size_t bytes_per_row = data_part_info_for_read->getColumnSize(columns_to_read[pos].getNameInStorage()).data_uncompressed / part_rows;
+        if (bytes_per_row <= sizeof(UInt64))
+            continue;
+
+        const size_t value_bytes_per_row = bytes_per_row - sizeof(UInt64);
+        const size_t min_rows = std::max<size_t>(1, (SerializationString::MIN_REJECTED_BYTES_TO_SKIP + value_bytes_per_row - 1) / value_bytes_per_row);
+        min_rejected_rows_by_column[pos] = min_rows;
+        min_rejected_rows_to_skip = min_rejected_rows_to_skip ? std::min(min_rejected_rows_to_skip, min_rows) : min_rows;
+    }
+}
+
+size_t MergeTreeReaderWide::getMinRejectedRowsToSkip() const
+{
+    /// Cached columns must hold the real values; a part read without marks is read as one sequential range.
+    if (columns_cache_reads_possible || columns_cache_writes_possible || read_without_marks)
+        return 0;
+    return min_rejected_rows_to_skip;
 }
 
 void MergeTreeReaderWide::updateReadRequestMap(MarkRangesPtr request_map)
@@ -216,6 +245,13 @@ size_t MergeTreeReaderWide::readRows(
     size_t from_mark, size_t current_range_last_mark, bool continue_reading, size_t max_rows_to_read,
     MutableColumns & res_columns, Columns & shared_columns)
 {
+    return readRowsWithRejectedPrefix(from_mark, current_range_last_mark, continue_reading, max_rows_to_read, 0, res_columns, shared_columns);
+}
+
+size_t MergeTreeReaderWide::readRowsWithRejectedPrefix(
+    size_t from_mark, size_t current_range_last_mark, bool continue_reading, size_t max_rows_to_read, size_t num_rejected_rows,
+    MutableColumns & res_columns, Columns & shared_columns)
+{
     size_t read_rows = 0;
     if (prefetched_from_mark != -1 && static_cast<size_t>(prefetched_from_mark) != from_mark)
     {
@@ -236,7 +272,7 @@ size_t MergeTreeReaderWide::readRows(
         if (!columns_cache_reads_possible && !columns_cache_writes_possible)
         {
             /// Read from disk: every column that is in the part, continuing or seeking as asked.
-            read_rows = readSegmentFromDisk(from_mark, max_rows_to_read, res_columns, shared_columns,
+            read_rows = readSegmentFromDisk(from_mark, max_rows_to_read, num_rejected_rows, res_columns, shared_columns,
                 [&](size_t) -> std::optional<bool> { return continue_reading; });
         }
         else
@@ -285,6 +321,7 @@ size_t MergeTreeReaderWide::readRows(
 size_t MergeTreeReaderWide::readSegmentFromDisk(
     size_t from_mark,
     size_t max_rows_to_read,
+    size_t num_rejected_rows,
     MutableColumns & res_columns,
     Columns & shared_columns,
     const ColumnReadSelector & selector,
@@ -338,6 +375,7 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
             auto & cache = caches[column_to_read.getNameInStorage()];
             auto & deserialize_states_cache = deserialize_states_caches[column_to_read.getNameInStorage()];
 
+            const size_t min_rejected_rows = min_rejected_rows_by_column[pos];
             readData(
                 column_to_read,
                 serializations[pos],
@@ -346,7 +384,8 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
                 *continue_reading,
                 max_rows_to_read,
                 cache,
-                deserialize_states_cache);
+                deserialize_states_cache,
+                min_rejected_rows && num_rejected_rows >= min_rejected_rows ? num_rejected_rows : 0);
 
             /// For elements of Nested, column_size_before_reading may be greater than column size
             ///  if offsets are not empty and were already read, but elements are empty.
@@ -703,7 +742,7 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
         if (disk_columns || has_columns_read_only_from_part)
         {
             const bool continue_reading_from_part_only = partial_columns_started;
-            const size_t rows_from_disk = readSegmentFromDisk(segments[run_begin].mark, run_rows, res_columns, shared_columns,
+            const size_t rows_from_disk = readSegmentFromDisk(segments[run_begin].mark, run_rows, 0, res_columns, shared_columns,
                 [&](size_t pos) -> std::optional<bool>
                 {
                     if (isColumnAbsentFromPart(pos))
@@ -1603,7 +1642,8 @@ void MergeTreeReaderWide::readData(
     bool continue_reading,
     size_t max_rows_to_read,
     ISerialization::SubstreamsCache & cache,
-    ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache)
+    ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
+    size_t num_rejected_rows)
 {
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.data_part_type = MergeTreeDataPartType::Wide;
@@ -1685,10 +1725,12 @@ void MergeTreeReaderWide::readData(
 
     deserialize_settings.continuous_reading = continue_reading;
     deserialize_settings.string_value_filter = getStringValueFilter(name_and_type);
+    deserialize_settings.num_rejected_rows = num_rejected_rows;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
 
     serialization->deserializeBinaryBulkWithMultipleStreams(
         column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+    bytes_of_skipped_rows += deserialize_settings.num_skipped_bytes;
 }
 
 bool MergeTreeReaderWide::streamsDependOnPrefixes(const NameAndTypePair & column, const SerializationInfoByName & infos)

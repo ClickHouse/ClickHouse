@@ -4,12 +4,14 @@
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ByteRangeSet.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
 
@@ -201,6 +203,69 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         }
 
         return bytes_read;
+    }
+    catch (Exception & e)
+    {
+        addDiagnostics(e);
+        throw;
+    }
+}
+
+
+void CompressedReadBufferFromFile::ignoreBig(size_t n)
+{
+    if (n <= available())
+    {
+        ignore(n);
+        return;
+    }
+
+    try
+    {
+        n -= available();
+        pos = working_buffer.end();
+        bytes += offset();
+        resetWorkingBuffer();
+        size_compressed = 0;
+
+        /// After a lazy seek the position is this many bytes into the next block.
+        size_t offset_in_first_block = std::exchange(nextimpl_working_buffer_offset, 0);
+        bool first_block = true;
+
+        while (true)
+        {
+            size_t size_decompressed = 0;
+            size_t size_compressed_without_checksum = 0;
+            const size_t block_offset = ranges_read ? file_in.getPosition() : 0;
+            const size_t new_size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
+            if (!new_size_compressed)
+                throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after eof");
+            if (ranges_read)
+                ranges_read->emplace_back(block_offset, block_offset + new_size_compressed);
+
+            if (first_block)
+            {
+                if (offset_in_first_block > size_decompressed || common::addOverflow(n, offset_in_first_block, n))
+                    throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Required to move position beyond the decompressed block (pos: "
+                        "{}, block size: {})", offset_in_first_block, size_decompressed);
+                first_block = false;
+            }
+
+            if (n < size_decompressed)
+            {
+                size_compressed = new_size_compressed;
+                memory.resize(size_decompressed + codec->getAdditionalSizeAtTheEndOfBuffer());
+                working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, size_decompressed);
+                decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
+                pos = working_buffer.begin() + n;
+                return;
+            }
+
+            n -= size_decompressed;
+            bytes += size_decompressed;
+            if (n == 0)
+                return;
+        }
     }
     catch (Exception & e)
     {

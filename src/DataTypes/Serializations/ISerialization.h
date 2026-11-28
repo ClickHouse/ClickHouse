@@ -453,6 +453,12 @@ public:
         /// which is guaranteed to filter out the rows with non-matching values, so the replacement
         /// cannot change the query result. Used only by `SerializationString`.
         std::shared_ptr<const StringValueFilter> string_value_filter;
+
+        /// The number of rows at the start of this read that the caller filters out before using them, so they may be
+        /// read as empty strings. Used only by `SerializationString` with a size stream, for a column it is the serialization of.
+        size_t num_rejected_rows = 0;
+        /// Increased by the serialization by the bytes of the values it did not read because of `num_rejected_rows`.
+        size_t num_skipped_bytes = 0;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
