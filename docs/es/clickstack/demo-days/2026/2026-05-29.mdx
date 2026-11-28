@@ -7,9 +7,7 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Demo days']
 ---
 
-<div id="version-aware-improved-schema-filtering">
-  ## Filtrado mejorado de esquemas según la versión
-</div>
+## Filtrado mejorado de esquemas según la versión {#version-aware-improved-schema-filtering}
 
 *Demo de [@knudtty](https://github.com/knudtty)*
 
@@ -23,9 +21,7 @@ También se mostró trabajo en curso para sustituir la vista materializada de au
 
 **PR relacionadas:** [#2341](https://github.com/hyperdxio/hyperdx/pull/2341) feat: adds direct&#95;read optimization by default for logs and traces, [#2405](https://github.com/hyperdxio/hyperdx/pull/2405) feat(common-utils): apply direct&#95;read KV items optimization to SQL filters, [#2376](https://github.com/hyperdxio/hyperdx/pull/2376) feat: use text index to power filters and autocomplete
 
-<div id="better-log-parsing">
-  ## Mejor análisis de logs
-</div>
+## Mejor análisis de logs {#better-log-parsing}
 
 *Demo de [@dhable](https://github.com/dhable)*
 
@@ -39,9 +35,7 @@ La corrección añade una condición de control: si el body se analiza como JSON
 
 **PR relacionadas:** [#2363](https://github.com/hyperdxio/hyperdx/pull/2363) fix(log-parser): omitir la inferencia por cadenas cuando el body se analiza como JSON con un campo `level`
 
-<div id="mcp-server-improvements">
-  ## Mejoras del servidor MCP
-</div>
+## Mejoras del servidor MCP {#mcp-server-improvements}
 
 *Demo de [@brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -53,9 +47,7 @@ Esta semana se lanzaron varias mejoras de MCP: mejor agrupación y puntuación d
 
 **PR relacionados:** [#2337](https://github.com/hyperdxio/hyperdx/pull/2337) feat(mcp): mejora la calidad de las herramientas de MCP — sugerencias de error, funciones auxiliares compartidas y mejores mensajes, [#2396](https://github.com/hyperdxio/hyperdx/pull/2396) refactor(mcp): renombra los prefijos de las herramientas de hyperdx&#95; a clickstack&#95;, [#2343](https://github.com/hyperdxio/hyperdx/pull/2343) feat(mcp): añade las herramientas patch&#95;dashboard, get&#95;dashboard&#95;tile y search&#95;dashboards, [#2418](https://github.com/hyperdxio/hyperdx/pull/2418) fix(mcp): mejora las descripciones de alias y los ejemplos para que las leyendas de los gráficos sean legibles, [#2412](https://github.com/hyperdxio/hyperdx/pull/2412) refactor: simplifica la validación de ObjectId de MCP con funciones auxiliares compartidas y comprobaciones a nivel de esquema
 
-<div id="new-series-color-palette">
-  ## Nueva paleta de colores para series
-</div>
+## Nueva paleta de colores para series {#new-series-color-palette}
 
 *Demo de [@elizabetdev](https://github.com/elizabetdev)*
 
@@ -63,15 +55,13 @@ Esta semana se lanzaron varias mejoras de MCP: mejor agrupación y puntuación d
   <iframe src="https://www.youtube.com/embed/YzECP3diWvg" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-Elizabet trabajó en unificar la paleta de colores de las visualizaciones de datos en los temas de HyperDX y ClickStack, como apoyo al trabajo de Alex en el selector de color. Ambos temas tenían paletas distintas con reglas de excepción propias, lo que hacía innecesariamente complejo trabajar con los colores. El objetivo era contar con una única paleta que funcionara en ambos.
+Elizabet trabajó en unificar la paleta de colores de las visualizaciones de datos en los temas de la UI de ClickStack y de ClickStack, como apoyo al trabajo de Alex en el selector de color. Ambos temas tenían paletas distintas con reglas de excepción propias, lo que hacía innecesariamente complejo trabajar con los colores. El objetivo era contar con una única paleta que funcionara en ambos.
 
 Hizo pruebas con paletas estándar del sector (Tableau, Observable, IBM) usando una herramienta de simulación de visión cromática para comprobar el contraste y la accesibilidad. La paleta de ClickHouse dio malos resultados: el verde no tiene suficiente contraste sobre fondo blanco. Tanto Tableau como Observable no superan al menos una comprobación cada una; la paleta de IBM las supera todas, pero solo tiene cinco colores, lo que no es suficiente. En conjunto, la paleta de Observable fue la que más se acercó, con un pequeño ajuste en el azul, y ahora se compartirá entre ambos temas.
 
 **PR relacionadas:** [#2362](https://github.com/hyperdxio/hyperdx/pull/2362) refactor(theme): renombrar los tokens de la paleta de gráficos con nombres de matiz + unificar en ambos temas
 
-<div id="new-page-layout-with-sticky-header">
-  ## Nuevo diseño de página con encabezado fijo
-</div>
+## Nuevo diseño de página con encabezado fijo {#new-page-layout-with-sticky-header}
 
 *Demo de [@elizabetdev](https://github.com/elizabetdev)*
 
@@ -85,9 +75,7 @@ El comportamiento fijo se activa de forma opcional mediante una prop. Todo lo qu
 
 **PR relacionadas:** [#2282](https://github.com/hyperdxio/hyperdx/pull/2282) Add PageHeader/PageLayout and migrate Sessions, [#2345](https://github.com/hyperdxio/hyperdx/pull/2345) Use PageHeader title on list pages, [#2346](https://github.com/hyperdxio/hyperdx/pull/2346) Migrate Service Map to PageLayout, [#2347](https://github.com/hyperdxio/hyperdx/pull/2347) Migrate Kubernetes dashboard to PageLayout, [#2348](https://github.com/hyperdxio/hyperdx/pull/2348) Migrate ClickHouse dashboard to PageLayout, [#2364](https://github.com/hyperdxio/hyperdx/pull/2364) feat(dashboard): migrate to PageLayout with sticky query toolbar, [#2394](https://github.com/hyperdxio/hyperdx/pull/2394) fix(PageHeader): keep sticky header below drawer overlays
 
-<div id="new-datasource-selector-and-color-picking-for-series">
-  ## Nuevo selector de origen de datos y selector de color para series
-</div>
+## Nuevo selector de origen de datos y selector de color para series {#new-datasource-selector-and-color-picking-for-series}
 
 *Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -101,9 +89,7 @@ Los tiles Number ahora también tienen un selector de color estático para que p
 
 **PR relacionados:** [#2365](https://github.com/hyperdxio/hyperdx/pull/2365) feat(source-picker): chip + menú kebab UX, [#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): selector de color estático para tile Number
 
-<div id="better-hints-for-dashboard-actions">
-  ## Mejores indicaciones para las acciones del dashboard
-</div>
+## Mejores indicaciones para las acciones del dashboard {#better-hints-for-dashboard-actions}
 
 *Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
 

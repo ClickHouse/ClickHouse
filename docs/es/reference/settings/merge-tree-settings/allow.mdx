@@ -14,9 +14,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se autogeneran a partir del código fuente de ClickHouse.
 
-<div id="allow_coalescing_columns_in_partition_or_order_key">
-  ## allow_coalescing_columns_in_partition_or_order_key
-</div>
+## allow_coalescing_columns_in_partition_or_order_key {#allow_coalescing_columns_in_partition_or_order_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -25,9 +23,7 @@ Estas configuraciones están disponibles en [system.merge&#95;tree&#95;settings]
 Cuando está habilitada, permite usar columnas de coalescencia en una tabla CoalescingMergeTree
 en la partición o la clave de ordenación.
 
-<div id="allow_commit_order_projection">
-  ## allow_commit_order_projection
-</div>
+## allow_commit_order_projection {#allow_commit_order_projection}
 
 <ExperimentalBadge />
 
@@ -38,9 +34,7 @@ en la partición o la clave de ordenación.
 Habilita proyecciones en orden de commit que almacenan las columnas virtuales `_block_number` y `_block_offset`, y conservan el orden de inserción original durante las fusiones.
 Requiere que `enable_block_number_column` y `enable_block_offset_column` estén habilitados.
 
-<div id="allow_dimensions_outside_sorting_key">
-  ## allow_dimensions_outside_sorting_key
-</div>
+## allow_dimensions_outside_sorting_key {#allow_dimensions_outside_sorting_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -60,9 +54,7 @@ comportamiento es intencionado.
 La comprobación solo se aplica a las tablas que realmente agregan (aquellas con al menos una columna de estado de agregación)
 y se omite cuando `allow_tuple_element_aggregation` está habilitado.
 
-<div id="allow_floating_point_partition_key">
-  ## allow_floating_point_partition_key
-</div>
+## allow_floating_point_partition_key {#allow_floating_point_partition_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -73,9 +65,7 @@ Valores posibles:
 * `0` — No se permite usar una clave de partición de coma flotante.
 * `1` — Se permite usar una clave de partición de coma flotante.
 
-<div id="allow_minmax_index_for_json">
-  ## allow_minmax_index_for_json
-</div>
+## allow_minmax_index_for_json {#allow_minmax_index_for_json}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -83,17 +73,13 @@ Valores posibles:
 
 Permite crear índices de omisión minmax en columnas JSON (Object). Está deshabilitado de forma predeterminada porque la ruta de serialización del índice minmax no puede manejar valores heterogéneos de Field que pueden contener las columnas JSON.
 
-<div id="allow_nullable_key">
-  ## allow_nullable_key
-</div>
+## allow_nullable_key {#allow_nullable_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Permite usar tipos Nullable como claves primarias.
 
-<div id="allow_part_offset_column_in_projections">
-  ## allow_part_offset_column_in_projections
-</div>
+## allow_part_offset_column_in_projections {#allow_part_offset_column_in_projections}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -101,9 +87,7 @@ Permite usar tipos Nullable como claves primarias.
 
 Permite usar la columna &#39;&#95;part&#95;offset&#39; en la consulta SELECT de las proyecciones.
 
-<div id="allow_reduce_blocking_parts_task">
-  ## allow_reduce_blocking_parts_task
-</div>
+## allow_reduce_blocking_parts_task {#allow_reduce_blocking_parts_task}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -112,9 +96,7 @@ Permite usar la columna &#39;&#95;part&#95;offset&#39; en la consulta SELECT de 
 Tarea en segundo plano que reduce las partes bloqueantes de las tablas shared merge tree.
 Solo en ClickHouse Cloud
 
-<div id="allow_remote_fs_zero_copy_replication">
-  ## allow_remote_fs_zero_copy_replication
-</div>
+## allow_remote_fs_zero_copy_replication {#allow_remote_fs_zero_copy_replication}
 
 <ExperimentalBadge />
 
@@ -122,9 +104,7 @@ Solo en ClickHouse Cloud
 
 No utilice esta configuración en producción, ya que aún no está lista.
 
-<div id="allow_summing_columns_in_partition_or_order_key">
-  ## allow_summing_columns_in_partition_or_order_key
-</div>
+## allow_summing_columns_in_partition_or_order_key {#allow_summing_columns_in_partition_or_order_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,17 +113,13 @@ No utilice esta configuración en producción, ya que aún no está lista.
 Cuando está habilitada, permite usar en la partición o en la clave de ordenación
 las columnas de suma de una tabla SummingMergeTree.
 
-<div id="allow_suspicious_indices">
-  ## allow_suspicious_indices
-</div>
+## allow_suspicious_indices {#allow_suspicious_indices}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Rechaza índices primarios/secundarios y claves de ordenación con expresiones idénticas
 
-<div id="allow_tuple_element_aggregation">
-  ## allow_tuple_element_aggregation
-</div>
+## allow_tuple_element_aggregation {#allow_tuple_element_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -155,9 +131,17 @@ CoalescingMergeTree. Las Tuple anidadas se expanden de forma recursiva para que 
 elementos hoja se agreguen de manera independiente. Esta configuración es inmutable
 y debe especificarse al crear la tabla.
 
-<div id="allow_vertical_merges_from_compact_to_wide_parts">
-  ## allow_vertical_merges_from_compact_to_wide_parts
-</div>
+## allow_vector_similarity_index_in_specialized_merge_tree {#allow_vector_similarity_index_in_specialized_merge_tree}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nuevo ajuste. Los índices de similitud vectorial ya no se permiten de forma predeterminada en los motores MergeTree especializados"}]}]} />
+
+Indica si se puede crear un índice `vector_similarity` en un motor de la familia `MergeTree` distinto de `MergeTree` / `ReplicatedMergeTree`,
+por ejemplo, `ReplacingMergeTree` o `CollapsingMergeTree`. Con estos motores, una consulta `SELECT ... FINAL` que utilice el índice puede devolver resultados incorrectos.
+Este parámetro de configuración solo se comprueba al crear un índice, por lo que no afecta a las tablas existentes ni a `ATTACH`.
+
+## allow_vertical_merges_from_compact_to_wide_parts {#allow_vertical_merges_from_compact_to_wide_parts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

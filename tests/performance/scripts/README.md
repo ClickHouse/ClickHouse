@@ -86,6 +86,8 @@ The columns "Instructions ratio", "Cycles ratio", "IPC old" and "IPC new" come f
 
 Profile runs are normally limited to the queries whose performance changed, because they cost `--profile-seconds` per query per server. A test can ask for profile runs on every one of its queries with `<test profile_all_queries="1">`, and the whole run can be forced with `perf.py --profile-all-queries`. Then the trace-log metrics and the flame graphs are produced for all queries of that test, whether their performance changed or not.
 
+In CI, a shard stops the profile runs once they have taken 10 minutes in total (`PROFILE_BUDGET_SEC` in `ci/jobs/performance_tests.py`): a change that moves most queries would otherwise spend most of the shard on profiles, and the tests that do not fit before the job timeout would not run. The queries of the tests that run after the budget is spent are not profiled, so they have no flame graphs and no hardware counters.
+
 In CI, most tests run only a random sample of their queries (`perf.py --max-queries 10`). A fixed benchmark suite such as `tpch.xml` can opt out with `<test run_all_queries="1">`; the attribute takes effect only when the runner also passes `--soft-max-queries`.
 
 Tests can reuse ordered setup and measured queries with `<include file="shared_workload.xml.inc"/>` inside `<test>`. An included file has a `<fragment>` root; its children are inserted at the include's position before substitutions are expanded. Nested includes and `file` attributes inside fragments resolve relative to the fragment that declares them. Keep fragments outside the `*.xml` test selection (for example, use `.xml.inc`).

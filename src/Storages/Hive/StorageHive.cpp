@@ -30,6 +30,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/parseURI.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -435,7 +436,7 @@ StorageHive::StorageHive(
     , storage_settings(std::move(storage_settings_))
 {
     /// Check hive metastore url.
-    getContext()->getRemoteHostFilter().checkURL(Poco::URI(hive_metastore_url));
+    getContext()->getRemoteHostFilter().checkURL(parseURI(hive_metastore_url));
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);

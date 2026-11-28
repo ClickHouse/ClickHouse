@@ -103,6 +103,12 @@ public:
         data(place).count = common::addIgnoreOverflow(data(place).count, data(rhs).count);
     }
 
+    /// `count` is the number of non-NULL rows; the state is that of `count()`.
+    void setSumAndCount(AggregateDataPtr __restrict place, const Field & /*sum*/, UInt64 count) const override
+    {
+        AggregateFunctionCount::set(place, count);
+    }
+
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         writeVarUInt(data(place).count, buf);

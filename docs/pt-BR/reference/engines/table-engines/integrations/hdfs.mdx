@@ -35,9 +35,9 @@ ENGINE = HDFS(URI, format)
 
 ### PARTITION BY {#partition-by}
 
-`PARTITION BY` — Opcional. Na maioria dos casos, você não precisa de uma chave de partição e, quando ela for necessária, em geral também não precisa ser mais granular do que por mês. O particionamento não acelera as consultas (ao contrário da expressão ORDER BY). Você nunca deve usar um particionamento granular demais. Não particione seus dados por identificadores ou nomes de clientes (em vez disso, use o identificador ou nome do cliente como a primeira coluna na expressão ORDER BY).
+`PARTITION BY` — Opcional. Na maioria dos casos, você não precisa de uma chave de particionamento e, quando ela for necessária, em geral também não precisa ser mais granular do que por mês. O particionamento é principalmente uma técnica de gerenciamento de dados: cada partição é gravada em arquivos separados. Com a estratégia de particionamento `hive`, uma consulta que filtra por uma coluna de partição lê apenas os arquivos das partições correspondentes. Você nunca deve usar um particionamento granular demais. Não particione seus dados por identificadores ou nomes de clientes.
 
-Para particionar por mês, use a expressão `toYYYYMM(date_column)`, em que `date_column` é uma coluna com uma data do tipo [Date](/pt-BR/reference/data-types/date). Os nomes das partições aqui têm o formato `"YYYYMM"`.
+Com a estratégia de particionamento `hive`, que é o padrão definido por `file_like_engine_default_partition_strategy`, a chave de particionamento deve ser composta por colunas da tabela, por exemplo, `PARTITION BY (year, month)`. Uma expressão como `toYYYYMM(date_column)` exige a estratégia `wildcard`, com `{_partition_id}` no caminho. Tabelas que usam a estratégia `wildcard` aceitam gravação, mas não podem ser lidas.
 
 **Exemplo:**
 
@@ -101,8 +101,6 @@ As construções com `{}` são semelhantes à função de tabela [remote](/pt-BR
    * &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;3&#39;
 
 2. Há várias maneiras de criar uma tabela composta pelos seis arquivos:
-
-{/* */}
 
 ```sql
 CREATE TABLE table_with_range (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV')

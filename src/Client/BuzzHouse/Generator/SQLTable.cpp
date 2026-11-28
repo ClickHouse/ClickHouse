@@ -1560,6 +1560,14 @@ bool StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isFileLogEngine())
     {
+        if (b.integration == IntegrationCall::Dolor)
+        {
+            /// Ask dolor to create the directory or the file before ClickHouse creates the table over it
+            if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
+            {
+                connections.createExternalDatabaseTable(rg, *t, entries, te);
+            }
+        }
         te->add_params()->set_svalue(b.getTablePath(rg, false));
         te->add_params()->set_svalue(b.file_format.value());
     }
