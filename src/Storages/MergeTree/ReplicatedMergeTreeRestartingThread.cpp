@@ -41,7 +41,6 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char finish_clean_quorum_failed_parts[];
-    extern const char rmt_restarting_thread_pause_after_activation[];
 };
 
 /// Used to check whether it's us who set node `is_active`, or not.
@@ -188,10 +187,6 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.deduplication_hashes_cache.start();
 
     LOG_DEBUG(log, "Table started successfully");
-
-    /// Pauses where the replica is not readonly, first_time is still set, and queue_updating_task is armed.
-    FailPointInjection::pauseFailPoint(FailPoints::rmt_restarting_thread_pause_after_activation);
-
     return true;
 }
 
