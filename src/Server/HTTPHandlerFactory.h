@@ -6,6 +6,7 @@
 #include <Common/StringUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include "Server/HTTP/HTTP2RequestHandlerFactory.h"
 
 namespace DB
 {
@@ -152,5 +153,7 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server,
     const std::string & http_handlers_key = {},
     const std::string & protocol_name = {},
     const std::optional<String> & default_session_user = {});
+
+HTTP2RequestHandlerFactoryPtr createHTTP2HandlerFactory(IServer & server);
 
 }

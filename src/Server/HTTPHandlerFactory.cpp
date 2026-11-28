@@ -28,6 +28,8 @@
 
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandler.h>
+#include <Server/HTTP/HTTP2RequestHandlerFactory.h>
+#include <Server/StaticRequestHandler2.h>
 #include <base/find_symbols.h>
 
 
@@ -428,6 +430,13 @@ static inline HTTPRequestHandlerFactoryPtr createHTTPHandlerFactory(
     /// reference). Registering it earlier would shadow every SQL-defined handler.
     if (factory->areDefaultHandlersRegistered())
         addCatchAllQueryHandlerFactory(*factory, server, config, default_session_user);
+    return factory;
+}
+
+HTTP2RequestHandlerFactoryPtr
+createHTTP2HandlerFactory(IServer & server)
+{
+    auto factory = std::make_shared<SimpleHTTP2HandlerFactory<StaticRequestHandler2>>(server);
     return factory;
 }
 
