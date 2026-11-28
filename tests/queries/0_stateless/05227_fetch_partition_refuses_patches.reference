@@ -1,0 +1,7 @@
+the update is acknowledged on the source	1000	21000
+the partition has two base parts	2
+and its patch part is still pending	1
+the fetch of the partition is refused: 1
+and so is the fetch of the patched part: 1
+the fetch of the unpatched part is allowed	500	0
+the copy has the update	1000	21000

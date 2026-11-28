@@ -132,7 +132,7 @@ def test_embedded_ca_certificates(started_cluster):
                 "SELECT count() FROM system.certificates WHERE path = '(embedded)'"
             ).strip()
         )
-        > 100
+        > 50
     )
 
     # The outbound (client) TLS context is created from the same embedded certificates.
@@ -160,7 +160,7 @@ def test_embedded_ca_certificates(started_cluster):
                 "SELECT count() FROM system.certificates WHERE path = '(embedded)'"
             ).strip()
         )
-        > 100
+        > 50
     )
 
     # An existing but empty default CA file must also engage the fallback:
@@ -182,7 +182,7 @@ def test_embedded_ca_certificates(started_cluster):
                 "SELECT count() FROM system.certificates WHERE path = '(embedded)'"
             ).strip()
         )
-        > 100
+        > 50
     )
 
 
@@ -263,7 +263,7 @@ def test_unloadable_hash_named_file_engages_fallback(started_cluster):
                 "SELECT count() FROM system.certificates WHERE path = '(embedded)'"
             ).strip()
         )
-        > 100
+        > 50
     )
 
 

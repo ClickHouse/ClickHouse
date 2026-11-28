@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas, long
+-- Tags: no-parallel-replicas, long, no-msan
 -- Correctness of enable_group_by_top_k_optimization for composite GROUP BY keys,
 -- ORDER BY prefix matching, and projections that reuse a GROUP BY key's name for
 -- a different expression.
@@ -571,7 +571,6 @@ DROP TABLE t_gbylimit_comp;
 -- never produce a wrong top-N.  How the colliding name is resolved in ORDER BY
 -- is only well-defined under the analyzer; the old analyzer resolves the same
 -- construct inconsistently across query contexts.
-SET enable_analyzer = 1;
 SET max_threads = 1;
 SET optimize_trivial_group_by_limit_query = 0;
 

@@ -34,7 +34,7 @@ INSERT INTO t_pr_ai_2 SELECT number + 75 FROM numbers(25);
 
 # correlated_subqueries_use_in_memory_buffer = 0 is what a lowered compatibility setting gives;
 # with the in-memory buffer the decorrelated plan does not clone the referenced read.
-pr_settings="SETTINGS enable_analyzer = 1, automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 1, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', correlated_subqueries_use_in_memory_buffer = 0"
+pr_settings="SETTINGS automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 1, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', correlated_subqueries_use_in_memory_buffer = 0"
 
 # Reports whether the analysis produced rows, and the coordinators it created: exactly, when
 # none are expected, otherwise as a boolean, because the count of a query that legitimately
@@ -52,7 +52,7 @@ report() {
     coordinators=$(${CLICKHOUSE_CLIENT} --query "
         SELECT count()
         FROM system.text_log
-        WHERE query_id = '$query_id'
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id'
           AND message LIKE '%Creating parallel replicas coordinator%'")
     if [ "$expect" = positive ]; then
         echo "$label: analysis ok $ok, any coordinator $(( coordinators > 0 ? 1 : 0 ))"
@@ -94,13 +94,13 @@ echo -n 'plain query uses parallel replicas: '
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count() > 0
     FROM system.text_log
-    WHERE query_id = '$plain_id'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$plain_id'
       AND message LIKE '%Creating parallel replicas coordinator%'"
 
 # The analysis must return the same ranges with and without parallel replicas.
 echo -n 'correlated predicate result matches non-parallel: '
 with_pr=$(${CLICKHOUSE_CLIENT} --query "SELECT part_name, ranges FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_pr_ai, (key IN (SELECT (SELECT key) FROM t_pr_ai_2 ORDER BY key LIMIT 10))) ORDER BY part_name $pr_settings")
-without_pr=$(${CLICKHOUSE_CLIENT} --query "SELECT part_name, ranges FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_pr_ai, (key IN (SELECT (SELECT key) FROM t_pr_ai_2 ORDER BY key LIMIT 10))) ORDER BY part_name SETTINGS enable_analyzer = 1, enable_parallel_replicas = 0, correlated_subqueries_use_in_memory_buffer = 0")
+without_pr=$(${CLICKHOUSE_CLIENT} --query "SELECT part_name, ranges FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_pr_ai, (key IN (SELECT (SELECT key) FROM t_pr_ai_2 ORDER BY key LIMIT 10))) ORDER BY part_name SETTINGS enable_parallel_replicas = 0, correlated_subqueries_use_in_memory_buffer = 0")
 if [ -n "$with_pr" ] && [ "$with_pr" = "$without_pr" ]; then echo 1; else echo 0; fi
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_pr_ai; DROP TABLE t_pr_ai_2"

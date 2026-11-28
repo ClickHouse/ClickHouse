@@ -267,9 +267,8 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             {
                 ++count_invalid;
 
-                /// Buffer only what a vertical merge could have to reorder: its gather stage pairs
-                /// the Nth unskipped row source with the Nth merged row. A horizontal merge has no
-                /// such pairing, and nothing precedes the key's first selected row.
+                /// Buffer only what a vertical merge could have to reorder: its gather stage
+                /// pairs the Nth unskipped row source with the Nth merged row.
                 if (!out_row_sources_buf || (count_positive == 0 && count_negative == 0))
                     insertRow(current_row);
                 else

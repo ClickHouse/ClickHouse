@@ -13,41 +13,25 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="s3_max_connections">
-  ## s3_max_connections
-</div>
-
-<SettingsInfoBlock type="UInt64" default_value="1024" />
-
-الحد الأقصى لعدد الاتصالات لكل خادم.
-
-<div id="s3_max_get_burst">
-  ## s3_max_get_burst
-</div>
+## s3_max_get_burst {#s3_max_get_burst}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 الحد الأقصى لعدد الطلبات التي يمكن إرسالها بالتزامن قبل بلوغ حدّ الطلبات في الثانية. تكون القيمة الافتراضية (0) مساوية لـ `s3_max_get_rps`
 
-<div id="s3_max_get_rps">
-  ## s3_max_get_rps
-</div>
+## s3_max_get_rps {#s3_max_get_rps}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 حدّ معدل طلبات GET إلى S3 في الثانية قبل تطبيق تقييد المعدل. تعني القيمة صفر عدم وجود حد.
 
-<div id="s3_max_inflight_parts_for_one_file">
-  ## s3_max_inflight_parts_for_one_file
-</div>
+## s3_max_inflight_parts_for_one_file {#s3_max_inflight_parts_for_one_file}
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
 الحد الأقصى لعدد الأجزاء التي يمكن تحميلها بالتزامن ضمن طلب الرفع متعدد الأجزاء. القيمة 0 تعني عدم وجود حد.
 
-<div id="s3_max_part_number">
-  ## s3_max_part_number
-</div>
+## s3_max_part_number {#s3_max_part_number}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -55,25 +39,19 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الحد الأقصى لرقم الجزء في أجزاء الرفع إلى S3.
 
-<div id="s3_max_put_burst">
-  ## s3_max_put_burst
-</div>
+## s3_max_put_burst {#s3_max_put_burst}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 الحد الأقصى لعدد الطلبات التي يمكن إصدارها بالتزامن قبل بلوغ حد الطلبات في الثانية. افتراضيًا، تعادل القيمة (0) `s3_max_put_rps`
 
-<div id="s3_max_put_rps">
-  ## s3_max_put_rps
-</div>
+## s3_max_put_rps {#s3_max_put_rps}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 الحد الأقصى لمعدل طلبات PUT إلى S3 في الثانية قبل تطبيق تقييد المعدل. تعني القيمة صفر عدم وجود حد.
 
-<div id="s3_max_single_operation_copy_size">
-  ## s3_max_single_operation_copy_size
-</div>
+## s3_max_single_operation_copy_size {#s3_max_single_operation_copy_size}
 
 <SettingsInfoBlock type="UInt64" default_value="33554432" />
 
@@ -81,33 +59,25 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الحد الأقصى لحجم عملية نسخ واحدة في S3. لا يُستخدم هذا الإعداد إلا إذا كانت قيمة s3&#95;allow&#95;multipart&#95;copy هي true.
 
-<div id="s3_max_single_part_upload_size">
-  ## s3_max_single_part_upload_size
-</div>
+## s3_max_single_part_upload_size {#s3_max_single_part_upload_size}
 
 <SettingsInfoBlock type="UInt64" default_value="33554432" />
 
 الحد الأقصى لحجم الكائن الذي يمكن رفعه إلى S3 باستخدام الرفع أحادي الجزء.
 
-<div id="s3_max_single_read_retries">
-  ## s3_max_single_read_retries
-</div>
+## s3_max_single_read_retries {#s3_max_single_read_retries}
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
 الحد الأقصى لعدد مرات إعادة المحاولة أثناء عملية قراءة واحدة من S3.
 
-<div id="s3_max_unexpected_write_error_retries">
-  ## s3_max_unexpected_write_error_retries
-</div>
+## s3_max_unexpected_write_error_retries {#s3_max_unexpected_write_error_retries}
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
 الحد الأقصى لعدد مرات إعادة المحاولة عند حدوث أخطاء غير متوقعة أثناء الكتابة إلى S3.
 
-<div id="s3_max_upload_part_size">
-  ## s3_max_upload_part_size
-</div>
+## s3_max_upload_part_size {#s3_max_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" />
 

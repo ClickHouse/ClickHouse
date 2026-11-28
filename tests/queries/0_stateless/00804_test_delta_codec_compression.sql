@@ -25,8 +25,10 @@ INSERT INTO default_codec_synthetic SELECT number FROM system.numbers LIMIT 5000
 OPTIMIZE TABLE delta_codec_synthetic FINAL;
 OPTIMIZE TABLE default_codec_synthetic FINAL;
 
+-- `Delta` makes the data at least twice smaller. The exact ratio is not checked,
+-- because it depends on the version of the compression library and on the tuning of its levels.
 SELECT
-    floor(big_size / small_size) AS ratio
+    big_size > 2 * small_size
 FROM
     (SELECT 1 AS key, sum(bytes_on_disk) AS small_size FROM system.parts WHERE database == currentDatabase() and table == 'delta_codec_synthetic' and active)
 INNER JOIN
@@ -64,7 +66,7 @@ OPTIMIZE TABLE delta_codec_float FINAL;
 OPTIMIZE TABLE default_codec_float FINAL;
 
 SELECT
-    floor(big_size / small_size) as ratio
+    big_size > 2 * small_size
 FROM
     (SELECT 1 AS key, sum(bytes_on_disk) AS small_size FROM system.parts WHERE database = currentDatabase() and table = 'delta_codec_float' and active)
 INNER JOIN
@@ -102,7 +104,7 @@ OPTIMIZE TABLE delta_codec_string FINAL;
 OPTIMIZE TABLE default_codec_string FINAL;
 
 SELECT
-    floor(big_size / small_size) as ratio
+    big_size > 2 * small_size
 FROM
     (SELECT 1 AS key, sum(bytes_on_disk) AS small_size FROM system.parts WHERE database = currentDatabase() and table = 'delta_codec_string' and active)
 INNER JOIN

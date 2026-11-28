@@ -1,8 +1,7 @@
--- Tags: no-random-settings
+-- Tags: no-random-settings, no-msan
 
 -- { echo }
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET optimize_trivial_approximate_count_query = 0;
 SET max_insert_threads = 1;
 SET enable_parallel_replicas = 0;

@@ -390,7 +390,16 @@ def test_backward_compatibility_for_tuple_return_type(start_cluster):
 
     def run_checks(node, checks):
         """Run all checks on a node in a single round-trip and return results dict."""
-        return parse_batch_result(node.query(batch_query(checks)), checks)
+        # Every check opens connections between the nodes. With the default 1000 ms connect timeout,
+        # a network stall of a few seconds on the CI host fails all three connection attempts and the
+        # whole query, while a longer timeout lets the kernel retransmit the SYN and connect.
+        return parse_batch_result(
+            node.query(
+                batch_query(checks),
+                settings={"connect_timeout_with_failover_ms": 10000},
+            ),
+            checks,
+        )
 
     mixed_checks = build_checks(mixed_remote_tab)
     pre_nullable_only_checks = build_checks(pre_nullable_only_remote_tab)
@@ -401,11 +410,20 @@ def test_backward_compatibility_for_tuple_return_type(start_cluster):
     mixed_baseline = run_checks(pre_nullable_tuple_node_1, mixed_checks)
     assert mixed_baseline["sumCount"] == "(48,16)"
 
+    # `studentTTestOneSample` keeps the population mean in its state. A server older than the fix of its
+    # `merge` loses the mean when it merges the states of the shards and does the test against zero, so
+    # this one result depends on the version of the coordinator: the 16 values have the mean 3, which a
+    # current server tests against 2 and an older one against 0. The states are the same in both versions.
+    def expected(name, node, latest_nodes):
+        if name == "studentTTestOneSample" and node in latest_nodes:
+            return "(2.4495,0.0271)"
+        return mixed_baseline[name]
+
     # Verify all other nodes produce the same results (one round-trip per node).
     for node in [pre_nullable_tuple_node_2, node3, node4]:
         results = run_checks(node, mixed_checks)
         for name in mixed_baseline:
-            assert results[name] == mixed_baseline[name], f"{name} on {node.name}"
+            assert results[name] == expected(name, node, (node3, node4)), f"{name} on {node.name}"
 
     # Extra baseline with 4x pre-26.1 nodes — must match mixed baseline.
     pre_nullable_only_baseline = run_checks(
@@ -434,10 +452,11 @@ def test_backward_compatibility_for_tuple_return_type(start_cluster):
     # Upgrade one pre-26.1 node to latest and re-check compatibility from all coordinators.
     pre_nullable_tuple_node_1.restart_with_latest_version(fix_metadata=True)
 
+    latest_nodes = (pre_nullable_tuple_node_1, node3, node4)
     for node in [pre_nullable_tuple_node_1, pre_nullable_tuple_node_2, node3, node4]:
         results = run_checks(node, mixed_checks)
         for name in mixed_baseline:
-            assert results[name] == mixed_baseline[name], f"{name} on {node.name}"
+            assert results[name] == expected(name, node, latest_nodes), f"{name} on {node.name}"
 
         results = run_checks(node, mixed_empty_checks)
         for name in mixed_empty_baseline:

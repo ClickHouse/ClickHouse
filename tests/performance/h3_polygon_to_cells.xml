@@ -1,0 +1,5 @@
+<test>
+    <!-- Rings much smaller than a cell at resolution 10. -->
+    <query>SELECT sum(length(h3PolygonToCells(arrayMap(i -> (-0.4 + (number % 1000) / 2500 + 0.0001 * cos(i), 51.4 + intDiv(number, 1000) / 2000 + 0.0001 * sin(i)), range(9)), 10))) FROM numbers(10000)</query>
+    <query>SELECT sum(length(h3PolygonToCellsWithContainment(arrayMap(i -> (-0.4 + (number % 1000) / 2500 + 0.0001 * cos(i), 51.4 + intDiv(number, 1000) / 2000 + 0.0001 * sin(i)), range(9)), 10, 2))) FROM numbers(10000)</query>
+</test>

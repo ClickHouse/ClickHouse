@@ -1,4 +1,5 @@
 #include <Columns/ColumnString.h>
+#include <Formats/FormatSettings.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -10,15 +11,12 @@
 #include <Functions/IFunction.h>
 #include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 #include <ranges>
 
 namespace DB
 {
-namespace ErrorCodes
-{
-extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-}
 
 using namespace GatherUtils;
 
@@ -36,32 +34,35 @@ public:
         return std::make_shared<ConcatImpl>(name, is_injective);
     }
 
-    String getName() const override { return function_name; }
+    [[nodiscard]] String getName() const override { return function_name; }
 
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return injective; }
+    [[nodiscard]] bool isInjective(const ColumnsWithTypeAndName &) const override { return injective; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (arguments.size() == 1)
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Number of arguments for function {} should not be 1", getName());
+        /// Accept zero or at least two arguments, but not exactly one: a single argument hits the
+        /// passthrough in `executeImpl` that returns the input column unchanged, which would
+        /// contradict the declared `String` result type (legacy rejected it with
+        /// `TOO_FEW_ARGUMENTS_FOR_FUNCTION`). The `concat` overload resolver routes a single
+        /// argument to `toString` separately, so only the direct `ConcatImpl`
+        /// (`concatAssumeInjective`) relies on this.
+        return "() -> String OR (Any, Any, ...) -> String";
+    }
 
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (arguments.empty())
         {
@@ -84,7 +85,7 @@ private:
     const char * function_name;
     bool injective;
 
-    ColumnPtr executeBinary(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeBinary(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const IColumn * c0 = arguments[0].column.get();
         const IColumn * c1 = arguments[1].column.get();
@@ -111,7 +112,7 @@ private:
         return col_res;
     }
 
-    ColumnPtr executeFormatImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeFormatImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const size_t num_arguments = arguments.size();
         chassert(num_arguments >= 2);
@@ -214,8 +215,10 @@ public:
 
     bool isInjective(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// When called with a single argument, concat delegates to toString which is injective.
-        return arguments.size() == 1;
+        /// When called with a single argument, concat delegates to toString, so the claim has to be
+        /// the one toString makes: it depends on the argument type, because rendering a date-time in a
+        /// time zone that has a UTC offset transition maps two distinct instants onto one string.
+        return arguments.size() == 1 && to_string->isInjective(arguments);
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
@@ -234,10 +237,10 @@ public:
             return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    String getSignatureString() const override
     {
-        /// We always return Strings from concat, even if arguments were fixed strings.
-        return std::make_shared<DataTypeString>();
+        /// We always return String from concat, even if arguments were fixed strings.
+        return "([Any], ...) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

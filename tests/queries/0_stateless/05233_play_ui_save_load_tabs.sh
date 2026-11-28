@@ -23,7 +23,8 @@ echo "$page" | grep -oE '<button id="tab-(save|load)" type="button" title="[^"]*
 echo "$page" | grep -E '^ *<div id="(tab-io|connection-menu)">$' | sed 's/^ *//'
 
 echo '--- one auto margin pushes that whole right-hand cluster over; a second one would split it'
-echo "$page" | grep -cE '^ *margin-left: auto;$'
+# (counted among the tab bar's rules only: a notebook cell header uses an auto margin of its own)
+echo "$page" | grep -B3 -E '^ *margin-left: auto;$' | grep -cE '^ *#(tab-io|connection-menu)$'
 
 echo '--- Save opens a modal with the document, Load one with a textarea to paste into'
 echo "$page" | grep -oE '^ *<dialog id="tabs-(save|load)-dialog" class="tabs-dialog">$' | sed 's/^ *//'
@@ -32,7 +33,11 @@ echo "$page" | grep -oE '^ *<button id="tabs-(save-copy|save-download|load-uploa
 
 echo '--- a section per tab: its title as a top-level heading, then its query in a fenced block'
 echo "$page" | grep -oF "out.push('# ' + tab.title);"
-echo "$page" | grep -oF "out.push(fence + '\n' + tab.query + '\n' + fence);"
+echo "$page" | grep -oF "out.push(fence + '\n' + cell.query + '\n' + fence);"
+
+echo '--- a notebook tab writes every cell, a Markdown cell as a block with the markdown info string'
+echo "$page" | grep -A1 -F 'for (const cell of tab.cells) {' | grep -oF "if (cell.type === 'text') {"
+echo "$page" | grep -oF "out.push(text_fence + 'markdown\n' + cell.text + '\n' + text_fence);"
 
 echo '--- the fence is one backtick longer than the longest run of backticks inside the query'
 echo "$page" | grep -oF "return '\`'.repeat(Math.max(3, longest + 1));"
@@ -44,14 +49,15 @@ echo "$page" | grep -oF "out.push(params_fence + 'json\n' + json + '\n' + params
 echo '--- a cell of a result table escapes what would otherwise break the row apart'
 echo "$page" | grep -oF "return text.replace(/\\\\/g, '\\\\\\\\').replace(/([\`|])/g, '\\\\\$1').replace(/\r?\n/g, '<br>');"
 
-echo '--- loading reads back the title, the query and the parameters - and nothing else'
+echo '--- loading reads back the title, the cells and the parameters - and nothing else'
 echo "$page" | grep -oF "if (kind === 'query') {"
 echo "$page" | grep -oF "if (current && line.match(/^##[ \t]+parameters[ \t]*\$/i)) { expect = 'params'; continue; }" | sed 's/^ *//'
-echo "$page" | grep -oF ".map(entry => ({ title: entry.title, query: entry.query ?? '', params: entry.params }));"
+echo "$page" | grep -oF "current.cells.push({ type: 'query', query: body.join('\n'), params: null });"
+echo "$page" | grep -oF "current.cells.push({ type: 'text', text: body.join('\n') });"
 
-echo '--- a loaded tab states its query and its parameter values together, so the pair is coherent'
-echo "$page" | grep -oF 'tab.params = entry.params;'
-echo "$page" | grep -A4 -F 'tab.params = entry.params;' | grep -oF 'tab.paramsSyncedQuery = tab.query;'
+echo '--- a loaded cell states its query and its parameter values together, so the pair is coherent'
+echo "$page" | grep -oF 'const cell = makeQueryCell(c.query, c.params || {});'
+echo "$page" | grep -A4 -F 'const cell = makeQueryCell(c.query, c.params || {});' | grep -oF 'if (c.params) cell.paramsSyncedQuery = cell.query;'
 
 echo '--- replacing the workspace closes the old tabs, and asks first when there is anything to lose'
 echo "$page" | grep -oF 'if (has_content && !confirm('

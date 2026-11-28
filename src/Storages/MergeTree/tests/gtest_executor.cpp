@@ -9,7 +9,9 @@
 #include <array>
 #include <atomic>
 #include <barrier>
+#include <chrono>
 #include <functional>
+#include <future>
 #include <latch>
 #include <memory>
 #include <random>
@@ -55,7 +57,7 @@ public:
 
     void cancel() noexcept override { /* no op */ }
 
-    StorageID getStorageID() const override
+    [[nodiscard]] StorageID getStorageID() const override
     {
         return {"test", name};
     }
@@ -67,8 +69,8 @@ public:
             throw TestException();
     }
 
-    Priority getPriority() const override { return {}; }
-    String getQueryId() const override { return {}; }
+    [[nodiscard]] Priority getPriority() const override { return {}; }
+    [[nodiscard]] String getQueryId() const override { return {}; }
 
 private:
     std::mt19937 generator;
@@ -157,6 +159,35 @@ TEST(Executor, Simple)
     barrier.arrive_and_wait(); // Do not finish until tasks are done
     executor->wait();
     ASSERT_EQ(schedule, expected_schedule);
+}
+
+TEST(Executor, ReserveTaskSlotsWaitsForAvailableSlot)
+{
+    auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
+    (
+        ThreadName::TEST_SCHEDULER,
+        1, // threads
+        1, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
+    );
+
+    ASSERT_EQ(executor->tryReserveTaskSlots(1), 1);
+
+    auto reserved_slot = std::async(std::launch::async, [&]
+    {
+        return executor->reserveTaskSlots(1);
+    });
+
+    ASSERT_EQ(reserved_slot.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+    executor->releaseTaskSlots(1);
+    ASSERT_EQ(reserved_slot.get(), 1);
+    executor->releaseTaskSlots(1);
+    executor->wait();
 }
 
 
@@ -330,10 +361,10 @@ public:
 
     bool executeStep() override { return false; }
     void cancel() noexcept override {}
-    StorageID getStorageID() const override { return {"test", name}; }
+    [[nodiscard]] StorageID getStorageID() const override { return {"test", name}; }
     void onCompleted() override {}
-    Priority getPriority() const override { return {}; }
-    String getQueryId() const override { return "test::slow_destructor"; }
+    [[nodiscard]] Priority getPriority() const override { return {}; }
+    [[nodiscard]] String getQueryId() const override { return "test::slow_destructor"; }
 
 private:
     String name;

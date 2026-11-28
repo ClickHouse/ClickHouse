@@ -7,9 +7,7 @@ doc_type: 'guide'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', 'extension', 'tutorial', 'taxi']
 ---
 
-<div id="overview">
-  ## Vue d’ensemble
-</div>
+## Vue d’ensemble {#overview}
 
 Ce tutoriel suit le [tutoriel ClickHouse], mais exécute toutes ses requêtes via
 pg&#95;clickhouse.
@@ -20,9 +18,7 @@ Choisissez comment vous souhaitez configurer `pg_clickhouse` :
 * [Depuis PSQL](#from-psql) si vous installez et configurez l’extension
   vous-même.
 
-<div id="start-clickhouse">
-  ## Démarrer ClickHouse
-</div>
+## Démarrer ClickHouse {#start-clickhouse}
 
 Commencez par créer une base de données ClickHouse si vous n’en avez pas déjà. Pour démarrer rapidement,
 vous pouvez utiliser l’image Docker :
@@ -32,9 +28,7 @@ docker run -d --network host --name clickhouse -p 8123:8123 -p9000:9000 --ulimit
 docker exec -it clickhouse clickhouse-client
 ```
 
-<div id="create-a-table">
-  ## Créer une table
-</div>
+## Créer une table {#create-a-table}
 
 Inspirons-nous du [tutoriel ClickHouse] pour créer une base de données simple à partir du jeu de données des taxis de la ville de New York :
 
@@ -98,16 +92,15 @@ PARTITION BY toYYYYMM(pickup_date)
 ORDER BY pickup_datetime;
 ```
 
-<div id="add-the-data-set">
-  ## Ajouter le jeu de données
-</div>
+## Ajouter le jeu de données {#add-the-data-set}
 
-Importez ensuite les données :
+Importez ensuite les données :
 
 ```sql
 INSERT INTO taxi.trips
 SELECT * FROM s3(
     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{1..2}.gz',
+    'NOSIGN',
     'TabSeparatedWithNames', "
     trip_id UInt32,
     vendor_id Enum8(
@@ -162,16 +155,14 @@ SELECT * FROM s3(
 ") SETTINGS input_format_try_infer_datetimes = 0
 ```
 
-Vérifiez que nous pouvons l’interroger, puis quittez le client :
+Vérifiez que nous pouvons l’interroger, puis quittez le client :
 
 ```sql
 SELECT count() FROM taxi.trips;
 quit
 ```
 
-<div id="from-console">
-  ## Depuis la console
-</div>
+## Depuis la console {#from-console}
 
 Si vous utilisez ClickHouse Managed Postgres, vous pouvez configurer
 `pg_clickhouse` et vous connecter à un service ClickHouse depuis la ClickHouse Cloud console.
@@ -184,16 +175,28 @@ mot de passe ClickHouse, puis sélectionnez la base de données Postgres et le s
 tables ClickHouse doivent être importées. Cliquez sur **Connect** pour créer le serveur foreign
 et importer le schéma.
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="Formulaire de configuration de pg_clickhouse pour la base de données taxi dans la ClickHouse Cloud console" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Formulaire de configuration de pg_clickhouse pour la base de données taxi dans la ClickHouse Cloud console](/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp)
+  </Frame>
+</div>
 
 Une fois la configuration terminée, la console affiche une confirmation et le serveur foreign
 apparaît dans la liste des serveurs.
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="Configuration de pg_clickhouse terminée pour la base de données taxi dans la ClickHouse Cloud console" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Configuration de pg_clickhouse terminée pour la base de données taxi dans la ClickHouse Cloud console](/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp)
+  </Frame>
+</div>
 
-<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="Liste des serveurs foreign affichant la connexion pg_clickhouse de taxi" size="lg" border />
+<div className="ch-image-lg">
+  <Frame>
+    ![Liste des serveurs foreign affichant la connexion pg_clickhouse de taxi](/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp)
+  </Frame>
+</div>
 
-Vous pouvez maintenant ouvrir la **SQL console** Postgres et interroger les tables importées :
+Vous pouvez maintenant ouvrir la **SQL console** Postgres et interroger les tables importées :
 
 ```sql
 SELECT * FROM <schema>.<table>;
@@ -202,13 +205,9 @@ SELECT * FROM <schema>.<table>;
 Pour suivre les exemples de trajets en taxi de ce tutoriel, sélectionnez la base de données ClickHouse `taxi`
 et importez-la dans un schéma de destination nommé `taxi`.
 
-<div id="from-psql">
-  ## Depuis PSQL
-</div>
+## Depuis PSQL {#from-psql}
 
-<div id="install-pg_clickhouse">
-  ### Installer pg_clickhouse
-</div>
+### Installer pg_clickhouse {#install-pg_clickhouse}
 
 Compilez et installez pg&#95;clickhouse depuis [PGXN] ou [GitHub]. Vous pouvez aussi démarrer un
 conteneur Docker à partir de l’[image pg&#95;clickhouse], qui ajoute simplement
@@ -219,9 +218,7 @@ docker run -d --network host --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
        -d ghcr.io/clickhouse/pg_clickhouse:18
 ```
 
-<div id="connect-pg_clickhouse">
-  ### Connecter pg_clickhouse
-</div>
+### Connecter pg_clickhouse {#connect-pg_clickhouse}
 
 Connectez-vous maintenant à Postgres :
 
@@ -339,35 +336,33 @@ Server: taxi_srv
 FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 ```
 
-Exécutez maintenant une requête sur la table :
+Exécutez maintenant une requête sur la table :
 
 ```pgsql
- SELECT count(*) FROM taxi.trips;
-   count
- ---------
-  1999657
- (1 row)
+SELECT count(*) FROM taxi.trips;
+  count
+---------
+ 1999657
+(1 row)
 ```
 
 Notez la rapidité d’exécution de la requête. pg&#95;clickhouse transmet l’intégralité de la
 requête, y compris l’agrégat `COUNT()`, à ClickHouse, de sorte qu’elle s’y exécute et ne
-renvoie qu’une seule ligne à Postgres. Utilisez [EXPLAIN] pour le constater :
+renvoie qu’une seule ligne à Postgres. Utilisez [EXPLAIN] pour le constater :
 
 ```pgsql
- EXPLAIN select count(*) from taxi.trips;
-                    QUERY PLAN
- -------------------------------------------------
-  Foreign Scan  (cost=1.00..-0.90 rows=1 width=8)
-    Relations: Aggregate on (trips)
- (2 rows)
+EXPLAIN select count(*) from taxi.trips;
+                   QUERY PLAN
+-------------------------------------------------
+ Foreign Scan  (cost=1.00..-0.90 rows=1 width=8)
+   Relations: Aggregate on (trips)
+(2 rows)
 ```
 
 Notez que &quot;Foreign Scan&quot; apparaît à la racine du plan, ce qui signifie que l’intégralité de la
 requête a été déléguée à ClickHouse.
 
-<div id="analyze-the-data">
-  ## Analyser les données
-</div>
+## Analyser les données {#analyze-the-data}
 
 Exécutez quelques requêtes pour analyser les données. Consultez les exemples suivants ou essayez
 votre propre requête SQL.
@@ -524,9 +519,7 @@ votre propre requête SQL.
   Time: 17.450 ms
   ```
 
-<div id="create-a-dictionary">
-  ## Créer un dictionnaire
-</div>
+## Créer un dictionnaire {#create-a-dictionary}
 
 Créez un dictionnaire associé à une table dans votre service ClickHouse. La
 table et le dictionnaire sont basés sur un fichier CSV qui contient une ligne pour chaque
@@ -538,7 +531,7 @@ Les quartiers sont associés aux noms des cinq boroughs de New York
 
 Voici un extrait du fichier CSV que vous utilisez, présenté sous forme de tableau. La
 colonne `LocationID` du fichier correspond aux colonnes `pickup_nyct2010_gid` et
-`dropoff_nyct2010_gid` de votre table des trajets :
+`dropoff_nyct2010_gid` de votre table des trajets :
 
 | LocationID | Borough       | Zone                    | service&#95;zone |
 | ---------: | ------------- | ----------------------- | ---------------- |
@@ -550,7 +543,7 @@ colonne `LocationID` du fichier correspond aux colonnes `pickup_nyct2010_gid` et
 
 1. Toujours dans Postgres, utilisez la fonction `clickhouse_raw_query` pour créer un
    [dictionnaire] ClickHouse nommé `taxi_zone_dictionary` et le renseigner à
-   partir du fichier CSV stocké dans S3 :
+   partir du fichier CSV stocké dans S3 :
 
    ```sql
    CALL clickhouse_perform('taxi_srv', $$
@@ -574,14 +567,14 @@ colonne `LocationID` du fichier correspond aux colonnes `pickup_nyct2010_gid` et
      LIFETIME](/fr/reference/statements/create/dictionary/lifetime).
    </Note>
 
-   2. Importez-le maintenant :
+   2. Importez-le maintenant :
 
    ```sql
    IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
    FROM SERVER taxi_srv INTO taxi;
    ```
 
-   3. Vérifiez que nous pouvons l’interroger :
+   3. Vérifiez que nous pouvons l’interroger :
 
    ```pgsql
    taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
@@ -595,7 +588,7 @@ colonne `LocationID` du fichier correspond aux colonnes `pickup_nyct2010_gid` et
 
    4. Excellent. Utilisez maintenant la fonction `dictGet` pour récupérer le
       nom d’un borough dans une requête. Cette requête additionne le nombre de trajets
-      en taxi par borough qui se terminent à l’aéroport de LaGuardia ou à JFK :
+      en taxi par borough qui se terminent à l’aéroport de LaGuardia ou à JFK :
 
    ```pgsql
    taxi=# SELECT
@@ -626,15 +619,13 @@ colonne `LocationID` du fichier correspond aux colonnes `pickup_nyct2010_gid` et
    à l’aéroport de LaGuardia, soit à l’aéroport JFK. Notez qu’un certain nombre de trajets ont un
    quartier de prise en charge inconnu.
 
-<div id="perform-a-join">
-  ## Effectuer une jointure
-</div>
+## Effectuer une jointure {#perform-a-join}
 
 Rédigez quelques requêtes qui effectuent une jointure entre `taxi_zone_dictionary` et votre
 table `trips`.
 
 1. Commencez par un `JOIN` simple, similaire à la requête précédente sur l’aéroport
-   ci-dessus :
+   ci-dessus :
 
    ```pgsql
    taxi=# SELECT
@@ -688,7 +679,7 @@ table `trips`.
    ```
 
 2. Cette requête renvoie les lignes correspondant aux 1000 trajets avec le montant de
-   pourboire le plus élevé, puis associe chaque ligne au dictionnaire via une jointure interne :
+   pourboire le plus élevé, puis associe chaque ligne au dictionnaire via une jointure interne :
 
    ```sql
    taxi=# SELECT *
@@ -705,11 +696,11 @@ table `trips`.
   ne devez récupérer que les colonnes dont vous avez réellement besoin.
 </Note>
 
-[ClickHouse tutorial]: /get-started/quickstarts/tutorial "tutoriel ClickHouse avancé"
+[ClickHouse tutorial]: /get-started/sample-datasets/nyc-taxi "Données des taxis de New York"
 
-[psql]: https://www.postgresql.org/docs/current/app-psql.html "Applications clientes PostgreSQL : psql"
+[psql]: https://www.postgresql.org/docs/current/app-psql.html "Applications clientes PostgreSQL : psql"
 
-[EXPLAIN]: https://www.postgresql.org/docs/current/sql-explain.html "Commandes SQL : EXPLAIN"
+[EXPLAIN]: https://www.postgresql.org/docs/current/sql-explain.html "Commandes SQL : EXPLAIN"
 
 [dictionary]: /reference/statements/create/dictionary
 
@@ -721,4 +712,4 @@ table `trips`.
 
 [Postgres image]: https://hub.docker.com/_/postgres "Image OCI Postgres sur Docker Hub"
 
-[Refreshing dictionary data using LIFETIME]: /reference/statements/create/dictionary/lifetime "Documentation ClickHouse : actualisation des données du dictionnaire avec LIFETIME"
+[Refreshing dictionary data using LIFETIME]: /reference/statements/create/dictionary/lifetime "Documentation ClickHouse : actualisation des données du dictionnaire avec LIFETIME"

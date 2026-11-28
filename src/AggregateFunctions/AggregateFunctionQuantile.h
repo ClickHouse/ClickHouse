@@ -71,6 +71,10 @@ class AggregateFunctionQuantile final
 {
 private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
+    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, SecondArgumentType, FloatReturnType, returns_many, has_accuracy_parameter>>;
+
+    static constexpr bool has_add_many = std::is_same_v<SecondArgumentType, void>
+        && requires(Data & data, const Value * values) { data.addMany(values, size_t{}); };
 
     static constexpr bool returns_float = !std::is_same_v<FloatReturnType, void>;
     static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDD<Value>>;
@@ -89,6 +93,9 @@ private:
     Float64 relative_accuracy = 0.01;
 
     DataTypePtr & argument_type;
+
+    /// The weight is `UInt128` or `UInt256`, see `getWeight`.
+    bool weight_is_wide = false;
 
 public:
     AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
@@ -110,6 +117,12 @@ public:
                     "Second argument (weight) for function {} must be unsigned integer, but it has type {}",
                     Name::name,
                     argument_types_[1]->getName());
+            /// Only a weight is checked: the determinator of `quantileDeterministic` may be any value of its type.
+            if constexpr (!requires { Data::second_argument_is_determinator; })
+            {
+                const WhichDataType which_weight(argument_types_[1]);
+                weight_is_wide = which_weight.isUInt128() || which_weight.isUInt256();
+            }
         }
         else if constexpr (std::is_same_v<SecondArgumentType, Float64>)
         {
@@ -180,7 +193,7 @@ public:
         }
     }
 
-    String getName() const override { return Name::name; }
+    [[nodiscard]] String getName() const override { return Name::name; }
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
@@ -207,13 +220,13 @@ public:
             return res;
     }
 
-    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    [[nodiscard]] bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
         return GatherFunctionQuantileData::toFusedNameOrSelf(getName()) == GatherFunctionQuantileData::toFusedNameOrSelf(rhs.getName())
             && this->haveEqualArgumentTypes(rhs);
     }
 
-    DataTypePtr getNormalizedStateType() const override
+    [[nodiscard]] DataTypePtr getNormalizedStateType() const override
     {
         /// Return normalized state type: quantiles*(1)(...)
         Array params{1};
@@ -229,12 +242,7 @@ public:
             params);
     }
 
-    /// The level may be any numeric Field. A Decimal or wide-integer one prints as a quoted string,
-    /// which reparses as a String that the level check rejects, so the printed state type name needs
-    /// ::Type suffixes to name the parameters it was printed from.
-    bool shouldPrintParametersWithTypes() const override { return true; }
-
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -251,11 +259,78 @@ public:
         }
 
         if constexpr (std::is_same_v<SecondArgumentType, UInt64>)
-            this->data(place).add(value, columns[1]->getUInt(row_num));
+            this->data(place).add(value, getWeight(*columns[1], row_num));
         else if constexpr (std::is_same_v<SecondArgumentType, Float64>)
             this->data(place).add(value, columns[1]->getFloat64(row_num));
         else
             this->data(place).add(value);
+    }
+
+    /// The weights are `UInt64`: `getUInt` would narrow a wider one silently, so it is checked in its own type.
+    [[nodiscard]] UInt64 getWeight(const IColumn & column, size_t row_num) const
+    {
+        if (unlikely(weight_is_wide))
+        {
+            const Field weight = column[row_num];
+            const bool fits = weight.getType() == Field::Types::UInt128
+                ? weight.safeGet<UInt128>() <= std::numeric_limits<UInt64>::max()
+                : weight.safeGet<UInt256>() <= std::numeric_limits<UInt64>::max();
+            if (!fits)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The weight {} of function {} is too large: weights are at most the maximum of UInt64",
+                    weight.dump(), Name::name);
+        }
+        return column.getUInt(row_num);
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if constexpr (has_add_many)
+        {
+            const auto * values = assert_cast<const ColVecType &>(*columns[0]).getData().data() + row_begin;
+            if (if_argument_pos >= 0)
+            {
+                const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data() + row_begin;
+                this->data(place).template addManyFiltered<true>(values, row_end - row_begin, if_flags);
+            }
+            else
+                this->data(place).addMany(values, row_end - row_begin);
+        }
+        else
+            Base::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if constexpr (has_add_many)
+        {
+            const auto * values = assert_cast<const ColVecType &>(*columns[0]).getData().data() + row_begin;
+            const size_t count = row_end - row_begin;
+            if (if_argument_pos >= 0)
+            {
+                const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data() + row_begin;
+                auto keep = std::make_unique_for_overwrite<UInt8[]>(count);
+                for (size_t i = 0; i < count; ++i)
+                    keep[i] = !null_map[row_begin + i] & !!if_flags[i];
+                this->data(place).template addManyFiltered<true>(values, count, keep.get());
+            }
+            else
+                this->data(place).template addManyFiltered<false>(values, count, null_map + row_begin);
+        }
+        else
+            Base::addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -263,7 +338,7 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    bool isVersioned() const override { return state_version > 0; }
+    [[nodiscard]] bool isVersioned() const override { return state_version > 0; }
 
     /// The default version - the one used when the type carries no explicit version - must stay 0.
     /// Unversioned `AggregateFunction(quantileDeterministic, ...)` types already exist in persisted
@@ -278,13 +353,13 @@ public:
     /// state (a `-State` query result, an inferred `CREATE TABLE ... AS SELECT` column, a value
     /// entering a `Dynamic` column) carries the version with it on every medium, while a fresh
     /// `CREATE TABLE` with a spelled-out unversioned column type gets the version pinned at DDL time.
-    size_t getDefaultVersion() const override { return 0; }
+    [[nodiscard]] size_t getDefaultVersion() const override { return 0; }
 
     /// The state type spells the version out, so that the type name and the payload stay consistent
     /// on every medium the state can travel through - including the generic formats, which serialize
     /// query results with the state type as-is (only the `Native` wire re-derives versions from the
     /// negotiated revision).
-    DataTypePtr getStateType() const override
+    [[nodiscard]] DataTypePtr getStateType() const override
     {
         if constexpr (state_version > 0)
             return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, state_version);
@@ -292,7 +367,7 @@ public:
             return IAggregateFunction::getStateType();
     }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
     {
         if constexpr (state_version >= 1)
         {

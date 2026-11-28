@@ -3,17 +3,11 @@
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
-#include <Common/SilkFiberScheduler.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <IO/WriteHelpers.h>
 
 #include <base/scope_guard.h>
 #include <base/sleep.h>
-
-#include "config.h"
-
-#if USE_SILK
-#include <silk/fibers/fiber.h>
-#endif
 
 #include <atomic>
 #include <limits>
@@ -63,13 +57,8 @@ Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceed
 
 void Throttler::sleep(UInt64 nanoseconds)
 {
-#if USE_SILK
-    if (Silk::isInsideFiber())
-    {
-        silk::FiberScheduler::sleep(nanoseconds);
-        return;
-    }
-#endif
+    /// Park the CPU lease while sleeping
+    CPULeaseParkGuard park_guard;
     sleepForNanoseconds(nanoseconds);
 }
 
@@ -121,6 +110,17 @@ bool Throttler::throttle(size_t amount, size_t max_block_ns)
     return block || parent_block;
 }
 
+bool Throttler::throttleOSPageCacheRead(size_t amount, size_t max_block_ns)
+{
+    if (!limits_block_device_bandwidth)
+        return throttle(amount, max_block_ns);
+
+    /// This throttler does not account the read, but a parent still can.
+    if (parent)
+        return parent->throttleOSPageCacheRead(amount, max_block_ns);
+    return false;
+}
+
 void Throttler::throttleImpl(size_t amount, size_t & count_value, double & tokens_value)
 {
     size_t max_speed_value = 0;
@@ -166,6 +166,12 @@ Int64 Throttler::getAvailable()
     double tokens_value = 0.0;
     throttleImpl(0, count_value, tokens_value);
 
+    /// The bucket of a throttler with a huge burst (e.g. `s3_max_get_rps` = 2^64 - 1, which makes the burst the same)
+    /// holds more tokens than `Int64` can represent, and converting such a value to `Int64` is undefined behavior.
+    if (tokens_value >= static_cast<double>(std::numeric_limits<Int64>::max()))
+        return std::numeric_limits<Int64>::max();
+    if (tokens_value <= static_cast<double>(std::numeric_limits<Int64>::min()))
+        return std::numeric_limits<Int64>::min();
     return static_cast<Int64>(tokens_value);
 }
 

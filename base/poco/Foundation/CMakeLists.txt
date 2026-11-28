@@ -93,6 +93,7 @@ set (SRCS
     src/NamedEvent.cpp
     src/NamedMutex.cpp
     src/NestedDiagnosticContext.cpp
+    src/NoDumpAllocator.cpp
     src/Notification.cpp
     src/NotificationCenter.cpp
     src/NotificationQueue.cpp

@@ -1,0 +1,5 @@
+--- the information_schema relations resolve through pg_namespace.oid -> pg_class.relnamespace
+columns
+tables
+--- a self-connect reads information_schema.columns as a schema-qualified table
+a

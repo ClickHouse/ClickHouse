@@ -1,6 +1,6 @@
 -- { echo }
 
-SET allow_experimental_nullable_tuple_type = 0;
+SET enable_nullable_tuple_type = 0;
 DROP TABLE IF EXISTS test;
 CREATE TABLE test
 (
@@ -19,7 +19,7 @@ SELECT json.d AS path, toTypeName(path) FROM test;
 \N	Nullable(Tuple(e UInt32, f Nullable(UInt32)))
 \N	Nullable(Tuple(e UInt32, f Nullable(UInt32)))
 \N	Nullable(Tuple(e UInt32, f Nullable(UInt32)))
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 DROP TABLE IF EXISTS test;
 CREATE TABLE test
 (

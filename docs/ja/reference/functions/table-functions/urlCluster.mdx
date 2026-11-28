@@ -11,17 +11,13 @@ doc_type: 'reference'
 
 指定したクラスター内の複数のノードで、URL 上のファイルを並列に処理できます。イニシエーターでは、クラスター内のすべてのノードへの接続を確立し、URL のファイルパス内のアスタリスクを展開して、各ファイルを動的に振り分けます。ワーカーノードでは、次に処理するタスクをイニシエーターに問い合わせて処理します。これを、すべてのタスクが完了するまで繰り返します。
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 urlCluster(cluster_name, URL, format, structure)
 ```
 
-<div id="arguments">
-  ## 引数
-</div>
+## 引数 {#arguments}
 
 | 引数             | 説明                                                                                                 |
 | -------------- | -------------------------------------------------------------------------------------------------- |
@@ -30,15 +26,11 @@ urlCluster(cluster_name, URL, format, structure)
 | `format`       | データの [フォーマット](/ja/reference/formats/index)。型: [String](/ja/reference/data-types/string)。                 |
 | `structure`    | `'UserID UInt64, Name String'` 形式のテーブル構造です。カラム名と型を決定します。型: [String](/ja/reference/data-types/string)。 |
 
-<div id="returned-value">
-  ## 戻り値
-</div>
+## 戻り値 {#returned-value}
 
 指定されたフォーマットと構造を持ち、指定した`URL`のデータを含むテーブル。
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 `String` および [UInt32](/ja/reference/data-types/int-uint) 型のカラムを含むテーブルの先頭 3 行を、[CSV](/ja/reference/formats/CSV/CSV) フォーマットで応答する HTTP サーバーから取得する例です。
 
@@ -64,16 +56,14 @@ if __name__ == "__main__":
 SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column1 String, column2 UInt32')
 ```
 
-<div id="globs-in-url">
-  ## URL 内のグロブ
-</div>
+## URL 内のグロブ {#globs-in-url}
 
 `{ }` 内のパターンは、分片の集合を生成したり、フェイルオーバー用アドレスを指定したりするために使用されます。サポートされているパターンの種類と例については、[remote](/ja/reference/functions/table-functions/remote#globs-in-addresses) 関数の説明を参照してください。
 パターン内の文字 `|` は、フェイルオーバー用アドレスを指定するために使用されます。これらのアドレスは、パターンに記載された順序どおりに順次試行されます。生成されるアドレス数は、[glob&#95;expansion&#95;max&#95;elements](/ja/reference/settings/session-settings/other#glob_expansion_max_elements) 設定によって制限されます。
 
-<div id="related">
-  ## 関連
-</div>
+アドレスは、タスクがクラスターのノードに割り当てられるたびに 1 つずつ生成されます。そのため、[url](/ja/reference/functions/table-functions/url#globs-in-url) 関数の説明にあるとおり、`glob_expansion_max_elements` が制限するのはパターンの大きさではなく、単一のクエリで読み取れるアドレス数です。`_path` または `_file` に対する述語は各アドレスの生成時に適用されるため、述語によって除外されるアドレスも生成され、制限のカウント対象となります。送出されるのは一致したアドレスのみです。
+
+## 関連 {#related}
 
 * [HDFS エンジン](/ja/reference/engines/table-engines/integrations/hdfs)
 * [URL テーブル関数](/ja/reference/engines/table-engines/special/url)

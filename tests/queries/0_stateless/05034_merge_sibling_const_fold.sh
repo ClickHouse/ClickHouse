@@ -4,10 +4,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The old analyzer rejects a `merge()` child that lacks a selected column with UNKNOWN_IDENTIFIER,
-# and the two system siblings below have no column in common with the fixture table.
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer 1"
-
 # merge()'s REGEXP argument only accepts a string literal, so the database name has to be
 # interpolated by the shell rather than computed with currentDatabase(). Anchoring both regexps
 # keeps a concurrent copy of this test, which creates the same table name in its own database,
@@ -37,7 +33,7 @@ for prewhere in 0 1; do
     ${CLICKHOUSE_CLIENT} -q "
     SET allow_suspicious_variant_types = 1, allow_suspicious_low_cardinality_types = 1,
         use_variant_as_common_type = 1,
-        optimize_move_to_prewhere = ${prewhere}, query_plan_optimize_prewhere = ${prewhere};
+        optimize_move_to_prewhere = ${prewhere};
 
     SELECT DISTINCT toString(c) AS s FROM (
         SELECT multiIf(${COND}, 'yesyes', toLowCardinality(isNull('nononono'))) AS c

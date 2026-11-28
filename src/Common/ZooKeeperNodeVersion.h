@@ -104,11 +104,11 @@ class ZooKeeperNodeVersion : public details::ZooKeeperNodeVersionBase<int64_t>
 public:
     using ZooKeeperNodeVersionBase::ZooKeeperNodeVersionBase;
 
-    int32_t toInt32() const;
-    int64_t toInt64() const noexcept;
+    [[nodiscard]] int32_t toInt32() const;
+    [[nodiscard]] int64_t toInt64() const noexcept;
 
-    bool isFromZooKeeper() const noexcept;
-    bool isFakeVersion() const noexcept;
+    [[nodiscard]] bool isFromZooKeeper() const noexcept;
+    [[nodiscard]] bool isFakeVersion() const noexcept;
 };
 
 class AtomicZooKeeperNodeVersion : public details::ZooKeeperNodeVersionBase<std::atomic<int64_t>>

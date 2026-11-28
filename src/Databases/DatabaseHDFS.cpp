@@ -5,6 +5,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseHDFS.h>
 
+#include <IO/parseURI.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -90,7 +91,7 @@ bool DatabaseHDFS::checkUrl(const std::string & url, ContextPtr context_, bool t
     try
     {
         checkHDFSURL(url);
-        context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url));
+        context_->getGlobalContext()->getRemoteHostFilter().checkURL(parseURI(url));
     }
     catch (...)
     {
@@ -191,7 +192,7 @@ ASTPtr DatabaseHDFS::getCreateDatabaseQueryImpl() const
     const auto & settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
 
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = HDFS('{}')", backQuoteIfNeed(database_name), source);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = HDFS({})", backQuoteIfNeed(database_name), quoteString(source));
     ASTPtr ast
         = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
@@ -268,14 +269,15 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
           * what turns a stored host into a disallowed one. Every statement a user writes, `CREATE` and
           * `ATTACH` alike, is still checked up front, and the allowlist holds for every use of the
           * database regardless: `DatabaseHDFS::checkUrl` runs it for each table, which is where
-          * `DatabaseS3` enforces it too.
+          * `DatabaseS3` enforces it too. The loader flag, not `internal`, is the discriminator: wrappers
+          * such as `PARALLEL WITH` and `RESTORE DATABASE` run user-controlled statements as internal ones.
           */
-        if (!args.internal && !source_url.empty())
-            args.context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(source_url));
+        if (!args.is_metadata_replay && !source_url.empty())
+            args.context->getGlobalContext()->getRemoteHostFilter().checkURL(parseURI(source_url));
 
         return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.context);
     };
-    factory.registerDatabase("HDFS", create_fn, {
+    factory.registerDatabase("HDFS", create_fn, SecretArgumentsSpec{}, {
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::HDFS,

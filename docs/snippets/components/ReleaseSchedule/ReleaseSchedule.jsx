@@ -42,34 +42,26 @@ const ReleaseSchedule = ({ releases = [] }) => {
     </span>
   );
 
-  const handleReleaseChannelClick = (event) => {
-    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
-      return;
-    }
-
-    event.preventDefault();
-    const href = event.currentTarget.getAttribute("href");
-    window.location.href = (window.location.pathname.startsWith("/docs") ? "/docs" : "") + href.slice("/docs".length);
-  };
-
   return (
     <table>
       <colgroup />
       <colgroup span={2} />
       <colgroup span={2} />
       <colgroup span={2} />
+      <colgroup />
       <thead>
         <tr>
           <th rowSpan={2} scope="col">Version</th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#fast-release-channel-early-upgrades" onClick={handleReleaseChannelClick}>Fast Channel</a>
+            <a href="/products/cloud/features/admin-features/upgrades#fast-release-channel-early-upgrades">Fast Channel</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#regular-release-channel" onClick={handleReleaseChannelClick}>Regular Channel</a>
+            <a href="/products/cloud/features/admin-features/upgrades#regular-release-channel">Regular Channel</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href="/docs/manage/updates#slow-release-channel-deferred-upgrades" onClick={handleReleaseChannelClick}>Slow Channel</a>
+            <a href="/products/cloud/features/admin-features/upgrades#slow-release-channel-deferred-upgrades">Slow Channel</a>
           </th>
+          <th rowSpan={2} scope="col" style={groupStartStyle}>EOL date</th>
         </tr>
         <tr>
           <th scope="col" style={groupStartStyle}>Start</th>
@@ -116,6 +108,7 @@ const ReleaseSchedule = ({ releases = [] }) => {
                   <td><DateCell date={release.slow_end_date} status={release.slow_progress} /></td>
                 </>
               )}
+              <td style={groupStartStyle}><DateCell date={release.eol_date} /></td>
             </tr>
           );
         })}

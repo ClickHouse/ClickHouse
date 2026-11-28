@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <concepts>
 #include <limits>
@@ -23,7 +24,7 @@ public:
     };
 
     using Key = TUInt;
-    using Map = std::vector<DPEntry>;
+    using Map = VectorWithMemoryTracking<DPEntry>;
 
     explicit DPTable(size_t numRelations_);
 
@@ -31,11 +32,11 @@ public:
     const DPEntry & operator[](TUInt x) const { return table.at(x); }
     DPEntry & operator[](TUInt x) { return table[x]; }
 
-    bool isConnected(TUInt S) const { return table[S].count; }
-    size_t numRelations() const { return num_relations; }
-    size_t noCCP() const { return nr_ccp; }
-    size_t noCSG() const { return map().size(); }
-    const Map & map() const { return table; }
+    [[nodiscard]] bool isConnected(TUInt S) const { return table[S].count; }
+    [[nodiscard]] size_t numRelations() const { return num_relations; }
+    [[nodiscard]] size_t noCCP() const { return nr_ccp; }
+    [[nodiscard]] size_t noCSG() const { return map().size(); }
+    [[nodiscard]] const Map & map() const { return table; }
 
     void printStatistics() const;
 private:

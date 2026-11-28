@@ -1,3 +1,9 @@
+-- The assertions below require one `EXPLAIN` line to carry both the reading step and the text
+-- `RIGHT JOIN`, i.e. the shipped SQL query, so they describe the query-based implementation only.
+-- Plan-based ships a serialized plan fragment and distributes the same joins; see
+-- `05240_pr_plan_based_right_join_materialized_left`.
+SET parallel_replicas_plan_based = 0;
+
 DROP TABLE IF EXISTS t_mid;
 DROP TABLE IF EXISTS t_right;
 DROP TABLE IF EXISTS t_merge_left;
@@ -21,7 +27,6 @@ INSERT INTO t_replicated_right SELECT number FROM numbers(10);
 -- below into controls.
 CREATE TABLE t_merge_left (key UInt64) ENGINE = Merge(currentDatabase(), '^t_mid$');
 
-SET enable_analyzer = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1,
     max_parallel_replicas = 2,

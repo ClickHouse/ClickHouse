@@ -12,7 +12,7 @@ You scale a cluster by editing the replica and shard counts on the Custom Resour
 This guide covers how to scale `ClickHouseCluster` replicas and shards, how to scale a `KeeperCluster` quorum safely, and which conditions to watch while a scale operation is in flight.
 
 <Note>
-A `ClickHouseCluster` always needs a Keeper, referenced through the required `spec.keeperClusterRef` field — the operator coordinates the cluster through it regardless of size. To run more than one replica per shard, the data must also live in `ReplicatedMergeTree` tables, since replication is what lets a second replica serve the same rows.
+A `ClickHouseCluster` always needs a Keeper, set through `spec.keeperClusterRef` or `spec.externalKeeper` — the operator coordinates the cluster through it regardless of size. To run more than one replica per shard, the data must also live in `ReplicatedMergeTree` tables, since replication is what lets a second replica serve the same rows.
 </Note>
 
 ## Scaling replicas {#scaling-replicas}

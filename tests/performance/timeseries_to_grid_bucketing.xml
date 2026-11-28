@@ -52,7 +52,7 @@
     <!-- Sorted, all samples accepted: step = window = 300s -> 1001 grid points, 20 samples per bucket. -->
     <query>SELECT id, timeSeriesRateToGrid(0, 300000, 300, 300)(timestamp, value) FROM ts_bucketing GROUP BY id FORMAT Null</query>
     <query>SELECT id, timeSeriesInstantRateToGrid(0, 300000, 300, 300)(timestamp, value) FROM ts_bucketing GROUP BY id FORMAT Null</query>
-    <query>SELECT id, timeSeriesResampleToGridWithStaleness(0, 300000, 300, 300)(timestamp, value) FROM ts_bucketing GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesLastToGrid(0, 300000, 300, 300)(timestamp, value) FROM ts_bucketing GROUP BY id FORMAT Null</query>
 
     <!-- Sorted, most samples rejected: window 60 < step 900 -> only samples in (grid - 60, grid] contribute. -->
     <query>SELECT id, timeSeriesRateToGrid(0, 300000, 900, 60)(timestamp, value) FROM ts_bucketing GROUP BY id FORMAT Null</query>

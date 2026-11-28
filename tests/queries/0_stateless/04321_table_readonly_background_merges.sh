@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Tags: long
 # ^ long: waits for the background merge pool to make progress within a bounded time window.
+# The waits are bounded by wall clock, not by a poll count: on slow builds (sanitizers, coverage) each
+# poll spawns a client whose startup alone can take seconds, and an iteration-counted loop would
+# multiply that overhead past the per-test timeout instead of giving up after the intended window.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,6 +23,16 @@ dump_background_merge_state() {
         SELECT database, table, merge_type, is_mutation, num_parts,
                round(elapsed, 1) AS elapsed, round(progress, 3) AS progress
         FROM system.merges ORDER BY database, table FORMAT PrettyCompactMonoBlock" || echo "merges dump failed"
+}
+
+# Runs one poll of a bounded wait under `timeout`, capped by what is left of the wait budget: the
+# deadline is only checked between polls, so a single hung or slow client must not overrun it.
+# -k because a client ignoring SIGTERM would keep a bare `timeout` waiting forever.
+poll_query() {
+    local deadline=$1 query=$2
+    local remaining=$((deadline - SECONDS))
+    [[ $remaining -gt 0 ]] || return 1
+    timeout -k 5 "$remaining" ${CLICKHOUSE_CLIENT} -q "$query"
 }
 
 # A read-only table (the `table_readonly` MergeTree setting) performs no modifications on disk and
@@ -56,9 +69,10 @@ SYSTEM START MERGES t_writable;
 # Wait until the writable table gets its parts merged in the background.
 # This proves the background merge pool is actively making progress right now.
 merged=0
-for _ in $(seq 1 120); do
-    count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_writable' AND active")
-    if [[ "$count" -lt 10 ]]; then
+deadline=$((SECONDS + 120))
+while [[ $SECONDS -lt $deadline ]]; do
+    if count=$(poll_query "$deadline" "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_writable' AND active") \
+        && [[ "$count" -lt 10 ]]; then
         merged=1
         break
     fi
@@ -119,9 +133,9 @@ SYSTEM START MERGES t_writable_ttl;
 # Wait until the writable control table drops its expired part via a background TTL merge.
 # This proves the background TTL merge path is actively making progress right now.
 dropped=0
-for _ in $(seq 1 120); do
-    count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_writable_ttl")
-    if [[ "$count" -eq 1 ]]; then
+deadline=$((SECONDS + 120))
+while [[ $SECONDS -lt $deadline ]]; do
+    if count=$(poll_query "$deadline" "SELECT count() FROM t_writable_ttl") && [[ "$count" -eq 1 ]]; then
         dropped=1
         break
     fi

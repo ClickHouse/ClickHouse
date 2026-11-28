@@ -7,6 +7,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/Exception.h>
 #include <IO/Operators.h>
+#include <IO/parseURI.h>
 #include <Common/logger_useful.h>
 
 #if USE_KRB5
@@ -120,7 +121,7 @@ void HDFSBuilderWrapper::runKinit() const
 
 HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration & config)
 {
-    const Poco::URI uri(uri_str);
+    const Poco::URI uri = parseURI(uri_str);
     const auto & host = uri.getHost();
     auto port = uri.getPort();
     if (host.empty())
@@ -135,7 +136,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
     hdfsBuilderConfSetStr(builder.get(), "input.write.timeout", "60000"); // 1 min
     hdfsBuilderConfSetStr(builder.get(), "input.connect.timeout", "60000"); // 1 min
 
-    const String & user_info = uri.getUserInfo();
+    std::string_view user_info = uri.getUserInfo();
     String user;
     if (!user_info.empty() && user_info.front() != ':')
     {

@@ -1,6 +1,10 @@
--- Tags: no-fasttest, no-random-settings
+-- Tags: no-fasttest, no-random-settings, no-parallel-replicas
+-- Tag no-parallel-replicas: asserts on `ProfileEvents` of the initial query, but with parallel replicas the replicas read the file
 -- Closes #90890
 -- This tests verifies that while reading a parquet file, the prefetcher leverages more efficient readBigAt logic (ReadMode::RandomRead)
+
+-- The reads go through the distributed cache by default where it is enabled, but the test checks the reads of this server.
+SET table_engine_read_through_distributed_cache = 0;
 
 DROP TABLE IF EXISTS t_parquet_prefetcher_read_big_at;
 

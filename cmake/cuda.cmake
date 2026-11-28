@@ -13,6 +13,9 @@ if (ENABLE_GPU)
     # gnu_get_libc_version, none of which musl has. And libcuda.so.1 is NVIDIA's closed
     # binary linked against glibc, so a musl process could not load it either way. A musl
     # build wanting GPU work has to put it behind a separate glibc process.
+    #
+    # The Linux toolchain files default USE_MUSL to OFF when ENABLE_GPU is set, so this only
+    # fires for an explicit -DUSE_MUSL=ON, or for a build directory configured for musl first.
     if (USE_MUSL)
         message (FATAL_ERROR "ENABLE_GPU is incompatible with USE_MUSL. See cmake/cuda.cmake.")
     endif ()
@@ -130,7 +133,7 @@ if (ENABLE_GPU)
     # It has to reach gcc through -Xcompiler. nvcc rejects `-std=gnu++20` for itself
     # ("Value 'gnu++20' is not defined for option 'std'"), and CMAKE_CUDA_EXTENSIONS is a
     # no-op here - CMake emits -std=c++20 for nvcc either way.
-    string (APPEND CMAKE_CUDA_FLAGS " --expt-relaxed-constexpr -Xcompiler -fPIC -Xcompiler -std=gnu++20")
+    string (APPEND CMAKE_CUDA_FLAGS " --expt-relaxed-constexpr -Xcompiler -fPIE -Xcompiler -std=gnu++20")
 
     option (ENABLE_GPU_KERNEL_LINEINFO "Emit CUDA line info, for profiling kernels in Nsight Compute" OFF)
 
@@ -166,7 +169,6 @@ if (ENABLE_GPU)
             COMPILE_OPTIONS ""
             COMPILE_DEFINITIONS ""
             INCLUDE_DIRECTORIES ""
-            POSITION_INDEPENDENT_CODE ON
         )
 
         get_target_property (_gpu_island_srcs ${target} SOURCES)

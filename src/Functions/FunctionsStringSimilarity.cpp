@@ -218,7 +218,10 @@ struct NgramDistanceImpl
                 ++ngram_stats[hash];
             }
             i = 0;
-        } while (start < end && (found = read_code_points(cp, start, end)));
+            if (start >= end)
+                break;
+            found = read_code_points(cp, start, end);
+        } while (found);
 
         return len;
     }
@@ -259,7 +262,10 @@ struct NgramDistanceImpl
                 --ngram_stats[hash];
             }
             iter = 0;
-        } while (start < end && (found = read_code_points(cp, start, end)));
+            if (start >= end)
+                break;
+            found = read_code_points(cp, start, end);
+        } while (found);
 
         /// Return the state of hash map to its initial.
         if constexpr (reuse_stats)

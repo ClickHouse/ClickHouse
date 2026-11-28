@@ -1,0 +1,53 @@
+---
+title: 'ClickHouse 如何执行 JOIN'
+sidebarTitle: '执行'
+description: 'JOIN 的构建阶段与探测阶段，以及查询规划器针对 JOIN 的优化。'
+keywords: ['JOIN 执行', '构建侧', '探测侧', 'JOIN 查询规划器', 'JOIN 重排序', '过滤器下推']
+doc_type: 'guide'
+---
+
+大多数 JOIN 算法分两个阶段执行：
+
+* **构建阶段。** ClickHouse 完整读取其中一个输入，并将其存入支持匹配的数据结构中，例如哈希表或一组已排序的块。该输入称为构建侧。
+* **探测阶段。** ClickHouse 以流式方式逐块读取另一个输入，并将其中每一行与构建阶段生成的数据结构进行匹配。该输入称为探测侧。
+
+探测阶段必须等构建阶段完成后才会开始。因此，JOIN 所需的内存主要取决于构建侧的大小。
+
+默认情况下，JOIN 的右侧为构建侧，左侧为探测侧。部分算法并不遵循这一模型：[`direct` 算法](/zh/concepts/features/operations/select/join-algorithms#direct) 没有构建阶段，因为右侧本身已经是键值结构；[`full_sorting_merge` 算法](/zh/concepts/features/operations/select/join-algorithms#full-sorting-merge) 会先对两个输入分别排序，再将其合并；[`ie_join` 算法](/zh/concepts/features/operations/select/join-algorithms#ie-join) 则会先累积两个输入，再执行连接。
+
+## 查询规划器行为 {#query-planner-behavior}
+
+在 JOIN 算法执行之前，查询规划器可能会对 JOIN 的输入进行调整。具体会应用以下优化。
+
+### 自动选择构建侧 {#automatic-build-side-selection}
+
+从 24.12 版本开始，查询规划器可以交换 JOIN 的两个输入，使较小的输入成为构建侧。查询规划器会比较两个输入的估计行数，若估计左侧输入较小，则在基于哈希的 JOIN 中交换这两个输入。此行为由 [`query_plan_join_swap_table`](/zh/reference/settings/session-settings/query-plan#query_plan_join_swap_table) 设置控制。
+
+输入交换后，`LEFT` JOIN 会作为 `RIGHT` JOIN 执行，反之亦然。交换后的顺序可在 `EXPLAIN` 输出中查看。
+
+### 多表 JOIN 重排序 {#multi-table-join-reordering}
+
+如果查询在同一个子查询中连接多个表，查询规划器可以调整这些表的连接顺序。[`query_plan_optimize_join_order_limit`](/zh/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) 设置用于指定查询规划器最多可重排序的表数量。默认值为 `10`。值为 `1` 时会禁用重排序。
+
+### 列统计信息的使用 {#use-of-column-statistics}
+
+构建侧的选择和 JOIN 重排序都依赖于行数估算。若没有列统计信息，查询规划器会根据主索引推算估算值，而这类估算值可能不够精确。有了[列统计信息](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)后，查询规划器会借助统计信息来估算过滤器的选择性以及 JOIN 键的基数。
+
+[`use_statistics`](/zh/reference/settings/session-settings/use-statistics#use_statistics) 设置用于控制优化器是否使用统计信息。[`materialize_statistics_on_insert`](/zh/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) 设置用于控制是否为新插入的数据构建统计信息。
+
+### 过滤器下推 {#filter-pushdown}
+
+当启用 [`query_plan_filter_push_down`](/zh/reference/settings/session-settings/query-plan#query_plan_filter_push_down) 时，查询规划器会将 `WHERE` 条件下移到 JOIN 之下，使每个输入在构建阶段和探测阶段之前先完成过滤。
+
+* 若某个条件只引用其中一个输入的列，则该条件会直接应用到该输入上。
+* 对于 `LEFT` JOIN，条件不会下推到右侧输入；对于 `RIGHT` JOIN，条件不会下推到左侧输入。
+* 作用于某一输入 JOIN 键上的条件也可以应用到另一输入，因为对每个匹配的行而言，两个输入的键列都相等。
+* 条件不会下推到已填充好的右侧 (例如字典) ，也不会下推到 `ASOF` JOIN 的右侧。
+
+## 相关页面 {#related-pages}
+
+* [在 ClickHouse 中使用 JOIN](/zh/concepts/features/operations/select/joining-tables)
+* [JOIN 算法](/zh/concepts/features/operations/select/join-algorithms)
+* [JOIN 内存管理与溢写](/zh/concepts/features/operations/select/join-memory-management)
+* [JOIN 设置](/zh/concepts/features/operations/select/join-settings)
+* [减少并优化 JOIN](/zh/concepts/best-practices/minimize-optimize-joins)

@@ -7,17 +7,13 @@ doc_type: 'reference'
 keywords: ['ClickHouse Cloud', 'visão geral da API', 'API de nuvem', 'REST API', 'acesso programático']
 ---
 
-<div id="overview">
-  ## Visão geral
-</div>
+## Visão geral {#overview}
 
 A ClickHouse Cloud API é uma API REST desenvolvida para que desenvolvedores gerenciem com facilidade organizações e serviços no ClickHouse Cloud. Usando nossa Cloud API, você pode criar e gerenciar serviços, gerar API keys e adicionar ou remover membros da sua organização, entre outras ações.
 
 [Saiba como criar sua primeira API key e começar a usar a ClickHouse Cloud API.](/pt-BR/products/cloud/features/admin-features/api/openapi)
 
-<div id="swagger-openapi-endpoint-and-ui">
-  ## Endpoint e UI do Swagger (OpenAPI)
-</div>
+## Endpoint e UI do Swagger (OpenAPI) {#swagger-openapi-endpoint-and-ui}
 
 A ClickHouse Cloud API é baseada na [especificação OpenAPI](https://www.openapis.org/) de código aberto
 para permitir um consumo previsível por clientes. Se você precisar
@@ -32,18 +28,14 @@ em https://api.clickhouse.cloud/v1. Você também pode acessar a documentação 
   Isso afetará os objetos retornados pelas requisições de serviço `POST`, `GET` e `PATCH`. Portanto, qualquer código que consuma essas APIs talvez precise ser ajustado para lidar com essas mudanças.
 </Note>
 
-<div id="rate-limits">
-  ## Limites de taxa
-</div>
+## Limites de taxa {#rate-limits}
 
 Os desenvolvedores podem ter até 100 API keys por organização. Cada API key tem um
 limite de 10 solicitações por intervalo de 10 segundos. Se você quiser aumentar o
 número de API keys ou de solicitações por intervalo de 10 segundos para a sua organização,
 entre em contato com o suporte em support@clickhouse.com
 
-<div id="terraform-provider">
-  ## Terraform provider
-</div>
+## Terraform provider {#terraform-provider}
 
 O ClickHouse Terraform Provider oficial permite usar [Infraestrutura como Código](https://www.redhat.com/en/topics/automation/what-is-infrastructure-as-code-iac)
 para criar configurações previsíveis e versionadas, tornando as implantações muito
@@ -60,15 +52,11 @@ o código-fonte [no repositório do GitHub](https://github.com/ClickHouse/terraf
   Agora você também poderá especificar o campo `num_replicas` como uma propriedade do recurso de serviço.
 </Note>
 
-<div id="terraform-provider-releases">
-  ## Lançamentos dos providers Terraform
-</div>
+## Lançamentos dos providers Terraform {#terraform-provider-releases}
 
 A ClickHouse mantém dois providers oficiais do Terraform - o provider ClickHouse Cloud para infraestrutura em nuvem e o provider DBops para objetos em nível de banco de dados. Ambos seguem o mesmo modelo de lançamento.
 
-<div id="ga-vs-beta-resources">
-  ### Recursos GA versus Beta
-</div>
+### Recursos GA versus Beta {#ga-vs-beta-resources}
 
 Cada lançamento consiste em uma única compilação que contém todos os recursos. Os recursos de funcionalidades que ainda não atingiram a disponibilidade geral são distribuídos junto com os recursos GA, marcados como **beta** — não há uma compilação separada nem nada a fixar para usá-los.
 
@@ -83,31 +71,23 @@ Beta significa que o schema e o comportamento podem mudar em uma versão futura 
   Antes da v3.25.2, o provider marcava esses recursos como *alpha* em vez de *beta*, e o aviso durante o plano era `Alpha Resource`. Apenas a redação mudou — não há schema, comportamento nem migração de estado envolvidos —, mas ferramentas que usam grep na saída do plano em busca de `Alpha Resource` deixarão de encontrar correspondências silenciosamente. Lançamentos anteriores também publicavam uma compilação alpha separada.
 </Note>
 
-<div id="versioning">
-  ### Versionamento
-</div>
+### Versionamento {#versioning}
 
 Ambos os providers usam versionamento semântico (MAJOR.MINOR.PATCH). A versão major é incrementada em caso de mudanças incompatíveis, a versão minor para novos recursos ou funcionalidades, e a versão patch para correções de bugs. Os lançamentos são gerados sob demanda, em vez de seguirem um cronograma fixo.
 
 Versões com o sufixo `-alphaN` (por exemplo, `3.15.0-alpha3`) são anteriores ao modelo de compilação única. Elas continuam disponíveis, mas não são mais produzidas.
 
-<div id="promotion">
-  ### Promoção de beta para GA
-</div>
+### Promoção de beta para GA {#promotion}
 
 Quando um recurso atinge a disponibilidade geral, ele deixa de ter o marcador beta no próximo lançamento do provider: o aviso no momento do plano deixa de ser exibido, e o destaque na documentação é removido. Nada mais muda — não há edições de configuração, migração de estado nem alternância entre compilações.
 
-<div id="terraform-and-openapi-new-pricing---replica-settings-explained">
-  ## Terraform e OpenAPI New Pricing: Configurações de réplica explicadas
-</div>
+## Terraform e OpenAPI New Pricing: Configurações de réplica explicadas {#terraform-and-openapi-new-pricing---replica-settings-explained}
 
 O número de réplicas com que cada serviço será criado é, por padrão, 3 para os tiers Scale e Enterprise, enquanto para o tier Basic o padrão é 1.
 Para os tiers Scale e Enterprise, é possível ajustá-lo informando o campo `numReplicas` na solicitação de criação do serviço.
-O valor do campo `numReplicas` deve estar entre 2 e 20 para o primeiro serviço em um warehouse. Services criados em um warehouse existente podem ter apenas 1 réplica.
+O valor do campo `numReplicas` deve ser de no mínimo 2 para o primeiro serviço em um warehouse. Serviços criados em um warehouse existente podem ter apenas 1 réplica. Para saber o número máximo de réplicas, consulte [Limites de uso](/pt-BR/cloud/bestpractices/usage-limits).
 
-<div id="support">
-  ## Suporte
-</div>
+## Suporte {#support}
 
 Recomendamos acessar [nosso canal no Slack](https://clickhouse.com/slack) primeiro para obter suporte mais rapidamente. Se
 você quiser ajuda adicional ou mais informações sobre nossa API e suas funcionalidades,

@@ -1,0 +1,9 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- The intent replay tests check that a retried batch is deduplicated in the
+                 ReplicatedMergeTree target of a materialized view. -->
+            <deduplicate_blocks_in_dependent_materialized_views>1</deduplicate_blocks_in_dependent_materialized_views>
+        </default>
+    </profiles>
+</clickhouse>

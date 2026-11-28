@@ -8,11 +8,13 @@
 #include <Common/StringUtils.h>
 #include <Columns/IColumn_fwd.h>
 #include <Common/PODArray_fwd.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Functions/sparseGramsImpl.h>
 #include <Interpreters/BloomFilter.h>
 #include <base/FnTraits.h>
 #include <base/types.h>
+#include <base/unaligned.h>
 #include <fmt/format.h>
 
 #if USE_JIEBA
@@ -51,22 +53,22 @@ public:
     explicit ITokenizer(Type type_) : type(type_) {}
     ITokenizer(const ITokenizer &) = default;
 
-    Type getType() const { return type; }
+    [[nodiscard]] Type getType() const { return type; }
 
     /// Mutable state across calls: callers must clone per thread rather than share.
-    virtual bool isStateful() const { return false; }
+    [[nodiscard]] virtual bool isStateful() const { return false; }
 
     virtual ~ITokenizer() = default;
-    virtual std::unique_ptr<ITokenizer> clone() const = 0;
+    [[nodiscard]] virtual std::unique_ptr<ITokenizer> clone() const = 0;
 
     /// Returns a formatted description of the tokenizer with arguments.
-    virtual String getDescription() const = 0;
+    [[nodiscard]] virtual String getDescription() const = 0;
 
     /// Renders a stored token for logs and `EXPLAIN`: double-quoted, with quotes, backslashes and control bytes escaped.
-    virtual String formatTokenForLogs(std::string_view token) const;
+    [[nodiscard]] virtual String formatTokenForLogs(std::string_view token) const;
 
-    virtual const char * getTokenizerName() const = 0;
-    virtual const char * getTokenizerExternalName() const = 0;
+    [[nodiscard]] virtual const char * getTokenizerName() const = 0;
+    [[nodiscard]] virtual const char * getTokenizerExternalName() const = 0;
 
     /// Fast inplace implementation for regular use.
     /// Gets string (data ptr and len) and start position for extracting next token (state of tokenizer).
@@ -82,7 +84,7 @@ public:
 
     /// Filters out tokens excessive for search.
     /// This method is inefficient and should be used only for constants.
-    virtual VectorWithMemoryTracking<String> compactTokens(const VectorWithMemoryTracking<String> & tokens) const = 0;
+    [[nodiscard]] virtual VectorWithMemoryTracking<String> compactTokens(const VectorWithMemoryTracking<String> & tokens) const = 0;
 
     /// Updates Bloom filter from substring-match string filter value.
     /// An `ITokenizer` implementation may decide to skip certain
@@ -111,7 +113,7 @@ public:
         bool is_suffix) const = 0;
 
     virtual void stringLikeToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const = 0;
-    virtual bool supportsStringLike() const = 0;
+    [[nodiscard]] virtual bool supportsStringLike() const = 0;
 
 private:
     const Type type;
@@ -125,10 +127,10 @@ class ITokenizerHelper : public ITokenizer
 protected:
     explicit ITokenizerHelper(Type type_) : ITokenizer(type_) {}
 
-    const char * getTokenizerName() const override { return Derived::getName(); }
-    const char * getTokenizerExternalName() const override { return Derived::getExternalName(); }
+    [[nodiscard]] const char * getTokenizerName() const override { return Derived::getName(); }
+    [[nodiscard]] const char * getTokenizerExternalName() const override { return Derived::getExternalName(); }
 
-    std::unique_ptr<ITokenizer> clone() const override
+    [[nodiscard]] std::unique_ptr<ITokenizer> clone() const override
     {
         return std::make_unique<Derived>(*static_cast<const Derived *>(this));
     }
@@ -171,7 +173,7 @@ protected:
             tokens.push_back(token);
     }
 
-    VectorWithMemoryTracking<String> compactTokens(const VectorWithMemoryTracking<String> & tokens) const override
+    [[nodiscard]] VectorWithMemoryTracking<String> compactTokens(const VectorWithMemoryTracking<String> & tokens) const override
     {
         std::unordered_set<String> unique_tokens(tokens.begin(), tokens.end());
         return VectorWithMemoryTracking<String>(unique_tokens.begin(), unique_tokens.end());
@@ -185,16 +187,41 @@ struct NgramsTokenizer final : public ITokenizerHelper<NgramsTokenizer>
 
     static const char * getName() { return "ngrambf_v1"; }
     static const char * getExternalName() { return "ngrams"; }
-    String getDescription() const override { return fmt::format("ngrams({})", n); }
+    [[nodiscard]] String getDescription() const override { return fmt::format("ngrams({})", n); }
 
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
 
-    size_t getN() const { return n; }
+    [[nodiscard]] size_t getN() const { return n; }
 
-    bool supportsStringLike() const override { return true; }
+    [[nodiscard]] bool supportsStringLike() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+    /// Hot-path tokenizer used by the free `forEachToken` (index build, search, the `tokens` function).
+    /// Emits the same tokens in the same order as `nextInString`, including a last code point cut off by the end of the string.
+    template <Fn<bool(const char *, size_t)> Callback>
+    void forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const
+    {
+        /// `begin` is the start of the current n-gram, `last` the start of its n-th code point.
+        size_t begin = 0;
+        size_t last = 0;
+        for (size_t i = 1; i < n; ++i)
+        {
+            if (last >= length)
+                return;
+            last += UTF8::seqLength(static_cast<UInt8>(data[last]));
+        }
+
+        while (last < length)
+        {
+            const size_t end = last + UTF8::seqLength(static_cast<UInt8>(data[last]));
+            if (callback(data + begin, std::min(end, length) - begin))
+                return;
+            begin += UTF8::seqLength(static_cast<UInt8>(data[begin]));
+            last = end;
+        }
+    }
 
 private:
     size_t n;
@@ -255,14 +282,14 @@ struct SplitByNonAlphaTokenizer final : public ITokenizerHelper<SplitByNonAlphaT
 
     static const char * getName() { return "tokenbf_v1"; }
     static const char * getExternalName() { return "splitByNonAlpha"; }
-    String getDescription() const override { return "splitByNonAlpha"; }
+    [[nodiscard]] String getDescription() const override { return "splitByNonAlpha"; }
 
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token) const override;
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
-    bool supportsStringLike() const override { return true; }
+    [[nodiscard]] bool supportsStringLike() const override { return true; }
 
     /// Non-alphanumeric ASCII bytes separate tokens.
     /// Every other byte, including all bytes of UTF-8 sequences, belongs to a token.
@@ -288,12 +315,12 @@ struct SplitByStringTokenizer final : public ITokenizerHelper<SplitByStringToken
 
     static const char * getName() { return "splitByString"; }
     static const char * getExternalName() { return getName(); }
-    String getDescription() const override;
+    [[nodiscard]] String getDescription() const override;
 
     bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
 
-    bool supportsStringLike() const override { return false; }
+    [[nodiscard]] bool supportsStringLike() const override { return false; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
@@ -349,7 +376,7 @@ private:
                 if (candidate < resume)
                     continue;
 
-                size_t separator_length = matchSeparator(data, length, candidate - data);
+                const size_t separator_length = short_separators.empty() ? matchSeparator(data, length, candidate - data) : matchShortSeparator(candidate, end);
                 if (separator_length == 0)
                     continue;
 
@@ -367,11 +394,32 @@ private:
             callback(token_start, end - token_start);
     }
 
+    /// Reads 8 bytes at `pos`, which the padding of the data allows.
+    ALWAYS_INLINE size_t matchShortSeparator(const char * pos, const char * end) const
+    {
+        const UInt64 word = unalignedLoadLittleEndian<UInt64>(pos);
+        for (const auto & separator : short_separators)
+        {
+            if (separator.length <= static_cast<size_t>(end - pos) && (word & separator.mask) == separator.bytes)
+                return separator.length;
+        }
+        return 0;
+    }
+
     std::vector<String> separators;
     /// The first bytes of all separators. Only positions holding one of them can start a separator.
     ByteSetLookup separator_first_bytes;
     /// If every separator is a single byte, `separator_first_bytes` is exactly the set of separators.
     bool all_separators_single_byte = false;
+
+    struct ShortSeparator
+    {
+        UInt64 bytes;
+        UInt64 mask;
+        size_t length;
+    };
+    /// Filled only when every separator is at most 8 bytes and not all of them are single bytes.
+    std::vector<ShortSeparator> short_separators;
 };
 
 /// Parser extracting tokens separated by a regular expression, or - in `match_tokens` mode - tokens
@@ -385,12 +433,12 @@ struct SplitByRegexpTokenizer final : public ITokenizerHelper<SplitByRegexpToken
 
     static const char * getName() { return "splitByRegexp"; }
     static const char * getExternalName() { return getName(); }
-    String getDescription() const override;
+    [[nodiscard]] String getDescription() const override;
 
     bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
 
-    bool supportsStringLike() const override { return false; }
+    [[nodiscard]] bool supportsStringLike() const override { return false; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
@@ -441,12 +489,12 @@ struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
 
     static const char * getName() { return "array"; }
     static const char * getExternalName() { return getName(); }
-    String getDescription() const override { return getName(); }
+    [[nodiscard]] String getDescription() const override { return getName(); }
 
     bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
 
-    bool supportsStringLike() const override { return false; }
+    [[nodiscard]] bool supportsStringLike() const override { return false; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 };
@@ -470,7 +518,7 @@ struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsToken
 
     static const char * getName() { return "keyValuePairs"; }
     static const char * getExternalName() { return getName(); }
-    String getDescription() const override { return getName(); }
+    [[nodiscard]] String getDescription() const override { return getName(); }
 
     /// `out` is cleared first, so a hot loop can reuse one buffer.
     static void encodeToken(std::string_view key, std::string_view value, bool is_duplicate, String & out);
@@ -489,12 +537,12 @@ struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsToken
     static DecodedToken decodeToken(std::string_view token);
 
     /// A token is a `Map` entry: {"key": "value"}, both parts quoted and escaped like the base rendering.
-    String formatTokenForLogs(std::string_view token) const override;
+    [[nodiscard]] String formatTokenForLogs(std::string_view token) const override;
 
     bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
 
-    bool supportsStringLike() const override { return false; }
+    [[nodiscard]] bool supportsStringLike() const override { return false; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 };
@@ -599,7 +647,7 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
 
     static const char * getName() { return "asciiCJK"; }
     static const char * getExternalName() { return getName(); }
-    String getDescription() const override { return getName(); }
+    [[nodiscard]] String getDescription() const override { return getName(); }
 
     bool nextInString(
         const char * data,
@@ -614,7 +662,7 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
 
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
-    bool supportsStringLike() const override { return true; }
+    [[nodiscard]] bool supportsStringLike() const override { return true; }
 };
 
 #if USE_JIEBA
@@ -632,14 +680,14 @@ struct ChineseTokenizer final : public ITokenizerHelper<ChineseTokenizer>
 
     static const char * getName() { return "chinese"; }
     static const char * getExternalName() { return getName(); }
-    String getDescription() const override
+    [[nodiscard]] String getDescription() const override
     {
         return fmt::format("{}({})", getName(), granularity == ChineseTokenizationGranularity::Fine ? "fine_grained" : "coarse_grained");
     }
 
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
-    bool supportsStringLike() const override { return false; }
+    [[nodiscard]] bool supportsStringLike() const override { return false; }
     /// Hot-path methods bypass `nextInString` and invoke the segmenter directly with
     /// per-call local state. `MergeTreeIndexText` shares one `ChineseTokenizer` between
     /// concurrent aggregators and conditions, so the streaming `nextInString` iterator
@@ -649,7 +697,7 @@ struct ChineseTokenizer final : public ITokenizerHelper<ChineseTokenizer>
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
-    ChineseTokenizationGranularity getGranularity() const { return granularity; }
+    [[nodiscard]] ChineseTokenizationGranularity getGranularity() const { return granularity; }
 
 private:
     ChineseTokenizationGranularity granularity;
@@ -666,16 +714,16 @@ struct IcuTokenizer final : public ITokenizerHelper<IcuTokenizer>
 
     static const char * getName() { return "icu"; }
     static const char * getExternalName() { return getName(); }
-    String getDescription() const override;
+    [[nodiscard]] String getDescription() const override;
 
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
 
-    bool supportsStringLike() const override { return false; }
+    [[nodiscard]] bool supportsStringLike() const override { return false; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
-    const String & getLocale() const { return locale; }
+    [[nodiscard]] const String & getLocale() const { return locale; }
 
 private:
     String locale;
@@ -728,7 +776,7 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
             if (length < ngrams_tokenizer.getN())
                 return;
 
-            detail::forEachTokenImpl(ngrams_tokenizer, data, length, callback);
+            ngrams_tokenizer.forEachTokenImpl(data, length, callback);
             return;
         }
         case ITokenizer::Type::SplitByString:
@@ -800,6 +848,13 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
 void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, size_t length, BloomFilter & bloom_filter);
 
 /// Tokenizes `rows`-many rows of `input`, starting at offset `from`. Returns a ColumnArray(String) with one array per row, containing the tokens.
-ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, size_t from, size_t rows);
+/// For an Array `input`, `element_token_offsets`, if set, receives for each non-NULL element
+/// the offset in the returned data where its tokens end.
+ColumnPtr tokenizeToArray(
+    const ITokenizer & tokenizer,
+    const IColumn & input,
+    size_t from,
+    size_t rows,
+    PaddedPODArray<UInt64> * element_token_offsets = nullptr);
 
 }

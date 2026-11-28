@@ -10,13 +10,14 @@ struct FileCacheKey
     using KeyHash = UInt128;
     KeyHash key;
 
-    std::string toString() const;
+    [[nodiscard]] std::string toString() const;
 
     FileCacheKey() = default;
 
     static FileCacheKey random();
     static FileCacheKey fromPath(const std::string & path);
     static FileCacheKey fromKey(const UInt128 & key);
+    static constexpr size_t KEY_STRING_SIZE = 32;
     static FileCacheKey fromKeyString(const std::string & key_str);
 
     bool operator==(const FileCacheKey & other) const { return key == other.key; }

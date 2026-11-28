@@ -23,9 +23,7 @@ desactivados de forma predeterminada:
   ningún error. Confirma que tu CNI aplique estas políticas antes de depender de ellas.
 </Note>
 
-<div id="cluster-network-policies">
-  ## NetworkPolicies del clúster
-</div>
+## NetworkPolicies del clúster {#cluster-network-policies}
 
 Habilite la política gestionada para cada clúster:
 
@@ -52,15 +50,14 @@ los clústeres necesitan para funcionar:
 | ClickHouse | Los propios pods del clúster                                                               | `9009` (interserver), `9001` (administración)  |
 | ClickHouse | Pods del operador (etiqueta `clickhouse.com/role: operator`, cualquier espacio de nombres) | `9001`, `9002` (administración)                |
 | Keeper     | Los propios pods del clúster                                                               | `9234` (Raft)                                  |
-| Keeper     | Pods del operador y cada `ClickHouseCluster` que haga referencia a este keeper             | `2181`, `2281` (client), `9123` (control HTTP) |
+| Keeper     | Pods del operador y cada `ClickHouseCluster` que haga referencia a este keeper             | `2181`, `2281` (Client), `9123` (control HTTP) |
 
 Un keeper admite clústeres de ClickHouse según su `keeperClusterRef`: añadir
 o eliminar una referencia actualiza automáticamente la política del keeper, incluidas
-las referencias de otros espacios de nombres.
+las referencias de otros espacios de nombres. Los clústeres que usan `externalKeeper` nunca
+se admiten, aunque sus nodos apunten a los pods del keeper.
 
-<div id="allowing-clients">
-  ### Permitir conexiones de clientes y monitorización
-</div>
+### Permitir conexiones de clientes y monitorización {#allowing-clients}
 
 Las conexiones de clientes y el scraping de métricas **no** están cubiertos: con la
 política administrada habilitada, nada puede acceder a los puertos de cliente (`9000`/`8123` o las variantes
@@ -95,9 +92,7 @@ Configurar `networkPolicy.policy: Disabled` (el valor predeterminado) elimina la
 gestionada; el operador nunca modifica las políticas definidas por el usuario, salvo que
 incluyan la etiqueta `app` del clúster.
 
-<div id="np-cluster-wide-disable">
-  ### Exclusión a nivel de todo el clúster
-</div>
+### Exclusión a nivel de todo el clúster {#np-cluster-wide-disable}
 
 La gestión de NetworkPolicy también puede deshabilitarse para todo el clúster mediante la variable de entorno `ENABLE_NETWORK_POLICY` del operador. Con `ENABLE_NETWORK_POLICY=false`,
 el operador omite el paso de reconciliación de NetworkPolicy para **todos** los
@@ -123,18 +118,14 @@ controller:
     enabled: false
 ```
 
-<div id="operator-pod-policies">
-  ## Políticas de pods de Kubernetes del operador
-</div>
+## Políticas de pods de Kubernetes del operador {#operator-pod-policies}
 
 El gráfico de Helm también incluye políticas opcionales que restringen qué tráfico puede llegar al
 **pod de Kubernetes del controller manager**; es decir, al proceso del propio operador. Cubren los dos
 puertos que el operador expone a otros clientes: el endpoint de métricas y el
 admission webhook.
 
-<div id="what-the-helm-chart-creates">
-  ## Lo que crea el gráfico de Helm
-</div>
+## Lo que crea el gráfico de Helm {#what-the-helm-chart-creates}
 
 Cuando está habilitado, el gráfico crea hasta dos políticas únicamente de Ingreso, ambas seleccionando
 el pod de Kubernetes del controller manager:
@@ -147,9 +138,7 @@ el pod de Kubernetes del controller manager:
 Ambas políticas declaran únicamente `policyTypes: [Ingress]`. No restringen la salida
 del operador ni afectan a los pods de Kubernetes de ClickHouse server o Keeper.
 
-<div id="default-deny">
-  ## Comportamiento de denegación por defecto
-</div>
+## Comportamiento de denegación por defecto {#default-deny}
 
 Seleccionar un pod de Kubernetes con una `NetworkPolicy` de ingreso hace que ese pod de Kubernetes pase a **denegar por defecto el ingreso**: una vez que se aplica cualquiera de estas políticas, se descarta todo el tráfico entrante al pod de Kubernetes del controller manager que no esté permitido explícitamente. Después de habilitarlas,
 el único ingreso que llega al operador es:
@@ -161,9 +150,7 @@ Todo lo demás que llegue al pod de Kubernetes se deniega. Este es el endurecimi
 significa que un scraper o emisor de llamadas al webhook sin etiquetar deja de funcionar en cuanto las
 políticas entran en vigor.
 
-<div id="enabling">
-  ## Habilitar las políticas
-</div>
+## Habilitar las políticas {#enabling}
 
 Con Helm, active esta opción en sus values:
 
@@ -187,9 +174,7 @@ Con los manifiestos sin procesar de `kubectl`, descomente la sección `[NETWORK 
 describe en la [guía de instalación de kubectl](/es/products/kubernetes-operator/install/kubectl).
 Los manifiestos sin procesar incluyen las mismas dos políticas.
 
-<div id="labeling-namespaces">
-  ## Etiquetado de los espacios de nombres del client
-</div>
+## Etiquetado de los espacios de nombres del client {#labeling-namespaces}
 
 Como ambas políticas coinciden con el origen mediante `namespaceSelector`, todo espacio de nombres
 que necesite llegar al operador debe llevar la etiqueta correspondiente. Un scrape o
@@ -220,9 +205,7 @@ la autorización. Ambos deben estar configurados para que un scrape seguro funci
   regla explícita de permiso para el servidor de API si es necesario.
 </Warning>
 
-<div id="verifying">
-  ## Verificación
-</div>
+## Verificación {#verifying}
 
 ```bash
 NS=clickhouse-operator-system
@@ -244,9 +227,7 @@ Después de habilitarlo, confirma que:
 Si un scrape no devuelve datos o la aplicación de un CR se queda bloqueada, la causa más probable es un espacio de nombres de origen sin etiquetar o
 la advertencia anterior sobre la accesibilidad del servidor API.
 
-<div id="related-guides">
-  ## Guías relacionadas
-</div>
+## Guías relacionadas {#related-guides}
 
 * [Monitorización del operador](/es/products/kubernetes-operator/guides/monitoring) — el endpoint de métricas, su RBAC y cómo proteger el scraping.
 * [Instalar con kubectl](/es/products/kubernetes-operator/install/kubectl) — dónde descomentar la sección de la política de red.

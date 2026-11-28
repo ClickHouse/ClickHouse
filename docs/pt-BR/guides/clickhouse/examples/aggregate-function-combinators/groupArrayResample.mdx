@@ -7,9 +7,7 @@ sidebarTitle: 'groupArrayResample'
 doc_type: 'reference'
 ---
 
-<div id="description">
-  ## Descrição
-</div>
+## Descrição {#description}
 
 O combinador [`Resample`](/pt-BR/reference/functions/aggregate-functions/combinators#-resample)
 pode ser aplicado à função de agregação [`groupArray`](/pt-BR/reference/functions/aggregate-functions/sum) para
@@ -18,9 +16,7 @@ e construir o array resultante selecionando um valor representativo
 (correspondente à chave mínima) dos pontos de dados que se enquadram em cada intervalo.
 Ele cria uma visão dos dados com downsampling, em vez de coletar todos os valores.
 
-<div id="example-usage">
-  ## Exemplo de uso
-</div>
+## Exemplo de uso {#example-usage}
 
 Vamos ver um exemplo. Criaremos uma tabela com `name`, `age` e
 `wage` dos funcionários e inseriremos alguns dados nela:
@@ -32,7 +28,7 @@ CREATE TABLE employee_data
     age UInt8,
     wage Float32
 ) ENGINE = MergeTree()
-ORDER BY tuple()
+ORDER BY tuple();
 
 INSERT INTO employee_data (name, age, wage) VALUES
     ('John', 16, 10.0),
@@ -62,9 +58,7 @@ SELECT groupArrayResample(30, 75, 30)(name, age) FROM employee_data
 └───────────────────────────────────────────────┘
 ```
 
-<div id="see-also">
-  ## Veja também
-</div>
+## Veja também {#see-also}
 
 * [`groupArray`](/pt-BR/reference/functions/aggregate-functions/groupArray)
 * [`combinador Resample`](/pt-BR/reference/functions/aggregate-functions/combinators#-resample)

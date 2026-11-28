@@ -16,7 +16,6 @@ set (SRCS
   "${SRC_DIR}/json_reporter.cc"
   "${SRC_DIR}/perf_counters.cc"
   "${SRC_DIR}/reporter.cc"
-  "${SRC_DIR}/sleep.cc"
   "${SRC_DIR}/statistics.cc"
   "${SRC_DIR}/string_util.cc"
   "${SRC_DIR}/sysinfo.cc"

@@ -33,6 +33,7 @@ enum class KeeperFeatureFlag : size_t
     CREATE_TTL,
     CREATE_CONTAINER,
     MAX_REQUEST_SIZE,
+    LIST_WITH_OPTIONS,
 };
 
 class KeeperFeatureFlags
@@ -45,10 +46,10 @@ public:
     /// backwards compatibility
     void fromApiVersion(KeeperApiVersion keeper_api_version);
 
-    bool isEnabled(KeeperFeatureFlag feature) const;
+    [[nodiscard]] bool isEnabled(KeeperFeatureFlag feature) const;
 
     void setFeatureFlags(std::string feature_flags_);
-    const std::string & getFeatureFlags() const;
+    [[nodiscard]] const std::string & getFeatureFlags() const;
 
     void enableFeatureFlag(KeeperFeatureFlag feature);
     void disableFeatureFlag(KeeperFeatureFlag feature);

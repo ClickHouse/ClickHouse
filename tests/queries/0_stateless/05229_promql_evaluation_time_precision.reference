@@ -1,0 +1,10 @@
+-- the setting holds the value it is given, over the native protocol
+1700000100
+-- and over the command line, which used to round it
+1700000100
+-- ground truth: the table function evaluates at the requested instant
+2023-11-14 22:15:00.000	100
+-- the dialect agrees with it instead of landing on the later sample
+[('__name__','up'),('instance','host1')]	2023-11-14 22:15:00.000	100
+-- a fractional instant survives too
+1700000100.5

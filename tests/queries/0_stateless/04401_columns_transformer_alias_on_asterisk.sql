@@ -3,7 +3,6 @@
 -- The naming cases below are analyzer-specific: the legacy expansion substitutes the lambda
 -- argument only in children of the body, so a root `x -> x` stays the identifier `x` and the
 -- query fails with UNKNOWN_IDENTIFIER. Pin the mode instead of inheriting the job profile.
-SET enable_analyzer = 1;
 
 -- A named transformer (APPLY with a prefix, or REPLACE) over a bare matcher/asterisk
 -- expansion is rejected: there is no single column to carry the name.
@@ -42,8 +41,7 @@ SELECT * APPLY (toString, 'f_') FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames
 SELECT * APPLY (x -> x + 1, 'f_') FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
 SELECT * APPLY (x -> x + 1, 'p_') APPLY (x -> x + 1, 'q_') FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 SELECT * REPLACE (a + 1 AS a) FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
--- The prefix uses the short column name (`f_a`), not the qualified projection name (`f_x.a`)
--- that a qualifying scope stores.
+-- The prefix keeps the qualifier a clashing alias forces: `f_x.a`.
 SELECT 99 AS a, x.* APPLY (toString, 'f_') FROM (SELECT 1 AS a, 2 AS b) AS x FORMAT TSVWithNames;
 -- A chained transformer names its argument from the previous expression, not from the prefix
 -- alias: `upper(toString(a))`, `toString(identity(a))`.

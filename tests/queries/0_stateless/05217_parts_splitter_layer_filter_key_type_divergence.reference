@@ -1,0 +1,18 @@
+FINAL, diverged key type
+a
+b
+c
+d
+\N
+ordinary read, forced split, diverged key type
+a
+b
+c
+\N
+4	1
+FINAL, same key type
+
+a
+b
+c
+d

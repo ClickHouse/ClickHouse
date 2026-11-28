@@ -24,8 +24,8 @@ public:
         size_t max_single_size = 32 * 1024 * 1024; /// Max size for a single buffer/block
     };
 
-    virtual size_t getBufferNumber() const = 0;
-    virtual size_t getBufferSize() const = 0;
+    [[nodiscard]] virtual size_t getBufferNumber() const = 0;
+    [[nodiscard]] virtual size_t getBufferSize() const = 0;
     virtual void nextBuffer() = 0;
     virtual ~BufferAllocationPolicy() = 0;
 

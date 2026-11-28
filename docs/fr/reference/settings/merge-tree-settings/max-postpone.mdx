@@ -13,37 +13,29 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/reference/system-tables/merge_tree_settings) et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="max_postpone_time_for_failed_mutations_ms">
-  ## max_postpone_time_for_failed_mutations_ms
-</div>
+## max_postpone_time_for_failed_mutations_ms {#max_postpone_time_for_failed_mutations_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 
-Le délai maximal de report pour les mutations en échec.
+Délai maximal du backoff exponentiel, en millisecondes, avant de relancer une mutation en échec sur la même part. Ce délai augmente à chaque nouvel échec, dans la limite de cette valeur. Définissez ce paramètre à `0` pour relancer sans report.
 
-<div id="max_postpone_time_for_failed_replicated_fetches_ms">
-  ## max_postpone_time_for_failed_replicated_fetches_ms
-</div>
+## max_postpone_time_for_failed_replicated_fetches_ms {#max_postpone_time_for_failed_replicated_fetches_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "Ajout d'un nouveau paramètre permettant de reporter les tâches de récupération dans la file d'attente de réplication."}]}]} />
 
-Temps maximal de report pour les opérations de récupération répliquées ayant échoué.
+Délai maximal, en millisecondes, du backoff exponentiel appliqué avant de relancer une tâche `GET_PART` ayant échoué dans une file d&#39;attente de réplication `ReplicatedMergeTree`. Ce délai augmente à chaque nouvel échec, dans la limite de cette valeur. Définissez-le à `0` pour désactiver le report.
 
-<div id="max_postpone_time_for_failed_replicated_merges_ms">
-  ## max_postpone_time_for_failed_replicated_merges_ms
-</div>
+## max_postpone_time_for_failed_replicated_merges_ms {#max_postpone_time_for_failed_replicated_merges_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "Ajout d’un nouveau paramètre pour permettre de reporter les tâches de fusion dans la file d’attente de réplication."}]}]} />
 
-Durée maximale de report des fusions répliquées ayant échoué.
+Délai maximal de backoff exponentiel, en millisecondes, avant une nouvelle tentative d’exécution d’une tâche `MERGE_PARTS` ayant échoué dans une file d’attente de réplication `ReplicatedMergeTree`. Ce délai augmente à chaque nouvel échec, dans la limite de cette valeur. Définissez ce paramètre sur `0` pour désactiver le report.
 
-<div id="max_postpone_time_for_failed_replicated_tasks_ms">
-  ## max_postpone_time_for_failed_replicated_tasks_ms
-</div>
+## max_postpone_time_for_failed_replicated_tasks_ms {#max_postpone_time_for_failed_replicated_tasks_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 

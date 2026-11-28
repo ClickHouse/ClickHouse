@@ -6,7 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # A failed remote shard read must be recorded on the per-shard fragment span
-# (`RemoteQueryExecutor::execute`) as status ERROR with the exception message. On the default
+# (`RemoteQueryExecutor::execute`) as status ERROR. The status message is set only when the shard
+# reported the exception itself; for a local failure the span is failed from a `SCOPE_FAIL`
+# during unwinding, where the message is not available (it is on the query span). On the default
 # asynchronous path the span is owned by the read context fiber and used to be logged with
 # status UNSET on failure: nothing stamped it when the fiber task threw locally (the exception
 # is caught in the `AsyncTaskExecutor` routine and rethrown on the consumer thread only after
@@ -19,7 +21,7 @@ function check_error_span
     local _label="$2"
     local _query="
         with UUIDNumToString(toFixedString(unhex('$_trace_id'), 16)) as t
-        select countIf(status_code = 'ERROR' and status_message != '')
+        select countIf(status_code = 'ERROR')
         from system.opentelemetry_span_log
         where finish_date >= yesterday() and trace_id = t
           and operation_name = 'RemoteQueryExecutor::execute'"

@@ -52,7 +52,7 @@ void ASTKillQueryQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings
 void ASTKillQueryQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "KillQueryQuery");
-    w.writeString("kill_type", std::string(magic_enum::enum_name(type)));
+    w.writeString("kill_type", magic_enum::enum_name(type));
     w.writeChild("where_expression", where_expression);
     if (sync)
         w.writeBool("sync", true);

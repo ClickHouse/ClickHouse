@@ -19,6 +19,11 @@ limit above arrayJoin:	1
 2	7	updated
 3	7	updated
 4	7	updated
+float key, no order, no limit:	1
+float key, read-in-order, limit:	0
+float key, small limit:	0
+mixed key, no order, no limit:	1
+mixed key, small limit:	0
 disjoint read-in-order limit, final read:	0
 disjoint small limit, final read:	0
 disjoint lazy off, final read:	1
