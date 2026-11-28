@@ -4,6 +4,10 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Core/AccurateComparison.h>
 #include <Core/callOnTypeIndex.h>
@@ -390,6 +394,151 @@ void retagBoolInField(Field & field, const DataTypePtr & type)
     }
 }
 
+/// Whether a value of `type` occupies one of SEVERAL `Variant` alternatives, at any nesting depth. A
+/// single-alternative `Variant` has no choice to lose, so it is not this class.
+bool carriesAmbiguousVariant(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & nested)
+    {
+        const auto * variant = typeid_cast<const DataTypeVariant *>(&nested);
+        return variant && variant->getVariants().size() > 1;
+    });
+}
+
+/// `CAST` resolves a `Variant` target's alternatives BY NAME, so it can choose the alternative for an
+/// identity conversion, for a source type that names one, and for a `Variant` source whose alternatives
+/// the target all names. By name, not `equals`: `equals` conflates types the lookup does not (a `DateTime`
+/// timezone, an `AggregateFunction`'s serialization version). An ordinary `LowCardinality` survives the
+/// source normalization, since it can be an alternative itself. Two tuples that both name their elements
+/// are paired by NAME by `CAST` and positionally by `convertFieldToType`, so they qualify only where the
+/// two pairings coincide.
+bool variantAlternativeIsChosenByType(const DataTypePtr & from, const DataTypePtr & to)
+{
+    if (from->getName() == to->getName())
+        return true;
+
+    /// The lookup below ignores a source `Nullable`, while `CAST` cannot place a NULL in a target that
+    /// does not hold one, so by type alone such a pair is refused and keeps the `Field` path, which owns
+    /// the "not representable" answer for it. A `Variant` does hold a NULL, through its own discriminator.
+    if (isNullableOrLowCardinalityNullable(from) && !canContainNull(*to))
+        return false;
+
+    const DataTypePtr source = removeNullableOrLowCardinalityNullable(from);
+
+    /// A `Nullable` target adds a NULL flag over a conversion `CAST` performs unchanged, so the nested
+    /// type answers the same question. Only a composite is reached: a `Variant` cannot be inside `Nullable`.
+    if (const auto * to_nullable = typeid_cast<const DataTypeNullable *>(to.get()))
+        return variantAlternativeIsChosenByType(source, to_nullable->getNestedType());
+
+    if (const auto * to_variant = typeid_cast<const DataTypeVariant *>(to.get()))
+    {
+        if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(source.get()))
+        {
+            for (const auto & alternative : from_variant->getVariants())
+                if (!to_variant->tryGetVariantDiscriminator(alternative->getName()))
+                    return false;
+            return true;
+        }
+
+        return to_variant->tryGetVariantDiscriminator(source->getName()).has_value();
+    }
+
+    /// `CAST` refuses arrays of different depth, as an `Array` placed into an alternative makes them.
+    if (const auto * to_array = typeid_cast<const DataTypeArray *>(to.get()))
+    {
+        const auto * from_array = typeid_cast<const DataTypeArray *>(source.get());
+        return from_array && from_array->getNumberOfDimensions() == to_array->getNumberOfDimensions()
+            && variantAlternativeIsChosenByType(from_array->getNestedType(), to_array->getNestedType());
+    }
+
+    if (const auto * to_map = typeid_cast<const DataTypeMap *>(to.get()))
+    {
+        const auto * from_map = typeid_cast<const DataTypeMap *>(source.get());
+        return from_map && variantAlternativeIsChosenByType(from_map->getKeyType(), to_map->getKeyType())
+            && variantAlternativeIsChosenByType(from_map->getValueType(), to_map->getValueType());
+    }
+
+    if (const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get()))
+    {
+        const auto * from_tuple = typeid_cast<const DataTypeTuple *>(source.get());
+        if (!from_tuple || from_tuple->getElements().size() != to_tuple->getElements().size())
+            return false;
+
+        if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames()
+            && from_tuple->getElementNames() != to_tuple->getElementNames())
+            return false;
+
+        for (size_t i = 0; i < to_tuple->getElements().size(); ++i)
+            if (!variantAlternativeIsChosenByType(from_tuple->getElements()[i], to_tuple->getElements()[i]))
+                return false;
+        return true;
+    }
+
+    return false;
+}
+
+/// `CAST` keeps a `Bool` it does not convert byte for byte, so clamp it to 0/1 as `retagBoolInField` does.
+void clampBoolBytes(IColumn & column, const DataTypePtr & type)
+{
+    if (isBool(type))
+    {
+        for (auto & byte : assert_cast<ColumnUInt8 &>(column).getData())
+            byte = static_cast<UInt8>(byte != 0);
+    }
+    else if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        clampBoolBytes(assert_cast<ColumnNullable &>(column).getNestedColumn(), nullable->getNestedType());
+    else if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    {
+        /// Clamped keys can coincide, so the values are re-inserted instead of edited in the dictionary.
+        auto & low_cardinality_column = assert_cast<ColumnLowCardinality &>(column);
+        auto values = IColumn::mutate(low_cardinality_column.convertToFullColumn());
+        clampBoolBytes(*values, low_cardinality->getDictionaryType());
+        low_cardinality_column.popBack(low_cardinality_column.size());
+        low_cardinality_column.insertRangeFromFullColumn(*values, 0, values->size());
+    }
+    else if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        clampBoolBytes(assert_cast<ColumnArray &>(column).getData(), array->getNestedType());
+    else if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        clampBoolBytes(assert_cast<ColumnMap &>(column).getNestedColumn(), map->getNestedType());
+    else if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (size_t i = 0; i < tuple->getElements().size(); ++i)
+            clampBoolBytes(assert_cast<ColumnTuple &>(column).getColumn(i), tuple->getElements()[i]);
+    }
+    else if (const auto * variant = typeid_cast<const DataTypeVariant *>(type.get()))
+    {
+        for (size_t i = 0; i < variant->getVariants().size(); ++i)
+            clampBoolBytes(assert_cast<ColumnVariant &>(column).getVariantByGlobalDiscriminator(i), variant->getVariants()[i]);
+    }
+}
+
+/// A `Field` cannot express a `Variant` result: `convertFieldToType` returns the value unchanged, and the
+/// alternative is then chosen on insertion into a `ColumnVariant`, by the first one that accepts it (so
+/// `1 :: UInt64` lands in `Date` for `Variant(Date, UInt64)`). `CAST` chooses it by type.
+std::optional<ColumnPtr> tryConvertVariantColumnNative(
+    const IColumn & value, const DataTypePtr & from, const DataTypePtr & to)
+{
+    if (!carriesAmbiguousVariant(*to))
+        return std::nullopt;
+
+    /// A `Nullable` that this row does not use holds no NULL for `CAST` to place, so the outermost one is
+    /// decided by the row; the levels below have no value here and keep the type-level answer.
+    const DataTypePtr source = value.isNullAt(0) ? from : removeNullableOrLowCardinalityNullable(from);
+
+    if (!variantAlternativeIsChosenByType(source, to))
+        return std::nullopt;
+
+    /// The value keeps its own type here, so it stays representable, and neither `strict` nor
+    /// `convert_inexact_floats` applies.
+    ColumnPtr result = castColumn({value.getPtr(), from, ""}, to)->convertToFullColumnIfConst();
+    if (!containsBool(*to))
+        return result;
+
+    auto clamped = IColumn::mutate(std::move(result));
+    clampBoolBytes(*clamped, to);
+    return ColumnPtr(std::move(clamped));
+}
+
 /// Whether a converted `DateTime` value - of `type`, looking through `Nullable`/`LowCardinality` - fits the
 /// `UInt32` storage of `DateTime`. `convertFieldToType` keeps the exact timestamp of a `Date`/`Date32` outside
 /// that range, and inserting it into a `DateTime` column would truncate it modulo 2^32, so such a value is not
@@ -448,6 +597,12 @@ DataTypePtr resolveActiveAlternativeType(const IColumn & value, const DataTypePt
 
 }
 
+bool fieldCanLoseVariantAlternative(const DataTypePtr & from, const DataTypePtr & to)
+{
+    return carriesAmbiguousVariant(*from) || carriesAmbiguousVariant(*to) || from->hasDynamicStructure()
+        || to->hasDynamicStructure();
+}
+
 ColumnPtr convertColumnToTypeOrNull(
     const IColumn & value,
     const DataTypePtr & from,
@@ -479,6 +634,9 @@ ColumnPtr convertColumnToTypeOrNull(
 
     if (auto native = tryConvertNumericColumnNative(unwrapped, from, to, strict, convert_inexact_floats))
         return std::move(*native);
+
+    if (auto variant = tryConvertVariantColumnNative(unwrapped, from, to))
+        return std::move(*variant);
 
     /// `X -> Decimal` column-native (an engaged optional whose value may be a null `ColumnPtr`, meaning
     /// a strict-rejected lossy value; std::nullopt means "not handled here, use the `Field` fallback").
