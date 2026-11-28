@@ -52,6 +52,9 @@ public:
 private:
     [[nodiscard]] String getName() const { return engine_name; }
 
+    /// Apply the `after_processing` action to the objects, appending the objects it completed to `successful_objects`.
+    void applyAfterProcessingAction(const StoredObjects & objects, StoredObjects & successful_objects) const;
+
     void doWithRetries(std::function<void()> action) const;
 
     /// Add to the `after_processing` stage of the failures metric of the table.
