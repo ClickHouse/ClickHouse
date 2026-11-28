@@ -30,6 +30,9 @@ struct TTLAggregateDescription
     /// Expressions to calculate the value of assignment expression
     ExpressionActionsPtr expression;
 
+    /// Set when `expression` needs a set that no consumer of `set_parts` builds; see `checkSetPartsAreExecutable`.
+    bool requires_sets_from_subqueries = false;
+
     /// The assignment expression before analysis and the columns it reads, to build the arguments of its aggregate functions
     ASTPtr expression_ast;
     NamesAndTypesList expression_source_columns;
@@ -127,6 +130,8 @@ struct TTLDescription
 
     /// SET parts of TTL expression
     TTLAggregateDescriptions set_parts;
+
+    void checkSetPartsAreExecutable() const;
 
     /// Aggregate descriptions for GROUP BY in TTL
     AggregateDescriptions aggregate_descriptions;
