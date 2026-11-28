@@ -41,3 +41,5 @@ SELECT 'argument types';
 SELECT toTypeName(exp(toFloat32(1))), toTypeName(log(1)), toTypeName(tanh(toDecimal32(1, 2))), toTypeName(sigmoid(1::Int8));
 SELECT exp(toDecimal32(1, 2)) = exp(1.), log(toUInt8(10)) = log(10.), tanh(toInt64(-3)) = tanh(-3.), sigmoid(toDecimal64(2, 3)) = sigmoid(2.);
 SELECT isNaN(exp(nan::Nullable(Float64))), log(NULL::Nullable(Float64)), exp(toLowCardinality(0.));
+-- `BFloat16` is converted to `Float64`, in every build.
+SELECT exp(materialize(toBFloat16(1))) = exp(1.), log(materialize(toBFloat16(2))) = log(2.), tanh(materialize(toBFloat16(0.5))) = tanh(0.5), sigmoid(materialize(toBFloat16(-1))) = sigmoid(-1.), toTypeName(exp(materialize(toBFloat16(1))));

@@ -7,11 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int NOT_IMPLEMENTED;
-}
-
 namespace
 {
 
@@ -26,23 +21,16 @@ struct Impl
     template <typename T>
     static void execute(const T * src, size_t size, T * dst)
     {
-        if constexpr (std::is_same_v<T, BFloat16>)
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function `{}` is not implemented for BFloat16", name);
-        }
-        else
-        {
 #if USE_HIGHWAY
-            HighwayMath::sigmoid(src, size, dst);
+        HighwayMath::sigmoid(src, size, dst);
 #else
-            for (size_t i = 0; i < size; ++i)
-            {
-                /// Unlike 1 / (1 + exp(-x)), does not overflow to 0 for large negative arguments.
-                T e = std::exp(-std::abs(src[i]));
-                dst[i] = (src[i] < 0 ? e : T(1)) / (T(1) + e);
-            }
-#endif
+        for (size_t i = 0; i < size; ++i)
+        {
+            /// Unlike 1 / (1 + exp(-x)), does not overflow to 0 for large negative arguments.
+            T e = std::exp(-std::abs(src[i]));
+            dst[i] = (src[i] < 0 ? e : T(1)) / (T(1) + e);
         }
+#endif
     }
 };
 
