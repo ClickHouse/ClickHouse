@@ -27,6 +27,7 @@ private:
 
     UInt64 mask = 0;
     UInt64 grouping_set = 0;
+    bool generated_grand_total = false;
 };
 
 }

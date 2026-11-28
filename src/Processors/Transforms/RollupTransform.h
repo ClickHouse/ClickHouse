@@ -21,6 +21,12 @@ protected:
 
     MutableColumnPtr getColumnWithDefaults(size_t key, size_t n) const;
 
+    /// A single grand-total row over the intermediate header: keys take their default
+    /// values (NULLs with group_by_use_nulls) and aggregate states are freshly created
+    /// empty states, so finalized aggregates report their empty-input values (count() = 0).
+    /// Used when the input is empty and nothing was aggregated.
+    Chunk makeGrandTotalRow();
+
     AggregatingTransformParamsPtr params;
 
     bool use_nulls;
@@ -35,6 +41,8 @@ protected:
 
     Chunks consumed_chunks;
     Chunk current_chunk;
+
+    bool has_input = false;
 };
 
 /// Takes blocks after grouping, with non-finalized aggregate functions.
@@ -53,6 +61,7 @@ private:
 
     size_t last_removed_key = 0;
     size_t set_counter = 0;
+    bool generated_grand_total = false;
 };
 
 }
