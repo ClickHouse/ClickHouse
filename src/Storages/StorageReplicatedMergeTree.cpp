@@ -12700,7 +12700,7 @@ void StorageReplicatedMergeTree::backupData(
             retries_ctl.retryLoop([&]()
             {
                 if (!zookeeper || zookeeper->expired())
-                    zookeeper = local_context->getZooKeeper();
+                    zookeeper = local_context->getDefaultOrAuxiliaryZooKeeper(zookeeper_info.zookeeper_name);
                 exists = (zookeeper->tryGetChildren(mutations_node_path, mutation_ids) == Coordination::Error::ZOK);
             });
         }
@@ -12719,7 +12719,7 @@ void StorageReplicatedMergeTree::backupData(
                 retries_ctl.retryLoop([&]()
                 {
                     if (!zookeeper || zookeeper->expired())
-                        zookeeper = local_context->getZooKeeper();
+                        zookeeper = local_context->getDefaultOrAuxiliaryZooKeeper(zookeeper_info.zookeeper_name);
                     mutation_id_exists = zookeeper->tryGet(mutations_node_path / mutation_id, mutation);
                 });
 
