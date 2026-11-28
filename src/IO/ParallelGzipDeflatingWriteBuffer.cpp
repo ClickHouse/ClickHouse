@@ -33,6 +33,7 @@ void ParallelGzipDeflatingWriteBuffer::nextImpl()
 
     auto * in_buf = reinterpret_cast<unsigned char *>(working_buffer.begin());
     compressAndWrite(in_buf, offset(), false);
+    growAdaptiveBufferAfterFlush();
 }
 
 void ParallelGzipDeflatingWriteBuffer::cancelImpl() noexcept
@@ -257,16 +258,24 @@ void ParallelGzipDeflatingWriteBuffer::compressAndWriteImpl(unsigned char * in_b
     std::exception_ptr exception;
     try
     {
-        for (; scheduled < cnt_blocks; ++scheduled)
+        /// A pass of one block is compressed on this thread: a pool job would only add a thread wake-up.
+        if (cnt_blocks == 1)
         {
-            const size_t block_offset = scheduled * def_block;
-            const size_t block_len = std::min(def_block, in_len - block_offset);
-            unsigned char * block_buf = in_buf + block_offset;
-            const bool last_block = final_compression_flag && (block_offset + block_len == in_len);
+            results[0] = compressBlock(in_buf, in_len, final_compression_flag);
+        }
+        else
+        {
+            for (; scheduled < cnt_blocks; ++scheduled)
+            {
+                const size_t block_offset = scheduled * def_block;
+                const size_t block_len = std::min(def_block, in_len - block_offset);
+                unsigned char * block_buf = in_buf + block_offset;
+                const bool last_block = final_compression_flag && (block_offset + block_len == in_len);
 
-            futures[scheduled] = runner(
-                [this, block_buf, block_len, last_block] { return compressBlock(block_buf, block_len, last_block); },
-                Priority{});
+                futures[scheduled] = runner(
+                    [this, block_buf, block_len, last_block] { return compressBlock(block_buf, block_len, last_block); },
+                    Priority{});
+            }
         }
     }
     catch (...)
@@ -308,7 +317,7 @@ void ParallelGzipDeflatingWriteBuffer::compressAndWriteImpl(unsigned char * in_b
     /// can still discard the body and replace it with a clean, uncompressed exception message.
     ensureHeaderWritten();
 
-    for (size_t i = 0; i < scheduled; ++i)
+    for (size_t i = 0; i < cnt_blocks; ++i)
         out->write(results[i].mem->data(), results[i].len);
 
     /// The trailer must describe only the data whose compressed form has reached the nested buffer.

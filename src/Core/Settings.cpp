@@ -403,7 +403,7 @@ Possible values:
 - 1 - single-threaded compression.
 - Positive integer greater than 1 - compress on up to this many threads.
 
-Each compressing stream buffers up to this many blocks of 256 KiB (at most 256), so higher values lead to higher memory usage. `gzip` levels above `9` are always compressed on one thread.
+Each compressing stream buffers up to this many blocks of 256 KiB (at most 256): it starts with one block and grows with its output, so higher values lead to higher memory usage for large outputs. `gzip` levels above `9` are always compressed on one thread.
 
 For HTTP query responses, the compressing buffer is set up before the query is executed, like the other HTTP response-shaping settings (`enable_http_compression`, `http_zlib_compression_level`, `compression`). There the setting must be supplied via the HTTP URL parameter or a user profile; an in-query `SETTINGS` clause does not affect the compression of the HTTP response itself (it still applies to files and storage written by the query, e.g. `INSERT INTO FUNCTION file(...)` or `SELECT ... INTO OUTFILE`).
 )", 0, \
