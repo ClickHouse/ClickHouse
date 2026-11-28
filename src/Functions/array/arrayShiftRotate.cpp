@@ -169,8 +169,8 @@ public:
                     const auto nested_default_type = removeNullable(default_argument.type);
                     if (const auto * nullable_default_column = checkAndGetColumn<ColumnNullable>(materialized_default_column.get()))
                     {
-                        const auto * null_map_data = nullable_default_column->tryGetNullMapData();
-                        if (!null_map_data || nested_default_type->isDefaultInsertTrivial() || memoryIsZero(null_map_data->data(), 0, null_map_data->size()))
+                        const NullMap * null_map = nullable_default_column->tryGetNullMapData();
+                        if (nested_default_type->isDefaultInsertTrivial() || !null_map || memoryIsZero(null_map->data(), 0, null_map->size()))
                             materialized_default_column = nullable_default_column->getNestedColumnWithDefaultOnNull();
                         else
                         {
@@ -180,7 +180,7 @@ public:
                             filled_default_column->reserve(nested_default_column.size());
                             for (size_t row = 0; row < nested_default_column.size(); ++row)
                             {
-                                if ((*null_map_data)[row])
+                                if ((*null_map)[row])
                                     nested_default_type->insertDefaultInto(*filled_default_column);
                                 else
                                     filled_default_column->insertFrom(nested_default_column, row);

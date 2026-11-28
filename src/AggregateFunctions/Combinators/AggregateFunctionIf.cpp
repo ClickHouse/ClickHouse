@@ -462,12 +462,9 @@ public:
             if (is_nullable[arg])
             {
                 const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[arg]);
-                if (const auto * col_null_map_data = nullable_col.tryGetNullMapData())
-                {
-                    const UInt8 * col_null_map = col_null_map_data->data();
-                    for (size_t row = row_begin; row < row_end; ++row)
-                        final_null_flags[row] |= col_null_map[row];
-                }
+                const UInt8 * col_null_map = nullable_col.getNullMapRawDataOrZeros();
+                for (size_t row = row_begin; row < row_end; ++row)
+                    final_null_flags[row] |= col_null_map[row];
                 nested_columns[arg] = &nullable_col.getNestedColumn();
             }
             else

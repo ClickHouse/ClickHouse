@@ -1203,9 +1203,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
     /// A NULL of a set, e.g. inside a tuple element, does not cast to a non-`Nullable` element type and matches no element.
     const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
-    const auto * null_map = nullable_column ? nullable_column->tryGetNullMapData() : nullptr;
-    if (null_map && !canContainNull(*array_nested_type)
-        && std::ranges::any_of(*null_map, [](UInt8 is_null) { return is_null != 0; }))
+    const NullMap * set_null_map = nullable_column ? nullable_column->tryGetNullMapData() : nullptr;
+    if (set_null_map && !canContainNull(*array_nested_type)
+        && std::ranges::any_of(*set_null_map, [](UInt8 is_null) { return is_null != 0; }))
         return false;
 
     const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);

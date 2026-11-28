@@ -53,7 +53,8 @@ struct SerializationInfoSettings
     /// Additional serialization versions can be added here in the future.
     /// `with_string_size_stream` also enables the size-stream String layout (including nested Strings); it is
     /// not self-describing on the wire, so enable it only when the peer protocol revision supports it.
-    static SerializationInfoSettings enableAllSupportedSerializations(bool with_string_size_stream = false);
+    /// `with_compact_null_map` enables the compact null map of Nullable (including nested Nullable), the same applies.
+    static SerializationInfoSettings enableAllSupportedSerializations(bool with_string_size_stream = false, bool with_compact_null_map = false);
 };
 
 }

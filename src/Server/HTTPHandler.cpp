@@ -91,6 +91,7 @@ namespace Setting
     extern const SettingsInt64 http_zlib_compression_level;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 input_format_max_block_wait_ms;
+    extern const SettingsUInt64 max_generic_compression_threads;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 readonly;
     extern const SettingsBool run_query_in_background;
@@ -446,6 +447,14 @@ void HTTPHandler::processQuery(
             settings_changes.setSetting(key, value);
         else
             deferred_unrecognized_params.emplace_back(key, value);
+    }
+
+    /// `buffer_size` and `wait_end_of_query` are the old names of these settings; the setting itself wins.
+    for (const auto & [param_name, setting_name] :
+         {std::pair{"buffer_size", "http_response_buffer_size"}, std::pair{"wait_end_of_query", "http_wait_end_of_query"}})
+    {
+        if (auto it = params.findLast(param_name); it != params.end() && !params.has(setting_name))
+            settings_changes.setSetting(setting_name, it->second);
     }
 
     /// The `X-ClickHouse-Database` header is an alias for the `database` setting. It overrides a
@@ -855,19 +864,10 @@ void HTTPHandler::processQuery(
 
     /// If wait_end_of_query is specified, the whole result will be buffered.
     ///  First ~buffer_size bytes will be buffered in memory, the remaining bytes will be stored in temporary file.
-    auto buffer_size_http = settings[Setting::http_response_buffer_size];
-    /// setting overrides deprecated buffer_size parameter
-    if (!params.has("http_response_buffer_size"))
-        buffer_size_http = params.getParsedLast<size_t>("buffer_size", buffer_size_http);
-
-    bool wait_end_of_query = settings[Setting::http_wait_end_of_query];
-    /// setting overrides deprecated wait_end_of_query parameter
-    if (!params.has("http_wait_end_of_query"))
-        wait_end_of_query = params.getParsedLast<bool>("wait_end_of_query", wait_end_of_query);
-
-    bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", settings[Setting::enable_http_compression]);
-    Int64 http_zlib_compression_level
-        = params.getParsed<Int64>("http_zlib_compression_level", settings[Setting::http_zlib_compression_level]);
+    const size_t buffer_size_http = settings[Setting::http_response_buffer_size];
+    const bool wait_end_of_query = settings[Setting::http_wait_end_of_query];
+    const bool enable_http_compression = settings[Setting::enable_http_compression];
+    const Int64 http_zlib_compression_level = settings[Setting::http_zlib_compression_level];
     /// `http_zlib_compression_level` is for the zlib-based methods only. Other methods have their own ranges
     /// and meanings of levels (e.g. `lz4` switches to the slow high-compression mode starting from level 2),
     /// so they use the generic `output_format_compression_level`.
@@ -889,6 +889,9 @@ void HTTPHandler::processQuery(
     used_output.out_maybe_compressed = used_output.out_holder;
     used_output.out = used_output.out_holder;
 
+    /// The compressing buffers below are built before the query is executed, so, like the other response-shaping
+    /// settings read here, `max_generic_compression_threads` comes from the URL parameters and the user profile;
+    /// an in-query `SETTINGS` clause cannot change how the already constructed response is compressed.
     if (client_supports_http_compression && enable_http_compression)
     {
         used_output.out_holder->setCompressionMethodHeader(http_response_compression_method);
@@ -901,7 +904,8 @@ void HTTPHandler::processQuery(
             DBMS_DEFAULT_BUFFER_SIZE,
             nullptr,
             0,
-            false);
+            false,
+            context->getSettingsRef()[Setting::max_generic_compression_threads]);
         used_output.out_maybe_compressed = used_output.wrap_compressed_holder;
         used_output.out = used_output.wrap_compressed_holder;
     }
@@ -927,7 +931,8 @@ void HTTPHandler::processQuery(
                 DBMS_DEFAULT_BUFFER_SIZE,
                 nullptr,
                 0,
-                false);
+                false,
+                settings[Setting::max_generic_compression_threads]);
             used_output.out_maybe_compressed = used_output.generic_compression_holder;
             used_output.out = used_output.generic_compression_holder;
         }

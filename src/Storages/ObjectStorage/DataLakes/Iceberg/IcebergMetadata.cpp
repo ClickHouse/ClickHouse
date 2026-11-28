@@ -1621,12 +1621,13 @@ namespace
 std::optional<UInt64> countDeletedRows(
     const std::vector<ProcessedManifestFileEntryPtr> & data_files,
     const std::vector<ProcessedManifestFileEntryPtr> & position_deletes,
+    const IcebergPathResolver & path_resolver,
     LoggerPtr log)
 {
-    auto grouped = groupPositionDeletesByDataFile(position_deletes);
+    auto grouped = groupPositionDeletesByDataFile(position_deletes, path_resolver);
     if (!grouped.other.empty())
         LOG_DEBUG(
-            log, "The row estimate does not subtract {} position delete files that cover several data files", grouped.other.size());
+            log, "The row estimate does not subtract {} position delete files not scoped to one resolvable data file", grouped.other.size());
 
     UInt64 deleted_rows = 0;
     if (grouped.single_data_file.empty())
@@ -1638,7 +1639,10 @@ std::optional<UInt64> countDeletedRows(
 
     for (const auto & data_file : data_files)
     {
-        const auto it = grouped.single_data_file.find(data_file->parsed_entry->file_path_key);
+        const auto data_file_identity = path_resolver.tryStorageIdentity(data_file->parsed_entry->file_path_key);
+        if (!data_file_identity)
+            continue;
+        const auto it = grouped.single_data_file.find(*data_file_identity);
         if (it == grouped.single_data_file.end())
             continue;
 
@@ -1863,7 +1867,7 @@ IcebergMetadata::estimateRead(
         }
     }
 
-    const auto deleted_rows = countDeletedRows(remaining_data_files, position_deletes, log);
+    const auto deleted_rows = countDeletedRows(remaining_data_files, position_deletes, persistent_components.path_resolver, log);
     if (!deleted_rows)
         return estimate;
     column_statistics.subtractDeletedRows(*deleted_rows);
@@ -2057,7 +2061,10 @@ void IcebergMetadata::addDeleteTransformers(
     {
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
-            { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, parser_shared_resources, local_context); });
+            {
+                return iceberg_object_info->getPositionDeleteTransformer(
+                    object_storage, persistent_components.path_resolver, header, format_settings, parser_shared_resources, local_context);
+            });
     }
     const auto & delete_files = iceberg_object_info->info.equality_deletes_objects;
     LOG_DEBUG(log, "Constructing filter transform for equality delete, there are {} delete files", delete_files.size());
@@ -2249,7 +2256,7 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     chassert(object_info->getFileFormat().has_value());
     /// Only these readers resolve columns through a mapper: `Parquet` and `Avro` for the columns they read
     /// (and `Parquet` for its filters), `Vortex` for the filters it pushes into the scan, `ORC` for the columns
-    /// absent from the file.
+    /// it reads.
     const auto file_format = Poco::toLower(*object_info->getFileFormat());
     if (file_format != "parquet" && file_format != "avro" && file_format != "vortex" && file_format != "orc")
         return nullptr;

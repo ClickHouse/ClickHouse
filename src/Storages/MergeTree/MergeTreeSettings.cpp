@@ -377,7 +377,15 @@ Possible values:
 - basic — Use the standard serialization for `Nullable(T)`.
 
 - allow_sparse — Permit `Nullable(T)` to use sparse encoding.
+
+- compact_null_map — The same as `allow_sparse`, and the null map is written in the compact form:
+  a granule without NULLs (or with only NULLs) takes a few bytes in the null map stream instead of a byte per row,
+  and it is read without creating the null map in memory. The parts written with this version cannot be read by
+  older versions of ClickHouse.
+
+This setting is only effective when `serialization_info_version` is set to "with_types" or newer.
 )", 0, \
+        {"26.12", "basic", "basic", "New value `compact_null_map`"}, \
         {"25.12", "basic", "basic", "New setting"}) \
     DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v3", R"(
 Serialization version for JSON data type. Required for compatibility.
@@ -2300,8 +2308,10 @@ needed only to temporarily allow to run the server with wrong tables for
 backward compatibility.
 )", 0) \
     DECLARE(UInt64, finished_mutations_to_keep, 100, R"(
-How many records about mutations that are done to keep. If zero, then keep
-all of them.
+How many records about mutations that are done to keep. If zero, then no
+finished mutation entries are kept: the entry of a mutation is removed by the
+background cleanup once the mutation is finished. To keep all the entries, set
+a large value instead (in previous versions, zero meant keeping all of them).
 )", 0) \
     DECLARE(UInt64, min_merge_bytes_to_use_direct_io, 10ULL * 1024 * 1024 * 1024, R"(
 The minimum data volume for merge operation that is required for using direct

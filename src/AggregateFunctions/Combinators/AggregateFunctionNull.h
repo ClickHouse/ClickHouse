@@ -112,31 +112,6 @@ public:
         return nested_function->getName();
     }
 
-    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        if constexpr (result_is_nullable)
-            if (getFlag(rhs_place))
-                setFlag(place);
-
-        const size_t rhs_prefix_size = result_is_nullable ? rhs_nested->alignOfData() : 0;
-        nested_function->mergeStateFromDifferentVariant(nestedPlace(place), *rhs_nested, rhs_place + rhs_prefix_size, arena);
-    }
-
     static DataTypePtr createResultType(const AggregateFunctionPtr & nested_function_)
     {
         if constexpr (result_is_nullable)
@@ -700,10 +675,8 @@ public:
         Arena * arena) const override
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
-        /// A column without a null map has no NULLs.
-        const auto * null_map_data = column->tryGetNullMapData();
-        const UInt8 * null_map = null_map_data ? null_map_data->data() : nullptr;
-        const bool has_nulls = null_map && !memoryIsZero(null_map, row_begin, row_end);
+        const UInt8 * null_map = column->getNullMapRawDataOrZeros();
+        const bool has_nulls = !memoryIsZero(null_map, row_begin, row_end);
         if (has_nulls && hasManyNulls(null_map, row_begin, row_end))
         {
             addBatchLookupTable8RowByRow(row_begin, row_end, map, place_offset, std::move(init), key, columns, arena);
@@ -781,10 +754,8 @@ private:
         ssize_t if_argument_pos) const
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
-        /// A column without a null map has no NULLs.
-        const auto * null_map_data = column->tryGetNullMapData();
-        const UInt8 * null_map = null_map_data ? null_map_data->data() : nullptr;
-        const bool has_nulls = null_map && !memoryIsZero(null_map, row_begin, row_end);
+        const UInt8 * null_map = column->getNullMapRawDataOrZeros();
+        const bool has_nulls = !memoryIsZero(null_map, row_begin, row_end);
         if (if_argument_pos >= 0 || (has_nulls && hasManyNulls(null_map, row_begin, row_end)))
         {
             addBatchRowByRow<places_are_non_null>(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
