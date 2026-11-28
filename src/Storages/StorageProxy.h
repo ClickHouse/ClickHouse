@@ -35,6 +35,8 @@ public:
     bool supportsSampling() const override { return getNested()->supportsSampling(); }
     bool supportsFinal() const override { return getNested()->supportsFinal(); }
     bool supportsStreaming() const override { return getNested()->supportsStreaming(); }
+    bool reportsStreamingCursor() const override { return getNested()->reportsStreamingCursor(); }
+    void checkStreamingCursorForIncrementalRefresh() const override { getNested()->checkStreamingCursorForIncrementalRefresh(); }
     bool supportsPrewhere() const override { return getNested()->supportsPrewhere(); }
     bool canMoveConditionsToPrewhere() const override { return getNested()->canMoveConditionsToPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override { return getNested()->supportedPrewhereColumns(); }

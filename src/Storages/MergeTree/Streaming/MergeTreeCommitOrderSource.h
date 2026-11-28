@@ -16,7 +16,12 @@
 
 #include <Processors/IProcessor.h>
 
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/StreamingCursor.h>
+
 #include <map>
+
+#include <atomic>
 #include <optional>
 #include <string>
 
@@ -33,6 +38,7 @@ class MergeTreeCommitOrderSource final : public IProcessor
         ClassifiedPartitions partitions;
     };
 
+    Status prepareImpl();
     Status handleRunningPipeline();
     Status handleShutdown();
     Status handleReconfiguration(const ClassifiedPartitions & partitions, bool subscription_updated);
@@ -40,6 +46,7 @@ class MergeTreeCommitOrderSource final : public IProcessor
     void startRound();
     void finishRound();
     void surfaceFinalCursor();
+    bool needsFinalCursor() const;
 
     bool needToEmitGlobalIdle(const ClassifiedPartitions & partitions, bool subscription_updated);
     Status handleEmitGlobalIdle();
@@ -75,6 +82,11 @@ private:
     /// Runtime information
     ReadState read_state;
     int64_t finished_rounds = 0;
+    /// Whether the cursor of the bounded read was reported to the query, see `surfaceFinalCursor`.
+    /// It is read by `onUpdatePorts`, which is called from another thread.
+    std::atomic<bool> final_cursor_surfaced = false;
+    /// A bounded read for an incremental refresh is pending until it reports its cursor or finishes.
+    StreamingCursor::PendingReport pending_report;
 
     /// Reconfiguration
     std::optional<ReadRound> pending_round;

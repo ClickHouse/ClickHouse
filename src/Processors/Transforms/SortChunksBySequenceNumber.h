@@ -43,6 +43,8 @@ private:
     VectorWithMemoryTracking<Int64> chunk_snums;
     Chunks chunks;
     VectorWithMemoryTracking<bool> is_input_finished;
+    /// The sequence number of the chunk to push next: `AddSequenceNumber` numbers the chunks consecutively from 1.
+    Int64 next_snum = 1;
 };
 
 }

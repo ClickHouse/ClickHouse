@@ -122,6 +122,19 @@ bool SortChunksBySequenceNumber::tryPushChunk()
 {
     auto & output = outputs.front();
 
+    /// The next chunk in order is pushed as soon as it arrives, without waiting for a chunk in every input:
+    /// the stream may be infinite (a streaming query), and then the other inputs may not get a chunk for a long time.
+    for (size_t i = 0; i < num_inputs; ++i)
+    {
+        if (chunk_snums[i] == next_snum)
+        {
+            output.push(std::move(chunks[i]));
+            chunk_snums[i] = -1;
+            ++next_snum;
+            return true;
+        }
+    }
+
     bool can_peak_next = false;
     Int64 min_snum = std::numeric_limits<Int64>::max();
     size_t min_snum_idx = 0;
@@ -147,6 +160,7 @@ bool SortChunksBySequenceNumber::tryPushChunk()
     auto & chunk = chunks[min_snum_idx];
     output.push(std::move(chunk));
     chunk_snums[min_snum_idx] = -1;
+    next_snum = min_snum + 1;
     return true;
 }
 

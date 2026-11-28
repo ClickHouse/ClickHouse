@@ -370,6 +370,7 @@ private:
     /// `final_report` is the report after all the data of the `INSERT` has been received.
     void sendInsertProfileEvents(QueryState & state, bool final_report = false) TSA_REQUIRES(callback_mutex);
     void sendTimezone(QueryState & state);
+    void sendStreamingCursor(QueryState & state);
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     static void initMaybeCompressedOut(QueryState & state, std::shared_ptr<TCPHandlerPocoChunkedWriter> out);

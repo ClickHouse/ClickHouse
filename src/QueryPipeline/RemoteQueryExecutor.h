@@ -340,6 +340,9 @@ private:
       */
     bool finished = false;
 
+    /// The shard sent the `StreamingCursor` packet, see `report_streaming_cursor`.
+    bool received_streaming_cursor = false;
+
     /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:
       * - data size is already satisfactory (when using LIMIT, for example)
@@ -420,6 +423,7 @@ private:
     void sendExternalTables();
 
     void processReadTaskRequest();
+    void processStreamingCursor(const CursorTreeNodePtr & cursor);
 
     /// Accounts the `ProfileEvents` packet of a remote server for the quotas over profile events and
     /// passes it on to the client.

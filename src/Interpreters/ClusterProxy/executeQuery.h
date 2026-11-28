@@ -186,6 +186,8 @@ std::optional<LocalPlanParallelReplicasInfo> dropReadFromRemoteInPlan(QueryPlan 
 /// Execute a distributed query, creating a query plan, from which the query pipeline can be built.
 /// `stream_factory` object encapsulates the logic of creating plans for a different type of query
 /// (currently SELECT, DESCRIBE).
+/// `stream_table_expression_alias` is the alias, in `query_info.query_tree`, of the table expression that replaced
+/// the distributed one. It is required for a STREAM read, to give every shard its part of the cursor.
 void executeQuery(
     QueryPlan & query_plan,
     SharedHeader header,
@@ -200,7 +202,8 @@ void executeQuery(
     const std::string & sharding_key_column_name,
     const DistributedSettings & distributed_settings,
     AdditionalShardFilterGenerator shard_filter_generator,
-    bool is_remote_function);
+    bool is_remote_function,
+    const String & stream_table_expression_alias = {});
 
 std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ASTInsertQuery & query_ast,

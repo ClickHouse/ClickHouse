@@ -42,6 +42,7 @@
 #include <Parsers/stripQuerySettings.h>
 #include <Planner/findQueryForParallelReplicas.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <Processors/Transforms/WaitForStreamingCursorTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
@@ -643,6 +644,18 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
 
     /// Reached only when the async route was never eligible: build the ordinary synchronous
     /// `INSERT ... SELECT` tail directly on the `SELECT` pipeline.
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// An incremental refresh: the target gets its input finished only after every read of the query reported its cursor.
+    if (auto streaming_cursor = context->getStreamingCursor())
+    {
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
+        {
+            return std::make_shared<WaitForStreamingCursorTransform>(in_header, streaming_cursor);
+        });
+    }
+#endif
+
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
         auto counting = std::make_shared<CountingTransform>(in_header, context->getQuota(), context->getNormalizedQueryHash());

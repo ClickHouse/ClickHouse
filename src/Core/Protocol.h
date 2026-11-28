@@ -97,7 +97,9 @@ namespace Protocol
             MergeTreeReadTaskRequest = 16,  /// Request from a MergeTree replica to a coordinator
             TimezoneUpdate = 17,            /// Receive server's (session-wide) default timezone
             SSHChallenge = 18,              /// Return challenge for SSH signature signing
-            MAX = SSHChallenge,
+            StreamingCursor = 19,           /// The cursor that a bounded streaming read of a secondary query advanced to
+                                            /// (for an incremental refresh from a `Distributed` table, see `report_streaming_cursor`)
+            MAX = StreamingCursor,
 
         };
 
