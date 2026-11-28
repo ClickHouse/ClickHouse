@@ -1,4 +1,5 @@
 #include <atomic>
+#include <limits>
 #include <optional>
 #include <shared_mutex>
 
@@ -8,10 +9,13 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/replaceNegativeZeros.h>
 
+#include <Common/HashTable/CuckooSet.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/Logger.h>
 #include <Common/ServerOwnedMemory.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -64,6 +68,179 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
+namespace
+{
+
+/// Whether at least 15 of 16 sampled rows, one pseudo-random row per sixteenth of the block, repeat the previous key.
+bool keysAreSorted(const ColumnRawPtrs & key_columns, size_t rows)
+{
+    static constexpr size_t max_samples = 16;
+    if (rows < 2)
+        return false;
+    const size_t samples = std::min(max_samples, rows - 1);
+    const size_t stride = (rows - 1) / samples;
+    size_t repeats = 0;
+    for (size_t i = 0; i < samples; ++i)
+    {
+        const size_t row = 1 + i * stride + intHash64(i) % stride;
+        bool repeat = true;
+        for (const auto * column : key_columns)
+            repeat = repeat && column->compareAt(row, row - 1, *column, 1) == 0;
+        repeats += repeat;
+    }
+    return repeats * 16 >= samples * 15;
+}
+
+}
+
+/// The keys of a set in a `CuckooSet`, looked up instead of the hash table (see `execute`).
+class Set::CuckooLookup
+{
+public:
+    /// The table is built by a single lookup on the query's critical path, so only small sets get one.
+    static constexpr size_t max_keys = 1 << 15;
+    static constexpr size_t max_bytes = 2 << 20;
+
+    [[nodiscard]] size_t allocatedBytes() const
+    {
+        return set32.allocatedBytes() + set64.allocatedBytes() + set128.allocatedBytes();
+    }
+
+    /// Builds nothing if the peak memory of a placement would exceed `memory_budget`.
+    template <typename Method>
+    static std::unique_ptr<CuckooLookup> tryCreate(const Method & method, size_t num_keys, size_t memory_budget, size_t & attempts)
+    {
+        using Key = typename Method::Key;
+        attempts = 0;
+        auto lookup = std::make_unique<CuckooLookup>();
+        if constexpr (IsSetMethodOneNumber<Method>::value || IsSetMethodKeysFixed<Method>::value)
+        {
+            if constexpr (std::is_same_v<Key, UInt32> || std::is_same_v<Key, UInt64> || std::is_same_v<Key, UInt128>)
+            {
+                if (CuckooSet<Key>::minPeakBytes(num_keys + 1, num_keys) > memory_budget)
+                    return nullptr;
+                PODArray<Key> keys;
+                copyKeys(method.data, keys);
+                if (lookup->getSet<Key>().tryBuild(keys, max_bytes, memory_budget, attempts))
+                    return lookup;
+            }
+        }
+        return nullptr;
+    }
+
+    /// The same result as `executeImplCase`. Returns false if the table is not for this method and columns.
+    /// With `repeated_keys`, a row whose key equals the previous row's reuses its result, as in the hash table's cache.
+    template <typename Method>
+    bool execute(
+        const Method &, const ColumnRawPtrs & columns, const Sizes & sizes,
+        ColumnUInt8::Container & vec_res, bool negative, ConstNullMapPtr null_map, bool repeated_keys) const
+    {
+        using Key = typename Method::Key;
+        const size_t rows = vec_res.size();
+        UInt8 * res = vec_res.data();
+
+        if constexpr (IsSetMethodOneNumber<Method>::value && (std::is_same_v<Key, UInt32> || std::is_same_v<Key, UInt64>))
+        {
+            const auto & set = getSet<Key>();
+            const IColumn & column = *columns[0];
+            if (set.empty() || !column.isFixedAndContiguous() || column.sizeOfValueIfFixed() != sizeof(Key))
+                return false;
+            /// Read through the method's state, so the values are those the hash table would look up.
+            typename Method::State state(columns, sizes, nullptr);
+            static_assert(sizeof(*state.getKeyData()) == sizeof(Key));
+            const char * values = reinterpret_cast<const char *>(state.getKeyData());
+            if (repeated_keys || CuckooSet<Key>::keysChangeRegularly(values, rows))
+                set.findRepeated(values, rows, res);
+            else
+                set.find(values, rows, res);
+        }
+        else if constexpr (IsSetMethodKeysFixed<Method>::value
+                           && (std::is_same_v<Key, UInt32> || std::is_same_v<Key, UInt64> || std::is_same_v<Key, UInt128>))
+        {
+            const auto & set = getSet<Key>();
+            if (set.empty() || repeated_keys)
+                return false;
+            typename Method::State state(columns, sizes, nullptr);
+            Arena pool;
+            set.findEach(rows, res, [&](size_t i) { return state.getKeyHolder(i, pool); });
+        }
+        else
+            return false;
+
+        /// A row with a NULL key is not in the set, whatever its value.
+        if (null_map)
+        {
+            const UInt8 * is_null = null_map->data();
+            for (size_t i = 0; i < rows; ++i)
+                res[i] = static_cast<UInt8>(res[i] & !is_null[i]);
+        }
+
+        if (negative)
+        {
+            for (size_t i = 0; i < rows; ++i)
+                res[i] ^= 1;
+        }
+
+        return true;
+    }
+
+private:
+    template <typename T> struct IsSetMethodOneNumber : std::false_type {};
+    template <typename FieldType, typename Data, bool use_cache>
+    struct IsSetMethodOneNumber<SetMethodOneNumber<FieldType, Data, use_cache>> : std::true_type {};
+
+    template <typename T> struct IsSetMethodKeysFixed : std::false_type {};
+    template <typename Data, bool has_nullable_keys>
+    struct IsSetMethodKeysFixed<SetMethodKeysFixed<Data, has_nullable_keys>> : std::true_type {};
+
+    CuckooSet<UInt32> set32;
+    CuckooSet<UInt64> set64;
+    CuckooSet<UInt128> set128;
+
+    template <typename Key>
+    CuckooSet<Key> & getSet()
+    {
+        if constexpr (std::is_same_v<Key, UInt32>)
+            return set32;
+        else if constexpr (std::is_same_v<Key, UInt64>)
+            return set64;
+        else
+        {
+            static_assert(std::is_same_v<Key, UInt128>);
+            return set128;
+        }
+    }
+
+    template <typename Key>
+    [[nodiscard]] const CuckooSet<Key> & getSet() const
+    {
+        return const_cast<CuckooLookup *>(this)->getSet<Key>();
+    }
+
+    /// Reads every cell without branches: an empty cell holds the zero key, which the hash table stores apart.
+    template <typename Table, typename Key>
+    static void copyKeys(const Table & table, PODArray<Key> & keys)
+    {
+        /// One more, since every cell writes the next key.
+        keys.resize_exact(table.size() + 1);
+        size_t size = 0;
+        if (table.hasZero())
+            keys[size++] = Key{};
+        if (const auto * cells_end = table.end().getPtr())
+        {
+            const size_t num_cells = table.getBufferSizeInCells();
+            const auto * cells = cells_end - num_cells;
+            for (size_t i = 0; i < num_cells; ++i)
+            {
+                const Key key = cells[i].getKey();
+                keys[size] = key;
+                size += key != Key{};
+            }
+        }
+        keys.resize(size);
+    }
+};
+
 Set::Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
     :  limits(limits_), transform_null_in(transform_null_in_), max_elements_to_fill(max_elements_to_fill_)
     , data(std::make_unique<SetVariants>())
@@ -95,7 +272,39 @@ void Set::finishInsert()
         is_truncated = disk_set_builder->isTruncated();
         disk_set_builder.reset();
     }
+    else if (data && !cuckoo_lookup)
+    {
+        const size_t num_keys = data->getTotalRowCount();
+        using Type = SetVariants::Type;
+        const bool has_suitable_key = data->type == Type::key32 || data->type == Type::key64 || data->type == Type::keys32 || data->type == Type::keys64 || data->type == Type::keys128
+            || data->type == Type::nullable_keys128;
+        rows_before_cuckoo_lookup = has_suitable_key && num_keys > 0 && num_keys <= CuckooLookup::max_keys && !cuckoo_lookup_disabled
+            ? static_cast<Int64>(rows_per_key_before_cuckoo_lookup * num_keys)
+            : -1;
+    }
     is_created = true;
+}
+
+std::unique_ptr<Set::CuckooLookup> Set::createCuckooLookup() const
+{
+    const size_t num_keys = data->getTotalRowCount();
+
+    /// The build takes at most 1/8 of the memory the query can still use and of the memory left before the set spills.
+    size_t memory_budget = std::numeric_limits<size_t>::max();
+    if (const auto available = getCurrentQueryAvailableMemory())
+        memory_budget = *available / 8;
+    if (const size_t threshold = spill_settings.max_bytes_before_external_set)
+    {
+        const size_t used = static_cast<size_t>(std::max<Int64>(0, getCurrentQueryMemoryUsage()));
+        memory_budget = std::min(memory_budget, (threshold - std::min(threshold, used)) / 8);
+    }
+
+    Stopwatch watch;
+    size_t attempts = 0;
+    auto lookup = data->callOnMethod([&](const auto & method) { return CuckooLookup::tryCreate(method, num_keys, memory_budget, attempts); });
+    LOG_TRACE(log, "{} the lookup table for {} keys: {} placements tried, {} bytes, {:.3f} ms",
+        lookup ? "Built" : "Did not build", num_keys, attempts, lookup ? lookup->allocatedBytes() : 0, watch.elapsedSeconds() * 1000);
+    return lookup;
 }
 
 ProcessorMemoryStats Set::getMemoryStatsUnlocked() const
@@ -105,7 +314,7 @@ ProcessorMemoryStats Set::getMemoryStatsUnlocked() const
         return {};
 
     ProcessorMemoryStats stats;
-    stats.spillable_memory_bytes = data->getTotalByteCount();
+    stats.spillable_memory_bytes = data->getTotalByteCount() + (cuckoo_lookup ? cuckoo_lookup->allocatedBytes() : 0);
     stats.need_reserved_memory_bytes = estimateMemoryToSpill(/*requested=*/ true);
 
     /// A built set writes its disk set while lookups keep reading the table, so the directory and the Bloom
@@ -256,6 +465,11 @@ size_t Set::spillAfterBuild(std::string_view reason, bool requested) const
         compute_disk_set_keys = new_compute_disk_set_keys;
         disk_set = std::move(new_disk_set);
         table = std::move(data);
+        if (cuckoo_lookup)
+            bytes += cuckoo_lookup->allocatedBytes();
+        cuckoo_lookup.reset();
+        rows_before_cuckoo_lookup = -1;
+        ++keys_version;
     }
     ProfileEvents::increment(ProfileEvents::SetsSpilledToDisk);
     return bytes;
@@ -565,6 +779,10 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder,
     if (data && data->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method Set::setHeader must be called before Set::insertFromBlock");
 
+    cuckoo_lookup.reset();
+    rows_before_cuckoo_lookup = -1;
+    ++keys_version;
+
     holder.key_columns.reserve(keys_size);
     holder.materialized_columns.reserve(keys_size);
 
@@ -847,7 +1065,29 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         return res;
     }
 
-    data->callOnMethod([&](auto & method) { executeImpl(method, key_columns, vec_res, negative, vec_res.size(), null_map); });
+    std::unique_ptr<CuckooLookup> new_cuckoo_lookup;
+    const UInt64 version_of_keys = keys_version;
+    /// The hash table skips the rows with a NULL key, while the table looks up every row, so it is used only if at
+    /// most half of the rows are NULL, and only the other rows count towards building it.
+    const bool may_use_cuckoo_lookup = cuckoo_lookup || rows_before_cuckoo_lookup.load(std::memory_order_relaxed) > 0;
+    const size_t num_null_rows = null_map && may_use_cuckoo_lookup ? countBytesInFilter(*null_map) : 0;
+    /// Keys that repeat the previous row's are looked up only when they change: in the table if it is built, otherwise in
+    /// the hash table.
+    const bool keys_sorted = may_use_cuckoo_lookup && keysAreSorted(key_columns, vec_res.size());
+    /// The keys do not change while the shared lock is held, so the table is built here, looks up this block, and is
+    /// installed below.
+    const Int64 rows = static_cast<Int64>(vec_res.size() - num_null_rows);
+    if (!keys_sorted && rows > 0 && !cuckoo_lookup && rows_before_cuckoo_lookup.load(std::memory_order_relaxed) > 0)
+    {
+        const Int64 rows_before = rows_before_cuckoo_lookup.fetch_sub(rows, std::memory_order_relaxed);
+        if (rows_before > 0 && rows_before <= rows)
+            new_cuckoo_lookup = createCuckooLookup();
+    }
+    const CuckooLookup * lookup_table = cuckoo_lookup ? cuckoo_lookup.get() : new_cuckoo_lookup.get();
+    const bool used_cuckoo_lookup = lookup_table && num_null_rows * 2 <= vec_res.size() && data->callOnMethod([&](const auto & method)
+        { return lookup_table->execute(method, key_columns, key_sizes, vec_res, negative, null_map, keys_sorted); });
+    if (!used_cuckoo_lookup)
+        data->callOnMethod([&](auto & method) { executeImpl(method, key_columns, vec_res, negative, vec_res.size(), null_map); });
 
     /// The set is usually built before the rest of the query takes its memory, so it also spills while it is
     /// used. Spilling takes the lock exclusively, so this lookup releases its shared lock first.
@@ -860,6 +1100,17 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         lock.unlock();
         spillAfterBuild(reason);
     }
+
+    if (new_cuckoo_lookup)
+    {
+        if (lock.owns_lock())
+            lock.unlock();
+        std::lock_guard exclusive_lock(rwlock);
+        /// Not if the set has spilled or its keys have changed meanwhile.
+        if (keys_version == version_of_keys && data && !disk_set && !cuckoo_lookup)
+            cuckoo_lookup = std::move(new_cuckoo_lookup);
+    }
+
     return res;
 }
 
