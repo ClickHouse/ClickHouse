@@ -75,8 +75,15 @@ public:
         return at;
     }
 
-    /// Prefetches the storage of a later record, whose append can target any partition.
-    ALWAYS_INLINE void prefetchAppend(size_t partition) const { __builtin_prefetch(cursors[partition].pos, 1); }
+    /// Prefetches the storage of a later record, whose append can target any partition: the append position and the
+    /// cache line after it, which a later append of the partition writes. The position is null while the partition has
+    /// no chunk, so the addresses are computed as integers.
+    ALWAYS_INLINE void prefetchAppend(size_t partition) const
+    {
+        const uintptr_t pos = reinterpret_cast<uintptr_t>(cursors[partition].pos);
+        __builtin_prefetch(reinterpret_cast<const char *>(pos), /*rw=*/1);
+        __builtin_prefetch(reinterpret_cast<const char *>(pos + CH_CACHE_LINE_SIZE), /*rw=*/1);
+    }
 
     /// Records the fill of every partition's last chunk and ends the claims on the blocks being carved, so a block
     /// is freed with its last chunk. Appends may resume after consumers have finished; released partitions
