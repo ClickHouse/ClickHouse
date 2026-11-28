@@ -1,0 +1,85 @@
+-- { echoOn }
+SELECT _table, count() FROM merge('^t_(flat|part|pk|idx|ifnull)$') WHERE has([NULL, 1], k) GROUP BY _table ORDER BY _table;
+t_flat	16
+t_idx	16
+t_ifnull	16
+t_part	16
+t_pk	16
+SELECT _table, count() FROM merge('^t_(flat|part|pk|idx|ifnull)$') WHERE k IN (NULL) GROUP BY _table ORDER BY _table SETTINGS transform_null_in = 1;
+t_flat	15
+t_idx	15
+t_ifnull	15
+t_part	15
+t_pk	15
+SELECT _table, count() FROM merge('^t_(flat|part|pk|idx|ifnull)$') WHERE k IN (NULL, 1) GROUP BY _table ORDER BY _table SETTINGS transform_null_in = 1;
+t_flat	16
+t_idx	16
+t_ifnull	16
+t_part	16
+t_pk	16
+SELECT _table, count() FROM merge('^t_(flat|part|pk|idx|ifnull)$') WHERE (n, k) IN ((1, NULL), (2, NULL)) GROUP BY _table ORDER BY _table SETTINGS transform_null_in = 1;
+t_flat	3
+t_idx	3
+t_ifnull	3
+t_part	3
+t_pk	3
+SELECT _table, count() FROM merge('^t_(flat|part|pk|idx|ifnull)$') WHERE k IN (SELECT arrayJoin([NULL, 1::Nullable(UInt64)])) GROUP BY _table ORDER BY _table SETTINGS transform_null_in = 1;
+t_flat	16
+t_idx	16
+t_ifnull	16
+t_part	16
+t_pk	16
+-- Already answered correctly, and must stay so.
+SELECT _table, count() FROM merge('^t_(flat|part|pk|idx|ifnull)$') WHERE k IS NULL GROUP BY _table ORDER BY _table;
+t_flat	15
+t_idx	15
+t_ifnull	15
+t_part	15
+t_pk	15
+SELECT _table, count() FROM merge('^t_(flat|part|pk|idx|ifnull)$') WHERE isNotDistinctFrom(k, NULL) GROUP BY _table ORDER BY _table;
+t_flat	15
+t_idx	15
+t_ifnull	15
+t_part	15
+t_pk	15
+SELECT _table, count() FROM merge('^t_(flat|part|pk|idx|ifnull)$') WHERE NOT has([NULL], k) GROUP BY _table ORDER BY _table;
+t_flat	5
+t_idx	5
+t_ifnull	5
+t_part	5
+t_pk	5
+SELECT _table, count() FROM merge('^t_(flat|part|pk|idx|ifnull)$') WHERE k NOT IN (NULL, 2) GROUP BY _table ORDER BY _table SETTINGS transform_null_in = 1;
+t_flat	5
+t_idx	5
+t_ifnull	5
+t_part	5
+t_pk	5
+SELECT _table, count() FROM merge('^t_(flat|part|pk|idx|ifnull)$') WHERE k IN (1, 2) GROUP BY _table ORDER BY _table;
+t_flat	1
+t_idx	1
+t_ifnull	1
+t_part	1
+t_pk	1
+-- A set without a NULL still prunes through `assumeNotNull`, and a NULL still prunes through `ifNull`.
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT n FROM t_part WHERE k IN (1, 2)) WHERE explain ILIKE '%Condition: (assumeNotNull(k) in 2-element set)%';
+1
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT n FROM t_ifnull WHERE k IN (NULL, 1) SETTINGS transform_null_in = 1) WHERE explain ILIKE '%Condition: (ifNull(k, 0) in 2-element set)%';
+1
+-- { echoOn }
+SELECT arraySort(groupArray(ver)) FROM t_final FINAL WHERE v = 1
+SETTINGS query_plan_optimize_lazy_final = 1, do_not_merge_across_partitions_select_final = 0,
+         enable_automatic_decision_for_merging_across_partitions_for_final = 0, max_threads = 1;
+[2]
+-- { echoOn }
+SELECT count() FROM t_tuple WHERE x <=> (NULL::Nullable(UInt64), 1::UInt8);
+10
+SELECT count() FROM t_tuple WHERE x <=> (NULL, 1);
+10
+SELECT count() FROM t_tuple WHERE x IN ((NULL::Nullable(UInt64), 1::UInt8)) SETTINGS transform_null_in = 1;
+10
+SELECT count() FROM t_tuple WHERE has([(NULL::Nullable(UInt64), 1::UInt8)], x);
+10
+SELECT count() FROM t_array WHERE a = [NULL, 1];
+10
+SELECT count() FROM t_array WHERE has([[NULL, 1]], a);
+10
