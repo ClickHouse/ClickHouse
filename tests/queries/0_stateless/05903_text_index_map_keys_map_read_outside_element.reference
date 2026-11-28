@@ -22,3 +22,7 @@ gt	[4]
 gt and length	[4]
 gt prunes	1
 gt and length prunes	1
+-- a hint from another conjunct keeps the value of m[key] in an atom that does not use the index
+hint truth	[]
+hint	[]
+hint	[]

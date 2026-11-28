@@ -6,6 +6,7 @@ SET use_skip_indexes = 1;
 DROP TABLE IF EXISTS t_basic;
 DROP TABLE IF EXISTS t_buckets;
 DROP TABLE IF EXISTS t_fs;
+DROP TABLE IF EXISTS t_hint;
 
 CREATE TABLE t_basic (id UInt8, m Map(String, UInt8), INDEX idx_keys mapKeys(m) TYPE text(tokenizer = 'array'))
 ENGINE = MergeTree ORDER BY id
@@ -49,6 +50,16 @@ SELECT 'gt and length', arraySort(groupArray(id)) FROM t_basic WHERE m['ab'] > 0
 SELECT 'gt prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT id FROM t_basic WHERE m['ab'] > 0 SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain ILIKE '%Granules: 2/4%';
 SELECT 'gt and length prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT id FROM t_basic WHERE m['ab'] > 0 AND length(m) = 1 SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain ILIKE '%Granules: 2/4%';
 
+SELECT '-- a hint from another conjunct keeps the value of m[key] in an atom that does not use the index';
+CREATE TABLE t_hint (id UInt8, m Map(String, UInt8), INDEX idx_keys mapKeys(m) TYPE text(tokenizer = 'array'))
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
+INSERT INTO t_hint VALUES (1, {'x': 2}), (2, {'ab': 2, 'y': 1}), (3, {'ab': 1});
+SELECT 'hint truth', arraySort(groupArray(id)) FROM t_hint WHERE m['ab'] < length(m) AND m['ab'] > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'hint', arraySort(groupArray(id)) FROM t_hint WHERE m['ab'] < length(m) AND m['ab'] > 0 SETTINGS optimize_functions_to_subcolumns = 0, query_plan_direct_read_from_text_index = 1, query_plan_text_index_add_hint = 1, text_index_hint_max_selectivity = 1;
+SELECT 'hint', arraySort(groupArray(id)) FROM t_hint WHERE m['ab'] < length(m) AND m['ab'] > 0 SETTINGS optimize_functions_to_subcolumns = 1, query_plan_direct_read_from_text_index = 1, query_plan_text_index_add_hint = 1, text_index_hint_max_selectivity = 1;
+
 DROP TABLE t_basic;
 DROP TABLE t_buckets;
 DROP TABLE t_fs;
+DROP TABLE t_hint;
