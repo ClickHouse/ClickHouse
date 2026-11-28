@@ -143,7 +143,7 @@ namespace
     {
         static const std::unordered_set<std::string_view> auth_type_keys = {
             "no_password", "password", "password_sha256_hex", "password_scram_sha256_hex",
-            "password_double_sha1_hex", "ldap", "kerberos", "ssl_certificates",
+            "password_double_sha1_hex", "password_bcrypt_hash", "ldap", "kerberos", "ssl_certificates",
             "ssh_keys", "http_authentication"
         };
         Poco::Util::AbstractConfiguration::Keys user_keys;
@@ -194,6 +194,9 @@ namespace
         const auto password_double_sha1_hex_config = auth_method_path + ".password_double_sha1_hex";
         bool has_password_double_sha1_hex = config.has(password_double_sha1_hex_config);
 
+        const auto password_bcrypt_hash_config = auth_method_path + ".password_bcrypt_hash";
+        bool has_password_bcrypt_hash = config.has(password_bcrypt_hash_config);
+
         const auto ldap_config = auth_method_path + ".ldap";
         bool has_ldap = config.has(ldap_config);
 
@@ -210,7 +213,8 @@ namespace
         bool has_http_auth = config.has(http_auth_config);
 
         size_t num_authentication_types = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
-            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_scram_password_sha256_hex;
+            + has_password_bcrypt_hash + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth
+            + has_scram_password_sha256_hex;
 
         if (num_authentication_types > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -219,8 +223,9 @@ namespace
 
         if (num_authentication_types < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least one authentication type (one of 'password', "
-                "'password_sha256_hex', 'password_scram_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', "
-                "'ssl_certificates', 'ssh_keys', 'http_authentication') must be specified for user {} in path {}.", user_name, auth_method_path);
+                "'password_sha256_hex', 'password_scram_sha256_hex', 'password_double_sha1_hex', 'password_bcrypt_hash', 'no_password', "
+                "'ldap', 'kerberos', 'ssl_certificates', 'ssh_keys', 'http_authentication') must be specified for user {} in path {}.",
+                user_name, auth_method_path);
 
         AuthenticationData auth_data;
 
@@ -251,6 +256,12 @@ namespace
         {
             const auto password = config.getString(password_double_sha1_hex_config);
             auth_data = createPasswordAuthData(AuthenticationType::DOUBLE_SHA1_PASSWORD, password, otp_secret, validate, true);
+        }
+        else if (has_password_bcrypt_hash)
+        {
+            const auto hash = config.getString(password_bcrypt_hash_config);
+            auth_data = AuthenticationData(AuthenticationType::BCRYPT_PASSWORD);
+            auth_data.setPasswordHashBinary(AuthenticationData::Util::stringToDigest(hash), otp_secret, validate);
         }
         else if (has_ldap)
         {

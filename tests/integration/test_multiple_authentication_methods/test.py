@@ -79,3 +79,14 @@ def test_auth_types_in_system_table(started_cluster):
     )
     # plaintext_password(1) < double_sha1_password(3), so plaintext comes first
     assert TSV(result) == TSV([["plaintext_password"], ["double_sha1_password"], ["double_sha1_password"]])
+
+
+def test_bcrypt_hash_passwords(started_cluster):
+    """Users with `password_bcrypt_hash`, flat and inside `auth_methods`, authenticate with the hashed password"""
+    for user, password in [("bcrypt_user", "bcrypt_pass"), ("mixed_bcrypt", "bcrypt_pass_1"), ("mixed_bcrypt", "plain_pass_2")]:
+        result = node.query("SELECT currentUser()", user=user, password=password)
+        assert result.strip() == user
+
+    for user in ["bcrypt_user", "mixed_bcrypt"]:
+        error = node.query_and_get_error("SELECT currentUser()", user=user, password="wrong_pass")
+        assert "AUTHENTICATION_FAILED" in error

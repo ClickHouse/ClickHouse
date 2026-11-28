@@ -116,6 +116,20 @@ Password can be specified in plaintext or in SHA256 (hex format).
 
     The first line of the result is the password. The second line is the corresponding double SHA1 hash.
 
+<a id="password_bcrypt_hash"></a>
+
+- To assign a password using its bcrypt hash, place it in a `password_bcrypt_hash` element.
+
+    For example, `<password_bcrypt_hash>$2a$12$rz5iy2LhuwBezsM88ZzWiemOVUeJ94xHTzwAlLMDhTzwUxOHaY64q</password_bcrypt_hash>`.
+
+    Example of how to generate a password from shell (requires the Python `bcrypt` package):
+
+    ```bash
+    PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; python3 -c 'import bcrypt, sys; print(bcrypt.hashpw(sys.argv[1].encode(), bcrypt.gensalt()).decode())' "$PASSWORD"
+    ```
+
+    The first line of the result is the password. The second line is the corresponding bcrypt hash.
+
 ### TOTP Authentication Configuration {#totp-authentication-configuration}
 
 Time-Based One-Time Password (TOTP) can be used to authenticate ClickHouse users by generating temporary access codes that are valid for a limited time.
@@ -254,6 +268,7 @@ The following authentication types are supported inside `<auth_methods>`:
 - **`password_sha256_hex`** — SHA256 password hash
 - **`password_scram_sha256_hex`** — SCRAM-SHA-256 password hash
 - **`password_double_sha1_hex`** — double SHA1 password hash
+- **`password_bcrypt_hash`** - bcrypt password hash
 - **`ldap`** — LDAP server authentication
 - **`kerberos`** — Kerberos authentication
 - **`ssl_certificates`** — SSL certificate authentication

@@ -75,5 +75,30 @@
             <profile>default</profile>
             <quota>default</quota>
         </mixed_auth>
+
+        <bcrypt_user>
+            <password_bcrypt_hash>$2a$04$5nQvqncp7WGRfBG.nGaU/O59eNFFYuWXpp.sjFAhbwYgxSywzWa3i</password_bcrypt_hash>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </bcrypt_user>
+
+        <mixed_bcrypt>
+            <auth_methods>
+                <bcrypt>
+                    <password_bcrypt_hash>$2b$04$lugLXmGfYi1tPY.sM82CE.Ho62rEICCYfn3H78KpyCPgIRQmuYxrS</password_bcrypt_hash>
+                </bcrypt>
+                <plain>
+                    <password>plain_pass_2</password>
+                </plain>
+            </auth_methods>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </mixed_bcrypt>
     </users>
 </clickhouse>
