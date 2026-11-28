@@ -66,4 +66,15 @@ for schema in "${schemas[@]}"; do
         <(${CLICKHOUSE_CLIENT} --query "$(queries "${OFF}")") \
         && echo "OK"
 done
+
+echo "-- url"
+for schema in "${schemas[@]}"; do
+    echo "${schema}"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t; CREATE TABLE t (${schema}) ENGINE = URL('http://localhost:11111/test/${S3_PATH}', Parquet)"
+    ${CLICKHOUSE_CLIENT} --format JSON --query "${ROWS_READ_QUERY}" | skipped
+    diff \
+        <(${CLICKHOUSE_CLIENT} --query "$(queries "${ON}")") \
+        <(${CLICKHOUSE_CLIENT} --query "$(queries "${OFF}")") \
+        && echo "OK"
+done
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t"
