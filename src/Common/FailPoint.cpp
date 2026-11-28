@@ -276,6 +276,7 @@ static struct InitFiu
     ONCE(adaptive_aggregation_drain_create_states_throw) \
     ONCE(aggregator_merge_collect_states_throw) \
     ONCE(aggregator_merge_batch_throw) \
+    ONCE(aggregator_convert_two_level_schedule_throw) \
     ONCE(aggregator_convert_queued_states_throw) \
     ONCE(aggregator_convert_insert_results_throw) \
     REGULAR(adaptive_aggregation_spill_no_room_to_append) \

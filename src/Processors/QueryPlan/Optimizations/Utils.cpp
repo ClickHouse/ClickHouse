@@ -613,9 +613,11 @@ bool isUniqueByColumns(const QueryPlan::Node & root, NameSet columns)
         const auto * step = node->step.get();
 
         /// An aggregation outputs one row per value of its keys, unless it is to be finished by another step:
-        /// by the initiator of a distributed query, or by `ROLLUP`, `CUBE` and `WITH TOTALS`.
+        /// by the initiator of a distributed query, or by `ROLLUP`, `CUBE` and `WITH TOTALS`. `group_by_each_block_no_merge`
+        /// flushes the groups of every block separately, so the same key can appear in several rows.
         if (const auto * aggregating = typeid_cast<const AggregatingStep *>(step))
-            return aggregating->isFinal() && !aggregating->isGroupingSets() && has_all(aggregating->getParams().keys);
+            return aggregating->isFinal() && !aggregating->isGroupingSets() && !aggregating->getParams().group_by_each_block_no_merge
+                && has_all(aggregating->getParams().keys);
 
         /// The other steps looked through only drop or reorder rows, some leaving them unique on the way.
         const ActionsDAG * expression = nullptr;
