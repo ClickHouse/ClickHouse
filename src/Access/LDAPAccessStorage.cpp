@@ -279,12 +279,12 @@ void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchR
 }
 
 
-void LDAPAccessStorage::updateAssignedRolesNoLock(const UUID & id, const String & user_name, const LDAPClient::SearchResultsList & external_roles) const
+bool LDAPAccessStorage::updateAssignedRolesNoLock(const UUID & id, const String & user_name, const LDAPClient::SearchResultsList & external_roles) const
 {
     // Map and grant the roles from scratch only if the list of external role has changed.
     const auto it = users_external_roles.find(user_name);
     if (it != users_external_roles.end() && it->second == external_roles)
-        return;
+        return false;
 
     auto update_func = [this, &external_roles] (const AccessEntityPtr & entity_, const UUID &) -> AccessEntityPtr
     {
@@ -298,6 +298,7 @@ void LDAPAccessStorage::updateAssignedRolesNoLock(const UUID & id, const String 
     };
 
     memory_storage.update(id, update_func);
+    return true;
 }
 
 
@@ -331,7 +332,7 @@ std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const LDAPClient::Sea
 
 
 bool LDAPAccessStorage::areLDAPCredentialsValidNoLock(const User & user, const Credentials & credentials,
-    const ExternalAuthenticators & external_authenticators, LDAPClient::SearchResultsList & role_search_results) const
+    const ExternalAuthenticators & external_authenticators, std::optional<LDAPClient::SearchResultsList> & role_search_results) const
 {
     if (!credentials.isReady())
         return false;
@@ -339,11 +340,13 @@ bool LDAPAccessStorage::areLDAPCredentialsValidNoLock(const User & user, const C
     if (credentials.getUserName() != user.getName())
         return false;
 
+    // The user was authenticated elsewhere (e.g. by the interserver secret) and there is no password to bind
+    // to the LDAP server with, so the groups cannot be searched and `role_search_results` stays unset.
     if (typeid_cast<const AlwaysAllowCredentials *>(&credentials))
         return true;
 
     if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
-        return external_authenticators.checkLDAPCredentials(ldap_server_name, *basic_credentials, &role_search_params, &role_search_results);
+        return external_authenticators.checkLDAPCredentials(ldap_server_name, *basic_credentials, &role_search_params, &role_search_results.emplace());
 
     return false;
 }
@@ -445,50 +448,57 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
     bool /* allow_no_password */,
     bool /* allow_plaintext_password */) const
 {
-    std::lock_guard lock(mutex);
-    auto id = memory_storage.find<User>(credentials.getUserName());
-    UserPtr user = id ? memory_storage.read<User>(*id) : nullptr;
-
-    std::shared_ptr<User> new_user;
-    if (!user)
+    std::optional<UUID> id;
+    bool roles_updated = false;
     {
-        // User does not exist, so we create one, and will add it if authentication is successful.
-        new_user = std::make_shared<User>();
-        new_user->setName(credentials.getUserName());
-        new_user->authentication_methods.emplace_back(AuthenticationType::LDAP);
-        new_user->authentication_methods.back().setLDAPServerName(ldap_server_name);
-        user = new_user;
+        std::lock_guard lock(mutex);
+        id = memory_storage.find<User>(credentials.getUserName());
+        UserPtr user = id ? memory_storage.read<User>(*id) : nullptr;
+
+        std::shared_ptr<User> new_user;
+        if (!user)
+        {
+            // User does not exist, so we create one, and will add it if authentication is successful.
+            new_user = std::make_shared<User>();
+            new_user->setName(credentials.getUserName());
+            new_user->authentication_methods.emplace_back(AuthenticationType::LDAP);
+            new_user->authentication_methods.back().setLDAPServerName(ldap_server_name);
+            user = new_user;
+        }
+
+        if (!isAddressAllowed(*user, address))
+            throwAddressNotAllowed(address);
+
+        std::optional<LDAPClient::SearchResultsList> external_roles;
+        if (!areLDAPCredentialsValidNoLock(*user, credentials, external_authenticators, external_roles))
+        {
+            // We don't know why the authentication has just failed:
+            // either there is no such user in LDAP or the password is not correct.
+            // We treat this situation as if there is no such user because we don't want to block
+            // other storages following this LDAPAccessStorage from trying to authenticate on their own.
+            if (throw_if_user_not_exists)
+                throwNotFound(AccessEntityType::USER, credentials.getUserName(), getStorageName());
+            else
+                return {};
+        }
+
+        if (new_user)
+        {
+            // Without a search result only the common roles can be granted; the mapped ones appear at the first login with a password.
+            assignRolesNoLock(*new_user, external_roles.value_or(LDAPClient::SearchResultsList{}));
+            id = memory_storage.insert(new_user);
+        }
+        else if (external_roles)
+        {
+            // Without a search result the roles mapped at the last login with a password are kept as they are.
+            roles_updated = updateAssignedRolesNoLock(*id, user->getName(), *external_roles);
+        }
     }
 
-    if (!isAddressAllowed(*user, address))
-        throwAddressNotAllowed(address);
-
-    LDAPClient::SearchResultsList external_roles;
-    if (!areLDAPCredentialsValidNoLock(*user, credentials, external_authenticators, external_roles))
-    {
-        // We don't know why the authentication has just failed:
-        // either there is no such user in LDAP or the password is not correct.
-        // We treat this situation as if there is no such user because we don't want to block
-        // other storages following this LDAPAccessStorage from trying to authenticate on their own.
-        if (throw_if_user_not_exists)
-            throwNotFound(AccessEntityType::USER, credentials.getUserName(), getStorageName());
-        else
-            return {};
-    }
-
-    if (new_user)
-    {
-        // TODO: if these were AlwaysAllowCredentials, then mapped external roles are not available here,
-        // since without a password we can't authenticate and retrieve roles from the LDAP server.
-
-        assignRolesNoLock(*new_user, external_roles);
-        id = memory_storage.insert(new_user);
-    }
-    else
-    {
-        // Just in case external_roles are changed. This will be no-op if they are not.
-        updateAssignedRolesNoLock(*id, user->getName(), external_roles);
-    }
+    // Deliver now, otherwise open sessions and cached access rights see the change only at the next unrelated access change.
+    // Not under `mutex`: a thread delivering notifications may be waiting for it in `processRoleChange`.
+    if (roles_updated)
+        access_control.getChangesNotifier().sendNotifications();
 
     if (id)
         return AuthResult{ .user_id = *id, .authentication_data = AuthenticationData(AuthenticationType::LDAP), .user_name = credentials.getUserName() };
