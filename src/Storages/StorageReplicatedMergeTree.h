@@ -173,7 +173,7 @@ public:
     MutationCounters getMutationCounters() const override;
 
 protected:
-    DataPartsVector getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const override;
+    DataPartsVector filterPartsForColumnDefaultnessStats(DataPartsVector parts, ContextPtr query_context) const override;
 public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
@@ -367,6 +367,10 @@ public:
 
     /// Get a sequential consistent view of current parts.
     PartitionIdToMaxBlock getMaxAddedBlocks() const;
+
+    /// The cutoff of a read with `select_sequential_consistency`: `getMaxAddedBlocks`, with the partitions named by
+    /// the block numbers of a lightweight update (`Context::getPartitionIdToMaxBlock`) clamped to those numbers.
+    PartitionIdToMaxBlock getMaxBlocksToReadWithSequentialConsistency(ContextPtr local_context) const;
 
     void addLastSentPart(const MergeTreePartInfo & info);
 

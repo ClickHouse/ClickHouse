@@ -6522,6 +6522,25 @@ void StorageReplicatedMergeTree::read(
     readLocalImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams);
 }
 
+PartitionIdToMaxBlock StorageReplicatedMergeTree::getMaxBlocksToReadWithSequentialConsistency(ContextPtr local_context) const
+{
+    auto max_added_blocks = getMaxAddedBlocks();
+
+    /// The block numbers allocated by a lightweight update only clamp the partitions they name.
+    /// A partition absent from them stays readable up to the quorum boundary.
+    if (auto additional_blocks = local_context->getPartitionIdToMaxBlock(getStorageID().uuid))
+    {
+        for (const auto & [partition_id, max_block] : *additional_blocks)
+        {
+            auto [it, inserted] = max_added_blocks.emplace(partition_id, max_block);
+            if (!inserted)
+                it->second = std::min(it->second, max_block);
+        }
+    }
+
+    return max_added_blocks;
+}
+
 void StorageReplicatedMergeTree::readLocalSequentialConsistencyImpl(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -6531,17 +6550,7 @@ void StorageReplicatedMergeTree::readLocalSequentialConsistencyImpl(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto max_added_blocks = std::make_shared<PartitionIdToMaxBlock>(getMaxAddedBlocks());
-
-    if (auto additional_blocks = local_context->getPartitionIdToMaxBlock(getStorageID().uuid))
-    {
-        for (const auto & [partition_id, max_block] : *additional_blocks)
-        {
-            auto [it, inserted] = max_added_blocks->emplace(partition_id, max_block);
-            if (!inserted)
-                it->second = std::min(it->second, max_block);
-        }
-    }
+    auto max_added_blocks = std::make_shared<PartitionIdToMaxBlock>(getMaxBlocksToReadWithSequentialConsistency(local_context));
 
     /// A boundary that binds comes from ZooKeeper and is identical on every replica, so the clamped read can be coordinated.
     const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower();
@@ -6641,12 +6650,22 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(
 }
 
 MergeTreeData::DataPartsVector
-StorageReplicatedMergeTree::getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const
+StorageReplicatedMergeTree::filterPartsForColumnDefaultnessStats(DataPartsVector parts, ContextPtr query_context) const
 {
-    DataPartsVector parts;
-    foreachActiveParts(
-        [&](auto & part) { parts.push_back(part); },
-        query_context->getSettingsRef()[Setting::select_sequential_consistency]);
+    /// Without `select_sequential_consistency` the row scan reads the parts up to the block numbers allocated
+    /// by a lightweight update, if the query is a part of one (see `readLocalImpl`), the same as the base does.
+    if (!query_context->getSettingsRef()[Setting::select_sequential_consistency])
+        return MergeTreeData::filterPartsForColumnDefaultnessStats(std::move(parts), query_context);
+
+    /// With it, the row scan uses the quorum boundary clamped by those block numbers, which is not the same
+    /// as applying both filters one after another: a partition that the lightweight update did not allocate
+    /// a block number in is still read. Use exactly the cutoff of `readLocalSequentialConsistencyImpl`.
+    const auto max_blocks_to_read = getMaxBlocksToReadWithSequentialConsistency(query_context);
+    std::erase_if(parts, [&](const DataPartPtr & part)
+    {
+        auto blocks_iterator = max_blocks_to_read.find(part->info.getPartitionId());
+        return blocks_iterator == max_blocks_to_read.end() || part->info.max_block > blocks_iterator->second;
+    });
     return parts;
 }
 

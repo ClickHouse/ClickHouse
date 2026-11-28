@@ -1,0 +1,4 @@
+optimize_trivial_count_with_sparsity_filter = 0:	1	1
+optimize_trivial_count_with_sparsity_filter = 0:	2	0
+optimize_trivial_count_with_sparsity_filter = 1:	1	1
+optimize_trivial_count_with_sparsity_filter = 1:	2	0
