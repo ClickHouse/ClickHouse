@@ -90,6 +90,17 @@ On AWS, the IAM role created during setup trusts ClickHouse Cloud with an [exter
 <Note>
 BYOC infrastructures onboarded before external IDs were introduced use the placeholder value `emptyid` for backward compatibility. The console shows this value when you add infrastructure on an AWS account with an existing legacy deployment, so that all infrastructures on the account keep a consistent trust configuration. If you would like to switch to a unique external ID, contact ClickHouse Support.
 </Note>
+
+#### Permissions to apply the Azure module {#azure-module-permissions}
+
+The Azure Terraform module adds the ClickHouse BYOC application, which is registered in ClickHouse's Microsoft Entra tenant, to your tenant as a service principal (enterprise application). It grants that service principal the Microsoft Graph application permission `Application.ReadWrite.OwnedBy`, and creates a custom `ClickHouse BYOC Provisioner` role assigned to it on the subscription. The identity that runs `terraform apply` therefore needs:
+
+- **In Microsoft Entra ID**: for a user, the Global Administrator role, or Application Administrator or Cloud Application Administrator together with Privileged Role Administrator. Application Administrator and Cloud Application Administrator alone can't grant Microsoft Graph application permissions. For a service principal, such as a CI/CD pipeline identity, the Microsoft Graph application permissions `Application.ReadWrite.All` and `AppRoleAssignment.ReadWrite.All`.
+- **On the subscription**: the Owner or User Access Administrator role.
+
+These rights are needed only once, by the identity that runs onboarding, and ClickHouse doesn't keep them. You can activate the roles through Microsoft Entra Privileged Identity Management (PIM) for the duration of `terraform apply`, or ask a tenant administrator to run it. The ClickHouse service principal ends up with only `Application.ReadWrite.OwnedBy` in your tenant and the custom role on the onboarded subscription. See [Onboarding service principal](/products/bring-your-own-cloud/reference/privilege#onboarding-service-principal).
+
+If the apply fails on `azuread_service_principal.this` with `Authorization_RequestDenied: When using this permission, the backing application of the service principal being created must in the local tenant`, Terraform is running as a service principal with `Application.ReadWrite.OwnedBy`, which only covers applications registered in your own tenant. Ask a tenant administrator to apply the module, or to grant the permissions above to the identity that runs it.
 </Step>
 <Step title="Set up BYOC infrastructure" id="setup-byoc-infrastructure">
 You will be prompted to set up the infrastructure, including object storage buckets, VPC/VNet, and the Kubernetes cluster, from the ClickHouse Cloud console. Certain configurations must be determined at this stage, as they can't be changed later. Specifically:
