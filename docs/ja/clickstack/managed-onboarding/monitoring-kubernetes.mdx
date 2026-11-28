@@ -1,21 +1,30 @@
 ---
 slug: /use-cases/observability/clickstack/monitoring-kubernetes
-title: 'Managed ClickStack を使用した Kubernetes の監視'
-description: 'Kubernetes クラスターから Managed ClickStack にログ、インフラストラクチャのメトリクス、イベントを収集します'
+title: 'ClickHouse オブザーバビリティを使用した Kubernetes の監視'
+sidebarTitle: 'Kubernetes の監視'
+description: 'セルフマネージド エクスペリエンスで、Kubernetes クラスターから ClickHouse オブザーバビリティにログ、インフラストラクチャのメトリクス、イベントを収集します'
 doc_type: 'guide'
-keywords: ['clickstack', 'kubernetes', 'k8s', 'managed', 'observability', 'logs', 'metrics', 'events', 'daemonset', 'helm']
+keywords: ['clickstack', 'kubernetes', 'k8s', 'self-managed', 'ClickHouse Observability', 'logs', 'metrics', 'events', 'daemonset', 'helm']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
 ---
 
-このガイドでは、クラスターから Managed ClickStack にログ、インフラストラクチャのメトリクス、Kubernetes イベントを収集し、組み込みの Kubernetes ダッシュボードで表示する方法を説明します。
+<Note>
+  **セルフマネージドのルートを選択しています**
 
-この構成は、標準的な OpenTelemetry のパターンに従っています。[OpenTelemetry Helm チャート](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector) を使用して 2 つの collector をデプロイし、それぞれが OTLP 経由で ClickStack ゲートウェイ collector に転送します。**デーモンセット** は各ノードで実行され、コンテナのログとキューブレットのメトリクスを収集します。単一レプリカの **デプロイメント** は、Kubernetes イベントとクラスター全体のメトリクスを収集します。ゲートウェイ ロールの詳細については、[Collector roles](/ja/clickstack/ingesting-data/collector#collector-roles) を参照してください。
+  [セルフマネージド エクスペリエンス](/ja/clickstack/self-configured/overview) を使用して、ClickHouse オブザーバビリティをご自身でセットアップするルートを選択しています。このルートでは、OpenTelemetry collector の実行、ClickHouse Cloud サービスへのインジェストの管理、スキーマのチューニング、ウェアハウスによるインジェストとクエリのワークロードの分離をご自身で行います。詳しくは、[OpenTelemetry collector](/ja/clickstack/self-configured/ingesting-data/collector)、[パフォーマンスチューニング](/ja/clickstack/self-configured/managing/performance-tuning)、[読み取りと書き込みのワークロードの分離](/ja/clickstack/self-configured/managing/isolating-read-write) を参照してください。
 
-このガイドは、[OpenTelemetry Collector のセットアップ](/ja/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) を完了し、ClickStack ゲートウェイ collector が稼働していることを前提としています。
+  インジェスト、スキーマ、コンピュートを ClickHouse が管理するサーバーレス エクスペリエンスをご希望の場合は、デフォルトの ClickHouse オブザーバビリティ エクスペリエンスを使用し、代わりに [OpenTelemetry を使用した Kubernetes の監視](/ja/clickstack/managed-onboarding/monitoring-kubernetes-serverless) の手順に従ってください。
+</Note>
 
-Kubernetes 上で稼働するワークロードの場合、ゲートウェイ collector 自体は、**ClickStack collector イメージを使用してアップストリームの OpenTelemetry Helm チャートで同じクラスター内に**デプロイする必要があります。インストールするには、[Deploying the collector](/ja/clickstack/ingesting-data/collector#configuring-the-collector) の Helm の手順に従ってください。**この OTLP endpoint は必ず記録しておいてください**。
+このガイドでは、クラスターから ClickHouse オブザーバビリティにログ、インフラストラクチャのメトリクス、Kubernetes イベントを収集し、組み込みの Kubernetes ダッシュボードで表示する方法を説明します。
+
+この構成は、標準的な OpenTelemetry のパターンに従っています。[OpenTelemetry Helm チャート](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector) を使用して 2 つの collector をデプロイし、それぞれが OTLP 経由で ClickStack ゲートウェイ collector に転送します。**デーモンセット** は各ノードで実行され、コンテナのログとキューブレットのメトリクスを収集します。単一レプリカの **デプロイメント** は、Kubernetes イベントとクラスター全体のメトリクスを収集します。ゲートウェイ ロールの詳細については、[Collector roles](/ja/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured) を参照してください。
+
+このガイドは、[OpenTelemetry Collector のセットアップ](/ja/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector) を完了し、ClickStack ゲートウェイ collector が稼働していることを前提としています。
+
+Kubernetes 上で稼働するワークロードの場合、ゲートウェイ collector 自体は、**ClickStack collector イメージを使用してアップストリームの OpenTelemetry Helm チャートで同じクラスター内に**デプロイする必要があります。インストールするには、[Deploying the collector](/ja/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured) の Helm の手順に従ってください。**この OTLP endpoint は必ず記録しておいてください**。
 
 <Steps>
   <Step title="前提条件を確認する" id="gather-prerequisites">
@@ -301,37 +310,25 @@ Kubernetes 上で稼働するワークロードの場合、ゲートウェイ co
     [ClickHouse Cloud console](https://console.clickhouse.cloud)でサービスを開き、左側のメニューから**ClickStack**を選択します。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ClickStackを起動](/images/use-cases/observability/clickstack-cloud-v2.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickStackを起動](/images/use-cases/observability/clickstack-cloud-v2.webp)
+      </Frame>
     </div>
 
     **Search**ビューで、ログソースを`Logs`に切り替え、時間範囲を**Last 15 minutes**に設定します。数秒以内に、`k8s.namespace.name`、`k8s.pod.name`、`k8s.node.name`などの属性が付与された、クラスター全体のコンテナーログが表示されるはずです。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Kubernetesログを表示したClickStack Searchビュー](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Kubernetesログを表示したClickStack Searchビュー](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
+      </Frame>
     </div>
 
     インフラストラクチャのメトリクスやイベントを関連付けて確認するには、**Dashboards** -&gt; **Kubernetes** の順に移動し、組み込みの**Kubernetes**ダッシュボードを開きます。`Pods`、`Nodes`、`Namespaces`の各タブには、いずれもデータが表示されるはずです。
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ClickStack Kubernetesダッシュボード](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickStack Kubernetesダッシュボード](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
+      </Frame>
     </div>
 
     何も表示されない場合:
@@ -342,10 +339,10 @@ Kubernetes 上で稼働するワークロードの場合、ゲートウェイ co
   </Step>
 
   <Step title="参考資料" id="further-reading">
-    * receiver、プロセッサ、チューニングオプションの全体像については、[Kubernetes インテグレーション リファレンス](/ja/clickstack/integration-examples/kubernetes) を参照してください。
-    * アプリケーション側でのエンリッチメントの詳細については、[resource タグをポッドに転送する](/ja/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) を参照してください。
-    * OTLP endpoint での TLS の利用と最小権限のインジェスト用ユーザーについては、[collector の保護](/ja/clickstack/ingesting-data/collector#securing-the-collector) を参照してください。
-    * 想定スループットにおけるゲートウェイおよびエージェントのデプロイメントについては、[リソースの見積もり](/ja/clickstack/ingesting-data/collector#estimating-resources) を参照してください。
-    * 本番環境への移行時の推奨事項については、[本番環境への移行](/ja/clickstack/managing/production) を参照してください。
+    * receiver、プロセッサ、チューニングオプションの全体像については、[Kubernetes インテグレーション リファレンス](/ja/clickstack/observability/integration-examples/kubernetes#self-managed) を参照してください。
+    * アプリケーション側でのエンリッチメントの詳細については、[resource タグをポッドに転送する](/ja/clickstack/observability/integration-examples/kubernetes#application-metadata) を参照してください。
+    * OTLP endpoint での TLS の利用と最小権限のインジェスト用ユーザーについては、[collector の保護](/ja/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) を参照してください。
+    * 想定スループットにおけるゲートウェイおよびエージェントのデプロイメントについては、[リソースの見積もり](/ja/clickstack/self-configured/ingesting-data/collector#estimating-resources-self-configured) を参照してください。
+    * 本番環境への移行時の推奨事項については、[本番環境への移行](/ja/clickstack/self-configured/managing/production) を参照してください。
   </Step>
 </Steps>

@@ -2,7 +2,7 @@
 slug: /data-compression/compression-modes
 title: '圧縮モード'
 description: 'ClickHouseのカラム圧縮モード'
-keywords: ['圧縮', 'codec', '符号化', 'モード']
+keywords: ['圧縮', 'コーデック', 'エンコーディング', 'モード']
 doc_type: 'reference'
 ---
 
@@ -15,7 +15,7 @@ ClickHouseプロトコルは、チェックサム付きの**データブロッ�
 </Tip>
 
 <div id="modes">
-  ## モード
+  ## モード {#modes}
 </div>
 
 | value  | name               | description             |
@@ -33,7 +33,7 @@ LZ4 と ZSTD はどちらも同じ著者によるものですが、トレード�
 | **lz4** 1.9.2     | 2.1   | 740 MB/s | 4530 MB/s |
 
 <div id="block">
-  ## ブロック
+  ## ブロック {#block}
 </div>
 
 | フィールド               | 型       | 説明                                                                                         |
@@ -45,21 +45,17 @@ LZ4 と ZSTD はどちらも同じ著者によるものですが、トレード�
 | compressed&#95;data | binary  | 圧縮データのブロック                                                                                 |
 
 <div className="ch-image-md">
-
-<Frame>
-
-![ClickHouse の圧縮ブロック構造を示す図](/images/data-compression/ch_compression_block.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse の圧縮ブロック構造を示す図](/images/data-compression/ch_compression_block.webp)
+  </Frame>
 </div>
 
 ヘッダーは (raw&#95;size + data&#95;size + mode) で、元のサイズは len(header + compressed&#95;data) に相当します。
 
-Checksum は [ClickHouse CityHash](/ja/resources/develop-contribute/native-protocol/hash) を使用した `hash(header + compressed_data)` です。
+チェックサムは [ClickHouse CityHash](/ja/resources/develop-contribute/native-protocol/hash) を使用した `hash(header + compressed_data)` です。
 
 <div id="none-mode">
-  ## None モード
+  ## None モード {#none-mode}
 </div>
 
 *None* モードを使用すると、`compressed_data` は元のデータと同じです。

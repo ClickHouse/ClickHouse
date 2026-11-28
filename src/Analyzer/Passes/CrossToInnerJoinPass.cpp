@@ -76,7 +76,7 @@ bool canMoveToJoinExpression(const QueryTreeNodePtr & node)
 
         if (const auto * function_node = current->as<FunctionNode>())
         {
-            if (function_node->isWindowFunction() || !function_node->isOrdinaryFunction())
+            if (function_node->isWindowCall() || !function_node->isOrdinaryCall())
                 return false;
 
             auto function_base = function_node->getFunction();
@@ -388,9 +388,9 @@ public:
     }
 
 private:
-    bool isEnabled() const { return getSettings()[Setting::cross_to_inner_join_rewrite]; }
+    [[nodiscard]] bool isEnabled() const { return getSettings()[Setting::cross_to_inner_join_rewrite]; }
 
-    bool forceRewrite(bool is_comma) const
+    [[nodiscard]] bool forceRewrite(bool is_comma) const
     {
         /// Comma join can be forced to rewrite
         return is_comma && getSettings()[Setting::cross_to_inner_join_rewrite] >= 2;

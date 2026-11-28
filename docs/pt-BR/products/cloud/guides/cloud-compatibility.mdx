@@ -70,9 +70,11 @@ Os motores de tabela experimentais `PaimonS3` e `PaimonAzure` podem ser habilita
 
 O ClickHouse Cloud oferece suporte a HTTPS, interfaces nativas e ao [MySQL wire protocol](/pt-BR/concepts/features/interfaces/mysql). Em breve, haverá suporte a mais interfaces, como Postgres.
 
-### Dictionaries {#dictionaries}
+### Dicionários {#dictionaries}
 
-Dictionaries são uma forma popular de acelerar buscas no ClickHouse. Atualmente, o ClickHouse Cloud oferece suporte a Dictionaries do PostgreSQL, MySQL, servidores ClickHouse remotos e locais, Redis, MongoDB e fontes HTTP.
+Dicionários são uma forma popular de acelerar buscas no ClickHouse. Atualmente, o ClickHouse Cloud oferece suporte a dicionários do PostgreSQL, MySQL, servidores ClickHouse remotos e locais, Redis, MongoDB e fontes HTTP.
+
+Ao criar um dicionário que lê dados de uma tabela do ClickHouse, inclua o nome de usuário e a senha de um usuário dedicado na cláusula `SOURCE`. Esse usuário precisa ter permissão `SELECT` na tabela de origem. Consulte o [exemplo de fonte de dicionário do ClickHouse](/pt-BR/reference/statements/create/dictionary/sources/clickhouse).
 
 ### Consultas federadas {#federated-queries}
 

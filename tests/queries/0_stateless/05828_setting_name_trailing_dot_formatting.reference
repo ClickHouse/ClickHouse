@@ -1,0 +1,7 @@
+SET `a.` = 1	1
+SET `a.b.` = 1, a.b = 2, a.b.c = 3	1
+SELECT 1 SETTINGS `max_threads.` = 1	1
+CREATE SETTINGS PROFILE `p` SETTINGS `max_threads.` = 1	1
+CREATE NAMED COLLECTION c AS `a.b.` = 5, a.b = 6	1
+ALTER NAMED COLLECTION c SET `a.` = 4 NOT OVERRIDABLE	1
+SET a.b = 1, `a..b` = 2, `.a` = 3, `a b` = 4, `a b.c` = 5	1

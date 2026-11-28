@@ -2,7 +2,7 @@
 sidebarTitle: '简介'
 description: '在 Postgres 与各类数据格式、对象存储之间导入和导出数据。'
 slug: '/cloud/managed-postgres/extensions/chdb'
-title: 'chdb 扩展参考文档'
+title: 'chdb 扩展文档'
 doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
 ---
@@ -126,7 +126,7 @@ chdb 和 chdb&#95;hook 扩展依赖 `chdb_helper` 进程来执行 [chDB] 查询�
 与 background worker 不同，该辅助进程不持有 Postgres 共享内存，postmaster 也不对其进行管理。因此崩溃被隔离开来，不会影响 Postgres。辅助进程一旦终止，只会在启动它的 backend 中引发一个错误，其他 session 则完全不受影响。
 
 <Important>
-  对于每个查询，该辅助进程都会连接到磁盘上一个新的临时 chDB database 来执行该查询。因此，目前每个查询都运行在与其他所有查询完全隔离的环境中。请不要 CREATE 一个表后，期望在后续查询中访问它。
+  对于每个查询，该辅助进程都会连接到磁盘上一个新的临时 chDB 数据库来执行该查询。因此，目前每个查询都运行在与其他所有查询完全隔离的环境中。请不要 CREATE 一个表后，期望在后续查询中访问它。
 </Important>
 
 ## 依赖项 {#dependencies}

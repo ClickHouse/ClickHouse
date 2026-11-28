@@ -1,4 +1,4 @@
-This page covers provisioning ClickHouse Managed Postgres, loading data, replicating it to ClickHouse, and querying it, all from the command line with [clickhousectl](/concepts/features/interfaces/cli) and `psql`. Apart from the optional `--interactive` login, commands are non-interactive. `clickhousectl` emits JSON with `--json`, and automatically when it detects a coding agent; pass `--format` to `cloud service query` to get plain values.
+This page covers provisioning ClickHouse Managed Postgres, loading data, replicating it to ClickHouse, and querying it, all from the command line with [clickhousectl](/concepts/features/interfaces/cli) and `psql`. Apart from the optional `--interactive` login, commands are non-interactive. `clickhousectl` emits JSON with `--json`, and automatically when it detects a coding agent; pass `--format` to `cloud clickhouse query` to get plain values.
 
 ## Prerequisites {#prerequisites}
 
@@ -194,7 +194,7 @@ psql "$PG_URL" -c "SELECT event_type, COUNT(*) FROM events GROUP BY event_type O
 Create a service in the same region and save the response; the password appears only in the create response:
 
 ```bash
-clickhousectl cloud service create \
+clickhousectl cloud clickhouse create \
   --name quickstart-ch \
   --region us-east-1 \
   --json > ch.json
@@ -206,12 +206,12 @@ CH_PASSWORD=$(jq -r .password ch.json)
 Wait until it's running; the ClickPipe requires a running destination:
 
 ```bash
-while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+while [ "$(clickhousectl cloud clickhouse get "$CH_ID" --json | jq -r .state)" != "running" ]; do
   sleep 15
 done
 ```
 
-To use an existing service instead, set `CH_ID` from `clickhousectl cloud service list` and `CH_PASSWORD` to its `default` user password, which the `pg_clickhouse` step needs.
+To use an existing service instead, set `CH_ID` from `clickhousectl cloud clickhouse list` and `CH_PASSWORD` to its `default` user password, which the `pg_clickhouse` step needs.
 
 ### Replicate the tables to ClickHouse {#replicate-to-clickhouse}
 
@@ -262,7 +262,7 @@ done
 Run SQL against the ClickHouse service directly from the CLI. On the first call, clickhousectl adds your API key to the service's Query API endpoint, creating the endpoint if needed; no new key is created. Pass `--no-auto-enable` to fail instead. `--format TabSeparated` prints the bare value, which the comparison below relies on:
 
 ```bash
-clickhousectl cloud service query "$CH_ID" --format TabSeparated \
+clickhousectl cloud clickhouse query "$CH_ID" --format TabSeparated \
   --query "SELECT count() FROM public_events FINAL WHERE _peerdb_is_deleted = 0"
 ```
 
@@ -278,7 +278,7 @@ New writes to Postgres replicate continuously. Insert a row and poll until the c
 ```bash
 psql "$PG_URL" -c "INSERT INTO events (event_name, event_type, user_id, user_ip) VALUES ('cdc-test', 'click', 42, '10.0.0.1');"
 
-while [ "$(clickhousectl cloud service query "$CH_ID" --format TabSeparated \
+while [ "$(clickhousectl cloud clickhouse query "$CH_ID" --format TabSeparated \
   --query "SELECT count() FROM public_events FINAL WHERE _peerdb_is_deleted = 0")" != "1000001" ]; do
   sleep 10
 done
@@ -289,7 +289,7 @@ done
 The [`pg_clickhouse`](/products/managed-postgres/extensions/pg_clickhouse/introduction) extension lets Postgres act as a unified query layer for both transactional and analytical data. Grab the ClickHouse HTTPS hostname, then set up the extension over `psql`:
 
 ```bash
-CH_HOST=$(clickhousectl cloud service get "$CH_ID" --json \
+CH_HOST=$(clickhousectl cloud clickhouse get "$CH_ID" --json \
   | jq -r '.endpoints[] | select(.protocol=="https") | .host')
 
 psql "$PG_URL" <<SQL
@@ -319,5 +319,5 @@ clickhousectl cloud postgres delete "$PG_ID"
 A running ClickHouse service can't be deleted directly. `--force` stops it, waits for the stop to finish, then deletes it:
 
 ```bash
-clickhousectl cloud service delete "$CH_ID" --force
+clickhousectl cloud clickhouse delete "$CH_ID" --force
 ```

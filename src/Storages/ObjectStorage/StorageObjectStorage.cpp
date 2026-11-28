@@ -17,6 +17,8 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/RenameColumnVisitor.h>
+#include <Storages/AlterCommands.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -40,10 +42,6 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/ReadFromTableChangesStep.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeRefreshCursorStore.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Interpreters/StorageID.h>
@@ -164,6 +162,11 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     /// We don't want to throw an exception if there are no files with specified path.
     query_settings.throw_on_zero_files_match = false;
     query_settings.ignore_non_existent_file = true;
+    /// Force serial listing here: this sample path drives hive-partitioning detection, and the parallel
+    /// iterator returns keys in scheduler (non-deterministic) order, so parallel listing would make the
+    /// detected partitioning depend on listing timing. `s3_list_object_parallelism` must stay a pure
+    /// performance knob, so keep the sample path deterministic (S3's lexicographic order).
+    query_settings.list_object_parallelism = 1;
 
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
@@ -218,6 +221,12 @@ StorageObjectStorage::StorageObjectStorage(
     , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, Context::getGlobalContextInstance())
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
+
+    if (configuration->isDataLakeConfiguration() && !is_table_function)
+    {
+        data_lake_partition_by = partition_by_ ? partition_by_->clone() : nullptr;
+        data_lake_order_by = order_by_ ? order_by_->clone() : nullptr;
+    }
 
     /// Validate the configuration (RemoteHostFilter / HTTPHeaderFilter / format) before any remote access.
     configuration->check(context);
@@ -907,46 +916,17 @@ void StorageObjectStorage::read(
     }
 
     const auto & settings = local_context->getSettingsRef();
-#if USE_DELTA_KERNEL_RS
-    if (configuration->isDataLakeConfiguration())
+    /// The change data feed of a Delta Lake table (`delta_lake_snapshot_start_version`) is read like a snapshot:
+    /// `IDataLakeMetadata::iterate` returns the data files with the changes.
+    if (configuration->isDataLakeConfiguration()
+        && settings[Setting::delta_lake_snapshot_start_version] == -1
+        && settings[Setting::delta_lake_snapshot_end_version] != -1)
     {
-        if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
-            start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
-        {
-            if (const auto delta_kernel_metadata = std::dynamic_pointer_cast<const DeltaLakeMetadataDeltaKernel>(configuration->getExternalMetadata());
-                delta_kernel_metadata != nullptr)
-            {
-                auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
-                auto version_range = DeltaLake::TableChanges::getVersionRange(
-                    start_version,
-                    settings[Setting::delta_lake_snapshot_end_version].value);
-                auto table_changes = delta_kernel_metadata->getTableChanges(
-                    version_range,
-                    source_header,
-                    format_settings,
-                    local_context);
-
-                auto read_step = std::make_unique<ReadFromDeltaLakeTableChangesStep>(
-                    std::move(table_changes),
-                    source_header,
-                    column_names,
-                    query_info,
-                    storage_snapshot,
-                    num_streams,
-                    local_context);
-                query_plan.addStep(std::move(read_step));
-                return;
-            }
-        }
-        else if (auto end_version = settings[Setting::delta_lake_snapshot_end_version].value;
-                 end_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::BAD_ARGUMENTS,
-                "Cannot use delta_lake_snapshot_end_version without delta_lake_snapshot_start_version");
-        }
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot use delta_lake_snapshot_end_version without delta_lake_snapshot_start_version");
     }
-#endif
+
     const auto hive_columns = hive_partitioning_columns.get();
     auto read_from_format_info = configuration->prepareReadingFromFormat(
         object_storage,
@@ -1049,7 +1029,9 @@ SinkToStoragePtr StorageObjectStorage::write(
         configuration->update(object_storage, local_context);
     }
 
-    return createSink(configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context);
+    return createSink(
+        configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context,
+        getPartitionedWriteAccessCheck());
 }
 
 SinkToStoragePtr StorageObjectStorage::createSink(
@@ -1059,7 +1041,8 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     const std::optional<FormatSettings> & format_settings,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & local_context)
+    const ContextPtr & local_context,
+    const PartitionedWriteAccessCheck & write_access_check)
 {
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
     const auto & settings = configuration->getQuerySettings(local_context);
@@ -1068,35 +1051,44 @@ SinkToStoragePtr StorageObjectStorage::createSink(
 
     if (configuration->isArchive())
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Path '{}' contains archive. Write into archive is not supported",
-                        raw_path.path);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table reads from an archive. Write into archive is not supported");
     }
 
     if (raw_path.hasGlobsIgnorePlaceholders())
     {
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                        "Non partitioned table with path '{}' that contains globs, the table is in readonly mode",
-                        configuration->getRawPath().path);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Table is in readonly mode because of globs in path");
     }
 
     if (!configuration->supportsWrites())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
     if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
-        return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
+        return configuration->write(sample_block, metadata_snapshot, storage_id, object_storage, format_settings, local_context, catalog);
 
     /// Not a data lake, just raw object storage
 
     if (configuration->partition_strategy)
     {
-        return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
+        return std::make_shared<PartitionedStorageObjectStorageSink>(
+            object_storage, configuration, format_settings, sample_block, local_context, write_access_check);
     }
 
     const auto paths = configuration->getPaths();
     /// Unless the insert truncates, the probe below checks the first path, which is written when it is free.
     auto write_path = settings.truncate_on_insert ? paths.back().path : paths.front().path;
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
+
+    /// The written key can differ from the typed URI that the source access check covered, e.g. after `{_schema_hash}`
+    /// is expanded, so it is checked before it is probed or written.
+    if (write_access_check)
+        write_access_check(local_context, configuration->getURIForAccessCheck(write_path));
+
+    /// A key renamed by `s3_create_new_file_on_insert` can be outside the grant, e.g. `data.1.tsv` for `data.tsv`.
+    std::function<void(const String &)> check_new_key;
+    if (write_access_check)
+        check_new_key = [&](const String & new_key) { write_access_check(local_context, configuration->getURIForAccessCheck(new_key)); };
+
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
+            *object_storage, *configuration, settings, paths.front().path, paths.size(), check_new_key))
     {
         configuration->addPath({*new_key});
         write_path = *new_key;
@@ -1140,8 +1132,8 @@ void StorageObjectStorage::truncate(
     if (configuration->isArchive())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Path '{}' contains archive. Table cannot be truncated",
-                        path.path);
+                        "Table '{}' reads from an archive and cannot be truncated",
+                        getStorageID().getNameForLogs());
     }
 
     if (configuration->isDataLakeConfiguration())
@@ -1154,16 +1146,16 @@ void StorageObjectStorage::truncate(
     {
         throw Exception(
             ErrorCodes::DATABASE_ACCESS_DENIED,
-            "{} key '{}' contains globs, so the table is in readonly mode and cannot be truncated",
-            getName(), path.path);
+            "Can't truncate table '{}' in readonly mode because of globs in path",
+            getStorageID().getNameForLogs());
     }
 
     if (path.hasPartitionWildcard())
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Truncate is not supported for partitioned tables, the path is '{}'",
-            path.path);
+            "Truncate is not supported for partitioned table '{}'",
+            getStorageID().getNameForLogs());
     }
 
     /// The credentials of the client follow the session that truncates, as for `write`.
@@ -1217,9 +1209,16 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
     ObjectInfos & read_keys,
     const ContextPtr & context)
 {
+    /// Force serial listing during schema/format inference: the parallel iterator returns keys in
+    /// scheduler (non-deterministic) order, and inference reads the first listed file(s), so parallel
+    /// listing could otherwise make the inferred format/schema depend on listing timing.
+    /// `s3_list_object_parallelism` must stay a pure performance knob.
+    auto query_settings = configuration->getQuerySettings(context);
+    query_settings.list_object_parallelism = 1;
+
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
-        configuration->getQuerySettings(context),
+        query_settings,
         object_storage,
         nullptr, /* storage_metadata */
         false, /* distributed_processing */
@@ -1409,8 +1408,33 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 
+    /// The stored definition of a data lake table gets its `PARTITION BY` and `ORDER BY` with the renamed columns.
+    auto rename_columns = [&](const ASTPtr & ast) -> ASTPtr
+    {
+        if (!ast)
+            return nullptr;
+        auto renamed = ast->clone();
+        for (const auto & command : params)
+        {
+            if (command.type != AlterCommand::RENAME_COLUMN)
+                continue;
+            RenameColumnData rename_data{command.column_name, command.rename_to, /*rename_subcolumns=*/true, &new_metadata.columns};
+            RenameColumnVisitor(rename_data).visit(renamed);
+        }
+        return renamed;
+    };
+    ASTPtr new_data_lake_partition_by = rename_columns(data_lake_partition_by);
+    ASTPtr new_data_lake_order_by = rename_columns(data_lake_order_by);
+    StorageInMemoryMetadata metadata_to_store = new_metadata;
+    if (new_data_lake_partition_by && !metadata_to_store.isPartitionKeyDefined())
+        metadata_to_store.partition_key = KeyDescription::getKeyFromAST(
+            new_data_lake_partition_by, metadata_to_store.columns, metadata_to_store.virtuals, context);
+    if (new_data_lake_order_by && !metadata_to_store.isSortingKeyDefined())
+        metadata_to_store.sorting_key = KeyDescription::getKeyFromAST(
+            new_data_lake_order_by, metadata_to_store.columns, metadata_to_store.virtuals, context);
+
     /// Check that the resulting metadata does not exceed max_query_size before mutating external state.
-    checkMetadataDoesNotExceedMaxQuerySize(storage_id, new_metadata, context);
+    checkMetadataDoesNotExceedMaxQuerySize(storage_id, metadata_to_store, context);
 
     if (params.isSettingsAlter())
     {
@@ -1425,13 +1449,15 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
 
     DatabaseCatalog::instance()
         .getDatabase(storage_id.database_name)
-        ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
+        ->alterTable(context, storage_id, metadata_to_store, /*validate_new_create_query=*/true);
+    data_lake_partition_by = new_data_lake_partition_by;
+    data_lake_order_by = new_data_lake_order_by;
     setInMemoryMetadata(new_metadata);
 }
 void StorageObjectStorage::alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context)
 {
     auto new_settings = std::make_shared<DataLakeStorageSettings>();
-    new_settings->loadFromQuery(new_metadata.settings_changes->as<ASTSetQuery &>());
+    new_settings->loadFromQuery(new_metadata.getSettingsChanges()->as<ASTSetQuery &>());
 
     /// The metadata object of the table is created again with the new settings. It takes the global context rather
     /// than the context of the query, so that the settings of the session which runs the `ALTER` do not stick to it.

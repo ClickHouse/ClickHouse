@@ -177,6 +177,7 @@ ReachableFilesResult collectReachableFiles(
     }
 
     Int32 current_schema_id = metadata->getValue<Int32>(f_current_schema_id);
+    persistent_table_components.schema_processor->registerMetadata(metadata);
 
     auto snapshot_files = collectSnapshotReferencedFiles(
         snapshots, object_storage, persistent_table_components, context, log, current_schema_id);

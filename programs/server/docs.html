@@ -505,6 +505,7 @@
         'Function':                      '#4F8DF7',
         'Aggregate Function':            '#3F6FE0',
         'Aggregate Function Combinator': '#6A6AE0',
+        'Window Function':               '#2F8FD0',
         'Table Function':                '#3FB0E0',
         'Table Engine':                  '#4FB04F',
         'Database Engine':               '#3F9F66',
@@ -668,6 +669,7 @@
         /// `preprocessMarkdown` into renderable Markdown; the names here catch any leftover tags.
         'Tab', 'Card', 'CardGroup',
         'Note', 'Warning', 'Tip', 'Info', 'Check', 'Danger', 'Caution',
+        'Accordion',
     ];
 
     /// Human-readable text for an MDX `*Badge` component such as `<ExperimentalBadge/>`, mirroring the
@@ -788,6 +790,15 @@
                     return ':::' + name.toLowerCase() + (title ? ' ' + title[1] : '');
                 })
             .replace(/^[ \t]*<\/(?:Note|Warning|Tip|Info|Check|Danger|Caution)>[ \t]*$/gm, ':::');
+
+        /// A Mintlify `<Accordion title="...">` is rendered as the allowlisted `<details>` disclosure
+        /// widget; the blank lines keep the Markdown between the tags parsed as Markdown.
+        out = out
+            .replace(/^[ \t]*<Accordion(?:[ \t]+([^>]*))?>[ \t]*$/gm, (m, attributes) => {
+                const title = /(?:^|\s)title="([^"]*)"/.exec(attributes || '');
+                return '<details>\n<summary>' + escapeHTML(title ? title[1] : '') + '</summary>\n\n';
+            })
+            .replace(/^[ \t]*<\/Accordion>[ \t]*$/gm, '\n\n</details>');
 
         /// A `<Tab title="...">` / `<TabItem label="...">` / `<Card title="...">` introduces an
         /// alternative (e.g. a syntax variant) or a callout whose heading carries meaning: keep the
@@ -1199,6 +1210,7 @@
         'formats': 'Format',
         'functions': 'Function',
         'aggregate-functions': 'Aggregate Function',
+        'window-functions': 'Window Function',
         'table-functions': 'Table Function',
         'table-engines': 'Table Engine',
         'database-engines': 'Database Engine',

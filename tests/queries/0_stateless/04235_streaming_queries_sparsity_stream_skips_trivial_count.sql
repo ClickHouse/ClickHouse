@@ -31,7 +31,7 @@ FROM (EXPLAIN SELECT count() FROM t_sparsity_stream WHERE b != 0
 
 SELECT 'stream',
        countIf(explain LIKE '%Optimized trivial count with sparsity filter%')
-FROM (EXPLAIN SELECT count() FROM t_sparsity_stream STREAM WHERE b != 0
+FROM (EXPLAIN SELECT count() FROM t_sparsity_stream STREAM BOUNDED WHERE b != 0
       SETTINGS optimize_trivial_count_with_sparsity_filter = 1, use_skip_indexes_on_data_read = 0);
 
 DROP TABLE t_sparsity_stream;

@@ -1,0 +1,11 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- A negative offset with a short length: the slice is found walking backward from the end of the string. -->
+    <query>SELECT substringUTF8(repeat('界', 1024), -512 - toInt64(number % 2), 1) FROM numbers(200000) FORMAT Null</query>
+    <query>SELECT substringUTF8(materialize(repeat('界', 1024)), -512, 1) FROM numbers(200000) FORMAT Null</query>
+    <query>SELECT substringUTF8(materialize(repeat('界', 1024)), -512, 256) FROM numbers(200000) FORMAT Null</query>
+    <query>SELECT rightUTF8(materialize(repeat('界', 1024)), 512 + number % 2) FROM numbers(200000) FORMAT Null</query>
+</test>

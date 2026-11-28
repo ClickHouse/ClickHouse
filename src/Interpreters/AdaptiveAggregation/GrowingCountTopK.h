@@ -7,6 +7,8 @@
 #include <base/PackedStringRef.h>
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/Concepts.h>
+#include <Common/HashTable/KeysAndPackedString.h>
 
 namespace DB
 {
@@ -72,7 +74,7 @@ public:
 
     /// The groups with the `limit` largest counts so far, or all of them while there are fewer, in no particular
     /// order. Which of the groups with equal counts at the smallest are kept is unspecified.
-    const std::vector<Group> & getGroups() const { return groups; }
+    [[nodiscard]] const std::vector<Group> & getGroups() const { return groups; }
 
 private:
     template <bool copy_key>
@@ -132,14 +134,23 @@ private:
         return {buffer.data(), buffer.size()};
     }
 
-    static PackedStringRef copyKey(PackedStringRef key, std::vector<char> & buffer)
+    template <is_any_of<PackedStringRef, UnhashedPackedStringRef> PackedString>
+    static PackedString copyKey(PackedString key, std::vector<char> & buffer)
     {
-        /// The small and empty encodings hold their bytes in the value itself.
+        /// The strings kept inline hold their bytes in the value itself.
         if (const size_t size = key.heapSize())
         {
             buffer.assign(key.getHeapPtr(), key.getHeapPtr() + size);
             key.setHeapPointer(buffer.data());
         }
+        return key;
+    }
+
+    /// The fixed-width values are held by value, so only the string is copied.
+    template <typename Keys>
+    static KeysAndPackedString<Keys> copyKey(KeysAndPackedString<Keys> key, std::vector<char> & buffer)
+    {
+        key.str = copyKey(key.str, buffer);
         return key;
     }
 

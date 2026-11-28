@@ -121,12 +121,12 @@ public:
     {
     }
 
-    String getName() const override { return "VersionedTest"; }
-    QueryPlanStepPtr clone() const override { return std::make_unique<VersionedTestStep>(getOutputHeader(), payload); }
+    [[nodiscard]] String getName() const override { return "VersionedTest"; }
+    [[nodiscard]] QueryPlanStepPtr clone() const override { return std::make_unique<VersionedTestStep>(getOutputHeader(), payload); }
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override { }
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
-    UInt64 getPayload() const { return payload; }
+    [[nodiscard]] UInt64 getPayload() const { return payload; }
 
     void serialize(Serialization & ctx) const override
     {

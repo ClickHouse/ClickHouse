@@ -16,6 +16,7 @@ def pages(value):
             yield from pages(value.get(key, []))
 
 groups = {}
+mapping = {}
 for page in sorted(set(pages(json.loads((root / 'clickstack/navigation.json').read_text())))):
     source = root / (page + '.mdx')
     if not source.is_file():
@@ -32,6 +33,11 @@ for page in sorted(set(pages(json.loads((root / 'clickstack/navigation.json').re
             relative = relative.removeprefix(prefix)
             product = label
             break
+    # All nurture guides target Observability, including self-managed and legacy URLs.
+    # Keep each copy's badge on its own route rather than pairing it with an OSS edition.
+    if relative.startswith('managed-onboarding/'):
+        mapping[slug] = [['ClickHouse Observability', slug]]
+        continue
     key = re.sub(r'(^|/)index$', '', relative).rstrip('/')
     # Demo Days label availability per feature rather than per page.
     if re.match(r'demo-days/\d{4}/', key):
@@ -40,7 +46,6 @@ for page in sorted(set(pages(json.loads((root / 'clickstack/navigation.json').re
         key = 'getting-started'
     groups.setdefault(key, {})[product] = slug
 
-mapping = {}
 for variants in groups.values():
     for slug in variants.values():
         badges = []
@@ -57,6 +62,11 @@ for variants in groups.values():
 
 # Read feature anchors from both product editions, including shared newer pages.
 exceptions = json.loads((Path(__file__).with_name('demo-days-availability.json')).read_text())
+# Each list maps a page date to the feature anchors available in one product only.
+only_keys = ('observabilityOnly', 'openSourceOnly')
+unknown = set(exceptions) - set(only_keys)
+if unknown:
+    raise ValueError(f'demo-days-availability.json: unknown keys {unknown}, expected {only_keys}')
 sections = {}
 for source in sorted((root / 'clickstack').glob('**/demo-days/2026/*.mdx')):
     page = '/' + source.relative_to(root).with_suffix('').as_posix()
@@ -66,13 +76,16 @@ for source in sorted((root / 'clickstack').glob('**/demo-days/2026/*.mdx')):
     if not (root / (observability.lstrip('/') + '.mdx')).exists():
         observability = oss
     anchors = re.findall(r'^## .*?\{#([^}]+)\}$', source.read_text(), re.M)
-    only = exceptions.get(date, [])
-    missing = set(only) - set(anchors)
+    only = {key: exceptions.get(key, {}).get(date, []) for key in only_keys}
+    missing = set(only['observabilityOnly'] + only['openSourceOnly']) - set(anchors)
     if missing:
         raise ValueError(f'{source}: missing feature anchors {missing}')
+    both = set(only['observabilityOnly']) & set(only['openSourceOnly'])
+    if both:
+        raise ValueError(f'{source}: feature anchors {both} are marked as only in both products')
     sections[page] = {
         'variants': [['Open Source', oss], ['ClickHouse Observability', observability]],
-        'observabilityOnly': only,
+        **only,
     }
 
 path = root / '_site/customizations/clickstack-availability.js'

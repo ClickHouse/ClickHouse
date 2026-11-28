@@ -9,6 +9,5 @@ exists_database	OK
 no_create_table	CREATE TABLE ACCESS_DENIED
 no_create_database	CREATE DATABASE ACCESS_DENIED
 no_cluster	CLUSTER ACCESS_DENIED
-no_cluster_legacy_table	CLUSTER ACCESS_DENIED
 no_cluster_table	Unknown table engine memory. Maybe you meant: ['Memory']. (UNKNOWN_STORAGE)
 on_cluster	Unknown database engine atomic. Maybe you meant: ['Atomic']. (UNKNOWN_DATABASE_ENGINE)

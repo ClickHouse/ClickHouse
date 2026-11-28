@@ -131,6 +131,7 @@ Run these only when the trigger appears. They are small expansion passes, not a 
 - **New setting/flag/option:** grep consumers that share the settings class or configuration surface. Each relevant engine/mode/API must implement it, reject it, or make an explicit harmless no-op contract.
 - **Matching a SQL construct in a query:** fires when the diff inspects a query to allow, reject, rewrite, or special-case a construct (for example a specific function, keyword, or operator). First enumerate every AST and query-tree representation of the construct's semantics, not just the one the diff happens to match. The same semantics often live in more than one node shape. `arrayJoin` is the motivating example: the expression form is an `ASTFunction` / `FunctionNode`, but the `ARRAY JOIN` clause is a separate node (`ASTArrayJoin` / `ArrayJoinNode`), so a guard that bans only the function still misses the clause. A guard that covers only one carrier is a gap even if its name matching is perfect. Then, for each name-based carrier, a user can reach the same semantics through forms the surface name does not reveal, so verify the guard handles: (a) **name aliases**: resolve to the canonical name (case-insensitive and registered aliases) instead of comparing a literal string; (b) **user-defined expansions**: SQL UDF bodies, and any macro, lambda, or view inlining, that expand to the construct, so descend into them with cycle protection; (c) **alternate spellings**: equivalent operators or syntaxes for the same construct. The AST and the query tree normalize different things, so confirm which forms the chosen one already resolves and which the guard must still handle. On the raw AST nothing is resolved. On the query tree the analyzer may already inline UDFs and turn operators into functions, but the stored name can still be an alias. Also confirm the guard runs at (or is duplicated at) the point where these expansions have already happened. A check placed before inlining that is not re-checked after inlining is a gap.
 - **Build flag that drops a global side-effect or weakens numeric semantics:** fires when the diff changes compiler/build flags that remove a documented side-effect or relax FP behavior across many TUs (`-fno-math-errno`, `-ffast-math`, `-ffp-contract=fast`, `-fassociative-math`, `-fno-signed-zeros`, strict-aliasing relaxation, and similar). Read `references/build-flags.md` and follow that procedure before reviewing.
+- **Build change that weakens security hardening:** fires when the diff removes, downgrades, or opts code out of a hardening flag (stack protector, `_FORTIFY_SOURCE`, PIE, RELRO, `-mbranch-protection`, CFI, `_LIBCPP_HARDENING_MODE`, and similar), globally or per target, file, or function, including through a CMake flag allowlist or a submodule bump. Read `references/hardening-flags.md` and follow that procedure.
 - **Wire-layout change to the native protocol or `Native` format:** fires only when the diff changes the bytes sent over the wire (see `references/spec-sync.md`), not on refactors or fixes that keep the layout. Check that the matching spec is updated.
 - **Access or privilege check, or a new surface derived from another object:** fires when the diff adds, moves, removes, or relies on an access check (`checkAccess`, `checkAccessRights`, `AccessType::*`, row policies, readonly/`allow_ddl` gates), or adds a table function, table engine, system table, subcolumn, or introspection surface whose result is derived from an object the querying user may not be allowed to read. Read `references/access-checks.md` and follow that procedure. Settle completeness — every entrypoint reaches the check, and the check runs before anything is derived from the guarded object — before critiquing the check's granularity.
 - **Memory addresses reaching users:** fires when the diff formats, stores, returns, or derives an identifier from a pointer, a runtime address, a captured stack, an allocator or profiler output, a memory map, or symbol and debug information; or when it changes how existing addresses are normalized, symbolized, or gated. Read `references/memory-addresses.md` and follow that procedure.
@@ -142,6 +143,7 @@ Run these only when the trigger appears. They are small expansion passes, not a 
 - **A decision made on another reading of the input than its consumer:** fires when the diff checks or classifies an input (a configuration from SQL arguments, settings, a URL, a path, headers, an `AST`) to allow, reject, or restrict something, and the code that acts on it reads the input separately. The check must see exactly what the consumer will use. Compare the two readings: which occurrence of a repeated key wins (`XMLConfiguration` and `AbstractConfiguration` return the first one, while a loop that assigns flags keeps the last), the spellings of a value the consumer accepts (`AbstractConfiguration::getBool` accepts `0`/`1`, `true`/`false`, `yes`/`no`, `on`/`off` in any case), defaults for absent keys, case and whitespace, normalization, substitutions (`include`, `from_env`, `from_zk`). Prefer making the decision on the resolved representation the consumer uses, with the consumer's own accessors. A difference that lets an input pass the check and then be used in a form the check rejects is a **Blocker** when the check guards credentials, access, or resources.
 - **Ownership, leadership, leases, locks, or failover:** inspect ownership gain, ownership loss, active in-flight work, delayed commits after waits, and anything that can still mutate after the guard changes state.
 - **Jobs on other threads:** fires when the diff schedules work that runs on another thread and is joined later (`ThreadPool::scheduleOrThrowOnError`, `scheduleOrThrow`, `trySchedule`, `ThreadPoolCallbackRunnerLocal`, `ThreadFromGlobalPool`). List every local or member a job uses, including through a lambda or `std::function` it calls, because `[&]` hides them. Each one must outlive the join on every exit after the first schedule: a later schedule throws (for example `CANNOT_SCHEDULE_TASK` when a thread cannot be created), the scheduling thread throws while doing its own share of the work, or it returns early. Objects are destroyed in reverse order of declaration, so declare whatever joins the jobs (the pool, the runner, a scope guard) after everything the jobs use, and capture by value a closure that itself refers to the pool. A green CI is weak evidence for these exits: they are reached mostly through rare thread-creation fault injection in the Stress tests. See the warning above `ThreadPoolCallbackRunnerLocal` in `src/Common/threadPoolCallbackRunner.h`.
+- **Destroying and re-creating in place:** fires when the diff destroys an object and then builds a new one in the same storage (`destroy` then `create` of an aggregate state, an explicit destructor call followed by placement `new`, a `reset` or `recreate` helper), or adds a caller of such code. If building the new object throws (any allocation can throw `MEMORY_LIMIT_EXCEEDED`), the storage holds a destroyed object, and whoever destroys it later (the owner's destructor, a cleanup loop, an exception handler, an outer combinator's `destroy`) destroys it a second time. Check that something records that the object is gone (a `created` flag, as in `AggregatingSortedAlgorithm.cpp`) and that the later destruction and every later use respect it. The same holds for a `create` or constructor that builds several parts in sequence: when a later part throws, the earlier ones must be destroyed before rethrowing. Whether the second destruction crashes depends on the members of the type, so a passing test is weak evidence. `memory_tracker_fault_probability` with `max_untracked_memory = 1` under ASan reaches these paths.
 - **Subclass adds guards:** inspect inherited mutating operations it does not override, especially `rename`, `drop`, `truncate`, `alter`, partition commands, and background callbacks.
 - **Shared storage or distributed state:** identify which state is shared and which remains local. If local state affects correctness after failover/restart, it must be synchronized, rejected, or explicitly unsupported.
 - **Tests using restrictive settings or shared system tables:** prefer query-local `SETTINGS` for fixture-specific execution constraints, such as a tiny `max_block_size`. When session-wide `SET` or inherited client options are needed, trace their effects through setup, polling, assertions, and cleanup, and ensure unrelated helper queries do not inherit expensive constraints. In particular, `max_block_size = 1` leaking into a `system.query_log` assertion can make verification expensive as the shared log grows, even when the fixture contains only a few rows. Evaluate helper-query cost against a populated CI server, not just a fresh standalone run. Preserve the settings required to exercise the behavior under test, along with assertions and coverage; do not treat larger timeouts as the fix.
@@ -150,6 +152,7 @@ Run these only when the trigger appears. They are small expansion passes, not a 
 
 **Use concrete traces for suspicious code**
 - When you find suspicious callee logic, pick a minimal boundary input and trace execution step by step with concrete values. Do not dismiss it by abstract reasoning.
+- In the CI `Code Review` job only: when a finding can be shown with a query or a command, run it with a CI binary; `references/binaries.md` lists which binaries exist for the PR head, earlier commits, and master, and how to get them. Local reviews (including a local codex review) use the binaries their user provides and do not download CI binaries.
 - **Anti-pattern to avoid:** finding a suspicious access, writing "this is technically safe because [memory layout / padding / practical likelihood]", and moving on. If you cannot prove safety via a concrete trace, report it or request the test that would prove it.
 
 **Do not let one finding close a topic**
@@ -222,7 +225,7 @@ Severity comes from user/system impact and confidence, not from which prompt unc
 - Pure formatting or "style wars".
 
 REQUESTED OUTPUT FORMAT
-Respond with the following sections. Be terse but specific. Include code suggestions as minimal diffs/patches where helpful.
+Respond with the following sections. Be terse but specific. Suggest a fix only as described for Fix under Findings.
 Focus on problems — do not describe what was checked and found to be fine. Use emojis (❌ ⚠️ ✅ 💡) to make findings scannable.
 **Omit any section entirely if there is nothing notable to report in it** — do not include a section just to say "looks good" or "no concerns". The only mandatory sections are Summary and Final Verdict.
 
@@ -241,14 +244,23 @@ Focus on problems — do not describe what was checked and found to be fine. Use
 
 **Findings** (omit if no findings)
 - Each finding must name the violated behavior/invariant/contract and its impact. Do not frame findings as checklist matches.
-- **❌ Blockers**
-  - `[File:Line(s)]` Clear description of issue and impact.
-  - Suggested fix (code snippet or steps).
-- **⚠️ Majors**
-  - `[File:Line(s)]` Issue + rationale.
-  - Suggested fix.
+- Each Blocker and Major, in the summary and in an inline comment, has the layout below. An inline comment is self-contained, because the author may read only it.
+  ```
+  - `File:Line(s)` <Impact>
+    - **Repro:** <```sql``` block>
+    - **Evidence:** <one line>
+    - **Cause:** <defect>
+    - **Fix:** <optional>
+  ```
+  - **Impact**: one sentence (after the severity tag, if any) saying what a user or operator sees and when: a wrong result, an exception, a crash, data loss, a stuck job, a slowdown. The mechanism belongs in Cause.
+  - **Repro**: the smallest code block that shows it, with the expected and the actual result: a ```sql``` block whenever SQL can show it, otherwise a ```bash``` block with the commands. Prose steps only when neither can. When no runnable repro exists (a race, a failure path, an environment the review cannot set up), give the concrete input and the sequence of events that reach the defect.
+  - **Evidence**: one short line, exactly one of `✅ Reproduced with <binary>` or `📖 Code reading: <reason it was not run>`. Name the binary by job and short commit in CI (`Fast test` of `b92c716f`, `Build (arm_asan_ubsan)` of `b92c716f`), or by path and build type in a local review. Outputs belong in Repro, not here.
+  - **Cause**: the defect in the code, in a few sentences.
+  - **Fix** (optional): only when the defect and its fix are both clear and simple, such as a missing check or a wrong bound. Otherwise omit the line and leave the fix to the author: a partial fix proposed with confidence is taken as complete.
+- **❌ Blockers**: findings in the layout above.
+- **⚠️ Majors**: findings in the layout above.
 - **💡 Nits**
-  - `[File:Line(s)]` Issue + quick fix.
+  - `File:Line(s)` Issue + quick fix.
   - Use this section for changelog-template quality issues (`Changelog category` mismatch, missing/unclear required `Changelog entry`, or low-quality user-facing `Changelog entry` that is too vague).
 
 
@@ -266,12 +278,15 @@ Focus on problems — do not describe what was checked and found to be fine. Use
 - Only include if there are surprising behaviors, unclear errors, or UX issues.
 
 **Final Verdict**
-- Status: **✅ Approve** / **⚠️ Request changes** / **❌ Block**
+- First line of the section, exactly one of these three lines, copied verbatim with no bold, list marker or other text on it:
+  `Status: ✅ Approve`
+  `Status: ⚠️ Request changes`
+  `Status: ❌ Block`
 - Approve only if there are no unresolved contract violations, no unresolved high-impact plausible risks, and no missing evidence for material claims. A `Performance Improvement` without performance evidence, or a `Bug Fix` without regression evidence or a clear exception, should be **⚠️ Request changes**. If not approving, list the **minimum** required actions.
 
 STYLE & CONDUCT
 - Be precise, evidence-based, and neutral.
-- Prefer small, surgical suggestions over broad rewrites.
+- When you suggest a fix, prefer a small, surgical one over a broad rewrite.
 - Do not assume unstated behavior; if necessary, ask for clarification in "Missing context / blind spots."
 - Avoid changing scope: review what's in the PR; suggest follow-ups separately. Unchanged code that the PR's inputs reach is in scope: a defect there is a finding, even when it is pre-existing. The PR must either fix it or link an issue that tracks it; approve only when one of the two is done.
 - Avoid uncertain minor comments. For serious plausible risks, state the uncertainty and request the needed verification or tests.

@@ -56,6 +56,10 @@ A record of exactly two `bytes` fields named `metadata` and `value`, which is ho
 
 While importing data, when a field is not found in the schema and setting [`input_format_avro_allow_missing_fields`](/reference/settings/formats/input-format#input_format_avro_allow_missing_fields) is enabled, the default value will be used instead of throwing an error.
 
+### Parallel parsing {#parallel-parsing}
+
+When [`input_format_parallel_parsing`](/reference/settings/formats/input-format#input_format_parallel_parsing) is enabled, an Avro object container file is split on its block (sync marker) boundaries and the blocks are parsed on several threads. Because whole blocks are buffered and decoded concurrently, peak memory grows with the number of parsing threads; set `input_format_parallel_parsing = 0` to parse sequentially and keep memory low. This does not apply to [`AvroConfluent`](/reference/formats/Avro/AvroConfluent), which is not an object container file.
+
 ### Writing Avro data {#writing-avro-data}
 
 To write data from a ClickHouse table into an Avro file:

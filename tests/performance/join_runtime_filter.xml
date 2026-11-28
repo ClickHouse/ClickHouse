@@ -143,6 +143,40 @@
         SETTINGS enable_join_runtime_filters=1
     </query>
 
+    <!-- 12000 UInt16 keys in a join on two keys -->
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders
+        JOIN (SELECT toUInt16(number * 5) AS k, toInt32(number % 4) AS m FROM numbers(12000)) AS b
+        ON b.k = toUInt16(o_orderkey) AND b.m = o_orderkey % 4
+        SETTINGS enable_join_runtime_filters=0
+    </query>
+
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders
+        JOIN (SELECT toUInt16(number * 5) AS k, toInt32(number % 4) AS m FROM numbers(12000)) AS b
+        ON b.k = toUInt16(o_orderkey) AND b.m = o_orderkey % 4
+        SETTINGS enable_join_runtime_filters=1
+    </query>
+
+    <!-- 50 UInt8 keys in a join on two keys. A UInt8 key has at most 256 values, so it leaves the exact set only with a lower limit. -->
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders
+        JOIN (SELECT toUInt8(number * 5) AS k, toInt32(number % 4) AS m FROM numbers(50)) AS b
+        ON b.k = toUInt8(o_orderkey) AND b.m = o_orderkey % 4
+        SETTINGS enable_join_runtime_filters=0, join_runtime_filter_exact_values_limit=10
+    </query>
+
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders
+        JOIN (SELECT toUInt8(number * 5) AS k, toInt32(number % 4) AS m FROM numbers(50)) AS b
+        ON b.k = toUInt8(o_orderkey) AND b.m = o_orderkey % 4
+        SETTINGS enable_join_runtime_filters=1, join_runtime_filter_exact_values_limit=10
+    </query>
+
     <!-- Mixed equi + non-equi ON predicate: before this fix no runtime filter was built at all.
          o_totalprice > c_nationkey * 100 spans both sides so it cannot be pushed to PREWHERE
          and stays as a post-join filter, while the runtime filter is built on c_custkey only. -->

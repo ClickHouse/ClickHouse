@@ -45,14 +45,10 @@ WHERE database = currentDatabase() AND table = 't_lwu_cte_in_ignore' AND active;
 UPDATE t_lwu_cte_in_ignore SET v = 100 WHERE ignore(id IN (WITH c AS MATERIALIZED (SELECT number * 2 AS x FROM numbers(3)) SELECT a.x FROM c AS a, c AS b));
 SELECT * FROM t_lwu_cte_in_ignore ORDER BY id;
 
--- Carrier pin 3: that mutation's pipeline really was multi-stream at the gate itself -
--- with a single stream through the gate no reader of the set's source plan is scheduled
--- and the bug this test guards is invisible. Counting the readers is not enough, since
--- `ReadFromMergeTree` may resize its pipe to fewer streams after creating them, so look
--- at the `DelayedPorts` processor of the `MaterializingCTEs` step: `parent_ids` holds
--- one entry per connected output, i.e. per main stream passing through the gate.
+-- Carrier pin 3: the set is built by a pipeline of its own, which gates the readers of the CTE
+-- behind its materialization. Then the gate does not depend on the streams of the mutation.
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
-SELECT max(length(parent_ids)) > 1
+SELECT count() > 0
 FROM system.processors_profile_log
 WHERE query_id IN
 (

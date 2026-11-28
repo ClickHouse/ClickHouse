@@ -297,11 +297,9 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
         && skip_index_type_eligible
         && read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name);
 
-    /// Dynamic and Variant columns cannot be reliably filtered: their lessOrEquals
-    /// returns Nullable(UInt8) rather than UInt8, causing an "Unexpected return type"
-    /// logical error when the prewhere filter is executed. Comparison functions also
-    /// reject zero-sized tuples even though ORDER BY supports them. Skip the optimization
-    /// for these types.
+    /// A Field threshold loses the runtime type of a Dynamic, Variant or JSON value anywhere in the
+    /// type, which their columns compare first. Comparison functions also reject zero-sized tuples
+    /// even though ORDER BY supports them. Skip the optimization for these types.
     ///
     /// For variable-length types (e.g. String, Array, Map, Tuple containing variable-length
     /// elements), the per-row threshold comparison cost can exceed its savings — most notably
@@ -313,8 +311,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
         && isString(removeNullable(sort_column.type));
     const auto * sort_column_tuple_type = typeid_cast<const DataTypeTuple *>(sort_column.type.get());
     bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
-        && !isDynamic(sort_column.type)
-        && !isVariant(sort_column.type)
+        && !hasRuntimeTypedType(sort_column.type)
         && (!sort_column_tuple_type || !sort_column_tuple_type->getElements().empty())
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types || single_string_sort_column);
 

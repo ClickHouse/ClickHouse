@@ -219,9 +219,16 @@ namespace
                 "Incremental refresh source table {} has engine {}, which does not support streaming",
                 source->getStorageID().getNameForLogs(), source->getName());
 
-        /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
+        /// The refresh resumes from the cursor that the read reports through `Context::getStreamingCursor`, and only
+        /// a `MergeTree` read reports it. A source of another engine that supports STREAM (e.g. a queue) would be
+        /// read from the beginning on every refresh, appending the same rows again.
         const auto * merge_tree = castStorage<MergeTreeData>(source, DeferredTable::Load).get();
-        if (merge_tree)
+        if (!merge_tree)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Incremental refresh source table {} has engine {}; only MergeTree tables are supported",
+                source->getStorageID().getNameForLogs(), source->getName());
+
+        /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
         {
             if (merge_tree->merging_params.mode != MergeTreeData::MergingParams::Ordinary)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -599,6 +606,22 @@ void StorageMaterializedView::readImpl(
 
     auto src_table_query_info = query_info;
     src_table_query_info.initial_storage_snapshot = storage_snapshot;
+
+    /// `context` has a query context of its own only for a `DEFINER` / `NONE` view.
+    if (local_context->hasQueryContext() && context->hasQueryContext()
+        && context->getQueryContext() != local_context->getQueryContext())
+    {
+        auto read_query = make_intrusive<ASTSelectQuery>();
+        auto select_list = make_intrusive<ASTExpressionList>();
+        for (const auto & name : column_names)
+            select_list->children.push_back(make_intrusive<ASTIdentifier>(name));
+        read_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+        read_query->replaceDatabaseAndTable(storage_id);
+        local_context->getQueryContext()->addSQLSecurityOverriddenBody(getStorageID(), context, read_query);
+        /// `storage->read` below bypasses the planner, which records what a read accesses.
+        context->getQueryContext()->addQueryAccessInfo(storage_id, column_names);
+    }
+
     storage->read(query_plan, column_names, target_storage_snapshot, src_table_query_info, context, processed_stage, max_block_size, num_streams);
 
     if (query_plan.isInitialized())
@@ -773,6 +796,22 @@ bool StorageMaterializedView::optimize(
     ContextPtr local_context)
 {
     checkStatementCanBeForwarded();
+    if (deduplicate)
+    {
+        /// Reading the view requires `SELECT` on its source table too, see `readImpl`.
+        auto view_metadata = getInMemoryMetadataPtr(local_context, false);
+        const auto & select_table_id = view_metadata->select.select_table_id;
+        if (!select_table_id.empty())
+        {
+            const auto & columns = view_metadata->getColumns();
+            auto context = view_metadata->getSQLSecurityOverriddenContext(local_context);
+            context->checkAccess(
+                AccessType::SELECT,
+                select_table_id,
+                columns.getColumnNamesForSelectAccessCheck(
+                    deduplicate_by_columns.empty() ? columns.getNamesOfPhysical() : deduplicate_by_columns, context, select_table_id));
+        }
+    }
     auto storage_ptr = getTargetTable();
     auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(local_context, false);
     return storage_ptr->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
@@ -1130,7 +1169,9 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         auto rename = make_intrusive<ASTRenameQuery>();
         rename->addElement(inner_table_id.database_name, inner_table_id.table_name, new_table_id.database_name, new_target_table_name);
 
-        InterpreterRenameQuery(rename, getContext()).execute();
+        InterpreterRenameQuery interpreter(rename, getContext());
+        interpreter.setSkipDatabaseLocks(true);
+        interpreter.execute();
         updateTargetTableId(new_table_id.database_name, new_target_table_name);
     }
 
@@ -1316,7 +1357,8 @@ void StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(const Stor
         auto view = std::dynamic_pointer_cast<StorageMaterializedView>(catalog.tryGetTable(dependent_id, local_context));
         if (!view)
             continue;
-        auto metadata = view->getInMemoryMetadataPtr(local_context, false);
+        /// The override also looks up the target table, which may be unreachable.
+        auto metadata = view->IStorage::getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false);
         const auto * refresh_strategy = metadata->refresh ? metadata->refresh->as<ASTRefreshStrategy>() : nullptr;
         if (!refresh_strategy || !refresh_strategy->isIncremental())
             continue;
@@ -1343,12 +1385,13 @@ void StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(const Stor
 void StorageMaterializedView::checkDatabaseHasNoIncrementalRefreshSources(
     const IDatabase & database, const String & database_name, const ContextPtr & local_context, bool is_drop_database)
 {
+    /// External databases cannot hold the `MergeTree` source of an incremental view, and listing their tables may query a remote catalog.
+    if (database.isExternal())
+        return;
+
     for (auto iterator = database.getTablesIterator(local_context); iterator->isValid(); iterator->next())
         checkTableIsNotIncrementalRefreshSource(StorageID(database_name, iterator->name()), local_context, is_drop_database);
 
-    /// External databases do not track detached tables, and cannot hold the `MergeTree` source of an incremental view.
-    if (database.isExternal())
-        return;
     for (auto iterator = database.getDetachedTablesIterator(local_context, {}, false); iterator->isValid(); iterator->next())
         checkTableIsNotIncrementalRefreshSource(StorageID(database_name, iterator->table()), local_context, is_drop_database);
 }

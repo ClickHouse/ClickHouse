@@ -1,0 +1,20 @@
+-- local
+ACCESS_DENIED TABLE ENGINE ON URL
+-- on cluster
+ACCESS_DENIED TABLE ENGINE ON URL
+-- copy
+ACCESS_DENIED TABLE ENGINE ON URL
+-- copy, on cluster
+ACCESS_DENIED TABLE ENGINE ON URL
+-- restore
+ACCESS_DENIED TABLE ENGINE ON URL
+-- no table
+0
+-- on cluster, granted
+OK
+-- copy, granted
+OK
+-- restore, granted
+OK
+-- tables created
+3

@@ -26,42 +26,34 @@ Azure Blob Storage или Azure Data Lake Storage в ClickHouse. С помощь
 см. в официальной документации:
 [страница документации по табличной функции `azureBlobStorage`](/ru/reference/functions/table-functions/azureBlobStorage)
 
-<div id="acquiring-azure-blob-storage-access-keys">
-  ## Получение ключей доступа к Azure Blob Storage
-</div>
+## Получение ключей доступа к Azure Blob Storage {#acquiring-azure-blob-storage-access-keys}
 
-Чтобы ClickHouse мог обращаться к Azure Blob Storage, вам понадобится строка подключения с ключом доступа.
+Чтобы ClickHouse мог обращаться к Azure Blob Storage, вам понадобится Строка подключения с ключом доступа.
 
-1. В портале Azure перейдите к своей **Storage Account**.
+1. В Azure Portal перейдите к своей **учётной записи хранилища**.
 
 2. В меню слева в разделе **Security +
    networking** выберите **Access keys**.
+
    <div className="ch-image-lg">
-
-   <Frame>
-
-   ![Настройки хранилища данных Azure](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp)
-
-   </Frame>
-
+     <Frame>
+       ![Настройки хранилища данных Azure](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp)
+     </Frame>
    </div>
 
 3. Выберите **key1** или **key2** и нажмите кнопку **Show** рядом с
-   полем **Connection string**.
+   полем **Строка подключения**.
+
    <div className="ch-image-lg">
-
-   <Frame>
-
-   ![Ключи доступа к хранилищу данных Azure](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp)
-
-   </Frame>
-
+     <Frame>
+       ![Ключи доступа к хранилищу данных Azure](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp)
+     </Frame>
    </div>
 
-4. Скопируйте строку подключения — она понадобится вам как параметр для табличной функции `azureBlobStorage`.
+4. Скопируйте Строку подключения — она понадобится вам как параметр для табличной функции azureBlobStorage.
 
 <div id="querying-the-data-from-azure-blob-storage">
-  ## Запрос данных из Azure Blob Storage
+  ## Запрос данных из Azure Blob Storage {#querying-the-data-from-azure-blob-storage}
 </div>
 
 Откройте удобную для вас консоль запросов ClickHouse — это может быть веб-интерфейс ClickHouse Cloud,
@@ -95,43 +87,41 @@ SELECT * FROM azureBlobStorage(
 Это позволяет эффективно загружать внешние данные в ClickHouse без
 промежуточных этапов ETL.
 
-<div id="simple-example-using-the-environmental-sensors-dataset">
-  ## Простой пример использования набора данных Environmental Sensors
-</div>
+## Простой пример использования набора данных Environmental Sensors {#simple-example-using-the-environmental-sensors-dataset}
 
 Для примера мы загрузим один файл из набора данных Environmental Sensors.
 
 1. Загрузите [пример файла](https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/sensors/monthly/2019-06_bmp180.csv.zst)
    из [набора данных Environmental Sensors](/ru/get-started/sample-datasets/environmental-sensors)
 
-2. В Azure Portal создайте новую учетную запись хранения, если у вас ее
+2. В Azure Portal создайте новую учётную запись хранилища, если у вас ее
    еще нет.
 
 <Warning>
-  Убедитесь, что для вашей учетной записи хранения включен параметр **Allow storage account key access**,
+  Убедитесь, что для вашей учётной записи хранилища включен параметр **Allow storage account key access**,
   иначе вы не сможете использовать ключи учетной записи для доступа к
   данным.
 </Warning>
 
-3. Создайте новый контейнер в своей учетной записи хранения. В этом примере мы назовем его sensors.
+3. Создайте новый контейнер в своей учётной записи хранилища. В этом примере мы назовем его sensors.
    Вы можете пропустить этот шаг, если используете существующий контейнер.
 
 4. Загрузите ранее скачанный файл `2019-06_bmp180.csv.zst` в
    контейнер.
 
-5. Выполните описанные ранее шаги, чтобы получить строку подключения к Azure Blob Storage.
+5. Выполните описанные ранее шаги, чтобы получить Строку подключения к Azure Blob Storage.
 
 Теперь, когда все настроено, вы можете выполнять запросы к данным напрямую из Azure Blob Storage:
 
 ```sql
-    SELECT *
-    FROM azureBlobStorage(
-        '<YOUR CONNECTION STRING>', 
-        'sensors',
-        '2019-06_bmp180.csv.zst', 
-        'CSVWithNames')
-    LIMIT 10
-    SETTINGS format_csv_delimiter = ';'
+SELECT *
+FROM azureBlobStorage(
+    '<YOUR CONNECTION STRING>', 
+    'sensors',
+    '2019-06_bmp180.csv.zst', 
+    'CSVWithNames')
+LIMIT 10
+SETTINGS format_csv_delimiter = ';'
 ```
 
 7. Чтобы загрузить данные в таблицу, создайте упрощенную версию
@@ -170,12 +160,10 @@ SELECT * FROM azureBlobStorage(
 Теперь таблица sensors заполнена данными из файла `2019-06_bmp180.csv.zst`,
 хранящегося в Azure Blob Storage.
 
-<div id="additional-resources">
-  ## Дополнительные ресурсы
-</div>
+## Дополнительные ресурсы {#additional-resources}
 
-Это лишь краткое введение в использование функции azureBlobStorage. Для
-получения информации о более расширенных возможностях и подробных параметрах конфигурации обратитесь к официальной
+Это лишь краткое введение в использование функции azureBlobStorage. Подробнее
+о расширенных параметрах и конфигурации см. в официальной
 документации:
 
 * [Табличная функция azureBlobStorage](/ru/reference/functions/table-functions/azureBlobStorage)

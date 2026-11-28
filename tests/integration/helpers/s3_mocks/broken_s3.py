@@ -76,6 +76,9 @@ class MockControl:
     def setup_at_listing(self, **kwargs):
         self.setup_action("at_listing", **kwargs)
 
+    def setup_at_object_delete(self, **kwargs):
+        self.setup_action("at_object_delete", **kwargs)
+
     def setup_at_object_get(self, **kwargs):
         self.setup_action("at_object_get", **kwargs)
 
@@ -248,7 +251,10 @@ class _ServerRuntime:
         # Answers directly instead of redirecting, so the upload is never completed upstream and
         # whatever object the key already holds stays in place.
         def __init__(self, early=None):
-            self.early = early == "1"
+            # `1`: answer before reading the body, then reset the connection, like MinIO.
+            # `lingering`: answer before reading the body, then read and drop a part of it before
+            # the connection is reset, like AWS S3, which keeps reading for a while after its answer.
+            self.early = early
 
         def inject_error(self, request_handler):
             data = (
@@ -260,15 +266,29 @@ class _ServerRuntime:
                 "<RequestId>txfbd566d03042474888193-00608d7538</RequestId>"
                 "</Error>"
             )
-            if self.early:
+            if self.early in ("1", "lingering"):
                 request_handler.send_response(404)
                 request_handler.send_header("Content-Type", "text/xml")
                 request_handler.send_header("Content-Length", str(len(data)))
                 request_handler.send_header("Connection", "close")
                 request_handler.end_headers()
                 request_handler.wfile.write(bytes(data, "UTF-8"))
-                # like MinIO: stop sending, wait, then close with the body unread, which resets the connection
                 request_handler.connection.shutdown(socket.SHUT_WR)
+                if self.early == "lingering":
+                    # like AWS S3: keep reading and dropping the body after the answer, but less than
+                    # a large part, so that a client that does not watch the connection is still sending
+                    connection = request_handler.connection
+                    connection.settimeout(1)
+                    to_drop = 8 * 1024 * 1024
+                    while to_drop > 0:
+                        try:
+                            data = connection.recv(min(to_drop, 65536))
+                        except OSError:
+                            break
+                        if not data:
+                            break
+                        to_drop -= len(data)
+                # stop reading, wait, then close with the body unread, which resets the connection
                 time.sleep(0.5)
                 request_handler.connection.close()
             else:
@@ -490,6 +510,7 @@ class _ServerRuntime:
         self.at_object_get_by_key = {}
         self.at_complete_multi_part_upload = None
         self.at_abort_multi_part_upload = None
+        self.at_object_delete = None
 
     def register_fake_upload(self, upload_id, key):
         with self.lock:
@@ -514,6 +535,7 @@ class _ServerRuntime:
             self.at_complete_multi_part_upload = None
             self.at_abort_multi_part_upload = None
             self.at_listing = None
+            self.at_object_delete = None
             self.at_object_get = None
             self.at_object_get_by_key = {}
 
@@ -754,6 +776,14 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.log_message("set at_listing %s", _runtime.at_listing)
             return self._ok()
 
+        if path[1] == "at_object_delete":
+            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
+            _runtime.at_object_delete = _ServerRuntime.CountAfter.from_cgi_params(
+                _runtime.lock, params
+            )
+            self.log_message("set at_object_delete %s", _runtime.at_object_delete)
+            return self._ok()
+
         if path[1] == "at_object_get":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             rule = _ServerRuntime.CountAfter.from_cgi_params(_runtime.lock, params)
@@ -863,6 +893,11 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         parts = urllib.parse.urlsplit(self.path)
         params = urllib.parse.parse_qs(parts.query, keep_blank_values=True)
+        # Multi-object delete is `POST /bucket?delete`.
+        if "delete" in params and _runtime.at_object_delete is not None:
+            if _runtime.at_object_delete.has_effect():
+                return _runtime.at_object_delete.inject_error(self)
+
         uploads = params.get("uploads", [None])[0]
         if uploads is not None:
             if _runtime.at_create_multi_part_upload is not None:
@@ -894,6 +929,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.redirect()
 
     def do_DELETE(self):
+        if _runtime.at_object_delete is not None:
+            if _runtime.at_object_delete.has_effect():
+                return _runtime.at_object_delete.inject_error(self)
+
         parts = urllib.parse.urlsplit(self.path)
         params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
         upload_id = params.get("uploadId", [None])[0]

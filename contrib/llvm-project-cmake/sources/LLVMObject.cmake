@@ -2,6 +2,7 @@
 set(LLVMOBJECT_SOURCES
     ${LLVM_SOURCE_DIR}/lib/Object/Archive.cpp
     ${LLVM_SOURCE_DIR}/lib/Object/ArchiveWriter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/BBAddrMap.cpp
     ${LLVM_SOURCE_DIR}/lib/Object/Binary.cpp
     ${LLVM_SOURCE_DIR}/lib/Object/BuildID.cpp
     ${LLVM_SOURCE_DIR}/lib/Object/COFFImportFile.cpp

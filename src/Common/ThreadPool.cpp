@@ -11,6 +11,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
+#include <Common/ServerOwnedMemory.h>
 #include <base/scope_guard.h>
 
 #include <map>
@@ -283,6 +284,19 @@ public:
 };
 
 
+namespace
+{
+
+/// What the callable captured may be the query's, the rest was allocated as the server's.
+void releaseJob(std::optional<JobWithPriority> & job_data)
+{
+    job_data->job = {};
+    ServerOwnedMemoryScope server_owned;
+    job_data.reset();
+}
+
+}
+
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_, Metric metric_scheduled_jobs_)
     : ThreadPoolImpl(metric_threads_, metric_active_threads_, metric_scheduled_jobs_, getNumberOfCPUCoresToUse())
@@ -328,7 +342,8 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 {
     value = std::min(value, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));
     std::lock_guard lock(mutex);
-    remaining_pool_capacity.fetch_add(value - max_threads, std::memory_order_relaxed);
+    remaining_pool_capacity.fetch_add(
+        static_cast<Int64>(value) - static_cast<Int64>(max_threads), std::memory_order_relaxed);
 
     bool need_start_threads = (value > max_threads);
     bool need_finish_free_threads = (value < max_free_threads);
@@ -435,6 +450,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     ScopedDecrement available_threads_decrement(available_threads);
 
     std::unique_ptr<ThreadFromThreadPool> new_thread;
+    std::shared_ptr<std::condition_variable> idle_thread_cv;
     // Load the current capacity
     int64_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
     int64_t currently_available_threads = available_threads.load(std::memory_order_relaxed);
@@ -557,7 +573,14 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
         try
         {
-            jobs.emplace(std::move(job),
+            /// A worker frees what the job holds besides the callable after detaching, so it is the server's. The callable
+            /// is moved in after, so that it stays the caller's when this throws; if the queue does, it is released like
+            /// on the worker.
+            std::optional<JobWithPriority> job_with_priority;
+            SCOPE_EXIT({ if (job_with_priority) releaseJob(job_with_priority); });
+            {
+                ServerOwnedMemoryScope server_owned;
+                job_with_priority.emplace(Job{},
                     priority,
                     metric_scheduled_jobs,
                     /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
@@ -567,6 +590,9 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                     /// capture_frame_pointers
                     DB::Exception::enable_job_stack_trace,
                     std::move(available_threads_decrement));
+            }
+            job_with_priority->job = std::move(job);
+            jobs.emplace(std::move(*job_with_priority));
 
             ++scheduled_jobs;
 
@@ -589,13 +615,18 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         /// avoids a thundering herd where every idle thread wakes, contends for the
         /// mutex, and goes back to sleep on every job schedule.
         ///
-        /// Notify while still holding `mutex`: once `idle_wakeup_flag` is set, a
-        /// spurious wakeup is enough for the worker to run and remove itself from
-        /// the pool, so the raw `ThreadFromThreadPool` pointer must not be used
-        /// after the lock is released.
+        /// Notify after releasing `mutex`, otherwise the woken thread blocks on it right away.
+        /// Once `idle_wakeup_flag` is set, a spurious wakeup is enough for the thread to run
+        /// and remove itself from the pool, so only its CV, not the thread, is used after unlock.
         if (ThreadFromThreadPool * thread_to_wake = popNewestIdleThreadNoLock())
-            wakeIdleThreadNoLock(thread_to_wake);
+        {
+            thread_to_wake->idle_wakeup_flag = true;
+            idle_thread_cv = thread_to_wake->cv;
+        }
     }
+
+    if (idle_thread_cv)
+        idle_thread_cv->notify_one();
 
     ProfileEvents::increment(std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
 
@@ -853,7 +884,7 @@ template <typename Thread>
 void ThreadPoolImpl<Thread>::wakeIdleThreadNoLock(ThreadFromThreadPool * thread)
 {
     thread->idle_wakeup_flag = true;
-    thread->cv.notify_one();
+    thread->cv->notify_one();
 }
 
 template <typename Thread>
@@ -1086,7 +1117,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             {
                 idle_wakeup_flag = false;
                 parent_pool.pushIdleThreadNoLock(this);
-                cv.wait(lock, [this]
+                cv->wait(lock, [this]
                 {
                     return idle_wakeup_flag
                         || !parent_pool.jobs.empty()
@@ -1124,7 +1155,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 {
                     ALLOW_ALLOCATIONS_IN_SCOPE;
                     /// job can contain packaged_task which can set exception during destruction
-                    job_data.reset();
+                    releaseJob(job_data);
                 }
                 job_is_done = true;
                 continue;
@@ -1196,7 +1227,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 
             /// job should be reset before decrementing scheduled_jobs to
             /// ensure that the Job destroyed before wait() returns.
-            job_data.reset();
+            releaseJob(job_data);
         }
         catch (...)
         {
@@ -1213,7 +1244,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 
             /// job should be reset before decrementing scheduled_jobs to
             /// ensure that the Job destroyed before wait() returns.
-            job_data.reset();
+            releaseJob(job_data);
         }
 
         DB::Exception::clearThreadFramePointers();

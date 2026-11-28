@@ -16,7 +16,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ServerOwnedMemory.h>
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -86,17 +86,26 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         initPrimaryIndex();
 
     initSkipIndices();
+
+    for (const auto & column : columns_list)
+    {
+        UInt64 min_compress_block_size = settings.min_compress_block_size;
+        const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());
+        /// Honor an explicit column override even when it is 0 ("start a new block at every boundary");
+        /// inheritance is expressed by not setting it (or RESET SETTING), i.e. tryGet returning null.
+        if (column_desc)
+            if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
+                min_compress_block_size = value->safeGet<UInt64>();
+        min_compress_block_sizes.emplace(column.name, min_compress_block_size);
+    }
 }
 
 UInt64 MergeTreeDataPartWriterOnDisk::getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const
 {
-    const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
-    /// Honor an explicit column override even when it is 0 ("start a new block at every boundary");
-    /// inheritance is expressed by not setting it (or RESET SETTING), i.e. tryGet returning null.
-    if (column_desc)
-        if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
-            return value->safeGet<UInt64>();
-    return settings.min_compress_block_size;
+    const auto it = min_compress_block_sizes.find(name_and_type.name);
+    if (it == min_compress_block_sizes.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not in the columns list of the part writer", name_and_type.name);
+    return it->second;
 }
 
 void MergeTreeDataPartWriterOnDisk::cancel() noexcept
@@ -286,7 +295,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
          * And otherwise it will look like excessively growing memory consumption in context of query.
          *  (observed in long INSERT SELECTs)
          */
-        MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+        ServerOwnedMemoryScope temporarily_disable_memory_tracker;
         /// The in-memory primary index lives on the part for its whole lifetime (freed only when the
         /// part is merged away), so build it in the dedicated MergeTree arena — same rationale as the
         /// memory-tracker blocker above.
@@ -388,7 +397,7 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
     {
         if (write_final_mark && !last_index_block.empty())
         {
-            MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+            ServerOwnedMemoryScope temporarily_disable_memory_tracker;
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             calculateAndSerializePrimaryIndexRow(last_index_block, last_index_block.rows() - 1);
         }
@@ -737,7 +746,7 @@ void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
 
 void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
 {
-    if (columns_substreams.getTotalSubstreams() || (index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Compact && !index_granularity_info.mark_type.with_substreams))
+    if (columns_substreams.getTotalSubstreams())
         return;
 
     /// Block sample is required. It's initialized in prepareBlockForWriting on first written block.

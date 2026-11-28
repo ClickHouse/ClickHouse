@@ -61,6 +61,7 @@
 #include <Common/getMappedArea.h>
 #include <Common/SignalHandlers.h>
 #include <Common/remapExecutable.h>
+#include <Common/FilesystemIsolation.h>
 #include <Common/SeccompFilter.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
@@ -113,6 +114,7 @@
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <WindowFunctions/registerWindowFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
@@ -130,6 +132,7 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Common/ReplicasReconnector.h>
+#include <FilesystemIsolationPaths.h>
 #include <MetricsTransmitter.h>
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
@@ -441,6 +444,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 total_memory_profiler_step;
     extern const ServerSettingsDouble total_memory_tracker_sample_probability;
     extern const ServerSettingsBool throw_on_unknown_workload;
+    extern const ServerSettingsBool workloads_respect_server_cpu_limit;
+    extern const ServerSettingsBool workloads_respect_server_memory_limit;
+    extern const ServerSettingsBool implicit_default_workload;
     extern const ServerSettingsBool cpu_slot_preemption;
     extern const ServerSettingsUInt64 cpu_slot_quantum_ns;
     extern const ServerSettingsUInt64 cpu_slot_preemption_timeout_ms;
@@ -514,6 +520,7 @@ namespace ServerSetting
     extern const ServerSettingsBool quick_startup;
     extern const ServerSettingsUInt64 mlock_executable_min_total_memory_amount_bytes;
     extern const ServerSettingsSeccompMode seccomp;
+    extern const ServerSettingsFilesystemIsolationMode filesystem_isolation;
     extern const ServerSettingsUInt32 listen_backlog;
     extern const ServerSettingsBool listen_reuse_port;
     extern const ServerSettingsBool listen_try;
@@ -860,6 +867,34 @@ void setOOMScore(int value, LoggerRawPtr log)
 }
 #endif
 
+
+void Server::beforeStartingThreads()
+{
+    /// From the configuration as it is before a `from_zk` value arrives: the isolation can only be done while the
+    /// process has a single thread, and connecting to ZooKeeper takes several. Only this one setting is read here, and
+    /// the others are loaded and validated in `main` as usual.
+    ServerSettings server_settings;
+    if (config().has("filesystem_isolation"))
+        server_settings.set("filesystem_isolation", config().getString("filesystem_isolation"));
+    const FilesystemIsolationMode mode = server_settings[ServerSetting::filesystem_isolation];
+    if (mode == FilesystemIsolationMode::Disabled)
+    {
+        isolateFilesystem(mode, {});
+        return;
+    }
+#if USE_JEMALLOC
+    /// The only threads by now are the background threads of jemalloc, which `background_thread:true` in its
+    /// compiled-in configuration starts at the first allocation. Disabling them joins them, and `Jemalloc::setup`,
+    /// right after this, starts them again.
+    Jemalloc::setBackgroundThreads(false);
+#endif
+    const std::string startup_directory = fs::current_path().string();
+    isolateFilesystem(
+        mode,
+        [&](bool with_supervisor)
+        { return collectFilesystemIsolationPaths(config(), config_path, original_working_directory, startup_directory, with_supervisor); },
+        getFilesystemIsolationPidFile(config(), config_path, original_working_directory, startup_directory));
+}
 
 void Server::uninitialize()
 {
@@ -1389,6 +1424,7 @@ try
     registerParsers();
     registerFunctions();
     registerAggregateFunctions();
+    registerWindowFunctions();
     registerTableFunctions();
     registerDatabases();
     registerStorages();
@@ -1481,7 +1517,9 @@ try
                 "(it was introduced in Linux 4.18), a seccomp profile may block the rseq system call, or the C library "
                 "did not register the rseq area");
 
-        Silk::initializeFiberScheduler(config().getUInt("silk.fiber_stack_size", Silk::DEFAULT_FIBER_STACK_SIZE));
+        Silk::initialize(
+            config().getUInt("silk.fiber_stack_size", Silk::DEFAULT_FIBER_STACK_SIZE),
+            Poco::Logger::parseLevel(server_settings[ServerSetting::logger_level]));
     }
 #endif
 
@@ -1915,6 +1953,43 @@ try
     /// above so a `from_zk` value of the setting is honored, and still well before any parts are loaded.
     JemallocMergeTreeArena::initialize(server_settings[ServerSetting::jemalloc_merge_tree_arenas]);
     addMergeTreeArenaPoolWarnings(global_context);
+
+    /// The filesystem was isolated in `beforeStartingThreads`, before the logger existed.
+    if (const auto filesystem_isolation = getFilesystemIsolationStatus())
+    {
+        if (filesystem_isolation->isolated)
+        {
+            if (filesystem_isolation->created_pid_namespace)
+            {
+                LOG_INFO(
+                    log,
+                    "Isolated the filesystem of this process in new PID and mount namespaces. This process has the PID {} in its "
+                    "PID namespace and {} outside of it, and the supervisor outside, which owns the pid file, has the PID {}. "
+                    "Only these paths are visible: {}",
+                    getpid(),
+                    filesystem_isolation->serving_host_pid,
+                    filesystem_isolation->supervisor_pid,
+                    fmt::join(filesystem_isolation->visible_paths, ", "));
+            }
+            else
+                LOG_INFO(
+                    log,
+                    "Isolated the filesystem of this process in new user and mount namespaces. Only these paths are visible: {}",
+                    fmt::join(filesystem_isolation->visible_paths, ", "));
+            if (!filesystem_isolation->lost_capabilities.empty())
+                LOG_WARNING(
+                    log,
+                    "The process had to create a user namespace to isolate its filesystem, because it does not have `CAP_SYS_ADMIN`, "
+                    "and lost its capabilities {}. Grant it `CAP_SYS_ADMIN`, which it drops right after the isolation, to keep them",
+                    fmt::join(filesystem_isolation->lost_capabilities, ", "));
+        }
+        else if (!filesystem_isolation->not_isolated_reason.empty())
+            LOG_WARNING(
+                log,
+                "The `filesystem_isolation` server setting is set to `best_effort`, but the filesystem cannot be isolated: {}. "
+                "The server is running without the isolation",
+                filesystem_isolation->not_isolated_reason);
+    }
 
     /// Restrict the server to the system calls it is known to use, as early in the startup as the
     /// configuration allows. That is after the ZooKeeper-include reload above, not before it: a
@@ -2656,10 +2731,12 @@ try
         command_line_skip_check = command_line_config->getBool("skip_check_for_incorrect_settings", false);
     }
 
+    /// The preprocessed configuration goes into `path` as it is used everywhere else: without the whitespace around it,
+    /// and relative to the original working directory rather than to the current one, which differs with `--daemon`.
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
-        server_settings[ServerSetting::path],
+        path_str,
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
         [&](ConfigurationPtr loaded_config, bool initial_loading)
@@ -2738,6 +2815,16 @@ try
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
             ConnectionRegistry::instance().setEnabled(new_server_settings[ServerSetting::collect_connection_metrics]);
+
+            if (const auto requested_filesystem_isolation_mode = getRequestedFilesystemIsolationMode();
+                requested_filesystem_isolation_mode
+                && *requested_filesystem_isolation_mode != new_server_settings[ServerSetting::filesystem_isolation].value)
+                LOG_WARNING(
+                    log,
+                    "The `filesystem_isolation` server setting was changed from `{}` to `{}` in the configuration, but it takes effect only "
+                    "after a restart: the filesystem of a running process is isolated once, at startup",
+                    SettingFieldFilesystemIsolationMode(*requested_filesystem_isolation_mode).toString(),
+                    new_server_settings[ServerSetting::filesystem_isolation].toString());
 
             /// The seccomp filter cannot be changed once installed; `system.server_settings` keeps showing the mode in force.
             if (const auto requested_seccomp_mode = getRequestedSeccompMode();
@@ -3049,7 +3136,29 @@ try
             }
 
             /// Load WORKLOADs and RESOURCEs.
-            global_context->getWorkloadEntityStoragePtr()->loadEntities(config());
+            std::exception_ptr workload_entities_exception;
+            try
+            {
+                global_context->getWorkloadEntityStoragePtr()->loadEntities(config());
+            }
+            catch (...)
+            {
+                if (initial_loading)
+                    throw;
+                workload_entities_exception = std::current_exception();
+            }
+
+            {
+                ImplicitWorkloadEntitiesConfig implicit_entities_config;
+                implicit_entities_config.respect_cpu_limit = new_server_settings[ServerSetting::workloads_respect_server_cpu_limit];
+                implicit_entities_config.respect_memory_limit = new_server_settings[ServerSetting::workloads_respect_server_memory_limit];
+                implicit_entities_config.implicit_default_workload = new_server_settings[ServerSetting::implicit_default_workload];
+                if (implicit_entities_config.respect_cpu_limit && concurrent_threads_soft_limit != UnlimitedSlots)
+                    implicit_entities_config.cpu_slots = static_cast<Int64>(concurrent_threads_soft_limit);
+                if (implicit_entities_config.respect_memory_limit && max_server_memory_usage != 0)
+                    implicit_entities_config.memory_bytes = static_cast<Int64>(max_server_memory_usage);
+                global_context->getWorkloadEntityStoragePtr()->updateImplicitEntities(implicit_entities_config);
+            }
 
             if (!initial_loading)
             {
@@ -3189,6 +3298,9 @@ try
 
             /// Must be the last.
             latest_config = reload_config;
+
+            if (workload_entities_exception)
+                std::rethrow_exception(workload_entities_exception);
         });
 
     const auto listen_hosts = getListenHosts(config());
@@ -3224,6 +3336,7 @@ try
             return global_context->getConfigRef();
         };
 
+        /// `updateServers` does not recreate Keeper listeners, so a config reload must not stop them.
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper
@@ -3250,7 +3363,8 @@ try
                                 global_context->getSettingsRef()[Setting::send_timeout].totalSeconds(),
                                 false),
                             server_pool,
-                            socket));
+                            socket),
+                        /* supports_runtime_reconfiguration = */ false);
                 });
 
             const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -3277,7 +3391,8 @@ try
                                 global_context->getSettingsRef()[Setting::send_timeout].totalSeconds(),
                                 true),
                             server_pool,
-                            socket));
+                            socket),
+                        /* supports_runtime_reconfiguration = */ false);
 #else
                     UNUSED(port);
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
@@ -3314,7 +3429,8 @@ try
                             handler_factory,
                             server_pool,
                             socket,
-                            http_params));
+                            http_params),
+                        /* supports_runtime_reconfiguration = */ false);
                 });
             }
 
@@ -3351,7 +3467,8 @@ try
                             handler_factory,
                             server_pool,
                             socket,
-                            http_params));
+                            http_params),
+                        /* supports_runtime_reconfiguration = */ false);
 #else
                     UNUSED(port);
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS control protocol is disabled because Poco library was built without NetSSL support.");
@@ -5069,6 +5186,7 @@ void Server::updateServers(
         {
             std::string port_name = server->getPortName();
             bool has_host = false;
+            bool has_explicit_host = false;
             bool is_http = false;
             bool is_non_keeper_prometheus = false;
             bool is_prometheus = false;
@@ -5078,7 +5196,8 @@ void Server::updateServers(
             if (port_name.starts_with("protocols."))
             {
                 std::string protocol = port_name.substr(0, port_name.find_last_of('.'));
-                has_host = config.has(protocol + ".host");
+                has_explicit_host = config.has(protocol + ".host");
+                has_host = has_explicit_host && config.getString(protocol + ".host") == server->getListenHost();
 
                 /// Whether any handler in the `impl` chain actually consumes the default session
                 /// user, so that a `default_session_user` change does not restart listeners that
@@ -5173,12 +5292,13 @@ void Server::updateServers(
                 is_non_keeper_prometheus = is_prometheus && !server_settings[ServerSetting::prometheus_keeper_metrics_only];
             }
 
-            if (!has_host)
+            if (!has_explicit_host)
             {
                 const auto & server_listen_hosts =
 #if USE_GRPC || USE_ARROWFLIGHT
                     (port_name == "grpc_port" || port_name == "arrowflight_port") ? grpc_listen_hosts :
 #endif
+                    (port_name == "interserver_http_port" || port_name == "interserver_https_port") ? interserver_listen_hosts :
                     listen_hosts;
                 has_host = std::find(server_listen_hosts.begin(), server_listen_hosts.end(), server->getListenHost()) != server_listen_hosts.end();
             }

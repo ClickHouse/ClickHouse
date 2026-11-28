@@ -1,3 +1,4 @@
+-- Random settings limits: input_format_parquet_preserve_order=(0, 0)
 -- Test: exercises `ReadFromURL::initializePipeline` with a globbed URL whose glob
 -- iterator yields fewer files than `max_threads`, hitting the post-read resize branch
 -- with `output_ports < max_num_streams`.

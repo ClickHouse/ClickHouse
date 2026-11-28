@@ -56,20 +56,20 @@ class Reader
 public:
     explicit Reader(std::string_view data_);
 
-    uint64_t nameCount() const { return name_count; }
-    uint64_t addressCount() const { return address_count; }
-    uint32_t granuleCount() const { return granule_count; }
+    [[nodiscard]] uint64_t nameCount() const { return name_count; }
+    [[nodiscard]] uint64_t addressCount() const { return address_count; }
+    [[nodiscard]] uint32_t granuleCount() const { return granule_count; }
 
-    std::vector<AddressEntry> decodeAddresses() const;
-    size_t maximumNameGranuleSize() const;
+    [[nodiscard]] std::vector<AddressEntry> decodeAddresses() const;
+    [[nodiscard]] size_t maximumNameGranuleSize() const;
     /// Decompresses and decodes every name granule, so that a corrupted name payload is rejected
     /// before the table is used instead of silently producing empty names on lookups.
     void validateNames() const;
     NameGranuleDecoder decodeNameGranule(uint32_t granule_index, ZSTD_DCtx * decompression_context, std::span<char> destination) const;
 
 private:
-    std::string_view compressedNameGranule(uint32_t granule_index) const;
-    size_t nameGranuleContentSize(uint32_t granule_index) const;
+    [[nodiscard]] std::string_view compressedNameGranule(uint32_t granule_index) const;
+    [[nodiscard]] size_t nameGranuleContentSize(uint32_t granule_index) const;
 
     std::string_view data;
     uint64_t name_count;

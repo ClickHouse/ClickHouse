@@ -11,6 +11,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionHelpers.h>
@@ -45,7 +46,14 @@ struct CompareHelperEqual
 template <typename T>
 struct CompareHelperLess
 {
-    bool operator()(const T & a, const T & b) const { return CompareHelper<T>::less(a, b, 1); }
+    bool operator()(const T & a, const T & b) const
+    {
+        /// Only floating point keys need `CompareHelper` (to order `NaN`), and it takes the arguments by value.
+        if constexpr (is_floating_point<T>)
+            return CompareHelper<T>::less(a, b, 1);
+        else
+            return a < b;
+    }
 };
 
 /// The hash has to agree with `CompareHelperEqual`, which is used as the equality predicate of `merged_maps`:
@@ -153,27 +161,27 @@ private:
     using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionMap<KeyType, Plain>>;
 
 public:
-    bool isState() const override
+    [[nodiscard]] bool isState() const override
     {
         return nested_func->isState();
     }
 
-    bool isVersioned() const override
+    [[nodiscard]] bool isVersioned() const override
     {
         return nested_func->isVersioned();
     }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
     {
         return nested_func->getVersionFromRevision(revision);
     }
 
-    size_t getDefaultVersion() const override
+    [[nodiscard]] size_t getDefaultVersion() const override
     {
         return nested_func->getDefaultVersion();
     }
 
-    DataTypePtr getStateType() const override
+    [[nodiscard]] DataTypePtr getStateType() const override
     {
         return this->getStateTypeWithVersionOf(*nested_func);
     }
@@ -185,7 +193,7 @@ public:
         key_type = getKeyType(types, nested_func);
     }
 
-    String getName() const override { return nested_func->getName() + "Map"; }
+    [[nodiscard]] String getName() const override { return nested_func->getName() + "Map"; }
 
     static DataTypePtr getKeyType(const DataTypes & types, const AggregateFunctionPtr & nested)
     {
@@ -289,39 +297,6 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        mergeNestedStates(place, rhs, arena, [&](AggregateDataPtr nested_place, ConstAggregateDataPtr rhs_nested_place)
-        {
-            nested_func->merge(nested_place, rhs_nested_place, arena);
-        });
-    }
-
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        chassert(rhs.getNestedFunction() != nullptr);
-
-        return nested_func->canMergeStateFromDifferentVariant(*rhs.getNestedFunction());
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        chassert(canMergeStateFromDifferentVariant(rhs));
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        mergeNestedStates(place, rhs_place, arena, [&](AggregateDataPtr nested_place, ConstAggregateDataPtr rhs_nested_place)
-        {
-            nested_func->mergeStateFromDifferentVariant(nested_place, *rhs_nested, rhs_nested_place, arena);
-        });
-    }
-
-private:
-    template <typename MergeNested>
-    void mergeNestedStates(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena, MergeNested && merge_nested) const
-    {
         auto & merged_maps = this->data(place).merged_maps;
         const auto & rhs_maps = this->data(rhs).merged_maps;
 
@@ -356,11 +331,10 @@ private:
             }
 
             if (!zero_size_nested)
-                merge_nested(it->second, elem.second);
+                nested_func->merge(it->second, elem.second, arena);
         }
     }
 
-public:
     template <bool up_to_state>
     void destroyImpl(AggregateDataPtr __restrict place) const noexcept
     {
@@ -382,7 +356,7 @@ public:
         destroyImpl<false>(place);
     }
 
-    bool hasTrivialDestructor() const override
+    [[nodiscard]] bool hasTrivialDestructor() const override
     {
         return std::is_trivially_destructible_v<Data> && nested_func->hasTrivialDestructor();
     }
@@ -418,6 +392,19 @@ public:
             KeyType key{};
 
             this->data(place).readKey(key, buf);
+            if constexpr (std::is_same_v<KeyType, String>)
+            {
+                /// `keyAt` reads exactly N bytes of a `FixedString(N)` key, so a key of another length
+                /// could never be found again (e.g. by `rollbackInsertResult`).
+                if (key_type->getTypeId() == TypeIndex::FixedString)
+                {
+                    const size_t n = assert_cast<const DataTypeFixedString &>(*key_type).getN();
+                    if (key.size() != n)
+                        throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "Key of size {} in the serialized state of aggregate function {} does not match its type {}",
+                            key.size(), getName(), key_type->getName());
+                }
+            }
             /// Take the slot before creating the state. `emplace` on a key that is already present
             /// does not insert, so creating first would abandon the fresh state: nothing would
             /// reference it and `destroyImpl` walks only `merged_maps`. `serialize` writes each key
@@ -551,8 +538,8 @@ public:
                 catch (...)
                 {
                     res_offsets.resize_assume_reserved(offsets_before);
-                    for (size_t i = transferred; i-- > 0;)
-                        nested_func->rollbackInsertResult(merged_maps[keys[i]], val_column);
+                    for (size_t i = transferred; i > 0; --i)
+                        nested_func->rollbackInsertResult(merged_maps[keys[i - 1]], val_column);
                     key_column.rollback(*keys_checkpoint);
                     throw;
                 }
@@ -590,9 +577,10 @@ public:
         /// The values were appended in sorted key order while `merged_maps` is unordered, and a row's
         /// undo depends on which place produced it, so recover that order from the keys themselves.
         const size_t appended_end = key_column.size();
-        for (size_t pos = appended_end; pos-- > appended_end - appended;)
+        const size_t appended_begin = appended_end - appended;
+        for (size_t pos = appended_end; pos > appended_begin; --pos)
         {
-            auto it = merged_maps.find(keyAt(key_column, pos));
+            auto it = merged_maps.find(keyAt(key_column, pos - 1));
             if (it == merged_maps.end())
                 abortOnFailedAssertion("AggregateFunctionMap::rollbackInsertResult: appended key is missing from merged_maps");
             nested_func->rollbackInsertResult(it->second, val_column);
@@ -601,9 +589,9 @@ public:
         key_column.popBack(appended);
     }
 
-    bool allocatesMemoryInArena() const override { return true; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
 
-    AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
+    [[nodiscard]] AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 
 
@@ -629,17 +617,17 @@ class AggregateFunctionCombinatorMap final : public IAggregateFunctionCombinator
     }
 
 public:
-    String getName() const override { return "Map"; }
+    [[nodiscard]] String getName() const override { return "Map"; }
 
-    bool transformsArgumentTypes() const override { return true; }
+    [[nodiscard]] bool transformsArgumentTypes() const override { return true; }
 
     /// The values of the maps are passed to the nested function one by one, so the maps are converted around.
-    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
 
     /// The legacy form `sumMap(keys, values1, values2, ...)` (or a tuple of these arrays) passes every value array
     /// to `sumMappedArrays`, while `transformArguments` returns only the type of the first values.
     /// So every value array is probed and converted independently.
-    DataTypes transformArgumentsForVariantConversion(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypes transformArgumentsForVariantConversion(const DataTypes & arguments) const override
     {
         if (const auto * value_arrays = getLegacyValueArrays(arguments))
         {
@@ -683,7 +671,7 @@ public:
         IAggregateFunctionCombinator::convertVariantArgumentsAround(arguments, nested_arguments, converted_nested_arguments);
     }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -724,7 +712,7 @@ public:
         return DataTypes(arguments.begin(), arguments.end() - 1);
     }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,

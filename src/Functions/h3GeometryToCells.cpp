@@ -193,7 +193,7 @@ public:
 
 private:
     /// Leaving the subtree of `root` yields a cell at its resolution or coarser.
-    H3Index nextCandidate(H3Index candidate) const
+    [[nodiscard]] H3Index nextCandidate(H3Index candidate) const
     {
         const H3Index next_cell = nextCellInSequence(candidate);
         return H3_GET_RESOLUTION(next_cell) <= root_res ? H3_NULL : next_cell;

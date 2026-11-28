@@ -5,8 +5,6 @@
 -- result_type (Nullable(JSON)) was passed instead of value_type (JSON) to
 -- SingleValueDataGenericWithColumn::read, causing a type/serialization mismatch.
 
-SET enable_json_type = 1;
-
 -- Test 1: singleValueOrNull with JSON works correctly without MergeTree (no serialize/deserialize cycle).
 SELECT singleValueOrNull(j) FROM (SELECT '{"a":1}'::JSON AS j);
 SELECT singleValueOrNull(j) FROM (SELECT '{"a":1}'::JSON AS j FROM numbers(3));
