@@ -198,6 +198,27 @@ bool TimeSeriesDeduplicationCache::isExpired(const WrittenRow & written_row, Tim
     return now >= written_row.expiration_time;
 }
 
+void TimeSeriesDeduplicationCache::addWrittenRows(const Block & block, size_t key_column_index)
+{
+    if (!block.rows())
+        return;
+
+    PaddedPODArray<UInt8> filter;
+    filter.resize_fill(block.rows(), true);
+    auto hashed_rows = hashRows(block, key_column_index, filter);
+
+    auto now = currentTime();
+    /// Spread remaining lifetimes over the full expiration period, so a restarted server does not rewrite every series at once.
+    Float64 min_ratio = expiration_seconds ? (1.0 / static_cast<Float64>(expiration_seconds)) : 0.0;
+    std::uniform_real_distribution<Float64> lifetime_ratio_distribution(min_ratio, 1.0);
+    for (const auto & hashed_row : hashed_rows)
+    {
+        Float64 lifetime_ratio = lifetime_ratio_distribution(thread_local_rng);
+        WrittenRow written_row{.row_hash = hashed_row.row_hash, .expiration_time = getExpirationTime(now, lifetime_ratio)};
+        cache.set(hashed_row.key_hash, std::make_shared<WrittenRow>(written_row));
+    }
+}
+
 void TimeSeriesDeduplicationCache::markRowsAsWritten(PendingRows && pending_rows_)
 {
     PendingRows pending_rows = std::move(pending_rows_);

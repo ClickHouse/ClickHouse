@@ -1,0 +1,20 @@
+<test>
+    <settings>
+        <enable_time_series_table>1</enable_time_series_table>
+    </settings>
+
+    <!-- 10000 series fill a cache of 10000 entries (about 144 bytes each). -->
+    <create_query>CREATE TABLE ts_tags_prewarm_perf ENGINE = TimeSeries SETTINGS tags_deduplication_cache_size_bytes = 1440000 TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id)</create_query>
+    <fill_query>INSERT INTO ts_tags_prewarm_perf (metric_name, tags, samples) SELECT 'm', map('job', toString(number)), [(toDateTime64(0, 3), 0.)] FROM numbers(10000)</fill_query>
+
+    <!-- Each repetition attaches the table and then inserts the stored series. -->
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CLIENT} --database default --query "
+            DETACH TABLE ts_tags_prewarm_perf;
+            ATTACH TABLE ts_tags_prewarm_perf;
+            INSERT INTO ts_tags_prewarm_perf (metric_name, tags, samples) SELECT 'm', map('job', toString(number)), [(toDateTime64(1, 3), 0.)] FROM numbers(10000);
+        "
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS ts_tags_prewarm_perf</drop_query>
+</test>
