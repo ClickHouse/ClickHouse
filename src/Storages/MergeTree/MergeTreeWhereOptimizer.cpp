@@ -527,13 +527,18 @@ static bool computesSharedNode(const RPNBuilderTreeNode & node, const std::unord
     return false;
 }
 
-static void collectConjuncts(const RPNBuilderTreeNode & node, std::vector<RPNBuilderTreeNode> & conjuncts)
+static void collectConjuncts(
+    const RPNBuilderTreeNode & node,
+    std::vector<RPNBuilderTreeNode> & conjuncts,
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & expanded)
 {
     auto fn = node.toFunctionNodeOrNull();
     if (fn.has_value() && fn->getFunctionName() == "and")
     {
+        if (!expanded.insert(fn->getDAGNode()).second)
+            return;
         for (size_t i = 0; i < fn->getArgumentsSize(); ++i)
-            collectConjuncts(fn->getArgumentAt(i), conjuncts);
+            collectConjuncts(fn->getArgumentAt(i), conjuncts, expanded);
     }
     else
         conjuncts.push_back(node);
@@ -575,7 +580,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
 {
     /// Flatten the top-level AND chain into individual conjuncts.
     std::vector<RPNBuilderTreeNode> conjuncts;
-    collectConjuncts(node, conjuncts);
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> expanded;
+    collectConjuncts(node, conjuncts, expanded);
 
     struct ConjunctInfo
     {
@@ -839,7 +845,8 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
     if (!where_optimizer_context.allow_reorder_prewhere_conditions)
     {
         std::vector<RPNBuilderTreeNode> conjuncts;
-        collectConjuncts(node, conjuncts);
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> expanded;
+        collectConjuncts(node, conjuncts, expanded);
         for (const auto & conjunct : conjuncts)
         {
             NameSet columns;
