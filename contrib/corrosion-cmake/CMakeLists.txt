@@ -210,6 +210,18 @@ elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
 
+if (ENABLE_FUZZING)
+    # Match CMakeLists.txt:1017 (`-fsanitize=fuzzer-no-link -fno-sanitize-coverage=pc-table`):
+    # C++ targets omit `pc-table` to stay within the 2 GiB small code model, and libFuzzer
+    # aborts at startup if `__sancov_cntrs` and `__sancov_pcs` have different total counts.
+    list(APPEND RUSTFLAGS
+        "-Cpasses=sancov-module"
+        "-Cllvm-args=-sanitizer-coverage-level=4"
+        "-Cllvm-args=-sanitizer-coverage-inline-8bit-counters"
+        "-Cllvm-args=-sanitizer-coverage-trace-compares"
+    )
+endif()
+
 # Clang CFI is whole-program: the Rust code, its standard library included, is emitted as LLVM bitcode with CFI type
 # metadata and checked in the final link with the C and C++ code (which uses the same normalized integer encoding).
 if (ENABLE_CFI)
@@ -303,8 +315,16 @@ set(RUST_CONTRIB_WORKSPACE_MANIFEST "${ClickHouse_SOURCE_DIR}/contrib/rust-contr
 # Delta Lake reads). CI was unaffected only because it always passes -DSANITIZE= explicitly.
 if (SANITIZE)
     set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 1
-codegen-units = 4")
-    message(STATUS "Rust release profile: opt-level = 1, to limit LLVM memory usage under sanitizers")
+codegen-units = 4
+[profile.release.package._ch_rust_dwarf]
+opt-level = 2
+[profile.release.package.gimli]
+opt-level = 2
+[profile.release.package.object]
+opt-level = 2
+[profile.release.package.memchr]
+opt-level = 2")
+    message(STATUS "Rust release profile: opt-level = 1 (opt-level = 2 for DWARF parser), to limit LLVM memory usage under sanitizers")
 elseif (ENABLE_CFI)
     # CFI links the crates as bitcode, where every codegen unit repeats the inline functions it uses.
     # vortex-array keeps 4 units so that it is not the longest ThinLTO backend job of the link.

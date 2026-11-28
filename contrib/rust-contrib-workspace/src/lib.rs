@@ -4,6 +4,8 @@
 pub use _ch_rust_chdig;
 #[cfg(feature = "delta_kernel")]
 pub use _ch_rust_delta_kernel;
+#[cfg(feature = "dwarf")]
+pub use _ch_rust_dwarf;
 #[cfg(feature = "pco")]
 pub use _ch_rust_pco;
 #[cfg(feature = "polyglot")]
