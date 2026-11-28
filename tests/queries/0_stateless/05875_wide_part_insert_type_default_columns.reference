@@ -1,0 +1,15 @@
+t_defaults_no_sparse	[]
+t_defaults_nullable_sparse	['d_dec','d_f64','d_fs','d_s','d_u64','n','n_hidden','u_last']
+t_defaults_sparse	['d_dec','d_f64','d_fs','d_s','d_u64','u_last']
+10000	0	10000	42	1	30000
+10000	0	10000	42	1	30000
+10000	0	10000	42	1	30000
+1	10000
+2	9999
+3	9998
+1	10000
+2	9999
+3	9998
+1	0
+2	0
+3	0

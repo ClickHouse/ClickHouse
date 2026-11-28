@@ -1,0 +1,52 @@
+<test>
+    <!-- The columns not listed in the INSERT get the default of their type in every row: the sparse
+         ones (numbers, strings) and the full ones (Nullable, LowCardinality). -->
+    <settings>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE t_insert_defaults_sparse
+        (
+            k UInt64, v UInt64,
+            u1 UInt64, u2 UInt64, u3 UInt64, u4 UInt64, u5 UInt64, u6 UInt64, u7 UInt64, u8 UInt64, u9 UInt64,
+            u10 UInt64, u11 UInt64, u12 UInt64, u13 UInt64, u14 UInt64, u15 UInt64, u16 UInt64, u17 UInt64,
+            u18 UInt64, u19 UInt64, u20 UInt64, u21 UInt64, u22 UInt64, u23 UInt64, u24 UInt64, u25 UInt64,
+            u26 UInt64, u27 UInt64, u28 UInt64, u29 UInt64, u30 UInt64,
+            s1 String, s2 String, s3 String, s4 String, s5 String, s6 String, s7 String, s8 String, s9 String,
+            s10 String, s11 String, s12 String, s13 String, s14 String, s15 String, s16 String, s17 String,
+            s18 String, s19 String, s20 String, s21 String, s22 String, s23 String, s24 String, s25 String,
+            s26 String, s27 String, s28 String, s29 String, s30 String
+        )
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+    </create_query>
+    <create_query>
+        CREATE TABLE t_insert_defaults_full
+        (
+            k UInt64, v UInt64,
+            n1 Nullable(String), n2 Nullable(String), n3 Nullable(String), n4 Nullable(String),
+            n5 Nullable(String), n6 Nullable(String), n7 Nullable(String), n8 Nullable(String),
+            n9 Nullable(String), n10 Nullable(String), n11 Nullable(String), n12 Nullable(String),
+            n13 Nullable(String), n14 Nullable(String), n15 Nullable(String), n16 Nullable(String),
+            n17 Nullable(String), n18 Nullable(String), n19 Nullable(String), n20 Nullable(String),
+            n21 Nullable(String), n22 Nullable(String), n23 Nullable(String), n24 Nullable(String),
+            n25 Nullable(String), n26 Nullable(String), n27 Nullable(String), n28 Nullable(String),
+            n29 Nullable(String), n30 Nullable(String), n31 Nullable(String), n32 Nullable(String),
+            n33 Nullable(String), n34 Nullable(String), n35 Nullable(String),
+            lc1 LowCardinality(String), lc2 LowCardinality(String), lc3 LowCardinality(String),
+            lc4 LowCardinality(String), lc5 LowCardinality(String)
+        )
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES t_insert_defaults_sparse</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_insert_defaults_full</fill_query>
+
+    <query>INSERT INTO t_insert_defaults_sparse (k, v) SELECT cityHash64(number), number FROM numbers(2000000)</query>
+    <query>INSERT INTO t_insert_defaults_full (k, v) SELECT cityHash64(number), number FROM numbers(2000000)</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_insert_defaults_sparse</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_insert_defaults_full</drop_query>
+</test>

@@ -1,5 +1,8 @@
 #include <algorithm>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnString.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -414,6 +417,24 @@ void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_wri
     }
 }
 
+namespace
+{
+
+/// Every row holds the default of its type, so any permutation of the rows gives the same column.
+/// For Nullable, the values under the NULLs must be defaults too.
+bool isColumnOfTypeDefaults(const IColumn & column)
+{
+    if (column.isConst() || column.isSparse())
+        return false;
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+        return nullable->hasOnlyTypeDefaults() && isColumnOfTypeDefaults(nullable->getNestedColumn());
+    if (typeid_cast<const ColumnLowCardinality *>(&column) || typeid_cast<const ColumnString *>(&column) || column.isFixedAndContiguous())
+        return column.hasOnlyTypeDefaults();
+    return false;
+}
+
+}
+
 void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache)
 {
     Block block_to_write = block;
@@ -478,8 +499,19 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
     {
         auto & column = block_to_write.getByName(it->name);
 
-        if (!ISerialization::hasKind(getSerialization(it->name)->getKindStack(), ISerialization::Kind::SPARSE))
+        const auto kind_stack = getSerialization(it->name)->getKindStack();
+        if (!ISerialization::hasKind(kind_stack, ISerialization::Kind::SPARSE))
             column.column = recursiveRemoveSparse(column.column);
+
+        const bool sparse = kind_stack.back() == ISerialization::Kind::SPARSE;
+        const bool only_type_defaults = (permutation || sparse) && isColumnOfTypeDefaults(*column.column);
+        if (only_type_defaults && sparse)
+        {
+            /// Sparse serialization writes no value for this column: do not search every granule for one.
+            auto all_defaults = ColumnSparse::create(column.column->cloneEmpty());
+            all_defaults->insertManyDefaults(column.column->size());
+            column.column = std::move(all_defaults);
+        }
 
         if (permutation)
         {
@@ -492,6 +524,10 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
             {
                 const auto & index_column = *skip_indexes_block.getByName(it->name).column;
                 writeColumn(*it, index_column, offset_substreams, granules_to_write);
+            }
+            else if (only_type_defaults)
+            {
+                writeColumn(*it, *column.column, offset_substreams, granules_to_write);
             }
             else
             {
