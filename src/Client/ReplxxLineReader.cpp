@@ -18,9 +18,6 @@
 #include <cstring>
 #include <unistd.h>
 
-#if defined(OS_DARWIN)
-#    include <dlfcn.h>
-#endif
 #include <functional>
 #include <limits>
 #include <sys/file.h>
@@ -88,28 +85,26 @@ std::string getEditor()
     return editor;
 }
 
-/// See comments in ShellCommand::executeImpl()
 int executeCommand(char * const argv[])
 {
 #if defined(OS_DARWIN)
-    /// x86_64 macOS binds library symbols lazily (there is no `-z now` there), and binding `vfork` in the call itself
-    /// can deadlock in a multithreaded program. So resolve it before the call. Elsewhere everything is bound at startup.
-    static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
-    if (!real_vfork)
-        throw std::runtime_error("Cannot find vfork symbol");
-    pid_t pid = reinterpret_cast<pid_t (*)()>(real_vfork)();
+    /// Use separate memory for the child on all supported macOS versions.
+    pid_t pid = fork();
 #else
+    /// Call `vfork` directly so the compiler preserves the parent's stack frame while the child
+    /// runs on it; see `ShellCommand::executeImpl`.
     pid_t pid = vfork(); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c,clang-analyzer-security.insecureAPI.vfork)
 #endif
 
     if (-1 == pid)
-        throw std::runtime_error(fmt::format("Cannot vfork {}: {}", argv[0], errnoToString()));
+        throw std::runtime_error(fmt::format("Cannot create child process for {}: {}", argv[0], errnoToString()));
 
-    /// The child only calls async-signal-safe functions before `exec`.
-    // NOLINTBEGIN(clang-analyzer-unix.Vfork)
     /// Child
     if (0 == pid)
     {
+        /// Only `sigemptyset` and `sigprocmask` before `exec`: async-signal-safe, touching nothing the parent
+        /// shares - as `posix_spawn` does in its own child.
+        /// NOLINTBEGIN(clang-analyzer-unix.Vfork)
         sigset_t mask;
         sigemptyset(&mask);
         sigprocmask(0, nullptr, &mask); // NOLINT(concurrency-mt-unsafe) // ok in newly created process
@@ -117,8 +112,8 @@ int executeCommand(char * const argv[])
 
         execvp(argv[0], argv);
         _exit(-1);
+        /// NOLINTEND(clang-analyzer-unix.Vfork)
     }
-    // NOLINTEND(clang-analyzer-unix.Vfork)
 
     int status = 0;
     do

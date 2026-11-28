@@ -1,0 +1,41 @@
+--- the region of a pooled worker is charged to the query that uses it
+error: MEMORY_LIMIT_EXCEEDED UDF_EXECUTION_FAILED
+--- a pooled region is counted once, not on every borrow
+Key 1
+Key 2
+Key 3
+Key 4
+Key 5
+1
+--- a borrow refused by the memory limit leaves the pool as it was
+error: MEMORY_LIMIT_EXCEEDED UDF_EXECUTION_FAILED
+0
+1
+error: MEMORY_LIMIT_EXCEEDED UDF_EXECUTION_FAILED
+1
+1
+1
+--- the region of an idle pooled worker is charged to the server, exactly once
+Key 1
+1
+67108864
+67108864
+Key 1
+67108864
+0
+0
+0
+--- a pooled worker keeps the region it grew
+8000
+1
+1	1
+1
+8000
+1
+1
+1
+0
+--- a worker discarded for its stdout still reports its CPU and memory
+1
+1
+1

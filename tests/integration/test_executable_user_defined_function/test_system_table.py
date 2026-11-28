@@ -297,6 +297,13 @@ def test_system_user_defined_functions_columns(started_cluster):
         "execute_direct",
         "lifetime",
         "deterministic",
+        "stderr_reaction",
+        "check_exit_code",
+        # Shared-memory transport
+        "use_shared_memory",
+        "shared_memory_size",
+        "shared_memory_max_size",
+        "command_pipe_capacity",
     ]
 
     actual_columns = result.strip().split('\n')

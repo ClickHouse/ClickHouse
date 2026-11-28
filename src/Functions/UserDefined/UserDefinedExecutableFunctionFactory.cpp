@@ -285,7 +285,7 @@ public:
                 if (sampler->poolWaitDone())
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionPoolWaitMicroseconds, sampler->getPoolWaitMicroseconds());
 
-                /// Byte counters are recorded by the pipe buffers as data streams through
+                /// Byte counters include pipe traffic and shared-memory payloads
                 /// (`recordInputBytes` / `recordOutputBytes`) and are valid for any call
                 /// that performed I/O, independent of whether the child was reaped.
                 ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionInputBytes, sampler->getInputBytes());
