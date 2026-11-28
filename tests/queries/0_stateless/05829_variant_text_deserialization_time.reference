@@ -1,0 +1,46 @@
+TSV
+12:00:00	Time
+string	String
+12:00:00.500	Time64(3)
+string	String
+1.5	BFloat16
+string	String
+CSV
+12:00:00	Time
+string	String
+JSONEachRow
+12:00:00	Time
+string	String
+Values
+12:00:00	Time
+string	String
+CAST
+Time	Time64(3)
+JSONExtract
+Time64(3)	Time
+Time and DateTime
+12:00:00	Time
+12:00:00.500	Time64(3)
+2020-01-01 00:00:00.000	DateTime64(3)
+string	String
+Nested
+[\'12:00:00\']	Array(Time)
+Ranks
+BFloat16
+Decimal(9, 2)
+12	Float64
+12:00:00	Time
+2020-01-01 00:00:00	DateTime
+00:00:12	Time
+00:00:42	Time
+Interval
+2020-01-01	Date
+42	IntervalDay
+string	String
+IntervalDay	IntervalDay
+Boundaries
+Decimal(76, 2)
+Float64
+Time
+Time64(3)
+DateTime64(3)

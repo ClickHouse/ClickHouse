@@ -48,9 +48,9 @@ static void checkByCompressedReadBuffer(const std::string & mrk_path, const std:
         out << ", decompressed size " << bin_in.available();
 
         out << ".\n" << DB::flush;
-
-        out.finalize();
     }
+
+    out.finalize();
 }
 
 
