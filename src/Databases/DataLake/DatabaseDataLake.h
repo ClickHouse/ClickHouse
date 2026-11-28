@@ -11,7 +11,11 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/MultiVersion.h>
 #include <Common/SecretString.h>
+#include <Common/SettingsChanges.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
+
+#include <condition_variable>
+#include <mutex>
 
 namespace DB
 {
@@ -98,6 +102,9 @@ public:
     StoragePtr maybeCreateTableInExternalCatalog(ContextPtr context_, const ASTCreateQuery & create, const ColumnsDescription & columns) const override;
 
     ASTs getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const;
+
+    /// The settings of the database that all its tables take, also a new table unless the `CREATE TABLE` query sets them.
+    SettingsChanges getSettingsForTables() const;
 
     void applyCatalogSpecificConfiguration(StorageObjectStorageConfiguration & configuration) const;
 
@@ -208,6 +215,13 @@ private:
 
     void evictStatefulTable(const String & name) const;
 
+    /// Shuts down all the cached tables with background compaction, and waits for the tables that were taken from the cache
+    /// before and that another thread still shuts down. A query builds them again.
+    void shutdownStatefulTables();
+
+    /// Called when the shutdown of `count` tables counted in `stateful_tables_shutting_down` is done.
+    void finishStatefulTablesShutdown(size_t count) const;
+
     /// For tables which have merges.
     struct StatefulTable
     {
@@ -219,6 +233,11 @@ private:
 
     mutable std::mutex stateful_tables_mutex;
     mutable std::unordered_map<String, StatefulTable> stateful_tables TSA_GUARDED_BY(stateful_tables_mutex);
+    /// The tables taken from `stateful_tables` whose shutdown is not done yet. The cache is the only registry of the started
+    /// tables, so `shutdownStatefulTables` waits for these too: the background jobs of a table with the previous settings
+    /// must not run after `ALTER DATABASE ... MODIFY SETTING` returns.
+    mutable size_t stateful_tables_shutting_down TSA_GUARDED_BY(stateful_tables_mutex) = 0;
+    mutable std::condition_variable stateful_tables_shut_down;
 
     const UUID db_uuid;
 };

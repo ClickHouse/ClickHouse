@@ -73,7 +73,9 @@ struct DatabaseDataLakeSettings
 
     DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES(DatabaseDataLakeSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void loadFromQuery(const ASTStorage & storage_def, bool is_attach);
+    /// `is_existing_definition` is for a definition that was accepted before, maybe by an older version: attached,
+    /// recovered from the stored metadata or restored from a backup. The settings of such a definition are not checked.
+    void loadFromQuery(const ASTStorage & storage_def, bool is_existing_definition);
 
     void applyChanges(const SettingsChanges & changes);
 
@@ -86,6 +88,17 @@ struct DatabaseDataLakeSettings
     static const String & getSettingName(DatabaseDataLakeSettingsBool setting);
 
     static bool hasBuiltin(std::string_view name);
+
+    /// Whether `name` is one of the settings of the Iceberg table engine that can be set for the database, which applies
+    /// them to all its Iceberg tables: the ones marked with `DATABASE_AND_TABLE_SETTING` in
+    /// `DATA_LAKE_STORAGE_RELATED_SETTINGS`.
+    /// The database handles them itself, so `ALTER DATABASE ... MODIFY SETTING` can change them for any catalog type,
+    /// except `disk`, see `DatabaseDataLake::applySettingsChanges`.
+    static bool isDatabaseAndTableSetting(std::string_view name);
+
+    /// Throws if `name` is a setting of the data lake table engines in `DATA_LAKE_STORAGE_RELATED_SETTINGS` that is not
+    /// marked with `DATABASE_AND_TABLE_SETTING`, so it cannot be set for the database.
+    static void checkCanBeSetForDatabase(std::string_view name);
 
 private:
     std::unique_ptr<DatabaseDataLakeSettingsImpl> impl;

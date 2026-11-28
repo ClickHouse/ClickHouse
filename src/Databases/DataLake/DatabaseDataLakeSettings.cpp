@@ -9,6 +9,11 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Common/Exception.h>
 
+#include <fmt/ranges.h>
+
+#include <algorithm>
+#include <array>
+
 namespace DB
 {
 
@@ -86,7 +91,7 @@ void DatabaseDataLakeSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
-void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def, bool is_attach)
+void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def, bool is_existing_definition)
 {
     if (storage_def.settings)
     {
@@ -94,8 +99,9 @@ void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def, boo
         {
             for (const auto & change : storage_def.settings->changes)
             {
-                if (!is_attach && change.name.starts_with("iceberg_") && change.name != "iceberg_timezone_for_timestamptz")
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting {} is used for storage. Please use the setting without `iceberg_` prefix", change.name);
+                /// Only for a new definition, so that an existing one still loads.
+                if (!is_existing_definition)
+                    checkCanBeSetForDatabase(change.name);
                 if (change.name == "disk")
                     DiskFromAST::ensureDiskIsNotInline(change.value);
             }
@@ -121,6 +127,42 @@ SettingsChanges DatabaseDataLakeSettings::allChanged() const
 bool DatabaseDataLakeSettings::hasBuiltin(std::string_view name)
 {
     return DatabaseDataLakeSettingsImpl::hasBuiltin(name);
+}
+
+bool DatabaseDataLakeSettings::isDatabaseAndTableSetting(std::string_view name)
+{
+    const auto & accessor = DatabaseDataLakeSettingsTraits::Accessor::instance();
+    const size_t index = accessor.find(DatabaseDataLakeSettingsTraits::resolveName(name));
+    return index != static_cast<size_t>(-1) && accessor.isDatabaseAndTableSetting(index);
+}
+
+/// The settings of the data lake table engines that the database checks. The format settings, which it gives to all its
+/// tables too, and the obsolete settings, which do nothing, are not here.
+#define TABLE_ENGINE_SETTING_NAME(TYPE, NAME, ...) #NAME,
+static constexpr auto table_engine_settings
+    = std::to_array<std::string_view>({DATA_LAKE_STORAGE_RELATED_SETTINGS(TABLE_ENGINE_SETTING_NAME, TABLE_ENGINE_SETTING_NAME)});
+#undef TABLE_ENGINE_SETTING_NAME
+
+void DatabaseDataLakeSettings::checkCanBeSetForDatabase(std::string_view name)
+{
+    /// An unknown name is reported by `applyChanges`.
+    const std::string_view resolved_name = DatabaseDataLakeSettingsTraits::resolveName(name);
+    if (std::ranges::find(table_engine_settings, resolved_name) == table_engine_settings.end() || isDatabaseAndTableSetting(name))
+        return;
+
+    const auto & accessor = DatabaseDataLakeSettingsTraits::Accessor::instance();
+    Strings table_settings;
+    for (size_t i = 0; i < accessor.size(); ++i)
+    {
+        if (accessor.isDatabaseAndTableSetting(i))
+            table_settings.push_back(accessor.getName(i));
+    }
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Table setting `{}` cannot be set for a `DataLakeCatalog` database. "
+        "The table settings that the database applies to all its tables are: {}",
+        name,
+        fmt::join(table_settings, ", "));
 }
 
 static const String & getSettingNameByOffset(size_t offset)
