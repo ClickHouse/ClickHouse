@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/FlattenTupleForCSVHeader.h>
 #include <IO/Operators.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -112,6 +113,11 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
     if (!with_names && !with_types && try_detect_header)
         tryDetectHeader(column_names, type_names);
 
+    if (!column_names.empty() && format_settings.with_names_use_header && format_reader->readsTupleFromSeparateFields())
+        collapseCSVHeaderTupleNames(
+            getPort().getHeader(), column_indexes_by_names, format_settings, column_names, type_names,
+            format_settings.with_types_use_header, /*header_detection=*/ is_header_detected);
+
     if (!column_names.empty())
     {
         if (format_settings.with_names_use_header)
@@ -180,7 +186,19 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(VectorWi
     /// or column names from provided header is a subset of values from this row
     auto column_names = getPort().getHeader().getNames();
     UnorderedSetWithMemoryTracking<std::string_view> column_names_set(column_names.begin(), column_names.end());
-    UnorderedSetWithMemoryTracking<std::string_view> first_row_values_set(first_row_values.begin(), first_row_values.end());
+    /// Collapse the row's flattened `Tuple` names before the subset test; `column_names_out` keeps it raw for `readPrefix`.
+    VectorWithMemoryTracking<String> collapsed_first_row;
+    const auto * first_row_names = &first_row_values;
+    if (format_reader->readsTupleFromSeparateFields())
+    {
+        collapsed_first_row = first_row_values;
+        VectorWithMemoryTracking<String> no_types;
+        collapseCSVHeaderTupleNames(
+            getPort().getHeader(), column_indexes_by_names, format_settings, collapsed_first_row, no_types,
+            /*check_types=*/ false, /*header_detection=*/ true);
+        first_row_names = &collapsed_first_row;
+    }
+    UnorderedSetWithMemoryTracking<std::string_view> first_row_values_set(first_row_names->begin(), first_row_names->end());
     if (!isSubsetOf(first_row_values_set, column_names_set) && !isSubsetOf(column_names_set, first_row_values_set))
     {
         /// Rollback to the beginning of the first row to parse it as data later.

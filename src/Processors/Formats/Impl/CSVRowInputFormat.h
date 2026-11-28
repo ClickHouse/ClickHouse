@@ -64,6 +64,11 @@ public:
 
     void setDataTypes(const DataTypes & types) override;
 
+    [[nodiscard]] bool readsTupleFromSeparateFields() const override
+    {
+        return format_settings.csv.deserialize_separate_columns_into_tuple && format_settings.csv.tuple_delimiter == format_settings.csv.delimiter;
+    }
+
     bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) override;
 
     void skipRow() override;

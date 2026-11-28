@@ -48,6 +48,13 @@ public:
 
     using EscapingRule = FormatSettings::EscapingRule;
 
+    /// `csv.delimiter` is rewritten per field by `updateFormatSettings`, so compare the field delimiter.
+    [[nodiscard]] bool readsTupleFromSeparateFields() const override
+    {
+        return format_settings.custom.escaping_rule == EscapingRule::CSV && format_settings.csv.deserialize_separate_columns_into_tuple
+            && format_settings.custom.field_delimiter.size() == 1 && format_settings.custom.field_delimiter[0] == format_settings.csv.tuple_delimiter;
+    }
+
     bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) override;
 
     void skipField(size_t /*file_column*/) override { skipField(); }
