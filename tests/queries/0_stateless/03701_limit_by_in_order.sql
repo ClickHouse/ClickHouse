@@ -10,8 +10,8 @@ INSERT INTO 03701_unsorted SELECT intDiv(number, 2), number, '2025-05-05' FROM n
 INSERT INTO 03701_unsorted SELECT intDiv(number, 3) + 10, number, '2025-05-06' FROM numbers(9);
 INSERT INTO 03701_unsorted SELECT number + 50, number, '2025-05-07' FROM numbers(500);
 
--- DISTINCT for explain outputs are required due to parallel replicas tests, as there
--- are created multiple LimitByTransforms (pushed down to replicas and the global one)
+-- `DISTINCT` removes repeated processor names from the explain output because parallel replicas can create
+-- several `LIMIT BY` transforms, both on the replicas and in the global pipeline.
 
 SELECT DISTINCT 'Unsorted ORDER BY key LIMIT BY key: ' || replaceRegexpOne(trim(BOTH ' ' FROM explain), ' × \\d+$', '')
 FROM (EXPLAIN PIPELINE SELECT key FROM 03701_unsorted ORDER BY key LIMIT 1 BY key LIMIT 10)

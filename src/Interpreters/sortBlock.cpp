@@ -411,8 +411,10 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit,
     block.setColumns(columns);
 }
 
-void sortBlockAndDeduplicate(Block & block, const SortDescription & description, IColumn::PermutationSortStability stability)
+void sortBlockAndLimitGroupRows(
+    Block & block, const SortDescription & description, size_t group_limit, IColumn::PermutationSortStability stability)
 {
+    chassert(group_limit > 0);
 #ifndef NDEBUG
     block.checkNumberOfRows();
 #endif
@@ -429,23 +431,26 @@ void sortBlockAndDeduplicate(Block & block, const SortDescription & description,
     /// No non-constant sort column: every row is equal to the first one.
     if (permutation.empty())
     {
-        if (block.rows() > 1)
+        if (block.rows() > group_limit)
         {
-            transformColumnsWithSharedIndex(columns, [](const ColumnPtr & col) { return col->cut(0, 1); });
+            transformColumnsWithSharedIndex(columns, [group_limit](const ColumnPtr & col) { return col->cut(0, group_limit); });
             block.setColumns(columns);
         }
         return;
     }
 
-    if (!equal_ranges.empty())
+    /// Keep the first `group_limit` positions of each equal range. The write position never passes the read
+    /// position, so retained entries can be compacted in the existing permutation. Without a range longer
+    /// than `group_limit`, every row stays, and only the order may change.
+    auto is_longer_than_limit = [group_limit](const EqualRange & range) { return range.size() > group_limit; };
+    if (std::ranges::any_of(equal_ranges, is_longer_than_limit))
     {
-        /// Keep the first position of each equal range. The write position never passes the read
-        /// position, so retained entries can be compacted in the existing permutation.
         size_t read_pos = 0;
         size_t write_pos = 0;
         for (const auto & range : equal_ranges)
         {
-            while (read_pos <= range.from)
+            const size_t kept_end = range.from + std::min(range.size(), group_limit);
+            while (read_pos < kept_end)
                 permutation[write_pos++] = permutation[read_pos++];
             read_pos = range.to;
         }

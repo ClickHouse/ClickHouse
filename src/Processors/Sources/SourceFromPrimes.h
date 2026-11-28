@@ -34,6 +34,9 @@ public:
 
     String getName() const override { return "Primes"; }
 
+    /// Without a limit, the source generates the primes up to the end of the `UInt64` domain.
+    bool isUnboundedSource() const override { return !limit; }
+
     static SharedHeader createHeader(const std::string & column_name)
     {
         return std::make_shared<const Block>(
@@ -141,6 +144,13 @@ public:
     }
 
     String getName() const override { return "PrimesSimpleRange"; }
+
+    /// Without a limit, intervals that reach the end of the `UInt64` domain come from a filter without an
+    /// upper bound, so the source generates the primes up to that end.
+    bool isUnboundedSource() const override
+    {
+        return !limit && intervals.back().second == std::numeric_limits<UInt64>::max();
+    }
 
 protected:
     Chunk generate() override

@@ -6,7 +6,7 @@
 --
 -- With the passes off both keys reach the in-order optimization: `a` and `negate(a)` compete for the
 -- single sorting column `a`, so only one can claim the prefix position, the matched order does not cover
--- all keys, and it bails to the hash LimitByTransform.
+-- all keys, so the hash-based transform is used.
 --
 -- With the passes on the redundant `negate(a)` key is removed (it is an injective function of `a`),
 -- leaving `LIMIT 1 BY a`, a clean cover of `ORDER BY (a)`, so it streams via LimitBySortedStreamTransform.
@@ -18,11 +18,11 @@ SYSTEM STOP MERGES test_collapse_single;
 INSERT INTO test_collapse_single SELECT number % 50, number      FROM numbers(1000);
 INSERT INTO test_collapse_single SELECT number % 50, number+1000 FROM numbers(1000);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a FROM test_collapse_single LIMIT 1 BY a, negate(a) SETTINGS optimize_limit_by_in_order = 1, optimize_limit_by_function_keys = 0, optimize_injective_functions_in_limit_by = 0) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
-LimitByTransform
+ExternalLimitByTransform
 SELECT count() = (SELECT uniqExact(a) FROM test_collapse_single) FROM (SELECT a FROM test_collapse_single LIMIT 1 BY a, negate(a) SETTINGS optimize_limit_by_in_order = 1, optimize_limit_by_function_keys = 0, optimize_injective_functions_in_limit_by = 0);
 1
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a FROM test_collapse_single LIMIT 1 BY a, negate(a) SETTINGS optimize_limit_by_in_order = 1, optimize_limit_by_function_keys = 1, optimize_injective_functions_in_limit_by = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
-LimitByTransform
+ExternalLimitByTransform
 LimitBySortedStreamTransform × 2
 SELECT count() = (SELECT uniqExact(a) FROM test_collapse_single) FROM (SELECT a FROM test_collapse_single LIMIT 1 BY a, negate(a) SETTINGS optimize_limit_by_in_order = 1, optimize_limit_by_function_keys = 1, optimize_injective_functions_in_limit_by = 1);
 1
@@ -40,20 +40,20 @@ SYSTEM STOP MERGES test_collapse_extra;
 INSERT INTO test_collapse_extra SELECT number % 50, intDiv(number, 50) % 4, number      FROM numbers(1000);
 INSERT INTO test_collapse_extra SELECT number % 50, intDiv(number, 50) % 4, number+1000 FROM numbers(1000);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a, b FROM test_collapse_extra LIMIT 1 BY a, negate(a), b SETTINGS optimize_limit_by_in_order = 1, optimize_limit_by_function_keys = 0, optimize_injective_functions_in_limit_by = 0) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
-LimitByTransform
+ExternalLimitByTransform
 SELECT count() = (SELECT uniqExact((a, b)) FROM test_collapse_extra) FROM (SELECT a, b FROM test_collapse_extra LIMIT 1 BY a, negate(a), b SETTINGS optimize_limit_by_in_order = 1, optimize_limit_by_function_keys = 0, optimize_injective_functions_in_limit_by = 0);
 1
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a, b FROM test_collapse_extra LIMIT 1 BY a, negate(a), b SETTINGS optimize_limit_by_in_order = 1, optimize_limit_by_function_keys = 1, optimize_injective_functions_in_limit_by = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
-LimitByTransform
+ExternalLimitByTransform
 LimitBySortedStreamTransform × 2
 SELECT count() = (SELECT uniqExact((a, b)) FROM test_collapse_extra) FROM (SELECT a, b FROM test_collapse_extra LIMIT 1 BY a, negate(a), b SETTINGS optimize_limit_by_in_order = 1, optimize_limit_by_function_keys = 1, optimize_injective_functions_in_limit_by = 1);
 1
 -- Contrast: dropping the redundant negate(a) by hand leaves (a, b) as a full (permuted) cover of (b, a),
 -- so it streams regardless of the collapsing passes.
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a, b FROM test_collapse_extra LIMIT 1 BY a, b SETTINGS optimize_limit_by_in_order = 1, optimize_limit_by_function_keys = 0, optimize_injective_functions_in_limit_by = 0) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
-LimitByTransform
+ExternalLimitByTransform
 LimitBySortedStreamTransform × 2
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a, b FROM test_collapse_extra LIMIT 1 BY a, b SETTINGS optimize_limit_by_in_order = 1, optimize_limit_by_function_keys = 1, optimize_injective_functions_in_limit_by = 1) WHERE explain LIKE '%LimitBy%Transform%' OR explain LIKE '%MergingSortedTransform%';
-LimitByTransform
+ExternalLimitByTransform
 LimitBySortedStreamTransform × 2
 DROP TABLE test_collapse_extra;

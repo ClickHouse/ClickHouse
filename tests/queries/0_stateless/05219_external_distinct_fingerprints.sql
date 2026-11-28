@@ -18,13 +18,19 @@ SELECT k, payload FROM
 )
 ORDER BY k;
 
--- Internal comparison columns remain separate from user columns with the same base names.
+-- Internal comparison columns remain separate from user columns with the same base names. The generic key adds a
+-- fingerprint, every run adds the seen count, and the order above `DISTINCT` adds an arrival number.
 SELECT count() FROM
 (
-    SELECT DISTINCT [number % 3] AS __distinct_fingerprint,
-        number % 3 AS __distinct_already_emitted, 'constant' AS __distinct_arrival_number
+    SELECT DISTINCT [number % 3] AS __key_fingerprint, number % 3 AS __seen_rows, number % 3 AS __arrival_number
     FROM numbers(12)
 );
+SELECT groupArray(__arrival_number) FROM
+(
+    SELECT DISTINCT [number % 3] AS __key_fingerprint, number % 3 AS __seen_rows, number % 3 AS __arrival_number
+    FROM numbers(12)
+    ORDER BY __arrival_number DESC
+);
 
--- A single ordinary spill run is merged with an empty in-memory tail.
+-- A single input spill run is merged with an empty in-memory tail.
 SELECT count() FROM (SELECT DISTINCT [number] AS k FROM numbers(2));

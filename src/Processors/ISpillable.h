@@ -15,7 +15,7 @@ class IProcessor;
 class TemporaryDataOnDiskScope;
 
 /// Memory spilling interface of a processor.
-/// Aggregation, join, sorting, `DISTINCT`, and `IN` set processors can be spillable.
+/// Aggregation, join, sorting, `DISTINCT`, `LIMIT BY`, and `IN` set processors can be spillable.
 ///
 /// Processors or shared state own an implementation, exposed through `getSpillables`.
 /// Processors may share the same spilling state. The executor excludes a spill from its selected

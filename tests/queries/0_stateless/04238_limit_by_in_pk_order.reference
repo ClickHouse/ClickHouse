@@ -77,7 +77,7 @@ DROP TABLE IF EXISTS test_middle_column;
 CREATE TABLE test_middle_column (a UInt32, b UInt32, c UInt32, z UInt32) ENGINE = MergeTree ORDER BY (a, b, c);
 INSERT INTO test_middle_column SELECT number % 1000, number % 97, number % 7, number FROM numbers_mt(1e5);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a, b, c, z FROM test_middle_column LIMIT 5 BY b SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%';
-LimitByTransform
+ExternalLimitByTransform
 SELECT (SELECT count() FROM (SELECT a, b, c, z FROM test_middle_column LIMIT 5 BY b SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT a, b, c, z FROM test_middle_column LIMIT 5 BY b SETTINGS optimize_limit_by_in_order = 1));
 1
 DROP TABLE test_middle_column;
@@ -86,7 +86,7 @@ DROP TABLE IF EXISTS test_last_column;
 CREATE TABLE test_last_column (a UInt32, b UInt32, c UInt32, z UInt32) ENGINE = MergeTree ORDER BY (a, b, c);
 INSERT INTO test_last_column SELECT number % 1000, number % 97, number % 7, number FROM numbers_mt(1e5);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a, b, c, z FROM test_last_column LIMIT 5 BY c SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%';
-LimitByTransform
+ExternalLimitByTransform
 SELECT (SELECT count() FROM (SELECT a, b, c, z FROM test_last_column LIMIT 5 BY c SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT a, b, c, z FROM test_last_column LIMIT 5 BY c SETTINGS optimize_limit_by_in_order = 1));
 1
 DROP TABLE test_last_column;
@@ -95,7 +95,7 @@ DROP TABLE IF EXISTS test_skip_prefix;
 CREATE TABLE test_skip_prefix (a UInt32, b UInt32, c UInt32, z UInt32) ENGINE = MergeTree ORDER BY (a, b, c);
 INSERT INTO test_skip_prefix SELECT number % 1000, number % 97, number % 7, number FROM numbers_mt(1e5);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a, b, c, z FROM test_skip_prefix LIMIT 5 BY a, c SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%';
-LimitByTransform
+ExternalLimitByTransform
 SELECT (SELECT count() FROM (SELECT a, b, c, z FROM test_skip_prefix LIMIT 5 BY a, c SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT a, b, c, z FROM test_skip_prefix LIMIT 5 BY a, c SETTINGS optimize_limit_by_in_order = 1));
 1
 DROP TABLE test_skip_prefix;
@@ -104,7 +104,7 @@ DROP TABLE IF EXISTS test_non_pk_column;
 CREATE TABLE test_non_pk_column (a UInt32, b UInt32, c UInt32, z UInt32) ENGINE = MergeTree ORDER BY (a, b, c);
 INSERT INTO test_non_pk_column SELECT number % 1000, number % 97, number % 7, number FROM numbers_mt(1e5);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a, b, c, z FROM test_non_pk_column LIMIT 5 BY z SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%';
-LimitByTransform
+ExternalLimitByTransform
 SELECT (SELECT count() FROM (SELECT a, b, c, z FROM test_non_pk_column LIMIT 5 BY z SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT a, b, c, z FROM test_non_pk_column LIMIT 5 BY z SETTINGS optimize_limit_by_in_order = 1));
 1
 DROP TABLE test_non_pk_column;
@@ -113,7 +113,7 @@ DROP TABLE IF EXISTS test_order_by_non_pk;
 CREATE TABLE test_order_by_non_pk (a UInt32, b UInt32, c UInt32, z UInt32) ENGINE = MergeTree ORDER BY (a, b, c);
 INSERT INTO test_order_by_non_pk SELECT number % 1000, number % 97, number % 7, number FROM numbers_mt(1e5);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a, b, c, z FROM test_order_by_non_pk ORDER BY z LIMIT 5 BY a SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%';
-LimitByTransform
+ExternalLimitByTransform
 SELECT (SELECT count() FROM (SELECT a, b, c, z FROM test_order_by_non_pk ORDER BY z LIMIT 5 BY a SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT a, b, c, z FROM test_order_by_non_pk ORDER BY z LIMIT 5 BY a SETTINGS optimize_limit_by_in_order = 1));
 1
 DROP TABLE test_order_by_non_pk;
@@ -203,7 +203,7 @@ INSERT INTO test_merge_part_1 SELECT number % 500, number % 97, number FROM numb
 INSERT INTO test_merge_part_2 SELECT number % 500 + 500, number % 97, number FROM numbers_mt(5e4);
 CREATE TABLE test_merge_wrap AS test_merge_part_1 ENGINE = Merge(currentDatabase(), '^test_merge_part_[12]$');
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a, b, z FROM test_merge_wrap LIMIT 5 BY a SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%';
-LimitByTransform
+ExternalLimitByTransform
 LimitBySortedStreamTransform × 2
 SELECT (SELECT count() FROM (SELECT a, b, z FROM test_merge_wrap LIMIT 5 BY a SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT a, b, z FROM test_merge_wrap LIMIT 5 BY a SETTINGS optimize_limit_by_in_order = 1));
 1
@@ -221,7 +221,7 @@ INSERT INTO test_merge_nonpk_part_1 SELECT number % 500, number % 97, number FRO
 INSERT INTO test_merge_nonpk_part_2 SELECT number % 500, number % 97, number + 1000 FROM numbers_mt(5e4);
 CREATE TABLE test_merge_nonpk_wrap AS test_merge_nonpk_part_1 ENGINE = Merge(currentDatabase(), '^test_merge_nonpk_part_[12]$');
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a, b, z FROM test_merge_nonpk_wrap LIMIT 5 BY z SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%';
-LimitByTransform
+ExternalLimitByTransform
 SELECT (SELECT count() FROM (SELECT a, b, z FROM test_merge_nonpk_wrap LIMIT 5 BY z SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT a, b, z FROM test_merge_nonpk_wrap LIMIT 5 BY z SETTINGS optimize_limit_by_in_order = 1));
 1
 DROP TABLE test_merge_nonpk_wrap;

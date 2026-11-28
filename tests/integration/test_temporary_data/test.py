@@ -136,15 +136,18 @@ def test_distinct_cancellation_releases_temporary_data(start_cluster, cancel_sta
 
     baseline_files = temporary_files()
     query_id = str(uuid.uuid4())
-    query = "SELECT DISTINCT number FROM system.numbers FORMAT Null"
+    # A `DISTINCT` over a source that never ends stays in memory, so the input has an end, far beyond the
+    # point where the test cancels the query.
+    query = "SELECT DISTINCT number FROM numbers(1000000000000000) FORMAT Null"
     settings = {
         "max_threads": 1,
+        "max_rows_to_read": 0,
         "max_bytes_before_external_distinct": "1M",
         "max_bytes_ratio_before_external_distinct": 0,
         "max_untracked_memory": 0,
     }
     during_extraction = cancel_stage == "extraction"
-    failpoint = "external_distinct_suppression_run_prepared_pause"
+    failpoint = "external_group_limit_seen_run_prepared_pause"
     if during_extraction:
         # Small input blocks populate the set before spilling. Its retained keys exceed the 16 MiB
         # run target, leaving the extractor and arena alive alongside the pending file run.
@@ -200,9 +203,9 @@ def test_distinct_cancellation_releases_temporary_data(start_cluster, cancel_sta
     )
 
 
-def test_distinct_partial_cancellation_drains_suppression(start_cluster):
+def test_distinct_partial_cancellation_drains_seen_run(start_cluster):
     query_id = str(uuid.uuid4())
-    failpoint = "external_distinct_suppression_run_prepared_pause"
+    failpoint = "external_group_limit_seen_run_prepared_pause"
     unique_keys = 131072
     branch = (
         "SELECT concat(toString(if(number % 2, intDiv(number, 2), 0)), repeat('x', 1024)) AS k "
@@ -222,7 +225,7 @@ def test_distinct_partial_cancellation_drains_suppression(start_cluster):
 
     # Single-threaded `UNION DISTINCT` sends both branches directly to the final distinct processor.
     # The threshold leaves room to populate the set before spilling, and the unique keys exceed that
-    # budget. Its suppression run spans multiple blocks, and every input block repeats key zero,
+    # budget. Its seen run spans multiple blocks, and every input block repeats key zero,
     # which hashing has already emitted before cancellation.
     node_distinct.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
     try:
@@ -247,7 +250,7 @@ def test_distinct_partial_cancellation_drains_suppression(start_cluster):
     assert 0 < len(rows) < unique_keys
     assert len(rows) == len(set(rows))
 
-    # Sources registered after the partial-result request must drain the complete suppression run.
+    # Sources registered after the partial-result request must drain the complete seen run.
     node_distinct.query("SYSTEM FLUSH LOGS processors_profile_log")
     written, read, tail = map(
         int,

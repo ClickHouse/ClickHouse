@@ -122,6 +122,7 @@ Limit
    │  Columns: x
    │  Length 1
    │  Offset 0
+   │  Preserve input order: 1
    └──Sorting
       │  Sort description: x ASC
       │  Per-stream LIMIT BY columns: x

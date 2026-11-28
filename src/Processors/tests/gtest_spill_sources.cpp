@@ -22,7 +22,7 @@ enum class SourceKind
     File,
     OwnedFile,
     SortedChunks,
-    UniqueChunks,
+    LimitedGroupRows,
 };
 
 class SpillSourceTest : public testing::TestWithParam<std::tuple<SourceKind, IProcessor::CancelReason, bool>>
@@ -74,7 +74,7 @@ protected:
 
         SortDescription description;
         description.emplace_back("key", 1, 1);
-        auto mode = kind == SourceKind::UniqueChunks ? MergeSorter::Mode::MergeUniqueChunks : MergeSorter::Mode::PreserveRows;
+        auto mode = kind == SourceKind::LimitedGroupRows ? MergeSorter::Mode::LimitGroupRows : MergeSorter::Mode::PreserveRows;
         return std::make_unique<MergeSorterSource>(header, std::move(chunks), description, 2, 0, mode);
     }
 };
@@ -140,7 +140,7 @@ INSTANTIATE_TEST_SUITE_P(
     Replay,
     SpillSourceTest,
     testing::Combine(
-        testing::Values(SourceKind::File, SourceKind::OwnedFile, SourceKind::SortedChunks, SourceKind::UniqueChunks),
+        testing::Values(SourceKind::File, SourceKind::OwnedFile, SourceKind::SortedChunks, SourceKind::LimitedGroupRows),
         testing::Values(
             IProcessor::CancelReason::PartialResult,
             IProcessor::CancelReason::Unknown,

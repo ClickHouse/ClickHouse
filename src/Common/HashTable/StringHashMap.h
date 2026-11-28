@@ -143,6 +143,74 @@ public:
         return it->getMapped();
     }
 
+    /// The position of a resumable traversal in `forEachValue` order. A default-constructed position is at the
+    /// beginning. The map must not change while a traversal is in progress.
+    struct ValuePosition
+    {
+        /// The submap visited next: 0 for the empty key, 1-3 for the fixed-size classes, 4 for the generic
+        /// submap, 5 after the end.
+        size_t submap = 0;
+        /// The traversal sets the iterator of a submap when it enters that submap.
+        typename Base::T1::const_iterator it1{nullptr, nullptr};
+        typename Base::T2::const_iterator it2{nullptr, nullptr};
+        typename Base::T3::const_iterator it3{nullptr, nullptr};
+        typename Base::Ts::const_iterator its{nullptr, nullptr};
+    };
+
+    /// Calls `func(key, mapped)` for the values from `position` in `forEachValue` order. A `func` returning false
+    /// stops the traversal after that value. Leaves `position` at the next unvisited value and returns whether
+    /// the end was reached, also when `func` stopped at the last value.
+    template <typename Func>
+    bool forEachValueFrom(ValuePosition & position, Func && func) const
+    {
+        bool stopped = false;
+        /// Visits the rest of one submap until `func` stops the traversal, and returns whether the submap is
+        /// exhausted. After a stop, the following submaps are only checked for values, so a stop at the last
+        /// value still reports the end.
+        auto visit = [&](const auto & map, auto & it)
+        {
+            for (; !stopped && it != map.end(); ++it)
+                stopped = !func(it->getKey(), it->getMapped());
+            return it == map.end();
+        };
+
+        switch (position.submap)
+        {
+            case 0:
+                position.submap = 1;
+                position.it1 = this->m1.begin();
+                if (this->m0.size())
+                    stopped = !func(std::string_view{}, this->m0.zeroValue()->getMapped());
+                [[fallthrough]];
+            case 1:
+                if (!visit(this->m1, position.it1))
+                    return false;
+                position.submap = 2;
+                position.it2 = this->m2.begin();
+                [[fallthrough]];
+            case 2:
+                if (!visit(this->m2, position.it2))
+                    return false;
+                position.submap = 3;
+                position.it3 = this->m3.begin();
+                [[fallthrough]];
+            case 3:
+                if (!visit(this->m3, position.it3))
+                    return false;
+                position.submap = 4;
+                position.its = this->ms.begin();
+                [[fallthrough]];
+            case 4:
+                if (!visit(this->ms, position.its))
+                    return false;
+                position.submap = 5;
+                [[fallthrough]];
+            case 5:
+                return true;
+        }
+        UNREACHABLE();
+    }
+
     template <typename Func>
     void ALWAYS_INLINE forEachValue(Func && func)
     {

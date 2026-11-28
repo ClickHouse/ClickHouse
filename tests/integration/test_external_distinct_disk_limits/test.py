@@ -127,12 +127,15 @@ def test_concurrent_queries_share_user_limit(user):
             query_id=query_id,
         )
         node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+        # The 49152 keys before the pause spill 8 bytes each.
         assert node.query(
-            "SELECT ProfileEvents['ExternalDistinctCompressedBytes'] > 400000 "
+            "SELECT ProfileEvents['ExternalDistinctCompressedBytes'] > 350000 "
             f"FROM system.processes WHERE query_id = '{query_id}'"
         ) == "1\n"
 
-        query = spill_query(81920)
+        # The query spills 786432 bytes of keys, within the 1 MiB quota of the user on its own, but not next
+        # to the files of the paused query.
+        query = spill_query(98304)
         # Another user has an independent quota, even while the first query's files remain live.
         node.query(query, settings=SETTINGS)
         error = node.query_and_get_error(query, settings=SETTINGS, user=user)
@@ -149,4 +152,4 @@ def test_concurrent_queries_share_user_limit(user):
         node, f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'", "0"
     )
     assert_no_temporary_files()
-    node.query(spill_query(81920), settings=SETTINGS, user=user)
+    node.query(query, settings=SETTINGS, user=user)

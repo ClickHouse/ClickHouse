@@ -109,6 +109,9 @@ public:
 
     String getName() const override { return "Loop"; }
 
+    /// The source reads its table again whenever it ends, so only a consumer that stops reading ends it.
+    bool isUnboundedSource() const override { return true; }
+
     void initLoop()
     {
         if (loop)

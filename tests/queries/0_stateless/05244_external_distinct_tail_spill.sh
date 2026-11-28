@@ -30,18 +30,20 @@ run_case()
 }
 
 # The counters show whether files were written, the final merge count, and whether tail rows were
-# spilled or retained. A tail that fits beside the file readers stays in memory.
+# spilled or retained. A tail that fits beside the file readers stays in memory. The 32 MiB threshold
+# spills only a set that grows past the spill floor of about 16 MiB, so the set holds a million keys.
 run_case narrow 33554432 \
-    'SELECT count() FROM (SELECT DISTINCT cityHash64(number) AS k FROM numbers(65537))'
+    'SELECT count() FROM (SELECT DISTINCT cityHash64(number) AS k FROM numbers(1000000))'
 
 # Wide rows and a small spill threshold leave insufficient room for the final tail beside file readers.
 # The result checks the row count and total value length after readback.
 run_case payload 1048576 \
     "SELECT count(), sum(length(payload)) FROM (SELECT DISTINCT cityHash64(number) AS k, repeat(toString(number % 10), 128) AS payload FROM numbers(32769))"
 
-# Order restoration must return the largest keys when merging files with the retained tail.
+# Order restoration must return the largest keys when merging files with the retained tail. The `LIMIT`
+# admits enough keys for the set to pass the spill floor before the result is complete.
 run_case ordered 33554432 \
-    'SELECT count(), min(k), max(k) FROM (SELECT DISTINCT number AS k FROM numbers(65537) ORDER BY k + 1 DESC LIMIT 10000)'
+    'SELECT count(), min(k), max(k) FROM (SELECT DISTINCT number AS k FROM numbers(2000000) ORDER BY k + 1 DESC LIMIT 1500000)'
 
 # A one-byte threshold spills every input chunk. EOF then starts the merge with an empty tail.
 run_case empty_tail 1 \

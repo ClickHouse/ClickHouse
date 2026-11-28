@@ -49,6 +49,10 @@ struct BuildQueryPipelineSettings
     size_t max_block_size;
 
     const ExpressionActionsSettings & getActionsSettings() const { return actions_settings; }
+
+    /// Whether a memory scheduler can ask the processors of the query to spill: the query runs under a workload
+    /// memory reservation or with `enable_adaptive_memory_spill_scheduler`, and it has temporary storage.
+    [[nodiscard]] bool isSchedulerSpillingEnabled() const;
 };
 
 }

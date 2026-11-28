@@ -36,6 +36,9 @@ public:
 
     String getName() const override { return "ObfuscateSource"; }
 
+    /// Generation reruns the inner query whenever it ends, so the source ends only on an empty inner query.
+    bool isUnboundedSource() const override { return true; }
+
     /// Build the context for interpreting the hidden inner query: clear the query-level
     /// result settings (`limit`, `offset`, result-size limits, `extremes`) that describe the
     /// final query result rather than the source used for training and generation, and mark

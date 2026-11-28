@@ -11,7 +11,7 @@ SET max_threads = 16;
 --
 -- With the passes off both keys reach the in-order optimization: `a` and `negate(a)` compete for the
 -- single sorting column `a`, so only one can claim the prefix position, the matched order does not cover
--- all keys, and it bails to the hash LimitByTransform.
+-- all keys, so the hash-based transform is used.
 --
 -- With the passes on the redundant `negate(a)` key is removed (it is an injective function of `a`),
 -- leaving `LIMIT 1 BY a`, a clean cover of `ORDER BY (a)`, so it streams via LimitBySortedStreamTransform.

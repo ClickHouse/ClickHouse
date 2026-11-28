@@ -18,7 +18,7 @@ YAML
 
 # Hash-table growth must respect the 90 MiB spill threshold before a replacement allocation can
 # exceed the 160 MiB query limit. No user memory limit protects the query. The input crosses the
-# resize boundary and then repeats one block of keys to exercise suppression after spilling.
+# resize boundary and then repeats one block of keys to exercise the seen runs after spilling.
 ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" --config-file "${LOCAL_DIR}/query-log.yaml" --log_queries 1 --query "
     SELECT count(), sum(k)
     FROM

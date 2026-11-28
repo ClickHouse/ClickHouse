@@ -1,16 +1,46 @@
 #pragma once
+#include <Core/Defines.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
 namespace DB
 {
 
+struct Settings;
+
 /// Executes LIMIT BY for specified columns. See LimitByTransform.
 class LimitByStep : public ITransformingStep
 {
 public:
+    struct Settings
+    {
+        UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
+        UInt64 prefer_external_sort_block_bytes = DEFAULT_BLOCK_SIZE * 256;
+
+        /// The pipeline combines these thresholds into the smaller enabled spill trigger.
+        /// Setting both to zero disables threshold-triggered spilling; the scheduler may still request it.
+        UInt64 max_bytes_before_external_limit_by = 0;
+        double max_bytes_ratio_before_external_limit_by = 0.;
+
+        /// Internal steps serialize these settings through `updatePlanSettings` even when both thresholds
+        /// are zero. Defaults match the query settings, including the required nonzero buffer size.
+        size_t min_free_disk_space = 0;
+        String temporary_files_codec = "LZ4";
+        UInt64 temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+
+        /// Leaves both thresholds at zero for internal steps that do not use query settings, such as the
+        /// `LIMIT BY` of a decorrelated subquery. The memory scheduler can still make such a step spill,
+        /// which keeps the same rows of each group as processing in memory.
+        Settings() = default;
+        explicit Settings(const DB::Settings & settings_);
+        explicit Settings(const QueryPlanSerializationSettings & settings_);
+
+        void updatePlanSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const;
+    };
+
     explicit LimitByStep(
             const SharedHeader & input_header_,
+            Settings settings_,
             size_t group_length_, size_t group_offset_, Names columns_, bool always_read_till_end_ = false);
 
     [[nodiscard]] String getName() const override { return "LimitBy"; }
@@ -22,6 +52,7 @@ public:
 
     [[nodiscard]] bool hasCorrelatedExpressions() const override { return false; }
 
+    void serializeSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     [[nodiscard]] bool isSerializable() const override { return true; }
 
@@ -41,11 +72,31 @@ public:
     /// partition sets so no `LIMIT BY` group spans two streams.
     void skipStreamMerging() { skip_stream_merging = true; }
 
+    /// The step must return the rows in their input order, which `input_order_` describes: it runs above the
+    /// `ORDER BY` sorting or the `SHUFFLE` of its query (set by the planners), or the optimizer propagates a
+    /// global order through it, which the steps above may rely on (set by the `applyOrder` optimization). The
+    /// in-memory `LIMIT BY` keeps the order by construction; a spilling one sorts the rows returned after
+    /// spilling back into it (see `ExternalLimitByTransform`): by the columns of `input_order_` when the spilled
+    /// rows carry them all, and by arrival numbers otherwise. For `SHUFFLE`, `input_order_` names its internal
+    /// key column (`ShuffleStep::internal_key_column_name`), which only the rows of a distributed query carry, so
+    /// arrival numbers restore the order of a local one. Without an input order, the order has no meaning, so a
+    /// spilling `LIMIT BY` may keep any rows of a group that fit its window, and returns them grouped by key.
+    void preserveInputOrder(SortDescription input_order_) { input_order = std::move(input_order_); }
+    [[nodiscard]] bool preservesInputOrder() const { return !input_order.empty(); }
+
+    /// Only the first `hint` rows of the output are read, by a `LIMIT` above the step (set by the
+    /// `limitPushDown` optimization). A spilling `LIMIT BY` stops once its result has that many rows, and
+    /// restores the input order of only that many rows after a spill. Zero disables the hint; of two hints,
+    /// the smaller applies.
+    void updateLimitHint(UInt64 hint);
+
 private:
     void updateOutputHeader() override
     {
         output_header = input_headers.front();
     }
+
+    Settings settings;
 
     size_t group_length;
     size_t group_offset;
@@ -57,6 +108,12 @@ private:
     SortDescription sorted_columns_descr;
 
     bool skip_stream_merging = false;
+    /// The order that the output must keep; empty when the order has no meaning.
+    SortDescription input_order;
+    /// The step was read at step version 0, which predates `input_order`, so its empty order does not show
+    /// that the order has no meaning. See `transformPipeline`.
+    bool input_order_unknown = false;
+    UInt64 limit_hint = 0;
 };
 
 }

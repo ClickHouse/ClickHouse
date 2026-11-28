@@ -68,6 +68,9 @@ public:
     }
     String getName() const override { return "Numbers"; }
 
+    /// The full scan of a table without a size, which only a consumer that stops reading ends.
+    bool isUnboundedSource() const override { return true; }
+
     static SharedHeader createHeader(const std::string & column_name)
     {
         return std::make_shared<const Block>(Block{ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name)});
@@ -189,6 +192,12 @@ auto sizeOfRanges(const RangesWithStep & rs)
     return total_size;
 };
 
+/// Whether the last value of `range` is the largest `UInt64`. The caller guarantees a non-empty `range`.
+bool reachesEndOfDomain(const RangeWithStep & range)
+{
+    return range.left + (range.size - 1) * range.step == std::numeric_limits<UInt64>::max();
+}
+
 /// Generate numbers according to ranges.
 /// Numbers generated is ordered in one stream.
 /// Notice that we will not generate additional numbers out of ranges.
@@ -215,16 +224,20 @@ public:
         RangesStatePtr & ranges_state_,
         UInt64 base_block_size_,
         UInt64 step_,
-        const std::string & column_name)
+        const std::string & column_name,
+        bool unbounded_)
         : ISource(NumbersSource::createHeader(column_name))
         , ranges(ranges_)
         , ranges_state(ranges_state_)
         , base_block_size(base_block_size_)
         , step(step_)
+        , unbounded(unbounded_)
     {
     }
 
     String getName() const override { return "NumbersRange"; }
+
+    bool isUnboundedSource() const override { return unbounded; }
 
 private:
     /// Find the data range in ranges and return (start position, how many items found).
@@ -359,6 +372,9 @@ private:
     UInt64 base_block_size;
 
     UInt64 step;
+
+    /// Whether the ranges end only at the end of the `UInt64` domain of a table without a size.
+    const bool unbounded;
 };
 
 }
@@ -803,12 +819,18 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     if (num_streams == 0)
         num_streams = 1;
 
+    /// In a table without a size, ranges that reach the end of the `UInt64` domain come from a filter without
+    /// an upper bound, with no `LIMIT` pushed down. Such a read ends only after up to 2^64 values, like the
+    /// full scan.
+    const bool unbounded = !numbers_storage.limit.has_value() && !intersected_ranges.empty()
+        && reachesEndOfDomain(intersected_ranges.back());
+
     /// All streams share a single cursor into `intersected_ranges` to split work without overlaps.
     auto ranges_state = std::make_shared<NumbersRangedSource::RangesState>();
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<NumbersRangedSource>(
-            intersected_ranges, ranges_state, max_block_size, numbers_storage.step, numbers_storage.column_name);
+            intersected_ranges, ranges_state, max_block_size, numbers_storage.step, numbers_storage.column_name, unbounded);
 
         if (i == 0)
             source->addTotalRowsApprox(static_cast<size_t>(total_size));

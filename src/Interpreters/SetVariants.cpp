@@ -56,18 +56,12 @@ size_t SetVariantsTemplate<Variant>::estimateGrowthMemory(const ColumnRawPtrs & 
         arena_growth_memory = string_pool.estimateGrowthMemory(num_rows, key_bytes);
     }
 
-    auto estimate = [num_rows, arena_growth_memory]<typename Method>(const Method & method) -> size_t
+    auto estimate = [num_rows, arena_growth_memory](const auto & method) -> size_t
     {
-        using Table = typename Method::Data;
-        if constexpr (std::is_same_v<Table, FixedHashSet<UInt8>> || std::is_same_v<Table, FixedHashSet<UInt16>>)
-            return 0;
-        else
-        {
-            size_t growth_memory = 0;
-            if (common::addOverflow(method.data.estimateGrowthMemory(num_rows), arena_growth_memory, growth_memory))
-                return std::numeric_limits<size_t>::max();
-            return growth_memory;
-        }
+        size_t growth_memory = 0;
+        if (common::addOverflow(method.data.estimateGrowthMemory(num_rows), arena_growth_memory, growth_memory))
+            return std::numeric_limits<size_t>::max();
+        return growth_memory;
     };
 
     return callOnMethod(estimate);

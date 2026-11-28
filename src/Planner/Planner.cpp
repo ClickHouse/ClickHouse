@@ -54,7 +54,7 @@
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
 #include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
-#include <Processors/QueryPlan/Streaming/hasUnboundedSource.h>
+#include <Processors/QueryPlan/Streaming/hasUnboundedStream.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -827,7 +827,7 @@ void Planner::buildPlanForUnionNode()
         select_query_options.ignore_limits |= branch_select_query_options.ignore_limits;
     }
 
-    bool has_unbounded_arm = std::ranges::any_of(query_plans, [](const auto & plan) { return hasUnboundedSource(*plan); });
+    bool has_unbounded_arm = std::ranges::any_of(query_plans, [](const auto & plan) { return hasUnboundedStream(*plan); });
     if (has_unbounded_arm && union_mode != SelectUnionMode::UNION_ALL && union_mode != SelectUnionMode::UNION_DISTINCT)
         throw Exception(ErrorCodes::ILLEGAL_STREAM, "INTERSECT and EXCEPT are not supported over an unbounded STREAM");
     if (has_unbounded_arm && settings[Setting::use_query_cache])
@@ -904,8 +904,6 @@ void Planner::buildPlanForUnionNode()
             false /*pre distinct*/);
         if (add_pre_distinct)
             distinct_step->setStepDescription("DISTINCT");
-        if (has_unbounded_arm)
-            distinct_step->disableExternalDistinct();
 
         /// INNER ANY emits each key once whichever side is built, so `INTERSECT DISTINCT` needs only the limit on rows.
         if (execute_as_join)
@@ -1211,7 +1209,7 @@ void Planner::buildPlanForQueryNode()
         query_processing_info,
         join_tree_query_plan.source_constants);
 
-    if (hasUnboundedSource(query_plan))
+    if (hasUnboundedStream(query_plan))
     {
         buildStreamingPlan(
             query_plan,

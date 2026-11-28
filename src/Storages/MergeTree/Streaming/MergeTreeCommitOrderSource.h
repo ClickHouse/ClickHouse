@@ -57,6 +57,9 @@ public:
 
     String getName() const override { return "MergeTreeCommitOrderSource"; }
 
+    /// A subscription for updates keeps waiting for new data, so it never ends by itself.
+    bool isUnboundedSource() const override { return stream_settings.subscribe_for_updates; }
+
     Status prepare() override;
     void work() override;
     std::tuple<int, uint32_t, Int64> scheduleForEvent() override;

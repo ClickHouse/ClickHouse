@@ -10,7 +10,7 @@ SELECT count(), arraySort(groupArray(finalizeAggregation(s))) = arrayMap(x -> [c
 SELECT count(), arraySort(groupArray(finalizeAggregation(s))) = arrayMap(x -> [concat(toString(x), repeat(char(0, 120, 255), 1 + x * 1024))], range(5)) FROM (SELECT DISTINCT initializeAggregation('groupArrayState', concat(toString(number % 5), repeat(char(0, 120, 255), 1 + (number % 5) * 1024))) AS s FROM numbers(20)) SETTINGS max_bytes_before_external_distinct = 1;
 
 -- Each state contains three 6 MiB strings and exceeds the run byte target. Ordinary runs retain the
--- entire state as payload and restore all of its values; suppression runs retain only its fingerprint.
+-- entire state as payload and restore all of its values; seen runs retain only its fingerprint.
 WITH repeat(repeat(char(0, 120, 255), 32), 64 * 1024) AS payload
 SELECT
     count(),

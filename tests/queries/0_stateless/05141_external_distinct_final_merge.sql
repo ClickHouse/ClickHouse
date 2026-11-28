@@ -8,7 +8,7 @@ SET allow_preliminary_distinct_abandoning = 1;
 SET optimize_distinct_in_order = 0;
 
 -- A small threshold starts spilling before hashing. Later chunks repeat a small set of new keys,
--- which must remain unique when ordinary runs are merged with the buffered tail.
+-- which must remain unique when input runs are merged with the buffered tail.
 SELECT count(), uniqExact(k), sum(k)
 FROM
 (
