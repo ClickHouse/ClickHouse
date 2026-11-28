@@ -1644,10 +1644,8 @@ UInt64 StorageObjectStorageQueue::generateCommitID()
 
 static std::string normalizeSetting(const std::string & name)
 {
-    /// We support this prefix for compatibility.
-    if (name.starts_with("s3queue_"))
-        return name.substr(std::strlen("s3queue_"));
-    return name;
+    /// We support the `s3queue_` prefix and the old setting names for compatibility.
+    return ObjectStorageQueueSettings::resolveName(name);
 }
 
 static void checkNormalizedSetting(const std::string & name)
@@ -1672,6 +1670,17 @@ static bool requiresDetachedMV(const std::string & name)
 {
     checkNormalizedSetting(name);
     return name == "buckets";
+}
+
+/// The values are compared as the setting parses them, so `4` and `'4'` are the same value.
+static bool isSettingValueChanged(const SettingChange & old_setting, const SettingChange & new_setting)
+{
+    if (old_setting.value == new_setting.value)
+        return false;
+    if (!ObjectStorageQueueSettings::hasBuiltin(new_setting.name))
+        return true;
+    return ObjectStorageQueueSettings::castValueUtil(old_setting.name, old_setting.value)
+        != ObjectStorageQueueSettings::castValueUtil(new_setting.name, new_setting.value);
 }
 
 static AlterCommands normalizeAlterCommands(const AlterCommands & alter_commands)
@@ -1742,7 +1751,7 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
                 old_settings->begin(), old_settings->end(),
                 [&](const SettingChange & change) { return change.name == setting.name; });
 
-            setting_changed = it != old_settings->end() && it->value != setting.value;
+            setting_changed = it != old_settings->end() && isSettingValueChanged(*it, setting);
         }
 
         if (setting_changed)
@@ -1915,11 +1924,12 @@ void StorageObjectStorageQueue::alter(
         {
             if (!ObjectStorageQueueTableMetadata::isStoredInKeeper(setting.name) || !isSettingChangeable(setting.name, mode))
                 return false;
-            if (local_shared_metadata_settings.get(setting.name) != setting.value)
+            const Field value = ObjectStorageQueueSettings::castValueUtil(setting.name, setting.value);
+            if (local_shared_metadata_settings.get(setting.name) != value)
                 return true;
             if (!settings_in_keeper)
                 settings_in_keeper.emplace(read_settings_in_keeper());
-            return settings_in_keeper->get(setting.name) != setting.value;
+            return settings_in_keeper->get(setting.name) != value;
         };
 
         for (auto & setting : new_settings)
@@ -1937,7 +1947,7 @@ void StorageObjectStorageQueue::alter(
                     old_settings->begin(), old_settings->end(),
                     [&](const SettingChange & change) { return change.name == setting.name; });
 
-                setting_changed = it == old_settings->end() || it->value != setting.value
+                setting_changed = it == old_settings->end() || isSettingValueChanged(*it, setting)
                     || (settings_in_query.contains(setting.name) && differs_from_queue(setting));
             }
             if (!setting_changed)
@@ -1966,6 +1976,18 @@ void StorageObjectStorageQueue::alter(
 
             changed_settings.push_back(setting);
         }
+
+        /// Before any state change: reject what `ATTACH` would reject, and give the changed values the types of their settings.
+        auto new_storage_def = make_intrusive<ASTStorage>();
+        new_storage_def->set(new_storage_def->engine, makeASTFunction(getName()));
+        new_storage_def->set(new_storage_def->settings, new_metadata.getSettingsChanges());
+        ObjectStorageQueueSettings new_queue_settings;
+        new_queue_settings.loadFromQuery(*new_storage_def, /*is_attach=*/ true, table_id);
+        validateSettings(
+            new_queue_settings, type, local_context->getRemoteHostFilter(), /*is_attach=*/ true, /*is_loading_from_existing_metadata=*/ true);
+        for (auto & change : changed_settings)
+            change.value = new_queue_settings.get(change.name);
+
         if (requires_detached_mv)
         {
             LOG_TRACE(log, "Deactivating {} streaming tasks", streaming_tasks.size());
