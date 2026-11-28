@@ -33,6 +33,7 @@
 #include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/StatisticsDescription.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Parsers/parseQuery.h>
@@ -366,6 +367,72 @@ TEST(Statistics, ColumnStatsOriginsTransformationsAndPartialCoverage)
     EXPECT_TRUE(filtered.ndv_provenance.has(RowSubset));
     EXPECT_TRUE(filtered.range_provenance.has(RowSubset));
     EXPECT_TRUE(filtered.ndv_provenance.has(EstimatedRowCountClamp));
+}
+
+TEST(Statistics, RelationProfileRecordsRowSubsetUnlessTheCallerDoes)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto stats = buildInt32Stats({StatisticsType::Basic, StatisticsType::Uniq}, 100);
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("k", stats);
+    builder.addStatistics("j", stats);
+    builder.incrementRowCount(100);
+    auto estimator = builder.getEstimator();
+
+    ContextPtr context = getContext().context;
+    ParserExpressionWithOptionalAlias parser(false);
+    ASTPtr ast = parseQuery(parser, "k < 50", 1000, 1000, 1000);
+    const auto int32_type = std::make_shared<DataTypeInt32>();
+    auto syntax_result = TreeRewriter(context).analyze(ast, NamesAndTypesList{{"k", int32_type}, {"j", int32_type}});
+    ActionsDAG dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(/*add_aliases=*/false, /*remove_unused_result=*/false);
+    const auto * predicate = &dag.findInOutputs(ast->getColumnName());
+
+    auto expect_row_subset = [](const ColumnStats & column, bool row_subset)
+    {
+        SCOPED_TRACE(column.range_provenance.toString());
+        EXPECT_EQ(column.ndv_provenance.has(RowSubset), row_subset);
+        EXPECT_EQ(column.range_provenance.has(RowSubset), row_subset);
+    };
+
+    /// The overloads that take a single node or `RPNBuilderTreeNode`s record `RowSubset` on every column.
+    for (const auto & profile :
+         {estimator->estimateRelationProfile(nullptr, predicate),
+          estimator->estimateRelationProfile(nullptr, std::vector<RPNBuilderTreeNode>{RPNBuilderTreeNode(predicate, context)})})
+    {
+        expect_row_subset(profile.column_stats.at("k"), /*row_subset=*/true);
+        expect_row_subset(profile.column_stats.at("j"), /*row_subset=*/true);
+        EXPECT_FALSE(profile.column_stats.at("j").valueRange(ValueRangeGuarantee::Representative));
+    }
+
+    /// So does the overload for a filter and a PREWHERE by default. A caller that records the dropped rows itself turns it
+    /// off; the row count and the clamp of the distinct count to it do not depend on it.
+    using FilterAndPrewhere = std::pair<const ActionsDAG::Node *, const ActionsDAG::Node *>;
+    for (const auto & [filter, prewhere] : {FilterAndPrewhere{predicate, nullptr}, {nullptr, predicate}, {predicate, predicate}})
+    {
+        SCOPED_TRACE(fmt::format("filter: {}, prewhere: {}", filter != nullptr, prewhere != nullptr));
+        const auto recorded = estimator->estimateRelationProfile(nullptr, filter, prewhere);
+        EXPECT_GT(recorded.rows, 0);
+        EXPECT_LT(recorded.rows, 100);
+        expect_row_subset(recorded.column_stats.at("k"), /*row_subset=*/true);
+        expect_row_subset(recorded.column_stats.at("j"), /*row_subset=*/true);
+
+        const auto not_recorded = estimator->estimateRelationProfile(nullptr, filter, prewhere, /*record_row_subset=*/false);
+        EXPECT_EQ(not_recorded.rows, recorded.rows);
+        for (const auto & column_name : {"k", "j"})
+        {
+            const auto & column = not_recorded.column_stats.at(column_name);
+            expect_row_subset(column, /*row_subset=*/false);
+            EXPECT_EQ(column.num_distinct_values, recorded.column_stats.at(column_name).num_distinct_values);
+            EXPECT_TRUE(column.ndv_provenance.has(EstimatedRowCountClamp));
+        }
+    }
+
+    /// Without predicates no rows are dropped, so there is nothing to record.
+    const auto unfiltered = estimator->estimateRelationProfile(nullptr, nullptr, nullptr);
+    EXPECT_EQ(unfiltered.rows, 100);
+    expect_row_subset(unfiltered.column_stats.at("j"), /*row_subset=*/false);
 }
 
 TEST(Statistics, SummaryWithoutBoundsMakesRangePartial)

@@ -18,7 +18,7 @@ std::optional<UInt64> ColumnStats::distinctCount(DistinctCountGuarantee guarante
     switch (guarantee)
     {
         case DistinctCountGuarantee::Exact: break;
-        case DistinctCountGuarantee::UpperBound: kept_by = RowSubset | NDVBoundExpression; break;
+        case DistinctCountGuarantee::UpperBound: kept_by = RowSubset | FilterOnOtherColumns | NDVBoundExpression; break;
     }
     if (!ndv_provenance.hasOnly(kept_by))
         return {};
@@ -33,9 +33,10 @@ std::optional<ColumnValueRange> ColumnStats::valueRange(ValueRangeGuarantee guar
     UInt16 kept_by = 0;
     switch (guarantee)
     {
-        case ValueRangeGuarantee::Exact:
-        case ValueRangeGuarantee::Representative: break;
-        case ValueRangeGuarantee::Superset: kept_by = RowSubset; break;
+        case ValueRangeGuarantee::Exact: break;
+        case ValueRangeGuarantee::Superset: kept_by = RowSubset | FilterOnOtherColumns; break;
+        /// With the assumption described at `ValueRangeGuarantee::Representative`.
+        case ValueRangeGuarantee::Representative: kept_by = FilterOnOtherColumns; break;
     }
     if (!range_provenance.hasOnly(kept_by))
         return {};

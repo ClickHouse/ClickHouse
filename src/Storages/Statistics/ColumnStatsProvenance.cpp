@@ -33,6 +33,7 @@ String ColumnStatsProvenance::toString() const
     append(NDVBoundExpression, "ndv-bound-expression");
     append(PartialStatisticsCoverage, "partial-statistics-coverage");
     append(Unmodeled, "unmodeled");
+    append(FilterOnOtherColumns, "filter-on-other-columns");
     result += ']';
     return result;
 }

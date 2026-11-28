@@ -25,6 +25,7 @@ namespace DB
 ///                                 distinct count             value range
 ///                                 Exact   UpperBound         Exact   Superset   Representative
 ///     RowSubset                   no      yes                no      yes        no
+///     FilterOnOtherColumns        no      yes                no      yes        yes (assumes independent columns)
 ///     EstimatedRowCountClamp      no      no                 (recorded only for the distinct count)
 ///     NDVBoundExpression          no      yes                no      no         no
 ///     PartialStatisticsCoverage   no      no                 no      no         no
@@ -66,6 +67,11 @@ enum ColumnStatsTransformation : UInt16
     PartialStatisticsCoverage = 1 << 3,
     /// A step whose effect on the column is not modeled, such as `FINAL` or a join.
     Unmodeled = 1 << 4,
+    /// Rows were dropped by predicates that do not read the column; its values are unchanged. Recorded instead of
+    /// `RowSubset` only where the columns the predicates read are known. A predicate on a column computed by a `DEFAULT`
+    /// or `MATERIALIZED` expression reads the columns the expression reads, and a predicate on those reads the computed
+    /// column too.
+    FilterOnOtherColumns = 1 << 5,
 };
 
 struct ColumnStatsProvenance
@@ -99,10 +105,11 @@ enum class ValueRangeGuarantee : UInt8
     Exact,
     /// Contains the range of the produced rows. The NULL fraction of a subset is unknown, so it comes without one.
     Superset,
-    /// The values of the produced rows are plausibly spread over the range, as uniform-distribution consumers need.
-    /// A filtered relation is deliberately not representative: interpolating uniformly over an unfiltered range can
-    /// misestimate a predicate that cuts that range. Today only an exact range is known to be representative, but the
-    /// two may diverge (e.g. for a uniform sample), so consumers name the guarantee they need.
+    /// The values of the produced rows are plausibly spread over the range, and the NULL fraction is plausibly theirs,
+    /// as uniform-distribution consumers need. An exact range is representative, and so is the range of a column whose
+    /// rows were dropped only by predicates that do not read it (`FilterOnOtherColumns`): this guarantee assumes that the
+    /// column is statistically independent of the columns those predicates read. A predicate that reads the column can
+    /// cut its range, and interpolating uniformly over the measured range would then misestimate predicates on it.
     Representative,
 };
 }

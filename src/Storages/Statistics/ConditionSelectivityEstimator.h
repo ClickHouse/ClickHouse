@@ -45,7 +45,14 @@ public:
     /// The rows and column statistics of the relation after the given predicates. A statistic whose type differs from
     /// the type of its column in `metadata` is outdated (an `ALTER MODIFY COLUMN` is not materialized yet) and skipped;
     /// without `metadata`, every statistic is used.
-    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
+    ///
+    /// With predicates, the statistics of every column record `RowSubset`, unless `record_row_subset` is false: a caller
+    /// that records the dropped rows itself passes false.
+    RelationProfile estimateRelationProfile(
+        const StorageMetadataPtr & metadata,
+        const ActionsDAG::Node * filter,
+        const ActionsDAG::Node * prewhere,
+        bool record_row_subset = true) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
     [[nodiscard]] RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
     [[nodiscard]] RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
@@ -130,7 +137,8 @@ private:
         [[nodiscard]] UInt64 estimateCardinality() const;
     };
 
-    RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
+    RelationProfile estimateRelationProfileImpl(
+        std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata, bool record_row_subset = true) const;
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
 
     /// Selectivity of `column IN (set)` derived from the size of the set rather than from its contents:

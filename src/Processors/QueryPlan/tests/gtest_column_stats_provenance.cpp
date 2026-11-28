@@ -309,10 +309,14 @@ TEST(ColumnStatsProvenance, StableDiagnosticString)
     EXPECT_EQ(provenance(ColumnStatsOrigin::SyntheticFallback).toString(), "synthetic-fallback");
     EXPECT_EQ(provenance(ColumnStatsOrigin::SyntheticOverride).toString(), "synthetic-override");
 
-    constexpr UInt16 all_transformations = RowSubset | EstimatedRowCountClamp | NDVBoundExpression | PartialStatisticsCoverage | Unmodeled;
+    constexpr UInt16 all_transformations
+        = RowSubset | EstimatedRowCountClamp | NDVBoundExpression | PartialStatisticsCoverage | Unmodeled | FilterOnOtherColumns;
     EXPECT_EQ(
         provenance(ColumnStatsOrigin::MeasuredStatistics, all_transformations).toString(),
-        "measured-statistics[row-subset,estimated-row-clamp,ndv-bound-expression,partial-statistics-coverage,unmodeled]");
+        "measured-statistics[row-subset,estimated-row-clamp,ndv-bound-expression,partial-statistics-coverage,unmodeled,"
+        "filter-on-other-columns]");
+    EXPECT_EQ(
+        provenance(ColumnStatsOrigin::MeasuredStatistics, FilterOnOtherColumns).toString(), "measured-statistics[filter-on-other-columns]");
 }
 
 TEST(ColumnStatsProvenance, GuaranteesKeptByEachTransformation)
@@ -330,6 +334,7 @@ TEST(ColumnStatsProvenance, GuaranteesKeptByEachTransformation)
     const std::vector<Case> cases{
         {std::nullopt, true, true, true, true, true},
         {RowSubset, false, true, false, true, false},
+        {FilterOnOtherColumns, false, true, false, true, true},
         {NDVBoundExpression, false, true, false, false, false},
         {PartialStatisticsCoverage, false, false, false, false, false},
         {Unmodeled, false, false, false, false, false},
@@ -384,6 +389,39 @@ TEST(ColumnStatsProvenance, ValueRangeComesWithTheNullFractionOfTheSameRows)
     const auto superset = stats.valueRange(ValueRangeGuarantee::Superset);
     ASSERT_TRUE(superset.has_value());
     EXPECT_FALSE(superset->null_fraction.has_value());
+}
+
+TEST(ColumnStatsProvenance, FilterOnOtherColumnsKeepsRepresentativeRangeUnlessRowsWereDroppedByTheColumn)
+{
+    auto stats = measuredColumnStats();
+    stats.null_fraction = 0.25;
+    stats.addTransformation(FilterOnOtherColumns);
+
+    /// The independence assumption of `Representative` covers the NULLs as well.
+    const auto representative = stats.valueRange(ValueRangeGuarantee::Representative);
+    ASSERT_TRUE(representative.has_value());
+    EXPECT_EQ(representative->min, Field(UInt64{10}));
+    EXPECT_EQ(representative->max, Field(UInt64{59}));
+    EXPECT_EQ(representative->null_fraction, 0.25);
+
+    /// A superset makes no assumption, so it comes without the NULL fraction, as for `RowSubset`.
+    const auto superset = stats.valueRange(ValueRangeGuarantee::Superset);
+    ASSERT_TRUE(superset.has_value());
+    EXPECT_FALSE(superset->null_fraction.has_value());
+
+    /// The range still encloses the values, so it is kept where only enclosing ranges are.
+    auto enclosing = stats;
+    keepOnlyEnclosingValueRange(enclosing);
+    EXPECT_EQ(enclosing.min_value, stats.min_value);
+    EXPECT_EQ(enclosing.max_value, stats.max_value);
+
+    /// Another predicate that reads the column cuts its distribution.
+    stats.addTransformation(RowSubset);
+    EXPECT_FALSE(stats.valueRange(ValueRangeGuarantee::Representative).has_value());
+    EXPECT_FALSE(stats.valueRange(ValueRangeGuarantee::Exact).has_value());
+    EXPECT_TRUE(stats.valueRange(ValueRangeGuarantee::Superset).has_value());
+    EXPECT_TRUE(stats.distinctCount(DistinctCountGuarantee::UpperBound).has_value());
+    EXPECT_FALSE(stats.distinctCount(DistinctCountGuarantee::Exact).has_value());
 }
 
 TEST(ColumnStatsProvenance, SyntheticPlannerInputsCarryOverrideProvenance)
