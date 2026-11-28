@@ -802,6 +802,9 @@ private:
     const DataTypes aggregate_state_types;
     Params params;
 
+    /// By header position: a `LowCardinality(Nullable)` argument read only by `readsOnlyNullMap` functions, passed as `Nullable(UInt8)`.
+    std::vector<UInt8> null_map_only_arguments;
+
     /// The record layout of the staged aggregate arguments; set when the adaptive aggregation is engaged and the
     /// query has aggregate functions.
     std::unique_ptr<const AdaptiveArgumentLayout> adaptive_argument_layout;
