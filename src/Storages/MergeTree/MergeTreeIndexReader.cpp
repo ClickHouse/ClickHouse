@@ -236,6 +236,26 @@ void MergeTreeIndexReader::read(size_t mark, size_t current_granule_num, MergeTr
     stream_mark = mark + 1;
 }
 
+size_t MergeTreeIndexReader::readRange(size_t mark_begin, size_t mark_end, IMergeTreeIndexBulkGranules & granules)
+{
+    chassert(mark_begin < mark_end);
+
+    initStreamIfNeeded();
+    if (streams.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Bulk range read is not supported for indexes with multiple streams. Have {} streams for index {}", streams.size(), index->getFileName());
+
+    auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
+    if (stream_mark != mark_begin)
+        stream->seekToMark(mark_begin);
+
+    const size_t granules_read = granules.deserializeBinaryBulk(mark_begin, mark_end - mark_begin, *stream->getDataBuffer(), version);
+    if (granules_read == 0 || granules_read > mark_end - mark_begin)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Bulk range read of index {} returned {} granules for the range [{}, {})", index->getFileName(), granules_read, mark_begin, mark_end);
+
+    stream_mark = mark_begin + granules_read;
+    return granules_read;
+}
+
 void MergeTreeIndexReader::adjustRightMark(size_t right_mark)
 {
     for (const auto & stream : stream_holders)

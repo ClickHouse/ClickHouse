@@ -1,0 +1,89 @@
+<test>
+    <!-- Compare scalar and bulk minmax evaluation for partition-key, non-partition-key,
+         and multi-index predicates. The scalar variant omits the new setting so it can run
+         on the reference server. -->
+
+    <substitutions>
+        <substitution>
+            <name>bulk_settings</name>
+            <values>
+                <value>SETTINGS secondary_indices_enable_bulk_filtering = 0, use_skip_indexes_on_data_read = 0</value>
+                <value>SETTINGS secondary_indices_enable_bulk_filtering = 1, use_skip_indexes_on_data_read = 0, use_minmax_index_bulk_filtering = 1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE minmax_bench_partitioned
+        (
+            t DateTime,
+            c UInt32,
+            INDEX idx_t t TYPE minmax GRANULARITY 1,
+            INDEX idx_c c TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree
+        PARTITION BY toYYYYMM(t)
+        ORDER BY t
+    </create_query>
+
+    <create_query>
+        CREATE TABLE minmax_bench_large_part
+        (
+            t DateTime,
+            c UInt32,
+            v UInt64,
+            INDEX idx_c c TYPE minmax GRANULARITY 1,
+            INDEX idx_v v TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree
+        ORDER BY t
+    </create_query>
+
+    <fill_query>
+        INSERT INTO minmax_bench_partitioned
+        SELECT toDateTime('2024-01-01 00:00:00') + number, intHash32(number)
+        FROM numbers(30000000)
+        SETTINGS max_insert_threads = 8
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO minmax_bench_large_part
+        SELECT toDateTime('2024-01-01 00:00:00') + number, intHash32(number), intHash64(number + 1)
+        FROM numbers(20000000)
+        SETTINGS max_insert_threads = 8
+    </fill_query>
+
+    <fill_query>OPTIMIZE TABLE minmax_bench_large_part FINAL</fill_query>
+
+    <!-- Whole interior partitions: every granule of Feb..Sep is trivially covered. -->
+    <query><![CDATA[
+        SELECT count() FROM minmax_bench_partitioned
+        WHERE t BETWEEN toDateTime('2024-02-01 00:00:00') AND toDateTime('2024-09-30 23:59:59')
+        {bulk_settings}
+    ]]></query>
+
+    <!-- Predicate on a non-partition-key minmax-indexed column spanning the whole table:
+         evaluator runs on every granule of every partition. -->
+    <query><![CDATA[
+        SELECT count() FROM minmax_bench_partitioned
+        WHERE c BETWEEN 1000000000 AND 3000000000
+        {bulk_settings}
+    ]]></query>
+
+    <!-- Single large part, predicate that passes every granule: isolates evaluator cost
+         from pruning effects. -->
+    <query><![CDATA[
+        SELECT count() FROM minmax_bench_large_part WHERE c >= 0
+        {bulk_settings}
+    ]]></query>
+
+    <!-- Single large part, conjunction across two minmax indices. -->
+    <query><![CDATA[
+        SELECT count() FROM minmax_bench_large_part
+        WHERE c BETWEEN 1000000000 AND 3000000000 AND v < 9000000000000000000
+        {bulk_settings}
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS minmax_bench_partitioned</drop_query>
+    <drop_query>DROP TABLE IF EXISTS minmax_bench_large_part</drop_query>
+</test>

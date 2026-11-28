@@ -2,6 +2,7 @@
 #include "config.h"
 
 #include <Common/Documentation.h>
+#include <Core/Defines.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
@@ -140,9 +141,33 @@ using MergeTreeIndexGranules = std::vector<MergeTreeIndexGranulePtr>;
 struct IMergeTreeIndexBulkGranules
 {
     virtual ~IMergeTreeIndexBulkGranules() = default;
+
+    /// `granule_num` is the number of the index granule (mark) in the part. The granule numbers
+    /// returned by `IMergeTreeIndexCondition::getPossibleGranules` are the same numbers.
     virtual void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
     /// Number of index values read so far.
     [[nodiscard]] virtual size_t numValues() const = 0;
+
+    /// Read up to `count` consecutive granules starting from `first_granule_num` from `istr` in one call.
+    /// Returns the number of granules read, which is at least one when `count` is not zero.
+    ///
+    /// A granule of an index like `set` stores a variable number of values, so the default implementation
+    /// loops over the per-granule API and stops once at least `DEFAULT_BLOCK_SIZE` values are read: the
+    /// batch stays bounded by the number of values rather than by the number of granules. Implementations
+    /// for indexes with one fixed-width value per granule (e.g. minmax) can override it to read all `count`
+    /// granules and amortize per-granule dispatch over the chunk. Used by `MergeTreeIndexReader::readRange`.
+    [[nodiscard]] virtual size_t deserializeBinaryBulk(size_t first_granule_num, size_t count, ReadBuffer & istr, MergeTreeIndexVersion version)
+    {
+        size_t granules_read = 0;
+        while (granules_read < count)
+        {
+            deserializeBinary(first_granule_num + granules_read, istr, version);
+            ++granules_read;
+            if (numValues() >= DEFAULT_BLOCK_SIZE)
+                break;
+        }
+        return granules_read;
+    }
 };
 
 using MergeTreeIndexBulkGranulesPtr = std::shared_ptr<IMergeTreeIndexBulkGranules>;
@@ -181,6 +206,22 @@ public:
     [[nodiscard]] virtual FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr &) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
+    }
+
+    /// Whether `getPossibleGranules` can evaluate this condition, given that the index `supportsBulkFiltering`.
+    [[nodiscard]] virtual bool supportsBulkFiltering() const { return true; }
+
+    /// Whether bulk filtering stays as precise as `mayBeTrueOnGranule` with `use_skip_indexes_for_disjunctions`.
+    /// `getPossibleGranules` does not report the partial results of the atoms, so a rejected granule is recorded
+    /// with `reportBulkRejectedGranule` instead.
+    [[nodiscard]] virtual bool bulkFilteringPreservesPartialDisjunctions() const { return false; }
+
+    /// Record into the partial-disjunction bitset that `getPossibleGranules` rejected a granule, so that
+    /// `mergePartialResultsForDisjunctions` excludes its marks even when a later index restores them.
+    /// Called only when `bulkFilteringPreservesPartialDisjunctions`.
+    virtual void reportBulkRejectedGranule(const UpdatePartialDisjunctionResultFn & /*update_partial_disjunction_result_fn*/) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support partial disjunction results in bulk filtering");
     }
 
     /// Special method for vector similarity indexes:
