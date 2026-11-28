@@ -4,8 +4,14 @@
 #include <functional>
 #include <memory>
 #include <utility>
+#include <Common/Exception.h>
 
-template <class F>
+/// `may_throw` makes the destructor `noexcept(false)`, so that on a normal scope exit an exception from the function
+/// propagates to the caller instead of calling `std::terminate`. Guards made by `make_scope_guard` (`SCOPE_EXIT`) have it.
+/// The `scope_guard` type does not: it is kept as a class member, and a potentially throwing member destructor
+/// makes the owner's destructor potentially throwing too, which is not allowed to override a virtual `noexcept` one.
+/// Nothing is lost, because an owner's destructor is `noexcept` and would terminate on a throw anyway.
+template <class F, bool may_throw = false>
 class [[nodiscard]] BasicScopeGuard
 {
 public:
@@ -22,15 +28,15 @@ public:
         return *this;
     }
 
-    template <typename G>
+    template <typename G, bool other_may_throw>
     requires std::is_convertible_v<G, F>
-    constexpr BasicScopeGuard(BasicScopeGuard<G> && src) : function{src.release()} {} // NOLINT(google-explicit-constructor, cppcoreguidelines-rvalue-reference-param-not-moved, cppcoreguidelines-noexcept-move-operations)
+    constexpr BasicScopeGuard(BasicScopeGuard<G, other_may_throw> && src) : function{src.release()} {} // NOLINT(google-explicit-constructor, cppcoreguidelines-rvalue-reference-param-not-moved, cppcoreguidelines-noexcept-move-operations)
 
-    template <typename G>
+    template <typename G, bool other_may_throw>
     requires std::is_convertible_v<G, F>
-    constexpr BasicScopeGuard & operator=(BasicScopeGuard<G> && src) // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved, cppcoreguidelines-noexcept-move-operations)
+    constexpr BasicScopeGuard & operator=(BasicScopeGuard<G, other_may_throw> && src) // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved, cppcoreguidelines-noexcept-move-operations)
     {
-        if constexpr (std::is_same_v<G, F>)
+        if constexpr (std::is_same_v<G, F> && other_may_throw == may_throw)
         {
             if (this == &src)
                 return *this;
@@ -48,7 +54,26 @@ public:
     requires std::is_convertible_v<G, F>
     constexpr BasicScopeGuard(G && function_) : function{std::move(function_)} {} // NOLINT(google-explicit-constructor, bugprone-forwarding-reference-overload, bugprone-move-forwarding-reference, cppcoreguidelines-missing-std-forward)
 
-    ~BasicScopeGuard() { invoke(); }
+    /// While another exception is in flight, an exception from the function is logged and swallowed,
+    /// because a throw there would call `std::terminate`.
+    ~BasicScopeGuard() noexcept(!may_throw)
+    {
+        if (exceptions == std::uncaught_exceptions())
+        {
+            invoke();
+        }
+        else
+        {
+            try
+            {
+                invoke();
+            }
+            catch (...)
+            {
+                DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    }
 
     static constexpr bool is_nullable = std::is_constructible_v<bool, F>;
 
@@ -71,11 +96,11 @@ public:
         return std::exchange(function, {});
     }
 
-    template <typename G>
+    template <typename G, bool other_may_throw>
     requires std::is_convertible_v<G, F>
-    BasicScopeGuard<F> & join(BasicScopeGuard<G> && other) // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
+    BasicScopeGuard & join(BasicScopeGuard<G, other_may_throw> && other) // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
     {
-        if (other.function)
+        if (other)
         {
             if (function)
             {
@@ -99,17 +124,19 @@ private:
             if (!function)
                 return;
         }
+
         std::move(function)();
     }
 
     F function = F{};
+    int exceptions{std::uncaught_exceptions()};
 };
 
 using scope_guard = BasicScopeGuard<std::function<void()>>;
 
 
 template <class F>
-inline BasicScopeGuard<F> make_scope_guard(F && function_) { return std::forward<F>(function_); }
+inline BasicScopeGuard<F, /* may_throw = */ true> make_scope_guard(F && function_) { return std::forward<F>(function_); }
 
 #define SCOPE_EXIT_CONCAT(n, ...) \
 const auto scope_exit##n = make_scope_guard([&] { __VA_ARGS__; })
