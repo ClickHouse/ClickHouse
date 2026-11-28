@@ -74,6 +74,8 @@ void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuf
     try
     {
         function->deserialize(place, istr, version, &arena);
+        if (!function->hasTrivialDestructor())
+            checkMemoryLimitForAggregateFunctionState();
         /// Inside the guard: `push_back` can throw, and until it succeeds nothing owns `place`.
         column_concrete.getData().push_back(place);
     }
@@ -174,6 +176,8 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
     {
         ReadBufferFromString istr(s);
         function->deserialize(place, istr, version, &arena);
+        if (!function->hasTrivialDestructor())
+            checkMemoryLimitForAggregateFunctionState();
 
         const size_t trailing_bytes = istr.available();
         if (trailing_bytes != 0)

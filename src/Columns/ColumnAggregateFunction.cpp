@@ -240,6 +240,8 @@ void ColumnAggregateFunction::ensureOwnership()
         Container new_data;
         new_data.resize_exact(size);
 
+        const bool check_memory_limit = !func->hasTrivialDestructor();
+
         size_t rollback_pos = 0;
         try
         {
@@ -253,6 +255,8 @@ void ColumnAggregateFunction::ensureOwnership()
                     throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Failpoint triggered");
 
                 func->merge(new_data[i], data[i], &arena);
+                if (check_memory_limit)
+                    checkMemoryLimitForAggregateFunctionState();
             }
         }
         catch (...)
@@ -308,9 +312,15 @@ void ColumnAggregateFunction::doInsertRangeFrom(const IColumn & from, size_t sta
         ///  because ownership of states of aggregate function cannot be shared for individual rows,
         ///  (only as a whole).
 
+        const bool check_memory_limit = !func->hasTrivialDestructor();
+
         size_t end = start + length;
         for (size_t i = start; i < end; ++i)
+        {
             insertFromWithOwnership(from, i);
+            if (check_memory_limit)
+                checkMemoryLimitForAggregateFunctionState();
+        }
     }
     else
     {
@@ -627,6 +637,8 @@ void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
     /// ensureOwnership() will execute in insertDefault()
     insertDefault();
     insertMergeFrom(place);
+    if (!func->hasTrivialDestructor())
+        checkMemoryLimitForAggregateFunctionState();
 }
 
 void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
@@ -685,6 +697,8 @@ void ColumnAggregateFunction::insert(const Field & x)
     pushBackAndCreateState(data, arena, func.get());
     ReadBufferFromString read_buffer(x.safeGet<AggregateFunctionStateData>().data);
     func->deserialize(data.back(), read_buffer, version, &arena);
+    if (!func->hasTrivialDestructor())
+        checkMemoryLimitForAggregateFunctionState();
 }
 
 bool ColumnAggregateFunction::tryInsert(const DB::Field & x)
@@ -701,6 +715,8 @@ bool ColumnAggregateFunction::tryInsert(const DB::Field & x)
     pushBackAndCreateState(data, arena, func.get());
     ReadBufferFromString read_buffer(x.safeGet<AggregateFunctionStateData>().data);
     func->deserialize(data.back(), read_buffer, version, &arena);
+    if (!func->hasTrivialDestructor())
+        checkMemoryLimitForAggregateFunctionState();
     return true;
 }
 
