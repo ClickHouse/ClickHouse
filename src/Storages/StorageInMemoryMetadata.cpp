@@ -75,6 +75,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , settings_changes_names(other.settings_changes_names)
     , select(other.select)
     , refresh(other.refresh ? other.refresh->clone() : nullptr)
+    , new_engine(other.new_engine ? other.new_engine->clone() : nullptr)
     , definer(other.definer)
     , sql_security_type(other.sql_security_type)
     , comment(other.comment)
@@ -114,6 +115,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     settings_changes_names = other.settings_changes_names;
     select = other.select;
     refresh = other.refresh ? other.refresh->clone() : nullptr;
+    new_engine = other.new_engine ? other.new_engine->clone() : nullptr;
     definer = other.definer;
     sql_security_type = other.sql_security_type;
     comment = other.comment;
