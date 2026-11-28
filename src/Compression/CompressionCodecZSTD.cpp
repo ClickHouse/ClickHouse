@@ -238,7 +238,7 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
-            if (!literal)
+            if (!literal || !isInt64OrUInt64orBoolFieldType(literal->value.getType()))
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "ZSTD codec argument must be integer");
 
             level = static_cast<int>(literal->value.safeGet<UInt64>());
@@ -251,7 +251,7 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
             if (arguments->children.size() > 1)
             {
                 const auto * window_literal = children[1]->as<ASTLiteral>();
-                if (!window_literal)
+                if (!window_literal || !isInt64OrUInt64orBoolFieldType(window_literal->value.getType()))
                     throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "ZSTD codec second argument must be integer");
 
                 const int window_log = static_cast<int>(window_literal->value.safeGet<UInt64>());

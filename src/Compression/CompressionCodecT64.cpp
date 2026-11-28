@@ -861,7 +861,7 @@ void registerCodecT64(CompressionCodecFactory & factory)
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
-            if (!literal)
+            if (!literal || literal->value.getType() != Field::Types::String)
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Wrong modification for T64. Expected: 'bit', 'byte')");
             String name = literal->value.safeGet<String>();
 

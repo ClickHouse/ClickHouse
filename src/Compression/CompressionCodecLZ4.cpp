@@ -251,7 +251,7 @@ void registerCodecLZ4HC(CompressionCodecFactory & factory)
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
-            if (!literal)
+            if (!literal || !isInt64OrUInt64orBoolFieldType(literal->value.getType()))
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "LZ4HC codec argument must be integer");
 
             level = static_cast<int>(literal->value.safeGet<UInt64>());
