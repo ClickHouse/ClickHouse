@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsComparison.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/ColumnNumbers.h>
@@ -40,6 +41,12 @@ public:
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Only `equals` of the arguments can throw: `if` then picks one of the values that exist already.
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
+    {
+        return arguments.size() != 2 || comparisonCanThrow(arguments[0].type, arguments[1].type);
+    }
 
     [[nodiscard]] String getSignatureString() const override { return "(T, Any) -> Nullable(T)"; }
 
