@@ -56,12 +56,14 @@ void StatisticsUniqV2::build(const ColumnPtr & column)
     }
 
     collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &raw_column_ptr, nullptr);
+    invalidateCachedCardinality();
 }
 
 void StatisticsUniqV2::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsUniqV2 * other = typeid_cast<const StatisticsUniqV2 *>(other_stats.get());
     collector->merge(data, other->data, arena.get());
+    invalidateCachedCardinality();
 }
 
 size_t StatisticsUniqV2::allocatedBytes() const
@@ -108,6 +110,7 @@ void StatisticsUniqV2::deserialize(ReadBuffer & buf, StatisticsFileVersion /*ver
             is_null, collector_is_nullable);
 
     collector->deserialize(data, buf);
+    invalidateCachedCardinality();
 }
 
 UInt64 StatisticsUniqV2::estimateCardinality() const

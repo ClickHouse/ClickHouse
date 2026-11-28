@@ -15,7 +15,7 @@ class LazyOutputFormat : public IOutputFormat
 {
 
 public:
-    explicit LazyOutputFormat(SharedHeader header);
+    LazyOutputFormat(SharedHeader header, bool keep_automatic_low_cardinality_);
 
     String getName() const override { return "LazyOutputFormat"; }
 
@@ -66,13 +66,29 @@ public:
 protected:
     void consume(Chunk chunk) override
     {
+        if (!keep_automatic_low_cardinality)
+            convertToFullIfNonNativeLowCardinality(chunk);
         (void)(queue.emplace(std::move(chunk)));
     }
 
-    void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
-    void consumeExtremes(Chunk chunk) override { extremes = std::move(chunk); }
+    void consumeTotals(Chunk chunk) override
+    {
+        if (!keep_automatic_low_cardinality)
+            convertToFullIfNonNativeLowCardinality(chunk);
+        totals = std::move(chunk);
+    }
+
+    void consumeExtremes(Chunk chunk) override
+    {
+        if (!keep_automatic_low_cardinality)
+            convertToFullIfNonNativeLowCardinality(chunk);
+        extremes = std::move(chunk);
+    }
 
 private:
+
+    /// See `PullingAsyncPipelineExecutor`.
+    const bool keep_automatic_low_cardinality;
 
     ConcurrentBoundedQueue<Chunk> queue;
     std::atomic<bool> keep_queued_chunks_on_cancel{false};

@@ -1,0 +1,6 @@
+t_auto_lc_whatif	LowCardinality
+t_auto_lc_whatif_default	Default
+skip_ratio: 50.0%
+source: empirical
+skip_ratio: 50.0%
+source: empirical

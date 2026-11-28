@@ -1,0 +1,17 @@
+all_1_1_0	fs	LowCardinality
+all_1_1_0	lc	LowCardinality
+all_2_2_0	fs	Default
+all_2_2_0	lc	Default
+all_3_3_0	fs	Default
+all_3_3_0	lc	Default
+all_4_4_0	fs	Default
+all_4_4_0	lc	Default
+all_5_5_0	fs	Default
+all_5_5_0	lc	Default
+20005	20005	10005	1	20009
+1	a	aaaa
+2	b	bbbb
+3	c	cccc
+4	d	dddd
+5	e	eeee
+20005	20005	10005

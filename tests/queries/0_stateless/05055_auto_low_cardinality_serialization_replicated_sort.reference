@@ -1,0 +1,16 @@
+0	['0']	['0']
+0	['0']	['0']
+0	['0']	['0']
+0	['0']	['0']
+0	['0']	['0']
+0	['0']	['0']
+1	['1']	['1']
+1	['1']	['1']
+1	['1']	['1']
+1	['1']	['1']
+1	['1']	['1']
+1	['1']	['1']
+2	['2']	[]
+2	['2']	[]
+---
+Array(LowCardinality(String))	Array(LowCardinality(String)), Array(size = N, UInt64(size = N), LowCardinality(size = N, UInt8(size = N), Unique(size = N, String(size = N))))

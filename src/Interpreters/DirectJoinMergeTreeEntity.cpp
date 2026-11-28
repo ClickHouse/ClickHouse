@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -129,10 +130,11 @@ Chunk DirectJoinMergeTreeEntity::executePlan(QueryPlan & plan) const
         if (!result_chunk)
         {
             /// Materialize columns to ensure consistent types across blocks
-            /// (e.g., ColumnConst or ColumnSparse may appear in some blocks but not others).
+            /// (e.g., ColumnConst, ColumnSparse or a non-native ColumnLowCardinality from automatic
+            /// LowCardinality serialization may appear in some blocks but not others).
             auto columns = result_block.getColumns();
             for (auto & col : columns)
-                col = col->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
+                col = recursiveRemoveNonNativeLowCardinality(col->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
             result_chunk = Chunk(std::move(columns), result_block.rows());
         }
         else
@@ -143,7 +145,8 @@ Chunk DirectJoinMergeTreeEntity::executePlan(QueryPlan & plan) const
 
             for (size_t i = 0; i < columns.size(); ++i)
             {
-                auto new_col = new_columns[i]->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
+                auto new_col = recursiveRemoveNonNativeLowCardinality(
+                    new_columns[i]->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
                 auto mutable_col = IColumn::mutate(std::move(columns[i]));
                 mutable_col->insertRangeFrom(*new_col, 0, new_col->size());
                 columns[i] = std::move(mutable_col);

@@ -1,0 +1,31 @@
+serialization per part
+all_1_1_0	hc	Default
+all_1_1_0	id	Default
+all_1_1_0	lc	LowCardinality
+all_2_2_0	hc	Default
+all_2_2_0	id	Default
+all_2_2_0	lc	LowCardinality
+transparent type
+FixedString(16)	FixedString(16)
+correctness
+20000	17	20000
+functions on lc
+10000	2
+group by lc
+item_0	1429
+item_1	1429
+item_2	1429
+item_3	1429
+item_4	1428
+after merge
+all_1_2_1	hc	Default
+all_1_2_1	id	Default
+all_1_2_1	lc	LowCardinality
+20000	17	20000
+after mutation
+hc	Default
+id	Default
+lc	LowCardinality
+20000	14	20000
+after detach/attach
+20000	14

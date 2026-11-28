@@ -59,12 +59,13 @@ struct PullingAsyncPipelineExecutor::Data
     }
 };
 
-PullingAsyncPipelineExecutor::PullingAsyncPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
+PullingAsyncPipelineExecutor::PullingAsyncPipelineExecutor(QueryPipeline & pipeline_, bool keep_automatic_low_cardinality_)
+    : pipeline(pipeline_)
 {
     if (!pipeline.pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PullingAsyncPipelineExecutor must be pulling");
 
-    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.output->getSharedHeader());
+    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.output->getSharedHeader(), keep_automatic_low_cardinality_);
     pipeline.complete(lazy_format);
 }
 

@@ -9,8 +9,8 @@ namespace DB
 
 NullWriteBuffer LazyOutputFormat::out;
 
-LazyOutputFormat::LazyOutputFormat(SharedHeader header)
-    : IOutputFormat(header, out), queue(2)
+LazyOutputFormat::LazyOutputFormat(SharedHeader header, bool keep_automatic_low_cardinality_)
+    : IOutputFormat(header, out), keep_automatic_low_cardinality(keep_automatic_low_cardinality_), queue(2)
 {
 }
 

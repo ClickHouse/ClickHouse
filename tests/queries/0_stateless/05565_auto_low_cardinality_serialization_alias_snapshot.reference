@@ -1,0 +1,6 @@
+alias: rewrite is skipped
+0
+300
+direct read of the target: rewrite fires
+1
+300

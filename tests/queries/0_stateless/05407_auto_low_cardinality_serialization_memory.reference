@@ -1,0 +1,6 @@
+source kind
+LowCardinality
+memory
+6000	6000	2000	0	10
+memory compressed
+6000	6000	2000	0	10

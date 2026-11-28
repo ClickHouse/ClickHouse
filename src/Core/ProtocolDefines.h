@@ -416,6 +416,10 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_SECONDARY
 /// from the columns, and an older receiver rejects a column-less block that declares rows.
 static constexpr auto DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT = 54498;
 
+/// Automatic `LowCardinality` serialization adds the `LOW_CARDINALITY` kind to
+/// custom serialization metadata. Older peers do not recognize that kind.
+static constexpr auto DBMS_MIN_REVISION_WITH_AUTOMATIC_LOW_CARDINALITY_SERIALIZATION = 54499;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -424,5 +428,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT = 54498
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54498;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54499;
 }

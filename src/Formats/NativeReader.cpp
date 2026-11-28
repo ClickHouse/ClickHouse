@@ -15,6 +15,7 @@
 #include <Formats/NativeReader.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/castColumnToRequestedType.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
@@ -265,7 +266,10 @@ Block NativeReader::read()
             UInt8 has_custom = 0;
             readBinary(has_custom, istr);
             if (has_custom)
+            {
                 info->deserializeFromKindsBinary(istr, allowed_kinds);
+                info->checkKindStackForType(*column.type);
+            }
 
             serialization = column.type->getSerialization(*info);
             auto new_column = column.type->createColumn(*serialization);
@@ -307,6 +311,10 @@ Block NativeReader::read()
 
                 if (!header_column.type->equals(*column.type))
                 {
+                    /// The conversions below key on the data types, which do not reflect the dictionary-encoded
+                    /// representation of automatic LowCardinality serialization, so convert to the full column first.
+                    column.column = recursiveRemoveNonNativeLowCardinality(column.column);
+
                     /// Named tuples keep the pairing of `CAST`: this is also the receiving side of every Native INSERT.
                     /// Without type conversion LowCardinality may still differ, to support inserts from old clients without it.
                     castColumnToRequestedType(
