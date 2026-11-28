@@ -1317,12 +1317,13 @@ def test_missing_collection_still_fails_a_push_source(cluster):
     node.restart_clickhouse()
 
     try:
-        # The push source: its own load failed, so nothing stood in for it. Reading it first also
-        # settles the load job, which is what makes the EXISTS reading below deterministic.
+        # The push source: its own load failed, so nothing stood in for it, and `EXISTS` waits for
+        # that load like any other access.
         error = node.query_and_get_error("SELECT * FROM db_push_source.t_queue")
         assert "NAMED_COLLECTION_DOESNT_EXIST" in error
         assert "ASYNC_LOAD_WAIT_FAILED" in error
-        assert node.query("EXISTS TABLE db_push_source.t_queue").strip() == "0"
+        error = node.query_and_get_error("EXISTS TABLE db_push_source.t_queue")
+        assert "ASYNC_LOAD_WAIT_FAILED" in error
 
         # The URL table in the same database: attached, and the stand-in itself is what reports
         # the missing collection, so its load job completed.
