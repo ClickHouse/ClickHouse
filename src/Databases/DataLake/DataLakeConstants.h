@@ -30,6 +30,8 @@ inline std::unordered_map<String, ValueMaskingFunc> settingsToHide()
         /// Catalog credentials
         {"catalog_credential", DB::hideSecretValue},
         {"auth_header", DB::hideSecretValue},
+        {"bearer_token_endpoint", DB::hideSecretValue},
+        {"bearer_token_header", DB::hideSecretValue},
         /// AWS credentials
         {"aws_access_key_id", DB::hideSecretValue},
         {"aws_secret_access_key", DB::hideSecretValue},
