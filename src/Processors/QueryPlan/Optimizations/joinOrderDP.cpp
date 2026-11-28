@@ -40,7 +40,9 @@ DPJoinEntryPtr evaluateJoin(
     VectorWithMemoryTracking<JoinActionRef *> & predicates,
     LoggerPtr log)
 {
-    auto selectivity = computeSelectivity(query_graph, dp_table, expression_selectivity, predicates, left->relations, right->relations);
+    auto selectivity = computeSelectivity(
+        query_graph, dp_table, expression_selectivity, predicates, left->relations, right->relations,
+        left->estimated_rows, right->estimated_rows);
     auto new_cost = computeJoinCost(left, right, selectivity);
 
     const BitSet combined_rels = left->relations | right->relations;

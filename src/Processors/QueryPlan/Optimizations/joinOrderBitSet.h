@@ -22,6 +22,8 @@ SelectivityEstimate computeSelectivity(
     SelectivityCache & expression_selectivity,
     const VectorWithMemoryTracking<JoinActionRef *> & edges,
     const BitSet & left,
-    const BitSet & right);
+    const BitSet & right,
+    std::optional<UInt64> left_rows,
+    std::optional<UInt64> right_rows);
 
 }
