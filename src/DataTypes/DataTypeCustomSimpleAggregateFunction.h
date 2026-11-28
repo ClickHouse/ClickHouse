@@ -46,6 +46,8 @@ public:
     [[nodiscard]] String getName() const override;
     [[nodiscard]] DataTypeCustomDescPtr rederiveFor(const DataTypePtr & rebuilt, const RewriteNestedFn & rewrite_nested) const override;
     static void checkSupportedFunctions(const AggregateFunctionPtr & function);
+    /// Whether applying the function to a single value yields exactly that value.
+    static bool isIdentityOnSingleValue(const AggregateFunctionPtr & function);
 };
 
 DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & function, const DataTypes & argument_types, const Array & parameters);
