@@ -137,7 +137,8 @@ static UInt64 groupByTopKPlanHash(
     const AggregatingStep & aggregating_step,
     const VectorWithMemoryTracking<const ActionsDAG *> & path_expressions,
     const VectorWithMemoryTracking<int> & directions,
-    const VectorWithMemoryTracking<int> & nulls_directions)
+    const VectorWithMemoryTracking<int> & nulls_directions,
+    const VectorWithMemoryTracking<std::shared_ptr<Collator>> & collators)
 {
     SipHash hash;
     hash.update(std::string_view("group_by_top_k"));
@@ -165,6 +166,9 @@ static UInt64 groupByTopKPlanHash(
     {
         hash.update(directions[i]);
         hash.update(nulls_directions[i]);
+        const String locale = i < collators.size() && collators[i] ? collators[i]->getLocale() : String{};
+        hash.update(locale.size());
+        hash.update(locale);
     }
     return hash.get64();
 }
@@ -267,6 +271,7 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     size_t num_key_columns,
     const VectorWithMemoryTracking<int> & directions,
     const VectorWithMemoryTracking<int> & nulls_directions,
+    const VectorWithMemoryTracking<std::shared_ptr<Collator>> & collators,
     const Optimization::ExtraSettings & settings,
     QueryPlan::Nodes & nodes)
 {
@@ -283,6 +288,13 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     /// may alias the column (`__table1.a` at the aggregation is `a` at the read).
     String key_name = aggregating_step.getParams().keys.front();
     auto log = getLogger("optimizeGroupByTopK");
+
+    /// `__topKFilter` would compare every read row under the collation, even after the heap gives up.
+    if (!collators.empty() && collators.front())
+    {
+        LOG_TRACE(log, "No dynamic filter: the key {} is sorted with COLLATE", key_name);
+        return nullptr;
+    }
 
     /// Descend through the steps that pass the key column through without computing anything
     /// over it, down to the reading step.
@@ -360,7 +372,7 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
             UInt64 plan_hash = groupByTopKPlanHash(
                 key_name,
                 aggregating_step.getInputHeaders().front()->getByName(aggregating_step.getParams().keys.front()).type,
-                num_key_columns, limit, aggregating_step, path_expressions, directions, nulls_directions);
+                num_key_columns, limit, aggregating_step, path_expressions, directions, nulls_directions, collators);
             return tryAttachFormatDynamicFilter(
                 *node->step, key_name, direction, nulls_direction, plan_hash, columns_deciding_threshold,
                 has_non_deterministic_expression, settings, log);
@@ -460,7 +472,8 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     /// (`GROUP BY a, g` over `SELECT a, b % 100 AS g`), and the name of a computed key does not always identify its
     /// expression (a column of a subquery), so the salt also includes every expression between the read and the aggregation.
     info.condition_hash = groupByTopKPlanHash(
-        info.column_name, info.data_type, info.num_sort_columns, info.limit_n, aggregating_step, path_expressions, directions, nulls_directions);
+        info.column_name, info.data_type, info.num_sort_columns, info.limit_n, aggregating_step, path_expressions, directions,
+        nulls_directions, collators);
 
     read_step->setTopKColumn(info);
 
@@ -499,6 +512,7 @@ static void applyTopK(
         top_k_params.key_columns,
         top_k_params.directions,
         top_k_params.nulls_directions,
+        top_k_params.collators,
         settings,
         nodes);
 
@@ -513,6 +527,7 @@ static Aggregator::Params::TopKParams topKByAllKeys(size_t num_key_columns, size
         .k = limit,
         .directions = VectorWithMemoryTracking<int>(num_key_columns, 1),
         .nulls_directions = VectorWithMemoryTracking<int>(num_key_columns, 1),
+        .collators = {},
         .key_columns = num_key_columns,
         .observation_rows = 0,
         .shared_boundary = settings.top_k_optimization_shared_boundary,
@@ -651,6 +666,7 @@ static size_t tryOptimizeGroupByTopKImpl(
                 params.top_k->key_columns,
                 params.top_k->directions,
                 params.top_k->nulls_directions,
+                params.top_k->collators,
                 settings,
                 nodes);
             if (threshold_tracker)
@@ -745,6 +761,7 @@ static size_t tryOptimizeGroupByTopKImpl(
 
     VectorWithMemoryTracking<int> directions;
     VectorWithMemoryTracking<int> nulls_directions;
+    VectorWithMemoryTracking<std::shared_ptr<Collator>> collators;
     size_t num_key_columns = 0;
 
     if (sorting_step)
@@ -757,6 +774,7 @@ static size_t tryOptimizeGroupByTopKImpl(
 
         directions.reserve(num_key_columns);
         nulls_directions.reserve(num_key_columns);
+        collators.reserve(num_key_columns);
 
         for (size_t i = 0; i < num_key_columns; ++i)
         {
@@ -766,11 +784,15 @@ static size_t tryOptimizeGroupByTopKImpl(
             if (expression_step && !isSortKeyPassThrough(expression_step->getExpression(), params.keys[i]))
                 return 0;
 
-            if (sort_description[i].collator)
+            if (!canTopKRankSortKey(
+                    sort_description[i],
+                    *aggregating_step->getInputHeaders().front()->getByName(params.keys[i]).type,
+                    num_key_columns == params.keys.size()))
                 return 0;
 
             directions.push_back(sort_description[i].direction);
             nulls_directions.push_back(sort_description[i].nulls_direction);
+            collators.push_back(sort_description[i].collator);
         }
     }
     else
@@ -810,6 +832,7 @@ static size_t tryOptimizeGroupByTopKImpl(
         .k = limit,
         .directions = std::move(directions),
         .nulls_directions = std::move(nulls_directions),
+        .collators = std::move(collators),
         .key_columns = num_key_columns,
         .observation_rows = synthetic_sort ? 0 : settings.top_k_optimization_observation_rows,
         .shared_boundary = settings.top_k_optimization_shared_boundary,
@@ -829,6 +852,7 @@ static size_t tryOptimizeGroupByTopKImpl(
         num_key_columns,
         top_k_params.directions,
         top_k_params.nulls_directions,
+        top_k_params.collators,
         settings,
         nodes);
 

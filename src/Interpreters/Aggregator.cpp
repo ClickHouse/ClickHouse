@@ -15,6 +15,7 @@
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
+#include <Columns/Collator.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -612,6 +613,15 @@ static Aggregator::AggregateColumnsConstData makeAggregateColumnsData(const Colu
     return aggregate_columns;
 }
 
+static Strings topKCollationLocales(const Aggregator::Params::TopKParams & top_k)
+{
+    Strings locales;
+    locales.reserve(top_k.collators.size());
+    for (const auto & collator : top_k.collators)
+        locales.push_back(collator ? collator->getLocale() : String{});
+    return locales;
+}
+
 void Aggregator::Params::explain(ExplainFormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
@@ -650,8 +660,13 @@ void Aggregator::Params::explain(ExplainFormatSettings & settings) const
     }
 
     if (top_k)
+    {
         out << fmt::format(
-            "{}Top-K: limit={}, columns={}, directions=[{}]\n", prefix, top_k->k, top_k->key_columns, fmt::join(top_k->directions, ","));
+            "{}Top-K: limit={}, columns={}, directions=[{}]", prefix, top_k->k, top_k->key_columns, fmt::join(top_k->directions, ","));
+        if (top_k->hasCollators())
+            out << fmt::format(", collations=[{}]", fmt::join(topKCollationLocales(*top_k), ","));
+        out << '\n';
+    }
 }
 
 void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
@@ -686,6 +701,13 @@ void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
         for (int direction : top_k->directions)
             directions->add(direction);
         top_k_map->add("Directions", std::move(directions));
+        if (top_k->hasCollators())
+        {
+            auto collations = std::make_unique<JSONBuilder::JSONArray>();
+            for (const auto & locale : topKCollationLocales(*top_k))
+                collations->add(locale);
+            top_k_map->add("Collations", std::move(collations));
+        }
         map.add("Top-K", std::move(top_k_map));
     }
 }
@@ -1353,6 +1375,7 @@ void Aggregator::executeImpl(
             params.keys.size(),
             params.top_k->k, params.top_k->directions,
             params.top_k->nulls_directions,
+            params.top_k->collators,
             params.top_k->observation_rows,
             params.top_k->shared_boundary ? &top_k_shared_boundary : nullptr,
             params.top_k->threshold_tracker);

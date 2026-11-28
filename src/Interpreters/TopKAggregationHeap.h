@@ -28,6 +28,7 @@ namespace DB
 
 class ITopKThresholdTracker;
 using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
+struct TopKRejectedKeyCache;
 
 /** The tightest skip boundary any aggregation thread has published, shared by all
   * per-thread top-K sets of one `Aggregator`. A set at capacity K with boundary B proves
@@ -71,11 +72,12 @@ struct TopKAggregationHeapBase
     bool frozen = false;                    /// abandoned at runtime; aggregation proceeds as if the optimization were off
     std::vector<AggregateDataPtr> free_states;  /// state slots of pruned groups, reused by later inserts (arena memory is never returned)
 
-    TopKAggregationHeapBase() = default;
+    TopKAggregationHeapBase();
+    ~TopKAggregationHeapBase();
     TopKAggregationHeapBase(const TopKAggregationHeapBase &) = delete;
     TopKAggregationHeapBase & operator=(const TopKAggregationHeapBase &) = delete;
-    TopKAggregationHeapBase(TopKAggregationHeapBase &&) noexcept = default;
-    TopKAggregationHeapBase & operator=(TopKAggregationHeapBase &&) noexcept = default;
+    TopKAggregationHeapBase(TopKAggregationHeapBase &&) noexcept;
+    TopKAggregationHeapBase & operator=(TopKAggregationHeapBase &&) noexcept;
 
     [[nodiscard]] size_t size() const { return heap_indices.size(); }
 
@@ -87,6 +89,8 @@ struct TopKAggregationHeapBase
         skipped_rows += skipped;
         if (boundary_changed)
             publishBoundary();
+        if (rejected_keys) [[unlikely]]
+            advanceRejectedKeys(observed);
     }
 
     [[nodiscard]] bool everRejected() const { return skipped_rows > 0 || evicted_keys > 0; }
@@ -154,8 +158,11 @@ protected:
     bool publish_pending = false;           /// a trim tightened the local boundary since the last exchange
 
     /// Ranking configuration.
+    bool has_collators = false;             /// some entry of `collators` is set
     std::vector<int> directions;            /// per ranked column: +1/-1 for ASC/DESC
     std::vector<int> nulls_directions;      /// per ranked column: NULLs/NaNs placement for `compareAt`/`CompareHelper`
+    std::vector<std::shared_ptr<Collator>> collators;  /// per ranked column, null without `COLLATE`
+    mutable std::unique_ptr<TopKRejectedKeyCache> rejected_keys;   /// only for a single collated `String` key
     TypeIndex typed_key_type = TypeIndex::Nothing;  /// single numeric key type for the inlined fast paths; `Nothing` means the virtual `compareAt` path
 
     std::vector<size_t> low_cardinality_columns;    /// positions of `ColumnLowCardinality` heap columns, for dictionary compaction after a trim
@@ -198,6 +205,7 @@ protected:
         size_t query_k,
         const VectorWithMemoryTracking<int> & dirs,
         const VectorWithMemoryTracking<int> & null_dirs,
+        const VectorWithMemoryTracking<std::shared_ptr<Collator>> & cols,
         UInt64 observation_rows);
 
     void freezeBase();
@@ -347,13 +355,19 @@ private:
 
     void setK(size_t query_k);
 
-    void init(const IColumn & source_column, size_t query_k, int direction, int nulls_direction);
+    void init(
+        const IColumn & source_column,
+        size_t query_k,
+        int direction,
+        int nulls_direction,
+        const VectorWithMemoryTracking<std::shared_ptr<Collator>> & cols);
 
     void init(
         const ColumnRawPtrs & source_columns,
         size_t query_k,
         const VectorWithMemoryTracking<int> & dirs,
-        const VectorWithMemoryTracking<int> & null_dirs);
+        const VectorWithMemoryTracking<int> & null_dirs,
+        const VectorWithMemoryTracking<std::shared_ptr<Collator>> & cols);
 
     void findLowCardinalityColumns();
 
@@ -384,10 +398,25 @@ private:
     /// `aboveBoundary` for the keys that are not numeric; out of line, so the numeric path needs no stack frame.
     [[nodiscard]] NO_INLINE bool aboveBoundaryGeneric(size_t row) const;
 
+    /// `aboveBoundary` for a collated key; a single `String` key goes through `rejected_keys`.
+    [[nodiscard]] bool aboveBoundaryCollated(size_t row) const;
+
+    template <bool with_collation>
+    [[nodiscard]] bool aboveBoundaryImpl(size_t row) const;
+
+    void advanceRejectedKeys(UInt64 rows);
+
     [[nodiscard]] int compareHeapRowsComposite(size_t a, size_t b) const;
 
+    /// `with_collation = false` is valid only without `has_collators`.
+    template <bool with_collation = true>
     [[nodiscard]] int compareColumns(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row, size_t column_index) const
     {
+        if constexpr (with_collation)
+        {
+            if (const auto & collator = collators[column_index])
+                return lhs.compareAtWithCollation(lhs_row, rhs_row, rhs, nulls_directions[column_index], *collator);
+        }
         return lhs.compareAt(lhs_row, rhs_row, rhs, nulls_directions[column_index]);
     }
 };
@@ -415,6 +444,7 @@ struct TopKAggregationHeap : public TopKAggregationHeapBase
         size_t query_k,
         const VectorWithMemoryTracking<int> & dirs,
         const VectorWithMemoryTracking<int> & null_dirs,
+        const VectorWithMemoryTracking<std::shared_ptr<Collator>> & cols,
         UInt64 observation_rows,
         SharedTopKBoundary * shared,
         TopKThresholdTrackerPtr tracker)
@@ -425,7 +455,7 @@ struct TopKAggregationHeap : public TopKAggregationHeapBase
         shared_boundary = shared;
 
         const size_t reserve_hint
-            = initBase(key_columns, heap_key_count, total_group_by_keys, query_k, dirs, null_dirs, observation_rows);
+            = initBase(key_columns, heap_key_count, total_group_by_keys, query_k, dirs, null_dirs, cols, observation_rows);
         threshold_tracker = std::move(tracker);
 
         hash_table_keys.clear();
