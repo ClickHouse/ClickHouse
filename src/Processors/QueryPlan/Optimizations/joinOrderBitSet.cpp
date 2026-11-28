@@ -117,7 +117,8 @@ SelectivityEstimate computeSelectivity(
             continue;
 
         auto equiv_class = query_graph.column_equivalences.getClass(member);
-        if (!equiv_class || !visited.insert(equiv_class).second)
+        /// A join adds no equality from a class of several types (see `cleanupJoinPredicates`), so such a class gives no selectivity.
+        if (!equiv_class || !visited.insert(equiv_class).second || !isClassOfOneType(*equiv_class))
             continue;
 
         /// Find the maximum NDV across all members of this class that belong

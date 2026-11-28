@@ -130,6 +130,18 @@ static std::optional<JoinActionRef> resolveInput(const JoinActionRef & ref)
     return resolved;
 }
 
+/// Whether two columns have one type up to Nullable and LowCardinality. Only such equalities are transitive: `Int32` 0
+/// equals `Enum8('a' = 0)`, which equals the `String` 'a', which equals `Enum8('a' = 1)`, which equals `Int32` 1.
+static bool haveOneType(const JoinActionRef & lhs, const JoinActionRef & rhs)
+{
+    return removeLowCardinalityAndNullable(lhs.getType())->equals(*removeLowCardinalityAndNullable(rhs.getType()));
+}
+
+bool isClassOfOneType(const EquivalenceClasses<JoinActionRef>::Class & columns)
+{
+    return std::ranges::all_of(columns, [&](const JoinActionRef & column) { return haveOneType(column, columns.front()); });
+}
+
 void QueryGraph::buildColumnEquivalences()
 {
     for (const auto & edge : edges)
@@ -173,29 +185,27 @@ void QueryGraph::buildColumnEquivalences()
             "Column equivalence: relation {} `{}` = relation {} `{}`",
             *lhs_rel, lhs_resolved->getColumnName(), *rhs_rel, rhs_resolved->getColumnName());
     }
+
+    connecting_class_relations.clear();
+    UnorderedSetWithMemoryTracking<const EquivalenceClasses<JoinActionRef>::Class *> visited;
+    for (const auto & [_, equiv_class] : column_equivalences.getMemberToClassMap())
+    {
+        if (!equiv_class || !visited.insert(equiv_class.get()).second || !isClassOfOneType(*equiv_class))
+            continue;
+
+        BitSet relations;
+        for (const auto & column : *equiv_class)
+            relations |= column.getSourceRelations();
+        connecting_class_relations.push_back(std::move(relations));
+    }
 }
 
 bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & right) const
 {
-    for (const auto & [member, _] : column_equivalences.getMemberToClassMap())
+    return std::ranges::any_of(connecting_class_relations, [&](const BitSet & relations)
     {
-        auto member_rel = member.getSourceRelations().getSingleBit();
-
-        if (!member_rel || !left.test(*member_rel))
-            continue;
-
-        auto equiv_class = column_equivalences.getClass(member);
-        if (!equiv_class)
-            continue;
-
-        for (const auto & other : *equiv_class)
-        {
-            auto other_rel = other.getSourceRelations().getSingleBit();
-            if (other_rel && right.test(*other_rel))
-                return true;
-        }
-    }
-    return false;
+        return areIntersecting(relations, left) && areIntersecting(relations, right);
+    });
 }
 
 /// Post-process the join tree to remove redundant predicates and synthesize missing ones.
@@ -207,8 +217,8 @@ bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & ri
 ///      so later predicates at the same step can also be detected as redundant.
 ///   2. At an inner join, synthesize one predicate per equivalence class spanning the left
 ///      and right subtrees that the remaining predicates do not connect. If predicates remain,
-///      only for classes whose members have one type up to Nullable and LowCardinality
-///      (equality across types is not transitive), and not when a side is a prepared storage.
+///      not when a side is a prepared storage.
+/// Both phases use only equalities of one type up to Nullable and LowCardinality (see `isClassOfOneType`).
 static void cleanupJoinPredicates(
     const DPJoinEntryPtr & root,
     const EquivalenceClasses<JoinActionRef> & column_equivalences,
@@ -222,15 +232,6 @@ static void cleanupJoinPredicates(
         return relation && prepared_storage_relations.test(*relation);
     };
 
-    auto has_single_type = [](const EquivClasses::Class & members)
-    {
-        auto type = removeLowCardinalityAndNullable(members.front().getType());
-        return std::ranges::all_of(members, [&](const JoinActionRef & member)
-        {
-            return removeLowCardinalityAndNullable(member.getType())->equals(*type);
-        });
-    };
-
     std::function<EquivClasses(const DPJoinEntryPtr &)> process =
         [&](const DPJoinEntryPtr & entry) -> EquivClasses
     {
@@ -238,8 +239,10 @@ static void cleanupJoinPredicates(
             return {};
 
         /// Merge equivalence classes from both children.
-        auto equiv = process(entry->left);
-        equiv.merge(process(entry->right));
+        auto left_equiv = process(entry->left);
+        auto right_equiv = process(entry->right);
+        auto equiv = left_equiv;
+        equiv.merge(right_equiv);
 
         /// Phase 1: Remove redundant predicates.
         auto & expressions = entry->join_operator.expression;
@@ -276,7 +279,7 @@ static void cleanupJoinPredicates(
             /// Only propagate equivalences from inner joins to the parent;
             /// outer join equality holds only for matching rows
             /// and would be invalid for NULL-padded non-matching rows.
-            if (is_inner)
+            if (is_inner && haveOneType(*lhs_resolved, *rhs_resolved))
                 equiv.add(*lhs_resolved, *rhs_resolved);
             return false;
         });
@@ -321,7 +324,7 @@ static void cleanupJoinPredicates(
                 if (!equiv_class || !visited.insert(equiv_class).second)
                     continue;
 
-                if (has_predicates && (is_connected(*equiv_class) || !has_single_type(*equiv_class)))
+                if (!isClassOfOneType(*equiv_class) || (has_predicates && is_connected(*equiv_class)))
                     continue;
 
                 for (const auto & other : *equiv_class)
@@ -344,7 +347,19 @@ static void cleanupJoinPredicates(
             }
         }
 
-        return equiv;
+        /// An outer join fills the columns of an unmatched side with defaults or NULLs, so the equalities of that side do
+        /// not hold on every row above the join.
+        switch (entry->join_operator.kind)
+        {
+            case JoinKind::Left:
+                return left_equiv;
+            case JoinKind::Right:
+                return right_equiv;
+            case JoinKind::Full:
+                return {};
+            default:
+                return equiv;
+        }
     };
 
     process(root);

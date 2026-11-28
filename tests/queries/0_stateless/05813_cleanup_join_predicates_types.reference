@@ -1,0 +1,18 @@
+kept	0
+kept, written order	0
+not added	1
+not added, written order	1
+one type	1
+Join conditions: x = CAST(t AS Nullable(Int32))
+Join conditions: t = v
+merge keys	1
+merge keys, written order	1
+dphyp	0
+dpsize	0
+dpsub	0
+greedy	0
+mixed integer keys	5000
+time zones, dpsub	1
+time zones, dphyp	1
+time zones, dpsize	1
+time zones, greedy	1
