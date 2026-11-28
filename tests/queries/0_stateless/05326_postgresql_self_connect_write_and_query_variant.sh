@@ -12,8 +12,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #
 # The `query(...)` variant works when the structure is given explicitly (the `PostgreSQL` engine with a column
 # list), but inferring the structure of its result is not supported against a ClickHouse server yet: it is
-# resolved with `unnest(...) WITH ORDINALITY AS t(...)`, which ClickHouse does not parse. This pins that
-# limitation down, so the test has to be updated once the inference starts to work.
+# resolved with `format_type(...)` over `unnest(ARRAY[...]::oid[], ...) WITH ORDINALITY`, and ClickHouse does not
+# parse the `::oid[]` array casts. This pins that limitation down, so the test has to be updated once the
+# inference starts to work.
 
 USER_NAME="pg_self_write_${CLICKHOUSE_DATABASE}"
 PG_HOST="localhost:${CLICKHOUSE_PORT_POSTGRESQL}"

@@ -112,7 +112,8 @@ public:
 
     static bool tryBindIdentifierToArrayJoinExpressions(
         const IdentifierLookup & identifier_lookup,
-        const IdentifierResolveScope & scope);
+        const IdentifierResolveScope & scope,
+        const IQueryTreeNode * array_join_node_to_ignore = nullptr);
 
     /// `replaced_storage` is the view source that the caller swaps into the query tree after the analysis.
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(

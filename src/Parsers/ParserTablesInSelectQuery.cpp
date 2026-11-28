@@ -5,6 +5,7 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -14,6 +15,8 @@
 #include <Parsers/ParserStreamSettings.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Core/Joins.h>
+
+#include <Poco/String.h>
 
 
 namespace DB
@@ -80,6 +83,22 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         else
         {
             return false;
+        }
+    }
+
+    /// `func(...) WITH ORDINALITY [[AS] alias]`
+    if (res->table_function && res->table_function->tryGetAlias().empty()
+        && ParserKeyword(Keyword::WITH_ORDINALITY).ignore(pos, expected))
+    {
+        res->with_ordinality = true;
+
+        ASTPtr alias_node;
+        if (ParserAlias(allow_alias_without_as_keyword).parse(pos, alias_node, expected))
+        {
+            auto & function = res->table_function->as<ASTFunction &>();
+            tryGetIdentifierNameInto(alias_node, function.alias);
+            if (!alias_node->children.empty() && alias_node->children.front()->as<ASTQueryParameter>())
+                function.parametrised_alias = boost::dynamic_pointer_cast<ASTQueryParameter>(alias_node->children.front());
         }
     }
 
@@ -190,6 +209,25 @@ bool ParserArrayJoin::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+
+/// In PostgreSQL `LATERAL` is a noise word before a function; `unnest` is implicitly lateral.
+static bool parseLateralUnnest(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool allow_alias_without_as_keyword)
+{
+    auto begin = pos;
+    if (ParserKeyword(Keyword::LATERAL).ignore(pos, expected) && pos->type == TokenType::BareWord
+        && Poco::toLower(String(pos->begin, pos->end)) == "unnest")
+    {
+        auto next = pos;
+        ++next;
+        if (next->type == TokenType::OpeningRoundBracket && ParserTableExpression(allow_alias_without_as_keyword).parse(pos, node, expected)
+            && node->as<ASTTableExpression &>().table_function)
+            return true;
+    }
+
+    pos = begin;
+    node = nullptr;
+    return false;
+}
 
 static void parseJoinStrictness(IParser::Pos & pos, ASTTableJoin & table_join, Expected & expected)
 {
@@ -319,7 +357,8 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
         {
             pos = before_lateral;
             res->table_expression = nullptr;
-            if (!ParserTableExpression(allow_alias_without_as_keyword).parse(pos, res->table_expression, expected))
+            if (!parseLateralUnnest(pos, res->table_expression, expected, allow_alias_without_as_keyword)
+                && !ParserTableExpression(allow_alias_without_as_keyword).parse(pos, res->table_expression, expected))
                 return false;
         }
 
@@ -437,6 +476,8 @@ SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, val);
 ```
 
 See [Values table function](/reference/functions/table-functions/values#sql-standard-values-clause) for more details.
+
+PostgreSQL's table source `unnest(arr)` is also supported, see [ARRAY JOIN](/reference/statements/select/array-join#unnest).
 
 The `FROM` can contain multiple data sources, separated by commas, which is equivalent of performing [CROSS JOIN](/reference/statements/select/join) on them.
 
@@ -1069,9 +1110,8 @@ Only the following subset is supported so far; anything else is rejected with an
   must not contain functions that are non-deterministic within a query, such as
   `rand` or `generateUUIDv4`, or table functions that generate random rows, such as `generateRandom`.
   Functions that are constant within a query, such as `now`, are allowed.
-- Only a subquery is supported as the lateral table expression. The PostgreSQL table-source forms
-  `LATERAL unnest(...)` and `CROSS JOIN UNNEST(...)` are not supported. Use the
-  [`ARRAY JOIN`](/reference/statements/select/array-join) clause instead.
+- Only a subquery is supported as the lateral table expression. For `unnest(...)` (also with `LATERAL`), see
+  [ARRAY JOIN](/reference/statements/select/array-join#unnest); it does not need `enable_lateral_join`.
 - The `GROUP BY` and `ORDER BY` of the lateral subquery run once for all left values together, so the
   `max_rows_to_group_by`, `max_rows_to_sort` and `max_bytes_to_sort` limits count the rows for all left values,
   not for one. They are only supported with the `throw` overflow mode; `any` and `break` are rejected.
@@ -1201,9 +1241,7 @@ It is a common operation for tables that contain an array column to produce a ne
 
 Its name comes from the fact that it can be looked at as executing `JOIN` with an array or nested data structure. The intent is similar to the [arrayJoin](/reference/functions/regular-functions/array-join) function, but the clause functionality is broader.
 
-<Note>
-PostgreSQL's `FROM unnest(...)`, `CROSS JOIN UNNEST(...)` and `LATERAL unnest(...)` table-source forms are not supported. Use `ARRAY JOIN` instead. The `unnest` name (since version 26.5) is a function-call alias of `arrayJoin` (`SELECT unnest(arr)`), not a table function. `JOIN LATERAL <subquery>` over a correlated subquery is supported separately as an experimental feature, see [`JOIN`](/reference/statements/select/join#lateral-join).
-</Note>
+PostgreSQL's table source `unnest(...)` is a shorter form of `ARRAY JOIN`, see [Table source unnest](#unnest).
 
 Syntax:
 
@@ -1602,6 +1640,76 @@ LIMIT 10 OFFSET 20;
 If `ORDER BY` starts with the columns of the sorting key of a `MergeTree` table, the query reads the table in the order of the key. In the example, this is true when the table has `ORDER BY id`. The query then stops when it has the rows for `LIMIT`, and it does not expand the arrays of the other rows. For more information, see [Optimization of Data Reading](/reference/statements/select/order-by#optimization-of-data-reading) and the setting [optimize_read_in_order](/reference/settings/session-settings/optimize#optimize_read_in_order). If `ORDER BY` starts with an element of the array, for example `ORDER BY num, id`, the query expands and sorts all the rows.
 
 The [arrayJoin](/reference/functions/regular-functions/array-join) function also produces the elements of each array in their order in the array. But if a query has more than one `arrayJoin` call, the first call is not always the outer loop. For more information, see [Row order](/reference/functions/regular-functions/array-join#row-order).
+
+## Table source unnest {#unnest}
+
+As in PostgreSQL, `unnest` can be used as a table source in `FROM` and `JOIN`:
+
+```sql
+unnest(arr1[, arr2, ...]) [WITH ORDINALITY] [[AS] alias[(column1, column2, ...)]]
+```
+
+- It gives one row per element of the array. Several arrays are zipped: the elements at the same position go to the same row, as in `ARRAY JOIN arr1, arr2`.
+- `WITH ORDINALITY` adds a last column with the 1-based position of the element.
+- The column list names the columns. A column that is not named is called as the alias (`unnest` without an alias) when there is one array, `unnest1`, `unnest2`, ... when there are several arrays, and `ordinality` for the position. The alias (`unnest` without an alias) qualifies the columns: `u.x`, `u.*`. It must differ from the names and aliases of the preceding tables.
+
+After a comma, `CROSS JOIN`, `[INNER] JOIN ... ON` or `LEFT [OUTER] JOIN ... ON`, the arguments of `unnest` can use the columns of the preceding tables, and it is evaluated for each of their rows: it is implicitly `LATERAL` (`LATERAL unnest(...)` is also accepted and does not need `enable_lateral_join`). This is `ARRAY JOIN`: `FROM t, unnest(t.arr) AS u(x)` is `FROM t ARRAY JOIN t.arr AS x`, and a `LEFT JOIN` is a `LEFT ARRAY JOIN`, which gives the default values (`NULL` with [join_use_nulls](/reference/settings/session-settings/join#join_use_nulls)) to a row without elements. The `ON` condition can use the columns of both sides by name, but not inside a subquery, and keeps the elements for which it is true. `u.x`, and a column of `unnest` with the same name as a column of a preceding table, must be written in the `ON` itself, not in an alias defined elsewhere in the query, and `*`, `COLUMNS('regexp')`, `u.*` and `u.COLUMNS(...)` are not supported in the `ON` condition or the arguments of `unnest`, also through an alias. As for `ARRAY JOIN`, the columns of `unnest` can also be used without the alias, and then they hide the columns of the preceding tables with the same names.
+
+Anywhere else, for example as the first table of `FROM` or after a `RIGHT JOIN`, `unnest(arr) AS x` is the subquery `(SELECT arrayJoin(arr) AS x) AS x`. In a correlated subquery, its arguments can use the columns of the outer query: `WHERE EXISTS (SELECT 1 FROM unnest(t.tags) AS tag WHERE tag = 'b')`.
+
+As for `ARRAY JOIN`, several arrays must have the same size, unless the setting [enable_unaligned_array_join](/reference/settings/session-settings/enable#enable_unaligned_array_join) is enabled, which pads the shorter arrays with default values.
+
+Examples:
+
+```sql
+SELECT x, n FROM unnest(['a', 'b']) WITH ORDINALITY AS u(x, n);
+```
+
+```response
+┌─x─┬─n─┐
+│ a │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+```sql
+SELECT * FROM unnest([1, 2], ['a', 'b']);
+```
+
+```response
+┌─unnest1─┬─unnest2─┐
+│       1 │ a       │
+│       2 │ b       │
+└─────────┴─────────┘
+```
+
+```sql
+SELECT s, x, n FROM arrays_test AS t, unnest(t.arr) WITH ORDINALITY AS u(x, n);
+```
+
+```response
+┌─s─────┬─x─┬─n─┐
+│ Hello │ 1 │ 1 │
+│ Hello │ 2 │ 2 │
+│ World │ 3 │ 1 │
+│ World │ 4 │ 2 │
+│ World │ 5 │ 3 │
+└───────┴───┴───┘
+```
+
+```sql
+SELECT s, u.x FROM arrays_test AS t LEFT JOIN unnest(t.arr) AS u(x) ON u.x > 1;
+```
+
+```response
+┌─s───────┬─u.x─┐
+│ Hello   │   2 │
+│ World   │   3 │
+│ World   │   4 │
+│ World   │   5 │
+│ Goodbye │   0 │
+└─────────┴─────┘
+```
 
 ## Implementation Details {#implementation-details}
 
