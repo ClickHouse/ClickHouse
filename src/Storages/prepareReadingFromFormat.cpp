@@ -442,19 +442,8 @@ SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMet
     if (!storage_ptr)
         return SerializationInfoByName{{}};
 
-    const auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
-    const auto & our_columns = metadata_snapshot->getColumns();
-    const auto & storage_columns = storage_metadata_snapshot->getColumns();
-    auto storage_hints = storage_ptr->getSerializationHints();
-    SerializationInfoByName res({});
-
-    for (const auto & hint : storage_hints)
-    {
-        if (our_columns.tryGetPhysical(hint.first) == storage_columns.tryGetPhysical(hint.first))
-            res.insert(hint);
-    }
-
-    return res;
+    /// Only the hints of the columns with the same types as in `metadata_snapshot` are returned.
+    return storage_ptr->getSerializationHints(*metadata_snapshot);
 }
 
 bool ReadFromFormatInfo::formatReadsHivePartitionColumns() const
