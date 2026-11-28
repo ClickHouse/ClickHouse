@@ -12,6 +12,8 @@
 #include <Parsers/CommonParsers.h>
 #include <Access/IAccessStorage.h>
 
+#include <limits>
+
 
 namespace DB
 {
@@ -78,7 +80,12 @@ namespace
             if (!literal || literal->value.getType() != Field::Types::UInt64)
                 return false;
 
-            priority = literal->value.safeGet<UInt64>();
+            /// The priority is stored as `Int64`, larger values would wrap to negative ones.
+            UInt64 value = literal->value.safeGet<UInt64>();
+            if (value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                return false;
+
+            priority = static_cast<Int64>(value);
             return true;
         });
     }
