@@ -13,11 +13,12 @@ from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
-MIN_TOTAL_TESTS = 5_939_581
-MAX_FAILED_TESTS = 174_004
+EXPECTED_TOTAL_TESTS = 5_939_581
+SQLLOGICTEST_COMMIT = "634e46492bff5c206a6eb9ba934f2cd411c74bf0"
 
 MAX_EXAMPLES_PER_CATEGORY = 5
 MAX_NEW_FAILURES_DISPLAY = 200
+FAILURE_ID_RE = re.compile(r"^[^:\s]+:\d+$")
 
 
 # Reuse the same ClickHouseBinary helper from sqltest_job.py
@@ -174,8 +175,8 @@ def classify_failures(report):
     )
 
 
-def check_thresholds(complete_test_reports):
-    """Check that the complete-clickhouse stage meets success thresholds.
+def check_corpus_size(complete_test_reports):
+    """Check that the complete-clickhouse stage ran the pinned corpus.
     Returns (passed, info_string)."""
     report = complete_test_reports.get("complete-clickhouse")
     if report is None:
@@ -184,46 +185,137 @@ def check_thresholds(complete_test_reports):
     stats = report.get("stats", {})
     total_stats = stats.get("total", {})
     total_success = total_stats.get("success", 0)
-    total_fail = total_stats.get("fail", 0)
-    total_tests = total_success + total_fail
+    total_tests = total_success + total_stats.get("fail", 0)
 
     lines = []
     passed = True
 
-    if total_tests < MIN_TOTAL_TESTS:
+    if total_tests != EXPECTED_TOTAL_TESTS:
         lines.append(
-            f"FAILED: total tests {total_tests:,} < minimum {MIN_TOTAL_TESTS:,}"
+            f"FAILED: total tests {total_tests:,} != expected "
+            f"{EXPECTED_TOTAL_TESTS:,}"
         )
         passed = False
     else:
-        lines.append(f"OK: total tests {total_tests:,} >= minimum {MIN_TOTAL_TESTS:,}")
-
-    if total_fail > MAX_FAILED_TESTS:
-        lines.append(
-            f"FAILED: failed tests {total_fail:,} > maximum {MAX_FAILED_TESTS:,}"
-        )
-        passed = False
-    else:
-        lines.append(
-            f"OK: failed tests {total_fail:,} <= maximum {MAX_FAILED_TESTS:,}"
-        )
+        lines.append(f"OK: total tests {total_tests:,} == expected {EXPECTED_TOTAL_TESTS:,}")
 
     info = "; ".join(lines)
     return passed, info
 
 
-def load_known_failures(known_failures_path):
-    """Load the set of known failure IDs from a text file.
-    Each line is 'test_name:position'. Lines starting with # and empty lines are skipped."""
-    known = set()
-    if not os.path.isfile(known_failures_path):
-        return known
-    with open(known_failures_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                known.add(line)
-    return known
+def load_exclusions(exclusions_dir, catalog_path):
+    """Load and validate the allowed-failure manifests.
+
+    The catalog describes every list file. Each non-comment line in a list is a
+    stable SQLLogicTest request ID in the form ``test_name:position``.
+    """
+    with open(catalog_path, "r", encoding="utf-8") as f:
+        catalog = json.load(f)
+
+    if catalog.get("schema_version") != 1:
+        raise ValueError("exclusion catalog must use schema_version 1")
+    corpus = catalog.get("corpus", {})
+    if corpus.get("commit") != SQLLOGICTEST_COMMIT:
+        raise ValueError(
+            "exclusion catalog commit does not match SQLLOGICTEST_COMMIT"
+        )
+
+    groups = catalog.get("groups")
+    if not isinstance(groups, list) or not groups:
+        raise ValueError("exclusion catalog must contain a non-empty groups list")
+
+    exclusions = {}
+    files = set()
+    keys = set()
+    for group in groups:
+        key = group.get("key")
+        file_name = group.get("file")
+        description = group.get("description")
+        if not key or not file_name or not description:
+            raise ValueError(
+                "each exclusion group needs key, file, and description"
+            )
+        if key in keys:
+            raise ValueError(f"duplicate exclusion group key: {key}")
+        if file_name in files:
+            raise ValueError(f"duplicate exclusion group file: {file_name}")
+        if os.path.basename(file_name) != file_name or not file_name.endswith(".txt"):
+            raise ValueError(f"invalid exclusion file name: {file_name}")
+        keys.add(key)
+        files.add(file_name)
+
+        path = os.path.join(exclusions_dir, file_name)
+        if not os.path.isfile(path):
+            raise ValueError(f"exclusion file does not exist: {path}")
+
+        group_ids = set()
+        with open(path, "r", encoding="utf-8") as f:
+            for line_number, line in enumerate(f, 1):
+                failure_id = line.strip()
+                if not failure_id or failure_id.startswith("#"):
+                    continue
+                if not FAILURE_ID_RE.fullmatch(failure_id):
+                    raise ValueError(
+                        f"invalid failure ID in {file_name}:{line_number}: {failure_id}"
+                    )
+                if failure_id in group_ids:
+                    raise ValueError(
+                        f"duplicate failure ID in {file_name}: {failure_id}"
+                    )
+                if failure_id in exclusions:
+                    other_group = exclusions[failure_id]
+                    raise ValueError(
+                        f"failure ID appears in both {other_group} and {key}: {failure_id}"
+                    )
+                group_ids.add(failure_id)
+                exclusions[failure_id] = key
+        group["count"] = len(group_ids)
+
+    unmanaged_files = sorted(
+        path.name
+        for path in Path(exclusions_dir).glob("*.txt")
+        if path.name not in files
+    )
+    if unmanaged_files:
+        raise ValueError(
+            "exclusion list files missing from catalog: " + ", ".join(unmanaged_files)
+        )
+
+    return exclusions, groups
+
+
+def load_compatibility_status(status_path):
+    with open(status_path, "r", encoding="utf-8") as f:
+        status = json.load(f)
+    if status.get("schema_version") != 1:
+        raise ValueError("compatibility status must use schema_version 1")
+    if not isinstance(status.get("findings"), list):
+        raise ValueError("compatibility status must contain a findings list")
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", status.get("verified_at", "")):
+        raise ValueError("compatibility status needs an ISO verified_at date")
+    if not isinstance(status.get("count_scope"), str):
+        raise ValueError("compatibility status needs a count_scope string")
+    for index, finding in enumerate(status["findings"]):
+        if not finding.get("title"):
+            raise ValueError(f"compatibility finding {index} needs a title")
+        for field, allowed_states in (
+            ("issue", {"open", "closed"}),
+            ("pull_request", {"open", "closed", "merged"}),
+        ):
+            reference = finding.get(field)
+            if reference is None:
+                continue
+            if reference.get("state") not in allowed_states:
+                raise ValueError(
+                    f"compatibility finding {index} has invalid {field} state"
+                )
+            if not reference.get("url", "").startswith(
+                "https://github.com/ClickHouse/ClickHouse/"
+            ):
+                raise ValueError(
+                    f"compatibility finding {index} has invalid {field} URL"
+                )
+    return status
 
 
 def extract_failures_with_details(report):
@@ -247,11 +339,20 @@ def extract_failures_with_details(report):
 
 def save_current_failures(failures_dict, output_path):
     """Save current failure IDs to a text file (sorted, one per line).
-    This file can be copied to tests/sqllogic/known_failures.txt to update the baseline."""
+    This file can be passed to generate_known_failures.py to update the baseline."""
     with open(output_path, "w", encoding="utf-8") as f:
         for fid in sorted(failures_dict.keys()):
             f.write(fid + "\n")
     print(f"Saved {len(failures_dict)} current failures to {output_path}")
+
+
+def check_compatibility_baseline(new_failures, fixed_tests):
+    failures = []
+    if new_failures:
+        failures.append(f"FAILED: {len(new_failures):,} new failures detected")
+    if fixed_tests:
+        failures.append(f"FAILED: {len(fixed_tests):,} stale exclusions now pass")
+    return not failures, "; ".join(failures)
 
 
 def generate_html_report(
@@ -262,6 +363,8 @@ def generate_html_report(
     new_failures=None,
     fixed_tests=None,
     known_failures_count=0,
+    exclusion_groups=None,
+    compatibility_status=None,
 ):
     """Generate an HTML report following the sqltest_job.py pattern."""
     reset_color = "</b>"
@@ -292,13 +395,72 @@ def generate_html_report(
             )
         f.write(f"  {html.escape(threshold_info)}\n\n")
 
+        if exclusion_groups:
+            f.write("<b>Compatibility exclusions</b>\n")
+            f.write(
+                "  Every excluded request is still executed. New failures and "
+                "exclusions that start passing fail this check.\n"
+            )
+            for group in exclusion_groups:
+                count = group.get("count", 0)
+                current_count = group.get("current_count", 0)
+                fixed_count = count - current_count
+                f.write(
+                    f"  {html.escape(group['key'])}: {current_count:,} failing / "
+                    f"{count:,} excluded"
+                )
+                if fixed_count:
+                    f.write(
+                        f" <b style='color: green;'>({fixed_count:,} now pass){reset_color}"
+                    )
+                f.write("\n")
+                f.write(f"    {html.escape(group['description'])}\n")
+            f.write("\n")
+
+        if compatibility_status:
+            verified_at = compatibility_status.get("verified_at", "unknown")
+            f.write(
+                f"<b>Tracked ClickHouse compatibility work</b> "
+                f"(status verified {html.escape(verified_at)})\n"
+            )
+            count_scope = compatibility_status.get("count_scope")
+            if count_scope:
+                f.write(f"  {html.escape(count_scope)}\n")
+            for finding in compatibility_status.get("findings", []):
+                title = html.escape(finding["title"])
+                observed = finding.get("observed_cases")
+                observed_text = ""
+                if observed is not None:
+                    observed_text = f"; {observed:,} observed cases"
+                f.write(f"  {title}{observed_text}\n")
+                issue = finding.get("issue")
+                if issue:
+                    issue_url = html.escape(issue["url"], quote=True)
+                    issue_state = html.escape(issue["state"])
+                    f.write(
+                        f"    Issue: <a href='{issue_url}'>{issue_url}</a> "
+                        f"[{issue_state}]\n"
+                    )
+                pull_request = finding.get("pull_request")
+                if pull_request:
+                    pr_url = html.escape(pull_request["url"], quote=True)
+                    pr_state = html.escape(pull_request["state"])
+                    f.write(
+                        f"    PR:    <a href='{pr_url}'>{pr_url}</a> "
+                        f"[{pr_state}]\n"
+                    )
+                note = finding.get("note")
+                if note:
+                    f.write(f"    {html.escape(note)}\n")
+            f.write("\n")
+
         # New failures section (shown first, as it's the most actionable)
-        if new_failures is not None and known_failures_count > 0:
+        if new_failures is not None:
             num_new = len(new_failures)
             if num_new > 0:
                 f.write(
                     f"<b style='color: red;'>NEW FAILURES: {num_new:,} "
-                    f"(not in known_failures.txt with {known_failures_count:,} entries)"
+                    f"(not in the {known_failures_count:,}-entry exclusion baseline)"
                     f"{reset_color}\n"
                 )
                 f.write(
@@ -312,7 +474,7 @@ def generate_html_report(
                 f.write(
                     "\n  To reproduce via sqllogictest (ClickHouse must be running):\n"
                     "  <span style='color: blue;'>"
-                    "git clone https://github.com/gregrahn/sqllogictest.git"
+                    "git clone https://github.com/gregrahn/sqllogictest"
                     " /tmp/sqllogictest</span>\n\n"
                 )
                 for tf in new_test_files:
@@ -377,12 +539,12 @@ def generate_html_report(
             f.write("\n")
 
         # Fixed tests section
-        if fixed_tests and known_failures_count > 0:
+        if fixed_tests:
             num_fixed = len(fixed_tests)
             if num_fixed > 0:
                 f.write(
                     f"<b style='color: green;'>FIXED TESTS: {num_fixed:,} "
-                    f"(were in known_failures.txt but now pass){reset_color}\n"
+                    f"(excluded requests that now pass){reset_color}\n"
                 )
                 max_show = 50
                 displayed = 0
@@ -468,21 +630,54 @@ def main():
     out_dir = os.path.join(temp_dir, "sqllogic_output")
     os.makedirs(out_dir, exist_ok=True)
 
-    known_failures_path = os.path.join(sqllogic_dir, "known_failures.txt")
+    exclusions_dir = os.path.join(sqllogic_dir, "exclusions")
+    exclusion_catalog_path = os.path.join(exclusions_dir, "catalog.json")
+    compatibility_status_path = os.path.join(
+        sqllogic_dir, "compatibility_status.json"
+    )
     current_failures_path = os.path.join(out_dir, "current_failures.txt")
+    fixed_exclusions_path = os.path.join(out_dir, "fixed_exclusions.txt")
 
-    # Step 1: Start ClickHouse
-    print("Start ClickHouse")
+    exclusions = {}
+    exclusion_groups = []
+    compatibility_status = {}
+    server_started = False
 
-    def start():
-        return ch.install() and ch.start()
+    def validate_manifests():
+        nonlocal exclusions, exclusion_groups, compatibility_status
+        exclusions, exclusion_groups = load_exclusions(
+            exclusions_dir, exclusion_catalog_path
+        )
+        compatibility_status = load_compatibility_status(
+            compatibility_status_path
+        )
+        print(
+            f"Loaded {len(exclusions):,} exclusions from "
+            f"{len(exclusion_groups)} groups"
+        )
+        return True
 
     results.append(
         Result.from_commands_run(
-            name="Start ClickHouse",
-            command=start,
+            name="Validate compatibility manifests",
+            command=validate_manifests,
         )
     )
+
+    # Step 1: Start ClickHouse
+    if results[-1].is_ok():
+        print("Start ClickHouse")
+
+        def start():
+            return ch.install() and ch.start()
+
+        results.append(
+            Result.from_commands_run(
+                name="Start ClickHouse",
+                command=start,
+            )
+        )
+        server_started = results[-1].is_ok()
 
     # Step 2: Clone sqllogictest repo
     if results[-1].is_ok():
@@ -490,12 +685,10 @@ def main():
 
         # Pin to a specific commit to avoid non-deterministic test results
         # when the upstream repo updates (e.g., SQLite version bumps).
-        sqllogictest_commit = "634e46492bff5c206a6eb9ba934f2cd411c74bf0"
-
         def clone():
             if not Path(sqllogictest_repo).is_dir():
                 if not Shell.check(
-                    f"git clone https://github.com/gregrahn/sqllogictest.git {sqllogictest_repo}",
+                    f"git clone https://github.com/gregrahn/sqllogictest {sqllogictest_repo}",
                     verbose=True,
                 ):
                     return False
@@ -508,7 +701,7 @@ def main():
                 ):
                     return False
             return Shell.check(
-                f"git -C {sqllogictest_repo} checkout {sqllogictest_commit}",
+                f"git -C {sqllogictest_repo} checkout {SQLLOGICTEST_COMMIT}",
                 verbose=True,
             )
 
@@ -605,13 +798,12 @@ def main():
                     all_reports[mode_name] = stage_reports
 
             complete_reports = all_reports.get("complete-test", {})
-            threshold_ok, threshold_info = check_thresholds(complete_reports)
+            threshold_ok, threshold_info = check_corpus_size(complete_reports)
 
-            # Known failures analysis on the complete-clickhouse stage
+            # Compatibility exclusions analysis on the complete-clickhouse stage
             new_failures = {}
             fixed_tests = set()
-            known = load_known_failures(known_failures_path)
-            known_count = len(known)
+            known_count = len(exclusions)
 
             ch_report = complete_reports.get("complete-clickhouse")
             if ch_report is not None:
@@ -620,74 +812,84 @@ def main():
                 # Save current failures list as artifact for baseline updates
                 save_current_failures(current, current_failures_path)
 
-                if known_count > 0:
-                    current_ids = set(current.keys())
-                    new_ids = current_ids - known
-                    fixed_tests = known - current_ids
+                current_ids = set(current.keys())
+                excluded_ids = set(exclusions)
+                new_ids = current_ids - excluded_ids
+                fixed_tests = excluded_ids - current_ids
 
-                    new_failures = {
-                        fid: current[fid] for fid in new_ids
-                    }
+                new_failures = {fid: current[fid] for fid in new_ids}
 
-                    print(
-                        f"Known failures: {known_count:,}, "
-                        f"current failures: {len(current):,}, "
-                        f"new: {len(new_failures):,}, "
-                        f"fixed: {len(fixed_tests):,}"
+                group_current_counts = {
+                    group["key"]: 0 for group in exclusion_groups
+                }
+                for failure_id in current_ids & excluded_ids:
+                    group_current_counts[exclusions[failure_id]] += 1
+                for group in exclusion_groups:
+                    group["current_count"] = group_current_counts[group["key"]]
+
+                with open(fixed_exclusions_path, "w", encoding="utf-8") as f:
+                    for failure_id in sorted(fixed_tests):
+                        f.write(failure_id + "\n")
+
+                print(
+                    f"Excluded failures: {known_count:,}, "
+                    f"current failures: {len(current):,}, "
+                    f"new: {len(new_failures):,}, "
+                    f"fixed exclusions: {len(fixed_tests):,}"
+                )
+
+                if new_failures:
+                    new_test_files = sorted(
+                        set(d["test_name"] for d in new_failures.values())
                     )
-
-                    if new_failures:
-                        new_test_files = sorted(
-                            set(d["test_name"] for d in new_failures.values())
-                        )
-                        print("\nNEW FAILURES (with reproduction commands):")
+                    print("\nNEW FAILURES (with reproduction commands):")
+                    print(
+                        "\nTo reproduce via sqllogictest"
+                        " (ClickHouse must be running):"
+                    )
+                    print(
+                        "  git clone"
+                        " https://github.com/gregrahn/sqllogictest"
+                        " /tmp/sqllogictest"
+                    )
+                    for tf in new_test_files:
+                        subdir = os.path.dirname(tf)
                         print(
-                            "\nTo reproduce via sqllogictest"
-                            " (ClickHouse must be running):"
+                            f"\n  mkdir -p"
+                            f" /tmp/sqllogic_input/{subdir}"
+                            f" && cp"
+                            f" /tmp/sqllogictest/test/{tf}"
+                            f" /tmp/sqllogic_input/{subdir}/"
                         )
                         print(
-                            "  git clone"
-                            " https://github.com/gregrahn/sqllogictest.git"
-                            " /tmp/sqllogictest"
+                            "  python3 tests/sqllogic/runner.py"
+                            " complete-test"
+                            " --input-dir /tmp/sqllogic_input"
+                            " --out-dir /tmp/sqllogic_output"
                         )
-                        for tf in new_test_files:
-                            subdir = os.path.dirname(tf)
+                    displayed = 0
+                    for fid in sorted(new_failures.keys()):
+                        if displayed >= MAX_NEW_FAILURES_DISPLAY:
+                            remaining = len(new_failures) - displayed
                             print(
-                                f"\n  mkdir -p"
-                                f" /tmp/sqllogic_input/{subdir}"
-                                f" && cp"
-                                f" /tmp/sqllogictest/test/{tf}"
-                                f" /tmp/sqllogic_input/{subdir}/"
+                                f"\n  ... and {remaining:,} more new failures"
+                                f" (see current_failures.txt artifact for the full list)"
                             )
-                            print(
-                                "  python3 tests/sqllogic/runner.py"
-                                " complete-test"
-                                " --input-dir /tmp/sqllogic_input"
-                                " --out-dir /tmp/sqllogic_output"
-                            )
-                        displayed = 0
-                        for fid in sorted(new_failures.keys()):
-                            if displayed >= MAX_NEW_FAILURES_DISPLAY:
-                                remaining = len(new_failures) - displayed
-                                print(
-                                    f"\n  ... and {remaining:,} more new failures"
-                                    f" (see current_failures.txt artifact for the full list)"
-                                )
-                                break
-                            details = new_failures[fid]
-                            reason = details.get("reason", "")
-                            print(f"\n  {fid}")
-                            if reason:
-                                print(f"    Reason: {reason[:300]}")
-                            displayed += 1
+                            break
+                        details = new_failures[fid]
+                        reason = details.get("reason", "")
+                        print(f"\n  {fid}")
+                        if reason:
+                            print(f"    Reason: {reason[:300]}")
+                        displayed += 1
 
             # Finalize pass/fail verdict before rendering HTML report
-            final_ok = threshold_ok
-            if known_count > 0 and len(new_failures) > 0:
-                threshold_info += (
-                    f"; FAILED: {len(new_failures):,} new failures detected"
-                )
-                final_ok = False
+            baseline_ok, baseline_info = check_compatibility_baseline(
+                new_failures, fixed_tests
+            )
+            final_ok = threshold_ok and baseline_ok
+            if baseline_info:
+                threshold_info += f"; {baseline_info}"
 
             generate_html_report(
                 all_reports,
@@ -697,6 +899,8 @@ def main():
                 new_failures=new_failures,
                 fixed_tests=fixed_tests,
                 known_failures_count=known_count,
+                exclusion_groups=exclusion_groups,
+                compatibility_status=compatibility_status,
             )
 
             return final_ok
@@ -709,7 +913,7 @@ def main():
         )
 
     # A server that died mid-run otherwise shows only as a short test count.
-    if results[0].is_ok():
+    if server_started:
         died = ch.died_result()
         if died:
             results.append(died)
@@ -719,6 +923,8 @@ def main():
         report_files.append(report_html_path)
     if os.path.isfile(current_failures_path):
         report_files.append(current_failures_path)
+    if os.path.isfile(fixed_exclusions_path):
+        report_files.append(fixed_exclusions_path)
 
     Result.create_from(
         results=results,
