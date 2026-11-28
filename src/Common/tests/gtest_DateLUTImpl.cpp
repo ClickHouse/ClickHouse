@@ -348,9 +348,11 @@ TEST(DateLUTTest, WeekFunctionsOutOfRangePeriodicity)
         const Int64 in_range = cctz::convert(cctz::civil_second(2250, month, 14, 0, 0, 0), cctz::utc_time_zone()).time_since_epoch().count();
 
         EXPECT_EQ(lut.toISOWeek(oor), lut.toISOWeek(in_range)) << "month=" << month;
-        EXPECT_EQ(lut.toYearWeek(oor, 0).second, lut.toYearWeek(in_range, 0).second) << "month=" << month;
+        EXPECT_EQ(lut.toYearWeek(oor, WeekSpec::fromMode(0)).second, lut.toYearWeek(in_range, WeekSpec::fromMode(0)).second)
+            << "month=" << month;
         EXPECT_EQ(lut.toISOYear(oor) + 400, lut.toISOYear(in_range)) << "month=" << month;
-        EXPECT_EQ(lut.toYearWeek(oor, 0).first + 400, lut.toYearWeek(in_range, 0).first) << "month=" << month;
+        EXPECT_EQ(lut.toYearWeek(oor, WeekSpec::fromMode(0)).first + 400, lut.toYearWeek(in_range, WeekSpec::fromMode(0)).first)
+            << "month=" << month;
     }
 }
 

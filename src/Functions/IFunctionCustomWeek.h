@@ -10,6 +10,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/TransformDateTime64.h>
+#include <Functions/WeekFunctionsSettings.h>
 
 namespace DB
 {
@@ -23,7 +24,17 @@ template <typename Transform>
 class IFunctionCustomWeek : public IFunction
 {
 public:
+    using ModeSpec = typename Transform::ModeSpec;
+
     static constexpr auto name = Transform::name;
+
+    /// The `week_functions_*` settings are resolved here, once per function object, into the spec used when the
+    /// `mode` argument is absent. Every function of this family defaults to mode 0.
+    explicit IFunctionCustomWeek(ContextPtr context)
+        : default_spec(WeekFunctionsSettings(context).apply(ModeSpec::fromMode(0)))
+    {
+    }
+
     [[nodiscard]] String getName() const override { return name; }
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -53,6 +64,18 @@ public:
             type_ptr = nullable_type->getNestedType().get();
 
         const IFunction::Monotonicity is_not_monotonic;
+
+        /// `toDayOfWeek` is monotonic inside a week that starts on its first day. Its factor transform
+        /// `ToDayOfWeekFactorImpl` gives two days the same factor only if they lie in the same Monday week and in the
+        /// same Sunday week, so it covers the weeks that start on Monday or on Sunday, from `mode` or from
+        /// `week_functions_starting_day`. A week that starts on another day, from the setting, is reported as not
+        /// monotonic. This method cannot see whether the `mode` argument is present, so an explicit mode under such a
+        /// setting is reported as not monotonic too.
+        if constexpr (std::is_same_v<ModeSpec, WeekDaySpec>)
+        {
+            if (default_spec.first_weekday != 1 && default_spec.first_weekday != 7)
+                return is_not_monotonic;
+        }
 
         /// Parsing of String arguments is not monotonic w.r.t. String ordering
         if (checkAndGetDataType<DataTypeString>(type_ptr))
@@ -127,6 +150,9 @@ public:
     }
 
 protected:
+    /// The spec used when the `mode` argument is absent.
+    const ModeSpec default_spec;
+
     void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date_or_date32, bool value_may_be_string) const
     {
         auto is_date_or_date_time_or_string = [](const IDataType & type)

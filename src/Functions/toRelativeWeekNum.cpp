@@ -15,6 +15,8 @@ REGISTER_FUNCTION(ToRelativeWeekNum)
 Converts a date or date with time to the number of weeks elapsed since a certain fixed point in the past.
 The exact point in time is an implementation detail, and therefore this function is not intended to be used standalone.
 The main purpose of the function is to calculate the difference in weeks between two dates or dates with time, e.g., `toRelativeWeekNum(dt1) - toRelativeWeekNum(dt2)`.
+
+Weeks start on Monday, or on the day set by [`week_functions_starting_day`](/reference/settings/session-settings/week-functions#week_functions_starting_day). The function has no argument to override the setting.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 toRelativeWeekNum(date)

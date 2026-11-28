@@ -22,12 +22,14 @@ and whether the return value should be in the range from 0 to 6 or 1 to 7.
 | 1    | Monday            | 0-6: Monday = 0, Tuesday = 1, ..., Sunday = 6  |
 | 2    | Sunday            | 0-6: Sunday = 0, Monday = 1, ..., Saturday = 6 |
 | 3    | Sunday            | 1-7: Sunday = 1, Monday = 2, ..., Saturday = 7 |
+
+If `mode` is omitted, mode `0` is used, unless the setting [`week_functions_starting_day`](/reference/settings/session-settings/week-functions#week_functions_starting_day) is not `'auto'`: then the days are numbered 1-7 from that day. For example, with `'saturday'`, Saturday = 1, ..., Friday = 7. An explicit `mode` ignores the setting.
         )";
     FunctionDocumentation::Syntax syntax = "toDayOfWeek(datetime[, mode[, timezone]])";
     FunctionDocumentation::Arguments arguments =
     {
         {"datetime", "Date or date with time to get the day of week from.", {"Date", "Date32", "DateTime", "DateTime64"}},
-        {"mode", "Optional. Integer specifying the week mode (0-3). Defaults to 0 if omitted.", {"UInt8"}},
+        {"mode", "Optional. Integer specifying the week mode (0-3). Defaults to 0 if omitted, adjusted by the `week_functions_starting_day` setting.", {"UInt8"}},
         {"timezone", "Optional. Timezone to use for the conversion.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the day of the week for the given `Date` or `DateTime`", {"UInt8"}};

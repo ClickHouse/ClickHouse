@@ -663,10 +663,12 @@ const std::map<String, Entry> & scalarFunctions()
                 [](const ASTs & a) -> ASTPtr
                 {
                     /// Kusto returns the *timespan* since the preceding Sunday, so a Monday
-                    /// is `1.00:00:00` and not `1`. ClickHouse's `toDayOfWeek` counts from
-                    /// Monday = 1, hence the modulo.
+                    /// is `1.00:00:00` and not `1`. ClickHouse's `toDayOfWeek` with mode 0 counts
+                    /// from Monday = 1, hence the modulo. The explicit mode keeps the
+                    /// `week_functions_starting_day` setting from changing the result; it must be
+                    /// unsigned, as `toDayOfWeek` takes a `UInt8` mode.
                     return makeASTFunction(
-                        "toIntervalDay", makeASTFunction("modulo", makeASTFunction("toDayOfWeek", a[0]), litI(7)));
+                        "toIntervalDay", makeASTFunction("modulo", makeASTFunction("toDayOfWeek", a[0], lit(Field(UInt64(0)))), litI(7)));
                 }});
         /// `datetime_add(period, amount, datetime)` and `datetime_part(part, datetime)` name
         /// the unit with a string literal, so the right ClickHouse function is chosen here
