@@ -1277,6 +1277,14 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
     visitor.visit(query_tree_to_modify);
 }
 
+IQueryTreeNode::ReplacementMap rewriteAsShippedToParallelReplicas(QueryTreeNodePtr query_tree, const ContextPtr & context)
+{
+    rewriteJoinToGlobalJoin(query_tree, context);
+    DistributedProductModeRewriteInJoinVisitor visitor(context, /*allow_global_join_for_right_table*/ true, /*enforce_distributed_product_mode*/ false);
+    visitor.visit(query_tree);
+    return visitor.getReplacementMap();
+}
+
 namespace
 {
 
