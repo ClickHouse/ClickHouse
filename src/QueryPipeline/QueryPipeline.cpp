@@ -1,9 +1,9 @@
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <iterator>
-#include <tuple>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/QueueWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
@@ -166,47 +166,31 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
     UnorderedSetWithMemoryTracking<IProcessor *> processors;
 
-    /// Start at the output and follow inputs toward the sources. For each path, remember which
-    /// limit is being counted and which of its input ports the path came through. A shared processor
-    /// may need to be visited more than once when it feeds different limits or limit inputs.
+    /// Start at the output and follow inputs toward the sources, remembering which limit is being counted.
+    /// A shared processor is visited once per limit.
     ///
     /// `counted_inputs_by_limit` records limit inputs whose rows are counted closer to the source.
     /// The limit itself counts rows only for the other inputs.
     MapWithMemoryTracking<IProcessor *, UnorderedSetWithMemoryTracking<size_t>> counted_inputs_by_limit;
-    MapWithMemoryTracking<std::tuple<IProcessor *, IProcessor *, ssize_t>, bool> visited;
+    /// (processor, limit being counted) -> whether the walk continued to its inputs under the same limit.
+    using State = std::pair<IProcessor *, IProcessor *>;
+    MapWithMemoryTracking<State, bool> visited;
+    /// States where the rows of their limit are counted.
+    QueueWithMemoryTracking<State> counted_states;
     bool has_limit = false;
 
-    struct QueuedEntry
-    {
-        IProcessor * processor;
-        IProcessor * limit_being_counted;
-        ssize_t limit_input_port;
-    };
-
-    QueueWithMemoryTracking<QueuedEntry> queue;
-
-    auto mark_limit_input_as_counted = [&](IProcessor * limit, ssize_t input_port)
-    {
-        if (input_port < 0 || static_cast<size_t>(input_port) >= limit->getInputs().size())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Invalid input port {} while placing the rows_before_limit_at_least counter",
-                input_port);
-
-        counted_inputs_by_limit[limit].emplace(static_cast<size_t>(input_port));
-    };
-
-    queue.push({ output_format, nullptr, -1 });
+    QueueWithMemoryTracking<State> queue;
+    queue.push({ output_format, nullptr });
 
     while (!queue.empty())
     {
-        auto * processor = queue.front().processor;
-        auto * limit_being_counted = queue.front().limit_being_counted;
-        auto limit_input_port = queue.front().limit_input_port;
+        auto * processor = queue.front().first;
+        auto * limit_being_counted = queue.front().second;
         queue.pop();
 
-        /// The same processor can be reached under different limits or parent input ports.
-        if (!visited.emplace(std::tuple(processor, limit_being_counted, limit_input_port), true).second)
+        /// The same processor can be reached under different limits.
+        auto [visited_it, inserted] = visited.emplace(State(processor, limit_being_counted), false);
+        if (!inserted)
             continue;
 
         /// Set counter based on the following cases:
@@ -241,9 +225,9 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         if (((limit && limit->isShardLimit()) || (negative_limit && negative_limit->isShardLimit()))
             && limit_being_counted)
         {
-            /// Rows discarded by a shard limit still belong to the parent limit's total. Mark the
-            /// parent input as counted, then continue toward the source past the shard limit.
-            mark_limit_input_as_counted(limit_being_counted, limit_input_port);
+            /// Rows discarded by a shard limit still belong to the parent limit's total. Count the
+            /// parent input here, then continue toward the source past the shard limit.
+            counted_states.push(visited_it->first);
             limit_being_counted = processor;
             counted_inputs_by_limit.try_emplace(limit_being_counted);
         }
@@ -268,7 +252,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             if (typeid_cast<PartialSortingTransform *>(processor) || typeid_cast<ReservoirSampleTransform *>(processor))
             {
                 processors.emplace(processor);
-                mark_limit_input_as_counted(limit_being_counted, limit_input_port);
+                counted_states.push(visited_it->first);
                 continue;
             }
 
@@ -291,7 +275,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             if (typeid_cast<RemoteSource *>(processor) || typeid_cast<DelayedSource *>(processor))
             {
                 processors.emplace(processor);
-                mark_limit_input_as_counted(limit_being_counted, limit_input_port);
+                counted_states.push(visited_it->first);
                 continue;
             }
 
@@ -299,7 +283,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             if (typeid_cast<LimitByTransform *>(processor) || typeid_cast<LimitBySortedStreamTransform *>(processor))
             {
                 processors.emplace(processor);
-                mark_limit_input_as_counted(limit_being_counted, limit_input_port);
+                counted_states.push(visited_it->first);
                 continue;
             }
         }
@@ -308,8 +292,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         if (auto * format = dynamic_cast<IOutputFormat *>(processor))
         {
             auto * child_processor = &format->getPort(IOutputFormat::PortKind::Main).getOutputPort().getProcessor();
-            queue.push({ child_processor, limit_being_counted, limit_input_port });
-
+            queue.push({ child_processor, limit_being_counted });
             continue;
         }
 
@@ -317,29 +300,42 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         if (typeid_cast<CreatingSetsTransform *>(processor))
             continue;
 
-        if (limit_being_counted == processor)
+        visited_it->second = limit_being_counted != processor;
+        for (auto & child_port : processor->getInputs())
+            queue.push({ &child_port.getOutputPort().getProcessor(), limit_being_counted });
+    }
+
+    /// A limit input is counted closer to the source if a counted state of that limit is reachable from it.
+    SetWithMemoryTracking<State> reaches_counted_state;
+    while (!counted_states.empty())
+    {
+        auto [processor, limit] = counted_states.front();
+        counted_states.pop();
+        if (!reaches_counted_state.emplace(processor, limit).second)
+            continue;
+
+        for (auto & output : processor->getOutputs())
         {
-            ssize_t i = 0;
-            for (auto & child_port : processor->getInputs())
-            {
-                auto * child_processor = &child_port.getOutputPort().getProcessor();
-                queue.push({ child_processor, limit_being_counted, i });
-                ++i;
-            }
-        }
-        else
-        {
-            for (auto & child_port : processor->getInputs())
-            {
-                auto * child_processor = &child_port.getOutputPort().getProcessor();
-                queue.push({ child_processor, limit_being_counted, limit_input_port });
-            }
+            if (!output.isConnected())
+                continue;
+
+            auto parent = visited.find(State(&output.getInputPort().getProcessor(), limit));
+            if (parent != visited.end() && parent->second)
+                counted_states.push(parent->first);
         }
     }
 
     /// Case 7.
     for (auto && [limit, ports] : counted_inputs_by_limit)
     {
+        size_t input_num = 0;
+        for (auto & input : limit->getInputs())
+        {
+            if (reaches_counted_state.contains(State(&input.getOutputPort().getProcessor(), limit)))
+                ports.emplace(input_num);
+            ++input_num;
+        }
+
         /// If there are some input ports which don't have the counter, add it to the limit processor.
         if (ports.size() < limit->getInputs().size())
         {
