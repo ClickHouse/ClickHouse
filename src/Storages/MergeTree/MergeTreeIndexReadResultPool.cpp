@@ -158,6 +158,9 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             continue;
         }
 
+        if (MergeTreeDataSelectExecutor::isSkipIndexConditionTrueOnWholePart(index_and_condition, *part_info, log))
+            continue;
+
         auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition_template->generateForPart(*part_info),
