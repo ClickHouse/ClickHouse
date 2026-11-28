@@ -1,0 +1,29 @@
+array_tuple	distributed	1
+array_tuple	final	1
+array_tuple	join	1
+array_tuple	read	1
+date32_decimal	final	1
+date_datetime64	final	1
+datetime_fixedstring	final	1
+enum	final	1
+enum	join	1
+enum	read	1
+int128_bool	final	1
+ipv6_interval	final	1
+lowcardinality	final	1
+prefix_hash	join	1
+repeated_key	final	1
+repeated_key	join	1
+repeated_key	read	1
+string_uuid	final	1
+two_tables	join	1
+array_tuple	1
+date32_decimal	1
+date_datetime64	1
+datetime_fixedstring	1
+enum	1
+int128_bool	1
+ipv6_interval	1
+lowcardinality	1
+repeated_key	1
+string_uuid	1
