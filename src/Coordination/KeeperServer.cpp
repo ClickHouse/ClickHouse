@@ -15,7 +15,9 @@
 #include <Coordination/LoggerWrapper.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Disks/DiskLocal.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string.hpp>
 #include <libnuraft/callback.hxx>
@@ -133,6 +135,18 @@ using namespace std::chrono_literals;
 
 namespace
 {
+
+/// Keeper Session Touch metadata, all integer fields are little-endian:
+/// `"KST" | UInt8 version | UInt64 session_count | session_count * Int64 session_id`.
+/// Example: "KST" | UInt8(1) | UInt64(2) | Int64(10) | Int64(42)
+constexpr std::string_view SESSION_TOUCHES_METADATA_MAGIC = "KST";
+enum class SessionTouchesMetadataVersion : UInt8
+{
+    V1 = 1,
+};
+constexpr auto CURRENT_SESSION_TOUCHES_METADATA_VERSION = SessionTouchesMetadataVersion::V1;
+constexpr size_t SESSION_TOUCHES_METADATA_HEADER_SIZE
+    = SESSION_TOUCHES_METADATA_MAGIC.size() + sizeof(UInt8) + sizeof(UInt64);
 
 #if USE_SSL
 
@@ -697,6 +711,31 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     /// still as safeguard it's better to have some redundant capacity here
     asio_opts.thread_pool_size_ = std::max(16U, getNumberOfCPUCoresToUse());
     asio_opts.streaming_mode_ = coordination_settings[CoordinationSetting::nuraft_streaming_mode];
+    /// A follower can serve local reads while catching up through `AppendEntries` or a snapshot transfer.
+    /// Equal request and response terms are enough to prove that the request came from the current leader.
+    asio_opts.write_resp_meta_ = [this](const nuraft::asio_service_meta_cb_params & callback_params)
+    {
+        if (
+            (callback_params.msg_type_ != nuraft::msg_type::append_entries_request
+             && callback_params.msg_type_ != nuraft::msg_type::install_snapshot_request)
+            || !callback_params.resp_
+            || callback_params.resp_->get_term() != callback_params.term_)
+            return std::string{};
+
+        return takeSessionTouches();
+    };
+    asio_opts.read_resp_meta_ = [this](const nuraft::asio_service_meta_cb_params & callback_params, const std::string & metadata)
+    {
+        if (
+            (callback_params.msg_type_ == nuraft::msg_type::append_entries_request
+             || callback_params.msg_type_ == nuraft::msg_type::install_snapshot_request)
+            && callback_params.resp_
+            && callback_params.resp_->get_term() == callback_params.term_)
+            applySessionTouches(metadata);
+
+        return true;
+    };
+    asio_opts.invoke_resp_cb_on_empty_meta_ = false;
 
     if (state_manager->isSecure())
     {
@@ -928,7 +967,85 @@ void KeeperServer::putLocalReadRequests(const KeeperRequestsForSessions & reques
         if (!request_for_session.request->isReadRequest())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process non-read request locally");
     }
+
+    if (raft_instance)
+    {
+        std::lock_guard lock(session_touches_mutex);
+        if (!isLeader())
+        {
+            for (const auto & request_for_session : requests)
+            {
+                if (request_for_session.session_id >= 0)
+                    pending_session_touches.insert(request_for_session.session_id);
+            }
+        }
+    }
+
     state_machine->processReadRequests(requests);
+}
+
+std::string KeeperServer::takeSessionTouches()
+{
+    std::unordered_set<int64_t> session_touches;
+    {
+        std::lock_guard lock(session_touches_mutex);
+        if (pending_session_touches.empty())
+            return {};
+
+        session_touches.swap(pending_session_touches);
+    }
+
+    WriteBufferFromOwnString buf;
+    writeString(SESSION_TOUCHES_METADATA_MAGIC, buf);
+    writeBinaryLittleEndian(static_cast<UInt8>(CURRENT_SESSION_TOUCHES_METADATA_VERSION), buf);
+    writeBinaryLittleEndian(static_cast<UInt64>(session_touches.size()), buf);
+    for (int64_t session_id : session_touches)
+        writeBinaryLittleEndian(session_id, buf);
+
+    return buf.str();
+}
+
+void KeeperServer::applySessionTouches(std::string_view metadata)
+{
+    if (metadata.size() < SESSION_TOUCHES_METADATA_HEADER_SIZE
+        || !metadata.starts_with(SESSION_TOUCHES_METADATA_MAGIC))
+        return;
+
+    ReadBufferFromMemory in(metadata.substr(SESSION_TOUCHES_METADATA_MAGIC.size()));
+    UInt8 version = 0;
+    readBinaryLittleEndian(version, in);
+    if (static_cast<SessionTouchesMetadataVersion>(version) != CURRENT_SESSION_TOUCHES_METADATA_VERSION)
+        return;
+
+    UInt64 count = 0;
+    readBinaryLittleEndian(count, in);
+    if (count > (metadata.size() - SESSION_TOUCHES_METADATA_HEADER_SIZE) / sizeof(Int64))
+    {
+        LOG_WARNING(
+            log,
+            "Ignoring malformed Keeper session touches metadata with {} sessions and {} bytes",
+            count,
+            metadata.size());
+        return;
+    }
+
+    const size_t expected_size = SESSION_TOUCHES_METADATA_HEADER_SIZE + sizeof(Int64) * count;
+    if (metadata.size() != expected_size)
+    {
+        LOG_WARNING(
+            log,
+            "Ignoring malformed Keeper session touches metadata: expected {} bytes, got {}",
+            expected_size,
+            metadata.size());
+        return;
+    }
+
+    std::vector<int64_t> session_ids(count);
+    for (auto & session_id : session_ids)
+        readBinaryLittleEndian(session_id, in);
+
+    std::lock_guard lock(received_session_touches_mutex);
+    received_session_touches.insert(session_ids.begin(), session_ids.end());
 }
 
 RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions & requests_for_sessions)
@@ -1127,13 +1244,29 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     ///  here could come from the dispatcher on another node.)
     LockMemoryExceptionInThread blocker{VariableContext::Global};
 
+    if (type == nuraft::cb_func::BecomeLeader || type == nuraft::cb_func::BecomeFollower)
+    {
+        session_expiry_queue_refreshed_for_leadership = false;
+        /// Do not carry pending touches into another leadership term.
+        {
+            std::lock_guard lock(session_touches_mutex);
+            pending_session_touches.clear();
+        }
+        {
+            std::lock_guard lock(received_session_touches_mutex);
+            received_session_touches.clear();
+        }
+    }
+
     if (type == nuraft::cb_func::BecomeLeader)
     {
         startLeaderUptimeMetrics();
         finishLeaderElectionMetrics();
     }
     else if (type == nuraft::cb_func::BecomeFollower)
+    {
         stopLeaderUptimeMetrics();
+    }
     else if (type == nuraft::cb_func::RejectedCommittedLogRollback)
     {
         const auto & args = *static_cast<nuraft::cb_func::RejectedCommittedLogRollbackArgs *>(param->ctx);
@@ -1532,7 +1665,33 @@ void KeeperServer::waitInit()
 
 std::vector<int64_t> KeeperServer::getDeadSessions()
 {
-    return state_machine->getDeadSessions();
+    if (!session_expiry_queue_refreshed_for_leadership)
+    {
+        state_machine->touchAllSessions();
+        session_expiry_queue_refreshed_for_leadership = true;
+        return {};
+    }
+
+    std::unordered_set<int64_t> session_touches;
+    {
+        std::lock_guard lock(received_session_touches_mutex);
+        session_touches.swap(received_session_touches);
+    }
+
+    if (!session_touches.empty())
+        state_machine->touchSessions({session_touches.begin(), session_touches.end()});
+
+    auto dead_sessions = state_machine->getDeadSessions();
+    if (!dead_sessions.empty())
+    {
+        /// A touch received after the batch was taken must also prevent expiration in this check.
+        std::lock_guard lock(received_session_touches_mutex);
+        std::erase_if(dead_sessions, [&](int64_t session_id) TSA_REQUIRES(received_session_touches_mutex)
+        {
+            return received_session_touches.contains(session_id);
+        });
+    }
+    return dead_sessions;
 }
 
 KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
