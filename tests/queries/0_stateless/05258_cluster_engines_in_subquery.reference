@@ -1,0 +1,18 @@
+IN subquery allowed: ReadFromCluster 4
+IN subquery not allowed: ReadFromURL 4
+IN table not allowed: ReadFromURL 4
+IN CTE not allowed: ReadFromURL 4
+IN in a WITH alias not allowed: ReadFromURL 4
+IN in a WITH alias used in a subquery not allowed: ReadFromURL 4
+IN in a SQL UDF not allowed: ReadFromURL 4
+EXISTS rewritten to IN not allowed: ReadFromURL 6
+IN subquery not allowed, force mode: SUPPORT_IS_DISABLED SUPPORT_IS_DISABLED
+IN constants, not allowed: ReadFromCluster 4
+IN an alias of constants, not allowed: ReadFromCluster 4
+IN a transitive alias of constants, not allowed: ReadFromCluster 4
+IN an outer alias of constants in a subquery, not allowed: ReadFromCluster 4
+IN an alias of a scalar subquery, not allowed: ReadFromURL 4
+SQL UDF without a subquery, not allowed: ReadFromCluster 4
+SQL UDF with a scalar subquery, not allowed: ReadFromCluster 6
+SQL UDF with IN a parameter, not allowed: ReadFromCluster 4
+SQL UDF with IN a table, not allowed: ReadFromURL 4
