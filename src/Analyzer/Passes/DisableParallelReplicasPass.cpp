@@ -7,6 +7,7 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
@@ -116,7 +117,7 @@ private:
     /// subqueries included, and a parallel-replicas read step cannot be cloned.
     static bool evaluatesCorrelatedSubquery(const QueryNode & query_node)
     {
-        std::vector<const IQueryTreeNode *> nodes;
+        VectorWithMemoryTracking<const IQueryTreeNode *> nodes;
         for (const auto & child : query_node.getChildren())
             if (child)
                 nodes.push_back(child.get());
@@ -162,7 +163,7 @@ private:
     const bool dry_run;
     size_t blockers_seen = 0;
     size_t blockers_on_path = 0;
-    std::vector<Scope> scopes;
+    VectorWithMemoryTracking<Scope> scopes;
     bool kept_in_some_query = false;
     bool reads_opaque_storage = false;
 };
