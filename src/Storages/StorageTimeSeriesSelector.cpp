@@ -1,5 +1,6 @@
 #include <Storages/StorageTimeSeriesSelector.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -281,6 +282,7 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     }
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    context->checkAccess(AccessType::SELECT, time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);

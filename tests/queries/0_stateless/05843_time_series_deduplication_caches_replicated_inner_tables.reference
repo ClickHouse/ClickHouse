@@ -1,0 +1,14 @@
+--- replicated inner tables outside of a Replicated database: TRUNCATE on one replica, the other replica writes the tags and the metric family again ---
+1
+1
+0
+0
+1
+1
+2
+--- in a Replicated database TRUNCATE is executed on every replica, so the caches are used with replicated inner tables ---
+1
+1
+--- outside of a Replicated database the same inserts write their rows every time ---
+2
+2
