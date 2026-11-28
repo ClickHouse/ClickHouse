@@ -24,6 +24,7 @@
 
 #include <Interpreters/Context.h>
 #include <Common/LoggingFormatStringHelpers.h>
+#include <Common/NameResolutionFilter.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -170,6 +171,15 @@ static std::string getEndpoint(
     return context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
 }
 
+/// The endpoint of a disk from the server configuration (`RemoteHostFilterCheck::None`) is not subject to
+/// `remote_url_allow_hosts`, and with `check_name_resolution` its host is not checked at the name resolution
+/// either, for the whole life of the disk. A disk created in SQL is not registered. The hosts that the storage
+/// tells the server to go to, such as a redirect to another region, are checked as before.
+[[maybe_unused]] static void addInternalHostOfDisk(const Poco::URI & uri)
+{
+    NameResolutionFilter::addInternalHost(uri.getHost());
+}
+
 /// host[:port]/bucket of an S3 endpoint, as in an <s3_bucket> entry.
 static std::string getS3BucketEntry(const S3::URI & uri)
 {
@@ -208,6 +218,14 @@ static void registerS3ObjectStorage(ObjectStorageFactory & factory)
             const auto s3_bucket_entry = getS3BucketEntry(uri);
             warnAboutDiskNotAllowedByRemoteHostFilter(
                 name, s3_bucket_entry, fmt::format("<s3_bucket>{}</s3_bucket>", s3_bucket_entry), context->getGlobalContext());
+        }
+        if (remote_host_filter_check == RemoteHostFilterCheck::None)
+        {
+            /// The host as it is written, and as the client addresses the bucket in the path and virtual-hosted styles.
+            addInternalHostOfDisk(parseURI(endpoint));
+            const Poco::URI endpoint_uri(uri.endpoint);
+            addInternalHostOfDisk(endpoint_uri);
+            NameResolutionFilter::addInternalHost(uri.bucket + "." + endpoint_uri.getHost());
         }
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */ true, name);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
@@ -250,6 +268,14 @@ static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
                     warnAboutDiskNotAllowedByRemoteHostFilter(
                         name, endpoint_uri.getAuthority(), fmt::format("<host>{}</host>", endpoint_uri.getHost()),
                         context->getGlobalContext());
+            }
+
+            if (remote_host_filter_check == RemoteHostFilterCheck::None)
+            {
+                /// `libhdfs3` resolves the name node by itself, so it is registered together with its port.
+                /// The data nodes are discovered by the library and stay subject to `remote_url_allow_hosts`.
+                const Poco::URI endpoint_uri = parseURI(uri);
+                NameResolutionFilter::addInternalEndpoint(endpoint_uri.getHost(), endpoint_uri.getPort());
             }
 
             std::unique_ptr<HDFSObjectStorageSettings> settings = std::make_unique<HDFSObjectStorageSettings>(
@@ -309,6 +335,12 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
                         uri, /* throw_on_error */ remote_host_filter_check == RemoteHostFilterCheck::Enforce))
                     warnAboutDiskNotAllowedByRemoteHostFilter(
                         name, uri.getAuthority(), fmt::format("<host>{}</host>", uri.getHost()), context->getGlobalContext());
+        }
+
+        else
+        {
+            for (const auto & uri : AzureObjectStorage::getURIsForRemoteHostFilter(params))
+                addInternalHostOfDisk(uri);
         }
 
         const bool drop_credentials = params.checkOrDropServerManagedCredentials();
