@@ -2,6 +2,7 @@
 #include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/ColumnsCache.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -623,9 +624,9 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
         DataTypePtr type_in_part = required_column.getTypeInStorage();
         DataTypePtr requested_type_in_part = required_column.type;
         bool frozen = false;
-        if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())
+        if (auto frozen_type = tryGetFrozenColumnType(*data_part_info_for_read, storage_snapshot, required_column, name_pair.first))
         {
-            type_in_part = DataTypeFactory::instance().get(missing->type_name);
+            type_in_part = std::move(frozen_type);
             requested_type_in_part = name_pair.second.empty()
                 ? type_in_part
                 : type_in_part->getSubcolumnType(name_pair.second);
