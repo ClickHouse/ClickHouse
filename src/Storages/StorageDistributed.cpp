@@ -13,6 +13,7 @@
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -63,6 +64,7 @@
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -77,6 +79,7 @@
 #include <Planner/CollectSets.h>
 #include <Planner/Planner.h>
 #include <Planner/Utils.h>
+#include <Planner/findQueryForParallelReplicas.h>
 
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
@@ -89,6 +92,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TreeRewriter.h>
@@ -185,6 +189,7 @@ namespace Setting
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsBool insert_distributed_one_random_shard;
+    extern const SettingsBool insert_null_as_default;
     extern const SettingsUInt64 insert_shard_id;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_distributed_depth;
@@ -1560,6 +1565,40 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
     return source->detachFilterActionsDAG();
 }
 
+/// Whether the analyzed query reads a subquery, including one the analysis folded into a constant or `__getScalar`.
+static bool hasSubqueryAfterAnalysis(const QueryTreeNodePtr & node)
+{
+    if (isQueryOrUnionNode(node))
+        return true;
+    if (const auto * function = node->as<FunctionNode>())
+    {
+        if (function->getFunctionName() == "__getScalar")
+            return true;
+        const auto & arguments = function->getArguments().getNodes();
+        if (isNameOfInFunction(function->getFunctionName()) && arguments.size() >= 2
+            && (arguments[1]->getNodeType() == QueryTreeNodeType::TABLE || arguments[1]->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION))
+            return true;
+    }
+    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression()
+        && hasSubqueryAfterAnalysis(constant->getSourceExpression()))
+        return true;
+    for (const auto & child : node->getChildren())
+        if (child && hasSubqueryAfterAnalysis(child))
+            return true;
+    return false;
+}
+
+static bool hasStatefulFunction(const QueryTreeNodePtr & node)
+{
+    if (const auto * function = node->as<FunctionNode>())
+        if (auto function_base = function->getFunction(); function_base && function_base->isStateful())
+            return true;
+    for (const auto & child : node->getChildren())
+        if (child && hasStatefulFunction(child))
+            return true;
+    return false;
+}
+
 
 std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(
     IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
@@ -1612,6 +1651,35 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     const auto * source_table_function = extractTableFunctionFromSelectQuery(source_to_send);
     const bool needs_cluster_function = source_table_function && !endsWith(source_table_function->name, "Cluster");
     if (needs_cluster_function && cluster_name.empty())
+        return {};
+
+    /// Each shard runs the forwarded SELECT on its share of the files: it must neither read anything else nor need the other shares.
+    InterpreterSelectQueryAnalyzer interpreter(
+        query.select, local_context, SelectQueryOptions(QueryProcessingStage::Complete).ignoreASTOptimizations());
+    const auto * analyzed_select = interpreter.getQueryTree()->as<QueryNode>();
+    if (!analyzed_select || !canRunQueryOnEachReplicaShare(*analyzed_select))
+        return {};
+    for (const auto & child : analyzed_select->getChildren())
+        if (child && (hasSubqueryAfterAnalysis(child) || hasStatefulFunction(child)))
+            return {};
+    /// Each shard would also evaluate, for its own rows only, the destination defaults that this INSERT fills.
+    const auto destination_metadata = getInMemoryMetadataPtr(local_context, false);
+    auto insert_header = InterpreterInsertQuery::getSampleBlock(
+        query, std::const_pointer_cast<IStorage>(shared_from_this()), destination_metadata, local_context,
+        /*no_destination=*/false, settings[Setting::insert_allow_materialized_columns]);
+    const auto & select_columns = analyzed_select->getProjectionColumns();
+    const bool null_as_default = settings[Setting::insert_null_as_default] && select_columns.size() == insert_header.columns();
+    for (size_t i = 0; null_as_default && i < select_columns.size(); ++i)
+    {
+        /// As in `InterpreterInsertQuery::convertSelectToInsertSchema`, the NULLs of a Nullable SELECT column take the default.
+        auto & column = insert_header.getByPosition(i);
+        if (isNullableOrLowCardinalityNullable(select_columns[i].type) && !isVariant(column.type) && !isDynamic(column.type))
+            column.type = makeNullableOrLowCardinalityNullable(column.type);
+    }
+    if (auto defaults = resolveMissingDefaults(
+            insert_header, destination_metadata->getSampleBlock().getNamesAndTypesList(), destination_metadata->getColumns(),
+            local_context, null_as_default);
+        defaults && hasStatefulFunction(defaults))
         return {};
 
     src_storage_cluster.updateExternalDynamicMetadataIfExists(local_context);
