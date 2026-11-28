@@ -3,4 +3,9 @@
     <query>SELECT x, sum(y) from (SELECT DISTINCT number % 12 AS x, number % 12321 AS y FROM numbers(10000000)) GROUP BY x</query>
     <query>SELECT sumIf(DISTINCT number % 10, number % 5 = 2) FROM numbers(100000000)</query>
     <query>SELECT countIf(DISTINCT number % 10, number % 5 = 2) FROM numbers(100000000)</query>
+
+    <!-- Large sets and integer widths other than UInt64, single-threaded to measure the hash set of `-Distinct` itself. -->
+    <query>SELECT sumDistinct(number % 262144) FROM numbers(50000000) SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT sumDistinct(toUInt32(number % 4096)) FROM numbers(100000000) SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT sumDistinct(toInt128(number % 4096)) FROM numbers(50000000) SETTINGS max_threads = 1 FORMAT Null</query>
 </test>
