@@ -1270,6 +1270,34 @@ ColumnPtr RecordBatchDecoder::decodeInner(
 
             auto & string_column = assert_cast<ColumnString &>(*column);
             string_column.reserve(rows);
+
+            /// The first pass checks every view and counts the bytes of the values. The bytes of the column
+            /// are then allocated once, and they do not move while the second pass appends the values.
+            size_t total_bytes = 0;
+            for (size_t i = 0; i < rows; ++i)
+            {
+                if (isInvisible(invisible_rows, i))
+                    continue;
+                const char * v = views.ptr + i * 16;
+                Int32 length = 0;
+                memcpy(&length, v, sizeof(Int32));
+                if (length < 0)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Negative Arrow view length {}", length);
+                if (length > 12)
+                {
+                    Int32 data_buffer_index = 0;
+                    Int32 offset = 0;
+                    memcpy(&data_buffer_index, v + 8, sizeof(Int32));
+                    memcpy(&offset, v + 12, sizeof(Int32));
+                    if (data_buffer_index < 0 || static_cast<size_t>(data_buffer_index) >= data_buffers.size())
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow view references invalid data buffer {}", data_buffer_index);
+                    if (offset < 0 || static_cast<Int64>(offset) + length > data_buffers[data_buffer_index].length)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow view references out-of-range data");
+                }
+                total_bytes += static_cast<size_t>(length);
+            }
+            string_column.getChars().reserve(total_bytes);
+
             for (size_t i = 0; i < rows; ++i)
             {
                 if (isInvisible(invisible_rows, i))
@@ -1280,8 +1308,6 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 const char * v = views.ptr + i * 16;
                 Int32 length = 0;
                 memcpy(&length, v, sizeof(Int32));
-                if (length < 0)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Negative Arrow view length {}", length);
                 if (length <= 12)
                 {
                     string_column.insertData(v + 4, static_cast<size_t>(length));
@@ -1292,12 +1318,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                     Int32 offset = 0;
                     memcpy(&data_buffer_index, v + 8, sizeof(Int32));
                     memcpy(&offset, v + 12, sizeof(Int32));
-                    if (data_buffer_index < 0 || static_cast<size_t>(data_buffer_index) >= data_buffers.size())
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow view references invalid data buffer {}", data_buffer_index);
-                    const Slice & data = data_buffers[data_buffer_index];
-                    if (offset < 0 || static_cast<Int64>(offset) + length > data.length)
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow view references out-of-range data");
-                    string_column.insertData(data.ptr + offset, static_cast<size_t>(length));
+                    string_column.insertData(data_buffers[data_buffer_index].ptr + offset, static_cast<size_t>(length));
                 }
             }
             /// Same raw-byte type-hint conversion as the Utf8/Binary branch above.
