@@ -41,7 +41,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 82
+    version: int = 84
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -54,7 +54,6 @@ class RunnerConfig:
     runner_org: str = "ClickHouse"
     runner_url: str = ""  # set in __post_init__
     max_total_errors: int = 5
-    # TEMPORARY: set to 1 to pair with the max_chill disable above (avoids GH race);
     # style-checker runners override this to 10, which is fine as they are small instances.
     max_jobs: int = 1
     max_chill: int = 600
@@ -223,6 +222,8 @@ class Runner:
             # Serve many cron runs on one warm instance and keep its checkout;
             # max_life still recycles the instance daily for a clean re-clone.
             config.max_jobs = 1_000_000
+            # The instance is meant to stay warm between cron runs: never stop it for idling.
+            config.max_chill = config.max_life
             config.keep_workspace = True
 
         if config.init_environment == Environment.MACOS:
@@ -952,24 +953,22 @@ class Monitor:
                 if current_time - last_print_time >= 100:
                     Monitor.log(f"the runner idling for {runner_idle_time} seconds")
                     last_print_time = current_time
-                # TEMPORARY: disabled max_chill idle-termination to avoid a race with GH;
-                # the runner now terminates only after completing max_jobs.
-                # if runner_idle_time > config.max_chill:
-                #     Monitor.write_termination_flag(
-                #         f"Runner idle for too long: {runner_idle_time} seconds"
-                #     )
-                #
-                #     if not self.runner.remove_if_not_running():
-                #         Monitor.log("Runner is busy, will not terminate")
-                #         Monitor.clear_termination_flag()
-                #         last_job_time = current_time
-                #         continue
-                #
-                #     run(["pkill", "Runner.Listener"], check=False)
-                #
-                #     time.sleep(10)
-                #     # normally should scale down from the main runner loop
-                #     raise RuntimeError("Runner idle for too long, terminating")
+                if runner_idle_time > config.max_chill:
+                    Monitor.write_termination_flag(
+                        f"Runner idle for too long: {runner_idle_time} seconds"
+                    )
+
+                    if not self.runner.remove_if_not_running():
+                        Monitor.log("Runner is busy, will not terminate")
+                        Monitor.clear_termination_flag()
+                        last_job_time = current_time
+                        continue
+
+                    run(["pkill", "Runner.Listener"], check=False)
+
+                    time.sleep(10)
+                    # normally should scale down from the main runner loop
+                    raise RuntimeError("Runner idle for too long, terminating")
 
     def daemonize(self) -> None:
         if sys.platform == "darwin":
