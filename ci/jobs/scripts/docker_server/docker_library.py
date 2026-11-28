@@ -25,6 +25,8 @@ CONFIG_OVERRIDE = SCRIPT_DIR / "config.sh"
 TEMP_PATH = SCRIPT_DIR.parents[2] / "tmp"  # parents[2] is `ci`
 REPO_ROOT = SCRIPT_DIR.parents[3]
 OFFICIAL_IMAGES_REPO = "docker-library/official-images"
+# One `run.sh` run; the slowest healthy one took 157 s over 90 days.
+RUN_SH_TIMEOUT = 600
 
 # A test is a `clickhouse-*` or `keeper-*` directory, the names `config.sh` runs; `tests/lib.sh` is a shared helper.
 _TEST_FILE_RE = re.compile(
@@ -123,7 +125,7 @@ def docker_library_config_args(repo_path: Path, image: str, image_os: str):
             generated_config.unlink(missing_ok=True)
 
 
-def test_docker_library(test_results, check_images=None, image_os=None) -> None:
+def test_docker_library(test_results, check_images=None, image_os=None, test_tries=None) -> None:
     """we test our images vs the official docker library repository to track integrity
 
     `check_images` names the images to run the suite against. Without it they are taken from the
@@ -131,6 +133,7 @@ def test_docker_library(test_results, check_images=None, image_os=None) -> None:
     another naming convention passes its own tags, so a mismatch cannot silently test nothing.
     `image_os` maps an image to its variant (`Dockerfile.<variant>`), which selects the tests for
     the variants without a shell; the tag does not tell it, e.g. for the default `scratch` server image.
+    `test_tries` overrides the readiness probe count for this invocation only.
     """
     image_os = image_os or {}
     arch = "amd64" if Utils.is_amd() else "arm64"
@@ -141,14 +144,20 @@ def test_docker_library(test_results, check_images=None, image_os=None) -> None:
     test_name = "docker library image test"
     try:
         repo = "docker-library/official-images"
-        logging.info("Cloning %s repository to run tests for 'clickhouse' image", repo)
         repo_path = TEMP_PATH / repo
-        if not Shell.check(
-            f"git clone --depth 1 {GITHUB_SERVER_URL}/{repo} {repo_path}",
-            verbose=True,
-            retries=3,
-        ):
-            raise RuntimeError(f"Failed to clone {repo}")
+        # Reuse an existing checkout: a single job may test several images
+        # (e.g. clickhouse-server + clickhouse-server-ubuntu), and re-cloning
+        # into the already-populated path would fail.
+        if not repo_path.exists():
+            logging.info(
+                "Cloning %s repository to run tests for 'clickhouse' image", repo
+            )
+            if not Shell.check(
+                f"git clone --depth 1 {GITHUB_SERVER_URL}/{repo} {repo_path}",
+                verbose=True,
+                retries=3,
+            ):
+                raise RuntimeError(f"Failed to clone {repo}")
         run_sh = repo_path / "test/run.sh"
         for image in check_images:
             with docker_library_config_args(
@@ -157,7 +166,19 @@ def test_docker_library(test_results, check_images=None, image_os=None) -> None:
                 cmd = f"{shlex.quote(run_sh.as_posix())} {shlex.quote(image)} {config_args}"
                 test_results.append(
                     Result.from_commands_run(
-                        name=f"{test_name} ({image})", command=cmd, with_info=True
+                        name=f"{test_name} ({image})",
+                        command=Shell.check,
+                        command_args=[cmd],
+                        command_kwargs={
+                            "verbose": True,
+                            "timeout": RUN_SH_TIMEOUT,
+                            "env": (
+                                {**os.environ, "CLICKHOUSE_TEST_TRIES": str(test_tries)}
+                                if test_tries is not None
+                                else None
+                            ),
+                        },
+                        with_info=True,
                     )
                 )
 
@@ -183,6 +204,7 @@ def validate_bugfix_tests(test_results, master_images, tests) -> None:
     # Cloned by `test_docker_library`, which reports a failed clone itself.
     repo_path = TEMP_PATH / OFFICIAL_IMAGES_REPO
     run_sh = repo_path / "test/run.sh"
+    log_file = TEMP_PATH / "docker_library_bugfix_validation.log"
     failed_on = {test: [] for test in tests}
     passed_on = {test: [] for test in tests}
     logs = {test: [] for test in tests}
@@ -205,30 +227,28 @@ def validate_bugfix_tests(test_results, master_images, tests) -> None:
                 repo_path, image, master_images[image]
             ) as config_args:
                 cmd = f"{shlex.quote(run_sh.as_posix())} -t {shlex.quote(test)} {shlex.quote(image)} {config_args}"
-                exit_code, stdout, stderr = Shell.get_res_stdout_stderr(
-                    cmd, verbose=True
+                exit_code = Shell.run(
+                    cmd, log_file=log_file, verbose=True, timeout=RUN_SH_TIMEOUT
                 )
-            if "image has no tests" in stdout:
+            output = log_file.read_text(errors="replace").strip()
+            if "image has no tests" in output:
                 continue
             if exit_code == 0:
                 passed_on[test].append(image)
-            elif f"'{test}' [" in stdout:
+            elif exit_code > 0 and f"'{test}' [" in output:
                 failed_on[test].append(image)
-                logs[test].extend(part for part in (stdout, stderr) if part)
+                logs[test].append(output)
             else:
+                reason = (
+                    f"{test} did not finish on {image} within {RUN_SH_TIMEOUT}s"
+                    if exit_code < 0
+                    else f"{test} did not run on {image}"
+                )
                 test_results.append(
                     Result(
                         name=f"bugfix validation: {test} ({image})",
                         status=Result.Status.ERROR,
-                        info="\n".join(
-                            part
-                            for part in (
-                                f"{test} did not run on {image}",
-                                stdout,
-                                stderr,
-                            )
-                            if part
-                        ),
+                        info="\n".join(part for part in (reason, output) if part),
                     )
                 )
     for test in tests:
