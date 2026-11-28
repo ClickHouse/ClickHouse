@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <config.h>
 
-#if USE_AMQPCPP
+#if USE_RABBITMQ
 
 #include <Storages/RabbitMQ/RabbitMQPublisher.h>
 #include <Common/logger_useful.h>
@@ -18,7 +18,7 @@ class RabbitMQPublisherTest : public ::testing::Test
 {
 protected:
     RabbitMQPublisherTest()
-        : publisher(RabbitMQConfiguration{}, Names{"key"}, "exchange", AMQP::ExchangeType::direct, 0, false, getLogger("RabbitMQPublisherTest"))
+        : publisher(RabbitMQConfiguration{}, Names{"key"}, "exchange", AMQP::ExchangeType::Direct, 0, false, getLogger("RabbitMQPublisherTest"))
     {
     }
 

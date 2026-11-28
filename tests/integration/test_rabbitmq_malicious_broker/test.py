@@ -22,7 +22,7 @@ TLS_BROKER_PORT = 19673
 HUGE_FRAME_MAX_BROKER_PORT = 19674
 
 # The client must clamp the broker's frame_max proposal to this range and reply with the
-# clamped value in `Connection.TuneOk` (MIN_FRAME_SIZE / MAX_FRAME_SIZE in AMQP-CPP).
+# clamped value in `Connection.TuneOk` (MIN_FRAME_SIZE / MAX_FRAME_SIZE in `src/Storages/RabbitMQ/AMQPClient.cpp`).
 MIN_FRAME_SIZE = 4096
 MAX_FRAME_SIZE = 128 * 1024 * 1024
 
@@ -151,8 +151,8 @@ def test_broker_proposing_zero_frame_max(started_cluster):
     assert node.query("SELECT 1") == "1\n"
 
     # Deterministic proof the frame-size guard actually fired (rather than the server merely
-    # surviving the overflow by luck on a non-sanitizer build): the library rejects the
-    # oversized frame with a `frame size exceeded` protocol error, which the handler logs.
+    # surviving the overflow by luck on a non-sanitizer build): the client rejects the
+    # oversized frame with a `frame size exceeded` protocol error, which is logged.
     wait_condition(
         lambda: node.contains_in_log("frame size exceeded"),
         lambda fired: fired,

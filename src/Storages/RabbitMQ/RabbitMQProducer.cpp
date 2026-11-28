@@ -9,8 +9,6 @@
 namespace DB
 {
 
-static const auto FINISH_PRODUCER_NUM_TRIES = 50;
-
 namespace ErrorCodes
 {
     extern const int ABORTED;
@@ -100,7 +98,15 @@ void RabbitMQProducer::startProducingTaskLoop()
 
         if (query_status && query_status->isKilled())
             break;
-        publish_error = publisher->publishStep(payloads);
+        try
+        {
+            publish_error = publisher->publishStep(payloads);
+        }
+        catch (...)
+        {
+            /// The task runs in a schedule pool, which would only log the exception: it fails the INSERT instead.
+            publish_error = getCurrentExceptionMessage(false);
+        }
         if (!publish_error.empty())
             break;
     }
@@ -113,20 +119,9 @@ void RabbitMQProducer::startProducingTaskLoop()
         return;
     }
 
-    size_t try_num = 0;
-    while (++try_num <= FINISH_PRODUCER_NUM_TRIES)
-    {
-        int res = publisher->iterateEventLoop();
-        if (!res)
-            break;
-        LOG_TEST(log, "Waiting for pending callbacks to finish (count: {}, try: {})", res, try_num);
-    }
-
     /// All messages are confirmed, so the next insert can continue on the same channel.
     if (!shutdown_called.load() && publisher->isReusable())
         can_reuse_publisher = true;
-    else
-        publisher->closeChannel();
 }
 
 }

@@ -46,8 +46,6 @@ private:
     /// Pops the most recently released publisher.
     std::optional<IdlePublisher> popIdlePublisher();
 
-    static bool isExpired(const IdlePublisher & idle);
-
     const RabbitMQConfiguration configuration;
     const Names routing_keys;
     const String exchange_name;

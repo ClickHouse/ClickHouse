@@ -245,10 +245,8 @@ def test_attach_detach_rabbitmq_with_materialized_view(started_cluster):
 )
 def test_idle_loop_shutdown_completes_promptly(started_cluster):
     """
-    Regression test: when the RabbitMQ event loop is idle (no pending messages),
-    shutdown/deactivation must complete promptly. Previously, UV_RUN_ONCE could
-    block indefinitely when no events were pending and stop paths did not wake
-    the libuv loop via uv_stop.
+    When the consumers are idle (no pending messages), shutdown/deactivation must
+    complete promptly, also while a source waits for messages.
     """
 
     instance.query("DROP DATABASE IF EXISTS test SYNC")
@@ -290,13 +288,10 @@ def test_idle_loop_shutdown_completes_promptly(started_cluster):
     """
     )
 
-    # Wait for streaming to start — the loop is now active but idle (no messages).
+    # Wait for streaming to start; the consumers are idle (no messages).
     instance.wait_for_log_line("Started streaming to .* attached views")
 
-    # Confirm the background loop is actually running before we restart.
-    instance.wait_for_log_line("Background loop started")
-
-    # Restart without publishing any messages — the loop has no pending events.
+    # Restart without publishing any messages.
     instance.restart_clickhouse()
 
     # Verify the loop was deactivated during shutdown (not already stopped).

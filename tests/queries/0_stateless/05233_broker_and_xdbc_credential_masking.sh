@@ -28,7 +28,7 @@ arm a2_nats_no_scheme        "SET nats_url = 'u:leak05233noscheme@h:4222'"
 arm a3_nats_leading_space    "SET nats_url = ' nats://u:pa/leak05233space@h:4222'"
 arm a4_nats_control          "SET nats_url = 'localhost:4222'"
 
-# `rabbitmq_address`: AMQP-CPP ends the login at the first '@' after the scheme, also unbounded by the
+# `rabbitmq_address`: the RabbitMQ client ends the login at the first '@' after the scheme, also unbounded by the
 # '/' that closes an RFC 3986 authority.
 arm b1_amqp_slash_password   "SET rabbitmq_address = 'amqp://u:pa/leak05233amqp@h:5672/v'"
 arm b2_amqp_control          "SET rabbitmq_address = 'amqp://h:5672/v'"
