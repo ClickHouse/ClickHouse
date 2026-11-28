@@ -531,6 +531,18 @@ static DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, 
 }
 
 
+/// Returns the names from `supplied` that `target` stores. The other ones are dropped silently by the conversion in
+/// front of the target (see `allow_materialized_view_with_bad_select`), and an ALIAS column has no storage.
+static Names columnsStoredBy(const ColumnsDescription & target, const Names & supplied)
+{
+    Names stored;
+    for (const auto & name : supplied)
+        if (target.hasNotAlias(name))
+            stored.push_back(name);
+    return stored;
+}
+
+
 /// For source chunk, execute view query over it.
 template <typename Executor>
 class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform
@@ -543,6 +555,7 @@ public:
         StorageID view_id_, StoragePtr view_storage_, StorageMetadataPtr view_metadata_,
         StorageID inner_id_, StoragePtr inner_storage_, StorageMetadataPtr inner_metadata_,
         ContextPtr context_,
+        ContextMutablePtr query_context_,
         bool async_insert_,
         bool deduplicate_blocks_in_view_)
         : ExceptionKeepingTransform(input_header, output_header)
@@ -557,6 +570,7 @@ public:
         , inner_metadata(inner_metadata_)
         , inner_storage(inner_storage_)
         , context(context_)
+        , query_context(query_context_)
         , async_insert(async_insert_)
         , deduplicate_blocks_in_view(deduplicate_blocks_in_view_)
     {
@@ -603,6 +617,8 @@ private:
     StorageMetadataPtr inner_metadata;
     StoragePtr inner_storage;
     ContextPtr context;
+    ContextMutablePtr query_context;
+    bool written_columns_recorded = false; // The columns are the same for every block, so they are recorded once.
     bool async_insert = false;
     bool deduplicate_blocks_in_view = false;
 
@@ -617,6 +633,18 @@ private:
         {
         }
     };
+
+    /// Lists in the query log the target columns this view writes: the result columns of its SELECT that the target
+    /// stores. They are known only after the SELECT is analyzed in `process`, so `observePath` cannot record them.
+    /// The view itself is listed in `views`, not here.
+    void recordWrittenColumns(const Names & select_columns)
+    {
+        if (!query_context || written_columns_recorded)
+            return;
+
+        query_context->addQueryAccessInfo(inner_id, columnsStoredBy(inner_metadata->getColumns(), select_columns));
+        written_columns_recorded = true;
+    }
 
     QueryPipeline process(Block data_block, Chunk::ChunkInfoCollection && chunk_infos)
     {
@@ -642,6 +670,11 @@ private:
                 select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
             pipeline = interpreter.buildQueryPipeline();
         }
+
+        /// Take the result columns of the SELECT before the conversion below replaces the header with the structure
+        /// of the target, which adds the DEFAULT columns nobody supplied and drops the columns the target lacks.
+        Names written_columns = pipeline.getHeader().getNames();
+
         pipeline.resize(1);
         pipeline.dropTotalsAndExtremes();
 
@@ -715,6 +748,8 @@ private:
                     inner_metadata))));
 
         inner_metadata->check(pipeline.getHeader());
+
+        recordWrittenColumns(written_columns);
 
         const auto & settings = context->getSettingsRef();
         bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert;
@@ -1670,9 +1705,21 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         /// at the first iteration it is the init_table_id most likely
         /// the following iterations will be for inner tables of materialized views
 
+        /// Each table is recorded in the context of its writer: the INSERT for the inserted table, the view for its
+        /// target. For a `SQL SECURITY DEFINER` or `NONE` view that context becomes a separate query log row, so the
+        /// user's row does not list the tables such a view writes. The target of a dependent view gets its columns
+        /// later from `ExecutingInnerQueryFromViewTransform`: analyzing the SELECT here would take storage snapshots
+        /// and execute scalar subqueries in table function arguments.
         const auto & writer_context = current == init_table_id ? init_context : insert_contexts.at(parent);
         if (writer_context->hasQueryContext())
-            writer_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
+        {
+            Names column_names;
+            if (current == init_table_id)
+                column_names = init_header->getNames();
+            else if (parent == init_table_id)
+                column_names = columnsStoredBy(metadata->getColumns(), init_header->getNames());
+            writer_context->getQueryContext()->addQueryAccessInfo(current, column_names);
+        }
 
         if (current == init_table_id)
         {
@@ -1799,6 +1846,9 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
 
     auto source_table_id = source_tables.at(view_id);
     auto input_header = input_headers.at(view_id);
+    /// The query log row for the writes of the view: the user's row, or the child row of a `SQL SECURITY DEFINER` or
+    /// `NONE` view, whose insert context is a query context of its own.
+    ContextMutablePtr query_context = insert_context->hasQueryContext() ? insert_context->getQueryContext() : nullptr;
 
     if (select_context->getSettingsRef()[Setting::use_async_executor_for_materialized_views])
     {
@@ -1809,6 +1859,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             view_id, storages.at(view_id), metadata_snapshots.at(view_id),
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context,
+            query_context,
             async_insert,
             deduplicate_blocks_in_dependent_materialized_views);
 
@@ -1825,6 +1876,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             view_id, storages.at(view_id), metadata_snapshots.at(view_id),
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context,
+            query_context,
             async_insert,
             deduplicate_blocks_in_dependent_materialized_views);
 

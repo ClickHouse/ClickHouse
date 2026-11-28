@@ -1,0 +1,6 @@
+1	42
+Row 1:
+──────
+tables:  ['default.dst','default.src']
+views:   ['default.mv']
+columns: ['default.dst.a','default.src.a']

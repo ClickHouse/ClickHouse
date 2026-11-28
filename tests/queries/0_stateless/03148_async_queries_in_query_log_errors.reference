@@ -22,7 +22,7 @@ query:          INSERT INTO default.async_insert_landing (id) SETTINGS wait_for_
 query_kind:     AsyncInsertFlush
 databases:      ['default']
 tables:         ['default.async_insert_landing']
-columns:        []
+columns:        ['default.async_insert_landing.id']
 views:          []
 exception_code: 0
 
@@ -39,6 +39,6 @@ query:          INSERT INTO default.async_insert_landing (id) SETTINGS wait_for_
 query_kind:     AsyncInsertFlush
 databases:      ['default']
 tables:         ['default.async_insert_landing']
-columns:        []
+columns:        ['default.async_insert_landing.id']
 views:          []
 exception_code: 0

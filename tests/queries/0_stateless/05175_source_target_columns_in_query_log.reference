@@ -1,0 +1,11 @@
+Row 1:
+──────
+tables:  ['default.src','default.tgt']
+columns: ['default.src.srcKey','default.src.srcVal','default.tgt.tgtKey','default.tgt.tgtVal']
+type:    QueryStart
+
+Row 2:
+──────
+tables:  ['default.src','default.tgt']
+columns: ['default.src.srcKey','default.src.srcVal','default.tgt.tgtKey','default.tgt.tgtVal']
+type:    QueryFinish
