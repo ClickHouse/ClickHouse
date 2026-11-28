@@ -12,8 +12,16 @@
 
 #include <Analyzer/traverseQueryTree.h>
 
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
+}
 
 namespace
 {
@@ -39,6 +47,8 @@ std::unordered_set<size_t> convertUsedColumnNamesToUsedProjectionIndexes(const Q
 }
 
 /// We cannot remove aggregate functions, if query does not contain GROUP BY or arrayJoin from subquery projection
+/// With empty_result_for_aggregation_by_constant_keys_on_empty_set = 0 neither with GROUP BY: when its keys are, or later
+/// passes make them, constant, the query returns a row for an empty input only while it has aggregate functions.
 void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, std::unordered_set<size_t> & used_projection_columns_indexes)
 {
     if (auto * union_node = query_or_union_node->as<UnionNode>())
@@ -82,10 +92,13 @@ void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, s
         return;
     }
 
+    bool keep_aggregates = !query_node.hasGroupBy()
+        || !query_node.getContext()->getSettingsRef()[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set];
+
     for (size_t i = 0; i < projection_nodes_size; ++i)
     {
         const auto & projection_node = projection_nodes[i];
-        if ((!query_node.hasGroupBy() && hasAggregateFunctionNodes(projection_node)) || hasFunctionNode(projection_node, "arrayJoin"))
+        if ((keep_aggregates && hasAggregateFunctionNodes(projection_node)) || hasFunctionNode(projection_node, "arrayJoin"))
             used_projection_columns_indexes.insert(i);
     }
 }
