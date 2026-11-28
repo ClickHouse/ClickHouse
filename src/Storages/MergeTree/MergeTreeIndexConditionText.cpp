@@ -2211,6 +2211,11 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
 
                 key_const_value = key_field.safeGet<String>();
             }
+            else if (node->type == ActionsDAG::ActionType::INPUT)
+            {
+                /// `m` is read outside `m['key']`, so the empty map does not stand for every map without the key.
+                return false;
+            }
             else
             {
                 for (const auto & child : node->children)

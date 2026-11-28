@@ -1,0 +1,28 @@
+-- without the index
+lt	[1,2]
+eq	[1]
+if	[1,2]
+-- the map is read outside m[key]: no row without the key is skipped
+basic lt	[1,2]
+basic lt	[1,2]
+basic eq	[1]
+basic eq	[1]
+basic if	[1,2]
+basic if	[1,2]
+buckets lt	[1,2]
+buckets lt	[1,2]
+buckets eq	[1]
+buckets eq	[1]
+buckets if	[1,2]
+buckets if	[1,2]
+fixedstring lt	[1]
+not used	0
+-- m[key] alone, or another use of the map in a separate conjunct, still prunes
+gt	[4]
+gt and length	[4]
+gt prunes	1
+gt and length prunes	1
+-- a hint from another conjunct keeps the value of m[key] in an atom that does not use the index
+hint truth	[]
+hint	[]
+hint	[]
