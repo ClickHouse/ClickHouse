@@ -1,0 +1,13 @@
+<clickhouse>
+    <!-- The Kafka-compatible interface, see `src/Server/Kafka`.
+         Not the default port 9092 of Kafka: it is taken by the real broker (Redpanda),
+         which the tests of the `Kafka` table engine use, see `setup_kafka.sh`. -->
+    <kafka_port>9192</kafka_port>
+    <!-- The Kafka protocol over TLS, `kafka_port_secure`, is in `secure_ports.xml`. -->
+    <kafka_protocol>
+        <!-- Do not wait for more members before the first rebalance of a consumer group. -->
+        <group_initial_rebalance_delay_ms>0</group_initial_rebalance_delay_ms>
+        <!-- Do not wait long for a client that stalls in the middle of a request. -->
+        <request_receive_timeout_ms>10000</request_receive_timeout_ms>
+    </kafka_protocol>
+</clickhouse>

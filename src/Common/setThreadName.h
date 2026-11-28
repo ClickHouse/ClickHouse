@@ -80,6 +80,7 @@ namespace DB
     M(ICEBERG_SCHEDULE_POOL, "IcebergSchPool") \
     M(INTERSERVER_HANDLER, "IntersrvHandler") \
     M(IO_URING_MONITOR, "IoUringMonitr") \
+    M(KAFKA_HANDLER, "KafkaHandler") \
     M(KEEPER_HANDLER, "KeeperHandler") \
     M(KEEPER_REQUEST, "KeeperRequest") \
     M(KEEPER_RESPONSE, "KeeperResponse") \
