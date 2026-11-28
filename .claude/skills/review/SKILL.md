@@ -71,13 +71,20 @@ Do not choose a final verdict until these gates are addressed. If a gate cannot 
    - Follow the changed invariant through unchanged callers/callees, sibling implementations, settings/options, supported and unsupported modes, APIs, lifecycle transitions, and cross-component boundaries. New settings/flags/options must be implemented consistently where supported and rejected where unsupported.
    - When the changed invariant applies to a value, type, state, operation, permission, lifecycle, setting, or error condition, follow all existing representations and carriers, not only the field, helper, or path touched by the diff.
 3) **Preconditions**
-   - List what the changed code assumes about its inputs for memory safety: sizes, indexes, lengths, and ranges, including those stated only by a `chassert` (not checked in release builds) or a comment. For each one, find every producer of the value: the constructors of the type that carries it and their callers, including values parsed from a query, deserialized, or received from another server. A caller that validates the value covers only its own path. Report any path that lets a query violate the assumption, even when it predates the PR.
+   - List what the changed code assumes about its inputs for memory safety: sizes, indexes, lengths, and ranges, including those stated only by a `chassert` (not checked in release builds) or a comment. For each one, find every producer of the value: the constructors of the type that carries it and their callers, including values parsed from a query, deserialized, or received from another server. A caller that validates the value covers only its own path. Report any path that lets a query violate the assumption; classify it with ATTRIBUTION below.
 4) **Failure and divergence**
    - Check state transitions and failure paths: startup, steady state, shutdown, retries, cancellation, exceptions, partial progress, async work already in flight, and anything that can still mutate after a guard or role check fires. For stateful/distributed changes, also check what can diverge over time across metadata, paths, identities, leases, caches, and ownership.
 5) **Evidence**
    - Map each material claim to proof before approving. Performance claims need before/after measurements, a benchmark, or a focused performance test; correctness claims need regression coverage or a clear reason coverage is impractical. Missing proof for important behavior is a review concern even when the code looks plausible.
 6) **Lower-priority quality**
    - After the contract and high-impact risks are covered, review performance regressions, build time, CI/script reliability, PR metadata, documentation, diagnostics, and maintainability.
+
+ATTRIBUTION
+Decide for every candidate Blocker or Major whether this PR introduces it, before choosing its severity.
+- Decide it from the code: a defect is introduced when the PR adds it, and pre-existing when the base code has it too. Verify with binaries with and without the PR (`references/binaries.md`).
+- A pre-existing defect is in scope at full severity only when the PR claims to fix it or its class. For a `Bug Fix`, the class is the bad value or state that the fix rejects: check the other producers of that value before anything inside the fixed lines. An unfixed producer reachable by a query is the most important finding of that review.
+- Report every other pre-existing defect only as one line in the summary section `Pre-existing issues`, with no inline comment. Find the GitHub issue that tracks it: one linked in the PR or in a reply, or one found by searching open and closed issues. An open issue, or one closed as not planned or as a duplicate, counts as tracked. An untracked defect only withholds the approval (see Final Verdict).
+- A behavior change that the PR states as its purpose (in the title, the description, the changelog entry, or the `Backward Incompatible Change` category) is not a finding. This includes fixing a bug or closing a security hole that someone may rely on: never ask for a setting or a `compatibility` value that restores a bug or an insecure behavior. When the change is evidently intended but the PR does not state it, the finding is the missing changelog category or entry, in `PR Metadata`. A change that the PR does not intend, such as a different query result, is a correctness finding with the usual severity.
 
 SIGNAL AND UNCERTAINTY
 - Avoid reporting minor issues when unsure: style preferences, naming opinions, speculative refactors, and micro-optimizations should be omitted unless they clearly affect correctness, maintainability, or user-facing quality.
@@ -184,35 +191,39 @@ Use these as supporting checks for ClickHouse-specific invariants. They are not 
 - **No magic constants**
   Avoid magic constants; represent important thresholds or alternative behaviors as settings with sensible defaults.
 - **Backward compatibility**
-  New versions must be configurable to behave like older versions via `compatibility` settings. Ensure a new setting or a changed default has a history record for the current version as a trailing argument of its `DECLARE` (`{"<version>", previous_value, new_value, "reason"}`). **New validation / enforcement on existing data:** if a PR adds a check that throws at `CREATE TABLE`, query execution, or server startup, and that check applies to objects created before the PR, it is a backward-incompatibility — the constraint may be violated by legitimate existing setups. It should either be gated behind a setting or applied only to newly created objects.
+  A changed default of a setting needs a history record for the current version as a trailing argument of its `DECLARE` (`{"<version>", previous_value, new_value, "reason"}`), so that `compatibility` restores it. **New validation on existing objects:** a check that makes the server fail to start, or a table, database or dictionary created before the PR fail to load, must apply only to newly created objects or be gated behind a setting. A check that rejects a query is an intended behavior change when the PR states it (see ATTRIBUTION).
 - **Safe rollout**
   Ensure incremental rollout is feasible in both OSS and Cloud (feature flags, safe defaults, non-disruptive changes).
 - **Compilation time**
   Avoid non-trivial code in widely-included headers, heavy transitive includes in high-fan-out headers, unnecessary template instantiations, and large `constexpr` work in headers.
 - **No large / binary files in git**
-  Binary blobs (JARs, archives, compiled artifacts, datasets >1 MB, fat dependency bundles) must never be committed. They permanently bloat the repository for every clone and cannot be removed without history rewriting. Test dependencies should be downloaded at test time, built from source inside the test container, or pulled from Docker images. Any violation is a blocker.
+  Binary blobs (JARs, archives, compiled artifacts, datasets >1 MB, fat dependency bundles) must never be committed. They permanently bloat the repository for every clone and cannot be removed without history rewriting. Test dependencies should be downloaded at test time, built from source inside the test container, or pulled from Docker images. Any violation is a Major.
 - **PR metadata quality**
   For PR-number reviews, verify PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`: `Changelog category` correctness, required `Changelog entry` quality, and alignment with `clickhouse-pr-description` changelog guidance (specificity, user impact, and migration details for backward-incompatible changes). **Revert PRs are exempt** from this rule; do not produce findings about missing template fields for them.
 
 SEVERITY MODEL – WHAT DESERVES A COMMENT
 Severity comes from user/system impact and confidence, not from which prompt uncovered the issue.
 
+An unresolved Blocker thread holds the full CI and the merge of the PR. A Blocker is a defect from the list below that the PR introduces, or a pre-existing one that the PR claims to fix (see ATTRIBUTION). Two kinds of findings are never Blockers:
+- A defect that can be reached only after an administrator deliberately sets something up on the server: files, symlinks, or permissions on its disk, or its configuration. It is a Major when the setup is an ordinary use of a documented feature, and not a finding when the setup itself grants what the finding describes or only makes sense to weaken the server.
+- Findings about tests, documentation, performance evidence, or PR metadata.
+
 **Blockers** – must be fixed before merge
 - Incorrectness, data loss, or corruption.
 - Memory/resource leaks or UB (use-after-free, double free, invalid pointer arithmetic, invalid fd use).
 - New races, deadlocks, or serious concurrency issues.
-- Breaking compatibility (serialization formats, protocols, behavior, settings) without a versioned migration path or a setting to restore previous behavior.
-- Deletion events not logged.
-- Risky new feature (new engine, execution strategy, replication mechanism, on-disk format) without an experimental gate.
-- Significant performance regression in a hot path.
+- An on-disk, wire, or replication format that the previous or the next release cannot read, without a versioned migration path.
+- A performance regression in a hot path, measured by the CI performance comparison or a benchmark that the review ran.
 - Security or privilege issues, or license incompatibility.
 - A privilege check that any entrypoint into the surface it guards can bypass, including an entrypoint that exposes only structure, metadata, or an error message naming a property of the object. "No row data leaked" does not downgrade it.
 - A runtime memory address, or data from which one can be computed, reaching a user through any channel (see `references/memory-addresses.md`).
 - Server-side file access with user-controlled paths that bypass `user_files_path` or equivalent restrictions.
-- Large binary files (JARs, archives, datasets, compiled artifacts) committed to git — permanent, irreversible repo bloat.
 - Destructive shell commands (`rm -rf`, `mv`, `chmod`, `dd`, `sudo`, …) with unquoted substitution under `shell=True` or in shell scripts.
 
 **Majors** – serious but not catastrophic
+- Large binary files (JARs, archives, datasets, compiled artifacts) committed to git — permanent, irreversible repo bloat.
+- Deletion events not logged.
+- Risky new feature (new engine, execution strategy, replication mechanism, on-disk format) without an experimental gate.
 - Under-tested important edge cases or error paths.
 - Fragile code that is likely to break under realistic usage.
 - Hidden magic constants that should be settings.
@@ -225,7 +236,7 @@ Severity comes from user/system impact and confidence, not from which prompt unc
 - Pure formatting or "style wars".
 
 REQUESTED OUTPUT FORMAT
-Respond with the following sections. Be terse but specific. Suggest a fix only as described for Fix under Findings.
+Respond with the following sections. Be terse but specific. Do not propose fixes for Blockers and Majors: the author owns the fix.
 Focus on problems — do not describe what was checked and found to be fine. Use emojis (❌ ⚠️ ✅ 💡) to make findings scannable.
 **Omit any section entirely if there is nothing notable to report in it** — do not include a section just to say "looks good" or "no concerns". The only mandatory sections are Summary and Final Verdict.
 
@@ -250,19 +261,21 @@ Focus on problems — do not describe what was checked and found to be fine. Use
     - **Repro:** <```sql``` block>
     - **Evidence:** <one line>
     - **Cause:** <defect>
-    - **Fix:** <optional>
   ```
   - **Impact**: one sentence (after the severity tag, if any) saying what a user or operator sees and when: a wrong result, an exception, a crash, data loss, a stuck job, a slowdown. The mechanism belongs in Cause.
   - **Repro**: the smallest code block that shows it, with the expected and the actual result: a ```sql``` block whenever SQL can show it, otherwise a ```bash``` block with the commands. Prose steps only when neither can. When no runnable repro exists (a race, a failure path, an environment the review cannot set up), give the concrete input and the sequence of events that reach the defect.
   - **Evidence**: one short line, exactly one of `✅ Reproduced with <binary>` or `📖 Code reading: <reason it was not run>`. Name the binary by job and short commit in CI (`Fast test` of `b92c716f`, `Build (arm_asan_ubsan)` of `b92c716f`), or by path and build type in a local review. Outputs belong in Repro, not here.
   - **Cause**: the defect in the code, in a few sentences.
-  - **Fix** (optional): only when the defect and its fix are both clear and simple, such as a missing check or a wrong bound. Otherwise omit the line and leave the fix to the author: a partial fix proposed with confidence is taken as complete.
 - **❌ Blockers**: findings in the layout above.
 - **⚠️ Majors**: findings in the layout above.
 - **💡 Nits**
   - `File:Line(s)` Issue + quick fix.
   - Use this section for changelog-template quality issues (`Changelog category` mismatch, missing/unclear required `Changelog entry`, or low-quality user-facing `Changelog entry` that is too vague).
 
+
+**Pre-existing issues** (omit if none)
+- One line per defect that the base revision has too and that the PR does not claim to fix: `File:Line(s)` impact, how it was confirmed on the base, and either `Tracked: <issue URL>` or `Not tracked`.
+- For each `Not tracked` defect, give the title and a ```sql``` repro for an issue, so the author can create it.
 
 **Tests** (omit if adequate)
 - Only include this section if evidence is **missing or insufficient**. Prefix each missing test/evidence item with ⚠️. Ask for the smallest focused test, benchmark, or measurement that would prove the relevant behavior, invariant, or claimed benefit. For `Performance Improvement`, missing before/after evidence belongs here even if the implementation looks reasonable.
@@ -282,12 +295,13 @@ Focus on problems — do not describe what was checked and found to be fine. Use
   `Status: ✅ Approve`
   `Status: ⚠️ Request changes`
   `Status: ❌ Block`
+  `Status: 💬 Comment`
 - Approve only if there are no unresolved contract violations, no unresolved high-impact plausible risks, and no missing evidence for material claims. A `Performance Improvement` without performance evidence, or a `Bug Fix` without regression evidence or a clear exception, should be **⚠️ Request changes**. If not approving, list the **minimum** required actions.
+- `💬 Comment` when the only obstacle to approval is a `Not tracked` line in `Pre-existing issues`: the PR itself needs no change. The required action is to create the issues, after which the next review approves. When the PR also needs changes, the verdict follows those changes, and the issues are one more required action.
 
 STYLE & CONDUCT
 - Be precise, evidence-based, and neutral.
-- When you suggest a fix, prefer a small, surgical one over a broad rewrite.
 - Do not assume unstated behavior; if necessary, ask for clarification in "Missing context / blind spots."
-- Avoid changing scope: review what's in the PR; suggest follow-ups separately. Unchanged code that the PR's inputs reach is in scope: a defect there is a finding, even when it is pre-existing. The PR must either fix it or link an issue that tracks it; approve only when one of the two is done.
+- Avoid changing scope: review what's in the PR; suggest follow-ups separately. Read the unchanged code that the PR's inputs reach, and classify a defect there with ATTRIBUTION.
 - Avoid uncertain minor comments. For serious plausible risks, state the uncertainty and request the needed verification or tests.
 - When performing a code review, **ignore `/.github/workflows/*` files**.

@@ -54,8 +54,8 @@ APPROVAL_ATTEMPTS = 7
 # via `codex login --with-api-key`.
 OPENAI_KEY_SECRET = "/ci/llm/openai_api_key"
 
-MODEL = "gpt-6.1-sol"
-# `gpt-6.1-sol` refuses some reviews with "This content was flagged for possible
+MODEL = "gpt-6.2-sol"
+# `gpt-6.2-sol` refuses some reviews with "This content was flagged for possible
 # cybersecurity risk"; the remaining attempts then use `FALLBACK_MODEL`. When it is
 # at capacity, only the last attempt does: a same-model retry usually recovers.
 FALLBACK_MODEL = "gpt-5.4"
@@ -66,11 +66,14 @@ STATUS_PREFIX = "Status:"
 VERDICT_APPROVE = "✅ Approve"
 VERDICT_REQUEST_CHANGES = "⚠️ Request changes"
 VERDICT_BLOCK = "❌ Block"
+# Nothing to change in the PR, but pre-existing issues it found have no GitHub issue yet.
+VERDICT_COMMENT = "💬 Comment"
 # The emoji variation selector and the spacing are optional, the words are matched case-insensitively.
 _VERDICT_PATTERNS = {
     VERDICT_APPROVE: r"✅\s*(?i:approve)",
     VERDICT_REQUEST_CHANGES: r"⚠\ufe0f?\s*(?i:request\s+changes)",
     VERDICT_BLOCK: r"❌\s*(?i:block)",
+    VERDICT_COMMENT: r"💬\s*(?i:comment)",
 }
 
 
@@ -149,6 +152,9 @@ Tools:
 - Resolve or unresolve bot-authored review threads with:
   `{GH_PREFIX} python3 -m ci.praktika.gh resolve-pr-review-thread --thread-id <thread_node_id>`
   `{GH_PREFIX} python3 -m ci.praktika.gh unresolve-pr-review-thread --thread-id <thread_node_id>`.
+- Look for an existing issue about each pre-existing defect with `{GH_PREFIX} gh search issues` in `{repo_name}`,
+  open and closed; for `ClickHouse/ClickHouse-private`, in `ClickHouse/ClickHouse` too. The search API allows 30
+  requests per minute.
 - To reproduce a finding, download a CI binary as described in
   `.claude/skills/review/references/binaries.md` into `./ci/tmp`, and run it there.
 - Do NOT run `python3 -m ci.praktika run ...` (for example to run tests): you are inside a CI job, and
@@ -174,8 +180,9 @@ Procedure:
 5. Apply the same judgment to your own prior summary: drop findings that have been addressed, keep
    or sharpen the rest. Verify by reading the current code, not by trusting the author's reply.
    Findings the author dismissed but you still consider real STAY in the summary's `Findings`
-   section, marked `[dismissed by author -- <thread URL>]` with a one-line note on why you still
-   consider it real. Do NOT migrate them back to the inline thread.
+   section, after the other findings, with their thread link and location as usual. Their first
+   nested line is `- **Dismissed by author.**`, and the second is `- **Still open:**` followed by one
+   sentence on why the issue is still present in the current code. Nothing else. Do NOT migrate them back to the inline thread.
 6. On existing threads, post a new comment only in these two cases:
    (a) The author asked you a direct, answerable question (e.g. "what would the fix look like?",
        "do you have a repro?"). Answer it once and stop -- do not restate the original finding.
@@ -222,7 +229,7 @@ fetch the threads again to get the ids of the new ones. A finding without a thre
 Do NOT post the summary yourself: the job script will post it after you finish.
 The first line of the Final Verdict section must be exactly one of these lines, copied verbatim with no
 bold, list marker or other text on it: `{STATUS_PREFIX} {VERDICT_APPROVE}`, `{STATUS_PREFIX} {VERDICT_REQUEST_CHANGES}`,
-`{STATUS_PREFIX} {VERDICT_BLOCK}`. The job reads the verdict from this line, and `{STATUS_PREFIX} {VERDICT_APPROVE}`
+`{STATUS_PREFIX} {VERDICT_BLOCK}`, `{STATUS_PREFIX} {VERDICT_COMMENT}`. The job reads the verdict from this line, and `{STATUS_PREFIX} {VERDICT_APPROVE}`
 makes it submit a GitHub approval of the PR on your behalf.
 """
 
@@ -267,12 +274,14 @@ query($owner: String!, $name: String!, $number: Int!, $after: String) {
 
 def _review_approves():
     """True if the last `Final Verdict` section in REVIEW_FILE states `✅ Approve` and no other verdict,
-    see the REQUESTED OUTPUT FORMAT in .claude/skills/review/SKILL.md. The `Status:` line is read if it has
-    a verdict, otherwise the whole section, so a summary that drops the prefix or adds bold still counts.
+    see the REQUESTED OUTPUT FORMAT in .claude/skills/review/SKILL.md. The section starts at the last line that is
+    only a `Final Verdict` heading. Its first `Status:` line is read if it has a verdict, otherwise the whole section, so a summary that drops the prefix or adds bold still counts.
     No verdict, or more than one (such as the template's list of all statuses), is not an approval."""
     with open(REVIEW_FILE, encoding="utf-8") as f:
-        _, found, section = f.read().rpartition("Final Verdict")
-    if not found:
+        text = f.read()
+    # A rationale can mention "Final Verdict" or quote a `Status:` line, so match whole lines only.
+    headings = list(re.finditer(r"^\W*Final Verdict\W*$", text, re.MULTILINE))
+    if not headings:
         print(f"WARNING: No Final Verdict in {REVIEW_FILE}")
         return False
 
@@ -280,7 +289,8 @@ def _review_approves():
         text = text.replace("*", "")
         return [verdict for verdict, pattern in _VERDICT_PATTERNS.items() if re.search(pattern, text)]
 
-    status = re.search(rf"{STATUS_PREFIX}(.*)", section)
+    section = text[headings[-1].end():]
+    status = re.search(rf"^\W*{STATUS_PREFIX}(.*)", section, re.MULTILINE)
     verdicts = find_verdicts(status.group(1)) if status else []
     if not verdicts:
         verdicts = find_verdicts(section)
