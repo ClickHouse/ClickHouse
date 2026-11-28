@@ -35,6 +35,11 @@ namespace
         /// CREATE HANDLER time and bound from the request - fails with UNKNOWN_QUERY_PARAMETER.
         new_context->setQueryParameters(context->getQueryParameters());
 
+        /// If the caller is a part of another query (e.g. a `PARALLEL WITH` subquery), so is the wrapped
+        /// statement: it is scheduled together with that query, and cannot change its scheduling settings.
+        if (auto parent_scheduling_group = context->getParentSchedulingGroup())
+            new_context->setParentSchedulingGroup(std::move(parent_scheduling_group));
+
         /// An empty current database cannot be copied over: `setCurrentDatabase` rejects an empty name,
         /// and it cannot happen for a query anyway - the server refuses to start with an empty
         /// `default_database`, so every session context has a database to inherit.
