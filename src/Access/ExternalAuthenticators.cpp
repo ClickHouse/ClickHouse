@@ -12,6 +12,7 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -58,6 +59,39 @@ void parseLDAPSearchParams(LDAPClient::SearchParams & params, const Poco::Util::
     }
 }
 
+LDAPClient::Params::TLSProtocolVersion parseLDAPTLSProtocolVersion(
+    const Poco::Util::AbstractConfiguration & config, const String & ldap_server_config, const String & entry_name)
+{
+    String value = config.getString(ldap_server_config + "." + entry_name);
+    toLowerASCII(value);
+
+    if (value == "ssl2")   return LDAPClient::Params::TLSProtocolVersion::SSL2;
+    if (value == "ssl3")   return LDAPClient::Params::TLSProtocolVersion::SSL3;
+    if (value == "tls1.0") return LDAPClient::Params::TLSProtocolVersion::TLS1_0;
+    if (value == "tls1.1") return LDAPClient::Params::TLSProtocolVersion::TLS1_1;
+    if (value == "tls1.2") return LDAPClient::Params::TLSProtocolVersion::TLS1_2;
+    if (value == "tls1.3") return LDAPClient::Params::TLSProtocolVersion::TLS1_3;
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Bad value for '{}' entry, allowed values are: "
+                    "'ssl2', 'ssl3', 'tls1.0', 'tls1.1', 'tls1.2', 'tls1.3'", entry_name);
+}
+
+/// The timeouts are handed to libldap as `int` seconds (`LDAP_OPT_TIMELIMIT`) or `timeval`,
+/// and a zero timeout would make every connect or operation fail immediately, so only
+/// positive values that fit into an `int` are accepted.
+std::chrono::seconds parseLDAPTimeout(
+    const Poco::Util::AbstractConfiguration & config, const String & ldap_server_config, const String & entry_name)
+{
+    const UInt64 value = config.getUInt64(ldap_server_config + "." + entry_name);
+    if (value == 0 || value > static_cast<UInt64>(std::numeric_limits<int>::max()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Bad value for '{}' entry, must be a number of seconds between 1 and {}",
+                        entry_name, std::numeric_limits<int>::max());
+
+    return std::chrono::seconds{value};
+}
+
 void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConfiguration & config, const String & name)
 {
     if (name.empty())
@@ -71,9 +105,12 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     const bool has_auth_dn_prefix = config.has(ldap_server_config + ".auth_dn_prefix");
     const bool has_auth_dn_suffix = config.has(ldap_server_config + ".auth_dn_suffix");
     const bool has_user_dn_detection = config.has(ldap_server_config + ".user_dn_detection");
+    const bool has_lookup_bind_dn = config.has(ldap_server_config + ".lookup_bind_dn");
+    const bool has_lookup_password = config.has(ldap_server_config + ".lookup_password");
     const bool has_verification_cooldown = config.has(ldap_server_config + ".verification_cooldown");
     const bool has_enable_tls = config.has(ldap_server_config + ".enable_tls");
     const bool has_tls_minimum_protocol_version = config.has(ldap_server_config + ".tls_minimum_protocol_version");
+    const bool has_tls_maximum_protocol_version = config.has(ldap_server_config + ".tls_maximum_protocol_version");
     const bool has_tls_require_cert = config.has(ldap_server_config + ".tls_require_cert");
     const bool has_tls_cert_file = config.has(ldap_server_config + ".tls_cert_file");
     const bool has_tls_key_file = config.has(ldap_server_config + ".tls_key_file");
@@ -82,6 +119,9 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     const bool has_tls_cipher_suite = config.has(ldap_server_config + ".tls_cipher_suite");
     const bool has_search_limit = config.has(ldap_server_config + ".search_limit");
     const bool has_follow_referrals = config.has(ldap_server_config + ".follow_referrals");
+    const bool has_operation_timeout = config.has(ldap_server_config + ".operation_timeout");
+    const bool has_network_timeout = config.has(ldap_server_config + ".network_timeout");
+    const bool has_search_timeout = config.has(ldap_server_config + ".search_timeout");
 
     if (!has_host)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'host' entry");
@@ -116,8 +156,65 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         parseLDAPSearchParams(*params.user_dn_detection, config, ldap_server_config + ".user_dn_detection");
     }
 
+    /// Optional service-account credentials used by
+    /// `IAccessStorage::find(..., force_external_lookup=true)` to resolve a user name
+    /// without the user's own password. Both must be provided together, and the lookup
+    /// path also requires `user_dn_detection` to confirm the user exists.
+    if (has_lookup_bind_dn != has_lookup_password)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Both 'lookup_bind_dn' and 'lookup_password' must be specified together");
+
+    if (has_lookup_bind_dn)
+    {
+        params.lookup_bind_dn = config.getString(ldap_server_config + ".lookup_bind_dn");
+        params.lookup_password = config.getString(ldap_server_config + ".lookup_password");
+
+        if (params.lookup_bind_dn.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'lookup_bind_dn' entry");
+
+        /// Fail closed: an empty `lookup_password` with a non-empty `lookup_bind_dn` would
+        /// issue an LDAP unauthenticated simple bind, which directories may accept as an
+        /// anonymous bind. That would let the service-bind path resolve users without
+        /// actually authenticating the lookup service account, defeating the purpose of
+        /// the service credentials and silently widening who can be impersonated. Mirror
+        /// the same fail-closed check that the user-mode bind already applies to
+        /// `params.password`.
+        if (params.lookup_password.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'lookup_password' entry");
+
+        if (!params.user_dn_detection)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'lookup_bind_dn' requires 'user_dn_detection' to be configured");
+
+        /// `user_dn_detection` must depend on the requested user name; otherwise a static
+        /// query (e.g. `search_filter=(cn=janedoe)`) returning a single entry would let
+        /// `EXECUTE AS some_other_name` resolve to that entry's DN.
+        const String & udd_base_dn = params.user_dn_detection->base_dn;
+        const String & udd_search_filter = params.user_dn_detection->search_filter;
+        const bool depends_on_user_name =
+            udd_base_dn.contains("{user_name}") || udd_search_filter.contains("{user_name}");
+        const bool bind_dn_carries_user_name = params.bind_dn.contains("{user_name}");
+        const bool depends_via_bind_dn = bind_dn_carries_user_name &&
+            (udd_base_dn.contains("{bind_dn}") || udd_search_filter.contains("{bind_dn}") ||
+             udd_base_dn.contains("{user_dn}") || udd_search_filter.contains("{user_dn}"));
+        if (!depends_on_user_name && !depends_via_bind_dn)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'lookup_bind_dn' requires 'user_dn_detection' to depend on the requested user name; "
+                "use '{{user_name}}' in 'user_dn_detection.base_dn' or '.search_filter', "
+                "or use '{{bind_dn}}'/'{{user_dn}}' with a 'bind_dn' template that contains '{{user_name}}'");
+    }
+
     if (has_verification_cooldown)
         params.verification_cooldown = std::chrono::seconds{config.getUInt64(ldap_server_config + ".verification_cooldown")};
+
+    if (has_operation_timeout)
+        params.operation_timeout = parseLDAPTimeout(config, ldap_server_config, "operation_timeout");
+
+    if (has_network_timeout)
+        params.network_timeout = parseLDAPTimeout(config, ldap_server_config, "network_timeout");
+
+    if (has_search_timeout)
+        params.search_timeout = parseLDAPTimeout(config, ldap_server_config, "search_timeout");
 
     if (has_enable_tls)
     {
@@ -133,24 +230,19 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     }
 
     if (has_tls_minimum_protocol_version)
-    {
-        String tls_minimum_protocol_version_lc_str = config.getString(ldap_server_config + ".tls_minimum_protocol_version");
-        toLowerASCII(tls_minimum_protocol_version_lc_str);
+        params.tls_minimum_protocol_version = parseLDAPTLSProtocolVersion(config, ldap_server_config, "tls_minimum_protocol_version");
 
-        if (tls_minimum_protocol_version_lc_str == "ssl2")
-            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::SSL2;
-        else if (tls_minimum_protocol_version_lc_str == "ssl3")
-            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::SSL3;
-        else if (tls_minimum_protocol_version_lc_str == "tls1.0")
-            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_0;
-        else if (tls_minimum_protocol_version_lc_str == "tls1.1")
-            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_1;
-        else if (tls_minimum_protocol_version_lc_str == "tls1.2")
-            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_2;
-        else
+    if (has_tls_maximum_protocol_version)
+    {
+        params.tls_maximum_protocol_version = parseLDAPTLSProtocolVersion(config, ldap_server_config, "tls_maximum_protocol_version");
+
+        /// The enumerators are ordered by protocol age, see `TLSProtocolVersion`. The default minimum bounds the maximum
+        /// as well; comparing against the unset `std::optional` directly would rank it below every version and skip the check.
+        if (*params.tls_maximum_protocol_version
+            < params.tls_minimum_protocol_version.value_or(LDAPClient::Params::default_tls_minimum_protocol_version))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Bad value for 'tls_minimum_protocol_version' entry, allowed values are: "
-                            "'ssl2', 'ssl3', 'tls1.0', 'tls1.1', 'tls1.2'");
+                            "Bad value for 'tls_maximum_protocol_version' entry, "
+                            "must not be lower than 'tls_minimum_protocol_version'");
     }
 
     if (has_tls_require_cert)
@@ -283,6 +375,7 @@ void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco
 void ExternalAuthenticators::resetImpl()
 {
     ldap_client_params_blueprint.clear();
+    ldap_server_parse_errors.clear();
     ldap_caches.clear();
     kerberos_params.reset();
 }
@@ -348,6 +441,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     Poco::Util::AbstractConfiguration::Keys ldap_server_names;
     config.keys("ldap_servers", ldap_server_names);
     ldap_client_params_blueprint.clear();
+    ldap_server_parse_errors.clear();
     for (auto ldap_server_name : ldap_server_names)
     {
         try
@@ -366,6 +460,11 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
         catch (...)
         {
             tryLogCurrentException(log, "Could not parse LDAP server " + backQuote(ldap_server_name));
+            /// Remember the error so that `findLDAPUser` can surface it as a
+            /// query-time exception. Without this the parsed-out server is
+            /// dropped silently and `EXECUTE AS` collapses to `UNKNOWN_USER`,
+            /// hiding a real operator misconfiguration.
+            ldap_server_parse_errors[ldap_server_name] = getCurrentExceptionMessage(/* with_stacktrace = */ false);
         }
     }
 
@@ -517,6 +616,75 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
             // Somehow a newer check with different params/password succeeded, so the current result is obsolete and we discard it.
             return false;
         }
+    }
+
+    return result;
+}
+
+bool ExternalAuthenticators::findLDAPUser(const String & server, const String & user_name,
+    const LDAPClient::RoleSearchParamsList * role_search_params, LDAPClient::SearchResultsList * role_search_results) const
+{
+    if (user_name.empty())
+        return false;
+
+    std::optional<LDAPClient::Params> params;
+    UInt128 params_hash = 0;
+
+    {
+        std::lock_guard lock(mutex);
+
+        const auto pit = ldap_client_params_blueprint.find(server);
+        if (pit == ldap_client_params_blueprint.end())
+        {
+            /// Mirror `checkLDAPCredentials`: an unknown server name is a configuration
+            /// error, not a user miss. If the server failed to parse, attach the saved
+            /// reason; otherwise the directory references a name with no `<ldap_servers>`
+            /// block at all (e.g. a typo).
+            const auto eit = ldap_server_parse_errors.find(server);
+            if (eit != ldap_server_parse_errors.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "LDAP server '{}' is misconfigured and cannot be used for forced "
+                    "user lookup: {}", server, eit->second);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server '{}' is not configured", server);
+        }
+
+        /// The service-bind path is opt-in: a server without `lookup_bind_dn` configured does
+        /// not participate in forced lookups. Returning false here lets the caller fall through
+        /// to other access storages.
+        if (pit->second.lookup_bind_dn.empty())
+            return false;
+
+        params = pit->second;
+        params->user = user_name;
+        /// The user's own password is not used in service-bind mode; clear it so it cannot
+        /// accidentally bleed into the LDAP exchange via cached state.
+        params->password.clear();
+
+        params_hash = computeParamsHash(*params, role_search_params);
+    }
+
+    LDAPSimpleAuthClient client(params.value());
+    const auto result = client.find(role_search_params, role_search_results);
+
+    if (result)
+    {
+        /// `SYSTEM RELOAD CONFIG` can mutate `ldap_client_params_blueprint` between
+        /// the snapshot above and the bind/search round-trip. If the server is gone
+        /// or its lookup parameters have changed, discard the result so the caller
+        /// does not materialize a user against stale lookup semantics. Mirrors the
+        /// post-check in `checkLDAPCredentials`.
+        std::lock_guard lock(mutex);
+
+        const auto pit = ldap_client_params_blueprint.find(server);
+        if (pit == ldap_client_params_blueprint.end())
+            return false;
+
+        auto new_params = pit->second;
+        new_params.user = user_name;
+        new_params.password.clear();
+
+        if (params_hash != computeParamsHash(new_params, role_search_params))
+            return false;
     }
 
     return result;
