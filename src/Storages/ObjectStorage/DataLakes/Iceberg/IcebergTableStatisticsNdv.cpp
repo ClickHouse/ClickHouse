@@ -297,7 +297,7 @@ private:
         if (!PuffinColumnThetaSketch::isSupportedType(type))
             return {};
         PuffinColumnThetaSketch sketch(type);
-        if (const auto value = Iceberg::getIcebergInitialDefault(field, type))
+        if (const auto value = Iceberg::getIcebergDefault(field, type, Iceberg::f_initial_default))
             sketch.update(*type->createColumnConst(1, *value));
         return sketch.serialize().bytes;
     }

@@ -35,9 +35,9 @@ std::optional<Int32> tryGetInt32Value(const Poco::JSON::Object::Ptr & object, co
 /// The `field-id` of each field of a partition spec. A spec without any gets 1000, 1001, ..., the ids Iceberg assigns to it.
 std::vector<std::optional<Int32>> getPartitionSpecFieldIds(const Poco::JSON::Array::Ptr & spec_fields);
 
-/// The `initial-default` of the schema field `field` as a value of its ClickHouse type `type`, or nullopt if the field
-/// has none. Throws ICEBERG_SPECIFICATION_VIOLATION if the default is malformed.
-std::optional<Field> getIcebergInitialDefault(const Poco::JSON::Object::Ptr & field, const DataTypePtr & type);
+/// The default `key` (`f_initial_default` or `f_write_default`) of the schema field `field` as a value of its ClickHouse
+/// type `type`, or nullopt if the field has none. Throws ICEBERG_SPECIFICATION_VIOLATION if the default is malformed.
+std::optional<Field> getIcebergDefault(const Poco::JSON::Object::Ptr & field, const DataTypePtr & type, const char * key);
 
 /**
  * Iceberg supports the following data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):

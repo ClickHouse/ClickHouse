@@ -500,7 +500,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find field {} in data", operation.field_name);
 
         const auto & inserted_type = current_types[index_to_insert];
-        inserted_value = getIcebergInitialDefault(subfield, inserted_type).value_or(inserted_type->getDefault());
+        inserted_value = getIcebergDefault(subfield, inserted_type, f_initial_default).value_or(inserted_type->getDefault());
     }
 
     void transformChildNode(Tuple & initial_node) override
