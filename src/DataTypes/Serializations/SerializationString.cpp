@@ -1189,6 +1189,7 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     auto & data = string_column.getChars();
     const size_t initial_size = data.size();
 
+    const bool values_filtered = settings.string_value_filter && settings.string_value_filter->isEnabled();
     size_t first_row_to_read = prev_num_rows;
     size_t skipped_bytes = 0;
     if (settings.num_rejected_rows && settings.path.size() == 1)
@@ -1204,12 +1205,14 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
             for (size_t i = end_of_rejected; i < offsets.size(); ++i)
                 offsets[i] -= skipped_bytes;
             stream->ignoreBig(skipped_bytes);
-            settings.num_skipped_bytes += skipped_bytes;
+            /// With a `StringValueFilter` the skipped values are not counted, like the values it replaces.
+            if (!values_filtered)
+                settings.num_skipped_bytes += skipped_bytes;
             first_row_to_read = end_of_rejected;
         }
     }
 
-    if (settings.string_value_filter && settings.string_value_filter->isEnabled())
+    if (values_filtered)
     {
         /// Check every value against the filter and read non-matching values as empty strings,
         /// rewriting the just-appended offsets accordingly. See the comment for `StringValueFilter`.
