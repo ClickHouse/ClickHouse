@@ -617,6 +617,8 @@ tokens:
   -'readWKTRing'
   -'caseWithExpression'
   -'extractTextFromHTML'
+  -'extractHTMLOne'
+  -'extractHTMLAll'
   -'L1Norm'
   -'fromUnixTimestamp64Milli'
   -'addSeconds'

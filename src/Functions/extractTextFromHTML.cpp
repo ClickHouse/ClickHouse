@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/extractTextFromHTML.h>
 #include <base/find_symbols.h>
 #include <Common/StringUtils.h>
 
@@ -287,6 +288,11 @@ size_t extract(const char * __restrict src, size_t size, char * __restrict dst)
     return dst - dst_begin;
 }
 
+}
+
+size_t extractTextFromHTML(const char * src, size_t size, char * dst)
+{
+    return extract(src, size, dst);
 }
 
 
