@@ -42,9 +42,11 @@
 #include <Storages/ColumnDefault.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnsDescription.h>
@@ -286,6 +288,11 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
 {
     if (auto destination = getDestinationTable())
     {
+        /// `read` applies the destination's row policies above the destination read and to the buffers,
+        /// where only the columns are available, so nothing may be processed past `FetchColumns` there.
+        if (getEffectiveRowPolicyFilter(*destination, local_context))
+            to_stage = QueryProcessingStage::FetchColumns;
+
         /// `read` unites the destination with the buffers, so anything past `FetchColumns` has to be merged above both.
         const bool merged_above = to_stage > QueryProcessingStage::FetchColumns;
         if (merged_above)
@@ -310,6 +317,29 @@ bool StorageBuffer::readRequiresAnalyzedQuery() const
 {
     auto destination = getDestinationTable();
     return destination && destination->readRequiresAnalyzedQuery();
+}
+
+/// Drops the columns of `read_names` that are not in `requested_names`: they were read only to evaluate a row policy.
+static void removeColumnsReadForRowPolicy(QueryPlan & plan, const Names & read_names, const NameSet & requested_names)
+{
+    NameSet names_to_remove;
+    for (const auto & name : read_names)
+        if (!requested_names.contains(name))
+            names_to_remove.insert(name);
+
+    if (names_to_remove.empty())
+        return;
+
+    ActionsDAG dag(plan.getCurrentHeader()->getColumnsWithTypeAndName());
+    ActionsDAG::NodeRawConstPtrs outputs;
+    for (const auto * output : dag.getOutputs())
+        if (!names_to_remove.contains(output->result_name))
+            outputs.push_back(output);
+    dag.getOutputs() = std::move(outputs);
+
+    auto removing = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(dag));
+    removing->setStepDescription("Remove columns read for the row policy of the destination table");
+    plan.addStep(std::move(removing));
 }
 
 void StorageBuffer::read(
@@ -346,6 +376,13 @@ void StorageBuffer::read(
     }
 
     const auto & metadata_snapshot = storage_snapshot->metadata;
+
+    /// The row policies of the destination, for the rows still in the buffers. The planner builds the row-level
+    /// filter for this `Buffer` only, so the destination's policies are applied here, or not at all.
+    std::optional<ReadFromMerge::RowPolicyData> buffers_row_policy;
+    /// The columns the policy reads, with the types of the destination, which a flush converts the buffered rows to.
+    ColumnsWithTypeAndName buffers_row_policy_columns;
+    Names buffers_column_names = column_names;
 
     if (auto destination = getDestinationTable())
     {
@@ -394,6 +431,77 @@ void StorageBuffer::read(
             return get_column(destination_snapshot, destination_columns, column_name);
         };
 
+        /// The destination's row policies are built against its own columns, which may differ from this table's.
+        std::optional<ReadFromMerge::RowPolicyData> destination_row_policy;
+        if (auto row_policy_filter = getEffectiveRowPolicyFilter(*destination, local_context))
+        {
+            /// `getQueryProcessingStage` asks for `FetchColumns` then, so only a destination that insists on processing more gets here.
+            if (processed_stage > QueryProcessingStage::FetchColumns)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Row policy filter for {} cannot be applied by {}, because the destination table processes the query itself. "
+                    "Query the destination table directly",
+                    destination_id.getNameForLogs(),
+                    getStorageID().getNameForLogs());
+
+            if (local_context->hasQueryContext())
+                for (const auto & row_policy : row_policy_filter->policies)
+                    local_context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
+
+            destination_row_policy.emplace(row_policy_filter, destination_snapshot->metadata, local_context);
+
+            /// Each read gets its own instance, as each plants the step building the sets of the policy's subqueries.
+            buffers_row_policy.emplace(row_policy_filter, destination_snapshot->metadata, local_context);
+            Names policy_column_names;
+            buffers_row_policy->extendNames(policy_column_names);
+            for (const auto & column_name : policy_column_names)
+            {
+                auto dest_column = get_destination_column(column_name);
+                const bool is_stored_in_buffers = storage_snapshot->metadata->getColumns().tryGetColumnOrSubcolumn(
+                    GetColumnsOptions::AllPhysical, column_name).has_value();
+                if (!dest_column || !is_stored_in_buffers)
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Row policy filter for {} cannot be applied to the rows in the buffers of {}, because the latter "
+                        "does not store the column {}. Query the destination table directly",
+                        destination_id.getNameForLogs(),
+                        getStorageID().getNameForLogs(),
+                        backQuoteIfNeed(column_name));
+                buffers_row_policy_columns.emplace_back(dest_column->type, column_name);
+            }
+            buffers_row_policy->extendNames(buffers_column_names);
+        }
+
+        /// Reads `names_to_read` from the destination and filters the result by its row policies.
+        auto read_destination_with_row_policy = [&](Names names_to_read, SelectQueryInfo & destination_query_info)
+        {
+            const NameSet requested_names(names_to_read.begin(), names_to_read.end());
+            destination_row_policy->extendNames(names_to_read);
+
+            /// Inside the read, the policy runs ahead of the forwarded PREWHERE, so the latter never sees the rows it excludes.
+            bool applies_row_policy = false;
+            if (auto row_level_filter = destination_row_policy->makeRowLevelFilter(
+                    *destination, destination_query_info.row_level_filter, local_context))
+            {
+                destination_query_info.row_level_filter = std::move(row_level_filter);
+                applies_row_policy = true;
+            }
+
+            destination->read(
+                query_plan, names_to_read, destination_snapshot, destination_query_info,
+                local_context, processed_stage, max_block_size, num_streams);
+
+            if (!query_plan.isInitialized())
+                return;
+
+            if (applies_row_policy)
+                destination_row_policy->addCreatingSetsStep(query_plan, local_context);
+            else
+                destination_row_policy->addFilterTransform(query_plan, local_context);
+
+            removeColumnsReadForRowPolicy(query_plan, names_to_read, requested_names);
+        };
+
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [&](const String & column_name)
         {
             auto dest_column = get_destination_column(column_name);
@@ -406,9 +514,15 @@ void StorageBuffer::read(
         if (dst_has_same_structure)
         {
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
-            destination->read(
-                query_plan, column_names, destination_snapshot, query_info,
-                local_context, processed_stage, max_block_size, num_streams);
+            if (destination_row_policy)
+            {
+                auto destination_query_info = query_info;
+                read_destination_with_row_policy(column_names, destination_query_info);
+            }
+            else
+                destination->read(
+                    query_plan, column_names, destination_snapshot, query_info,
+                    local_context, processed_stage, max_block_size, num_streams);
         }
         else
         {
@@ -561,9 +675,12 @@ void StorageBuffer::read(
                 }
 
                 src_table_query_info.initial_storage_snapshot = storage_snapshot;
-                destination->read(
-                        query_plan, columns_intersection, destination_snapshot, src_table_query_info,
-                        local_context, processed_stage, max_block_size, num_streams);
+                if (destination_row_policy)
+                    read_destination_with_row_policy(columns_intersection, src_table_query_info);
+                else
+                    destination->read(
+                            query_plan, columns_intersection, destination_snapshot, src_table_query_info,
+                            local_context, processed_stage, max_block_size, num_streams);
 
                 if (query_plan.isInitialized() && processed_stage <= QueryProcessingStage::FetchColumns)
                 {
@@ -610,7 +727,7 @@ void StorageBuffer::read(
         Pipes pipes_from_buffers;
         pipes_from_buffers.reserve(num_shards);
         for (auto & buf : buffers)
-            pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, storage_snapshot, getStorageID()));
+            pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(buffers_column_names, buf, storage_snapshot, getStorageID()));
 
         pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
         if (query_info.input_order_info)
@@ -659,6 +776,49 @@ void StorageBuffer::read(
     }
     else
     {
+        /// The destination's policy goes first, so that the conditions of this table and of the query never see the rows it excludes.
+        if (buffers_row_policy)
+        {
+            const auto & buffers_header = pipe_from_buffers.getHeader();
+
+            /// The policy sees the buffered rows converted to the destination's types, as they will be after the flush.
+            ColumnsWithTypeAndName policy_source_columns;
+            policy_source_columns.reserve(buffers_row_policy_columns.size());
+            for (const auto & column : buffers_row_policy_columns)
+                policy_source_columns.emplace_back(buffers_header.getByName(column.name).type, column.name);
+
+            auto policy_dag = ActionsDAG::merge(
+                ActionsDAG::makeConvertingActions(
+                    policy_source_columns, buffers_row_policy_columns, ActionsDAG::MatchColumnsMode::Name, local_context),
+                buffers_row_policy->getActionsDAG().clone());
+
+            /// The filter column name is unique among the destination's columns, but this table may have one of that name.
+            String filter_column_name = buffers_row_policy->getFilterColumnName();
+            const auto * filter_node = &policy_dag.findInOutputs(filter_column_name);
+            for (size_t i = 0; buffers_header.has(filter_column_name); ++i)
+                filter_column_name = buffers_row_policy->getFilterColumnName() + "_" + std::to_string(i);
+            if (filter_column_name != filter_node->result_name)
+                filter_node = &policy_dag.addAlias(*filter_node, filter_column_name);
+
+            /// The converted columns serve only the policy: the stream keeps this table's columns, except the ones
+            /// read just for the policy, which are inputs missing in the outputs and so are removed.
+            const NameSet requested_names(column_names.begin(), column_names.end());
+            ActionsDAG::NodeRawConstPtrs outputs;
+            for (const auto * input : policy_dag.getInputs())
+                if (requested_names.contains(input->result_name))
+                    outputs.push_back(input);
+            outputs.push_back(filter_node);
+            policy_dag.getOutputs() = std::move(outputs);
+            policy_dag.removeUnusedActions(/* allow_remove_inputs = */ false);
+
+            ExpressionActionsSettings actions_settings(local_context);
+            auto actions = std::make_shared<ExpressionActions>(std::move(policy_dag), actions_settings);
+            pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<FilterTransform>(header, actions, filter_column_name, /* remove_filter_column = */ true);
+            });
+        }
+
         if (query_info.row_level_filter)
         {
             ExpressionActionsSettings actions_settings(local_context);
@@ -693,6 +853,9 @@ void StorageBuffer::read(
         auto read_from_buffers = std::make_unique<ReadFromPreparedSource>(std::move(pipe_from_buffers));
         read_from_buffers->setStepDescription("Read from buffers of Buffer table");
         buffers_plan.addStep(std::move(read_from_buffers));
+
+        if (buffers_row_policy)
+            buffers_row_policy->addCreatingSetsStep(buffers_plan, local_context);
     }
 
     if (!query_plan.isInitialized())
