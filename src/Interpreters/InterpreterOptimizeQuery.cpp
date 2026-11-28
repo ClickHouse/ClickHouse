@@ -1,15 +1,20 @@
 #include "config.h"
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterOptimizeQuery.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/ContextAccess.h>
+#include <Planner/Utils.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -31,6 +36,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int THERE_IS_NO_COLUMN;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_TABLE;
 }
 
 
@@ -42,6 +48,39 @@ BlockIO InterpreterOptimizeQuery::execute()
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess();
+        if (ast.deduplicate)
+        {
+            params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
+            {
+                /// Hosts that run the query as the initiating user check the table themselves.
+                if (!throw_if_unresolved)
+                    return;
+                const auto & query = captured_query_ptr->as<const ASTOptimizeQuery &>();
+                const StorageID table_id(query.getDatabase().empty() ? cluster_default_database : query.getDatabase(), query.getTable());
+                /// The hosts compare the columns without the user, so `SELECT` is required on the whole table here.
+                context->checkAccess(AccessType::SELECT, table_id.database_name, table_id.table_name);
+                const auto table = DatabaseCatalog::instance().tryGetTable(table_id, context);
+                if (!table)
+                    throw Exception(ErrorCodes::UNKNOWN_TABLE,
+                        "Table {} does not exist on the initiator. The other hosts do not run the query as the initiating user. So the "
+                        "initiator must check the columns that DEDUPLICATE compares. Run the query on a host that has this table. "
+                        "Alternatively, let every host check the query as the initiating user. For that, enable the server setting "
+                        "distributed_ddl_use_initial_user_and_roles on every host, and set distributed_ddl_entry_format_version to at least {}",
+                        table_id.getNameForLogs(), DDLLogEntry::INITIATOR_USER_VERSION);
+                if (castStorage<StorageAlias>(table, DeferredTable::Load))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Table {} is an Alias. The other hosts do not run the query as the initiating user, so they would not check SELECT "
+                        "on its target. Run OPTIMIZE ... ON CLUSTER ... DEDUPLICATE on the target table. Alternatively, enable the server "
+                        "setting distributed_ddl_use_initial_user_and_roles on every host, and set distributed_ddl_entry_format_version to at least {}",
+                        table_id.getNameForLogs(), DDLLogEntry::INITIATOR_USER_VERSION);
+                if (auto view = castStorage<StorageMaterializedView>(table, DeferredTable::Load))
+                {
+                    auto view_metadata = view->getInMemoryMetadataPtr(context, false);
+                    if (!view_metadata->sql_security_type && !view_metadata->select.select_table_id.empty())
+                        context->checkAccess(AccessType::SELECT, view_metadata->select.select_table_id);
+                }
+            };
+        }
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
@@ -91,7 +130,13 @@ BlockIO InterpreterOptimizeQuery::execute()
                 column_names.emplace_back(col->getColumnName());
         }
 
-        storage_snapshot->check(column_names);
+        checkAccessRights(table, table_id, storage_snapshot, column_names, getContext());
+
+        /// The errors below name the table's columns, so only for a user who may `DESCRIBE` the table.
+        const auto * alias = table->as<StorageAlias>();
+        const bool can_show_columns = getContext()->getAccess()->isGranted(AccessType::SHOW_COLUMNS, table_id.database_name, table_id.table_name)
+            && (!alias || alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}));
+        storage_snapshot->check(column_names, can_show_columns);
         Names required_columns;
         {
             required_columns = metadata_snapshot->getColumnsRequiredForSortingKey();
@@ -106,12 +151,22 @@ BlockIO InterpreterOptimizeQuery::execute()
             // hence deduplication always implicitly takes sorting keys and partition keys in account.
             // So we just explicitly state that limitation in order to avoid confusion.
             if (std::find(column_names.begin(), column_names.end(), required_col) == column_names.end())
+            {
+                if (!can_show_columns)
+                    throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
+                        "DEDUPLICATE BY expression must include all columns used in table's ORDER BY, PRIMARY KEY, or PARTITION BY");
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
                         "DEDUPLICATE BY expression must include all columns used in table's"
                         " ORDER BY, PRIMARY KEY, or PARTITION BY but '{}' is missing."
                         " Expanded DEDUPLICATE BY columns expression: ['{}']",
                         required_col, fmt::join(column_names, "', '"));
+            }
         }
+    }
+    else if (ast.deduplicate)
+    {
+        /// Without a list, deduplication compares all physical columns.
+        checkAccessRights(table, table_id, storage_snapshot, metadata_snapshot->getColumns().getNamesOfPhysical(), getContext());
     }
 
     if (ast.dry_run)

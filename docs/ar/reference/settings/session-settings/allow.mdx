@@ -23,6 +23,16 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 تمكين التجميع المستقل لـ partitions على threads منفصلة عندما يكون مفتاح partition مناسبًا لمفتاح `GROUP BY`. يكون ذلك مفيدًا عندما يكون عدد partitions قريبًا من عدد الأنوية وتكون أحجام partitions متقاربة إلى حدٍّ ما. تقوم الآليات الاستدلالية في `ReadFromMergeTree` تلقائيًا بتعطيل هذا التحسين في التخطيطات غير الملائمة (عدد قليل جدًا من partitions، أو عدد كبير جدًا منها، أو أحجام partitions غير متوازنة بشكل ملحوظ)؛ راجع `force_aggregate_partitions_independently` لتجاوز هذه الفحوصات.
 
+## allow_ai_functions {#allow_ai_functions}
+
+**الأسماء البديلة**: `allow_experimental_ai_functions`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "دوال الذكاء الاصطناعي في مرحلة تجريبية ومفعّلة افتراضيًا. كان اسم الإعداد آنذاك `allow_experimental_ai_functions`، وأصبح الآن اسمًا بديلًا له. تُحافَظ على القيمة الافتراضية بصرف النظر عن قيمة `compatibility`."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "إعداد جديد. كان اسم الإعداد آنذاك `allow_experimental_ai_functions`، وأصبح الآن اسمًا بديلًا له."}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "1"},{"label": "أُضيف اسم بديل للإعداد `allow_experimental_ai_functions`."}]}]} />
+
+يسمح باستخدام دوال الذكاء الاصطناعي (`aiGenerate`، `aiClassify`، `aiFilter`، `aiExtract`، `aiTranslate`، `aiRedact`، `aiEmbed`، `aiSimilarity`). عند تعطيله، يُطلق أي استعلام يستخدم هذه الدوال استثناءً.
+
 ## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -149,18 +159,6 @@ Cloud default value: `1`.
 
 إذا ضُبطت القيمة على true، فسيُسمح للمستخدم بتنفيذ استعلامات DDL.
 
-## allow_delta_kernel_rs {#allow_delta_kernel_rs}
-
-<BetaBadge />
-
-**الأسماء المستعارة**: `allow_experimental_delta_kernel_rs`
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "الاسم الجديد لـ `allow_experimental_delta_kernel_rs`، الذي لم يعد تجريبيًا ويُحتفَظ به كاسم مستعار. لم تتغير القيمة الافتراضية."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "إعداد جديد. قُدِّم في البداية باسم `allow_experimental_delta_kernel_rs`، وهو الآن اسم مستعار له؛ ويُدرج هذا الصف تحت الاسم المعياري للحفاظ على السجل الكامل."}]}]} />
-
-يسمح باستخدام تنفيذ `delta-kernel-rs` لقراءة جداول Delta Lake.
-
 ## allow_delta_lake_create_table {#allow_delta_lake_create_table}
 
 <ExperimentalBadge />
@@ -228,6 +226,18 @@ Cloud default value: `1`.
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 السماح بتنفيذ الدالة multiIf بشكل عمودي
+
+## allow_expire_snapshots {#allow_expire_snapshots}
+
+<ExperimentalBadge />
+
+**الأسماء البديلة**: `allow_experimental_expire_snapshots`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "إعداد جديد."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "تمت إضافة اسم بديل للإعداد `allow_experimental_expire_snapshots`."}]}]} />
+
+يتيح تنفيذ أمر Iceberg ‏`ALTER TABLE ... EXECUTE expire_snapshots`.
 
 ## allow_fuzz_query_functions {#allow_fuzz_query_functions}
 
@@ -509,6 +519,14 @@ Cloud default value: `1`.
 بشكل افتراضي، هذا غير مسموح به: إذ إن `REPLACE PARTITION` من مصدر لا يحتوي على بيانات في الـ partition المطلوب يُطلق استثناءً، لأن العملية في هذه الحالة تصبح فعليًا `DROP PARTITION` صامتًا على الوجهة (تُزال بيانات الوجهة ولا يستبدلها شيء)، وهو سبب شائع لفقدان البيانات عن طريق الخطأ (راجع [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)).
 
 فعّل هذا الإعداد لاستعادة السلوك السابق، على سبيل المثال عندما تستخدم عمدًا partition فارغًا في المصدر لمسح البيانات في الوجهة. وإذا أردت حذفًا غير مشروط، فالأفضل استخدام `ALTER TABLE ... DROP PARTITION ...` بدلًا من ذلك.
+
+## allow_reserved_column_names {#allow_reserved_column_names}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "رفض الأعمدة التي يطابق اسمها اسم عمود افتراضي في جدول MergeTree"}]}]} />
+
+يسمح بأن يحمل عمود في جدول من عائلة `MergeTree` اسم أحد الأعمدة الافتراضية للجدول (مثل `_part` أو `_part_offset` أو `_table`) في `CREATE TABLE`، وفي `ATTACH TABLE` مع تعريف كامل، وفي `ALTER TABLE ... ADD COLUMN` و`RENAME COLUMN`. ويحجب هذا العمود العمودَ الافتراضي المماثل له في الاسم. أما الجداول التي تحتوي على مثل هذا العمود مسبقًا، فتُحمَّل بصرف النظر عن قيمة هذا الإعداد. وتُرفض أسماء الأعمدة الافتراضية الدائمة في جميع الأحوال.
 
 ## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 

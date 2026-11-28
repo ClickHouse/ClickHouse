@@ -38,7 +38,7 @@ ClickHouse는 뛰어난 압축률(로그의 경우 최대 [170배](https://click
     CREATE DATABASE IF NOT EXISTS nginxdb
     ```
 
-    2. 전체 로그 이벤트를 하나의 문자열로 삽입합니다. 이는 로그 데이터 분석에 적합한 포맷은 아니지만, 이 부분은 아래에서 ***구체화된 뷰(Materialized Views)***를 사용해 해결하겠습니다.
+    2. 전체 로그 이벤트를 하나의 문자열로 삽입합니다. 이는 로그 데이터 분석에 적합한 포맷은 아니지만, 이 부분은 아래에서 ***구체화된 뷰(Materialized Views)***&#xB97C; 사용해 해결하겠습니다.
 
     ```sql
     CREATE TABLE IF NOT EXISTS  nginxdb.access_logs (
@@ -112,13 +112,9 @@ ClickHouse는 뛰어난 압축률(로그의 경우 최대 [170배](https://click
     ```
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ClickHouse 로그를 테이블 형식으로 보기](/images/integrations/data-ingestion/etl-tools/vector_01.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickHouse 로그를 테이블 형식으로 보기](/images/integrations/data-ingestion/etl-tools/vector_01.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -223,13 +219,9 @@ ClickHouse는 뛰어난 압축률(로그의 경우 최대 [170배](https://click
     ```
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![파싱된 ClickHouse 로그를 테이블 형식으로 보기](/images/integrations/data-ingestion/etl-tools/vector_02.webp)
-
-    </Frame>
-
+      <Frame>
+        ![파싱된 ClickHouse 로그를 테이블 형식으로 보기](/images/integrations/data-ingestion/etl-tools/vector_02.webp)
+      </Frame>
     </div>
 
     <Note>

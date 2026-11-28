@@ -1,4 +1,5 @@
 #include <WindowFunctions/IAggregateWindowFunction.h>
+#include <WindowFunctions/Aggregate/AggregateWindowFunctionCrossTab.h>
 #include <WindowFunctions/Aggregate/AggregateWindowFunctionPrefix.h>
 #include <WindowFunctions/Aggregate/AggregateWindowFunctionRecalculate.h>
 
@@ -16,7 +17,9 @@ namespace ErrorCodes
 
 AggregateWindowFunctionPtr createAggregateWindowFunction(AggregateFunctionPtr function, const WindowDescription & window)
 {
-    if (auto prefix = tryCreateAggregateWindowFunctionPrefix(function, window))
+    if (auto cross_tab = tryCreateAggregateWindowFunctionCrossTab(function, window))
+        return cross_tab;
+    else if (auto prefix = tryCreateAggregateWindowFunctionPrefix(function, window))
         return prefix;
     else if (auto recalculate = tryCreateAggregateWindowFunctionRecalculate(function, window))
         return recalculate;

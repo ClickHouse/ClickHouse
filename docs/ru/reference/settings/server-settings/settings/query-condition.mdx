@@ -14,7 +14,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 ## query_condition_cache_policy {#query_condition_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Название политики вытеснения кэша условий запроса. Возможные значения: `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Политика вытеснения кэша условий запроса. Возможные значения: `LRU`, `SLRU`, `SIEVE`. Ёмкость кэша задаётся настройкой [`query_condition_cache_size`](/ru/reference/settings/server-settings/settings/query-condition#query_condition_cache_size), а размер защищённой очереди в политике SLRU — настройкой [`query_condition_cache_size_ratio`](/ru/reference/settings/server-settings/settings/query-condition#query_condition_cache_size_ratio).
 
 ## query_condition_cache_size {#query_condition_cache_size}
 

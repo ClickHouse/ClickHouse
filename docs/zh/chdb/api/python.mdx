@@ -7,13 +7,9 @@ keywords: ['chdb', '嵌入式', 'clickhouse-lite', 'python', 'api', '参考文�
 doc_type: 'reference'
 ---
 
-<div id="core-query-functions">
-  ## 核心查询函数
-</div>
+## 核心查询函数 {#core-query-functions}
 
-<div id="chdb-query">
-  ### `chdb.query`
-</div>
+### `chdb.query` {#chdb-query}
 
 使用 chDB 引擎执行 SQL 查询。
 
@@ -78,9 +74,7 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 
 ***
 
-<div id="chdb_sql">
-  ### `chdb.sql`
-</div>
+### `chdb.sql` {#chdb_sql}
 
 使用 chDB 引擎执行 SQL 查询。
 
@@ -145,9 +139,7 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 
 ***
 
-<div id="chdb-state-sqlitelike-to_arrowtable">
-  ### `chdb.to_arrowTable`
-</div>
+### `chdb.to_arrowTable` {#chdb-state-sqlitelike-to_arrowtable}
 
 将查询结果转换为 PyArrow 表。
 
@@ -190,9 +182,7 @@ chdb.to_arrowTable(res)
 
 ***
 
-<div id="chdb_to_df">
-  ### `chdb.to_df`
-</div>
+### `chdb.to_df` {#chdb_to_df}
 
 将查询结果转换为 pandas DataFrame。
 
@@ -232,15 +222,11 @@ chdb.to_df(r)
 0   1  hello
 ```
 
-<div id="connection-session-management">
-  ## 连接与会话管理
-</div>
+## 连接与会话管理 {#connection-session-management}
 
 可使用以下会话函数：
 
-<div id="chdb-connect">
-  ### `chdb.connect`
-</div>
+### `chdb.connect` {#chdb-connect}
 
 创建到 chDB 后台 server 的连接。
 
@@ -331,13 +317,9 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 * [`Connection`](#chdb-state-sqlitelike-connection) - 数据库连接类
 * [`Cursor`](#chdb-state-sqlitelike-cursor) - 用于 DB-API 2.0 操作的数据库游标
 
-<div id="chdb-exceptions">
-  ## 异常处理
-</div>
+## 异常处理 {#chdb-exceptions}
 
-<div id="chdb_chdbError">
-  ### **class** `chdb.ChdbError`
-</div>
+### **class** `chdb.ChdbError` {#chdb_chdbError}
 
 基类：`Exception`
 
@@ -349,17 +331,15 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 
 ***
 
-<div id="chdb_session_session">
-  ### **class** `chdb.session.Session`
-</div>
+### **class** `chdb.session.Session` {#chdb_session_session}
 
 基类：`object`
 
 Session 会保留查询状态。
-如果 path 为 None，会话会使用进程范围的临时 (`:memory:`) 数据库，因此所有未指定 path 的会话 都能看到彼此的表；仅当最后一个此类会话 或 connection 关闭时，其临时目录才会被删除。
-你也可以传入一个 path，在该 path 创建数据库，数据将保存在那里。
+如果 路径 为 None，会话会使用进程范围的临时 (`:memory:`) 数据库，因此所有未指定 路径 的会话 都能看到彼此的表；仅当最后一个此类会话 或 连接 关闭时，其临时目录才会被删除。
+你也可以传入一个 路径，在该 路径 创建数据库，数据将保存在那里。
 
-你也可以使用连接字符串传入该 path 和其他参数。
+你也可以使用连接字符串传入该 路径 和其他参数。
 
 ```python
 class chdb.session.Session(path=None)
@@ -367,7 +347,7 @@ class chdb.session.Session(path=None)
 
 **示例**
 
-| Connection String                                  | 描述          |
+| 连接字符串                                  | 描述          |
 | -------------------------------------------------- | ----------- |
 | `":memory:"`                                       | 临时数据库       |
 | `"test.db"`                                        | 相对路径        |
@@ -384,11 +364,11 @@ class chdb.session.Session(path=None)
   对于包含查询参数的连接字符串，例如 “[file:test.db?param1=value1&amp;param2=value2](file:test.db?param1=value1\&param2=value2)”，
   其中的 “param1=value1” 会作为启动参数传递给 ClickHouse 引擎。
 
-  更多详情，请参见 `clickhouse local –help –verbose`
+  更多详情，请参见 `clickhouse local --help --verbose`
 
   一些特殊参数的处理方式：
 
-  * “mode=ro” 在 clickhouse 中会转换为 “–readonly=1” (只读模式)
+  * “mode=ro” 在 clickhouse 中会转换为 `--readonly=1` (只读模式)
 </Info>
 
 <Note>
@@ -400,9 +380,7 @@ class chdb.session.Session(path=None)
 
 ***
 
-<div id="cleanup">
-  #### `cleanup`
-</div>
+#### `cleanup` {#cleanup}
 
 在处理异常时清理会话资源。
 
@@ -435,9 +413,7 @@ cleanup()
 
 ***
 
-<div id="close">
-  #### `close`
-</div>
+#### `close` {#close}
 
 关闭会话并清理资源。
 
@@ -472,9 +448,7 @@ close()
 
 ***
 
-<div id="chdb-session-session-query">
-  #### `query`
-</div>
+#### `query` {#chdb-session-session-query}
 
 执行 SQL 查询并返回结果。
 
@@ -557,9 +531,7 @@ id,name
 
 ***
 
-<div id="chdb-session-session-send_query">
-  #### `send_query`
-</div>
+#### `send_query` {#chdb-session-session-send_query}
 
 执行 SQL 查询，并返回一个流式结果迭代器。
 
@@ -631,9 +603,7 @@ send_query(sql, fmt='CSV') → StreamingResult
 
 ***
 
-<div id="chdb-session-session-sql">
-  #### `sql`
-</div>
+#### `sql` {#chdb-session-session-sql}
 
 执行 SQL 查询并返回结果。
 
@@ -715,13 +685,9 @@ id,name
 * [`send_query()`](#chdb-session-session-send_query) - 用于流式执行查询
 * [`sql`](#chdb-session-session-sql) - 该方法的别名
 
-<div id="chdb-state-management">
-  ## 状态管理
-</div>
+## 状态管理 {#chdb-state-management}
 
-<div id="chdb_state_connect">
-  ### `chdb.state.connect`
-</div>
+### `chdb.state.connect` {#chdb_state_connect}
 
 创建一个到 chDB 后台服务器的 [Connection](#chdb-state-sqlitelike-connection)。
 
@@ -816,9 +782,7 @@ chdb.state.connect(connection_string: str = ':memory:') → Connection
 * `Connection` - 数据库连接类
 * `Cursor` - 用于 DB-API 2.0 操作的数据库游标
 
-<div id="chdb-state-sqlitelike-connection">
-  ### **class** `chdb.state.sqlitelike.Connection`
-</div>
+### **class** `chdb.state.sqlitelike.Connection` {#chdb-state-sqlitelike-connection}
 
 基类：`object`
 
@@ -830,9 +794,7 @@ class chdb.state.sqlitelike.Connection(connection_string: str)
 
 ***
 
-<div id="close">
-  #### `close`
-</div>
+#### `close` {#chdb-session-session-close}
 
 关闭连接并清理资源。
 
@@ -876,9 +838,7 @@ close() → None
 
 ***
 
-<div id="chdb-state-sqlitelike-connection-cursor">
-  #### `cursor`
-</div>
+#### `cursor` {#chdb-state-sqlitelike-connection-cursor}
 
 创建一个用于执行查询的 [Cursor](#chdb-state-sqlitelike-cursor) 对象。
 
@@ -922,9 +882,7 @@ cursor() → Cursor
 
 ***
 
-<div id="chdb-session-session-query">
-  #### `query`
-</div>
+#### `query` {#chdb-state-sqlitelike-connection-query}
 
 执行 SQL 查询并返回完整结果。
 
@@ -998,9 +956,7 @@ num,text
 
 ***
 
-<div id="chdb-session-session-send_query">
-  #### `send_query`
-</div>
+#### `send_query` {#chdb-state-sqlitelike-connection-send_query}
 
 执行 SQL 查询并返回一个流式结果迭代器。
 
@@ -1073,9 +1029,7 @@ send_query(query: str, format: str = 'CSV') → StreamingResult
 
 ***
 
-<div id="chdb-state-sqlitelike-streamingresult">
-  ### **class** `chdb.state.sqlitelike.StreamingResult`
-</div>
+### **class** `chdb.state.sqlitelike.StreamingResult` {#chdb-state-sqlitelike-streamingresult}
 
 基类：`object`
 
@@ -1089,9 +1043,7 @@ class chdb.state.sqlitelike.StreamingResult
 
 ***
 
-<div id="streamingresult-fetch">
-  #### `fetch`
-</div>
+#### `fetch` {#streamingresult-fetch}
 
 拉取下一批流式结果。
 
@@ -1123,9 +1075,7 @@ fetch() → Any
 
 ***
 
-<div id="streamingresult-cancel">
-  #### `cancel`
-</div>
+#### `cancel` {#streamingresult-cancel}
 
 取消流式查询并清理资源。
 
@@ -1152,9 +1102,7 @@ cancel() → None
 
 ***
 
-<div id="close">
-  #### `close`
-</div>
+#### `close` {#streamingresult-close}
 
 关闭流式结果并清理资源。
 
@@ -1169,9 +1117,7 @@ close() → None
 
 ***
 
-<div id="streamingresult-record_batch">
-  #### `record_batch`
-</div>
+#### `record_batch` {#streamingresult-record_batch}
 
 创建一个 PyArrow RecordBatchReader，以高效进行批次处理。
 
@@ -1215,9 +1161,7 @@ record_batch(rows_per_batch: int = 1000000) → pa.RecordBatchReader
 
 ***
 
-<div id="streamingresult-iterator">
-  #### 迭代器协议
-</div>
+#### 迭代器协议 {#streamingresult-iterator}
 
 StreamingResult 支持 Python 的迭代器协议，因此可以
 直接用于 for 循环：
@@ -1230,9 +1174,7 @@ StreamingResult 支持 Python 的迭代器协议，因此可以
 
 ***
 
-<div id="streamingresult-context-manager">
-  #### 上下文管理器协议
-</div>
+#### 上下文管理器协议 {#streamingresult-context-manager}
 
 StreamingResult 支持上下文管理器协议，可自动清理资源：
 
@@ -1245,9 +1187,7 @@ StreamingResult 支持上下文管理器协议，可自动清理资源：
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor">
-  ### **类** `chdb.state.sqlitelike.Cursor`
-</div>
+### **类** `chdb.state.sqlitelike.Cursor` {#chdb-state-sqlitelike-cursor}
 
 基类：`object`
 
@@ -1257,9 +1197,7 @@ class chdb.state.sqlitelike.Cursor(connection)
 
 ***
 
-<div id="close">
-  #### `close`
-</div>
+#### `close` {#cursor-close-none}
 
 关闭游标并释放资源。
 
@@ -1289,9 +1227,7 @@ close() → None
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor-column_names">
-  #### `column_names`
-</div>
+#### `column_names` {#chdb-state-sqlitelike-cursor-column_names}
 
 返回最近一次执行的查询的列名列表。
 
@@ -1327,9 +1263,7 @@ column_names() → list
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor-column_types">
-  #### `column_types`
-</div>
+#### `column_types` {#chdb-state-sqlitelike-cursor-column_types}
 
 返回上一次执行的查询中的列类型列表。
 
@@ -1363,9 +1297,7 @@ column_types() → list
 
 ***
 
-<div id="commit">
-  #### `commit`
-</div>
+#### `commit` {#commit}
 
 提交所有待处理的事务。
 
@@ -1394,9 +1326,7 @@ commit() → None
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor-description">
-  #### `property description : list`
-</div>
+#### `property description : list` {#chdb-state-sqlitelike-cursor-description}
 
 按照 DB-API 2.0 规范返回列描述。
 
@@ -1435,9 +1365,7 @@ Column: name, Type: String
 
 ***
 
-<div id="execute">
-  #### `execute`
-</div>
+#### `execute` {#execute}
 
 执行 SQL 查询，并为后续拉取结果做好准备。
 
@@ -1505,9 +1433,7 @@ execute(query: str) → None
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor-fetchall">
-  #### `fetchall`
-</div>
+#### `fetchall` {#chdb-state-sqlitelike-cursor-fetchall}
 
 从查询结果中拉取所有剩余行。
 
@@ -1552,9 +1478,7 @@ fetchall() → tuple
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor-fetchmany">
-  #### `fetchmany`
-</div>
+#### `fetchmany` {#chdb-state-sqlitelike-cursor-fetchmany}
 
 从查询结果中拉取多行。
 
@@ -1604,9 +1528,7 @@ fetchmany(size: int = 1) → tuple
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor-fetchone">
-  #### `fetchone`
-</div>
+#### `fetchone` {#chdb-state-sqlitelike-cursor-fetchone}
 
 从查询结果中拉取下一行。
 
@@ -1651,9 +1573,7 @@ fetchone() → tuple | None
 
 ***
 
-<div id="state-sqlitelike-to_arrowtable">
-  ### `chdb.state.sqlitelike`
-</div>
+### `chdb.state.sqlitelike` {#state-sqlitelike-to_arrowtable}
 
 将查询结果转换为 PyArrow Table。
 
@@ -1712,9 +1632,7 @@ text: string
 
 ***
 
-<div id="state-sqlitelike-to_df">
-  ### `chdb.state.sqlitelike.to_df`
-</div>
+### `chdb.state.sqlitelike.to_df` {#state-sqlitelike-to_df}
 
 将查询结果转换为 Pandas DataFrame。
 
@@ -1768,13 +1686,9 @@ text    object
 dtype: object
 ```
 
-<div id="dataframe-integration">
-  ## DataFrame 集成
-</div>
+## DataFrame 集成 {#dataframe-integration}
 
-<div id="chdb-dataframe-table">
-  ### **类** `chdb.dataframe.Table`
-</div>
+### **类** `chdb.dataframe.Table` {#chdb-dataframe-table}
 
 基类：
 
@@ -1782,9 +1696,7 @@ dtype: object
 class chdb.dataframe.Table(*args: Any, **kwargs: Any)
 ```
 
-<div id="database-api-interface">
-  ## 数据库 API (DBAPI) 2.0 接口
-</div>
+## 数据库 API (DBAPI) 2.0 接口 {#database-api-interface}
 
 chDB 提供兼容 Python DB-API 2.0 的数据库连接接口，使你能够将 chDB 与需要标准数据库接口的工具和框架配合使用。
 
@@ -1798,15 +1710,11 @@ chDB DB-API 2.0 接口包括：
 
 ***
 
-<div id="core-functions">
-  ### 核心函数
-</div>
+### 核心函数 {#core-functions}
 
 Database API (DBAPI) 2.0 接口提供以下核心函数：
 
-<div id="dbapi-connect">
-  #### `chdb.dbapi.connect`
-</div>
+#### `chdb.dbapi.connect` {#dbapi-connect}
 
 初始化新的数据库连接。
 
@@ -1830,9 +1738,7 @@ chdb.dbapi.connect(*args, **kwargs)
 
 ***
 
-<div id="dbapi-get-client-info">
-  #### `chdb.dbapi.get_client_info()`
-</div>
+#### `chdb.dbapi.get_client_info()` {#dbapi-get-client-info}
 
 获取客户端版本信息。
 
@@ -1852,13 +1758,9 @@ chdb.dbapi.get_client_info()
 
 ***
 
-<div id="type-constructors">
-  ### 类型构造器
-</div>
+### 类型构造器 {#type-constructors}
 
-<div id="dbapi-binary">
-  #### `chdb.dbapi.Binary(x)`
-</div>
+#### `chdb.dbapi.Binary(x)` {#dbapi-binary}
 
 将 x 以二进制类型返回。
 
@@ -1885,13 +1787,9 @@ chdb.dbapi.Binary(x)
 
 ***
 
-<div id="connection-class">
-  ### 连接类
-</div>
+### 连接类 {#connection-class}
 
-<div id="chdb-dbapi-connections-connection">
-  #### **类** `chdb.dbapi.connections.Connection(path=None)`
-</div>
+#### **类** `chdb.dbapi.connections.Connection(path=None)` {#chdb-dbapi-connections-connection}
 
 基类：`object`
 
@@ -1953,9 +1851,7 @@ class chdb.dbapi.connections.Connection(path=None)
 
 ***
 
-<div id="close">
-  #### `close`
-</div>
+#### `close` {#dbapi-connection-close}
 
 关闭数据库连接。
 
@@ -1976,9 +1872,7 @@ close()
 
 ***
 
-<div id="commit">
-  #### `commit`
-</div>
+#### `commit` {#dbapi-commit}
 
 提交当前事务。
 
@@ -1995,9 +1889,7 @@ commit()
 
 ***
 
-<div id="chdb-state-sqlitelike-connection-cursor">
-  #### `cursor`
-</div>
+#### `cursor` {#dbapi-cursor}
 
 创建一个用于执行查询的新游标。
 
@@ -2036,9 +1928,7 @@ cursor(cursor=None)
 
 ***
 
-<div id="escape">
-  #### `escape`
-</div>
+#### `escape` {#escape}
 
 对值进行转义，以便安全地插入 SQL 查询中。
 
@@ -2071,9 +1961,7 @@ escape(obj, mapping=None)
 
 ***
 
-<div id="escape-string">
-  #### `escape_string`
-</div>
+#### `escape_string` {#escape-string}
 
 对字符串值进行转义，以用于 SQL 查询。
 
@@ -2097,9 +1985,7 @@ escape_string(s)
 
 ***
 
-<div id="property-open">
-  #### `property open`
-</div>
+#### `property open` {#property-open}
 
 检查连接是否已打开。
 
@@ -2111,9 +1997,7 @@ escape_string(s)
 
 ***
 
-<div id="chdb-session-session-query">
-  #### `query`
-</div>
+#### `query` {#dbapi-query}
 
 直接执行 SQL 查询并返回原始结果。
 
@@ -2156,9 +2040,7 @@ query(sql, fmt='CSV')
 
 ***
 
-<div id="property-resp">
-  #### `property resp`
-</div>
+#### `property resp` {#property-resp}
 
 获取最后一次查询的响应。
 
@@ -2175,9 +2057,7 @@ query(sql, fmt='CSV')
 
 ***
 
-<div id="rollback">
-  #### `rollback`
-</div>
+#### `rollback` {#rollback}
 
 回滚当前事务。
 
@@ -2194,13 +2074,9 @@ rollback()
 
 ***
 
-<div id="cursor-class">
-  ### Cursor 类
-</div>
+### Cursor 类 {#cursor-class}
 
-<div id="chdb-dbapi-cursors-cursor">
-  #### **class** `chdb.dbapi.cursors.Cursor`
-</div>
+#### **class** `chdb.dbapi.cursors.Cursor` {#chdb-dbapi-cursors-cursor}
 
 基类：`object`
 
@@ -2240,9 +2116,7 @@ class chdb.dbapi.cursors.Cursor(connection)
 
 ***
 
-<div id="callproc">
-  #### `callproc`
-</div>
+#### `callproc` {#callproc}
 
 执行存储过程 (占位用实现) 。
 
@@ -2281,9 +2155,7 @@ callproc(procname, args=())
 
 ***
 
-<div id="close">
-  #### `close`
-</div>
+#### `close` {#dbapi-cursor-close}
 
 关闭游标并释放相关资源。
 
@@ -2298,9 +2170,7 @@ close()
 
 ***
 
-<div id="execute">
-  #### `execute`
-</div>
+#### `execute` {#dbapi-execute}
 
 执行 SQL 查询，并可选择绑定参数。
 
@@ -2356,9 +2226,7 @@ execute(query, args=None)
 
 ***
 
-<div id="chdb-dbapi-cursors-cursor-executemany">
-  #### `executemany(query, args)`
-</div>
+#### `executemany(query, args)` {#chdb-dbapi-cursors-cursor-executemany}
 
 使用不同的参数集多次执行查询。
 
@@ -2408,9 +2276,7 @@ executemany(query, args)
 
 ***
 
-<div id="dbapi-fetchall">
-  #### `fetchall()`
-</div>
+#### `fetchall()` {#dbapi-fetchall}
 
 从查询结果中获取所有剩余行。
 
@@ -2449,9 +2315,7 @@ fetchall()
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor-fetchmany">
-  #### `fetchmany`
-</div>
+#### `fetchmany` {#dbapi-fetchmany}
 
 从查询结果中获取多行。
 
@@ -2489,9 +2353,7 @@ fetchmany(size=1)
 
 ***
 
-<div id="chdb-state-sqlitelike-cursor-fetchone">
-  #### `fetchone`
-</div>
+#### `fetchone` {#dbapi-fetchone}
 
 从查询结果中获取下一行。
 
@@ -2525,9 +2387,7 @@ fetchone()
 
 ***
 
-<div id="max-stmt-length">
-  #### `max_stmt_length = 1024000`
-</div>
+#### `max_stmt_length = 1024000` {#max-stmt-length}
 
 [`executemany()`](#chdb-dbapi-cursors-cursor-executemany) 生成的最大语句大小。
 
@@ -2535,9 +2395,7 @@ fetchone()
 
 ***
 
-<div id="mogrify">
-  #### `mogrify`
-</div>
+#### `mogrify` {#mogrify}
 
 返回将发送到数据库的精确查询字符串。
 
@@ -2576,9 +2434,7 @@ mogrify(query, args=None)
 
 ***
 
-<div id="nextset">
-  #### `nextset`
-</div>
+#### `nextset` {#nextset}
 
 切换到下一个结果集 (不支持) 。
 
@@ -2601,9 +2457,7 @@ nextset()
 
 ***
 
-<div id="setinputsizes">
-  #### `setinputsizes`
-</div>
+#### `setinputsizes` {#setinputsizes}
 
 设置参数输入大小 (实际为空操作) 。
 
@@ -2626,9 +2480,7 @@ setinputsizes(*args)
 
 ***
 
-<div id="setoutputsizes">
-  #### `setoutputsizes`
-</div>
+#### `setoutputsizes` {#setoutputsizes}
 
 设置输出列的大小 (空操作实现) 。
 
@@ -2651,9 +2503,7 @@ setoutputsizes(*args)
 
 ***
 
-<div id="error-classes">
-  ### 错误类
-</div>
+### 错误类 {#error-classes}
 
 用于 chdb database 操作的异常类。
 
@@ -2722,9 +2572,7 @@ Constraint violation: Duplicate entry '1' for key 'PRIMARY'
 
 ***
 
-<div id="chdb-dbapi-err-dataerror">
-  #### **异常** `chdb.dbapi.err.DataError`
-</div>
+#### **异常** `chdb.dbapi.err.DataError` {#chdb-dbapi-err-dataerror}
 
 基类：[`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2761,9 +2609,7 @@ DataError: Invalid date format
 
 ***
 
-<div id="chdb-dbapi-err-databaseerror">
-  #### **异常** `chdb.dbapi.err.DatabaseError`
-</div>
+#### **异常** `chdb.dbapi.err.DatabaseError` {#chdb-dbapi-err-databaseerror}
 
 基类：[`Error`](#chdb-dbapi-err-error)
 
@@ -2787,9 +2633,7 @@ DataError: Invalid date format
 
 ***
 
-<div id="chdb-dbapi-err-error">
-  #### **异常** `chdb.dbapi.err.Error`
-</div>
+#### **异常** `chdb.dbapi.err.Error` {#chdb-dbapi-err-error}
 
 基类：[`StandardError`](#chdb-dbapi-err-standarderror)
 
@@ -2806,9 +2650,7 @@ DataError: Invalid date format
 
 * [`Warning`](#chdb-dbapi-err-warning) - 用于不会阻止操作完成的非致命警告
 
-<div id="chdb-dbapi-err-integrityerror">
-  #### **异常** `chdb.dbapi.err.IntegrityError`
-</div>
+#### **异常** `chdb.dbapi.err.IntegrityError` {#chdb-dbapi-err-integrityerror}
 
 基类：[`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2846,9 +2688,7 @@ IntegrityError: Cannot add or update a child row: foreign key constraint fails
 
 ***
 
-<div id="chdb-dbapi-err-interfaceerror">
-  #### **异常** `chdb.dbapi.err.InterfaceError`
-</div>
+#### **异常** `chdb.dbapi.err.InterfaceError` {#chdb-dbapi-err-interfaceerror}
 
 基类：[`Error`](#chdb-dbapi-err-error)
 
@@ -2874,9 +2714,7 @@ IntegrityError: Cannot add or update a child row: foreign key constraint fails
 
 ***
 
-<div id="chdb-dbapi-err-internalerror">
-  #### **异常** `chdb.dbapi.err.InternalError`
-</div>
+#### **异常** `chdb.dbapi.err.InternalError` {#chdb-dbapi-err-internalerror}
 
 基类：[`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2908,9 +2746,7 @@ IntegrityError: Cannot add or update a child row: foreign key constraint fails
 
 ***
 
-<div id="chdb-dbapi-err-notsupportederror">
-  #### **异常** `chdb.dbapi.err.NotSupportedError`
-</div>
+#### **异常** `chdb.dbapi.err.NotSupportedError` {#chdb-dbapi-err-notsupportederror}
 
 基类：[`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2950,9 +2786,7 @@ NotSupportedError: WITH clause not supported in this database version
 
 ***
 
-<div id="chdb-dbapi-err-operationalerror">
-  #### **异常** `chdb.dbapi.err.OperationalError`
-</div>
+#### **异常** `chdb.dbapi.err.OperationalError` {#chdb-dbapi-err-operationalerror}
 
 基类：[`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -2989,9 +2823,7 @@ NotSupportedError: WITH clause not supported in this database version
 
 ***
 
-<div id="chdb-dbapi-err-programmingerror">
-  #### **异常** `chdb.dbapi.err.ProgrammingError`
-</div>
+#### **异常** `chdb.dbapi.err.ProgrammingError` {#chdb-dbapi-err-programmingerror}
 
 基类：[`DatabaseError`](#chdb-dbapi-err-databaseerror)
 
@@ -3034,9 +2866,7 @@ ProgrammingError: Column count doesn't match value count
 
 ***
 
-<div id="chdb-dbapi-err-standarderror">
-  #### **异常** `chdb.dbapi.err.StandardError`
-</div>
+#### **异常** `chdb.dbapi.err.StandardError` {#chdb-dbapi-err-standarderror}
 
 基类：`Exception`
 
@@ -3052,9 +2882,7 @@ Python 内置的 Exception 类，并作为数据库操作异常层级结构的�
 
 ***
 
-<div id="chdb-dbapi-err-warning">
-  #### **异常** `chdb.dbapi.err.Warning`
-</div>
+#### **异常** `chdb.dbapi.err.Warning` {#chdb-dbapi-err-warning}
 
 基类：[`StandardError`](#chdb-dbapi-err-standarderror)
 
@@ -3074,13 +2902,9 @@ Python 内置的 Exception 类，并作为数据库操作异常层级结构的�
 
 ***
 
-<div id="module-constants">
-  ### 模块常量
-</div>
+### 模块常量 {#module-constants}
 
-<div id="apilevel">
-  #### `chdb.dbapi.apilevel = '2.0'`
-</div>
+#### `chdb.dbapi.apilevel = '2.0'` {#apilevel}
 
 ```python
 str(object=’’) -> str
@@ -3098,9 +2922,7 @@ errors，则该对象必须提供一个数据缓冲区，
 
 ***
 
-<div id="threadsafety">
-  #### `chdb.dbapi.threadsafety = 1`
-</div>
+#### `chdb.dbapi.threadsafety = 1` {#threadsafety}
 
 ```python
 int([x]) -> integer
@@ -3124,9 +2946,7 @@ base 为 0 表示根据字符串中的整数字面量来解释其进制。
 
 ***
 
-<div id="paramstyle">
-  #### `chdb.dbapi.paramstyle = 'format'`
-</div>
+#### `chdb.dbapi.paramstyle = 'format'` {#paramstyle}
 
 ```python
 str(object=’’) -> str
@@ -3143,13 +2963,9 @@ errors 默认为‘strict’。
 
 ***
 
-<div id="type-constants">
-  ### 类型常量
-</div>
+### 类型常量 {#type-constants}
 
-<div id="string-type">
-  #### `chdb.dbapi.STRING = frozenset({247, 253, 254})`
-</div>
+#### `chdb.dbapi.STRING = frozenset({247, 253, 254})` {#string-type}
 
 用于 DB-API 2.0 类型比较的扩展型 frozenset。
 
@@ -3171,9 +2987,7 @@ errors 默认为‘strict’。
 
 ***
 
-<div id="binary-type">
-  #### `chdb.dbapi.BINARY = frozenset({249, 250, 251, 252})`
-</div>
+#### `chdb.dbapi.BINARY = frozenset({249, 250, 251, 252})` {#binary-type}
 
 为 DB-API 2.0 类型比较扩展的 frozenset。
 
@@ -3195,9 +3009,7 @@ errors 默认为‘strict’。
 
 ***
 
-<div id="number-type">
-  #### `chdb.dbapi.NUMBER = frozenset({0, 1, 3, 4, 5, 8, 9, 13})`
-</div>
+#### `chdb.dbapi.NUMBER = frozenset({0, 1, 3, 4, 5, 8, 9, 13})` {#number-type}
 
 用于 DB-API 2.0 类型比较的扩展型 frozenset。
 
@@ -3219,9 +3031,7 @@ errors 默认为‘strict’。
 
 ***
 
-<div id="date-type">
-  #### `chdb.dbapi.DATE = frozenset({10, 14})`
-</div>
+#### `chdb.dbapi.DATE = frozenset({10, 14})` {#date-type}
 
 用于 DB-API 2.0 类型比较的扩展型 frozenset。
 
@@ -3243,9 +3053,7 @@ errors 默认为‘strict’。
 
 ***
 
-<div id="time-type">
-  #### `chdb.dbapi.TIME = frozenset({11})`
-</div>
+#### `chdb.dbapi.TIME = frozenset({11})` {#time-type}
 
 用于 DB-API 2.0 类型比较的扩展版 frozenset。
 
@@ -3267,9 +3075,7 @@ errors 默认为‘strict’。
 
 ***
 
-<div id="timestamp-type">
-  #### `chdb.dbapi.TIMESTAMP = frozenset({7, 12})`
-</div>
+#### `chdb.dbapi.TIMESTAMP = frozenset({7, 12})` {#timestamp-type}
 
 用于 DB-API 2.0 类型比较的扩展版 frozenset。
 
@@ -3289,9 +3095,7 @@ errors 默认为‘strict’。
 >>> FIELD_TYPE.BLOB in string_types    # 返回 False
 ```
 
-<div id="datetime-type">
-  #### `chdb.dbapi.DATETIME = frozenset({7, 12})`
-</div>
+#### `chdb.dbapi.DATETIME = frozenset({7, 12})` {#datetime-type}
 
 用于 DB-API 2.0 类型比较的扩展型 frozenset。
 
@@ -3313,9 +3117,7 @@ errors 默认为‘strict’。
 
 ***
 
-<div id="rowid-type">
-  #### `chdb.dbapi.ROWID = frozenset({})`
-</div>
+#### `chdb.dbapi.ROWID = frozenset({})` {#rowid-type}
 
 为 DB-API 2.0 类型比较扩展的 frozenset。
 
@@ -3445,17 +3247,13 @@ with dbapi.connect("test.chdb") as conn:
   * 参数绑定语法遵循 `format` 风格：`%s`
 </Warning>
 
-<div id="user-defined-functions">
-  ## Python 用户自定义函数 (UDF)
-</div>
+## Python 用户自定义函数 (UDF) {#user-defined-functions}
 
 chDB 支持原生 Python UDF，可在进程内运行，支持类型化参数、自动类型推断以及可配置的 NULL/异常处理。注册为 UDF 的 Python 函数可直接在 SQL 查询中调用。
 
 以下示例使用默认的 CSV 输出格式。行内注释显示逻辑结果值；原始输出会将 `NULL` 显示为 `\N`，并对字符串和日期值进行 CSV 引号转义。
 
-<div id="create-function">
-  ### `chdb.create_function`
-</div>
+### `chdb.create_function` {#create-function}
 
 将 Python 函数注册为 chDB SQL 函数。
 
@@ -3498,9 +3296,7 @@ drop_function("strlen")
 
 ***
 
-<div id="drop-function">
-  ### `chdb.drop_function`
-</div>
+### `chdb.drop_function` {#drop-function}
 
 移除先前注册的 Python UDF。如果该函数尚未注册，则不会执行任何操作，因此可放心无条件调用。
 
@@ -3518,9 +3314,7 @@ chdb.drop_function(name)
 
 ***
 
-<div id="func-decorator">
-  ### `@func` 装饰器
-</div>
+### `@func` 装饰器 {#func-decorator}
 
 用于将 Python 函数注册为 chDB SQL 函数。该函数仍可像普通 Python 函数一样调用，同时可通过其 `__name__` 在 SQL 查询中使用。
 
@@ -3566,13 +3360,9 @@ print(query("SELECT greet('world')"))    # Hello, world!
 
 ***
 
-<div id="udf-type-system">
-  ### 类型系统
-</div>
+### 类型系统 {#udf-type-system}
 
-<div id="udf-available-types">
-  #### 可用类型
-</div>
+#### 可用类型 {#udf-available-types}
 
 从 `chdb.sqltypes` 中导入类型：
 
@@ -3587,9 +3377,7 @@ from chdb.sqltypes import (
 )
 ```
 
-<div id="udf-automatic-type-mapping">
-  #### 自动类型映射
-</div>
+#### 自动类型映射 {#udf-automatic-type-mapping}
 
 根据 Python 类型注解推断类型时，使用以下映射：
 
@@ -3604,9 +3392,7 @@ from chdb.sqltypes import (
 | `datetime.date`     | `Date`          |
 | `datetime.datetime` | `DateTime64(6)` |
 
-<div id="udf-type-specification-methods">
-  #### 类型指定方式
-</div>
+#### 类型指定方式 {#udf-type-specification-methods}
 
 可以通过多种方式指定类型：
 
@@ -3633,9 +3419,7 @@ def f5(x: int) -> int:
 
 ***
 
-<div id="udf-null-handling">
-  ### NULL 处理
-</div>
+### NULL 处理 {#udf-null-handling}
 
 使用 `on_null` 参数控制 NULL 值的处理方式。
 
@@ -3664,9 +3448,7 @@ print(query("SELECT null_safe(NULL)"))  # 0
 
 ***
 
-<div id="udf-exception-handling">
-  ### 异常处理
-</div>
+### 异常处理 {#udf-exception-handling}
 
 使用 `on_error` 参数控制异常处理方式。
 
@@ -3696,9 +3478,7 @@ print(query("SELECT safe_divide(10, 2)"))  # 5
 
 ***
 
-<div id="udf-datetime">
-  ### 日期时间和时区支持
-</div>
+### 日期时间和时区支持 {#udf-datetime}
 
 UDF 完全支持具有时区信息的 `Date`、`Date32`、`DateTime` 和 `DateTime64` 类型。
 
@@ -3724,17 +3504,13 @@ print(query("SELECT get_year(toDate('2024-06-15'))"))  # 2024
 
 ***
 
-<div id="legacy-udf">
-  ### 旧版 API
-</div>
+### 旧版 API {#legacy-udf}
 
 <Warning>
   **已弃用：** `@chdb_udf` 装饰器是基于子进程的旧版 UDF 机制：它会在独立的 Python 进程中运行函数，并将所有参数以字符串形式传递。该机制仍可使用，但建议使用原生 Python UDF API ([`@func`](#func-decorator) / [`create_function`](#create-function)) ——原生 UDF 在进程内运行，支持类型化参数、NULL 处理和异常控制。有关完整说明，请参阅 [Python UDF 指南](/zh/chdb/guides/python-udf)。
 </Warning>
 
-<div id="chdb-udf">
-  #### `chdb.udf.chdb_udf`
-</div>
+#### `chdb.udf.chdb_udf` {#chdb-udf}
 
 chDB Python UDF (用户自定义函数) 装饰器。
 
@@ -3774,9 +3550,7 @@ def func_use_json(arg):
 
 ***
 
-<div id="generate-udf">
-  #### `chdb.udf.generate_udf`
-</div>
+#### `chdb.udf.generate_udf` {#generate-udf}
 
 生成 UDF 配置文件和可执行脚本。
 
@@ -3806,9 +3580,7 @@ chdb.udf.generate_udf(func_name, args, return_type, udf_body)
 
 ***
 
-<div id="utilities">
-  ## 工具
-</div>
+## 工具 {#utilities}
 
 适用于 chDB 的实用函数和辅助工具。
 
@@ -3816,9 +3588,7 @@ chdb.udf.generate_udf(func_name, args, return_type, udf_body)
 
 ***
 
-<div id="convert-to-columnar">
-  ### `chdb.utils.convert_to_columnar`
-</div>
+### `chdb.utils.convert_to_columnar` {#convert-to-columnar}
 
 将字典列表转换为列式格式。
 
@@ -3862,9 +3632,7 @@ chdb.utils.convert_to_columnar(items: List[Dict[str, Any]]) → Dict[str, List[A
 
 ***
 
-<div id="flatten-dict">
-  ### `chdb.utils.flatten_dict`
-</div>
+### `chdb.utils.flatten_dict` {#flatten-dict}
 
 将嵌套字典扁平化。
 
@@ -3919,9 +3687,7 @@ chdb.utils.flatten_dict(d: Dict[str, Any], parent_key: str = '', sep: str = '_')
 
 ***
 
-<div id="infer-data-type">
-  ### `chdb.utils.infer_data_type`
-</div>
+### `chdb.utils.infer_data_type` {#infer-data-type}
 
 为一组值推断最合适的数据类型。
 
@@ -3954,9 +3720,7 @@ chdb.utils.infer_data_type(values: List[Any]) → str
 
 ***
 
-<div id="infer-data-types">
-  ### `chdb.utils.infer_data_types`
-</div>
+### `chdb.utils.infer_data_types` {#infer-data-types}
 
 为列式数据结构中的每一列推断数据类型。
 
@@ -3982,13 +3746,9 @@ chdb.utils.infer_data_types`(column_data: Dict[str, List[Any]], n_rows: int = 10
 | ------------- | --------------------------- |
 | `List[tuple]` | 一个元组列表，其中每个元组包含列名及其推断出的数据类型 |
 
-<div id="abstract-base-classes">
-  ## 抽象基类
-</div>
+## 抽象基类 {#abstract-base-classes}
 
-<div id="pyreader">
-  ### **类** `chdb.rwabc.PyReader`(data: Any)&#96;
-</div>
+### **类** `chdb.rwabc.PyReader`(data: Any)&#96; {#pyreader}
 
 基类：`ABC`
 
@@ -3998,9 +3758,7 @@ class chdb.rwabc.PyReader(data: Any)
 
 ***
 
-<div id="read">
-  #### **abstractmethod** `read`
-</div>
+#### **abstractmethod** `read` {#read}
 
 从给定列中读取指定数量的行，并返回一个对象列表，
 其中每个对象对应一列的值序列。
@@ -4022,9 +3780,7 @@ abstractmethod (col_names: List[str], count: int) → List[Any]
 | ----------- | -------------- |
 | `List[Any]` | 序列列表，每一列对应一个序列 |
 
-<div id="pywriter">
-  ### **类** `chdb.rwabc.PyWriter`
-</div>
+### **类** `chdb.rwabc.PyWriter` {#pywriter}
 
 基类：`ABC`
 
@@ -4034,9 +3790,7 @@ class chdb.rwabc.PyWriter(col_names: List[str], types: List[type], data: Any)
 
 ***
 
-<div id="finalize">
-  #### **abstractmethod** finalize
-</div>
+#### **abstractmethod** finalize {#finalize}
 
 组装并返回各个块中的最终数据。必须由子类实现。
 
@@ -4052,9 +3806,7 @@ abstractmethod finalize() → bytes
 
 ***
 
-<div id="write">
-  #### **abstractmethod** `write`
-</div>
+#### **abstractmethod** `write` {#write}
 
 将数据列写入块中。必须由子类实现。
 
@@ -4069,13 +3821,9 @@ abstractmethod write(col_names: List[str], columns: List[List[Any]]) → None
 | `col_names` | `List[str]`       | 正在写入的列名列表          |
 | `columns`   | `List[List[Any]]` | 列数据列表，其中每列都由一个列表表示 |
 
-<div id="chdb-exceptions">
-  ## 异常处理
-</div>
+## 异常处理 {#exception-handling}
 
-<div id="chdberror">
-  ### **类** `chdb.ChdbError`
-</div>
+### **类** `chdb.ChdbError` {#chdberror}
 
 基类：`Exception`
 
@@ -4116,13 +3864,9 @@ Syntax error: Syntax error near 'FROM'
   以便在应用程序中进行适当的错误处理。
 </Note>
 
-<div id="version-information">
-  ## 版本信息
-</div>
+## 版本信息 {#version-information}
 
-<div id="chdb-version">
-  ### `chdb.chdb_version = ('3', '6', '0')`
-</div>
+### `chdb.chdb_version = ('3', '6', '0')` {#chdb-version}
 
 内置的不可变序列。
 
@@ -4133,9 +3877,7 @@ Syntax error: Syntax error near 'FROM'
 
 ***
 
-<div id="engine-version">
-  ### `chdb.engine_version = '25.5.2.1'`
-</div>
+### `chdb.engine_version = '25.5.2.1'` {#engine-version}
 
 ```python
 str(object=’’) -> str
@@ -4153,9 +3895,7 @@ errors，则该对象必须提供一个数据缓冲区，
 
 ***
 
-<div id="version">
-  ### `chdb.__version__ = '3.6.0'`
-</div>
+### `chdb.__version__ = '3.6.0'` {#version}
 
 ```python
 str(object=’’) -> str

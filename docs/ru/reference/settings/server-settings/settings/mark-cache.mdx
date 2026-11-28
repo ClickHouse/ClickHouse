@@ -14,7 +14,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 ## mark_cache_policy {#mark_cache_policy}
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Название политики вытеснения кэша меток. Возможные значения: `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Политика вытеснения для кэша меток (индекса таблиц семейства MergeTree). Возможные значения: `LRU`, `SLRU`, `SIEVE`. Ёмкость кэша задаётся настройкой [`mark_cache_size`](/ru/reference/settings/server-settings/settings/mark-cache#mark_cache_size), а размер защищённой очереди в политике SLRU — настройкой [`mark_cache_size_ratio`](/ru/reference/settings/server-settings/settings/mark-cache#mark_cache_size_ratio).
 
 ## mark_cache_prewarm_ratio {#mark_cache_prewarm_ratio}
 

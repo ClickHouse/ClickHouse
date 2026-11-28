@@ -22,10 +22,10 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
 <a href="https://www.airbyte.com/" target="_blank">Airbyte</a> est une plateforme open source d’intégration de données. Elle permet de créer des pipelines de données <a href="https://airbyte.com/blog/why-the-future-of-etl-is-not-elt-but-el" target="_blank">ELT</a> et est fournie avec plus de 140 connecteurs prêts à l’emploi. Ce tutoriel pas à pas montre comment configurer ClickHouse comme destination dans Airbyte et charger un jeu de données d’exemple.
 
 <Steps>
-  <Step title="Télécharger et exécuter Airbyte" id="1-download-and-run-airbyte">
-    1. Airbyte s’exécute sur Docker et utilise `docker-compose`. Assurez-vous de télécharger et d’installer les dernières versions de Docker.
+  <Step title="Téléchargez et lancez Airbyte" id="1-download-and-run-airbyte">
+    1. Airbyte s’exécute sur Docker et utilise `docker-compose`. Veillez à télécharger et à installer les dernières versions de Docker.
 
-    2. Déployez Airbyte en clonant le dépôt GitHub officiel et en exécutant `docker-compose up` dans le terminal de votre choix :
+    2. Déployez Airbyte en clonant le dépôt Github officiel et en exécutant `docker-compose up` dans votre terminal habituel :
 
        ```bash
        git clone https://github.com/airbytehq/airbyte.git --depth=1
@@ -36,57 +36,45 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
     3. Une fois la bannière Airbyte affichée dans votre terminal, vous pouvez vous connecter à <a href="http://localhost:8000" target="_blank">localhost:8000</a>
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Bannière Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_01.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Bannière Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_01.webp)
+         </Frame>
        </div>
 
     <Note>
-      Vous pouvez également vous inscrire et utiliser <a href="https://docs.airbyte.com/" target="_blank">Airbyte Cloud</a>
+      Vous pouvez également créer un compte et utiliser <a href="https://docs.airbyte.com/" target="_blank">Airbyte Cloud</a>
     </Note>
   </Step>
 
   <Step title="Ajouter ClickHouse comme destination" id="2-add-clickhouse-as-a-destination">
-    Dans cette section, nous allons voir comment ajouter une instance ClickHouse comme destination.
+    Dans cette section, nous allons voir comment ajouter une instance ClickHouse en tant que destination.
 
-    1. Démarrez votre serveur ClickHouse (Airbyte est compatible avec ClickHouse version `21.8.10.19` ou ultérieure) ou connectez-vous à votre compte cloud ClickHouse :
+    1. Démarrez votre serveur ClickHouse (Airbyte est compatible avec ClickHouse version `21.8.10.19` ou ultérieure) ou connectez-vous à votre compte ClickHouse Cloud :
 
        ```bash
        clickhouse-server start
        ```
 
-    2. Dans Airbyte, sélectionnez la page &quot;Destinations&quot; et ajoutez une nouvelle destination :
+    2. Dans Airbyte, ouvrez la page « Destinations » et ajoutez une nouvelle destination :
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Ajouter une destination dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_02.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Ajouter une destination dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_02.webp)
+         </Frame>
        </div>
 
-    3. Sélectionnez ClickHouse dans la liste déroulante &quot;Destination type&quot;, puis remplissez le formulaire &quot;Set up the destination&quot; en indiquant le nom d&#39;hôte et les ports de votre instance ClickHouse, le nom de la base de données, le nom d&#39;utilisateur et le mot de passe, puis précisez s&#39;il s&#39;agit d&#39;une connexion SSL (équivalente au flag `--secure` dans `clickhouse-client`) :
+    3. Sélectionnez ClickHouse dans la liste déroulante « Destination type », puis remplissez le formulaire « Set up the destination » en indiquant le nom d’hôte et les ports de votre instance ClickHouse, le nom de la base de données, le nom d’utilisateur et le mot de passe, et précisez s&#39;il s&#39;agit d&#39;une connexion SSL (équivalent de l’option `--secure` de `clickhouse-client`) :
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Création de la destination ClickHouse dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_03.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Création d’une destination ClickHouse dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_03.webp)
+         </Frame>
        </div>
 
-    4. Félicitations ! Vous avez maintenant ajouté ClickHouse comme destination dans Airbyte.
+    4. Félicitations ! Vous avez ajouté ClickHouse en tant que destination dans Airbyte.
 
     <Note>
-      Pour utiliser ClickHouse comme destination, l&#39;utilisateur que vous utiliserez doit disposer des autorisations nécessaires pour créer des bases de données, des tables et insérer des lignes. Nous recommandons de créer un utilisateur dédié pour Airbyte (par ex. `my_airbyte_user`) avec les autorisations suivantes :
+      Pour utiliser ClickHouse comme destination, l&#39;utilisateur employé doit disposer des autorisations nécessaires pour créer des bases de données et des tables, et pour insérer des lignes. Nous vous recommandons de créer un utilisateur dédié à Airbyte (par ex. `my_airbyte_user`) avec les autorisations suivantes :
 
       ```sql
       CREATE USER 'my_airbyte_user'@'%' IDENTIFIED BY 'your_password_here';
@@ -97,91 +85,67 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
   </Step>
 
   <Step title="Ajouter un jeu de données comme source" id="3-add-a-dataset-as-a-source">
-    Le jeu de données d’exemple que nous utiliserons est le <a href="/fr/get-started/sample-datasets/nyc-taxi" target="_blank">jeu de données des taxis de New York</a> (sur <a href="https://github.com/toddwschneider/nyc-taxi-data" target="_blank">GitHub</a>). Pour ce tutoriel, nous utiliserons un sous-ensemble de ce jeu de données correspondant au mois de janvier 2022.
+    Le jeu de données d’exemple que nous allons utiliser est le <a href="/fr/get-started/sample-datasets/nyc-taxi" target="_blank">New York City Taxi Data</a> (sur <a href="https://github.com/toddwschneider/nyc-taxi-data" target="_blank">Github</a>). Dans ce tutoriel, nous utiliserons un sous-ensemble de ce jeu de données correspondant au mois de janvier 2022.
 
-    1. Dans Airbyte, sélectionnez la page &quot;Sources&quot; et ajoutez une nouvelle source de type fichier.
+    1. Dans Airbyte, ouvrez la page « Sources » et ajoutez une nouvelle source de type File.
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Ajouter une source dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_04.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Ajouter une source dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_04.webp)
+         </Frame>
        </div>
 
-    2. Remplissez le formulaire &quot;Set up the source&quot; en donnant un nom à la source et en fournissant l’URL du fichier NYC Taxi de janvier 2022 (voir ci-dessous). Veillez à sélectionner `parquet` comme format de fichier, `HTTPS Public Web` comme fournisseur de stockage et `nyc_taxi_2022` comme nom du jeu de données.
+    2. Remplissez le formulaire « Set up the source » en nommant la source et en indiquant l’URL du fichier NYC Taxi de janvier 2022 (voir ci-dessous). Veillez à choisir `parquet` comme format de fichier, `HTTPS Public Web` comme Storage Provider et `nyc_taxi_2022` comme Dataset Name.
 
        ```text
        https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2022-01.parquet
        ```
 
        <div className="ch-image-lg">
-
-       <Frame>
-
-       ![Création d’une source ClickHouse dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_05.webp)
-
-       </Frame>
-
+         <Frame>
+           ![Création d’une source ClickHouse dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_05.webp)
+         </Frame>
        </div>
 
-    3. Félicitations ! Vous avez maintenant ajouté une source de type fichier dans Airbyte.
+    3. Félicitations ! Vous avez ajouté une source de type fichier dans Airbyte.
   </Step>
 
-  <Step title="Créer une connexion et charger le jeu de données dans ClickHouse" id="4-create-a-connection-and-load-the-dataset-into-clickhouse">
-    1. Dans Airbyte, ouvrez la page &quot;Connexions&quot; et ajoutez une nouvelle connexion
+  <Step title="Créez une connexion et chargez le jeu de données dans ClickHouse" id="4-create-a-connection-and-load-the-dataset-into-clickhouse">
+    1. Dans Airbyte, ouvrez la page « Connections » et ajoutez une nouvelle connexion
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Ajouter une connexion dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_06.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Ajouter une connexion dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_06.webp)
+      </Frame>
     </div>
 
-    2. Sélectionnez &quot;Utiliser une source existante&quot;, puis choisissez New York City Taxi Data. Sélectionnez ensuite &quot;Utiliser une destination existante&quot; et choisissez votre instance ClickHouse.
+    2. Sélectionnez &quot;Use existing source&quot; et choisissez New York City Taxi Data, puis sélectionnez &quot;Use existing destination&quot; et choisissez votre instance ClickHouse.
 
-    3. Remplissez le formulaire &quot;Configurer la connexion&quot; en choisissant une fréquence de réplication (nous utiliserons `manual` pour ce tutoriel), puis sélectionnez `nyc_taxi_2022` comme flux à synchroniser. Assurez-vous de choisir `Normalized Tabular Data` comme option de normalisation.
+    3. Remplissez le formulaire &quot;Set up the connection&quot; en choisissant une fréquence de réplication (Replication Frequency ; nous utiliserons `manual` dans ce tutoriel), puis sélectionnez `nyc_taxi_2022` comme flux à synchroniser. Veillez à choisir `Normalized Tabular Data` comme mode de normalisation (Normalization).
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Création d’une connexion dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_07.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Création d'une connexion dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_07.webp)
+      </Frame>
     </div>
 
-    4. Une fois la connexion créée, cliquez sur &quot;Synchroniser maintenant&quot; pour déclencher le chargement des données (car nous avons choisi `Manual` comme fréquence de réplication)
+    4. Une fois la connexion créée, cliquez sur &quot;Sync now&quot; pour lancer le chargement des données (puisque nous avons choisi `Manual` comme Replication Frequency)
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Synchronisez maintenant dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_08.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Bouton « Sync now » dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_08.webp)
+      </Frame>
     </div>
 
-    5. Le chargement de vos données commencera, vous pouvez développer la vue pour voir les logs et la progression d’Airbyte. Une fois l’opération terminée, vous verrez un message `Completed successfully` dans les logs :
+    5. Le chargement de vos données démarre. Vous pouvez développer la vue pour consulter les logs et la progression d&#39;Airbyte. Une fois l&#39;opération terminée, le message `Completed successfully` s&#39;affiche dans les logs :
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Terminé avec succès](/images/integrations/data-ingestion/etl-tools/airbyte_09.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Terminé avec succès](/images/integrations/data-ingestion/etl-tools/airbyte_09.webp)
+      </Frame>
     </div>
 
-    6. Connectez-vous à votre instance ClickHouse à l’aide de votre client SQL préféré et vérifiez la table qui en résulte :
+    6. Connectez-vous à votre instance ClickHouse avec votre client SQL préféré et vérifiez la table obtenue :
 
        ```sql
        SELECT *
@@ -189,7 +153,7 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
        LIMIT 10
        ```
 
-       La réponse devrait ressembler à :
+       La réponse devrait ressembler à ceci :
 
        ```response
        Query id: 4f79c106-fe49-4145-8eba-15e1cb36d325
@@ -213,7 +177,7 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
        FROM nyc_taxi_2022
        ```
 
-       La réponse est :
+       Réponse :
 
        ```response
        Query id: a9172d39-50f7-421e-8330-296de0baa67e
@@ -223,7 +187,7 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
        └─────────┘
        ```
 
-    7. Notez qu’Airbyte a automatiquement inféré les types de données et ajouté 4 colonnes à la table de destination. Ces colonnes sont utilisées par Airbyte pour gérer la logique de réplication et consigner les opérations. Vous trouverez plus de détails dans la  <a href="https://docs.airbyte.com/integrations/destinations/clickhouse#output-schema" target="_blank">documentation officielle d’Airbyte</a>.
+    7. Notez qu&#39;Airbyte a automatiquement inféré les types de données et ajouté 4 colonnes à la table de destination. Airbyte utilise ces colonnes pour gérer la logique de réplication et journaliser les opérations. Pour plus de détails, consultez la  <a href="https://docs.airbyte.com/integrations/destinations/clickhouse#output-schema" target="_blank">documentation officielle d&#39;Airbyte</a>.
 
        ```sql
            `_airbyte_ab_id` String,
@@ -232,8 +196,8 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
            `_airbyte_nyc_taxi_072021_hashid` String
        ```
 
-       Maintenant que le jeu de données est chargé dans votre instance ClickHouse, vous pouvez créer une nouvelle table et utiliser des types de données ClickHouse plus appropriés (<a href="/fr/get-started/sample-datasets/nyc-taxi" target="_blank">plus de détails</a>).
+       Maintenant que le jeu de données est chargé dans votre instance ClickHouse, vous pouvez créer une nouvelle table et utiliser des types de données ClickHouse plus adaptés (<a href="/fr/get-started/sample-datasets/nyc-taxi" target="_blank">plus de détails</a>).
 
-    8. Félicitations ! Vous avez chargé avec succès les données des taxis de New York dans ClickHouse à l’aide d’Airbyte !
+    8. Félicitations : vous avez chargé les données des taxis de New York dans ClickHouse à l&#39;aide d&#39;Airbyte !
   </Step>
 </Steps>

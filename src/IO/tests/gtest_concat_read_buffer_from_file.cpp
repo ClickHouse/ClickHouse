@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <IO/ConcatReadBufferFromFile.h>
+#include <IO/ReadBufferFromFileView.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
@@ -26,6 +27,19 @@ std::vector<std::string> makeParts()
 std::unique_ptr<ReadBufferFromMemory> child(const std::string & part)
 {
     return std::make_unique<ReadBufferFromMemory>(part.data(), part.size());
+}
+
+/// A view of `part` inside a copy with `0xff` padding (never a byte of `makeParts`) on both sides; the view
+/// is positioned inside its working buffer, whose bytes before the position are padding.
+std::unique_ptr<ReadBufferFromFileView> viewChild(const std::string & part)
+{
+    constexpr size_t padding = 100;
+    const std::string data = std::string(padding, '\xff') + part + std::string(padding, '\xff');
+    return std::make_unique<ReadBufferFromFileView>(
+        std::make_unique<ReadBufferFromOwnMemoryFile>("archive", data),
+        "file",
+        static_cast<off_t>(padding),
+        static_cast<off_t>(padding + part.size()));
 }
 
 void expectByteAt(ConcatReadBufferFromFile & buf, off_t offset)
@@ -76,5 +90,27 @@ TEST(ConcatReadBufferFromFile, NestedChild)
     auto parts = makeParts();
     auto inner = std::make_unique<ConcatReadBufferFromFile>("", child(parts[0]), 100, child(parts[1]), 50);
     ConcatReadBufferFromFile buf("", std::move(inner), 150, child(parts[2]), 100);
+    checkSeeksAndReads(buf);
+}
+
+TEST(ConcatReadBufferFromFile, ChildrenPositionedInsideTheirBuffers)
+{
+    auto parts = makeParts();
+    ConcatReadBufferFromFile buf("");
+    for (const auto & part : parts)
+        buf.appendBuffer(viewChild(part), part.size());
+    checkSeeksAndReads(buf);
+}
+
+TEST(ConcatReadBufferFromFile, AppendAfterEOF)
+{
+    auto parts = makeParts();
+    ConcatReadBufferFromFile buf("");
+    buf.appendBuffer(viewChild(parts[0]), parts[0].size());
+    buf.ignore(parts[0].size());
+    EXPECT_TRUE(buf.eof());
+    buf.appendBuffer(viewChild(parts[1]), parts[1].size());
+    buf.appendBuffer(viewChild(parts[2]), parts[2].size());
+    buf.seek(0, SEEK_SET);
     checkSeeksAndReads(buf);
 }

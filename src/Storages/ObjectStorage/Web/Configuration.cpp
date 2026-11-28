@@ -5,6 +5,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Core/Settings.h>
 #include <IO/Archives/ArchiveUtils.h>
+#include <IO/parseURI.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
@@ -142,7 +143,7 @@ void StorageWebConfiguration::check(ContextPtr context)
     for (const auto & url_shard : url_shards)
     {
         for (const auto & url_option : url_shard)
-            context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url_option.base_url + url_option.query_fragment, false));
+            context->getGlobalContext()->getRemoteHostFilter().checkURL(parseURI(url_option.base_url + url_option.query_fragment, false));
     }
     context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
 }
@@ -310,7 +311,7 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
 
         for (const auto & url_option : failover_url_options)
         {
-            Poco::URI uri(url_option, false);
+            auto uri = parseURI(url_option, false);
 
             if (url_shards.empty() && url_shard.empty())
             {
