@@ -122,6 +122,17 @@ name=s org_name=s schema=<database> table=t org_table=t type=254 length=0
 name=id org_name=id schema=<database> table=t org_table=t type=8 length=20
 name=flag org_name=flag schema=<database> table=t org_table=t type=1 length=3
 name=s org_name=s schema=<database> table=t org_table=t type=254 length=0
+--- query: SELECT id AS label, s FROM t ORDER BY id SETTINGS enable_query_plan_cache = 1
+name=label org_name=id schema=<database> table=t org_table=t type=8 length=20
+name=s org_name=s schema=<database> table=t org_table=t type=254 length=0
+--- query: SELECT id AS label, s FROM t ORDER BY id SETTINGS enable_query_plan_cache = 1
+name=label org_name=id schema=<database> table=t org_table=t type=8 length=20
+name=s org_name=s schema=<database> table=t org_table=t type=254 length=0
+--- prepare: SELECT id AS prepared_label, s FROM t ORDER BY id SETTINGS enable_query_plan_cache = 1
+num_columns=2 num_params=0
+name=prepared_label org_name=id schema=<database> table=t org_table=t type=8 length=20
+name=s org_name=s schema=<database> table=t org_table=t type=254 length=0
+execute: 3 rows, column definitions are the same as the prepared ones
 --- query: SELECT id, toFixedString('x', assumeNotNull((SELECT id FROM c LIMIT 1))) AS x FROM c SETTINGS use_query_cache = 1, query_cache_ttl = 600
 name=id org_name=id schema=<database> table=c org_table=c type=8 length=20
 name=x org_name=x schema= table= org_table= type=254 length=1

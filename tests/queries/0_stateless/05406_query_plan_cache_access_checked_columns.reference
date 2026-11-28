@@ -1,0 +1,12 @@
+-- A changed ALIAS expression in PREWHERE invalidates the cached plan
+2
+2
+3
+-- SELECT count() FROM t_plan_cache_access_checked PREWHERE z > 0
+3
+3
+ACCESS_DENIED
+-- SELECT count() FROM t_plan_cache_access_checked WHERE indexHint(z > 0)
+3
+3
+ACCESS_DENIED

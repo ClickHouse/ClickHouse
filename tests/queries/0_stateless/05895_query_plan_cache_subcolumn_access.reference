@@ -1,0 +1,21 @@
+-- column_grant: SELECT tup.a FROM t
+100
+100
+-- subcolumn_grant: SELECT tup.a + 1 FROM t
+101
+101
+-- trivial: SELECT count() FROM t
+1
+1
+-- a column without a grant is still denied on a hit
+1
+ACCESS_DENIED
+-- after revoke
+ACCESS_DENIED
+ACCESS_DENIED
+column_grant_miss	0
+column_grant_hit	1
+subcolumn_grant_miss	0
+subcolumn_grant_hit	1
+trivial_miss	0
+trivial_hit	1

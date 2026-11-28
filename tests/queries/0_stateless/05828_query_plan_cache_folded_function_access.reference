@@ -1,0 +1,8 @@
+foo()
+foo()
+user without the grant
+ACCESS_DENIED
+after revoke
+ACCESS_DENIED
+miss	0
+hit	1
