@@ -1,0 +1,17 @@
+-- $unionWith of temporary tables with the same fields in a different order
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+-- $unionWith of temporary tables with the same fields in the same order
+{"x":1,"y":2}
+{"x":3,"y":4}
+-- a field name with a zero byte
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+1	1
+2	2
+-- $toLong of null
+{"id":1,"a":null,"b":null}
+{"id":2,"a":null,"b":5}
+{"id":1,"a":null,"b":null}
+{"id":2,"a":null,"b":5}

@@ -1,0 +1,21 @@
+-- a sort by a field with a parenthesis
+{"id":2}
+{"id":1}
+{"id":3}
+{"id":3}
+-- null operands of $divide and $log
+{"a":null,"b":null,"c":null,"d":null,"e":null,"f":null}
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+-- the order of the operands of $add of a Dynamic and the promotion of $multiply
+{"id":1,"s":1}
+{"id":2,"s":-9999999999999992}
+{"p":27021597764222976,"q":27021597764222979,"s":1}
+-- $rename to a narrower type in a temporary table
+(UNKNOWN_ELEMENT_OF_ENUM)
+2147483648	7
+0	5
+-- nested unions
+{"c":15}
+(TOO_BIG_AST)

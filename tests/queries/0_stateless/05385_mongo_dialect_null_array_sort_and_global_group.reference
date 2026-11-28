@@ -1,0 +1,38 @@
+-- null sorts first ascending and last descending
+1
+3
+2
+2
+3
+1
+1
+2
+3
+1
+-- a sort on an array is rejected
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+-- $sort orders the output of the preceding stage
+-2
+2
+-- a global group is one document for a nonempty stream and none for an empty one
+\N
+\N	3
+2
+-- the accumulators keep null
+\N	\N	7
+\N	5	7
+\N	7	[7,NULL,5]
+3	3
+\N	\N	\N	[NULL]
+-- $toInt rejects a value out of the 32-bit range
+2147483647	-2147483648	5
+-5
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+-- a malformed $trim is a controlled error
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)

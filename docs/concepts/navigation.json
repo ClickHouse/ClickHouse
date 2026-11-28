@@ -250,6 +250,7 @@
                   "group": "Compatibility protocols",
                   "pages": [
                     "concepts/features/connect-to-clickhouse/protocols/compatibility/mysql",
+                    "concepts/features/connect-to-clickhouse/protocols/compatibility/mongo",
                     "concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql"
                   ]
                 },

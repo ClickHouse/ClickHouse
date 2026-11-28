@@ -1,0 +1,54 @@
+-- $toInt of a decimal just below the upper bound
+{"r":2147483647,"l":-2147483648}
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+{"r":null,"c":1}
+-- BFloat16 zero is false
+{"t":false}
+{"t":true}
+{"id":2}
+-- floating point operands in their order
+{"x":1,"y":1,"z":6}
+{"x":"inf","n":null,"m":null}
+-- $pow
+{"p":16677181699666569,"q":125,"r":0.5,"f":1,"z":1,"m":-1}
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+{"p":32}
+-- $divide with sql_compatible_division_for_integers
+{"x":2.5,"y":2.5}
+{"id":1}
+-- $toUpper and $toLower of null
+{"u":"","s":"","l":""}
+{"u":"","s":"AB","l":"ab"}
+-- $unwind replaces the field of the index
+{"a":4,"out":0}
+{"a":5,"out":1}
+{"id":1,"a":4,"out":0}
+{"id":1,"a":5,"out":1}
+{"id":2,"a":null,"out":null}
+{"a":4,"i":0}
+{"a":5,"i":1}
+-- a numeric string for a numeric column
+(UNKNOWN_ELEMENT_OF_ENUM)
+(UNKNOWN_ELEMENT_OF_ENUM)
+(UNKNOWN_ELEMENT_OF_ENUM)
+-- an integer that a Float32 does not hold
+(CANNOT_CONVERT_TYPE)
+(CANNOT_CONVERT_TYPE)
+-- non-numeric operands of $inc and $mul
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+-- operands of $min and $max of another type
+(UNKNOWN_ELEMENT_OF_ENUM)
+(UNKNOWN_ELEMENT_OF_ENUM)
+(UNKNOWN_ELEMENT_OF_ENUM)
+-- $rename to a narrower type
+(UNKNOWN_ELEMENT_OF_ENUM)
+-- nothing else was written, and no mutation failed
+{"id":1,"f":1,"d":1.5,"x":2,"big":2147483648,"small":7,"name":"1.25"}
+{"id":2,"f":2,"d":2.5,"x":7,"big":8,"small":0,"name":"m"}
+{"id":4,"f":0.1,"d":0,"x":0,"big":0,"small":0,"name":""}
+0

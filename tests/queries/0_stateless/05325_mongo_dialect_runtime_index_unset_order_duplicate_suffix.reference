@@ -1,0 +1,17 @@
+-- $arrayElemAt with a runtime index
+1	10
+2	20
+3	30
+4	10
+-- $unset keeps the order of the sort key it does not remove
+a	a1	a2
+b	b1	b2
+a	2
+b	2
+-- $unset of the sort key
+Code: 48. The accumulator '$first' reads the documents of the group in the order of the stream, and the keys the preceding '$sort' established are not fields of the documents the '$group' reads: sort right before the '$group', or keep the sort keys
+-- a repeated suffix
+Code: 36. The '.limit' suffix of a query must not be given more than once
+Code: 36. The '.skip' suffix of a query must not be given more than once
+Code: 36. The '.sort' suffix of a query must not be given more than once
+3	[10,20,30]	-1
