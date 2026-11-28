@@ -53,6 +53,8 @@ public:
 
     [[nodiscard]] const Block & getSampleBlock() const;
     [[nodiscard]] bool isCurrentRangeFinished() const;
+    /// Whether a PREWHERE step threw while evaluating its actions, rather than while reading or filtering.
+    [[nodiscard]] bool prewhereEvaluationFailed() const { return prewhere_evaluation_failed; }
 
 private:
     /// Executes actions required before PREWHERE, such as alter conversions and filling defaults.
@@ -155,6 +157,7 @@ private:
     bool prewhere_pending_contaminated = false;
 
     bool is_initialized = false;
+    bool prewhere_evaluation_failed = false;
     LoggerPtr log = getMergeTreeReadersChainLogger();
 };
 
