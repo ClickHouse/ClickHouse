@@ -1,0 +1,13 @@
+4
+4
+union count
+200
+200
+is materialized
+1
+two consumers
+40000
+40000
+two consumers, no set operation
+10000
+10000
