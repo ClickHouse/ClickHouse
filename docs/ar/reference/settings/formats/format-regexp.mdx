@@ -13,25 +13,19 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات مُولَّدة تلقائيًا استنادًا إلى [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
 
-<div id="format_regexp">
-  ## format_regexp
-</div>
+## format_regexp {#format_regexp}
 
 التعبير النمطي (لتنسيق Regexp)
 
-<div id="format_regexp_escaping_rule">
-  ## format_regexp_escaping_rule
-</div>
+## format_regexp_escaping_rule {#format_regexp_escaping_rule}
 
 <SettingsInfoBlock type="EscapingRule" default_value="Raw" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "20.10"},{"label": "Raw"},{"label": "استخدم Raw كقاعدة الإفلات الافتراضية لتنسيق Regexp لجعل السلوك أقرب إلى ما يتوقعه المستخدمون"}]}]} />
 
-قاعدة إفلات الحقل (لتنسيق Regexp)
+يحدد كيفية تحليل كل مجموعة التقاط ينتجها `format_regexp` وتحويلها إلى نوع العمود الهدف المقابل لها. استخدم `Raw` (الافتراضي) للنص غير المُفلَت، و`Escaped` للإفلات بأسلوب TSV، و`Quoted` للحقول المحاطة بعلامات اقتباس بأسلوب Values، و`CSV` لحقول CSV، أو `JSON` لقيم JSON. يُطبَّق هذا الإعداد بعد أن يطابق التعبير النمطي صفًا، ولا يُغيّر التعبير النمطي نفسه.
 
-<div id="format_regexp_skip_unmatched">
-  ## format_regexp_skip_unmatched
-</div>
+## format_regexp_skip_unmatched {#format_regexp_skip_unmatched}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

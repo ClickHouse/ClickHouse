@@ -5,8 +5,6 @@
 -- If a physical column with that exact name exists, `sourceHasColumn` must block the
 -- rewrite so that `json['a']` still reads from the JSON column, not the physical one.
 
-SET enable_analyzer = 1;
-
 -- ============================================================
 -- 1. No-collision case: optimization should fire normally.
 -- ============================================================

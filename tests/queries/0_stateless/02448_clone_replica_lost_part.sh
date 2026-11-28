@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-shared-merge-tree
+# Tags: long, no-shared-merge-tree, no-msan
 # no-shared-merge-tree: depend on replication queue/fetches
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

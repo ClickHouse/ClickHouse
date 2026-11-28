@@ -4,7 +4,6 @@
 -- so KeyCondition must build an exact point range [x, x] for primary key analysis, not the wider
 -- half-open prefix range [x, x_incremented) it used for patterns with a perfect prefix.
 
-SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 -- The equality/inequality baselines must go through primary-key analysis; without this they would be
 -- served straight from the persisted num_defaults counter and produce no Condition line to compare.

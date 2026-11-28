@@ -34,17 +34,17 @@ public:
     static constexpr auto name = "arrayFold";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayFold>(); }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isHigherOrderFunction() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isHigherOrderFunction() const override { return true; }
 
     /// Documentation-only — folds the parallel arrays into a single
     /// accumulator value. The lambda's first argument is the accumulator
     /// (whose type is taken from the trailing `acc_initial` argument),
     /// followed by one element per parallel array; the lambda must return
     /// the accumulator type, which is also the result type.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Function((A : Any, Any, ...), A), Array, ..., A) -> A";
     }
@@ -52,8 +52,8 @@ public:
     /// Avoid the default adaptors since they modify the inputs and that makes knowing the lambda argument types
     /// (getLambdaArgumentTypes) more complex, as it requires knowing what the adaptors will do
     /// It's much simpler to avoid the adapters
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
@@ -78,7 +78,7 @@ public:
         arguments[0] = std::make_shared<DataTypeFunction>(accumulator_and_array_types);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 3)
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} requires as arguments a lambda function, at least one array and an accumulator", getName());
@@ -97,7 +97,7 @@ public:
         return accumulator_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /// Resolved from the executing thread rather than captured: this instance can be stored in table
         /// metadata and then run by any later query.
@@ -342,7 +342,7 @@ private:
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }

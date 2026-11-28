@@ -35,8 +35,7 @@ $$
 -- Disabled for the old analyzer since it incorrectly passes 's' to format, instead of resolving s and passing that
 WITH (SELECT sum(number)::String as s FROM numbers(4)) as s
 SELECT *, s
-FROM format(TSVRaw, s)
-SETTINGS enable_analyzer=1;
+FROM format(TSVRaw, s);
 
 SELECT count()
 FROM format(TSVRaw, (

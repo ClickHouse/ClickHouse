@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-SETTINGS="enable_analyzer = 1, enable_join_runtime_filters = 1, enable_join_runtime_filters_index_analysis = 1,
+SETTINGS="enable_join_runtime_filters = 1, enable_join_runtime_filters_index_analysis = 1,
     use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, join_runtime_filter_min_probe_rows = 0,
     query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
     enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, make_distributed_plan = 0"

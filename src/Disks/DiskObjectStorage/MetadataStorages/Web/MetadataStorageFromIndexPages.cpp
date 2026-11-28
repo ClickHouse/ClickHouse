@@ -12,6 +12,7 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
+#include <IO/parseURI.h>
 #include <Interpreters/Context.h>
 #include <Common/re2.h>
 
@@ -190,14 +191,14 @@ namespace
 
     std::string ensureTrailingSlashInPath(std::string url)
     {
-        Poco::URI uri(url, false);
+        auto uri = parseURI(url, false);
         uri.setPath(ensureTrailingSlash(uri.getPath()));
         return uri.toString();
     }
 
     std::string getPathPrefixForMatching(const std::string & url)
     {
-        const Poco::URI uri(url, false);
+        const auto uri = parseURI(url, false);
         return ensureTrailingSlash(uri.getPath());
     }
 
@@ -360,7 +361,8 @@ std::vector<std::string> MetadataStorageFromIndexPages::makeListingURLs(const st
     return object_storage.buildURLs(ensureTrailingSlashInPath(stripLeadingSlash(path)), shard_index);
 }
 
-MetadataStorageFromIndexPages::IndexPage MetadataStorageFromIndexPages::readIndexPage(const std::string & url) const
+MetadataStorageFromIndexPages::IndexPage MetadataStorageFromIndexPages::readIndexPage(
+    const Poco::URI & uri, const Poco::Net::HTTPBasicCredentials & credentials) const
 {
     const auto request_context = object_storage.getRequestContext();
     const auto & settings = request_context->getSettingsRef();
@@ -369,10 +371,6 @@ MetadataStorageFromIndexPages::IndexPage MetadataStorageFromIndexPages::readInde
     /// Carry the same HTTP request semantics as direct `url()` reads: honor `enable_url_encoding`,
     /// follow up to `max_http_get_redirects` redirects, and authenticate with credentials parsed from
     /// the URL's userinfo (e.g. `http://user:pass@host`).
-    Poco::URI uri(url, enable_url_encoding);
-    Poco::Net::HTTPBasicCredentials credentials;
-    setCredentialsFromURL(credentials, uri);
-
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(
         settings,
         request_context->getServerSettings());
@@ -554,6 +552,9 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
 
     bool has_listed_directory = false;
 
+    const auto request_context = object_storage.getRequestContext();
+    const bool enable_url_encoding = request_context->getSettingsRef()[Setting::enable_url_encoding];
+
     const auto first_shard_index = requested_shard_index.value_or(0);
     const auto end_shard_index = requested_shard_index ? *requested_shard_index + 1 : url_shards.size();
 
@@ -568,9 +569,12 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
         for (size_t i = 0; i != listing_urls.size(); ++i)
         {
             const auto & listing_url = listing_urls[i];
+            const auto listing_uri = parseURI(listing_url, enable_url_encoding);
+            Poco::Net::HTTPBasicCredentials credentials;
+            setCredentialsFromURL(credentials, listing_uri, request_context->getHTTPHeaderFilter());
             try
             {
-                auto index_page = readIndexPage(listing_url);
+                auto index_page = readIndexPage(listing_uri, credentials);
                 rejectOriginChangingRedirect(listing_url, index_page.final_url);
                 const auto final_listing_prefix_url = getListingPrefixURLForMatching(index_page.final_url);
                 const auto final_path_prefix = WebIndexPage::getPathPrefixRelativeToBase(

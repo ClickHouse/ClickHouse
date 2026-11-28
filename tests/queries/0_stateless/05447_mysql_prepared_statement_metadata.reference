@@ -1,0 +1,141 @@
+--- query: SELECT * FROM t
+name=id org_name=id schema=<database> table=t org_table=t type=8 length=20
+name=flag org_name=flag schema=<database> table=t org_table=t type=1 length=3
+name=s org_name=s schema=<database> table=t org_table=t type=254 length=0
+--- query: SELECT * FROM types
+name=i8 org_name=i8 schema=<database> table=types org_table=types type=1 length=4
+name=i16 org_name=i16 schema=<database> table=types org_table=types type=2 length=6
+name=i32 org_name=i32 schema=<database> table=types org_table=types type=3 length=11
+name=i64 org_name=i64 schema=<database> table=types org_table=types type=8 length=20
+name=u16 org_name=u16 schema=<database> table=types org_table=types type=2 length=5
+name=u32 org_name=u32 schema=<database> table=types org_table=types type=3 length=10
+name=f32 org_name=f32 schema=<database> table=types org_table=types type=4 length=12
+name=f64 org_name=f64 schema=<database> table=types org_table=types type=5 length=22
+name=d org_name=d schema=<database> table=types org_table=types type=0 length=12
+name=d0 org_name=d0 schema=<database> table=types org_table=types type=0 length=6
+name=date org_name=date schema=<database> table=types org_table=types type=10 length=10
+name=dt org_name=dt schema=<database> table=types org_table=types type=12 length=19
+name=dt64 org_name=dt64 schema=<database> table=types org_table=types type=12 length=26
+name=fs org_name=fs schema=<database> table=types org_table=types type=254 length=3
+name=n org_name=n schema=<database> table=types org_table=types type=1 length=3
+name=lc org_name=lc schema=<database> table=types org_table=types type=254 length=0
+--- query: SELECT id FROM <database>.t
+name=id org_name=id schema=<database> table=t org_table=t type=8 length=20
+--- query: SELECT id AS x, a.s, flag + 1 AS expr, 1 AS const FROM t AS a
+name=x org_name=id schema=<database> table=a org_table=t type=8 length=20
+name=s org_name=s schema=<database> table=a org_table=t type=254 length=0
+name=expr org_name=expr schema= table= org_table= type=2 length=5
+name=const org_name=const schema= table= org_table= type=1 length=3
+--- query: SELECT id FROM (SELECT id FROM t)
+name=id org_name=id schema=<database> table=t org_table=t type=8 length=20
+--- query: SELECT x FROM (SELECT id AS x FROM t AS a) AS d
+name=x org_name=id schema=<database> table=d org_table=t type=8 length=20
+--- query: SELECT id FROM t UNION ALL SELECT id FROM t
+name=id org_name=id schema= table= org_table= type=8 length=20
+--- query: SELECT length(a) AS len, if(1, id, id) AS expr, a FROM arrays
+name=len org_name=len schema= table= org_table= type=8 length=20
+name=expr org_name=expr schema= table= org_table= type=8 length=20
+name=a org_name=a schema=<database> table=arrays org_table=arrays type=254 length=0
+--- prepare: SELECT length(a) AS len, if(1, id, id) AS expr, a FROM arrays
+num_columns=3 num_params=0
+name=len org_name=len schema= table= org_table= type=8 length=20
+name=expr org_name=expr schema= table= org_table= type=8 length=20
+name=a org_name=a schema=<database> table=arrays org_table=arrays type=254 length=0
+execute: 1 rows, column definitions are the same as the prepared ones
+--- prepare: SELECT * FROM t ORDER BY id
+num_columns=3 num_params=0
+name=id org_name=id schema=<database> table=t org_table=t type=8 length=20
+name=flag org_name=flag schema=<database> table=t org_table=t type=1 length=3
+name=s org_name=s schema=<database> table=t org_table=t type=254 length=0
+reset: OK
+execute: 3 rows, column definitions are the same as the prepared ones
+reset: OK
+execute: 3 rows, column definitions are the same as the prepared ones
+--- prepare: SELECT id AS x, a.s, flag + 1 AS expr FROM t AS a ORDER BY id LIMIT 2
+num_columns=3 num_params=0
+name=x org_name=id schema=<database> table=a org_table=t type=8 length=20
+name=s org_name=s schema=<database> table=a org_table=t type=254 length=0
+name=expr org_name=expr schema= table= org_table= type=2 length=5
+reset: OK
+execute: 2 rows, column definitions are the same as the prepared ones
+reset: OK
+execute: 2 rows, column definitions are the same as the prepared ones
+--- query: SELECT id, flag + 1 AS expr FROM t
+name=id org_name=id schema=<database> table=t org_table=t type=8 length=20
+name=expr org_name=expr schema= table= org_table= type=2 length=5
+--- prepare: SELECT id, flag + 1 AS expr FROM t
+num_columns=2 num_params=0
+name=id org_name=id schema=<database> table=t org_table=t type=8 length=20
+name=expr org_name=expr schema= table= org_table= type=2 length=5
+execute: 2 rows, column definitions are the same as the prepared ones
+--- prepare: SHOW TABLES LIKE 't'
+num_columns=1 num_params=0
+name=name org_name=name schema= table= org_table= type=254 length=0
+execute: 1 rows, column definitions are the same as the prepared ones
+--- prepare: DESCRIBE TABLE t
+num_columns=7 num_params=0
+name=name org_name=name schema= table= org_table= type=254 length=0
+name=type org_name=type schema= table= org_table= type=254 length=0
+name=default_type org_name=default_type schema= table= org_table= type=254 length=0
+name=default_expression org_name=default_expression schema= table= org_table= type=254 length=0
+name=comment org_name=comment schema= table= org_table= type=254 length=0
+name=codec_expression org_name=codec_expression schema= table= org_table= type=254 length=0
+name=ttl_expression org_name=ttl_expression schema= table= org_table= type=254 length=0
+execute: 3 rows, column definitions are the same as the prepared ones
+--- prepare: SHOW COLUMNS FROM t
+num_columns=6 num_params=0
+name=field org_name=field schema= table= org_table= type=254 length=0
+name=type org_name=type schema= table= org_table= type=254 length=0
+name=null org_name=null schema= table= org_table= type=254 length=0
+name=key org_name=key schema= table= org_table= type=254 length=0
+name=default org_name=default schema= table= org_table= type=254 length=0
+name=extra org_name=extra schema= table= org_table= type=254 length=0
+execute: 3 rows, column definitions are the same as the prepared ones
+--- prepare: SHOW CREATE TABLE t
+num_columns=1 num_params=0
+name=statement org_name=statement schema= table= org_table= type=254 length=0
+execute: 1 rows, column definitions are the same as the prepared ones
+--- prepare: EXISTS TABLE t
+num_columns=1 num_params=0
+name=result org_name=result schema= table= org_table= type=1 length=3
+execute: 1 rows, column definitions are the same as the prepared ones
+--- prepare: INSERT INTO t VALUES (4, 0, 'd')
+num_columns=0 num_params=0
+--- prepare: SELECT * FROM table_that_does_not_exist
+error: UNKNOWN_TABLE
+reset: error: Unknown prepared statement
+--- prepare: SELECT toFixedString('x', assumeNotNull((SELECT id FROM t ORDER BY id LIMIT 1))) AS x
+num_columns=1 num_params=0
+name=x org_name=x schema= table= org_table= type=254 length=1
+execute: 1 rows, column definitions are the same as the prepared ones
+--- prepare: SELECT CAST(1, assumeNotNull((SELECT 'UInt16' FROM t LIMIT 1))) AS x
+num_columns=1 num_params=0
+name=x org_name=x schema= table= org_table= type=2 length=5
+execute: 1 rows, column definitions are the same as the prepared ones
+--- prepare: SELECT repeat('abcdefghij', 500000) AS x SETTINGS max_memory_usage = 1000000
+error: MEMORY_LIMIT_EXCEEDED
+--- query: SELECT * FROM t SETTINGS use_query_cache = 1, query_cache_ttl = 600
+name=id org_name=id schema=<database> table=t org_table=t type=8 length=20
+name=flag org_name=flag schema=<database> table=t org_table=t type=1 length=3
+name=s org_name=s schema=<database> table=t org_table=t type=254 length=0
+--- query: SELECT * FROM t SETTINGS use_query_cache = 1, query_cache_ttl = 600
+name=id org_name=id schema=<database> table=t org_table=t type=8 length=20
+name=flag org_name=flag schema=<database> table=t org_table=t type=1 length=3
+name=s org_name=s schema=<database> table=t org_table=t type=254 length=0
+--- query: SELECT id, toFixedString('x', assumeNotNull((SELECT id FROM c LIMIT 1))) AS x FROM c SETTINGS use_query_cache = 1, query_cache_ttl = 600
+name=id org_name=id schema=<database> table=c org_table=c type=8 length=20
+name=x org_name=x schema= table= org_table= type=254 length=1
+--- query: SELECT id, toFixedString('x', assumeNotNull((SELECT id FROM c LIMIT 1))) AS x FROM c SETTINGS use_query_cache = 1, query_cache_ttl = 600
+name=id org_name=id schema=<database> table=c org_table=c type=8 length=20
+name=x org_name=x schema= table= org_table= type=254 length=1
+--- query: SELECT id, toFixedString('x', assumeNotNull((SELECT id FROM c LIMIT 1))) AS x FROM c SETTINGS use_query_cache = 1, query_cache_ttl = 600
+name=id org_name=id schema=<database> table=c org_table=c type=8 length=20
+name=x org_name=x schema= table= org_table= type=254 length=1
+--- prepare: SELECT id FROM (SELECT id FROM t) ORDER BY id
+num_columns=1 num_params=0
+name=id org_name=id schema=<database> table=t org_table=t type=8 length=20
+execute: 3 rows, column definitions are the same as the prepared ones
+--- prepare: SELECT (SELECT s FROM (SELECT s FROM t) LIMIT 1) AS x
+error: ACCESS_DENIED
+--- prepare: SELECT s FROM t
+error: ACCESS_DENIED

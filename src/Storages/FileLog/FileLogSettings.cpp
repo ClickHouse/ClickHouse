@@ -22,9 +22,9 @@ namespace ErrorCodes
     DECLARE(UInt64, poll_max_batch_size, 0, "Maximum amount of messages to be polled in a single StorageFileLog poll.", 0) \
     DECLARE(UInt64, max_block_size, 0, "Number of row collected by poll(s) for flushing data from StorageFileLog.", 0) \
     DECLARE(MaxThreads, max_threads, 0, "Number of max threads to parse files, default is 0, which means the number will be max(1, physical_cpu_cores / 4)", 0) \
-    DECLARE(Milliseconds, poll_directory_watch_events_backoff_init, 500, "The initial sleep value for watch directory thread.", 0) \
-    DECLARE(Milliseconds, poll_directory_watch_events_backoff_max, 32000, "The max sleep value for watch directory thread.", 0) \
-    DECLARE(UInt64, poll_directory_watch_events_backoff_factor, 2, "The speed of backoff, exponential by default", 0) \
+    DECLARE(Milliseconds, poll_directory_watch_events_backoff_init, 500, "The initial sleep value for the streaming task of the table, which backs off while there are no new data. On macOS it is also the initial sleep value of the thread that watches the directory.", 0) \
+    DECLARE(Milliseconds, poll_directory_watch_events_backoff_max, 32000, "The max sleep value for the streaming task of the table. On macOS it is also the max sleep value of the thread that watches the directory.", 0) \
+    DECLARE(UInt64, poll_directory_watch_events_backoff_factor, 2, "The speed of backoff, exponential by default. Applies to the streaming task of the table and, on macOS, to the thread that watches the directory.", 0) \
     DECLARE(StreamingHandleErrorMode, handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for FileLog engine. Possible values: default (a direct `SELECT` throws an exception if a record fails to parse; while the table streams into materialized views, such a record is skipped and the error is written to the server log), stream (save broken records and errors in virtual columns `_raw_record`, `_error`).", 0) \
 
 #define LIST_OF_FILELOG_SETTINGS(M, ALIAS) \

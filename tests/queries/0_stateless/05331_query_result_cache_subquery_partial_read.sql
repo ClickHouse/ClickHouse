@@ -4,7 +4,9 @@
 -- A cached subquery result must be complete even if the outer query reads only a part of it.
 -- https://github.com/ClickHouse/ClickHouse/issues/124409
 
-SET enable_analyzer = 1;
+-- The subquery query result cache is not used with plan-based parallel replicas:
+-- https://github.com/ClickHouse/ClickHouse/issues/131463
+SET parallel_replicas_plan_based = 0;
 
 SYSTEM DROP QUERY CACHE;
 

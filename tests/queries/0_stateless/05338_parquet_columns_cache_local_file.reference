@@ -20,6 +20,11 @@ second_subgroups	70	0
 --- reads disabled
 49995000	38890	99990000	33326667	6666	49995000	38890	49995000
 no_reads	0	0
+--- a PREWHERE that keeps most rows of the cached columns does not change the cache
+42848616	33327	85697232	28562010	5712	8569
+42848616	33327	85697232	28562010	5712	8569
+49995000	38890	99990000	33326667	6666	49995000	38890	49995000
+after_dense	70	0
 --- PREWHERE: the columns of the filter are written, the columns read after it are not
 7142142	5556	1429
 7142142	5556	1429

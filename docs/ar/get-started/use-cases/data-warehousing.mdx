@@ -7,8 +7,6 @@ sidebarTitle: 'مستودعات البيانات'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -23,7 +21,7 @@ export const ExclusiveGroup = ({ name, children }) => {
 ومن خلال إضافة تنسيقات الجداول المفتوحة ومحرك استعلام عالي الأداء مثل ClickHouse إلى تخزين الكائنات السحابي، تحصل على إمكانات بمستوى قواعد البيانات — معاملات ACID، وفرض المخطط، واستعلامات تحليلية سريعة — من دون التضحية بالطابع المفتوح لبحيرة بياناتك. ويجمع هذا المزيج بين الأداء وتخزين قابل للتشغيل البيني وفعّال من حيث التكلفة، بما يدعم تحليلاتك التقليدية وأعباء عمل الذكاء الاصطناعي/تعلّم الآلة الحديثة.
 
 <div id="benefits">
-  ## ما الذي توفّره هذه البنية
+  ## ما الذي توفّره هذه البنية {#benefits}
 </div>
 
 من خلال الجمع بين تخزين الكائنات المفتوح وتنسيقات الجداول مع ClickHouse باعتباره محرك الاستعلام لديك، ستحصل على:
@@ -36,15 +34,17 @@ export const ExclusiveGroup = ({ name, children }) => {
 | **الحوكمة**               | توفّر الكتالوجات وتنسيقات الجداول تحكمًا دقيقًا في الوصول وإمكانات تدقيق على مستوى الصفوف والأعمدة، مما يعالج محدودية أدوات الأمان في بحيرات البيانات البسيطة.                                                                                                |
 | **فصل التخزين والحوسبة**  | يتوسع التخزين والحوسبة بشكل مستقل فوق تخزين الكائنات القياسي، وهو أقل تكلفة بكثير من التخزين الاحتكاري في مستودعات البيانات. وبينما يُعد هذا الفصل معيارًا في مستودعات Cloud الحديثة، تتيح لك التنسيقات المفتوحة اختيار *محرك الحوسبة* الذي يتوسع مع بياناتك. |
 
-<div id="architecture">
-  ## كيف يدعم ClickHouse مستودع البيانات لديك
-</div>
+## كيف يدعم ClickHouse مستودع البيانات لديك {#architecture}
 
-تتدفق البيانات من منصات البث ومستودعات البيانات الحالية عبر تخزين الكائنات إلى ClickHouse، حيث تُحوَّل وتُحسَّن ثم تُقدَّم إلى أدوات BI/AI لديك.
+تتدفق البيانات من منصات البث ومستودعات البيانات الحالية عبر تخزين الكائنات إلى ClickHouse، حيث تُحوَّل وتُحسَّن ثم تُقدَّم إلى أدوات BI/AI لديك.
 
 <Columns cols={2}>
   <div>
-    <Image img="/images/cloud/onboard/discover/use_cases/data-warehousing.webp" alt="بنية ClickHouse لمستودعات البيانات" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![معمارية ClickHouse لمستودعات البيانات](/images/cloud/onboard/discover/use_cases/data-warehousing.webp)
+      </Frame>
+    </div>
   </div>
 
   <ExclusiveGroup name="dw-arch">
@@ -62,7 +62,7 @@ export const ExclusiveGroup = ({ name, children }) => {
       </Accordion>
 
       <Accordion title="تحويلات البيانات">
-        تعمل [العروض المادية](/ar/concepts/features/materialized-views) في ClickHouse على أتمتة التحويلات — إذ تُفعَّل عند إدراج بيانات جديدة في الجداول المصدر، بحيث يمكنك استخراج البيانات وتجميعها وتعديلها عند وصولها من دون إنشاء مسارات معالجة مخصصة.
+        تعمل [العروض المادية](/ar/concepts/features/materialized-views) في ClickHouse على أتمتة التحويلات — إذ تُفعَّل عند إدراج بيانات جديدة في الجداول المصدر، بحيث يمكنك استخراج البيانات وتجميعها وتعديلها عند وصولها من دون إنشاء مسارات معالجة مخصصة.
 
         ولعمليات النمذجة الأكثر تعقيدًا، تتيح لك [dbt integration](/ar/integrations/connectors/data-ingestion/etl-tools/dbt) في ClickHouse تعريف التحويلات على هيئة نماذج SQL خاضعة للتحكم في الإصدارات.
       </Accordion>
@@ -75,7 +75,7 @@ export const ExclusiveGroup = ({ name, children }) => {
 </Columns>
 
 <div id="hybrid-architecture-the-best-of-both-worlds">
-  ## البنية الهجينة: أفضل ما في العالمين
+  ## البنية الهجينة: أفضل ما في العالمين {#hybrid-architecture-the-best-of-both-worlds}
 </div>
 
 إلى جانب الاستعلام من بحيرة البيانات لديك، يمكنك إدخال البيانات الحساسة للأداء إلى تخزين [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) الأصلي في ClickHouse لحالات الاستخدام التي تتطلب زمن استجابة منخفضًا للغاية — مثل لوحات المعلومات في الوقت الفعلي، والتحليلات التشغيلية، أو التطبيقات التفاعلية.

@@ -17,6 +17,16 @@ import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnly
 
 다음 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
+## adaptive_aggregator_disable_thaw {#adaptive_aggregator_disable_thaw}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "임시 저장된 키가 얼마나 반복되든 적응형 집계기(adaptive aggregator)의 로컬 테이블을 고정된 상태로 유지하고, 해시 테이블 통계에 기록된 해제 판정을 무시하는 새로운 설정입니다."}]}]} />
+
+적응형 집계기의 스레드별 해제(thaw) 보호 장치를 비활성화합니다(`enable_adaptive_aggregator` 참조). 기본적으로 임시 준비된 레코드에서 동일한 키가 계속 반복되는 스레드는 자신의 테이블을 해제하고 일반 집계를 재개할 수 있습니다. 고정된 스레드 중 절반 이상이 해제되면 그 판정이 해시 테이블 통계(`collect_hash_table_stats_during_aggregation`)에 기록되며, 이후 해당 쿼리를 실행할 때는 적응형 집계기를 사용하지 않습니다. `GROUP BY ... ORDER BY count() DESC LIMIT n` 형식의 쿼리는 상위권에 들 수 있는 그룹만 머지합니다(top-K 프루닝). 이러한 쿼리의 판정은 `LIMIT`이 없는 동일한 집계와 별도로 기록됩니다. `count()`가 유일한 집계 함수이면, 테이블에 임시 저장되는 행 대부분이 프루닝으로 폐기될 것으로 예상되는 동안에도 스레드는 테이블을 고정된 상태로 유지합니다.
+
+이 설정을 활성화하면 임시 저장된 키가 반복되더라도 테이블이 해제되지 않으며, 기록된 판정도 무시됩니다. 단, 외부 집계 설정에 따라 크기가 커지는 고정된 테이블을 디스크에 기록하고 새로운 학습 테이블로 대체하는 동작은 여전히 가능합니다.
+
 ## adaptive_aggregator_freeze_threshold {#adaptive_aggregator_freeze_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="16384" />
@@ -31,13 +41,23 @@ import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnly
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "적응형 집계기의 고정된 로컬 테이블을 바이트 단위로 제한하는 새로운 설정입니다. 이 값과 키 개수 임계값 중 먼저 도달하는 기준이 적용되며, 0은 바이트 제한을 비활성화합니다."}]}]} />
 
-적응형 집계기가 스레드의 로컬 해시 테이블을 고정하는 메모리 크기입니다(`enable_adaptive_aggregator` 참조). 이 값과 `adaptive_aggregator_freeze_threshold` 중 먼저 도달하는 기준에서 테이블이 고정됩니다. 크기는 블록 사이에서 확인하며, 로컬 테이블 자체에 할당된 바이트 수(해시 테이블 버퍼와 해당 아레나의 합)입니다. 키 또는 집계 상태의 폭이 넓을 때는 바이트 제한이 중요합니다. 키 개수 임계값만으로는 이러한 테이블이 CPU 캐시보다 커질 수 있기 때문입니다. 기본값에서는 일반적인 폭의 키와 상태를 사용하는 테이블이 계속 키 개수 기준으로 고정됩니다. 0은 바이트 제한을 비활성화하므로 키 개수 임계값만으로 결정됩니다.
+적응형 집계기가 스레드의 로컬 해시 테이블을 고정하는 메모리 크기입니다(`enable_adaptive_aggregator` 참조). 이 값과 `adaptive_aggregator_freeze_threshold` 중 먼저 도달하는 기준에서 테이블이 고정됩니다. 크기는 블록 사이에서 확인하며, 로컬 테이블의 해시 테이블 버퍼 크기입니다. 이 버퍼는 모든 조회(lookup)가 순회하는 셀로 구성되며, 셀에는 키(문자열 키의 경우 해당 바이트에 대한 참조)와 집계 상태에 대한 포인터가 저장되거나, 집계 상태가 인라인으로 저장되는 경우에는 상태 자체가 저장됩니다. 셀의 폭이 넓을 때는 바이트 제한이 중요합니다. 키 개수 임계값만으로는 이러한 테이블이 CPU 캐시보다 커질 수 있기 때문입니다. 집계 상태의 메모리는 포함되지 않습니다. 이 메모리는 테이블에 이미 있는 키를 통해 증가하며, 고정하더라도 이 증가는 멈추지 않기 때문입니다. 기본값에서는 일반적인 폭의 키를 사용하는 테이블이 계속 키 개수 기준으로 고정됩니다. 0은 바이트 제한을 비활성화하므로 키 개수 임계값으로 결정됩니다.
 
 ## add_http_cors_header {#add_http_cors_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 HTTP CORS 헤더를 추가합니다.
+
+## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "인덱스 분석(Index Analysis) 시 단일 조건이 여러 키 열을 제한할 수 있도록 하는 새로운 설정입니다."}]}]} />
+
+인덱스 분석(Index Analysis) 시 `WHERE`/`PREWHERE` 표현식의 원자적 조건(단일 비교, `IN`, `has` 등) 하나가 여러 키 열(Key Columns)을 제한할 수 있도록 허용합니다.
+
+예를 들어 테이블에 `ORDER BY (toDate(ts), ts)`가 지정되어 있고 쿼리에 `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42`가 포함되어 있으면, 두 조건 중 첫 번째 조건이 두 키 열을 모두 제한합니다. 즉, `toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'`이라고 작성한 것과 동일하게 분석됩니다. 이 설정을 비활성화하면 해당 프레디케이트는 `ts`만 제한합니다. 단, `(a, b) IN ((1, 2), (3, 4))`와 같은 튜플 멤버십 프레디케이트는 이 경우에도 여러 키 열을 제한할 수 있습니다.
 
 ## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
@@ -138,6 +158,14 @@ Arrow Flight 요청에 사용할 디스크립터 유형입니다. &#39;path&#39;
 
 단일 Arrow Flight 요청에 대한 타임아웃(초 단위)입니다. 이 값은 요청 전체에 적용됩니다. 즉, 읽기 작업에서는 첫 번째 레코드 배치를 기다리는 시간만이 아니라 전체 결과 스트림을 수신하는 시간까지 포함됩니다. 0은 타임아웃이 없음을 의미하며, 이 경우 Flight 서버가 요청을 수락한 뒤 응답하지 않으면 연결이 종료될 때까지 쿼리가 차단됩니다.
 
+## backup_s3_expired_token_retry_timeout_ms {#backup_s3_expired_token_retry_timeout_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="120000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "토큰이 만료되면 S3 백업 및 복원 요청을 재시도합니다. 0으로 설정하면 이전 동작이 적용됩니다."}]}]} />
+
+백업 또는 복원 중 응답에서 `ExpiredToken`이 반환된 S3 요청을 재시도할 최대 시간(밀리초)입니다. 재시도 횟수가 `backup_restore_s3_retry_attempts`에 도달해도 재시도가 중단됩니다. 0으로 설정하면 이 재시도가 비활성화됩니다. AWS S3 `HEAD` 응답은 일반적인 HTTP 상태만 반환하므로, 이 재시도는 `HEAD` 메타데이터 요청에는 적용되지 않습니다.
+
 ## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -190,7 +218,7 @@ Cascades 최적화기에서 부분 집계를 조인 아래로 푸시다운하는
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "응답 본문에 범용 압축을 적용하기 위한 새로운 설정입니다."}]}]} />
 
-응답 본문에 범용 압축을 적용합니다. 예: `compression=gz`. 이는 `Content-Encoding`(HTTP 압축) 및 레거시 `compress` 매개변수(ClickHouse 네이티브 압축)와는 별개입니다. URL 경로에 압축 파일 확장자를 지정해도 동일한 효과를 얻을 수 있습니다.
+응답 본문에 범용 압축을 적용합니다. 예: `compression=gz`. 이는 `Content-Encoding`(HTTP 압축) 및 레거시 `compress` 매개변수(ClickHouse 네이티브 압축)와는 별개입니다. 응답을 생성하는 경로 기반 요청에서는 URL 경로에 압축 파일 확장자를 지정해도 동일한 효과를 얻을 수 있습니다. 반면 경로 기반 HTTP `PUT` 업로드에서는 압축 접미사가 요청 body의 압축 형식을 나타내며, 이 body는 삽입 전에 압축 해제됩니다.
 
 이는 HTTP 인터페이스에서 응답 형식을 제어하는 설정입니다. 쿼리 실행 전에 처리되어(응답 버퍼가 미리 설정됨) HTTP URL 매개변수, URL 경로의 파일 확장자 또는 사용자 프로필을 통해 지정해야 합니다. 쿼리 내 `SETTINGS` 절로 지정하면 효과가 없으며 거부됩니다.
 
@@ -313,7 +341,8 @@ WHERE 절에 조인 표현식이 있으면 comma/cross join 대신 INNER JOIN을
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-컬럼 정의에서 명시적인 [NULL 또는 NOT NULL 수정자](/ko/reference/statements/create/table#null-or-not-null-modifiers)가 없는 데이터 타입을 [널 허용](/ko/reference/data-types/nullable)으로 처리합니다.
+컬럼 정의에서 명시적인 [NULL 또는 NOT NULL 수정자](/ko/reference/statements/create/table#null-or-not-null-modifiers)가 없는 데이터 타입을 [NULL 허용](/ko/reference/data-types/nullable)으로 처리합니다.
+이 설정은 `CREATE TABLE`, `ALTER TABLE ... ADD COLUMN`, `ALTER TABLE ... MODIFY COLUMN`에 적용됩니다.
 
 가능한 값:
 
@@ -378,13 +407,13 @@ true로 설정하면 DESCRIBE 쿼리 결과에 컬럼명과 타입만 포함됩�
 지원되는 값:
 
 * `clickhouse` (기본값) — 표준 ClickHouse SQL입니다.
-* `kusto` — Kusto Query Language입니다. 실험적 설정 `allow_experimental_kusto_dialect`이 필요합니다.
-* `prql` — PRQL입니다. 실험적 설정 `allow_experimental_prql_dialect`이 필요합니다.
-* `polyglot` — 다른 방언(MySQL, PostgreSQL 등)의 SQL을 ClickHouse SQL로 트랜스파일합니다. 실험적 설정 `allow_experimental_polyglot_dialect`이 필요합니다.
+* `kusto` — Kusto Query Language입니다. 베타 설정 `enable_kusto_dialect`이 필요합니다.
+* `prql` — PRQL입니다. 실험적 설정 `enable_prql_dialect`이 필요합니다.
+* `polyglot` — 다른 방언(MySQL, PostgreSQL 등)의 SQL을 ClickHouse SQL로 트랜스파일합니다. 실험적 설정 `enable_polyglot_dialect`이 필요합니다.
 * `promql` — `promql_database`, `promql_table`, `promql_evaluation_time` 설정으로 구성된 TimeSeries 테이블에서 평가되는 PromQL(Prometheus Query Language)입니다.
 * `clickhouse_json` — SQL 텍스트 대신 쿼리를 JSON AST(`parseQueryToJSON`의 출력)로 해석합니다. 방언을 다시 전환할 수 있도록 일반 형식의 `SET` 쿼리도 계속 인식됩니다. 실험적 설정 `enable_json_ast_dialect`이 필요합니다.
 * `logsql` — VictoriaLogs의 로그 쿼리 언어인 LogsQL입니다. `logsql_database` 및 `logsql_table` 설정으로 구성된 로그 테이블에 대한 `SELECT` 쿼리로 변환됩니다. 실험적 설정 `enable_logsql_dialect`이 필요합니다.
-* `trino` — Trino SQL: Trino 구문(`ARRAY[...]`, `TRY_CAST`, `UNNEST` 등)을 변환하고 Trino 함수 이름을 이에 상응하는 ClickHouse 함수로 매핑합니다. 실험적 설정 `enable_trino_dialect`이 필요합니다.
+* `trino` — Trino SQL: Trino 구문(`ARRAY[...]`, `TRY_CAST`, `UNNEST` 등)을 변환하고 Trino 함수 이름을 이에 상응하는 ClickHouse 함수로 매핑합니다. 베타 설정 `enable_trino_dialect`이 필요합니다.
 
 ## discard_query_data {#discard_query_data}
 
@@ -578,6 +607,8 @@ ClickHouse는 테이블의 오래된 레플리카 중에서 가장 적합한 레
 <SettingsInfoBlock type="UInt64" default_value="200" />
 
 프리페치의 최대 개수입니다. 0은 무제한을 의미합니다. 프리페치 개수를 제한하려면 설정 `filesystem_prefetches_max_memory_usage`를 사용하는 것이 더 권장됩니다.
+
+이 설정은 머지 및 뮤테이션(merges and mutations)에도 적용됩니다.
 
 ## filter {#filter}
 
@@ -805,10 +836,10 @@ false인 경우 h3 함수(예: h3CellAreaM2)는 입력이 유효하지 않으면
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "새로운 설정"}]}]} />
 
-Keeper 클라이언트가 해당 `Context` 뮤텍스를 획득하기 위해 대기하는 최대 시간(밀리초)을 정의합니다. 이 시간 안에 획득하지 못하면 실패합니다.
+쿼리가 Keeper 클라이언트를 기다리는 최대 시간(밀리초)을 정의합니다. 여기에는 클라이언트의 `Context` 뮤텍스를 기다리는 시간과 다른 스레드가 해당 클라이언트를 위해 진행 중인 연결 시도를 기다리는 시간이 포함됩니다. 이 시간을 초과하면 쿼리는 `TIMEOUT_EXCEEDED` 오류와 함께 실패합니다. 쿼리가 취소된 경우에도 대기를 중단합니다.
 
-이 값은 획득을 수행하는 `Context`에서 가져옵니다. 쿼리별 재정의는 작업이 쿼리 컨텍스트를 사용할 때만 적용됩니다. `system.zookeeper` 읽기, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER`, 쿼리 컨텍스트를 통한 보조 Keeper 액세스 등이 이에 해당합니다.
-`BACKUP` 및 `RESTORE` 조정, `Replicated` 데이터베이스 작업처럼 전역 또는 백그라운드 컨텍스트를 사용하는 작업은 해당 컨텍스트의 값을 사용합니다. 이러한 작업에서 타임아웃이 발생하면 Keeper 오류(`ZOPERATIONTIMEOUT`)로 전달되며, 다른 Keeper 오류와 동일하게 처리됩니다.
+이 값은 쿼리 컨텍스트에서 가져오므로 쿼리 컨텍스트를 사용하는 작업에 적용됩니다. `system.zookeeper` 읽기, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER`, 쿼리 컨텍스트를 통한 보조 Keeper 액세스 등이 이에 해당합니다.
+`BACKUP` 및 `RESTORE` 조정, `Replicated` 데이터베이스 작업처럼 전역 또는 백그라운드 컨텍스트를 사용하는 작업은 연결 시도가 끝날 때까지 기다린 후 해당 클라이언트 또는 Keeper 오류를 받습니다.
 `SYSTEM RELOAD CONFIG` 및 `SYSTEM RELOAD ASYNCHRONOUS METRICS`는 별도로 직렬화된 다시 로드 경로를 사용하므로 이 설정이 적용되지 않습니다.
 
 가능한 값:
@@ -837,6 +868,29 @@ Keeper 클라이언트가 해당 `Context` 뮤텍스를 획득하기 위해 대�
 <SettingsInfoBlock type="밀리초" default_value="10000" />
 
 핸드셰이크 중 레플리카로부터 Hello packet을 수신할 때까지의 timeout이며, 밀리초 단위입니다.
+
+## hash_join_layout {#hash_join_layout}
+
+<SettingsInfoBlock type="HashJoinLayout" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "auto"},{"label": "해시 조인의 레이아웃(layout)을 강제로 지정하는 새로운 설정입니다. `auto`는 기존과 같이 `parallel_hash_join_threshold`를 사용하여 레이아웃을 선택합니다."}]}]} />
+
+`INNER`, `LEFT`, `RIGHT` 또는 `FULL` 해시 조인이 해시 테이블을 구성하는 방식을 지정합니다.
+기본값인 `auto`는 플래너가 `parallel_hash_join_threshold`를 사용하여 레이아웃을 선택하도록 합니다. 특정 레이아웃을 강제로 사용하려면 `serial` 또는 `parallel`로 설정하십시오.
+
+가능한 값:
+
+* `auto` — 오른쪽 테이블(right table)의 예상 행 수를 바탕으로 `parallel_hash_join_threshold`가 결정합니다. 예상 행 수가 없는 조인은 해당 설정을 참조하십시오.
+* `serial` — 예상 행 수와 관계없이 해시 테이블이 하나의 파트로 구성되며, 하나의 스레드가 채웁니다.
+* `parallel` — 예상 행 수와 관계없이 해시 테이블이 여러 파트로 분할되며, 최대 `max_threads`개의 스레드가 동시에 채웁니다(`max_threads = 1`이면 하나의 스레드).
+
+다음 조인은 설정값과 관계없이 항상 하나의 파트로 구성됩니다.
+
+* `CROSS` 등 그 밖의 유형의 조인
+* 오른쪽에 `Join` 테이블 또는 키-값 저장소가 있는 조인
+* 그레이스 해시 조인(grace hash join)의 각 버킷
+* 조인이 디스크 유출(spill)을 수행할 수 없고(예: `max_bytes_before_external_join`과 `max_bytes_ratio_before_external_join`이 모두 `0`인 경우) 대신 부분 병합 조인으로 전환될 수 있을 때, `join_algorithm = 'auto'`가 처음에 사용하는 해시 조인
+* `query_plan_join_shard_by_pk_ranges`의 세그먼트별 조인 각각
 
 ## hedged_connection_timeout_ms {#hedged_connection_timeout_ms}
 
@@ -888,9 +942,9 @@ HSTS의 만료 시간입니다. 0은 HSTS를 비활성화한다는 뜻입니다.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
-활성화하면 ORDER BY 절이 없는 SELECT 쿼리에 &#39;ORDER BY rand()&#39;를 삽입합니다.
+활성화하면 ORDER BY 절이 없는 SELECT 쿼리에 `SHUFFLE`을 삽입합니다.
 서브쿼리 깊이 = 0인 경우에만 적용됩니다. 서브쿼리와 INSERT INTO ... SELECT에는 영향을 주지 않습니다.
-최상위 구문이 UNION이면 각 하위 쿼리에 &#39;ORDER BY rand()&#39;를 개별적으로 삽입합니다.
+최상위 구문이 UNION이면 각 하위 쿼리에 `SHUFFLE`을 개별적으로 삽입합니다.
 테스트 및 개발에만 유용합니다(ORDER BY가 없으면 비결정적인 쿼리 결과가 발생할 수 있습니다).
 
 ## input_format {#input_format}
@@ -911,15 +965,37 @@ HSTS의 만료 시간입니다. 0은 HSTS를 비활성화한다는 뜻입니다.
 
 INTERSECT 쿼리의 기본 모드를 설정합니다. 가능한 값: 빈 문자열, &#39;ALL&#39;, &#39;DISTINCT&#39;입니다. 빈 문자열이면 모드가 없는 쿼리에서 예외가 발생합니다.
 
-## kill_throw_if_noop {#kill_throw_if_noop}
+## json_extract_named_tuples_as_objects {#json_extract_named_tuples_as_objects}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "`JSONExtract` 계열 함수가 기존처럼 배열에서 위치 기반으로 채우는 대신, JSON 객체에서만 named tuple을 채우도록 하는 새로운 설정입니다. 이름이 없는 튜플은 항상 위치 기반으로 채워지며, `JSON` 데이터 타입 컬럼에서의 추출은 영향을 받지 않습니다."}]}]} />
+
+`JSONExtract` 계열 함수에서 named tuple을 JSON 객체로부터만 채웁니다. 비활성화하면 JSON 배열이 named tuple을 위치 기반으로 채우므로(기존 동작), 어떤 배열 원소가 어떤 이름의 필드에 들어갈지는 튜플의 선언 순서에 따라 달라집니다. 이름이 없는 튜플은 이 설정과 관계없이 항상 배열에서 위치 기반으로 채워집니다.
+
+이 설정은 문자열로 전달된 JSON에 적용됩니다. `JSON` 데이터 타입 컬럼에서의 추출은 타입이 지정된 경로와 지정되지 않은 경로 모두 영향을 받지 않습니다. 이 경우에는 JSON 문서를 파싱하지 않고 컬럼의 서브컬럼을 읽기 때문에, 이 설정이 제어하는 코드까지 도달하지 않습니다. JSON 입력 형식의 named tuple *컬럼*은 별도의 [input&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects](/ko/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects) 설정으로 제어되며, 이 설정은 추출 함수에만 적용됩니다.
+
+기본적으로 비활성화되어 있습니다.
+
+## json_extract_use_cast_string_to_date_time_mode {#json_extract_use_cast_string_to_date_time_mode}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`JSONExtract`는 `date_time_input_format` 대신 `cast_string_to_date_time_mode`에 따라 `DateTime` 값을 파싱합니다. `compatibility`를 26.8 이전 버전으로 설정하면 이전 동작으로 돌아갑니다."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "1"},{"label": "`JSONExtract` 계열 함수가 `DateTime` 값을 파싱할 때 `cast_string_to_date_time_mode`(26.8부터)와 `date_time_input_format`(26.8 이전) 중 어느 설정을 따를지 선택하는 새로운 설정입니다."}]}]} />
+
+`JSONExtract` 계열 함수가 JSON 문자열 값을 `DateTime` 또는 `DateTime64`로 파싱할 때 어떤 설정을 따를지 제어합니다. 활성화하면 `CAST`와 동일하게 [cast&#95;string&#95;to&#95;date&#95;time&#95;mode](/ko/reference/settings/session-settings/cast-string#cast_string_to_date_time_mode)에서 파싱 모드를 가져옵니다. 비활성화하면 26.8 이전 버전과 마찬가지로 [date&#95;time&#95;input&#95;format](/ko/reference/settings/formats/date-time#date_time_input_format)에서 파싱 모드를 가져옵니다.
+
+선택된 파서가 값을 읽지 못하면 함수는 오류 없이 해당 타입의 기본값(`1970-01-01 00:00:00`)을 반환합니다. 따라서 두 설정이 서로 맞지 않으면 추출되는 값이 아무런 경고 없이 달라집니다.
+
+## kill_throw_if_noop {#kill_throw_if_noop}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "`KILL QUERY` 및 `KILL MUTATION`이 일치하는 항목이 없음을 보고하도록 `kill_throw_if_noop`을 기본적으로 활성화합니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]} />
 
 [`KILL QUERY`](/ko/reference/statements/kill#kill-query) 및 [`KILL MUTATION`](/ko/reference/statements/kill#kill-mutation)의 `WHERE` 절과 일치하는 행이 없을 때 예외를 발생시킬지 여부를 제어합니다.
 
-true로 설정하면 `KILL QUERY`는 현재 실행 중인 `KILL` SQL 문을 제외하고 `system.processes`에 대상 행이 없을 때 예외를 발생시키며, `KILL MUTATION`은 `system.mutations`에 일치하는 행이 없을 때 예외를 발생시킵니다. 기본적으로는 일치하는 행이 없어도 예외 없이 반환됩니다. `ON CLUSTER`로 실행하면 일치 결과가 호스트 간에 집계되지 않으므로, 일치하는 행이 없어도 예외가 발생하지 않습니다.
+기본적으로 활성화되어 있습니다. `KILL QUERY`는 현재 실행 중인 `KILL` SQL 문을 제외하고 `system.processes`에 대상 행이 없을 때 예외를 발생시키며, `KILL MUTATION`은 `system.mutations`에 일치하는 행이 없을 때 예외를 발생시킵니다. 일치하는 행이 없어도 예외 없이 처리하려면 `false`로 설정하십시오. `TEST` 시험 실행(dry run)은 예외를 발생시키지 않고 빈 미리보기를 반환합니다. `ON CLUSTER`로 실행하면 일치 결과가 호스트 간에 집계되지 않으므로, 일치하는 행이 없어도 예외가 발생하지 않습니다.
 
 가능한 값:
 
@@ -1000,7 +1076,7 @@ true로 설정하면 `KILL QUERY`는 현재 실행 중인 `KILL` SQL 문을 제�
 
 잠금 요청이 실패하기 전까지 몇 초 동안 대기할지 정의합니다.
 
-잠금 타임아웃은 테이블에 대해 읽기/쓰기 작업을 수행하는 동안 교착 상태를 방지하는 데 사용됩니다. 타임아웃이 만료되어 잠금 요청이 실패하면 ClickHouse 서버는 오류 코드 `DEADLOCK_AVOIDED`와 함께 &quot;Locking attempt timed out! Possible deadlock avoided. Client should retry.&quot; 예외를 발생시킵니다.
+잠금 타임아웃은 테이블에 대해 읽기/쓰기 작업을 수행하는 동안 교착 상태를 방지하는 데 사용됩니다. 타임아웃이 만료되어 잠금 요청이 실패하면 ClickHouse 서버는 오류 코드 `DEADLOCK_AVOIDED`와 함께 &quot;Locking attempt timed out. Possible deadlock avoided. Client should retry.&quot; 예외를 발생시킵니다.
 
 가능한 값:
 
@@ -1064,6 +1140,14 @@ true로 설정하면 `KILL QUERY`는 현재 실행 중인 `KILL` SQL 문을 제�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.3"},{"label": "1"},{"label": "함수 이름을 정규 이름으로 변환합니다. 이는 프로젝션 쿼리 라우팅에 필요했습니다"}]}]} />
 
 함수 이름을 정규 이름으로 변환합니다
+
+## obfuscate_seed {#obfuscate_seed}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "새로운 설정: obfuscate 테이블 함수의 seed 문자열입니다."}]}]} />
+
+`obfuscate` 테이블 함수에 사용할 seed입니다. 임의의 문자열을 지정할 수 있으며, 각 컬럼의 seed는 이 값과 컬럼명을 기반으로 생성되므로 동일한 seed를 사용하면 항상 동일한 난독화 결과를 얻습니다. 빈 문자열을 지정하면 쿼리마다 랜덤 시드가 생성됩니다.
+
+seed는 시크릿이 아닌 일반 설정입니다. 다른 설정과 마찬가지로 값이 평문으로 저장되고 표시되며, `system.query_log`, `system.settings` 등에서 확인할 수 있습니다. 비밀번호나 기타 시크릿을 seed로 사용하지 마십시오. 서로 다른 쿼리의 난독화된 출력을 서로 연관 지을 수 없어야 한다면, 고정된 seed를 설정하지 말고 기본값인 빈 값(쿼리마다 새로운 랜덤 시드 생성)을 그대로 유지하십시오.
 
 ## offset {#offset}
 
@@ -1268,6 +1352,18 @@ a   Tuple(
 
 기본적으로 정밀도 1에서는 기준 벡터가 전체 정밀도를 유지하고 저장된 벡터만 부호로 축소됩니다(비대칭 거리). 대칭 거리는 몇 배 더 빠르지만 기준 벡터 원소의 크기를 고려하지 않습니다. 즉, 기준 값이 큰 차원과 0에 가까운 차원이 동일한 비중으로 반영됩니다.
 
+## query_condition_cache_time_condition_grid_factor {#query_condition_cache_time_condition_grid_factor}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Float" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "새 실험적 설정: 쿼리 조건 캐시에서 현재 시간이 포함된 조건으로부터 결정적 조건을 도출할 때 사용하는 그리드 간격으로, 시간 상수와 현재 시간 사이 거리에 대한 비율로 지정합니다."}]}]} />
+
+`MergeTree` 테이블의 [쿼리 조건 캐시](/ko/concepts/features/performance/caches/query-condition-cache)에서 현재 시간이 포함된 조건에 적용되는 설정입니다([`use_query_condition_cache_for_time_conditions`](/ko/reference/settings/session-settings/use-query#use_query_condition_cache_for_time_conditions) 참조). 시간 상수를 내림할 그리드의 크기를 상수와 현재 시간 사이 거리에 대한 비율로 지정합니다. 예를 들어 기본 계수 1.0을 사용하면 `WHERE time >= now() - INTERVAL 10 DAY`의 상수는 1일 그리드로 내림되고(최대 1일), `WHERE time >= now() - INTERVAL 1 HOUR`의 상수는 1시간 그리드로 내림됩니다.
+
+값이 작을수록 도출된 조건이 원래 조건에 더 가까워지지만(경계 부근의 over-read 감소), 그만큼 캐시 키가 더 자주 바뀝니다. 그리드 간격은 최소 1초로 제한되므로, 계수를 작게 지정하면 도출된 조건이 비활성화되지 않고 원래 조건에 수렴합니다. 0 이하의 값을 지정하면 조건 도출이 완전히 비활성화됩니다.
+
 ## query_metric_log_interval {#query_metric_log_interval}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
@@ -1457,13 +1553,13 @@ FORMAT Null;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "제출한 연결과 분리된 상태로 백그라운드에서 쿼리를 실행하고 결과는 버리는 새로운 설정입니다."}]}]} />
 
-활성화하면 서버는 쿼리를 백그라운드에서 예약하고 즉시 비어 있는 성공 결과를 반환합니다. 이후 연결 상태와 관계없이 쿼리는 완료될 때까지 실행됩니다.
+활성화하면 서버는 쿼리를 백그라운드에서 예약한 뒤, 쿼리가 검사(예: 테이블이 존재하는지, 사용자에게 필요한 권한이 부여되어 있는지)를 통과하고 주요 작업을 시작하기 직전 단계에 이를 때까지 기다렸다가 비어 있는 성공 결과를 반환합니다. 이후 연결 상태와 관계없이 쿼리는 완료될 때까지 실행됩니다. 그 이전에 발생한 오류는 클라이언트에 반환되며, 이후에 발생한 오류는 `system.query_log`에만 기록됩니다.
 
 백그라운드 쿼리는 서버를 재시작하면 유지되지 않습니다. 서버 종료 시에는 포그라운드 쿼리와 동일한 서버 설정을 따릅니다. `shutdown_wait_unfinished_queries`는 쿼리를 취소할지 완료될 때까지 기다릴지를 결정하며(큐에 대기 중인 항목은 어느 경우든 `system.query_log` 항목을 남기지 않고 삭제됩니다), `shutdown_wait_unfinished`는 서버가 기다리는 시간을 제한합니다.
 
 `query_id`로 쿼리를 추적할 수 있습니다. 실행 중에는 `system.processes`에서, 완료 후 쿼리 로그 항목이 플러시되면 `system.query_log`에서 확인할 수 있습니다.
 
-네이티브 TCP 및 HTTP 프로토콜을 통해 수신된 쿼리에 적용됩니다. HTTP에서는 이 설정을 URL 매개변수로 전달하십시오. `SET`으로 변경할 수 없으므로 쿼리별로 활성화하거나 사용자 또는 profile 수준에서 활성화하십시오.
+네이티브 TCP 및 HTTP 프로토콜을 통해 수신된 쿼리에 적용됩니다. HTTP에서는 이 설정을 URL 매개변수로 전달하십시오. `SET`으로 변경할 수 없으므로 쿼리별로 활성화하거나 사용자 또는 프로필 수준에서 활성화하십시오.
 
 주요 사용 사례는 클라이언트 연결이 끊어져도 손실되어서는 안 되는 장시간 실행 `INSERT ... SELECT`입니다.
 
@@ -1727,57 +1823,73 @@ TCPHandler에서 쿼리를 수신한 후 대기하는 시간입니다.
 * `0` - 남은 문자열은 결과 배열의 마지막 요소에 포함되지 않습니다.
 * `1` - 남은 문자열이 결과 배열의 마지막 요소에 포함됩니다. 이는 Spark의 [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) 함수와 Python의 [&#39;string.split()&#39;](https://docs.python.org/3/library/stdtypes.html#str.split) 메서드의 동작과 같습니다.
 
+## sql_compatible_division_for_integers {#sql_compatible_division_for_integers}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "정수 나눗셈 설정에 SQL 호환 이름을 사용합니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "`\/` 및 `divide`에서 정확한 정수 나눗셈을 활성화하는 새로운 설정입니다."}]}]} />
+
+두 피연산자가 모두 정수 타입(`Int128`, `UInt128`, `Int256`, `UInt256` 포함)이면 `/` 및 `divide`가 정수를 반환하도록 합니다.
+몫은 0 방향으로 잘립니다. 결과의 너비는 첫 번째 피연산자와 같으며, 피연산자 중 하나라도 부호 있는 타입이면 결과도 부호 있는 타입이 됩니다.
+0으로 나누거나 몫이 결과 타입의 범위를 벗어나면 예외를 발생시킵니다. `Nullable` 피연산자는 `NULL`을 전파합니다.
+
+기본적으로 두 정수를 나누면 `Float64`가 반환됩니다. 이 설정은 `Decimal` 또는 floating-point 피연산자가 포함된 나눗셈이나,
+명시적 함수인 `intDiv`, `divideDecimal`, `divideOrNull`에는 영향을 주지 않습니다.
+
+새로 제출된 SQL의 표현식이 테이블 메타데이터, 뷰(view), SQL 함수 또는 뮤테이션에 저장될 때, 이 설정값이 저장 전에 함께 기록됩니다.
+기존 정의와 `ATTACH` 쿼리는 이 설정과 관계없이 원래의 나눗셈 의미 체계를 그대로 유지합니다.
+
 ## statistics_max_set_size_for_exact_selectivity_estimation {#statistics_max_set_size_for_exact_selectivity_estimation}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 <VersionHistory
   rows={[
-{
-  id: "row-1",
-  items: [
-    { label: "26.9" },
-    { label: "10000" },
-    {
-      label:
-        "대규모 Set이 포함된 `IN`의 선택도 추정 비용 제한은 이전 버전과의 `compatibility`에서도 유지됩니다. 단일 쿼리의 계획 수립에 수백 밀리초가 추가될 수 있는 제한 없는 추정이 복원되지 않도록 이전 값은 의도적으로 새 값과 동일하게 설정됩니다."
-    }
-  ]
-},
-{
-  id: "row-2",
-  items: [
-    { label: "26.8" },
-    { label: "10000" },
-    {
-      label:
-        "대규모 Set이 포함된 `IN`의 선택도 추정 비용을 제한하는 새로운 설정입니다. 제한을 초과하면 추정기는 정확한 범위 대신 Set의 크기와 경계 범위를 사용합니다. 단일 쿼리의 계획 수립에 수백 밀리초가 추가될 수 있는 제한 없는 추정이 복원되는 대신 제한이 유지되도록 이전 버전과의 `compatibility`를 위해 이전 값은 의도적으로 새 값과 동일하게 설정됩니다."
-    }
-  ]
-},
-{
-  id: "row-3",
-  items: [
-    { label: "26.7" },
-    { label: "10000" },
-    {
-      label:
-        "대규모 Set이 포함된 `IN`의 선택도 추정 비용 제한은 이전 버전과의 `compatibility`에서도 유지됩니다. 단일 쿼리의 계획 수립에 수백 밀리초가 추가될 수 있는 제한 없는 추정이 복원되지 않도록 이전 값은 의도적으로 새 값과 동일하게 설정됩니다."
-    }
-  ]
-},
-{
-  id: "row-4",
-  items: [
-    { label: "26.6" },
-    { label: "10000" },
-    {
-      label:
-        "대규모 Set이 포함된 `IN`의 선택도 추정 비용 제한은 이전 버전과의 `compatibility`에서도 유지됩니다. 단일 쿼리의 계획 수립에 수백 밀리초가 추가될 수 있는 제한 없는 추정이 복원되지 않도록 이전 값은 의도적으로 새 값과 동일하게 설정됩니다."
-    }
-  ]
-}
-]}
+  {
+    id: "row-1",
+    items: [
+      { label: "26.9" },
+      { label: "10000" },
+      {
+        label:
+          "대규모 Set이 포함된 `IN`의 선택도 추정 비용 제한은 이전 버전과의 `compatibility`에서도 유지됩니다. 단일 쿼리의 계획 수립에 수백 밀리초가 추가될 수 있는 제한 없는 추정이 복원되지 않도록 이전 값은 의도적으로 새 값과 동일하게 설정됩니다."
+      }
+    ]
+  },
+  {
+    id: "row-2",
+    items: [
+      { label: "26.8" },
+      { label: "10000" },
+      {
+        label:
+          "대규모 Set이 포함된 `IN`의 선택도 추정 비용을 제한하는 새로운 설정입니다. 제한을 초과하면 추정기는 정확한 범위 대신 Set의 크기와 경계 범위를 사용합니다. 단일 쿼리의 계획 수립에 수백 밀리초가 추가될 수 있는 제한 없는 추정이 복원되는 대신 제한이 유지되도록 이전 버전과의 `compatibility`를 위해 이전 값은 의도적으로 새 값과 동일하게 설정됩니다."
+      }
+    ]
+  },
+  {
+    id: "row-3",
+    items: [
+      { label: "26.7" },
+      { label: "10000" },
+      {
+        label:
+          "대규모 Set이 포함된 `IN`의 선택도 추정 비용 제한은 이전 버전과의 `compatibility`에서도 유지됩니다. 단일 쿼리의 계획 수립에 수백 밀리초가 추가될 수 있는 제한 없는 추정이 복원되지 않도록 이전 값은 의도적으로 새 값과 동일하게 설정됩니다."
+      }
+    ]
+  },
+  {
+    id: "row-4",
+    items: [
+      { label: "26.6" },
+      { label: "10000" },
+      {
+        label:
+          "대규모 Set이 포함된 `IN`의 선택도 추정 비용 제한은 이전 버전과의 `compatibility`에서도 유지됩니다. 단일 쿼리의 계획 수립에 수백 밀리초가 추가될 수 있는 제한 없는 추정이 복원되지 않도록 이전 값은 의도적으로 새 값과 동일하게 설정됩니다."
+      }
+    ]
+  }
+  ]}
 />
 
 선택도 추정기가 Set이 포함하는 정확한 범위를 도출하는 `IN` 연산자 오른쪽 Set의 최대 크기입니다. 정확한 범위를 도출하려면 원소당 `Field` 하나, 정렬 1회, 원소당 통계 프로브 1회가 필요하므로 대규모 Set에서는 쿼리 계획 수립 비용의 대부분을 차지합니다. 이 제한을 초과하면 추정기는 정렬이나 원소별 통계 프로브 없이 Set을 한 번 선형으로 순회하여 Set의 크기와 경계 범위로 선택도를 도출합니다. 0은 제한이 없음을 의미합니다.
@@ -1825,6 +1937,25 @@ TCP가 keepalive probe 전송을 시작하기 전에 연결이 유휴 상태로 
 <SettingsInfoBlock type="Seconds" default_value="10" />
 
 지정된 시간(초)이 지난 후 실행 속도가 너무 느린지 여부를 확인합니다(`min_execution_speed` 이상이어야 함).
+
+`0`으로 설정하면 쿼리 시작 시점부터 실행 속도 제한을 검사하지만,
+[`max_estimated_execution_time`](/ko/reference/settings/session-settings/max#max_estimated_execution_time)은
+전혀 검사하지 않습니다.
+
+## to_start_of_interval_preserves_argument_type {#to_start_of_interval_preserves_argument_type}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "함수 `toStartOfInterval`은 인터벌 단위에 따라 결정되는 타입 대신 인수와 동일한 타입의 값을 반환합니다. 기존 방식에서는 더 좁은 타입의 범위를 벗어난 값이 순환(wrap)되었습니다"}]}]} />
+
+함수 `toStartOfInterval`(및 별칭 `time_bucket`, `date_bin`)이 인터벌 단위와 관계없이 첫 번째 인수와 동일한 타입의 값을 반환하도록 합니다.
+즉, `Date`에는 `Date`, `Date32`에는 `Date32`, `DateTime`에는 `DateTime`, `DateTime64`에는 소수 자릿수(scale)가 동일한 `DateTime64`를 반환합니다.
+유일한 예외는 `DateTime64` 인수의 소수 자릿수보다 더 세밀한 초 미만 단위를 사용하는 경우입니다. 예를 들어 `DateTime64(0)`에 `INTERVAL 1500 MILLISECOND`를 사용하면 인수의 소수 자릿수로는 버킷 경계를 표현할 수 없으므로, 결과는 단위의 소수 자릿수를 따릅니다.
+
+가능한 값:
+
+* `1` — 결과가 첫 번째 인수의 타입을 따릅니다. `enable_extended_results_for_datetime_functions` 설정은 이 함수에 영향을 주지 않습니다.
+* `0` — 레거시 동작: 결과 타입이 인터벌 단위에 따라 달라집니다. `WEEK` 이상의 단위는 `Date`를, `DAY`부터 `SECOND`까지는 `DateTime`을, 초 미만 단위는 해당 단위의 소수 자릿수를 가진 `DateTime64`를 반환합니다(단, `enable_extended_results_for_datetime_functions = 1`이면 `Date32` 및 `DateTime64` 인수에 대해 `Date` 및 `DateTime` 대신 `Date32` 및 `DateTime64`를 반환합니다). 더 좁은 결과 타입의 범위를 벗어나는 값은 순환(wrap)됩니다. 예를 들어 `toStartOfInterval(toDate32('1900-01-01'), INTERVAL 1 DAY)`는 `2036-02-07 06:28:16`을 반환합니다. 이는 `origin`이 없는 오버로드에 대한 설명입니다. `origin`이 있는 오버로드는 레거시 동작에서도 인수의 타입을 유지합니다. 다만 `DateTime64` 인수에 초 미만 단위를 사용하면 결과는 단위의 소수 자릿수를 따릅니다.
 
 ## transfer_overflow_mode {#transfer_overflow_mode}
 
@@ -1940,7 +2071,23 @@ N번째 데이터 패킷에서 데이터를 보내는 대신 알 수 없는 패�
 
 <SettingsInfoBlock type="TransactionsWaitCSNMode" default_value="wait_unknown" />
 
-커밋된 변경 사항이 최신 스냅샷에 실제로 반영될 때까지 기다립니다
+`COMMIT`이 무엇을 기다리는지 지정합니다.
+
+* `wait_commit`: 커밋 요청을 기다립니다. 결과를 알 수 없는 경우(Keeper 연결이 끊어진 경우) `COMMIT`은 `UNKNOWN_STATUS_OF_TRANSACTION` 예외를 발생시킵니다.
+* `wait_unknown`: 상태를 알 수 없는 커밋의 결과까지 추가로 기다립니다.
+* `wait_visible`: 이 레플리카의 새 트랜잭션에서 변경 사항이 보일 때까지 최대 `wait_changes_become_visible_timeout_ms` 동안 추가로 기다립니다. 이 시간을 초과하면 트랜잭션이 이미 커밋된 상태이더라도 `COMMIT`은 `TIMEOUT_EXCEEDED` 예외를 발생시킵니다.
+
+## wait_changes_become_visible_timeout_ms {#wait_changes_become_visible_timeout_ms}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "10000"},{"label": "새로운 설정입니다. `SYSTEM SYNC TRANSACTION LOG`, `BACKUP`, `COMMIT`이 이 레플리카에서 커밋이 보이게 될 때까지 대기하는 시간을 제한합니다."}]}]} />
+
+`SYSTEM SYNC TRANSACTION LOG`, 트랜잭션을 사용하는 테이블에 대한 `BACKUP`, 그리고
+`wait_changes_become_visible_after_commit_mode = 'wait_visible'`로 설정된 `COMMIT`이 이 레플리카에서 커밋이 새
+트랜잭션에 보이게 될 때까지 대기하는 시간입니다. 이 시간이 초과되면 `TIMEOUT_EXCEEDED` 예외가 발생합니다.
 
 ## weight {#weight}
 
@@ -1994,7 +2141,7 @@ memory reservation 대기(`CREATE RESOURCE ... (MEMORY RESERVATION)` resource와
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "새 설정입니다."}]}]} />
 
-Iceberg 메타데이터 파일에 전체 경로(s3:// 포함)를 기록합니다.
+Iceberg 메타데이터 파일에 전체 경로(s3:// 포함)를 기록합니다. `DataLakeCatalog` 데이터베이스에 생성된 테이블에는 항상 전체 경로가 기록됩니다.
 
 ## zstd_window_log_max {#zstd_window_log_max}
 

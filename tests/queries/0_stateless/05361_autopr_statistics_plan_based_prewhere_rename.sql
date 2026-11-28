@@ -10,7 +10,6 @@ CREATE TABLE t_pb_rename (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY 
 
 INSERT INTO t_pb_rename SELECT number, number FROM numbers(200000);
 
-SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
 -- An aggregation that spills marks the statistics as unsupported.
 SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;

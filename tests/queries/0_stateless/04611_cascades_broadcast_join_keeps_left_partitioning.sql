@@ -4,7 +4,6 @@
 -- the join output advertises no partitioning and the aggregation above needs an extra shuffle of
 -- the joined rows.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET max_rows_to_group_by = 0;
 SET param__internal_cascades_cluster_node_count = 4;

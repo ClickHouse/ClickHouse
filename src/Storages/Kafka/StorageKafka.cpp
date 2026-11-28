@@ -122,7 +122,7 @@ public:
     {
     }
 
-    String getName() const override { return "ReadFromStorageKafka"; }
+    [[nodiscard]] String getName() const override { return "ReadFromStorageKafka"; }
 
 private:
     Pipe makePipe() final
@@ -272,7 +272,7 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
     auto payload_split = StorageKafkaUtils::splitPayloadColumns(header, map_virtual_columns_on_write);
 
     auto producer = std::make_unique<KafkaProducer>(
-        std::make_shared<cppkafka::Producer>(conf), topics[0], std::chrono::milliseconds(poll_timeout), shutdown_called, header, map_virtual_columns_on_write);
+        std::move(conf), topics[0], std::chrono::milliseconds(poll_timeout), shutdown_called, header, map_virtual_columns_on_write);
 
     LOG_TRACE(log, "Kafka producer created");
 
@@ -362,7 +362,7 @@ void StorageKafka::renameInMemory(const StorageID & new_table_id)
 {
     const auto prev_storage_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
-    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID());
+    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID(), /* if_exists */ true);
 }
 
 void StorageKafka::cleanConsumers()

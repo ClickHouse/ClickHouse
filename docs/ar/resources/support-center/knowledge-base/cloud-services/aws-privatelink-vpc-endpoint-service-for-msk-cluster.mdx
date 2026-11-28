@@ -6,9 +6,7 @@ tags: ['الأمان والمصادقة', 'إدارة Cloud']
 keywords: ['AWS PrivateLink', 'خدمة نقطة نهاية VPC', 'MSK', 'Kafka', 'ClickPipes']
 ---
 
-<div id="overview">
-  ## نظرة عامة
-</div>
+## نظرة عامة {#overview}
 
 يشرح هذا الدليل كيفية إتاحة الوصول من ClickPipes إلى عنقود Amazon MSK باستخدام [خدمات نقاط نهاية VPC في AWS PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html).
 
@@ -22,9 +20,7 @@ keywords: ['AWS PrivateLink', 'خدمة نقطة نهاية VPC', 'MSK', 'Kafka'
 
 يمكن أيضًا استخدام نمط PrivateLink نفسه مع عناقيد Kafka المُدارة ذاتيًا أو المحلية المستضافة عبر AWS، لكن الأمثلة في هذه المقالة تستخدم MSK.
 
-<div id="how-the-setup-works">
-  ## كيف يعمل الإعداد
-</div>
+## كيف يعمل الإعداد {#how-the-setup-works}
 
 تتصل برامج Kafka العميلة أولاً بوسطاء Bootstrap، وتجلب البيانات الوصفية الخاصة بالعنقود، ثم تتصل مباشرةً بأسماء المضيفين للوسطاء المُعلَن عنها في تلك البيانات الوصفية.
 
@@ -48,19 +44,14 @@ MSK broker hostname
 
 يجب ضبط موازن التحميل NLB على تمرير TCP. يتيح ذلك لعميل Kafka مواصلة استخدام اسم المضيف الأصلي لـ broker في MSK من أجل SNI في TLS والتحقق من الشهادة.
 
-<div id="requirements">
-  ## المتطلبات
-</div>
+## المتطلبات {#requirements}
 
 * عنقود MSK داخل الشبكات الفرعية الخاصة.
 * أسماء مضيفي الوسطاء وعناوين IP الخاصة لعنقود MSK.
-* صلاحية إنشاء NLBs ومجموعات الأهداف والمستمعين وخدمات VPC endpoint service في VPC الخاص بـ MSK.
-* السماح للكيان الأساسي الخاص بحساب AWS التابع لـ ClickPipes على كل VPC endpoint service: `arn:aws:iam::072088201116:root`.
-* يجب أن تكون ميزة DNS خاص مخصص مُمكّنة لخدمة ClickHouse Cloud الخاصة بك. تواصل مع ClickHouse Support إذا لم يكن الحقل `Custom private DNS name` متاحًا عند إنشاء نقطة نهاية خاصة عكسية.
+* صلاحية إنشاء NLBs ومجموعات الأهداف والمستمعين وخدمات نقطة نهاية VPC في VPC الخاص بـ MSK.
+* السماح للكيان الأساسي الخاص بحساب AWS التابع لـ ClickPipes على كل خدمة نقطة نهاية VPC: `arn:aws:iam::072088201116:root`.
 
-<div id="get-broker-hostnames-and-private-ips">
-  ## احصل على أسماء مضيفي الوسطاء وعناوين IP الخاصة
-</div>
+## احصل على أسماء مضيفي الوسطاء وعناوين IP الخاصة {#get-broker-hostnames-and-private-ips}
 
 استخدم AWS CLI لعرض عُقد وسطاء MSK:
 
@@ -75,23 +66,17 @@ aws kafka list-nodes \
 
 سيستخدم ClickPipe أسماء المضيف هذه كوسطاء Kafka. لا تستخدم سلسلة وسطاء bootstrap الخاصة بـ MSK في هذا الإعداد المعتمد على واجهة المستخدم.
 
-<div id="create-one-endpoint-service-per-broker">
-  ## أنشئ خدمة endpoint لكل وسيط
-</div>
+## أنشئ خدمة endpoint لكل وسيط {#create-one-endpoint-service-per-broker}
 
 كرّر هذه الخطوات لكل وسيط في MSK.
 
-<div id="create-an-internal-nlb">
-  ### أنشئ NLB داخليًا
-</div>
+### أنشئ NLB داخليًا {#create-an-internal-nlb}
 
 أنشئ موازن تحميل شبكة داخليًا (NLB) في VPC الخاص بـ MSK. يجب أن يستخدم NLB الشبكات الفرعية الخاصة، وألا يكون موجّهًا إلى الإنترنت.
 
 إذا كانت هناك مجموعة أمان مرفقة بـ NLB، فعطّل `Enforce Security Group Inbound Rules on Private Link Traffic`. هذا مطلوب للسماح لحركة المرور الواردة من نقطة نهاية VPC الخاصة بـ ClickPipes بالوصول إلى NLB.
 
-<div id="create-an-ip-target-group">
-  ### إنشاء مجموعة أهداف IP
-</div>
+### إنشاء مجموعة أهداف IP {#create-an-ip-target-group}
 
 أنشئ مجموعة أهداف بالإعدادات التالية:
 
@@ -102,15 +87,11 @@ aws kafka list-nodes \
 
 استخدم فحوصات صحة `TCP` على منفذ حركة المرور.
 
-<div id="create-a-tcp-listener">
-  ### أنشئ مستمع TCP
-</div>
+### أنشئ مستمع TCP {#create-a-tcp-listener}
 
 أنشئ مستمع NLB على منفذ Kafka الخاص بالوسيط، ووجّه حركة المرور إلى المجموعة المستهدفة الخاصة بذلك الوسيط.
 
-<div id="create-the-vpc-endpoint-service">
-  ### أنشئ VPC endpoint service
-</div>
+### أنشئ VPC endpoint service {#create-the-vpc-endpoint-service}
 
 أنشئ VPC endpoint service مدعومًا بواسطة NLB الخاص بكل broker.
 
@@ -128,9 +109,7 @@ arn:aws:iam::072088201116:root
 com.amazonaws.vpce.<region>.vpce-svc-0123456789abcdef0
 ```
 
-<div id="create-clickpipes-reverse-private-endpoints">
-  ## أنشئ نقاط النهاية الخاصة العكسية لـ ClickPipes
-</div>
+## أنشئ نقاط النهاية الخاصة العكسية لـ ClickPipes {#create-clickpipes-reverse-private-endpoints}
 
 في ClickHouse Cloud console، أنشئ نقطة نهاية خاصة عكسية واحدة لكل `VPC endpoint service` خاصة بكل وسيط:
 
@@ -167,9 +146,7 @@ com.amazonaws.vpce.<region>.vpce-svc-0123456789abcdef0
 
 بالنسبة إلى Terraform، استخدم [`clickhouse_clickpipes_reverse_private_endpoint`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint) لإنشاء نقطة النهاية، و[`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns) لتهيئة تعيين اسم مضيف الـ وسيط.
 
-<div id="create-the-kafka-clickpipe">
-  ## أنشئ Kafka ClickPipe
-</div>
+## أنشئ Kafka ClickPipe {#create-the-kafka-clickpipe}
 
 اتبع [دليل AWS PrivateLink لـ ClickPipes](/ar/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe)
 لإنشاء ClickPipe باستخدام نقاط النهاية الخاصة العكسية.
@@ -191,9 +168,7 @@ b-1.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com:9098,b-2.example-c
 
 يجب أن يتطابق كل اسم مضيف في قائمة الوسطاء مع `DNS خاص مخصص` المُعَدّ على أحد RPEs.
 
-<div id="terraform-automation">
-  ## أتمتة Terraform
-</div>
+## أتمتة Terraform {#terraform-automation}
 
 توضح [وحدة Terraform aws-msk-vpc-endpoint-service](https://github.com/ClickHouse/clickpipes-terraform-modules/tree/main/modules/aws-msk-vpc-endpoint-service) كيفية أتمتة هذا الإعداد. فهي تنشئ موازنات تحميل شبكة (NLB) خاصة بكل broker، ومجموعات أهداف، وخدمات VPC endpoint، وRPEs لـ ClickPipes، وتعيينات DNS خاص مخصص.
 

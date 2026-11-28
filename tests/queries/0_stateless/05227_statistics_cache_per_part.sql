@@ -8,7 +8,6 @@
 -- partition pruning hits the cache as well, a new part is the only miss of the next query, and the
 -- statistics are never loaded in the background.
 
-SET enable_analyzer = 1;
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;
 -- One part per insert: a merge of the parts of one insert between the queries would make a new part, a cache miss.

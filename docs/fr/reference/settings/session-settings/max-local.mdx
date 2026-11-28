@@ -12,17 +12,15 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_local_read_bandwidth">
-  ## max_local_read_bandwidth
-</div>
+## max_local_read_bandwidth {#max_local_read_bandwidth}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Le débit maximal des lectures locales en octets par seconde.
 
-<div id="max_local_write_bandwidth">
-  ## max_local_write_bandwidth
-</div>
+La limite s’applique aux données lues depuis les périphériques bloc : les lectures servies par le cache de pages du système d’exploitation ne sont pas prises en compte, à condition que la méthode de lecture soit en mesure de les détecter (c’est le cas pour la valeur par défaut `local_filesystem_read_method = 'pread_threadpool'`, pour `pread`, ainsi que pour les lectures des fichiers du cache du système de fichiers).
+
+## max_local_write_bandwidth {#max_local_write_bandwidth}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

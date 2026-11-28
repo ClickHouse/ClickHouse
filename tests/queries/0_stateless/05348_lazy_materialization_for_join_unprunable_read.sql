@@ -3,7 +3,6 @@
 -- read and cross the LIMIT, while the other side of the join is still read lazily. Every query is followed by the
 -- number of lazy reads in its plan, and the results are compared with the optimization disabled.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_lazy_materialization_for_join = 1;
 SET query_plan_max_limit_for_lazy_materialization = 100;

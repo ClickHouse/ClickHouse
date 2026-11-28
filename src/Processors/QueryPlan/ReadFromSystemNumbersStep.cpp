@@ -22,6 +22,7 @@
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
 #include <Core/Types.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -131,7 +132,8 @@ protected:
 
         iotaWithStepOptimized(vec.data(), count, next, step);
 
-        next += count * step;
+        /// `step` may be the wrapping (negated) step, so both operations wrap by design.
+        next = common::addIgnoreOverflow(next, common::mulIgnoreOverflow(count, step));
         remaining -= count;
 
         progress(column->size(), column->byteSize());
@@ -152,7 +154,7 @@ struct RangeWithStep
     UInt128 size;   /// how many values in this range
 };
 
-using RangesWithStep = std::vector<RangeWithStep>;
+using RangesWithStep = VectorWithMemoryTracking<RangeWithStep>;
 
 std::optional<RangeWithStep> steppedRangeFromRange(const Range & r, UInt64 step, UInt64 remainder)
 {
@@ -440,7 +442,6 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, {}, context, false).expression}
     , max_block_size{max_block_size_}
     , num_streams{num_streams_}
-    , storage_limits(query_info.storage_limits)
 {
     storage_snapshot->check(column_names);
     chassert(column_names.size() == 1);
@@ -462,7 +463,7 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     /// Add storage limits.
     for (const auto & processor : pipe.getProcessors())
-        processor->setStorageLimits(storage_limits);
+        processor->setStorageLimits(query_info.storage_limits);
 
     /// Add to processors to get processor info through explain pipeline statement.
     for (const auto & processor : pipe.getProcessors())
@@ -648,9 +649,9 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             return pipe;
         }
 
-        NumbersLikeUtils::checkLimits(context->getSettingsRef(), total_count);
+        NumbersLikeUtils::checkLimits(*context, total_count);
 
-        UInt64 wrapping_step = UInt64(0) - numbers_storage.step;
+        UInt64 wrapping_step = common::negateIgnoreOverflow(numbers_storage.step);
         auto source = std::make_shared<SimpleSteppedNumbersSource>(
             max_block_size, numbers_storage.offset, wrapping_step, total_count, numbers_storage.column_name);
         source->addTotalRowsApprox(total_count);
@@ -686,6 +687,10 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     if (!numbers_storage.limit.has_value() && NumbersLikeUtils::isUniverse(extracted_ranges.ranges) && !can_pushdown_query_limit)
     {
         chassert(numbers_storage.step == 1);
+
+        /// The chunks of all streams together must fit into the range of `UInt64`, otherwise they overlap.
+        if (num_streams > std::numeric_limits<UInt64>::max() / max_block_size)
+            num_streams = std::numeric_limits<UInt64>::max() / max_block_size;
 
         /// Distance between the starts of consecutive chunks in a single source.
         /// For multiple streams, each source jumps by `num_streams * block_range` to avoid overlap.
@@ -789,7 +794,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         shrinkRanges(intersected_ranges, static_cast<size_t>(total_size));
     }
 
-    NumbersLikeUtils::checkLimits(context->getSettingsRef(), size_t(total_size));
+    NumbersLikeUtils::checkLimits(*context, size_t(total_size));
 
     /// Don't start more streams than can be meaningfully filled with at least one block.
     if (total_size / max_block_size < num_streams)

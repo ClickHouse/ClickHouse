@@ -19,16 +19,16 @@ ClickPipes metrics use the [standard service-level labels](/products/cloud/featu
 | `clickpipe_id`     | The unique identifier of the ClickPipe                                  |
 | `clickpipe_name`   | The name of the ClickPipe                                               |
 | `clickpipe_source` | The source type (e.g., `kafka`, `postgres`, `s3`)                       |
-| `clickpipe_state`  | The state of the ClickPipe (e.g., `Stopped`, `Provisioning`, `Running`) |
+| `clickpipe_status` | The state of the ClickPipe (e.g., `Stopped`, `Provisioning`, `Running`) |
 
 ### Sample response {#sample-response}
 
 The following shows what ClickPipes metrics look like in a Prometheus scrape response for a Kafka ClickPipe. The set of exposed metrics varies by pipe type — see [Available metrics](#available-metrics) for which metrics apply to which pipe types:
 
 ```response
-# HELP ClickPipes_Info Always equal to 1. Label "clickpipe_state" contains the current state of the pipe: Stopped/Provisioning/Running/Paused/Failed
+# HELP ClickPipes_Info Always equal to 1. Label "clickpipe_status" contains the current state of the pipe: Stopped/Provisioning/Running/Paused/Failed
 # TYPE ClickPipes_Info gauge
-ClickPipes_Info{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent",clickpipe_state="Running"} 1
+ClickPipes_Info{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent",clickpipe_status="Running"} 1
 
 # HELP ClickPipes_FetchedEvents_Total Total number of records fetched from the source.
 # TYPE ClickPipes_FetchedEvents_Total counter
@@ -79,7 +79,6 @@ Not every metric is emitted by every pipe type. In particular, CDC ClickPipes ex
 |-------------------------------------|---------|---------------|-------------|
 | `ClickPipes_FetchedEvents_Total`    | Counter | Streaming, object storage | Total number of records fetched from the source. |
 | `ClickPipes_SentEvents_Total`       | Counter | Streaming, object storage | Total number of records sent to ClickHouse. |
-| `ClickPipes_FetchedEvents_PerTable` | Gauge   | CDC | Number of records fetched per destination table and event type. Uses additional `destination_table` and `event_type` labels. |
 
 ### Errors {#metrics-errors}
 
@@ -121,7 +120,7 @@ Not every metric is emitted by every pipe type. In particular, CDC ClickPipes ex
 
 | Metric                          | Type | Available for | Description |
 |---------------------------------|------|---------------|-------------|
-| `ClickPipes_Info`               | Gauge | All | Always equal to `1`. Use the `clickpipe_state` label to filter or alert on pipe state. |
+| `ClickPipes_Info`               | Gauge | All | Always equal to `1`. Use the `clickpipe_status` label to filter or alert on pipe state. |
 | `ClickPipes_LastFetchedBatchId` | Gauge | CDC | ID of the last batch fetched from the source. |
 | `ClickPipes_LastSentBatchId`    | Gauge | CDC | ID of the last batch sent to ClickHouse. |
 

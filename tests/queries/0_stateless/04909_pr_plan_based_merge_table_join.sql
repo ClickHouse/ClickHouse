@@ -34,7 +34,6 @@ INSERT INTO t_pbmj_dim_1 SELECT number * 100, 'dim_' || toString(number * 100) F
 INSERT INTO t_pbmj_dim_2 SELECT (number + 10) * 100, 'dim_' || toString((number + 10) * 100) FROM numbers(10);
 CREATE TABLE m_pbmj_dim ENGINE = Merge(currentDatabase(), '^t_pbmj_dim_[12]$');
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

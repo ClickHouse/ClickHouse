@@ -140,7 +140,7 @@ what will be equivalent to the following JDBC URL:
 
 ```sql
 jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01
-// credentials shoud be passed in `Properties`. Here it is just for example.
+// credentials should be passed in `Properties`. Here it is just for example.
 ```
 Note: no need to url encode JDBC URL or properties, they will be automatically encoded.
 
@@ -317,7 +317,7 @@ There are few ways to change the mapping:
     - `rs.getObject(1, Float64.class)` will return `Float64` value of `Int8` column.
     - `rs.getLong(1)` will return `Long` value of `Int8` column.
     - `rs.getByte(1)` can return `Byte` value of `Int16` column if it fits into `Byte`.
-- conversion from wider to narrower type isn't recommend because of data coruption risk.
+- conversion from wider to narrower type isn't recommended because of data corruption risk.
 - `Bool` type acts as number, too.
 - All number types can be read as `java.lang.String`.
 - Storing java `Float.MAX_VALUE` as `Float` has issue (https://github.com/ClickHouse/clickhouse-java/issues/809). Saving same value as `Double` solves the issue.
@@ -340,8 +340,8 @@ There are few ways to change the mapping:
 | Enum16                      | VARCHAR     | java.lang.String            |
 
 - `Enum8` and `Enum16` are mapped to `java.lang.String` by default.
-- Enum values can be read as numeric values using designtated getter method or `getObject(columnIndex, Integer.class)` method.
-- `Enum16` is mapped to short and Enum8 is mapped to byte internally. Reading `Enum16` as byte should be avoided because of data coruption risk.
+- Enum values can be read as numeric values using designated getter method or `getObject(columnIndex, Integer.class)` method.
+- `Enum16` is mapped to short and Enum8 is mapped to byte internally. Reading `Enum16` as byte should be avoided because of data corruption risk.
 - Enum values can be set as string or numeric value in `PreparedStatement`.
 
 **Date/Time Types**
@@ -444,7 +444,7 @@ The method accepts two arguments:
 - `typeName` - type name of the array elements. For example `Array(Int32)` -> `"Int32"`.
 - `elements` - actual array elements. For example `[[1, 2, 3], [4, 5, 6]]` -> `new Integer[][] {{1, 2, 3}, {4, 5, 6}}`.
 
-Tuple can be presented as `Object[]` or as `java.sql.Struct` (See how to write tuples bellow).
+Tuple can be presented as `Object[]` or as `java.sql.Struct` (See how to write tuples below).
 
 **Example**
 ```java
@@ -671,7 +671,7 @@ map.put("key3", new HashMap<String, Object>() {{
     put("key5", "value5");
 }});
 ```
-There is more convinient option to read JSON as String by passing server setting `jdbc_read_json_as_string=true` to connection properties.
+There is a more convenient option to read JSON as String by passing server setting `jdbc_read_json_as_string=true` to connection properties.
 This makes driver return JSON values as String and can be used to parse using any JSON library.
 
 ```java
@@ -1049,7 +1049,7 @@ try (Connection conn = DriverManager.getConnection(url, properties)) {
 - `Dynamic` and `Variant` are new types in V2. Not supported in V1.
 - `JSON` is based on `Dynamic` type. Therefore it is supported only in V2.
 - IPv4 and IPv6 values can be read as `byte[]` by using `getBytes(columnIndex)` method. However it is recommended to use designated classes for these types.
-- V2 do not support reading IP address as numeric values because convertion is better implementation in InetAddress classes.
+- V2 do not support reading IP address as numeric values because conversion is better implementation in InetAddress classes.
 
 ### Database Metadata Changes {#database-metadata-changes}
 

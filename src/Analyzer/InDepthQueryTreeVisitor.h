@@ -42,7 +42,7 @@ public:
     using VisitQueryTreeNodeType = std::conditional_t<const_visitor, const QueryTreeNodePtr, QueryTreeNodePtr>;
 
     /// Return true if visitor should traverse tree top to bottom, false otherwise
-    bool shouldTraverseTopToBottom() const
+    [[nodiscard]] bool shouldTraverseTopToBottom() const
     {
         return true;
     }
@@ -71,7 +71,7 @@ private:
         return *static_cast<Derived *>(this);
     }
 
-    const Derived & getDerived() const
+    [[nodiscard]] const Derived & getDerived() const
     {
         return *static_cast<Derived *>(this);
     }
@@ -119,50 +119,30 @@ public:
         return true;
     }
 
-    const ContextPtr & getContext() const
+    [[nodiscard]] const ContextPtr & getContext() const
     {
         return current_context;
     }
 
-    const Settings & getSettings() const
+    [[nodiscard]] const Settings & getSettings() const
     {
         return current_context->getSettingsRef();
     }
 
-    size_t getSubqueryDepth() const
+    [[nodiscard]] size_t getSubqueryDepth() const
     {
         return subquery_depth;
     }
 
     void visit(VisitQueryTreeNodeType & query_tree_node)
     {
-        auto current_scope_context_ptr = current_context;
-        bool is_subquery_node = false;
-        SCOPE_EXIT(
-            current_context = std::move(current_scope_context_ptr);
-            if (is_subquery_node)
-                --subquery_depth;
-        );
-
+        /// Only a query or a union node changes the context and the subquery depth.
         if (auto * query_node = query_tree_node->template as<QueryNode>())
-        {
-            current_context = query_node->getContext();
-            is_subquery_node = true;
-        }
+            visitSubqueryNode(query_tree_node, query_node->getContext());
         else if (auto * union_node = query_tree_node->template as<UnionNode>())
-        {
-            current_context = union_node->getContext();
-            is_subquery_node = true;
-        }
-
-        if (is_subquery_node)
-            ++subquery_depth;
-
-        getDerived().enterImpl(query_tree_node);
-
-        visitChildren(query_tree_node);
-
-        getDerived().leaveImpl(query_tree_node);
+            visitSubqueryNode(query_tree_node, union_node->getContext());
+        else
+            visitNode(query_tree_node);
     }
 
     void enterImpl(VisitQueryTreeNodeType & node [[maybe_unused]])
@@ -176,9 +156,30 @@ private:
         return *static_cast<Derived *>(this);
     }
 
-    const Derived & getDerived() const
+    [[nodiscard]] const Derived & getDerived() const
     {
         return *static_cast<Derived *>(this);
+    }
+
+    void visitSubqueryNode(VisitQueryTreeNodeType & query_tree_node, ContextPtr subquery_context)
+    {
+        auto current_scope_context_ptr = std::exchange(current_context, std::move(subquery_context));
+        ++subquery_depth;
+        SCOPE_EXIT(
+            current_context = std::move(current_scope_context_ptr);
+            --subquery_depth;
+        );
+
+        visitNode(query_tree_node);
+    }
+
+    void visitNode(VisitQueryTreeNodeType & query_tree_node)
+    {
+        getDerived().enterImpl(query_tree_node);
+
+        visitChildren(query_tree_node);
+
+        getDerived().leaveImpl(query_tree_node);
     }
 
     void visitChildIfNeeded(

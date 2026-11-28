@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 
 # Arrow timestamps may carry a fixed numeric UTC offset (e.g. "+05:30", "-08:00", "00:00") or the
 # non-IANA marker "fixed" as their timezone. These are not loadable by cctz, so reading such a file

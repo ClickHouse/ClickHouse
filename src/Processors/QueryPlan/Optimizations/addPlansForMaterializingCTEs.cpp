@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -28,7 +29,7 @@ void addPlansForMaterializingCTEs(
     /// replacing the delayed one has to take over the strong handles - for exactly the CTEs
     /// it claimed. A CTE claimed by someone else (a recursive `buildSetInplace` that
     /// materialized it inplace) has its plan attached elsewhere and is owned there.
-    std::vector<MaterializedCTEPtr> ctes;
+    VectorWithMemoryTracking<MaterializedCTEPtr> ctes;
     ctes.reserve(claimed_ctes.size());
 
     for (auto & [cte, plan] : claimed_ctes)

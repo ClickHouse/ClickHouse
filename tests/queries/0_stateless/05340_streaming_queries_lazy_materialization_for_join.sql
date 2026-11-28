@@ -3,7 +3,6 @@
 -- ranges during execution, so a lazy read could not address the same rows. The other side of the join is still read
 -- lazily. Bounded streaming reads everything committed so far and finishes, so it runs synchronously.
 
-SET enable_analyzer = 1; -- streaming queries require the analyzer
 SET enable_streaming_queries = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_lazy_materialization_for_join = 1;

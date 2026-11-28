@@ -1,0 +1,86 @@
+-- The optimized JSON-to-JSON conversion must give the same result as format+parse. Every case runs with
+-- both values of json_use_optimized_type_conversion and only the cases whose results differ are printed,
+-- so the reference is the list of accepted differences. Split across two tests by runtime;
+-- 05816 has the new, changed, skip and setting-dependent cases.
+
+SET session_timezone = 'UTC';
+
+DROP TABLE IF EXISTS results;
+CREATE TABLE results (optimized UInt8, name String, result String) ENGINE = Memory;
+
+{% macro check(name, src, dst, rows, settings='') -%}
+{% for optimized in [1, 0] -%}
+INSERT INTO results
+SELECT {{ optimized }}, '{{ name }}', arrayStringConcat(arrayMap(x -> x.2, arraySort(groupArray((id,
+    concat(toString(j), ' ', toString(JSONDynamicPathsWithTypes(j)), ' ', toString(JSONSharedDataPathsWithTypes(j))))))), '; ')
+FROM (SELECT id, CAST(CAST(json AS {{ src }}) AS {{ dst }}) AS j
+      FROM values('id UInt32, json String', {% for row in rows %}({{ loop.index }}, '{{ row }}'){{ ', ' if not loop.last }}{% endfor %}))
+SETTINGS json_use_optimized_type_conversion = {{ optimized }}{{ ', ' ~ settings if settings }};
+{% endfor -%}
+{%- endmacro %}
+
+-- Removed typed paths, one representative per type family and the distinct text parsers.
+{% for type, rows in [
+    ('Int8', ['{"a": 1}', '{"a": -128}', '{"a": 127}', '{}']),
+    ('Bool', ['{"a": true}', '{"a": false}', '{}']),
+    ('Float64', ['{"a": 0.1}', '{"a": -3.25}', '{"a": 1e300}']),
+    ('Decimal64(3)', ['{"a": 1.125}']),
+    ('Date', ['{"a": "2024-01-15"}', '{"a": "1970-01-01"}']),
+    ('DateTime64(3)', ['{"a": "2024-01-15 12:30:00.123"}', '{"a": "2024-01-15 12:30:00.000"}', '{"a": "2280-01-01 00:00:00.123"}']),
+    ('String', ['{"a": "abc"}', '{"a": ""}', '{}']),
+    ('UUID', ['{"a": "550e8400-e29b-41d4-a716-446655440000"}']),
+    ('IPv4', ['{"a": "1.2.3.4"}']),
+    ('Nullable(Int16)', ['{"a": 1}', '{"a": null}', '{}']),
+    ('Array(Int8)', ['{"a": [1, 2, 3]}', '{"a": [-1]}']),
+    ('Array(Nullable(Int32))', ['{"a": [1, null]}']),
+    ('Array(String)', ['{"a": ["x", "y"]}']),
+    ("Enum8('x' = 1, 'y' = 2)", ['{"a": "x"}']),
+    ('LowCardinality(Nullable(String))', ['{"a": "abc"}', '{"a": null}']),
+] -%}
+{{ check('removed ' ~ type | replace("'", ""), 'JSON(a ' ~ type ~ ')', 'JSON', rows) }}
+{{ check('removed ' ~ type | replace("'", "") ~ ' to shared data',
+         'JSON(max_dynamic_paths = 0, a ' ~ type ~ ')', 'JSON(max_dynamic_paths = 0)', rows) }}
+{% endfor %}
+
+{% set date32_outside_date_range = ['{"a": "1900-01-01"}', '{"a": "2299-12-31"}'] -%}
+{{ check('removed Date32 outside the Date range', 'JSON(a Date32)', 'JSON', date32_outside_date_range) }}
+{{ check('removed Date32 outside the Date range to shared data',
+         'JSON(max_dynamic_paths = 0, a Date32)', 'JSON(max_dynamic_paths = 0)', date32_outside_date_range) }}
+
+-- A LowCardinality typed path is promoted like its dictionary type.
+{% for type, rows in [
+    ('LowCardinality(DateTime)', ['{"a": "2024-01-15 12:30:00"}', '{}']),
+    ('LowCardinality(Nullable(DateTime))', ['{"a": "2024-01-15 12:30:00"}', '{"a": null}']),
+    ('LowCardinality(Int32)', ['{"a": 5}', '{}']),
+    ('Array(LowCardinality(String))', ['{"a": ["x", "y"]}']),
+] -%}
+{{ check('removed ' ~ type, 'JSON(a ' ~ type ~ ')', 'JSON', rows, 'allow_suspicious_low_cardinality_types = 1') }}
+{% endfor %}
+
+-- SimpleAggregateFunction(any, Bool) serializes true/false like Bool, so the parser infers Bool, not Int64.
+{{ check('removed SimpleAggregateFunction(any, Bool)', 'JSON(a SimpleAggregateFunction(any, Bool))', 'JSON', ['{"a": true}', '{"a": false}']) }}
+{{ check('removed SimpleAggregateFunction(any, Bool) to shared data',
+         'JSON(max_dynamic_paths = 0, a SimpleAggregateFunction(any, Bool))', 'JSON(max_dynamic_paths = 0)', ['{"a": true}']) }}
+{{ check('removed Array(SimpleAggregateFunction(any, Bool))', 'JSON(a Array(SimpleAggregateFunction(any, Bool)))', 'JSON', ['{"a": [true, false]}']) }}
+
+-- A changed String path to Date goes through the parser (a CAST would read the date out of a longer string).
+{{ check('changed String to Date full date', 'JSON(a String)', 'JSON(a Date)', ['{"a": "2024-01-15"}', '{"a": "1970-01-01"}']) }}
+-- A changed String path to DateTime follows the parser's overflow policy: it saturates by default.
+{{ check('changed String to DateTime overflow saturates by default', 'JSON(a String)', 'JSON(a DateTime)', ['{"a": "2024-01-15 12:30:00"}', '{"a": "2280-01-01 00:00:00"}']) }}
+
+-- Dropping an unused enum member keeps a value that is still in the destination.
+{{ check('changed enum drops unused member', "JSON(a Enum8('x' = 1, 'y' = 2))", "JSON(a Enum8('x' = 1))", ['{"a": "x"}']) }}
+
+-- A valid string reaches a Nullable typed path through a CAST to the nested type, wrapped in Nullable.
+{{ check('changed String to Nullable(UUID)', 'JSON(a String)', 'JSON(a Nullable(UUID))', ['{"a": "550e8400-e29b-41d4-a716-446655440000"}']) }}
+{{ check('changed Nullable(String) to Nullable(UUID)', 'JSON(a Nullable(String))', 'JSON(a Nullable(UUID))', ['{"a": "550e8400-e29b-41d4-a716-446655440000"}', '{"a": null}']) }}
+{{ check('changed Array(String) to Array(Nullable(Int64))', 'JSON(a Array(String))', 'JSON(a Array(Nullable(Int64)))', ['{"a": ["1", "2"]}']) }}
+
+-- Dropping the Nullable of array elements that hold no NULL reuses the source elements, which stay shared.
+{{ check('changed Array(Nullable(Int64)) without NULLs to Array(Int64)', 'JSON(a Array(Nullable(Int64)))', 'JSON(a Array(Int64))', ['{"a": [1, 2]}', '{"a": [3]}']) }}
+
+SELECT name, optimized, result FROM results
+WHERE name IN (SELECT name FROM results GROUP BY name HAVING uniqExact(result) > 1)
+ORDER BY name, optimized DESC;
+
+DROP TABLE results;

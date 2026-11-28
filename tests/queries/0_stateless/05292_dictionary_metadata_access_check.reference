@@ -1,0 +1,57 @@
+--- no grants
+SELECT dictGet('d', 'no_such_attribute', toUInt64(1))
+ACCESS_DENIED
+DESCRIBE (SELECT dictGet('d', 'value', toUInt64(1)))
+ACCESS_DENIED
+SELECT dictGet('d', 'value', number) FROM numbers(0)
+ACCESS_DENIED
+SELECT dictGetOrDefault('d', 'value', toUInt64(1), 'x')
+ACCESS_DENIED
+SELECT dictGetOrNull('d', 'value', toUInt64(1))
+ACCESS_DENIED
+SELECT dictGetKeys('d', 'value', 'a')
+ACCESS_DENIED
+SELECT dictGetKeys('d', 'no_such_attribute', 'a')
+ACCESS_DENIED
+SELECT naiveBayesClassifier('d', 'good')
+ACCESS_DENIED
+--- dictGet
+DESCRIBE (SELECT dictGet('d', 'value', toUInt64(1)))
+dictGet(\'d\', \'value\', toUInt64(1))	String					
+SELECT dictGet('d', 'no_such_attribute', toUInt64(1))
+No such attribute
+SELECT dictGetKeys('d', 'no_such_attribute', 'a')
+has no attribute
+SELECT naiveBayesClassifier('d', 'good')
+NAIVE_BAYES layout
+--- missing dictionary, no grants
+SELECT dictGet('no_such_dictionary', 'value', toUInt64(1))
+ACCESS_DENIED
+SELECT dictGetKeys('no_such_dictionary', 'value', 'a')
+ACCESS_DENIED
+SELECT naiveBayesClassifier('no_such_dictionary', 'good')
+ACCESS_DENIED
+SELECT * FROM dictionary('no_such_dictionary')
+ACCESS_DENIED
+--- identifier, no grants
+SELECT dictGet(d, 'value', toUInt64(1))
+ACCESS_DENIED
+SELECT dictGet(no_such_dictionary, 'value', toUInt64(1))
+ACCESS_DENIED
+SELECT dictHas(no_such_dictionary, toUInt64(1))
+ACCESS_DENIED
+SELECT dictGetKeys(no_such_dictionary, 'value', 'a')
+ACCESS_DENIED
+SELECT naiveBayesClassifier(no_such_dictionary, 'good')
+ACCESS_DENIED
+--- missing dictionary, dictGet
+SELECT dictGet('no_such_dictionary', 'value', toUInt64(1))
+not found
+SELECT dictGetKeys('no_such_dictionary', 'value', 'a')
+not found
+SELECT naiveBayesClassifier('no_such_dictionary', 'good')
+not found
+SELECT * FROM dictionary('no_such_dictionary')
+not found
+SELECT dictGet(no_such_dictionary, 'value', toUInt64(1))
+not found

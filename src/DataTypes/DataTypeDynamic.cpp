@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeDynamic.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/Serializations/SerializationDynamicElement.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
@@ -21,6 +22,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <base/find_symbols.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -281,6 +283,8 @@ SELECT d::Nullable(Float64) FROM test;
 │                            0 │
 └──────────────────────────────┘
 ```
+
+A type that cannot be converted to the destination type causes an error only if the column contains values of this type.
 
 ### Converting a Variant column to Dynamic column {#converting-a-variant-column-to-dynamic-column}
 
@@ -1030,7 +1034,8 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
         nested_name_to_store,
         is_null_map_subcolumn,
         nullable_added_by_extraction,
-        selected_subcolumn_is_null_map);
+        selected_subcolumn_is_null_map,
+        subcolumn_type_before_wrap);
 
     if (data.column)
     {
@@ -1057,7 +1062,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
                     nullptr,
                     variant_column.getNumVariants(),
                     selected_subcolumn_is_null_map);
-            res->data.column = creator->create(res->data.column);
+            res->data.column = creator->create(res->data.column, subcolumn_type_before_wrap);
         }
         /// Check if requested type was extracted from shared variant. In this case we should use
         /// VariantSubcolumnCreator to create full subcolumn from variant according to created null map.
@@ -1078,7 +1083,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
                     null_map_for_variant_from_shared_variant,
                     0,
                     selected_subcolumn_is_null_map);
-                res->data.column = creator.create(res->data.column);
+                res->data.column = creator.create(res->data.column, subcolumn_type_before_wrap);
             }
         }
         /// Provided Dynamic column doesn't have subcolumn of this type, just create column filled with default values.
@@ -1092,7 +1097,10 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
         else
         {
             auto column = res->data.type->createColumn();
-            column->insertManyDefaults(data.column->size());
+            if (res->data.type->isDefaultInsertTrivial())
+                column->insertManyDefaults(data.column->size());
+            else
+                res->data.type->insertManyDefaultsInto(*column, data.column->size());
             res->data.column = std::move(column);
         }
     }

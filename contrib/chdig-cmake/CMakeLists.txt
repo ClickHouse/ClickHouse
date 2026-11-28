@@ -16,10 +16,9 @@ if (NOT ENABLE_CHDIG OR NOT ENABLE_RUST)
     return()
 endif()
 
-clickhouse_import_crate(MANIFEST_PATH ../chdig/Cargo.toml FEATURES tls)
-clickhouse_config_crate_flags(chdig)
-add_library(ch_rust::chdig ALIAS chdig)
+clickhouse_add_rust_member(_ch_rust_chdig FEATURE chdig)
+add_library(ch_rust::chdig ALIAS _ch_rust_chdig)
 
 if (OS_DARWIN)
-    target_link_libraries(chdig INTERFACE "-framework AppKit")
+    target_link_libraries(_ch_rust_chdig INTERFACE "-framework AppKit")
 endif()

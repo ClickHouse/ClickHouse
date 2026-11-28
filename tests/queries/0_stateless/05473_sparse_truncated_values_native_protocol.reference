@@ -1,0 +1,3 @@
+truncated sparse values: caught expected exception INCORRECT_DATA
+sparse on insert: caught expected exception INCORRECT_DATA
+server alive	0

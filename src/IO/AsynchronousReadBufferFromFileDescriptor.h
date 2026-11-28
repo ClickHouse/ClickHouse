@@ -36,7 +36,7 @@ protected:
 
     const size_t required_alignment = 0;  /// For O_DIRECT both file offsets and memory addresses have to be aligned.
     size_t file_offset_of_buffer_end = 0; /// What offset in file corresponds to working_buffer.end().
-    size_t bytes_to_ignore = 0;           /// How many bytes should we ignore upon a new read request.
+    size_t bytes_to_ignore = 0;           /// How many bytes the next read request, or the one in flight, skips.
     int fd;
     bool direct_io;
     ThrottlerPtr throttler;

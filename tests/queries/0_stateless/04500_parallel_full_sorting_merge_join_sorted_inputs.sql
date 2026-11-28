@@ -26,8 +26,6 @@ INSERT INTO pfsmj_rio_left SELECT number, number FROM numbers(0, 2000);
 INSERT INTO pfsmj_rio_left SELECT number, number FROM numbers(2000, 2000);
 INSERT INTO pfsmj_rio_right SELECT number, number * 2 FROM numbers(0, 4000);
 
-SET enable_analyzer = 1;
-
 -- Generic already-sorted subqueries (the `ORDER BY k` is preserved because the query returns `l.k`, so the
 -- pre-join sort is a `FinishSorting`): must NOT be scattered.
 SELECT 'analyzer sorted_subquery_not_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 0

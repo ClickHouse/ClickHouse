@@ -150,7 +150,6 @@ public:
 
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
 
-    bool supportsParallelInsert() const override { return true; }
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
     bool supportsStreaming() const override { return true; }
@@ -216,6 +215,7 @@ public:
 
     /// Wait till replication queue's current last entry is processed or till size becomes 0
     /// If timeout is exceeded returns false
+    /// Throws if the current query is cancelled or exceeds `max_execution_time`, whatever its `timeout_overflow_mode`.
     bool waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode, std::unordered_set<String> source_replicas);
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
@@ -235,7 +235,7 @@ public:
     void getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay);
 
     /// Add a part to the queue of parts whose data you want to check in the background thread.
-    void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0);
+    void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0, bool after_read_error = false);
 
     DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override;
     std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;

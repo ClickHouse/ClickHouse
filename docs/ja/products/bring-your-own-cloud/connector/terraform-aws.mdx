@@ -8,24 +8,27 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
 managed モードは、お客様が所有する Amazon EKS クラスター上で動作します。各リリースには 4 つの Terraform ルートモジュール (以下、ルート) が同梱されており、要件を満たすクラスターを新規作成するか、既存の VPC またはクラスターに不足しているリソースを追加します。ルートは、システムノードグループとマネージドアドオン (`vpc-cni`、`kube-proxy`、`coredns`、`aws-ebs-csi-driver`) を備えたクラスターを作成するほか、IAM role、KMS キー、タグも作成します。なお、`existing-eks` は `install_addons` で指定したアドオンのみをインストールします。Helm ターゲットの場合は、その後 `clicklink clctl init` が Terraform の出力とプラットフォームバンドルを使用してプラットフォームレイヤーをインストールします。プラットフォームレイヤーには、Karpenter、AWS Load Balancer コントローラー、StorageClass、およびバージョンが固定されたコンポーネントが含まれます ([Terraform の出力からコネクタを初期化する](#hand-off)を参照) 。ルートを使用するには、Terraform 1.10 以降または OpenTofu 1.12 以降と、AWS プロバイダー `~> 6.0` が必要です。このページのすべてのコマンドで、`terraform` の代わりに `tofu` を使用できます。
 
-<Image img="/images/cloud/reference/byoc-connector-terraform-flow.svg" size="lg" alt="AWS 上の ClickHouse Connector の Terraform プロビジョニングフロー" />
+<div className="ch-image-lg">
+  <Frame>
+    ![AWS 上の ClickHouse Connector の Terraform プロビジョニングフロー](/images/cloud/reference/byoc-connector-terraform-flow.svg)
+  </Frame>
+</div>
 
 ## 始める前に {#before-you-begin}
 
 以下が必要です。
 
 * Terraform 1.10 以降または OpenTofu 1.12 以降、および AWS プロバイダー `~> 6.0`。
-* 選択したルートで必要となるリソースの作成・変更権限を持つ AWS アイデンティティ。
+* 選択したルートで必要となるリソースの作成と変更が許可された AWS アイデンティティ。
 * リリースアーカイブのダウンロードと検証に使用する `curl`、SHA-256 ツール (`sha256sum` または `shasum`) 、および `cosign`。
-* [登録](/ja/products/bring-your-own-cloud/connector/onboarding#registration)時に取得した以下の情報：すべてのルートで必要な `chart_repository_arn`、および最後に `init` へ引き渡すコネクタエンドポイント、登録トークン、プラットフォームバンドル。
+* [登録](/ja/products/bring-your-own-cloud/connector/onboarding#registration)時に取得したもの：すべてのルートで必要な `chart_repository_arn`、および最後に `init` へ引き渡すコネクタエンドポイント、登録トークン、プラットフォームバンドル。
 
-`production` および `existing-vpc` を使用する場合は、`clicklink clctl init` と `kubectl` を実行するマシンからプライベートな EKS API にどのようにアクセスするかを事前に検討しておいてください。VPN、踏み台サーバー、ピアリング接続されたネットワーク、SSM ポートフォワーディングなどの方法があります。
+`production` および `existing-vpc` を使用する場合は、`clicklink clctl init` と `kubectl` を実行するマシンからプライベート EKS API へどのように接続するかを事前に検討してください。VPN、踏み台ホスト、ピアリングされたネットワーク、SSM ポートフォワードなどの方法があります。
 
 <Steps titleSize="h2">
   <Step title="環境に適した Terraform ルートを選択する" id="choose-a-root">

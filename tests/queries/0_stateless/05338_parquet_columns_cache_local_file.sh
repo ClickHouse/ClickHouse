@@ -87,6 +87,13 @@ echo "--- reads disabled"
 run no_reads "use_columns_cache = 1, enable_reads_from_columns_cache = 0"
 events no_reads
 
+echo "--- a PREWHERE that keeps most rows of the cached columns does not change the cache"
+DENSE_QUERY="SELECT sum(id), sum(length(s)), sum(arraySum(arr)), sum(n), count(n), count() FROM file('${FILE}') PREWHERE (id + length(s) + arraySum(arr) + ifNull(n, 0)) % 7 != 0"
+$CLICKHOUSE_CLIENT -q "${DENSE_QUERY} SETTINGS use_columns_cache = 0"
+$CLICKHOUSE_CLIENT -q "${DENSE_QUERY} SETTINGS use_columns_cache = 1"
+run after_dense "use_columns_cache = 1"
+events after_dense
+
 echo "--- PREWHERE: the columns of the filter are written, the columns read after it are not"
 $CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"
 PREWHERE_QUERY="SELECT sum(id), sum(length(s)), count() FROM file('${FILE}') PREWHERE id % 7 = 0"
