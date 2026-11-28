@@ -18,6 +18,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The stress test fuzzes DDL: a `__fuzz_N` copy of a queue `CREATE` shares its `keeper_path` but keeps its own
+# `after_processing` when an `ALTER` below changes it in Keeper, and the server could not load the copy after a restart.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --ast_fuzzer_any_query=0"
+
 db="${CLICKHOUSE_DATABASE}"
 user_alter="s3queue_move_alter_${db}"
 user_create="s3queue_move_create_${db}"
