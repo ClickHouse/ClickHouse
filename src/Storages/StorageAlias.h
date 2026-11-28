@@ -28,6 +28,9 @@ public:
 
     bool isMergeTree() const override;
 
+    /// Answers for the target, as `isMergeTree` and `isRemote` do.
+    bool producesMergeableState(const ContextPtr & query_context) const override;
+
     bool readsFromOtherTables() const override { return true; }
     std::vector<StoragePtr> getUnderlyingStorages() const override
     {
