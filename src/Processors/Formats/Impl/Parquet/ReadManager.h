@@ -75,6 +75,7 @@ public:
     /// Not thread safe.
     ReadResult read();
 
+    /// Thread safe. Makes `read` return end of data, also if it is waiting in another thread.
     void cancel() noexcept;
 
 private:
@@ -141,6 +142,9 @@ private:
     std::priority_queue<Task, VectorWithMemoryTracking<Task>, Task::Comparator> delivery_queue TSA_GUARDED_BY(delivery_mutex);
     std::condition_variable delivery_cv;
     std::exception_ptr exception TSA_GUARDED_BY(delivery_mutex);
+    bool cancelled TSA_GUARDED_BY(delivery_mutex) = false;
+    /// Set at the end of `init`: `cancel` doesn't interrupt reading the metadata.
+    bool initialized TSA_GUARDED_BY(delivery_mutex) = false;
     RowGroupSelection row_groups_to_read;
 
     /// Used when `reader.row_groups_ordered_by_top_k`, see admitTopKRowGroups.
