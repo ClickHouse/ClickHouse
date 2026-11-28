@@ -1651,9 +1651,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             ///  - the non-analyzer path: getModifiedQueryInfo rewrites _table and _database
             ///    directly into the cloned AST, so sharing it across tables is incorrect;
             ///  - tables with row policies (they extend real_column_names differently);
-            ///  - Merge/Distributed/View storages (they interpret table_expression for
-            ///    query routing and nested plan building, so sharing a representative's
-            ///    table_expression would route reads to the wrong table);
+            ///  - storages whose read uses the query tree (`readRequiresAnalyzedQuery`: Merge,
+            ///    remote storages and wrappers over either) and views (they interpret
+            ///    table_expression for query routing and nested plan building, so sharing a
+            ///    representative's table_expression would route reads to the wrong table);
             ///  - when processed_stage > FetchColumns, because createPlanForTable will
             ///    either convert query_tree->toAST() (analyzer path, referencing the wrong
             ///    table) or call replaceDatabaseAndTable on the shared AST (non-analyzer
@@ -1671,8 +1672,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 && !row_policy_data_opt
                 && !query_references_table_virtual_column
                 && common_processed_stage == QueryProcessingStage::FetchColumns
-                && !std::dynamic_pointer_cast<StorageMerge>(storage)
-                && !std::dynamic_pointer_cast<StorageDistributed>(storage)
+                && !storage->readRequiresAnalyzedQuery()
                 && !storage->isView();
             /// The substitute read for a query over nothing but virtual columns depends on the storage,
             /// not only on its columns, see above.
@@ -1998,16 +1998,21 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     const NamesAndTypesList & child_only_columns,
     const std::optional<NameAndTypePair> & substitute_column,
     bool is_fetch_columns_stage,
+    bool select_only_required_columns,
     std::vector<std::pair<size_t, QueryTreeNodePtr>> & child_only_projection)
 {
     auto * query_node = query->as<QueryNode>();
     auto join_tree_type = query_node->getJoinTreeNode()->getNodeType();
     auto modified_query = query_node->cloneAndReplace(original_table_expression, replacement_table_expression);
 
+    const bool is_single_table
+        = join_tree_type == QueryTreeNodeType::TABLE || join_tree_type == QueryTreeNodeType::TABLE_FUNCTION;
+
     // For the case when join tree is just a table or a table function we don't need to do anything more,
-    // except for making the substitute read part of the projection at `FetchColumns`, as below for a JOIN:
-    // a child that analyzes the query itself (`Distributed`) would otherwise pick the smallest column of
-    // its own, while the shards pick theirs. This is the case of a `Merge` nested in another one, which
+    // unless only the required columns must be selected (a remote child at `FetchColumns`, which is reduced
+    // to its reads below), and except for making the substitute read part of the projection at `FetchColumns`,
+    // as below for a JOIN: a child that analyzes the query itself would otherwise pick the smallest column
+    // of its own, while the tables under it pick theirs. This is the case of a `Merge` nested in another one, which
     // removed the JOIN already. The substitute is projected even when the `Merge` declares a column of
     // the same name: the references to the `Merge` virtual columns are replaced by constants below, which
     // would leave the child query without any read of the child's own. A column cannot be appended to the
@@ -2023,8 +2028,7 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
         || hasWindowFunctionNodes(original_query_node.getProjectionNode())
         || (original_query_node.hasOrderBy()
             && (hasAggregateFunctionNodes(original_query_node.getOrderByNode()) || hasWindowFunctionNodes(original_query_node.getOrderByNode())));
-    if ((join_tree_type == QueryTreeNodeType::TABLE || join_tree_type == QueryTreeNodeType::TABLE_FUNCTION)
-        && !(has_columns_to_project && is_aggregating_query))
+    if (is_single_table && !select_only_required_columns && !(has_columns_to_project && is_aggregating_query))
     {
         if (has_columns_to_project)
         {
@@ -2060,6 +2064,7 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     // GROUP BY should be removed as well.
 
     auto * modified_query_node = modified_query->as<QueryNode>();
+    query_node = modified_query_node;
 
     /// An `ARRAY JOIN` result column is produced above the table, so a filter over it is not a filter
     /// over the table's own columns, and the child must not be asked to read it: `StorageMerge` reads
@@ -2079,18 +2084,21 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
                 modified_query_node->getWhere(), replacement_table_expression, context);
     }
 
-    // Remove the JOIN statement. As a result query will have a form like: SELECT * FROM <table> ...
-    modified_query = modified_query->cloneAndReplace(modified_query_node->getJoinTreeNodeTyped(), replacement_table_expression);
-    modified_query_node = modified_query->as<QueryNode>();
+    if (!is_single_table)
+    {
+        // Remove the JOIN statement. As a result query will have a form like: SELECT * FROM <table> ...
+        modified_query = modified_query->cloneAndReplace(modified_query_node->getJoinTreeNodeTyped(), replacement_table_expression);
+        modified_query_node = modified_query->as<QueryNode>();
 
-    query_node = modified_query->as<QueryNode>();
+        query_node = modified_query->as<QueryNode>();
 
-    // For backward compatibility we need to leave all filters related to this table.
-    // It may lead to some incorrect result.
-    if (query_node->hasPrewhere())
-        removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
-    if (query_node->hasWhere())
-        removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
+        // For backward compatibility we need to leave all filters related to this table.
+        // It may lead to some incorrect result.
+        if (query_node->hasPrewhere())
+            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
+        if (query_node->hasWhere())
+            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
+    }
 
     query_node->getGroupBy().getNodes().clear();
     /// A GROUP BY modifier must not outlive its clause: with no GROUP BY keys and no aggregate
@@ -2292,9 +2300,14 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 = std::make_shared<StorageSnapshot>(merge_storage_snapshot->storage, std::move(metadata_with_child_only_columns));
         }
 
+        /// A remote child (`isRemote`, also behind a wrapper or a `Merge`) builds the query it sends from this tree,
+        /// so at `FetchColumns` it must ask for the columns to read and nothing else. A `Merge` with only local tables
+        /// also reads this tree (`readRequiresAnalyzedQuery`) but sends no query, so it gets the tree as is.
+        const bool select_only_required_columns
+            = common_processed_stage == QueryProcessingStage::FetchColumns && storage->isRemote();
         std::vector<std::pair<size_t, QueryTreeNodePtr>> child_only_projection;
         modified_query_info.query_tree = replaceTableExpressionAndRemoveJoin(modified_query_info.query_tree, modified_query_info.table_expression, replacement_table_expression, modified_context, required_column_names, child_only_columns,
-            substitute_column, common_processed_stage == QueryProcessingStage::FetchColumns, child_only_projection);
+            substitute_column, common_processed_stage == QueryProcessingStage::FetchColumns, select_only_required_columns, child_only_projection);
         modified_query_info.table_expression = replacement_table_expression;
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 

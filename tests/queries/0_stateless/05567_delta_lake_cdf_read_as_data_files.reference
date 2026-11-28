@@ -1,0 +1,48 @@
+--- count
+43
+23
+--- only the columns of the change data feed
+delete	2	1
+delete	5	2
+delete	10	1
+delete	16	2
+delete	22	1
+delete	24	6
+insert	0	1
+insert	1	4
+insert	4	1
+insert	7	1
+insert	8	1
+insert	14	2
+insert	15	2
+insert	18	2
+insert	22	1
+insert	25	3
+update_postimage	9	3
+update_postimage	12	1
+update_postimage	18	1
+update_postimage	20	1
+update_preimage	9	3
+update_preimage	12	1
+update_preimage	18	1
+update_preimage	20	1
+--- only a partition column
+2023-12-22	4
+2023-12-23	6
+2023-12-24	6
+2023-12-25	3
+2023-12-29	4
+--- virtual columns
+1	0
+--- a subcolumn
+1	insert
+1	insert
+1	insert
+1	insert
+1	insert
+--- the number of threads
+1
+--- TopN query condition cache
+10
+10
+4

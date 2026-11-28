@@ -132,7 +132,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "input_format_*",
-      count: 133,
+      count: 135,
       settings: [
         { name: "input_format_allow_errors_num", path: "/input-format#input_format_allow_errors_num", default: "0" },
         { name: "input_format_allow_errors_ratio", path: "/input-format#input_format_allow_errors_ratio", default: "0" },
@@ -293,6 +293,8 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "input_format_values_accurate_types_of_literals", path: "/input-format#input_format_values_accurate_types_of_literals", default: "1" },
         { name: "input_format_values_deduce_templates_of_expressions", path: "/input-format#input_format_values_deduce_templates_of_expressions", default: "1" },
         { name: "input_format_values_interpret_expressions", path: "/input-format#input_format_values_interpret_expressions", default: "1" },
+        { name: "input_format_vortex_filter_push_down", path: "/input-format#input_format_vortex_filter_push_down", default: "1" },
+        { name: "input_format_vortex_preserve_order", path: "/input-format#input_format_vortex_preserve_order", default: "0" },
         { name: "input_format_with_names_use_header", path: "/input-format#input_format_with_names_use_header", default: "1" },
         { name: "input_format_with_types_use_header", path: "/input-format#input_format_with_types_use_header", default: "1" }
       ],
@@ -300,13 +302,14 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "output_format_*",
-      count: 116,
+      count: 119,
       settings: [
         { name: "output_format_always_write_decimal_point_in_float_and_decimal", path: "/output-format#output_format_always_write_decimal_point_in_float_and_decimal", default: "0" },
         { name: "output_format_arrow_compression_method", path: "/output-format#output_format_arrow_compression_method", default: "lz4_frame" },
         { name: "output_format_arrow_date_as_uint16", path: "/output-format#output_format_arrow_date_as_uint16", default: "0" },
         { name: "output_format_arrow_fixed_string_as_fixed_byte_array", path: "/output-format#output_format_arrow_fixed_string_as_fixed_byte_array", default: "1" },
         { name: "output_format_arrow_low_cardinality_as_dictionary", path: "/output-format#output_format_arrow_low_cardinality_as_dictionary", default: "0" },
+        { name: "output_format_arrow_max_record_batch_size_bytes", path: "/output-format#output_format_arrow_max_record_batch_size_bytes", default: "2147483646" },
         { name: "output_format_arrow_record_batch_size", path: "/output-format#output_format_arrow_record_batch_size", default: "0" },
         { name: "output_format_arrow_record_batch_size_bytes", path: "/output-format#output_format_arrow_record_batch_size_bytes", default: "0" },
         { name: "output_format_arrow_string_as_string", path: "/output-format#output_format_arrow_string_as_string", default: "1" },
@@ -314,6 +317,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "output_format_arrow_unsupported_types_as_binary", path: "/output-format#output_format_arrow_unsupported_types_as_binary", default: "1" },
         { name: "output_format_arrow_use_64_bit_indexes_for_dictionary", path: "/output-format#output_format_arrow_use_64_bit_indexes_for_dictionary", default: "0" },
         { name: "output_format_arrow_use_signed_indexes_for_dictionary", path: "/output-format#output_format_arrow_use_signed_indexes_for_dictionary", default: "1" },
+        { name: "output_format_arrow_uuid_as_fixed_byte_array", path: "/output-format#output_format_arrow_uuid_as_fixed_byte_array", default: "0" },
         { name: "output_format_avro_codec", path: "/output-format#output_format_avro_codec", default: '""' },
         { name: "output_format_avro_confluent_subject", path: "/output-format#output_format_avro_confluent_subject", default: '""' },
         { name: "output_format_avro_rows_in_file", path: "/output-format#output_format_avro_rows_in_file", default: "1" },
@@ -417,6 +421,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "output_format_trim_fixed_string", path: "/output-format#output_format_trim_fixed_string", default: "0" },
         { name: "output_format_tsv_crlf_end_of_line", path: "/output-format#output_format_tsv_crlf_end_of_line", default: "0" },
         { name: "output_format_values_escape_quote_with_quote", path: "/output-format#output_format_values_escape_quote_with_quote", default: "0" },
+        { name: "output_format_vortex_string_as_string", path: "/output-format#output_format_vortex_string_as_string", default: "1" },
         { name: "output_format_write_statistics", path: "/output-format#output_format_write_statistics", default: "1" }
       ],
       children: []
@@ -443,9 +448,10 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "type_json_*",
-      count: 5,
+      count: 6,
       settings: [
         { name: "type_json_allow_duplicated_key_with_literal_and_nested_object", path: "/type-json#type_json_allow_duplicated_key_with_literal_and_nested_object", default: "1" },
+        { name: "type_json_skip_duplicate_key_detection", path: "/type-json#type_json_skip_duplicate_key_detection", default: "0" },
         { name: "type_json_skip_duplicated_paths", path: "/type-json#type_json_skip_duplicated_paths", default: "0" },
         { name: "type_json_skip_invalid_typed_paths", path: "/type-json#type_json_skip_invalid_typed_paths", default: "0" },
         { name: "type_json_skip_null_typed_paths", path: "/type-json#type_json_skip_null_typed_paths", default: "0" },

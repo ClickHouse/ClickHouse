@@ -1,0 +1,412 @@
+---
+slug: /clickstack/managed-onboarding/monitoring-kubernetes-serverless
+title: 'Supervision de Kubernetes avec OpenTelemetry'
+sidebarTitle: 'Superviser Kubernetes'
+description: 'Installez deux collecteurs OpenTelemetry avec Helm pour envoyer les logs de conteneurs, les metrics des nœuds et du cluster ainsi que les événements Kubernetes directement vers ClickHouse Observability, puis explorez-les dans le Tableau de bord Kubernetes.'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'Kubernetes', 'k8s', 'OpenTelemetry collector', 'Helm', 'DaemonSet', 'kubeletstats', 'container logs', 'Kubernetes events', 'Kubernetes dashboard']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+<Info>
+  **En bref**
+
+  Stockez l&#39;endpoint et l&#39;API key de votre service dans votre cluster, installez deux collecteurs OpenTelemetry à partir du Chart Helm officiel avec les fichiers de valeurs ci-dessous, puis ouvrez le Tableau de bord Kubernetes. Les logs de conteneurs, les metrics des nœuds et du cluster ainsi que les événements Kubernetes sont envoyés directement vers ClickHouse Observability. Aucun autre composant ne s&#39;exécute dans votre cluster.
+
+  Durée estimée : environ 15 minutes
+</Info>
+
+Vous avez créé votre service ClickHouse Observability. Ce guide s&#39;adresse à vous si vos charges de travail s&#39;exécutent dans Kubernetes et que vous souhaitez observer le cluster lui-même : logs de conteneurs, consommation CPU et mémoire des groupes de conteneurs et des nœuds, et événements Kubernetes, étiquetés avec le namespace, le groupe de conteneurs et le nœud d&#39;origine afin d&#39;être corrélés dans le Tableau de bord Kubernetes intégré.
+
+L&#39;approche est celle, standard, d&#39;OpenTelemetry. Vous déployez deux collecteurs à partir du [Chart Helm OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector) : un **DaemonSet** sur chaque nœud pour les logs de conteneurs et les metrics des nœuds, et un **Déploiement** à réplique unique pour les événements Kubernetes et les metrics du cluster. Tous deux envoient les données directement au point de terminaison OTLP de votre service.
+
+<Note>
+  **Vous exécutez déjà des collecteurs OpenTelemetry dans votre cluster ?**
+
+  Conservez-les et ajoutez-leur simplement l&#39;exportateur, comme décrit dans [Connecter un collecteur OpenTelemetry](/fr/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector-serverless).
+</Note>
+
+## Prérequis {#prerequisites}
+
+* Un service ClickHouse Observability. Si vous n&#39;en avez pas encore, suivez le [Guide de démarrage](/fr/clickstack/observability/getting-started).
+* Un cluster Kubernetes hébergeant les charges de travail à surveiller, avec `kubectl` configuré pour ce cluster et disposant de la permission de créer des espaces de noms, des Secrets, des ConfigMaps et des rôles de cluster.
+* [Helm](https://helm.sh/). Le README du chart indique Helm 4.0 ou une version ultérieure comme prérequis.
+* Un accès HTTPS sortant sur le port `4318` depuis les groupes de conteneurs du collecteur vers l&#39;endpoint de télémétrie de votre service.
+
+## Déployer les collecteurs {#deploy-the-collectors}
+
+<Steps>
+  <Step title="Copiez vos informations de connexion" id="copy-connection-details">
+    Ouvrez votre service ClickHouse Observability. Tant qu’aucune donnée n’a été reçue, il affiche la page **Start sending telemetry**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Page Start sending telemetry affichant le service actuel, encore sans données, et trois options : Use an existing OpenTelemetry setup, Instrument with AI et Follow setup guides](/images/clickstack/getting-started/observability-start-sending-telemetry.png)
+      </Frame>
+    </div>
+
+    Sous **Use an existing OpenTelemetry setup**, sélectionnez **View connection details**, puis ouvrez l’onglet **Collector config**. Celui-ci affiche le bloc d’exportateur de votre service : l’URL du point de terminaison et un en-tête `authorization` contenant votre API key. Sélectionnez **Reveal key** pour afficher la clé complète.
+
+    <div className="ch-image-md">
+      <Frame>
+        ![Boîte de dialogue Set up OpenTelemetry avec l’onglet Collector config sélectionné, affichant un exportateur otlphttp avec l’endpoint masqué et un en-tête d’autorisation Bearer](/images/clickstack/getting-started/observability-collector-config.png)
+      </Frame>
+    </div>
+
+    À l’étape suivante, vous aurez besoin de ces deux valeurs séparément : l’endpoint, avec son schéma `https://` et son port, et l’API key seule, sans le préfixe `Bearer`. Les fichiers de valeurs ci-dessous ajoutent ce préfixe.
+
+    Vous pouvez retrouver ces valeurs à tout moment dans **Paramètres de l’équipe → Télémétrie gérée**.
+  </Step>
+
+  <Step title="Stockez-les dans votre cluster" id="store-connection-details">
+    Créez un namespace pour les collecteurs, un Secret contenant l&#39;API key et un ConfigMap contenant l&#39;endpoint. Les deux collecteurs les lisent via `extraEnvs`, de sorte que la clé n&#39;apparaît jamais dans un fichier de valeurs. Remplacez les deux espaces réservés par vos propres valeurs :
+
+    ```shell
+    kubectl create namespace otel-collectors
+
+    kubectl create secret generic hyperdx-secret \
+      --namespace otel-collectors \
+      --from-literal=HYPERDX_API_KEY='<your-api-key>'
+
+    kubectl create configmap otel-config-vars \
+      --namespace otel-collectors \
+      --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+    ```
+
+    Conservez l&#39;URL de base comme endpoint. N&#39;ajoutez pas `/v1/logs`, `/v1/traces` ou `/v1/metrics` à la fin, car l&#39;exportateur ajoute lui-même le chemin propre à chaque signal. Si vous préférez utiliser un autre namespace, reprenez-le systématiquement dans toutes les commandes ci-dessous : le Secret et la ConfigMap doivent se trouver dans le même namespace que les releases Helm.
+  </Step>
+
+  <Step title="Ajoutez le dépôt Helm OpenTelemetry" id="add-helm-repository">
+    ```shell
+    helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+    helm repo update open-telemetry
+    ```
+  </Step>
+
+  <Step title="Déployez le collecteur du cluster" id="deploy-cluster-collector">
+    Ce Déploiement à réplique unique collecte les **événements Kubernetes** et les **métriques à l’échelle du cluster** : conditions des nœuds, phases des groupes de conteneurs, ainsi que statut des déploiements et des répliques. Une seule réplique suffit : une seconde produirait des données en double.
+
+    Téléchargez le fichier de valeurs et installez-le :
+
+    ```shell
+    curl -fSL -o k8s_deployment.yaml \
+      https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/docs/clickstack/observability/example-datasets/_snippets/k8s_deployment.yaml
+
+    helm install --namespace otel-collectors k8s-otel-deployment open-telemetry/opentelemetry-collector \
+      --version 0.175.0 -f k8s_deployment.yaml
+    ```
+
+    <Accordion title="k8s_deployment.yaml">
+      ```yaml
+      # k8s_deployment.yaml
+      mode: deployment
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.161.0
+
+      # Un seul de ces collecteurs suffit : au-delà, les données seraient dupliquées
+      replicaCount: 1
+
+      presets:
+        kubernetesAttributes:
+          enabled: true
+          # Lorsque cette option est activée, le processeur extrait tous les labels du pod associé et les ajoute comme attributs de ressource.
+          # Le nom exact du label sert de clé.
+          extractAllPodLabels: true
+          # Lorsque cette option est activée, le processeur extrait toutes les annotations du pod associé et les ajoute comme attributs de ressource.
+          # Le nom exact de l'annotation sert de clé.
+          extractAllPodAnnotations: true
+        # Configure le collecteur pour recueillir les événements Kubernetes.
+        # Ajoute le k8sobject receiver au pipeline de logs et collecte les événements Kubernetes par défaut.
+        # Plus d'informations : https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+        kubernetesEvents:
+          enabled: true
+        # Configure le récepteur Kubernetes Cluster pour collecter les métriques au niveau du cluster.
+        # Ajoute le k8s_cluster receiver au pipeline de métriques et ajoute les règles nécessaires au ClusterRole.
+        # Plus d'informations : https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+        clusterMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: HYPERDX_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hyperdx-secret
+              key: HYPERDX_API_KEY
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        exporters:
+          otlp_http:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "Bearer ${env:HYPERDX_API_KEY}"
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlp_http
+            metrics:
+              exporters:
+                - otlp_http
+
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+      ```
+    </Accordion>
+
+    Les `presets` activent les récepteurs prédéfinis du chart, ainsi que les règles RBAC dont ils ont besoin. Le bloc `config` ajoute un exportateur `otlp_http`, qui lit l&#39;endpoint et la clé dans les variables d&#39;environnement, et le définit comme exportateur des pipelines `logs` et `metrics`. Tout le reste, y compris les processeurs `memory_limiter` et `batch`, provient des valeurs par défaut du chart.
+  </Step>
+
+  <Step title="Déployer le collecteur de nœud" id="deploy-node-collector">
+    Ce DaemonSet exécute un collecteur par nœud pour collecter les **logs des conteneurs** depuis `/var/log/pods`, les **métriques d’hôte** du nœud et les **métriques de l’agent de nœud Kubernetes** : CPU et mémoire de chaque groupe de conteneurs et de chaque conteneur, y compris le taux d’utilisation par rapport aux demandes (requests) et aux limites (limits).
+
+    ```shell
+    curl -fSL -o k8s_daemonset.yaml \
+      https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/docs/clickstack/observability/example-datasets/_snippets/k8s_daemonset.yaml
+
+    helm install --namespace otel-collectors k8s-otel-daemonset open-telemetry/opentelemetry-collector \
+      --version 0.175.0 -f k8s_daemonset.yaml
+    ```
+
+    <Accordion title="k8s_daemonset.yaml">
+      ```yaml
+      # k8s_daemonset.yaml
+      mode: daemonset
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.161.0
+
+      # Required to use the kubeletstats cpu/memory utilization metrics
+      clusterRole:
+        create: true
+        rules:
+          - apiGroups:
+              - ''
+            resources:
+              - nodes/proxy
+            verbs:
+              - get
+
+      presets:
+        logsCollection:
+          enabled: true
+        hostMetrics:
+          enabled: true
+        # Configures the Kubernetes Processor to add Kubernetes metadata.
+        # Adds the k8sattributes processor to all the pipelines and adds the necessary rules to ClusterRole.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+        kubernetesAttributes:
+          enabled: true
+          # When enabled, the processor will extract all labels for an associated pod and add them as resource attributes.
+          # The label's exact name will be the key.
+          extractAllPodLabels: true
+          # When enabled, the processor will extract all annotations for an associated pod and add them as resource attributes.
+          # The annotation's exact name will be the key.
+          extractAllPodAnnotations: true
+        # Configures the collector to collect node, pod, and container metrics from the kubelet API.
+        # Adds the kubeletstats receiver to the metrics pipeline and adds the necessary rules to ClusterRole.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+        kubeletMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: HYPERDX_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hyperdx-secret
+              key: HYPERDX_API_KEY
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        receivers:
+          kubeletstats:
+            insecure_skip_verify: true
+        exporters:
+          otlp_http:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "Bearer ${env:HYPERDX_API_KEY}"
+
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlp_http
+            metrics:
+              exporters:
+                - otlp_http
+
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+      ```
+    </Accordion>
+
+    Le préréglage `kubernetesAttributes` associe à chaque ligne de journal et à chaque métrique le groupe de conteneurs, l&#39;espace de noms, le nœud et la charge de travail dont elle provient, ainsi que les labels et annotations du groupe de conteneurs. Ce sont ces attributs qu&#39;utilise le Tableau de bord Kubernetes pour filtrer les données.
+
+    Le fichier définit `insecure_skip_verify: true` pour la connexion du collecteur à l&#39;agent de nœud Kubernetes (kubelet) local, car de nombreux clusters émettent des certificats kubelet qui ne couvrent pas l&#39;adresse du nœud. Cela n&#39;affecte pas la vérification TLS de l&#39;endpoint de votre service. En production, configurez des certificats kubelet de confiance et supprimez ce paramètre.
+
+    Vérifiez que les collecteurs s’exécutent, puis consultez leurs logs :
+
+    ```shell
+    kubectl get pods --namespace otel-collectors -l app.kubernetes.io/name=opentelemetry-collector
+    kubectl logs --namespace otel-collectors -l app.kubernetes.io/name=opentelemetry-collector --prefix --tail=50
+    ```
+
+    Vous devriez voir un groupe de conteneurs du Déploiement et un groupe de conteneurs du DaemonSet par nœud, tous à l’état `Running`. Un groupe de conteneurs en cours d’exécution ne garantit pas à lui seul que les données sont bien acheminées ; recherchez donc d’éventuelles erreurs d’exportation dans les log :
+
+    * Des réponses `401` ou `403` indiquent que l&#39;API key contenue dans le Secret est incorrecte, ou qu&#39;elle a été stockée avec un préfixe `Bearer` que le fichier de valeurs ajoute une seconde fois.
+    * Des réponses `404` indiquent généralement qu&#39;un path de signal tel que `/v1/logs` a été ajouté à la fin de l&#39;endpoint dans le ConfigMap.
+    * Des erreurs `no such host` ou TLS signalent une faute de frappe dans l&#39;endpoint ou un accès sortant bloqué sur le port `4318`.
+  </Step>
+</Steps>
+
+## Vérifier l’arrivée des données {#confirm-data-is-arriving}
+
+Revenez à la page **Start sending telemetry** de votre service et sélectionnez **Check for data**. Une fois la télémétrie reçue, le statut du service passe à **Data received** et le bouton **Start exploring** devient disponible.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Page Start sending telemetry affichant le statut du service Data received, une confirmation indiquant que vous pouvez commencer l’exploration, et le bouton Start exploring activé](/images/clickstack/getting-started/observability-data-received.png)
+  </Frame>
+</div>
+
+Sélectionnez **Start exploring** pour ouvrir **Recherche**, sélectionnez la source **Logs** et définissez l’intervalle de temps sur **Last 15 minutes**. Les logs des conteneurs de l’ensemble du cluster apparaissent en quelques secondes : les composants du cluster, tels que `kube-proxy` et `coredns`, figurent sous `ServiceName` aux côtés de vos charges de travail. Développez une ligne pour afficher ses **ResourceAttributes** : `k8s.namespace.name`, `k8s.pod.name`, `k8s.node.name` et les labels du groupe de conteneurs.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Recherche affichant les logs des conteneurs d’un cluster Kubernetes, avec les services kindnet, kube-proxy et sample-logs répertoriés dans le filtre ServiceName](/images/clickstack/getting-started/observability-kubernetes-logs.png)
+  </Frame>
+</div>
+
+Pour les metrics, ouvrez **Explorateur de graphiques**, sélectionnez **Time Series** et la source **Metrics**, puis tracez la moyenne (**Average**) de `k8s.pod.memory.usage` regroupée par `ResourceAttributes['k8s.pod.name']`. Laissez **Delta** décoché et sélectionnez **Run** pour comparer l’utilisation de la mémoire des différents groupes de conteneurs. Si le graphique présente des discontinuités, choisissez une granularité au moins égale à l’intervalle de collecte.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Explorateur de graphiques affichant l’utilisation moyenne de la mémoire des groupes de conteneurs Kubernetes, regroupée par nom de groupe de conteneurs](/images/clickstack/getting-started/observability-kubernetes-metrics.png)
+  </Frame>
+</div>
+
+Ouvrez ensuite **Tableaux de bord** dans la barre latérale et sélectionnez **Kubernetes** sous **Tableaux de bord prédéfinis**. Sélectionnez vos sources **Logs** et **Metrics** en haut de la page. Les onglets **Pods**, **Nodes** et **Namespaces** affichent l’utilisation du CPU et de la mémoire, le statut des groupes de conteneurs avec leur nombre de redémarrages, ainsi que les derniers événements d’avertissement Kubernetes. Affinez l’affichage à l’aide des filtres par groupe de conteneurs, déploiement, nœud, namespace et cluster.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Tableau de bord Kubernetes affichant l’utilisation du CPU et de la mémoire des groupes de conteneurs, un tableau des groupes de conteneurs avec leur statut et leur nombre de redémarrages, ainsi que les derniers événements d’avertissement Kubernetes](/images/clickstack/getting-started/observability-kubernetes-dashboard.png)
+  </Frame>
+</div>
+
+## Si rien ne s’affiche {#if-nothing-shows-up}
+
+* Consultez d’abord les logs du collecteur à l’aide de la commande `kubectl logs` ci-dessus. Les problèmes d’authentification, d’endpoint et de TLS y sont tous signalés, avec les codes d’erreur répertoriés ci-dessus.
+* Si un groupe de conteneurs reste bloqué à l’état `CreateContainerConfigError`, c’est que le Secret ou la ConfigMap est manquant, ou qu’il se trouve dans un namespace différent de celui de la Version Helm. `kubectl describe pod` indique le nom de l’objet manquant.
+* Si le groupe de conteneurs du DaemonSet reste bloqué à l’état `CreateContainerError` avec `path "/" is mounted on "/" but it is not a shared or slave mount`, c’est que le système de fichiers racine du nœud n’est pas un montage partagé, ce qu’exige le préréglage de metrics de l’hôte. Cela se produit sur les clusters locaux dont les nœuds s’exécutent dans des conteneurs. Exécutez `mount --make-rshared /` sur le nœud, puis supprimez le groupe de conteneurs pour qu’il soit recréé.
+* Si les logs arrivent mais pas les metrics, recherchez des erreurs `kubeletstats` dans les logs du DaemonSet. Le récepteur a besoin de la règle de rôle de cluster `nodes/proxy` définie dans le fichier de valeurs, ainsi que d’un accès à l’agent de nœud Kubernetes sur le port `10250`.
+* Si les metrics arrivent mais pas les logs, patientez une minute. Le récepteur de logs commence la lecture à la fin de chaque fichier : seules les lignes écrites après le démarrage du collecteur apparaissent, et les groupes de conteneurs qui n’écrivent aucun log ne produisent aucune donnée.
+* Élargissez l’intervalle de temps dans **Recherche** et supprimez tous les filtres. Il se peut que la source par défaut soit définie sur **Traces** plutôt que sur **Logs**.
+* Pour écarter un problème lié au service lui-même, accédez à **Paramètres de l’équipe → Télémétrie gérée** et utilisez **Send a Test Log**. Si ce log apparaît dans **Recherche**, le service reçoit bien les données et le problème se situe entre votre cluster et l’endpoint.
+
+## Ajouter la télémétrie des applications {#add-application-telemetry}
+
+Les deux collecteurs couvrent le cluster. Les traces, ainsi que les logs ou metrics que vos applications émettent via un SDK OpenTelemetry, doivent être exportés par l’application elle-même. Deux approches sont possibles.
+
+<Tabs>
+  <Tab title="Directement vers votre service" id="directly-to-your-service">
+    Instrumentez l’application et exportez directement vers l’endpoint géré, comme décrit dans [Instrumenter votre application avec OpenTelemetry](/fr/clickstack/managed-onboarding/instrument-application-serverless). Stockez les valeurs `OTEL_EXPORTER_OTLP_ENDPOINT` et `OTEL_EXPORTER_OTLP_HEADERS` de l’onglet **Env vars** dans un Secret et exposez-les au groupe de conteneurs sous forme de variables d’environnement.
+
+    Ajoutez les attributs Kubernetes issus de la downward API afin que la télémétrie soit corrélée avec les données d’infrastructure du Tableau de bord Kubernetes :
+
+    ```yaml
+    env:
+      - name: POD_NAME
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.name
+      - name: POD_UID
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.uid
+      - name: POD_NAMESPACE
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.namespace
+      - name: NODE_NAME
+        valueFrom:
+          fieldRef:
+            fieldPath: spec.nodeName
+      - name: OTEL_RESOURCE_ATTRIBUTES
+        value: k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME)
+    ```
+  </Tab>
+
+  <Tab title="Via le collecteur de nœud" id="through-the-node-collector">
+    Vous pouvez également passer par le DaemonSet, qui reçoit déjà de l’OTLP sur chaque nœud via les ports d’hôte `4317` pour gRPC et `4318` pour HTTP. Cette approche présente deux avantages : le collecteur ajoute l’API key, si bien que vos groupes de conteneurs ne la détiennent jamais, et son processeur `k8s_attributes` étiquette chaque span et chaque enregistrement de log avec le namespace, le nœud, la charge de travail et les labels du groupe de conteneurs émetteur, de sorte que les traces applicatives concordent avec les données d’infrastructure.
+
+    Le fichier de valeurs téléchargé n’achemine que les logs et les metrics. Ajoutez également l’exportateur au pipeline `traces`, puis mettez à niveau la Version :
+
+    ```yaml
+    # Ajouter à la section service.pipelines de k8s_daemonset.yaml
+          traces:
+            exporters:
+              - otlp_http
+    ```
+
+    ```shell
+    helm upgrade --namespace otel-collectors k8s-otel-daemonset open-telemetry/opentelemetry-collector \
+      --version 0.175.0 -f k8s_daemonset.yaml
+    ```
+
+    Configurez ensuite chaque application pour qu’elle cible le collecteur de son propre nœud. La downward API fournit l’adresse du nœud et l’UID du groupe de conteneurs :
+
+    ```yaml
+    env:
+      - name: HOST_IP
+        valueFrom:
+          fieldRef:
+            fieldPath: status.hostIP
+      - name: POD_UID
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.uid
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: http://$(HOST_IP):4318
+      - name: OTEL_EXPORTER_OTLP_PROTOCOL
+        value: http/protobuf
+      - name: OTEL_SERVICE_NAME
+        value: <your-service-name>
+      - name: OTEL_RESOURCE_ATTRIBUTES
+        value: k8s.pod.uid=$(POD_UID)
+    ```
+
+    Aucune API key n’est nécessaire au sein du cluster. Le collecteur retrouve le groupe de conteneurs grâce à l’UID indiqué dans `OTEL_RESOURCE_ATTRIBUTES` et ajoute lui-même `k8s.pod.name`, `k8s.namespace.name`, `k8s.node.name`, la charge de travail propriétaire et les labels du groupe de conteneurs. Il peut aussi identifier les groupes de conteneurs à partir de l’adresse source de la connexion, mais cela suppose que le réseau du cluster conserve l’IP du groupe de conteneurs sur le chemin du port d’hôte ; transmettez donc l’UID.
+  </Tab>
+</Tabs>
+
+## Étapes suivantes {#next-steps}
+
+* [Alertes](/fr/clickstack/observability/features/alerts) : configurez des alertes sur les redémarrages de groupes de conteneurs, les groupes de conteneurs en échec ou les pics d’erreurs dans les données que vous collectez désormais.
+* [Tableaux de bord](/fr/clickstack/observability/features/dashboards/overview) : partez du préréglage Kubernetes, ou enregistrez une requête de l’Explorateur de graphiques dans votre propre tableau de bord.
+* [Recherche](/fr/clickstack/observability/features/search) : interrogez les logs par `k8s.namespace.name` et `k8s.pod.name` avec une syntaxe de type Lucene ou en SQL.
+* [Logs et metrics locaux](/fr/clickstack/observability/example-datasets/local-data) : collectez les mêmes metrics d’hôte et fichiers de log sur des machines extérieures à Kubernetes.
+* [Composants du Collecteur OpenTelemetry pour Kubernetes](https://opentelemetry.io/docs/platforms/kubernetes/collector/components/) : les récepteurs et processeurs sur lesquels repose chaque préréglage, avec l’ensemble de leurs options.

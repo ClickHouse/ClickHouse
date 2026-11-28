@@ -14,19 +14,15 @@ keywords: ['конфигурация ClickStack', 'секреты Helm', 'нас
 
 В этом руководстве описаны параметры конфигурации для Helm-развертываний ClickStack. Базовую установку см. в [основном руководстве по Helm-развертыванию](/ru/clickstack/deployment/helm-v1).
 
-<div id="api-key-setup">
-  ## Настройка ключа API
-</div>
+## Настройка ключа API {#api-key-setup}
 
 После успешного развертывания ClickStack настройте ключ API, чтобы включить сбор телеметрических данных:
 
-1. **Откройте свой экземпляр HyperDX** через настроенный входной шлюз или конечную точку сервиса
-2. **Войдите в панель мониторинга HyperDX** и перейдите в настройки команды, чтобы создать или получить ключ API
+1. **Откройте свой инстанс интерфейса ClickStack** через настроенный входной шлюз или конечную точку сервиса
+2. **Войдите в панель мониторинга интерфейса ClickStack** и перейдите в настройки команды, чтобы создать или получить ключ API
 3. **Обновите свое развертывание**, добавив ключ API одним из следующих способов:
 
-<div id="api-key-values-file">
-  ### Способ 1: Обновление через Helm upgrade с файлом values
-</div>
+### Способ 1: Обновление через Helm upgrade с файлом values {#api-key-values-file}
 
 Добавьте API-ключ в файл `values.yaml`:
 
@@ -41,17 +37,13 @@ hyperdx:
 helm upgrade my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-<div id="api-key-set-flag">
-  ### Способ 2: обновление с помощью helm upgrade с флагом --set
-</div>
+### Способ 2: обновление с помощью helm upgrade с флагом `--set` {#api-key-set-flag}
 
 ```shell
 helm upgrade my-clickstack clickstack/clickstack --set hyperdx.apiKey="your-api-key-here"
 ```
 
-<div id="restart-pods">
-  ### Перезапустите поды, чтобы применить изменения
-</div>
+### Перезапустите поды, чтобы применить изменения {#restart-pods}
 
 После обновления API-ключа перезапустите поды, чтобы они подхватили новую конфигурацию:
 
@@ -63,15 +55,11 @@ kubectl rollout restart deployment my-clickstack-clickstack-app my-clickstack-cl
   Чарт автоматически создаёт секрет Kubernetes (`<release-name>-app-secrets`) с вашим API-ключом. Дополнительная настройка секрета не требуется, если только вы не хотите использовать внешний секрет.
 </Note>
 
-<div id="secret-management">
-  ## Управление секретами
-</div>
+## Управление секретами {#secret-management}
 
 Для хранения конфиденциальных данных, таких как ключи API или учетные данные базы данных, используйте секреты Kubernetes.
 
-<div id="using-pre-configured-secrets">
-  ### Использование предварительно настроенных secrets
-</div>
+### Использование предварительно настроенных secrets {#using-pre-configured-secrets}
 
 Helm-чарт включает шаблон секрета по умолчанию, расположенный в [`charts/clickstack/templates/secrets.yaml`](https://github.com/hyperdxio/helm-charts/blob/main/charts/clickstack/templates/secrets.yaml). Этот файл задаёт базовую структуру для управления secrets.
 
@@ -95,9 +83,7 @@ data:
 kubectl apply -f secrets.yaml
 ```
 
-<div id="creating-a-custom-secret">
-  ### Создание пользовательского секрета
-</div>
+### Создание пользовательского секрета {#creating-a-custom-secret}
 
 Создайте пользовательский секрет Kubernetes вручную:
 
@@ -106,9 +92,7 @@ kubectl create secret generic hyperdx-secret \
   --from-literal=API_KEY=my-secret-api-key
 ```
 
-<div id="referencing-a-secret">
-  ### Указание секрета в values.yaml
-</div>
+### Указание секрета в values.yaml {#referencing-a-secret}
 
 ```yaml
 hyperdx:
@@ -119,15 +103,11 @@ hyperdx:
         key: API_KEY
 ```
 
-<div id="ingress-setup">
-  ## Настройка входного шлюза
-</div>
+## Настройка входного шлюза {#ingress-setup}
 
-Чтобы открыть доступ к интерфейсу HyperDX и API по доменному имени, включите входной шлюз в `values.yaml`.
+Чтобы открыть доступ к интерфейсу ClickStack и API по доменному имени, включите входной шлюз в `values.yaml`.
 
-<div id="general-ingress-configuration">
-  ### Общая конфигурация входного шлюза
-</div>
+### Общая конфигурация входного шлюза {#general-ingress-configuration}
 
 ```yaml
 hyperdx:
@@ -143,9 +123,7 @@ hyperdx:
   `hyperdx.frontendUrl` должен совпадать с хостом входного шлюза и включать протокол (например, `https://hyperdx.yourdomain.com`). Это гарантирует корректную работу всех создаваемых ссылок, файлов cookie и перенаправлений.
 </Info>
 
-<div id="enabling-tls">
-  ### Включение TLS (HTTPS)
-</div>
+### Включение TLS (HTTPS) {#enabling-tls}
 
 Чтобы защитить развертывание с помощью HTTPS:
 
@@ -169,9 +147,7 @@ hyperdx:
       tlsSecretName: "hyperdx-tls"
 ```
 
-<div id="example-ingress-configuration">
-  ### Пример конфигурации входного шлюза
-</div>
+### Пример конфигурации входного шлюза {#example-ingress-configuration}
 
 Для справки: ниже показано, как выглядит сгенерированный ресурс входного шлюза:
 
@@ -202,9 +178,7 @@ spec:
       secretName: hyperdx-tls
 ```
 
-<div id="common-ingress-pitfalls">
-  ### Распространённые проблемы с входным шлюзом
-</div>
+### Распространённые проблемы с входным шлюзом {#common-ingress-pitfalls}
 
 **Настройка пути и rewrite:**
 
@@ -229,9 +203,7 @@ spec:
 kubectl -n ingress-nginx get pods -l app.kubernetes.io/name=ingress-nginx -o jsonpath="{.items[0].spec.containers[0].image}"
 ```
 
-<div id="otel-collector-ingress">
-  ## Входной шлюз для OTel collector
-</div>
+## Входной шлюз для OTel collector {#otel-collector-ingress}
 
 Если вам нужно открыть доступ к конечным точкам OTel collector (для трассировок, метрик и журналов) через входной шлюз, используйте конфигурацию `additionalIngresses`. Это полезно, если вы отправляете данные телеметрии извне кластера или хотите использовать для collector собственный домен.
 
@@ -267,9 +239,7 @@ hyperdx:
   Если вам не нужно открывать внешний доступ к OTel collector, эту конфигурацию можно пропустить. Для большинства пользователей достаточно общей настройки входного шлюза.
 </Note>
 
-<div id="troubleshooting-ingress">
-  ## Устранение неполадок входного шлюза
-</div>
+## Устранение неполадок входного шлюза {#troubleshooting-ingress}
 
 **Проверьте ресурс входного шлюза:**
 
@@ -306,9 +276,7 @@ curl -I https://hyperdx.yourdomain.com/_next/static/chunks/main-xxxx.js
 
 * После внесения изменений очистите кэш браузера и любой кэш CDN/proxy, чтобы не использовать устаревшие ресурсы
 
-<div id="customizing-values">
-  ## Настройка значений
-</div>
+## Настройка значений {#customizing-values}
 
 Вы можете изменить параметры с помощью флагов `--set`:
 
@@ -347,9 +315,7 @@ hyperdx:
 helm install my-clickstack clickstack/clickstack -f values.yaml
 ```
 
-<div id="next-steps">
-  ## Следующие шаги
-</div>
+## Следующие шаги {#next-steps}
 
 * [Варианты развертывания (v1.x)](/ru/clickstack/deployment/helm-deployment-options-v1) - Внешние системы и минимальные варианты развертывания
 * [Развертывания в Cloud (v1.x)](/ru/clickstack/deployment/helm-cloud-v1) - Конфигурации для GKE, EKS и AKS

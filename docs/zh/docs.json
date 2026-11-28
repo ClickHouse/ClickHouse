@@ -4,7 +4,7 @@
       "pages": [
         "zh/index"
       ],
-      "tab": "首页"
+      "tab": "Home"
     },
     {
       "menu": [
@@ -29,17 +29,17 @@
           "$ref": "./products/managed-postgres/navigation.json"
         }
       ],
-      "tab": "数据库"
+      "tab": "Databases"
     },
     {
       "menu": [
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "部署"
+          "item": "Deployments"
         },
         {
-        "$ref": "./products/cloud/navigation.json"
+          "$ref": "./products/cloud/navigation.json"
         },
         {
           "item": "BYOC",
@@ -56,7 +56,7 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "应用"
+          "item": "Applications"
         },
         {
           "$ref": "./clickstack/navigation.json"
@@ -67,22 +67,22 @@
         {
           "href": "https://langfuse.com/docs",
           "icon": "/images/icons/logo-langfuse.svg",
-          "item": "AI 工程"
+          "item": "AI Engineering"
         },
         {
           "href": "https://docs.runreveal.com/",
           "icon": "/images/integrations/logos/runreveal.webp",
-          "item": "安全"
+          "item": "Security"
         },
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "开源"
+          "item": "Open source"
         },
         {
           "item": "ClickStack",
           "pages": [
-            "zh/clickstack/index"
+            "zh/clickstack"
           ]
         },
         {
@@ -96,12 +96,12 @@
           "item": "LibreChat"
         }
       ],
-      "tab": "产品"
+      "tab": "Products"
     },
     {
       "menu": [
         {
-          "item": "生态系统",
+          "item": "Ecosystem",
           "pages": [
             "zh/integrations/home",
             "zh/integrations/data-catalogs"
@@ -117,7 +117,7 @@
           "$ref": "./integrations/connectors/navigation.json"
         }
       ],
-      "tab": "集成"
+      "tab": "Integrations"
     },
     {
       "menu": [
@@ -134,7 +134,7 @@
           "$ref": "./resources/about/navigation.json"
         }
       ],
-      "tab": "资源"
+      "tab": "Resources"
     }
   ]
 }

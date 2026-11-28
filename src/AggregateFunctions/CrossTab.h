@@ -9,8 +9,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 
-#include <type_traits>
-
 
 /** Aggregate function that calculates statistics on top of cross-tab:
   * - histogram of every argument and every pair of elements.
@@ -29,8 +27,6 @@ namespace ErrorCodes
 extern const int ARGUMENT_OUT_OF_BOUND;
 extern const int CORRUPTED_DATA;
 }
-
-struct CrossTabPhiSquaredWindowData;
 
 /// Common (count + maps) state layout.
 /// It is used as the aggregation state (`CrossTabAggregateData`) and also as a prefix for some window states
@@ -174,15 +170,6 @@ struct CrossTabCountsState
 
 struct CrossTabAggregateData : CrossTabCountsState
 {
-    static constexpr AggregateFunctionStateVariant state_representation = AggregateFunctionStateVariant::Aggregation;
-
-    using CrossTabCountsState::add;
-    using CrossTabCountsState::deserialize;
-    using CrossTabCountsState::merge;
-    using CrossTabCountsState::serialize;
-
-    void merge(const CrossTabPhiSquaredWindowData & other);
-
     /** See https://en.wikipedia.org/wiki/Cram%C3%A9r%27s_V
       *
       * φ² is χ² divided by the sample size (count).
@@ -289,9 +276,9 @@ struct CrossTabAggregateData : CrossTabCountsState
 ///
 /// It stores the contingency table as a bipartite graph: distinct `a` and `b` values are nodes, and each observed (a, b)
 /// pair is an edge with its count. This representation allows efficient iteration over all pairs that share the same `a`
-/// (row) or the same `b` (column), which is required to update φ² in add()/merge().
+/// (row) or the same `b` (column), which is required to update φ² in add().
 ///
-/// This base is used by window-friendly implementations of `cramersV`, `cramersVBiasCorrected`, and `contingency`.
+/// This is the state of the aggregate window function of `cramersV`, `cramersVBiasCorrected`, and `contingency`.
 ///
 /// Performance characteristics:
 /// - Fast when the joint distribution is sparse (each `a` is seen with only a few `b` values and vice versa),
@@ -315,8 +302,6 @@ struct CrossTabAggregateData : CrossTabCountsState
 /// which will be very slow.
 struct CrossTabPhiSquaredWindowData
 {
-    static constexpr AggregateFunctionStateVariant state_representation = AggregateFunctionStateVariant::Window;
-
     struct Edge
     {
         UInt32 a;
@@ -340,21 +325,17 @@ struct CrossTabPhiSquaredWindowData
     /// This could be implemented with additional hash maps (e.g. hash -> list of pairs), but that would
     /// increase memory usage and add extra hash-table lookups/overhead on every update.
     ///
-    /// We do a small number of hash-table lookups to map `hash1`/`hash2` to compact indices in add()/merge().
+    /// We do a small number of hash-table lookups to map `hash1`/`hash2` to compact indices in add().
     /// After that, all hot-path work (marginals, adjacency traversal, and phi_term_sum updates) operates on
     /// dense arrays/vectors, which is faster and more cache-friendly than repeated hash lookups.
 
 
-    /// Maps from hashed value -> compact index in arrays (a_hash_by_index[], a_marginal_count[], a_incident_edges[])
+    /// Maps from hashed value -> compact index in arrays (a_marginal_count[], a_incident_edges[])
     HashMapWithStackMemory<UInt64, UInt32, TrivialHash, 4> a_index_by_hash;
     HashMapWithStackMemory<UInt64, UInt32, TrivialHash, 4> b_index_by_hash;
 
     /// Map from (hash_a, hash_b) -> edge index in ab_edges[]
     HashMapWithStackMemory<UInt128, UInt32, UInt128Hash, 4> ab_edge_index_by_pair;
-
-    /// Reverse maps index (compact index -> hash)
-    VectorWithMemoryTracking<UInt64> a_hash_by_index;
-    VectorWithMemoryTracking<UInt64> b_hash_by_index;
 
     /// compact index -> marginal counts
     VectorWithMemoryTracking<UInt64> a_marginal_count;
@@ -367,15 +348,6 @@ struct CrossTabPhiSquaredWindowData
 
     /// All observed (a, b) pairs as edges
     VectorWithMemoryTracking<Edge> ab_edges;
-
-    /// Marks for "a" nodes used during merge() to avoid double-subtract/add.
-    /// During a merge we first adjust affected rows (all edges with affected `a`), then adjust affected
-    /// columns but must skip edges whose `a` was already handled by the row pass.
-    /// We mark affected `a` indices by setting `a_epoch_mark[a_idx] = epoch`. Since `epoch` is unique
-    /// for the current merge, we can test membership with a single integer compare without clearing the
-    /// mark array each time.
-    VectorWithMemoryTracking<UInt32> a_epoch_mark;
-    UInt32 epoch = 1;
 
     void add(UInt64 hash1, UInt64 hash2)
     {
@@ -423,239 +395,6 @@ struct CrossTabPhiSquaredWindowData
         applyColumnPhiDelta(b_idx, static_cast<Float64>(b_marginal_count[b_idx]), +1.0, edge_idx);
     }
 
-    void merge(const CrossTabPhiSquaredWindowData & other)
-    {
-        if (other.count == 0)
-            return;
-
-        /// Remap other indices -> our indices
-        VectorWithMemoryTracking<UInt32> map_a(other.a_hash_by_index.size());
-        VectorWithMemoryTracking<UInt32> map_b(other.b_hash_by_index.size());
-
-        /// Keep the affected node indices (in our indexing)
-        VectorWithMemoryTracking<UInt32> affected_a;
-        affected_a.reserve(other.a_hash_by_index.size());
-        for (size_t i = 0; i < other.a_hash_by_index.size(); ++i)
-        {
-            map_a[i] = getOrCreateIndexA(other.a_hash_by_index[i]);
-            affected_a.push_back(map_a[i]);
-        }
-
-        VectorWithMemoryTracking<UInt32> affected_b;
-        affected_b.reserve(other.b_hash_by_index.size());
-        for (size_t i = 0; i < other.b_hash_by_index.size(); ++i)
-        {
-            map_b[i] = getOrCreateIndexB(other.b_hash_by_index[i]);
-            affected_b.push_back(map_b[i]);
-        }
-
-        const UInt32 cur_epoch = epoch;
-        prepareMerge(affected_a, affected_b, cur_epoch);
-
-        /// Apply count changes
-        count += other.count;
-
-        for (size_t i = 0; i < other.a_marginal_count.size(); ++i)
-            a_marginal_count[map_a[i]] += other.a_marginal_count[i];
-
-        for (size_t i = 0; i < other.b_marginal_count.size(); ++i)
-            b_marginal_count[map_b[i]] += other.b_marginal_count[i];
-
-
-        /// Merge edges (joint counts)
-        for (const auto & edge : other.ab_edges)
-        {
-            const UInt64 hash_a = other.a_hash_by_index[edge.a];
-            const UInt64 hash_b = other.b_hash_by_index[edge.b];
-
-            const UInt32 a_idx = map_a[edge.a];
-            const UInt32 b_idx = map_b[edge.b];
-
-            const UInt128 pair_key{hash_a, hash_b};
-            auto * it = ab_edge_index_by_pair.find(pair_key);
-            if (it != ab_edge_index_by_pair.end())
-            {
-                ab_edges[it->getMapped()].count += edge.count;
-            }
-            else
-            {
-                chassert(ab_edges.size() < INVALID_EDGE_IDX);
-                const UInt32 new_edge_idx = static_cast<UInt32>(ab_edges.size());
-                ab_edges.push_back(Edge{a_idx, b_idx, edge.count});
-                ab_edge_index_by_pair[pair_key] = new_edge_idx;
-                a_incident_edges[a_idx].push_back(new_edge_idx);
-                b_incident_edges[b_idx].push_back(new_edge_idx);
-            }
-        }
-
-        finalizeMerge(affected_a, affected_b, cur_epoch);
-    }
-
-    /// Merge a CrossTabAggregateData (GROUP BY) state into the window-optimized representation.
-    /// This is used to support merging "aggregate" states in OVER()
-    void merge(const CrossTabAggregateData & other)
-    {
-        if (other.count == 0)
-            return;
-
-        VectorWithMemoryTracking<UInt32> affected_a;
-        affected_a.reserve(other.count_a.size());
-        for (const auto & [hash, _] : other.count_a)
-            affected_a.push_back(getOrCreateIndexA(hash));
-
-        VectorWithMemoryTracking<UInt32> affected_b;
-        affected_b.reserve(other.count_b.size());
-        for (const auto & [hash, _] : other.count_b)
-            affected_b.push_back(getOrCreateIndexB(hash));
-
-        const UInt32 cur_epoch = epoch;
-        prepareMerge(affected_a, affected_b, cur_epoch);
-
-        /// Apply count changes
-        count += other.count;
-        for (const auto & [hash, cnt] : other.count_a)
-            a_marginal_count[a_index_by_hash.at(hash)] += cnt;
-        for (const auto & [hash, cnt] : other.count_b)
-            b_marginal_count[b_index_by_hash.at(hash)] += cnt;
-
-        /// Merge edges (joint counts)
-        for (const auto & [pair_key, cnt_ab] : other.count_ab)
-        {
-            const UInt64 hash_a = pair_key.items[UInt128::_impl::little(0)];
-            const UInt64 hash_b = pair_key.items[UInt128::_impl::little(1)];
-
-            const UInt32 a_idx = a_index_by_hash.at(hash_a);
-            const UInt32 b_idx = b_index_by_hash.at(hash_b);
-
-            auto * it = ab_edge_index_by_pair.find(pair_key);
-            if (it != ab_edge_index_by_pair.end())
-            {
-                ab_edges[it->getMapped()].count += cnt_ab;
-            }
-            else
-            {
-                chassert(ab_edges.size() < INVALID_EDGE_IDX);
-                const UInt32 edge_idx = static_cast<UInt32>(ab_edges.size());
-                ab_edges.push_back(Edge{a_idx, b_idx, cnt_ab});
-                ab_edge_index_by_pair[pair_key] = edge_idx;
-                a_incident_edges[a_idx].push_back(edge_idx);
-                b_incident_edges[b_idx].push_back(edge_idx);
-            }
-        }
-
-        finalizeMerge(affected_a, affected_b, cur_epoch);
-    }
-
-    /// Keep the same serialization format as CrossTabAggregateData
-    void serialize(WriteBuffer & buf) const
-    {
-        writeBinary(count, buf);
-
-        HashMapWithStackMemory<UInt64, UInt64, TrivialHash, 4> count_a;
-        for (size_t i = 0; i < a_hash_by_index.size(); ++i)
-            count_a[a_hash_by_index[i]] = a_marginal_count[i];
-        count_a.write(buf);
-
-        HashMapWithStackMemory<UInt64, UInt64, TrivialHash, 4> count_b;
-        for (size_t i = 0; i < b_hash_by_index.size(); ++i)
-            count_b[b_hash_by_index[i]] = b_marginal_count[i];
-        count_b.write(buf);
-
-        HashMapWithStackMemory<UInt128, UInt64, UInt128Hash, 4> count_ab;
-        for (const auto & edge : ab_edges)
-        {
-            const UInt128 pair_key{a_hash_by_index[edge.a], b_hash_by_index[edge.b]};
-            count_ab[pair_key] = edge.count;
-        }
-        count_ab.write(buf);
-    }
-
-    void deserialize(ReadBuffer & buf)
-    {
-        clear();
-
-        readBinary(count, buf);
-
-        HashMapWithStackMemory<UInt64, UInt64, TrivialHash, 4> count_a;
-        HashMapWithStackMemory<UInt64, UInt64, TrivialHash, 4> count_b;
-        HashMapWithStackMemory<UInt128, UInt64, UInt128Hash, 4> count_ab;
-
-        count_a.read(buf);
-        count_b.read(buf);
-        count_ab.read(buf);
-
-        if (count_a.size() >= INVALID_EDGE_IDX || count_b.size() >= INVALID_EDGE_IDX || count_ab.size() >= INVALID_EDGE_IDX)
-            throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "Corrupted aggregate function state: number of unique values or pairs is too large "
-                "(count_a={}, count_b={}, count_ab={}, limit={})",
-                count_a.size(),
-                count_b.size(),
-                count_ab.size(),
-                INVALID_EDGE_IDX - 1);
-
-        CrossTabCountsState::validateDeserialized(count, count_a, count_b, count_ab);
-
-        /// Update the internal states
-        a_hash_by_index.reserve(count_a.size());
-        a_marginal_count.reserve(count_a.size());
-        a_incident_edges.reserve(count_a.size());
-        a_epoch_mark.reserve(count_a.size());
-
-        for (const auto & [hash, cnt] : count_a)
-        {
-            const UInt32 idx = static_cast<UInt32>(a_hash_by_index.size());
-            a_index_by_hash[hash] = idx;
-            a_hash_by_index.push_back(hash);
-            a_marginal_count.push_back(cnt);
-            a_incident_edges.emplace_back();
-
-            a_epoch_mark.push_back(0);
-        }
-
-        epoch = 1;
-
-        b_hash_by_index.reserve(count_b.size());
-        b_marginal_count.reserve(count_b.size());
-        b_incident_edges.reserve(count_b.size());
-
-        for (const auto & [hash, cnt] : count_b)
-        {
-            const UInt32 idx = static_cast<UInt32>(b_hash_by_index.size());
-            b_index_by_hash[hash] = idx;
-            b_hash_by_index.push_back(hash);
-            b_marginal_count.push_back(cnt);
-            b_incident_edges.emplace_back();
-        }
-
-        /// Additionally, compute `phi_term_sum` on the fly
-        ab_edges.reserve(count_ab.size());
-        phi_term_sum = 0.0;
-
-        for (const auto & [pair_key, cnt_ab] : count_ab)
-        {
-            const UInt64 hash_a = pair_key.items[UInt128::_impl::little(0)];
-            const UInt64 hash_b = pair_key.items[UInt128::_impl::little(1)];
-
-            const UInt32 a_idx = a_index_by_hash.at(hash_a);
-            const UInt32 b_idx = b_index_by_hash.at(hash_b);
-
-            const UInt32 edge_idx = static_cast<UInt32>(ab_edges.size());
-            ab_edges.push_back(Edge{a_idx, b_idx, cnt_ab});
-
-            ab_edge_index_by_pair[pair_key] = edge_idx;
-            a_incident_edges[a_idx].push_back(edge_idx);
-            b_incident_edges[b_idx].push_back(edge_idx);
-
-            const Float64 a = static_cast<Float64>(a_marginal_count[a_idx]);
-            const Float64 b = static_cast<Float64>(b_marginal_count[b_idx]);
-
-            chassert(a > 0 && b > 0 && "value frequencies are positive after validation");
-
-            phi_term_sum += phiTerm(cnt_ab, a, b);
-        }
-    }
-
     [[nodiscard]] Float64 getPhiSquared() const
     {
         if (count == 0)
@@ -683,75 +422,6 @@ struct CrossTabPhiSquaredWindowData
 
 private:
     static constexpr UInt32 INVALID_EDGE_IDX = UInt32(-1);
-
-    void prepareMerge(const VectorWithMemoryTracking<UInt32> & affected_a, const VectorWithMemoryTracking<UInt32> & affected_b, UInt32 cur_epoch)
-    {
-        for (UInt32 a_idx : affected_a)
-            a_epoch_mark[a_idx] = cur_epoch;
-
-        /// Remove old contributions for affected rows (all edges in those rows)
-        for (UInt32 a_idx : affected_a)
-        {
-            const UInt64 old_a = a_marginal_count[a_idx];
-            if (old_a)
-                applyRowPhiDelta(a_idx, static_cast<Float64>(old_a), -1.0);
-        }
-
-        /// Remove old contributions for affected columns, but only edges whose 'a' is NOT affected.
-        ///    Otherwise, we would double-subtract those edges
-        for (UInt32 b_idx : affected_b)
-        {
-            const UInt64 old_b = b_marginal_count[b_idx];
-            if (old_b)
-                adjustColumnPhiSkipMarkedA(b_idx, static_cast<Float64>(old_b), -1.0, cur_epoch);
-        }
-    }
-
-    void finalizeMerge(const VectorWithMemoryTracking<UInt32> & affected_a, const VectorWithMemoryTracking<UInt32> & affected_b, UInt32 cur_epoch)
-    {
-        /// Add new contributions back for affected rows
-        for (UInt32 a_idx : affected_a)
-        {
-            const UInt64 new_a = a_marginal_count[a_idx];
-            if (new_a)
-                applyRowPhiDelta(a_idx, static_cast<Float64>(new_a), +1.0);
-        }
-
-        /// Add new contributions back for affected columns, skipping edges whose 'a' is affected.
-        ///  Otherwise, we would double-add those edges
-        for (UInt32 b_idx : affected_b)
-        {
-            const UInt64 new_b = b_marginal_count[b_idx];
-            if (new_b)
-                adjustColumnPhiSkipMarkedA(b_idx, static_cast<Float64>(new_b), +1.0, cur_epoch);
-        }
-
-        ++epoch;
-
-        /// For theoretical correctness, we should now handle the case epoch == 0 by resetting all marks to 0 and setting epoch = 1.
-        /// This will require UINT32_MAX merges which is impossible in practice, so we skip for simplicity.
-    }
-
-    void clear()
-    {
-        count = 0;
-        phi_term_sum = 0.0;
-
-        a_index_by_hash.clear();
-        b_index_by_hash.clear();
-        ab_edge_index_by_pair.clear();
-
-        a_hash_by_index.clear();
-        b_hash_by_index.clear();
-        a_marginal_count.clear();
-        b_marginal_count.clear();
-        a_incident_edges.clear();
-        b_incident_edges.clear();
-        ab_edges.clear();
-
-        a_epoch_mark.clear();
-        epoch = 1;
-    }
 
     static Float64 phiTerm(UInt64 ab_count, Float64 a, Float64 b)
     {
@@ -789,14 +459,11 @@ private:
         if (it != a_index_by_hash.end())
             return it->getMapped();
 
-        chassert(a_hash_by_index.size() < INVALID_EDGE_IDX);
-        const UInt32 idx = static_cast<UInt32>(a_hash_by_index.size());
+        chassert(a_marginal_count.size() < INVALID_EDGE_IDX);
+        const UInt32 idx = static_cast<UInt32>(a_marginal_count.size());
         a_index_by_hash[hash] = idx;
-        a_hash_by_index.push_back(hash);
         a_marginal_count.push_back(0);
         a_incident_edges.emplace_back();
-
-        a_epoch_mark.push_back(0);
         return idx;
     }
 
@@ -806,71 +473,18 @@ private:
         if (it != b_index_by_hash.end())
             return it->getMapped();
 
-        chassert(b_hash_by_index.size() < INVALID_EDGE_IDX);
-        const UInt32 idx = static_cast<UInt32>(b_hash_by_index.size());
+        chassert(b_marginal_count.size() < INVALID_EDGE_IDX);
+        const UInt32 idx = static_cast<UInt32>(b_marginal_count.size());
         b_index_by_hash[hash] = idx;
-        b_hash_by_index.push_back(hash);
         b_marginal_count.push_back(0);
         b_incident_edges.emplace_back();
         return idx;
     }
-
-    void adjustColumnPhiSkipMarkedA(UInt32 b_idx, Float64 b, Float64 sign, UInt32 cur_epoch)
-    {
-        for (UInt32 e : b_incident_edges[b_idx])
-        {
-            const auto & edge = ab_edges[e];
-
-            /// This edge is already handled in row update
-            if (a_epoch_mark[edge.a] == cur_epoch)
-                continue;
-
-            const Float64 a = static_cast<Float64>(a_marginal_count[edge.a]);
-            phi_term_sum += sign * phiTerm(edge.count, a, b);
-        }
-    }
 };
-
-inline void CrossTabAggregateData::merge(const CrossTabPhiSquaredWindowData & other)
-{
-    if (other.count == 0)
-        return;
-
-    count += other.count;
-
-    for (size_t i = 0; i < other.a_hash_by_index.size(); ++i)
-        count_a[other.a_hash_by_index[i]] += other.a_marginal_count[i];
-
-    for (size_t i = 0; i < other.b_hash_by_index.size(); ++i)
-        count_b[other.b_hash_by_index[i]] += other.b_marginal_count[i];
-
-    for (const auto & edge : other.ab_edges)
-    {
-        const UInt128 pair_key{other.a_hash_by_index[edge.a], other.b_hash_by_index[edge.b]};
-        count_ab[pair_key] += edge.count;
-    }
-}
-
 
 template <typename Data>
 class AggregateFunctionCrossTab final : public IAggregateFunctionDataHelper<Data, AggregateFunctionCrossTab<Data>>
 {
-    static_assert(
-        Data::state_representation != AggregateFunctionStateVariant::Window
-            || std::is_base_of_v<CrossTabPhiSquaredWindowData, Data> || std::is_base_of_v<CrossTabCountsState, Data>,
-        "CrossTab window state must either derive from CrossTabPhiSquaredWindowData or keep CrossTabCountsState prefix (derive from "
-        "CrossTabCountsState).");
-
-    static_assert(
-        Data::state_representation != AggregateFunctionStateVariant::Window
-            || !std::is_base_of_v<CrossTabPhiSquaredWindowData, Data> || sizeof(Data) == sizeof(CrossTabPhiSquaredWindowData),
-        "CrossTab window state derived from CrossTabPhiSquaredWindowData must not add data members; it is merged as "
-        "CrossTabPhiSquaredWindowData.");
-
-    static_assert(
-        Data::state_representation != AggregateFunctionStateVariant::Aggregation || std::is_base_of_v<CrossTabAggregateData, Data>,
-        "CrossTab aggregation state must derive from CrossTabAggregateData.");
-
 public:
     explicit AggregateFunctionCrossTab(const DataTypes & arguments)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionCrossTab<Data>>({arguments}, {}, createResultType())
@@ -893,7 +507,20 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        mergeChecked(this->data(place), this->data(rhs));
+        auto & dst = this->data(place);
+        const auto & src = this->data(rhs);
+
+        /// Every count of a state is at most its total `count`, so no count overflows if the merged total fits.
+        UInt64 merged_count = 0;
+        if (common::addOverflow(dst.count, src.count, merged_count))
+            throw Exception(
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "Cannot merge states of aggregate function {}: the total number of rows ({} + {}) does not fit into UInt64",
+                getName(),
+                dst.count,
+                src.count);
+
+        dst.merge(src);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
@@ -906,82 +533,11 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        /// `AggregateFunctionStateVariant` has exactly two values, so a different variant is sufficient:
-        ///  - if we are Window, rhs must be Aggregation (merge aggregation states into the window representation).
-        ///  - if we are Aggregation, rhs must be Window (merge window states into the aggregation representation).
-        ///    There are two window state layouts in this family:
-        ///      * CrossTabPhiSquaredWindowData — used by cramersV, cramersVBiasCorrected, contingency.
-        ///      * TheilsUWindowData — keeps CrossTabCountsState as a prefix and adds cached entropy sums.
-        return rhs.getStateVariant() != getStateVariant();
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena *) const override
-    {
-        chassert(canMergeStateFromDifferentVariant(rhs));
-
-        auto & dst = this->data(place);
-
-        if constexpr (Data::state_representation == AggregateFunctionStateVariant::Window)
-        {
-            mergeChecked(dst, *reinterpret_cast<const CrossTabAggregateData *>(rhs_place));
-        }
-        else
-        {
-            /// By default, window state for this family is CrossTabPhiSquaredWindowData-based.
-            /// If a specific aggregate function has a different window state layout, it can declare:
-            ///   using WindowData = <its window state type>;
-            ///   void merge(const WindowData &);
-            if constexpr (requires { typename Data::WindowData; }) /// Only TheilsUData declares it
-            {
-                using WindowData = typename Data::WindowData;
-                static_assert(
-                    std::is_base_of_v<CrossTabCountsState, WindowData>,
-                    "CrossTab custom window state must keep CrossTabCountsState prefix (derive from CrossTabCountsState).");
-                static_assert(requires(Data & data, const WindowData & other) { data.merge(other); });
-
-                mergeChecked(dst, *reinterpret_cast<const WindowData *>(rhs_place));
-            }
-            else
-            {
-                mergeChecked(dst, *reinterpret_cast<const CrossTabPhiSquaredWindowData *>(rhs_place));
-            }
-        }
-    }
-
-    [[nodiscard]] AggregateFunctionStateVariant getStateVariant() const override
-    {
-        if constexpr (Data::state_representation == AggregateFunctionStateVariant::Window)
-            return AggregateFunctionStateVariant::Window;
-        return AggregateFunctionStateVariant::Aggregation;
-    }
-
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         Float64 result = this->data(place).getResult();
         auto & column = static_cast<ColumnVector<Float64> &>(to);
         column.getData().push_back(result);
-    }
-
-private:
-    /// Every count of a state is at most its total `count`, so no count overflows if the merged total fits.
-    template <typename Src>
-    void mergeChecked(Data & dst, const Src & src) const
-    {
-        UInt64 merged_count = 0;
-        if (common::addOverflow(dst.count, src.count, merged_count))
-            throw Exception(
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                "Cannot merge states of aggregate function {}: the total number of rows ({} + {}) does not fit into UInt64",
-                getName(),
-                dst.count,
-                src.count);
-        dst.merge(src);
     }
 };
 

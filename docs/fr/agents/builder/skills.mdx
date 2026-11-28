@@ -1,8 +1,8 @@
 ---
-sidebarTitle: 'Skills'
+sidebarTitle: 'Compétences'
 slug: /agents/builder/skills
-title: 'Skills'
-description: 'Ensembles d’instructions réutilisables pour ClickHouse Agents'
+title: 'Compétences'
+description: "Ensembles d'instructions réutilisables pour ClickHouse Agents"
 keywords: ['AI', 'ClickHouse Cloud', 'agents', 'skills', 'SKILL.md']
 doc_type: 'reference'
 ---
@@ -11,13 +11,11 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
-Un skill est un pack d’instructions réutilisable qu’un agent peut appliquer à la demande. Utilisez des skills pour les procédures récurrentes d’un agent à l’autre — guide de style de marque, checklist de revue de code, runbook pour un workflow spécifique — au lieu de dupliquer les instructions dans le system prompt de chaque agent.
+Une compétence est un ensemble d&#39;instructions réutilisable qu&#39;un agent peut appliquer à la demande. Utilisez les compétences pour les procédures communes à plusieurs agents — un guide de style de marque, une checklist de revue de code, un runbook pour un flux de travail spécifique — plutôt que de dupliquer les instructions dans l&#39;instruction système de chaque agent.
 
-<div id="anatomy-of-a-skill">
-  ## Anatomie d’un skill
-</div>
+## Anatomie d&#39;une compétence {#anatomy-of-a-skill}
 
-Un skill est un fichier Markdown avec un court en-tête frontmatter :
+Une compétence est un fichier Markdown doté d&#39;un court en-tête frontmatter :
 
 ```markdown
 ---
@@ -39,38 +37,32 @@ When asked to generate a revenue report:
 4. Render the result as a Markdown table.
 ```
 
-Les paramètres de frontmatter les plus importants :
+Les paramètres du frontmatter les plus importants :
 
-* **`name`** - identifiant en kebab-case.
-* **`description`** - court résumé utilisé par le modèle pour déterminer quand ce skill est pertinent. Considérez ce champ comme le plus important. Rédigez-le de manière précise ; des descriptions vagues entraînent l’invocation du mauvais skill.
-* **`always-apply`** - lorsque sa valeur est `true`, le skill est inclus d’office à chaque tour au lieu d’être sélectionné. À utiliser avec parcimonie ; les skills en mode always-apply consomment du contexte à chaque message.
-* **`user-invocable`** - lorsque sa valeur est `true` (valeur par défaut), le skill apparaît dans le popover `$` pour une sélection manuelle.
+* **`name`** - identifiant au format kebab-case.
+* **`description`** - court résumé utilisé par le modèle pour déterminer quand cette compétence est pertinente. C’est le champ le plus important. Rédigez-le de manière précise : une description vague conduit à invoquer la mauvaise compétence.
+* **`always-apply`** - lorsque la valeur est `true`, la compétence est préchargée à chaque tour au lieu d’être sélectionnée. À utiliser avec parcimonie : les compétences always-apply consomment du contexte à chaque message.
+* **`user-invocable`** - lorsque la valeur est `true` (valeur par défaut), la compétence apparaît dans la fenêtre contextuelle `$` pour être sélectionnée manuellement.
 
-Vous pouvez joindre au skill des fichiers complémentaires — documentation de référence, exemples de requêtes, petits scripts — en téléversant un `.zip` contenant `SKILL.md` et ses ressources.
+Vous pouvez joindre des fichiers complémentaires à la compétence (documentation de référence, exemples de requêtes, petits scripts) en téléversant un fichier `.zip` contenant le `SKILL.md` et ses ressources.
 
-<div id="use-a-skill">
-  ## Utiliser un skill
-</div>
+## Utiliser une compétence {#use-a-skill}
 
-Un agent peut faire appel à un skill dans une conversation de trois façons :
+Un agent peut faire appel à une compétence dans une conversation de trois manières :
 
-* **Invocation par l&#39;utilisateur** - appuyez sur `$` dans le composer, puis sélectionnez le skill dans le popover. Le contenu du skill est injecté pour le tour suivant.
-* **Sélection automatique par le modèle** - en fonction de la `description` du skill, l&#39;agent décide lui-même quand l&#39;appliquer.
-* **Always-apply** - injecté à chaque tour pour les skills configurés de cette façon.
+* **Invocation par l&#39;utilisateur** - appuyez sur `$` dans la zone de saisie et choisissez la compétence dans la fenêtre contextuelle. Le contenu de la compétence est préchargé pour le tour suivant.
+* **Sélection automatique par le modèle** - en fonction de la `description` de la compétence, l&#39;agent décide lui-même quand l&#39;appliquer.
+* **Always-apply** - le contenu est préchargé à chaque tour pour les compétences configurées ainsi.
 
-<div id="manage-skills">
-  ## Gérer les Skills
-</div>
+## Gérer les compétences {#manage-skills}
 
-Le panneau Skills de la console Cloud vous permet de créer des skills directement, de téléverser des fichiers `.md` ou `.zip`, et de gérer les skills actifs pour votre compte utilisateur. Les skills dont vous êtes propriétaire sont actifs par défaut ; désactivez-en un pour le retirer du popover et du catalogue du modèle sans le supprimer.
+Le panneau Compétences de la Console Cloud vous permet de créer des compétences directement dans l&#39;interface, de téléverser des fichiers `.md` ou `.zip` et de choisir les compétences actives pour votre utilisateur. Les compétences dont vous êtes propriétaire sont actives par défaut ; désactivez-en une pour la retirer de la fenêtre contextuelle et du catalogue du modèle sans la supprimer.
 
-Les Skills peuvent être partagés avec d&#39;autres utilisateurs (voir [partage et accès](/fr/agents/sharing-and-access)).
+Les compétences peuvent être partagées avec d&#39;autres utilisateurs (voir [partage et accès](/fr/agents/sharing-and-access)).
 
-<div id="skills-vs-instructions">
-  ## Skills vs. instructions
-</div>
+## Compétences ou instructions {#skills-vs-instructions}
 
-* **Les instructions de l’agent** définissent ce qu’est l’agent et la manière dont il se comporte globalement. Elles sont toujours actives pour cet agent.
-* **Les Skills** sont contextuelles — elles s’appliquent lorsqu’elles sont pertinentes et se limitent à des workflows spécifiques.
+* Les **instructions de l’agent** définissent ce qu’est l’agent et son comportement général. Elles sont toujours actives pour cet agent.
+* Les **compétences** sont contextuelles : elles s’appliquent lorsqu’elles sont pertinentes et se limitent à des flux de travail spécifiques.
 
-Utilisez une skill lorsque le même ensemble d’instructions détaillées réapparaît dans plusieurs agents, ou lorsque vous souhaitez qu’elle ne soit déclenchée que pour des demandes utilisateur précises plutôt qu’à chaque échange.
+Privilégiez une compétence lorsque le même ensemble d’instructions détaillées se retrouve dans plusieurs agents, ou lorsque vous souhaitez qu’elle ne soit déclenchée que pour certaines requêtes utilisateur plutôt qu’à chaque échange.
