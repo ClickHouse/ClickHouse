@@ -5132,10 +5132,10 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
         /// The state variant of an AggregateFunction is not part of its name.
         if (typeid_cast<const DataTypeAggregateFunction *>(from_type.get()))
         {
-            if (DataTypeAggregateFunction::strictEquals(from_type, to_type))
+            if (DataTypeAggregateFunction::strictEquals(from_type, to_type) && !needsAggregateStateRelabel(*from_type, *to_type))
                 return createIdentityWrapper(from_type);
         }
-        else
+        else if (!needsAggregateStateRelabel(*from_type, *to_type))
             return createIdentityWrapper(from_type);
     }
     else if (WhichDataType(from_type).isNothing())

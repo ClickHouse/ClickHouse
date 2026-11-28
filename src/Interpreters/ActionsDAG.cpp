@@ -7,6 +7,7 @@
 
 #include <Analyzer/FunctionNode.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -2833,7 +2834,8 @@ ActionsDAG ActionsDAG::makeConvertingActions(
     bool add_cast_columns,
     NameToNameMap * new_names,
     NameSet * columns_contain_compiled_function,
-    bool materialize_constants)
+    bool materialize_constants,
+    bool relabel_aggregate_states)
 {
     size_t num_input_columns = source.size();
     size_t num_result_columns = result.size();
@@ -2923,7 +2925,8 @@ ActionsDAG ActionsDAG::makeConvertingActions(
         }
 
         /// Add CAST function to convert into result type if needed.
-        if (!res_elem.type->equals(*dst_node->result_type))
+        if (!res_elem.type->equals(*dst_node->result_type)
+            || (relabel_aggregate_states && needsAggregateStateRelabel(*dst_node->result_type, *res_elem.type)))
         {
             auto string_type = std::make_shared<DataTypeString>();
             auto type_name = res_elem.type->getName();

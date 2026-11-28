@@ -20,6 +20,7 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/addMissingDefaults.h>
@@ -682,7 +683,13 @@ private:
                 input.getColumnsWithTypeAndName(),
                 to_convert,
                 ActionsDAG::MatchColumnsMode::Name,
-                local_context);
+                local_context,
+                /*ignore_constant_values=*/ false,
+                /*add_cast_columns=*/ false,
+                /*new_names=*/ nullptr,
+                /*columns_contain_compiled_function=*/ nullptr,
+                /*materialize_constants=*/ true,
+                /*relabel_aggregate_states=*/ true);
 
             bool inner_share_nested_offsets = true;
             if (auto * merge_tree = castStorage<MergeTreeData>(inner_storage, DeferredTable::Load).get())
@@ -1859,11 +1866,24 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
     /// are absent from the input, never retypes present ones.
     auto to_convert = mapWidenedEnumColumnsToTargetTypes(*input_headers.at(view_id), *output_header);
 
+    for (auto & column : to_convert)
+    {
+        const auto * target = output_header->findByName(column.name);
+        if (target && target->type->equals(*column.type) && needsAggregateStateRelabel(*column.type, *target->type))
+            column.type = target->type;
+    }
+
     auto converting_types_dag = ActionsDAG::makeConvertingActions(
         input_headers.at(view_id)->getColumnsWithTypeAndName(),
         to_convert,
         ActionsDAG::MatchColumnsMode::Name,
-        insert_context);
+        insert_context,
+        /*ignore_constant_values=*/ false,
+        /*add_cast_columns=*/ false,
+        /*new_names=*/ nullptr,
+        /*columns_contain_compiled_function=*/ nullptr,
+        /*materialize_constants=*/ true,
+        /*relabel_aggregate_states=*/ true);
 
     auto adding_missing_defaults_dag = addMissingDefaults(
         Block(to_convert),

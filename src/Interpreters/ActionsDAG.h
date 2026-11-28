@@ -469,6 +469,7 @@ public:
     /// @param ignore_constant_values - Do not check that constants are same. Use value from result_header.
     /// @param add_cast_columns - Create new columns with converted values instead of replacing original.
     /// @param new_names - Output parameter for new column names when add_cast_columns is used.
+    /// @param relabel_aggregate_states - Also cast equal types if `needsAggregateStateRelabel`, for a table's declared columns.
     static ActionsDAG makeConvertingActions(
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
@@ -478,7 +479,8 @@ public:
         bool add_cast_columns = false,
         NameToNameMap * new_names = nullptr,
         NameSet * columns_contain_compiled_function = nullptr,
-        bool materialize_constants=true);
+        bool materialize_constants=true,
+        bool relabel_aggregate_states = false);
     /// Create expression which add const column and then materialize it.
     static ActionsDAG makeAddingColumnActions(ColumnConstPtr column, DataTypePtr type, std::string name);
     static ActionsDAG makeAddingConstantColumnActions(const std::string & name, const DataTypePtr & type, const Field & value);
