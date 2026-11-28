@@ -1010,12 +1010,17 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
         metadata_snapshot->columns,
         query_context);
 
-    return buildFilterInfo(
+    auto filter_info = buildFilterInfo(
         parallel_replicas_custom_filter_ast,
         table_expression_query_info.table_expression,
         planner_context,
         {},
         /*check_access_rights=*/ true);
+
+    if (const auto * filter_node = filter_info.actions.tryFindInOutputs(filter_info.column_name))
+        checkCustomKeyFilterType(filter_node->result_type, settings[Setting::parallel_replicas_custom_key].value);
+
+    return filter_info;
 }
 
 /// Parse `additional_table_filters` for this table expression and assign the AST into
