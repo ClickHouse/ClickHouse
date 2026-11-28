@@ -13,6 +13,7 @@
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -88,10 +89,10 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionContainsArrayJoin.h>
-#include <Interpreters/ExtractExpressionInfoVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TreeRewriter.h>
@@ -188,6 +189,7 @@ namespace Setting
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsBool insert_distributed_one_random_shard;
+    extern const SettingsBool insert_null_as_default;
     extern const SettingsUInt64 insert_shard_id;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_distributed_depth;
@@ -1660,16 +1662,25 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     for (const auto & child : analyzed_select->getChildren())
         if (child && (hasSubqueryAfterAnalysis(child) || hasStatefulFunction(child)))
             return {};
-    /// Each shard would also evaluate the destination's defaults for its own rows only.
+    /// Each shard would also evaluate, for its own rows only, the destination defaults that this INSERT fills.
     const auto destination_metadata = getInMemoryMetadataPtr(local_context, false);
-    for (const auto & [_, column_default] : destination_metadata->getColumns().getDefaults())
+    auto insert_header = InterpreterInsertQuery::getSampleBlock(
+        query, std::const_pointer_cast<IStorage>(shared_from_this()), destination_metadata, local_context,
+        /*no_destination=*/false, settings[Setting::insert_allow_materialized_columns]);
+    const auto & select_columns = analyzed_select->getProjectionColumns();
+    const bool null_as_default = settings[Setting::insert_null_as_default] && select_columns.size() == insert_header.columns();
+    for (size_t i = 0; null_as_default && i < select_columns.size(); ++i)
     {
-        TablesWithColumns no_tables;
-        ExpressionInfoVisitor::Data expression_info{WithContext{local_context}, no_tables};
-        ExpressionInfoVisitor(expression_info).visit(column_default.expression);
-        if (expression_info.is_stateful_function)
-            return {};
+        /// As in `InterpreterInsertQuery::convertSelectToInsertSchema`, the NULLs of a Nullable SELECT column take the default.
+        auto & column = insert_header.getByPosition(i);
+        if (isNullableOrLowCardinalityNullable(select_columns[i].type) && !isVariant(column.type) && !isDynamic(column.type))
+            column.type = makeNullableOrLowCardinalityNullable(column.type);
     }
+    if (auto defaults = resolveMissingDefaults(
+            insert_header, destination_metadata->getSampleBlock().getNamesAndTypesList(), destination_metadata->getColumns(),
+            local_context, null_as_default);
+        defaults && hasStatefulFunction(defaults))
+        return {};
 
     src_storage_cluster.updateExternalDynamicMetadataIfExists(local_context);
     const auto storage_metadata = src_storage_cluster.getInMemoryMetadataPtr(local_context, false);

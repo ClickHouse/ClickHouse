@@ -4,9 +4,9 @@
 -- `INSERT INTO <Distributed table> SELECT ... FROM <cluster table function>` with `parallel_distributed_insert_select`
 -- sends the INSERT to every shard of the destination, and each shard inserts the result of the SELECT over its share of
 -- the files. That is the result of the SELECT only when the SELECT does not combine rows across the shares (aggregation,
--- window and stateful functions, LIMIT, OFFSET, ...) and reads nothing but the source (subqueries), and when no default of
--- the destination calls a stateful function. Any other INSERT SELECT is run by the initiator. Both shards of the cluster
--- are this server, so every row lands in `loc` whichever way the INSERT runs.
+-- window and stateful functions, LIMIT, OFFSET, ...) and reads nothing but the source (subqueries), and when no default
+-- that the INSERT evaluates calls a stateful function. Any other INSERT SELECT is run by the initiator. Both shards of the
+-- cluster are this server, so every row lands in `loc` whichever way the INSERT runs.
 
 SET parallel_distributed_insert_select = 2, insert_deduplicate = 0, distributed_foreground_insert = 1;
 
@@ -21,11 +21,17 @@ DROP TABLE IF EXISTS dist;
 DROP TABLE IF EXISTS loc;
 DROP TABLE IF EXISTS dist_default;
 DROP TABLE IF EXISTS loc_default;
+DROP TABLE IF EXISTS dist_unused_default;
+DROP TABLE IF EXISTS loc_unused_default;
 DROP TABLE IF EXISTS allow;
 CREATE TABLE loc (x UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE dist AS loc ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), loc, rand());
 CREATE TABLE loc_default (x UInt64, y UInt64 DEFAULT rowNumberInAllBlocks()) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE dist_default AS loc_default ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), loc_default, rand());
+SET allow_deprecated_error_prone_window_functions = 1;
+CREATE TABLE loc_unused_default (x UInt64, y UInt64 DEFAULT neighbor(x, 1)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE dist_unused_default AS loc_unused_default ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), loc_unused_default, rand());
+SET allow_deprecated_error_prone_window_functions = 0;
 CREATE TABLE allow (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO allow SELECT number * 2 FROM numbers(300);
 
@@ -134,6 +140,10 @@ INSERT INTO dist_default SELECT x, NULL FROM fileCluster('test_cluster_two_shard
 SELECT 'stateful default for NULL, parallel_distributed_insert_select = 1', count(), uniqExact(y), min(y), max(y) FROM loc_default;
 TRUNCATE TABLE loc_default;
 
+-- A default of a column the INSERT supplies is not evaluated.
+INSERT INTO dist_unused_default (x, y) SELECT x, x FROM fileCluster('test_cluster_two_shards_localhost', {CLICKHOUSE_DATABASE:String} || '_05895_*.tsv', 'TSV', 'x UInt64') SETTINGS log_comment = 'case_25_unused_default';
+SELECT 'unused default', count(), sum(y), min(y), max(y) FROM loc_unused_default;
+
 -- Which INSERTs were sent to the shards. The INSERTs `Distributed` itself sends to the shards do not name the source.
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment,
@@ -147,4 +157,6 @@ DROP TABLE dist;
 DROP TABLE loc;
 DROP TABLE dist_default;
 DROP TABLE loc_default;
+DROP TABLE dist_unused_default;
+DROP TABLE loc_unused_default;
 DROP TABLE allow;
