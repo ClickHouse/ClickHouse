@@ -126,9 +126,6 @@ public:
     /// The broker has closed the channel, but not the connection. Then this is the reason, otherwise empty.
     [[nodiscard]] const String & getChannelCloseReason() const { return channel_close_reason; }
 
-    /// Shuts the socket down, so that a call blocked in another thread returns with an error. Thread-safe with the
-    /// other methods, which is the only exception: it is how a stopped consumer interrupts a source that reads.
-    void interrupt();
 
     void declareExchange(const String & name, ExchangeType type, bool durable, bool auto_delete, const FieldTable & arguments = {});
     void deleteExchange(const String & name);

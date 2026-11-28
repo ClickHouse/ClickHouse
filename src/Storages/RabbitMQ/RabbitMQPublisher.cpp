@@ -230,8 +230,13 @@ String RabbitMQPublisher::publishStep(Payloads & payloads)
         const bool published = delivery_record.size() != pending_before;
         processConfirms(!published && !delivery_record.empty() ? WAIT_MS : 0);
     }
-    catch (...) /// Ok: onChannelError logs the exception
+    catch (...) /// Ok: onChannelError logs the exception, or it is rethrown
     {
+        /// Not a failure of the connection, e.g. a memory limit while recording a popped message: it fails the INSERT,
+        /// because the popped message may be gone.
+        if (connection.get().getChannelCloseReason().empty() && connection.isConnected())
+            throw;
+
         /// The broker closes only the channel when it rejects a publish, e.g. NOT_FOUND for a missing exchange.
         /// A new channel is rejected the same way.
         const String channel_close_reason = connection.get().getChannelCloseReason();

@@ -5,7 +5,6 @@
 #include <Storages/RabbitMQ/AMQPClient.h>
 
 #include <memory>
-#include <mutex>
 
 
 namespace DB
@@ -54,20 +53,13 @@ public:
     /// The current connection. Requires a successful `connect` before.
     AMQP::Connection & get();
 
-    /// Interrupts a call that another thread is blocked in, and makes this and every later connection fail.
-    /// Thread-safe: it is how a stopped consumer interrupts the source that reads from it.
-    void interrupt();
-
     [[nodiscard]] String connectionInfoForLog() const { return configuration.getAddressForLog(); }
 
 private:
     const RabbitMQConfiguration configuration;
     LoggerPtr log;
 
-    /// Protects only the replacement of `connection` against `interrupt`, the users of the connection are one thread.
-    std::mutex mutex;
     std::unique_ptr<AMQP::Connection> connection;
-    bool interrupted = false;
 };
 
 using RabbitMQConnectionPtr = std::unique_ptr<RabbitMQConnection>;

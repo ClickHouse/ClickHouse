@@ -56,6 +56,9 @@ constexpr size_t FRAME_OVERHEAD = FRAME_HEADER_SIZE + 1;
 constexpr UInt32 MIN_FRAME_SIZE = 4096;
 constexpr UInt32 MAX_FRAME_SIZE = 128 * 1024 * 1024;
 
+/// Buffered output is sent once it reaches this size, and a larger buffer is released after it is sent.
+constexpr size_t OUTPUT_BUFFER_SIZE = 1024 * 1024;
+
 /// RabbitMQ does not accept messages larger than 512 MiB.
 constexpr UInt64 MAX_MESSAGE_SIZE = 512 * 1024 * 1024;
 
@@ -493,6 +496,9 @@ void Connection::sendFrame(UInt8 type, UInt16 channel, std::string_view payload)
     writeRaw(payload.data(), payload.size());
     const char end = static_cast<char>(FRAME_END);
     writeRaw(&end, 1);
+
+    if (output.size() >= OUTPUT_BUFFER_SIZE)
+        flushOutput();
 }
 
 void Connection::sendMethod(UInt16 channel, UInt16 class_id, UInt16 method_id, std::string_view arguments)
@@ -503,13 +509,6 @@ void Connection::sendMethod(UInt16 channel, UInt16 class_id, UInt16 method_id, s
     writeShort(payload, method_id);
     payload.append(arguments);
     sendFrame(FRAME_METHOD, channel, payload);
-}
-
-void Connection::interrupt()
-{
-    /// Only the descriptor is touched, which `shutdown(2)` allows from any thread: a blocked read (also inside the TLS
-    /// library, which would wait for the rest of an incomplete record) returns, and every later read or write fails.
-    ::shutdown(socket->impl()->sockfd(), SHUT_RDWR);
 }
 
 std::optional<Connection::Frame> Connection::receiveFrame(Poco::Timespan timeout)
@@ -551,7 +550,12 @@ void Connection::flushOutput()
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while writing to RabbitMQ {}", address_for_log);
         }
     }
-    output.clear();
+
+    /// A connection can stay in the pool of idle producer connections for long, so it does not keep a large buffer.
+    if (output.capacity() > 2 * OUTPUT_BUFFER_SIZE)
+        String().swap(output);
+    else
+        output.clear();
 }
 
 bool Connection::waitForInput(Clock::time_point deadline)

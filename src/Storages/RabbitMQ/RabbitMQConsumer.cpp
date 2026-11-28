@@ -33,9 +33,10 @@ RabbitMQConsumer::RabbitMQConsumer(
 
 void RabbitMQConsumer::stop()
 {
+    /// A source notices it within a wait slice; a read that has started is bounded by the request timeout.
+    /// The socket is not shut down here: the closing handshake in `closeConnections` must reach the broker,
+    /// which removes the consumers before it confirms the closing, so that the queues can be deleted after it.
     stopped = true;
-    /// A source that is blocked in a read returns at once.
-    connection.interrupt();
 }
 
 void RabbitMQConsumer::setError(const String & what)

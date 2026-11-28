@@ -98,7 +98,15 @@ void RabbitMQProducer::startProducingTaskLoop()
 
         if (query_status && query_status->isKilled())
             break;
-        publish_error = publisher->publishStep(payloads);
+        try
+        {
+            publish_error = publisher->publishStep(payloads);
+        }
+        catch (...)
+        {
+            /// The task runs in a schedule pool, which would only log the exception: it fails the INSERT instead.
+            publish_error = getCurrentExceptionMessage(false);
+        }
         if (!publish_error.empty())
             break;
     }
