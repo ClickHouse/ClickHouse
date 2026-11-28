@@ -5002,6 +5002,35 @@ static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const 
     return isVariantExtension(part_column->type, command.data_type);
 }
 
+/// A write is discarded if a later drop of the same task removes its column and no current column or subcolumn has its name.
+static std::vector<bool> getCommandsDiscardedByLaterDrop(const MutationCommands & commands, const StorageMetadataPtr & metadata_snapshot)
+{
+    std::vector<bool> discarded(commands.size(), false);
+    const auto & columns = metadata_snapshot->getColumns();
+    NameSet dropped_later;
+    auto is_dropped = [&](const String & name)
+    { return dropped_later.contains(name) && !columns.hasColumnOrSubcolumn(GetColumnsOptions::All, name); };
+    for (size_t i = commands.size(); i > 0; --i)
+    {
+        const auto & command = commands[i - 1];
+        if (command.type == MutationCommand::DROP_COLUMN && !command.clear)
+            dropped_later.insert(command.column_name);
+        else if (command.type == MutationCommand::RENAME_COLUMN)
+            dropped_later.clear();
+        else if ((command.type == MutationCommand::READ_COLUMN && !command.read_for_patch)
+                 || command.type == MutationCommand::MATERIALIZE_COLUMN)
+            discarded[i - 1] = is_dropped(command.column_name);
+        else if (command.type == MutationCommand::UPDATE)
+        {
+            auto alter = command.ast();
+            discarded[i - 1] = alter && alter->update_assignments && !alter->update_assignments->children.empty()
+                && std::ranges::all_of(alter->update_assignments->children, [&](const ASTPtr & child)
+                    { return is_dropped(child->as<ASTAssignment &>().column_name); });
+        }
+    }
+    return discarded;
+}
+
 static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command, const ContextPtr & context)
 {
     /// The partition ids of a command scoped with `IN PARTITION` are resolved once, when the mutation
@@ -5379,9 +5408,11 @@ bool MutateTask::prepare()
     /// disable parallel replicas for mutations
     context_for_reading->setSetting("enable_parallel_replicas", false);
 
-    for (const auto & command : *ctx->commands)
+    const auto discarded_by_later_drop = getCommandsDiscardedByLaterDrop(*ctx->commands, ctx->metadata_snapshot);
+    for (size_t i = 0; i < ctx->commands->size(); ++i)
     {
-        if (!canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, command, context_for_reading))
+        const auto & command = (*ctx->commands)[i];
+        if (!discarded_by_later_drop[i] && !canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, command, context_for_reading))
             ctx->commands_for_part.emplace_back(command);
     }
 

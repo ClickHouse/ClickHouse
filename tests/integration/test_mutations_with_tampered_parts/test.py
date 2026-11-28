@@ -11,6 +11,7 @@ import shlex
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node")
@@ -1050,3 +1051,98 @@ def test_variant_escape_filename_rename_consistency(
             f"\tw.{tuple_name}%2Eb\n"
         )
     node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_mutation_of_dropped_column_after_mutated_parts_are_lost(started_cluster):
+    # A power loss loses the unsynced mutated parts, so their source part comes back and the mutations are replayed.
+    # See https://github.com/ClickHouse/ClickHouse/issues/134373
+    compact = "min_bytes_for_wide_part = '10G'"
+    wide = "min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0"
+    drop_and_update = ["DROP COLUMN c", "UPDATE note = 'u' WHERE id = 2"]
+    # A write read by a later command before the drop is replayed; the re-added `c` lets that command run.
+    drop_and_readd = ["DROP COLUMN c", "ADD COLUMN c UInt32 DEFAULT 7"]
+    cases = {
+        "t_lost_modify_compact": (
+            compact,
+            ["MODIFY COLUMN c UInt64 DEFAULT 7", *drop_and_update],
+            "1\t\n2\tu\n",
+        ),
+        "t_lost_modify_wide": (
+            wide,
+            ["MODIFY COLUMN c UInt64 DEFAULT 7", *drop_and_update],
+            "1\t\n2\tu\n",
+        ),
+        "t_lost_materialize": (
+            compact,
+            ["MATERIALIZE COLUMN c", *drop_and_update],
+            "1\t\n2\tu\n",
+        ),
+        "t_lost_update": (
+            compact,
+            ["UPDATE c = 100 WHERE id = 2", *drop_and_update],
+            "1\t\n2\tu\n",
+        ),
+        "t_lost_modify_then_update": (
+            compact,
+            [
+                "MODIFY COLUMN c UInt64 DEFAULT 7",
+                "UPDATE note = 'm' WHERE id = 1",
+                *drop_and_update,
+            ],
+            "1\tm\n2\tu\n",
+        ),
+        "t_lost_update_read": (
+            wide,
+            [
+                "UPDATE c = 100 WHERE id = 1",
+                "UPDATE note = toString(c) WHERE id = 1",
+                *drop_and_readd,
+            ],
+            "1\t100\n2\t\n",
+        ),
+        "t_lost_update_delete": (
+            wide,
+            ["UPDATE c = 100 WHERE id = 1", "DELETE WHERE c = 100", *drop_and_readd],
+            "2\t\n",
+        ),
+    }
+    sync = {"alter_sync": 1, "mutations_sync": 1}
+    for table, (part_format, alters, _) in cases.items():
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node.query(f"""
+            CREATE TABLE {table} (id UInt64, note String DEFAULT '', c UInt32 DEFAULT 7)
+            ENGINE = MergeTree ORDER BY id
+            SETTINGS old_parts_lifetime = 3600, {part_format}
+            """)
+        node.query(f"INSERT INTO {table} (id, c) VALUES (1, 41), (2, 42)")
+        for alter in alters:
+            node.query(f"ALTER TABLE {table} {alter}", settings=sync)
+
+        path = table_data_path(table)
+        node.query(f"DETACH TABLE {table}")
+        assert path_exists(f"{path}all_1_1_0", flag="-d")
+        assert glob_exists(f"{path}all_1_1_0_*")
+        container_bash(f"rm -r {path}all_1_1_0_*")
+        assert not glob_exists(f"{path}all_1_1_0_*")
+        node.query(f"ATTACH TABLE {table}")
+
+    for table, (_, _, notes) in cases.items():
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() FROM system.mutations WHERE database = 'default' AND table = '{table}' AND NOT is_done",
+            "0",
+            retry_count=60,
+            sleep_time=0.5,
+        )
+        assert node.query(f"SELECT id, note FROM {table} ORDER BY id") == notes
+
+    tables = ", ".join(f"'{table}'" for table in cases)
+    assert (
+        node.query(
+            f"SELECT count() FROM system.parts_columns WHERE database = 'default' AND table IN ({tables}) AND active AND column = 'c'"
+        )
+        == "0\n"
+    )
+
+    for table in cases:
+        node.query(f"DROP TABLE {table} SYNC")
