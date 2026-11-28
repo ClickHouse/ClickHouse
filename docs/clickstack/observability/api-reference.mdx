@@ -1,0 +1,84 @@
+---
+slug: /clickstack/observability/api-reference
+title: 'API reference'
+description: 'ClickHouse Observability API reference for dashboards, alerts, sources, webhooks, roles, and saved searches'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'API', 'REST API', 'dashboards', 'alerts']
+sidebarTitle: 'API reference'
+---
+
+ClickHouse Observability uses the ClickHouse Cloud API to manage dashboards, alerts, webhooks, roles, and saved searches, and to access data sources.
+
+<Note>
+In the fully managed experience, sources are managed for you. Use the source read operations to inspect them; the source creation, update, and deletion operations are for deployments where you manage your own sources.
+</Note>
+
+## API reference documentation {#api-docs}
+
+Select an endpoint in the sidebar for its parameters, request and response schemas, and interactive examples. These pages use the **ClickHouse Cloud API** specification, with Cloud service URLs and authentication.
+
+The following endpoints are available:
+
+| Resource | Operations |
+|---|---|
+| **Dashboards** | Create, list, get, update, delete, and validate dashboards |
+| **Alerts** | Create, list, get, update, and delete alerts |
+| **Sources** | List and get data sources; create, update, and delete sources where you manage them yourself |
+| **Webhooks** | Create, list, update, delete, and validate webhooks |
+| **Roles** | Create, list, get, update, and delete roles |
+| **Saved searches** | Create, list, get, update, and delete saved searches |
+
+## Authentication {#authentication}
+
+ClickHouse Observability uses the **ClickHouse Cloud API key** for authentication via [HTTP Basic Authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication). To create and manage API keys, see [Managing API keys](/products/cloud/features/admin-features/api/openapi).
+
+The key must have the `control-plane:service:manage-clickstack-api` permission.
+
+Include the key ID and secret using HTTP Basic Authentication:
+
+```bash
+export KEY_ID=<your_key_id>
+export KEY_SECRET=<your_key_secret>
+
+curl --user $KEY_ID:$KEY_SECRET \
+  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
+```
+
+## Base URL and request format {#base-url}
+
+All ClickHouse Observability API requests are sent to the ClickHouse Cloud API:
+
+```bash
+https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/<resource>
+```
+
+You can find your **Organization ID** in the ClickHouse Cloud console under **Organization → Organization details**. Your **Service ID** is visible in the service URL or on the service details page.
+
+### Example: List dashboards {#list-dashboards-managed}
+
+```bash
+curl --user $KEY_ID:$KEY_SECRET \
+  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
+```
+
+### Example: Create an alert {#create-alert-managed}
+
+```bash
+curl -X POST --user $KEY_ID:$KEY_SECRET \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dashboardId": "<DASHBOARD_ID>",
+    "tileId": "<TILE_ID>",
+    "threshold": 100,
+    "interval": "1h",
+    "source": "tile",
+    "thresholdType": "above",
+    "channel": {
+      "type": "webhook",
+      "webhookId": "<WEBHOOK_ID>"
+    },
+    "name": "Error Spike Alert",
+    "message": "Error rate exceeded 100 in the last hour"
+  }' \
+  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/alerts
+```

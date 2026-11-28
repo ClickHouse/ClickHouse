@@ -1,19 +1,34 @@
 #include <gtest/gtest.h>
 
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Core/BaseSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsEnums.h>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/VarInt.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <functional>
 #include <limits>
+#include <tuple>
+#include <vector>
 
 namespace DB::ErrorCodes
 {
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int TOO_LARGE_STRING_SIZE;
     extern const int INCORRECT_DATA;
+    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int CANNOT_PARSE_BOOL;
+    extern const int UNKNOWN_LOAD_BALANCING;
 }
 
 namespace
@@ -195,11 +210,11 @@ GTEST_TEST(Settings, KnownSettingFlaggedCustomOnTheWireIsReadIntoItsTypedField)
     sent.setCustom("custom_unknown_here", Field(String("kept")));
 
     WriteBufferFromOwnString out;
-    sent.write(out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    sent.write(out);
 
     Settings settings;
     ReadBufferFromString in(out.str());
-    settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    settings.read(in);
 
     ASSERT_TRUE(settings.isChanged("log_comment"));
     ASSERT_EQ(settings.get("log_comment"), Field(String("hello")));
@@ -209,6 +224,22 @@ GTEST_TEST(Settings, KnownSettingFlaggedCustomOnTheWireIsReadIntoItsTypedField)
     /// A name that is not a setting here stays a custom setting.
     ASSERT_TRUE(settings.isChanged("custom_unknown_here"));
     ASSERT_EQ(settings.get("custom_unknown_here"), Field(String("kept")));
+}
+
+GTEST_TEST(SettingFieldNumber, NonConvertibleFieldIsRejected)
+{
+    /// Rejecting a Field with no text representation must not format its value into the message
+    /// (because it could throw `LOGICAL_ERROR` instead of the clean `CANNOT_CONVERT_TYPE`).
+    SettingFieldUInt64 setting;
+    try
+    {
+        setting = Field(AggregateFunctionStateData{.name = "uniq", .data = ""});
+        FAIL();
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::CANNOT_CONVERT_TYPE);
+    }
 }
 
 GTEST_TEST(SettingFieldTimespan, ValueAlwaysFitsInt64Microseconds)
@@ -252,6 +283,279 @@ GTEST_TEST(SettingFieldTimespan, SecondsParseFromStringChecksTheRange)
 
     /// A value that does not fit Int64 microseconds is rejected, the same as through Field.
     ASSERT_THROW(seconds.parseFromString("1e30"), DB::Exception);
+    ASSERT_THROW(seconds.parseFromString("-1"), DB::Exception);
+    ASSERT_THROW(seconds.parseFromString("9223372036854.775"), DB::Exception);
+    ASSERT_EQ(seconds.totalSeconds(), 300);
+
+    seconds.parseFromString("9223372036854");
+    ASSERT_GT(seconds.totalSeconds(), 0);
+}
+
+GTEST_TEST(Settings, SecondsOnTheWireRejectNegativeAndOverflowingValues)
+{
+    auto wire = [](const String & value)
+    {
+        WriteBufferFromOwnString out;
+        BaseSettingsHelpers::writeString("max_execution_time", out);
+        BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags{}, out);
+        BaseSettingsHelpers::writeString(value, out);
+        BaseSettingsHelpers::writeString("", out); /// end of settings
+        return out.str();
+    };
+
+    for (const String & value : {String("-1"), String("9223372036854.775")})
+    {
+        const String bytes = wire(value);
+        ReadBufferFromString in(bytes);
+        Settings settings;
+        try
+        {
+            settings.read(in);
+            FAIL() << value << " was accepted";
+        }
+        catch (const Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+        }
+    }
+
+    const String bytes = wire("60");
+    ReadBufferFromString in(bytes);
+    Settings settings;
+    settings.read(in);
+    ASSERT_TRUE(settings.isChanged("max_execution_time"));
+    ASSERT_EQ(settings.get("max_execution_time"), Field(Float64(60)));
+}
+
+GTEST_TEST(Settings, SkipInvalidValuesKeepsTheDefaultsAndReadsTheRest)
+{
+    /// The settings a server of an older version sends in `Hello` may hold values this version rejects.
+    using Entry = std::tuple<std::string_view, BaseSettingsHelpers::Flags, std::string_view>;
+    auto wire = [](std::initializer_list<Entry> entries)
+    {
+        WriteBufferFromOwnString out;
+        for (const auto & [name, flags, value] : entries)
+        {
+            BaseSettingsHelpers::writeString(name, out);
+            BaseSettingsHelpers::writeFlags(flags, out);
+            BaseSettingsHelpers::writeString(value, out);
+        }
+        BaseSettingsHelpers::writeString("", out); /// end of settings
+        return out.str();
+    };
+
+    auto read_error_code = [](const String & bytes, bool skip_invalid_values)
+    {
+        ReadBufferFromString in(bytes);
+        Settings settings;
+        try
+        {
+            settings.read(in, skip_invalid_values);
+        }
+        catch (const Exception & e)
+        {
+            return e.code();
+        }
+        return 0;
+    };
+
+    const String bytes = wire({
+        {"max_execution_time", {}, "-1"},
+        {"max_block_size", {}, "0"}, /// `NonZeroUInt64` assigns the value before it rejects it.
+        {"log_queries", {}, "maybe"},
+        {"max_threads", {}, "4"},
+    });
+    ReadBufferFromString in(bytes);
+    Settings settings;
+    settings.read(in, /* skip_invalid_values= */ true);
+    const SettingsChanges changes = settings.changes();
+    ASSERT_EQ(changes.size(), 1u);
+    ASSERT_EQ(changes[0].name, "max_threads");
+    ASSERT_EQ(changes[0].value, Field(UInt64(4)));
+    ASSERT_FALSE(settings.isChanged("max_execution_time"));
+    ASSERT_FALSE(settings.isChanged("max_block_size"));
+    ASSERT_EQ(settings.get("max_block_size"), Settings().get("max_block_size"));
+    ASSERT_FALSE(settings.isChanged("log_queries"));
+
+    /// The default read stays strict; an important setting and other error codes are not skipped.
+    ASSERT_EQ(read_error_code(bytes, false), ErrorCodes::BAD_ARGUMENTS);
+    ASSERT_EQ(read_error_code(wire({{"log_queries", {}, "maybe"}}), false), ErrorCodes::CANNOT_PARSE_BOOL);
+    ASSERT_EQ(read_error_code(wire({{"max_execution_time", BaseSettingsHelpers::Flags::IMPORTANT, "-1"}}), true), ErrorCodes::BAD_ARGUMENTS);
+    ASSERT_EQ(read_error_code(wire({{"load_balancing", {}, "nonsense"}}), true), ErrorCodes::UNKNOWN_LOAD_BALANCING);
+}
+
+GTEST_TEST(SettingsCompatibility, MarkChangedByCompatibilityAsUnchangedKeepsTheValues)
+{
+    /// The client passes such a Settings object to `Connection::sendQuery`: the values that
+    /// `compatibility` derived must keep acting locally (the client-side network codec is picked
+    /// from them by value), but they must not be serialized to the server, which sends only
+    /// changed settings and re-derives these from `compatibility` itself.
+    DB::Settings settings;
+    settings.set("compatibility", "26.6");
+    ASSERT_TRUE(settings.hasSettingsChangedByCompatibility());
+    ASSERT_TRUE(settings.isChanged("network_compression_method"));
+    const auto derived_method = settings.get("network_compression_method");
+    const auto derived_level = settings.get("network_zstd_compression_level");
+
+    settings.markSettingsChangedByCompatibilityAsUnchanged();
+
+    ASSERT_FALSE(settings.hasSettingsChangedByCompatibility());
+    ASSERT_FALSE(settings.isChanged("network_compression_method"));
+    ASSERT_FALSE(settings.isChanged("network_zstd_compression_level"));
+    ASSERT_EQ(settings.get("network_compression_method"), derived_method);
+    ASSERT_EQ(settings.get("network_zstd_compression_level"), derived_level);
+
+    /// The explicitly set `compatibility` itself stays changed and is still serialized.
+    ASSERT_TRUE(settings.isChanged("compatibility"));
+
+    /// The demoted settings no longer count as compatibility-derived: a later
+    /// `resetSettingsChangedByCompatibility` must not touch them.
+    settings.resetSettingsChangedByCompatibility();
+    ASSERT_EQ(settings.get("network_compression_method"), derived_method);
+}
+
+GTEST_TEST(SettingFieldNonZeroUInt32, RejectsZeroAndOutOfRange)
+{
+    /// In-range values, including both boundaries, are kept exactly.
+    ASSERT_EQ(SettingFieldNonZeroUInt32{}.value, 1u);
+    ASSERT_EQ(SettingFieldNonZeroUInt32(Field(UInt64(1))).value, 1u);
+    ASSERT_EQ(SettingFieldNonZeroUInt32(Field(UInt64(4294967295))).value, 4294967295u);
+
+    /// Zero violates the non-zero half of the type.
+    ASSERT_THROW(SettingFieldNonZeroUInt32(Field(UInt64(0))), DB::Exception);
+
+    /// Out-of-range values are rejected instead of wrapping mod 2^32. Before the check, 2^32 + 4
+    /// wrapped to 4 - for `logs_to_keep` of a Replicated database that made the cleanup thread
+    /// delete almost the whole DDL log.
+    ASSERT_THROW(SettingFieldNonZeroUInt32(Field(UInt64(4294967300ULL))), DB::Exception);
+    ASSERT_THROW(SettingFieldNonZeroUInt32(Field(Float64(5e9))), DB::Exception);
+
+    /// The same holds when the value arrives as a string, whether inside a Field or not. This is
+    /// the path a plain `SettingFieldUInt32` wraps on, because its parse does not check overflow.
+    ASSERT_THROW(SettingFieldNonZeroUInt32(Field(String("10000000000"))), DB::Exception);
+    ASSERT_THROW(SettingFieldNonZeroUInt32(Field(String("0"))), DB::Exception);
+    ASSERT_EQ(SettingFieldNonZeroUInt32(Field(String("4294967295"))).value, 4294967295u);
+
+    SettingFieldNonZeroUInt32 setting;
+    ASSERT_THROW(setting = Field(UInt64(4294967300ULL)), DB::Exception);
+    ASSERT_THROW(setting = Field(String("10000000000")), DB::Exception);
+    ASSERT_THROW(setting.parseFromString("4294967300"), DB::Exception);
+    ASSERT_THROW(setting.parseFromString("0"), DB::Exception);
+
+    /// Size suffixes still work on the checked path.
+    setting.parseFromString("1K");
+    ASSERT_EQ(setting.value, 1000u);
+
+    /// Like every other setting field type, construction from a Field leaves the field unchanged;
+    /// only assignment marks it changed.
+    ASSERT_FALSE(SettingFieldNonZeroUInt32(Field(UInt64(5))).changed);
+    SettingFieldNonZeroUInt32 assigned;
+    assigned = Field(UInt64(5));
+    ASSERT_TRUE(assigned.changed);
+}
+
+GTEST_TEST(SettingFieldNonZeroUInt32, ReadBinaryRejectsZeroAndOutOfRange)
+{
+    /// The binary form of an unsigned setting is a VarUInt of up to 64 bits regardless of the field's
+    /// width, and the base `SettingFieldUInt32::readBinary` narrows it silently. The non-zero type
+    /// has to range-check the wide value before narrowing, the same as it does for strings.
+    auto read = [](UInt64 wire_value)
+    {
+        WriteBufferFromOwnString out;
+        writeVarUInt(wire_value, out);
+        const String bytes = out.str();
+        ReadBufferFromString in(bytes);
+        SettingFieldNonZeroUInt32 setting;
+        setting.readBinary(in);
+        return setting;
+    };
+
+    /// In-range values, including both boundaries, are decoded exactly and marked changed.
+    ASSERT_EQ(read(1).value, 1u);
+    ASSERT_EQ(read(1000).value, 1000u);
+    ASSERT_EQ(read(4294967295ULL).value, 4294967295u);
+    ASSERT_TRUE(read(1000).changed);
+
+    /// Zero violates the non-zero half of the type. Pinned to the code of the non-zero check.
+    try
+    {
+        read(0);
+        FAIL() << "zero was accepted from the binary form";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    /// Values wider than UInt32 are rejected instead of wrapping mod 2^32. Pinned to the code of the
+    /// range check, so that the wrapped value 4 or 0 failing some other way cannot pass here.
+    for (UInt64 wide : {UInt64(4294967296ULL), UInt64(4294967300ULL), std::numeric_limits<UInt64>::max()})
+    {
+        try
+        {
+            read(wide);
+            FAIL() << "value " << wide << " was accepted from the binary form";
+        }
+        catch (const Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::CANNOT_CONVERT_TYPE);
+        }
+    }
+
+    /// The bytes the field writes for itself are what its own readBinary consumes.
+    SettingFieldNonZeroUInt32 written(4294967295u);
+    WriteBufferFromOwnString out;
+    written.writeBinary(out);
+    const String bytes = out.str();
+    ReadBufferFromString in(bytes);
+    SettingFieldNonZeroUInt32 reread;
+    reread.readBinary(in);
+    ASSERT_EQ(reread.value, written.value);
+    ASSERT_TRUE(in.eof());
+}
+
+GTEST_TEST(SettingFieldNumber, ReadBinaryRejectsOutOfRange)
+{
+    /// The binary form of an integer setting is a 64-bit VarUInt or VarInt; a narrower field rejects a value it cannot hold.
+    auto expect_incorrect_data = [](auto setting, auto write_value)
+    {
+        WriteBufferFromOwnString out;
+        write_value(out);
+        const String bytes = out.str();
+        ReadBufferFromString in(bytes);
+        try
+        {
+            setting.readBinary(in);
+            FAIL() << "an out-of-range value was accepted from the binary form";
+        }
+        catch (const Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
+        }
+    };
+
+    expect_incorrect_data(SettingFieldUInt32{}, [](WriteBuffer & out) { writeVarUInt(4294967296ULL, out); });
+    expect_incorrect_data(SettingFieldBool{}, [](WriteBuffer & out) { writeVarUInt(2, out); });
+    expect_incorrect_data(SettingFieldInt32{}, [](WriteBuffer & out) { writeVarInt(Int64(2147483648LL), out); });
+    expect_incorrect_data(SettingFieldInt32{}, [](WriteBuffer & out) { writeVarInt(Int64(-2147483649LL), out); });
+
+    /// Values the field writes itself, including the boundaries, round-trip exactly.
+    auto round_trip = [](auto written)
+    {
+        WriteBufferFromOwnString out;
+        written.writeBinary(out);
+        const String bytes = out.str();
+        ReadBufferFromString in(bytes);
+        decltype(written) reread;
+        reread.readBinary(in);
+        ASSERT_EQ(reread.value, written.value);
+        ASSERT_TRUE(in.eof());
+    };
+
+    round_trip(SettingFieldUInt32{std::numeric_limits<UInt32>::max()});
+    round_trip(SettingFieldBool{true});
+    round_trip(SettingFieldInt32{std::numeric_limits<Int32>::min()});
+    round_trip(SettingFieldInt32{std::numeric_limits<Int32>::max()});
 }
 
 GTEST_TEST(SettingsTier, GetTierDecodesEveryEncoding)
@@ -285,5 +589,142 @@ GTEST_TEST(SettingsTier, GetTierDecodesEveryEncoding)
     constexpr UInt64 private_preview = static_cast<UInt64>(SettingsTierType::PRIVATE_PREVIEW);
     EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::IMPORTANT), SettingsTierType::PRIVATE_PREVIEW);
     EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::CUSTOM), SettingsTierType::PRIVATE_PREVIEW);
+    EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::AFFECTS_CLIENT), SettingsTierType::PRIVATE_PREVIEW);
     EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::HOT_RELOAD), SettingsTierType::PRIVATE_PREVIEW);
+}
+
+namespace
+{
+
+/// Restores the global hard limit and the operator-new throw threshold on scope exit.
+struct MemoryLimitGuard
+{
+    Int64 prev_hard_limit;
+    MemoryLimitGuard() : prev_hard_limit(total_memory_tracker.getHardLimit()) {}
+    ~MemoryLimitGuard()
+    {
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(0);
+        total_memory_tracker.setHardLimit(prev_hard_limit);
+    }
+};
+
+/// Makes the next allocation of a megabyte or more overshoot the global limit, while smaller
+/// allocations (the exception being built, the settings object's own bookkeeping) still succeed.
+void armMemoryLimitOnAllocationsOfAtLeastAMegabyte()
+{
+    MainThreadStatus::getInstance();
+    CurrentThread::flushUntrackedMemory();
+    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1ULL << 20);
+    total_memory_tracker.setHardLimit(total_memory_tracker.get() + 1024);
+}
+
+}
+
+GTEST_TEST(Settings, ADeclaredLengthOnTheSettingsWireIsNotAnAllocation)
+{
+    /// Each entry declares a large string length on the settings wire and then sends no payload, so
+    /// a read that grows with the bytes that actually arrive runs out of buffer immediately, while
+    /// one that sizes its destination from the declared length allocates before it can fail.
+    constexpr size_t declared_size = 64 * 1024 * 1024;
+
+    struct Case
+    {
+        std::string_view covers;
+        std::function<void(WriteBuffer &)> write_wire;
+        /// A setting name is an identifier, so a name declared longer than `MAX_SETTING_NAME_SIZE` is
+        /// refused before it is read at all, instead of running out of buffer.
+        int expected_code = DB::ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF;
+    };
+
+    const std::vector<Case> cases = {
+        {"the setting name",
+         [&](WriteBuffer & out) { writeVarUInt(declared_size, out); },
+         DB::ErrorCodes::TOO_LARGE_STRING_SIZE},
+        {"the setting value",
+         [&](WriteBuffer & out)
+         {
+             BaseSettingsHelpers::writeString("log_comment", out);
+             BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags{}, out);
+             writeVarUInt(declared_size, out);
+         }},
+    };
+
+    for (const auto & test_case : cases)
+    {
+        SCOPED_TRACE(test_case.covers);
+
+        /// Build the wire and the settings object before clamping, so only the read runs clamped.
+        WriteBufferFromOwnString out;
+        test_case.write_wire(out);
+        const std::string wire = out.str();
+        Settings settings;
+        ReadBufferFromString in(wire);
+
+        try
+        {
+            MemoryLimitGuard guard;
+            armMemoryLimitOnAllocationsOfAtLeastAMegabyte();
+            settings.read(in);
+            ADD_FAILURE() << "reading a declared length of " << declared_size << " did not throw";
+        }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), test_case.expected_code) << e.displayText();
+        }
+    }
+}
+
+GTEST_TEST(Settings, WellFormedSettingsStillReadUnderAClampedMemoryLimit)
+{
+    /// The in-range control: the clamp itself does not make a read fail, and the empty string end
+    /// marker still terminates the loop.
+    Settings sent;
+    sent.set("log_comment", "hello");
+    sent.set("max_block_size", UInt64(4096));
+    sent.set("totals_auto_threshold", 0.25);
+
+    WriteBufferFromOwnString out;
+    sent.write(out);
+    const std::string wire = out.str();
+
+    Settings settings;
+    ReadBufferFromString in(wire);
+    {
+        MemoryLimitGuard guard;
+        armMemoryLimitOnAllocationsOfAtLeastAMegabyte();
+        ASSERT_NO_THROW(settings.read(in));
+    }
+
+    ASSERT_EQ(settings.get("log_comment"), Field(String("hello")));
+    ASSERT_EQ(settings.get("max_block_size"), Field(UInt64(4096)));
+    ASSERT_EQ(settings.get("totals_auto_threshold"), Field(0.25));
+    ASSERT_TRUE(in.eof());
+}
+
+
+GTEST_TEST(Settings, CustomFlaggedDecimalWithOutOfRangeScaleRejected)
+{
+    /// A built-in setting marked `CUSTOM` is parsed via
+    /// `SettingFieldCustom::parseFromString` -> `Field::restoreFromDump` -> `readQuoted`. An
+    /// exponent-form decimal dump builds a `Decimal` scale that, before the fix, bypassed the binary
+    /// reader's check and reached the decimal text writer (a fixed-size stack buffer) with an
+    /// oversized scale. The scale must be rejected while reading the settings, not formatted later.
+    WriteBufferFromOwnString out;
+    BaseSettingsHelpers::writeString("max_block_size", out);
+    BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags::CUSTOM, out);
+    BaseSettingsHelpers::writeString("Decimal64_'1e-1000'", out);
+    BaseSettingsHelpers::writeString("", out); /// end of settings
+
+    const String wire = out.str();
+    Settings settings;
+    ReadBufferFromString in(wire);
+    try
+    {
+        settings.read(in);
+        FAIL() << "expected ARGUMENT_OUT_OF_BOUND";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    }
 }

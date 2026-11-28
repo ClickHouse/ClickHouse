@@ -207,7 +207,7 @@ TEST(ParserStreamSettings, WatermarkOnlyParses)
     ASSERT_NE(stream_ast, nullptr);
     ASSERT_FALSE(stream_ast->cursor);
     ASSERT_TRUE(stream_ast->watermark);
-    ASSERT_EQ(stream_ast->watermark->column, "event_time");
+    ASSERT_EQ(stream_ast->watermark->time_attribute_column, "event_time");
     ASSERT_NE(stream_ast->watermark->expression, nullptr);
 
     /// The expression must be reachable through `children` for generic AST walkers.
@@ -230,7 +230,7 @@ TEST(ParserStreamSettings, CursorAndWatermarkParses)
     ASSERT_NE(stream_ast, nullptr);
     ASSERT_TRUE(stream_ast->cursor);
     ASSERT_TRUE(stream_ast->watermark);
-    ASSERT_EQ(stream_ast->watermark->column, "event_time");
+    ASSERT_EQ(stream_ast->watermark->time_attribute_column, "event_time");
 }
 
 TEST(ParserStreamSettings, FormatRoundTripPreservesWatermark)
@@ -246,7 +246,7 @@ TEST(ParserStreamSettings, FormatRoundTripPreservesWatermark)
     const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
     ASSERT_NE(stream_ast, nullptr);
     ASSERT_TRUE(stream_ast->watermark);
-    ASSERT_EQ(stream_ast->watermark->column, "event_time");
+    ASSERT_EQ(stream_ast->watermark->time_attribute_column, "event_time");
 }
 
 TEST(ParserStreamSettings, StreamBoundedParses)

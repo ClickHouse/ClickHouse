@@ -7,11 +7,10 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', '暗号化', 'CMEK', 'KMS キーポーラー']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <div id="storage-encryption">
-  ## ストレージレベルの暗号化
+  ## ストレージレベルの暗号化 {#storage-encryption}
 </div>
 
 ClickHouse Cloud では、クラウドプロバイダー管理の AES-256 鍵を使用する保存データの暗号化がデフォルトで有効になっています。詳しくは、以下を参照してください。
@@ -21,7 +20,7 @@ ClickHouse Cloud では、クラウドプロバイダー管理の AES-256 鍵を
 * [保存データ向け Azure Storage 暗号化](https://learn.microsoft.com/en-us/azure/storage/common/storage-service-encryption)
 
 <div id="database-encryption">
-  ## データベースレベルの暗号化
+  ## データベースレベルの暗号化 {#database-encryption}
 </div>
 
 <EnterprisePlanFeatureBadge feature="Enhanced Encryption" />
@@ -31,7 +30,7 @@ ClickHouse Cloud では、クラウドプロバイダー管理の AES-256 鍵を
 強化された暗号化は現在、AWS と GCP のサービスで利用できます。Azure にも近日対応予定です。
 
 <div id="transparent-data-encryption-tde">
-  ### 透過的データ暗号化 (TDE)
+  ### 透過的データ暗号化 (TDE) {#transparent-data-encryption-tde}
 </div>
 
 TDE はサービス作成時に有効にする必要があります。既存のサービスを作成後に暗号化することはできません。いったん TDE を有効にすると、無効化できません。サービス内のすべてのデータは暗号化された状態のまま保持されます。TDE を有効にした後で無効にしたい場合は、新しいサービスを作成し、そちらにデータを移行する必要があります。
@@ -43,7 +42,7 @@ TDE はサービス作成時に有効にする必要があります。既存の�
 5. [Create service] をクリックします
 
 <div id="customer-managed-encryption-keys-cmek">
-  ### 顧客管理暗号化キー (CMEK)
+  ### 顧客管理暗号化キー (CMEK) {#customer-managed-encryption-keys-cmek}
 </div>
 
 <Warning>
@@ -138,27 +137,29 @@ TDE はサービス作成時に有効にする必要があります。既存の�
 </Accordion>
 
 <div id="key-rotation">
-  #### キーのローテーション
+  #### キーのローテーション {#key-rotation}
 </div>
 
 CMEK を設定したら、上記の手順に従って新しい KMS キーを作成し、必要な権限を付与してキーをローテーションします。続いてサービスの設定に戻り、新しい ARN (AWS) 、Key Resource Path (GCP) 、または Key Name (Azure) を貼り付けて保存します。新しいキーを適用するため、サービスは再起動します。
 
 <div id="kms-key-poller">
-  #### KMS キーポーラー
+  #### KMS キーポーラー {#kms-key-poller}
 </div>
 
 CMEK を使用している場合、指定された KMS キーが有効かどうかは 10 分ごとに確認されます。KMS キーにアクセスできなくなると、ClickHouse サービスは停止します。サービスを再開するには、このガイドの手順に従って KMS キーへのアクセスを復旧し、その後サービスを再起動してください。
 
 <div id="backup-and-restore">
-  ### バックアップと復元
+  ### バックアップと復元 {#backup-and-restore}
 </div>
 
 バックアップは、対応するサービスと同じキーで暗号化されます。暗号化されたバックアップを復元すると、元のインスタンスと同じ KMS キーを使用する暗号化済みのインスタンスが作成されます。必要に応じて、復元後に KMS キーをローテーションできます。詳しくは、[キーのローテーション](#key-rotation) を参照してください。
 
-<div id="performance">
-  ## パフォーマンス
+## パフォーマンス {#performance}
+
+データベース暗号化では、ClickHouse に組み込まれている[データ暗号化向け仮想ファイルシステム機能](/ja/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system)を利用して、データを暗号化し保護します。この機能で使用されるアルゴリズムは `AES_256_CTR` で、ワークロードに応じて 5～15% のパフォーマンス低下が見込まれます。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![CMEK のパフォーマンス低下](/images/_snippets/cmek-performance.webp)
+  </Frame>
 </div>
-
-データベース暗号化では、ClickHouse に組み込まれている[データ暗号化向け仮想ファイルシステム機能](/ja/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system)を利用して、データを暗号化し保護します。この機能で使用されるアルゴリズムは `AES_256_CTR` で、ワークロードに応じて 5～15% の性能低下が見込まれます。
-
-<Image img="/images/_snippets/cmek-performance.webp" size="lg" alt="CMEK の性能低下" />

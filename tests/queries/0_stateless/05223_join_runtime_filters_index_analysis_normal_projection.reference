@@ -1,0 +1,9 @@
+base_table	64	125920
+projection_by_join_key	64	125920
+projection_by_other_column	64	125920
+05223_base_table	[]
+05223_projection_by_join_key	['p_by_id']
+05223_projection_by_other_column	['p_by_v']
+05223_base_table	1	0
+05223_projection_by_join_key	1	1
+05223_projection_by_other_column	0	0

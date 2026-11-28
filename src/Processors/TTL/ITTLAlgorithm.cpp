@@ -4,6 +4,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Common/DateLUTImpl.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/castColumn.h>
 
 #include <Columns/ColumnsDateTime.h>
 
@@ -38,11 +39,35 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
         return nullptr;
 
     if (block.has(result_column))
-        return block.getByName(result_column).column->convertToFullColumnIfSparse();
+    {
+        /// When the TTL expression is a bare source column (e.g. `TTL ts`), the block holds
+        /// it in the original type, which may differ from the type the analyzed expression
+        /// produces: the analysis widens `Date`/`DateTime` sources to `Date32`/`DateTime64`
+        /// and looks through `LowCardinality`. Cast to the expression's result type so the
+        /// consumers see the same column type in both paths (a no-op for matching types).
+        const auto & ttl_column = block.getByName(result_column);
+        const auto & expected_type = expression->getSampleBlock().getByName(result_column).type;
+        if (!ttl_column.type->equals(*expected_type))
+            return castColumn(ttl_column, expected_type)->convertToFullColumnIfSparse();
+        return ttl_column.column->convertToFullColumnIfSparse();
+    }
 
+    /// `Date`/`DateTime` source columns are widened to `Date32`/`DateTime64` at TTL
+    /// analysis time so the arithmetic in the expression cannot silently 16/32-bit wrap
+    /// on overflow. The block here still holds the original narrow types, so cast each
+    /// required input to the type the expression expects; for matching types this is a
+    /// cheap no-op handled inside `castColumn`.
     Block block_copy;
-    for (const auto & column_name : expression->getRequiredColumns())
-        block_copy.insert(block.getColumnOrSubcolumnByName(column_name));
+    for (const auto & required : expression->getRequiredColumnsWithTypes())
+    {
+        auto block_col = block.getColumnOrSubcolumnByName(required.name);
+        if (!block_col.type->equals(*required.type))
+        {
+            block_col.column = castColumn(block_col, required.type);
+            block_col.type = required.type;
+        }
+        block_copy.insert(std::move(block_col));
+    }
 
     /// Keep number of rows for const expression.
     size_t num_rows = block.rows();
@@ -51,12 +76,11 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
     return block_copy.getByName(result_column).column->convertToFullColumnIfSparse();
 }
 
-/// Shared by every TTL algorithm and by `TTLDeleteFilterTransform`, so a new result type is added
+/// Shared by every TTL algorithm, so a new result type is added
 /// once for all of them. Not shared with the insert path: `MergeTreeDataWriter::updateTTLInfo` and
 /// `updateTTLInfoConst` fold the same types into `MergeTreeDataPartTTLInfo` without building an
 /// array, and still need the new type too.
-void ITTLAlgorithm::extractTimestamps(
-    const IColumn * column, const DateLUTImpl & date_lut, PaddedPODArray<Int64> & timestamps)
+void ITTLAlgorithm::extractTimestamps(const IColumn * column, PaddedPODArray<Int64> & timestamps) const
 {
     const IColumn * ttl_column = column;
     const size_t num_rows = column->size();

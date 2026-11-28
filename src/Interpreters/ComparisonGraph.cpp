@@ -443,10 +443,16 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, c
 template <ComparisonGraphNodeType Node>
 bool ComparisonGraph<Node>::isPossibleCompare(ComparisonGraphCompareResult expected, const Node & left, const Node & right) const
 {
+    using enum ComparisonGraphCompareResult;
+
+    /// See `isAlwaysCompare`: an atom the graph does not know rules nothing out, and comparing its
+    /// arguments would fail the query where they cannot be ordered against a constraint's bound.
+    if (expected == UNKNOWN)
+        return true;
+
     const auto result = compare(left, right);
 
-    using enum ComparisonGraphCompareResult;
-    if (expected == UNKNOWN || result == UNKNOWN)
+    if (result == UNKNOWN)
         return true;
 
     if (expected == result)
@@ -480,10 +486,18 @@ bool ComparisonGraph<Node>::isPossibleCompare(ComparisonGraphCompareResult expec
 template <ComparisonGraphNodeType Node>
 bool ComparisonGraph<Node>::isAlwaysCompare(ComparisonGraphCompareResult expected, const Node & left, const Node & right) const
 {
+    using enum ComparisonGraphCompareResult;
+
+    /// The atom is not one of the comparisons the graph knows - `a IN (5, 8, 12)` is one such atom -
+    /// so nothing follows from it either way. Answering before the arguments are compared also keeps
+    /// their constants out of `compare`, which has no order to put an `IN` list and the scalar bound
+    /// of a constraint in and would fail the whole query over it.
+    if (expected == UNKNOWN)
+        return false;
+
     const auto result = compare(left, right);
 
-    using enum ComparisonGraphCompareResult;
-    if (expected == UNKNOWN || result == UNKNOWN)
+    if (result == UNKNOWN)
         return false;
 
     if (expected == result)

@@ -1,0 +1,38 @@
+{
+  "version": 3,
+  "id": 0,
+  "fields": [
+    {
+      "id": 0,
+      "name": "id",
+      "type": "BIGINT NOT NULL"
+    },
+    {
+      "id": 1,
+      "name": "d",
+      "type": "DATE"
+    },
+    {
+      "id": 2,
+      "name": "d_nn",
+      "type": "DATE NOT NULL"
+    },
+    {
+      "id": 3,
+      "name": "ad",
+      "type": {
+        "type": "ARRAY",
+        "element": "DATE",
+        "nullable": true
+      }
+    }
+  ],
+  "highestFieldId": 3,
+  "partitionKeys": [],
+  "primaryKeys": [],
+  "options": {
+    "file.format": "parquet"
+  },
+  "comment": null,
+  "timeMillis": 1793406100364
+}

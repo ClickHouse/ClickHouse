@@ -98,3 +98,41 @@ SETTINGS(format_csv_allow_single_quotes = 0)
 
 </Tab>
 </Tabs>
+
+## Column order of a custom query {#custom-query-column-order}
+
+The [ClickHouse](/reference/statements/create/dictionary/sources/clickhouse),
+[MySQL](/reference/statements/create/dictionary/sources/mysql),
+[PostgreSQL](/reference/statements/create/dictionary/sources/postgresql) and
+[ODBC](/reference/statements/create/dictionary/sources/odbc) sources accept a `query` field that
+replaces the query ClickHouse would otherwise build from `table` and `where`.
+
+A dictionary expects the columns of that result in a fixed order, which is not the order the
+attributes are written in the `CREATE DICTIONARY` statement:
+
+1. the key column(s), in `PRIMARY KEY` order;
+2. for a [`range_hashed`](/reference/statements/create/dictionary/layouts/range-hashed) or
+   `complex_key_range_hashed` dictionary, the `range_min` column, then the `range_max` column;
+3. the remaining attributes, in the order they are declared.
+
+The ClickHouse source matches the result to that order by column name, so with it the order of
+the `query` does not matter as long as every column is named after the attribute it fills. The
+MySQL, PostgreSQL and ODBC sources take the columns by position, so with those a `query` whose
+columns are in any other order loads values into the wrong attributes. Depending on the types
+involved, the dictionary either fails to load with a conversion error or stores wrong values, so
+write the `query` in the order above:
+
+```sql
+CREATE DICTIONARY contracts (
+    meter_no String,
+    id Int64,
+    contract_time Date,
+    end_date Date
+)
+PRIMARY KEY meter_no
+-- The key comes first, then the range columns, then the remaining attributes.
+SOURCE(POSTGRESQL(... query 'SELECT meter_no, contract_time, end_date, id FROM contracts'))
+LAYOUT(RANGE_HASHED())
+RANGE(MIN contract_time MAX end_date)
+LIFETIME(300)
+```

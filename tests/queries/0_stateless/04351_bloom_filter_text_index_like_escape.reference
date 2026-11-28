@@ -1,0 +1,67 @@
+Results are the same with and without an ESCAPE clause when the escape character is not used in the pattern
+1024
+1024
+1024
+4096
+4096
+ESCAPE used to match a literal LIKE wildcard
+1024
+0
+force_data_skipping_indices accepts the ESCAPE, functional and NOT LIKE forms, just like the plain 2-argument LIKE
+1024
+1024
+4096
+Index analysis with LIKE ESCAPE narrows to the matching part (8 of 40 granules), same as the plain 2-argument LIKE
+Parts: 1 | Granules: 8
+Granules: 40/40
+Name: idx
+Granules: 8/40
+Parts: 1 | Granules: 8
+Granules: 40/40
+Name: idx
+Granules: 8/40
+Index analysis with a consumed escape character also narrows to 8 of 40 granules
+Parts: 1 | Granules: 8
+Granules: 40/40
+Name: idx
+Granules: 8/40
+Functional 3-argument form like(haystack, needle, escape) is equivalent to the operator form and also narrows to 8 of 40 granules
+1024
+Parts: 1 | Granules: 8
+Granules: 40/40
+Name: idx
+Granules: 8/40
+A tokenbf_v1 text index also uses the index with LIKE ESCAPE, with the same plan as the plain LIKE (16 of 32 granules)
+1024
+1024
+1024
+Parts: 2 | Granules: 16
+Granules: 32/32
+Name: idx
+Granules: 16/32
+Parts: 2 | Granules: 16
+Granules: 32/32
+Name: idx
+Granules: 16/32
+A sparse_grams text index also uses the index with LIKE ESCAPE (8 of 24 granules)
+1024
+1024
+1024
+Parts: 1 | Granules: 8
+Granules: 24/24
+Name: idx
+Granules: 8/24
+Index analysis with a consumed escape character also narrows to 8 of 24 granules
+1024
+Parts: 1 | Granules: 8
+Granules: 24/24
+Name: idx
+Granules: 8/24
+A non-ASCII ESCAPE byte is rejected, also by EXPLAIN
+A pattern containing a literal backslash matches, and no granule is skipped
+Only the row containing the literal backslash is returned
+1
+All 3 granules are scanned
+Parts: 1 | Granules: 3
+Granules: 3/3
+A pattern ending in a lone escape character is rejected, also by EXPLAIN

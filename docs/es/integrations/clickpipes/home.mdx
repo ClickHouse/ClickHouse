@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'Introducción'
+sidebarTitle: 'Descripción general'
 description: 'Conecta fácilmente tus fuentes de datos externas a ClickHouse Cloud.'
 slug: /integrations/clickpipes
 title: 'Integración con ClickHouse Cloud'
@@ -10,44 +10,26 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
+import ClickPipesConnectors from '/snippets/es/_clickpipes_connectors.mdx';
 
-<div id="introduction">
-  ## Introducción
+<div id="overview">
+  ## Descripción general {#overview}
 </div>
 
-[ClickPipes](/es/integrations/clickpipes/home) es una plataforma de integración gestionada que hace que la ingestión de datos desde una amplia variedad de fuentes sea tan sencilla como hacer clic en unos pocos botones. Diseñada para las cargas de trabajo más exigentes, la arquitectura robusta y escalable de ClickPipes garantiza un rendimiento y una fiabilidad constantes. ClickPipes puede utilizarse para necesidades de streaming a largo plazo o para una carga puntual de datos.
+[ClickPipes](/es/integrations/clickpipes/home) es una plataforma de integración gestionada que hace que la ingestión de datos desde una amplia variedad de fuentes sea tan sencilla como hacer clic en unos pocos botones. Diseñada para las cargas de trabajo más exigentes, la arquitectura robusta y escalable de ClickPipes garantiza un rendimiento y una fiabilidad constantes. ClickPipes puede utilizarse para la ingestión continua de datos o para una carga puntual de datos.
 
-ClickPipes puede implementarse y gestionarse manualmente mediante la UI de ClickPipes, así como de forma programática mediante [OpenAPI](/es/integrations/clickpipes/programmatic-access/openapi) y [Terraform](/es/integrations/clickpipes/programmatic-access/terraform).
+ClickPipes puede implementarse y gestionarse mediante la UI de ClickPipes, así como de forma programática mediante [OpenAPI](/es/integrations/clickpipes/programmatic-access/openapi) y [Terraform](/es/integrations/clickpipes/programmatic-access/terraform).
 
-<Image img="/images/integrations/data-ingestion/clickpipes/clickpipes_stack.webp" alt="stack de ClickPipes" size="lg" border />
-
-<div id="supported-data-sources">
-  ## Fuentes de datos compatibles
+<div id="clickpipes-connectors">
+  ## Conectores {#clickpipes-connectors}
 </div>
 
-| Nombre                                                                                                                                                                                                                                             | Tipo                                                    | Estado                                             | Descripción                                                                                                                                                                                                                       |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <img src="/images/integrations/logos/kafka.svg" alt="Logo de Apache Kafka" className="integration-table-logo" width="24" height="24" /> [Apache Kafka](/es/integrations/clickpipes/kafka/index)                                                       | <Badge color="blue">Streaming</Badge>                   | <Badge color="green">Estable</Badge>               | Configure ClickPipes y comience a ingestar datos en streaming desde Apache Kafka en ClickHouse Cloud.                                                                                                                             |
-| <img src="/images/integrations/logos/confluent.svg" alt="logotipo de Confluent Cloud" className="integration-table-logo" width="24" height="24" /> Confluent Cloud                                                                                 | <Badge color="blue">Streaming</Badge>                   | <Badge color="green">Estable</Badge>               | Aproveche todo el potencial de Confluent y ClickHouse Cloud con nuestra integración directa.                                                                                                                                      |
-| <img src="/images/integrations/logos/logo_redpanda.webp" alt="logo de Redpanda" className="integration-table-logo" width="24" height="24" /> Redpanda                                                                                              | <Badge color="blue">Streaming</Badge>                   | <Badge color="green">Estable</Badge>               | Configure ClickPipes y comience a ingestar datos en streaming de Redpanda en ClickHouse Cloud.                                                                                                                                    |
-| <img src="/images/integrations/logos/msk.svg" alt="logo de AWS MSK" className="integration-table-logo" width="24" height="24" /> AWS MSK                                                                                                           | <Badge color="blue">Streaming</Badge>                   | <Badge color="green">Estable</Badge>               | Configure ClickPipes e inicie la ingesta de datos en streaming desde AWS MSK hacia ClickHouse Cloud.                                                                                                                              |
-| <img src="/images/integrations/logos/azure_event_hubs.svg" alt="logo de Azure Event Hubs" className="integration-table-logo" width="24" height="24" /> Azure Event Hubs                                                                            | <Badge color="blue">Streaming</Badge>                   | <Badge color="green">Estable</Badge>               | Configure ClickPipes y comience a ingestar datos en streaming desde Azure Event Hubs hacia ClickHouse Cloud. Consulte las [FAQ de Azure Event Hubs](/es/integrations/clickpipes/kafka/faq#azure-eventhubs) para obtener orientación. |
-| <img src="/images/integrations/logos/warpstream.svg" alt="Logo de WarpStream" className="integration-table-logo" width="24" height="24" /> WarpStream                                                                                              | <Badge color="blue">Streaming</Badge>                   | <Badge color="green">Estable</Badge>               | Configure ClickPipes e inicie la ingesta de datos en streaming desde WarpStream hacia ClickHouse Cloud.                                                                                                                           |
-| <img src="/images/integrations/logos/amazon_kinesis_logo.svg" alt="Logo de Amazon Kinesis" className="integration-table-logo" width="24" height="24" /> [Amazon Kinesis](/es/integrations/clickpipes/kinesis/overview)                                | <Badge color="blue">Streaming</Badge>                   | <Badge color="green">Estable</Badge>               | Configure ClickPipes y comience a ingestar datos en streaming desde Amazon Kinesis hacia ClickHouse Cloud.                                                                                                                        |
-| <img src="/images/integrations/logos/google_pubsub.svg" alt="logo de Google Cloud Pub/Sub" className="integration-table-logo" width="24" height="24" /> [GCP Pub/Sub](/es/integrations/clickpipes/pubsub/overview)                                    | <Badge color="blue">Streaming</Badge>                   | <Badge color="purple">Vista previa privada</Badge> | Configure ClickPipes y comience a ingestar datos en streaming desde Google Cloud Pub/Sub hacia ClickHouse Cloud.                                                                                                                  |
-| <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Logo de Amazon S3" className="integration-table-logo" width="24" height="24" /> [Amazon S3](/es/integrations/clickpipes/object-storage/amazon-s3/overview)                              | <Badge color="orange">Almacenamiento de objetos</Badge> | <Badge color="green">Estable</Badge>               | Configure ClickPipes para ingerir grandes volúmenes de datos desde el almacenamiento de objetos.                                                                                                                                  |
-| <img src="/images/integrations/logos/gcs.svg" alt="logo de Google Cloud Storage" className="integration-table-logo" width="24" height="24" /> [Google Cloud Storage](/es/integrations/clickpipes/object-storage/google-cloud-storage/overview)        | <Badge color="orange">Almacenamiento de objetos</Badge> | <Badge color="green">Estable</Badge>               | Configure ClickPipes para ingerir grandes volúmenes de datos desde el almacenamiento de objetos.                                                                                                                                  |
-| <img src="/images/integrations/logos/digitalocean.svg" alt="logotipo de DigitalOcean" className="integration-table-logo" width="24" height="24" /> DigitalOcean Spaces                                                                             | <Badge color="orange">Almacenamiento de objetos</Badge> | <Badge color="green">Estable</Badge>               | Configure ClickPipes para ingerir grandes volúmenes de datos desde el almacenamiento de objetos.                                                                                                                                  |
-| <img src="/images/integrations/logos/azureblobstorage.svg" alt="logo de Azure Blob Storage" className="integration-table-logo" width="24" height="24" /> [Azure Blob Storage](/es/integrations/clickpipes/object-storage/azure-blob-storage/overview) | <Badge color="orange">Almacenamiento de objetos</Badge> | <Badge color="green">Estable</Badge>               | Configure ClickPipes para ingerir grandes volúmenes de datos desde el almacenamiento de objetos.                                                                                                                                  |
-| <img src="/images/integrations/logos/postgresql.svg" alt="logo de Postgres" className="integration-table-logo" width="24" height="24" /> [Postgres](/es/integrations/clickpipes/postgres/index)                                                       | <Badge color="purple">DBMS</Badge>                      | <Badge color="green">Estable</Badge>               | Configure ClickPipes y comience a ingestar datos de Postgres en ClickHouse Cloud.                                                                                                                                                 |
-| <img src="/images/integrations/logos/mysql.svg" alt="logo de MySQL" className="integration-table-logo" width="24" height="24" /> [MySQL](/es/integrations/clickpipes/mysql/index)                                                                     | <Badge color="purple">DBMS</Badge>                      | <Badge color="yellow">Beta pública</Badge>         | Configure ClickPipes y comience a ingestar datos de MySQL en ClickHouse Cloud.                                                                                                                                                    |
-| <img src="/images/integrations/logos/mongodb.svg" alt="logo de MongoDB" className="integration-table-logo" width="24" height="24" /> [MongoDB](/es/integrations/clickpipes/mongodb/index)                                                             | <Badge color="purple">DBMS</Badge>                      | <Badge color="purple">Vista previa privada</Badge> | Configure ClickPipes y comience a ingestar datos de MongoDB en ClickHouse Cloud.                                                                                                                                                  |
+<ClickPipesConnectors />
 
 Se irán añadiendo más conectores a ClickPipes. Puede obtener más información [poniéndose en contacto con nosotros](https://clickhouse.com/company/contact?loc=clickpipes).
 
 <div id="aws-iam-database-authentication">
-  ## Autenticación de base de datos con AWS IAM
+  ## Autenticación de base de datos con AWS IAM {#aws-iam-database-authentication}
 </div>
 
 ClickPipes admite la autenticación de base de datos con AWS IAM para Amazon RDS y Aurora. La configuración varía según el motor de base de datos y el servicio de AWS, así que elige la guía de configuración de origen que corresponda a tu base de datos:
@@ -61,14 +43,12 @@ ClickPipes admite la autenticación de base de datos con AWS IAM para Amazon RDS
 | MariaDB                | Amazon RDS      | [RDS para MariaDB](/es/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)                     |
 
 <div id="list-of-static-ips">
-  ## Lista de IP estáticas
+  ## Lista de IP estáticas {#list-of-static-ips}
 </div>
 
 La lista de direcciones IP NAT estáticas de ClickPipes se ha trasladado a la [documentación de redes de ClickPipes](/es/integrations/clickpipes/networking/static-ips).
 
-<div id="adjusting-clickhouse-settings">
-  ## Ajustar los ajustes de ClickHouse
-</div>
+## Ajustar los ajustes de ClickHouse {#adjusting-clickhouse-settings}
 
 ClickHouse Cloud proporciona valores predeterminados adecuados para la mayoría de los casos de uso. Sin embargo, si necesita ajustar algunos ajustes de ClickHouse para las tablas de destino de ClickPipes, un rol dedicado para ClickPipes es la solución más flexible.
 Pasos:
@@ -76,17 +56,17 @@ Pasos:
 1. cree un rol personalizado `CREATE ROLE my_clickpipes_role SETTINGS ...`. Consulte la sintaxis de [CREATE ROLE](/es/reference/statements/create/role) para obtener más información.
 2. añada el rol personalizado al usuario de ClickPipes en el paso `Details and Settings` durante la creación de ClickPipes.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_custom_role.webp" alt="Asignar un rol personalizado" size="lg" border />
-
-<div id="clickpipes-advanced-settings">
-  ## Ajustar la configuración avanzada de ClickPipes
+<div className="ch-image-lg">
+  <Frame>
+    ![Asignar un rol personalizado](/images/integrations/data-ingestion/clickpipes/cp_custom_role.webp)
+  </Frame>
 </div>
 
-ClickPipes proporciona valores predeterminados adecuados para la mayoría de los casos de uso. Si su caso de uso requiere un ajuste más preciso, puede modificar la siguiente configuración:
+## Ajuste de la configuración avanzada de ClickPipes {#clickpipes-advanced-settings}
 
-<div id="clickpipes-advanced-settings-object-storage">
-  ### ClickPipes de almacenamiento de objetos
-</div>
+ClickPipes ofrece valores predeterminados razonables que cubren los requisitos de la mayoría de los casos de uso. Si su caso de uso requiere un ajuste avanzado adicional, puede modificar los siguientes parámetros:
+
+### ClickPipes de almacenamiento de objetos {#clickpipes-advanced-settings-object-storage}
 
 | Configuración                        | Valor predeterminado | Descripción                                                                                                                                                      |
 | ------------------------------------ | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -101,18 +81,20 @@ ClickPipes proporciona valores predeterminados adecuados para la mayoría de los
 | `Parallel view processing`           | false                | Si se habilita el envío a vistas adjuntas [de forma concurrente en lugar de secuencial](/es/reference/settings/session-settings/parallel#parallel_view_processing). |
 | `Use cluster function`               | true                 | Si los archivos se procesan en paralelo en varios nodos.                                                                                                         |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Configuración avanzada de ClickPipes" size="lg" border />
-
-<div id="clickpipes-advanced-settings-streaming">
-  ### ClickPipes de streaming
+<div className="ch-image-lg">
+  <Frame>
+    ![Configuración avanzada de ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+  </Frame>
 </div>
 
-| Configuración                    | Valor predeterminado | Descripción                                                                               |
-| -------------------------------- | -------------------- | ----------------------------------------------------------------------------------------- |
-| `Streaming max insert wait time` | 5 s                  | Configura el tiempo máximo de espera antes de insertar datos en el clúster de ClickHouse. |
+### ClickPipes de streaming {#clickpipes-advanced-settings-streaming}
+
+| Parámetro de configuración       | Valor predeterminado | Descripción                                                                                    |
+| -------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------- |
+| `Streaming max insert wait time` | 5 s                  | Configura el período máximo de espera antes de insertar los datos en el clúster de ClickHouse. |
 
 <div id="error-reporting">
-  ## Registro de errores
+  ## Registro de errores {#error-reporting}
 </div>
 
 ClickPipes almacenará los errores en dos tablas distintas, según el tipo de error que se produzca durante el proceso de ingestión.
@@ -122,13 +104,13 @@ ClickPipes almacenará los errores en dos tablas distintas, según el tipo de er
 </Note>
 
 <div id="record-errors">
-  ### Registro de errores
+  ### Registro de errores {#record-errors}
 </div>
 
 ClickPipes creará una tabla junto a tu tabla de destino con el sufijo `<destination_table_name>_clickpipes_error`. Esta tabla contendrá cualquier error provocado por datos malformados o por un esquema incompatible, e incluirá el mensaje no válido completo. Esta tabla tiene un [TTL](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) de 7 días.
 
 <div id="system-errors">
-  ### Errores del sistema
+  ### Errores del sistema {#system-errors}
 </div>
 
 Los errores relacionados con el funcionamiento de ClickPipe se almacenarán en la tabla `system.clickpipes_log`. En ella se guardarán todos los demás errores relacionados con el funcionamiento de su ClickPipe (red, conectividad, etc.). Esta tabla tiene un [TTL](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) de 7 días.
@@ -136,13 +118,13 @@ Los errores relacionados con el funcionamiento de ClickPipe se almacenarán en l
 Si ClickPipes no puede conectarse a una fuente de datos después de 15 min o a un destino después de 1 h, la instancia de ClickPipes se detendrá y almacenará un mensaje correspondiente en la tabla de errores del sistema (siempre que la instancia de ClickHouse esté disponible).
 
 <div id="monitoring">
-  ## Monitoreo
+  ## Monitoreo {#monitoring}
 </div>
 
 Además del monitoreo en la consola, ClickPipes expone métricas en un [endpoint compatible con Prometheus](/es/products/cloud/features/monitoring/prometheus) para su scraping. Estas métricas se publican junto con otras métricas del servicio de ClickHouse Cloud y le permiten integrar el monitoreo de ClickPipes con su stack de observabilidad actual (por ejemplo, [Grafana](/es/products/cloud/features/monitoring/prometheus#integrating-with-grafana), [Datadog](/es/products/cloud/features/monitoring/prometheus#integrating-with-datadog)). Consulte [Monitoreo de ClickPipes](/es/integrations/clickpipes/monitoring) para ver la lista completa de métricas disponibles.
 
 <div id="faq">
-  ## Preguntas frecuentes
+  ## Preguntas frecuentes {#faq}
 </div>
 
 * **¿Qué es ClickPipes?**

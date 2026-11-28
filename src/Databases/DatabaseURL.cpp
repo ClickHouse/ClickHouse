@@ -4,6 +4,7 @@
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessFlags.h>
 #include <Core/Settings.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -17,6 +18,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 
 #include <filesystem>
@@ -28,6 +30,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_archive_path_syntax;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
 }
@@ -41,26 +44,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// Check that the string starts with a valid RFC 3986 scheme followed by "://".
-bool hasURLScheme(const String & url)
-{
-    auto scheme_end = url.find("://");
-    if (scheme_end == String::npos || scheme_end == 0)
-        return false;
-
-    if (!std::isalpha(static_cast<unsigned char>(url[0])))
-        return false;
-
-    for (size_t i = 1; i < scheme_end; ++i)
-    {
-        char c = url[i];
-        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '+' && c != '-' && c != '.')
-            return false;
-    }
-
-    return true;
-}
 
 /// A table of a `URL` database is a thin wrapper over the `url` table function, which dispatches
 /// the URL to the matching backend (`file`, `s3`, `azureBlobStorage`, ...).
@@ -151,6 +134,7 @@ public:
     }
 
     StoragePtr getNested() const override { return nested; }
+    StoragePtr tryGetNested() const override { return nested; }
     String getName() const override { return nested->getName(); }
 
     /// Engine classification is used by policy checks (e.g. the `disable_insertion_and_mutation`
@@ -264,16 +248,17 @@ private:
 DatabaseURL::DatabaseURL(const String & name_, const String & base_url_, ContextPtr context_)
     : IDatabase(name_), WithContext(context_->getGlobalContext()), base_url(base_url_)
 {
-    if (!base_url.empty() && !hasURLScheme(base_url))
+    /// Not echoed back: password masking anchors on the `://` this value lacks, so it would log the password.
+    if (!base_url.empty() && findURIAuthority(base_url) == String::npos)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "The base URL of a URL database must contain a scheme (e.g. https://), got: {}", base_url);
+                        "The base URL of a URL database must contain a scheme (e.g. https://)");
 }
 
 String DatabaseURL::getTableURL(const String & name) const
 {
     String resolved = StorageURL::resolveURLBase(name, base_url, "base URL of the URL database");
 
-    if (!hasURLScheme(resolved))
+    if (findURIAuthority(resolved) == String::npos)
         return {};
     return resolved;
 }
@@ -283,7 +268,22 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     if (classifyURLScheme(url) != URLSchemeTarget::File)
         return true;
 
-    fs::path fs_path(getLocalPathFromFileURL(url));
+    /// A table name can use the archive path syntax (`archive.tar.zst::data.native`), which the
+    /// `file` delegate resolves to a file stored inside the archive. The file that has to exist on
+    /// the filesystem is then the archive, not the whole name: probing the name itself would make
+    /// every table inside an archive unresolvable.
+    String local_path = getLocalPathFromFileURL(url);
+    String path_in_archive;
+    if (context_->getSettingsRef()[Setting::allow_archive_path_syntax])
+    {
+        if (auto [path_to_archive, path_inside] = splitToArchivePathAndPathInArchive(local_path); !path_to_archive.empty())
+        {
+            local_path = std::move(path_to_archive);
+            path_in_archive = std::move(path_inside);
+        }
+    }
+
+    fs::path fs_path(local_path);
     if (fs_path.is_relative())
         fs_path = fs::path(context_->getUserFilesPath()) / fs_path;
     const String path = fs::absolute(fs_path).lexically_normal().string();
@@ -308,17 +308,28 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     if (!isFileReadGranted(context_))
         return true;
 
-    if (!fs::exists(path))
+    if (!existsOrFileNameTooLong([&] { return fs::exists(path); }))
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
         return false;
     }
 
-    if (!fs::is_regular_file(path))
+    if (!existsOrFileNameTooLong([&] { return fs::is_regular_file(path); }))
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", path);
+        return false;
+    }
+
+    /// The name addresses a file stored inside the archive, so the table exists only if that file
+    /// does. Answering with the presence of the archive alone would claim a table for a member that
+    /// is not there, and its resolution would fail with a schema inference error instead of
+    /// reporting the missing table, as this database does for a plain path.
+    if (!path_in_archive.empty() && !archiveContainsFile(path, path_in_archive))
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist inside the archive {}: {}", path, path_in_archive);
         return false;
     }
 
@@ -438,26 +449,53 @@ void registerDatabaseURL(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseURL>(args.database_name, base_url, args.context);
     };
-    factory.registerDatabase("URL", create_fn, {
+    factory.registerDatabase("URL", create_fn, urlSecretArguments(0), {
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::URL,
     }, Documentation{
-        .description = "A database that treats table names as URLs and exposes the data they point to as tables. "
-                       "Relative names are resolved against the optional base URL. The URL scheme selects the backend: "
-                       "`file://` reads local files, `s3://` (and `gs://`, `gcs://`, `oss://`) reads object storage, "
-                       "`az://`/`azure://`/`abfss://` reads Azure Blob Storage, `hdfs://` reads HDFS, and `http://`/`https://` "
-                       "and other schemes are read by the URL engine, so files, web and object storage URLs are handled uniformly. "
-                       "The database stores no tables of its own; resolving a table requires read access to the corresponding "
-                       "source (e.g. `GRANT READ ON URL`), because the structure of the table is inferred from the data, "
-                       "and `INSERT` writes to the underlying source and additionally requires the "
-                       "corresponding write source grant (e.g. `GRANT WRITE ON S3`). "
-                       "clickhouse-local uses it (inside the Overlay database, with the `file://` base URL) as the default "
-                       "database, so a plain table name resolves to a file in the current directory, while queries like "
-                       "`SELECT * FROM 'https://example.com/data.csv'` read from the URL. "
-                       "A base URL scopes the database to a location: after "
-                       "`CREATE DATABASE web ENGINE = URL('https://example.com/data/')`, the query "
-                       "``SELECT * FROM web.`daily.csv` `` reads `https://example.com/data/daily.csv`.",
+        .description = R"DOCS_MD(
+The `URL` database engine treats table names as URLs and exposes the data at those URLs as tables. It uses the [`url`](/reference/functions/table-functions/url) table function, which dispatches each URL to the appropriate backend, such as `file`, `s3`, HDFS, Azure Blob Storage, or HTTP.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE web_data
+ENGINE = URL([base_url]);
+```
+
+When `base_url` is specified, relative table names are resolved against it. Without a base URL, every table name must be a complete URL.
+
+## Usage {#usage}
+
+```sql
+CREATE DATABASE web_data
+ENGINE = URL('https://example.com/data/');
+
+SELECT * FROM web_data.`daily.csv`;
+```
+
+The database owns no table definitions. Each table is resolved from its URL when it is used, so its schema is inferred from the current data. Table names can also use a full URL, for example `web_data.`s3://bucket/data/events.parquet``.
+
+## Access control {#access-control}
+
+Creating this database requires `READ` and `WRITE` source grants on `URL`, regardless of [`table_engines_require_grant`](/reference/settings/server-settings/settings/other#table_engines_require_grant). Reading a table also requires a `READ` source grant for the resolved backend; writing requires the matching `WRITE` grant. For example:
+
+```sql
+GRANT READ, WRITE ON URL TO user_name;
+GRANT READ, WRITE ON S3 TO user_name;
+```
+
+For a database with a `file://` base URL, a user needs `READ ON FILE`. On ClickHouse server, local files are additionally restricted to [`user_files_path`](/reference/settings/server-settings/settings#user_files_path).
+
+See the [`SOURCES` privileges](/reference/statements/grant#sources) for version and compatibility details.
+
+## See also {#see-also}
+
+- [`url` table function](/reference/functions/table-functions/url)
+- [Filesystem database engine](/reference/engines/database-engines/filesystem)
+- [S3 database engine](/reference/engines/database-engines/s3)
+)DOCS_MD",
         .syntax = "ENGINE = URL([base_url])",
         .examples = {{
             "Reading files of the user_files directory through a database with a `file://` base URL",

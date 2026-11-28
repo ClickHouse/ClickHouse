@@ -45,6 +45,8 @@ class ClickHouseTypeMapper:
 
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        # Whether wide integers may map to a DECIMAL holding values outside `Int64`
+        self.wide_ints_as_decimal = True
         # Basic type mappings from ClickHouse to Spark SQL strings
         self.field_id = 1
         self.clickhouse_to_spark_map: Dict[
@@ -453,6 +455,7 @@ class ClickHouseTypeMapper:
         # so the unsigned/128/256-bit boundary is exercised
         if (
             ch_type in ("UInt64", "UInt128", "UInt256", "Int128", "Int256")
+            and self.wide_ints_as_decimal
             and random.randint(1, 3) == 1
         ):
             # 20 digits so every UInt64 value stays representable; the generator bounds

@@ -203,3 +203,52 @@ The merge table function matches table names with a regexp: exact, prefix, suffi
 1
 1
 2
+An escape of a non-alphanumeric character is part of the literal, so it stays on the fast path
+100%
+
+a b
+a:b
+svc,4999
+user@host
+a#b
+a=b
+a~b
+a_b
+a\\b
+
+a b
+An escape of an alphanumeric character is a special sequence and stays on the re2 path
+a1
+aXb
+A
+ab
+a\tb
+A column haystack with an escaped literal, where the first row matches
+0
+1
+1
+0
+0
+0
+1
+0
+0
+1
+0
+1
+0
+0
+0
+0
+1
+1
+0
+0
+0
+1
+0
+0
+0
+1
+1
+0

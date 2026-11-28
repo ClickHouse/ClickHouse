@@ -11,9 +11,7 @@ keywords: ['스냅샷', '백업', '복원', 'SharedMergeTree', 'SharedSet', 'Sha
 
 이 경량 방식은 [SharedMergeTree](/ko/products/cloud/features/infrastructure/shared-merge-tree), SharedSet, SharedJoin 테이블에 적용됩니다. Log 또는 Memory와 같은 다른 모든 엔진 유형에서는 백업이 자동으로 표준 복사 기반 백업으로 전환됩니다.
 
-<div id="create-a-snapshot">
-  ## 스냅샷 생성
-</div>
+## 스냅샷 생성 {#create-a-snapshot}
 
 스냅샷 백업은 `experimental_lightweight_snapshot = true`와 함께 표준 [`BACKUP`](/ko/concepts/features/backup-restore/overview#syntax) 명령을 사용합니다. `id` 설정은 필수이며, 스냅샷 이름을 지정하고 잠금 해제 및 관측성 명령에서 이를 참조하는 데 사용됩니다:
 
@@ -50,6 +48,15 @@ TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/full/', 'ACCESS_KE
 SETTINGS experimental_lightweight_snapshot = true, id = 'full_snapshot_1'
 ```
 
+데이터는 제외하고 테이블 DDL만 백업합니다(복원하면 올바른 스키마를 갖춘 빈 테이블이 생성됩니다):
+
+```sql
+BACKUP TABLE mydb.events
+EXCEPT DATA FROM TABLE mydb.events
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events_schema/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_schema_snapshot'
+```
+
 다음 명령은 Azure Blob Storage에서도 동일하게 사용할 수 있습니다:
 
 ```sql
@@ -58,9 +65,7 @@ TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=myaccount;Accoun
 SETTINGS experimental_lightweight_snapshot = true, id = 'events_snapshot_1'
 ```
 
-<div id="restore-to-same-service">
-  ## 동일한 서비스로 복원
-</div>
+## 동일한 서비스로 복원 {#restore-to-same-service}
 
 스냅샷은 데이터 복사본이 아니라 객체 스토리지 파일에 대한 참조를 저장하므로, 새롭거나 다른 ClickHouse 서비스로 복원하려면 원본 객체 스토리지에 대한 액세스가 필요합니다. 따라서 서비스 간 복원은 SQL로는 지원되지 않으며 UI에서만 가능합니다. SQL에서는 `snapshot_from_current_service = 1`을 사용하여 외부 백업 버킷에서 동일한 서비스로 스냅샷을 복원할 수 있습니다. 이 경우 원격 스냅샷 리더를 거치지 않고 대상 디스크를 통해 객체를 직접 읽습니다:
 
@@ -80,9 +85,7 @@ FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCES
 SETTINGS snapshot_from_current_service = 1
 ```
 
-<div id="unlock-snapshot">
-  ## 스냅샷 잠금 해제
-</div>
+## 스냅샷 잠금 해제 {#unlock-snapshot}
 
 각 스냅샷은 참조된 객체 스토리지 파일이 가비지 컬렉션되지 않도록 ClickHouse Keeper에 잠금을 유지합니다. 복원이 완료되었거나 스냅샷이 더 이상 필요하지 않으면 잠금을 해제하여 해당 잠금을 해제하십시오.
 
@@ -113,13 +116,9 @@ ALTER TABLE mydb.events UNLOCK SNAPSHOT '<snapshot_id>'
 
 잠금이 해제되면 해당 행은 `system.snapshot_locks`에서 사라지고, 다른 스냅샷에서 더 이상 참조되지 않는 파트는 `system.snapshot_parts`에서도 사라집니다.
 
-<div id="observability">
-  ## 관측성
-</div>
+## 관측성 {#observability}
 
-<div id="system-backups">
-  ### system.backups
-</div>
+### system.backups {#system-backups}
 
 모든 스냅샷 작업은 일반적인 백업 및 복원 작업과 함께 [`system.backups`](/ko/reference/system-tables/backups)에 표시됩니다. 설정한 `id`(또는 명령이 반환한 UUID)로 조회하십시오:
 
@@ -144,9 +143,7 @@ uncompressed_size: 1073741824
 compressed_size:   0
 ```
 
-<div id="system-snapshot-locks">
-  ### system.snapshot_locks
-</div>
+### system.snapshot_locks {#system-snapshot-locks}
 
 `system.snapshot_locks`는 현재 Keeper에 등록된 커밋된 스냅샷을 보여줍니다. 스냅샷이 커밋되면 `/clickhouse/snapshot/committed/{snapshot_id}`에 Keeper 노드가 생성됩니다. 서버는 데이터 파트(data part)를 삭제하기 전에 커밋된 스냅샷이 해당 파트에 대한 잠금을 보유하고 있는지 확인합니다. 잠금이 있으면 삭제를 건너뜁니다. 잠금은 스냅샷을 명시적으로 잠금 해제할 때까지 유지됩니다.
 
@@ -172,9 +169,7 @@ FROM system.snapshot_locks
 WHERE id = 'events_snapshot_1'
 ```
 
-<div id="system-snapshot-parts">
-  ### system.snapshot_parts
-</div>
+### system.snapshot_parts {#system-snapshot-parts}
 
 `system.snapshot_parts`는 현재 하나 이상의 스냅샷 잠금에 의해 고정된 데이터 파트를 보여줍니다. 잠긴 각 파트마다 `/clickhouse/snapshot/{table_uuid}/{part_name}`에 해당 파트의 압축된 크기와 압축되지 않은 크기를 포함하는 Keeper 노드가 존재합니다. 이 테이블은 해당 노드를 읽어 현재 삭제되지 않도록 보호되고 있는 파트를 보여줍니다.
 
@@ -229,9 +224,7 @@ WHERE (name, table_id) NOT IN (
 
 이는 원본 데이터가 변경되거나 삭제된 후에도 스냅샷을 유지할 때 발생하는 스토리지 오버헤드를 이해하는 데 유용합니다.
 
-<div id="server-settings">
-  ## 서버 설정
-</div>
+## 서버 설정 {#server-settings}
 
 다음 서버 구성 매개변수는 스냅샷 동작을 제어합니다. 이 매개변수는 SQL이 아니라 서버 설정 파일에서 설정합니다.
 

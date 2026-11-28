@@ -112,7 +112,7 @@ Relevant changes for ClickHouse Cloud services based on the v24.6 release.
 * Fix an error Cannot find column in distributed queries with constant CTE in the GROUP BY key. #64519 (Nikolai Kochetov).
 * Fix the output of function formatDateTimeInJodaSyntax when a formatter generates an uneven number of characters and the last character is 0. For example, SELECT formatDateTimeInJodaSyntax(toDate('2012-05-29'), 'D') now correctly returns 150 instead of previously 15. #64614 (LiuNeng).
 * Do not rewrite aggregation if -If combinator is already used. #64638 (Dmitry Novik).
-* Fix type inference for float (in case of small buffer, i.e. --max_read_buffer_size 1). #64641 (Azat Khuzhin).
+* Fix type inference for float (in case of small buffer, i.e. `--max_read_buffer_size` 1). #64641 (Azat Khuzhin).
 * Fix bug which could lead to non-working TTLs with expressions. #64694 (alesapin).
 * Fix removing the WHERE and PREWHERE expressions, which are always true (for the new analyzer). #64695 (Nikolai Kochetov).
 * Fixed excessive part elimination by token-based text indexes (ngrambf , full_text) when filtering by result of startsWith, endsWith, match, multiSearchAny. #64720 (Eduard Karacharov).

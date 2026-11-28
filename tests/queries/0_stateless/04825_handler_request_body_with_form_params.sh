@@ -38,5 +38,5 @@ ${CLICKHOUSE_CURL} -sS -X POST -H 'Content-Type: application/json' --data-binary
 echo "=== a form-parsed parameter present in both the URL and the body still takes its value from the URL ==="
 ${CLICKHOUSE_CURL} -sS -X POST -H 'Content-Type: application/x-www-form-urlencoded' --data-binary 'param_id=21' "${BASE}${P}/both?param_id=9"
 
-echo "=== _request_body supplied in the URL wins over the raw body, and form fields still bind ==="
-${CLICKHOUSE_CURL} -sS -X POST -H 'Content-Type: application/x-www-form-urlencoded' --data-binary 'param_id=21' "${BASE}${P}/both?param__request_body=url_wins"
+echo "=== _request_body cannot be supplied in the URL ==="
+${CLICKHOUSE_CURL} -sS -X POST -H 'Content-Type: application/x-www-form-urlencoded' --data-binary 'param_id=21' "${BASE}${P}/both?param__request_body=url_wins" | grep -o -m1 "BAD_ARGUMENTS"

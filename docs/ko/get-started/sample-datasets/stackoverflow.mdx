@@ -8,20 +8,22 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이 데이터셋에는 Stack Overflow의 모든 `Posts`, `Users`, `Votes`, `Comments`, `Badges`, `PostHistory`, `PostLinks` 데이터가 포함되어 있습니다.
 
 2024년 4월까지의 모든 게시물이 포함된 미리 준비된 Parquet 버전의 데이터를 다운로드하거나, 최신 XML 포맷 데이터를 다운로드해 적재할 수 있습니다. Stack Overflow는 이 데이터를 주기적으로 업데이트하며, 지금까지는 3개월마다 업데이트해 왔습니다.
 
-다음 다이어그램은 Parquet 포맷을 기준으로 사용 가능한 테이블의 스키마를 보여줍니다.
+다음 다이어그램은 Parquet 포맷을 기준으로 사용 가능한 테이블의 스키마(schema)를 보여줍니다.
 
-<Image img="/images/getting-started/example-datasets/stackoverflow.webp" alt="Stack Overflow 스키마" size="md" />
+<div className="ch-image-md">
+  <Frame>
+    ![Stack Overflow 스키마(schema)](/images/getting-started/example-datasets/stackoverflow.webp)
+  </Frame>
+</div>
 
-이 데이터의 스키마 설명은 [여기](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede)에서 확인할 수 있습니다.
+이 데이터의 스키마(schema) 설명은 [여기](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede)에서 확인할 수 있습니다.
 
 <div id="pre-prepared-data">
-  ## 미리 준비된 데이터
+  ## 미리 준비된 데이터 {#pre-prepared-data}
 </div>
 
 이 데이터의 사본을 Parquet 포맷으로 제공하며, 2024년 4월 기준 최신 상태입니다. 이 데이터셋은 행 수(Posts 6천만 개)만 보면 ClickHouse 기준으로는 작은 편이지만, 상당한 양의 텍스트와 큰 String 컬럼을 포함하고 있습니다.
@@ -32,29 +34,27 @@ CREATE DATABASE stackoverflow
 
 다음 측정 시간은 `eu-west-2`에 위치한 96 GiB, 24 vCPU ClickHouse Cloud 클러스터를 기준으로 합니다. 데이터셋은 `eu-west-3`에 위치해 있습니다.
 
-<div id="posts">
-  ### Posts
-</div>
+### Posts {#posts}
 
 ```sql
 CREATE TABLE stackoverflow.posts
 (
-    `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+    `Id` Int32 CODEC(Delta, Default),
     `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
     `AcceptedAnswerId` UInt32,
     `CreationDate` DateTime64(3, 'UTC'),
     `Score` Int32,
-    `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+    `ViewCount` UInt32 CODEC(Delta, Default),
     `Body` String,
     `OwnerUserId` Int32,
     `OwnerDisplayName` String,
     `LastEditorUserId` Int32,
     `LastEditorDisplayName` String,
-    `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
     `LastActivityDate` DateTime64(3, 'UTC'),
     `Title` String,
     `Tags` String,
-    `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+    `AnswerCount` UInt16 CODEC(Delta, Default),
     `CommentCount` UInt8,
     `FavoriteCount` UInt8,
     `ContentLicense` LowCardinality(String),
@@ -64,9 +64,9 @@ CREATE TABLE stackoverflow.posts
 )
 ENGINE = MergeTree
 PARTITION BY toYear(CreationDate)
-ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate);
 
-INSERT INTO stackoverflow.posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+INSERT INTO stackoverflow.posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -75,9 +75,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM s3('https://datasets-documentation
 
 Posts는 연도별로도 사용할 수 있습니다. 예: [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet)
 
-<div id="votes">
-  ### Votes
-</div>
+### Votes {#votes}
 
 ```sql
 CREATE TABLE stackoverflow.votes
@@ -90,9 +88,9 @@ CREATE TABLE stackoverflow.votes
     `BountyAmount` UInt8
 )
 ENGINE = MergeTree
-ORDER BY (VoteTypeId, CreationDate, PostId, UserId)
+ORDER BY (VoteTypeId, CreationDate, PostId, UserId);
 
-INSERT INTO stackoverflow.votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+INSERT INTO stackoverflow.votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -101,9 +99,7 @@ INSERT INTO stackoverflow.votes SELECT * FROM s3('https://datasets-documentation
 
 Votes는 연도별로도 사용할 수 있습니다. 예: [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/2020.parquet)
 
-<div id="comments">
-  ### Comments
-</div>
+### Comments {#comments}
 
 ```sql
 CREATE TABLE stackoverflow.comments
@@ -117,9 +113,9 @@ CREATE TABLE stackoverflow.comments
     `UserDisplayName` LowCardinality(String)
 )
 ENGINE = MergeTree
-ORDER BY CreationDate
+ORDER BY CreationDate;
 
-INSERT INTO stackoverflow.comments SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/*.parquet')
+INSERT INTO stackoverflow.comments SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -128,16 +124,14 @@ INSERT INTO stackoverflow.comments SELECT * FROM s3('https://datasets-documentat
 
 Comments는 연도별로도 사용할 수 있습니다. 예: [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/2020.parquet)
 
-<div id="users">
-  ### Users
-</div>
+### Users {#users}
 
 ```sql
 CREATE TABLE stackoverflow.users
 (
     `Id` Int32,
     `Reputation` LowCardinality(String),
-    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta, Default),
     `DisplayName` String,
     `LastAccessDate` DateTime64(3, 'UTC'),
     `AboutMe` String,
@@ -149,18 +143,16 @@ CREATE TABLE stackoverflow.users
     `AccountId` Int32
 )
 ENGINE = MergeTree
-ORDER BY (Id, CreationDate)
+ORDER BY (Id, CreationDate);
 
-INSERT INTO stackoverflow.users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
+INSERT INTO stackoverflow.users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
 ```
 
 ```response
 0 rows in set. Elapsed: 10.988 sec. Processed 22.48 million rows, 1.36 GB (2.05 million rows/s., 124.10 MB/s.)
 ```
 
-<div id="badges">
-  ### Badges
-</div>
+### Badges {#badges}
 
 ```sql
 CREATE TABLE stackoverflow.badges
@@ -173,18 +165,16 @@ CREATE TABLE stackoverflow.badges
     `TagBased` Bool
 )
 ENGINE = MergeTree
-ORDER BY UserId
+ORDER BY UserId;
 
-INSERT INTO stackoverflow.badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+INSERT INTO stackoverflow.badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet', NOSIGN)
 ```
 
 ```response
 0 rows in set. Elapsed: 6.635 sec. Processed 51.29 million rows, 797.05 MB (7.73 million rows/s., 120.13 MB/s.)
 ```
 
-<div id="postlinks">
-  ### PostLinks
-</div>
+### PostLinks {#postlinks}
 
 ```sql
 CREATE TABLE stackoverflow.postlinks
@@ -196,18 +186,16 @@ CREATE TABLE stackoverflow.postlinks
     `LinkTypeId` Enum8('Linked' = 1, 'Duplicate' = 3)
 )
 ENGINE = MergeTree
-ORDER BY (PostId, RelatedPostId)
+ORDER BY (PostId, RelatedPostId);
 
-INSERT INTO stackoverflow.postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet')
+INSERT INTO stackoverflow.postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
 ```
 
 ```response
 0 rows in set. Elapsed: 1.534 sec. Processed 6.55 million rows, 129.70 MB (4.27 million rows/s., 84.57 MB/s.)
 ```
 
-<div id="posthistory">
-  ### PostHistory
-</div>
+### PostHistory {#posthistory}
 
 ```sql
 CREATE TABLE stackoverflow.posthistory
@@ -224,9 +212,9 @@ CREATE TABLE stackoverflow.posthistory
     `UserDisplayName` String
 )
 ENGINE = MergeTree
-ORDER BY (CreationDate, PostId)
+ORDER BY (CreationDate, PostId);
 
-INSERT INTO stackoverflow.posthistory SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posthistory/*.parquet')
+INSERT INTO stackoverflow.posthistory SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posthistory/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -234,13 +222,13 @@ INSERT INTO stackoverflow.posthistory SELECT * FROM s3('https://datasets-documen
 ```
 
 <div id="original-dataset">
-  ## 원본 데이터셋
+  ## 원본 데이터셋 {#original-dataset}
 </div>
 
 원본 데이터셋은 [https://archive.org/download/stackexchange](https://archive.org/download/stackexchange)에서 압축된(7zip) XML 포맷으로 제공되며, 파일 접두사는 `stackoverflow.com*`입니다.
 
 <div id="download">
-  ### 다운로드
+  ### 다운로드 {#download}
 </div>
 
 ```bash
@@ -256,7 +244,7 @@ wget https://archive.org/download/stackexchange/stackoverflow.com-Votes.7z
 이 파일들은 최대 35GB이며 인터넷 연결 상태에 따라 다운로드에 약 30분이 걸릴 수 있습니다 - 다운로드 서버는 초당 약 20MB로 속도가 제한됩니다.
 
 <div id="convert-to-json">
-  ### JSON으로 변환
+  ### JSON으로 변환 {#convert-to-json}
 </div>
 
 이 문서를 작성하는 시점 기준으로 ClickHouse는 XML을 입력 형식으로 네이티브 지원하지 않습니다. 데이터를 ClickHouse에 로드하려면 먼저 NDJSON으로 변환해야 합니다.
@@ -304,13 +292,13 @@ clickhouse local --query "SELECT * FROM file('posts.json', JSONEachRow, 'Id Int3
 ```
 
 <div id="example-queries">
-  ## 예시 쿼리
+  ## 예시 쿼리 {#example-queries}
 </div>
 
 시작하는 데 도움이 될 몇 가지 간단한 질문입니다.
 
 <div id="most-popular-tags-on-stack-overflow">
-  ### Stack Overflow에서 가장 많이 사용된 태그
+  ### Stack Overflow에서 가장 많이 사용된 태그 {#most-popular-tags-on-stack-overflow}
 </div>
 
 ```sql
@@ -342,7 +330,7 @@ Peak memory usage: 224.03 MiB.
 ```
 
 <div id="user-with-the-most-answers-active-accounts">
-  ### 답변을 가장 많이 한 사용자(활성 계정)
+  ### 답변을 가장 많이 한 사용자(활성 계정) {#user-with-the-most-answers-active-accounts}
 </div>
 
 계정에는 `UserId`가 필요합니다.
@@ -372,7 +360,7 @@ Peak memory usage: 206.45 MiB.
 ```
 
 <div id="clickhouse-related-posts-with-the-most-views">
-  ### 조회 수가 가장 많은 ClickHouse 관련 게시물
+  ### 조회 수가 가장 많은 ClickHouse 관련 게시물 {#clickhouse-related-posts-with-the-most-views}
 </div>
 
 ```sql
@@ -406,7 +394,7 @@ Peak memory usage: 240.01 MiB.
 ```
 
 <div id="most-controversial-posts">
-  ### 가장 논란이 된 게시물
+  ### 가장 논란이 된 게시물 {#most-controversial-posts}
 </div>
 
 ```sql
@@ -444,7 +432,7 @@ Peak memory usage: 6.05 GiB.
 ```
 
 <div id="attribution">
-  ## 출처 표기
+  ## 출처 표기 {#attribution}
 </div>
 
 `cc-by-sa 4.0` 라이선스에 따라 이 데이터를 제공한 Stack Overflow에 감사드리며, [https://archive.org/details/stackexchange](https://archive.org/details/stackexchange)에 있는 원본 데이터 출처와 Stack Overflow의 노고를 밝힙니다.

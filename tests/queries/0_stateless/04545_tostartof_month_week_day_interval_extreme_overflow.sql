@@ -17,6 +17,9 @@
 -- interval returned `1970-01-01` instead of the `1969-12-22` bucket. That path now goes through the same
 -- floored `roundDownToMultiple` helper.
 
+-- The narrowing of the result to `Date` and `DateTime` is tested, which depends on the interval unit only in the legacy mode.
+SET to_start_of_interval_preserves_argument_type = 0;
+
 -- Normal values must still be rounded down to the start of the interval correctly.
 SELECT toStartOfInterval(toDate('2021-06-22'), INTERVAL 5 MONTH);
 SELECT toStartOfInterval(toDate('2021-06-22'), INTERVAL 3 MONTH);
@@ -82,5 +85,31 @@ SELECT toStartOfInterval(toDateTime64(-9223372036854775807, 0, 'UTC'), INTERVAL 
 SELECT toStartOfInterval(toDateTime64(9223372036854775807, 0, 'UTC'), INTERVAL 9223372036854775807 DAY) FORMAT Null;
 SELECT toStartOfInterval(toDateTime64(-9223372036854775807, 0, 'UTC'), INTERVAL 9223372036854775807 QUARTER) FORMAT Null;
 SELECT toStartOfInterval(toDateTime64(9223372036854775807, 0, 'UTC'), INTERVAL 9223372036854775807 QUARTER) FORMAT Null;
+
+-- `enable_extended_results_for_datetime_functions = 1` widens the `DAY` result of a `Date32` argument to
+-- `DateTime64(0)`, which represents the whole `Date32` domain, so the floored instant has to be exact there.
+-- A `Date` argument keeps the `DateTime` result regardless of the setting, the same as `toStartOfDay`, and
+-- saturates at that type's own maximum instead.
+SELECT toStartOfInterval(toDate32('2106-02-07'), INTERVAL 1 DAY)
+    SETTINGS enable_extended_results_for_datetime_functions = 1, session_timezone = 'UTC';
+SELECT toStartOfInterval(toDate32('2106-02-08'), INTERVAL 1 DAY)
+    SETTINGS enable_extended_results_for_datetime_functions = 1, session_timezone = 'UTC';
+SELECT toStartOfInterval(toDate32('2149-06-06'), INTERVAL 1 DAY)
+    SETTINGS enable_extended_results_for_datetime_functions = 1, session_timezone = 'UTC';
+SELECT toStartOfInterval(toDate('2106-02-07'), INTERVAL 1 DAY)
+    SETTINGS enable_extended_results_for_datetime_functions = 0, session_timezone = 'UTC';
+SELECT toStartOfInterval(toDate('2106-02-08'), INTERVAL 1 DAY)
+    SETTINGS enable_extended_results_for_datetime_functions = 0, session_timezone = 'UTC';
+SELECT toStartOfInterval(toDate('2149-06-06'), INTERVAL 1 DAY)
+    SETTINGS enable_extended_results_for_datetime_functions = 0, session_timezone = 'UTC';
+-- Each of the 15825 days from 2106-02-08 to the end of the `Date` domain must keep its own bucket in the
+-- widened result; they all shared the single saturated one while the clamp applied to it.
+SELECT uniqExact(toStartOfInterval(toDate32('2106-02-08') + number, INTERVAL 1 DAY)) FROM numbers(15825)
+    SETTINGS enable_extended_results_for_datetime_functions = 1, session_timezone = 'UTC';
+-- East of UTC the start of 1970-01-01 is negative, which the narrow type cannot hold but the widened one can.
+SELECT toStartOfInterval(toDate32('1970-01-01'), INTERVAL 1 DAY)
+    SETTINGS enable_extended_results_for_datetime_functions = 1, session_timezone = 'Asia/Tokyo';
+SELECT toStartOfInterval(toDate('1970-01-01'), INTERVAL 1 DAY)
+    SETTINGS enable_extended_results_for_datetime_functions = 0, session_timezone = 'Asia/Tokyo';
 
 SELECT 'ok';

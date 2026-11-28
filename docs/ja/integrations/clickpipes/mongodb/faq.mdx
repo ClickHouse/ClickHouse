@@ -10,9 +10,7 @@ integration:
   - category: 'clickpipes'
 ---
 
-<div id="can-i-query-for-individual-fields-in-the-json-datatype">
-  ### JSONデータ型の個々のフィールドに対してクエリできますか？
-</div>
+### JSONデータ型の個々のフィールドに対してクエリできますか？ {#can-i-query-for-individual-fields-in-the-json-datatype}
 
 `{"user_id": 123}` のようにフィールドに直接アクセスするには、**ドット記法**を使用できます。
 
@@ -34,9 +32,7 @@ SELECT sum(doc.shipping.cost::Float32) AS total_shipping_cost FROM t1;
 
 JSON の操作について詳しくは、[JSON の操作ガイド](/ja/integrations/clickpipes/mongodb/quickstart)を参照してください。
 
-<div id="how-do-i-flatten-the-nested-mongodb-documents-in-clickhouse">
-  ### ClickHouse でネストされた MongoDB ドキュメントをフラット化するにはどうすればよいですか？
-</div>
+### ClickHouse でネストされた MongoDB ドキュメントをフラット化するにはどうすればよいですか？ {#how-do-i-flatten-the-nested-mongodb-documents-in-clickhouse}
 
 MongoDB ドキュメントは、デフォルトではネスト構造を保持したまま、ClickHouse で JSON type としてレプリケートされます。このデータをフラット化する方法はいくつかあります。データをカラムにフラット化したい場合は、通常のビュー、materialized view、またはクエリ時のアクセスを使用できます。
 
@@ -46,59 +42,53 @@ MongoDB ドキュメントは、デフォルトではネスト構造を保持し
 
 詳細な例については、[JSON の操作ガイド](/ja/integrations/clickpipes/mongodb/quickstart) を参照してください。
 
-<div id="can-i-connect-mongodb-databases-that-dont-have-a-public-ip-or-are-in-private-networks">
-  ### パブリックIPを持たない、またはプライベートネットワーク内にあるMongoDBデータベースに接続できますか？
-</div>
+### パブリックIPを持たない、またはプライベートネットワーク内にあるMongoDBデータベースに接続できますか？ {#can-i-connect-mongodb-databases-that-dont-have-a-public-ip-or-are-in-private-networks}
 
 はい。パブリックインターネットに公開されていないデータソースにClickPipesが到達する方法については、[ClickPipes のネットワーク](/ja/integrations/clickpipes/networking)を参照してください。
 
-<div id="what-happens-if-i-delete-a-database-table-from-my-mongodb-database">
-  ### MongoDB データベースからデータベース/テーブルを削除するとどうなりますか？
-</div>
+### MongoDB データベースからデータベース/テーブルを削除するとどうなりますか？ {#what-happens-if-i-delete-a-database-table-from-my-mongodb-database}
 
 MongoDB からデータベース/テーブルを削除しても、ClickPipes は引き続き動作しますが、削除されたデータベース/テーブルの変更はレプリケートされなくなります。一方、ClickHouse 内の対応するテーブルは保持されます。
 
-<div id="how-does-mongodb-cdc-connector-handle-transactions">
-  ### MongoDB CDC コネクタはトランザクションをどのように処理しますか？
-</div>
+### MongoDB CDC コネクタはトランザクションをどのように処理しますか？ {#how-does-mongodb-cdc-connector-handle-transactions}
 
 トランザクション内の各ドキュメント変更は、それぞれ個別に ClickHouse に処理されます。変更は oplog に記録された順序で適用され、コミットされた変更のみが ClickHouse にレプリケートされます。MongoDB のトランザクションがロールバックされた場合、それらの変更は変更ストリームには現れません。
 
 その他の例については、[JSON の操作ガイド](/ja/integrations/clickpipes/mongodb/quickstart) を参照してください。
 
-<div id="resume-point-may-no-longer-be-in-the-oplog-error">
-  ### `resume of change stream was not possible, as the resume point may no longer be in the oplog.` エラーはどのように対処すればよいですか？
-</div>
+### `resume of change stream was not possible, as the resume point may no longer be in the oplog.` エラーはどのように対処すればよいですか？ {#resume-point-may-no-longer-be-in-the-oplog-error}
 
 このエラーは通常、oplog が切り詰められ、ClickPipe が想定した位置から変更ストリームを再開できなくなった場合に発生します。この問題を解決するには、[ClickPipe を再同期](/ja/integrations/clickpipes/mongodb/resync)してください。この問題の再発を防ぐには、oplog の保持期間を延ばすことを推奨します。手順については、[MongoDB Atlas](/ja/integrations/clickpipes/mongodb/source/atlas#enable-oplog-retention)、[セルフマネージド MongoDB](/ja/integrations/clickpipes/mongodb/source/generic#enable-oplog-retention)、または [Amazon DocumentDB](/ja/integrations/clickpipes/mongodb/source/documentdb#configure-change-stream-log-retention) を参照してください。
 
-<div id="how-is-replication-managed">
-  ### レプリケーションはどのように管理されますか？
-</div>
+### `Cannot open a new cursor since too many cursors are already opened` エラーにはどう対処すればよいですか？ {#too-many-cursors-error}
+
+Amazon DocumentDB などの一部のマネージド MongoDB プロバイダーでは、各インスタンスで同時にオープンできるカーソルの数に上限があります。Amazon DocumentDB では、この上限はインスタンスクラスによって異なります。たとえば、`t3.medium` および `t4g.medium` インスタンスでは、同時にオープンできるカーソルは 30 個までです。各インスタンスクラスの上限については、[インスタンスの制限](https://docs.aws.amazon.com/documentdb/latest/devguide/limits.html#limits.instance)を参照してください。
+
+ClickPipe は変更ストリームを読み取るためにカーソルを使用します。インスタンス上の他のワークロードが利用可能なカーソルをすべて使い切っている場合、ClickPipe は変更ストリームをオープンできません。この場合でも ClickPipe は自動的に再試行し、カーソルが利用可能になった時点でレプリケーションを再開します。
+
+この問題を解決するには、次の手順を実行します。
+
+1. ClickPipe の読み取り元インスタンスでオープンされているカーソルの数を確認します。`mongosh` でインスタンスに接続し、`db.serverStatus().metrics.cursor.open` を実行します。Amazon DocumentDB の場合は、Amazon CloudWatch で `DatabaseCursorsMax` と `DatabaseCursorsLimit` のメトリクスを比較して確認することもできます。
+2. 他のワークロードがオープンしたままにしているカーソルの数を減らします。たとえば、アプリケーション側で不要になったカーソルは確実にクローズするようにします。
+3. ワークロードにより多くのカーソルが必要な場合は、インスタンスをより大きなインスタンスクラスにスケールアップします。
+
+### レプリケーションはどのように管理されますか？ {#how-is-replication-managed}
 
 データベース内の変更を追跡するために、MongoDB ネイティブの Change Streams API を使用します。Change Streams API は、MongoDB の oplog (operations log) を活用して、再開可能なデータベース変更のストリームを提供します。ClickPipe は MongoDB の resume token を使用して oplog 内の位置を追跡し、すべての変更が ClickHouse にレプリケートされるようにします。
 
-<div id="which-read-preference-should-i-use">
-  ### どの read preference を使用すべきですか？
-</div>
+### どの read preference を使用すべきですか？ {#which-read-preference-should-i-use}
 
 使用する read preference は、具体的なユースケースによって異なります。プライマリノードへの負荷を最小限に抑えたい場合は、`secondaryPreferred` を使用することを推奨します。インジェストのレイテンシを最適化したい場合は、`primaryPreferred` を使用することを推奨します。詳しくは、[MongoDB のドキュメント](https://www.mongodb.com/docs/manual/core/read-preference/#read-preference-modes-1)を参照してください。
 
-<div id="does-the-mongodb-clickpipe-support-sharded-cluster">
-  ### MongoDB ClickPipe は Sharded Cluster に対応していますか？
-</div>
+### MongoDB ClickPipe は Sharded Cluster に対応していますか？ {#does-the-mongodb-clickpipe-support-sharded-cluster}
 
 はい、MongoDB ClickPipe は Replica Set と Sharded Cluster の両方に対応しています。
 
-<div id="documentdb-support">
-  ### MongoDB ClickPipe は Amazon DocumentDB をサポートしていますか？
-</div>
+### MongoDB ClickPipe は Amazon DocumentDB をサポートしていますか？ {#documentdb-support}
 
 はい、MongoDB ClickPipe は Amazon DocumentDB 5.0 をサポートしています。詳細については、[Amazon DocumentDB ソースのセットアップガイド](/ja/integrations/clickpipes/mongodb/source/documentdb) を参照してください。
 
-<div id="privatelink-support">
-  ### MongoDB ClickPipe は PrivateLink をサポートしていますか？
-</div>
+### MongoDB ClickPipe は PrivateLink をサポートしていますか？ {#privatelink-support}
 
 AWS 上の MongoDB (および DocumentDB) クラスターに対してのみ、PrivateLink をサポートしています。
 
@@ -108,4 +98,19 @@ AWS 上の MongoDB (および DocumentDB) クラスターに対してのみ、Pr
 
 Replica Set 接続の場合、MongoDB 向け PrivateLink は VPC リソース または VPC エンドポイントサービス のいずれかで設定できます。VPC リソースを使用する場合は、`GROUP` リソース構成に加えて、クラスター内の各ノードごとに `CHILD` リソース構成を作成する必要があります。VPC エンドポイントサービスを使用する場合は、クラスター内の各ノードごとに個別の Endpoint Service (および個別の NLB) を作成する必要があります。
 
-詳細については、[ClickPipes 向け AWS PrivateLink](/ja/integrations/clickpipes/networking/aws-privatelink) のドキュメントを参照してください。サポートが必要な場合は、ClickHouse Support までお問い合わせください。
+詳細については、[AWS PrivateLink](/ja/integrations/clickpipes/networking/aws-privatelink) のドキュメントを参照してください。サポートが必要な場合は、ClickHouse Support までお問い合わせください。
+
+### `_peerdb_raw_mirror_*` テーブルが肥大化するのはなぜですか？また、そのサイズを抑えるにはどうすればよいですか？ {#raw-mirror-table-retention}
+
+CDC ClickPipe は、まず変更イベントを宛先データベース内の `_peerdb_raw_mirror_<pipe id>` という名前の未加工テーブルに書き込み、その後それらを正規化して宛先テーブルに反映します。ClickPipes がこのテーブルを切り詰めることはありません。パイプの作成時期によっては、このテーブルに有効期限 (TTL) が設定されておらず、すべてのイベントが保持され続けている場合があります。`SHOW CREATE TABLE` で確認したうえで、次のコマンドで有効期限 (TTL) を追加または変更してください。
+
+```sql
+ALTER TABLE <db>._peerdb_raw_mirror_<id>
+    MODIFY TTL toDateTime(fromUnixTimestamp64Nano(_peerdb_timestamp)) + INTERVAL 30 DAY;
+```
+
+未加工テーブルにパーティションキーがない場合、最初の有効期限 (TTL) 処理で既存のパーツが書き換えられるため、大規模なテーブルではバックグラウンドで顕著な I/O が発生することがあります。進捗は `system.mutations` で確認できます。
+
+<Warning>
+  有効期限 (TTL) はローカル時刻に基づいて評価され、パイプの状態は考慮されません。パイプの一時停止またはストールが有効期限 (TTL) より長く続くと、まだ正規化されていないイベントは削除され、宛先テーブルには到達しません。保持期間は、予定しているどの一時停止期間よりも長く設定してください。
+</Warning>

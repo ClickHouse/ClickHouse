@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Common/Exception.h>
+#include <Common/NoDumpAllocator.h>
 
 #if USE_SSL
 
@@ -11,6 +12,7 @@
 #include <openssl/kdf.h>
 #include <openssl/stack.h>
 #include <openssl/x509.h>
+#include <span>
 
 
 namespace DB
@@ -20,15 +22,10 @@ struct X509ExtensionStackDeleter
 {
     void operator()(X509_EXTENSIONS * ptr) const
     {
-        OPENSSL_sk_pop_free(
-            reinterpret_cast<OPENSSL_STACK *>(ptr),
-            &X509ExtensionStackDeleter::freeX509Extension
-        );
-    }
-
-    static void freeX509Extension(void * ptr)
-    {
-        X509_EXTENSION_free(static_cast<X509_EXTENSION *>(ptr));
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+        sk_X509_EXTENSION_pop_free(ptr, X509_EXTENSION_free);
+#pragma clang diagnostic pop
     }
 };
 
@@ -44,14 +41,14 @@ using X509_REQ_ptr = std::unique_ptr<X509_REQ, decltype(&X509_REQ_free)>;
 /// Encodes `text` and returns it.
 std::string encodeSHA256(std::string_view text);
 std::string encodeSHA256(const void * text, size_t size);
-std::vector<uint8_t> encodeSHA256(const std::vector<uint8_t> & data);
+std::vector<uint8_t> encodeSHA256(std::span<const uint8_t> data);
 
 /// `out` must be at least 32 bytes long.
 void encodeSHA256(std::string_view text, unsigned char * out);
 void encodeSHA256(const void * text, size_t size, unsigned char * out);
 
-std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t> & key, const std::string & data);
-std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<uint8_t>& salt, int iterations);
+std::vector<uint8_t, NoDumpAllocator<uint8_t>> hmacSHA256(std::span<const uint8_t> key, const std::string & data);
+std::vector<uint8_t, NoDumpAllocator<uint8_t>> pbkdf2SHA256(std::string_view password, const std::vector<uint8_t>& salt, int iterations);
 
 std::string rsaSHA256Sign(EVP_PKEY * pkey, const std::string & data);
 bool rsaSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature);

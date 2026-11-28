@@ -1,6 +1,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
+#include <DataTypes/DataTypeArray.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -19,13 +20,24 @@ namespace
 class AggregateFunctionCombinatorArray final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "Array"; }
+    [[nodiscard]] String getName() const override { return "Array"; }
 
-    bool supportsNesting() const override { return true; }
+    [[nodiscard]] bool supportsNesting() const override { return true; }
 
-    bool transformsArgumentTypes() const override { return true; }
+    [[nodiscard]] bool transformsArgumentTypes() const override { return true; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    /// The rows of the arrays are passed to the nested function one by one, so the arrays are converted around.
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+
+    void convertVariantArgumentsAround(
+        DataTypes & arguments, const DataTypes & nested_arguments, const DataTypes & converted_nested_arguments) const override
+    {
+        for (size_t i = 0; i < nested_arguments.size(); ++i)
+            if (!converted_nested_arguments[i]->equals(*nested_arguments[i]))
+                arguments[i] = std::make_shared<DataTypeArray>(converted_nested_arguments[i]);
+    }
+
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Array aggregate functions require at least one argument");
@@ -43,7 +55,7 @@ public:
         return nested_arguments;
     }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,

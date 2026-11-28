@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
@@ -14,13 +15,13 @@ namespace DB
 class JoinCommutativity : public IOptimizationRule
 {
 public:
-    String getName() const override { return "JoinCommutativity"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
-    Promise getPromise() const override { return 2000; }
-    bool isTransformation() const override { return true; }
+    [[nodiscard]] String getName() const override { return "JoinCommutativity"; }
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
+    [[nodiscard]] Promise getPromise() const override { return 2000; }
+    [[nodiscard]] bool isTransformation() const override { return true; }
 
 protected:
-    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const override;
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const override;
 };
 
 bool JoinCommutativity::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
@@ -62,7 +63,7 @@ static std::unique_ptr<JoinStepLogical> cloneSwapped(const JoinStepLogical & joi
     return swapped_join_step;
 }
 
-std::vector<GroupExpressionPtr> JoinCommutativity::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
+GroupExpressions JoinCommutativity::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
 {
     chassert(expression->inputs.size() == 2);
     const auto * join_step = typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep());

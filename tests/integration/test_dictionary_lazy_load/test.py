@@ -41,6 +41,12 @@ def get_status(node, name):
     ).strip()
 
 
+def get_is_lazy(node, name):
+    return node.query(
+        f"SELECT is_lazy FROM system.dictionaries WHERE name = '{name}'"
+    ).strip() == "true"
+
+
 # lazy = the effective decision: the dictionary_lazy_load setting if not 'auto', else the server's default.
 @pytest.mark.parametrize("node, clause, lazy", [
     pytest.param(node_lazy, "", True),
@@ -62,10 +68,13 @@ def test_dictionary_lazy_load(started_cluster, node, clause, lazy):
     create_dictionary(node, clause, "src")
 
     assert get_status(node, "dict") == ("NOT_LOADED" if lazy else "LOADED")
+    assert get_is_lazy(node, "dict") == lazy
     assert node.query("SELECT dictGetString('dict', 'val', toUInt64(1))").strip() == "a"
     assert get_status(node, "dict") == "LOADED"
+    assert get_is_lazy(node, "dict") == lazy
 
     node.restart_clickhouse()
     assert_eq_with_retry(node, "SELECT status FROM system.dictionaries WHERE name = 'dict'", "NOT_LOADED" if lazy else "LOADED")
+    assert get_is_lazy(node, "dict") == lazy
 
     node.query("DROP DICTIONARY dict")

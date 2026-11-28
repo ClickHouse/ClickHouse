@@ -7,8 +7,6 @@ sidebarTitle: 'リアルタイム分析'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -22,9 +20,7 @@ export const ExclusiveGroup = ({ name, children }) => {
 ユーザーはダッシュボードを更新したり、リーダーボードを開いたり、問題を調査したりする際に、データへ今起きたことが反映されていると期待します。
 技術的には、これは単に低レイテンシの分析クエリを提供するだけでなく、大量のデータが継続的に挿入されている状況でも、それを実現することを意味します。
 
-<div id="system-properties">
-  ## リアルタイム分析システムの特性
-</div>
+## リアルタイム分析システムの特性 {#system-properties}
 
 顧客がリアルタイム分析プラットフォームを評価する際、クエリレイテンシだけに注目しがちです。「50ms以内に答えを返せるか？」というのはもっともな問いであり、静的なデータセットに十分なコンピュートを投入すれば、たいていの分析エンジンはこれに十分説得力をもって答えられます。
 
@@ -36,15 +32,21 @@ export const ExclusiveGroup = ({ name, children }) => {
 * **変換と準備にかかる時間**: クエリが実際に参照する構造 (materialized view、ロールアップ、索引) を、クレンジング、エンリッチ、結合、事前集計、更新できる状態にするまでにどれくらい時間がかかるか。
 * **クエリにかかる時間**: データが利用可能になってから、読み取りの計画と実行にどれくらい時間がかかるか。
 
-<Image img="/images/use-cases/rta-considerations.webp" alt="リアルタイム分析: 取り込み、変換、クエリにかかる時間" />
-
-<div id="clickhouse-rta">
-  ## ClickHouseがリアルタイム分析を支える仕組み
+<div className="ch-image-lg">
+  <Frame>
+    ![リアルタイム分析：取り込み、変換、クエリにかかる時間](/images/use-cases/rta-considerations.webp)
+  </Frame>
 </div>
+
+## ClickHouseがリアルタイム分析を支える仕組み {#clickhouse-rta}
 
 <Columns cols={2}>
   <div>
-    <Image img="/images/use-cases/real-time-analytics-architecture.webp" alt="ClickHouseがリアルタイム分析を支える仕組み" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouseがリアルタイム分析を支える仕組み](/images/use-cases/real-time-analytics-architecture.webp)
+      </Frame>
+    </div>
   </div>
 
   <ExclusiveGroup name="rta-arch">

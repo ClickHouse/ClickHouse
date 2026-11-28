@@ -8,10 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="inserting-into-clickhouse-vs-oltp-databases">
-  ## ClickHouse への挿入と OLTP データベースの違い
+  ## ClickHouse への挿入と OLTP データベースの違い {#inserting-into-clickhouse-vs-oltp-databases}
 </div>
 
 OLAP (オンライン分析処理) データベースである ClickHouse は、高いパフォーマンスとスケーラビリティに最適化されており、条件によっては 1 秒あたり数百万行を挿入できます。
@@ -26,11 +24,11 @@ PostgreSQL は、同時実行トランザクションを処理するために MV
 これらのルールに従うことで、ClickHouse を初めて使うユーザーがよく遭遇する問題や、OLTP データベースで有効な挿入戦略をそのまま再現しようとして生じる問題を避けることができます。
 
 <div id="best-practices-for-inserts">
-  ## インサートのベストプラクティス
+  ## インサートのベストプラクティス {#best-practices-for-inserts}
 </div>
 
 <div id="insert-in-large-batch-sizes">
-  ### 大きなバッチサイズで挿入する
+  ### 大きなバッチサイズで挿入する {#insert-in-large-batch-sizes}
 </div>
 
 デフォルトでは、ClickHouse に送信される挿入ごとに、その挿入データと保存が必要なその他のメタデータを含むストレージパーツが ClickHouse によって即座に作成されます。
@@ -41,7 +39,7 @@ PostgreSQL は、同時実行トランザクションを処理するために MV
 大きなバッチが難しい場合は、以下で説明する非同期挿入を使用してください。
 
 <div id="ensure-consistent-batches-for-idempotent-retries">
-  ### 冪等な再試行のために、一貫したバッチを保つ
+  ### 冪等な再試行のために、一貫したバッチを保つ {#ensure-consistent-batches-for-idempotent-retries}
 </div>
 
 デフォルトでは、ClickHouse への insert は同期的かつ冪等です (つまり、同じ insert 操作を複数回実行しても、1 回だけ実行した場合と結果は変わりません) 。
@@ -56,7 +54,7 @@ MergeTree engine family の table では、ClickHouse はデフォルトで自�
 再試行した INSERT クエリ に同じデータが同じ順序で含まれている限り、 (確認応答のない) 元の insert が成功していた場合、ClickHouse は再試行された insert を自動的に無視します。
 
 <div id="insert-to-a-mergetree-table-or-a-distributed-table">
-  ### MergeTree テーブルまたは分散テーブルへの insert
+  ### MergeTree テーブルまたは分散テーブルへの insert {#insert-to-a-mergetree-table-or-a-distributed-table}
 </div>
 
 MergeTree (または Replicated テーブル) に直接 insert し、データが分片化されている場合は一連のノードに対してリクエストを分散し、`internal_replication=true` を設定することを推奨します。
@@ -65,9 +63,7 @@ MergeTree (または Replicated テーブル) に直接 insert し、データ�
 このクライアント側の負荷分散が難しい場合は、[分散テーブル](/ja/reference/engines/table-engines/special/distributed) 経由で insert することもできます。この場合、書き込みは各ノードに分散されます。ここでも、`internal_replication=true` を設定することを推奨します。
 ただし、この方法ではまず分散テーブルを持つノードにローカル書き込みを行い、その後で各分片に送信する必要があるため、パフォーマンスはやや低下します。
 
-<div id="use-asynchronous-inserts-for-small-batches">
-  ### 小さなバッチには非同期挿入を使用する
-</div>
+### 小さなバッチには非同期挿入を使用する {#use-asynchronous-inserts-for-small-batches}
 
 クライアント側でのバッチ処理が難しいケースもあります。たとえば、数百〜数千の単機能の agent がログ、メトリクス、トレースなどを送信するオブザーバビリティのユースケースです。
 このようなシナリオでは、問題や異常をできるだけ早く検知するために、そうしたデータをリアルタイムで転送することが重要です。
@@ -76,7 +72,11 @@ MergeTree (または Replicated テーブル) に直接 insert し、データ�
 
 非同期挿入では、以下の図にあるように、データはまずバッファに入れられ、その後 3 つのステップでデータベースストレージに書き込まれます。
 
-<Image img="/images/guides/postgres-inserts.webp" size="md" alt="Postgres inserts" />
+<div className="ch-image-md">
+  <Frame>
+    ![Postgres inserts](/images/guides/postgres-inserts.webp)
+  </Frame>
+</div>
 
 非同期挿入を有効にすると、ClickHouse は次のように動作します。
 
@@ -89,22 +89,22 @@ MergeTree (または Replicated テーブル) に直接 insert し、データ�
 一般に、これらの仕組みによって、データのバッチ処理はクライアント側からサーバー側 (ClickHouse インスタンス) へ移されます。
 
 <Note>
-  データベースストレージに flush される前のデータはクエリで検索できず、また buffer の flush は設定可能である点に注意してください。
+  データベースストレージに flush される前のデータはクエリで検索できず、また バッファ の flush は設定可能である点に注意してください。
 
   非同期挿入の設定に関する詳細は[こちら](/ja/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)、より詳しい解説は[こちら](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)を参照してください。
 </Note>
 
 <div id="use-official-clickhouse-clients">
-  ### 公式のClickHouseクライアントを使用する
+  ### 公式のClickHouseクライアントを使用する {#use-official-clickhouse-clients}
 </div>
 
 ClickHouseには、主要なプログラミング言語向けのクライアントが用意されています。
 これらはinsertが正しく実行されるよう最適化されており、たとえば [Go client](/ja/integrations/language-clients/go/clickhouse-api#async-insert) のように直接、またはクエリ、ユーザー、接続レベルの設定で有効にした場合に間接的に、非同期挿入をネイティブでサポートしています。
 
-利用可能なClickHouseクライアントとドライバーの一覧については、[Clients and Drivers](/ja/concepts/features/interfaces/cli)を参照してください。
+利用可能なClickHouseクライアントとドライバーの一覧については、[Native Clients and Interfaces](/ja/concepts/features/interfaces/native-clients-interfaces-index)を参照してください。
 
 <div id="prefer-the-native-format">
-  ### Native フォーマットを優先する
+  ### Native フォーマットを優先する {#prefer-the-native-format}
 </div>
 
 ClickHouse は、インサート時 (およびクエリ時) に多数の[入力フォーマット](/ja/reference/formats/index)をサポートしています。
@@ -120,7 +120,7 @@ ClickHouse は、インサート時 (およびクエリ時) に多数の[入力�
 迅速に統合したいものの、書き込みスループット要件がそれほど高くない場合は、[JSONEachRow](/ja/reference/formats/JSON/JSONEachRow) フォーマットも検討できます。ただし、このフォーマットでは ClickHouse 側でのパースに CPU オーバーヘッドが発生する点に注意してください。
 
 <div id="use-the-http-interface">
-  ### HTTPインターフェイスを使用する
+  ### HTTPインターフェイスを使用する {#use-the-http-interface}
 </div>
 
 多くの従来型データベースとは異なり、ClickHouse は HTTPインターフェイスをサポートしています。
@@ -133,7 +133,7 @@ HTTPインターフェイスは、ロードバランサーでトラフィック�
 詳細については、[HTTPインターフェイス](/ja/concepts/features/interfaces/http) を参照してください。
 
 <div id="basic-example">
-  ## 基本的な例
+  ## 基本的な例 {#basic-example}
 </div>
 
 ClickHouse では、おなじみの `INSERT INTO TABLE` コマンドを使用できます。スタートガイド[&quot;ClickHouse でテーブルを作成する&quot;](/ja/get-started/quickstarts/creating-tables)で作成したテーブルに、データをいくつか挿入してみましょう。
@@ -163,7 +163,7 @@ user_id message                                             timestamp           
 ```
 
 <div id="loading-data-from-postgres">
-  ## Postgres からのデータの読み込み
+  ## Postgres からのデータの読み込み {#loading-data-from-postgres}
 </div>
 
 Postgres からデータを読み込むには、次の方法があります。
@@ -181,7 +181,7 @@ Postgres からデータを読み込むには、次の方法があります。
 </Info>
 
 <div id="inserting-data-from-command-line">
-  ## コマンドラインからのデータ挿入
+  ## コマンドラインからのデータ挿入 {#inserting-data-from-command-line}
 </div>
 
 **前提条件**

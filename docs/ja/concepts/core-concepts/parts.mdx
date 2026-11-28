@@ -6,11 +6,7 @@ keywords: ['パーツ']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
-<div id="what-are-table-parts-in-clickhouse">
-  ## ClickHouse のテーブルのパーツとは何ですか？
-</div>
+## ClickHouse のテーブルのパーツとは何ですか？ {#what-are-table-parts-in-clickhouse}
 
 <br />
 
@@ -34,38 +30,54 @@ ORDER BY (town, street);
 
 テーブルに一連の行が挿入されるたびに、データパーツが作成されます。以下の図はその概要を示したものです。
 
-<Image img="/images/managing-data/core-concepts/part.webp" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![](/images/managing-data/core-concepts/part.webp)
+  </Frame>
+</div>
 
 <br />
 
-ClickHouse server が上の図に示した 4 行のサンプル insert (たとえば [INSERT INTO ステートメント](/ja/reference/statements/insert-into) 経由) を処理すると、いくつかのステップが実行されます。
+ClickHouse server が上の図に示した 4 行のサンプル 挿入 (たとえば [INSERT INTO ステートメント](/ja/reference/statements/insert-into) 経由) を処理すると、いくつかのステップが実行されます。
 
-① **ソート**: 行はテーブルのソートキー `(town, street)` に従ってソートされ、ソート後の行に対して [スパースプライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes) が生成されます。
+<Steps>
+  <Step title="ソート">
+    行はテーブルのソートキー `(town, street)` に従ってソートされ、ソート後の行に対して [スパースプライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes) が生成されます。
+  </Step>
 
-② **分割**: ソート済みのデータはカラムごとに分割されます。
+  <Step title="分割">
+    ソート済みのデータはカラムごとに分割されます。
+  </Step>
 
-③ **圧縮**: 各カラムは[圧縮](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)されます。
+  <Step title="圧縮">
+    各カラムは[圧縮](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)されます。
+  </Step>
 
-④ **ディスクへの書き込み**: 圧縮されたカラムは、insert のデータパーツを表す新しいディレクトリ内に、バイナリのカラムファイルとして保存されます。スパースプライマリインデックスも圧縮され、同じディレクトリに格納されます。
+  <Step title="ディスクへの書き込み">
+    圧縮されたカラムは、挿入 のデータパーツを表す新しいディレクトリ内に、バイナリのカラムファイルとして保存されます。スパースプライマリインデックスも圧縮され、同じディレクトリに格納されます。
+  </Step>
+</Steps>
 
 テーブルで使用しているエンジンによっては、ソートとあわせて追加の変換が行われる[場合があります](/ja/reference/settings/session-settings)。
 
 データパーツは自己完結型であり、中央カタログがなくても内容を解釈するために必要なすべてのメタデータを含んでいます。スパースプライマリインデックスに加え、パーツには、セカンダリの[データスキッピングインデックス](/ja/concepts/features/performance/skip-indexes/skipping-indexes)、[カラム STATISTICS](https://clickhouse.com/blog/clickhouse-release-23-11#column-statistics-for-prewhere)、チェックサム、min-max 索引 ([パーティション化](/ja/concepts/core-concepts/partitions) を使用している場合) など、さらに[多くの](https://github.com/ClickHouse/ClickHouse/blob/a065b11d591f22b5dd50cb6224fab2ca557b4989/src/Storages/MergeTree/MergeTreeData.h#L104)メタデータが含まれます。
 
-<div id="part-merges">
-  ## パーツのマージ
-</div>
+## パーツのマージ {#part-merges}
 
 テーブルごとのパーツ数を管理するため、[バックグラウンドマージ](/ja/concepts/core-concepts/merges)ジョブが定期的に小さなパーツをより大きなパーツへ統合し、[設定可能な](/ja/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool)圧縮サイズ (通常は約 150 GB) に達するまでこの処理を続けます。マージ済みパーツは非アクティブとしてマークされ、[設定可能な](/ja/reference/settings/merge-tree-settings/other#old_parts_lifetime)期間の経過後に削除されます。時間の経過とともに、このプロセスによってマージ済みパーツの階層構造が形成されるため、これが MergeTree テーブルと呼ばれる理由です。
 
-<Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
+<div className="ch-image-lg">
+  <Frame>
+    ![](/images/managing-data/core-concepts/merges.webp)
+  </Frame>
+</div>
 
 <br />
 
 初期パーツ数とマージのオーバーヘッドを最小限に抑えるため、データベースクライアントでは、たとえば一度に 20,000 行を挿入するようにタプルをまとめて挿入するか、[非同期挿入モード](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)を使用することが[推奨されています](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance)。このモードでは、ClickHouse は同じテーブルに対する複数の受信 INSERT の行をバッファリングし、バッファサイズが設定可能なしきい値を超えるか、タイムアウトになるまで、新しいパーツを作成しません。
 
 <div id="monitoring-table-parts">
-  ## テーブルのパーツの監視
+  ## テーブルのパーツの監視 {#monitoring-table-parts}
 </div>
 
 [仮想カラム](/ja/reference/engines/table-engines/index#table_engines-virtual_columns) `_part` を使用すると、サンプルテーブルで現在存在するすべてのアクティブなパーツの一覧を[クエリ](https://sql.clickhouse.com/?query=U0VMRUNUIF9wYXJ0CkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGUKR1JPVVAgQlkgX3BhcnQKT1JERVIgQlkgX3BhcnQgQVNDOw\&run_query=true\&tab=results)できます。

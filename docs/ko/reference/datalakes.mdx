@@ -47,6 +47,13 @@ AWS Glue Data Catalog는 Iceberg 테이블과 함께 사용할 수 있습니다.
 
 Iceberg REST 카탈로그는 Iceberg 테이블과 함께 사용할 수 있습니다. `iceberg` 테이블 엔진에서 사용할 수도 있고, [DataLakeCatalog](/ko/reference/engines/database-engines/datalake) 데이터베이스 엔진에서 사용할 수도 있습니다.
 
+<div id="snowflake-horizon-catalog">
+  ## Snowflake Horizon Catalog
+</div>
+
+Snowflake Horizon Catalog는 Snowflake에서 관리하는 Iceberg 테이블용 Iceberg REST API를 제공합니다.
+`catalog_type = 'horizon'`으로 `DataLakeCatalog`를 사용하십시오. [Horizon catalog 가이드](/ko/guides/use-cases/data-warehousing/horizon-catalog)를 참조하십시오.
+
 <div id="unity-catalog">
   ## Unity Catalog
 </div>

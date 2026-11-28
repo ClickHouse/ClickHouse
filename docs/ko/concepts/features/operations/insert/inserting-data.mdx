@@ -8,10 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="inserting-into-clickhouse-vs-oltp-databases">
-  ## ClickHouse 삽입과 OLTP 데이터베이스의 차이
+  ## ClickHouse 삽입과 OLTP 데이터베이스의 차이 {#inserting-into-clickhouse-vs-oltp-databases}
 </div>
 
 OLAP(Online Analytical Processing) 데이터베이스인 ClickHouse는 높은 성능과 확장성에 최적화되어 있어 초당 수백만 행까지 삽입할 수 있습니다.
@@ -26,11 +24,11 @@ PostgreSQL은 동시 트랜잭션을 처리하기 위해 MVCC(Multi-Version Conc
 이 규칙을 따르면 사용자가 ClickHouse를 처음 사용할 때 흔히 겪는 문제를 피할 수 있고, OLTP 데이터베이스에서 통하던 삽입 전략을 그대로 복제하려 할 때 생기는 문제도 방지하는 데 도움이 됩니다.
 
 <div id="best-practices-for-inserts">
-  ## 삽입 모범 사례
+  ## 삽입 모범 사례 {#best-practices-for-inserts}
 </div>
 
 <div id="insert-in-large-batch-sizes">
-  ### 큰 배치 크기로 삽입하기
+  ### 큰 배치 크기로 삽입하기 {#insert-in-large-batch-sizes}
 </div>
 
 기본적으로 ClickHouse에 전송되는 각 삽입은 삽입 데이터와 함께 저장해야 하는 기타 메타데이터를 포함한 스토리지 파트를 즉시 생성합니다.
@@ -41,7 +39,7 @@ PostgreSQL은 동시 트랜잭션을 처리하기 위해 MVCC(Multi-Version Conc
 큰 Batch를 사용할 수 없는 경우 아래에 설명된 비동기 삽입을 사용하십시오.
 
 <div id="ensure-consistent-batches-for-idempotent-retries">
-  ### 멱등적 재시도를 위해 일관된 배치를 유지하세요
+  ### 멱등적 재시도를 위해 일관된 배치를 유지하세요 {#ensure-consistent-batches-for-idempotent-retries}
 </div>
 
 기본적으로 ClickHouse에 대한 삽입은 동기식이며 멱등적입니다(즉, 동일한 삽입 작업을 여러 번 수행해도 한 번만 수행한 것과 같은 효과가 납니다).
@@ -56,7 +54,7 @@ MergeTree 엔진 계열의 테이블에서는 ClickHouse가 기본적으로 [삽
 재시도한 삽입 쿼리에 동일한 데이터가 동일한 순서로 포함되어 있기만 하면, 확인되지 않은 원래 삽입이 성공한 경우 ClickHouse는 재시도된 삽입을 자동으로 무시합니다.
 
 <div id="insert-to-a-mergetree-table-or-a-distributed-table">
-  ### MergeTree 테이블 또는 분산 테이블에 삽입
+  ### MergeTree 테이블 또는 분산 테이블에 삽입 {#insert-to-a-mergetree-table-or-a-distributed-table}
 </div>
 
 MergeTree(또는 복제된 테이블(Replicated Table))에 직접 삽입하고, 데이터가 세그먼트로 나뉘어 있다면 요청을 여러 노드에 고르게 분산하며, `internal_replication=true`를 설정하는 것을 권장합니다.
@@ -65,9 +63,7 @@ MergeTree(또는 복제된 테이블(Replicated Table))에 직접 삽입하고, 
 이러한 클라이언트 측 부하 분산이 불편하다면 [분산 테이블](/ko/reference/engines/table-engines/special/distributed)을 통해 삽입할 수 있으며, 그러면 쓰기가 여러 노드에 분산됩니다. 이 경우에도 `internal_replication=true`를 설정하는 것이 좋습니다.
 다만 이 방식은 쓰기가 먼저 분산 테이블이 있는 노드에 로컬로 수행된 후 세그먼트로 전송되어야 하므로 성능이 다소 떨어집니다.
 
-<div id="use-asynchronous-inserts-for-small-batches">
-  ### 작은 배치에는 비동기 삽입을 사용하세요
-</div>
+### 작은 배치에는 비동기 삽입을 사용하세요 {#use-asynchronous-inserts-for-small-batches}
 
 클라이언트 측 배칭이 적합하지 않은 경우가 있습니다. 예를 들어, 단일 목적의 에이전트 수백~수천 개가 로그, 메트릭, 트레이스 등을 전송하는 관측성 사용 사례가 여기에 해당합니다.
 이러한 시나리오에서는 문제와 이상 징후를 가능한 한 빨리 감지할 수 있도록 데이터를 실시간으로 전송하는 것이 중요합니다.
@@ -76,7 +72,11 @@ MergeTree(또는 복제된 테이블(Replicated Table))에 직접 삽입하고, 
 
 비동기 삽입을 사용하면 아래 다이어그램과 같이 데이터가 먼저 버퍼에 삽입된 다음, 이후 3단계에 걸쳐 데이터베이스 스토리지에 기록됩니다.
 
-<Image img="/images/guides/postgres-inserts.webp" size="md" alt="Postgres inserts" />
+<div className="ch-image-md">
+  <Frame>
+    ![Postgres inserts](/images/guides/postgres-inserts.webp)
+  </Frame>
+</div>
 
 비동기 삽입이 활성화되면 ClickHouse는 다음을 수행합니다:
 
@@ -95,16 +95,16 @@ MergeTree(또는 복제된 테이블(Replicated Table))에 직접 삽입하고, 
 </Note>
 
 <div id="use-official-clickhouse-clients">
-  ### 공식 ClickHouse 클라이언트 사용
+  ### 공식 ClickHouse 클라이언트 사용 {#use-official-clickhouse-clients}
 </div>
 
 ClickHouse는 가장 널리 사용되는 프로그래밍 언어용 클라이언트를 제공합니다.
 이 클라이언트는 데이터가 올바르게 삽입되도록 최적화되어 있으며, 예를 들어 [Go client](/ko/integrations/language-clients/go/clickhouse-api#async-insert)처럼 비동기 삽입을 직접 네이티브로 지원하거나, 쿼리, 사용자 또는 연결 수준 설정에서 활성화된 경우 간접적으로 지원합니다.
 
-사용 가능한 ClickHouse 클라이언트와 드라이버의 전체 목록은 [클라이언트 및 드라이버](/ko/concepts/features/interfaces/cli)에서 확인하십시오.
+사용 가능한 ClickHouse 클라이언트와 드라이버의 전체 목록은 [네이티브 클라이언트 및 인터페이스](/ko/concepts/features/interfaces/native-clients-interfaces-index)에서 확인하십시오.
 
 <div id="prefer-the-native-format">
-  ### 네이티브 형식을 우선 사용하십시오
+  ### 네이티브 형식을 우선 사용하십시오 {#prefer-the-native-format}
 </div>
 
 ClickHouse는 삽입(및 쿼리) 시점에 다양한 [입력 형식](/ko/reference/formats/index)을 지원합니다.
@@ -120,7 +120,7 @@ ClickHouse는 삽입(및 쿼리) 시점에 다양한 [입력 형식](/ko/referen
 빠르게 통합해야 하고 쓰기 처리량이 낮은 경우에는 [JSONEachRow](/ko/reference/formats/JSON/JSONEachRow) 형식도 고려할 수 있습니다. 다만 이 형식은 ClickHouse에서 파싱을 위해 CPU 오버헤드가 발생한다는 점에 유의해야 합니다.
 
 <div id="use-the-http-interface">
-  ### HTTP 인터페이스 사용
+  ### HTTP 인터페이스 사용 {#use-the-http-interface}
 </div>
 
 많은 기존 데이터베이스와 달리 ClickHouse는 HTTP 인터페이스를 지원합니다.
@@ -133,7 +133,7 @@ ClickHouse는 삽입(및 쿼리) 시점에 다양한 [입력 형식](/ko/referen
 자세한 내용은 [HTTP 인터페이스](/ko/concepts/features/interfaces/http)를 참조하십시오.
 
 <div id="basic-example">
-  ## 기본 예시
+  ## 기본 예시 {#basic-example}
 </div>
 
 ClickHouse에서는 익숙한 `INSERT INTO TABLE` 명령을 사용할 수 있습니다. [&quot;ClickHouse에서 테이블 생성하기&quot;](/ko/get-started/quickstarts/creating-tables) 빠른 시작 가이드에서 만든 테이블에 데이터를 삽입해 보겠습니다.
@@ -163,7 +163,7 @@ user_id message                                             timestamp           
 ```
 
 <div id="loading-data-from-postgres">
-  ## Postgres에서 데이터 로드하기
+  ## Postgres에서 데이터 로드하기 {#loading-data-from-postgres}
 </div>
 
 Postgres에서 데이터를 로드할 때는 다음 방법을 사용할 수 있습니다.
@@ -181,7 +181,7 @@ Postgres에서 데이터를 로드할 때는 다음 방법을 사용할 수 있�
 </Info>
 
 <div id="inserting-data-from-command-line">
-  ## 명령줄에서 데이터 삽입
+  ## 명령줄에서 데이터 삽입 {#inserting-data-from-command-line}
 </div>
 
 **전제 조건**

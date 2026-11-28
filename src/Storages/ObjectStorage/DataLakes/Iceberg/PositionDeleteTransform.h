@@ -26,6 +26,7 @@ public:
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
         ObjectStoragePtr object_storage_,
+        const IcebergPathResolver & path_resolver_,
         const std::optional<FormatSettings> & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         ContextPtr context_)
@@ -33,6 +34,7 @@ public:
         , header(header_)
         , iceberg_object_info(iceberg_object_info_)
         , object_storage(object_storage_)
+        , path_resolver(path_resolver_)
         , format_settings(format_settings_)
         , context(context_)
         , parser_shared_resources(parser_shared_resources_)
@@ -50,7 +52,7 @@ protected:
     static size_t getColumnIndex(const std::shared_ptr<IInputFormat> & delete_source, const String & column_name);
 
     /// Drops rows whose `file_path` column does not match the current data file path.
-    /// The WHERE filter on `delete_sources` only drives row-group/page pruning at the
+    /// The WHERE filter on `position_delete_files` only drives row-group/page pruning at the
     /// Parquet reader; rows inside surviving row groups still need to be filtered explicitly.
     /// Returns the number of rows kept (0 if the chunk has no matching rows).
     size_t filterChunkToCurrentDataFile(Chunk & chunk, size_t filename_column_index) const;
@@ -58,13 +60,23 @@ protected:
     SharedHeader header;
     IcebergDataObjectInfoPtr iceberg_object_info;
     const ObjectStoragePtr object_storage;
+    const IcebergPathResolver path_resolver;
     const std::optional<FormatSettings> format_settings;
     ContextPtr context;
     FormatParserSharedResourcesPtr parser_shared_resources;
 
-    /// We need to keep the read buffers alive since the delete_sources depends on them.
+    /// We need to keep the read buffers alive since the position_delete_files depend on them.
     std::vector<std::unique_ptr<ReadBuffer>> delete_read_buffers;
-    std::vector<std::shared_ptr<IInputFormat>> delete_sources;
+    std::vector<std::shared_ptr<IInputFormat>> position_delete_files;
+
+private:
+    bool namesDataFileInAnotherSpelling(std::string_view file_to_delete) const;
+
+    std::optional<String> data_file_identity;
+    std::optional<String> data_file_name; /// `fileNameOf` of the data file path
+    /// Rows are sorted by `file_path`, so the last checked value usually repeats.
+    mutable String last_checked_file;
+    mutable bool last_checked_file_matches = false;
 };
 
 class IcebergBitmapPositionDeleteTransform final : public IcebergPositionDeleteTransform
@@ -76,10 +88,12 @@ public:
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
         ObjectStoragePtr object_storage_,
+        const IcebergPathResolver & path_resolver_,
         const std::optional<FormatSettings> & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         ContextPtr context_)
-        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_)
+        : IcebergPositionDeleteTransform(
+              header_, iceberg_object_info_, object_storage_, path_resolver_, format_settings_, parser_shared_resources_, context_)
     {
         initialize();
     }
@@ -102,10 +116,12 @@ public:
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
         ObjectStoragePtr object_storage_,
+        const IcebergPathResolver & path_resolver_,
         const std::optional<FormatSettings> & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         ContextPtr context_)
-        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_)
+        : IcebergPositionDeleteTransform(
+              header_, iceberg_object_info_, object_storage_, path_resolver_, format_settings_, parser_shared_resources_, context_)
     {
         initialize();
     }
@@ -113,6 +129,9 @@ public:
     String getName() const override { return "IcebergStreamingPositionDeleteTransform"; }
 
     void transform(Chunk & chunk) override;
+
+    /// The positions read by the constructor are out of order, so this transform cannot be used.
+    bool hasUnorderedPositions() const { return has_unordered_positions; }
 
 private:
     void initialize();
@@ -123,12 +142,15 @@ private:
         size_t position_index;
     };
 
-    void fetchNewChunkFromSource(size_t delete_source_index);
+    /// Returns false if a position of the source is less than one read before it.
+    bool fetchNewChunkFromSource(size_t position_delete_file_index);
 
-    std::vector<PositionDeleteFileIndexes> delete_source_column_indices;
+    std::vector<PositionDeleteFileIndexes> position_delete_file_column_indices;
     std::vector<Chunk> latest_chunks;
     std::vector<size_t> iterator_at_latest_chunks;
+    std::vector<size_t> last_positions;
     std::set<std::pair<size_t, size_t>> latest_positions;
+    bool has_unordered_positions = false;
 
     std::optional<size_t> previous_chunk_end_offset;
 };

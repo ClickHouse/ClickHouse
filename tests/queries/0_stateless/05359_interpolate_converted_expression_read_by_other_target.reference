@@ -1,0 +1,30 @@
+swap of targets of different types
+0	1	300
+1	44	1
+2	2	1300
+3	20	2
+4	3	2300
+swap with a Nullable target
+0	1	300
+1	300	1
+2	2	1300
+3	1300	2
+4	3	2300
+swap with a String target
+0	1	300
+1	300	1
+2	2	1300
+3	1300	2
+4	3	2300
+a column converted for an earlier target
+0	1	300	7
+1	44	0	301
+2	2	1300	7
+3	20	0	1301
+4	3	2300	7
+a literal converted for an earlier target
+0	0	0
+1	1	1
+2	1	10
+3	1	11
+4	2	20

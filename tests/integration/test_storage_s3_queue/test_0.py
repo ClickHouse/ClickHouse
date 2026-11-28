@@ -22,7 +22,7 @@ from helpers.s3_queue_common import (
     generate_random_string,
 )
 
-AVAILABLE_MODES = ["unordered", "ordered"]
+AVAILABLE_MODES = ["unordered", "ordered", "exclusive"]
 AUXILIARY_ZOOKEEPER_NAME = "zookeeper2"
 
 
@@ -86,6 +86,16 @@ def started_cluster():
             stay_alive=True,
         )
 
+        cluster.add_instance(
+            "instance_old",
+            with_zookeeper=True,
+            image="clickhouse/clickhouse-server",
+            # A release that is no longer supported, so it never gets the source hash in a backport.
+            tag="26.7",
+            with_installed_binary=True,
+            stay_alive=True,
+        )
+
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -95,7 +105,41 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+def wait_for_queue_log_rows(node, engine_name, table_name, keeper_path, expected, timeout=60):
+    """Wait until the queue log and the metadata cache report `expected` processed rows, and return the counts.
+
+    `ObjectStorageQueueSource::appendLogElement` is called from `finalizeCommit`, that is, only after the
+    rows have already been committed to the materialized view target. So a row count that has reached its
+    final value in the destination table does not imply that the log entries exist yet, and a `SYSTEM FLUSH
+    LOGS` issued right after it can flush an empty queue: the caller must poll rather than assert once.
+    """
+    if engine_name == "S3Queue":
+        system_tables = ["s3queue_log", "s3queue_metadata_cache"]
+    else:
+        system_tables = ["azure_queue_log", "azure_queue_metadata_cache"]
+
+    def counts():
+        node.query("SYSTEM FLUSH LOGS")
+        result = {}
+        for table in system_tables:
+            if table.endswith("_log"):
+                condition = f"table = '{table_name}'"
+            else:
+                condition = f"zookeeper_path = '{keeper_path}'"
+            result[table] = int(
+                node.query(f"SELECT sum(rows_processed) FROM system.{table} WHERE {condition}")
+            )
+        return result
+
+    deadline = time.monotonic() + timeout
+    current = counts()
+    while any(count != expected for count in current.values()) and time.monotonic() < deadline:
+        time.sleep(0.5)
+        current = counts()
+    return current
+
+
+@pytest.mark.parametrize("mode", ["unordered", "ordered", "exclusive"])
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 def test_delete_after_processing(started_cluster, mode, engine_name):
     node = started_cluster.instances["instance"]
@@ -145,32 +189,13 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
         ).splitlines()
     ] == sorted(total_values, key=lambda x: (x[0], x[1], x[2]))
 
-    node.query("system flush logs")
-
-    if engine_name == "S3Queue":
-        system_tables = ["s3queue_log", "s3queue_metadata_cache"]
-    else:
-        system_tables = ["azure_queue_log", "azure_queue_metadata_cache"]
-
-    for table in system_tables:
-        if table.endswith("_log"):
-            assert (
-                int(
-                    node.query(
-                        f"SELECT sum(rows_processed) FROM system.{table} WHERE table = '{table_name}'"
-                    )
-                )
-                == files_num * row_num
-            )
-        else:
-            assert (
-                int(
-                    node.query(
-                        f"SELECT sum(rows_processed) FROM system.{table} WHERE zookeeper_path = '{keeper_path}'"
-                    )
-                )
-                == files_num * row_num
-            )
+    counts = wait_for_queue_log_rows(
+        node, engine_name, table_name, keeper_path, files_num * row_num
+    )
+    for table, count in counts.items():
+        assert count == files_num * row_num, (
+            f"rows_processed mismatch in system.{table}: {count} != {files_num * row_num}"
+        )
 
     if engine_name == "S3Queue":
         object_count = count_minio_objects(started_cluster, started_cluster.minio_bucket, files_path)
@@ -307,32 +332,13 @@ def test_tag_after_processing(started_cluster, engine_name):
         ).splitlines()
     ] == sorted(total_values, key=lambda x: (x[0], x[1], x[2]))
 
-    node.query("system flush logs")
-
-    if engine_name == "S3Queue":
-        system_tables = ["s3queue_log", "s3queue_metadata_cache"]
-    else:
-        system_tables = ["azure_queue_log", "azure_queue_metadata_cache"]
-
-    for table in system_tables:
-        if table.endswith("_log"):
-            assert (
-                int(
-                    node.query(
-                        f"SELECT sum(rows_processed) FROM system.{table} WHERE table = '{table_name}'"
-                    )
-                )
-                == files_num * row_num
-            )
-        else:
-            assert (
-                int(
-                    node.query(
-                        f"SELECT sum(rows_processed) FROM system.{table} WHERE zookeeper_path = '{keeper_path}'"
-                    )
-                )
-                == files_num * row_num
-            )
+    counts = wait_for_queue_log_rows(
+        node, engine_name, table_name, keeper_path, files_num * row_num
+    )
+    for table, count in counts.items():
+        assert count == files_num * row_num, (
+            f"rows_processed mismatch in system.{table}: {count} != {files_num * row_num}"
+        )
 
     if engine_name == "S3Queue":
         minio = started_cluster.minio_client
@@ -446,32 +452,13 @@ def test_move_after_processing(started_cluster, engine_name, move_to):
         ).splitlines()
     ] == sorted(total_values, key=lambda x: (x[0], x[1], x[2]))
 
-    node.query("system flush logs")
-
-    if engine_name == "S3Queue":
-        system_tables = ["s3queue_log", "s3queue_metadata_cache"]
-    else:
-        system_tables = ["azure_queue_log", "azure_queue_metadata_cache"]
-
-    for table in system_tables:
-        if table.endswith("_log"):
-            assert (
-                int(
-                    node.query(
-                        f"SELECT sum(rows_processed) FROM system.{table} WHERE table = '{table_name}'"
-                    )
-                )
-                == files_num * row_num
-            )
-        else:
-            assert (
-                int(
-                    node.query(
-                        f"SELECT sum(rows_processed) FROM system.{table} WHERE zookeeper_path = '{keeper_path}'"
-                    )
-                )
-                == files_num * row_num
-            )
+    counts = wait_for_queue_log_rows(
+        node, engine_name, table_name, keeper_path, files_num * row_num
+    )
+    for table, count in counts.items():
+        assert count == files_num * row_num, (
+            f"rows_processed mismatch in system.{table}: {count} != {files_num * row_num}"
+        )
 
     if engine_name == "S3Queue":
         src_bucket = started_cluster.minio_bucket
@@ -493,6 +480,21 @@ def test_move_after_processing(started_cluster, engine_name, move_to):
     assert counts[(src_bucket, files_path)] == 0, (
         f"objects left: {counts[(src_bucket, files_path)]}"
     )
+
+    node.query("SYSTEM FLUSH LOGS blob_storage_log")
+    if engine_name == "S3Queue":
+        moved = node.query(
+            "SELECT uniqExact(source_remote_path) FROM system.blob_storage_log "
+            f"WHERE event_type = 'Copy' AND error_code = 0 AND source_bucket = '{src_bucket}' AND bucket = '{dst_bucket}' "
+            f"AND source_remote_path LIKE '{files_path}/%' AND remote_path LIKE '{processed_prefix}%'"
+        )
+    else:
+        # AzureQueue storages do not use the native copy, so a move is a read and an upload.
+        moved = node.query(
+            "SELECT uniqExact(remote_path) FROM system.blob_storage_log "
+            f"WHERE event_type = 'Upload' AND error_code = 0 AND bucket = '{dst_bucket}' AND remote_path LIKE '{processed_prefix}%'"
+        )
+    assert int(moved) == files_num, f"blob_storage_log rows for moved objects: {moved.strip()} != {files_num}"
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
@@ -753,13 +755,14 @@ def test_direct_select_file(started_cluster, mode):
         for l in node.query(f"SELECT * FROM {table_name}_1").splitlines()
     ] == values
 
-    for i in range(3):
-        node.query(f"ALTER TABLE {table_name}_{i + 1} MODIFY SETTING commit_on_select=true")
+    if mode != "exclusive":
+        for i in range(3):
+            node.query(f"ALTER TABLE {table_name}_{i + 1} MODIFY SETTING commit_on_select=true")
 
     assert [
         list(map(int, l.split()))
         for l in node.query(f"SELECT * FROM {table_name}_1").splitlines()
-    ] == values
+    ] == (values if mode != "exclusive" else [])
 
     assert [
         list(map(int, l.split()))
@@ -781,7 +784,7 @@ def test_direct_select_file(started_cluster, mode):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
-            "commit_on_select": 1
+            **({"commit_on_select": 1} if mode != "exclusive" else {}),
         },
     )
 
@@ -801,7 +804,7 @@ def test_direct_select_file(started_cluster, mode):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
-            "commit_on_select": 1
+            **({"commit_on_select": 1} if mode != "exclusive" else {}),
         },
     )
 
@@ -848,7 +851,11 @@ def test_direct_select_multiple_files(started_cluster, mode):
         table_name,
         mode,
         files_path,
-        additional_settings={"keeper_path": keeper_path, "processing_threads_num": 3, "commit_on_select": 1},
+        additional_settings={
+            "keeper_path": keeper_path,
+            "processing_threads_num": 3,
+            **({"commit_on_select": 1} if mode != "exclusive" else {}),
+        },
     )
     for i in range(5):
         rand_values = [[random.randint(0, 50) for _ in range(3)] for _ in range(10)]
@@ -1070,6 +1077,8 @@ def test_streaming_to_many_views(started_cluster, mode):
 
     for i in range(20, 40):
         log_message = (
+            f"File {files_path}/b_{i}.csv failed at try 2/2"
+            if mode == "exclusive" else
             f"File {files_path}/b_{i}.csv failed at try 2/2, retries node exists: true"
         )
 
@@ -1181,6 +1190,43 @@ def test_multiple_tables_meta_mismatch(started_cluster):
             "keeper_path": keeper_path,
         },
     )
+
+
+def test_source_hash_after_upgrade(started_cluster):
+    """A queue that an older version created gets the hash of its source in Keeper after the upgrade."""
+    node = started_cluster.instances["instance_old"]
+    keeper_path = f"/clickhouse/test_upgrade_{generate_random_string()}"
+
+    def create_queue(name, bucket):
+        return f"""
+            CREATE TABLE {name} (x String)
+            ENGINE = S3Queue('http://localhost:11111/{bucket}/upgrade/*', NOSIGN, 'CSV')
+            SETTINGS mode = 'unordered', keeper_path = '{keeper_path}'
+            """
+
+    def get_source_hash():
+        return node.query(
+            f"SELECT JSONExtractString(value, 'source_hash') FROM system.zookeeper "
+            f"WHERE path = '{keeper_path}' AND name = 'metadata'"
+        ).strip()
+
+    try:
+        node.query(create_queue("queue", "test"))
+        assert get_source_hash() == ""
+
+        node.restart_with_latest_version()
+        # Tables are loaded in the background, and a query to a table waits until it is loaded.
+        node.query("DESCRIBE TABLE queue")
+        assert get_source_hash() != ""
+
+        # Now the source is checked: a queue of another bucket cannot use this `keeper_path`.
+        error = node.query_and_get_error(create_queue("other", "other"))
+        assert "differs in source" in error
+        node.query(create_queue("same", "test"))
+    finally:
+        node.query("DROP TABLE IF EXISTS queue SYNC")
+        node.query("DROP TABLE IF EXISTS same SYNC")
+        node.restart_with_original_version()
 
 
 def test_virtual_columns(started_cluster):

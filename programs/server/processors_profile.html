@@ -4,7 +4,18 @@
     <meta charset="UTF-8">
     <title>ClickHouse Processors Profile</title>
     <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDExIDEwIj48c3R5bGU+LmJne2ZpbGw6IzAwMH0ub3tmaWxsOiNmZjB9PC9zdHlsZT48cmVjdCBjbGFzcz0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiLz48cGF0aCBkPSJNMSwxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik0zLDEgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTUsMSBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNNywxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik05LDQuMjUgaDEgdjEuNSBoLTEgeiIgY2xhc3M9Im8iLz48L3N2Zz4">
-    <script src="/js/viz-standalone.js"></script>
+    <script>
+        /// Where the Graphviz bundle lives. The server serves it from the site root, but a page
+        /// opened straight from disk has no site root - `file:///js/...` points at the root of
+        /// the filesystem - so resolve the name against the document instead, which finds the
+        /// copy sitting next to this page in the source tree. The site-root path is kept for
+        /// http(s), where the page is served under `/processors-profile` and a document-relative
+        /// URL would resolve to a path the server does not serve.
+        const viz_src = location.protocol === 'file:'
+            ? new URL('js/viz-standalone.js', document.baseURI).href
+            : '/js/viz-standalone.js';
+        document.write('<script src="' + viz_src + '"><\/script>');
+    </script>
     <style>
         :root {
             --color: black;
@@ -916,7 +927,7 @@
         async function getViz() {
             if (vizInstance) return vizInstance;
             if (typeof Viz === 'undefined') {
-                throw new Error('Viz.js failed to load from /js/viz-standalone.js.');
+                throw new Error('Viz.js failed to load from ' + viz_src + '.');
             }
             vizInstance = await Viz.instance();
             return vizInstance;

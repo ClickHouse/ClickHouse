@@ -20,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int CANNOT_PARSE_TEXT;
 }
 
@@ -80,29 +79,24 @@ public:
 
     static constexpr const char * name = NameHolder::name;
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr)
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be String");
-        }
-
-        return DataTypeFactory::instance().get(DataTypeName().getName());
+        return "(String) -> " + DataTypeName{}.getName();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         const auto & column_string = checkAndGetColumn<ColumnString>(*arguments[0].column);
 
@@ -120,10 +114,13 @@ public:
         return serializer.finalize();
     }
 
-    bool useDefaultImplementationForConstants() const override
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
+
+    /// An empty string is not WKT.
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     static FunctionPtr create(ContextPtr)
     {
@@ -150,23 +147,15 @@ public:
 
     static constexpr const char * name = "readWKT";
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr)
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be String");
-        }
+    [[nodiscard]] String getSignatureString() const override { return "(String) -> Geometry"; }
 
-        return DataTypeFactory::instance().get("Geometry");
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         const auto & column_string = checkAndGetColumn<ColumnString>(*arguments[0].column);
 
@@ -283,7 +272,7 @@ public:
         return ColumnVariant::create(std::move(discriminators_column), result_columns);
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionReadWKTCommon>(); }
 };

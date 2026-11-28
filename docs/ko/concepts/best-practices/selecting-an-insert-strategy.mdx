@@ -8,9 +8,8 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import AsyncInserts from '/snippets/ko/_async_inserts.mdx';
+
 import BulkInserts from '/snippets/ko/_bulk_inserts.mdx';
 
 효율적인 데이터 수집은 고성능 ClickHouse 배포의 기반입니다. 적절한 삽입 전략을 선택하면 처리량, 비용, 안정성에 큰 차이가 생길 수 있습니다. 이 섹션에서는 워크로드에 맞는 결정을 내릴 수 있도록 모범 사례, 장단점, 구성 옵션을 설명합니다.
@@ -19,9 +18,7 @@ import BulkInserts from '/snippets/ko/_bulk_inserts.mdx';
   아래 내용은 클라이언트를 통해 ClickHouse로 데이터를 푸시하는 경우를 가정합니다. [s3](/ko/reference/functions/table-functions/s3) 및 [gcs](/ko/reference/functions/table-functions/gcs)와 같은 기본 제공 테이블 함수를 사용해 ClickHouse로 데이터를 가져오는 경우에는 [&quot;S3 삽입 및 읽기 성능 최적화&quot;](/ko/integrations/connectors/data-ingestion/AWS/performance) 가이드를 참조하시기 바랍니다.
 </Note>
 
-<div id="synchronous-inserts-by-default">
-  ## 기본적으로는 동기 삽입
-</div>
+## 기본적으로는 동기 삽입 {#synchronous-inserts-by-default}
 
 기본적으로 ClickHouse에 대한 삽입은 동기식으로 처리됩니다. 각 삽입 쿼리는 메타데이터와 인덱스를 포함하는 저장 파트를 디스크에 즉시 생성합니다.
 
@@ -33,10 +30,14 @@ import BulkInserts from '/snippets/ko/_bulk_inserts.mdx';
 
 아래에서 ClickHouse의 MergeTree 삽입 메커니즘을 간략히 살펴보겠습니다:
 
-<Image img="/images/bestpractices/insert_process.webp" size="lg" alt="삽입 프로세스" background="black" />
+<div className="ch-image-lg ch-image-background-black">
+  <Frame>
+    ![삽입 프로세스](/images/bestpractices/insert_process.webp)
+  </Frame>
+</div>
 
 <div id="client-side-steps">
-  #### 클라이언트 측 단계
+  #### 클라이언트 측 단계 {#client-side-steps}
 </div>
 
 최적의 성능을 위해 데이터는 ①[ 배치로 묶어야](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance) 하며, 따라서 배치 크기를 정하는 것이 **첫 번째 결정 사항**입니다.
@@ -50,7 +51,7 @@ ClickHouse는 삽입된 데이터를 디스크에,[ 정렬된 상태로](/ko/gui
 데이터는 ⑤ ClickHouse 네트워크 인터페이스, 즉 [네이티브](/ko/concepts/features/interfaces/tcp) 또는 [HTTP](/ko/concepts/features/interfaces/http) 인터페이스를 통해 전송됩니다(이 둘은 이 글의 뒤에서 [비교합니다](https://clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient#clickhouse-client-defaults)).
 
 <div id="server-side-steps">
-  #### 서버 측 단계
+  #### 서버 측 단계 {#server-side-steps}
 </div>
 
 ⑥ 데이터를 수신한 후, ClickHouse는 압축이 사용된 경우 ⑦ 이를 압축 해제하고, 이어서 원래 전송된 포맷에서 ⑧ 이를 파싱합니다.
@@ -58,13 +59,13 @@ ClickHouse는 삽입된 데이터를 디스크에,[ 정렬된 상태로](/ko/gui
 해당 포맷의 데이터 값과 대상 테이블의 [DDL](/ko/reference/statements/create/table) 문을 바탕으로, ClickHouse는 MergeTree 포맷의 메모리 상 [블록](/ko/resources/develop-contribute/introduction/architecture#block)을 ⑨ 생성하고, 행이 이미 미리 정렬되어 있지 않으면 ⑩ 프라이머리 키 컬럼을 기준으로 [정렬](/ko/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)하며, ⑪ [희소 프라이머리 인덱스](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 생성하고, ⑫ [컬럼별 압축](/ko/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)을 적용한 뒤, ⑬ 데이터를 새로운 ⑭ [데이터 파트](/ko/concepts/core-concepts/parts)로 디스크에 기록합니다.
 
 <div id="batch-inserts-if-synchronous">
-  ### 동기식일 경우 배치 삽입
+  ### 동기식일 경우 배치 삽입 {#batch-inserts-if-synchronous}
 </div>
 
 <BulkInserts />
 
 <div id="ensure-idempotent-retries">
-  ### 멱등성이 보장되는 재시도
+  ### 멱등성이 보장되는 재시도 {#ensure-idempotent-retries}
 </div>
 
 동기 삽입도 **멱등적**입니다. MergeTree 엔진을 사용할 때 ClickHouse는 기본적으로 삽입을 중복 제거합니다. 이는 다음과 같이 성공 여부가 불분명한 실패 상황으로부터 보호합니다.
@@ -75,7 +76,7 @@ ClickHouse는 삽입된 데이터를 디스크에,[ 정렬된 상태로](/ko/gui
 두 경우 모두 배치의 내용과 순서가 완전히 동일하게 유지되는 한 **삽입을 재시도**해도 안전합니다. 따라서 클라이언트는 데이터를 수정하거나 순서를 바꾸지 않고 일관되게 재시도해야 합니다.
 
 <div id="choose-the-right-insert-target">
-  ### 올바른 삽입 대상 선택
+  ### 올바른 삽입 대상 선택 {#choose-the-right-insert-target}
 </div>
 
 샤딩된 cluster에서는 두 가지 옵션이 있습니다:
@@ -86,7 +87,7 @@ ClickHouse는 삽입된 데이터를 디스크에,[ 정렬된 상태로](/ko/gui
 **ClickHouse Cloud에서는 모든 노드가 동일한 단일 세그먼트에 읽기 및 쓰기를 수행합니다. 삽입은 노드 간에 자동으로 분산됩니다. 제공된 엔드포인트로 삽입을 보내면 됩니다.**
 
 <div id="choose-the-right-format">
-  ### 적절한 포맷 선택
+  ### 적절한 포맷 선택 {#choose-the-right-format}
 </div>
 
 ClickHouse에서 효율적으로 데이터를 수집하려면 적절한 입력 형식을 선택하는 것이 매우 중요합니다. 지원되는 포맷이 70개가 넘기 때문에, 가장 성능이 좋은 옵션을 선택하면 삽입 속도, CPU 및 메모리 사용량, 전반적인 시스템 효율성에 큰 차이가 날 수 있습니다.
@@ -98,7 +99,7 @@ ClickHouse에서 효율적으로 데이터를 수집하려면 적절한 입력 �
 * **JSONEachRow**: 사용하기 쉽지만 파싱 비용이 큽니다. 적은 양의 데이터 처리나 빠른 통합에 적합합니다.
 
 <div id="use-compression">
-  ### 압축 사용
+  ### 압축 사용 {#use-compression}
 </div>
 
 압축은 네트워크 오버헤드를 줄이고, 삽입 속도를 높이며, ClickHouse의 스토리지 비용을 낮추는 데 중요한 역할을 합니다. 압축을 효과적으로 사용하면 데이터 포맷이나 스키마를 변경하지 않고도 수집 성능을 향상할 수 있습니다.
@@ -108,7 +109,7 @@ ClickHouse에서 효율적으로 데이터를 수집하려면 적절한 입력 �
 삽입에서는 압축을 Native 형식과 함께 사용할 때 특히 효과적입니다. Native 형식은 이미 ClickHouse의 내부 열 지향 스토리지 모델과 일치합니다. 이 구성에서는 서버가 최소한의 변환만으로 데이터를 효율적으로 압축 해제해 직접 저장할 수 있습니다.
 
 <div id="use-lz4-for-speed-zstd-for-compression-ratio">
-  #### 속도가 중요하면 LZ4, 압축률이 중요하면 ZSTD를 사용하십시오
+  #### 속도가 중요하면 LZ4, 압축률이 중요하면 ZSTD를 사용하십시오 {#use-lz4-for-speed-zstd-for-compression-ratio}
 </div>
 
 ClickHouse는 데이터 전송 중 여러 압축 코덱을 지원합니다. 대표적으로 많이 사용하는 옵션은 다음과 같습니다.
@@ -123,7 +124,7 @@ ClickHouse는 데이터 전송 중 여러 압축 코덱을 지원합니다. 대�
 </Note>
 
 <div id="compression-reduces-resource-usage">
-  #### 압축은 리소스 사용량을 줄입니다
+  #### 압축은 리소스 사용량을 줄입니다 {#compression-reduces-resource-usage}
 </div>
 
 압축은 네트워크 트래픽을 줄일 뿐만 아니라 서버의 CPU 및 메모리 효율도 높입니다. 데이터가 압축되면 ClickHouse는 더 적은 바이트를 수신하고 대량의 입력을 파싱하는 데 드는 시간도 줄어듭니다. 이러한 이점은 관측성 시나리오처럼 여러 동시 클라이언트에서 수집할 때 특히 중요합니다.
@@ -132,12 +133,12 @@ ClickHouse는 데이터 전송 중 여러 압축 코덱을 지원합니다. 대�
 
 **압축을 배칭 및 효율적인 입력 형식(예: Native)과 함께 사용하면 최상의 수집 성능을 얻을 수 있습니다.**
 
-네이티브 인터페이스(예: [clickhouse-client](/ko/concepts/features/interfaces/cli))를 사용할 때는 LZ4 압축이 기본적으로 활성화됩니다. 필요에 따라 설정을 통해 ZSTD로 전환할 수 있습니다.
+네이티브 인터페이스(예: [clickhouse-client](/ko/concepts/features/interfaces/client))를 사용할 때는 LZ4 압축이 기본적으로 활성화됩니다. 필요에 따라 설정을 통해 ZSTD로 전환할 수 있습니다.
 
 [HTTP 인터페이스](/ko/concepts/features/interfaces/http)에서는 Content-Encoding 헤더를 사용해 압축을 적용하십시오(예: Content-Encoding: lz4). 전체 페이로드는 전송하기 전에 반드시 압축되어야 합니다.
 
 <div id="pre-sort-if-low-cost">
-  ### 비용이 낮을 때만 사전 정렬
+  ### 비용이 낮을 때만 사전 정렬 {#pre-sort-if-low-cost}
 </div>
 
 삽입 전에 데이터를 프라이머리 키 기준으로 미리 정렬하면 ClickHouse의 수집 효율을 높일 수 있으며, 특히 대규모 배치에서 효과적입니다.
@@ -149,26 +150,24 @@ ClickHouse는 데이터 전송 중 여러 압축 코덱을 지원합니다. 대�
 **데이터가 이미 거의 정렬되어 있거나 클라이언트 측 리소스(CPU, 메모리)가 충분하고 여유가 있을 때만 사전 정렬을 권장합니다.** 관측성과 같이 지연 시간에 민감하거나 처리량이 높은 사용 사례에서는 데이터가 순서 없이 도착하거나 많은 에이전트에서 들어오는 경우가 많으므로, 사전 정렬을 생략하고 ClickHouse의 기본 성능에 맡기는 편이 더 나은 경우가 많습니다.
 
 <div id="asynchronous-inserts">
-  ## 비동기 삽입
+  ## 비동기 삽입 {#asynchronous-inserts}
 </div>
 
 <AsyncInserts />
 
 <div id="choose-an-interface">
-  ## 인터페이스 선택하기—HTTP 또는 네이티브
+  ## 인터페이스 선택하기—HTTP 또는 네이티브 {#choose-an-interface}
 </div>
 
 <div id="choose-an-interface-native">
-  ### 네이티브
+  ### 네이티브 {#choose-an-interface-native}
 </div>
 
-ClickHouse는 데이터 수집을 위한 두 가지 주요 인터페이스, 즉 **네이티브 인터페이스**와 **HTTP 인터페이스**를 제공합니다. 각 인터페이스는 성능과 유연성 측면에서 서로 다른 장단점이 있습니다. [clickhouse-client](/ko/concepts/features/interfaces/cli)와 Go, C++ 같은 일부 언어 클라이언트에서 사용하는 네이티브 인터페이스는 성능에 최적화되도록 설계되었습니다. 이 인터페이스는 항상 ClickHouse의 매우 효율적인 Native 형식으로 데이터를 전송하고, LZ4 또는 ZSTD를 사용하는 블록 단위 압축을 지원하며, 구문 분석 및 포맷 변환 같은 작업을 클라이언트로 넘겨 서버 측 처리를 최소화합니다.
+ClickHouse는 데이터 수집을 위한 두 가지 주요 인터페이스, 즉 **네이티브 인터페이스**와 **HTTP 인터페이스**를 제공합니다. 각 인터페이스는 성능과 유연성 측면에서 서로 다른 장단점이 있습니다. [clickhouse-client](/ko/concepts/features/interfaces/client)와 Go, C++ 같은 일부 언어 클라이언트에서 사용하는 네이티브 인터페이스는 성능에 최적화되도록 설계되었습니다. 이 인터페이스는 항상 ClickHouse의 매우 효율적인 Native 형식으로 데이터를 전송하고, LZ4 또는 ZSTD를 사용하는 블록 단위 압축을 지원하며, 파싱 및 포맷 변환 같은 작업을 클라이언트로 넘겨 서버 측 처리를 최소화합니다.
 
 또한 클라이언트 측에서 MATERIALIZED 및 DEFAULT 컬럼 값을 계산할 수 있으므로 서버는 이 단계를 완전히 건너뛸 수 있습니다. 따라서 네이티브 인터페이스는 효율성이 중요한 고처리량 수집 시나리오에 이상적입니다.
 
-<div id="choose-an-interface-http">
-  ### HTTP
-</div>
+### HTTP {#choose-an-interface-http}
 
 많은 전통적인 데이터베이스와 달리 ClickHouse는 HTTP 인터페이스도 지원합니다. **반면 HTTP 인터페이스는 호환성과 유연성에 중점을 둡니다.** JSON, CSV, Parquet 등을 포함한 [지원되는 모든 포맷](/ko/guides/clickhouse/data-formats/intro)으로 데이터를 전송할 수 있으며, Python, Java, JavaScript, Rust를 포함한 대부분의 ClickHouse 클라이언트에서 폭넓게 지원됩니다.
 

@@ -1,0 +1,90 @@
+---
+slug: /clickstack/observability/demo-days/2026/2026-05-22
+title: 'Demo days - 2026-05-22'
+sidebarTitle: '2026-05-22'
+description: 'Journées de démonstration ClickStack du 2026-05-22'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Mise à jour de la génération de données dans ClickCannon {#clickcannon-data-generation-update}
+
+*Démonstration par [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Zljd07_4uF4" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+[ClickCannon](https://github.com/clickhouse/clickcannon) est l’outil que nous utilisons en interne pour nos exercices de dimensionnement : il génère de grands volumes de données OpenTelemetry tout en exécutant des requêtes concurrentes, afin d’estimer les ressources nécessaires aux clients pour une charge de travail donnée en ingestion et en requêtes. Nous l’avons annoncé publiquement lors d’OpenHouse, où Spencer en a présenté la dernière version.
+
+Plutôt que de préparer les données à l’avance sur disque, vous pouvez désormais configurer le générateur directement en mode intégré. Activez-le, puis définissez le nombre de fils d’exécution, le nombre de lignes par bloc, le nombre total de lignes par seconde, ainsi que quelques contraintes de mémoire. Plus besoin de stocker au préalable deux téraoctets de données de test sur disque, ce qui rendait jusqu’ici l’outil difficile à partager.
+
+Nous allons orienter davantage d’utilisateurs vers ClickCannon pour leurs propres travaux de dimensionnement. Le dépôt est disponible à l’adresse [https://github.com/clickhouse/clickcannon](https://github.com/clickhouse/clickcannon).
+
+## Saisie de date pour les tuiles en plein écran et filtres limités à une source {#date-input-for-full-screen-tiles-and-source-scoped-filters}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Mop1EYtGwKc" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Deux améliorations complémentaires des tableaux de bord sont arrivées en même temps. Lorsque vous affichez une tuile en plein écran, vous disposez désormais d&#39;un sélecteur de date et d&#39;un sélecteur de granularité dédiés, indépendants de l&#39;intervalle de temps du tableau de bord. Vous pouvez ainsi examiner un long historique pour une métrique précise (par exemple, un graphique du tableau de bord du cluster ClickHouse) sans forcer le rafraîchissement de toutes les autres tuiles du tableau de bord. Par ailleurs, le nom du tableau de bord apparaît désormais dans le titre de l&#39;onglet du navigateur.
+
+Le second volet concerne la limitation des filtres de tableau de bord à certaines sources. Au lieu de s&#39;appliquer globalement à toutes les tuiles, les filtres peuvent désormais n&#39;être diffusés qu&#39;aux tuiles reposant sur des sources spécifiques. Sur un tableau de bord combinant plusieurs sources, par exemple des logs et des traces, vous pouvez ainsi éviter qu&#39;un filtre ne s&#39;applique à une tuile qui n&#39;est pas concernée.
+
+**PRs associées :** [#2302](https://github.com/hyperdxio/hyperdx/pull/2302) feat: Minor dashboard improvements, [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: Add source scoping to dashboard filters
+
+## Index de texte reconnu sur lower(Body) {#text-index-recognised-on-lower-body}
+
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/l0GpNBP859o" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Une correction modeste, mais bien réelle, qui touche à l’exactitude de la recherche case-insensitive. Si votre source possède un index de texte défini sur `lower(Body)` sans argument de préprocesseur, le planificateur de requêtes générait jusqu’ici une condition `hasAllTokens(Body, ...)`. Cette expression ne correspondant pas à celle de l’index, l’index de texte n’était pas utilisé et la requête se rabattait sur un parcours complet.
+
+La requête est désormais générée sous la forme `hasAllTokens(lower(Body), ...)`, qui correspond à l’expression de l’index. Sur les sources ainsi configurées, la recherche case-insensitive bénéficie maintenant correctement de l’accélération de l’index de texte.
+
+**PRs associées :** [#2326](https://github.com/hyperdxio/hyperdx/pull/2326) feat: support text index on lower(Body) with no preprocessor
+
+## Une expérience Écarts entre événements simplifiée {#simpler-event-deltas-experience}
+
+*Démonstration par [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BrIHHFz_Aw8" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Les Écarts entre événements nécessitaient auparavant une étape supplémentaire : il fallait cliquer sur un bouton pour passer en mode de comparaison avant de pouvoir délimiter une sélection sur la carte de chaleur. Cette étape a disparu : les barres de distribution s&#39;affichent dès le chargement et, dès que vous sélectionnez une zone sur la carte de chaleur en faisant glisser le curseur, les barres basculent en mode de comparaison Sélection / Groupe de référence. Cliquez en dehors de la sélection pour revenir à la vue de l&#39;ensemble des spans.
+
+La modification initiale a été intégrée à la version OSS il y a quelques semaines, mais une partie manquait dans Managed ClickStack. Cette lacune est désormais comblée : le parcours simplifié est désormais identique dans les deux éditions.
+
+**PRs associées :** [#1899](https://github.com/hyperdxio/hyperdx/pull/1899) feat: always-on attribute distribution mode
+
+## Table des matières des tableaux de bord et réduction groupée {#dashboard-table-of-contents-and-bulk-collapse}
+
+*Démonstration par [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Pojo5zf_hrE" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Dès qu&#39;un tableau de bord compte plus de quelques sections (ce qui est souhaitable, car ce sont elles qui permettent d&#39;organiser un tableau de bord volumineux), la navigation devient pénible. Tom a ajouté, dans un panneau latéral droit, une table des matières qui répertorie toutes les sections et permet d&#39;accéder directement à chacune d&#39;elles. Une commande de réduction et de développement groupés permet en outre de masquer d&#39;un coup le contenu de toutes les sections : vous pouvez ainsi parcourir la structure d&#39;un long tableau de bord sans avoir à le faire défiler en entier.
+
+Cette fonctionnalité est encore à l&#39;état de brouillon, mais elle s&#39;avère déjà utile sur les tableaux de bord à plusieurs sections que nous fournissons pour les vues cluster ClickHouse et Kubernetes.
+
+**PRs associées :** [#2350](https://github.com/hyperdxio/hyperdx/pull/2350) feat(dashboard): add Table of Contents right rail with bulk collapse/expand
+
+## Redimensionnement des colonnes conservé d&#39;une session à l&#39;autre {#column-resize-persisted-across-sessions}
+
+*Démonstration par [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7l-Rz1tFlq8" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Un client nous l&#39;a signalé hier : lorsque vous redimensionnez une colonne dans un tableau de résultats, ce dimensionnement devrait être conservé. C&#39;est désormais le cas. Les largeurs sont enregistrées dans le stockage local, indexées par ID de table, de sorte que chaque table conserve sa propre disposition de colonnes. Fermez le navigateur, revenez plus tard : les colonnes sont toujours telles que vous les avez laissées. Par ailleurs, l&#39;ajout ou la suppression d&#39;une colonne ne réinitialise pas la largeur des autres colonnes.
+
+**PRs associées :** [#2327](https://github.com/hyperdxio/hyperdx/pull/2327) fix: persist column widths in search results table

@@ -1,0 +1,10 @@
+SASL mechanism longer than the message: error response
+password without a terminator: error response
+password message at the Int32 maximum: error response
+password message above the limit: error response
+SASL initial response at the Int32 maximum: error response
+SASL final response at the Int32 maximum: error response
+well-formed exchange: query result received
+query with a smuggled tail: error response
+query shorter than declared: error response
+oversized sync: error response

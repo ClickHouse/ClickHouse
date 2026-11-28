@@ -1,8 +1,6 @@
 -- Matryoshka-style partial-dimension search on a strided QBit via the optional 4th `dims` argument.
 -- A strided search over the first D dims must equal a non-strided search over a QBit holding only those D dims.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS qbit_strided;
 DROP TABLE IF EXISTS qbit_plain;
 CREATE TABLE qbit_strided (id UInt32, vec QBit(Float32, 16, 8)) ENGINE = Memory;

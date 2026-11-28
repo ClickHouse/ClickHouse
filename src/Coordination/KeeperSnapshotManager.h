@@ -6,6 +6,7 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Coordination/ACLMap.h>
 #include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperStorage.h>
 #include <functional>
 #include <libnuraft/nuraft.hxx>
@@ -107,6 +108,25 @@ struct KeeperSnapshotReader
 
     KeeperContextPtr keeper_context;
 
+    /// Whether orphaned nodes (nodes whose parent is absent from the snapshot) may be removed
+    /// while loading this snapshot. Set only when loading the latest local snapshot during server
+    /// startup (`remove_orphaned_nodes_on_startup` recovery). It must never be set when applying
+    /// a snapshot received from another node (`KeeperStateMachine::apply_snapshot`), otherwise
+    /// this replica would silently diverge from the rest of the cluster.
+    bool allow_orphaned_nodes_removal = false;
+
+    /// Filled in by `loadNodesFromSnapshot` when orphaned nodes were removed: the topmost paths that
+    /// are absent from this snapshot, i.e. the roots of the region where the loaded tree differs from
+    /// the tree that the raft log above this snapshot was produced against. Verified by
+    /// `KeeperStateMachine::findOrphanConflictInLogTail` before the raft server is launched.
+    std::vector<std::string> removed_orphan_subtree_roots;
+
+    /// Filled in alongside `removed_orphan_subtree_roots`: the sessions that owned at least one of the
+    /// removed ephemeral nodes. A `Close` for such a session in the raft log above this snapshot would
+    /// remove those ephemerals (and bump their parents' stats) on every other replica but not here, so
+    /// `KeeperStateMachine::findOrphanConflictInLogTail` refuses to replay it. Sorted, unique.
+    std::vector<int64_t> removed_orphan_ephemeral_sessions;
+
     SnapshotVersion current_version = SnapshotVersion::V0;
     SnapshotMetadataPtr snapshot_meta;
     ClusterConfigPtr cluster_config;
@@ -129,6 +149,11 @@ struct SnapshotDeserializationResult
     /// Snapshot metadata (up_to_log_idx and so on)
     SnapshotMetadataPtr snapshot_meta;
     ClusterConfigPtr cluster_config;
+    /// See `KeeperSnapshotReader::removed_orphan_subtree_roots`. Empty unless orphaned nodes were
+    /// removed while loading this snapshot.
+    std::vector<std::string> removed_orphan_subtree_roots;
+    /// See `KeeperSnapshotReader::removed_orphan_ephemeral_sessions`.
+    std::vector<int64_t> removed_orphan_ephemeral_sessions;
 };
 
 /// In memory keeper snapshot. Keeper Storage based on a hash map which can be
@@ -256,26 +281,35 @@ public:
     KeeperSnapshotManager(
         size_t snapshots_to_keep_,
         const KeeperContextPtr & keeper_context_,
-        bool compress_snapshots_zstd_ = true);
+        bool compress_snapshots_zstd_ = true,
+        Int64 snapshot_zstd_compression_level_ = DEFAULT_KEEPER_SNAPSHOT_ZSTD_COMPRESSION_LEVEL);
 
     /// TODO: We should probably allow arbitrary WriteBuffer/SeekableReadBuffer in most of these
     ///       methods, instead of requiring the whole snapshot to be read/written into memory first.
     /// TODO: Rename methods that just copy a buffer to/from file from serialize*/deserialize* to
     ///       read/write or something, to avoid confusion with methods that actually serialize/deserialize.
 
-    /// Restore storage from latest available snapshot
+    /// Restore storage from latest available snapshot.
+    /// Orphaned-nodes removal (`remove_orphaned_nodes_on_startup` startup recovery) is deliberately
+    /// NOT allowed here: `KeeperStateMachine::init` is the only caller that may remove orphans,
+    /// because `KeeperServer::startup` then verifies that no local log entry above the snapshot
+    /// references the removed paths. Pruning from here would skip that verification.
     SnapshotDeserializationResult restoreFromLatestSnapshot(KeeperStorage & storage);
 
     /// Compress snapshot and serialize it to buffer
-    nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot) const;
+    [[nodiscard]] nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot) const;
 
     /// Write helpers do disk I/O under a fresh unique name and do not publish metadata.
     SnapshotFileInfoPtr writeSnapshotFile(const KeeperStorageSnapshot & snapshot);
     SnapshotFileInfoPtr writeSnapshotBufferToFile(nuraft::buffer & buffer, uint64_t up_to_log_idx);
 
+    /// Startup-only: publish a repaired snapshot after orphan recovery and log-tail validation.
+    /// Preserve the original and same-index duplicates under names excluded from snapshot discovery.
+    SnapshotFileInfoPtr rewriteSnapshotAfterRecovery(const KeeperStorageSnapshot & snapshot);
+
     /// Returns the already-registered entry for `up_to_log_idx` so the caller can skip rewriting.
     /// Returns nullptr if nothing is registered.
-    SnapshotFileInfoPtr tryReuseRegisteredSnapshot(uint64_t up_to_log_idx) const;
+    [[nodiscard]] SnapshotFileInfoPtr tryReuseRegisteredSnapshot(uint64_t up_to_log_idx) const;
 
     /// Publish `written`, retire it if a race was lost, run inline maintenance, and return the
     /// published metadata. Used by write-from-scratch and receive paths (not by
@@ -311,17 +345,20 @@ public:
     /// Serialize snapshot directly to disk
     SnapshotFileInfoPtr serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot);
 
-    std::unique_ptr<KeeperSnapshotReader> makeSnapshotReader(nuraft::ptr<nuraft::buffer> buffer) const;
+    [[nodiscard]] std::unique_ptr<KeeperSnapshotReader> makeSnapshotReader(nuraft::ptr<nuraft::buffer> buffer) const;
 
-    SnapshotDeserializationResult deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, KeeperStorage & storage) const;
+    /// `allow_orphaned_nodes_removal` must be set only when loading a snapshot from the local disk
+    /// during server startup; see `KeeperSnapshotReader::allow_orphaned_nodes_removal`.
+    SnapshotDeserializationResult deserializeSnapshotFromBuffer(
+        nuraft::ptr<nuraft::buffer> buffer, KeeperStorage & storage, bool allow_orphaned_nodes_removal = false) const;
 
-    SnapshotMetadataPtr deserializeSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
+    [[nodiscard]] SnapshotMetadataPtr deserializeSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
 
     /// Deserialize pinned snapshot from disk into compressed nuraft buffer.
-    nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(const SnapshotFileInfo & snapshot_info) const;
+    [[nodiscard]] nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(const SnapshotFileInfo & snapshot_info) const;
 
     /// Deserialize snapshot with log index up_to_log_idx from disk into compressed nuraft buffer.
-    nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const;
+    [[nodiscard]] nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const;
 
     /// Deserialize latest snapshot from disk into compressed nuraft buffer.
     nuraft::ptr<nuraft::buffer> deserializeLatestSnapshotBufferFromDisk();
@@ -330,19 +367,19 @@ public:
     void removeSnapshot(uint64_t log_idx);
 
     /// Total amount of snapshots
-    size_t totalSnapshots() const { return existing_snapshots.size(); }
+    [[nodiscard]] size_t totalSnapshots() const { return existing_snapshots.size(); }
 
     /// The most fresh snapshot log index we have
-    size_t getLatestSnapshotIndex() const;
+    [[nodiscard]] size_t getLatestSnapshotIndex() const;
 
-    SnapshotFileInfoPtr getLatestSnapshotInfo() const;
+    [[nodiscard]] SnapshotFileInfoPtr getLatestSnapshotInfo() const;
 
-    std::map<uint64_t, SnapshotFileInfoPtr> getExistingSnapshots(const std::lock_guard<std::mutex> & /*snapshots_lock*/) const;
+    [[nodiscard]] std::map<uint64_t, SnapshotFileInfoPtr> getExistingSnapshots(const std::lock_guard<std::mutex> & /*snapshots_lock*/) const;
 
     /// Return the map entry for `log_idx`, or `nullptr` if absent. Holding the
     /// result pins the file against unlink and cross-disk moves.
     /// Caller must hold `KeeperStateMachine::snapshots_lock`.
-    SnapshotFileInfoPtr getSnapshotPin(uint64_t log_idx) const;
+    [[nodiscard]] SnapshotFileInfoPtr getSnapshotPin(uint64_t log_idx) const;
 
     /// Protect this log index from retention — the file backing `latest_snapshot_meta` must
     /// stay servable to NuRaft. 0 = none. Caller must hold `KeeperStateMachine::snapshots_lock`.
@@ -353,6 +390,15 @@ public:
     void setProtectedPendingSnapshotIndex(uint64_t log_idx);
 
 private:
+    SnapshotFileInfoPtr writeSnapshotFile(
+        const KeeperStorageSnapshot & snapshot,
+        const DiskPtr & disk,
+        const std::string & snapshot_file_name,
+        bool checked_directory_sync = false);
+
+    /// Copy to an ignored backup, synchronize, then remove the old discoverable name.
+    void archiveSnapshotFile(const SnapshotFileInfoPtr & file_info);
+
     /// Detach the entry at `it` and same-index recovery copies, marking retired; caller's drop unlinks them.
     std::vector<SnapshotFileInfoPtr> detachSnapshotForRemoval(std::map<uint64_t, SnapshotFileInfoPtr>::iterator it);
     /// `just_written_log_idx` (0 = none) pins the calling writer's own entry through this pass.
@@ -362,10 +408,10 @@ private:
 
     /// Build a `shared_ptr<SnapshotFileInfo>` whose deleter unlinks only when
     /// `retired_for_removal` is set.
-    SnapshotFileInfoPtr makeManagedSnapshotFileInfo(std::string path, DiskPtr disk, uint64_t log_idx) const;
+    [[nodiscard]] SnapshotFileInfoPtr makeManagedSnapshotFileInfo(std::string path, DiskPtr disk, uint64_t log_idx) const;
 
-    DiskPtr getDisk() const;
-    DiskPtr getLatestSnapshotDisk() const;
+    [[nodiscard]] DiskPtr getDisk() const;
+    [[nodiscard]] DiskPtr getLatestSnapshotDisk() const;
 
     /// Checks first 4 buffer bytes to became sure that snapshot compressed with
     /// ZSTD codec.
@@ -385,6 +431,8 @@ private:
     uint64_t protected_pending_snapshot_log_idx = 0;
     /// Compress snapshots in common ZSTD format instead of custom ClickHouse block LZ4 format
     const bool compress_snapshots_zstd;
+    /// ZSTD compression level used by both in-memory and on-disk snapshot writers
+    const int snapshot_zstd_compression_level;
 
     KeeperContextPtr keeper_context;
 

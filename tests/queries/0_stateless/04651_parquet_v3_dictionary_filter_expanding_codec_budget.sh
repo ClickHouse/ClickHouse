@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: needs the Parquet format which is not built in fasttest.
 
 # Regression test for the compressed carrier of the double-counting bug that `04616` fixed for the
 # `UNCOMPRESSED` one. Before decoding a dictionary page on the pruning path, the reader bounds its

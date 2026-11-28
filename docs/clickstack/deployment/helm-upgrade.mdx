@@ -74,10 +74,10 @@ clickhouse:
 | MongoDB | Inline Deployment + Service + PVC | [MongoDB Kubernetes Operator (MCK)](https://github.com/mongodb/mongodb-kubernetes) managing a `MongoDBCommunity` CR |
 | ClickHouse | Inline Deployment + Service + ConfigMaps + PVCs | [ClickHouse Operator](/products/kubernetes-operator/overview) managing `ClickHouseCluster` + `KeeperCluster` CRs |
 | OTEL Collector | Inline Deployment + Service (`otel.*` block) | [Official OpenTelemetry Collector Helm chart](https://github.com/open-telemetry/opentelemetry-helm-charts) (`otel-collector:` subchart) |
-| HyperDX values | Flat keys under `hyperdx.*` plus top-level `tasks:` and `appUrl` | Reorganized by K8s resource type under `hyperdx.*` (see below) |
+| ClickStack UI values | Flat keys under `hyperdx.*` plus top-level `tasks:` and `appUrl` | Reorganized by K8s resource type under `hyperdx.*` (see below) |
 | hdx-oss-v2 | Deprecated legacy chart | Removed entirely |
 
-## HyperDX values reorganization {#hyperdx-values-reorganization}
+## ClickStack UI values reorganization {#hyperdx-values-reorganization}
 
 The `hyperdx:` block is now organized by Kubernetes resource type:
 
@@ -120,7 +120,7 @@ hyperdx:
 
 ### Unified ConfigMap and Secret {#unified-configmap-and-secret}
 
-All environment variables now flow through two static-named resources that are shared by the HyperDX Deployment **and** the OTEL Collector via `envFrom`:
+All environment variables now flow through two static-named resources that are shared by the ClickStack UI Deployment **and** the OTEL Collector via `envFrom`:
 
 - **`clickstack-config`** ConfigMap — populated from `hyperdx.config`
 - **`clickstack-secret`** Secret — populated from `hyperdx.secrets`

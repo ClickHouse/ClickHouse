@@ -1,0 +1,38 @@
+-- merge with row remapping, bitpacking codec, positions
+1
+100000
+100000
+1000
+1000
+8
+8
+5
+5
+50000
+50000
+50000
+50000
+-- merge with row remapping, none codec
+100000
+100000
+1000
+1000
+8
+8
+-- index materialization from multiple temporary segments, bitpacking codec
+20000
+20000
+200
+200
+8
+8
+-- index materialization from a single temporary segment, bitpacking codec
+20000
+20000
+200
+200
+-- index materialization from a single temporary segment, none codec
+20000
+20000
+200
+200

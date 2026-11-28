@@ -98,9 +98,7 @@ PRIMARY KEY Id
 
 * `PRIMARY KEY` – 键所在列的名称。
 
-<div id="composite-key">
-  ### 复合键
-</div>
+### 复合键 {#composite-key}
 
 键可以是由任意类型的字段组成的 `tuple`。在这种情况下，[布局](/zh/reference/statements/create/dictionary/layouts/overview)必须为 `complex_key_hashed` 或 `complex_key_cache`。
 
@@ -124,6 +122,7 @@ PRIMARY KEY Id
         ...
     </key>
 ...
+</structure>
 ```
 
 或

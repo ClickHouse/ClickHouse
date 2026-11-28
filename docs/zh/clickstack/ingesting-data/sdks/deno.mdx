@@ -6,61 +6,32 @@ doc_type: 'guide'
 keywords: ['Deno ClickStack SDK', 'Deno OpenTelemetry', 'ClickStack Deno 集成', 'Deno 可观测性', 'Deno 日志 SDK']
 ---
 
-本指南涵盖以下集成：
+import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-* **日志**
+借助 Deno 内置的 OpenTelemetry 支持，即可将日志、指标和链路追踪发送到 ClickStack，无需使用 ClickStack Node.js SDK 或旧版 Deno 日志软件包。
 
-<Note>
-  当前仅支持 OpenTelemetry 日志。如需链路追踪支持，[请参阅以下指南](https://dev.to/grunet/leveraging-opentelemetry-in-deno-45bj#a-minimal-interesting-example)。
-</Note>
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-<div id="logging">
-  ## 日志
-</div>
+## 设置 OpenTelemetry {#set-up-opentelemetry}
 
-可通过为 `std/log` 模块导出自定义日志记录器来启用日志功能。
+请按照 Deno 官方的 [Deno OpenTelemetry 设置指南](https://docs.deno.com/runtime/fundamentals/open_telemetry/)对应用程序进行插桩。先配置下方的目标端，然后在启动应用程序时启用 Deno 内置的集成：
 
-**示例用法：**
-
-```typescript
-import * as log from 'https://deno.land/std@0.203.0/log/mod.ts';
-import { OpenTelemetryHandler } from 'npm:@hyperdx/deno';
-
-log.setup({
-  handlers: {
-    otel: new OpenTelemetryHandler('DEBUG'),
-  },
-
-  loggers: {
-    'my-otel-logger': {
-      level: 'DEBUG',
-      handlers: ['otel'],
-    },
-  },
-});
-
-log.getLogger('my-otel-logger').info('Hello from Deno!');
+```shell
+OTEL_DENO=true OTEL_SERVICE_NAME='my-deno-app' deno run app.ts
 ```
 
-<div id="run-the-application">
-  ### 运行应用程序
-</div>
+添加应用程序所需的权限。替换上游说明中的所有示例目标端和控制台导出器设置，包括针对特定信号的端点覆盖配置。
 
-<Tabs>
-  <Tab title="托管 ClickStack">
-    ```shell
-    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318 \
-    OTEL_SERVICE_NAME="<NAME_OF_YOUR_APP_OR_SERVICE>" \
-    deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
-    ```
-  </Tab>
+## 配置目标端 {#configure-destination}
 
-  <Tab title="ClickStack 开源版">
-    ```shell
-    OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>" \
-    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318 \
-    OTEL_SERVICE_NAME="<NAME_OF_YOUR_APP_OR_SERVICE>" \
-    deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
-    ```
-  </Tab>
-</Tabs>
+为 ClickStack 采集器设置 OTLP HTTP 端点和摄取密钥。如果采集器未配置 TLS，请使用 `http://`。有关采集器的设置方法，请参阅[使用 OpenTelemetry 摄取数据](/zh/clickstack/ingesting-data/opentelemetry)。
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+```
+
+## 验证摄取 {#verify-ingestion}
+
+启动应用程序并产生一些活动。在 ClickStack 中选择最近的时间范围，然后在 日志 或 链路追踪 中查找应用程序的服务名称。稍等片刻待数据导出完成后，再查看 指标。

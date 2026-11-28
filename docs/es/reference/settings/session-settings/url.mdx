@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se autogeneran a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="url_base">
-  ## url_base
-</div>
+## url_base {#url_base}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": ""},{"label": "Nueva configuración para especificar la URL base para resolver URL relativas en la función de tabla url y el motor de tabla URL."}]}]} />
 
@@ -37,9 +35,9 @@ Por ejemplo, si `url_base` es `https://example.com/def/`, entonces:
 * `/test/data.csv` se resuelve como `https://example.com/test/data.csv`
 * `//other.com/test/data.csv` se resuelve como `https://other.com/test/data.csv`
 
-<div id="url_wildcard_max_directories_to_read">
-  ## url_wildcard_max_directories_to_read
-</div>
+Cuando la URL relativa procede de una [colección con nombre](/es/concepts/features/configuration/server-config/named-collections), resolverla equivale a sobrescribir la clave `url` de la colección y requiere el privilegio `SHOW NAMED COLLECTIONS SECRETS` sobre dicha colección.
+
+## url_wildcard_max_directories_to_read {#url_wildcard_max_directories_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 

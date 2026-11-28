@@ -1,5 +1,6 @@
 ---
 sidebarTitle: 'المراقبة'
+icon: 'chart-line'
 description: 'راقب ClickPipes باستخدام مقاييس Prometheus.'
 slug: /integrations/clickpipes/monitoring
 title: 'مراقبة ClickPipes'
@@ -9,9 +10,7 @@ keywords: ['ClickPipes', 'المراقبة', 'المقاييس', 'Prometheus', '
 
 بالإضافة إلى المراقبة داخل Console، يوفّر ClickPipes مقاييس عبر [نقطة نهاية متوافق مع Prometheus](/ar/products/cloud/features/monitoring/prometheus) ليتم جمعها. تُنشر هذه المقاييس مع مقاييس خدمة ClickHouse Cloud الأخرى، وتتيح لك دمج مراقبة ClickPipes مع مكدس observability الحالي لديك (مثل [Grafana](/ar/products/cloud/features/monitoring/prometheus#integrating-with-grafana) و[Datadog](/ar/products/cloud/features/monitoring/prometheus#integrating-with-datadog)).
 
-<div id="metric-labels">
-  ## تسميات المقاييس
-</div>
+## تسميات المقاييس {#metric-labels}
 
 تستخدم مقاييس ClickPipes [التسميات القياسية على مستوى الخدمة](/ar/products/cloud/features/monitoring/prometheus#metric-labels) (`clickhouse_org`, `clickhouse_service`, `clickhouse_service_name`)، بالإضافة إلى تسميات ClickPipes التالية:
 
@@ -20,18 +19,16 @@ keywords: ['ClickPipes', 'المراقبة', 'المقاييس', 'Prometheus', '
 | `clickpipe_id`     | المعرّف الفريد لـ ClickPipe                                                |
 | `clickpipe_name`   | اسم ClickPipe                                                              |
 | `clickpipe_source` | نوع المصدر (على سبيل المثال: `kafka` أو `postgres` أو `s3`)                |
-| `clickpipe_state`  | حالة ClickPipe (على سبيل المثال: `Stopped` أو `Provisioning` أو `Running`) |
+| `clickpipe_status` | حالة ClickPipe (على سبيل المثال: `Stopped` أو `Provisioning` أو `Running`) |
 
-<div id="sample-response">
-  ### استجابة نموذجية
-</div>
+### استجابة نموذجية {#sample-response}
 
 يوضح ما يلي شكل مقاييس ClickPipes في استجابة سحب من Prometheus لـ Kafka ClickPipe. تختلف مجموعة المقاييس المعرَّضة بحسب نوع الـ pipe — راجع [المقاييس المتاحة](#available-metrics) لمعرفة المقاييس التي تنطبق على أنواع الـ pipe المختلفة:
 
 ```response
-# HELP ClickPipes_Info Always equal to 1. Label "clickpipe_state" contains the current state of the pipe: Stopped/Provisioning/Running/Paused/Failed
+# HELP ClickPipes_Info Always equal to 1. Label "clickpipe_status" contains the current state of the pipe: Stopped/Provisioning/Running/Paused/Failed
 # TYPE ClickPipes_Info gauge
-ClickPipes_Info{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent",clickpipe_state="Running"} 1
+ClickPipes_Info{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent",clickpipe_status="Running"} 1
 
 # HELP ClickPipes_FetchedEvents_Total Total number of records fetched from the source.
 # TYPE ClickPipes_FetchedEvents_Total counter
@@ -58,9 +55,7 @@ ClickPipes_Errors_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",cl
 ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="my service",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="my kafka pipe",clickpipe_source="confluent"} 340
 ```
 
-<div id="available-metrics">
-  ## المقاييس المتاحة
-</div>
+## المقاييس المتاحة {#available-metrics}
 
 ليست كل المقاييس متاحة لكل نوع من أنواع المسارات. وعلى وجه الخصوص، توفّر ClickPipes الخاصة بـ CDC مجموعة فرعية مختلفة من المقاييس مقارنةً بـ ClickPipes الخاصة بالبث والتخزين الكائني.
 
@@ -68,9 +63,7 @@ ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickho
 * **CDC** — Postgres وMySQL وMongoDB وBigQuery
 * **الكل** — جميع أنواع المسارات
 
-<div id="metrics-data-transfer">
-  ### نقل البيانات
-</div>
+### نقل البيانات {#metrics-data-transfer}
 
 | المقياس                                    | النوع | متاح لـ                | الوصف                                                                                                                                                                                                                                                                                                                        |
 | ------------------------------------------ | ----- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -80,27 +73,20 @@ ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickho
 | `ClickPipes_SentBytes_Total`               | عدّاد | البث، التخزين الكائني | إجمالي البايتات غير المضغوطة التي أُرسلت إلى ClickHouse.                                                                                                                                                                                                                                                                     |
 | `ClickPipes_SentBytesCompressed_Total`     | عدّاد | البث، التخزين الكائني | إجمالي البايتات المضغوطة التي أُرسلت إلى ClickHouse.                                                                                                                                                                                                                                                                         |
 
-<div id="metrics-events">
-  ### الأحداث والسجلات
-</div>
+### الأحداث والسجلات {#metrics-events}
 
-| المقياس                             | النوع | متاح لـ               | الوصف                                                                                                             |
-| ----------------------------------- | ----- | --------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `ClickPipes_FetchedEvents_Total`    | عداد  | البث، التخزين الكائني | إجمالي عدد السجلات التي تم جلبها من المصدر.                                                                       |
-| `ClickPipes_SentEvents_Total`       | عداد  | البث، التخزين الكائني | إجمالي عدد السجلات التي تم إرسالها إلى ClickHouse.                                                                |
-| `ClickPipes_FetchedEvents_PerTable` | مقياس | CDC                   | عدد السجلات التي تم جلبها لكل جدول وجهة ولكل نوع حدث. يستخدم تسميتي `destination_table` و`event_type` الإضافيتين. |
+| المقياس                          | النوع | متاح لـ               | الوصف                                              |
+| -------------------------------- | ----- | --------------------- | -------------------------------------------------- |
+| `ClickPipes_FetchedEvents_Total` | عداد  | البث، التخزين الكائني | إجمالي عدد السجلات التي تم جلبها من المصدر.        |
+| `ClickPipes_SentEvents_Total`    | عداد  | البث، التخزين الكائني | إجمالي عدد السجلات التي تم إرسالها إلى ClickHouse. |
 
-<div id="metrics-errors">
-  ### الأخطاء
-</div>
+### الأخطاء {#metrics-errors}
 
 | المقياس                   | النوع | متاح لـ | الوصف                                                                                              |
 | ------------------------- | ----- | ------- | -------------------------------------------------------------------------------------------------- |
 | `ClickPipes_Errors_Total` | عدّاد | الكل    | إجمالي [الأخطاء](/ar/integrations/clickpipes/home#error-reporting) التي تمت مواجهتها أثناء الاستيعاب. |
 
-<div id="metrics-latency">
-  ### زمن الاستجابة
-</div>
+### زمن الاستجابة {#metrics-latency}
 
 | المقياس                                   | النوع         | متاح لـ            | الوصف                                                                                        |
 | ----------------------------------------- | ------------- | ------------------ | -------------------------------------------------------------------------------------------- |
@@ -109,9 +95,7 @@ ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickho
 | `ClickPipes_CDC_SourceLatency`            | مقياس (*avg*) | CDC                | التأخر بالمللي ثانية من الطابع الزمني لحدث المصدر إلى معالجة ClickPipes.                     |
 | `ClickPipes_CDC_DestinationLatency`       | مقياس (*avg*) | CDC                | التأخر بالمللي ثانية من وقت استلام حدث في ClickPipe حتى كتابته في جدول ClickHouse.           |
 
-<div id="metrics-resources">
-  ### استخدام الموارد
-</div>
+### استخدام الموارد {#metrics-resources}
 
 تعرض مقاييس `ClickPipes_Replica_*` استخدام الموارد في ClickPipes الخاصة بالبث والتخزين الكائني. لكل ClickPipe **قدرة حوسبية مخصصة**، لذا تعكس هذه القيم مستوى الاستخدام لكل ClickPipe على حدة.
 
@@ -132,19 +116,15 @@ ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickho
 | `ClickPipes_CDC_MemoryLimit`         | Gauge (*last*) | CDC     | حد الذاكرة المُعدّ، بالبايت. وهو مشترك بين جميع ClickPipes الخاصة بـ CDC في الخدمة.                                        |
 | `ClickPipes_CDC_NetworkReceiveBytes` | Gauge          | CDC     | عرض النطاق الترددي للشبكة الواردة، بالبايت (دلتا لكل نافذة scrape). وهو مشترك بين جميع ClickPipes الخاصة بـ CDC في الخدمة. |
 
-<div id="metrics-state">
-  ### الحالة والتقدم
-</div>
+### الحالة والتقدم {#metrics-state}
 
-| المقياس                         | النوع | متاح لـ | الوصف                                                                                             |
-| ------------------------------- | ----- | ------- | ------------------------------------------------------------------------------------------------- |
-| `ClickPipes_Info`               | مقياس | الجميع  | يساوي دائمًا `1`. استخدم التسمية `clickpipe_state` للتصفية أو التنبيه استنادًا إلى حالة الـ pipe. |
-| `ClickPipes_LastFetchedBatchId` | مقياس | CDC     | معرّف آخر دفعة جرى جلبها من المصدر.                                                               |
-| `ClickPipes_LastSentBatchId`    | مقياس | CDC     | معرّف آخر دفعة أُرسلت إلى ClickHouse.                                                             |
+| المقياس                         | النوع | متاح لـ | الوصف                                                                                              |
+| ------------------------------- | ----- | ------- | -------------------------------------------------------------------------------------------------- |
+| `ClickPipes_Info`               | مقياس | الجميع  | يساوي دائمًا `1`. استخدم التسمية `clickpipe_status` للتصفية أو التنبيه استنادًا إلى حالة مسار استيعاب البيانات. |
+| `ClickPipes_LastFetchedBatchId` | مقياس | CDC     | معرّف آخر دفعة جرى جلبها من المصدر.                                                                |
+| `ClickPipes_LastSentBatchId`    | مقياس | CDC     | معرّف آخر دفعة أُرسلت إلى ClickHouse.                                                              |
 
-<div id="related">
-  ## صفحات ذات صلة
-</div>
+## صفحات ذات صلة {#related}
 
 * [نقطة نهاية Prometheus](/ar/products/cloud/features/monitoring/prometheus) — مرجع نقطة النهاية والمصادقة والإعداد للأدوات الخارجية (مثل Grafana وDatadog)
 * [الإبلاغ عن الأخطاء](/ar/integrations/clickpipes/home#error-reporting) — حيث تُخزَّن أخطاء السجلات وأخطاء النظام

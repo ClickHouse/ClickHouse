@@ -12,27 +12,23 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="filesystem_prefetch_max_memory_usage">
-  ## filesystem_prefetch_max_memory_usage
-</div>
+## filesystem_prefetch_max_memory_usage {#filesystem_prefetch_max_memory_usage}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1073741824" />
 
 先読み処理の最大メモリ使用量。
 
+この設定はマージとミューテーションにも適用されます。
+
 Cloud でのデフォルト値: 総メモリの 10%。
 
-<div id="filesystem_prefetch_step_bytes">
-  ## filesystem_prefetch_step_bytes
-</div>
+## filesystem_prefetch_step_bytes {#filesystem_prefetch_step_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 プリフェッチステップをバイト単位で指定します。ゼロは `auto` を意味します。この場合、おおよそ最適なプリフェッチステップが自動的に推定されますが、必ずしも 100% 最適になるとは限りません。実際の値は、設定 filesystem&#95;prefetch&#95;min&#95;bytes&#95;for&#95;single&#95;read&#95;task によって異なる場合があります。
 
-<div id="filesystem_prefetch_step_marks">
-  ## filesystem_prefetch_step_marks
-</div>
+## filesystem_prefetch_step_marks {#filesystem_prefetch_step_marks}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

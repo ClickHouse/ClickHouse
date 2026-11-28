@@ -2,36 +2,55 @@
 slug: /use-cases/observability/clickstack/faq
 title: 'FAQ de ClickStack'
 sidebarTitle: 'FAQ'
-description: 'Preguntas frecuentes sobre alertas, dashboards, drill-downs y descubrimiento de métricas en ClickStack.'
+description: 'Preguntas frecuentes sobre ClickStack Open Source, ClickHouse Observability, HyperDX, alertas, dashboards y descubrimiento de métricas.'
 doc_type: 'guide'
 keywords: ['ClickStack', 'FAQ', 'alertas', 'dashboards', 'drill-downs', 'descubrimiento de métricas']
 ---
 
-Esta página responde a preguntas frecuentes sobre las capacidades de ClickStack, incluidas las alertas, los dashboards y los drill-downs, así como el descubrimiento de métricas.
+Esta página responde a preguntas frecuentes sobre ClickStack Open Source, su relación con ClickHouse Observability y HyperDX, y sus capacidades de observabilidad.
+
+## ClickStack y ClickHouse Observability {#clickstack-and-clickhouse-observability}
+
+<Accordion title="¿Cuál es la diferencia entre ClickStack Open Source y ClickHouse Observability?">
+  [ClickStack Open Source](/es/clickstack/overview) es la pila de observabilidad que usted mismo despliega y opera, e incluye ClickHouse, la interfaz de usuario de ClickStack y un recolector de OpenTelemetry.
+
+  ClickHouse Observability ofrece la experiencia de ClickStack en ClickHouse Cloud. ClickHouse aloja la base de datos y la interfaz de usuario. Con [ClickHouse Observability totalmente gestionado](/es/clickstack/observability/overview), ClickHouse también gestiona el recolector de ingestión y los esquemas; con [ClickHouse Observability autogestionado](/es/clickstack/self-configured/overview), usted controla la ingestión y los esquemas.
+</Accordion>
+
+<Accordion title="¿ClickHouse Observability autogestionado es lo mismo que ClickStack Open Source?">
+  No. [ClickHouse Observability autogestionado](/es/clickstack/self-configured/overview) se ejecuta en ClickHouse Cloud, que aloja ClickHouse y la interfaz de usuario. Usted gestiona la canalización de ingestión, los esquemas y la configuración de la base de datos.
+
+  Con ClickStack Open Source, usted mismo opera el stack. Puede alojar ClickHouse por su cuenta o conectarse a ClickHouse Cloud. Consulte las [opciones de despliegue](/es/clickstack/deployment/oss).
+</Accordion>
+
+<Accordion title="¿Qué ha pasado con HyperDX?">
+  HyperDX pasó a ser el componente de interfaz de usuario de ClickStack, que proporciona la interfaz para buscar y explorar logs, trazas, métricas y reproducciones de sesiones. En esta documentación se denomina **Interfaz de usuario de ClickStack**.
+
+  La interfaz de usuario sigue siendo [open source](https://github.com/hyperdxio/hyperdx). Es posible que todavía vea el nombre HyperDX en nombres de repositorios y en parámetros de configuración.
+</Accordion>
 
 <div id="alerting">
-  ## Alertas
+  ## Alertas {#alerting}
 </div>
 
 <Accordion title="¿Qué tipos de alertas admite ClickStack?">
   ClickStack admite dos tipos de alertas:
 
   * [Alertas de búsqueda](/es/clickstack/features/alerts#search-alerts): activan notificaciones cuando el recuento de resultados coincidentes de logs o trazas dentro de una ventana de tiempo supera o cae por debajo de un umbral.
-  * [Alertas de gráficos del dashboard](/es/clickstack/features/alerts#dashboard-alerts): activan notificaciones cuando una métrica representada en un panel del dashboard supera un umbral definido.
+  * [Alertas de gráficos del panel](/es/clickstack/features/alerts#dashboard-alerts): activan notificaciones cuando una métrica representada en un panel del dashboard supera un umbral definido.
 
-  Ambos tipos de alertas usan condiciones de umbral estáticas. Para obtener todos los detalles, consulta [Alertas](/es/clickstack/features/alerts).
+  Ambos tipos de alertas usan condiciones de umbral estáticas de forma predeterminada. En ClickHouse Observability, pueden usar, en su lugar, la [detección de anomalías](/es/clickstack/features/anomaly-detection), que se activa cuando un valor se sale de su rango esperado. Para obtener todos los detalles, consulta [Alertas](/es/clickstack/features/alerts).
 </Accordion>
 
 <Accordion title="¿Puedo crear alertas sobre condiciones complejas de métricas como ratios, p95/p99 o fórmulas con varias métricas?">
-  Los ratios entre dos métricas, así como los valores p95 y p99, pueden representarse en un panel del dashboard mediante la UI de [chart builder](/es/clickstack/features/dashboards/overview#navigate-chart-explorer). Después, puedes crear alertas basadas en umbrales sobre esos paneles.
+  Los ratios entre dos métricas, así como los valores p95 y p99, pueden representarse en un panel del dashboard mediante la interfaz de usuario de [chart builder](/es/clickstack/features/dashboards/overview#navigate-chart-explorer). Después, puedes crear alertas basadas en umbrales sobre esos paneles.
 
   Sin embargo, ClickStack actualmente no admite:
 
   * Alertas sobre consultas SQL personalizadas para métricas.
   * Reglas de alerta con múltiples condiciones o múltiples métricas combinadas en una sola alerta.
-  * Condiciones de alerta dinámicas o basadas en detección de anomalías (la detección de anomalías está prevista).
 
-  Si necesitas crear una alerta sobre una métrica compleja, el enfoque recomendado es crear primero la visualización como un gráfico del dashboard y, después, asociarle una alerta de umbral.
+  Si necesitas crear una alerta sobre una métrica compleja, el enfoque recomendado es crear primero la visualización como un gráfico del dashboard y, después, asociarle una alerta de umbral. En ClickHouse Observability, puedes asociar al gráfico una [alerta de detección de anomalías](/es/clickstack/features/anomaly-detection) en su lugar, de modo que se active cuando el valor se salga de su rango esperado y no cuando supere un umbral fijo.
 </Accordion>
 
 <Accordion title="¿Puedo usar vistas materializadas para casos de uso de alertas?">
@@ -39,13 +58,11 @@ Esta página responde a preguntas frecuentes sobre las capacidades de ClickStack
 </Accordion>
 
 <div id="dashboards-and-drill-downs">
-  ## Dashboards y drill-downs
+  ## Dashboards y drill-downs {#dashboards-and-drill-downs}
 </div>
 
 <Accordion title="¿ClickStack admite dashboards parametrizados o variables de dashboard?">
-  ClickStack admite filtros desplegables personalizados en los dashboards, que se rellenan con datos consultados desde ClickHouse. Estos filtros permiten acotar dinámicamente todos los paneles de un dashboard a un valor específico (por ejemplo, un nombre de servicio, un entorno o un host).
-
-  Actualmente, ClickStack no admite variables de dashboard reutilizables al estilo de las variables de plantilla de Grafana. Como ClickStack funciona exclusivamente con ClickHouse como origen de datos, las capacidades de drill-down y filtrado pueden ofrecerse de forma nativa sin necesidad de una capa de abstracción de variables.
+  Sí, ClickStack admite dashboards parametrizados mediante filtros personalizados y variables, que se rellenan con datos consultados desde ClickHouse. Estos filtros permiten acotar dinámicamente algunos o todos los paneles de un dashboard a un valor específico (por ejemplo, un nombre de servicio, un entorno o un host).
 
   Para obtener más información sobre cómo crear dashboards y aplicar filtros, consulta [Dashboards](/es/clickstack/features/dashboards/overview).
 </Accordion>
@@ -55,18 +72,16 @@ Esta página responde a preguntas frecuentes sobre las capacidades de ClickStack
 
   * [Filtrado a nivel de dashboard](/es/clickstack/features/dashboards/overview#filter-dashboards): los filtros Lucene o SQL, así como los ajustes del intervalo de tiempo aplicados a nivel de dashboard, se propagan a todos los paneles.
   * Filtros de dashboard personalizados: los dashboards personalizados admiten controles de filtro explícitos que se rellenan con valores de tus datos, lo que permite a los usuarios acotar todos los paneles sin escribir consultas manualmente.
-  * Clic para ver eventos: al hacer clic en datos de un panel de dashboard y seleccionar **View Events**, se abre la página de [Búsqueda](/es/clickstack/features/search) con filtros relevantes para datos de logs y traces.
+  * Clic para ver eventos: al hacer clic en datos de un panel de dashboard y seleccionar **View Events**, se abre la página de [Búsqueda](/es/clickstack/features/search) con filtros relevantes para datos de logs y trazas.
   * [Drill-downs al hacer clic en filas de tabla](/es/clickstack/features/dashboards/row-click-drilldowns): un table panel puede configurarse para que al hacer clic en una fila se abra la página de Búsqueda u otro dashboard, trasladando los valores de la fila como filtros. Esto admite flujos de trabajo multinivel, como un inventario de servicios que profundiza en un dashboard de detalle por servicio.
   * [Drill-downs de dashboards predefinidos](/es/clickstack/features/dashboards/overview#presets): los dashboards de [Services](/es/clickstack/features/dashboards/overview#services-dashboard), [ClickHouse](/es/clickstack/features/dashboards/overview#clickhouse-dashboard) y [Kubernetes](/es/clickstack/features/dashboards/overview#kubernetes-dashboard) incluyen una navegación de drill-down integrada más completa entre pestañas.
 
     <Note>
-      El drill-down de **View Events** funciona mejor con datos de logs y traces. Como los datos de metrics no pueden verse en la página de [Búsqueda](/es/clickstack/features/search), al profundizar desde un panel de metrics se abrirán en su lugar logs del intervalo de tiempo seleccionado.
+      El drill-down de **View Events** funciona mejor con datos de logs y trazas. Como los datos de metrics no pueden verse en la página de [Búsqueda](/es/clickstack/features/search), al profundizar desde un panel de metrics se abrirán en su lugar logs del intervalo de tiempo seleccionado.
     </Note>
 </Accordion>
 
-<div id="metrics-discovery">
-  ## Descubrimiento de métricas
-</div>
+## Descubrimiento de métricas {#metrics-discovery}
 
 <Accordion title="¿Hay una UI para explorar y buscar métricas?">
   ![Explorador de atributos de métricas](/images/clickstack/faq/metrics-explorer.webp)
@@ -80,9 +95,7 @@ Esta página responde a preguntas frecuentes sobre las capacidades de ClickStack
   No. Aunque hoy se pueden usar consultas SQL para descubrir métricas, ese no es el enfoque previsto a largo plazo. Se están desarrollando activamente mejores herramientas para el descubrimiento de métricas.
 </Accordion>
 
-<div id="further-reading">
-  ## Más información
-</div>
+## Más información {#further-reading}
 
 * [Alertas](/es/clickstack/features/alerts): alertas de búsqueda, alertas de gráficos en dashboards e integraciones de webhook.
 * [Dashboards](/es/clickstack/features/dashboards/overview): creación de visualizaciones, creación de dashboards y aplicación de filtros.

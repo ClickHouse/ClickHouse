@@ -37,9 +37,7 @@ namespace ErrorCodes
 }
 struct Settings;
 
-/// Guard against allocation bombs in deserialize(): a crafted state can declare
-/// a huge element count and make set.reserve allocate gigabytes before any key
-/// is read. The constant is arbitrary (matches windowFunnel).
+/// The constant is arbitrary (matches `windowFunnel`).
 static constexpr size_t MAX_GROUP_ARRAY_INTERSECT_STATE_SIZE = 100'000'000;
 
 
@@ -71,9 +69,9 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectData<T>,
           AggregateFunctionGroupArrayIntersect<T>>({argument_type}, parameters_, result_type_) {}
 
-    String getName() const override { return "groupArrayIntersect"; }
+    [[nodiscard]] String getName() const override { return "groupArrayIntersect"; }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -160,7 +158,8 @@ public:
         if (size > MAX_GROUP_ARRAY_INTERSECT_STATE_SIZE)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                 "Too large array size ({}) in groupArrayIntersect deserialization", size);
-        set.reserve(size);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
+        set.reserve(std::min(size, buf.available() / sizeof(T)));
         for (size_t i = 0; i < size; ++i)
         {
             T key{};
@@ -218,9 +217,9 @@ public:
         : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectGenericData, AggregateFunctionGroupArrayIntersectGeneric<is_plain_column>>({input_data_type_}, parameters_, result_type_)
         , input_data_type(result_type_) {}
 
-    String getName() const override { return "groupArrayIntersect"; }
+    [[nodiscard]] String getName() const override { return "groupArrayIntersect"; }
 
-    bool allocatesMemoryInArena() const override { return true; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
@@ -335,7 +334,9 @@ public:
         if (size > MAX_GROUP_ARRAY_INTERSECT_STATE_SIZE)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                 "Too large array size ({}) in groupArrayIntersect deserialization", size);
-        set.reserve(size);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
+        /// Elements are variable length, so the divisor is the size of a slot, not of an element.
+        set.reserve(std::min(size, buf.available() / sizeof(typename State::Set::cell_type)));
         for (size_t i = 0; i < size; ++i)
         {
             auto key = readStringBinaryInto(*arena, buf);

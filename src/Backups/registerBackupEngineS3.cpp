@@ -1,13 +1,14 @@
 #include "config.h"
 
 #include <Backups/BackupFactory.h>
-#include <Core/Settings.h>
 #include <Common/Exception.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 
 #if USE_AWS_S3
 #include <Backups/BackupIO_S3.h>
 #include <Backups/BackupImpl.h>
 #include <Backups/BackupInfo.h>
+#include <Backups/BackupLocatorArchive.h>
 #include <Backups/BackupSourceAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <IO/Archives/ArchiveUtils.h>
@@ -19,11 +20,11 @@
 namespace DB::S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
-    extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsSecretString secret_access_key;
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
-    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsSecretString session_token;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool no_sign_request;
     extern const S3AuthSettingsString http_client;
@@ -31,8 +32,9 @@ namespace DB::S3AuthSetting
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
     extern const S3AuthSettingsString google_adc_client_id;
-    extern const S3AuthSettingsString google_adc_client_secret;
-    extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsSecretString google_adc_client_secret;
+    extern const S3AuthSettingsSecretString google_adc_refresh_token;
+    extern const S3AuthSettingsSecretString google_service_account_key;
 }
 
 #endif
@@ -47,11 +49,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-namespace Setting
-{
-extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
-}
-
 #if USE_AWS_S3
 namespace
 {
@@ -64,18 +61,6 @@ namespace
         /// table function authorizes.
         String uri_with_archive;
     };
-
-    String removeFileNameFromURL(String & url)
-    {
-        Poco::URI url2{url};
-        String path = url2.getPath();
-        size_t slash_pos = path.find_last_of('/');
-        String file_name = path.substr(slash_pos + 1);
-        path.resize(slash_pos + 1);
-        url2.setPath(path);
-        url = url2.toString();
-        return file_name;
-    }
 
     String stripTrailingSlashes(String str)
     {
@@ -141,8 +126,8 @@ namespace
 
         if (backup_info.args.size() == 3)
         {
-            backup_info.args[1].safeGet<String>();
-            backup_info.args[2].safeGet<String>();
+            (void)backup_info.args[1].safeGet<String>();
+            (void)backup_info.args[2].safeGet<String>();
         }
 
         if (backup_info.function_arg)
@@ -171,7 +156,7 @@ namespace
         /// `NAMED_COLLECTION` is enforced.
         if (!backup_info.id_arg.empty())
         {
-            backup_info.getNamedCollection(context);
+            (void)backup_info.getNamedCollection(context);
             return target;
         }
 
@@ -214,7 +199,7 @@ void registerBackupEngineS3(BackupFactory & factory)
         auto location = resolveS3BackupLocation(params.backup_info, params.context);
         String & s3_uri = location.uri;
         String access_key_id;
-        String secret_access_key;
+        SecretString secret_access_key;
         String role_arn;
         String role_session_name;
         String external_id;
@@ -226,7 +211,7 @@ void registerBackupEngineS3(BackupFactory & factory)
         if (const auto & collection = location.collection)
         {
             access_key_id = collection->getOrDefault<String>("access_key_id", "");
-            secret_access_key = collection->getOrDefault<String>("secret_access_key", "");
+            secret_access_key = collection->getOrDefault<SecretString>("secret_access_key");
             role_arn = collection->getOrDefault<String>("role_arn", "");
             role_session_name = collection->getOrDefault<String>("role_session_name", "");
             external_id = collection->getOrDefault<String>("external_id", "");
@@ -275,7 +260,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             /// its own key pair without a token.
             auth[S3AuthSetting::session_token]
                 = (drop_collection_keys_for_query_role || drop_inherited_token)
-                ? "" : collection->getOrDefault<String>("session_token", "");
+                ? SecretString{} : collection->getOrDefault<SecretString>("session_token");
             auth[S3AuthSetting::role_arn] = role_arn;
             auth[S3AuthSetting::role_session_name] = role_session_name;
             auth[S3AuthSetting::external_id] = external_id;
@@ -284,8 +269,9 @@ void registerBackupEngineS3(BackupFactory & factory)
             auth[S3AuthSetting::metadata_service] = collection->getOrDefault<String>("metadata_service", "");
             auth[S3AuthSetting::request_token_path] = collection->getOrDefault<String>("request_token_path", "");
             auth[S3AuthSetting::google_adc_client_id] = collection->getOrDefault<String>("google_adc_client_id", "");
-            auth[S3AuthSetting::google_adc_client_secret] = collection->getOrDefault<String>("google_adc_client_secret", "");
-            auth[S3AuthSetting::google_adc_refresh_token] = collection->getOrDefault<String>("google_adc_refresh_token", "");
+            auth[S3AuthSetting::google_adc_client_secret] = collection->getOrDefault<SecretString>("google_adc_client_secret");
+            auth[S3AuthSetting::google_adc_refresh_token] = collection->getOrDefault<SecretString>("google_adc_refresh_token");
+            auth[S3AuthSetting::google_service_account_key] = collection->getOrDefault<SecretString>("google_service_account_key");
 
         }
         else
@@ -300,8 +286,23 @@ void registerBackupEngineS3(BackupFactory & factory)
             {
                 S3::S3AuthSettings auth_settings;
 
-                if (!StorageS3Configuration::collectCredentials(params.backup_info.function_arg, auth_settings, params.context))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid argument: {}", params.backup_info.function_arg->formatForErrorMessage());
+                /// `collectCredentials` resolves each value into the node it was given, so it is handed a
+                /// copy: `BackupImpl::writeBackupMetadata` decides whether the base backup may take this
+                /// backup's credentials by comparing the two locators as text, and a locator resolved on
+                /// one side alone no longer matches the other written the same way.
+                /// The rejected argument is never echoed, so both failure modes report the same way:
+                /// a nested map like `headers(..)` is masked only by its enclosing formatter, so
+                /// formatting one alone prints its values, and evaluating one can throw quoting it.
+                try
+                {
+                    if (!StorageS3Configuration::collectCredentials(
+                            params.backup_info.function_arg->clone(), auth_settings, params.context))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 extra credentials");
+                }
+                catch (const Exception &)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 extra credentials");
+                }
 
                 role_arn = std::move(auth_settings[S3AuthSetting::role_arn]);
                 role_session_name = std::move(auth_settings[S3AuthSetting::role_session_name]);
@@ -309,44 +310,45 @@ void registerBackupEngineS3(BackupFactory & factory)
             }
         }
 
-        BackupImpl::ArchiveParams archive_params;
-        if (!location.archive_name.empty())
-        {
-            if (hasSupportedZipExtension(location.archive_name))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Zip archive format is not supported for S3 backups because zip requires seeking which S3 does not support efficiently. "
-                    "Use tar.gz or other tar-based formats instead");
+        if (hasSupportedZipExtension(location.archive_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Zip archive format is not supported for S3 backups because zip requires seeking which S3 does not support efficiently. "
+                "Use tar.gz or other tar-based formats instead");
 
-            if (params.is_internal_backup)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
+        auto archive_params = makeBackupArchiveParams(params, location.archive_name);
 
-            archive_params.archive_name = location.archive_name;
-            archive_params.compression_method = params.compression_method;
-            archive_params.compression_level = params.compression_level;
-            archive_params.password = params.password;
-            archive_params.adaptive_buffer_max_size = params.context->getSettingsRef()[Setting::archive_adaptive_buffer_max_size_bytes];
-        }
-        else
+        /// Everything is captured by value: `snapshot_reader_creator` takes this lambda into `BackupImpl`, which keeps it
+        /// after this function returns.
+        auto make_reader = [access_key_id,
+                            secret_access_key,
+                            role_arn,
+                            role_session_name,
+                            external_id,
+                            named_collection_auth,
+                            allow_s3_native_copy = params.allow_s3_native_copy,
+                            read_settings = params.read_settings,
+                            write_settings = params.write_settings,
+                            context = params.context,
+                            is_internal_backup = params.is_internal_backup](const S3::URI & uri)
         {
-            if (!params.password.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Password is not applicable, backup cannot be encrypted");
-        }
-
-        if (params.open_mode == IBackup::OpenMode::UNLOCK)
-        {
-            auto reader = std::make_shared<BackupReaderS3>(
-                S3::URI{s3_uri},
+            return std::make_shared<BackupReaderS3>(
+                uri,
                 access_key_id,
                 secret_access_key,
                 role_arn,
                 role_session_name,
                 external_id,
                 named_collection_auth,
-                params.allow_s3_native_copy,
-                params.read_settings,
-                params.write_settings,
-                params.context,
-                params.is_internal_backup);
+                allow_s3_native_copy,
+                read_settings,
+                write_settings,
+                context,
+                is_internal_backup);
+        };
+
+        if (params.open_mode == IBackup::OpenMode::UNLOCK)
+        {
+            auto reader = make_reader(S3::URI{s3_uri});
 
             return std::make_unique<BackupImpl>(
                 params.backup_info,
@@ -355,43 +357,18 @@ void registerBackupEngineS3(BackupFactory & factory)
         }
         else if (params.open_mode == IBackup::OpenMode::READ)
         {
-            auto reader = std::make_shared<BackupReaderS3>(
-                S3::URI{s3_uri},
-                access_key_id,
-                secret_access_key,
-                role_arn,
-                role_session_name,
-                external_id,
-                named_collection_auth,
-                params.allow_s3_native_copy,
-                params.read_settings,
-                params.write_settings,
-                params.context,
-                params.is_internal_backup);
+            auto reader = make_reader(S3::URI{s3_uri});
 
-
-            auto snapshot_reader_creator = [&](const String & s3_uri_, const String & s3_bucket_)
+            auto snapshot_reader_creator = [make = std::move(make_reader)](const String & s3_uri_, const String & s3_bucket_)
             {
                 String full_uri = std::filesystem::path(s3_uri_) / s3_bucket_;
                 auto uri_for_lightweight = S3::URI{full_uri};
                 /// We set the prefix to "" because in meta file, object key is absolute path.
                 uri_for_lightweight.key = "";
-                return std::make_shared<BackupReaderS3>(
-                    uri_for_lightweight,
-                    access_key_id,
-                    secret_access_key,
-                    role_arn,
-                    role_session_name,
-                    external_id,
-                    named_collection_auth,
-                    params.allow_s3_native_copy,
-                    params.read_settings,
-                    params.write_settings,
-                    params.context,
-                    params.is_internal_backup);
+                return make(uri_for_lightweight);
             };
 
-            return std::make_unique<BackupImpl>(params, archive_params, reader, snapshot_reader_creator);
+            return std::make_unique<BackupImpl>(params, archive_params, reader, std::move(snapshot_reader_creator));
         }
         else
         {
@@ -437,7 +414,7 @@ void registerBackupEngineS3(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("S3", creator_fn, destination_identity_fn, source_access_fn);
+    factory.registerBackupEngine("S3", creator_fn, destination_identity_fn, source_access_fn, s3BackupSecretArguments());
 }
 
 }

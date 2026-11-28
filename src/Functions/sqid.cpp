@@ -22,7 +22,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /// sqidEncode(number1, ...)
@@ -31,39 +30,23 @@ class FunctionSqidEncode final : public IFunction
 public:
     static constexpr auto name = "sqidEncode";
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSqidEncode>(); }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
-
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            if (!checkDataTypes<
-                    DataTypeUInt8,
-                    DataTypeUInt16,
-                    DataTypeUInt32,
-                    DataTypeUInt64>(arguments[i].get()))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument {} for function {} must have datatype UInt*, given type: {}.",
-                    i, getName(), arguments[i]->getName());
-        }
-
-        return std::make_shared<DataTypeString>();
+        return "(NativeUInt, ...) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_res = ColumnString::create();
         col_res->reserve(input_rows_count);
@@ -94,23 +77,18 @@ class FunctionSqidDecode final : public IFunction
 public:
     static constexpr auto name = "sqidDecode";
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSqidDecode>(); }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"sqid", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+        return "(String) -> Array(UInt64)";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_res_nested = ColumnUInt64::create();
         auto & res_nested_data = col_res_nested->getData();
@@ -127,7 +105,7 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 std::string_view sqid = col_non_const->getDataAt(i);
-                std::vector<UInt64> integers = sqids.decode(String(sqid)); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+                std::vector<UInt64> integers = sqids.decode(sqid); // STYLE_CHECK_ALLOW_STD_CONTAINERS
                 if (!integers.empty())
                     res_nested_data.insert(integers.begin(), integers.end());
                 res_offsets_data.push_back(res_offsets_data.back() + integers.size());

@@ -10,10 +10,10 @@
 #include <vector>
 #include <base/defines.h>
 #include <base/sort.h>
+#include <base/PackedStringRef.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/StringHashMap.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
@@ -316,7 +316,7 @@ struct TokenPolicy
 };
 
 /// Maps an n-gram to its dense index.
-using NGramIndexMap = StringHashMap<UInt32>;
+using NGramIndexMap = HashMap<PackedStringRef, UInt32>;
 
 using ClassCountMap = HashMap<UInt32, UInt64, HashCRC32<UInt32>>; // class id -> total n-gram count
 using ClassIndexMap = HashMap<UInt32, UInt32, HashCRC32<UInt32>>; // class id -> dense class index
@@ -333,9 +333,9 @@ struct NaiveBayesEntry
     {
     }
 
-    UInt32 ngramIndex() const { return static_cast<UInt32>(key >> 32); }
-    UInt32 classId() const { return static_cast<UInt32>(key); }
-    UInt64 getCount() const { return count; }
+    [[nodiscard]] UInt32 ngramIndex() const { return static_cast<UInt32>(key >> 32); }
+    [[nodiscard]] UInt32 classId() const { return static_cast<UInt32>(key); }
+    [[nodiscard]] UInt64 getCount() const { return count; }
 
     /// Orders entries by the packed key — n-gram index first, then class id; the count is not part of the
     /// order. `buildNgramTables` sorts on this so each n-gram's rows are contiguous and its per-class rows adjacent.
@@ -474,7 +474,7 @@ public:
     /// arena) when it is not yet in the vocabulary.
     UInt32 getOrAssignNgramIndex(std::string_view ngram)
     {
-        ArenaKeyHolder key_holder{ngram, key_arena};
+        ArenaPackedStringHolder key_holder{PackedStringRef::build(ngram.data(), ngram.size(), PackedStringRefHash{}), key_arena};
         NGramIndexMap::LookupResult it = nullptr;
         bool inserted = false;
         ngram_to_index.emplace(key_holder, it, inserted);
@@ -574,7 +574,8 @@ public:
         size_t matched_ngrams = 0;
         auto accumulate = [&](std::string_view ngram)
         {
-            auto it = ngram_to_index.find(ngram);
+            auto key = PackedStringRef::build(ngram.data(), ngram.size(), PackedStringRefHash{});
+            const auto *it = ngram_to_index.find(key);
             if (!it)
                 return;
             ++matched_ngrams;
@@ -594,13 +595,13 @@ public:
     }
 
     /// Maps a dense class index back to the original class id.
-    UInt32 classIdAt(size_t class_index) const
+    [[nodiscard]] UInt32 classIdAt(size_t class_index) const
     {
         chassert(class_index < class_ids.size());
         return class_ids[class_index];
     }
 
-    UInt64 getAllocatedBytes() const
+    [[nodiscard]] UInt64 getAllocatedBytes() const
     {
         UInt64 total = sizeof(*this);
         total += key_arena.allocatedBytes();
@@ -610,7 +611,7 @@ public:
         return total;
     }
 
-    size_t getElementCount() const { return ngram_to_index.size(); }
+    [[nodiscard]] size_t getElementCount() const { return ngram_to_index.size(); }
 
 private:
     ClassIndexMap buildClassTables(
@@ -778,9 +779,9 @@ public:
         return scratch.probabilities;
     }
 
-    UInt64 getAllocatedBytes() const { return sizeof(*this) + data->getAllocatedBytes(); }
+    [[nodiscard]] UInt64 getAllocatedBytes() const { return sizeof(*this) + data->getAllocatedBytes(); }
 
-    size_t getElementCount() const { return data->getElementCount(); }
+    [[nodiscard]] size_t getElementCount() const { return data->getElementCount(); }
 
 private:
     /// Index of the maximum score; ties resolve to the smallest index, which is the smallest class id.

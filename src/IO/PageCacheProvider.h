@@ -1,7 +1,6 @@
 #pragma once
 
 #include <IO/ICacheProvider.h>
-#include <IO/IntervalSet.h>
 #include <Common/PageCache.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -18,8 +17,8 @@ public:
     explicit PageCacheChainedBuffer(PageCache::MappedPtr cell_);
 
     char * data() override { return cell->data(); }
-    const char * data() const override { return cell->data(); }
-    size_t size() const override { return cell->size(); }
+    [[nodiscard]] const char * data() const override { return cell->data(); }
+    [[nodiscard]] size_t size() const override { return cell->size(); }
 
 private:
     PageCache::MappedPtr cell;
@@ -34,7 +33,7 @@ class PageCacheReader : public CacheReader
 public:
     PageCacheReader(ByteRange range_in_file, PageCache::MappedPtr cell_);
 
-    ByteRange range() const override { return range_member; }
+    [[nodiscard]] ByteRange range() const override { return range_member; }
     ChainedBuffers read(ByteRange sub) override;
 
 private:
@@ -56,20 +55,18 @@ public:
         ByteRange block_range);
 
     ByteRange range() const override { return range_member; }
-    IntervalSet committed() const override
+    size_t committed() const override
     {
         std::lock_guard lock(committed_mutex);
-        IntervalSet c;
-        if (cell)
-            c.add(range_member);
-        return c;
+        /// Whole-segment: the block is either empty or fully committed.
+        return cell ? range_member.end() : range_member.offset;
     }
-    size_t write(ChainedBuffers data, const Claim & claim) override;
+    bool fillsWholeSegment() const override { return true; }
+    size_t write(ChainedBuffers data, const FillRole & role) override;
     ChainedBuffers read(ByteRange sub) override;
-    /// Re-probe the cache: the block may have been populated by a concurrent query since `resolve`. If
-    /// so, adopt its cell and report the whole block as `available` (already committed, served from
-    /// cache) with no claim; otherwise hold the claim to fill it.
-    Lead claimLeadRole(ByteRange range) override;
+    /// Re-probe the cache: if the block was cached by a concurrent query since `resolve`, adopt its cell
+    /// (`committed()` then reports it) and hold no role; otherwise hold the role to fill it.
+    FillRole takeFillRole() override;
 
 private:
     PageCachePtr cache;
@@ -106,13 +103,12 @@ public:
         bool bypass_if_missing_,
         size_t file_size_in_bytes_);
 
-    String name() const override { return "PageCache"; }
-    CacheTier tier() const override { return CacheTier::PageCache; }
-    bool populatesOnMiss() const override { return !bypass_if_missing; }
+    [[nodiscard]] String name() const override { return "PageCache"; }
+    [[nodiscard]] CacheTier tier() const override { return CacheTier::PageCache; }
 
     /// A page-cache block is written whole (first-writer-wins, no later
     /// completion); the probe reports one miss range per block.
-    bool fillsWholeSegment() const override { return true; }
+    [[nodiscard]] bool fillsWholeSegment() const override { return true; }
 
     /// Resolve `range` into per-block hits (readers) and misses (whole-block
     /// writers when populating); see the definition.

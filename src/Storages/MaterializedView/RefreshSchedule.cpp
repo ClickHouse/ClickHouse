@@ -2,8 +2,13 @@
 
 #include <Common/thread_local_rng.h>
 
+#include <algorithm>
+
 namespace DB
 {
+
+/// `RANDOMIZE FOR` is unbounded, so the random offset is capped at about 95 years.
+static constexpr Int64 max_random_offset_ms = 3'000'000'000'000;
 
 RefreshSchedule::RefreshSchedule(const ASTRefreshStrategy & strategy)
 {
@@ -54,7 +59,17 @@ std::chrono::sys_seconds RefreshSchedule::timeslotForCompletedRefresh(std::chron
     /// some timeslots.
     auto res = floorEvery(start_time, period, offset);
     if (out_of_schedule)
+    {
+        /// A scheduled refresh can complete the next timeslot early, by at most half of the random spread
+        /// (see `addRandomSpread`), so a manual refresh soon after it must not move the timeslot back.
+        /// A completed timeslot further ahead, e.g. after the clock went backwards, is reset to the current one.
+        /// Computed in `Int128` with the cap of `addRandomSpread`, because the spread is unbounded.
+        const Int128 max_early_seconds = std::min<Int128>(Int128(spread.minSeconds()) / 2, max_random_offset_ms / 1000) + 1;
+        const Int128 early_seconds = Int128(last_completed_timeslot.time_since_epoch().count()) - start_time.time_since_epoch().count();
+        if (last_completed_timeslot > res && early_seconds <= max_early_seconds)
+            return last_completed_timeslot;
         return res;
+    }
     /// Next timeslot after the last completed one. Useful in case we did a refresh a little early
     /// because of random spread.
     res = std::max(res, advanceEvery(last_completed_timeslot, period, offset));
@@ -70,7 +85,9 @@ std::chrono::sys_seconds RefreshSchedule::advance(std::chrono::sys_seconds last_
 
 std::chrono::system_clock::time_point RefreshSchedule::addRandomSpread(std::chrono::system_clock::time_point when, Int64 randomness) const
 {
-    return when + std::chrono::milliseconds(Int64(static_cast<double>(spread.minSeconds()) * 1e3 / 2 * static_cast<double>(randomness) / 1e9));
+    /// Computed in `Int128`, because the spread is unbounded.
+    const Int128 offset_ms = Int128(spread.minSeconds()) * randomness / 2'000'000;
+    return when + std::chrono::milliseconds(Int64(std::clamp<Int128>(offset_ms, -max_random_offset_ms, max_random_offset_ms)));
 }
 
 }

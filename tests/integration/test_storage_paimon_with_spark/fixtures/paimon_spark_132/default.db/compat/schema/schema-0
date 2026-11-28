@@ -1,0 +1,29 @@
+{
+  "version" : 3,
+  "id" : 0,
+  "fields" : [ {
+    "id" : 0,
+    "name" : "id",
+    "type" : "INT NOT NULL"
+  }, {
+    "id" : 1,
+    "name" : "val",
+    "type" : "STRING"
+  }, {
+    "id" : 2,
+    "name" : "d",
+    "type" : "DATE"
+  }, {
+    "id" : 3,
+    "name" : "part",
+    "type" : "INT"
+  } ],
+  "highestFieldId" : 3,
+  "partitionKeys" : [ "part" ],
+  "primaryKeys" : [ ],
+  "options" : {
+    "owner" : "root",
+    "file.format" : "parquet"
+  },
+  "timeMillis" : 1785865685530
+}

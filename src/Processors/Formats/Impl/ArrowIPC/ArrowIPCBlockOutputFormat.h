@@ -31,6 +31,8 @@ namespace DB
 /// metadata without the Apache Arrow C++ library.
 /// `LowCardinality` is written as its full column, or — when `output_format_arrow_low_cardinality_as_dictionary`
 /// is on — as an Arrow dictionary-encoded column (a single dictionary per id, extended across batches via deltas).
+/// Each chunk becomes one record batch, except when it holds more data than the 32-bit offsets of the Arrow
+/// IPC buffers can address, in which case it is split across several record batches.
 class ArrowIPCBlockOutputFormat final : public IOutputFormat
 {
 public:
@@ -43,7 +45,12 @@ private:
     void finalizeImpl() override;
     void resetFormatterImpl() override;
 
+    /// Encodes one chunk as exactly one record batch, preceded by the dictionary batches it references.
+    void writeChunk(Chunk chunk);
+
     void writeSchemaIfNeeded();
+    /// Writes rows [begin, end) of the already dictionary-substituted `columns` as one record batch.
+    void writeRecordBatch(const Columns & columns, const DataTypes & types, size_t begin, size_t end);
     /// Writes one encapsulated message for an encoded batch (a record batch, or a dictionary batch
     /// when `dictionary_id` is set), returning its location for recording an Arrow file `Block`.
     ArrowIPC::MessageWriter::WrittenMessage writeBatchMessage(
@@ -94,6 +101,11 @@ private:
     };
     ArrowIPC::DictPlans column_dict_plans;
     VectorWithMemoryTracking<DictionaryColumnState> dictionary_states;
+
+    /// Rows of consecutive chunks that are individually smaller than the configured record batch target,
+    /// to be written as one record batch. The first chunk becomes the accumulator itself, so a staged batch
+    /// can hold one source block's allocations until it is written.
+    Chunk staged;
 };
 
 }

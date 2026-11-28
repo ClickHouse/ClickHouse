@@ -1,0 +1,19 @@
+<test>
+    <!-- A throw-mode `max_rows_to_group_by` far above the number of groups keeps the top-K optimizations of
+         `GROUP BY ... ORDER BY <aggregate> DESC LIMIT n`: the adaptive top-K pruning, which skips the merge units
+         whose count bins cannot reach the top, and the top-K threshold merge of the ordinary aggregation, which
+         merges only the groups that can rank. -->
+    <settings>
+        <max_rows_to_group_by>10000000000</max_rows_to_group_by>
+        <group_by_overflow_mode>throw</group_by_overflow_mode>
+    </settings>
+
+    <query>SELECT UserID, count() AS c FROM hits_100m_single GROUP BY UserID ORDER BY c DESC LIMIT 10 FORMAT Null</query>
+    <query>SELECT UserID, URL, count() AS c FROM hits_100m_single GROUP BY UserID, URL ORDER BY c DESC LIMIT 10 FORMAT Null</query>
+    <!-- Uniform repeated keys give the pruning nothing to skip: every count bin reaches the winning count. The frozen
+         tables of the adaptive aggregator thaw, and the verdict of the run sends the later runs to the ordinary
+         aggregation. -->
+    <query>SELECT number % 200000 AS k, count() AS c FROM numbers_mt(200000000) GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null</query>
+    <!-- The threshold merge serves the ordinary aggregation, which the adaptive aggregator replaces by default. -->
+    <query>SELECT UserID, max(EventTime) AS m FROM hits_100m_single GROUP BY UserID ORDER BY m DESC LIMIT 10 SETTINGS enable_adaptive_aggregator = 0 FORMAT Null</query>
+</test>

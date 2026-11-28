@@ -18,7 +18,9 @@ Ces paramètres configurent le serveur ClickHouse et sont générés automatique
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
-Désactive les requêtes insert/alter/delete. Ce paramètre peut être activé si l’on a besoin de nœuds en lecture seule, afin d’éviter que les insertions et les mutations n’affectent les performances en lecture. Les insertions dans des moteurs externes (S3, DataLake, MySQL, PostgreSQL, Kafka, etc.) restent autorisées malgré ce paramètre.
+Désactive les requêtes `INSERT`, `ALTER` et `DELETE` afin que les répliques en lecture seule ne créent pas de parties de données, de mutations ni d&#39;opérations de fusion susceptibles d&#39;affecter les performances de lecture.
+
+Les écritures vers un stockage externe via des moteurs tels que `S3`, `DataLake`, `MySQL`, `PostgreSQL` et `Kafka` restent autorisées. Le streaming en arrière-plan des tables `Kafka`, `RabbitMQ`, `NATS` et `S3Queue` vers des vues matérialisées attachées est désactivé, car il produit des parties `MergeTree` et des opérations de fusion sur cette réplique.
 
 <div id="disable_internal_dns_cache">
   ## disable_internal_dns_cache

@@ -2,15 +2,35 @@
 slug: /use-cases/observability/clickstack/faq
 title: 'FAQ do ClickStack'
 sidebarTitle: 'FAQ'
-description: 'Perguntas frequentes sobre alertas, dashboards, drill-downs e descoberta de métricas no ClickStack.'
+description: 'Perguntas frequentes sobre o ClickStack Open Source, o ClickHouse Observability, o HyperDX, alertas, dashboards e descoberta de métricas.'
 doc_type: 'guide'
 keywords: ['ClickStack', 'FAQ', 'alertas', 'dashboards', 'drill-downs', 'descoberta de métricas']
 ---
 
-Esta página responde a perguntas frequentes sobre os recursos do ClickStack, incluindo alertas, dashboards, drill-downs e descoberta de métricas.
+Esta página responde a perguntas frequentes sobre o ClickStack Open Source, sua relação com o ClickHouse Observability e o HyperDX e seus recursos de observabilidade.
+
+## ClickStack e ClickHouse Observability {#clickstack-and-clickhouse-observability}
+
+<Accordion title="Qual é a diferença entre o ClickStack Open Source e o ClickHouse Observability?">
+  O [ClickStack Open Source](/pt-BR/clickstack/overview) é a stack de observabilidade que você implanta e opera por conta própria, incluindo o ClickHouse, a Interface do ClickStack e um coletor OpenTelemetry.
+
+  O ClickHouse Observability leva a experiência do ClickStack para o ClickHouse Cloud. O ClickHouse hospeda o banco de dados e a UI. Com o [ClickHouse Observability totalmente gerenciado](/pt-BR/clickstack/observability/overview), o ClickHouse também gerencia o coletor de ingestão e os esquemas; com o [ClickHouse Observability autogerenciado](/pt-BR/clickstack/self-configured/overview), você controla a ingestão e os esquemas.
+</Accordion>
+
+<Accordion title="O ClickHouse Observability autogerenciado é a mesma coisa que o ClickStack Open Source?">
+  Não. O [ClickHouse Observability autogerenciado](/pt-BR/clickstack/self-configured/overview) é executado no ClickHouse Cloud, que hospeda o ClickHouse e a UI. Você gerencia o pipeline de ingestão, os esquemas e a configuração do banco de dados.
+
+  Com o ClickStack Open Source, você mesmo opera a stack. É possível hospedar o ClickHouse por conta própria ou se conectar ao ClickHouse Cloud. Consulte as [opções de implantação](/pt-BR/clickstack/deployment/oss).
+</Accordion>
+
+<Accordion title="O que aconteceu com o HyperDX?">
+  O HyperDX passou a ser o componente de UI do ClickStack, fornecendo a interface para buscar e explorar logs, rastros, métricas e reproduções de sessão. Esta documentação se refere a ele como **Interface do ClickStack**.
+
+  A UI continua sendo de [código aberto](https://github.com/hyperdxio/hyperdx). O nome HyperDX ainda pode aparecer em nomes de repositórios e em parâmetros de configuração.
+</Accordion>
 
 <div id="alerting">
-  ## Alertas
+  ## Alertas {#alerting}
 </div>
 
 <Accordion title="Quais tipos de alertas o ClickStack oferece?">
@@ -19,7 +39,7 @@ Esta página responde a perguntas frequentes sobre os recursos do ClickStack, in
   * [Alertas de busca](/pt-BR/clickstack/features/alerts#search-alerts): acionam notificações quando a contagem de resultados de logs ou traces correspondentes em uma janela de tempo excede ou fica abaixo de um limiar.
   * [Alertas de gráficos do dashboard](/pt-BR/clickstack/features/alerts#dashboard-alerts): acionam notificações quando uma métrica plotada em um tile do dashboard ultrapassa um limiar definido.
 
-  Ambos os tipos de alerta usam condições de limiar estáticas. Para ver todos os detalhes, consulte [Alertas](/pt-BR/clickstack/features/alerts).
+  Por padrão, ambos os tipos de alerta usam condições de limiar estáticas. No ClickHouse Observability, eles podem, em vez disso, usar [detecção de anomalias](/pt-BR/clickstack/features/anomaly-detection), que dispara quando um valor sai do intervalo esperado. Para ver todos os detalhes, consulte [Alertas](/pt-BR/clickstack/features/alerts).
 </Accordion>
 
 <Accordion title="Posso criar alertas para condições complexas de métricas, como proporções, p95/p99 ou fórmulas com múltiplas métricas?">
@@ -29,9 +49,8 @@ Esta página responde a perguntas frequentes sobre os recursos do ClickStack, in
 
   * Alertas em consultas SQL personalizadas para métricas.
   * Regras de alerta com múltiplas condições ou múltiplas métricas combinadas em um único alerta.
-  * Condições de alerta dinâmicas ou baseadas em detecção de anomalias (a detecção de anomalias está planejada).
 
-  Se você precisar criar um alerta para uma métrica complexa, a abordagem recomendada é primeiro criar a visualização como um gráfico no dashboard e, depois, associar um alerta de limiar a esse gráfico.
+  Se você precisar criar um alerta para uma métrica complexa, a abordagem recomendada é primeiro criar a visualização como um gráfico no dashboard e, depois, associar um alerta de limiar a esse gráfico. No ClickHouse Observability, você pode, em vez disso, associar ao gráfico um [alerta de detecção de anomalias](/pt-BR/clickstack/features/anomaly-detection), para que ele dispare quando o valor sair do intervalo esperado, e não quando ultrapassar um limiar fixo.
 </Accordion>
 
 <Accordion title="Posso usar visões materializadas para casos de uso de alertas?">
@@ -39,13 +58,11 @@ Esta página responde a perguntas frequentes sobre os recursos do ClickStack, in
 </Accordion>
 
 <div id="dashboards-and-drill-downs">
-  ## Dashboards e drill-downs
+  ## Dashboards e drill-downs {#dashboards-and-drill-downs}
 </div>
 
 <Accordion title="O ClickStack oferece suporte a dashboards parametrizados ou variáveis de dashboard?">
-  O ClickStack oferece suporte a filtros suspensos personalizados em dashboards, preenchidos com dados consultados no ClickHouse. Esses filtros permitem restringir dinamicamente todos os tiles de um dashboard a um valor específico (por exemplo, um nome de serviço, ambiente ou host).
-
-  No momento, o ClickStack não oferece suporte a variáveis de dashboard reutilizáveis no estilo das variáveis de template do Grafana. Como o ClickStack funciona exclusivamente com o ClickHouse como fonte de dados, os recursos de drill-down e filtragem podem ser fornecidos nativamente, sem exigir uma camada de abstração de variáveis.
+  Sim, o ClickStack oferece suporte a dashboards parametrizados por filtros personalizados e variáveis, preenchidos com dados consultados no ClickHouse. Esses filtros permitem restringir dinamicamente alguns ou todos os tiles de um dashboard a um valor específico (por exemplo, um nome de serviço, ambiente ou host).
 
   Para saber mais sobre como criar dashboards e aplicar filtros, consulte [Dashboards](/pt-BR/clickstack/features/dashboards/overview).
 </Accordion>
@@ -64,9 +81,7 @@ Esta página responde a perguntas frequentes sobre os recursos do ClickStack, in
   </Note>
 </Accordion>
 
-<div id="metrics-discovery">
-  ## Descoberta de métricas
-</div>
+## Descoberta de métricas {#metrics-discovery}
 
 <Accordion title="Existe uma UI para navegar e pesquisar métricas?">
   ![Metric Attribute Explorer](/images/clickstack/faq/metrics-explorer.webp)
@@ -80,9 +95,7 @@ Esta página responde a perguntas frequentes sobre os recursos do ClickStack, in
   Não. Embora consultas SQL possam ser usadas hoje para descobrir métricas, essa não é a abordagem pretendida de longo prazo. Ferramentas aprimoradas para descoberta de métricas estão sendo desenvolvidas ativamente.
 </Accordion>
 
-<div id="further-reading">
-  ## Leitura adicional
-</div>
+## Leitura adicional {#further-reading}
 
 * [Alertas](/pt-BR/clickstack/features/alerts): alertas de busca, alerta de gráfico do dashboard e integrações com webhook.
 * [Dashboards](/pt-BR/clickstack/features/dashboards/overview): criação de visualizações, montagem de dashboards e aplicação de filtros.

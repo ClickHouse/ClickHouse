@@ -1,0 +1,9 @@
+cursor past every block, count()	0
+cursor past every block, countIf(1)	0
+cursor at the last block, count()	5
+cursor at the last block, countIf(1)	5
+no cursor, count()	15
+no cursor, countIf(1)	15
+not streaming, count()	15
+streaming count() reads through the reader	1
+not streaming count() uses the min-max projection	1

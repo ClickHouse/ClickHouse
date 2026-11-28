@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT --query "CREATE DATABASE IF NOT EXISTS ${CLICKHOUSE_DATABASE}
 function create_or_replace_view_thread
 {
     for _ in {1..20}; do
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "CREATE OR REPLACE VIEW ${CLICKHOUSE_DATABASE}_db.test_view AS SELECT 'abcdef'" > /dev/null
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "CREATE OR REPLACE VIEW ${CLICKHOUSE_DATABASE}_db.test_view AS SELECT 'abcdef'"
     done
 }
 export -f create_or_replace_view_thread;

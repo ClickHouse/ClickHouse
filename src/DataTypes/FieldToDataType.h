@@ -46,9 +46,25 @@ public:
     DataTypePtr operator() (const Decimal256 & x, UInt32 scale) const;
     DataTypePtr operator() (const AggregateFunctionStateData & x) const;
     DataTypePtr operator() (const CustomType & x) const;
+    DataTypePtr operator() (const NumberLiteral & x) const;
     DataTypePtr operator() (const UInt256 & x) const;
     DataTypePtr operator() (const Int256 & x) const;
     DataTypePtr operator() (const bool & x) const;
+
+private:
+    /// Data types are immutable, so the elements of one value share one instance of each scalar type.
+    /// A visitor is created per value and is not for concurrent use.
+    mutable DataTypePtr uint8_type;
+    mutable DataTypePtr uint16_type;
+    mutable DataTypePtr uint32_type;
+    mutable DataTypePtr uint64_can_be_signed_type;
+    mutable DataTypePtr uint64_type;
+    mutable DataTypePtr int8_type;
+    mutable DataTypePtr int16_type;
+    mutable DataTypePtr int32_type;
+    mutable DataTypePtr int64_type;
+    mutable DataTypePtr float64_type;
+    mutable DataTypePtr string_type;
 };
 
 FieldToDataType() -> FieldToDataType<LeastSupertypeOnError::Throw>;

@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <Formats/FormatSettings.h>
 #include <cstdlib>
 #include <memory>
 #include <optional>
@@ -52,8 +53,7 @@ struct AggregationFunctionEstimateCompressionRatioData
 
     [[maybe_unused]] ~AggregationFunctionEstimateCompressionRatioData()
     {
-        /// Real cancellation can happen only in case of exception
-        /// In other cases the data will be read via finalizeAndGetSizes()
+        /// Only insertResultInto finalizes the calculator: serialize and merge read the sizes of an open one.
         if (calculator)
             calculator->cancel();
     }
@@ -72,16 +72,14 @@ private:
     {
         Data & data_ref = data(place);
 
-        /// When aggregating on windows transformed columns, the function WindowTransform::appendChunk
-        /// calls updateAggregationState + writeOutCurrentRow in a loop.
-        /// writeOutCurrentRow finalizes the buffer to flush and compute sizes, but doesn't deletes it.
-        /// Ideally on finalized buffers we could "reinitialize" without reconstructing the whole object buffer.
-        if (!data_ref.calculator || data_ref.calculator->isFinalized())
+        if (!data_ref.calculator)
             data_ref.calculator = std::make_unique<CompressedSizeCalculator>(
-                getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
+                getCodecOrDefault(),
+                roundCompressBlockSizeToWholeValues(block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE), *argument_types[0]));
     }
 
-    std::pair<UInt64, UInt64> finalizeAndGetSizes(ConstAggregateDataPtr __restrict place) const
+    /// Does not modify the state: serialize and merge may read one shared state from several threads at once.
+    std::pair<UInt64, UInt64> getSizes(ConstAggregateDataPtr __restrict place) const
     {
         const Data & data_ref = data(place);
 
@@ -90,8 +88,6 @@ private:
 
         if (data_ref.calculator)
         {
-            data_ref.calculator->finalize();
-
             uncompressed_size += data_ref.calculator->getUncompressedBytes();
             compressed_size += data_ref.calculator->getCompressedBytes();
         }
@@ -106,6 +102,8 @@ private:
             ParserCodec codec_parser;
             auto ast
                 = parseQuery(codec_parser, "(" + codec.value() + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            /// The aggregate compresses the serialized values directly, so a declarative codec would measure nothing.
+            CompressionCodecFactory::instance().checkCodecChainIsNotDeclarative(ast);
             return CompressionCodecFactory::instance().get(ast, argument_types[0]);
         }
         return CompressionCodecFactory::instance().getDefaultCodec();
@@ -182,7 +180,7 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        auto [uncompressed_size, compressed_size] = finalizeAndGetSizes(rhs);
+        auto [uncompressed_size, compressed_size] = getSizes(rhs);
 
         data(place).merged_uncompressed_size += uncompressed_size;
         data(place).merged_compressed_size += compressed_size;
@@ -190,7 +188,7 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
     {
-        auto [uncompressed_size, compressed_size] = finalizeAndGetSizes(place);
+        auto [uncompressed_size, compressed_size] = getSizes(place);
 
         writeVarUInt(uncompressed_size, buf);
         writeVarUInt(compressed_size, buf);
@@ -204,7 +202,11 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto [uncompressed_size, compressed_size] = finalizeAndGetSizes(place);
+        /// Finalized here because the reset below must not destroy an open buffer.
+        if (data(place).calculator)
+            data(place).calculator->finalize();
+
+        auto [uncompressed_size, compressed_size] = getSizes(place);
 
         /// Persist finalized sizes so the next add()/resetCalculatorIfNeeded() cycle
         /// preserves all previously accumulated data. Without this, window functions
@@ -288,10 +290,10 @@ void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory 
     FunctionDocumentation::Description description = R"(
 Estimates the compression ratio of a given column without compressing it.
 
-:::note
+<Note>
 For the examples below, the result will differ based on the default compression codec of the server.
 See [Column Compression Codecs](/reference/statements/create/table#column_compression_codec).
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "estimateCompressionRatio([codec, block_size_bytes])(column)";
     FunctionDocumentation::Arguments arguments = {
@@ -320,9 +322,9 @@ SELECT number FROM system.numbers LIMIT 100_000;
 SELECT estimateCompressionRatio(number) AS estimate FROM compression_estimate_example
         )",
         R"(
-┌───────────estimate─┐
-│ 1.9988506608699999 │
-└────────────────────┘
+┌──────────estimate─┐
+│ 5.758875867430677 │
+└───────────────────┘
         )"
     },
     {

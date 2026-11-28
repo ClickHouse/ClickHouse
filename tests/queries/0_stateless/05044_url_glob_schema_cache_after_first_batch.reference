@@ -1,0 +1,6 @@
+--- the schema of the address after the first batch goes into the cache
+c1	Nullable(Int64)					
+--- inference over the pattern takes it from there
+c1	Nullable(Int64)					
+--- and the query log shows the cache hit
+1

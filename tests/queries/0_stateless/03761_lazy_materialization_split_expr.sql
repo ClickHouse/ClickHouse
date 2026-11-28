@@ -3,7 +3,6 @@ SET explain_query_plan_default = 'legacy';
 
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10;
-SET enable_analyzer=1;
 
 create table tab (x UInt32, y UInt32, z UInt32) engine = MergeTree order by tuple();
 insert into tab select number, number, number from numbers(1e6);

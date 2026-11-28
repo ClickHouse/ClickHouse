@@ -12,3 +12,10 @@ n = 12
 5
 5
 4
+3600000000000
+false
+true
+Nullable(IntervalNanosecond)
+3600000000000
+IntervalNanosecond
+1

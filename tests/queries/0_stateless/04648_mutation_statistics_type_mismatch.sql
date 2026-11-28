@@ -47,6 +47,9 @@ DROP TABLE t_stats_affected_materialized;
 
 SELECT '-- CLEAR COLUMN recalculating MATERIALIZED columns';
 
+-- CLEAR only recomputes MATERIALIZED columns derived from c. The metadata-only
+-- change of unrelated e remains unapplied to existing rows and its statistics
+-- stay aligned with the stored value.
 DROP TABLE IF EXISTS t_stats_clear_column;
 CREATE TABLE t_stats_clear_column (id Int64, c Int64, e Enum8('a' = 1, 'b' = 2) MATERIALIZED 'a' STATISTICS(uniq, basic), d Int64 MATERIALIZED c + 1)
 ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1;

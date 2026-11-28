@@ -8,8 +8,10 @@ namespace DB
 
 using FunctionLessOrEquals = FunctionComparison<LessOrEqualsOp, NameLessOrEquals>;
 using FunctionLess = FunctionComparison<LessOp, NameLess>;
-extern template class FunctionComparison<LessOp, NameLess>;
 using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
+
+/// Instantiated in less.cpp and equals.cpp.
+extern template class FunctionComparison<LessOp, NameLess>;
 extern template class FunctionComparison<EqualsOp, NameEquals>;
 
 REGISTER_FUNCTION(LessOrEquals)

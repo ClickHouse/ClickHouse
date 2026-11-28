@@ -25,7 +25,9 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB
@@ -228,13 +230,13 @@ protected:
             if (!lock)
                 return false;
 
-            auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(storage.get());
+            auto object_storage_table = castStorage<StorageObjectStorage>(storage, DeferredTable::Skip);
             if (!object_storage_table || !object_storage_table->isIcebergStorage())
                 return false;
 
             try
             {
-                auto * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage_table->getExternalMetadata(context_copy));
+                auto iceberg_metadata = std::dynamic_pointer_cast<IcebergMetadata>(object_storage_table->getExternalMetadata(context_copy));
                 if (!iceberg_metadata)
                     return false;
 
@@ -359,7 +361,7 @@ private:
     {
         StoragePtr storage;
         TableLockHolder lock;
-        IcebergMetadata * iceberg_metadata = nullptr;   // non-owning; kept alive via `storage`
+        std::shared_ptr<IcebergMetadata> iceberg_metadata;   /// Owning: a concurrent update() may replace the storage's metadata mid-scan.
         Iceberg::IcebergDataSnapshotPtr data_snapshot;
         Iceberg::TableStateSnapshot table_state;
         String database_name;
@@ -392,7 +394,7 @@ public:
     {
     }
 
-    String getName() const override { return "ReadFromSystemIcebergFiles"; }
+    [[nodiscard]] String getName() const override { return "ReadFromSystemIcebergFiles"; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override
     {

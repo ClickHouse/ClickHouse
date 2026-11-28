@@ -9,9 +9,7 @@ doc_type: 'guide'
 
 本文档概述了 ClickHouse Operator 的关键概念和使用方式。
 
-<div id="what-is-the-clickhouse-operator">
-  ## 什么是 ClickHouse Operator
-</div>
+## 什么是 ClickHouse Operator {#what-is-the-clickhouse-operator}
 
 ClickHouse Operator 是一个 Kubernetes Operator，用于在 Kubernetes 上自动部署和管理 ClickHouse 集群。它采用 operator 模式构建，通过自定义资源扩展 Kubernetes API，以表示 ClickHouse 集群及其依赖项。
 
@@ -24,15 +22,11 @@ ClickHouse Operator 是一个 Kubernetes Operator，用于在 Kubernetes 上自�
 * 滚动更新和升级
 * 存储预配
 
-<div id="custom-resources">
-  ## 自定义资源
-</div>
+## 自定义资源 {#custom-resources}
 
 该 Operator 提供两个主要的自定义资源定义 (CRD) ：
 
-<div id="clickhousecluster">
-  ### ClickHouseCluster
-</div>
+### ClickHouseCluster {#clickhousecluster}
 
 表示一个副本数和分片方式均可配置的 ClickHouse 数据库集群。
 
@@ -52,9 +46,7 @@ spec:
         storage: 100Gi
 ```
 
-<div id="keepercluster">
-  ### KeeperCluster
-</div>
+### KeeperCluster {#keepercluster}
 
 表示用于分布式协调的 ClickHouse Keeper 集群 (可替代 ZooKeeper) 。
 
@@ -71,29 +63,27 @@ spec:
         storage: 10Gi
 ```
 
-<div id="coordination">
-  ## 协调
-</div>
+## 协调 {#coordination}
 
-<div id="clickhouse-keeper-is-required">
-  ### 需要 ClickHouse Keeper
-</div>
+### 需要 ClickHouse Keeper {#clickhouse-keeper-is-required}
 
 每个 ClickHouseCluster 都需要一个 ClickHouse Keeper 集群来提供分布式协调。
-必须在 ClickHouseCluster 规约中使用 `keeperClusterRef` 引用该 Keeper 集群。默认情况下，operator 会在 ClickHouseCluster 所在的命名空间中查找，但你也可以设置 `keeperClusterRef.namespace`，使其指向另一个受监视命名空间中的 KeeperCluster。
+在 ClickHouseCluster 规范中使用 `keeperClusterRef` 引用由 operator 管理的 KeeperCluster。默认情况下，operator 会在 ClickHouseCluster 所在的命名空间中查找，但你也可以设置 `keeperClusterRef.namespace`，使其指向另一个受监视命名空间中的 KeeperCluster。
+如需使用不由 operator 管理的 Keeper 集群，请改为在 `externalKeeper` 中列出其服务器。请参阅[外部管理的 Keeper](/zh/products/kubernetes-operator/guides/configuration#external-keeper)。
 
-<div id="one-to-one-keeper-relationship">
-  ### Keeper 的一对一关系
-</div>
+### Keeper 的一对一关系 {#one-to-one-keeper-relationship}
 
-每个 ClickHouseCluster 都必须有自己专用的 KeeperCluster。多个 ClickHouseCluster 之间不能共享同一个 KeeperCluster。
+默认情况下，每个 ClickHouseCluster 都需要有自己专用的 KeeperCluster。
 
-**为什么？** operator 会自动为每个 ClickHouseCluster 生成一个唯一的身份验证密钥，用于访问其 Keeper。该密钥存储在 Secret 中，无法共享。
+**为什么？** operator 会自动为每个 ClickHouseCluster 生成一个唯一的身份验证密钥，用于访问其 Keeper。该密钥存储在 Secret 中。
 
 **后果**：
 
-* 多个 ClickHouseCluster 不能引用同一个 KeeperCluster
+* 若未完成下述配置，多个 ClickHouseCluster 不能引用同一个 KeeperCluster
 * 重新创建 ClickHouseCluster 时，必须同时重新创建其 KeeperCluster
+
+如需共享同一个 Keeper 集群，请在每个 ClickHouseCluster 的 `settings.extraConfig` 中分别设置不同的 `zookeeper.root`，
+并在 ClickHouse 启动前创建对应的 znode。请参阅[外部管理的 Keeper](/zh/products/kubernetes-operator/guides/configuration#external-keeper)。
 
 <Note>
   删除 ClickHouseCluster 或 KeeperCluster 资源时，Persistent Volumes 不会自动删除。
@@ -109,15 +99,11 @@ spec:
 
 为避免身份验证错误，请手动删除 Persistent Volumes，或者使用全新的存储同时重建这两个集群。
 
-<div id="schema-replication">
-  ## Schema 复制
-</div>
+## Schema 复制 {#schema-replication}
 
 ClickHouse Operator 会自动将数据库定义复制到集群中的所有副本。
 
-<div id="what-gets-replicated">
-  ### 会复制哪些内容
-</div>
+### 会复制哪些内容 {#what-gets-replicated}
 
 operator 会同步以下内容：
 
@@ -130,9 +116,7 @@ operator **不会**同步以下内容：
 * 非复制数据库中的本地表
 * 表数据 (由 ClickHouse 复制机制处理)
 
-<div id="recommended-use-replicated-database-engine">
-  ### 推荐：使用 Replicated 数据库引擎
-</div>
+### 推荐：使用 Replicated 数据库引擎 {#recommended-use-replicated-database-engine}
 
 <Tip>
   **最佳实践**
@@ -153,9 +137,7 @@ operator **不会**同步以下内容：
 CREATE DATABASE my_database ON CLUSTER 'default' ENGINE = Replicated;
 ```
 
-<div id="avoid-non-replicated-engines">
-  ### 避免使用非 Replicated 引擎
-</div>
+### 避免使用非 Replicated 引擎 {#avoid-non-replicated-engines}
 
 非复制数据库引擎 (Atomic、Lazy、SQLite、Ordinary) 需要手动管理 schema：
 
@@ -163,21 +145,15 @@ CREATE DATABASE my_database ON CLUSTER 'default' ENGINE = Replicated;
 * 节点之间可能出现 schema 漂移
 * Operator 无法自动同步新增副本
 
-<div id="disable-schema-replication">
-  ### 禁用 schema 复制
-</div>
+### 禁用 schema 复制 {#disable-schema-replication}
 
 如需禁用自动 schema 复制，请在 ClickHouseCluster 资源中将 `spec.settings.enableDatabaseSync` 设置为 `false`。
 
-<div id="storage-management">
-  ## 存储管理
-</div>
+## 存储管理 {#storage-management}
 
 ClickHouse Operator 通过 Kubernetes 的 PersistentVolumeClaim (PVC) 管理存储。
 
-<div id="data-volume-configuration">
-  ### 数据卷配置
-</div>
+### 数据卷配置 {#data-volume-configuration}
 
 在 `dataVolumeClaimSpec` 中指定存储要求：
 
@@ -190,9 +166,7 @@ spec:
         storage: 500Gi
 ```
 
-<div id="storage-lifecycle">
-  ### 存储生命周期
-</div>
+### 存储生命周期 {#storage-lifecycle}
 
 * **创建**：PVC 会随集群自动创建
 * **扩容**：如果 StorageClass 允许卷扩容，则支持扩容
@@ -212,9 +186,7 @@ kubectl wait --for=delete pod -l app.kubernetes.io/instance=my-cluster-clickhous
 kubectl delete pvc -l app.kubernetes.io/instance=my-cluster-clickhouse
 ```
 
-<div id="default-configuration-highlights">
-  ## 默认配置亮点
-</div>
+## 默认配置亮点 {#default-configuration-highlights}
 
 * **预配置集群：** 名为 `default` 的集群，包含所有 ClickHouse 节点。
 * **默认宏：** 预定义了一些实用的宏：
@@ -224,9 +196,7 @@ kubectl delete pvc -l app.kubernetes.io/instance=my-cluster-clickhouse
 * **RBAC 实体采用复制存储**
 * **用户自定义函数 (UDF) 采用复制存储**
 
-<div id="next-steps">
-  ## 后续步骤
-</div>
+## 后续步骤 {#next-steps}
 
 * [配置指南](/zh/products/kubernetes-operator/guides/configuration) - 详细配置选项
 * [API 参考文档](/zh/products/kubernetes-operator/reference/api-reference) - 完整的 API 文档

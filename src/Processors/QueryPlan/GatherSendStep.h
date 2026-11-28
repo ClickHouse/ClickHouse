@@ -20,16 +20,20 @@ public:
         , maintain_sort_description(std::move(maintain_sort_description_))
     {
         updateInputHeaders({std::move(input_header_)});
+        /// The exchange name in `EXPLAIN`, to join the step with the exchanges of the query fragments.
+        setStepDescription(exchange_id, exchange_id.size());
     }
 
-    String getName() const override { return "GatherSend"; }
+    [[nodiscard]] String getName() const override { return "GatherSend"; }
 
-    bool hasOutputStream() const { return false; }
+    [[nodiscard]] const String & getExchangeId() const { return exchange_id; }
+
+    [[nodiscard]] bool hasOutputStream() const { return false; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
