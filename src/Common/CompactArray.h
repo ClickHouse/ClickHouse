@@ -3,6 +3,7 @@
 #include <base/defines.h>
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <Common/NoInitTag.h>
 
 #include <limits>
 #include <span>
@@ -20,7 +21,13 @@ template <typename BucketIndex, UInt8 content_width, size_t bucket_count>
 class CompactArray final
 {
 public:
-    CompactArray() = default;
+    CompactArray() : bitset{} {}
+
+    /// Only the padding byte is zeroed.
+    explicit CompactArray(NoInitTag) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the caller
+    {
+        bitset[BITSET_SIZE] = 0;
+    }
 
     UInt8 ALWAYS_INLINE operator[](BucketIndex bucket_index) const
     {
@@ -60,7 +67,7 @@ private:
     static constexpr size_t BITSET_SIZE = (bucket_count * content_width + 7) / 8;
 
     /// The last byte is padding for the branchless 16-bit access; it stays zero and is not serialized.
-    UInt8 bitset[BITSET_SIZE + 1] = { 0 };
+    UInt8 bitset[BITSET_SIZE + 1];
 
     /// Checks
     static_assert((content_width > 0) && (content_width < 8), "Invalid parameter value");

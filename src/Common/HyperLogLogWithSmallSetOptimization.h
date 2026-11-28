@@ -134,10 +134,7 @@ public:
         readBinary(is_large, in);
 
         if (is_large)
-        {
-            toLarge();
-            large->read(in);
-        }
+            large = Large::createAndRead(in).release();
         else
             small.read(in);
     }
