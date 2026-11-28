@@ -17,3 +17,31 @@ SELECT count() FROM test WHERE stamp >= '2024-11-01' SETTINGS force_primary_key 
 SELECT count() FROM test WHERE stamp >= '2024-11-01';
 6
 DROP TABLE test;
+-- toDateTime(DateTime64) wraps for values before 1970: a negative epoch becomes year 2106
+-- under the default date_time_overflow_behavior = 'ignore'. The primary key index must not
+-- treat toDateTime as monotonic for DateTime64 input, otherwise it prunes the granule that
+-- holds the pre-1970 row.
+
+DROP TABLE IF EXISTS test_dt64;
+CREATE TABLE test_dt64 (b DateTime64(3, 'UTC'))
+ENGINE = MergeTree ORDER BY toDateTime(b) SETTINGS index_granularity = 1;
+INSERT INTO test_dt64 VALUES (toDateTime64(-100000, 3, 'UTC'));
+INSERT INTO test_dt64 VALUES (toDateTime64(500, 3, 'UTC'));
+INSERT INTO test_dt64 VALUES (toDateTime64(1000000000, 3, 'UTC'));
+OPTIMIZE TABLE test_dt64 FINAL;
+SELECT count() FROM test_dt64 WHERE b <= toDateTime64(1000000001, 3, 'UTC') SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM test_dt64 WHERE b <= toDateTime64(1000000001, 3, 'UTC');
+3
+DROP TABLE test_dt64;
+-- toDate(DateTime64) wraps the same way for values before 1970.
+
+DROP TABLE IF EXISTS test_todate;
+CREATE TABLE test_todate (b DateTime64(3, 'UTC'))
+ENGINE = MergeTree ORDER BY toDate(b) SETTINGS index_granularity = 1;
+INSERT INTO test_todate VALUES (toDateTime64(-100000, 3, 'UTC'));
+INSERT INTO test_todate VALUES (toDateTime64(1000000000, 3, 'UTC'));
+OPTIMIZE TABLE test_todate FINAL;
+SELECT count() FROM test_todate WHERE b <= toDateTime64(1000000001, 3, 'UTC') SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM test_todate WHERE b <= toDateTime64(1000000001, 3, 'UTC');
+2
+DROP TABLE test_todate;
