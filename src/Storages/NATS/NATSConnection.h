@@ -58,6 +58,9 @@ public:
     /// The current connection. Requires a successful `connect` before.
     NATSClient::Connection & get();
 
+    /// The messages that the connection has received but not returned yet, also after it failed.
+    DequeWithMemoryTracking<NATSClient::Message> takeReceived();
+
     [[nodiscard]] int getReconnectWait() const { return configuration.reconnect_wait; }
     [[nodiscard]] UInt64 getMaxConnectTries() const { return configuration.max_connect_tries; }
 

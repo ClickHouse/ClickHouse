@@ -106,6 +106,17 @@ void parseStatus(std::string_view headers, Message & message)
     }
 }
 
+/// Subjects and queue groups are written into the lines of the protocol, so they must be single tokens:
+/// otherwise a name with a space or a line break could add arguments or whole commands.
+void checkToken(std::string_view token, std::string_view what, bool allow_empty)
+{
+    if (token.empty() && !allow_empty)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The NATS {} must not be empty", what);
+    for (char c : token)
+        if (static_cast<unsigned char>(c) <= ' ' || c == 0x7F)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The NATS {} '{}' must not contain whitespace or control characters", what, token);
+}
+
 String randomToken(size_t size)
 {
     static constexpr std::string_view alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -258,9 +269,7 @@ ServerAddress ServerAddress::parse(std::string_view url)
     else if (rest.contains("://"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported scheme of the NATS server address");
 
-    /// A path after the host is not used.
-    rest = rest.substr(0, rest.find('/'));
-
+    /// The user info ends at the last '@', as `validateNATSAddress` reads it: it may contain '/'.
     if (auto at = rest.rfind('@'); at != std::string_view::npos)
     {
         const std::string_view user_info = rest.substr(0, at);
@@ -273,6 +282,9 @@ ServerAddress ServerAddress::parse(std::string_view url)
             address.token = SecretString(user_info);
         rest.remove_prefix(at + 1);
     }
+
+    /// A path after the host is not used.
+    rest = rest.substr(0, rest.find('/'));
 
     std::string_view host = rest;
     std::string_view port;
@@ -792,6 +804,8 @@ void Connection::close()
 
 UInt64 Connection::subscribe(const String & subject, const String & queue_group)
 {
+    checkToken(subject, "subject", /* allow_empty */ false);
+    checkToken(queue_group, "queue group", /* allow_empty */ true);
     return guarded([&]
     {
         const UInt64 sid = next_sid++;
@@ -815,6 +829,8 @@ void Connection::unsubscribe(UInt64 sid)
 
 void Connection::publish(const String & subject, const String & reply, std::string_view data)
 {
+    checkToken(subject, "subject", /* allow_empty */ false);
+    checkToken(reply, "reply subject", /* allow_empty */ true);
     guarded([&]
     {
         if (data.size() > max_payload)
@@ -862,6 +878,15 @@ std::optional<Message> Connection::receive(Poco::Timespan timeout)
                 const auto next_ping = last_ping + settings.ping_interval;
                 readOperation(std::min(deadline, next_ping));
                 if (messages.empty() && Clock::now() >= deadline)
+                    break;
+            }
+
+            /// Read what has arrived already as well: data left in the socket is lost if the server resets the connection,
+            /// while received messages are kept by `takeReceived`.
+            const auto now = Clock::now();
+            for (size_t i = 0; i < MAX_OPERATIONS_PER_PROCESSING; ++i)
+            {
+                if (!readOperation(now))
                     break;
             }
         });

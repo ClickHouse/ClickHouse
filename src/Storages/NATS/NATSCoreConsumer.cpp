@@ -2,6 +2,8 @@
 
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -30,7 +32,24 @@ void NATSCoreConsumer::unsubscribeImpl()
 
 std::optional<NATSClient::Message> NATSCoreConsumer::receiveImpl(UInt64 timeout_ms)
 {
-    return getConnection().receive(Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(timeout_ms) * 1000));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    while (true)
+    {
+        const auto wait = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::max(deadline - std::chrono::steady_clock::now(), std::chrono::steady_clock::duration::zero()));
+        auto message = getConnection().receive(Poco::Timespan(wait.count()));
+        if (!message)
+            return {};
+        if (auto accepted = acceptMessage(std::move(*message)))
+            return accepted;
+    }
+}
+
+std::optional<NATSClient::Message> NATSCoreConsumer::acceptMessage(NATSClient::Message message)
+{
+    if (std::find(sids.begin(), sids.end(), message.sid) == sids.end())
+        return {};
+    return message;
 }
 
 }

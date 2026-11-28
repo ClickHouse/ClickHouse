@@ -145,7 +145,6 @@ Chunk NATSSource::generateImpl()
 
         if (consumer && !consumer->isSubscribed())
         {
-            consumer->dropBuffered();
             consumer->subscribe();
             unsubscribe_on_destroy = true;
         }

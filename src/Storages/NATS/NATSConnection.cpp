@@ -141,6 +141,13 @@ void NATSConnection::disconnect()
     connection.reset();
 }
 
+DequeWithMemoryTracking<NATSClient::Message> NATSConnection::takeReceived()
+{
+    if (!connection)
+        return {};
+    return connection->takeReceived();
+}
+
 NATSClient::Connection & NATSConnection::get()
 {
     if (!connection)

@@ -3,6 +3,7 @@
 #include <Core/Names.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/NATS/NATSConnection.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <base/types.h>
 
 #include <atomic>
@@ -80,9 +81,6 @@ public:
     /// True while a consumed message may still turn into rows that nothing has acknowledged yet.
     [[nodiscard]] bool hasConsumedMessages() const { return !consumed_messages.empty(); }
 
-    /// Throw away what was received and consumed, but not committed.
-    void dropBuffered();
-
     [[nodiscard]] size_t subjectsCount() const { return subjects.size(); }
 
     [[nodiscard]] bool isConsumerStopped() const { return stopped; }
@@ -109,14 +107,22 @@ protected:
     /// Waits for the next message of the subscriptions at most `timeout_ms`.
     virtual std::optional<NATSClient::Message> receiveImpl(UInt64 timeout_ms) = 0;
 
+    /// Returns the message if it is a message of the subscriptions of this consumer, which `receiveImpl` returns.
+    virtual std::optional<NATSClient::Message> acceptMessage(NATSClient::Message message) = 0;
+
     [[nodiscard]] virtual bool needsAck() const { return false; }
 
     /// Before unsubscribing: waits until nothing more is going to be delivered, and returns the reply subjects of what was.
     virtual std::vector<String> drainBeforeUnsubscribe() { return {}; }
 
 private:
-    /// Reads the next message into `pending`, waiting at most `timeout_ms`. Returns whether there is one.
+    /// Reads the next message into `buffered`, waiting at most `timeout_ms`. Returns whether there is one.
     bool receive(UInt64 timeout_ms);
+
+    /// Keeps the messages that the lost connection has received already: they are inserted as usual, and the
+    /// acknowledgements of JetStream messages are sent over the next connection.
+    void salvageReceived();
+    void addReceived(NATSClient::Message message);
 
     /// Sends `payload` (an acknowledgement or a negative one) for every message in `messages` and clears it.
     void respond(std::vector<String> & messages, std::string_view payload);
@@ -129,7 +135,7 @@ private:
 
     bool subscribed = false;
 
-    std::optional<MessageData> pending;
+    DequeWithMemoryTracking<MessageData> buffered;
     MessageData current;
     /// The reply subjects of the consumed JetStream messages.
     std::vector<String> consumed_messages;

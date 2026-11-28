@@ -35,9 +35,39 @@ void INATSConsumer::connect()
     if (connection.isConnected())
         return;
 
-    /// Nothing that was received on the previous connection can be acknowledged anymore.
-    dropBuffered();
+    salvageReceived();
     connection.connect();
+}
+
+void INATSConsumer::addReceived(NATSClient::Message message)
+{
+    if (!message.data.empty())
+    {
+        buffered.push_back(MessageData{.message = std::move(message.data), .subject = std::move(message.subject), .reply = std::move(message.reply)});
+        return;
+    }
+
+    /// An empty JetStream message is acknowledged, so that it is not redelivered.
+    if (needsAck() && !message.reply.empty())
+        skipped_messages.push_back(std::move(message.reply));
+}
+
+void INATSConsumer::salvageReceived()
+{
+    if (!subscribed)
+        return;
+
+    size_t num_salvaged = 0;
+    for (auto & message : connection.takeReceived())
+    {
+        if (auto accepted = acceptMessage(std::move(message)))
+        {
+            addReceived(std::move(*accepted));
+            ++num_salvaged;
+        }
+    }
+    if (num_salvaged)
+        LOG_DEBUG(log, "Kept {} messages received on the lost connection", num_salvaged);
 }
 
 bool INATSConsumer::maintainConnection(String & error)
@@ -46,17 +76,18 @@ bool INATSConsumer::maintainConnection(String & error)
         return true;
 
     const bool was_subscribed = subscribed;
-    subscribed = false;
     try
     {
         LOG_INFO(log, "No connection to NATS {} (last error: {}), connecting", connection.connectionInfoForLog(), connection.lastErrorForLog());
         connect();
+        subscribed = false;
         if (was_subscribed)
             subscribe();
         return true;
     }
     catch (...)
     {
+        subscribed = false;
         error = getCurrentExceptionMessage(false);
         LOG_WARNING(log, "Cannot connect to NATS {}: {}", connection.connectionInfoForLog(), error);
         return false;
@@ -77,10 +108,15 @@ void INATSConsumer::unsubscribe()
 {
     if (!subscribed)
         return;
-    subscribed = false;
 
     if (!connection.isConnected())
+    {
+        /// Nothing can be returned to the server, so what was received is kept, and inserted after connecting again.
+        salvageReceived();
+        subscribed = false;
         return;
+    }
+    subscribed = false;
 
     try
     {
@@ -101,7 +137,7 @@ void INATSConsumer::disconnect()
 
 bool INATSConsumer::receive(UInt64 timeout_ms)
 {
-    if (pending)
+    if (!buffered.empty())
         return true;
     if (!subscribed || connection.hasFailed())
         return false;
@@ -110,15 +146,9 @@ bool INATSConsumer::receive(UInt64 timeout_ms)
     {
         while (auto message = receiveImpl(timeout_ms))
         {
-            if (!message->data.empty())
-            {
-                pending = MessageData{.message = std::move(message->data), .subject = std::move(message->subject), .reply = std::move(message->reply)};
+            addReceived(std::move(*message));
+            if (!buffered.empty())
                 return true;
-            }
-
-            /// An empty JetStream message is acknowledged, so that it is not redelivered.
-            if (needsAck() && !message->reply.empty())
-                getConnection().publish(message->reply, "", "+ACK");
             timeout_ms = 0;
         }
     }
@@ -154,8 +184,8 @@ ReadBufferPtr INATSConsumer::consume(std::optional<UInt64> timeout_ms)
         }
     }
 
-    current = std::move(*pending);
-    pending.reset();
+    current = std::move(buffered.front());
+    buffered.pop_front();
 
     if (needsAck())
         consumed_messages.push_back(current.reply);
@@ -186,17 +216,26 @@ void INATSConsumer::respond(std::vector<String> & messages, std::string_view pay
 
 void INATSConsumer::finishAndReturnUnprocessed(SkippedMessages skipped_messages_action)
 {
+    if (subscribed && !connection.isConnected())
+    {
+        /// Nothing can be returned over a lost connection. What was received is kept and inserted after connecting
+        /// again: the acknowledgements of JetStream messages work over any connection.
+        unsubscribe();
+        return;
+    }
+
     /// What was received but not consumed goes back too.
-    std::vector<String> buffered;
-    if (pending && !pending->reply.empty())
-        buffered.push_back(pending->reply);
-    pending.reset();
+    std::vector<String> unprocessed;
+    for (auto & message : buffered)
+        if (!message.reply.empty())
+            unprocessed.push_back(std::move(message.reply));
+    buffered.clear();
     if (subscribed && !connection.hasFailed())
     {
         try
         {
             auto drained = drainBeforeUnsubscribe();
-            buffered.insert(buffered.end(), drained.begin(), drained.end());
+            unprocessed.insert(unprocessed.end(), drained.begin(), drained.end());
         }
         catch (...)
         {
@@ -210,14 +249,7 @@ void INATSConsumer::finishAndReturnUnprocessed(SkippedMessages skipped_messages_
 
     respond(consumed_messages, "-NAK");
     respond(skipped_messages, skipped_messages_action == SkippedMessages::Acknowledge ? "+ACK" : "-NAK");
-    respond(buffered, "-NAK");
-}
-
-void INATSConsumer::dropBuffered()
-{
-    consumed_messages.clear();
-    skipped_messages.clear();
-    pending.reset();
+    respond(unprocessed, "-NAK");
 }
 
 void INATSConsumer::ackConsumed()

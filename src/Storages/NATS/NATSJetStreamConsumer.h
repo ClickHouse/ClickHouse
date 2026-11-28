@@ -28,6 +28,7 @@ protected:
     void subscribeImpl() override;
     void unsubscribeImpl() override;
     std::optional<NATSClient::Message> receiveImpl(UInt64 timeout_ms) override;
+    std::optional<NATSClient::Message> acceptMessage(NATSClient::Message message) override;
     std::vector<String> drainBeforeUnsubscribe() override;
 
 private:
@@ -39,7 +40,13 @@ private:
     String inbox;
     UInt64 sid = 0;
 
+    /// Bounded by the limits of the durable consumer, which rejects larger pull requests.
+    size_t pull_batch = 0;
+    std::chrono::nanoseconds pull_expires{0};
+
     bool pull_outstanding = false;
+    /// The server refused the last pull request.
+    bool pull_refused = false;
     size_t pull_remaining = 0;
     std::chrono::steady_clock::time_point pull_expires_at;
 };

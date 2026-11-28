@@ -126,6 +126,9 @@ public:
     /// A subject unique for this connection, to receive replies on.
     String newInbox();
 
+    /// The messages of the subscriptions that were received but not returned yet. Works also after a failure.
+    DequeWithMemoryTracking<Message> takeReceived() { return std::exchange(messages, {}); }
+
     /// Reads what is already there, answers `PING` of the server, and sends a `PING` when it is due.
     void processIncoming();
 
