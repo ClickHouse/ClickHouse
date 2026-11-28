@@ -3,6 +3,7 @@ mixed_strings	1
 long_strings	1
 high_min_bytes_strings	1
 sparse_nullable_strings	1
+unknown_size_strings	1
 left	1
 full	1
 empty	1
@@ -20,4 +21,5 @@ mixed_strings	1
 parallel_hash	1
 short_strings	1
 sparse_nullable_strings	1
+unknown_size_strings	1
 grace_hash_spilled spilled	1

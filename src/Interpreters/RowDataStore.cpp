@@ -325,10 +325,15 @@ NameSet computeRowStoreCandidateColumns(
         const auto nested = removeNullable(column.type)->createColumn();
         if (typeid_cast<const ColumnString *>(nested.get()))
         {
-            /// The average comes from the statistics and includes the 8-byte offset. 0 means the average is unknown.
-            const Float64 avg_value_bytes = table_join.getRightColumnAvgBytes(column.name);
-            if (min_string_column_bytes != 0 && avg_value_bytes > 0
-                && avg_value_bytes <= UnhashedPackedStringRef::MAX_SMALL_LEN + sizeof(ColumnString::Offset)
+            constexpr Float64 max_inline_value_bytes = UnhashedPackedStringRef::MAX_SMALL_LEN + sizeof(ColumnString::Offset);
+            /// The average comes from the statistics and includes the 8-byte offset. An unknown average (0: no statistics, or a
+            /// source that records no string lengths, like Iceberg) is taken to fit inline: a longer value goes to the store's
+            /// overflow buffer, which still saves the cache miss of a columnar gather.
+            Float64 avg_value_bytes = table_join.getRightColumnAvgBytes(column.name);
+            if (avg_value_bytes == 0)
+                avg_value_bytes = max_inline_value_bytes;
+            if (min_string_column_bytes != 0
+                && avg_value_bytes <= max_inline_value_bytes
                 && static_cast<Float64>(right_rows) * avg_value_bytes >= static_cast<Float64>(min_string_column_bytes))
                 columns.insert(column.name);
         }
