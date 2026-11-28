@@ -114,6 +114,8 @@ struct MergeTreeReaderSettings
     /// `TopKFilterInfo::rows_equal_to_threshold_dropped`: once set, a granule left without rows by the filter may hold rows
     /// of the result, so the read records nothing more in the query condition cache.
     std::shared_ptr<std::atomic<bool>> top_k_filter_rows_equal_to_threshold_dropped;
+    /// Every part of the TopK read stores every read column, so a bound beyond the threshold stays beyond it on the next run.
+    bool top_k_record_marks_beyond_threshold = false;
     /// Force reading complete granules, even when the readers could read incomplete granules.
     bool force_read_complete_granules = false;
     bool use_deserialization_prefixes_cache = false;

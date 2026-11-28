@@ -199,9 +199,9 @@ MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResu
     return index_read_result;
 }
 
-/// A mark that the primary key skips against the top-K threshold has all its rows beyond the threshold, so the
-/// `__topKFilter` would have dropped all of them. With the filter as a conjunct of the PREWHERE, the mark does not
-/// match the PREWHERE either, and the query condition cache entry of the PREWHERE is salted with the top-K plan
+/// A mark skipped against the top-K threshold has all its rows beyond the threshold, so the `__topKFilter` would
+/// have dropped all of them. With the filter as a conjunct of the PREWHERE, the mark does not match the PREWHERE
+/// either, and the query condition cache entry of the PREWHERE is salted with the top-K plan
 /// (see `MergeTreeSelectProcessor::read`), so it is only reused by the same plan over the same parts.
 static bool prewhereFiltersByTopKThreshold(const PrewhereInfoPtr & prewhere_info, const MergeTreeReaderSettings & reader_settings)
 {
@@ -652,6 +652,11 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 {
                     auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                     const auto & data_part_info = task->getInfo().data_part_info;
+
+                    const auto & rows_equal_to_threshold_dropped = reader_settings.top_k_filter_rows_equal_to_threshold_dropped;
+                    if (reader_settings.top_k_record_marks_beyond_threshold && prewhere_filters_by_top_k_threshold
+                        && (!rows_equal_to_threshold_dropped || !rows_equal_to_threshold_dropped->load(std::memory_order_relaxed)))
+                        task->addMarksBeyondTopKThreshold();
 
                     String part_name = data_part_info->isProjectionPart()
                         ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
