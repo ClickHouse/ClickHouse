@@ -26,7 +26,7 @@ Lazily read columns: rheavy
 998	2	[0,1,2]	heavy998	r2
 997	0	[0,1]	heavy997	r0
 997	1	[0,1]	heavy997	r1
-Lazily read columns: heavy
+Lazily read columns: arr, heavy
 Lazily read columns: rheavy
 -- two arrays
 998	0	0	heavy998	r0

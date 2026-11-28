@@ -25,5 +25,6 @@
 1	p1	4
 
 0		20
+1	0
 -- nothing is read lazily
 0

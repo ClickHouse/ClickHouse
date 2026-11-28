@@ -41,6 +41,9 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/extractStringValueFilters.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -5545,6 +5548,83 @@ static bool isFilledFromDefaultInSomePart(
     });
 }
 
+/// The columns the assignments and the predicate of an `UPDATE` or a `DELETE` read.
+static Names getColumnsReadByMutationCommand(const MutationCommand & command)
+{
+    if (command.type != MutationCommand::UPDATE && command.type != MutationCommand::DELETE)
+        return {};
+
+    const auto alter = command.ast();
+    RequiredSourceColumnsVisitor::Data required_columns;
+    if (command.type == MutationCommand::UPDATE && alter->update_assignments)
+    {
+        auto assignments = alter->update_assignments->clone();
+        RequiredSourceColumnsVisitor(required_columns).visit(assignments);
+    }
+    if (alter->predicate)
+    {
+        auto predicate = alter->predicate->clone();
+        RequiredSourceColumnsVisitor(required_columns).visit(predicate);
+    }
+
+    const auto names = required_columns.requiredColumns();
+    return Names(names.begin(), names.end());
+}
+
+bool ReadFromMergeTree::recomputesColumnsNonDeterministically() const
+{
+    if ((!mutations_snapshot || !mutations_snapshot->hasDataMutations()) && !data.hasEnabledMaskingPolicies(context))
+        return false;
+
+    const auto & metadata = storage_snapshot->metadata;
+    const auto & columns = metadata->getColumns();
+    const MaterializedColumnDependencies dependencies(columns, context);
+    for (const auto & part : getParts())
+    {
+        /// A projection part carries a fake data version, which makes every mutation look pending.
+        if (part.data_part->isProjectionPart())
+            continue;
+
+        const auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part.data_part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+            , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+        );
+        const auto & changed_columns = alter_conversions->getAllUpdatedColumns();
+        const auto & commands = alter_conversions->getMutationCommands();
+        if (changed_columns.empty() && commands.empty())
+            continue;
+
+        /// What the read computes: the recomputed `MATERIALIZED` columns, and the assignments and the predicates of the
+        /// commands, through the columns they read.
+        Names computed_from;
+        NameSet recomputed_set;
+        for (const auto & column : columns.getMaterialized())
+        {
+            if (!changed_columns.empty() && !dependencies.findColumnsToRecalculate(column.name, changed_columns).empty())
+            {
+                computed_from.push_back(column.name);
+                recomputed_set.insert(column.name);
+            }
+        }
+        for (const auto & command : commands)
+            std::ranges::move(getColumnsReadByMutationCommand(command), std::back_inserter(computed_from));
+        if (computed_from.empty())
+            continue;
+
+        /// A computed column reads the columns it is computed from as the read has them: a recomputed one, or one the read
+        /// fills from its default in this part, such as a column added after the part was written.
+        const RangesInDataParts this_part{part};
+        const auto non_deterministic = getNonDeterministicDefaults(computed_from, columns, [&](const String & column)
+        {
+            return recomputed_set.contains(column) || isFilledFromDefaultInSomePart(column, this_part, metadata, mutations_snapshot, context);
+        }, context);
+        if (!non_deterministic.empty())
+            return true;
+    }
+    return false;
+}
+
 Names ReadFromMergeTree::getLazilyReadColumns(const NameSet & required_outputs) const
 {
     NameSet columns_to_keep;
@@ -7689,40 +7769,47 @@ ReadFromMergeTree::removeUnusedColumns(const VectorWithMemoryTracking<size_t> & 
     return applyColumnPruning(pruneColumns(unneeded_output_positions));
 }
 
-VectorWithMemoryTracking<size_t> ReadFromMergeTree::getLazilyReadablePositions(const ColumnPruning & pruning) const
+ReadFromMergeTree::LazilyReadablePositions ReadFromMergeTree::getLazilyReadablePositions(const ColumnPruning & pruning) const
 {
     const auto & virtuals = getStorageMetadata()->virtuals;
 
     VectorWithMemoryTracking<size_t> positions;
     Names column_names;
-    for (size_t position : pruning.dropped_output_positions)
+    for (size_t position = 0; position < pruning.storage_position_of_output.size(); ++position)
     {
-        const auto storage_position = pruning.storage_position_of_output.at(position);
-        if (storage_position && std::ranges::binary_search(pruning.dropped_storage_positions, *storage_position)
-            && !virtuals.has(all_column_names.at(*storage_position)))
+        const auto storage_position = pruning.storage_position_of_output[position];
+        if (storage_position && !virtuals.has(all_column_names.at(*storage_position)))
         {
             positions.push_back(position);
             column_names.push_back(all_column_names.at(*storage_position));
         }
     }
 
-    /// A lazy read would fill such a column with values of its own, other than the ones the columns of the main read
-    /// computed from it have.
+    /// A lazy read would fill such a column with values of its own, other than the ones the main read has for it and for
+    /// the columns it computed from it.
     const auto non_deterministic = getNonDeterministicDefaults(
         column_names, storage_snapshot->metadata->getColumns(), [&](const String & column)
         {
             return isFilledFromDefaultInSomePart(column, getParts(), storage_snapshot->metadata, mutations_snapshot, context);
         }, context);
-    VectorWithMemoryTracking<size_t> readable_positions;
+
+    LazilyReadablePositions readable;
     for (size_t i = 0; i < positions.size(); ++i)
     {
-        if (!non_deterministic.contains(column_names[i]))
-            readable_positions.push_back(positions[i]);
+        if (non_deterministic.contains(column_names[i]))
+            continue;
+
+        const auto storage_position = *pruning.storage_position_of_output[positions[i]];
+        const bool read_by_main = !std::ranges::binary_search(pruning.dropped_storage_positions, storage_position);
+
+        readable.positions.push_back(positions[i]);
+        if (read_by_main)
+            readable.read_twice.push_back(positions[i]);
     }
-    return readable_positions;
+    return readable;
 }
 
-VectorWithMemoryTracking<size_t> ReadFromMergeTree::getLazilyReadablePositions(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const
+ReadFromMergeTree::LazilyReadablePositions ReadFromMergeTree::getLazilyReadablePositions(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const
 {
     if (output_header == nullptr)
         return {};
@@ -7742,7 +7829,7 @@ ReadFromMergeTree::removeUnusedColumnsAndCreateLazyReadStep(
         return {applyColumnPruning(pruning), nullptr};
 
     /// The lazily readable positions and the lazy ones are both in order, so they are followed at once.
-    const auto readable = getLazilyReadablePositions(pruning);
+    const auto readable = getLazilyReadablePositions(pruning).positions;
     auto next_readable = readable.begin();
     VectorWithMemoryTracking<size_t> lazy_storage_positions;
     for (size_t position : lazy_output_positions)
