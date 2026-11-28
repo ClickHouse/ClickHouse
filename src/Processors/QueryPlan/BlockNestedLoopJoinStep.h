@@ -52,6 +52,8 @@ public:
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
+    void setLimitAbove() { limit_above = true; }
+
     void describePipeline(FormatSettings & settings) const override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
@@ -90,6 +92,8 @@ private:
     /// and `min_joined_block_size_bytes`.
     size_t min_input_block_size;
     size_t min_input_block_bytes;
+    /// A LIMIT above may stop reading early, so the probe-side squashing grows its minimum from one row.
+    bool limit_above = false;
     /// Whether the operator counts what `EXPLAIN ANALYZE` reports, and how much of it: `Exact` also
     /// buys the numbers the join has no use for itself.
     JoinAnalyzeMode analyze_mode;

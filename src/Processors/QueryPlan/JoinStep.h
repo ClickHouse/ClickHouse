@@ -111,6 +111,8 @@ public:
     /// on the join itself. Does not downgrade an already required order.
     void keepLeftPipelineLayout();
 
+    void setLimitAbove() { limit_above = true; }
+
     [[nodiscard]] bool isOptimized() const { return optimized; }
     void setOptimized() { optimized = true; }
 
@@ -139,6 +141,8 @@ private:
     size_t min_block_size_rows;
     size_t min_block_size_bytes;
     size_t max_streams;
+    /// A LIMIT above may stop reading early, so the probe-side and output squashing grows its minimum from one row.
+    bool limit_above = false;
 
     const NameSet required_output;
     SetWithMemoryTracking<size_t> columns_to_remove;
