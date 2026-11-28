@@ -429,6 +429,9 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     else if (auto initiator_user_and_roles = resolveInitiatorUserAndRoles(from_context, /* throw_if_not_found= */ true))
     {
         query_context->setUser(initiator_user_and_roles->first, initiator_user_and_roles->second);
+        /// `setUser` does not set the user names in `ClientInfo`, which remote queries send to the shards.
+        query_context->setCurrentUserName(entry.initiator_user);
+        query_context->setInitialUserName(entry.initiator_user);
     }
 
     if (entry.settings)
