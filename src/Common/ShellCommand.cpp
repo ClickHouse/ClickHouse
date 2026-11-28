@@ -10,6 +10,7 @@
 #   pragma clang diagnostic pop
 #endif
 
+#include <fcntl.h>
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -39,16 +40,20 @@
 
 namespace
 {
-    /// By these return codes from the child process, we learn (for sure) about errors when creating it.
-    enum class ReturnCodes : int
+    /// What the child writes to the parent if it cannot run the program.
+    struct ChildFailure
     {
-        CANNOT_DUP_STDIN            = 0x55555555,   /// The value is not important, but it is chosen so that it's rare to conflict with the program return code.
-        CANNOT_DUP_STDOUT           = 0x55555556,
-        CANNOT_DUP_STDERR           = 0x55555557,
-        CANNOT_EXEC                 = 0x55555558,
-        CANNOT_DUP_READ_DESCRIPTOR  = 0x55555559,
-        CANNOT_DUP_WRITE_DESCRIPTOR = 0x55555560,
+        int fd; /// The descriptor that `dup2` could not set up, or -1 if `execv` failed.
+        int error;
     };
+
+    /// Called in the child after `vfork`, so only async-signal-safe functions.
+    [[noreturn]] void reportChildFailure(int pipe_fd, int fd)
+    {
+        ChildFailure failure{fd, errno};
+        while (-1 == ::write(pipe_fd, &failure, sizeof(failure)) && errno == EINTR) {}
+        _exit(127);
+    }
 }
 
 namespace ProfileEvents
@@ -66,6 +71,7 @@ namespace ErrorCodes
     extern const int CANNOT_WAITPID;
     extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
     extern const int CANNOT_CREATE_CHILD_PROCESS;
+    extern const int CANNOT_FCNTL;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -250,6 +256,22 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         res->write_fds.emplace(fd, fds.fds_rw[1]);
     }
 
+    /// The child reports through this pipe why it could not run the program; no `dup2` in the child may replace its write end.
+    PipeFDs pipe_child_failure;
+    int lowest_fd = STDERR_FILENO + 1;
+    for (int fd : config.read_fds)
+        lowest_fd = std::max(lowest_fd, fd + 1);
+    for (int fd : config.write_fds)
+        lowest_fd = std::max(lowest_fd, fd + 1);
+    if (pipe_child_failure.fds_rw[1] < lowest_fd)
+    {
+        int fd = fcntl(pipe_child_failure.fds_rw[1], F_DUPFD_CLOEXEC, lowest_fd);
+        if (fd == -1)
+            throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot duplicate a file descriptor");
+        [[maybe_unused]] int err = ::close(pipe_child_failure.fds_rw[1]);
+        pipe_child_failure.fds_rw[1] = fd;
+    }
+
 #if defined(OS_DARWIN)
     /// x86_64 macOS binds library symbols lazily (there is no `-z now` there), and binding `vfork` in the call itself
     /// can deadlock in a multithreaded program. So resolve it before the call. Elsewhere everything is bound at startup.
@@ -275,15 +297,15 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
         /// Replace the file descriptors with the ends of our pipes.
         if (STDIN_FILENO != dup2(pipe_stdin.fds_rw[0], STDIN_FILENO))
-            _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDIN));
+            reportChildFailure(pipe_child_failure.fds_rw[1], STDIN_FILENO);
 
         if (!config.pipe_stdin_only)
         {
             if (STDOUT_FILENO != dup2(pipe_stdout.fds_rw[1], STDOUT_FILENO))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDOUT));
+                reportChildFailure(pipe_child_failure.fds_rw[1], STDOUT_FILENO);
 
             if (STDERR_FILENO != dup2(pipe_stderr.fds_rw[1], STDERR_FILENO))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDERR));
+                reportChildFailure(pipe_child_failure.fds_rw[1], STDERR_FILENO);
         }
 
         for (size_t i = 0; i < config.read_fds.size(); ++i)
@@ -292,7 +314,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
             auto fd = config.read_fds[i];
 
             if (fd != dup2(fds.fds_rw[1], fd))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR));
+                reportChildFailure(pipe_child_failure.fds_rw[1], fd);
         }
 
         for (size_t i = 0; i < config.write_fds.size(); ++i)
@@ -301,7 +323,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
             auto fd = config.write_fds[i];
 
             if (fd != dup2(fds.fds_rw[0], fd))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR));
+                reportChildFailure(pipe_child_failure.fds_rw[1], fd);
         }
 
         // Reset the signal mask: it may be non-empty and will be inherited
@@ -314,11 +336,34 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         execv(filename, argv);
         /// If the process is running, then `execv` does not return here.
 
-        _exit(static_cast<int>(ReturnCodes::CANNOT_EXEC));
+        reportChildFailure(pipe_child_failure.fds_rw[1], -1);
     }
     // NOLINTEND(clang-analyzer-unix.Vfork)
 
     res->pid = pid;
+
+    /// The write end is closed on exec, so the read returns 0 once the child is running the program.
+    [[maybe_unused]] int err = ::close(pipe_child_failure.fds_rw[1]);
+    pipe_child_failure.fds_rw[1] = -1;
+
+    ChildFailure failure{};
+    ssize_t bytes_read = 0;
+    do
+        bytes_read = ::read(pipe_child_failure.fds_rw[0], &failure, sizeof(failure));
+    while (bytes_read == -1 && errno == EINTR);
+
+    if (bytes_read == static_cast<ssize_t>(sizeof(failure)))
+    {
+        /// The child has exited without running the program: reap it so that the destructor does not wait for it.
+        int status = 0;
+        while (-1 == waitpid(pid, &status, 0) && errno == EINTR) {}
+        res->pid = -1;
+
+        if (failure.fd == -1)
+            ErrnoException::throwWithErrno(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, failure.error, "Cannot execute {}", filename);
+        ErrnoException::throwWithErrno(
+            ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, failure.error, "Cannot set up file descriptor {} of child process", failure.fd);
+    }
 
     if (config.register_in_udf_process_registry)
         res->udf_registry_generation = UDFProcessRegistry::instance().add(pid);
@@ -474,25 +519,7 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking, bool check_
 void ShellCommand::handleProcessRetcode(int retcode) const
 {
     if (retcode != EXIT_SUCCESS)
-    {
-        switch (retcode)
-        {
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_STDIN):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 stdin of child process");
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_STDOUT):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 stdout of child process");
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_STDERR):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 stderr of child process");
-            case static_cast<int>(ReturnCodes::CANNOT_EXEC):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot execv in child process");
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 read descriptor of child process");
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR):
-                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 write descriptor of child process");
-            default:
-                throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process was exited with return code {}", toString(retcode));
-        }
-    }
+        throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process was exited with return code {}", toString(retcode));
 }
 
 bool ShellCommand::waitIfProccesTerminated()
