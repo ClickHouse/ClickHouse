@@ -931,7 +931,6 @@ static void splitAndModifyMutationCommands(
         return name;
     };
 
-    /// A CLEAR after a rename erases the rename-map entry, while the part still stores the column under the old name.
     auto clearsColumnStoredUnderOldName = [&](const MutationCommand & command)
     {
         if (command.type != MutationCommand::Type::DROP_COLUMN || !command.clear)
@@ -2326,8 +2325,7 @@ static NameToNameVector collectFilesForRenames(
         }
     };
 
-    /// Remove the streams of the columns that the source part has but the new part does not, e.g. after MODIFY COLUMN
-    /// to a type with fewer streams (LowCardinality -> String) or a rewrite of a column with a dynamic structure.
+    /// Streams can vanish after MODIFY COLUMN LowCardinality -> String or a CLEAR recomputing a dynamic MATERIALIZED dependent.
     auto remove_streams_not_in_new_part = [&](const Names & column_names)
     {
         auto old_streams = getStreamCounts(source_part, source_part->checksums, column_names);
@@ -2442,7 +2440,6 @@ static NameToNameVector collectFilesForRenames(
             if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
                 remove_column_streams(command.column_name);
-                /// CLEAR recomputes the MATERIALIZED columns depending on the cleared one.
                 if (command.clear)
                     remove_streams_not_in_new_part(updated_header.getNames());
             }
