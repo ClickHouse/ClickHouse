@@ -1890,7 +1890,16 @@ InputOrder buildInputOrderInfo(
             return {};
 
         if (!canImproveOrderForDistinct(order_info, reading->getInputOrder()))
+        {
+            /// The existing in-order read (e.g. set earlier by `SortingStep` optimization)
+            /// already covers the distinct keys, so `DistinctSortedStreamTransform` can
+            /// operate per stream in `pre_distinct` mode. Still call
+            /// `setPreferMultipleStreams` so per-part `PrefetchingConcat` doesn't collapse
+            /// the parallel streams into one per part, which would defeat the parallelism.
+            if (order_info.input_order && reading->getInputOrder())
+                reading->setPreferMultipleStreams();
             return {};
+        }
 
         if (!reading->requestReadingInOrder(
             order_info.input_order->used_prefix_of_sorting_key_size,
@@ -1919,7 +1928,14 @@ InputOrder buildInputOrderInfo(
             return {};
 
         if (!canImproveOrderForDistinct(order_info, merge->getInputOrder()))
+        {
+            /// Mirror the direct `ReadFromMergeTree` branch: the existing in-order read
+            /// already covers the distinct keys, so still prefer multiple streams to keep
+            /// `DistinctSortedStreamTransform` running per stream.
+            if (order_info.input_order && merge->getInputOrder())
+                merge->setPreferMultipleStreams();
             return {};
+        }
 
         if (!merge->requestReadingInOrder(order_info.input_order))
             return {};
@@ -1959,7 +1975,8 @@ InputOrder buildInputOrderInfo(
     return {};
 }
 
-InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
+InputOrder buildInputOrderInfo(
+    LimitByStep & limit_by, QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings, size_t query_limit)
 {
     /// Here we allow LimitByStep to drive read-in-order.
     /// Example: SELECT * FROM t LIMIT 1 BY a; -- sorting key: a, b
@@ -2003,8 +2020,13 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
         if (!canImproveOrderForDistinct(order_info, reading->getInputOrder()))
             return {};
 
+        /// `query_limit` is the enclosing `LIMIT`, if any: it sizes the first in-order task like the
+        /// `SortingStep` path does, instead of a full range per part.
         if (!reading->requestReadingInOrder(
-                order_info.input_order->used_prefix_of_sorting_key_size, order_info.input_order->direction, order_info.input_order->limit))
+                order_info.input_order->used_prefix_of_sorting_key_size,
+                order_info.input_order->direction,
+                order_info.input_order->limit,
+                query_limit))
             return {};
 
         /// `LimitByStep` runs the optimized per-stream `LimitBySortedStreamTransform` pre-filter on
@@ -2031,7 +2053,7 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
         if (!canImproveOrderForDistinct(order_info, merge->getInputOrder()))
             return {};
 
-        if (!merge->requestReadingInOrder(order_info.input_order))
+        if (!merge->requestReadingInOrder(order_info.input_order, query_limit))
             return {};
 
         /// `LimitByStep` runs a per-stream pre-filter, same as the direct `ReadFromMergeTree` path
@@ -2482,8 +2504,9 @@ void optimizeDistinctInOrder(const Stack & stack, QueryPlan::Nodes &, const Quer
         distinct->applyOrder(std::move(order_info.sort_description));
 }
 
-void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
+void optimizeLimitByInOrder(const Stack & stack, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
 {
+    auto & node = *stack.back().node;
     if (node.children.size() != 1)
         return;
 
@@ -2491,7 +2514,23 @@ void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const Qu
     if (!limit_by)
         return;
 
-    auto order_info = buildInputOrderInfo(*limit_by, *node.children.front(), optimization_settings);
+    /// An enclosing `LIMIT` (as in `LIMIT 3 BY a LIMIT 10`) bounds how much of the in-order read is
+    /// needed, so pass it on as the soft limit that sizes the first read task. Only expressions may
+    /// stand between the two: any other step could change the number of rows.
+    size_t query_limit = 0;
+    for (size_t i = stack.size() - 1; i > 0; --i)
+    {
+        const auto * parent_step = stack[i - 1].node->step.get();
+        if (const auto * limit = typeid_cast<const LimitStep *>(parent_step))
+        {
+            query_limit = limit->getLimitForSorting();
+            break;
+        }
+        if (!typeid_cast<const ExpressionStep *>(parent_step))
+            break;
+    }
+
+    auto order_info = buildInputOrderInfo(*limit_by, *node.children.front(), optimization_settings, query_limit);
     if (!order_info.input_order)
         return;
 

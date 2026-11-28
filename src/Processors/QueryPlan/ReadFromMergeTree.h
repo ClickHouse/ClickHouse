@@ -402,9 +402,36 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
+
+    /// Returns whether `requestReadingInOrder` with the same `prefix_size` and `direction` would
+    /// succeed, without changing anything.
+    bool canReadInOrder(size_t prefix_size, int direction) const;
+
     /// Whether `requestReadingInOrder` accepts a reverse direction. With `FINAL`, only the engines whose merge
     /// does not depend on the direct order of rows can read in reverse order.
     bool canReadInReverseOrder() const;
+
+    /// Restore the full post-`requestReadingInOrder` state that is not carried by `query_info`.
+    /// `has_outer_limit`, `prefer_multiple_streams`, `read_in_order_requested_by_plan_optimizer`,
+    /// `enable_vertical_final`, `query_task_size_limit` and `virtual_row_conversion` are set by
+    /// `requestReadingInOrder`/`setPreferMultipleStreams`/`setVirtualRowConversions`,
+    /// not stored in `SelectQueryInfo`; `reader_settings.read_in_order`,
+    /// `requested_num_streams` and `result_sort_description` are *derived* by
+    /// `requestReadingInOrder` and cannot be re-derived by the constructor either.
+    /// When a reading step is reconstructed from
+    /// `getQueryInfo()` (which keeps `input_order_info`, so the step still reads in order) —
+    /// e.g. the lazy-FINAL split in `optimizeLazyFinal`, the local parallel-replica fragment in
+    /// `createLocalParallelReplicasReadingStep`, or an arbitrary optimized subtree cloned through
+    /// `clone` — all of this state must be carried over too. Otherwise the per-part
+    /// `PrefetchingConcat` contract is silently dropped, the constructor re-derives
+    /// `enable_vertical_final` from settings (which can re-enable vertical FINAL on a cloned
+    /// in-order FINAL read and violate its sorted-output contract), the limit-aware
+    /// single-range task sizing keyed on `query_task_size_limit` (see line with
+    /// `has_soft_limit_below_one_block`) is lost, and the rebuilt step silently loses the
+    /// virtual-row optimization — which, with `read_in_order_use_virtual_row_per_block`
+    /// enabled, would also flip `can_use_per_part_prefetching` back to `true` and produce a
+    /// different pipeline shape than the original step it was rebuilt from.
+    void copyReadInOrderContractFrom(const ReadFromMergeTree & source);
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     void copyVirtualRowConversions(const ReadFromMergeTree & other)
     {
@@ -445,16 +472,6 @@ public:
     /// When set, PrefetchingConcatProcessor will not be used to avoid collapsing parallel streams.
     void setPreferMultipleStreams() { prefer_multiple_streams = true; }
     bool getPreferMultipleStreams() const { return prefer_multiple_streams; }
-
-    /// For optimizations that rebuild the reading step (e.g. lazy `FINAL`): carry over the fact that
-    /// reading in order was requested through `requestReadingInOrder`, together with the opt-outs
-    /// already stamped into `prefer_multiple_streams`, so the rebuilt read keeps the same
-    /// `PrefetchingConcatProcessor` eligibility as the original.
-    void setReadInOrderRequestedByPlanOptimizer() { read_in_order_requested_by_plan_optimizer = true; }
-    bool isReadInOrderRequestedByPlanOptimizer() const { return read_in_order_requested_by_plan_optimizer; }
-
-    void setQueryTaskSizeLimit(UInt64 query_task_size_limit_) { query_task_size_limit = query_task_size_limit_; }
-    UInt64 getQueryTaskSizeLimit() const { return query_task_size_limit; }
 
     /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY, DISTINCT and
     /// window functions.
@@ -853,6 +870,12 @@ private:
 
     size_t requested_num_streams;
     size_t output_streams_limit = 0;
+
+    /// True when a LIMIT exists in the query but could not be pushed
+    /// to input_order_info->limit (e.g. because of a JOIN). Set inside
+    /// `requestReadingInOrder` based on `query_limit`/`read_limit`, so it is
+    /// also recorded for child readers under a `Merge` table.
+    bool has_outer_limit = false;
 
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;

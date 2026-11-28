@@ -240,26 +240,12 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
     /// The JOIN runtime filters were attached to the read before this optimization, see `collectAppliedJoinRuntimeFilters`.
     non_final_reading->copyJoinRuntimeFilterIndexAnalysisDescriptors(*reading_step);
 
-    /// `optimizeReadInOrder` runs before this optimization and may have already opted the original
-    /// read out of `PrefetchingConcatProcessor` (aggregation-, distinct- or `LIMIT BY`-in-order, or a
-    /// residual filter above the read). The flag is a property of the plan around the read, not of
-    /// `SelectQueryInfo`, so a freshly constructed step starts with it unset — carry it over,
-    /// otherwise the replacement read would collapse the parallel streams the optimizer asked for.
-    if (reading_step->getPreferMultipleStreams())
-        non_final_reading->setPreferMultipleStreams();
-
-    /// Likewise, `read_in_order_requested_by_plan_optimizer` is set by `requestReadingInOrder` on the
-    /// original step, and the freshly constructed replacement starts with it unset. Carry it over so
-    /// that a read the plan optimizer put in order stays eligible for `PrefetchingConcatProcessor`.
-    if (reading_step->isReadInOrderRequestedByPlanOptimizer())
-        non_final_reading->setReadInOrderRequestedByPlanOptimizer();
-
-    non_final_reading->setQueryTaskSizeLimit(reading_step->getQueryTaskSizeLimit());
-
-    /// The virtual-row conversion is another property installed by `optimizeReadInOrder` on the
-    /// original read. Preserve it so that an inner `JOIN` read-in-order plan keeps the virtual rows
-    /// used by the sorting step to select the next probe stream after filtering.
-    non_final_reading->copyVirtualRowConversions(*reading_step);
+    /// Preserve the read-in-order safeguard flags. `non_final_query_info` carries
+    /// `input_order_info`, so this reconstructed step still reads in order, but the
+    /// separate `has_outer_limit`/`prefer_multiple_streams` members are not part of
+    /// `query_info` and would otherwise reset to their defaults — silently re-enabling
+    /// per-part `PrefetchingConcat` (or collapsing parallel streams) in the lazy-FINAL branch.
+    non_final_reading->copyReadInOrderContractFrom(*reading_step);
 
     /// The synthetic step inherits the filter rewritten to `__text_index_*` virtual columns, but not the read tasks that produce them
     /// from the index.
@@ -701,14 +687,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         /// A granule that a JOIN runtime filter skips holds no row the join needs, so the set loses no key of such a row.
         set_reading->copyJoinRuntimeFilterIndexAnalysisDescriptors(*reading_step);
 
-        /// Same as for `non_final_reading` above: preserve the `PrefetchingConcatProcessor` opt-out
-        /// that `optimizeReadInOrder` has possibly already applied to the original read, and the
-        /// fact that reading in order was requested by the plan optimizer.
-        if (reading_step->getPreferMultipleStreams())
-            set_reading->setPreferMultipleStreams();
-        set_reading->setQueryTaskSizeLimit(reading_step->getQueryTaskSizeLimit());
-        if (reading_step->isReadInOrderRequestedByPlanOptimizer())
-            set_reading->setReadInOrderRequestedByPlanOptimizer();
+        /// Preserve the read-in-order safeguard flags for the same reason as `non_final_reading`
+        /// above: `set_query_info` keeps `input_order_info`, so this step reads in order and must
+        /// carry the `has_outer_limit`/`prefer_multiple_streams` contract too.
+        set_reading->copyReadInOrderContractFrom(*reading_step);
 
         set_plan.addStep(std::move(set_reading));
     }

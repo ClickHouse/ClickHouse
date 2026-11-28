@@ -51,6 +51,7 @@
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/PrefetchingConcatProcessor.h>
+#include <Processors/WindowedPrefetchingConcatProcessor.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -358,6 +359,7 @@ namespace Setting
     extern const SettingsUInt64 max_number_of_partitions_for_independent_distinct;
     extern const SettingsUInt64 max_number_of_partitions_for_independent_window;
     extern const SettingsInt64 max_partitions_to_read;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 min_marks_per_part_to_load_statistics;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_rows_to_read_leaf;
@@ -386,6 +388,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool distributed_index_analysis;
     extern const SettingsBool distributed_index_analysis_for_non_shared_merge_tree;
+    extern const SettingsUInt64 prefer_external_sort_block_bytes;
     extern const SettingsUInt64 preferred_block_size_bytes;
     extern const SettingsUInt64 preferred_max_column_in_block_size_bytes;
     extern const SettingsUInt64 read_in_order_two_level_merge_threshold;
@@ -688,28 +691,15 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         all_ranges_callback_,
         read_task_callback_,
         replica_number);
+    /// The step is reconstructed from `getQueryInfo()`, which keeps `input_order_info` (so it still
+    /// reads in order) but not the post-`requestReadingInOrder` state. Carry it over, exactly as
+    /// `clone` and the lazy-FINAL split do, or the fragment would silently drop the per-part
+    /// `PrefetchingConcat` safeguard, re-enable vertical FINAL, or lose small-`LIMIT` task sizing.
+    parallel_replicas_step->copyReadInOrderContractFrom(*this);
 
-    /// `prefer_multiple_streams`, `virtual_row_conversion`, `output_each_partition_through_separate_port`
-    /// and `index_read_tasks` are plan-local state that lives outside `SelectQueryInfo`, so the
-    /// constructor does not carry them — propagate them explicitly, like `clone` does.
-    /// `virtual_row_conversion` matters because
-    /// `optimizeReadInOrder` keeps the read-in-order-through-join plan only when the virtual-row
-    /// markers are available (see the `joins_to_keep_in_order` check there); executing a rebuilt
-    /// read without them would make the sort after the join unable to tell which stream to pull.
-    /// `output_each_partition_through_separate_port` matters because the downstream `LimitByStep`
-    /// / `AggregatingStep` in the cloned fragment already committed to skipping the stream merge;
-    /// a rebuilt read that forgets the flag could split one partition across several streams and
-    /// silently emit duplicate `LIMIT BY` groups or partially aggregated results.
-    /// `index_read_tasks` matters because `processAndOptimizeTextIndexFunctions` rewrites the filter to
-    /// synthetic `__text_index_*` columns and only these tasks tell `MergeTreeSelectProcessor` how to
-    /// materialize them, so a rebuilt read without them keeps the rewritten filter but cannot produce
-    /// its inputs (`optimizeLazyFinal` copies them for the same reason).
-    parallel_replicas_step->prefer_multiple_streams = prefer_multiple_streams;
-    parallel_replicas_step->read_in_order_requested_by_plan_optimizer = read_in_order_requested_by_plan_optimizer;
-    parallel_replicas_step->query_task_size_limit = query_task_size_limit;
-    parallel_replicas_step->enable_vertical_final = enable_vertical_final;
-    parallel_replicas_step->virtual_row_conversion = virtual_row_conversion;
-    parallel_replicas_step->output_each_partition_through_separate_port = output_each_partition_through_separate_port;
+    /// `index_read_tasks` is plan-local state too: `processAndOptimizeTextIndexFunctions` rewrites the
+    /// filter to synthetic `__text_index_*` columns and only these tasks tell `MergeTreeSelectProcessor`
+    /// how to materialize them (`optimizeLazyFinal` copies them for the same reason).
     parallel_replicas_step->index_read_tasks = index_read_tasks;
 
     /// This replaces the read step in place, so it must carry over the same state as `clone`: a step
@@ -1152,6 +1142,15 @@ Pipe ReadFromMergeTree::readInOrder(
     /// one range per task to reduce number of read rows.
     const bool has_hard_limit_below_one_block = read_type != ReadType::Default && read_limit && read_limit < block_size.max_block_size_rows;
     const bool has_soft_limit_below_one_block = read_type != ReadType::Default && query_task_size_limit && query_task_size_limit < block_size.max_block_size_rows;
+
+    /// The soft-limit threshold is the one part of the read-in-order contract a shipped fragment used
+    /// to lose (it does not follow from `read_limit`, which an intervening filter or join zeroes), so
+    /// log the sizing decision: it is the only externally observable difference between a worker that
+    /// replayed the contract in full and one that rebuilt it with the defaults.
+    if (read_type != ReadType::Default)
+        LOG_TRACE(log, "Reading in order with read limit {} and soft limit threshold {}: first task is {}",
+            read_limit, query_task_size_limit,
+            (has_hard_limit_below_one_block || has_soft_limit_below_one_block) ? "a single range" : "the whole range set");
 
     /// The `FINAL` merges do not consume virtual rows: a `FINAL` read gets one per merge instead (see
     /// `spreadMarkRangesAmongStreamsFinal`).
@@ -2393,10 +2392,134 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         = context->getClientInfo().connection_parallel_replicas_protocol_version
         >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE;
     const bool is_local_plan_follower = isParallelReplicasLocalPlanForFollower() && upstream_supports_split_topology;
-    /// Genuine range splitting runs only for the initiator and for purely-local reads.
+
+    /// A local read of several parts can split each part independently into multiple streams.
+    /// Within each part, ranges are contiguous and in PK order, so the streams of one part are
+    /// concatenated by `WindowedPrefetchingConcatProcessor`, which keeps the I/O parallel.
+    /// For reverse direction, the pipe order is reversed so that it outputs the highest ranges first.
+    /// Between parts, `MergingSortedTransform` merges the sorted streams, so it gets one input
+    /// per part instead of one per stream.
+    /// It must be disabled when a downstream step (e.g. aggregation-in-order) benefits
+    /// from receiving multiple streams for parallel processing (`prefer_multiple_streams`),
+    /// and for the legacy read-in-order path that does not run the analysis that sets that flag
+    /// (`read_in_order_requested_by_plan_optimizer`), like the single-part
+    /// `PrefetchingConcatProcessor` path below (see `can_use_prefetching_concat`).
+    /// This path is used with multiple parts only: a read of a single part is handled by
+    /// `can_use_prefetching_concat`, which has its own conditions.
+    ///
+    /// It is also not used with per-block virtual rows
+    /// (`read_in_order_use_virtual_row_per_block`). That mode relies on a per-block
+    /// virtual row being observed by `MergingSortedTransform` before any later real
+    /// chunk from the same source is read, so `MergingSortedTransform` can reprioritize
+    /// inputs and avoid reading past the boundary, while the upcoming streams of a part are
+    /// read ahead of the current one. When per-block virtual rows are
+    /// active we therefore fall back to the non-prefetching path.
+    ///
+    /// It is also not used with `SAMPLE`: the sampling filter is added by `initializePipeline`
+    /// after the streams are built, so it would run on one stream per part after the
+    /// concatenation, serializing an arbitrarily expensive sampling-key expression.
+    const bool can_use_per_part_prefetching =
+        !is_parallel_reading_from_replicas
+        && read_in_order_requested_by_plan_optimizer
+        && !getAnalysisResult().sampling.use_sampling
+        && !output_each_partition_through_separate_port
+        && input_order_info->limit == 0
+        && !has_outer_limit
+        && !prefer_multiple_streams
+        && num_streams > 1
+        && parts_with_ranges.size() > 1
+        && !(settings[Setting::read_in_order_use_virtual_row_per_block] && virtual_row_conversion);
+
+    /// Per-part splitting exists only to feed `PrefetchingConcat`, which needs the streams of
+    /// one part to cover contiguous ranges of that part. When the downstream wants parallel
+    /// streams instead (`prefer_multiple_streams`: aggregation-, distinct- or `LIMIT BY`-in-order),
+    /// the distribute-by-streams loop below is better: it balances marks evenly across the
+    /// streams, while per-part splitting rounds the share of every part and can leave a whole
+    /// part to a single stream, which then becomes the critical path of the query.
+    ///
+    /// Per-part splitting requires at least one stream for every part, so it can
+    /// only stay within the `num_streams` budget when there are no more parts than
+    /// streams. With more parts than streams we fall through to the original
+    /// distribute-by-streams loop below, which groups multiple parts into a single
+    /// stream and keeps the total stream count bounded by `num_streams`.
+    ///
+    /// The number of streams of every part is decided here, before anything is read, because the
+    /// decision can also be that no part gets more than one stream: when the parts take the whole
+    /// stream budget (`parts_with_ranges.size() == num_streams`), or when no part has enough marks
+    /// for two streams. Then there is nothing to concatenate, and reading every part with a single
+    /// source would serialize the reading of a large part that the distribute-by-streams loop
+    /// divides among the streams. So per-part splitting is used only when it splits at least one part.
+    VectorWithMemoryTracking<size_t> streams_per_part;
+    bool any_part_is_split = false;
+    if (can_use_per_part_prefetching && parts_with_ranges.size() <= num_streams)
+    {
+        streams_per_part.reserve(parts_with_ranges.size());
+
+        size_t streams_remaining = num_streams;
+        size_t marks_remaining_total = info.sum_marks;
+        size_t parts_left = parts_with_ranges.size();
+
+        for (const auto & part : parts_with_ranges)
+        {
+            const size_t marks_in_part = part.getMarksCount();
+
+            /// Reserve at least one stream for each remaining part (including this one),
+            /// so that the total number of streams never exceeds `num_streams`.
+            const size_t max_streams_for_this_part = streams_remaining > parts_left - 1
+                ? streams_remaining - (parts_left - 1)
+                : 1;
+
+            /// Allocate streams proportional to marks, bounded by the per-part cap.
+            size_t part_streams = 1;
+            if (max_streams_for_this_part > 1 && marks_remaining_total > 0)
+            {
+                part_streams = std::max<size_t>(1,
+                    static_cast<size_t>(std::round(
+                        static_cast<double>(marks_in_part) / static_cast<double>(marks_remaining_total)
+                        * static_cast<double>(streams_remaining))));
+                part_streams = std::min(part_streams, max_streams_for_this_part);
+
+                /// Don't create more streams than marks available for concurrent reading.
+                if (marks_in_part < part_streams * info.min_marks_for_concurrent_read)
+                    part_streams = std::max<size_t>(1, marks_in_part / info.min_marks_for_concurrent_read);
+            }
+
+            streams_remaining -= std::min(part_streams, streams_remaining);
+            marks_remaining_total -= std::min(marks_in_part, marks_remaining_total);
+            --parts_left;
+
+            any_part_is_split |= part_streams > 1;
+            streams_per_part.push_back(part_streams);
+        }
+    }
+
+    const bool can_split_parts = any_part_is_split;
+
+    /// Read-ahead budget for a stream inside the `PrefetchingConcat` prefetch window: the
+    /// budget `SortingStep` gives to a single merge input through `BufferChunksTransform`,
+    /// which is what the stream had before its part's streams were concatenated. Sizing it
+    /// this way, instead of by a fixed number of chunks, is what keeps reads in flight: a
+    /// stream reads its ranges sequentially, so it only has a request outstanding while it
+    /// still has somewhere to put the result, and two chunks of depth is not enough to hide
+    /// the latency of a read that does not come from the page cache. The total is bounded by
+    /// the window rather than by the number of streams, which is what keeps the read-ahead
+    /// proportional to the number of parts.
+    /// `read_in_order_use_buffering = 0` asks for no read-ahead at all; then the budget is
+    /// zero and every source stalls after the one chunk its port holds, exactly as it does
+    /// when the streams are separate merge inputs and buffering is off.
+    /// The row half of the budget comes from `block_size.max_block_size_rows`, which the step
+    /// already carries, rather than from a fresh `max_block_size` lookup: the two can disagree
+    /// for a shipped parallel-replicas fragment, and the carried one is the value the rest of
+    /// the read is sized by.
+    const bool use_read_ahead = settings[Setting::read_in_order_use_buffering];
+    const size_t prefetch_max_rows = use_read_ahead ? block_size.max_block_size_rows : 0;
+    const size_t prefetch_max_bytes = use_read_ahead ? settings[Setting::prefer_external_sort_block_bytes] : 0;
+
+    /// Genuine range splitting by streams runs only for the initiator and for purely-local reads
+    /// that do not split every part on its own (see `can_split_parts`).
     /// Followers use all parts for every split and only need `num_streams` as the split count,
     /// since the initiator is the authority on split topology.
-    const bool need_split = is_local_plan_initiator || !is_parallel_reading_from_replicas;
+    const bool need_split = is_local_plan_initiator || (!is_parallel_reading_from_replicas && !can_split_parts);
 
     /// Only the local-plan follower path needs all parts replicated across per-split pools
     /// (each split reads from a copy and filters down to its assigned subset). The legacy
@@ -2637,40 +2760,134 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     }
     else /* local reading case */
     {
-        /// Preserve master behaviour: every split gets the unmodified `pool_settings` (with
-        /// `.threads = num_streams`). The per-split divider only exists to keep the new
-        /// parallel-replicas split topology from inflating `min_marks_per_request` across the
-        /// per-split pools — local reads have no such concern.
-        for (auto && item : split_parts_and_ranges)
+        if (can_split_parts)
         {
-            pipes.emplace_back(readInOrder(
-                std::move(item), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+            /// The granularity and block size are the same for every read below, so bind them once.
+            auto split_ranges = [this](const MarkRanges & ranges, int direction)
+            {
+                return splitRangesToAvoidLargeReads(
+                    ranges, direction, (*data_settings)[MergeTreeSetting::index_granularity], block_size.max_block_size_rows);
+            };
+
+            for (size_t part_idx = 0; part_idx < parts_with_ranges.size(); ++part_idx)
+            {
+                const auto & part = parts_with_ranges[part_idx];
+                const size_t marks_in_part = part.getMarksCount();
+                const size_t part_streams = streams_per_part[part_idx];
+
+                if (part_streams <= 1)
+                {
+                    /// Single stream for this part — no splitting needed.
+                    RangesInDataParts single_part_vec;
+                    RangesInDataPart part_copy = part;
+                    part_copy.ranges = split_ranges(part_copy.ranges, input_order_info->direction);
+                    single_part_vec.emplace_back(std::move(part_copy));
+                    pipes.emplace_back(readInOrder(
+                        std::move(single_part_vec), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+                    continue;
+                }
+
+                /// Split this part's ranges evenly across part_streams streams.
+                const size_t marks_per_stream = (marks_in_part + part_streams - 1) / part_streams;
+                Pipes part_pipes;
+                MarkRanges remaining_ranges = part.ranges;
+                size_t marks_remaining = marks_in_part;
+
+                for (size_t s = 0; s < part_streams && marks_remaining > 0; ++s)
+                {
+                    size_t need_marks = std::min(marks_per_stream, marks_remaining);
+
+                    /// Don't leave too few marks in the last stream.
+                    if (marks_remaining > need_marks && marks_remaining - need_marks < info.min_marks_for_concurrent_read)
+                        need_marks = marks_remaining;
+
+                    MarkRanges ranges_for_stream;
+                    size_t taken = 0;
+                    while (taken < need_marks && !remaining_ranges.empty())
+                    {
+                        MarkRange & range = remaining_ranges.front();
+                        const size_t marks_in_range = range.end - range.begin;
+                        const size_t to_take = std::min(marks_in_range, need_marks - taken);
+
+                        ranges_for_stream.emplace_back(range.begin, range.begin + to_take);
+                        range.begin += to_take;
+                        taken += to_take;
+                        if (range.begin == range.end)
+                            remaining_ranges.pop_front();
+                    }
+                    marks_remaining -= taken;
+
+                    ranges_for_stream = split_ranges(ranges_for_stream, input_order_info->direction);
+                    RangesInDataParts stream_parts;
+                    stream_parts.emplace_back(
+                        part.data_part, part.parent_part,
+                        part.part_index_in_query, part.part_starting_offset_in_query,
+                        std::move(ranges_for_stream),
+                        part.read_hints);
+                    part_pipes.emplace_back(readInOrder(
+                        std::move(stream_parts), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+                }
+
+                if (can_use_per_part_prefetching && part_pipes.size() > 1)
+                {
+                    /// Concatenate streams within this part using `WindowedPrefetchingConcatProcessor`.
+                    /// For reverse direction, reverse the pipe order so that PrefetchingConcat
+                    /// outputs the highest ranges first, maintaining correct descending order.
+                    if (input_order_info->direction != 1)
+                        std::reverse(part_pipes.begin(), part_pipes.end());
+
+                    LOG_TRACE(log, "Using WindowedPrefetchingConcatProcessor for {} streams from part {}, read-ahead budget {} rows / {} bytes",
+                        part_pipes.size(), part.data_part->name, prefetch_max_rows, prefetch_max_bytes);
+                    auto pipe = Pipe::unitePipes(std::move(part_pipes));
+                    pipe.addTransform(std::make_shared<WindowedPrefetchingConcatProcessor>(
+                        pipe.getSharedHeader(), pipe.numOutputPorts(), prefetch_max_rows, prefetch_max_bytes));
+                    pipes.emplace_back(std::move(pipe));
+                }
+                else
+                {
+                    /// Keep streams separate for downstream parallel processing.
+                    for (auto & p : part_pipes)
+                        pipes.emplace_back(std::move(p));
+                }
+            }
         }
-
-        if (use_prefetching_concat)
+        else
         {
-            /// `parts_with_ranges` is consumed by the splitting loop above, so its size
-            /// here is unreliable. The gate already requires a single underlying part,
-            /// so report stream count only.
-            LOG_TRACE(log, "Using PrefetchingConcatProcessor for {} streams (single part)", pipes.size());
+            /// Preserve master behaviour: every split gets the unmodified `pool_settings` (with
+            /// `.threads = num_streams`). The per-split divider only exists to keep the new
+            /// parallel-replicas split topology from inflating `min_marks_per_request` across the
+            /// per-split pools — local reads have no such concern.
+            for (auto && item : split_parts_and_ranges)
+            {
+                pipes.emplace_back(readInOrder(
+                    std::move(item), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+            }
 
-            /// Capture the source header before uniting pipes so we can build the
-            /// projection that drops temporary sorting-key columns added back to
-            /// compensate for `PREWHERE` removing them. The downstream sorting step
-            /// builds this projection from `out_projection` only when the early-return
-            /// code paths below run, so we must set it here as well.
-            Block source_header;
-            if (have_input_columns_removed_after_prewhere && !pipes.empty())
-                source_header = pipes.front().getHeader();
+            if (use_prefetching_concat)
+            {
+                /// `parts_with_ranges` is consumed by the splitting loop above, so its size
+                /// here is unreliable. The gate already requires a single underlying part,
+                /// so report stream count only.
+                LOG_TRACE(log, "Using PrefetchingConcatProcessor for {} streams (single part)", pipes.size());
 
-            auto pipe = Pipe::unitePipes(std::move(pipes));
-            pipe.addTransform(std::make_shared<PrefetchingConcatProcessor>(
-                pipe.getSharedHeader(), pipe.numOutputPorts(), settings[Setting::read_in_order_max_bytes_to_prefetch]));
+                /// Capture the source header before uniting pipes so we can build the
+                /// projection that drops temporary sorting-key columns added back to
+                /// compensate for `PREWHERE` removing them. The downstream sorting step
+                /// builds this projection from `out_projection` only when the early-return
+                /// code paths below run, so we must set it here as well.
+                Block source_header;
+                if (have_input_columns_removed_after_prewhere && !pipes.empty())
+                    source_header = pipes.front().getHeader();
 
-            if (have_input_columns_removed_after_prewhere)
-                out_projection = createProjection(source_header);
+                auto pipe = Pipe::unitePipes(std::move(pipes));
+                pipe.addTransform(std::make_shared<PrefetchingConcatProcessor>(
+                    pipe.getSharedHeader(), pipe.numOutputPorts(), settings[Setting::read_in_order_max_bytes_to_prefetch]));
 
-            return pipe;
+                if (have_input_columns_removed_after_prewhere)
+                    out_projection = createProjection(source_header);
+
+                return pipe;
+            }
         }
     }
 
@@ -4771,7 +4988,7 @@ bool ReadFromMergeTree::canReadInReverseOrder() const
             && context->getSettingsRef()[Setting::optimize_read_in_reverse_order_final]);
 }
 
-bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit)
+bool ReadFromMergeTree::canReadInOrder(size_t prefix_size, int direction) const
 {
     /// if direction is not set, use current one
     if (!direction)
@@ -4783,6 +5000,18 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// The prefix indexes this snapshot's sorting key, and a clone of its expression list is resized
     /// to `prefix_size`, which appends null `ASTPtr` children when the prefix is longer than the key.
     if (prefix_size > storage_snapshot->metadata->getSortingKey().column_names.size())
+        return false;
+
+    return true;
+}
+
+bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit)
+{
+    /// if direction is not set, use current one
+    if (!direction)
+        direction = getSortDirection();
+
+    if (!canReadInOrder(prefix_size, direction))
         return false;
 
     /// Only a later request that WIDENS an already-established prefix (distinct/aggregation-in-order
@@ -4798,6 +5027,15 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     reader_settings.read_in_order = true;
     read_in_order_requested_by_plan_optimizer = true;
 
+    /// If the query has an outer LIMIT that could not be pushed down to the reader
+    /// (e.g. it was zeroed by a JOIN), remember it so the per-part prefetching path
+    /// is disabled: prefetching later ranges would defeat early termination on the
+    /// outer LIMIT. This also covers child readers under a `Merge` table, which
+    /// receive the same `query_limit`/`read_limit` through
+    /// `ReadFromMerge::requestReadingInOrder`.
+    if (query_limit != 0 && read_limit == 0)
+        has_outer_limit = true;
+
     /// The conversion only produces its own leading sort columns; the extra merge columns of a
     /// widened re-request are default-filled by setVirtualRow, so the announced boundary is wrong.
     /// Drop the virtual row here: the merge then falls back to normal cross-part comparison.
@@ -4806,7 +5044,6 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (widened_over_previous_request && virtual_row_conversion
         && virtual_row_conversion->getRequiredColumnsWithTypes().size() < prefix_size)
         resetVirtualRowConversions();
-
     /// In case of read-in-order, don't create too many reading streams.
     /// Almost always we are reading from a single stream at a time because of merge sort.
     if (output_streams_limit)
@@ -4827,6 +5064,45 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     }
 
     return true;
+}
+
+void ReadFromMergeTree::copyReadInOrderContractFrom(const ReadFromMergeTree & source)
+{
+    has_outer_limit = source.has_outer_limit;
+    prefer_multiple_streams = source.prefer_multiple_streams;
+    read_in_order_requested_by_plan_optimizer = source.read_in_order_requested_by_plan_optimizer;
+    output_each_partition_through_separate_port = source.output_each_partition_through_separate_port;
+    enable_vertical_final = source.enable_vertical_final;
+    query_task_size_limit = source.query_task_size_limit;
+    virtual_row_conversion = source.virtual_row_conversion;
+
+    /// Nothing was requested in order — the remaining fields hold their constructor defaults on
+    /// both steps and must stay that way.
+    if (!source.reader_settings.read_in_order || !query_info.input_order_info)
+        return;
+
+    /// Everything below is state `requestReadingInOrder` derives rather than stores, so the
+    /// constructor of the rebuilt step cannot recover it from `query_info` alone.
+    ///
+    /// Without `read_in_order` the rebuilt step reads in order but does not know it: `readsInOrder`
+    /// answers `false`, so the parts are neither kept sorted for the in-order pool nor exempted from
+    /// the trailing `pipeline.resize(requested_num_streams)`.
+    reader_settings.read_in_order = true;
+
+    /// The constructor's asynchronous-read branch re-expands `requested_num_streams` up to
+    /// `max_streams_for_merge_tree_reading`, undoing the in-order stream budget: the source was
+    /// narrowed down to `output_streams_limit` and the rebuilt step must use the same budget.
+    if (output_streams_limit)
+        requested_num_streams = output_streams_limit;
+
+    /// `result_sort_description` is only ever filled by `updateSortDescription`, so a rebuilt step
+    /// would advertise no sort at all and hide its preserved order from later order-aware
+    /// optimizations such as `applyOrder` and redundant-sort removal.
+    updateSortDescription();
+
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->read_type
+            = query_info.input_order_info->direction > 0 ? ReadType::InOrder : ReadType::InReverseOrder;
 }
 
 bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversion_)
@@ -5121,6 +5397,12 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForAggregat
     if (isQueryWithFinal())
         return false;
 
+    /// A bucketed distributed read does not ship this layout to the worker, which would read with
+    /// ordinary splitting while the downstream steps still skip the cross-stream merge (see
+    /// `supportsBucketedRead`).
+    if (distributed_read_bucket_count)
+        return false;
+
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
     /// With aggregation-by-partitions optimisation we might create a separate pool for each partition.
     if (is_parallel_reading_from_replicas)
@@ -5140,6 +5422,12 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForAggregat
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForLimitBy()
 {
     if (isQueryWithFinal())
+        return false;
+
+    /// A bucketed distributed read does not ship this layout to the worker, which would read with
+    /// ordinary splitting while the downstream steps still skip the cross-stream merge (see
+    /// `supportsBucketedRead`).
+    if (distributed_read_bucket_count)
         return false;
 
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
@@ -5162,6 +5450,12 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForLimitBy(
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForCreatingSet()
 {
     if (isQueryWithFinal())
+        return false;
+
+    /// A bucketed distributed read does not ship this layout to the worker, which would read with
+    /// ordinary splitting while the downstream steps still skip the cross-stream merge (see
+    /// `supportsBucketedRead`).
+    if (distributed_read_bucket_count)
         return false;
 
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
@@ -5213,6 +5507,12 @@ void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForDistinct
     if (isQueryWithFinal())
         return;
 
+    /// A bucketed distributed read does not ship this layout to the worker, which would read with
+    /// ordinary splitting while the downstream steps still skip the cross-stream merge (see
+    /// `supportsBucketedRead`).
+    if (distributed_read_bucket_count)
+        return;
+
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
     /// With distinct-by-partitions optimisation we might create a separate pool for each partition.
     if (is_parallel_reading_from_replicas)
@@ -5232,6 +5532,12 @@ void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForDistinct
 bool ReadFromMergeTree::canOutputEachPartitionThroughSeparatePortForWindow() const
 {
     if (isQueryWithFinal())
+        return false;
+
+    /// A bucketed distributed read does not ship this layout to the worker, which would read with
+    /// ordinary splitting while the downstream steps still skip the cross-stream merge (see
+    /// `supportsBucketedRead`).
+    if (distributed_read_bucket_count)
         return false;
 
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
@@ -5457,12 +5763,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->allow_top_k_prewhere_query_condition_cache = allow_top_k_prewhere_query_condition_cache;
-    cloned_step->prefer_multiple_streams = prefer_multiple_streams;
-    cloned_step->read_in_order_requested_by_plan_optimizer = read_in_order_requested_by_plan_optimizer;
-    cloned_step->query_task_size_limit = query_task_size_limit;
-    cloned_step->enable_vertical_final = enable_vertical_final;
-    cloned_step->virtual_row_conversion = virtual_row_conversion;
-    cloned_step->output_each_partition_through_separate_port = output_each_partition_through_separate_port;
+    cloned_step->copyReadInOrderContractFrom(*this);
     cloned_step->distributed_read_bucket_count = distributed_read_bucket_count;
     /// The coordinator-computed mark buckets and their per-task grouping; without them the
     /// fan-out has nothing to ship in the per-read bucket task parameters, and a FINAL read
@@ -8054,7 +8355,12 @@ bool ReadFromMergeTree::supportsBucketedRead() const
     /// An order set before the plan was optimized is rejected in getReasonReadCannotBeDistributed,
     /// so it cannot reach here. Do not gate on it: the worker
     /// path asks for its order before consulting this, and refusing would route the read to a node with no catalog.
+    /// `output_each_partition_through_separate_port` is not serialized: a worker would replay the read with
+    /// ordinary splitting, spreading one partition across several streams, while the downstream
+    /// `LimitByStep` / `DistinctStep` / `AggregatingStep` still skip the cross-stream merge they were
+    /// told is unnecessary. Keep such a read local.
     return !unsupported_deferred_filters
+        && !output_each_partition_through_separate_port
         && !(analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
         && index_read_tasks.empty();
 }
@@ -8207,6 +8513,13 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
             writeVarUInt(query_info.input_order_info->used_prefix_of_sorting_key_size, ctx.out);
             writeIntBinary(static_cast<Int8>(query_info.input_order_info->direction), ctx.out);
             writeVarUInt(query_info.input_order_info->limit, ctx.out);
+            /// The soft-limit threshold the coordinator chose. It is not derivable from the three fields
+            /// above: an outer `LIMIT` that could not be pushed into the reader leaves
+            /// `input_order_info->limit` zero while still sizing the first in-order task by the limit
+            /// (`has_soft_limit_below_one_block` in `readInOrder`). Without it the worker reads a whole
+            /// range where the coordinator asked for a single one. Step version 2 of this step.
+            if (ctx.step_version >= 2)
+                writeVarUInt(query_task_size_limit, ctx.out);
         }
     }
     else if (ship_input_order_info)
@@ -8287,6 +8600,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     size_t input_order_prefix_size = 0;
     Int8 input_order_direction = 1;
     UInt64 input_order_limit = 0;
+    UInt64 input_order_task_size_limit = 0;
     bool has_input_order_info = false;
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER)
     {
@@ -8296,6 +8610,8 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
             readVarUInt(input_order_prefix_size, ctx.in);
             readIntBinary(input_order_direction, ctx.in);
             readVarUInt(input_order_limit, ctx.in);
+            if (ctx.step_version >= 2)
+                readVarUInt(input_order_task_size_limit, ctx.in);
         }
     }
     /// A version-1 bucketed step had a trailing part-name payload this reader would leave unconsumed; fail
@@ -8378,11 +8694,19 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
             /// drives the ordinary in-order path, including the per-layer merge and the reverse transform.
             /// Only a bucketed read carries the contract: findReadingStep installs the order only when the
             /// exchange pair collapses, which means the read was made distributed.
-            if (has_input_order_info
-                && !read_from_merge_tree_step->requestReadingInOrder(
-                    input_order_prefix_size, static_cast<int>(input_order_direction), input_order_limit))
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Coordinator asked for a read-in-order distributed read that this node refused");
+            if (has_input_order_info)
+            {
+                /// The soft-limit threshold is replayed through the `query_limit` argument, which is
+                /// exactly what the coordinator passed: `query_task_size_limit` is `query_limit` when it is
+                /// set and the read limit otherwise, so feeding it back here reproduces both
+                /// `query_task_size_limit` and `has_outer_limit` on the worker. A peer that predates step
+                /// version 2 sends nothing, which leaves the threshold at zero, i.e. the pre-branch sizing.
+                if (!read_from_merge_tree_step->requestReadingInOrder(
+                        input_order_prefix_size, static_cast<int>(input_order_direction), input_order_limit,
+                        input_order_task_size_limit))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Coordinator asked for a read-in-order distributed read that this node refused");
+            }
 
             /// The coordinator decides the `PrefetchingConcatProcessor` opt-outs (residual filter above the
             /// read, `LIMIT BY`, reading through a `JOIN`, aggregation-/distinct-in-order) on its own plan and
@@ -8417,10 +8741,14 @@ void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry);
 void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry)
 {
     /// Version 1 carries the `allow_query_condition_cache` flag bit (bit 64 of the flags byte).
+    /// Version 2 appends the read-in-order soft-limit threshold to the read-in-order contract of a
+    /// bucketed read.
     registry.registerStep(
         "ReadFromMergeTree",
         ReadFromMergeTree::deserialize,
-        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG}});
+        {{0, 0},
+         {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG},
+         {2, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER_SOFT_LIMIT}});
 }
 
 }
