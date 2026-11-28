@@ -769,11 +769,13 @@ bool VersionMetadata::validateAgainstPersistedMetadata(const VersionInfo & curre
             current_info.removal_tid,
             persisted_info.removal_tid);
 
-    /// In-memory creation_csn can be learned from TransactionManager after commit while
-    /// the on-disk file still carries Tx::UnknownCSN — that is a valid transient state.
-    /// Similarly, RolledBackCSN is only ever written to the in-memory state, never to disk.
+    /// Either side may lead. Memory can learn the commit CSN or RolledBack before disk records it;
+    /// `setAndStoreCreationCSN` stores before it sets, so disk can say RolledBack while memory is still Unknown,
+    /// but only once the creating transaction is itself rolled back.
     if (current_info.creation_csn != persisted_info.creation_csn && current_info.creation_csn != Tx::RolledBackCSN
-        && persisted_info.creation_csn != Tx::UnknownCSN)
+        && persisted_info.creation_csn != Tx::UnknownCSN
+        && !(persisted_info.creation_csn == Tx::RolledBackCSN && current_info.creation_csn == Tx::UnknownCSN
+             && TransactionManager::getCSN(current_info.creation_tid) == Tx::RolledBackCSN))
         throw Exception(
             ErrorCodes::CORRUPTED_DATA,
             "Invalid version metadata, creation_csn mismatched {} and {}",
