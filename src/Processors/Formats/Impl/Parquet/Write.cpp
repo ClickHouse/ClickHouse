@@ -27,6 +27,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
+#include <Common/UTF8Helpers.h>
 #include <base/unaligned.h>
 #include <bit>
 #include <cmath>
@@ -259,14 +260,21 @@ struct StatisticsStringRef
         parq::Statistics s;
         if (min.ptr == nullptr)
             return s;
-        if (static_cast<size_t>(min.len) <= options.max_statistics_size
-            && static_cast<size_t>(max.len) <= options.max_statistics_size)
+        const size_t limit = options.max_statistics_size;
+        std::string_view min_value(reinterpret_cast<const char *>(min.ptr), static_cast<size_t>(min.len));
+        std::string_view max_value(reinterpret_cast<const char *>(max.ptr), static_cast<size_t>(max.len));
+        std::optional<std::string> max_bound;
+        if (max_value.size() > limit)
         {
-            s.__set_min_value(std::string(reinterpret_cast<const char *>(min.ptr), static_cast<size_t>(min.len)));
-            s.__set_max_value(std::string(reinterpret_cast<const char *>(max.ptr), static_cast<size_t>(max.len)));
-            s.__set_is_min_value_exact(true);
-            s.__set_is_max_value_exact(true);
+            max_bound = UTF8::truncateStringUpperBound(max_value, limit);
+            /// No shorter upper bound exists (e.g. a prefix of only 0xFF bytes).
+            if (!max_bound)
+                return s;
         }
+        s.__set_min_value(std::string(UTF8::truncateStringLowerBound(min_value, limit)));
+        s.__set_max_value(max_bound ? *max_bound : std::string(max_value));
+        s.__set_is_min_value_exact(min_value.size() <= limit);
+        s.__set_is_max_value_exact(max_value.size() <= limit);
         return s;
     }
 

@@ -30,73 +30,6 @@ std::string decimalToString(Int128 value, Int32 scale)
     return Literal::Decimal{value, scale}.toString();
 }
 
-struct UTF8Character
-{
-    size_t start;
-    UInt32 code_point;
-};
-
-/// The last character of the string, if it is a valid UTF-8 sequence.
-std::optional<UTF8Character> lastUTF8Character(const std::string & s)
-{
-    const auto * begin = reinterpret_cast<const UInt8 *>(s.data());
-    const UInt8 * last = begin + s.size() - 1;
-    UTF8::syncBackward(last, begin);
-    const size_t start = last - begin;
-    const size_t length = s.size() - start;
-    if (UTF8::seqLength(*last) != length)
-        return std::nullopt;
-    /// Rejects the overlong encodings, which do not keep the order of the code points.
-    auto code_point = UTF8::convertUTF8ToCodePoint(s.data() + start, length);
-    if (!code_point)
-        return std::nullopt;
-    return UTF8Character{start, *code_point};
-}
-
-}
-
-std::string_view truncateStringLowerBound(std::string_view value)
-{
-    if (value.size() <= MAX_STRING_STATISTICS_SIZE)
-        return value;
-    size_t length = MAX_STRING_STATISTICS_SIZE;
-    /// The first byte after the prefix must not continue a character, which takes at most 4 bytes.
-    for (size_t i = 0; i < 3 && length > 0 && UTF8::isContinuationOctet(static_cast<UInt8>(value[length])); ++i)
-        --length;
-    return value.substr(0, length);
-}
-
-std::optional<std::string> truncateStringUpperBound(std::string_view value)
-{
-    std::string result(truncateStringLowerBound(value));
-    /// Any string greater than the prefix and not starting with it is greater than all strings that start with it.
-    while (!result.empty())
-    {
-        if (auto last = lastUTF8Character(result))
-        {
-            /// Increment the last character, which keeps valid UTF-8 valid for the readers that decode the bounds.
-            result.resize(last->start);
-            /// The largest code point cannot be incremented. U+FFFF is incremented to U+10000, which the readers
-            /// comparing UTF-16 (Java) order before it. Increment the previous character instead.
-            if (last->code_point >= 0x10FFFF || last->code_point == 0xFFFF)
-                continue;
-            UInt32 next = last->code_point + 1;
-            if (UTF8::isSurrogateCodePoint(next))
-                next = 0xE000;
-            char encoded[4];
-            const size_t encoded_size = UTF8::convertCodePointToUTF8(static_cast<int>(next), encoded, sizeof(encoded));
-            result.append(encoded, encoded_size);
-            return result;
-        }
-        /// Not valid UTF-8: increment the last byte.
-        if (static_cast<UInt8>(result.back()) != 0xFF)
-        {
-            result.back() = static_cast<char>(static_cast<UInt8>(result.back()) + 1);
-            return result;
-        }
-        result.pop_back();
-    }
-    return std::nullopt;
 }
 
 void StatisticsBuilder::updateInteger(Int64 value)
@@ -133,7 +66,7 @@ void StatisticsBuilder::updateDouble(double value)
 void StatisticsBuilder::setStringMinimum(std::string_view value)
 {
     string_minimum_is_bound = value.size() > MAX_STRING_STATISTICS_SIZE;
-    string_minimum = truncateStringLowerBound(value);
+    string_minimum = UTF8::truncateStringLowerBound(value, MAX_STRING_STATISTICS_SIZE);
 }
 
 void StatisticsBuilder::setStringMaximum(std::string_view value)
@@ -144,7 +77,7 @@ void StatisticsBuilder::setStringMaximum(std::string_view value)
         string_maximum = value;
         return;
     }
-    auto upper_bound = truncateStringUpperBound(value);
+    auto upper_bound = UTF8::truncateStringUpperBound(value, MAX_STRING_STATISTICS_SIZE);
     if (upper_bound)
         string_maximum = std::move(*upper_bound);
     else
