@@ -186,8 +186,9 @@ private:
 };
 
 /// The head of every chunk: the next chunk of the partition, the block it was carved from (null for a chunk
-/// allocated on its own), and how many of its bytes hold records. The records follow it.
-struct PartitionedRecordBuffer::ChunkHeader
+/// allocated on its own), and how many of its bytes hold records. The records follow it, from an offset aligned to 32
+/// bytes, so records of 16 bytes or a divisor of it never straddle two cache lines.
+struct alignas(32) PartitionedRecordBuffer::ChunkHeader
 {
     ChunkHeader * next;
     Block * block;
