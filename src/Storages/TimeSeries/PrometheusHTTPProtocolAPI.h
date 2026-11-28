@@ -116,16 +116,19 @@ private:
         QueryFinishCallback query_finish_callback);
 
     /// Writes the result of a prometheus query as a JSON.
-    void writeQueryResponse(WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type);
+    /// `series_share_timestamps`: the series of a range vector are evaluated at the same steps (the result of a range query).
+    void writeQueryResponse(
+        WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type, bool series_share_timestamps);
 
     /// Helper methods.
     void writeQueryResponseHeader(WriteBuffer & response, PrometheusQueryResultType result_type);
     void writeQueryResponseFooter(WriteBuffer & response);
-    void writeQueryResponseBlock(WriteBuffer & response, PrometheusQueryResultType result_type, const Block & result_block, bool first);
+    void writeQueryResponseBlock(
+        WriteBuffer & response, PrometheusQueryResultType result_type, const Block & result_block, bool first, bool series_share_timestamps);
     void writeQueryResponseScalarBlock(WriteBuffer & response, const Block & result_block, bool first);
     void writeQueryResponseStringBlock(WriteBuffer & response, const Block & result_block, bool first);
     void writeQueryResponseInstantVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
-    void writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
+    void writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first, bool series_share_timestamps);
     void writeTags(WriteBuffer & response, const Block & result_block, size_t row_index);
     void writeTimestamp(WriteBuffer & response, DateTime64 value, UInt32 scale);
     void writeScalar(WriteBuffer & response, Float64 value);
