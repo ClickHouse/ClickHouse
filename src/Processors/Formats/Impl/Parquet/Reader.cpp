@@ -2099,7 +2099,7 @@ void Reader::initializePrefetches()
                 else
                     column.offset_index_prefetch = prefetcher.registerRange(
                         size_t(column.meta->offset_index_offset),
-                        size_t(column.meta->offset_index_length), /*likely_to_be_used*/ true);
+                        size_t(column.meta->offset_index_length), /*likely_to_be_used*/ true, /*is_page_index=*/ true);
             }
 
             /// Locate the pages holding `rows_to_read` from page headers: cheap in a local file, nothing to skip in one data page.
@@ -2132,7 +2132,7 @@ void Reader::initializePrefetches()
                         column_indexes_to_keep_bytes += column_index_bytes;
                     column.column_index_prefetch = prefetcher.registerRange(
                         size_t(column.meta->column_index_offset),
-                        size_t(column.meta->column_index_length), /*likely_to_be_used=*/ true);
+                        size_t(column.meta->column_index_length), /*likely_to_be_used=*/ true, /*is_page_index=*/ true);
                 }
             }
 

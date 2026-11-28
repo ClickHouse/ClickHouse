@@ -49,7 +49,7 @@ public:
     /// (We use overlap to simplify bloom filter header reading a little.)
     /// If likely_to_be_used is true, Prefetcher will be more eager to piggy-back this range when
     /// reading other ranges.
-    PrefetchHandle registerRange(size_t offset, size_t length, bool likely_to_be_used);
+    PrefetchHandle registerRange(size_t offset, size_t length, bool likely_to_be_used, bool is_page_index = false);
 
     /// Called at most once, after all registerRange calls and before all enqueue/getRangeData calls.
     void finalizeRanges();
@@ -63,7 +63,8 @@ public:
     /// prefetching is enabled, and handle is valid).
     /// Adds the range's memory usage to MemoryUsageDiff. Remembers memory_usage->stage so that
     /// PrefetchHandle::reset can later subtract from MemoryUsageDiff correctly.
-    void startPrefetch(const VectorWithMemoryTracking<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff);
+    /// If `page_indexes_only`, the read tasks cover only ranges registered with `is_page_index`, so no column data is read with them.
+    void startPrefetch(const VectorWithMemoryTracking<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff, bool page_indexes_only = false);
 
     /// Like startPrefetch, but a read task covers only these requests and the gaps between them, so what is
     /// charged is what it allocates. Starts nothing and returns nullopt if that could exceed `max_memory`.
@@ -71,6 +72,10 @@ public:
     std::optional<size_t> startPrefetchWithinLimit(
         const VectorWithMemoryTracking<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff, size_t max_memory,
         VectorWithMemoryTracking<size_t> * created_task_first_handle = nullptr);
+
+    /// Whether a range that may be read incidentally and has no read task yet lies outside `own_ranges`, less than
+    /// `min_bytes_for_seek` from one of them, so that startPrefetch would read it together with them.
+    bool hasIncidentalRangesNear(const VectorWithMemoryTracking<std::pair<size_t, size_t>> & own_ranges);
 
     /// Consecutive (in sorted order) ranges registered before finalizeRanges(), with gaps below min_bytes_for_seek between them (as in a read task).
     struct AdjacentRanges
@@ -132,6 +137,9 @@ private:
 
         /// Whether this range can be piggy-backed to nearby other reads.
         std::atomic<bool> allow_incidental_read {true};
+
+        /// Whether the range is an offset index or a column index. Immutable after finalizeRanges().
+        bool is_page_index = false;
 
         /// Whether the data of this range was handed out by getRangeData. To count used bytes once (introspection only).
         std::atomic<bool> data_used {false};
@@ -249,9 +257,9 @@ private:
     ///
     /// If splitting, the request is being cancelled and replaced by a smaller range
     /// (splitAndPrefetchRange), and only subrange [subrange_start, subrange_end) needs to be read.
-    void pickRangesAndCreateTaskIfNotExists(RequestState *, const PrefetchHandle &, bool splitting, size_t start_offset, size_t end_offset, std::unique_lock<std::mutex> lock);
+    void pickRangesAndCreateTaskIfNotExists(RequestState *, const PrefetchHandle &, bool splitting, size_t start_offset, size_t end_offset, bool page_indexes_only, std::unique_lock<std::mutex> lock);
     /// Returns nullptr if the request already has a task. If set, only requests in `coalesce_only` are coalesced into it.
-    Task * pickRangesAndCreateTaskLocked(RequestState * initial_req, bool splitting, size_t start_offset, size_t end_offset, const UnorderedSetWithMemoryTracking<const RequestState *> * coalesce_only);
+    Task * pickRangesAndCreateTaskLocked(RequestState * initial_req, bool splitting, size_t start_offset, size_t end_offset, const UnorderedSetWithMemoryTracking<const RequestState *> * coalesce_only, bool page_indexes_only = false);
     struct PickedRanges
     {
         size_t start_idx;
@@ -261,9 +269,9 @@ private:
         size_t total_length_of_covered_ranges;
     };
     /// The ranges a task for `initial_req` covers. A neighbour may be covered if it is in `coalesce_set`, or if `allow_incidental` and
-    /// its `allow_incidental_read` is set.
+    /// its `allow_incidental_read` is set (if `page_indexes_only`, its `is_page_index` instead).
     PickedRanges pickRangesLocked(const RequestState * initial_req, bool splitting, size_t start_offset, size_t end_offset,
-        const UnorderedSetWithMemoryTracking<const RequestState *> * coalesce_set, bool allow_incidental) const;
+        const UnorderedSetWithMemoryTracking<const RequestState *> * coalesce_set, bool allow_incidental, bool page_indexes_only) const;
     static void decreaseTaskRefcount(Task * task, size_t amount);
     void scheduleTask(Task * task);
     Task::State runTask(Task * task);
