@@ -55,13 +55,17 @@ public:
     void finishQuery(double elapsed_seconds, bool cancelled);
 
     /// The sequence number of the latest entry ever opened, 0 when there was none. The numbers are
-    /// not reused after `dropFinishedEntries`, so an entry opened later is always newer.
+    /// not reused after `dropEntriesOfPreviousSession`, so an entry opened later is always newer.
     [[nodiscard]] UInt64 latestSeqno() const;
 
-    /// Forget the finished entries, keeping the open one (the query that is running). Called when
-    /// the client connects to the server again: the queries of the previous session, possibly on
-    /// another server, are not the context of the new one.
-    void dropFinishedEntries();
+    /// Forget the entries of the previous session. Called when the client connects to the server
+    /// again: the queries of the previous session, possibly on another server, are not the context
+    /// of the new one. With `keep_open_entry` the open entry stays - the caller passes it when the
+    /// query of that entry is being processed right now, so it is the connection of this very
+    /// query that was established again, and the query runs on the new session. Otherwise the
+    /// open entry is a leftover of a failed query of the previous session, and it is dropped
+    /// like the finished ones.
+    void dropEntriesOfPreviousSession(bool keep_open_entry);
 
     [[nodiscard]] bool empty() const { return entries.empty(); }
 

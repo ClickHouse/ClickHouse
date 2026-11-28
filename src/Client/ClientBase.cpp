@@ -3432,6 +3432,12 @@ void ClientBase::processParsedSingleQuery(
     /// Record the query into the context buffer of the AI agent.
     if (is_interactive && ai_query_context)
         ai_query_context->startQuery(queryTextForAIContext(query_, parsed_query), ai_running_query);
+    /// For the time of this query its entry is the one a re-established connection runs - see
+    /// `resetServerSessionCaches`. An exception leaves the entry open (the error is attached to it
+    /// later), but it is not a running query anymore.
+    const bool ai_query_context_entry_was_running = ai_query_context_entry_is_running;
+    ai_query_context_entry_is_running = is_interactive && ai_query_context;
+    SCOPE_EXIT({ ai_query_context_entry_is_running = ai_query_context_entry_was_running; });
 #endif
 
     /// Generate a fresh query_id for each query, unless the user fixed it with `--query_id`.
@@ -6368,9 +6374,11 @@ void ClientBase::resetServerSessionCaches()
 #if USE_CLIENT_AI
     ai_query_log_marker_writable.reset();
     /// Neither the conversation nor the recent queries of the previous session may reach the model
-    /// as the context of this one.
+    /// as the context of this one. The only entry that stays is the one of the query being
+    /// processed right now: the connection was established again to send it, so it runs on the
+    /// new session. An entry that a failed query of the previous session left open is not that.
     if (ai_query_context)
-        ai_query_context->dropFinishedEntries();
+        ai_query_context->dropEntriesOfPreviousSession(/*keep_open_entry=*/ ai_query_context_entry_is_running);
     if (ai_agent)
         ai_agent_reset_pending = true;
 #endif

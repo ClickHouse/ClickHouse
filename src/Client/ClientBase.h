@@ -820,6 +820,10 @@ protected:
     /// the next `?` turn rather than in `connect`, which can run in the middle of a turn, from a
     /// query the agent itself runs.
     bool ai_agent_reset_pending = false;
+    /// Set while a query that has an entry in `ai_query_context` is being processed. When the
+    /// connection is established again during that time, it is for this query, which then runs on
+    /// the new session, so its entry stays; an entry left open by a failed query does not.
+    bool ai_query_context_entry_is_running = false;
     /// The AI provider name (e.g., "openai", "anthropic")
     std::string ai_provider_name;
     /// The environment variable of another provider whose API key is also set but not used

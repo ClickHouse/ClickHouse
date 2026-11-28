@@ -309,9 +309,9 @@ UInt64 QueryContextBuffer::latestSeqno() const
     return next_seqno - 1;
 }
 
-void QueryContextBuffer::dropFinishedEntries()
+void QueryContextBuffer::dropEntriesOfPreviousSession(bool keep_open_entry)
 {
-    std::erase_if(entries, [](const Entry & entry) { return entry.finished; });
+    std::erase_if(entries, [&](const Entry & entry) { return entry.finished || !keep_open_entry; });
 }
 
 String QueryContextBuffer::format(UInt64 since_seqno, bool skip_ai_initiated) const

@@ -151,7 +151,7 @@ TEST(QueryContextBuffer, SeqnoFilteringAndAISkipping)
     EXPECT_NE(text.find("SELECT 3"), String::npos);
 }
 
-TEST(QueryContextBuffer, DropFinishedEntriesKeepsTheRunningQuery)
+TEST(QueryContextBuffer, DropEntriesOfPreviousSessionKeepsTheRunningQuery)
 {
     /// On a reconnect the queries of the previous session are forgotten, but the query that is
     /// running - the one that reconnected - stays, and a newer entry is still told from the old ones.
@@ -161,7 +161,7 @@ TEST(QueryContextBuffer, DropFinishedEntriesKeepsTheRunningQuery)
     const UInt64 seen = buffer.latestSeqno();
     buffer.startQuery("SELECT running", false);
 
-    buffer.dropFinishedEntries();
+    buffer.dropEntriesOfPreviousSession(/*keep_open_entry=*/ true);
     buffer.addBlock(makeBlock(0, 1));
     buffer.finishQuery(0.1, false);
 
@@ -170,9 +170,33 @@ TEST(QueryContextBuffer, DropFinishedEntriesKeepsTheRunningQuery)
     EXPECT_NE(text.find("SELECT running"), String::npos);
     EXPECT_GT(buffer.latestSeqno(), seen);
 
-    buffer.dropFinishedEntries();
+    buffer.dropEntriesOfPreviousSession(/*keep_open_entry=*/ true);
     EXPECT_TRUE(buffer.empty());
     EXPECT_GT(buffer.latestSeqno(), seen);
+}
+
+TEST(QueryContextBuffer, DropEntriesOfPreviousSessionDropsAnEntryLeftOpen)
+{
+    /// A query that failed with an exception of the client (a lost connection) leaves its entry
+    /// open, with the error attached. When the client connects again later, no query is running:
+    /// the entry belongs to the previous session and must not reach the model, even though it
+    /// was never closed.
+    QueryContextBuffer buffer;
+    buffer.startQuery("SELECT failed", false);
+    buffer.addBlock(makeBlock(0, 1));
+    buffer.recordError("SELECT failed", "Connection reset by peer", false);
+    const UInt64 seen = buffer.latestSeqno();
+
+    buffer.dropEntriesOfPreviousSession(/*keep_open_entry=*/ false);
+    EXPECT_TRUE(buffer.empty());
+    EXPECT_TRUE(buffer.format(0, false).empty());
+
+    /// Nothing is left to be closed or to take the error of the next query.
+    buffer.finishQuery(0.1, false);
+    EXPECT_TRUE(buffer.empty());
+    buffer.startQuery("SELECT next", false);
+    EXPECT_GT(buffer.latestSeqno(), seen);
+    EXPECT_EQ(buffer.format(0, false).find("SELECT failed"), String::npos);
 }
 
 TEST(QueryContextBuffer, EntryCountIsBounded)
