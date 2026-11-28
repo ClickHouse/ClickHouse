@@ -88,3 +88,13 @@ Compact
 Wide
 1	[0,0]	[3,4]	[1,1]	1
 1	[0,0]	[3,4]	[1,1]	1
+-- 13. a bucketed Map MATERIALIZED column with the prefix of the nested table
+Compact
+Wide
+1	[0,0]	[3,4]	{'x':2}	[1,1]	1	1
+1	[0,0]	[3,4]	{'x':2}	[1,1]	1	1
+-- 14. a column TTL of a bucketed Map column with the prefix of the nested table
+Compact
+Wide
+1	[0,0]	[3,4]	[1,1]	1
+1	[0,0]	[3,4]	[1,1]	1

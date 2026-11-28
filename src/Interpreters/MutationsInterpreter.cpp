@@ -1823,13 +1823,14 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (table == name)
             return {};
 
-        /// Only Array and Map columns share the offsets of their nested table.
+        /// Only Array columns share the offsets of their nested table: a `Map` there is either rejected by
+        /// `checkColumnFilenamesForCollision` or bucketed, with streams of its own.
         auto shares_offsets_of_table = [&](const String & column)
         {
             if (Nested::extractTableName(column) != table)
                 return false;
             auto column_in_metadata = metadata_snapshot->getColumns().tryGetPhysical(column);
-            return !column_in_metadata || isArray(column_in_metadata->type) || isMap(column_in_metadata->type);
+            return !column_in_metadata || isArray(column_in_metadata->type);
         };
 
         /// `TTLTransform` runs after every stage and may rewrite members through a GROUP BY TTL or a column TTL of a member.

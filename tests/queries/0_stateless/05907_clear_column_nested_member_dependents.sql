@@ -29,6 +29,10 @@ DROP TABLE IF EXISTS t11_compact;
 DROP TABLE IF EXISTS t11_wide;
 DROP TABLE IF EXISTS t12_compact;
 DROP TABLE IF EXISTS t12_wide;
+DROP TABLE IF EXISTS t13_compact;
+DROP TABLE IF EXISTS t13_wide;
+DROP TABLE IF EXISTS t14_compact;
+DROP TABLE IF EXISTS t14_wide;
 
 SELECT '-- 1. MATERIALIZED column over the cleared member';
 
@@ -317,6 +321,44 @@ ALTER TABLE t12_wide CLEAR COLUMN n.a;
 SELECT k, n.a, n.b, m, m = arrayMap(x -> x + 1, n.a) FROM t12_compact;
 SELECT k, n.a, n.b, m, m = arrayMap(x -> x + 1, n.a) FROM t12_wide;
 
+SELECT '-- 13. a bucketed Map MATERIALIZED column with the prefix of the nested table';
+
+CREATE TABLE t13_compact (k UInt32, n Nested(a UInt32, b UInt32), `n.c` Map(String, UInt64) MATERIALIZED map('x', length(n.a)), m Array(UInt32) MATERIALIZED arrayMap(x -> x + 1, n.a))
+ENGINE = MergeTree ORDER BY k
+SETTINGS share_nested_offsets = 1, serialization_info_version = 'with_types', map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets', min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
+CREATE TABLE t13_wide (k UInt32, n Nested(a UInt32, b UInt32), `n.c` Map(String, UInt64) MATERIALIZED map('x', length(n.a)), m Array(UInt32) MATERIALIZED arrayMap(x -> x + 1, n.a))
+ENGINE = MergeTree ORDER BY k
+SETTINGS share_nested_offsets = 1, serialization_info_version = 'with_types', map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t13_compact (k, n.a, n.b) VALUES (1, [1, 2], [3, 4]);
+INSERT INTO t13_wide (k, n.a, n.b) VALUES (1, [1, 2], [3, 4]);
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't13_compact' AND active;
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't13_wide' AND active;
+
+ALTER TABLE t13_compact CLEAR COLUMN n.a;
+ALTER TABLE t13_wide CLEAR COLUMN n.a;
+SELECT k, n.a, n.b, `n.c`, m, `n.c`['x'] = length(n.a), m = arrayMap(x -> x + 1, n.a) FROM t13_compact;
+SELECT k, n.a, n.b, `n.c`, m, `n.c`['x'] = length(n.a), m = arrayMap(x -> x + 1, n.a) FROM t13_wide;
+
+SELECT '-- 14. a column TTL of a bucketed Map column with the prefix of the nested table';
+
+CREATE TABLE t14_compact (k UInt32, n Nested(a UInt32, b UInt32), `n.e` Map(String, UInt64) TTL toDateTime('2100-01-01 00:00:00', 'UTC') + length(n.a), m Array(UInt32) MATERIALIZED arrayMap(x -> x + 1, n.a))
+ENGINE = MergeTree ORDER BY k
+SETTINGS share_nested_offsets = 1, serialization_info_version = 'with_types', map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets', min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
+CREATE TABLE t14_wide (k UInt32, n Nested(a UInt32, b UInt32), `n.e` Map(String, UInt64) TTL toDateTime('2100-01-01 00:00:00', 'UTC') + length(n.a), m Array(UInt32) MATERIALIZED arrayMap(x -> x + 1, n.a))
+ENGINE = MergeTree ORDER BY k
+SETTINGS share_nested_offsets = 1, serialization_info_version = 'with_types', map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t14_compact (k, n.a, n.b) VALUES (1, [1, 2], [3, 4]);
+INSERT INTO t14_wide (k, n.a, n.b) VALUES (1, [1, 2], [3, 4]);
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't14_compact' AND active;
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't14_wide' AND active;
+
+ALTER TABLE t14_compact CLEAR COLUMN n.a;
+ALTER TABLE t14_wide CLEAR COLUMN n.a;
+SELECT k, n.a, n.b, m, m = arrayMap(x -> x + 1, n.a) FROM t14_compact;
+SELECT k, n.a, n.b, m, m = arrayMap(x -> x + 1, n.a) FROM t14_wide;
+
 DROP TABLE t1_compact;
 DROP TABLE t1_wide;
 DROP TABLE t2_compact;
@@ -343,3 +385,7 @@ DROP TABLE t11_compact;
 DROP TABLE t11_wide;
 DROP TABLE t12_compact;
 DROP TABLE t12_wide;
+DROP TABLE t13_compact;
+DROP TABLE t13_wide;
+DROP TABLE t14_compact;
+DROP TABLE t14_wide;
