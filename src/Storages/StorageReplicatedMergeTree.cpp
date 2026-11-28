@@ -9161,6 +9161,18 @@ void StorageReplicatedMergeTree::forgetPartition(const ASTPtr & partition, Conte
     zkutil::ZooKeeperPtr zookeeper = getZooKeeperAndAssertNotReadonly();
 
     String partition_id = getPartitionIDFromQuery(partition, query_context);
+
+    /// Patch parts of the partition would be applied to new parts, whose block numbers restart from 0.
+    /// A patch part may be present only on another replica, so the parts of all replicas are checked.
+    for (const auto & patch_part : getPatchParts(getPartsOfAllReplicas(zookeeper, zookeeper_path, format_version)))
+    {
+        if (isPatchForPartition(MergeTreePartInfo::fromPartName(patch_part, format_version), partition_id))
+            throw Exception(ErrorCodes::CANNOT_FORGET_PARTITION,
+                "Partition {} is not empty: it has patch part {}, which is removed in background "
+                "when the MergeTree setting `remove_unused_patch_parts` is enabled",
+                partition_id, patch_part);
+    }
+
     String block_numbers_path = fs::path(zookeeper_path) / "block_numbers";
     String partition_path = fs::path(block_numbers_path) / partition_id;
 
