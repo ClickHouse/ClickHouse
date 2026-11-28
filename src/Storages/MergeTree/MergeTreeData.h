@@ -1856,6 +1856,9 @@ protected:
     /// under lockForShare if rename is possible.
     String relative_data_path;
 
+    /// Parts the replication queue says the table has or will have; `clearUnusedPatchParts` keeps the patches they need.
+    virtual std::vector<MergeTreePartInfo> getQueuedPartInfos() const { return {}; }
+
 private:
     /// Columns and secondary indices sizes can be calculated lazily.
     mutable std::mutex columns_and_secondary_indices_sizes_mutex;
