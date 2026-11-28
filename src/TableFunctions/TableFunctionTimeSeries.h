@@ -43,6 +43,7 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     const char * getStorageEngineName() const override;
 
+    void checkTimeSeriesAccess(const ContextPtr & context, bool is_insert_query) const;
     StoragePtr getTargetTable(const ContextPtr & context) const;
 
     StorageID time_series_storage_id = StorageID::createEmpty();
