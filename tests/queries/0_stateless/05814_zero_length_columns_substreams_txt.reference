@@ -1,0 +1,10 @@
+before columns_substreams.txt	500	125250
+after columns_substreams.txt, load 1	500	125250
+detached parts	0
+after columns_substreams.txt, load 2	500	125250
+detached parts	0
+before columns.txt columns_substreams.txt	500	125250
+after columns.txt columns_substreams.txt, load 1	0	0
+detached parts	1
+after columns.txt columns_substreams.txt, load 2	0	0
+detached parts	1
