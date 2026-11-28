@@ -130,6 +130,8 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
     /// Reserve the whole block: `MergeSortingTransform::remerge` keeps merged blocks and judges itself by their allocated bytes.
     /// Reserve at most one output block because reserved capacity counts toward tracked memory.
     size_t size_to_reserve = std::min(total_input_rows, max_merged_block_size);
+    if (limit)
+        size_to_reserve = std::min<size_t>(size_to_reserve, limit - total_merged_rows);
     for (auto & column : merged_columns)
         column->reserve(size_to_reserve);
 
