@@ -27,6 +27,8 @@ class AccessControl;
 /// Implementation of IAccessStorage which allows attaching users from a remote LDAP server.
 /// Currently, any user name will be treated as a name of an existing remote user,
 /// a user info entity will be created, with LDAP authentication type.
+/// Names listed in `exclude_users` are the exception: this storage reports them as not found
+/// without contacting the LDAP server, so that the storages that follow can serve them.
 class LDAPAccessStorage : public IAccessStorage
 {
 public:
@@ -45,6 +47,7 @@ public:
 
 private: // IAccessStorage implementations.
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
+    std::optional<UUID> findImpl(AccessEntityType type, const String & name, bool force_external_lookup) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
     std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const override;
@@ -65,6 +68,7 @@ private: // IAccessStorage implementations.
     String ldap_server_name;
     LDAPClient::RoleSearchParamsList role_search_params;
     std::set<String> common_role_names;                         // role name that should be granted to all users at all times
+    std::set<String> excluded_user_names;                       // user names this storage never serves (`exclude_users`)
     mutable std::map<String, LDAPClient::SearchResultsList> users_external_roles; // user name -> LDAPClient::SearchResultsList (most recently retrieved and processed)
     mutable std::map<String, std::set<String>> users_per_roles; // role name -> user names (...it should be granted to; may but don't have to exist for common roles)
     mutable std::map<String, std::set<String>> roles_per_users; // user name -> role names (...that should be granted to it; may but don't have to include common roles)
