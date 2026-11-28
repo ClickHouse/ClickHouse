@@ -192,7 +192,7 @@ def started_cluster():
                 "configs/text_log.xml",
                 "configs/display_secrets.xml",
             ],
-            user_configs=[],
+            user_configs=["configs/allow_alias_table_engine.xml"],
             stay_alive=True,
             with_iceberg_catalog=True,
         )

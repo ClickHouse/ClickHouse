@@ -27,7 +27,9 @@ SELECT sum(value) FROM system.events WHERE event LIKE 'S3%Request%';
 "
 
 # The same holds for a table that reads a data lake table through another engine.
-$CLICKHOUSE_LOCAL --multiquery "
+# `allow_alias_table_engine` cannot be enabled by `SET`, so pass it on the command line: in clickhouse-local
+# the command line plays the role of the server configuration.
+$CLICKHOUSE_LOCAL --allow_alias_table_engine=1 --multiquery "
 CREATE DATABASE d ENGINE = Memory;
 ATTACH TABLE d.t (x UInt64) ENGINE = IcebergS3('${GONE_S3}_wrapped/', 'clickhouse', 'clickhouse');
 CREATE TABLE d.a ENGINE = Alias('d', 't');

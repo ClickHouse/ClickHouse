@@ -50,6 +50,12 @@ def test_restore_alias_table_created_by_older_version(start_cluster):
     node.query(f"BACKUP TABLE db.a TO {old_backup}")
     assert "RESTORED" in restore_over_recreated_alias("a", old_backup)
 
+    # The latest version requires `allow_alias_table_engine` to create `Alias` tables; 26.9 does not know
+    # the setting and would refuse to start with it in a profile, so add it only before the upgrade.
+    node.replace_config(
+        "/etc/clickhouse-server/users.d/allow_alias_table_engine.xml",
+        "<clickhouse><profiles><default><allow_alias_table_engine>1</allow_alias_table_engine></default></profiles></clickhouse>",
+    )
     node.restart_with_latest_version()
 
     # The backup carries the columns, the alias it is restored over doesn't.

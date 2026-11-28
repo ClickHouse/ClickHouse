@@ -1,0 +1,14 @@
+-- the setting from the configuration allows creating an alias
+2
+-- a session that disabled the setting cannot create an alias and cannot re-enable the setting
+SUPPORT_IS_DISABLED
+QUERY_IS_PROHIBITED
+-- an existing alias keeps working without the setting
+2
+3
+-- a user without the setting cannot create an alias nor enable the setting
+SUPPORT_IS_DISABLED
+QUERY_IS_PROHIBITED
+QUERY_IS_PROHIBITED
+-- an administrator grants the setting to the user, who can then create an alias
+2
