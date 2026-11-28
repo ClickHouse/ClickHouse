@@ -2128,10 +2128,19 @@ void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, 
                 accountStringValueFilterRows(n, values_replaced, bytes_skipped);
                 break;
             }
-            size_t total_bytes = 0;
+            /// `n` is not bounded by a page. When a PLAIN page follows dictionary pages, `Reader::readRowsInPage`
+            /// gathers all indexes of the row subgroup at once, so the total size can wrap, and `appendStrings`
+            /// would then write past the allocated chars.
+            const size_t old_bytes = c.getChars().size();
+            size_t new_bytes = old_bytes;
             for (size_t i = 0; i < n; ++i)
-                total_bytes += offsets[indexes[i]] - offsets[ssize_t(indexes[i]) - 1] - 4;
-            appendStrings(c, n, total_bytes, data.data() + data.size(), [&](size_t i)
+            {
+                UInt32 idx = indexes[i];
+                size_t len = offsets[idx] - offsets[ssize_t(idx) - 1] - 4;
+                if (common::addOverflow(new_bytes, len, new_bytes))
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Overflow in total size of dictionary-encoded strings");
+            }
+            appendStrings(c, n, new_bytes - old_bytes, data.data() + data.size(), [&](size_t i)
             {
                 UInt32 idx = indexes[i];
                 size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
@@ -2196,8 +2205,23 @@ void Dictionary::appendRepeated(size_t idx, size_t n, IColumn & out)
                 accountStringValueFilterRows(n, 0, 0);
             }
             c.reserve(c.size() + n);
+            if (len == 0)
+            {
+                c.insertManyDefaults(n);
+                break;
+            }
+            auto & col_offsets = c.getOffsets();
+            auto & chars = c.getChars();
+            const size_t old_rows = col_offsets.size();
+            const size_t old_size = chars.size();
+            /// Offsets are reserved above, so a failed chars allocation leaves the column unchanged.
+            chars.resize(old_size + len * n);
+            const char * src = data.data() + start;
             for (size_t i = 0; i < n; ++i)
-                c.insertData(data.data() + start, len);
+                memcpy(chars.data() + old_size + i * len, src, len);
+            col_offsets.resize_assume_reserved(old_rows + n);
+            for (size_t i = 0; i < n; ++i)
+                col_offsets[old_rows + i] = old_size + (i + 1) * len;
             break;
         }
         case Mode::Column:
