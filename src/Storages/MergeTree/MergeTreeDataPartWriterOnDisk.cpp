@@ -188,6 +188,10 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     const bool is_compact_part = index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Compact;
     const StreamBaseManifestPtr manifest = is_compact_part ? nullptr : settings.stream_base_manifest;
 
+    WriteSettings index_write_settings = settings.query_write_settings;
+    index_write_settings.use_adaptive_write_buffer = settings.use_adaptive_write_buffer_for_skip_indexes;
+    index_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
+
     for (const auto & skip_index : skip_indices)
     {
         auto index_name = skip_index->getFileName();
@@ -249,7 +253,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 settings.max_compress_block_size,
                 marks_compression_codec,
                 settings.marks_compress_block_size,
-                settings.query_write_settings,
+                index_write_settings,
                 packing);
 
             /// An encrypting part codec is applied to every block, so the index data is not written in plain text.

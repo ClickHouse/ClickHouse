@@ -755,6 +755,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          {},
          false)},
     {"use_adaptive_write_buffer_for_dynamic_subcolumns", trueOrFalseSetting},
+    {"use_adaptive_write_buffer_for_skip_indexes", trueOrFalseSetting},
     {"use_compact_variant_discriminators_serialization", trueOrFalseSetting},
     {"use_const_adaptive_granularity", trueOrFalseSetting},
     {"use_object_shared_data_serialization_version_for_small_parts_on_insert", trueOrFalseSetting},

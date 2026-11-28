@@ -217,6 +217,7 @@ struct MergeTreeWriterSettings
     /// Null means no coordination is requested.
     StreamBaseManifestPtr stream_base_manifest;
     bool use_adaptive_write_buffer_for_dynamic_subcolumns{};
+    bool use_adaptive_write_buffer_for_skip_indexes{};
     size_t min_columns_to_activate_adaptive_write_buffer{};
     size_t adaptive_write_buffer_initial_size{};
     float max_memory_ratio_to_activate_adaptive_write_buffer{};
