@@ -755,7 +755,8 @@ ExpireSnapshotsResult expireSnapshots(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots is supported only for the second version of iceberg format");
         persistent_table_components.schema_processor->registerMetadata(metadata);
 
-        if (!metadata->has(Iceberg::f_current_snapshot_id))
+        /// `has` is true for a JSON null, and `getValue<Int64>` throws on one; null means "no current snapshot".
+        if (!metadata->has(Iceberg::f_current_snapshot_id) || metadata->isNull(Iceberg::f_current_snapshot_id))
         {
             LOG_INFO(log, "No snapshots to expire (table has no current snapshot)");
             return {.dry_run = options.dry_run};
