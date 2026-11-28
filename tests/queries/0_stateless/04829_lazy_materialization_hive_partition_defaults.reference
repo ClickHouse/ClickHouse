@@ -7,8 +7,10 @@
 1
 -- the defaulted column and the inputs of its expression are deferred; the hive column is not
 Lazily read columns: a, b, s
--- a default over a hive partition column cannot be evaluated on any plan (pre-existing)
-UNKNOWN_IDENTIFIER
+-- a default over a hive partition column is evaluated
+1	0	one_0
+3	2	one_1
+5	4	one_2
 -- query_plan_optimize_lazy_materialization_for_object_storage = 0
 -- a defaulted column with file-only inputs is deferred on a hive-partitioned table
 28	27	two_9	2
@@ -17,5 +19,7 @@ UNKNOWN_IDENTIFIER
 -- the lazy read step is applied
 0
 -- the defaulted column and the inputs of its expression are deferred; the hive column is not
--- a default over a hive partition column cannot be evaluated on any plan (pre-existing)
-UNKNOWN_IDENTIFIER
+-- a default over a hive partition column is evaluated
+1	0	one_0
+3	2	one_1
+5	4	one_2

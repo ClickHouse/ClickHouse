@@ -141,25 +141,29 @@ static MutableColumnPtr mixColumns(
     return column_mixed;
 }
 
-/// The column that `name` is or is a subcolumn of.
-static String getColumnOfSubcolumn(const ColumnsDescription & columns, const String & name)
+/// The column of `columns` or `available_columns` that `name` is or is a subcolumn of, exact names first.
+static String getColumnOfSubcolumn(const ColumnsDescription & columns, const Block & available_columns, const String & name)
 {
-    if (columns.has(name))
+    if (columns.has(name) || available_columns.has(name))
         return name;
 
     for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
     {
-        const auto * column = columns.tryGet(String(column_name));
-        if (column && column->type->tryGetSubcolumnType(subcolumn_name))
-            return column->name;
+        DataTypePtr type;
+        if (const auto * column = columns.tryGet(String(column_name)))
+            type = column->type;
+        else if (const auto * available = available_columns.findByName(column_name))
+            type = available->type;
+        if (type && type->tryGetSubcolumnType(subcolumn_name))
+            return String(column_name);
     }
     return name;
 }
 
-/// Columns of `header` that the default of `column_name` reads: directly, through a subcolumn, or through columns
-/// absent from `header`, whose defaults are inlined into the evaluation.
-static NameSet getHeaderColumnsReadByDefault(
-    const String & column_name, const ColumnsDescription & columns, const ColumnDefaults & column_defaults, const Block & header)
+/// Columns that the default of `column_name` reads: directly, through a subcolumn, or through columns absent from
+/// `available_columns`, whose defaults are inlined into the evaluation.
+static NameSet getColumnsReadByDefault(
+    const String & column_name, const ColumnsDescription & columns, const ColumnDefaults & column_defaults, const Block & available_columns)
 {
     NameSet result;
     NameSet visited{column_name};
@@ -173,13 +177,14 @@ static NameSet getHeaderColumnsReadByDefault(
         RequiredSourceColumnsVisitor(data).visit(expression);
         for (const auto & required : data.requiredColumns())
         {
-            auto name = getColumnOfSubcolumn(columns, required);
+            auto name = getColumnOfSubcolumn(columns, available_columns, required);
             if (!visited.insert(name).second)
                 continue;
 
-            if (header.has(name))
-                result.insert(name);
-            else if (auto it = column_defaults.find(name); it != column_defaults.end())
+            result.insert(name);
+            if (available_columns.has(name))
+                continue;
+            if (auto it = column_defaults.find(name); it != column_defaults.end())
                 expressions.push_back(it->second.expression);
         }
     }
@@ -191,13 +196,19 @@ AddingDefaultsTransform::AddingDefaultsTransform(
     SharedHeader header,
     const ColumnsDescription & columns_,
     IInputFormat & input_format_,
-    ContextPtr context_)
+    ContextPtr context_,
+    const NamesAndTypesList & extra_inputs_,
+    GetExtraInputs get_extra_inputs_)
     : ISimpleTransform(header, header, true)
     , columns(columns_)
     , column_defaults(columns.getDefaults())
     , input_format(input_format_)
     , context(context_)
+    , get_extra_inputs(std::move(get_extra_inputs_))
+    , available_columns(*header)
 {
+    for (const auto & column : extra_inputs_)
+        available_columns.insert({column.type->createColumn(), column.type, column.name});
 }
 
 
@@ -264,16 +275,20 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     for (const auto & [col_name, col_idx] : columns_needing_defaults)
         columns_needing_defaults_set.insert(col_name);
 
+    NameSet read_by_defaults;
     for (const auto & [col_name, col_idx] : columns_needing_defaults)
     {
         NameSet deps;
-        for (const auto & read : getHeaderColumnsReadByDefault(col_name, columns, column_defaults, header))
+        for (const auto & read : getColumnsReadByDefault(col_name, columns, column_defaults, available_columns))
         {
             if (columns_needing_defaults_set.contains(read))
                 deps.insert(read);
+            read_by_defaults.insert(read);
         }
         dependencies[col_name] = std::move(deps);
     }
+
+    const ColumnsWithTypeAndName extra_inputs = get_extra_inputs ? get_extra_inputs(read_by_defaults, num_rows) : ColumnsWithTypeAndName{};
 
     /// Process columns in dependency order (topological sort).
     /// In each iteration, process columns whose dependencies have all been satisfied.
@@ -316,6 +331,8 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
         /// Build evaluate_block: start from res (which has updated values from previous iterations),
         /// then remove only the columns we're computing defaults for in this iteration
         Block evaluate_block{res};
+        for (const auto & column : extra_inputs)
+            evaluate_block.insert(column);
         NamesAndTypesList required_columns_list;
 
         for (const auto & [col_name, col_idx] : ready)
@@ -334,7 +351,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
         auto dag = evaluateMissingDefaults(evaluate_block, required_columns_list, columns, context, false);
         if (dag)
         {
-            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header, dag->getRequiredColumnsNames(), context);
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(available_columns, dag->getRequiredColumnsNames(), context);
             auto actions = std::make_shared<ExpressionActions>(
                 ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*dag)),
                 ExpressionActionsSettings(context, CompileExpressions::yes), true);

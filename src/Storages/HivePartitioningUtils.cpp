@@ -171,6 +171,38 @@ void addPartitionColumnsToChunk(
     }
 }
 
+std::function<ColumnsWithTypeAndName(const NameSet &, size_t)> makePartitionColumnsForDefaults(
+    const NamesAndTypesList & columns,
+    const std::string & path,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context)
+{
+    if (columns.empty())
+        return {};
+
+    return [columns, path, hive_format_settings = buildHiveFormatSettings(format_settings, context)](
+               const NameSet & read_by_defaults, size_t num_rows)
+    {
+        NamesAndTypesList read_columns;
+        for (const auto & column : columns)
+            if (read_by_defaults.contains(column.name))
+                read_columns.push_back(column);
+
+        ColumnsWithTypeAndName result;
+        if (read_columns.empty())
+            return result;
+
+        const auto hive_map = parseHivePartitioningKeysAndValues(path);
+        for (const auto & column : read_columns)
+        {
+            const auto value = getPartitionValueFromPath(hive_map, column.getNameInStorage(), path);
+            auto field = convertPartitionValueToType(value, *column.type, column.getNameInStorage(), path, hive_format_settings);
+            result.emplace_back(column.type->createColumnConst(num_rows, field), column.type, column.name);
+        }
+        return result;
+    };
+}
+
 static void sanityCheckSchemaAndHivePartitionColumns(
     const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
     const ColumnsDescription & storage_columns,

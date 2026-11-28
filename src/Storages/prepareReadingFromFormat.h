@@ -48,6 +48,8 @@ namespace DB
         /// reads: the format may read only that side and fill the other with defaults. Not serialized: without them the whole map is read.
         NameSet map_columns_read_by_keys;
         NameSet map_columns_read_by_values;
+        /// Hive partition columns read by a `DEFAULT` of `columns_description`, given to `AddingDefaultsTransform`. Not serialized.
+        NamesAndTypesList hive_partition_columns_read_by_defaults;
 
         /// The serialization version of the enclosing step (`ctx.step_version`) since which `columns_added_after_format`
         /// is written. The step that serializes this structure (`ReadFromObjectStorage`) has to register this version in

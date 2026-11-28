@@ -2,8 +2,11 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/MapWithMemoryTracking.h>
+
+#include <functional>
 
 namespace DB
 {
@@ -39,6 +42,12 @@ FormatSettings buildHiveFormatSettings(const std::optional<FormatSettings> & for
 void addPartitionColumnsToChunk(
     Chunk & chunk,
     const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
+    const std::string & path,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context);
+
+std::function<ColumnsWithTypeAndName(const NameSet &, size_t)> makePartitionColumnsForDefaults(
+    const NamesAndTypesList & columns,
     const std::string & path,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context);

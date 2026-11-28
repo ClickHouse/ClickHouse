@@ -8,13 +8,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Lazy materialization on a hive-partitioned table, and its interaction with `DEFAULT` columns.
 #
-# Hive partition columns are parsed from the file path and appended to the chunk after the
-# per-file reader pipeline, where `AddingDefaultsTransform` runs - so a `DEFAULT` expression never
-# sees the real value of a hive partition column, on any plan: a query that has to evaluate such
-# a default fails with `UNKNOWN_IDENTIFIER` with and without the optimization (a pre-existing
-# limitation of hive partitioning, not introduced by lazy materialization; the same happens with
-# the `File` engine). The planner keeps such defaulted columns on the main branch, which preserves
-# exactly the single-pass behavior.
+# Hive partition columns are parsed from the file path. A `DEFAULT` expression that reads one is
+# evaluated with the value from the path, and the planner keeps such defaulted columns on the main
+# branch, so the result is the same with and without the optimization.
 #
 # A defaulted column whose expression only consumes columns read from the file is unaffected by
 # hive partitioning: it is still deferred to the lazy branch together with the inputs of its
@@ -70,15 +66,14 @@ for enabled in 1 0; do
         --query_plan_optimize_lazy_materialization_for_object_storage="$enabled" \
         --query "$QUERIES"
 
-    echo "-- a default over a hive partition column cannot be evaluated on any plan (pre-existing)"
+    echo "-- a default over a hive partition column is evaluated"
     ${CLICKHOUSE_CLIENT} \
         --use_hive_partitioning=1 \
         --s3_validate_etag_on_read=1 \
         --query_plan_optimize_lazy_materialization=1 \
         --query_plan_max_limit_for_lazy_materialization=0 \
         --query_plan_optimize_lazy_materialization_for_object_storage="$enabled" \
-        --query "SELECT a, b, s FROM lazy_mat_hive_path_default ORDER BY k LIMIT 3" 2>&1 \
-        | grep -o "UNKNOWN_IDENTIFIER" | head -1
+        --query "SELECT a, b, s FROM lazy_mat_hive_path_default ORDER BY k LIMIT 3"
 done
 
 ${CLICKHOUSE_CLIENT} --query "
