@@ -13862,6 +13862,18 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         if (need_primary_key_max_column && !part->index_granularity->hasFinalMark())
             return {};
 
+        /// The settings may have changed since the part was loaded or mutated.
+        /// Only use metadata counting when the visible row count is known for every selected part.
+        if (part->hasLightweightDelete())
+        {
+            if (!part->existing_rows_count.has_value())
+                return {};
+
+            /// Preserve empty-input semantics, including `empty_result_for_aggregation_by_empty_set`.
+            if (part->existing_rows_count.value() == 0)
+                continue;
+        }
+
         real_parts.push_back(part);
         filter_column_data.back() = 1;
     }
@@ -13957,7 +13969,10 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         for (const auto & part : real_parts)
         {
             auto & column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns.back());
-            insert(column, part->rows_count);
+            if (part->hasLightweightDelete())
+                insert(column, part->existing_rows_count.value());
+            else
+                insert(column, part->rows_count);
         }
     }
 
