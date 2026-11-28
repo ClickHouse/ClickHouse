@@ -2977,9 +2977,13 @@ void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const 
     if (txn && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
-    DatabaseAtomic::detachTablePermanently(local_context, table_name);
+    if (txn && !local_context->isInternalSubquery())
+        txn->commit();      /// Commit point (a sort of) for Replicated database
+    /// Before the local detach: writing the detached flag can fail after the table has left the tables map.
     tables_metadata_digest = new_digest;
-    assertDigestInTransactionOrInline(local_context, txn);
+
+    DatabaseAtomic::detachTablePermanently(local_context, table_name);
+    assertDigest(local_context);
 }
 
 void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context, const String & table_name, const String & table_metadata_path, bool attach)
