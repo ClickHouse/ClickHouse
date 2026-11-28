@@ -59,7 +59,7 @@ Decimal key, coarser-scale source, declined
 2
 1
 1
-DateTime64 key, coarser-scale source, declined
+DateTime64 key, coarser-scale source, kept
 2020-01-01 00:00:01.2300
 2020-01-01 00:00:01.2345
 2020-01-01 00:00:02.0000
@@ -153,10 +153,8 @@ DateTime key, Time source, declined
 2020-01-02 00:00:00
 1
 1
-DateTime64 key, Time64 source, declined
-2020-01-01 00:00:00.0000
-2020-01-02 00:00:00.0000
-1
+DateTime64 key, Time64 source, kept
+0
 1
 Tuple key, collapsing temporal element, declined
 ('2020-01-01 00:00:00',1)
@@ -173,9 +171,9 @@ Named tuple key, reordered collapsing element, declined
 1
 ('2020-01-01 00:00:00','2030-02-03')
 1
-Tuple key, sub-second DateTime64 element, declined
+Tuple key, sub-second DateTime64 element, kept
 ('2020-01-01 00:00:01.0000',1)
-('2020-01-01 00:00:01.1000',1)
+1
 1
 Transformed key, coarser-scale source, declined
 1.23

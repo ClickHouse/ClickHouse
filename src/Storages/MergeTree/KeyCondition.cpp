@@ -3827,6 +3827,10 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
         return !((key_which.isNumber() && !isBool(key_unwrapped)) || key_which.isEnum() || key_which.isDate() || key_which.isUUID()
             || key_which.isIPv4() || key_which.isIPv6());
 
+    /// `Set::execute` does not match a `DateTime64` key that the cast into such a type does not convert back unchanged.
+    if (key_which.isDateTime64() && (set_which.isIntegerOrDecimal() || set_which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64()))
+        return false;
+
     const auto key_scale = tryGetDecimalScale(*key_unwrapped);
     const auto set_scale = tryGetDecimalScale(*set_unwrapped);
 
@@ -3840,8 +3844,7 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
             return !set_which.isDateTime64();
         if (key_which.isTime())
             return !set_which.isTime64();
-        const bool same_family = (key_which.isDateTime64() && set_which.isDateTime64()) || (key_which.isTime64() && set_which.isTime64());
-        return !same_family || *set_scale < *key_scale;
+        return !(key_which.isTime64() && set_which.isTime64()) || *set_scale < *key_scale;
     }
 
     if (key_scale)

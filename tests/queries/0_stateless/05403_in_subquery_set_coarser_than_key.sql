@@ -94,10 +94,11 @@ CREATE TABLE t_tup64 (d DateTime64(3, 'UTC'), x UInt8) ENGINE = MergeTree ORDER 
 INSERT INTO t_tup64 VALUES ('2023-02-01 12:00:00.500', 1), ('2023-02-03 13:00:00', 1);
 SELECT count() FROM t_tup64 WHERE (d, x) IN (SELECT tuple(toDateTime('2023-02-01 12:00:00', 'UTC'), toUInt8(1)));
 
--- The cast into `DateTime` saturates, so a bound also stands for the keys beyond it.
+-- The cast into `DateTime` saturates, but a key beyond a bound does not convert back, so it is not a member.
 CREATE TABLE t_dt64s (d DateTime64(3, 'UTC')) ENGINE = MergeTree PARTITION BY d ORDER BY d;
 INSERT INTO t_dt64s VALUES ('1969-12-31 23:59:59'), ('1970-01-01 00:00:00'), ('2106-02-07 06:28:15'), ('2106-02-07 06:28:16');
 SELECT count() FROM t_dt64s WHERE d IN (SELECT toDateTime(0, 'UTC') UNION ALL SELECT toDateTime(4294967295, 'UTC'));
+SELECT countIf(d IN (SELECT toDateTime(0, 'UTC') UNION ALL SELECT toDateTime(4294967295, 'UTC'))) FROM t_dt64s;
 
 -- A numeric `CAST` stores values beyond the declared precision.
 CREATE TABLE t_dec6 (d Decimal(6, 0)) ENGINE = MergeTree PARTITION BY d ORDER BY d SETTINGS index_granularity = 1;

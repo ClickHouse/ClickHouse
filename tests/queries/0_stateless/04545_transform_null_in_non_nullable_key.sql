@@ -11,7 +11,7 @@
 --
 -- Cases A, B, D, C, C2 -- C25, E, F, H, I, J, G, K cover, in order: the folded-default pair, the
 -- numeric analogue, the cross-type exact direction and its counterexample, the three silent-collapse
--- families (text key against a different type / key with a finer Decimal or DateTime64 scale, or a
+-- families (text key against a different type / key with a finer Decimal scale, or a
 -- scaled key against a scale-less integer or float source / temporal key whose target drops its time
 -- of day or its calendar date) with their controls (injective numeric narrowing, identical text types,
 -- identical composite element types, a component-equal temporal pair, and three liveness controls: a
@@ -146,19 +146,16 @@ SELECT d FROM t_dk WHERE d NOT IN (SELECT CAST(1.23, 'Nullable(Decimal(10, 2))')
 SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dk WHERE d NOT IN (SELECT CAST(1.23, 'Nullable(Decimal(10, 2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dk WHERE d NOT IN (SELECT CAST(1.23, 'Nullable(Decimal(10, 2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
 
--- Case C7: the same scale-loss family through `DateTime64`, whose scale `tryGetDecimalScale` also
--- reports. It is the case that pins the decline as UNCONDITIONAL on the forward set-to-key cast:
--- `canBeSafelyCast` rejects `DateTime64 -> DateTime64` (its branch only accepts a `String` target),
--- so gating the decline on that cast would let this atom fall through, and a relaxed or exact atom
--- alike cannot protect the positive `IN` direction.
-SELECT 'DateTime64 key, coarser-scale source, declined';
+-- Case C7: `Set::execute` does not match a `DateTime64` key that does not convert back unchanged into
+-- the set's type, so a coarser `DateTime64` set keeps the index.
+SELECT 'DateTime64 key, coarser-scale source, kept';
 DROP TABLE IF EXISTS t_dt;
 CREATE TABLE t_dt (d DateTime64(4)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
 INSERT INTO t_dt VALUES ('2020-01-01 00:00:01.2345'), ('2020-01-01 00:00:01.2300'), ('2020-01-01 00:00:02.0000');
 SELECT d FROM t_dt WHERE d IN (SELECT CAST('2020-01-01 00:00:01.23', 'Nullable(DateTime64(2))') UNION ALL SELECT NULL) ORDER BY d;
 SELECT d FROM t_dt WHERE d NOT IN (SELECT CAST('2020-01-01 00:00:01.23', 'Nullable(DateTime64(2))') UNION ALL SELECT NULL) ORDER BY d;
-SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELECT CAST('2020-01-01 00:00:01.23', 'Nullable(DateTime64(2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELECT CAST('2020-01-01 00:00:01.23', 'Nullable(DateTime64(2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
+SELECT countIf(d IN (SELECT CAST('2020-01-01 00:00:01.23', 'Nullable(DateTime64(2))') UNION ALL SELECT NULL)) FROM t_dt;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dt WHERE d IN (SELECT CAST('2020-01-01 00:00:01.23', 'Nullable(DateTime64(2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 1/3%';
 
 -- Cases C6, C8, C9: the text half of the silent-collapse family is keyed on the text types being
 -- DIFFERENT, not on the set element being non-text. `String` and `FixedString(N)` do not share a
@@ -281,7 +278,7 @@ SELECT d FROM t_dw WHERE d IN (SELECT CAST(9007199254740992, 'Nullable(Float64)'
 SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dw WHERE d IN (SELECT CAST(9007199254740992, 'Nullable(Float64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
 
 -- Case C15: `Time64` reaches the collapsing integer branch through the same scale machinery as
--- `Decimal` and `DateTime64`, so the arm must reach every scaled key family rather than `Decimal` only.
+-- `Decimal`, so the arm must reach every scaled key family rather than `Decimal` only.
 -- Whether `Set::execute` additionally masks the fractional rows at runtime is beside the point: the
 -- pruning set built here is an under-approximation either way, so the atom must decline.
 SELECT 'Time64 key, integer source, declined';
@@ -334,9 +331,8 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_nn WHERE k NOT IN (
 -- Cases C17 -- C21: the third silent-collapse family, temporal GRANULARITY. It is invisible to the
 -- scale arm above, because a scale is not what is lost: `Date`/`Date32` carry a calendar date only,
 -- `Time`/`Time64` a time of day only, `DateTime`/`DateTime64` both, so a conversion whose target drops
--- one of the key's components maps many keys onto one set value. There is no round-trip check to save
--- these either -- the strict `accurate::convertNumeric` path requires an integer or float SOURCE -- so
--- the casts succeed silently. These are wrong results on master too.
+-- one of the key's components maps many keys onto one set value. Only a `DateTime64` key is checked for
+-- the round trip (C19), so for the others the casts succeed silently. These are wrong results on master too.
 SELECT 'DateTime key, Date source, declined';
 DROP TABLE IF EXISTS t_dd;
 CREATE TABLE t_dd (d DateTime) ENGINE = MergeTree ORDER BY d PARTITION BY d;
@@ -357,15 +353,15 @@ SELECT d FROM t_dd WHERE d IN (SELECT CAST('00:00:00', 'Nullable(Time)') UNION A
 SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dd WHERE d IN (SELECT CAST('00:00:00', 'Nullable(Time)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dd WHERE d IN (SELECT CAST('00:00:00', 'Nullable(Time)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
 
--- Case C19: the same date-dropping direction through the SCALED family. Both sides report a scale and
--- the key's is not coarser, so the scale arm cannot see it: the lost component is the calendar date.
-SELECT 'DateTime64 key, Time64 source, declined';
+-- Case C19: the same holds for a `Time64` set, which drops the date: no key converts back, and the index
+-- excludes every part.
+SELECT 'DateTime64 key, Time64 source, kept';
 DROP TABLE IF EXISTS t_d64;
 CREATE TABLE t_d64 (d DateTime64(4)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
 INSERT INTO t_d64 VALUES ('2020-01-01 00:00:00.0000'), ('2020-01-01 12:34:56.0000'), ('2020-01-02 00:00:00.0000');
 SELECT d FROM t_d64 WHERE d IN (SELECT CAST('00:00:00.0000', 'Nullable(Time64(4))') UNION ALL SELECT NULL) ORDER BY d;
-SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_d64 WHERE d IN (SELECT CAST('00:00:00.0000', 'Nullable(Time64(4))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_d64 WHERE d IN (SELECT CAST('00:00:00.0000', 'Nullable(Time64(4))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
+SELECT countIf(d IN (SELECT CAST('00:00:00.0000', 'Nullable(Time64(4))') UNION ALL SELECT NULL)) FROM t_d64;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_d64 WHERE d IN (SELECT CAST('00:00:00.0000', 'Nullable(Time64(4))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 0/3%';
 
 -- Case C20: the temporal arm must recurse into composites like the text and scale arms, so a
 -- `Tuple(DateTime, UInt64)` key collapses on its FIRST element exactly as C17 does.
@@ -395,14 +391,15 @@ SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_nt WHERE k IN (SELE
 SELECT k FROM t_nt WHERE k IN (SELECT CAST(tuple(toDate('2030-02-03'), toDateTime('2020-01-01 00:00:00')), 'Nullable(Tuple(b Date, a DateTime))') UNION ALL SELECT NULL) ORDER BY k SETTINGS enable_nullable_tuple_type = 1;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_nt WHERE k IN (SELECT CAST(tuple(toDate('2030-02-03'), toDateTime('2020-01-01 00:00:00')), 'Nullable(Tuple(b Date, a DateTime))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%Parts: 1/3%';
 
--- Case C24: `Set::execute` keeps the sub-second rows of a top-level `DateTime64` key out of a `DateTime`
--- set, but a `Tuple` element is truncated to the second, so both 00:00:01 keys match the set value.
-SELECT 'Tuple key, sub-second DateTime64 element, declined';
+-- Case C24: that check follows the cast into the elements of a `Tuple`, so a `DateTime` set over a
+-- `Tuple(DateTime64(4), UInt64)` key keeps the index.
+SELECT 'Tuple key, sub-second DateTime64 element, kept';
 DROP TABLE IF EXISTS t_tsub;
 CREATE TABLE t_tsub (k Tuple(DateTime64(4), UInt64)) ENGINE = MergeTree ORDER BY k PARTITION BY k;
 INSERT INTO t_tsub VALUES (('2020-01-01 00:00:01.0000', 1)), (('2020-01-01 00:00:01.1000', 1)), (('2020-01-01 00:00:02.0000', 1));
 SELECT k FROM t_tsub WHERE k IN (SELECT CAST(tuple(toDateTime('2020-01-01 00:00:01'), toUInt64(1)), 'Nullable(Tuple(DateTime, UInt64))') UNION ALL SELECT NULL) ORDER BY k SETTINGS enable_nullable_tuple_type = 1;
-SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tsub WHERE k IN (SELECT CAST(tuple(toDateTime('2020-01-01 00:00:01'), toUInt64(1)), 'Nullable(Tuple(DateTime, UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%element set%';
+SELECT countIf(k IN (SELECT CAST(tuple(toDateTime('2020-01-01 00:00:01'), toUInt64(1)), 'Nullable(Tuple(DateTime, UInt64))') UNION ALL SELECT NULL)) FROM t_tsub SETTINGS enable_nullable_tuple_type = 1;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tsub WHERE k IN (SELECT CAST(tuple(toDateTime('2020-01-01 00:00:01'), toUInt64(1)), 'Nullable(Tuple(DateTime, UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%Parts: 1/3%';
 
 -- Case C25: for a transformed key, membership casts the column the transform reads into the set's type,
 -- so the collapse is checked on that column. The set holds no NULL: an actual NULL makes the transform
