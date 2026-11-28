@@ -225,6 +225,7 @@ struct SelectQueryInfo
     /// For IStorageSystemOneBlock
     std::vector<UInt8> columns_mask;
 
+    [[nodiscard]] bool mayStopReadingEarly() const;
     [[nodiscard]] bool isFinal() const;
 
     /// Whether the table expression has the STREAM modifier.

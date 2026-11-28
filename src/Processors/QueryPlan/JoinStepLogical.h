@@ -155,6 +155,9 @@ public:
     void setRuntimeFilterDeclinedForSmallProbe() { runtime_filter_declined_small_probe = true; }
     void setRuntimeFilterKeepsMatchingRows() { runtime_filter_keeps_matching_rows = true; }
 
+    /// Planning only; retain this decision when physical join construction is deferred.
+    void invalidateAutoFingerprintProbeEstimate();
+
     /// Whether the runtime filter pass installed `BuildRuntimeFilterStep` / `__applyFilter` for this join.
     /// The physical `JoinStep` inherits it and refuses `clone` because of it, see `JoinStep::clone`.
     [[nodiscard]] bool hasRuntimeFilters() const { return has_runtime_filters; }
@@ -331,6 +334,9 @@ protected:
     bool has_runtime_filters = false;
 
     /// Runtime info, do not serialize
+
+    /// Reconstructed from actual filter and limit steps when a received plan is optimized.
+    bool auto_fingerprint_probe_estimate_disabled = false;
 
     std::optional<UInt64> result_rows_estimation = {};
     std::optional<double> estimated_cost = {};

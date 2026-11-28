@@ -173,6 +173,7 @@ private:
     const size_t max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
     const bool enable_join_key_only_hash_tables = false;
+    const UInt64 fingerprint_mode = 0;
     const bool enable_robin_hood_hash_for_joins = false;
     const bool join_runtime_filter_from_fixed_hash_table = false;
     /// The planner turns it off for a join that is faster with exact keys, see `shouldPackStringJoinKeys` in `PlannerJoins.cpp`.
@@ -360,6 +361,7 @@ public:
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     bool enableJoinKeyOnlyHashTables() const { return enable_join_key_only_hash_tables; }
+    [[nodiscard]] UInt64 getFingerprintMode() const { return fingerprint_mode; }
     bool enableRobinHoodHashForJoins() const { return enable_robin_hood_hash_for_joins; }
     bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
     bool enablePackedStringKeysInHashJoin() const { return enable_packed_string_keys_in_hash_join; }

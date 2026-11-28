@@ -32,7 +32,6 @@
 #include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <QueryPipeline/StreamLocalLimits.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/RPNBuilder.h>
@@ -368,27 +367,6 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
 namespace
 {
 
-/// Whether a read limit with a non-throwing overflow mode can end the read early instead of failing the
-/// query. Row and byte limits, including the leaf ones, are checked against the progress of the whole query
-/// and `max_execution_time` against the elapsed time, so the read can stop however few rows it selects.
-/// These are the limits that the sources of the read enforce; leaf limits are set only on a leaf of a distributed
-/// query (`distributed_depth > 0`).
-bool mayStopReadingEarly(const SelectQueryInfo & query_info)
-{
-    if (!query_info.storage_limits)
-        return false;
-    return std::ranges::any_of(
-        *query_info.storage_limits,
-        [](const StorageLimits & limits)
-        {
-            const auto & local_limits = limits.local_limits;
-            return (local_limits.size_limits.overflow_mode != OverflowMode::THROW && local_limits.size_limits.hasLimits())
-                || (limits.leaf_limits.overflow_mode != OverflowMode::THROW && limits.leaf_limits.hasLimits())
-                || (local_limits.timeout_overflow_mode != OverflowMode::THROW
-                    && local_limits.speed_limits.max_execution_time.totalMicroseconds() != 0);
-        });
-}
-
 /// What a read does to the rows and values that the statistics of its source describe. A filter step above the read
 /// records its own row subset; it counts here only where the estimate of the read accounts for it.
 struct ReadCoverage
@@ -483,7 +461,7 @@ ReadCoverage analyzeReadCoverage(const ReadFromMergeTree & reading, const Ranges
 
     return ReadCoverage{
         .may_drop_rows = has_predicates || has_row_selecting_modifiers || has_deleted_rows || has_on_the_fly_data_changes
-            || mayStopReadingEarly(query_info),
+            || query_info.mayStopReadingEarly(),
         /// `FINAL` can synthesize values in `SummingMergeTree`, `AggregatingMergeTree` and `GraphiteMergeTree`; every
         /// `FINAL` read counts, so that new merge modes fail closed.
         .may_rewrite_values = has_on_the_fly_data_changes || query_info.isFinal()
@@ -491,6 +469,15 @@ ReadCoverage analyzeReadCoverage(const ReadFromMergeTree & reading, const Ranges
         .top_k_limit
         = reading.isSelectedForTopKFilterOptimization() ? std::optional<UInt64>(reading.getTopKFilterInfo()->limit_n) : std::nullopt,
     };
+}
+
+/// Later planning can exempt the executed read from a throwing limit. An intermediate estimate
+/// must not enforce that limit or fix the ranges of the executed read.
+ReadFromMergeTree::AnalysisResultPtr analyzeRangesForRowEstimate(const ReadFromMergeTree & reading)
+{
+    return reading.hasThrowingReadRowLimit()
+        ? reading.selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true)
+        : reading.selectRangesToRead();
 }
 
 /// Statistics of a node that is estimated without first estimating a child: a read step or an
@@ -524,15 +511,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                 }
             }
             else
-            {
-                /// Range analysis normally enforces throwing read limits and memoizes its result.
-                /// At this stage, however, later planning may make the executed read exempt from those
-                /// limits. In that case use an estimation-only analysis; execution will analyze again
-                /// after its final read mode is known.
-                analyzed_result = reading->hasThrowingReadRowLimit()
-                    ? reading->selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true)
-                    : reading->selectRangesToRead();
-            }
+                analyzed_result = analyzeRangesForRowEstimate(*reading);
         }
 
         /// An exact empty range selection proves that the relation is empty. Other empty
@@ -669,7 +648,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
         /// The manifest statistics describe every row of the remaining files, deleted rows included.
         const ReadCoverage coverage{
             .may_drop_rows = estimate->has_delete_files || reading->getFilterActionsDAG() || reading->getPrewhereInfo()
-                || reading->getRowLevelFilter() || mayStopReadingEarly(reading->getQueryInfo()),
+                || reading->getRowLevelFilter() || reading->getQueryInfo().mayStopReadingEarly(),
             .may_rewrite_values = false,
             .top_k_limit = std::nullopt};
 
@@ -813,6 +792,49 @@ RelationStats estimateRelationStatsUnderFilter(QueryPlan::Node & node, const Act
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, RelationStatsOptions options)
 {
     return estimateRelationStatsUnderFilter(node, /*filter=*/nullptr, options);
+}
+
+std::optional<UInt64> getFingerprintProbeRows(QueryPlan::Node & probe)
+{
+    auto * node = &probe;
+    while (node->children.size() == 1)
+    {
+        const auto * step = node->step.get();
+        if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
+        {
+            if (expression->getExpression().hasArrayJoin())
+                return std::nullopt;
+        }
+        else if (const auto * sort = typeid_cast<const SortingStep *>(step))
+        {
+            const auto & limits = sort->getSettings().size_limits;
+            if (sort->getLimit() || sort->hasLimitByHint() || (limits.hasLimits() && limits.overflow_mode == OverflowMode::BREAK))
+                return std::nullopt;
+        }
+        else
+            return std::nullopt;
+
+        node = node->children.front();
+    }
+
+    if (const auto * memory = typeid_cast<const ReadFromMemoryStorageStep *>(node->step.get()))
+        return memory->getExactReadRows();
+
+    const auto * reading = typeid_cast<const ReadFromMergeTree *>(node->step.get());
+    if (!reading || reading->isParallelReadingFromReplicas() || reading->getDistributedReadBucketCount()
+        || (reading->getInputOrder() && reading->getInputOrder()->limit))
+        return std::nullopt;
+
+    /// The range analysis counts rows directly. A local full read can use that count without deriving
+    /// column statistics or consulting cardinality hints used by the join-order optimizer.
+    auto analysis = reading->getAnalyzedResult();
+    if (!analysis)
+        analysis = analyzeRangesForRowEstimate(*reading);
+    if (!analysis || analysis->exact_ranges_excluded || analysis->index_analysis_was_already_done_on_initiator)
+        return std::nullopt;
+    if (analyzeReadCoverage(*reading, analysis->parts_with_ranges, /*has_plan_time_filter=*/false).mayDropRows(analysis->selected_rows))
+        return std::nullopt;
+    return analysis->selected_rows;
 }
 }
 }

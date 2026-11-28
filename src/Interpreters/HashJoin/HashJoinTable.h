@@ -7,6 +7,7 @@
 #include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/JoinUtils.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Prefetching.h>
 #include <Common/ProfileEvents.h>
@@ -501,7 +502,7 @@ public:
         const HashJoinBuildLayout & layout,
         bool robin_hood_allowed);
 
-    /// The key type of the maps. Only `tryConvertToFixedHashMap` changes it.
+    /// The key type of the maps. `tryConvertToFixedHashMap` and `prepareAutoFingerprints` may change it before probing.
     Type type() const { return key_type; }
 
     /// The key range of a direct-addressed map. Only `tryConvertToFixedHashMap` sets it.
@@ -603,6 +604,23 @@ public:
     size_t bufferBytes() const;
     size_t bufferSizeInCells() const;
     size_t cellSize() const;
+
+    /// Metadata still to allocate for a manually selected fingerprint map, including the cloned wraparound prefix.
+    [[nodiscard]] size_t fingerprintReservationBytes() const;
+    /// Prepares the manually selected fingerprint map after the last insert, before probing starts.
+    void prepareFingerprints();
+
+    /// Automatic adoption requires exclusive ownership of an ordinary `UInt64` map.
+    [[nodiscard]] bool hasExclusiveKey64Map() const;
+    /// Samples row-weighted key presence through ordinary lookup, even if fingerprints have been prepared.
+    /// Writes the sampled keys into the supplied buffer and returns the number sampled and the number of hits.
+    [[nodiscard]] std::pair<size_t, size_t> sampleKey64(
+        const ScatteredBlock & block, const ColumnUInt64 & keys, std::span<UInt64> sampled_keys) const;
+    /// Allocates all metadata before moving cells; call under the join's first-probe barrier, before handles escape.
+    void prepareAutoFingerprints();
+    [[nodiscard]] bool fingerprintsEnabled() const;
+    /// Disables only the lookup index, retaining its storage and every cell until the table is destroyed.
+    [[nodiscard]] bool disableFingerprints();
 
     /// Replaces the map of a `key32` or `key64` table with a direct-addressed one if its keys span a small enough range. That
     /// map reads keys relative to the key range. Sets the key type and the key range of the table, and returns whether it did.

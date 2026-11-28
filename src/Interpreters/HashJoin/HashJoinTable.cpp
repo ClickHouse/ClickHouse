@@ -8,8 +8,17 @@
 #include <Interpreters/joinDispatch.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
+#include <bit>
 #include <limits>
 #include <numeric>
+
+namespace ProfileEvents
+{
+extern const Event HashJoinFingerprintTables;
+extern const Event HashJoinFingerprintSIMDTables;
+extern const Event HashJoinFingerprintRows;
+extern const Event HashJoinFingerprintBytes;
+}
 
 namespace DB
 {
@@ -171,6 +180,135 @@ size_t HashJoinTable::bufferBytes() const
 size_t HashJoinTable::bufferSizeInCells() const
 {
     return std::visit([&](const auto & maps_) { return maps_.getBufferSizeInCells(key_type); }, maps);
+}
+
+size_t HashJoinTable::fingerprintReservationBytes() const
+{
+    if (key_type != Type::fingerprint_key64 && key_type != Type::scalar_fingerprint_key64)
+        return 0;
+    return std::visit([&](const auto & maps_)
+    {
+        auto pending = [](const auto & table)
+        {
+            return table->getBufferSizeInCells() + 15 - table->fingerprintBytes();
+        };
+        if (key_type == Type::fingerprint_key64)
+            return pending(maps_.fingerprint_key64);
+        return pending(maps_.scalar_fingerprint_key64);
+    }, maps);
+}
+
+namespace
+{
+
+template <typename Map>
+void recordFingerprintPreparation(const Map & map)
+{
+    ProfileEvents::increment(ProfileEvents::HashJoinFingerprintTables);
+    if constexpr (Map::uses_simd)
+        ProfileEvents::increment(ProfileEvents::HashJoinFingerprintSIMDTables);
+    ProfileEvents::increment(ProfileEvents::HashJoinFingerprintRows, map.size());
+    ProfileEvents::increment(ProfileEvents::HashJoinFingerprintBytes, map.fingerprintBytes());
+}
+
+}
+
+void HashJoinTable::prepareFingerprints()
+{
+    if (key_type != Type::fingerprint_key64 && key_type != Type::scalar_fingerprint_key64)
+        return;
+    std::visit([&](auto & maps_)
+    {
+        auto prepare = [](auto & map)
+        {
+            map->prepareFingerprints();
+            recordFingerprintPreparation(*map);
+        };
+        if (key_type == Type::fingerprint_key64)
+            prepare(maps_.fingerprint_key64);
+        else
+            prepare(maps_.scalar_fingerprint_key64);
+    }, maps);
+}
+
+bool HashJoinTable::hasExclusiveKey64Map() const
+{
+    return key_type == Type::key64 && std::visit([](const auto & maps_) { return maps_.key64.use_count() == 1; }, maps);
+}
+
+std::pair<size_t, size_t> HashJoinTable::sampleKey64(
+    const ScatteredBlock & block, const ColumnUInt64 & keys, std::span<UInt64> sampled_keys) const
+{
+    const size_t rows = block.rows();
+    const size_t samples = std::min(rows, sampled_keys.size());
+    if (key_type != Type::key64 && key_type != Type::fingerprint_key64)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sample ordinary UInt64 lookup for hash join map type {}", key_type);
+    if (!samples)
+        return {0, 0};
+
+    return std::visit([&](const auto & maps_)
+    {
+        auto sample = [&](const auto & map)
+        {
+            /// An odd stride visits every position once. Fold high bits into the low bits so a short
+            /// power-of-two key cycle does not appear distinct just because the sample walks its entire period.
+            const size_t mask = std::bit_ceil(rows) - 1;
+            const auto shift = (std::bit_width(mask) + 1) / 2;
+            size_t position = 0x243f6a8885a308d3ULL & mask;
+            size_t hits = 0;
+            size_t sampled = 0;
+            while (sampled < samples)
+            {
+                const size_t row = position ^ (position >> shift);
+                if (row < rows)
+                {
+                    const UInt64 key = keys.getData()[block.getSelector()[row]];
+                    sampled_keys[sampled] = key;
+                    if constexpr (requires { map.findInBase(key); })
+                        hits += map.findInBase(key) != nullptr;
+                    else
+                        hits += map.find(key) != nullptr;
+                    ++sampled;
+                }
+                position = (position + 0x9e3779b97f4a7c15ULL) & mask;
+            }
+            return std::pair{samples, hits};
+        };
+        if (key_type == Type::key64)
+            return sample(*maps_.key64);
+        return sample(*maps_.fingerprint_key64);
+    }, maps);
+}
+
+void HashJoinTable::prepareAutoFingerprints()
+{
+#if !defined(__aarch64__)
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Automatic fingerprint preparation is only supported on AArch64");
+#else
+    if (!hasExclusiveKey64Map())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Automatic fingerprint preparation requires an exclusively owned ordinary key64 table");
+    std::visit([&](auto & maps_)
+    {
+        using FingerprintMap = NativeFingerprintJoinMap<typename std::remove_reference_t<decltype(maps_)>::MappedType, true>;
+        auto prepared = std::make_shared<FingerprintMap>(*maps_.key64);
+        maps_.fingerprint_key64 = std::move(prepared);
+        maps_.key64.reset();
+        key_type = Type::fingerprint_key64;
+        recordFingerprintPreparation(*maps_.fingerprint_key64);
+    }, maps);
+#endif
+}
+
+bool HashJoinTable::fingerprintsEnabled() const
+{
+    return key_type == Type::fingerprint_key64
+        && std::visit([](const auto & maps_) { return maps_.fingerprint_key64->fingerprintsEnabled(); }, maps);
+}
+
+bool HashJoinTable::disableFingerprints()
+{
+    return key_type == Type::fingerprint_key64
+        && std::visit([](const auto & maps_) { return maps_.fingerprint_key64->disableFingerprints(); }, maps);
 }
 
 size_t HashJoinTable::cellSize() const

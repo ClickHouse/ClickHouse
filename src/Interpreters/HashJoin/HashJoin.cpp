@@ -1,9 +1,12 @@
+#include <algorithm>
+#include <array>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <vector>
 #include <Columns/ColumnIndex.h>
 #include <Core/Block.h>
+#include <Core/Settings.h>
 
 #include <base/getL2CacheSize.h>
 #include <base/scope_guard.h>
@@ -30,7 +33,9 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ClientInfo.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/HashJoin/AutoFingerprintPolicy.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/JoinUtils.h>
@@ -70,12 +75,27 @@ extern const Metric HashJoinDestroyThreadsActive;
 extern const Metric HashJoinDestroyThreadsScheduled;
 }
 
+namespace ProfileEvents
+{
+    extern const Event HashJoinAutoFingerprintCandidates;
+    extern const Event HashJoinAutoFingerprintSelected;
+    extern const Event HashJoinAutoFingerprintRejected;
+    extern const Event HashJoinAutoFingerprintDisabled;
+    extern const Event HashJoinAutoFingerprintSampleRows;
+    extern const Event HashJoinAutoFingerprintSampleHits;
+    extern const Event HashJoinAutoFingerprintInitialSampleRows;
+    extern const Event HashJoinAutoFingerprintInitialSampleHits;
+    extern const Event HashJoinAutoFingerprintInitialDistinctKeys;
+    extern const Event HashJoinAutoFingerprintProbeEstimate;
+    extern const Event HashJoinAutoFingerprintCapacity;
+}
+
 namespace DB
 {
-
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
+extern const int BAD_ARGUMENTS;
 extern const int NO_SUCH_COLUMN_IN_TABLE;
 extern const int INCOMPATIBLE_TYPE_OF_JOIN;
 extern const int LOGICAL_ERROR;
@@ -286,7 +306,8 @@ HashJoin::HashJoin(
     size_t reserve_num_,
     const String & instance_id_,
     HashJoinBuildLayout build_layout_,
-    const HashJoinStatsCollectingParams & stats_collecting_params_)
+    const HashJoinStatsCollectingParams & stats_collecting_params_,
+    std::optional<UInt64> estimated_probe_rows_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -437,6 +458,25 @@ HashJoin::HashJoin(
         selected_join_method = Type::key_packed_string;
         LOG_TRACE(log, "{}Using packed keys for the single String join key", instance_log_id);
     }
+
+    const auto query_context = CurrentThread::tryGetQueryContext();
+    const UInt64 fingerprint_mode = table_join->getFingerprintMode();
+    if (fingerprint_mode > 4 || fingerprint_mode == 3)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `experimental_join_fingerprint_mode` must be 0, 1, 2 or 4");
+    /// A wrapping join owns spill decisions and may finish a bucket above its spill threshold.
+    const bool fingerprint_eligible = fingerprint_mode && !build_layout.two_level && table_join->oneDisjunct()
+        && *selected_join_method == Type::key64 && !isUsedByAnotherAlgorithm();
+    if (fingerprint_eligible && fingerprint_mode == 4 && query_context && query_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
+        && table_join->getMixedJoinExpression() == nullptr
+        && ((kind == JoinKind::Inner && strictness == JoinStrictness::All)
+            || (kind == JoinKind::Left && strictness == JoinStrictness::Semi)))
+    {
+        auto_fingerprint = true;
+        estimated_probe_rows = estimated_probe_rows_;
+        ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintCandidates);
+    }
+    if (fingerprint_eligible && fingerprint_mode < 4 && strictness != JoinStrictness::Asof)
+        *selected_join_method = fingerprint_mode == 2 ? Type::fingerprint_key64 : Type::scalar_fingerprint_key64;
 
     const auto maps_kind = getMapsKind();
     data->tables.reserve(disjuncts_num);
@@ -1255,6 +1295,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
     if (!context.joinChecksLimits())
         return true;
     shrinkStoredBlocksToFit(total_bytes, /*force_optimize=*/false, context.getStream());
+    total_bytes += data->tables.front()->fingerprintReservationBytes();
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
@@ -1525,8 +1566,171 @@ JoinResultPtr HashJoin::joinBlock(Block block)
     return std::make_unique<ContinuationResult>(*this, std::move(result));
 }
 
+namespace
+{
+
+std::pair<size_t, size_t> sampleAutoFingerprintKeys(
+    const ScatteredBlock & block, const ColumnUInt64 & keys, const HashJoinTable & table, std::span<UInt64> sampled_keys)
+{
+    const auto [samples, hits] = table.sampleKey64(block, keys, sampled_keys);
+    if (samples)
+    {
+        ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintSampleRows, samples);
+        ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintSampleHits, hits);
+    }
+    return {samples, hits};
+}
+
+size_t countDistinctSampleKeys(std::span<UInt64> keys)
+{
+    std::sort(keys.begin(), keys.end());
+    return std::unique(keys.begin(), keys.end()) - keys.begin();
+}
+
+}
+
+void HashJoin::selectAutoFingerprints([[maybe_unused]] const ScatteredBlock & block)
+{
+    auto reject = [&](const char * reason)
+    {
+        ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintRejected);
+        LOG_TEST(log, "{}Automatic fingerprint lookup declined: {}", instance_log_id, reason);
+    };
+#if !defined(__aarch64__)
+    reject("no native performance calibration for this architecture");
+    return;
+#else
+    if (!build_phase_finished || build_layout.two_level || data->tables.size() != 1
+        || keyType() != Type::key64 || from_storage_join || data.use_count() != 1)
+    {
+        reject("post-build method is not an exclusively owned ordinary key64 table");
+        return;
+    }
+    if (estimated_probe_rows)
+        ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintProbeEstimate, *estimated_probe_rows);
+    if (!estimated_probe_rows || *estimated_probe_rows < block.rows())
+    {
+        reject("missing or inconsistent probe-row estimate");
+        return;
+    }
+    const auto & clause = table_join->getOnlyClause();
+    if (clause.key_names_left.size() != 1 || !clause.condColumnNames().first.empty())
+    {
+        reject("unsupported probe key or ON mask");
+        return;
+    }
+    const auto & probe_column = block.getSourceBlock().getByName(clause.key_names_left.front()).column;
+    if (isColumnConst(*probe_column))
+    {
+        reject("constant probe column");
+        return;
+    }
+    const auto & column = probe_column;
+    const auto * keys = typeid_cast<const ColumnUInt64 *>(column.get());
+    if (!keys)
+    {
+        reject("probe key is not a nonnullable UInt64 column");
+        return;
+    }
+
+    auto & table = *data->tables.front();
+    const bool selected = [&]
+    {
+        if (!table.hasExclusiveKey64Map())
+            return false;
+        const size_t capacity = table.bufferSizeInCells();
+        const size_t build_keys = table.keys();
+        ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintCapacity, capacity);
+        /// Reject an insufficient work budget before doing any sample lookups.
+        if (AutoFingerprintPolicy::select(estimated_probe_rows, build_keys, capacity, AutoFingerprintPolicy::initial_sample_rows, 0)
+            != AutoFingerprintPolicy::Reason::Selected)
+            return false;
+        std::array<UInt64, AutoFingerprintPolicy::initial_sample_rows> sampled_keys{};
+        const auto [samples, hits] = sampleAutoFingerprintKeys(block, *keys, table, sampled_keys);
+        const size_t distinct = countDistinctSampleKeys(std::span(sampled_keys).first(samples));
+        ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintInitialSampleRows, samples);
+        ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintInitialSampleHits, hits);
+        ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintInitialDistinctKeys, distinct);
+        if (distinct * 2 <= samples)
+            return false;
+        const auto reason = AutoFingerprintPolicy::select(estimated_probe_rows, build_keys, capacity, samples, hits);
+        LOG_TEST(log, "{}Automatic fingerprint estimate={}, build={}, capacity={}, sample={}/{}, decision={}",
+            instance_log_id, estimated_probe_rows.value_or(0), build_keys, capacity, hits, samples, static_cast<unsigned>(reason));
+        if (reason != AutoFingerprintPolicy::Reason::Selected)
+            return false;
+        const auto & limits = table_join->sizeLimits();
+        const size_t current_bytes = getTotalByteCount();
+        if (limits.max_bytes && (current_bytes >= limits.max_bytes || capacity + 15 > limits.max_bytes - current_bytes))
+            return false;
+
+        table.prepareAutoFingerprints();
+        return true;
+    }();
+    if (!selected)
+    {
+        reject("work budget, sample, ownership or memory limit rejected preparation");
+        return;
+    }
+    recomputeBucketBytes();
+    updatePeakBuildBytes(getTotalByteCount());
+    ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintSelected);
+#endif
+}
+
+void HashJoin::monitorAutoFingerprints(const ScatteredBlock & block)
+{
+    auto & table = *data->tables.front();
+    if (!table.fingerprintsEnabled())
+        return;
+    const auto & key_name = table_join->getOnlyClause().key_names_left.front();
+    const auto column = block.getSourceBlock().getByName(key_name).column->convertToFullColumnIfConst();
+    const auto * keys = typeid_cast<const ColumnUInt64 *>(column.get());
+    if (!keys)
+    {
+        if (table.disableFingerprints())
+            ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintDisabled);
+        return;
+    }
+    std::array<UInt64, AutoFingerprintPolicy::monitor_sample_rows> sampled_keys{};
+    const auto [samples, hits] = sampleAutoFingerprintKeys(block, *keys, table, sampled_keys);
+    const bool frequent_hits = samples && hits * AutoFingerprintPolicy::monitor_sample_rows
+        >= AutoFingerprintPolicy::monitor_disable_hits * samples;
+    /// Repeated misses can stay hot in the ordinary table. Short blocks provide little evidence of periodic reuse.
+    if (frequent_hits || (block.rows() >= AutoFingerprintPolicy::min_monitor_rows_for_reuse
+        && countDistinctSampleKeys(std::span(sampled_keys).first(samples)) <= AutoFingerprintPolicy::monitor_max_distinct_for_reuse))
+    {
+        if (table.disableFingerprints())
+            ProfileEvents::increment(ProfileEvents::HashJoinAutoFingerprintDisabled);
+    }
+}
+
 JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
 {
+    /// `JoiningTransform::transformHeader` dispatches an empty header before build.
+    /// Leave `call_once` untouched there; every post-build reader must cross the barrier.
+    if (auto_fingerprint && build_phase_finished)
+    {
+        bool initialized_here = false;
+        /// Every probe reader crosses this barrier before observing maps or their type.
+        std::call_once(auto_fingerprint_once, [&]
+        {
+            /// Memoize failure so waiting readers propagate it instead of retrying allocation or ownership transfer.
+            try
+            {
+                selectAutoFingerprints(block);
+            }
+            catch (...)
+            {
+                auto_fingerprint_exception = std::current_exception();
+            }
+            initialized_here = true;
+        });
+        if (auto_fingerprint_exception)
+            std::rethrow_exception(auto_fingerprint_exception);
+        if (!initialized_here)
+            monitorAutoFingerprints(block);
+    }
+
     JoinResultPtr res;
     const bool joined = dispatchJoinShape(
         kind,
@@ -2393,6 +2597,17 @@ bool HashJoin::recordsRowRefsForStats() const
 
 void HashJoin::onBuildPhaseFinish()
 {
+    if (keyType() == Type::fingerprint_key64 || keyType() == Type::scalar_fingerprint_key64)
+    {
+        /// Also check an empty build and callers that defer their limit checks until finalization.
+        /// A final `BREAK` preserves the partial table already accepted at a block boundary.
+        (void)table_join->sizeLimits().check(
+            getTotalRowCount(), getTotalByteCount() + data->tables.front()->fingerprintReservationBytes(),
+            "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+        data->tables.front()->prepareFingerprints();
+        recomputeBucketBytes();
+    }
+
     freezeMapsForProbing();
     reinitUsedFlags();
 

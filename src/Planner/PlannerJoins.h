@@ -270,6 +270,7 @@ struct JoinAlgorithmParams
     std::chrono::milliseconds lock_acquire_timeout{};
 
     std::optional<UInt64> rhs_size_estimation;
+    std::optional<UInt64> probe_rows_estimation;
     std::optional<UInt64> result_rows_estimation;
 
     /// The rows of the right side from this host's own estimate of its read, for the choice of packed `String` keys when

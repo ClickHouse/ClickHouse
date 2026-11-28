@@ -2732,6 +2732,11 @@ static QueryPlanNode buildPhysicalJoinImpl(
                 table_join->setRightColumnComputed(output->result_name);
     }
 
+    /// The extracted probe-key expression runs after the child read. An `arrayJoin` in `ON`
+    /// can discard empty arrays or emit several keys from one row.
+    if (join_algorithm_params.probe_rows_estimation && left_dag.hasArrayJoin())
+        join_algorithm_params.probe_rows_estimation.reset();
+
     JoinPtr join_algorithm_ptr = chooseJoinAlgorithm(
         table_join,
         prepared_join_storage,
@@ -2775,6 +2780,13 @@ static QueryPlanNode buildPhysicalJoinImpl(
     return node;
 }
 
+void JoinStepLogical::invalidateAutoFingerprintProbeEstimate()
+{
+    auto_fingerprint_probe_estimate_disabled = true;
+    if (join_algorithm_params)
+        join_algorithm_params->probe_rows_estimation.reset();
+}
+
 void JoinStepLogical::buildPhysicalJoin(
     QueryPlanNode & node,
     const QueryPlanOptimizationSettings & optimization_settings,
@@ -2816,6 +2828,13 @@ void JoinStepLogical::buildPhysicalJoin(
 
         if (join_step->right_relation.estimated_rows)
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_relation.estimated_rows;
+
+#if defined(__aarch64__)
+        /// Index preparation needs enough physical probes to repay its cost. Join-order estimates can include
+        /// assumed array lengths or an upper bound on the number of groups.
+        if (!join_step->auto_fingerprint_probe_estimate_disabled && join_settings.experimental_join_fingerprint_mode == 4)
+            join_step->join_algorithm_params->probe_rows_estimation = QueryPlanOptimizations::getFingerprintProbeRows(*node.children[0]);
+#endif
 
         join_step->join_algorithm_params->sender_estimated_small_right_side = join_step->sender_estimated_small_right_side;
         join_step->join_algorithm_params->runtime_filter_keeps_matching_rows = join_step->runtime_filter_keeps_matching_rows;
@@ -3337,6 +3356,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     /// "Trying to extract chunk from ChunkBuffer before all inputs are finished".
     result_step->optimized = optimized;
     result_step->runtime_filter_declined_small_probe = runtime_filter_declined_small_probe;
+    result_step->auto_fingerprint_probe_estimate_disabled = auto_fingerprint_probe_estimate_disabled;
     result_step->sender_estimated_small_right_side = sender_estimated_small_right_side;
     result_step->runtime_filter_keeps_matching_rows = runtime_filter_keeps_matching_rows;
     result_step->has_runtime_filters = has_runtime_filters;

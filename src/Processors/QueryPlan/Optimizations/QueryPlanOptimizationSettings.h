@@ -198,6 +198,8 @@ struct QueryPlanOptimizationSettings
     bool query_plan_join_shard_by_pk_ranges;
     bool query_plan_join_multiway_merge;
     bool join_seal_gated_reading;
+    /// The final result cap is installed on the pipeline after plan optimization.
+    bool result_limit_can_stop_reading;
 
     bool enable_cascades_optimizer = false;
     bool cascades_aggregation_pushdown = true;

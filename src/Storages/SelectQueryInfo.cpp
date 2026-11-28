@@ -7,12 +7,35 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
 SelectQueryInfo::SelectQueryInfo()
     : prepared_sets(std::make_shared<PreparedSets>())
 {}
+
+/// Whether a read limit with a non-throwing overflow mode can end the read early instead of failing the
+/// query. Row and byte limits, including the leaf ones, are checked against the progress of the whole query
+/// and `max_execution_time` against the elapsed time, so the read can stop however few rows it selects.
+/// These are the limits that the sources of the read enforce; leaf limits are set only on a leaf of a distributed
+/// query (`distributed_depth > 0`).
+bool SelectQueryInfo::mayStopReadingEarly() const
+{
+    if (!storage_limits)
+        return false;
+    return std::ranges::any_of(
+        *storage_limits,
+        [](const StorageLimits & limits)
+        {
+            const auto & local_limits = limits.local_limits;
+            return (local_limits.size_limits.overflow_mode != OverflowMode::THROW && local_limits.size_limits.hasLimits())
+                || (limits.leaf_limits.overflow_mode != OverflowMode::THROW && limits.leaf_limits.hasLimits())
+                || (local_limits.timeout_overflow_mode != OverflowMode::THROW
+                    && local_limits.speed_limits.max_execution_time.totalMicroseconds() != 0);
+        });
+}
 
 bool SelectQueryInfo::isFinal() const
 {

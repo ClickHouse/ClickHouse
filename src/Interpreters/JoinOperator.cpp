@@ -59,6 +59,7 @@ namespace Setting
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
     extern const SettingsUInt64 parallel_hash_join_threshold;
     extern const SettingsHashJoinLayout hash_join_layout;
+    extern const SettingsUInt64 experimental_join_fingerprint_mode;
 
     extern const SettingsBool joined_block_split_single_row;
     extern const SettingsBool parallel_non_joined_rows_processing;
@@ -204,6 +205,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     max_size_to_preallocate_for_joins = query_settings[Setting::max_size_to_preallocate_for_joins];
     parallel_hash_join_threshold = query_settings[Setting::parallel_hash_join_threshold];
     hash_join_layout = query_settings[Setting::hash_join_layout];
+    experimental_join_fingerprint_mode = query_settings[Setting::experimental_join_fingerprint_mode];
 
     temporary_files_codec = query_settings[Setting::temporary_files_codec];
     temporary_files_buffer_size = query_settings[Setting::temporary_files_buffer_size];
