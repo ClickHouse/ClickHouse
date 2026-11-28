@@ -1,0 +1,11 @@
+--- a name that is not a setting at all is rejected ---
+--- the replicated member of the family is judged the same way ---
+--- a full-definition ATTACH states its settings, so they are checked ---
+--- a setting of the engine is still accepted in the reset form ---
+1
+--- an alias and an obsolete setting of the engine are still accepted ---
+CREATE TABLE default.t_mt_unknown_setting\n(\n    `x` UInt8\n)\nENGINE = MergeTree\nORDER BY x\nSETTINGS index_granularity = 4096, allow_experimental_block_number_column = 1, in_memory_parts_enable_wal = 1
+--- a query setting is still accepted ---
+1
+--- a query parameter is a VALUE, not a name, and still substitutes ---
+CREATE TABLE default.t_mt_unknown_setting\n(\n    `x` UInt8\n)\nENGINE = MergeTree\nORDER BY x\nSETTINGS index_granularity = 4096

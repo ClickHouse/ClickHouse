@@ -1,0 +1,12 @@
+--- a stored definition naming a non-setting still loads ---
+1
+7
+not_a_setting_at_all
+--- an unrelated ALTER on such a table still works ---
+merge_with_ttl_timeout = 100
+not_a_setting_at_all
+--- a refreshable view re-creates its target from a stored definition, so it keeps refreshing ---
+1
+2
+--- a stored non-setting is inherited by CREATE TABLE AS, which is fresh input ---
+UNKNOWN_SETTING
