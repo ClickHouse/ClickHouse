@@ -208,7 +208,7 @@ The maximum number of jobs that can be scheduled on the IO Thread pool.
 A value of `0` means unlimited.
 </Note>
 )", 0) \
-    DECLARE(UInt64, max_prefixes_deserialization_thread_pool_size, 100, R"(
+    DECLARE(NonZeroUInt64, max_prefixes_deserialization_thread_pool_size, 100, R"(
 ClickHouse uses threads from the prefixes deserialization Thread pool for parallel reading of metadata of columns and subcolumns from file prefixes in Wide parts in MergeTree. `max_prefixes_deserialization_thread_pool_size` limits the maximum number of threads in the pool.
 )", 0) \
     DECLARE(UInt64, max_prefixes_deserialization_thread_pool_free_size, 0, R"(

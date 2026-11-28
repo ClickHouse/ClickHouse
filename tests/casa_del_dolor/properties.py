@@ -452,7 +452,7 @@ possible_properties = {
     "max_prefixes_deserialization_thread_pool_free_size": threshold_generator(
         0.2, 0.2, 0, 1000
     ),
-    "max_prefixes_deserialization_thread_pool_size": threads_lambda,
+    "max_prefixes_deserialization_thread_pool_size": no_zero_threads_lambda,
     # 0 disables ReaderExecutor connection reuse
     "max_remote_read_connections": threshold_generator(0.2, 0.2, 0, 1000),
     "max_remote_read_network_bandwidth_for_server": threshold_generator(
