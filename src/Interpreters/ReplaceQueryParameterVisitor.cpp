@@ -99,7 +99,7 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
             for (const auto & [name, value] : settings->query_parameters)
                 scoped_parameters.insert_or_assign(name, value);
 
-        ReplaceQueryParameterVisitor scoped_visitor(scoped_parameters);
+        ReplaceQueryParameterVisitor scoped_visitor(scoped_parameters, format_settings);
         scoped_visitor.visitChildren(ast);
         num_replaced_parameters += scoped_visitor.getNumberOfReplacedParameters();
     }
@@ -265,7 +265,6 @@ Field ReplaceQueryParameterVisitor::resolveParameterValueAsField(const String & 
     auto temp_column_ptr = data_type->createColumn();
     IColumn & temp_column = *temp_column_ptr;
     ReadBufferFromString read_buffer{value};
-    FormatSettings format_settings;
 
     const SerializationPtr & serialization = data_type->getDefaultSerialization();
     try
@@ -347,9 +346,9 @@ void ReplaceQueryParameterVisitor::visitSetQuery(ASTSetQuery & set_query)
     visitSettingsChanges(set_query.changes);
 }
 
-void replaceQueryParametersInSettingsChanges(SettingsChanges & changes, const NameToNameMap & parameters)
+void replaceQueryParametersInSettingsChanges(SettingsChanges & changes, const NameToNameMap & parameters, const FormatSettings & format_settings)
 {
-    ReplaceQueryParameterVisitor(parameters).visitSettingsChanges(changes);
+    ReplaceQueryParameterVisitor(parameters, format_settings).visitSettingsChanges(changes);
 }
 
 void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)

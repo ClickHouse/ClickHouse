@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <Core/Types.h>
+#include <Formats/FormatSettings.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
@@ -17,8 +18,12 @@ class SettingsChanges;
 class ReplaceQueryParameterVisitor
 {
 public:
-    explicit ReplaceQueryParameterVisitor(const NameToNameMap & parameters)
+    /// Format settings affect how parameter values are parsed, e.g. `date_time_input_format`
+    /// for a `{param:DateTime}` parameter. Pass the settings obtained from the query context
+    /// (see `getFormatSettings`) so that the corresponding settings of the user are respected.
+    ReplaceQueryParameterVisitor(const NameToNameMap & parameters, const FormatSettings & format_settings_)
         : query_parameters(parameters)
+        , format_settings(format_settings_)
     {}
 
     void visit(ASTPtr & ast);
@@ -32,6 +37,7 @@ public:
 
 private:
     const NameToNameMap & query_parameters;
+    FormatSettings format_settings;
     size_t num_replaced_parameters = 0;
 
     const String & getParamValue(const String & name);
@@ -49,6 +55,6 @@ private:
 
 /// Resolve query parameters used as setting values in a SettingsChanges list, in place.
 /// Convenience wrapper around ReplaceQueryParameterVisitor::visitSettingsChanges.
-void replaceQueryParametersInSettingsChanges(SettingsChanges & changes, const NameToNameMap & parameters);
+void replaceQueryParametersInSettingsChanges(SettingsChanges & changes, const NameToNameMap & parameters, const FormatSettings & format_settings);
 
 }
