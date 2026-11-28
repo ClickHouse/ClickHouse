@@ -3,6 +3,8 @@
 #include <Common/StringUtils.h>
 #include <Parsers/ASTFunction.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -39,6 +41,15 @@ inline bool functionIsJoinGet(const std::string & name)
 inline bool functionIsDictGet(const std::string & name)
 {
     return startsWith(name, "dictGet") || (name == "dictHas") || (name == "dictIsIn") || startsWith(name, "naiveBayesClassifier");
+}
+
+inline std::optional<size_t> getDictionaryNameArgumentPosition(const std::string & name)
+{
+    if (functionIsDictGet(name))
+        return 0;
+    if (name == "assignCentroid")
+        return 1;
+    return {};
 }
 
 inline bool checkFunctionIsInOrGlobalInOperator(const ASTFunction & func)
