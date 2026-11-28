@@ -22,6 +22,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
@@ -33,10 +34,46 @@
 
 #include <gtest/gtest.h>
 
+namespace DB
+{
+void registerAggregatingStep(QueryPlanStepRegistry & registry);
+void registerDistinctStep(QueryPlanStepRegistry & registry);
+}
+
 using namespace DB;
 
 namespace
 {
+
+/// A registry holding the steps under test, registered the way `registerPlanSteps` registers them, so the
+/// version lists are the production ones. Not the process-wide instance: other tests in this binary populate
+/// that one, and a step cannot be registered twice.
+QueryPlanStepRegistry & stepRegistry()
+{
+    static QueryPlanStepRegistry registry;
+    static const bool registered = []
+    {
+        registerAggregatingStep(registry);
+        registerDistinctStep(registry);
+        return true;
+    }();
+    (void)registered;
+    return registry;
+}
+
+DistinctStep::Settings makeDistinctSettings(const SizeLimits & limits = {})
+{
+    DistinctStep::Settings settings;
+    settings.set_size_limits = limits;
+    return settings;
+}
+
+/// Runs the two passes of `optimizeTreeSecondPass` that decide how the final `DISTINCT` runs, in their order.
+void optimizeDistinct(QueryPlan & plan, const QueryPlanOptimizationSettings & settings, QueryPlan::Nodes & nodes)
+{
+    QueryPlanOptimizations::applyOrder(settings, *plan.getRootNode());
+    QueryPlanOptimizations::applyStreamDisjointness(settings, *plan.getRootNode(), nodes);
+}
 
 SharedHeader makeSourceHeader()
 {
@@ -49,11 +86,11 @@ bool convertsDistinctToAggregation(QueryPlanStepPtr source)
     QueryPlan plan;
     const auto header = source->getOutputHeader();
     plan.addStep(std::move(source));
-    plan.addStep(std::make_unique<DistinctStep>(header, SizeLimits{}, 0, Names{"k"}, false));
+    plan.addStep(std::make_unique<DistinctStep>(header, makeDistinctSettings(), 0, Names{"k"}, false));
     QueryPlanOptimizationSettings settings(getContext().context);
     settings.convert_distinct_to_aggregation = true;
     QueryPlan::Nodes nodes;
-    QueryPlanOptimizations::applyOrder(settings, *plan.getRootNode(), nodes);
+    optimizeDistinct(plan, settings, nodes);
     return plan.getRootNode()->step->getName() == "Aggregating";
 }
 
@@ -76,12 +113,13 @@ QueryTreeNodePtr makeSourceQuery(bool has_bounded_read)
 QueryPlan makePlanWithDeserializedDistinct(bool preliminary)
 {
     const auto header = makeSourceHeader();
-    DistinctStep distinct(header, SizeLimits{}, /*limit_hint=*/0, Names{"k"}, preliminary);
+    DistinctStep distinct(header, makeDistinctSettings(), /*limit_hint=*/0, Names{"k"}, preliminary);
 
     WriteBufferFromOwnString out;
     SerializedSetsRegistry serialized_sets;
     IQueryPlanStep::Serialization serialization{out, serialized_sets};
     serialization.version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+    serialization.step_version = stepRegistry().versionToWrite(distinct.getSerializationName(), serialization.version);
     distinct.serialize(serialization);
     QueryPlanSerializationSettings settings;
     distinct.serializeSettings(settings, serialization.version);
@@ -91,7 +129,8 @@ QueryPlan makePlanWithDeserializedDistinct(bool preliminary)
     ContextPtr context = getContext().context;
     SharedHeaders input_headers{header};
     IQueryPlanStep::Deserialization deserialization{
-        in, deserialized_sets, {}, context, input_headers, header, settings, 0, serialization.version, false};
+        in, deserialized_sets, {}, context, input_headers, header, settings, 0, serialization.version,
+        serialization.step_version, false};
 
     QueryPlan plan;
     plan.addStep(std::make_unique<ReadNothingStep>(header));
@@ -99,24 +138,26 @@ QueryPlan makePlanWithDeserializedDistinct(bool preliminary)
     return plan;
 }
 
-QueryPlanStepPtr roundTripAggregation(const AggregatingStep & step, UInt64 version)
+QueryPlanStepPtr roundTripAggregation(const AggregatingStep & step, UInt64 step_version)
 {
     WriteBufferFromOwnString out;
     SerializedSetsRegistry serialized_sets;
     IQueryPlanStep::Serialization serialization{out, serialized_sets};
-    serialization.version = version;
+    serialization.version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+    serialization.step_version = step_version;
     QueryPlanSerializationSettings settings;
-    step.serializeSettings(settings, version);
-    settings.writeChangedBinary(out);
+    step.serializeSettings(settings, serialization.version);
+    settings.write(out);
     step.serialize(serialization);
 
     ReadBufferFromString in(out.str());
     QueryPlanSerializationSettings restored_settings;
-    restored_settings.readBinary(in);
+    restored_settings.read(in);
     DeserializedSetsRegistry deserialized_sets;
     ContextPtr context = getContext().context;
     IQueryPlanStep::Deserialization deserialization{
-        in, deserialized_sets, {}, context, step.getInputHeaders(), step.getOutputHeader(), restored_settings, 0, version, false};
+        in, deserialized_sets, {}, context, step.getInputHeaders(), step.getOutputHeader(), restored_settings, 0,
+        serialization.version, step_version, false};
     auto restored = AggregatingStep::deserialize(deserialization);
     EXPECT_TRUE(in.eof());
     return restored;
@@ -135,7 +176,7 @@ TEST(DistinctToAggregation, DeserializedStepUsesOptimizationSettings)
             QueryPlanOptimizationSettings settings(getContext().context);
             settings.convert_distinct_to_aggregation = enabled;
             QueryPlan::Nodes nodes;
-            QueryPlanOptimizations::applyOrder(settings, *plan.getRootNode(), nodes);
+            optimizeDistinct(plan, settings, nodes);
             EXPECT_EQ(plan.getRootNode()->step->getName(), enabled && !preliminary ? "Aggregating" : "Distinct");
         }
     }
@@ -149,7 +190,7 @@ TEST(DistinctToAggregation, PreservesExplicitSortDescription)
         const auto header = makeSourceHeader();
         SortDescription sort_description;
         sort_description.emplace_back("k", 1, 1);
-        auto distinct = std::make_unique<DistinctStep>(header, SizeLimits{}, 0, Names{"k"}, false);
+        auto distinct = std::make_unique<DistinctStep>(header, makeDistinctSettings(), 0, Names{"k"}, false);
         distinct->applyOrder(sort_description);
 
         QueryPlan plan;
@@ -160,7 +201,7 @@ TEST(DistinctToAggregation, PreservesExplicitSortDescription)
         settings.convert_distinct_to_aggregation = true;
         settings.distinct_in_order = distinct_in_order;
         QueryPlan::Nodes nodes;
-        QueryPlanOptimizations::applyOrder(settings, *plan.getRootNode(), nodes);
+        optimizeDistinct(plan, settings, nodes);
 
         ASSERT_EQ(plan.getRootNode()->step->getName(), "Distinct");
         EXPECT_EQ(plan.getRootNode()->step->getSortDescription(), sort_description);
@@ -217,13 +258,13 @@ TEST(DistinctToAggregation, DuplicateColumnsRequireIdenticalValues)
             plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(actions)));
             const auto header = plan.getCurrentHeader();
             if (preliminary)
-                plan.addStep(std::make_unique<DistinctStep>(header, SizeLimits{}, 0, header->getNames(), true));
-            plan.addStep(std::make_unique<DistinctStep>(header, SizeLimits{}, 0, header->getNames(), false));
+                plan.addStep(std::make_unique<DistinctStep>(header, makeDistinctSettings(), 0, header->getNames(), true));
+            plan.addStep(std::make_unique<DistinctStep>(header, makeDistinctSettings(), 0, header->getNames(), false));
 
             QueryPlanOptimizationSettings settings(getContext().context);
             settings.convert_distinct_to_aggregation = true;
             QueryPlan::Nodes nodes;
-            QueryPlanOptimizations::applyOrder(settings, *plan.getRootNode(), nodes);
+            optimizeDistinct(plan, settings, nodes);
             const bool can_convert = duplicate_columns == DuplicateColumns::RepeatedOutput
                 || duplicate_columns == DuplicateColumns::AliasedOutput;
             EXPECT_EQ(plan.getRootNode()->step->getName(), can_convert ? "Aggregating" : "Distinct");
@@ -247,12 +288,12 @@ TEST(DistinctToAggregation, ConstantColumnsPreserveOutputHeader)
                 {type->createColumnConst(0, UInt64(7)), type, "c"}, {key_column, type, "k"}});
             QueryPlan plan;
             plan.addStep(std::make_unique<ReadNothingStep>(header));
-            plan.addStep(std::make_unique<DistinctStep>(header, SizeLimits{}, 0, keys, false));
+            plan.addStep(std::make_unique<DistinctStep>(header, makeDistinctSettings(), 0, keys, false));
 
             QueryPlanOptimizationSettings settings(getContext().context);
             settings.convert_distinct_to_aggregation = true;
             QueryPlan::Nodes nodes;
-            QueryPlanOptimizations::applyOrder(settings, *plan.getRootNode(), nodes);
+            optimizeDistinct(plan, settings, nodes);
 
             const auto & root = *plan.getRootNode();
             const bool can_convert = !all_constant && keys != Names{"c"};
@@ -321,7 +362,7 @@ TEST(DistinctToAggregation, RemoteSourceProperties)
                         });
                     auto source = std::make_unique<ReadFromRemote>(std::move(shards), makeSourceHeader(), stage,
                         StorageID("test", "source"), nullptr, context, nullptr, Scalars{}, Tables{},
-                        getLogger("DistinctToAggregationTest"), 2, nullptr, "test");
+                        getLogger("DistinctToAggregationTest"), 2, nullptr, "test", /*shard_scope_identity_=*/"");
                     EXPECT_EQ(convertsDistinctToAggregation(std::move(source)),
                         bounded && (stage != QueryProcessingStage::Complete || (!totals && !extremes)));
                 }
@@ -342,8 +383,8 @@ TEST(DistinctToAggregation, ParallelReplicaSourceProperties)
     {
         auto source = std::make_unique<ReadFromParallelRemoteReplicasStep>(query,
             query_tree, nullptr, cluster, StorageID("test", "source"), nullptr, makeSourceHeader(),
-            QueryProcessingStage::FetchColumns, context, nullptr, Scalars{}, Tables{},
-            getLogger("DistinctToAggregationTest"), nullptr, std::vector<ConnectionPoolPtr>{});
+            QueryProcessingStage::FetchColumns, context, /*filter_rewrite_context_=*/context, nullptr, Scalars{}, Tables{},
+            getLogger("DistinctToAggregationTest"), nullptr, VectorWithMemoryTracking<ConnectionPoolPtr>{});
         EXPECT_EQ(convertsDistinctToAggregation(std::move(source)), bounded);
     }
 }
@@ -412,16 +453,14 @@ TEST(DistinctToAggregation, DistinctLimitsSurviveSerialization)
         const auto header = makeSourceHeader();
         QueryPlan plan;
         plan.addStep(std::make_unique<ReadNothingStep>(header));
-        plan.addStep(std::make_unique<DistinctStep>(header, limits, 0, Names{"k"}, false));
+        plan.addStep(std::make_unique<DistinctStep>(header, makeDistinctSettings(limits), 0, Names{"k"}, false));
         QueryPlanOptimizationSettings settings(getContext().context);
         QueryPlan::Nodes nodes;
         ASSERT_TRUE(QueryPlanOptimizations::tryConvertDistinctToAggregation(*plan.getRootNode(), nodes, settings));
 
         const auto & step = static_cast<const AggregatingStep &>(*plan.getRootNode()->step);
         EXPECT_TRUE(step.isSerializable());
-        EXPECT_THROW(roundTripAggregation(step,
-            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_LIMITS - 1), Exception);
-        auto restored = roundTripAggregation(step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+        auto restored = roundTripAggregation(step, stepRegistry().versionToWrite("Aggregating", DBMS_QUERY_PLAN_SERIALIZATION_VERSION));
         const auto & params = static_cast<const AggregatingStep &>(*restored).getParams();
         EXPECT_EQ(params.max_rows_to_group_by, limits.max_rows);
         EXPECT_EQ(params.max_bytes_to_group_by, limits.max_bytes);
@@ -435,7 +474,8 @@ TEST(DistinctToAggregation, DefaultAggregationLimitsSurviveSerialization)
 {
     Aggregator::Params params(Names{"k"}, AggregateDescriptions{}, /*overflow_row=*/false,
         /*max_threads=*/1, /*max_block_size=*/1000, /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5,
-        /*serialize_string_with_zero_byte=*/false, /*enable_packed_string_keys=*/true);
+        /*serialize_string_with_zero_byte=*/false, /*enable_packed_string_keys=*/true,
+        /*enable_fixed_and_packed_string_keys=*/false);
     const AggregatingStep step(makeSourceHeader(), std::move(params), GroupingSetsParamsList{},
         /*final=*/true, /*max_block_size=*/1000, /*aggregation_in_order_max_block_bytes=*/0,
         /*merge_threads=*/1, /*temporary_data_merge_threads=*/1, /*storage_has_evenly_distributed_read=*/false,
@@ -444,11 +484,11 @@ TEST(DistinctToAggregation, DefaultAggregationLimitsSurviveSerialization)
         /*memory_bound_merging_of_aggregation_results_enabled=*/false,
         /*explicit_sorting_required_for_aggregation_in_order=*/false);
 
-    for (UInt64 version : {DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_LIMITS - 1,
-             DBMS_QUERY_PLAN_SERIALIZATION_VERSION})
+    /// Step version 1 omits the limits, version 2 writes them.
+    for (UInt64 step_version : {1, 2})
     {
-        SCOPED_TRACE(version);
-        auto restored = roundTripAggregation(step, version);
+        SCOPED_TRACE(step_version);
+        auto restored = roundTripAggregation(step, step_version);
         const auto & restored_params = static_cast<const AggregatingStep &>(*restored).getParams();
         EXPECT_EQ(restored_params.max_bytes_to_group_by, 0);
         EXPECT_EQ(restored_params.limit_errors, Aggregator::Params::LimitErrors{});
