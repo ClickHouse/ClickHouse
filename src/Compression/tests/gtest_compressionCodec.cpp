@@ -703,25 +703,6 @@ auto SequentialGenerator = [](auto stride = 1)
     };
 };
 
-// Generator that helps debugging output of other generators
-// by logging every output value alongside iteration index and input.
-//auto LoggingProxyGenerator = [](auto other_generator, const char * name, std::ostream & ostr, const int limit = std::numeric_limits<int>::max())
-//{
-//    ostr << "\n\nValues from " << name << ":\n";
-//    auto count = std::make_shared<int>(0);
-//    return [&, count](auto i)
-//    {
-//        using ValueType = decltype(i);
-//        const auto ret = static_cast<ValueType>(other_generator(i));
-//        if (++(*count) < limit)
-//        {
-//            ostr << "\t" << *count << " : " << i << " => " << ret << "\n";
-//        }
-
-//        return ret;
-//    };
-//};
-
 template <typename T>
 using uniform_distribution =
 typename std::conditional_t<std::is_floating_point_v<T>, std::uniform_real_distribution<T>,
@@ -1333,77 +1314,6 @@ auto DDperformanceTestSequence()
         + generateSeq<ValueType>(G(MinMaxGenerator()), 0, times) // worst
         + generateSeq<ValueType>(G(SameValueGenerator(42)), 0, times); // best
 }
-
-// prime numbers in ascending order with some random repetitions hit all the cases of Gorilla.
-// auto PrimesWithMultiplierGenerator = [](int multiplier = 1)
-// {
-//     return [multiplier](auto i)
-//     {
-//         static const int vals[] = {
-//              2, 3, 5, 7, 11, 11, 13, 17, 19, 23, 29, 29, 31, 37, 41, 43,
-//             47, 47, 53, 59, 61, 61, 67, 71, 73, 79, 83, 89, 89, 97, 101, 103,
-//             107, 107, 109, 113, 113, 127, 127, 127
-//         };
-//         static const size_t count = sizeof(vals)/sizeof(vals[0]);
-//
-//         return static_cast<UInt64>(vals[i % count]) * multiplier;
-//     };
-// };
-
-// These 'tests' try to measure performance of encoding and decoding and hence only make sense to be run locally,
-// also they require pretty big data to run against and generating this data slows down startup of unit test process.
-// So un-comment only at your discretion.
-
-// Just as if all sequences from generatePyramidOfSequences were appended to one-by-one to the first one.
-//template <typename T, typename Generator>
-//CodecTestSequence generatePyramidSequence(const size_t sequences_count, Generator && generator, const char* generator_name)
-//{
-//    CodecTestSequence sequence;
-//    sequence.data_type = makeDataType<T>();
-//    sequence.serialized_data.reserve(sequences_count * sequences_count * sizeof(T));
-//
-//    for (size_t i = 1; i < sequences_count; ++i)
-//    {
-//        std::string name = generator_name + std::string(" from 0 to ") + std::to_string(i);
-//        sequence.append(generateSeq<T>(std::forward<decltype(generator)>(generator), name.c_str(), 0, i));
-//    }
-//
-//    return sequence;
-//};
-
-//INSTANTIATE_TEST_SUITE_P(DoubleDelta,
-//    CodecTestPerformance,
-//    ::testing::Combine(
-//        ::testing::Values(Codec("DoubleDelta")),
-//        ::testing::Values(
-//            DDperformanceTestSequence<Int8 >(),
-//            DDperformanceTestSequence<UInt8 >(),
-//            DDperformanceTestSequence<Int16 >(),
-//            DDperformanceTestSequence<UInt16>(),
-//            DDperformanceTestSequence<Int32 >(),
-//            DDperformanceTestSequence<UInt32>(),
-//            DDperformanceTestSequence<Int64 >(),
-//            DDperformanceTestSequence<UInt64>()
-//        )
-//    ),
-//);
-
-//INSTANTIATE_TEST_SUITE_P(Gorilla,
-//    CodecTestPerformance,
-//    ::testing::Combine(
-//        ::testing::Values(Codec("Gorilla")),
-//        ::testing::Values(
-//            generatePyramidSequence<Int8 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
-//            generatePyramidSequence<UInt8 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
-//            generatePyramidSequence<Int16 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
-//            generatePyramidSequence<UInt16>(42, G(PrimesWithMultiplierGenerator())) * 6'000,
-//            generatePyramidSequence<Int32 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
-//            generatePyramidSequence<UInt32>(42, G(PrimesWithMultiplierGenerator())) * 6'000,
-//            generatePyramidSequence<Int64 >(42, G(PrimesWithMultiplierGenerator())) * 6'000,
-//            generatePyramidSequence<UInt64>(42, G(PrimesWithMultiplierGenerator())) * 6'000
-//        )
-//    ),
-//);
 
 TEST(LZ4Test, DecompressMalformedInput)
 {

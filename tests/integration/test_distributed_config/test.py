@@ -46,8 +46,6 @@ def test_distibuted_settings(start_cluster):
         DETACH TABLE dist_2;
     """
     )
-    ## Settings are not added to CREATE (only specific one, like index_granularity for MergeTree)
-    # assert "flush_on_detach = 0" in node.query("SHOW CREATE dist_2")
-
-    # But settins are applied (flush_on_detach=false in config, so data_2 should not have any rows)
+    # Settings are not added to `SHOW CREATE` (only specific ones, like `index_granularity` for `MergeTree`),
+    # but settins are applied (flush_on_detach=false in config, so data_2 should not have any rows)
     assert int(node.query("SELECT count() FROM data_2")) == 0

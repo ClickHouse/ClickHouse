@@ -52,7 +52,6 @@ create_clickhouse_dictionary_table_template = """
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
-        # time.sleep(30)
         cluster.start()
 
         # Create a MySQL database

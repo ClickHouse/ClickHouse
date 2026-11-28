@@ -174,8 +174,6 @@ Field convertFloatToDecimalType(const Field & from, const DataTypeDecimal<T> & t
     if (!type.canStoreWhole(value))
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Number is too big to place in {}", type.getName());
 
-    //String sValue = convertFieldToString(from);
-    //int fromScale = sValue.length()- sValue.find('.') - 1;
     UInt32 scale = type.getScale();
 
     auto scaled_value = convertToDecimal<DataTypeNumber<From>, DataTypeDecimal<T>>(value, scale);

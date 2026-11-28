@@ -319,13 +319,6 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (right_ctes.unsatisfiable)
         return 0;
 
-    // {
-    //     WriteBufferFromOwnString buf;
-    //     IQueryPlanStep::FormatSettings s{.out=buf, .write_header=true};
-    //     join->describeActions(s);
-    //     std::cerr << buf.stringView() << std::endl;
-    // }
-
     if (build_set_from_left_part)
     {
         for (auto & p : key_pairs)

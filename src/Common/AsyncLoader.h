@@ -201,8 +201,8 @@ public:
     // Remove all jobs of this task from AsyncLoader.
     void remove();
 
-    // Return the final jobs in this tasks. This job subset should be used as `dependencies` for dependent jobs or tasks:
-    //   auto load_task = loadSomethingAsync(async_loader, load_after_task.goals(), something);
+    /// Return the final jobs in this tasks. This job subset should be used as `dependencies` for dependent jobs or tasks,
+    /// for example: `auto load_task = loadSomethingAsync(async_loader, load_after_task.goals(), something);`.
     [[nodiscard]] const LoadJobSet & goals() const { return goal_jobs.empty() ? jobs : goal_jobs; }
 
     AsyncLoader & loader;

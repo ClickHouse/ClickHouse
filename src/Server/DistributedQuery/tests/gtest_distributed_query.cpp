@@ -244,8 +244,6 @@ static QueryPlan createHashJoinQueryPlan(const String & data_a, const String & d
 {
     const String file_name_a = "/tmp/file_a";
     const String file_name_b = "/tmp/file_b";
-//    const size_t num_shards_a = 3;
-//    const size_t num_shards_b = 2;
     const size_t replicate_input_count = 2; // Replicate the same data many times just for testing
 
     SharedHeader header_a = prepareSourceFileInNativeFormat(file_name_a, data_a, replicate_input_count);

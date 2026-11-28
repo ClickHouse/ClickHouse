@@ -1525,14 +1525,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     ///
     /// It is possible to filter columns before and after WITH FILL, but such change is not idempotent.
     /// So, appliying this to pair (Filter -> Filling) several times will create several similar filters.
-    // if (auto * filling = typeid_cast<FillingStep *>(child.get()))
-    // {
-    // }
-
-    /// Same reason for Cube
-    // if (auto * cube = typeid_cast<CubeStep *>(child.get()))
-    // {
-    // }
+    /// The same applies to `CubeStep`.
 
     if (typeid_cast<SortingStep *>(child.get()))
     {

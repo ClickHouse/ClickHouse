@@ -25,7 +25,6 @@ struct TimeSeriesColumnNames
     /// The "tags" table contains identifiers for each combination of a metric name with corresponding tags (labels):
 
     /// The default expression specified for the "id" column contains an expression for calculating an identifier of a time series by a metric name and tags.
-    //static constexpr const char * kID = "id";
     static constexpr const char * MetricName = "metric_name";
 
     /// Contains all tags, including the "__name__" tag with the name of a metric and the tags

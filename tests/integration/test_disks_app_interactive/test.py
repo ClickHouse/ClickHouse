@@ -123,7 +123,6 @@ class DisksClient(object):
                 elif file == self.proc.stderr:
                     error_line = self.proc.stderr.readline()
                     print(error_line)
-                    # raise ClickHouseDisksException(error_line.strip().decode())
 
             if separator_seen:
                 break

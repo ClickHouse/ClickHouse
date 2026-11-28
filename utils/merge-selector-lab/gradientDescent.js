@@ -51,7 +51,6 @@ export function orthogonalProjection(x, L, xSum, xMax) {
 
 function initialGuess(L, xSum) {
     return Array(L).fill(xSum / L); // Start with an equal distribution
-    // return projection(Array(L).fill(1).map((xi) => Math.random() * xSum));
 }
 
 /**

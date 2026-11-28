@@ -17,8 +17,6 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
-//#include <Common/HashTable/HashTableWithSmallLocks.h>
-//#include <Common/HashTable/HashTableMerge.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>

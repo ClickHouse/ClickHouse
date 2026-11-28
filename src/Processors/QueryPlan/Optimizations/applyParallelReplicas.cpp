@@ -422,14 +422,6 @@ public:
 
     bool visitTopDownImpl(QueryPlan::Node *, QueryPlan::Node *)
     {
-        // if (!parent_node)
-        //     return true;
-        //
-        // // there is no need to visit nodes below split step
-        // auto * split_step = typeid_cast<ParallelReplicasSplitStep *>(parent_node->step.get());
-        // if (split_step)
-        //     return false;
-        //
         return true;
     }
 
@@ -782,14 +774,6 @@ public:
 
     bool visitTopDownImpl(QueryPlan::Node *, QueryPlan::Node *)
     {
-        // if (!parent_node)
-        //     return true;
-        //
-        // // there is no need to visit nodes below split step
-        // auto * split_step = typeid_cast<ParallelReplicasSplitStep *>(parent_node->step.get());
-        // if (split_step)
-        //     return false;
-
         return true;
     }
 

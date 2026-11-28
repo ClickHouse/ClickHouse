@@ -55,8 +55,6 @@ try
                 {
                     Poco::Net::SocketAddress address = DNSResolver::instance().resolveAddress(host, port);
                     Poco::Net::StreamSocket socket;
-                    //socket.setLinger(1, 0);
-
                     socket.connectNB(address);
                     if (!socket.poll(Poco::Timespan(1000000),
                         Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR))

@@ -108,8 +108,6 @@ protected:
 
         if (method == static_cast<UInt8>(CompressionMethodByte::LZ4))
         {
-            //LZ4::statistics(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_decompressed, stat);
-
             if (variant == LZ4_REFERENCE)
             {
                 if (LZ4_decompress_fast(

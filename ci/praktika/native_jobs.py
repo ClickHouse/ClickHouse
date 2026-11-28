@@ -830,26 +830,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             fail_fast=True,
         )
 
-    def _check_secrets(secrets):
-        print("Check Secrets")
-        stop_watch = Utils.Stopwatch()
-        infos = []
-        for secret_config in secrets:
-            value = secret_config.get_value()
-            if not value:
-                info = f"ERROR: Failed to read secret [{secret_config.name}]"
-                infos.append(info)
-                print(info)
-
-        info = "\n".join(infos)
-        return Result(
-            name="Check Secrets",
-            status=(Result.Status.FAIL if infos else Result.Status.OK),
-            start_time=stop_watch.start_time,
-            duration=stop_watch.duration,
-            info=info,
-        )
-
     def _check_db(workflow):
         stop_watch = Utils.Stopwatch()
         try:
@@ -1019,14 +999,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             results.append(result_)
         else:
             print("NOTE: Skipping yaml-up-to-date check (PRAKTIKA_TEST_ACTIVE=1)")
-
-    # TODO: commented out to decrease risk of throttling:
-    #       An error occurred (ThrottlingException) when calling the GetParameter operation (reached max retries: 2): Rate exceeded
-    # if results[-1].is_ok() and workflow.secrets:
-    #     result_ = _check_secrets(workflow.secrets)
-    #     if result_.status != Result.Status.OK:
-    #         print(f"ERROR: Invalid secrets in workflow [{workflow.name}]")
-    #     results.append(result_)
 
     if results[-1].is_ok() and workflow.enable_cidb and not Info().is_local_run:
         result_ = _check_db(workflow)

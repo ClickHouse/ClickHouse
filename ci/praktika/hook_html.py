@@ -32,7 +32,6 @@ class GitCommit:
                 GitCommit(
                     message=commit["message"],
                     sha=commit["sha"],
-                    # date=commit["committedDate"],
                 )
                 for commit in json_data
             ]
@@ -99,15 +98,6 @@ class GitCommit:
     @classmethod
     def file_name(cls):
         return f"{Settings.TEMP_DIR}/commits.json"
-
-    # def _get_pr_commits(pr_number):
-    #     res = []
-    #     if not pr_number:
-    #         return res
-    #     output = Shell.get_output(f"gh pr view {pr_number}  --json commits")
-    #     if output:
-    #         res = GitCommit.from_json(output)
-    #     return res
 
 
 class HtmlRunnerHooks:

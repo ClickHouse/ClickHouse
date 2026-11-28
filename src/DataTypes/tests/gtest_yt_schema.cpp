@@ -72,10 +72,7 @@ TEST(YTDataType, CheckSimpleTypeConversation) {
     ASSERT_TRUE(checkColumnType(createSimpleTypeJson("json", true), CH_TYPE("JSON")));
     ASSERT_TRUE(checkColumnType(createSimpleTypeJson("uuid", true), CH_TYPE("UUID")));
 
-    // // Dates
-    // Commented until https://github.com/ClickHouse/ClickHouse/issues/82003 not resolved
-    // ASSERT_TRUE(checkColumnType(createSimpleTypeJson("date32", true), CH_TYPE("Date")));
-    // ASSERT_TRUE(checkColumnType(createSimpleTypeJson("date", true), CH_TYPE("Date")));
+    /// The `date32` and `date` types are not checked until https://github.com/ClickHouse/ClickHouse/issues/82003 is resolved.
     ASSERT_TRUE(checkColumnType(createSimpleTypeJson("datetime64", true), CH_TYPE("DateTime64(0)")));
     ASSERT_TRUE(checkColumnType(createSimpleTypeJson("datetime", true), CH_TYPE("DateTime64(0)")));
 
@@ -93,13 +90,7 @@ TEST(YTDataType, CheckSimpleTypeConversation) {
 
 TEST(YTDataType, CheckDecimal) {
     { // Decimal
-        // {
-        //     "type_v3": {
-        //         "type_name": "decimal",
-        //         "precision": 1,
-        //         "scale": 0
-        //     }
-        // }
+        /// Builds the schema `{"type_v3": {"type_name": "decimal", "precision": 1, "scale": 0}}`.
         Poco::JSON::Object::Ptr json(new Poco::JSON::Object());
         Poco::JSON::Object::Ptr decimal(new Poco::JSON::Object());
 
@@ -115,12 +106,7 @@ TEST(YTDataType, CheckOptional) {
 
     { // Optional
         {
-            // {
-            //     "type_v3": {
-            //         "type_name": "optional",
-            //         "item": "boolean"
-            //     }
-            // }
+            /// Builds the schema `{"type_v3": {"type_name": "optional", "item": "boolean"}}`.
             Poco::JSON::Object::Ptr json(new Poco::JSON::Object());
             Poco::JSON::Object::Ptr optional(new Poco::JSON::Object());
             optional->set("type_name", "optional");
@@ -129,15 +115,7 @@ TEST(YTDataType, CheckOptional) {
             ASSERT_TRUE(checkColumnType(json, CH_TYPE("Nullable(UInt8)")));
         }
         {
-            // {
-            //     "type_v3": {
-            //         "type_name": "optional",
-            //         "item": {
-            //             "type_name": "optional",
-            //             "item": "double"
-            //         }
-            //     }
-            // }
+            /// Builds the schema `{"type_v3": {"type_name": "optional", "item": {"type_name": "optional", "item": "double"}}}`.
 
             Poco::JSON::Object::Ptr json(new Poco::JSON::Object());
             Poco::JSON::Object::Ptr optional1(new Poco::JSON::Object());
@@ -151,15 +129,7 @@ TEST(YTDataType, CheckOptional) {
         }
 
         {
-            // {
-            //     "type_v3": {
-            //         "type_name": "optional",
-            //         "item": {
-            //             "type_name": "list",
-            //             "item": "double"
-            //         }
-            //     }
-            // }
+            /// Builds the schema `{"type_v3": {"type_name": "optional", "item": {"type_name": "list", "item": "double"}}}`.
             Poco::JSON::Object::Ptr json(new Poco::JSON::Object());
             Poco::JSON::Object::Ptr optional1(new Poco::JSON::Object());
             Poco::JSON::Object::Ptr optional2(new Poco::JSON::Object());
@@ -172,22 +142,7 @@ TEST(YTDataType, CheckOptional) {
         }
 
         {
-            // {
-            //     "type_v3": {
-            //         "type_name": "optional",
-            //         "item": {
-            //             "type_name": "tuple",
-            //             "elements": [
-            //                 {
-            //                     "type": "string"
-            //                 },
-            //                 {
-            //                     "type": "utf8"
-            //                 }
-            //             ]
-            //         }
-            //     }
-            // }
+            /// Builds the schema `{"type_v3": {"type_name": "optional", "item": {"type_name": "tuple", "elements": [{"type": "string"}, {"type": "utf8"}]}}}`.
             Poco::JSON::Object::Ptr json(new Poco::JSON::Object());
             Poco::JSON::Object::Ptr optional(new Poco::JSON::Object());
             Poco::JSON::Object::Ptr tuple(new Poco::JSON::Object());
@@ -228,15 +183,7 @@ TEST(YTDataType, CheckOptional) {
 }
 TEST(YTDataType, CheckList) {
     { // List
-        // {
-        //     "type_v3": {
-        //         "type_name": "list",
-        //         "item": {
-        //             "type_name": "list",
-        //             "item": "double"
-        //         }
-        //     }
-        // }
+        /// Builds the schema `{"type_v3": {"type_name": "list", "item": {"type_name": "list", "item": "double"}}}`.
         Poco::JSON::Object::Ptr json(new Poco::JSON::Object());
         Poco::JSON::Object::Ptr list1(new Poco::JSON::Object());
         Poco::JSON::Object::Ptr list2(new Poco::JSON::Object());
@@ -251,21 +198,7 @@ TEST(YTDataType, CheckList) {
 
 TEST(YTDataType, CheckStruct) {
     { // Struct
-        // {
-        //     "type_v3": {
-        //         "type_name": "struct",
-        //         "members": [
-        //             {
-        //                 "name": "key",
-        //                 "type": "int32"
-        //             },
-        //             {
-        //                 "name": "value",
-        //                 "type": "string"
-        //             }
-        //         ]
-        //     }
-        // }
+        /// Builds the schema `{"type_v3": {"type_name": "struct", "members": [{"name": "key", "type": "int32"}, {"name": "value", "type": "string"}]}}`.
         Poco::JSON::Object::Ptr json(new Poco::JSON::Object());
         Poco::JSON::Object::Ptr s(new Poco::JSON::Object());
         Poco::JSON::Array::Ptr members(new Poco::JSON::Array());
@@ -294,22 +227,7 @@ TEST(YTDataType, CheckStruct) {
 TEST(YTDataType, CheckTuple) {
 
     { // Tuple
-        // {
-        //     "type_v3": {
-        //         "type_name": "tuple",
-        //         "elements": [
-        //             {
-        //                 "type": "int16"
-        //             },
-        //             {
-        //                 "type": "uint32"
-        //             },
-        //             {
-        //                 "type": "int16"
-        //             }
-        //         ]
-        //     }
-        // }
+        /// Builds the schema `{"type_v3": {"type_name": "tuple", "elements": [{"type": "int16"}, {"type": "uint32"}, {"type": "int16"}]}}`.
         Poco::JSON::Object::Ptr json(new Poco::JSON::Object());
         Poco::JSON::Object::Ptr tuple(new Poco::JSON::Object());
         Poco::JSON::Array::Ptr elements(new Poco::JSON::Array());
@@ -340,19 +258,7 @@ TEST(YTDataType, CheckTuple) {
 TEST(YTDataType, CheckVariant) {
 
     { // Variant
-        // {
-        //     "type_v3": {
-        //         "type_name": "variant",
-        //         "elements": [
-        //             {
-        //                 "type": "string"
-        //             },
-        //             {
-        //                 "type": "int64"
-        //             }
-        //         ]
-        //     }
-        // }
+        /// Builds the schema `{"type_v3": {"type_name": "variant", "elements": [{"type": "string"}, {"type": "int64"}]}}`.
 
         Poco::JSON::Object::Ptr json(new Poco::JSON::Object());
         Poco::JSON::Object::Ptr variant(new Poco::JSON::Object());
@@ -380,13 +286,7 @@ TEST(YTDataType, CheckTagged) {
     
     { // Tagged
         
-        // {
-        //     "type_v3": {
-        //         "type_name": "tagged",
-        //         "tag": "image/svg",
-        //         "item": "string"
-        //     }
-        // }
+        /// Builds the schema `{"type_v3": {"type_name": "tagged", "tag": "image/svg", "item": "string"}}`.
 
         Poco::JSON::Object::Ptr json(new Poco::JSON::Object());
         Poco::JSON::Object::Ptr tagged(new Poco::JSON::Object());

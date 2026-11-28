@@ -3,20 +3,11 @@ set -ex
 set -o pipefail
 trap "exit" INT TERM
 trap 'kill $(jobs -pr) ||:' EXIT
-#S3_URL=${S3_URL:="https://clickhouse-builds.s3.amazonaws.com"}
-#BUILD_NAME=${BUILD_NAME:-package_release}
-#export S3_URL BUILD_NAME
 
 cd ./tmp_ci
 
 mkdir db0 ||:
 mkdir left ||:
-
-#left_pr=$1
-#left_sha=$2
-#
-## right_pr=$3 not used for now
-#right_sha=$4
 
 datasets=${CHPC_DATASETS-"hits1 hits10 hits100 values tpch10 tpcds1"}
 
@@ -31,32 +22,6 @@ dataset_paths["tpcds1"]="https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1
 
 function download
 {
-#    # Historically there were various paths for the performance test package.
-#    # Test all of them.
-#    declare -a urls_to_try=(
-#        "$S3_URL/PRs/$left_pr/$left_sha/$BUILD_NAME/performance.tar.zst"
-#    )
-#
-#    for path in "${urls_to_try[@]}"
-#    do
-#        if curl --fail --head "$path"
-#        then
-#            left_path="$path"
-#        fi
-#    done
-
-#    # Might have the same version on left and right (for testing) -- in this case we just copy
-#    # already downloaded 'right' to the 'left. There is the third case when we don't have to
-#    # download anything, for example in some manual runs. In this case, SHAs are not set.
-#    if ! [ "$left_sha" = "$right_sha" ]
-#    then
-#        wget -nv -nd -c "$left_path" -O- | tar -C left --no-same-owner --strip-components=1 --zstd --extract --verbose  &
-#    elif [ "$right_sha" != "" ]
-#    then
-#        mkdir left ||:
-#        cp -an right/* left &
-#    fi
-
     cd db0
     for dataset_name in $datasets
     do

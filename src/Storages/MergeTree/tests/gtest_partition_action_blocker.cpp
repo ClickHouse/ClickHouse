@@ -15,7 +15,6 @@ TEST(PartitionActionBlocker, TestDefaultConstructor)
     PartitionActionBlocker blocker;
 
     EXPECT_FALSE(blocker.isCancelled());
-    // EXPECT_EQ(0, blocker.getCounter().load());
 }
 
 TEST(PartitionActionBlocker, TestCancelForever)
@@ -24,7 +23,6 @@ TEST(PartitionActionBlocker, TestCancelForever)
 
     blocker.cancelForever();
     EXPECT_TRUE(blocker.isCancelled());
-    // EXPECT_EQ(1, blocker.getCounter().load());
 }
 
 TEST(PartitionActionBlocker, TestCancel)
@@ -34,7 +32,6 @@ TEST(PartitionActionBlocker, TestCancel)
     {
         auto lock = blocker.cancel();
         EXPECT_TRUE(blocker.isCancelled());
-        // EXPECT_EQ(1, blocker.getCounter().load());
     }
     // automatically un-cancelled on `lock` destruction
     EXPECT_FALSE(blocker.isCancelled());
@@ -51,7 +48,6 @@ TEST(PartitionActionBlocker, TestCancelForPartition)
 
         // blocker is not locked fully
         EXPECT_FALSE(blocker.isCancelled());
-        // EXPECT_EQ(0, blocker.getCounter().load());
 
         // blocker reports that only partition is locked
         EXPECT_TRUE(blocker.isCancelledForPartition(partition_id));
@@ -76,7 +72,6 @@ TEST(PartitionActionBlocker, TestCancelForTwoPartitions)
 
         // blocker is not locked fully
         EXPECT_FALSE(blocker.isCancelled());
-        // EXPECT_EQ(0, blocker.getCounter().load());
 
         // blocker reports that both partitions are locked
         EXPECT_TRUE(blocker.isCancelledForPartition(partition_id1));
@@ -85,7 +80,6 @@ TEST(PartitionActionBlocker, TestCancelForTwoPartitions)
 
     // blocker is not locked fully
     EXPECT_FALSE(blocker.isCancelled());
-    // EXPECT_EQ(0, blocker.getCounter().load());
 
     // blocker reports that only partition is locked
     EXPECT_FALSE(blocker.isCancelledForPartition(partition_id1));

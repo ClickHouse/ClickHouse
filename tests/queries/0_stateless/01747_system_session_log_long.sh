@@ -98,7 +98,7 @@ function createUser()
 
     elif [[ "${auth_type}" == "plaintext_password" ]]
     then
-        # password="${password}"
+        # The password is used as is.
         :
 
     elif [[ "${auth_type}" == "sha256_password" ]]

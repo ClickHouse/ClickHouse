@@ -18,9 +18,6 @@ class CloudUploader:
     def upload_directory(self, local_path, remote_blob_path, **kwargs):
         print(kwargs)
         result_files = []
-        # print(f"Arguments: {local_path}, {remote_blob_path}")
-        # for local_file in glob.glob(local_path + "/**"):
-        #     print("Local file: {}", local_file)
         for local_file in glob.glob(local_path + "/**"):
             result_local_path = local_file
             result_remote_blob_path = os.path.join(

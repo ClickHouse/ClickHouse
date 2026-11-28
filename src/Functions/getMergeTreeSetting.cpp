@@ -8,7 +8,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Core/Field.h>
-// #include <Core/ServerSettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 

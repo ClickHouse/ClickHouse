@@ -280,8 +280,6 @@ void PerfTestSharedMutexRW()
     }
 }
 
-// static_assert(sizeof(DB::SelfSharedMutex) == 16);
-
 #ifdef OS_LINUX
 TEST(Threading, SharedMutexSmokeSelf) { TestSharedMutex<DB::SelfSharedMutex>(); }
 #endif

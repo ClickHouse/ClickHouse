@@ -723,10 +723,6 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     # so that `..` is resolved the same way as by the commands below.
     refuse_if_dest_aliases_source "$ch_server_1_path" "$ch_server_1_path/config.d" "$ch_server_1_path/users.d" \
         "$ch_server_2_path" "$ch_server_2_path/config.d" "$ch_server_2_path/users.d"
-#    chown clickhouse $ch_server_1_path
-#    chown clickhouse $ch_server_2_path
-#    chgrp clickhouse $ch_server_1_path
-#    chgrp clickhouse $ch_server_2_path
     cp -r $DEST_SERVER_PATH/* $ch_server_1_path
     cp -r $DEST_SERVER_PATH/* $ch_server_2_path
 
@@ -739,11 +735,6 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > $ch_server_1_path/config.d/transactions.xml
     cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn2|" > $ch_server_2_path/config.d/transactions.xml
 
-#    ch_server_lib_1=$DEST_SERVER_PATH/../../var/lib/clickhouse1
-#    ch_server_lib_2=$DEST_SERVER_PATH/../../var/lib/clickhouse2
-#    mkdir -p $ch_server_lib_1 $ch_server_lib_2
-#    chown clickhouse $ch_server_lib_1 $ch_server_lib_2
-#    chgrp clickhouse $ch_server_lib_1 $ch_server_lib_2
     sed -i "s|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches_1/</filesystem_caches_path>|" $ch_server_1_path/config.d/filesystem_caches_path.xml
     sed -i "s|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches_2/</filesystem_caches_path>|" $ch_server_2_path/config.d/filesystem_caches_path.xml
     sed -i "s|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches/</custom_cached_disks_base_directory>|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches_1/</custom_cached_disks_base_directory>|" $ch_server_1_path/config.d/filesystem_caches_path.xml

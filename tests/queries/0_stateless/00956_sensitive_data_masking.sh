@@ -27,8 +27,6 @@ echo 2
 # failure at parsing stage
 echo "SELECT 'find_me_TOPSECRET=TOPSECRET' FRRRROM numbers" | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}" -d @- >"$tmp_file" 2>&1
 
-#cat $tmp_file
-
 ## can't be checked on client side!
 # grep -F 'find_me_[hidden]' $tmp_file >/dev/null || echo 'fail 2a'
 grep -F 'TOPSECRET' "$tmp_file" && echo 'fail 2b'

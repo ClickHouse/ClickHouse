@@ -337,8 +337,6 @@ int mainEntryExampleHashMapString(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        //using Map = HashMap<Key, Value>;
-
         /// Saving the hash accelerates the resize by about 2 times, and the overall performance by 6-8%.
         using Map = HashMapWithSavedHash<Key, Value, DefaultHash<Key>, Grower>;
 

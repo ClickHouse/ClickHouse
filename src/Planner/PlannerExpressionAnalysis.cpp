@@ -141,8 +141,6 @@ bool canRemoveConstantFromGroupByKey(const ConstantNode & root)
             for (const auto & child : function_node->getArguments())
                 nodes.push(child.get());
         }
-        // else
-        //     return false;
     }
 
     return true;

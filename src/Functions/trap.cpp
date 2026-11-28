@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
-#include <base/scope_guard.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ErrnoException.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -149,11 +148,6 @@ public:
             else if (mode == "mmap many")
             {
                 VectorWithMemoryTracking<void *> maps;
-                SCOPE_EXIT(
-                {
-                    //for (void * map : maps)
-                    //    munmap(map, 4096);
-                });
 
                 while (true)
                 {

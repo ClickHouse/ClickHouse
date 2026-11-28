@@ -109,8 +109,6 @@ class DedicatedHost:
         def fetch(self):
             ec2 = aws_client("ec2", self._resolved_region(), self.name)
 
-            # self._ensure_host_resource_group()
-
             azs = self._resolved_availability_zones()
             hosts_by_az: Dict[str, List[str]] = {}
             releasing_hosts_by_az: Dict[str, List[str]] = {}

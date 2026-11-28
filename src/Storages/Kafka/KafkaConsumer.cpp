@@ -128,15 +128,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
         cleanAssignment();
         waited_for_assignment = 0;
 
-        // for now we use slower (but reliable) sync commit in main loop, so no need to repeat
-        // try
-        // {
-        //     consumer->commit();
-        // }
-        // catch (cppkafka::HandleException & e)
-        // {
-        //     LOG_WARNING(log, "Commit error: {}", e.what());
-        // }
+        /// For now we use the slower (but reliable) synchronous commit in the main loop, so there is no need to commit here.
         num_rebalance_revocations++;
     });
 

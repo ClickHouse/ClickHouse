@@ -349,18 +349,6 @@ def test_broken_ignored(cluster):
     optimize(node, table_name, 0, 1)
     time.sleep(5)
 
-    # table_uuid=node.query(f"SELECT uuid FROM system.tables WHERE table='{table_name}' and database=currentDatabase()").strip()
-    # assert 0 < int(
-    #    node.query(
-    #        f"""
-    # SYSTEM FLUSH LOGS;
-    # SELECT count() FROM system.text_log
-    # WHERE level='Error'
-    # AND logger_name='MergeTreeBackgroundExecutor'
-    # AND message like 'Exception while executing background task %{table_uuid}:all_3_5_1%%Cannot open file%proj2.proj/c.bin%'
-    # """)
-    # )
-
     assert ["all_0_0_0", "all_1_1_0", "all_2_2_0", "all_3_5_1"] == get_parts(
         node, table_name
     )

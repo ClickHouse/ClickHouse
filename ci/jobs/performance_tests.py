@@ -3312,7 +3312,6 @@ def main():
     # `release_base` replaces the tests with their vintage of the release branch point.
     assert not (TABLE_ENGINE and compare_against_release), "the Iceberg configuration runs in master_head mode only"
 
-    # release_version = CHVersion.get_release_version()
     info = Info()
     # Before any stage: a job without a usable timeout fails now, not after the benchmarks.
     end = job_end(info) if compare_against_master and not info.is_local_run else None
@@ -3387,7 +3386,6 @@ def main():
     if nightly:
         test_files.remove("calibration.xml")
     # TODO: in PRs filter test files against changed files list if only tests has been changed
-    # changed_files = info.get_custom_data("changed_files")
     if test_keyword:
         test_files = [file for file in test_files if test_keyword in file]
     elif TABLE_ENGINE:

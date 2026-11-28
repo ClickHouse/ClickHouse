@@ -112,7 +112,6 @@ private:
     std::optional<StorageType> storage_type;
     const LoggerPtr log;
 
-    // void listDatabases();
     /// Adds provider-specific auth material for the request. For the `dlf` provider this appends the
     /// signed headers to `current_headers` and returns an empty string; for the `bearer` provider it
     /// returns the bearer token (to pass to `create`) without adding a header. Returns an empty

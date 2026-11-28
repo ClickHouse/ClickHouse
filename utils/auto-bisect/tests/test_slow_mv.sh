@@ -77,8 +77,5 @@ median=$(grep 'PushingToViews: Pushing from' $SCRIPT_DIR/data/clickhouse.log \
   | $CH_PATH local --structure 'ms UInt32' --input-format TSV --query "SELECT medianExact(ms) FROM table")
 
 
-#if (( median > 2000 )); then
-#    exit 1
-#fi
 
 )

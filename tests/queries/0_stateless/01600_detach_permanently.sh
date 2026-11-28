@@ -119,10 +119,7 @@ clickhouse_local "ATTACH TABLE db_ordinary.src_mv_with_inner"
 clickhouse_local "INSERT INTO db_ordinary.src SELECT * FROM numbers(10)"
 clickhouse_local "SELECT if(count() = 20, 'View can be reattached', 'can not reattach permanently detached view') from db_ordinary.src_mv_with_inner;"
 
-## clickhouse_local can't work with dicts...
-# mkdir -p "${WORKING_FOLDER_01600}/user_files"
-# echo "1" > "${WORKING_FOLDER_01600}/user_files/dummy_dict.tsv"
-# clickhouse_local "DROP DICTIONARY db_ordinary.dummy; CREATE DICTIONARY db_ordinary.dummy (id UInt64) PRIMARY KEY id LAYOUT(FLAT()) SOURCE(FILE(path 'dummy_dict.tsv' format 'TabSeparated')) LIFETIME(MIN 1 MAX 10); DETACH DICTIONARY db_ordinary.dummy PERMANENTLY; SELECT dictGet('db_ordinary.dummy','val',toUInt64(1));"
+# Dictionaries are not checked, because `clickhouse-local` can't work with them.
 
 echo "##################"
 echo "DETACH DATABASE is not implemented (proper error)"

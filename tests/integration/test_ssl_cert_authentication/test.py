@@ -243,7 +243,6 @@ def test_https_cn_nul_byte_no_bypass():
 
 def test_https_non_ssl_auth():
     # Users with non-SSL authentication are allowed, in this case we can skip sending a client certificate at all (because "verificationMode" is set to "relaxed").
-    # assert execute_query_https("SELECT currentUser()", user="peter", enable_ssl_auth=False) == "peter\n"
     assert (
         execute_query_https(
             "SELECT currentUser()",

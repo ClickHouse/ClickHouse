@@ -143,7 +143,6 @@ static std::string readData(DB::StoragePtr & table, const DB::ContextPtr context
 
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
-    // output->flush();
 
     out_buf.finalize();
     return out_buf.str();

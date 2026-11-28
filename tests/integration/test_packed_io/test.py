@@ -343,7 +343,6 @@ def test_packed_io_file_order(started_cluster):
     part_path_s3 = get_relative_part_path("t_packed_s3_file_order", "1727136000_1_2_1")
     proj_path_s3 = os.path.join(part_path_s3, "proj_sum_by_s1.proj")
     proj_files_in_part = list_files_in_part(proj_path_s3).strip().split("\n")
-    # check_wide_part_proj_file_order(proj_files_in_part)
     assert(proj_files_in_part[0] == "checksums.txt")
     assert(proj_files_in_part[1] == "columns.txt")
     assert(proj_files_in_part[2] == "columns_substreams.txt")

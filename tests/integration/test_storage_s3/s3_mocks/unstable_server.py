@@ -94,9 +94,6 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                     lines[i : min(i + self.send_block_size, self.end_bytes)]
                 )
                 if (c + 1) % self.stop_at == 0:
-                    # self.wfile._sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 0, 0))
-                    # self.wfile._sock.shutdown(socket.SHUT_RDWR)
-                    # self.wfile._sock.close()
                     self.log_message("Dropping connection %s", self.path)
                     break
 

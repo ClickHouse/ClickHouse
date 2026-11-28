@@ -23,5 +23,4 @@ done
 
 $CLICKHOUSE_CLIENT -q "SELECT 'Still alive'"
 
-# Query replay:
-# cat clickhouse-server.log  | grep -aF "<Debug> executeQuery: (from " | sed -E 's/^.*executeQuery: \(from [^ ]+\) (.*)/\1;/' | clickhouse-client -n --ignore-error
+# To replay the queries, run `cat clickhouse-server.log | grep -aF "<Debug> executeQuery: (from " | sed -E 's/^.*executeQuery: \(from [^ ]+\) (.*)/\1;/' | clickhouse-client -n --ignore-error`.

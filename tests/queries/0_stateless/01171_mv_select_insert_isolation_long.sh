@@ -38,10 +38,6 @@ function run_with_time_and_iterations_limits()
     local max_iterations=$1; shift
     local function_to_run=$1; shift
 
-    # if [ "${1:-X}" = "1" ]; then
-    #     set -x
-    # fi
-
     local started_time
     started_time=$SECONDS
     local iteration=0

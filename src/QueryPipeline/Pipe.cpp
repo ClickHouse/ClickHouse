@@ -631,10 +631,6 @@ void Pipe::addTransform(
     for (size_t i = 1; i < output_ports.size(); ++i)
         assertBlocksHaveEqualStructure(*header, output_ports[i]->getHeader(), "Pipes");
 
-    // Temporarily skip this check. TotalsHavingTransform may return finalized totals but not finalized data.
-    // if (totals_port)
-    //     assertBlocksHaveEqualStructure(*header, totals_port->getHeader(), "Pipes");
-
     if (extremes_port)
         assertBlocksHaveEqualStructure(*header, extremes_port->getHeader(), "Pipes");
 

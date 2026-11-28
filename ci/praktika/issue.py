@@ -580,7 +580,6 @@ if __name__ == "__main__":
                 command=lambda: collect_and_upload(),
             )
         )
-        # collect_and_upload()
     elif "--download" in sys.argv:
         results.append(
             Result.from_commands_run(

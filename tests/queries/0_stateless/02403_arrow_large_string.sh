@@ -12,7 +12,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #        batch = pa.record_batch([a], schema=schema)
 #        writer.write(batch)
 
-# cat arraydata.arrow | base64
+# The data below is the output of `cat arraydata.arrow | base64`.
 
 cat <<EOF | base64 --decode |  $CLICKHOUSE_LOCAL --query='SELECT * FROM table FORMAT TSVWithNamesAndTypes' --input-format=Arrow
 QVJST1cxAAD/////cAAAABAAAAAAAAoADAAGAAUACAAKAAAAAAEEAAwAAAAIAAgAAAAEAAgAAAAE

@@ -27,8 +27,6 @@ public:
         command_name = "packed-io";
         description = "List/Extracts/Creates archive in ClickHouse packed format";
 
-        // options_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
-
         options_description.add_options()("recursive", "Extract/Create packed archive recursively");
         options_description.add_options()(
             "disk-from", po::value<String>(), "Name of the disk of input file/directory. By default the same as --disk");

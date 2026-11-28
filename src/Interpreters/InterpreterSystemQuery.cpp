@@ -483,7 +483,6 @@ BlockIO InterpreterSystemQuery::execute()
             /// It's better than doing 'raise' or 'kill', because they have no effect for 'init' process (with pid = 0, usually in Docker).
             LOG_INFO(log, "Exit immediately as the SYSTEM KILL command has been issued.");
             _exit(128 + SIGKILL);
-            // break; /// unreachable
         }
         case Type::SUSPEND:
         {

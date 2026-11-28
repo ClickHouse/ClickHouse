@@ -58,11 +58,7 @@ try
                 std::cerr << "Error (create): " << errorMessage(response.error) << '\n';
             else
                 std::cerr << "Created path: " << response.path_created << '\n';
-
-            //event.set();
         });
-
-    //event.wait();
 
     std::cout << "get\n";
 
@@ -73,8 +69,6 @@ try
                 std::cerr << "Error (get): " << errorMessage(response.error) << '\n';
             else
                 std::cerr << "Value: " << response.data << '\n';
-
-            //event.set();
         },
         std::make_shared<Coordination::WatchCallback>(
             [](const WatchResponse & response)
@@ -86,8 +80,6 @@ try
             })
         );
 
-    //event.wait();
-
     std::cout << "set\n";
 
     zk.set("/test", "new", -1,
@@ -97,11 +89,7 @@ try
                 std::cerr << "Error (set): " << errorMessage(response.error) << '\n';
             else
                 std::cerr << "Set\n";
-
-            //event.set();
         });
-
-    //event.wait();
 
     std::cout << "list\n";
 
@@ -117,8 +105,6 @@ try
                 for (const auto & name : response.names)
                     std::cerr << name << "\n";
             }
-
-            //event.set();
         },
         std::make_shared<Coordination::WatchCallback>(
             [](const WatchResponse & response)
@@ -131,8 +117,6 @@ try
         false,
         false);
 
-    //event.wait();
-
     std::cout << "exists\n";
 
     zk.exists("/test",
@@ -142,8 +126,6 @@ try
                 std::cerr << "Error (exists): " << errorMessage(response.error) << '\n';
             else
                 std::cerr << "Exists\n";
-
-            //event.set();
         },
         std::make_shared<Coordination::WatchCallback>(
             [](const WatchResponse & response)
@@ -155,8 +137,6 @@ try
             })
         );
 
-    //event.wait();
-
     std::cout << "remove\n";
 
     zk.remove("/test", -1, [&](const RemoveResponse & response)
@@ -165,11 +145,7 @@ try
                 std::cerr << "Error (remove): " << errorMessage(response.error) << '\n';
             else
                 std::cerr << "Removed\n";
-
-            //event.set();
         });
-
-    //event.wait();
 
     std::cout << "multi\n";
 

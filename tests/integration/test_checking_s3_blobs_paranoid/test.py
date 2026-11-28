@@ -856,10 +856,7 @@ def test_no_key_found_disk(cluster, broken_s3):
 
     assert len(remote_pathes) > 0
 
-    # path_prefix = os.path.join('/', cluster.minio_bucket)
     for path in remote_pathes:
-        # name = os.path.relpath(path, path_prefix)
-        # assert False, f"deleting full {path} prefix {path_prefix} name {name}"
         assert cluster.minio_client.stat_object(cluster.minio_bucket, path).size > 0
         cluster.minio_client.remove_object(cluster.minio_bucket, path)
         with pytest.raises(Exception) as exc_info:

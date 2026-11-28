@@ -678,7 +678,6 @@ TEST_F(ReadBufferFromS3Test, HavingZeroBytes)
     const_cast<DB::Settings &>(settings)[DB::Setting::max_read_buffer_size_remote_fs] = 4;
     const_cast<DB::Settings &>(settings)[DB::Setting::filesystem_cache_name] = "cache1";
     const_cast<DB::Settings &>(settings)[DB::Setting::filesystem_cache_prefer_bigger_buffer_size] = false;
-    //const_cast<DB::Settings &>(settings)[DB::Setting::read_from_filesystem_cache_if_exists_otherwise_bypass_cache] = true;
     const_cast<DB::Settings &>(settings)[DB::Setting::remote_read_min_bytes_for_seek] = 0;
 
     DB::FileCacheSettings cache_settings;

@@ -483,20 +483,10 @@ function run_tests
         fi
     fi
 
-    # For PRs w/o changes in test definitions, test only a subset of queries,
-    # and run them less times. If the corresponding environment variables are
-    # already set, keep those values.
+    # The same limit applies to PRs and to the master branch. If CHPC_MAX_QUERIES
+    # is already set, keep its value.
     #
     # NOTE: too high CHPC_RUNS/CHPC_MAX_QUERIES may hit internal CI timeout.
-    # NOTE: Currently we disabled complete run even for master branch
-    #if [ "$PR_TO_TEST" -ne 0 ] && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ]
-    #then
-    #    CHPC_RUNS=${CHPC_RUNS:-7}
-    #    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
-    #else
-    #    CHPC_RUNS=${CHPC_RUNS:-13}
-    #    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
-    #fi
 
     # CHPC_RUNS has no default any more: it is forwarded to perf.py --runs
     # ("at least N runs per query") only when the caller set it; otherwise the
@@ -544,14 +534,6 @@ function run_tests
         profile_seconds=$(awk "BEGIN { print ($profile_seconds_left > 0 ? 10 : 0) }")
 
         max_queries=0
-# TODO: remove?
-#        if rg --quiet "$(basename $test)" changed-test-definitions.txt
-#        then
-#          # Run all queries from changed test files to ensure that all new queries will be tested.
-#          max_queries=0
-#        else
-#          max_queries=$CHPC_MAX_QUERIES
-#        fi
 
         (
             set +x

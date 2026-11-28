@@ -345,8 +345,6 @@ def test_alters(
         db="test_db",
         refresh_interval=f"EVERY 1 HOUR OFFSET {schedule_offset} MINUTE",
         depends_on=depends_on,
-        # can't change select with alter
-        # select_query="SELECT * FROM src1",
         with_append=with_append,
         settings=settings,
     )

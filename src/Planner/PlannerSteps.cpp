@@ -301,7 +301,6 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         if (all_inputs_present)
         {
             auto filter_dag = post_filter->clone();
-            // filter_dag.appendInputsForUnusedColumns(header);
             String filter_column_name = filter_dag.getOutputs().at(0)->result_name;
             auto filter_step = std::make_unique<FilterStep>(
                 result_query_plan.getCurrentHeader(),

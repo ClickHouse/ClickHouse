@@ -2870,11 +2870,6 @@ def test_rabbitmq_random_detach(rabbitmq_cluster, db, unique):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
-    # time.sleep(5)
-    # kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id)
-    # instance.query(f"detach table {db}.rabbitmq")
-    # revive_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id)
-
     for thread in threads:
         thread.join()
 

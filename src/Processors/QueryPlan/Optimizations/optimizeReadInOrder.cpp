@@ -1220,11 +1220,6 @@ InputOrder buildInputOrderFromUnorderedKeys(
     if (read_direction == 0 || sort_description.empty())
         return {};
 
-    // SortDescription sort_description_for_merging = group_by_sort_description;
-
-    // for (const auto & key : not_matched_group_by_keys)
-    //     group_by_sort_description.emplace_back(SortColumnDescription(std::string(key)));
-
     auto input_order = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, /*read_direction*/ 1, /* limit */ 0);
     return {.input_order = std::move(input_order), .sort_description = std::move(sort_description), .has_monotonic_match = has_monotonic_match};
 }
@@ -1348,7 +1343,6 @@ SortingInputOrder buildInputOrderFromSortDescription(
         auto storage = std::get<StoragePtr>(table);
         auto metadata = storage->getInMemoryMetadataPtr(merge->getContext(), false);
         const auto & sorting_key = metadata->getSortingKey();
-        // const auto & pk_column_names = metadata->getPrimaryKey().column_names;
 
         if (sorting_key.column_names.empty())
             return {};

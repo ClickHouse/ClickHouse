@@ -1,8 +1,4 @@
 #include <Storages/System/IStorageSystemOneBlock.h>
-// #include <Core/NamesAndAliases.h>
-// #include <DataTypes/DataTypeString.h>
-// #include <Storages/ColumnsDescription.h>
-// #include <Storages/IStorage.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/SelectQueryInfo.h>

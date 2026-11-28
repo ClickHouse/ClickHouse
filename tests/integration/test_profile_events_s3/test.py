@@ -191,10 +191,5 @@ def test_profile_events(cluster):
     )
     get_query_stat(instance, query3)
 
-    # With async reads profile events are not updated fully because reads are done in a separate thread.
-    # for metric in stat3:
-    #    print(metric)
-    #    assert stat3[metric] == metrics3.get(metric, 0) - metrics2.get(metric, 0)
-
     instance.query("DROP TABLE IF EXISTS test_s3.test_s3 SYNC")
     instance.query("DROP DATABASE IF EXISTS test_s3 SYNC")

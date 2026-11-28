@@ -87,7 +87,6 @@ std::string dumpContents(const T& container,
 template <typename ValueLeft, typename ValueRight>
 ::testing::AssertionResult BinaryEqual(const ValueLeft & left, const ValueRight & right)
 {
-//    ::testing::AssertionResult result = ::testing::AssertionSuccess();
     if (sizeof(left) != sizeof(right))
         return ::testing::AssertionFailure()
                 << "Sizes do not match, expected: " << sizeof(left) << " actual: " << sizeof(right);
@@ -149,7 +148,6 @@ TEST_P(BitIO, WriteAndRead)
 
     {
         ReadBufferFromMemory read_buffer(data.data(), data.size());
-//        auto memory_read_buffer = memory_write_buffer.tryGetReadBuffer();
 
         if (!expected_buffer_binary.empty())
         {
@@ -168,7 +166,6 @@ TEST_P(BitIO, WriteAndRead)
                          << ", at bit position: " << std::dec << reader.count()
                          << ".\nBuffer memory:\n" << dumpContents(data));
 
-//            const uint8_t next_byte = getBits(bv.first, bv.second) &
             ASSERT_TRUE(BinaryEqual(getBits(bv.first, bv.second), reader.readBits(bv.first)));
 
             ++item;

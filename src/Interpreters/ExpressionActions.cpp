@@ -652,8 +652,6 @@ void ExpressionActions::linearizeActions(
             ExpressionActions::Argument argument;
             argument.needed_later = !cur_info.parents.empty();
             arguments.emplace_back(argument);
-
-            //required_columns.push_back({node->result_name, node->result_type});
         }
 
         auto & action = actions.emplace_back(Action{node, arguments, free_position, lazy_executed_nodes.contains(node)});

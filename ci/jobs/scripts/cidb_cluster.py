@@ -195,9 +195,6 @@ class CIDBCluster:
                     continue
                 else:
                     break
-            # TODO
-            # except as ex:
-            #     print(f"WARNING: CIDB query failed with exception: {ex} - retry")
             except Exception as ex:
                 print(f"ERROR: CIDB query failed with exception: {ex}")
                 traceback.print_exc()

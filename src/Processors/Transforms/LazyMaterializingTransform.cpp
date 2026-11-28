@@ -453,10 +453,6 @@ void LazyMaterializingTransform::prepareLazyChunk()
 
     Stopwatch total_watch;
 
-    // std::cerr << "LazyMaterializingTransform::prepareLazyChunk " << chunks.size() << " chunks\n";
-    // for (auto & chunk : chunks)
-    //     std::cerr << "Chunk with " << chunk.getNumRows() << " rows\n";
-
     lazy_chunk_prepared = true;
 
     Chunk chunk;

@@ -143,9 +143,6 @@ void ReadFromParallelReplicasStep::initializePipeline(QueryPipelineBuilder & pip
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
-    // for (const auto & processor : pipe.getProcessors())
-    //     processor->setStorageLimits(storage_limits);
-
     pipeline.init(std::move(pipe));
 }
 
