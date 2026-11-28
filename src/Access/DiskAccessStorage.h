@@ -15,7 +15,7 @@ class DiskAccessStorage : public IAccessStorage
 public:
     static constexpr char STORAGE_TYPE[] = "local_directory";
 
-    DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool allow_backup_);
+    DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool allow_backup_, UInt64 access_entities_num_limit_);
     ~DiskAccessStorage() override;
 
     void shutdown() override;

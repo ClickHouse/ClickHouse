@@ -19,7 +19,7 @@ std::shared_ptr<const EntityT> loadWithGrants(const String & grants)
         "<clickhouse><" + section + "><e>" + auth + "<grants>" + grants + "</grants></e></" + section + "></clickhouse>");
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(xml);
     AccessControl access_control;
-    UsersConfigAccessStorage storage("users_config_test", access_control, false);
+    UsersConfigAccessStorage storage("users_config_test", access_control, false, 0);
     storage.setConfig(*config);
     return storage.tryRead<EntityT>("e");
 }
