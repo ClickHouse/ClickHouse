@@ -1667,7 +1667,6 @@ std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readPackedMember(const Membe
 
     /// Settings as in `IBackupReader::readFileForPackedMember`.
     auto settings = PackedFilesReader::disableDirectIOAndMmap(params.read_settings);
-    settings.page_cache_settings.cache.reset();
     auto in = file->getDisk()->readFile(file->getRelativePath(), settings, member.size);
     return PackedFilesReader::viewMember(std::move(in), pack_object, member.offset, member.size);
 }

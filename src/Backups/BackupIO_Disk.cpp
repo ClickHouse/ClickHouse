@@ -45,9 +45,7 @@ std::unique_ptr<ReadBufferFromFileBase> BackupReaderDisk::readFile(const String 
 
 std::unique_ptr<ReadBufferFromFileBase> BackupReaderDisk::readFileForPackedMember(const String & file_name)
 {
-    auto settings = PackedFilesReader::disableDirectIOAndMmap(read_settings);
-    settings.page_cache_settings.cache.reset();
-    return disk->readFile(root_path / file_name, settings);
+    return disk->readFile(root_path / file_name, PackedFilesReader::disableDirectIOAndMmap(read_settings));
 }
 
 void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
