@@ -341,7 +341,8 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
   */
-ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view, const ASTPtr & view_query)
+ContextPtr getViewContext(
+    ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view, const ASTPtr & view_query, bool hide_read_source)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
     if (context->hasQueryContext())
@@ -362,6 +363,8 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     view_settings[Setting::extremes] = false;
     view_context->setSettings(view_settings);
     view_context->setIsViewInnerQuery(true);
+    if (hide_read_source)
+        view_context->setReadSourceAliasForExplain(view->getStorageID());
     return view_context;
 }
 
@@ -785,8 +788,13 @@ void StorageView::readImpl(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
-    const bool sealed = isSealed(*storage_snapshot->metadata, context) && !isReadByDefiner(*storage_snapshot->metadata, context);
-    auto view_context = getViewContext(context, storage_snapshot, this, current_inner_query);
+    const auto & metadata = *storage_snapshot->metadata;
+    const bool sealed = isSealed(metadata, context) && !isReadByDefiner(metadata, context);
+    const bool runs_as_invoker = metadata.sql_security_type != SQLSecurityType::DEFINER && metadata.sql_security_type != SQLSecurityType::NONE;
+    const bool show_plan = runs_as_invoker || canSeeViewPlan(getStorageID(), metadata, context) || canDisplaySecrets(context);
+
+    /// A transparent view is inlined into the invoker's plan, so its read is shown under the name of the view instead.
+    auto view_context = getViewContext(context, storage_snapshot, this, current_inner_query, /*hide_read_source=*/ !sealed && !show_plan);
     {
         /// The outer filter is used only to analyze the indexes of the inner tables,
         /// but for a sealed view it would skip data by the values of the rows the view hides.
@@ -824,8 +832,6 @@ void StorageView::readImpl(
 
     if (sealed)
     {
-        const bool show_plan = canSeeViewPlan(getStorageID(), *storage_snapshot->metadata, context) || canDisplaySecrets(context);
-
         auto read_from_sealed_view = std::make_unique<ReadFromSealedViewStep>(std::move(query_plan), view_context, show_plan);
         read_from_sealed_view->setStepDescription(
             show_plan ? getStorageID().getFullNameNotQuoted()

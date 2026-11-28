@@ -129,7 +129,7 @@ PlanIndexStats stepIndexes(const IQueryPlanStep & step, const ExplainPlanOptions
         return {};
 
     /// The condition holds the constants the key was compared with.
-    PlanIndexStats indexes = read_from_merge_tree->getIndexStats();
+    PlanIndexStats indexes = read_from_merge_tree->getIndexStatsForExplain();
     for (auto & index : indexes)
     {
         maskSensitiveData(index.name, masker);
@@ -155,7 +155,7 @@ PlanProjectionStats stepProjections(const IQueryPlanStep & step, const ExplainPl
     if (!options.projections || !read_from_merge_tree)
         return {};
 
-    PlanProjectionStats projections = read_from_merge_tree->getProjectionStats();
+    PlanProjectionStats projections = read_from_merge_tree->getProjectionStatsForExplain();
     for (auto & projection : projections)
     {
         maskSensitiveData(projection.name, masker);

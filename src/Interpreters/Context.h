@@ -684,6 +684,9 @@ protected:
     /// replicas (including the replicas of a `Distributed` shard) or a `-Cluster` storage: a replica cannot run them with its
     /// privileges. Plan-based local reads stay allowed.
     bool is_sql_security_overridden_body = false;
+    /// Set for the query of a `SQL SECURITY DEFINER` / `NONE` view whose plan the invoker may not see: the reads of this
+    /// query are shown under this name (the view's) instead of the name of the table they read.
+    std::optional<StorageID> read_source_alias_for_explain;
     /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
     /// query, including joins in nested plans, which EXPLAIN also prints.
@@ -2130,6 +2133,9 @@ public:
 
     bool isSQLSecurityOverriddenBody() const { return is_sql_security_overridden_body; }
     void setSQLSecurityOverriddenBody(bool value) { is_sql_security_overridden_body = value; }
+
+    const std::optional<StorageID> & getReadSourceAliasForExplain() const { return read_source_alias_for_explain; }
+    void setReadSourceAliasForExplain(const StorageID & alias) { read_source_alias_for_explain = alias; }
     /// Turns off in the body of a `SQL SECURITY DEFINER` / `NONE` view the parallel replicas modes that would hand its reads
     /// to other replicas. Called once the settings of the body are applied, and again after each `SETTINGS` clause inside it.
     void restrictParallelReplicasInSQLSecurityOverriddenBody();

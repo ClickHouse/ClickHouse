@@ -1065,7 +1065,11 @@ UseProjectionsResult optimizeUseNormalProjections(
     if (projection_replaced_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
         reading->announceEmptyReadRangesToCoordinatorIfInitiator();
 
-    projection_reading->setStepDescription(best_candidate->projection->name, optimization_settings.max_step_description_length);
+    /// A hidden source keeps the name it is shown under.
+    if (reading->isSourceHiddenInExplain())
+        projection_reading->setStepDescription(*reading);
+    else
+        projection_reading->setStepDescription(best_candidate->projection->name, optimization_settings.max_step_description_length);
 
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
     auto * next_node = &projection_reading_node;

@@ -1337,7 +1337,7 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
             return;
         if (const auto * step = dynamic_cast<ReadFromMergeTree*>(node->step.get()))
         {
-            const auto & id = step->getStorageID();
+            const auto id = step->getStorageIDForExplain();
             auto key = id.database_name + "." + id.table_name;
             auto it = counters.find(key);
             if (it == counters.end())

@@ -1,0 +1,36 @@
+-- definer_view: the reader sees no private name
+0
+0
+0
+0
+0
+0
+0
+0
+-- definer_view: the read is shown under the name of the view, and the outer filter still reaches the primary key
+1
+1
+definer_view
+-- definer_view: the reader still queries the view, but not the table
+1	a
+a	1
+-- none_view: the reader sees no private name
+0
+0
+0
+0
+0
+0
+0
+0
+-- none_view: the read is shown under the name of the view, and the outer filter still reaches the primary key
+1
+1
+none_view
+-- none_view: the reader still queries the view, but not the table
+1	a
+a	1
+ACCESS_DENIED
+-- the definer sees the table
+1
+private_src

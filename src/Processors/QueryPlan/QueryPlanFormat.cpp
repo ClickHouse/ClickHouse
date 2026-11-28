@@ -608,7 +608,7 @@ namespace QueryPlanFormat
         {
             const auto & step_name = node->step->getName();
             if (step_name == "ReadFromMergeTree")
-                return static_cast<const ReadFromMergeTree *>(node->step.get())->getStorageID().getFullNameNotQuoted();
+                return static_cast<const ReadFromMergeTree *>(node->step.get())->getStorageIDForExplain().getFullNameNotQuoted();
             if (step_name == "ReadFromRemoteParallelReplicas")
                 return static_cast<const ReadFromParallelRemoteReplicasStep *>(node->step.get())->getStorageID().getFullNameNotQuoted();
             if (step_name == "ReadFromStorage")
