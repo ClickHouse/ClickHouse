@@ -146,13 +146,15 @@ struct TTLDescription
     ASTPtr recompression_codec;
 
     /// Parse TTL structure from definition. Able to parse both column and table TTLs.
+    /// In `TTLValidationMode::Attach` the `IN` subqueries of `WHERE` are planned only with `plan_where_subqueries_on_attach`.
     static TTLDescription getTTLFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
         ContextPtr context,
         const KeyDescription & primary_key,
         TTLValidationMode validation_mode,
-        bool trust_recompression_codec = false);
+        bool trust_recompression_codec = false,
+        bool plan_where_subqueries_on_attach = false);
 
     TTLDescription() = default;
     TTLDescription(const TTLDescription & other);
@@ -197,7 +199,8 @@ struct TTLTableDescription
         ContextPtr context,
         const KeyDescription & primary_key,
         TTLValidationMode validation_mode,
-        bool trust_recompression_codec = false);
+        bool trust_recompression_codec = false,
+        bool plan_where_subqueries_on_attach = false);
 
     /// Parse description from string
     static TTLTableDescription parse(
