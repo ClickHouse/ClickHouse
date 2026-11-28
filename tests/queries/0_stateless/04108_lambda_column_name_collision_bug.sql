@@ -69,3 +69,32 @@ SELECT 'multi-column: WHERE';
 SELECT * FROM t2 WHERE arrayMap(x -> t2.x + t2.y, [1])[1] > 50;
 
 DROP TABLE t2;
+
+-- A lambda argument with the name of a table column that the lambda body reads before the argument
+-- must keep its own type in the lambda body, also when the query plan is shipped to a remote server.
+DROP TABLE IF EXISTS t_prewhere_lambda_shadow;
+CREATE TABLE t_prewhere_lambda_shadow (k UInt64, arr Array(UInt8)) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_prewhere_lambda_shadow SELECT number, [number % 5, 1] FROM numbers(10);
+
+SELECT 'shadowed argument read after column: PREWHERE';
+SELECT k FROM t_prewhere_lambda_shadow AS tt PREWHERE arrayExists(k -> tt.k = k, arr) ORDER BY k;
+
+SELECT 'shadowed argument read after column: serialized plan';
+SELECT k FROM remote('127.0.0.1', currentDatabase(), t_prewhere_lambda_shadow) AS tt PREWHERE arrayExists(k -> tt.k = k, arr) ORDER BY k SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0;
+
+SELECT 'shadowed argument read before column: serialized plan';
+SELECT k FROM remote('127.0.0.1', currentDatabase(), t_prewhere_lambda_shadow) AS tt PREWHERE arrayExists(k -> k = tt.k, arr) ORDER BY k SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0;
+
+DROP TABLE t_prewhere_lambda_shadow;
+
+DROP TABLE IF EXISTS t_prewhere_lambda_shadow_nullable;
+CREATE TABLE t_prewhere_lambda_shadow_nullable (n Nullable(UInt32), arr Array(UInt8)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_prewhere_lambda_shadow_nullable VALUES (NULL, [1, 2]), (5, [1]), (NULL, [3]);
+
+SELECT 'shadowed nullable column: PREWHERE';
+SELECT arr FROM t_prewhere_lambda_shadow_nullable AS tt PREWHERE arrayExists(n -> isNull(tt.n) AND n = 1, arr) ORDER BY arr;
+
+SELECT 'shadowed nullable column: serialized plan';
+SELECT arr FROM remote('127.0.0.1', currentDatabase(), t_prewhere_lambda_shadow_nullable) AS tt PREWHERE arrayExists(n -> isNull(tt.n) AND n = 1, arr) ORDER BY arr SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0;
+
+DROP TABLE t_prewhere_lambda_shadow_nullable;
