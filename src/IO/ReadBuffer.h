@@ -197,6 +197,9 @@ public:
     /** Reads n bytes with readBig, if there are less - throws an exception. */
     void readBigStrict(char * to, size_t n);
 
+    /// Same as `ignore(n)`; a buffer may skip a large `n` without producing the data, e.g. without decompressing it.
+    virtual void ignoreBig(size_t n) { ignore(n); }
+
     /** Do something to allow faster subsequent call to 'nextImpl' if possible.
       * It's used for asynchronous readers with double-buffering.
       * `priority` is the `ThreadPool` priority, with which the prefetch task will be scheduled.

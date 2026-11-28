@@ -26,8 +26,14 @@ public:
     /// Arbitrary guard against absurd sizes from corrupted input, large enough for any real string.
     static constexpr size_t MAX_STRING_SIZE = 16_GiB;
 
+    /// Rejected values are skipped only if they take at least this many bytes (the default `min_compress_block_size`):
+    /// fewer bytes save little more than rewriting their offsets costs.
+    static constexpr size_t MIN_REJECTED_BYTES_TO_SKIP = 64_KiB;
+
     static UInt128 getHash(MergeTreeStringSerializationVersion version_);
     static SerializationPtr create(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
+
+    [[nodiscard]] bool hasSizeStream() const { return version == MergeTreeStringSerializationVersion::WITH_SIZE_STREAM; }
 
     /// Whether a resolved subcolumn is really the string lengths, which its name alone cannot tell.
     /// Covers both the stored size stream and the virtual one computed from the data.

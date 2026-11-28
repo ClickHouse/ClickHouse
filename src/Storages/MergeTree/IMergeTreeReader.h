@@ -49,6 +49,21 @@ public:
                             bool continue_reading, size_t max_rows_to_read,
                             MutableColumns & res_columns, Columns & shared_columns) = 0;
 
+    /// Same as `readRows`, but the caller filters out the first `num_rejected_rows` rows of the result before using them,
+    /// so the reader may return default values for them instead of reading them.
+    virtual size_t readRowsWithRejectedPrefix(size_t from_mark, size_t current_range_last_mark,
+                                              bool continue_reading, size_t max_rows_to_read, size_t /*num_rejected_rows*/,
+                                              MutableColumns & res_columns, Columns & shared_columns)
+    {
+        return readRows(from_mark, current_range_last_mark, continue_reading, max_rows_to_read, res_columns, shared_columns);
+    }
+
+    /// The fewest rejected rows for which `readRowsWithRejectedPrefix` does not read the values of some column; 0 if it reads them all.
+    [[nodiscard]] virtual size_t getMinRejectedRowsToSkip() const { return 0; }
+
+    /// The bytes of the values that were not read since the last call.
+    size_t takeBytesOfSkippedRows() { return std::exchange(bytes_of_skipped_rows, 0); }
+
     [[nodiscard]] virtual bool canReadIncompleteGranules() const = 0;
 
     /// This is a special case for the filter-only reader, when no other filtration is potentially applied.
@@ -297,6 +312,9 @@ protected:
 
     bool columns_cache_reads_possible = false;
     bool columns_cache_writes_possible = false;
+
+    /// See `takeBytesOfSkippedRows`.
+    size_t bytes_of_skipped_rows = 0;
 
     /// How the marks of the part are cut into stripes, and the identity of every result column
     /// for the cache. See `ColumnsCacheKey`.

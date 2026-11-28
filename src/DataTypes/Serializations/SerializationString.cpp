@@ -1189,16 +1189,36 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     auto & data = string_column.getChars();
     const size_t initial_size = data.size();
 
+    size_t first_row_to_read = prev_num_rows;
+    size_t skipped_bytes = 0;
+    if (settings.num_rejected_rows && settings.path.size() == 1)
+    {
+        auto & offsets = string_column.getOffsets();
+        const size_t end_of_rejected = prev_num_rows + std::min(settings.num_rejected_rows, offsets.size() - prev_num_rows);
+        const size_t base_offset = offsets[static_cast<ssize_t>(prev_num_rows) - 1];
+        if (end_of_rejected > prev_num_rows && offsets[end_of_rejected - 1] - base_offset >= MIN_REJECTED_BYTES_TO_SKIP)
+        {
+            /// Read the rejected values as empty strings, as the `StringValueFilter` path does.
+            skipped_bytes = offsets[end_of_rejected - 1] - base_offset;
+            std::fill(offsets.begin() + prev_num_rows, offsets.begin() + end_of_rejected, base_offset);
+            for (size_t i = end_of_rejected; i < offsets.size(); ++i)
+                offsets[i] -= skipped_bytes;
+            stream->ignoreBig(skipped_bytes);
+            settings.num_skipped_bytes += skipped_bytes;
+            first_row_to_read = end_of_rejected;
+        }
+    }
+
     if (settings.string_value_filter && settings.string_value_filter->isEnabled())
     {
         /// Check every value against the filter and read non-matching values as empty strings,
         /// rewriting the just-appended offsets accordingly. See the comment for `StringValueFilter`.
-        deserializeBinaryFilteredWithKnownSizes(data, string_column.getOffsets(), *stream, prev_num_rows, *settings.string_value_filter);
+        deserializeBinaryFilteredWithKnownSizes(data, string_column.getOffsets(), *stream, first_row_to_read, *settings.string_value_filter);
     }
     else
     {
-        data.resize(initial_size + bytes_to_read);
-        stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
+        data.resize(initial_size + bytes_to_read - skipped_bytes);
+        stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read - skipped_bytes);
     }
 
     /// Nothing is shared across reads, so the rows read equal the growth of the offsets column.

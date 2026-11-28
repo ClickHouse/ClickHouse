@@ -238,7 +238,8 @@ private:
         /// Returns the number of rows added to block.
         /// NOTE: have to return number of rows because block has broken invariant:
         ///       some columns may have different size (for example, default columns may be zero size).
-        size_t read(MutableColumns & columns, Columns & shared_columns, size_t from_mark, size_t offset, size_t num_rows);
+        /// The first @num_rejected_rows of them are filtered out by the caller, see `IMergeTreeReader::readRowsWithRejectedPrefix`.
+        size_t read(MutableColumns & columns, Columns & shared_columns, size_t from_mark, size_t offset, size_t num_rows, size_t num_rejected_rows = 0);
 
         [[nodiscard]] size_t numDelayedRows() const { return num_delayed_rows; }
 
@@ -253,6 +254,8 @@ private:
         size_t current_offset = 0;
         /// Num of rows we have to read
         size_t num_delayed_rows = 0;
+        /// The delayed rows begin with this many rows rejected by the filter of the previous steps.
+        size_t num_rejected_delayed_rows = 0;
         /// End mark of the contiguous mark range being read. Bounds caching of
         /// deserialized columns in the reader (see IMergeTreeReader::readRows).
         size_t current_range_last_mark = 0;
@@ -265,7 +268,7 @@ private:
 
         /// Current position from the beginning of file in rows
         [[nodiscard]] size_t position() const;
-        size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows);
+        size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows, size_t num_rejected_rows);
     };
 
     /// Very thin wrapper for DelayedStream
@@ -277,7 +280,8 @@ private:
         Stream(size_t from_mark, size_t to_mark, IMergeTreeReader * merge_tree_reader);
 
         /// Returns the number of rows added to block.
-        size_t read(MutableColumns & columns, Columns & shared_columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
+        size_t read(MutableColumns & columns, Columns & shared_columns, size_t num_rows, bool skip_remaining_rows_in_current_granule,
+            size_t num_rejected_rows = 0);
         size_t finalize(MutableColumns & columns, Columns & shared_columns);
         void skip(size_t num_rows);
 
@@ -311,7 +315,7 @@ private:
         void checkEnoughSpaceInCurrentGranule(size_t num_rows) const;
         void checkNoDelayedRows() const;
 
-        size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows);
+        size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows, size_t num_rejected_rows);
         void toNextMark();
         [[nodiscard]] size_t ceilRowsToCompleteGranules(size_t rows_num) const;
         [[nodiscard]] size_t alignRowsToColumnsCacheStripes(
@@ -532,6 +536,9 @@ public:
         void collapseZeroTails(const IColumn::Filter & filter, const NumRows & rows_per_granule_previous, IColumn::Filter & new_filter) const;
         size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules_) const;
         size_t countZeroTailsFromSparse(const ColumnUInt64 & sparse_indices, NumRows & zero_tails, bool can_read_incomplete_granules_) const;
+        /// Per granule, the number of rows at the start of its rows to read that `final_filter` rejects, at most all but one,
+        /// or 0 if fewer than @min_zeros. Empty if no granule has such rows.
+        NumRows countZeroHeads(size_t min_zeros) const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
 
         LoggerPtr log;
