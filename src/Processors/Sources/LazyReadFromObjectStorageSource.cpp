@@ -1,6 +1,5 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Sources/LazyReadFromObjectStorageSource.h>
-#include <Processors/Formats/AggregateFunctionStatesFromValuesInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -164,7 +163,7 @@ LazyReadFromObjectStorageSource::LazyReadFromObjectStorageSource(
     size_t max_threads_,
     size_t main_read_leaf_columns_,
     ObjectStorageLazyMaterializingRowsPtr lazy_materializing_rows_)
-    : IProcessor({}, {std::move(header)})
+    : LazyReadFromFileGroupsSource(std::move(header), max_threads_, main_read_leaf_columns_)
     , storage_id(std::move(storage_id_))
     , object_storage(std::move(object_storage_))
     , configuration(std::move(configuration_))
@@ -173,70 +172,8 @@ LazyReadFromObjectStorageSource::LazyReadFromObjectStorageSource(
     , info(std::move(info_))
     , context(std::move(context_))
     , max_block_size(max_block_size_)
-    , max_threads(max_threads_)
-    , main_read_leaf_columns(main_read_leaf_columns_)
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
-    , next_input_to_process(inputs.end())
 {
-}
-
-IProcessor::Status LazyReadFromObjectStorageSource::prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts & /*updated_output_ports*/)
-{
-    auto & output = outputs.front();
-    if (output.isFinished())
-    {
-        for (auto & input : inputs)
-            input.close();
-        return Status::Finished;
-    }
-
-    /// Pull the chunk of every updated reader before checking the output (an updated port is reported once,
-    /// and a reader whose chunk stays in its port stops), but push the chunks strictly in the order of the groups.
-    if (next_input_to_process != inputs.end())
-    {
-        for (InputPort * input_port : updated_input_ports)
-        {
-            auto & reader_chunks = chunks[input_port_to_index.at(input_port)];
-            if (!input_port->isFinished() && input_port->hasData())
-                reader_chunks.emplace_back(input_port->pull());
-        }
-    }
-
-    if (!output.canPush())
-        return Status::PortFull;
-
-    if (lazy_materializing_rows)
-        return Status::UpdatePipeline;
-
-    while (next_input_to_process != inputs.end())
-    {
-        auto & input = *next_input_to_process;
-        auto & pending = chunks[next_chunk_to_process];
-
-        if (!pending.empty())
-        {
-            output.push(std::move(pending.front()));
-            pending.pop_front();
-            return Status::PortFull;
-        }
-
-        if (input.isFinished())
-        {
-            ++next_input_to_process;
-            ++next_chunk_to_process;
-            continue;
-        }
-
-        if (!input.hasData())
-            return Status::NeedData;
-
-        output.push(input.pull());
-        return Status::PortFull;
-    }
-
-    /// All the readers have finished, or no rows survived the LIMIT and there is nothing to read.
-    output.finish();
-    return Status::Finished;
 }
 
 IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
@@ -246,11 +183,10 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
 
     auto rows = std::move(lazy_materializing_rows);
     lazy_materializing_rows.reset();
-    next_input_to_process = inputs.end();
 
     auto & files = rows->rows_in_files;
     if (files.empty())
-        return {};
+        return addReaders({});
 
     const auto & settings = context->getSettingsRef();
     const bool etag_validated_on_read
@@ -265,40 +201,16 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
 
     /// All readers together read no more leaf columns at once than the main pass; a lazy read of unknown width keeps one reader.
     /// Vortex reads whole top-level fields and converts them to the requested types, so the header does not show their width.
-    const auto header_to_parse = AggregateFunctionStatesFromValuesInputFormat::getHeaderToParse(
-        info.format_header, modified_format_settings.aggregate_function_input_format);
-    const Block & parsed_header = header_to_parse ? *header_to_parse : info.format_header;
     const bool reads_vortex = std::ranges::any_of(
         files, [&](const auto & file) { return boost::iequals(file.object->getFileFormat().value_or(configuration->format), "Vortex"); });
-    const auto lazy_read_leaf_columns = reads_vortex ? std::nullopt : countLeafColumns(parsed_header);
+    const auto lazy_read_leaf_columns = countLeafColumnsToRead(info.format_header, modified_format_settings, reads_vortex);
     /// A source of the main pass reads one file at a time, and every file that returned rows is registered.
     size_t main_read_streams = 0;
     {
         std::lock_guard lock(rows->file_registry->mutex);
         main_read_streams = std::min(rows->file_registry->main_read_streams, rows->file_registry->files.size());
     }
-    main_read_streams = std::clamp<size_t>(main_read_streams, 1, std::max<size_t>(max_threads, 1));
-    const size_t max_streams_for_columns = lazy_read_leaf_columns
-        ? std::max<size_t>(main_read_streams * main_read_leaf_columns / std::max<size_t>(*lazy_read_leaf_columns, 1), 1)
-        : 1;
-    const size_t num_streams = std::min({std::max<size_t>(max_threads, 1), max_streams_for_columns, files.size()});
-    size_t total_rows = 0;
-    for (const auto & file : files)
-        total_rows += file.rows->size();
-
-    /// Contiguous groups of files in file order, with about the same number of rows and at least one file each.
-    VectorWithMemoryTracking<VectorWithMemoryTracking<ObjectStorageLazyMaterializingRows::FileRows>> groups(num_streams);
-    size_t group = 0;
-    size_t rows_up_to_current_file = 0;
-    for (size_t i = 0; i < files.size(); ++i)
-    {
-        rows_up_to_current_file += files[i].rows->size();
-        groups[group].push_back(std::move(files[i]));
-        const size_t files_left = files.size() - i - 1;
-        const size_t groups_left = num_streams - group - 1;
-        if (groups_left > 0 && (files_left == groups_left || rows_up_to_current_file * num_streams >= total_rows * (group + 1)))
-            ++group;
-    }
+    const size_t num_streams = getNumReaders(main_read_streams, lazy_read_leaf_columns, files.size());
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
 
@@ -313,7 +225,7 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
         /*prewhere_info_=*/ nullptr);
 
     Processors sources;
-    for (auto & group_files : groups)
+    for (auto & group_files : splitIntoGroups(std::move(files), num_streams))
     {
         auto iterator = std::make_shared<LazyRowsObjectIterator>(
             std::move(group_files), object_storage, etag_validated_on_read, configuration->dataFilesAreImmutable());
@@ -333,18 +245,10 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
             format_filter_info,
             /*need_only_count_=*/ false);
 
-        auto & source_output = source->getOutputs().front();
-        inputs.emplace_back(source_output.getHeader(), this);
-        connect(source_output, inputs.back());
-        inputs.back().setNeeded();
-        const size_t input_index = input_port_to_index.size();
-        input_port_to_index[&inputs.back()] = input_index;
         sources.push_back(std::move(source));
     }
 
-    next_input_to_process = inputs.begin();
-    chunks.resize(sources.size());
-    return PipelineUpdate{.to_add = std::move(sources), .to_remove = {}};
+    return addReaders(std::move(sources));
 }
 
 }

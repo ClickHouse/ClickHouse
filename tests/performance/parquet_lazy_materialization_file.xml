@@ -1,0 +1,11 @@
+<!--
+    `ORDER BY ... LIMIT` over the 84 Parquet files of the `tpch_ice_sf10` lineitem dataset, unpacked from the dataset
+    archive before the tests. Lazy materialization reads the other columns only for the rows that survive the `LIMIT`,
+    and these rows are spread over most of the files (82 and 55 of them), so the lazy read opens many files: a few
+    columns, more columns, and all of them.
+-->
+<test>
+    <query>SELECT l_orderkey, l_linenumber, l_comment FROM file('tpch_ice_sf10/lineitem/data/*.parquet') ORDER BY l_extendedprice DESC, l_orderkey, l_linenumber LIMIT 1000 FORMAT Null</query>
+    <query>SELECT l_orderkey, l_linenumber, l_partkey, l_suppkey, l_quantity, l_discount, l_shipinstruct, l_shipmode, l_comment FROM file('tpch_ice_sf10/lineitem/data/*.parquet') ORDER BY l_extendedprice DESC, l_orderkey, l_linenumber LIMIT 1000 FORMAT Null</query>
+    <query>SELECT * FROM file('tpch_ice_sf10/lineitem/data/*.parquet') ORDER BY l_extendedprice DESC, l_orderkey, l_linenumber LIMIT 100 FORMAT Null</query>
+</test>

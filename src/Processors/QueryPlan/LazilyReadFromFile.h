@@ -5,6 +5,8 @@
 #include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Storages/prepareReadingFromFormat.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -38,6 +40,8 @@ struct LazyFileRegistry
 
     std::mutex mutex;
     VectorWithMemoryTracking<FileEntry> files;
+    /// The number of sources of the main branch.
+    size_t main_read_streams = 0;
 
     UInt64 registerFile(const String & path, const String & version_token);
 };
@@ -78,7 +82,10 @@ public:
         std::shared_ptr<StorageFile> storage_,
         ReadFromFormatInfo info_,
         ContextPtr context_,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        size_t main_read_leaf_columns_,
+        std::optional<size_t> lazy_read_leaf_columns_,
+        size_t max_num_streams_);
 
     void setLazyMaterializingRows(FileLazyMaterializingRowsPtr lazy_materializing_rows_);
 
@@ -94,6 +101,10 @@ private:
     ReadFromFormatInfo info;
     ContextPtr context;
     size_t max_block_size;
+    size_t main_read_leaf_columns;
+    std::optional<size_t> lazy_read_leaf_columns;
+    /// The stream limit of the main read (`max_streams_to_max_threads_ratio`).
+    size_t max_num_streams;
 
     FileLazyMaterializingRowsPtr lazy_materializing_rows;
 };

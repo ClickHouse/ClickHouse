@@ -1,0 +1,17 @@
+-- rows and files of the LIMITs
+3000	8
+100	8
+-- every lazily read value belongs to its row
+3000	24142141	0
+3000	24142141	0
+3000	24142141	0
+3000	24142141	0
+100	0
+-- the number of readers
+readers_04_narrow	4
+readers_16_aggregate_value	3
+readers_16_json	1
+readers_16_narrow	8
+readers_16_narrow_streams	4
+readers_16_variant	1
+readers_16_wide	3
