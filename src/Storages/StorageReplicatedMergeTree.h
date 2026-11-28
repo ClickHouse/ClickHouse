@@ -453,6 +453,9 @@ private:
 
     InterserverIOEndpointPtr data_parts_exchange_endpoint;
 
+    /// Set by the attach thread from getMetadataCommittedByPendingAlter, published by the restarting thread.
+    StorageMetadataPtr metadata_committed_by_pending_alter;
+
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
 
@@ -623,9 +626,9 @@ private:
     /// ALTER_METADATA entry still queued in this replica's queue accounts for the difference, else nullptr.
     StorageMetadataPtr getMetadataCommittedByPendingAlter(const zkutil::ZooKeeperPtr & zookeeper, const StorageMetadataPtr & current_metadata);
 
-    /// Publishes the metadata returned by getMetadataCommittedByPendingAlter in memory. Writes nothing:
-    /// the queue persists it later.
-    void adoptCommittedMetadata(const StorageInMemoryMetadata & current_metadata, const StorageInMemoryMetadata & committed_metadata);
+    /// Publishes metadata_committed_by_pending_alter in memory with `metadata_version`, if it is set. Writes
+    /// nothing: the queue persists it later.
+    bool adoptMetadataCommittedByPendingAlter(int32_t metadata_version);
 
     /** Check that the set of parts corresponds to that in ZK (/replicas/me/parts/).
       * If any parts described in ZK are not locally, throw an exception.

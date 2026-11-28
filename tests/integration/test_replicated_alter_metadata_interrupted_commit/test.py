@@ -113,7 +113,7 @@ def test_columns_delta_recovers(start_cluster):
 
     # Enabled from the config for this restart, the failpoint parks the queue's replay of the entry after
     # its Keeper commit and before it writes the local metadata file. A new column visible there can only
-    # have been published by the attach.
+    # have been published by the startup.
     node.replace_in_config(
         FAILPOINT_CONFIG, f"<{FAILPOINT}>false<", f"<{FAILPOINT}>true<"
     )
@@ -124,6 +124,13 @@ def test_columns_delta_recovers(start_cluster):
         assert (
             node.query(
                 f"SELECT count() FROM system.columns WHERE table = '{table}' AND name = 'y'"
+            ).strip()
+            == "1"
+        )
+        # Published with the metadata_version this replica committed, which new parts are stamped with.
+        assert (
+            node.query(
+                f"SELECT metadata_version FROM system.tables WHERE name = '{table}'"
             ).strip()
             == "1"
         )
@@ -465,3 +472,67 @@ def test_later_attach_failure_keeps_local_metadata(start_cluster):
     # With the adopted metadata published, this part would be read as if it already had the column `z`,
     # which it does not, and every value would come back as the default 0.
     assert node.query(f"SELECT x, y FROM {table} ORDER BY x") == "1\t10\n"
+
+
+def test_startup_failure_keeps_local_metadata(start_cluster):
+    """A startup attempt that fails after the attach checks passed leaves the table readonly but readable, and
+    the restarting thread retries it. Until an attempt has loaded the queue and pulled the log, the parts must
+    keep being read with the local metadata they match; after that, the adopted metadata is read with the
+    queued ALTER's conversions."""
+    table = "startup_failure_after_adoption"
+    node.query(
+        f"""
+        DROP TABLE IF EXISTS {table} SYNC;
+        CREATE TABLE {table} (x UInt32, y UInt32)
+        ENGINE = ReplicatedMergeTree('/clickhouse/{table}', 'r1') ORDER BY x;
+        INSERT INTO {table} VALUES (1, 10);
+        """
+    )
+
+    interrupt_alter(table, f"ALTER TABLE {table} RENAME COLUMN y TO z")
+
+    assert read_metadata_version(table) == 1
+    assert count_queue_entries(table) >= 1
+
+    # With an unparsable log pointer, every startup attempt fails when it pulls the log, after activating the
+    # replica and loading the queue and the mutations, while the attach checks pass.
+    node.stop_clickhouse(kill=True)
+    zk = cluster.get_kazoo_client("zoo1")
+    log_pointer_path = f"{replica_path(table)}/log_pointer"
+    log_pointer = zk.get(log_pointer_path)[0]
+    zk.set(log_pointer_path, b"not a number")
+    try:
+        node.start_clickhouse()
+        node.wait_for_log_line(
+            rf"\b{table} \(ReplicatedMergeTreeRestartingThread\): Failed to restart the table",
+            timeout=60,
+            look_behind_lines=100000,
+        )
+
+        assert (
+            node.query(f"SELECT is_readonly FROM system.replicas WHERE table = '{table}'")
+            == "1\n"
+        )
+        assert (
+            node.query(
+                f"SELECT name FROM system.columns WHERE table = '{table}' ORDER BY position"
+            )
+            == "x\ny\n"
+        )
+        assert node.query(f"SELECT x, y FROM {table}") == "1\t10\n"
+    finally:
+        zk.set(log_pointer_path, log_pointer)
+
+    # The restarting thread retries with a backoff of up to 10 seconds.
+    assert_eq_with_retry(
+        node,
+        f"SELECT is_readonly FROM system.replicas WHERE table = '{table}'",
+        "0\n",
+        retry_count=60,
+    )
+    assert node.query(f"SELECT x, z FROM {table}") == "1\t10\n"
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.zookeeper WHERE path = '{replica_path(table)}/queue'",
+        "0\n",
+    )

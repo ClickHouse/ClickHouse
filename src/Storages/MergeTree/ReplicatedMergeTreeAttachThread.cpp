@@ -174,6 +174,9 @@ void ReplicatedMergeTreeAttachThread::checkHasReplicaMetadataInZooKeeper(const z
 
 void ReplicatedMergeTreeAttachThread::runImpl()
 {
+    /// A record left by an earlier attempt describes Keeper state that this attempt has not checked.
+    std::atomic_store(&storage.metadata_committed_by_pending_alter, StorageMetadataPtr{});
+
     storage.setZooKeeper();
 
     auto zookeeper = storage.getZooKeeper();
@@ -251,10 +254,9 @@ void ReplicatedMergeTreeAttachThread::runImpl()
         storage.createTableSharedID(/* zookeeper_retries_info = */ {});
     }
 
-    /// Only after every check above: a failure before this point leaves the table readonly with its queue
-    /// never loaded, so its parts must keep being read with the local metadata they match.
-    if (committed_metadata)
-        storage.adoptCommittedMetadata(*metadata_snapshot, *committed_metadata);
+    /// Published by ReplicatedMergeTreeRestartingThread::tryStartup once the queue is loaded: until then the
+    /// parts must keep being read with the local metadata they match.
+    std::atomic_store(&storage.metadata_committed_by_pending_alter, committed_metadata);
 };
 
 void ReplicatedMergeTreeAttachThread::finalizeInitialization() TSA_NO_THREAD_SAFETY_ANALYSIS

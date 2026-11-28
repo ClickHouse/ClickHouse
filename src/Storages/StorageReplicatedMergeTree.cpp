@@ -2054,7 +2054,7 @@ StorageMetadataPtr StorageReplicatedMergeTree::getMetadataCommittedByPendingAlte
 
     LOG_WARNING(log, "Local table metadata does not match the metadata committed in {}, and queue entry {} "
                 "(ALTER_METADATA, alter_version {}) is still queued (not acknowledged). Applying that metadata in "
-                "memory once the attach checks pass, so that startup can proceed; the queue will persist it.",
+                "memory once the queue is loaded, so that startup can proceed; the queue will persist it.",
                 replica_path, pending_alter->znode_name, pending_alter->alter_version);
 
     auto columns_from_entry = ColumnsDescription::parse(pending_alter->columns_str);
@@ -2067,17 +2067,22 @@ StorageMetadataPtr StorageReplicatedMergeTree::getMetadataCommittedByPendingAlte
     const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
     auto metadata_diff = table_metadata.checkAndFindDiff(
         metadata_from_entry, current_metadata->columns, current_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
-    /// Not pending_alter->alter_version: cloneMetadataIfNeeded skips the ALTER_METADATA entry it
-    /// creates for a lost replica once the in-memory version already equals the source's.
+    /// The version is set when the metadata is published.
     return std::make_shared<StorageInMemoryMetadata>(getAlteredMetadata(
         getContext(), *current_metadata, std::move(columns_from_entry), metadata_diff, current_metadata->getMetadataVersion()));
 }
 
-void StorageReplicatedMergeTree::adoptCommittedMetadata(
-    const StorageInMemoryMetadata & current_metadata, const StorageInMemoryMetadata & committed_metadata)
+bool StorageReplicatedMergeTree::adoptMetadataCommittedByPendingAlter(int32_t metadata_version)
 {
+    auto committed_metadata = std::atomic_load(&metadata_committed_by_pending_alter);
+    if (!committed_metadata)
+        return false;
+
     auto alter_lock_holder = lockForAlter((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
-    setPropertiesAndResetSerializationHints(committed_metadata, current_metadata);
+    auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
+    setPropertiesAndResetSerializationHints(committed_metadata->withMetadataVersion(metadata_version), *current_metadata);
+    std::atomic_store(&metadata_committed_by_pending_alter, StorageMetadataPtr{});
+    return true;
 }
 
 
