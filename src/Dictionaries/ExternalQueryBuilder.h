@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/QualifiedTableName.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Formats/FormatSettings.h>
 #include <Parsers/IdentifierQuotingStyle.h>
@@ -11,6 +12,14 @@ namespace DB
 struct DictionaryStructure;
 class WriteBuffer;
 
+
+/** Splits a dictionary source's `table` setting into its schema and table parts.
+  *
+  * An unqualified `table` may be written as `schema.table`, in which case the schema it carries
+  * overrides the `schema` setting. An empty `table` is left alone: the source is then configured
+  * with `query` instead, and there is nothing to split.
+  */
+QualifiedTableName makeQualifiedTableName(const std::string & schema, const std::string & table);
 
 /** Builds a query to load data from external database.
   */

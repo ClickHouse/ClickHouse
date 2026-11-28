@@ -26,6 +26,19 @@ namespace ErrorCodes
 }
 
 
+QualifiedTableName makeQualifiedTableName(const std::string & schema, const std::string & table)
+{
+    QualifiedTableName qualified_name{schema, table};
+
+    /// `table` is empty when the source is configured with `query` instead, and there is nothing to
+    /// split into schema and table then. Parsing an empty name is a syntax error, so skip it.
+    if (qualified_name.database.empty() && !qualified_name.table.empty())
+        qualified_name = QualifiedTableName::parseFromString(qualified_name.table);
+
+    return qualified_name;
+}
+
+
 ExternalQueryBuilder::ExternalQueryBuilder(
     const DictionaryStructure & dict_struct_,
     const std::string & db_,
