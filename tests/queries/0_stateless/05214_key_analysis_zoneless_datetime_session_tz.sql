@@ -13,6 +13,8 @@ SET session_timezone = 'UTC';                -- freezes every key type below, wh
 SET optimize_time_filter_with_preimage = 0;  -- the rewrite would rewrite the `countIf` oracle as well
 SET explain_query_plan_default = 'legacy';   -- for the Condition/Parts/Granules assertions
 SET parallel_replicas_local_plan = 1;        -- for explain with indexes and key condition values
+-- Keep `ReadFromMergeTree` in the plan so `EXPLAIN indexes = 1` still reports the key condition.
+SET use_statistics_for_min_max_aggregation = 0, use_statistics_for_sum_avg_aggregation = 0;
 
 DROP TABLE IF EXISTS 05214_day, 05214_day_nullable, 05214_dt_seconds, 05214_hour, 05214_cast_date, 05214_pk, 05214_skip, 05214_explicit_zone;
 

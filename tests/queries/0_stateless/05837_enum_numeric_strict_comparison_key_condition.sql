@@ -5,6 +5,8 @@ DROP TABLE IF EXISTS t_enum16;
 DROP TABLE IF EXISTS t_enum_nullable;
 
 SET enable_parallel_replicas = 0;
+-- Keep `ReadFromMergeTree` in the plan so `EXPLAIN indexes = 1` still reports partition pruning.
+SET use_statistics_for_min_max_aggregation = 0, use_statistics_for_sum_avg_aggregation = 0;
 
 CREATE TABLE t_enum8 (e Enum8('neg' = -1, 'zero' = 0, 'one' = 1), v UInt64) ENGINE = MergeTree PARTITION BY e ORDER BY tuple();
 INSERT INTO t_enum8 SELECT 'zero', number FROM numbers(1000);
