@@ -2501,7 +2501,7 @@ Defines storage time for values. Can be specified only for MergeTree-family tabl
 <a id="aes-256-gcm-siv"></a>
 <a id="adaptive-codec-selection"></a>
 
-By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud. You can also define the compression method for each individual column in the `CREATE TABLE` query:
+By default, ClickHouse compresses data with `ZSTD(3)`. Parts of `MergeTree` tables that are smaller than 100 MiB when written are compressed with the faster `LZ4`, and merges recompress them with `ZSTD(3)` once they grow larger (see the [compression](/reference/settings/server-settings/settings/other#compression) server setting). You can also define the compression method for each individual column in the `CREATE TABLE` query:
 
 ```sql
 CREATE TABLE codec_example
@@ -2839,7 +2839,7 @@ SELECT * FROM base.t1;
     documentation["CODEC"] =
     {
         .description = R"DOCS_MD(
-By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud.
+By default, ClickHouse compresses data with `ZSTD(3)`. Parts of `MergeTree` tables that are smaller than 100 MiB when written are compressed with the faster `LZ4`, and merges recompress them with `ZSTD(3)` once they grow larger (see the [compression](/reference/settings/server-settings/settings/other#compression) server setting).
 
 For `MergeTree`-engine family you can change the default compression method in the [compression](/reference/settings/server-settings/settings/other#compression) section of a server configuration.
 
@@ -2879,7 +2879,7 @@ You can't decompress ClickHouse database files with external utilities like `lz4
 Compression is supported for the following table engines:
 
 - [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) family. Supports column compression codecs and selecting the default compression method by [compression](/reference/settings/server-settings/settings/other#compression) settings.
-- [Log](/reference/engines/table-engines/log-family/index) family. Uses the `lz4` compression method by default and supports column compression codecs.
+- [Log](/reference/engines/table-engines/log-family/index) family. Uses `ZSTD(3)` by default and supports column compression codecs.
 - [Set](/reference/engines/table-engines/special/set). Only supported the default compression.
 - [Join](/reference/engines/table-engines/special/join). Only supported the default compression.
 
@@ -2893,7 +2893,7 @@ ClickHouse supports general purpose codecs and specialized codecs.
 
 ### LZ4 {#lz4}
 
-`LZ4` — Lossless [data compression algorithm](https://github.com/lz4/lz4) used by default. Applies LZ4 fast compression.
+`LZ4` — Lossless [data compression algorithm](https://github.com/lz4/lz4). Applies LZ4 fast compression. It is used by default for small `MergeTree` parts.
 
 ### LZ4HC {#lz4hc}
 
@@ -2939,8 +2939,8 @@ This codec is experimental and requires `SET enable_gdeflate_codec = 1` to use.
 
 ### Choosing between LZ4, ZXC and ZSTD {#choosing-between-lz4-zxc-and-zstd}
 
-- `LZ4` is the default codec. It compresses and decompresses fast, with a moderate compression ratio.
-- `ZSTD` (the default codec in ClickHouse Cloud) is a good combination of compression ratio and speed when the size of the data matters. With `ZSTD(1)`, the data is 33% to 47% smaller than with `LZ4`, while the `hits` table below is compressed 1.5 to 1.7 times slower and decompressed about two times slower.
+- `LZ4` compresses and decompresses fast, with a moderate compression ratio. It is used by default for small `MergeTree` parts.
+- `ZSTD` (`ZSTD(3)` is the default codec) is a good combination of compression ratio and speed when the size of the data matters. With `ZSTD(1)`, the data is 33% to 47% smaller than with `LZ4`, while the `hits` table below is compressed 1.5 to 1.7 times slower and decompressed about two times slower.
 - `ZXC` with the default level 3 has a compression ratio close to `LZ4`: the data is 1% to 22% smaller. It is compressed about three times slower than with `LZ4` and decompressed 1.3 to 2.4 times faster, which suits data that is written once and read many times.
 
 These numbers are from the measurements below. They depend on the data, so try a codec on your own tables before switching to it.
@@ -3259,7 +3259,7 @@ INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number
 OPTIMIZE TABLE adaptive FINAL;
 ```
 
-You can observe how it works with the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/mergeTreeCodecBlockCounts) table function. Here `time` grows steadily, so `T64`, which stores only the bits that vary within a block, followed by the default `LZ4` squeezing the regular pattern those bits form, beat the default alone on every block. `user_id` holds hashes that no codec can shrink, so its blocks were stored raw:
+You can observe how it works with the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions/mergeTreeCodecBlockCounts) table function. Here `time` grows steadily, so `T64`, which stores only the bits that vary within a block, followed by `LZ4` (the default for a part this small) squeezing the regular pattern those bits form, beat the default alone on every block. `user_id` holds hashes that no codec can shrink, so its blocks were stored raw:
 
 ```sql
 SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase(), 'adaptive');
