@@ -18,6 +18,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/SignalHandlers.h>
 #include <Common/Stopwatch.h>
+#include <Common/checkStackSize.h>
 #include <Common/scope_guard_safe.h>
 
 #include <Interpreters/normalizeDivision.h>
@@ -953,9 +954,8 @@ static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
         return;
 
     /// Runs on the logging path of a query that has already returned its result, so failing to
-    /// write the plan must not fail the query. Producing the document is also the one part of
-    /// profiling that allocates in proportion to the plan, hence the blocker.
-    MemoryTrackerBlockerInThread block_memory_tracker;
+    /// write the plan must not fail the query.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
 
     const size_t max_size = context->getSettingsRef()[Setting::log_query_plans_max_size];
 
@@ -2039,6 +2039,8 @@ void wrapNestedConstructionSettings(
     if (!ast)
         return;
 
+    checkStackSize();
+
     /// `INSERT … SELECT` and an *immediate* `CREATE … AS SELECT` (`CREATE TABLE … AS SELECT`, or a
     /// `POPULATE`d materialized view) run their source `SELECT` right now, so a construction setting
     /// the source `SELECT` carries in its own `SETTINGS` clause must be materialized onto it — exactly
@@ -2142,6 +2144,8 @@ static void wrapPerArmConstructionSettingsImpl(
 {
     if (!ast)
         return;
+
+    checkStackSize();
 
     /// Descend into an `INSERT … SELECT` / immediate `CREATE … AS SELECT` source `SELECT` and keep the
     /// `select` member in sync, so per-arm settings on a source `UNION` are materialized too (see

@@ -3472,6 +3472,31 @@ struct Transformer
                                 is_valid_input = seconds >= 0 && seconds <= static_cast<Int64>(0xFFFFFFFFL);
                         }
                     }
+                    else if constexpr ((std::is_same_v<ToType, DataTypeDateTime> && is_any_of<FromType, DataTypeDate, DataTypeDate32, DataTypeDateTime64>)
+                        || (std::is_same_v<ToType, DataTypeDate> && is_any_of<FromType, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64>))
+                    {
+                        /// The start of the day, or the day of the whole seconds, in `time_zone` must lie in the target's range.
+                        if constexpr (std::is_same_v<ToType, DataTypeDateTime>)
+                        {
+                            Int64 seconds = 0;
+                            if constexpr (std::is_same_v<FromType, DataTypeDateTime64>)
+                                seconds = wholeSecondsRoundedDown(vec_from[i].value, transform.getScaleMultiplier());
+                            else
+                                seconds = time_zone.fromDayNum(ExtendedDayNum(static_cast<Int32>(vec_from[i])));
+                            is_valid_input = seconds >= 0 && seconds <= static_cast<Int64>(MAX_DATETIME_TIMESTAMP);
+                        }
+                        else
+                        {
+                            Int64 day = 0;
+                            if constexpr (std::is_same_v<FromType, DataTypeDate32>)
+                                day = vec_from[i];
+                            else if constexpr (std::is_same_v<FromType, DataTypeDateTime>)
+                                day = time_zone.toDayNum(static_cast<Int64>(vec_from[i]));
+                            else
+                                day = time_zone.toDayNum(wholeSecondsRoundedDown(vec_from[i].value, transform.getScaleMultiplier()));
+                            is_valid_input = day >= 0 && day <= DATE_LUT_MAX_DAY_NUM;
+                        }
+                    }
                     else if constexpr (std::is_same_v<ToType, DataTypeTime>)
                     {
                         /// `Time` is a signed count of seconds of a clock reading within
