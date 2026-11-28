@@ -346,7 +346,7 @@ ColumnsWithTypeAndName createBlockFromCollection(
         {
             auto converted = convertColumnToTypeCheckEnum(*member.column, member.type, lhs_type, params.forbid_unknown_enum_values);
 
-            bool need_insert_null = params.transform_null_in && column->isNullable();
+            bool need_insert_null = params.transform_null_in && canContainNull(*lhs_type);
             if (converted && (!(*converted)->isNullAt(0) || need_insert_null))
                 column->insertRangeFrom(**converted, 0, 1);
         }
@@ -394,7 +394,7 @@ ColumnsWithTypeAndName createBlockFromCollection(
             if (!converted)
                 break;
 
-            bool need_insert_null = params.transform_null_in && lhs_unpacked_types[i]->isNullable();
+            bool need_insert_null = params.transform_null_in && canContainNull(*lhs_unpacked_types[i]);
             if ((*converted)->isNullAt(0) && !need_insert_null)
                 break;
 
