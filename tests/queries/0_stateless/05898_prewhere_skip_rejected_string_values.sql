@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: read_bytes and ProfileEvents in the initiator's query_log do not include the replicas' reads.
 -- The String values a PREWHERE filter rejects at the start of a granule are not read when the column has a size stream:
 -- `t_size` takes that path, `t_single` (sizes inline) reads them as before, and both must return the same rows.
 -- `t_sparse` stores `flag` sparse, so the filter of `PREWHERE flag` is sparse.
@@ -57,8 +59,8 @@ SELECT id, length(s), cityHash64(s), cityHash64(z), left(s, 8), right(z, 8), ns,
 SELECT id, length(s), cityHash64(s), cityHash64(z), left(s, 8), right(z, 8), ns, arr, short FROM t_single PREWHERE id IN (8191, 13192) ORDER BY id SETTINGS log_comment = '05898_q2_single';
 
 SELECT 'the first row of a granule';
-SELECT id, length(s), cityHash64(s), cityHash64(z), left(s, 8), right(z, 8), ns, arr, short FROM t_size PREWHERE id IN (8192, 15192) ORDER BY id;
-SELECT id, length(s), cityHash64(s), cityHash64(z), left(s, 8), right(z, 8), ns, arr, short FROM t_single PREWHERE id IN (8192, 15192) ORDER BY id;
+SELECT id, length(s), cityHash64(s), cityHash64(z), left(s, 8), right(z, 8), ns, arr, short FROM t_size PREWHERE id IN (8192, 15192) ORDER BY id SETTINGS log_comment = '05898_q3_size';
+SELECT id, length(s), cityHash64(s), cityHash64(z), left(s, 8), right(z, 8), ns, arr, short FROM t_single PREWHERE id IN (8192, 15192) ORDER BY id SETTINGS log_comment = '05898_q3_single';
 
 SELECT 'granules split across blocks';
 SELECT id, length(s), cityHash64(s), cityHash64(z), left(s, 8), right(z, 8), ns, arr, short FROM t_size PREWHERE id IN (5000, 12000, 20000, 30000) ORDER BY id SETTINGS max_block_size = 1000;
@@ -93,11 +95,13 @@ SELECT 'short rejected values';
 SELECT id, length(s), cityHash64(s), cityHash64(z), left(s, 8), right(z, 8), ns, arr, short FROM t_size PREWHERE id = 3 * 8192 + 1000;
 SELECT id, length(s), cityHash64(s), cityHash64(z), left(s, 8), right(z, 8), ns, arr, short FROM t_single PREWHERE id = 3 * 8192 + 1000;
 
--- The skipped values are counted as read.
+-- The skipped values are counted as read, but are not decompressed (q3 has no rejected head).
 SYSTEM FLUSH LOGS query_log;
 SELECT splitByChar('_', log_comment)[2] AS query,
     abs(toInt64(anyIf(read_bytes, endsWith(log_comment, '_size'))) - toInt64(anyIf(read_bytes, endsWith(log_comment, '_single'))))
-        <= anyIf(read_bytes, endsWith(log_comment, '_single')) / 100
+        <= anyIf(read_bytes, endsWith(log_comment, '_single')) / 100,
+    anyIf(ProfileEvents['CompressedReadBufferBytes'], endsWith(log_comment, '_size'))
+        < 0.7 * anyIf(ProfileEvents['CompressedReadBufferBytes'], endsWith(log_comment, '_single'))
 FROM system.query_log
 WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05898\_q%'
 GROUP BY query ORDER BY query;
