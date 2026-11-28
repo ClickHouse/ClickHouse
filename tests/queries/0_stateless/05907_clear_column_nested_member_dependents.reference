@@ -68,3 +68,8 @@ Compact
 Wide
 1	[0,0]	[3,4]	Array(UInt64)	[1,1]
 1	[0,0]	[3,4]	Array(UInt64)	[1,1]
+-- 9. a column TTL of another column that reads the cleared member
+Compact
+Wide
+1	[0,0]	[3,4]	[1,1]	1
+1	[0,0]	[3,4]	[1,1]	1

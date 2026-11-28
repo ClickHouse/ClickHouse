@@ -1823,9 +1823,11 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (table == name)
             return {};
 
-        /// `TTLTransform` runs after every stage and may rewrite members through a column TTL or a GROUP BY TTL.
+        /// `TTLTransform` runs after every stage and may rewrite members through a GROUP BY TTL or a column TTL of a member.
         if (std::ranges::any_of(dependencies, is_ttl_target)
-            && (metadata_snapshot->hasAnyColumnTTL() || metadata_snapshot->hasAnyGroupByTTL()))
+            && (metadata_snapshot->hasAnyGroupByTTL()
+                || std::ranges::any_of(metadata_snapshot->getColumnTTLs(),
+                    [&](const auto & column_ttl) { return Nested::extractTableName(column_ttl.first) == table; })))
             return {};
 
         /// A member recomputed after the readonly stage rewrites the sizes of the whole group.

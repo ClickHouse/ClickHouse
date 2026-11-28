@@ -21,6 +21,8 @@ DROP TABLE IF EXISTS t7_compact;
 DROP TABLE IF EXISTS t7_wide;
 DROP TABLE IF EXISTS t8_compact;
 DROP TABLE IF EXISTS t8_wide;
+DROP TABLE IF EXISTS t9_compact;
+DROP TABLE IF EXISTS t9_wide;
 
 SELECT '-- 1. MATERIALIZED column over the cleared member';
 
@@ -233,6 +235,25 @@ ALTER TABLE t8_wide CLEAR COLUMN n.a, MODIFY COLUMN n.b Array(UInt64);
 SELECT k, n.a, n.b, toTypeName(n.b), m FROM t8_compact;
 SELECT k, n.a, n.b, toTypeName(n.b), m FROM t8_wide;
 
+SELECT '-- 9. a column TTL of another column that reads the cleared member';
+
+CREATE TABLE t9_compact (k UInt32, n Nested(a UInt32, b UInt32), d DateTime TTL toDateTime('2100-01-01 00:00:00', 'UTC') + length(n.a), m Array(UInt32) MATERIALIZED arrayMap(x -> x + 1, n.a))
+ENGINE = MergeTree ORDER BY k
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
+CREATE TABLE t9_wide (k UInt32, n Nested(a UInt32, b UInt32), d DateTime TTL toDateTime('2100-01-01 00:00:00', 'UTC') + length(n.a), m Array(UInt32) MATERIALIZED arrayMap(x -> x + 1, n.a))
+ENGINE = MergeTree ORDER BY k
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t9_compact (k, n.a, n.b) VALUES (1, [1, 2], [3, 4]);
+INSERT INTO t9_wide (k, n.a, n.b) VALUES (1, [1, 2], [3, 4]);
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't9_compact' AND active;
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't9_wide' AND active;
+
+ALTER TABLE t9_compact CLEAR COLUMN n.a;
+ALTER TABLE t9_wide CLEAR COLUMN n.a;
+SELECT k, n.a, n.b, m, m = arrayMap(x -> x + 1, n.a) FROM t9_compact;
+SELECT k, n.a, n.b, m, m = arrayMap(x -> x + 1, n.a) FROM t9_wide;
+
 DROP TABLE t1_compact;
 DROP TABLE t1_wide;
 DROP TABLE t2_compact;
@@ -251,3 +272,5 @@ DROP TABLE t7_compact;
 DROP TABLE t7_wide;
 DROP TABLE t8_compact;
 DROP TABLE t8_wide;
+DROP TABLE t9_compact;
+DROP TABLE t9_wide;
