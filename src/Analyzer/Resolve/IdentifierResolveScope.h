@@ -145,6 +145,16 @@ struct IdentifierResolveScope
     /// Argument can be expression like constant, column, function or table expression
     std::unordered_map<std::string, QueryTreeNodePtr> expression_argument_name_to_node;
 
+    /// Set when this lambda scope inlines a call: the projection names of the call's arguments.
+    std::optional<ProjectionNames> inlined_call_arguments_projection_names;
+
+    /// The inlined call is a SQL UDF call, or a SQL UDF call was inlined while resolving within this scope.
+    bool inlines_sql_udf = false;
+
+    /// `CREATE` does not substitute the SQL UDF calls under this scope, so stored definitions keep them: the scope is the body
+    /// of a SQL UDF called by its name (`arrayMap(f, arr)`, `APPLY(f)`) or resolves an `APPLY` transformer.
+    bool sql_udf_calls_not_substituted = false;
+
     /** Names from `expression_argument_name_to_node` that are temporarily invisible.
       * Set while an expression bound to an alias of an outer scope is resolved through this
       * lambda scope, so that a lambda argument does not capture an identifier of an expression
