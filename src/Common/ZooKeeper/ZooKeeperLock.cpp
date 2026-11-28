@@ -88,7 +88,11 @@ void ZooKeeperLock::unlock()
         zookeeper->remove(lock_path, -1);
         LOG_TRACE(log, "Lock on path {} for session {} is unlocked", lock_path, zookeeper->getClientID());
     }
-    else if (result && throw_if_lost) /// NOTE: What if session expired exactly here?
+    /// A foreign owner means someone else holds the lock we believe we hold, so it is always a bug,
+    /// no matter whether the caller tolerates a missing node. Only the absence of the node below is
+    /// tolerable, because it is indistinguishable from a legitimate removal of the lock's parent,
+    /// which is why `throw_if_lost` gates that branch alone.
+    else if (result) /// NOTE: What if session expired exactly here?
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Lock is lost, it has another owner. Path: {}, message: {}, owner: {}, our id: {}",
                         lock_path, lock_message, stat.ephemeralOwner, zookeeper->getClientID());
     else if (throw_if_lost)
