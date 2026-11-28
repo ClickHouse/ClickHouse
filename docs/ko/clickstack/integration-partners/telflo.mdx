@@ -17,7 +17,7 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
   이 가이드에서는 Telflo가 관리하는 OpenTelemetry Collector에서 ClickStack으로 텔레메트리를 전송하는 방법을 설명합니다. 다음 내용을 다룹니다:
 
   * Telflo의 시각적 편집기 또는 CLI로 collector 구성 만들기
-  * 텔레메트리를 오픈 소스 또는 관리형 ClickStack으로 전송하거나 ClickHouse에 직접 기록하기
+  * 텔레메트리를 오픈 소스 또는 자체 관리형 ClickHouse Observability로 전송하거나 ClickHouse에 직접 기록하기
   * collector 플릿에 구성을 원격으로 배포하기
   * 텔레메트리가 ClickStack 또는 ClickHouse 테이블에 정상적으로 수집되었는지 확인하기
 
@@ -59,12 +59,12 @@ Telflo는 다음 기능을 제공합니다:
 
 ## 사전 요구 사항 {#prerequisites}
 
-* 대상: [Open Source ClickStack](/ko/clickstack/getting-started/oss), [관리형 ClickStack](/ko/clickstack/getting-started/managed) 또는 자가 관리형 ClickHouse instance
+* 대상: [오픈 소스 ClickStack](/ko/clickstack/getting-started/oss), [자체 관리형 ClickHouse Observability](/ko/clickstack/self-configured/getting-started/managed) 또는 자체 관리형 ClickHouse instance
 * Telflo 계정([telflo.com에서 계정 생성](https://telflo.com))
 * collector를 실행할 환경: VM 또는 Kubernetes cluster
-* **Open Source ClickStack**: ClickStack OTLP endpoint(HTTP는 `4318`, gRPC는 `4317`)와 수집 API Key. API Key는 HyperDX의 **Team Settings → API Keys**에서 확인할 수 있습니다([참고 문서 보기](/ko/clickstack/ingesting-data/opentelemetry#sending-otel-data))
-* **관리형 ClickStack**: ClickHouse Cloud 서비스 endpoint(포트 `8443`)와 수집 사용자([수집 사용자 생성](/ko/clickstack/ingesting-data/collector#creating-an-ingestion-user) 참고)
-* **Self-managed ClickHouse**: ClickHouse endpoint, [ClickStack 테이블](/ko/clickstack/ingesting-data/schemas)을 저장할 데이터베이스, 해당 테이블을 생성하고 쓸 수 있는 사용자([수집 사용자 생성](/ko/clickstack/ingesting-data/collector#creating-an-ingestion-user-oss) 참고)
+* **오픈 소스 ClickStack**: ClickStack OTLP endpoint(HTTP는 `4318`, gRPC는 `4317`)와 수집 API Key. API Key는 ClickStack UI의 **Team Settings → API Keys**에서 확인할 수 있습니다([참고 문서 보기](/ko/clickstack/ingesting-data/opentelemetry#sending-otel-data))
+* **자체 관리형 ClickHouse Observability**: ClickHouse Cloud 서비스 endpoint(포트 `8443`)와 수집 사용자([수집 사용자 생성](/ko/clickstack/ingesting-data/collector#creating-an-ingestion-user) 참고)
+* **자체 관리형 ClickHouse**: ClickHouse endpoint, [ClickStack 테이블](/ko/clickstack/ingesting-data/schemas)을 저장할 데이터베이스, 해당 테이블을 생성하고 쓸 수 있는 사용자([수집 사용자 생성](/ko/clickstack/ingesting-data/collector#creating-an-ingestion-user-oss) 참고)
 * collector에서 ClickStack 또는 ClickHouse endpoint까지의 네트워크 연결
 
 {/* vale off */}
@@ -82,7 +82,7 @@ Telflo는 다음 기능을 제공합니다:
   </Step>
 
   <Step title="exporter 추가" id="add-exporter">
-    세 가지 경로 모두 동일한 편집기, 동일한 게시(publish) 단계, 동일한 플릿을 사용하며, 익스포터만 다릅니다. 사용 중인 배포 방식에 맞는 탭을 선택하십시오. Open Source ClickStack은 수집 키와 함께 OTLP를 사용하고, Managed ClickStack과 자가 관리형 ClickHouse는 ClickStack 테이블에 직접 쓰기를 수행합니다.
+    세 가지 경로 모두 동일한 편집기, 동일한 게시(publish) 단계, 동일한 플릿을 사용하며, 익스포터만 다릅니다. 사용 중인 배포 방식에 맞는 탭을 선택하십시오. Open Source ClickStack은 수집 키와 함께 OTLP를 사용하고, 자체 관리형 ClickHouse Observability와 자가 관리형 ClickHouse는 ClickStack 테이블에 직접 쓰기를 수행합니다.
 
     <Tabs>
       <Tab title="Open Source ClickStack">
@@ -93,8 +93,8 @@ Telflo는 다음 기능을 제공합니다:
         gRPC를 사용하려면 포트 `4317`에서 **OTLP** exporter를 사용하고, 동일한 header를 **gRPC Metadata Headers**에 지정하십시오.
       </Tab>
 
-      <Tab title="Managed ClickStack">
-        Managed ClickStack에는 gateway collector가 포함되어 있지 않으므로, telemetry를 보낼 호스팅형 OTLP endpoint가 없습니다. 여기서 구성하는 collector가 바로 그 [gateway](/ko/clickstack/ingesting-data/collector#collector-roles) 역할을 합니다. ClickHouse exporter와 함께 **OTLP** 수신기를 지정하면 ClickHouse Cloud 서비스에 데이터를 기록합니다. 이후 SDK와 agent collector는 `4318`(HTTP) 또는 `4317`(gRPC)로 이 collector에 OTLP를 전송합니다.
+      <Tab title="자체 관리형 ClickHouse Observability">
+        자체 관리형 ClickHouse Observability에는 gateway collector가 포함되어 있지 않으므로, telemetry를 보낼 호스팅형 OTLP endpoint가 없습니다. 여기서 구성하는 collector가 바로 그 [gateway](/ko/clickstack/ingesting-data/collector#collector-roles) 역할을 합니다. ClickHouse exporter와 함께 **OTLP** 수신기를 지정하면 ClickHouse Cloud 서비스에 데이터를 기록합니다. 이후 SDK와 agent collector는 `4318`(HTTP) 또는 `4317`(gRPC)로 이 collector에 OTLP를 전송합니다.
 
         1. **ClickHouse** exporter를 캔버스로 끌어다 놓습니다.
         2. **Endpoint**에 ClickHouse Cloud 서비스 endpoint(포트 `8443`)를 입력하고, **Database**는 `default`로, **Username**은 수집용 사용자로 설정합니다.
@@ -119,13 +119,9 @@ Telflo는 다음 기능을 제공합니다:
     수신기에서 프로세서를 거쳐 exporter까지 엣지를 연결하여 시그널별로 하나의 파이프라인을 구성합니다. status 행에는 **config valid** 또는 수정해야 할 오류 개수가 표시되며, **YAML** 탭에서 생성된 구성을 확인할 수 있습니다.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![ClickHouse exporter가 구성된 Telflo Editor의 collector pipeline](/images/clickstack/telflo/telflo-configuration.webp)
-
-    </Frame>
-
+      <Frame>
+        ![ClickHouse exporter가 구성된 Telflo Editor의 collector pipeline](/images/clickstack/telflo/telflo-configuration.webp)
+      </Frame>
     </div>
 
     본격적으로 배포하기 전에 샘플 텔레메트리를 구성에 흘려보내 최종 출력이 어떻게 나오는지 확인할 수 있습니다. [Telflo 테스트](https://docs.telflo.com/docs/testing/overview)를 참조하십시오. 또는 수행하려는 작업을 설명하면 툴바의 **AI** 버튼으로 열 수 있는 Telflo AI 어시스턴트가 구성을 빌드하고 검사하며 테스트해 줍니다. 직접 운영하는 에이전트도 [Telflo CLI](https://docs.telflo.com/docs/cli/)를 통해 동일한 작업을 수행할 수 있습니다.
@@ -144,18 +140,14 @@ Telflo는 다음 기능을 제공합니다:
     변경 사항을 배포하려면 새 버전을 게시하고 이를 그룹에 할당하십시오. 롤백하려면 이전에 배포했던 버전을 할당하십시오.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![롤아웃 후 모든 collector가 동기화된 Telflo fleet](/images/clickstack/telflo/telflo-fleet.webp)
-
-    </Frame>
-
+      <Frame>
+        ![롤아웃 후 모든 collector가 동기화된 Telflo fleet](/images/clickstack/telflo/telflo-fleet.webp)
+      </Frame>
     </div>
   </Step>
 
   <Step title="텔레메트리 확인" id="verify-telemetry">
-    HyperDX를 열고 **Search** 뷰에서 서비스 중 하나를 검색하십시오. 메트릭은 **Chart Explorer**를 사용하십시오. Managed ClickStack을 사용하는 경우 ClickHouse Cloud 콘솔에서 서비스를 열고 **Launch ClickStack**을 클릭하십시오. 자가 관리형 ClickHouse를 사용하는 경우 [ClickStack 테이블](/ko/clickstack/ingesting-data/schemas)을 직접 쿼리하십시오. 예를 들면 `SELECT ServiceName, count() FROM otel_logs GROUP BY ServiceName`과 같습니다.
+    ClickStack UI를 열고 **Search** 뷰에서 서비스 중 하나를 검색하십시오. 메트릭은 **Chart Explorer**를 사용하십시오. 자체 관리형 ClickHouse Observability를 사용하는 경우 ClickHouse Cloud 콘솔에서 서비스를 열고 **Launch ClickStack**을 클릭하십시오. 자가 관리형 ClickHouse를 사용하는 경우 [ClickStack 테이블](/ko/clickstack/ingesting-data/schemas)을 직접 쿼리하십시오. 예를 들면 `SELECT ServiceName, count() FROM otel_logs GROUP BY ServiceName`과 같습니다.
   </Step>
 </Steps>
 
@@ -172,17 +164,17 @@ Telflo는 다음 기능을 제공합니다:
 
 ## 다음 단계 {#next-steps}
 
-* **대시보드 구축**: HyperDX에서 로그, 메트릭, 트레이스에 대한 시각화를 생성합니다
+* **대시보드 구축**: ClickStack UI에서 로그, 메트릭, 트레이스에 대한 시각화를 생성합니다
 * **알림 설정**: ClickStack에서 중요한 조건에 대한 알림을 구성합니다
 * **AI 어시스턴트로 개선**: 파이프라인을 조정하거나 테스트를 제안하도록 요청합니다
-* **다른 벤더에서 이전하는 경우**: [flows](https://telflo.com/flows)가 전환 과정을 지원하여, 이미 인프라에 배포된 에이전트를 교체하고 두 백엔드를 비교하는 동안 양쪽 모두로 데이터를 이중 전송합니다
+* **다른 벤더에서 이전하는 경우**: [flows](https://telflo.com/flows)가 전환 과정을 지원하여, 이미 플릿에 배포된 에이전트를 교체하고 두 백엔드를 비교하는 동안 양쪽 모두로 데이터를 이중 전송합니다
 
-## 더 읽어보기 {#read-more}
+## 더 알아보기 {#read-more}
 
 * [Telflo 문서](https://docs.telflo.com/docs)
-* [퀵스타트: 빈 캔버스에서 collector 배포까지](https://docs.telflo.com/docs/getting-started/quickstart)
+* [빠른 시작: 빈 캔버스에서 collector 배포까지](https://docs.telflo.com/docs/getting-started/quickstart)
 * [collector 구성 테스트](https://docs.telflo.com/docs/testing/overview)
 * [Telflo의 플릿 관리](https://docs.telflo.com/docs/fleet-management/overview)
 * [collector 설치](https://docs.telflo.com/docs/fleet-management/install-collectors)
-* [OpenTelemetry로 데이터 수집하기](/ko/clickstack/ingesting-data/opentelemetry)
-* [ClickStack 테이블 스키마](/ko/clickstack/ingesting-data/schemas)
+* [OpenTelemetry를 사용한 데이터 수집](/ko/clickstack/ingesting-data/opentelemetry)
+* [ClickStack 테이블 스키마(table schemas)](/ko/clickstack/ingesting-data/schemas)

@@ -64,7 +64,9 @@ public:
     void doInsertFrom(const IColumn & src, size_t n) override
 #endif
     {
-        data.push_back(assert_cast<const Self &>(src).getData()[n]);
+        /// Snapshot before growing: the source may be this column.
+        const T value = assert_cast<const Self &>(src).getData()[n];
+        data.push_back(value);
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -256,6 +258,13 @@ public:
 #else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #endif
+
+    void insertFromEither(
+        const IColumn & src_true,
+        bool src_true_is_const,
+        const IColumn & src_false,
+        bool src_false_is_const,
+        const IColumn::Filter & condition) override;
 
     [[nodiscard]] ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 

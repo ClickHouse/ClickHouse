@@ -10,20 +10,14 @@ doc_type: 'guide'
 
 > これは、PostgreSQL から ClickHouse への移行ガイドの**第1部**です。実践的な例を用いて、リアルタイムレプリケーション (CDC (変更データキャプチャ) ) のアプローチで移行を効率的に進める方法を解説します。ここで取り上げる概念の多くは、PostgreSQL から ClickHouse への手動による大規模データ転送にも適用できます。
 
-<div id="dataset">
-  ## データセット
-</div>
+## データセット {#dataset}
 
 Postgres から ClickHouse への典型的な移行例を示すサンプルデータセットとして、[こちら](/ja/get-started/sample-datasets/stackoverflow)で説明している Stack Overflow データセットを使用します。これには、2008 年から 2024 年 4 月までに Stack Overflow で発生したすべての `post`、`vote`、`user`、`comment`、`badge` が含まれています。このデータの PostgreSQL スキーマを以下に示します。
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![PostgreSQL Stack Overflow スキーマ](/images/migrations/postgres-stackoverflow-schema.webp)
-
-</Frame>
-
+  <Frame>
+    ![PostgreSQL Stack Overflow スキーマ](/images/migrations/postgres-stackoverflow-schema.webp)
+  </Frame>
 </div>
 
 *PostgreSQL でテーブルを作成するための DDL コマンドは、[こちら](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==)から入手できます。*
@@ -76,11 +70,11 @@ ClickHouse にとっては小規模でも、このデータセットは Postgres
 > この例の結果では、Postgres と ClickHouse の性能差を示すために完全なデータセットを使用していますが、以下に記載する手順はすべて、より小さいサブセットでも機能的にはまったく同じです。完全なデータセットを Postgres に読み込みたい場合は、[こちら](https://pastila.nl/?00d47a08/1c5224c0b61beb480539f15ac375619d#XNj5vX3a7ZjkdiX7In8wqA==)を参照してください。上記のスキーマで課される外部キー制約のため、PostgreSQL 用の完全なデータセットには、参照整合性を満たす行のみが含まれます。このような制約のない [Parquet バージョン](/ja/get-started/sample-datasets/stackoverflow) は、必要に応じて ClickHouse に直接簡単に読み込めます。
 
 <div id="migrating-data">
-  ## データの移行
+  ## データの移行 {#migrating-data}
 </div>
 
 <div id="real-time-replication-or-cdc">
-  ### リアルタイムレプリケーション (CDC (変更データキャプチャ) )
+  ### リアルタイムレプリケーション (CDC (変更データキャプチャ) ) {#real-time-replication-or-cdc}
 </div>
 
 ClickPipes for PostgreSQL をセットアップするには、この[ガイド](/ja/integrations/clickpipes/postgres/index)を参照してください。このガイドでは、さまざまな種類のソース Postgres インスタンスを対象としています。
@@ -117,18 +111,16 @@ ORDER BY id;
 
 設定が完了すると、ClickPipes は PostgreSQL から ClickHouse への全データの移行を開始します。所要時間はネットワーク環境やデプロイメントの規模によって異なりますが、Stack Overflow データセットであれば通常は数分程度です。
 
-<div id="initial-bulk-load-with-periodic-updates">
-  ### 定期的に更新されるデータの手動バルクロード
-</div>
+### 定期的に更新されるデータの手動バルクロード {#initial-bulk-load-with-periodic-updates}
 
 手動で行う場合、データセットの初回バルクロードは次の方法で実施できます。
 
-* **テーブル関数** - ClickHouse の [Postgres table function](/ja/reference/functions/table-functions/postgresql) を使用して、Postgres からデータを `SELECT` し、ClickHouse のテーブルに `INSERT` します。数百 GB 程度までのデータセットのバルクロードに適しています。
+* **テーブル関数** - ClickHouse の [Postgres テーブル関数](/ja/reference/functions/table-functions/postgresql) を使用して、Postgres からデータを `SELECT` し、ClickHouse のテーブルに `INSERT` します。数百 GB 程度までのデータセットのバルクロードに適しています。
 * **エクスポート** - CSV や SQL スクリプトファイルなどの中間フォーマットにエクスポートします。これらのファイルは、その後クライアントから `INSERT FROM INFILE` 句を使用するか、オブジェクトストレージと関連する関数 (s3、gcs など) を使用して ClickHouse に読み込めます。
 
 PostgreSQL から手動でデータを読み込む場合は、まず ClickHouse にテーブルを作成する必要があります。Stack Overflow データセットも使って ClickHouse のテーブルスキーマを最適化する方法については、この [Data Modeling documentation](/ja/guides/clickhouse/data-modelling/schema-design#establish-initial-schema) を参照してください。
 
-PostgreSQL と ClickHouse ではデータ型が異なる場合があります。各テーブルのカラムに対応する型を確認するには、[Postgres table function](/ja/reference/functions/table-functions/postgresql) と `DESCRIBE` コマンドを使用できます。次のコマンドは PostgreSQL の `posts` テーブルを表示します。お使いの環境に合わせて変更してください。
+PostgreSQL と ClickHouse ではデータ型が異なる場合があります。各テーブルのカラムに対応する型を確認するには、[Postgres テーブル関数](/ja/reference/functions/table-functions/postgresql) と `DESCRIBE` コマンドを使用できます。次のコマンドは PostgreSQL の `posts` テーブルを表示します。お使いの環境に合わせて変更してください。
 
 ```sql title="Query"
 DESCRIBE TABLE postgresql('<host>:<port>', 'postgres', 'posts', '<username>', '<password>')
@@ -185,7 +177,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>:<port>', 'postg
 ここでは、`CreationDate` を使用した初期ロードと増分ロードを示します (行が更新された場合は、これも更新されるものと仮定します) 。.
 
 ```sql
--- 初期ロード
+-- initial load
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password')
 
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password') WHERE CreationDate > ( SELECT (max(CreationDate) FROM stackoverflow.posts)

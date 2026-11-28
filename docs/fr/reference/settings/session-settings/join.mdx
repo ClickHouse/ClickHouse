@@ -15,15 +15,15 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 ## join_algorithm {#join_algorithm}
 
-<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
+<SettingsInfoBlock type="JoinAlgorithm" default_value="direct,hash,ie_join" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "Ajout de `ie_join` à la liste par défaut, afin qu'une jointure dont la section `ON` ne comporte que des conditions d'inégalité soit exécutée avec IEJoin au lieu d'un `CROSS JOIN` avec filtre. Étant placé en dernier, il n'est utilisé que lorsque les autres algorithmes ne s'appliquent pas."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' a été déconseillé au profit d'algorithmes de jointure explicitement spécifiés, et parallel_hash est désormais préféré à hash"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "Ajout de `ie_join` à la liste par défaut, afin qu'une jointure dont la section `ON` ne comporte que des conditions d'inégalité soit exécutée avec IEJoin au lieu d'un `CROSS JOIN` avec filtre. Étant placé en dernier, il n'est utilisé que lorsque les autres algorithmes ne s'appliquent pas."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "direct,hash,ie_join"},{"label": "`parallel_hash` est un alias obsolète de `hash` et a été retiré de la liste par défaut ; il reste toutefois accepté. Mentionner `hash` ou `parallel_hash` dans la liste ne détermine pas le degré de parallélisme de la jointure."}]}, {"id": "row-3","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' a été déconseillé au profit d'algorithmes de jointure explicitement spécifiés, et parallel_hash est désormais préféré à hash"}]}]} />
 
 Spécifie quel algorithme de [JOIN](/fr/reference/statements/select/join) est utilisé.
 
 Plusieurs algorithmes peuvent être spécifiés, et un algorithme disponible est choisi pour une requête donnée en fonction du type, de la strictness et du moteur de table.
 
-Le déversement sur disque des algorithmes fondés sur le hachage se configure indépendamment de `join_algorithm`. Tous les algorithmes fondés sur le hachage utilisent [`max_bytes_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) et [`max_bytes_ratio_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) comme seuils de déversement.
+Le déversement sur disque des algorithmes hash-based se configure indépendamment de `join_algorithm`. Tous les algorithmes hash-based utilisent [`max_bytes_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) et [`max_bytes_ratio_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) comme seuils de déversement.
 
 La plupart des algorithmes n&#39;affectent une requête que lorsqu&#39;ils sont sélectionnés pour celle-ci. Certains, cependant, modifient la planification du simple fait d&#39;être répertoriés — même en tant que solution de repli de priorité inférieure qui n&#39;est finalement pas sélectionnée — car la décision est prise avant que l&#39;algorithme ne soit choisi. Il existe deux effets de ce type :
 
@@ -41,7 +41,7 @@ La sélection explicite de `grace_hash` est principalement destinée au diagnost
 
 `grace_hash` est externe dès le premier bloc : la table de droite est partitionnée immédiatement, là où `hash` et `parallel_hash` la collectent d&#39;abord en mémoire et ne la partitionnent qu&#39;une fois le seuil de déversement franchi. Choisissez-le lorsque vous savez déjà que le côté droit ne tiendra pas en mémoire et que vous souhaitez éviter la phase en mémoire. Le seuil de déversement lui-même est celui qu&#39;utilisent tous les algorithmes de hachage, [`max_bytes_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/fr/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join), et l&#39;une des deux valeurs doit être non nulle, sauf si `legacy_join_size_limits_trigger_spilling` est activé. Sans seuil, `grace_hash` est ignoré au profit de l&#39;algorithme suivant dans la liste, et rejeté s&#39;il est le seul.
 
-La première phase d&#39;une jointure grace lit la table de droite et la découpe en N buckets en fonction de la valeur de hachage des colonnes de clé (initialement, N vaut `grace_hash_join_initial_buckets`). Cela est fait de manière à garantir que chaque bucket puisse être traité indépendamment. Les lignes du premier bucket sont ajoutées à une hash table en mémoire tandis que les autres sont enregistrées sur disque. Si la hash table dépasse le seuil de déversement, le nombre de buckets est augmenté ainsi que le bucket affecté à chaque ligne. Toutes les lignes qui n&#39;appartiennent pas au bucket courant sont vidées et réaffectées.
+La première phase d&#39;une jointure grace lit la table de droite et la découpe en N buckets en fonction de la valeur de hachage des colonnes de clé (initialement, N vaut `grace_hash_join_initial_buckets`). Cela est fait de manière à garantir que chaque bucket puisse être traité indépendamment. Les lignes du premier bucket sont ajoutées à une table de hachage en mémoire tandis que les autres sont enregistrées sur disque. Si la table de hachage dépasse le seuil de déversement, le nombre de buckets est augmenté ainsi que le bucket affecté à chaque ligne. Toutes les lignes qui n&#39;appartiennent pas au bucket courant sont vidées et réaffectées.
 
 Prend en charge `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
@@ -53,7 +53,7 @@ Lors de l&#39;utilisation de l&#39;algorithme `hash`, la partie droite du `JOIN`
 
 * parallel&#95;hash
 
-Une variante de la jointure par hachage `hash` qui découpe les données en buckets et construit plusieurs hashtables simultanément au lieu d&#39;une seule afin d&#39;accélérer ce processus.
+Identique à `hash`, conservé pour des raisons de compatibilité. Les jointures par hachage `INNER`, `LEFT`, `RIGHT` et `FULL` peuvent construire la table de hachage en utilisant jusqu&#39;à `max_threads` fils d’exécution ; c&#39;est `parallel_hash_join_threshold` qui détermine dans quels cas. Pour la construire sur plusieurs fils d’exécution chaque fois que le type de jointure le permet, définissez `parallel_hash_join_threshold` sur `0`.
 
 Lors de l&#39;utilisation de l&#39;algorithme `parallel_hash`, la partie droite du `JOIN` est chargée en RAM.
 

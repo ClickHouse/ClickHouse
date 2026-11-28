@@ -16,6 +16,7 @@
 #include <Common/SettingsChanges.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
@@ -338,12 +339,14 @@ StoragePtr StorageFactory::get(
     chassert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
     /// The storage object and its metadata outlive the query, so route them to the table-lifetime arena instead
-    /// of fragmenting the per-CPU query arenas. Settled on query end, see `MemoryTracker::settleDriftOnQueryEnd`.
+    /// of fragmenting the per-CPU query arenas. They stay charged to the query until it ends and are settled then, see
+    /// `MemoryTracker::settleDriftOnQueryEnd`, like the data inserted into `Memory`, `Set` and `Join` tables.
     StoragePtr res;
     {
         ScopedJemallocThreadArena table_metadata_arena_scope(JemallocMergeTreeArena::getArenaIndex());
         res = storages.at(name).creator_fn(arguments);
     }
+    setCurrentQueryMemoryDriftExpected();
 
     /// A replayed definition was checked when the table was created.
     if (!isReplayedTableDefinition(mode, query, local_context))

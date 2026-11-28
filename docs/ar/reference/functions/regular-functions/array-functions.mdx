@@ -479,19 +479,19 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 أُضيف: v1.1.0
 
 تُرجع عدد العناصر التي تُرجع الدالة `func(arr1[i], ..., arrN[i])` القيمة true عند تطبيقها عليها.
-إذا لم تُحدَّد `func`، فإنها تُرجع عدد العناصر غير الصفرية في المصفوفة.
+إذا لم تُحدَّد `func`، فإنها تُرجع عدد العناصر غير الصفرية في المصفوفة.
 
 `arrayCount` هي [دالة عالية الرتبة](/ar/reference/functions/regular-functions/overview#higher-order-functions).
 
-<Info>
+<Note>
   **استخدم الإعداد `array_count_legacy_uint32_result` لإرجاع `UInt32`**
 
   أُضيف في الإصدار 26.10 تغيير غير متوافق مع الإصدارات السابقة: تُرجع `arrayCount` النوع `UInt64` بدلًا من `UInt32`، لضمان دقة النتيجة للمصفوفات التي تحتوي على أكثر من `4294967295` عنصرًا مطابقًا.
   تغيّرت أيضًا خاصية ثبات النتيجة: عند استخدام مصفوفة غير ثابتة ومسند يُختزل إلى القيمة الثابتة false، كانت النتيجة column ثابتًا قبل الإصدار 26.10 (كانت `isConstant(arrayCount(...))` تُرجع `1`)، وأصبحت الآن column كاملًا (تُرجع `isConstant` القيمة `0`)، بما يتوافق مع `length(arrayFilter(...))`.
   للاحتفاظ بالسلوك السابق (نوع النتيجة `UInt32` وخاصية ثبات النتيجة معًا)، اضبط الإعداد `array_count_legacy_uint32_result` (القيمة الافتراضية: `false`) على `true`.
 
-  أثناء الترقية التدريجية لعنقود، لا يمرّر الاستعلام الموزّع الذي يبدأه خادم لم تتم ترقيته بعد هذا الإعداد. لذلك، فإن التعبيرات التي تعتمد على النوع وتُقيَّم محليًا على المقاطع التي تمت ترقيتها بالفعل (مثل `byteSize(arrayCount(...))`) تتعامل مع النوع `UInt64` على تلك المقاطع. للحفاظ على سلوك هذه الاستعلامات دون أي تغيير إلى حين ترقية العنقود بأكمله، اضبط `array_count_legacy_uint32_result = 1` على الخوادم التي تمت ترقيتها، للمستخدمين الذين تُنفَّذ استعلامات المقاطع بحساباتهم، ثم أزل هذا الإعداد بعد اكتمال الترقية. يتحدد المستخدم المعني بحسب تهيئة العنقود: عند تهيئة `secret` للاتصال بين الخوادم، ينفّذ المقطع الاستعلام بحساب المستخدم الحالي على الخادم الذي بدأ الاستعلام؛ وإلا، يُستخدم الحساب المحدَّد في تعريف العنقود أو في دالة الجدول `remote` (وهو `default` ما لم يُحدَّد غيره). أبسط نهج موثوق هو تفعيل الإعداد لجميع مستخدمي الخوادم التي تمت ترقيتها.
-</Info>
+  أثناء الترقية التدريجية لعنقود، لا يمرّر الاستعلام الموزّع الذي يبدأه خادم لم تتم ترقيته بعد هذا الإعداد. لذلك، فإن التعبيرات التي تعتمد على النوع وتُقيَّم محليًا على المقاطع التي تمت ترقيتها بالفعل (مثل `byteSize(arrayCount(...))`) تتعامل مع النوع `UInt64` على تلك المقاطع. للحفاظ على سلوك هذه الاستعلامات دون أي تغيير إلى حين ترقية العنقود بأكمله، اضبط `array_count_legacy_uint32_result = 1` على الخوادم التي تمت ترقيتها، للمستخدمين الذين تُنفَّذ استعلامات المقاطع بحساباتهم، ثم أزل هذا الإعداد بعد اكتمال الترقية. يتحدد المستخدم المعني بحسب تهيئة العنقود: عند تهيئة `secret` للاتصال بين الخوادم، ينفّذ المقطع الاستعلام بحساب المستخدم الحالي على الخادم الذي بدأ الاستعلام؛ وإلا، يُستخدم الحساب المحدَّد في تعريف العنقود أو في دالة الجدول `remote` (وهو `default` ما لم يُحدَّد غيره). أبسط نهج موثوق هو تفعيل الإعداد لجميع مستخدمي الخوادم التي تمت ترقيتها.
+</Note>
 
 **الصيغة**
 
@@ -3480,12 +3480,14 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
 ## arrayReduceInRanges {#arrayReduceInRanges}
 
-قُدِّمت في: v20.4.0
+أُضيف في: v20.4.0
 
-تُطبِّق دالةً تجميعية على عناصر المصفوفة ضمن النطاقات المحددة، وتُرجِع مصفوفةً تتضمن النتيجة المقابلة لكل نطاق.
+تُطبِّق دالةً تجميعية على عناصر المصفوفة ضمن النطاقات المحددة، وتُرجِع مصفوفةً تتضمن النتيجة المقابلة لكل نطاق.
 تُرجِع الدالة النتيجة نفسها كما لو استُخدم `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)` عدة مرات.
+الفرق الوحيد هو أن الطول هنا غير موقَّع: فإذا تجاوز الطول القيمة القصوى لـ `Int64`، اختيرت بقية المصفوفة،
+في حين تفسّر `arraySlice` مثل هذه القيمة على أنها طول سالب.
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 arrayReduceInRanges(agg_f, ranges, arr1[, arr2, ... ,arrN])
@@ -4522,6 +4524,172 @@ SELECT arrayTranspose([['a', 'b'], ['c', 'd']])
 [['a','c'],['b','d']]
 ```
 
+## arrayTreePreorder {#arrayTreePreorder}
+
+أُضيف في: v26.11.0
+
+تُرتِّب شجرةً (أو غابةً) مخزّنةً في مصفوفتين، هما معرّفات العُقد ومعرّفات العُقد الأصل، وفق الترتيب المسبق (preorder) لاجتياز العمق أولًا.
+
+يصف العنصر `i` من `ids` و`parent_ids` عقدة الإدخال `i` وعقدتها الأصل.
+تُعيد الدالة Tuple مسمّى يتكوّن من أربع مصفوفات، جميعها مرتّبة وفق الترتيب المسبق، وجميع المواضع فيها تبدأ من 1:
+يصف العنصر `k` العقدة رقم `k` في الترتيب المسبق.
+
+* `order[k]` — فهرس هذه العقدة في الإدخال. ويُعاد ترتيب مصفوفات البيانات وفق الترتيب المسبق باستخدام `arrayMap(i -> x[i], t.order)`.
+* `size[k]` — عدد العُقد في الجزء الفرعي لهذه العقدة، بما فيها العقدة نفسها. ويشغل الجزء الفرعي النطاق المتصل من المواضع `[k, k + size[k])`.
+* `parent[k]` — موضع العقدة التي يساوي معرّفُها معرّفَ العقدة الأصل لهذه العقدة في الترتيب المسبق، أو `0` إذا لم توجد عقدة كهذه.
+* `depth[k]` — المسافة من هذه العقدة إلى جذر شجرتها، وتساوي `0` للجذور.
+
+تكون العقدة `a` سلفًا للعقدة `b` إذا وفقط إذا تحقق `a < b AND b < a + size[a]`.
+يمكن حساب دوال التجميع الجمعية على جزء فرعي بوصفها الفرق بين مجموعين تراكميين (انظر [`arrayCumSum`](#arrayCumSum)).
+أما دوال التجميع الأخرى على جزء فرعي فيمكن حسابها باستخدام [`arraySlice`](#arraySlice) على مصفوفة بيانات أُعيد ترتيبها وفق الترتيب المسبق.
+
+تُكتب الأشجار واحدةً تلو الأخرى بترتيب ورود جذورها في الإدخال، وتُزار العقد الفرعية لكل عقدة بترتيب الإدخال،
+ولذلك تكون النتيجة حتمية. التعقيد الزمني خطي بالنسبة إلى حجم المصفوفة، ولا يوجد حد لعمق الشجرة.
+
+لا ترفع الدالة استثناءً بسبب محتوى المصفوفات، بل تُنشئ غابةً صالحةً من أي إدخال:
+
+* تكون العقدة جذرًا إذا كان معرّف عقدتها الأصل `NULL` أو غير موجود في `ids`، كأن يكون سلسلة فارغة أو في حالة العقدة اليتيمة.
+* إذا شكّلت روابط العقد الأصل دورة، يُقتطع رابط عقدة الدورة التي ترد أولًا في الإدخال، وتصبح هذه العقدة جذرًا. ويحتفظ `parent` الخاص بها بموضع عقدتها الأصل الحقيقية، وهو أكبر من موضعها، لذا يدل `parent[k] > k` على أن دورةً قد اقتُطعت عند الموضع `k`. أما العقدة التي تكون أصلًا لنفسها فتحصل على `parent[k] = k`.
+* إذا احتوت `ids` على قيم مكررة، تُرفق العقد الفرعية بأول ظهور.
+
+تُقارَن المعرّفات باستخدام التجزئة. لذا لا يجوز أن تكون أعدادَ فاصلة عائمة أو أن تحتوي عليها (لأن `0.0` و`-0.0` متساويتان لكن تجزئتيهما مختلفتان)،
+ولا أن تكون قيمًا من النوع `Dynamic` أو `Variant` أو `JSON` (لأن `NULL` بداخلها يُقارَن كقيمة عادية، بينما يجعل `NULL` من نوع `Nullable` العقدةَ جذرًا).
+
+يمكن استنتاج بنية الإدخال من النتيجة (انظر الأمثلة أدناه):
+
+* هل توجد دورة: `arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent))`.
+* المواضع التي اقتُطعت عندها الدورات: `arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent)`.
+* مواضع جذور الأشجار: `arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)`، وعدد الأشجار هو `countEqual(t.depth, 0)`.
+* مواضع العقد التي لا يوجد معرّف عقدتها الأصل: `arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)`.
+* هل الإدخال شجرة واحدة ذات جذر حقيقي: `t.size[1] = length(ids) AND t.parent[1] <= 1`. يقبل هذا الشرط كلا اصطلاحَي الجذر (معرّف عقدة أصل غير موجود يعطي `0`، والحلقة الذاتية تعطي `1`)، ويرفض المصفوفة التي تمثّل دورةً واحدةً كبيرة.
+* مواضع عقد الدورة المقتطعة عند الموضع `r`: `arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))`. وهي العقد الممتدة من `r` نزولًا إلى عقدتها الأصل الحقيقية `t.parent[r]`، والتي يحتوي جزؤها الفرعي على العقدة الأصل الحقيقية.
+* المعرّفات المكررة: `arrayEnumerateUniq(ids) > 1`.
+
+للحصول على فهرس الإدخال للعقدة في الموضع `k`، استخدم `t.order[k]`.
+
+**الصيغة**
+
+```sql
+arrayTreePreorder(ids, parent_ids)
+```
+
+**الوسيطات**
+
+* `ids` — معرّفات العُقد. لا تُدعم أعداد الفاصلة العائمة ولا الأنواع `Dynamic` و`Variant` و`JSON`. [`Array(T)`](/ar/reference/data-types/array)
+* `parent_ids` — معرّفات العُقد الأصل، بمعدّل معرّف واحد لكل عقدة. يجب أن تكون بالحجم نفسه لـ `ids`. [`Array(T)`](/ar/reference/data-types/array)
+
+**قيمة معادة**
+
+تُعيد قيمة Tuple تمثّل تخطيط الترتيب المسبق (preorder). [`Tuple(order Array(UInt32), size Array(UInt32), parent Array(UInt32), depth Array(UInt32))`](/ar/reference/data-types/tuple)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT arrayTreePreorder(['G2', 'A', 'T1', 'B', 'G1', 'G3'], ['B', '', 'B', 'A', 'A', 'A']) AS t
+```
+
+```response title=Response
+([2,4,1,3,5,6],[6,3,1,1,1,1],[0,1,2,2,1,1],[0,1,2,2,1,1])
+```
+
+**التكلفة وعدد العُقد المنحدرة من كل span وكيل في التتبّع**
+
+```sql title=Query
+WITH
+    ['A', 'G1', 'B', 'G2', 'T1', 'G3'] AS ids,
+    ['', 'A', 'A', 'B', 'B', 'A'] AS parent_ids,
+    ['AGENT', 'GENERATION', 'AGENT', 'GENERATION', 'TOOL', 'GENERATION'] AS types,
+    [0, 2, 0, 3, 0, 1] AS costs,
+    arrayTreePreorder(ids, parent_ids) AS t,
+    arrayCumSum(arrayMap(i -> costs[i], t.order)) AS cum
+SELECT arrayMap(k -> (ids[t.order[k]], cum[k + t.size[k] - 1] - cum[k], t.size[k] - 1),
+    arrayFilter(k -> types[t.order[k]] = 'AGENT', arrayEnumerate(t.order))) AS res
+```
+
+```response title=Response
+[('A',6,5),('B',3,2)]
+```
+
+**إدخال غير صالح: دورة C -&gt; D -&gt; E -&gt; C، وعقدة F أسفل الدورة، وعقدة يتيمة G**
+
+```sql title=Query
+SELECT arrayTreePreorder(['A', 'B', 'C', 'D', 'E', 'F', 'G'], ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+```
+
+```response title=Response
+([1,2,3,5,4,6,7],[2,1,4,2,1,1,1],[0,1,5,3,4,3,0],[0,1,0,1,2,1,0])
+```
+
+**اكتشاف الدورات وتحديد مواضع قطعها**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+SELECT
+    arrayExists((p, k) -> p > k, t.parent, arrayEnumerate(t.parent)) AS has_cycle,
+    arrayFilter((k, p) -> p > k, arrayEnumerate(t.parent), t.parent) AS cut_positions,
+    arrayMap(k -> ids[t.order[k]], cut_positions) AS cut_ids
+```
+
+```response title=Response
+┌─has_cycle─┬─cut_positions─┬─cut_ids─┐
+│         1 │ [3]           │ ['C']   │
+└───────────┴───────────────┴─────────┘
+```
+
+**الجذور، وعدد الأشجار، والعُقد التي لم يُعثر على أصلها، والتحقق من أنها شجرة واحدة**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t
+SELECT
+    arrayMap(k -> ids[t.order[k]], arrayFilter((k, d) -> d = 0, arrayEnumerate(t.depth), t.depth)) AS roots,
+    countEqual(t.depth, 0) AS trees,
+    arrayMap(k -> ids[t.order[k]], arrayFilter((k, p) -> p = 0, arrayEnumerate(t.parent), t.parent)) AS parent_not_found,
+    t.size[1] = length(ids) AND t.parent[1] <= 1 AS is_one_tree
+```
+
+```response title=Response
+┌─roots─────────┬─trees─┬─parent_not_found─┬─is_one_tree─┐
+│ ['A','C','G'] │     3 │ ['A','G']        │           0 │
+└───────────────┴───────┴──────────────────┴─────────────┘
+```
+
+**عُقد الدورة بعد قطعها عند الموضع 3**
+
+```sql title=Query
+WITH
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G'] AS ids,
+    arrayTreePreorder(ids, ['', 'A', 'D', 'E', 'C', 'C', 'Z']) AS t,
+    3 AS r
+SELECT arrayMap(k -> ids[t.order[k]], arrayFilter(x -> x + t.size[x] > t.parent[r], range(r, t.parent[r] + 1))) AS cycle
+```
+
+```response title=Response
+┌─cycle─────────┐
+│ ['C','E','D'] │
+└───────────────┘
+```
+
+**المعرّفات المكررة: تُلحق العقد الفرعية بأول ظهور للمعرّف**
+
+```sql title=Query
+WITH ['a', 'b', 'a', 'c'] AS ids
+SELECT
+    arrayFilter((id, n) -> n > 1, ids, arrayEnumerateUniq(ids)) AS duplicate_ids,
+    arrayTreePreorder(ids, ['', 'a', '', 'a']).order AS order
+```
+
+```response title=Response
+┌─duplicate_ids─┬─order─────┐
+│ ['a']         │ [1,2,4,3] │
+└───────────────┴───────────┘
+```
+
 ## arrayUnion {#arrayUnion}
 
 أُضيف في: v24.10.0
@@ -4790,25 +4958,25 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 
 ## empty {#empty}
 
-قُدِّم في: v1.1.0
+أُضيف في: v1.1.0
 
 يتحقق مما إذا كانت المصفوفة المُدخلة فارغة.
 
 تُعد المصفوفة فارغة إذا كانت لا تحتوي على أي عناصر.
 
 <Note>
-  يمكن تحسين أداء هذه الدالة بتفعيل [إعداد `optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة فقط [العمود الفرعي size0](/ar/reference/data-types/array#array-size) بدلًا من قراءة عمود المصفوفة بالكامل ومعالجته. ويتحوّل الاستعلام `SELECT empty(arr) FROM TABLE;` إلى `SELECT arr.size0 = 0 FROM TABLE;`.
+  عندما لا يُستخدم العمود في أي موضع آخر من الاستعلام، يمكن للدالة أن تقرأ [العمود الفرعي size0](/ar/reference/data-types/array#array-size) فقط بدلًا من قراءة عمود المصفوفة بالكامل ومعالجته. ويتحوّل الاستعلام `SELECT empty(arr) FROM TABLE;` إلى `SELECT arr.size0 = 0 FROM TABLE;`. ويتحكّم في هذا التحسين الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns)، وهو مفعّل افتراضيًا.
 </Note>
 
 تعمل هذه الدالة أيضًا مع Strings أو UUIDs.
 
-**البنية**
+**الصيغة**
 
 ```sql
 empty(arr)
 ```
 
-**المعاملات**
+**الوسيطات**
 
 * `arr` — مصفوفة الإدخال. [`Array(T)`](/ar/reference/data-types/array)
 
@@ -4818,7 +4986,7 @@ empty(arr)
 
 **أمثلة**
 
-**مثال استخدام**
+**مثال على الاستخدام**
 
 ```sql title=Query
 SELECT empty([]);
@@ -5848,12 +6016,12 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 تُعدّ المصفوفة غير فارغة إذا كانت تحتوي على عنصر واحد على الأقل.
 
 <Note>
-  يمكن تحسينها عبر تمكين الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة العمود الفرعي [size0](/ar/reference/data-types/array#array-size) فقط بدلًا من قراءة عمود المصفوفة بالكامل ومعالجته. ويتحوّل الاستعلام `SELECT notEmpty(arr) FROM table` إلى `SELECT arr.size0 != 0 FROM TABLE`.
+  عندما لا يُستخدم العمود في أي موضع آخر من الاستعلام، يمكن للدالة أن تقرأ العمود الفرعي [size0](/ar/reference/data-types/array#array-size) فقط بدلًا من قراءة عمود المصفوفة بالكامل ومعالجته. ويتحوّل الاستعلام `SELECT notEmpty(arr) FROM table` إلى `SELECT arr.size0 != 0 FROM TABLE`. ويتحكم في هذا التحسين الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns)، وهو مفعّل افتراضيًا.
 </Note>
 
 تعمل الدالة أيضًا مع السلاسل النصية أو معرّفات UUID.
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 notEmpty(arr)

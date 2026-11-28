@@ -24,9 +24,9 @@ LIMIT 10;
 1970-01-01	1970-01-01
 1970-01-02	1970-01-02
 1970-01-03	1970-01-03
-1969-12-29	2149-06-04
-1969-12-30	2149-06-05
-1969-12-31	2149-06-06
+1969-12-29	\N
+1969-12-30	\N
+1969-12-31	\N
 SELECT x, accurateCastOrNull(toInt64(x), 'Date') AS d, toTypeName(d)
 FROM test_accurate_cast_or_null
 ORDER BY accurateCastOrNull(toInt64(x), 'Date'), x

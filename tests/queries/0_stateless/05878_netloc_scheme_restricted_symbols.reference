@@ -1,0 +1,25 @@
+-- a restricted symbol inside the scheme: no network location
+space	
+tab	
+less-than	
+greater-than	
+percent	
+brace-open	
+brace-close	
+pipe	
+backslash	
+caret	
+tilde	
+bracket-open	
+bracket-close	
+semicolon	
+equals	
+ampersand	
+-- a sub-delimiter before the @ belongs to the userinfo
+user;name@localhost
+localhost
+-- the query string ends the network location
+user:pass@localhost
+-- the fragment ends the network location
+localhost
+user@localhost

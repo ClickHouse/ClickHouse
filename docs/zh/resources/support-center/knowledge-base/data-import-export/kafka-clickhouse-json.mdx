@@ -5,16 +5,12 @@ date: 2024-11-06
 tags: ['数据格式', '数据摄取']
 ---
 
-<div id="kafka-and-the-json-data-type">
-  ## Kafka 与 JSON 数据类型
-</div>
+## Kafka 与 JSON 数据类型 {#kafka-and-the-json-data-type}
 
 随着新的 [`JSON`](/zh/reference/data-types/newjson) 数据类型推出，ClickHouse 现已成为进行 [JSON 分析](https://clickhouse.com/engineering-resources/json-database) 的理想数据库选择。
 在本指南中，我们将学习如何将 Apache Kafka 中的 JSON 消息直接加载到 ClickHouse 的单个 `JSON` 列中。
 
-<div id="setup-kafka">
-  ## 设置 Kafka
-</div>
+## 设置 Kafka {#setup-kafka}
 
 首先，在我们的机器上运行一个 Kafka broker。我们还会将 9092 端口映射到主机操作系统的 9092 端口，以便更方便地与 Kafka 交互：
 
@@ -22,9 +18,7 @@ tags: ['数据格式', '数据摄取']
 docker run --name broker -p 9092:9092 apache/kafka:3.8.1
 ```
 
-<div id="ingest-data-into-kafka">
-  ## 将数据摄取到 Kafka
-</div>
+## 将数据摄取到 Kafka {#ingest-data-into-kafka}
 
 运行起来后，我们需要摄取一些数据。
 Wikimedia 的 recent changes feed 是一个很好的流式数据源，因此我们将其摄取到 `wiki_events` topic 中：
@@ -49,16 +43,13 @@ kcat -C -b localhost:9092  -t wiki_events
 
 到这里一切顺利。
 
-<div id="ingest-data-into-clickhouse">
-  ## 将数据摄取到 ClickHouse
-</div>
+## 将数据摄取到 ClickHouse {#ingest-data-into-clickhouse}
 
 接下来，我们将把数据摄取到 ClickHouse 中。
-首先，通过设置以下属性来启用 JSON 类型 (目前仍处于 Experimental 阶段) ：
 
-```sql
-SET allow_experimental_json_type = 1;
-```
+<Note>
+  在 24.8 至 25.2 版本中，请先使用 `SET allow_experimental_json_type = 1;` 启用 `JSON` 类型，然后再创建下面的表。
+</Note>
 
 现在，我们来创建 `wiki_queue` 表，它使用 [`Kafka` 表引擎](/zh/integrations/connectors/data-ingestion/kafka/kafka-table-engine)。
 
@@ -98,9 +89,7 @@ SELECT json
 FROM wiki_queue;
 ```
 
-<div id="querying-json-data-in-clickhouse">
-  ## 在 ClickHouse 中查询 JSON 数据
-</div>
+## 在 ClickHouse 中查询 JSON 数据 {#querying-json-data-in-clickhouse}
 
 然后，我们就可以查询 `wiki` 表了。
 例如，我们可以统计提交过更改的机器人数量：

@@ -1,0 +1,84 @@
+---
+slug: /clickstack/observability/api-reference
+title: 'API 참조'
+description: '대시보드, 알림, 소스, 웹훅, 역할, 저장된 검색에 대한 ClickHouse Observability API 참조'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'API', 'REST API', 'dashboards', 'alerts']
+sidebarTitle: 'API 참조'
+---
+
+ClickHouse Observability는 ClickHouse Cloud API를 사용하여 대시보드, 알림, 웹훅, 역할, 저장된 검색을 관리하고 데이터 소스에 액세스합니다.
+
+<Note>
+  완전 관리형 환경에서는 소스가 자동으로 관리됩니다. 소스를 조회하려면 소스 읽기 작업(read operations)을 사용하십시오. 소스 생성, 업데이트, 삭제 작업은 소스를 직접 관리하는 배포 환경에서 사용합니다.
+</Note>
+
+## API 참조 문서 {#api-docs}
+
+사이드바에서 엔드포인트를 선택하면 해당 엔드포인트의 매개변수, 요청 및 응답 스키마(schema), 대화형 예시를 확인할 수 있습니다. 이 페이지는 **ClickHouse Cloud API** 명세를 기반으로 하며, 클라우드 서비스 URL과 인증 방식을 사용합니다.
+
+사용 가능한 엔드포인트는 다음과 같습니다.
+
+| 리소스        | 작업                                              |
+| ---------- | ----------------------------------------------- |
+| **대시보드**   | 대시보드 생성, 목록 조회, 단건 조회, 업데이트, 삭제 및 검사            |
+| **알림**     | 알림 생성, 목록 조회, 단건 조회, 업데이트 및 삭제                  |
+| **소스**     | 데이터 소스 목록 조회 및 단건 조회, 직접 관리하는 소스의 생성, 업데이트 및 삭제 |
+| **웹훅**     | 웹훅 생성, 목록 조회, 업데이트, 삭제 및 검사                     |
+| **역할**     | 역할 생성, 목록 조회, 단건 조회, 업데이트 및 삭제                  |
+| **저장된 검색** | 저장된 검색 생성, 목록 조회, 단건 조회, 업데이트 및 삭제              |
+
+## 인증 {#authentication}
+
+ClickHouse Observability는 [HTTP 기본 인증](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication) 방식으로 **ClickHouse Cloud API 키**를 사용하여 인증합니다. API 키 생성 및 관리 방법은 [API 키 관리](/ko/products/cloud/features/admin-features/api/openapi)를 참조하십시오.
+
+해당 키에는 `control-plane:service:manage-clickstack-api` 권한(permission)이 있어야 합니다.
+
+HTTP 기본 인증을 사용하여 키 ID와 시크릿을 함께 전달하십시오:
+
+```bash
+export KEY_ID=<your_key_id>
+export KEY_SECRET=<your_key_secret>
+
+curl --user $KEY_ID:$KEY_SECRET \
+  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
+```
+
+## 기준 URL 및 요청 형식 {#base-url}
+
+모든 ClickHouse Observability API 요청은 ClickHouse Cloud API로 전송됩니다:
+
+```bash
+https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/<resource>
+```
+
+**조직 ID**는 ClickHouse Cloud 콘솔의 **조직 → 조직 세부 정보**에서 확인할 수 있습니다. **서비스 ID**는 서비스 URL이나 서비스 세부 정보 페이지에서 확인할 수 있습니다.
+
+### 예시: 대시보드 목록 조회 {#list-dashboards-managed}
+
+```bash
+curl --user $KEY_ID:$KEY_SECRET \
+  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
+```
+
+### 예시: 알림 생성 {#create-alert-managed}
+
+```bash
+curl -X POST --user $KEY_ID:$KEY_SECRET \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dashboardId": "<DASHBOARD_ID>",
+    "tileId": "<TILE_ID>",
+    "threshold": 100,
+    "interval": "1h",
+    "source": "tile",
+    "thresholdType": "above",
+    "channel": {
+      "type": "webhook",
+      "webhookId": "<WEBHOOK_ID>"
+    },
+    "name": "Error Spike Alert",
+    "message": "Error rate exceeded 100 in the last hour"
+  }' \
+  https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/alerts
+```

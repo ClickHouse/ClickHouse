@@ -17,47 +17,35 @@ import { CloudSQLIAMAuthentication } from "/snippets/ar/clickpipes/_cloudsql_iam
 </Info>
 
 <div id="supported-postgres-versions">
-  ## إصدارات Postgres المدعومة
+  ## إصدارات Postgres المدعومة {#supported-postgres-versions}
 </div>
 
 Postgres 12 فما بعده
 
-## فعِّل النسخ المتماثل المنطقي {#enable-logical-replication}
+## فعِّل replication المنطقي {#enable-logical-replication}
 
-**لا تحتاج** إلى اتباع الخطوات أدناه إذا كان الإعداد `cloudsql. logical_decoding` مفعّلًا. في معظم الحالات، يكون هذا الإعداد مُعدًّا مسبقًا إذا كنت تُجري الترحيل من أداة أخرى لتكرار البيانات.
+**لا تحتاج** إلى اتباع الخطوات أدناه إذا كان الإعداد `cloudsql. logical_decoding` مفعّلًا. في معظم الحالات، يكون هذا الإعداد مُعدًّا مسبقًا إذا كنت تُجري الترحيل من أداة أخرى لـreplication البيانات.
 
 1. انقر على زر **Edit** في صفحة النظرة العامة.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![زر Edit في Cloud SQL Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp)
-
-</Frame>
-
+  <Frame>
+    ![زر Edit في Cloud SQL Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp)
+  </Frame>
 </div>
 
 2. انتقل إلى Flags وغيّر `cloudsql.logical_decoding` إلى on. سيتطلب هذا التغيير إعادة تشغيل خادم Postgres.
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![غيّر cloudsql.logical_decoding إلى on](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp)
-
-</Frame>
-
+  <Frame>
+    ![تغيير cloudsql.logical_decoding إلى on](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![أعد تشغيل الخادم](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp)
-
-</Frame>
-
+  <Frame>
+    ![إعادة تشغيل الخادم](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp)
+  </Frame>
 </div>
 
 ## إنشاء مستخدم ClickPipes ومنح الأذونات {#creating-clickpipes-user-and-granting-permissions}
@@ -121,51 +109,35 @@ Postgres 12 فما بعده
 1. انتقل إلى قسم **Connections**
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![قسم Connections في Cloud SQL](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp)
-
-</Frame>
-
+  <Frame>
+    ![قسم Connections في Cloud SQL](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp)
+  </Frame>
 </div>
 
 2. انتقل إلى القسم الفرعي Networking
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![القسم الفرعي Networking في Cloud SQL](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp)
-
-</Frame>
-
+  <Frame>
+    ![القسم الفرعي Networking في Cloud SQL](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp)
+  </Frame>
 </div>
 
 3. أضف [عناوين IP العامة الخاصة بـ ClickPipes](/ar/integrations/clickpipes/networking/static-ips)
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![أضف شبكات ClickPipes إلى جدار الحماية](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp)
-
-</Frame>
-
+  <Frame>
+    ![إضافة شبكات ClickPipes إلى جدار الحماية](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp)
+  </Frame>
 </div>
 
 <div className="ch-image-lg">
-
-<Frame>
-
-![تمت إضافة شبكات ClickPipes إلى جدار الحماية](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp)
-
-</Frame>
-
+  <Frame>
+    ![شبكات ClickPipes بعد إضافتها إلى جدار الحماية](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp)
+  </Frame>
 </div>
 
 <div id="whats-next">
-  ## ما الخطوة التالية؟
+  ## ما الخطوة التالية؟ {#whats-next}
 </div>
 
 يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/postgres/index) والبدء في إدخال البيانات من مثيل Postgres الخاص بك إلى ClickHouse Cloud.

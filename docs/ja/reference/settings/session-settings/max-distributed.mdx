@@ -12,19 +12,15 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="max_distributed_connections">
-  ## max_distributed_connections
-</div>
+## max_distributed_connections {#max_distributed_connections}
 
-<SettingsInfoBlock type="UInt64" default_value="1024" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1024" />
 
 1 つの分散テーブルに対する 1 つのクエリの分散処理において、リモートサーバーとの同時接続数の上限です。値は、クラスター内のサーバー数以上に設定することを推奨します。
 
 以下のパラメーターは、分散テーブルの作成時 (およびサーバーの起動時) にのみ使用されるため、実行時に変更する必要はありません。
 
-<div id="max_distributed_depth">
-  ## max_distributed_depth
-</div>
+## max_distributed_depth {#max_distributed_depth}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 

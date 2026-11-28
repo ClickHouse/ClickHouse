@@ -1,13 +1,37 @@
 ---
-title: 'هل يتضمن ClickHouse مُحسِّنًا قائمًا على التكلفة'
+title: 'هل يتضمن ClickHouse مُحسِّنًا قائمًا على التكلفة؟'
+sidebarTitle: 'المُحسِّن القائم على التكلفة'
 toc_hidden: true
 toc_priority: 10
 slug: /faq/general/cost-based
-description: 'يتضمن ClickHouse بعض آليات التحسين القائمة على التكلفة'
-doc_type: 'مرجع'
-keywords: ['CBE', 'optimizer']
+description: 'يتضمن ClickHouse مُحسِّنًا قائمًا على التكلفة لتحديد ترتيب JOIN وجانب البناء في JOIN وترتيب شروط PREWHERE، ويعتمد على إحصاءات الأعمدة التي تُجمع تلقائيًا'
+doc_type: 'reference'
+keywords: ['CBO', 'المُحسِّن القائم على التكلفة', 'مُحسِّن الاستعلامات', 'الإحصاءات', 'إعادة ترتيب عمليات الربط']
 ---
 
-يتضمن ClickHouse بعض آليات التحسين القائمة على التكلفة بشكل محدود، مثل: تحديد ترتيب قراءة الأعمدة بناءً على تكلفة قراءة نطاقات البيانات المضغوطة من القرص.
+نعم. يتضمن ClickHouse مُحسِّنًا قائمًا على التكلفة (CBO)، يقدّر عدد الصفوف الناتجة عن كل خطوة من خطوات الاستعلام اعتمادًا على إحصاءات الأعمدة، ثم يستخدم هذه التقديرات للمفاضلة بين خطط الاستعلام المكافئة.
 
-ويُجري ClickHouse أيضًا إعادة ترتيب JOIN استنادًا إلى إحصاءات الأعمدة، لكن هذا (اعتبارًا من 2025) لا يزال بعيدًا جدًا عن مستوى CBE في Postgres وOracle وMS SQL Server.
+وتشمل القرارات القائمة على التكلفة ما يلي:
+
+* **ترتيب JOIN.** في الاستعلام الذي يربط عدة جداول، يبحث مخطط الاستعلامات عن ترتيب JOIN الأقل تكلفةً مقدّرة. ويستخدم افتراضيًا خوارزمية البرمجة الديناميكية `dpsub`، التي تأخذ في الحسبان جميع ترتيبات JOIN الصالحة، بما فيها الترتيبات التي تتضمن عمليات ربط من نوع `LEFT` و`RIGHT` و`FULL` و`SEMI` و`ANTI`. ويشمل البحث مجموعات تضم ما يصل إلى 10 جداول، وهو حد يضبطه الإعداد `query_plan_optimize_join_order_limit`؛ إذ يُقسَّم الاستعلام الذي يربط عددًا أكبر من الجداول إلى مجموعات تُحسَّن كلٌّ منها على حدة. وإذا رُفع هذا الحد إلى ما يتجاوز 12، فإن المجموعة التي تضم أكثر من 12 جدولًا تُخطَّط باستخدام خوارزمية جشعة بدلًا من ذلك. راجع [`query_plan_optimize_join_order_algorithm`](/ar/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_algorithm) و[`query_plan_optimize_join_order_limit`](/ar/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit).
+* **جانب البناء في JOIN.** في الربط بالتجزئة، يضع مخطط الاستعلامات المُدخل ذا الحجم المقدّر الأصغر في جدول التجزئة، بصرف النظر عن ترتيب كتابة الجداول في الاستعلام. راجع [`query_plan_join_swap_table`](/ar/reference/settings/session-settings/query-plan#query_plan_join_swap_table).
+* **خوارزمية الربط.** عندما يمكن قراءة الجداول المربوطة وفق ترتيب مفتاح الربط، يختار مخطط الاستعلامات بين الربط بالتجزئة و`full_sorting_merge` بناءً على التكلفة، ويفضّل الخطط التي يمكن لعملية ربط لاحقة الاستفادة من مخرجاتها المرتّبة. راجع [`query_plan_join_order_use_interesting_orders`](/ar/reference/settings/session-settings/query-plan#query_plan_join_order_use_interesting_orders).
+* **ترتيب عوامل التصفية.** تُنقل الشروط الواردة في `WHERE` إلى [`PREWHERE`](/ar/optimize/prewhere) وتُرتَّب بحيث تُقيَّم الشروط منخفضة التكلفة وعالية الانتقائية أولًا، استنادًا إلى الحجم المضغوط للأعمدة والانتقائية المقدّرة لكل شرط.
+
+## من أين تأتي التقديرات؟ {#where-do-the-estimates-come-from}
+
+تجمع جداول `MergeTree` إحصاءات الأعمدة تلقائيًا لكل جزء بيانات عند دمج أجزاء البيانات، وكذلك عند الإدراج في الجداول التي يقل حجمها عن [`materialize_statistics_on_insert_max_table_size`](/ar/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert_max_table_size) (‏25 GiB افتراضيًا)، لذا لا حاجة إلى تشغيل `ANALYZE` أو صيانة الإحصاءات يدويًا. ويحدد إعداد الجدول [`auto_statistics_types`](/ar/reference/settings/merge-tree-settings/other#auto_statistics_types) أنواع الإحصاءات المجمّعة، وقيمته الافتراضية هي `basic` (القيمة الدنيا والقيمة القصوى، وعدد القيم الافتراضية وقيم `NULL`، والطول الإجمالي للسلاسل النصية) و`uniq_v2` (عدد القيم المميزة). أما الأنواع الإضافية، مثل `tdigest` (توزيع القيم) و`countmin` (تكرار كل قيمة على حدة)، فتُحسِّن دقة التقديرات لشروط النطاق وشروط المساواة على البيانات غير المتوازنة التوزيع. راجع [إحصاءات الأعمدة](/ar/reference/engines/table-engines/mergetree-family/mergetree#column-statistics).
+
+تُستخدم الإحصاءات عندما يكون الإعداد [`use_statistics`](/ar/reference/settings/session-settings/use-statistics#use_statistics) مفعّلًا، وهو الوضع الافتراضي. وإلى جانب إحصاءات الأعمدة، يمكن لمُحسِّن ترتيب عمليات الربط الاستفادة من أحجام جداول التجزئة التي رُصدت في عمليات التنفيذ السابقة لعملية الربط ذاتها ([`use_hash_table_stats_for_join_reordering`](/ar/reference/settings/session-settings/use#use_hash_table_stats_for_join_reordering))، ومن الإحصاءات المخزّنة في ملفات البيان الخاصة بـ Iceberg ([`use_datalake_metadata_statistics`](/ar/reference/settings/session-settings/use)).
+
+## كيف يمكنني معرفة ما فعله مُحسِّن الاستعلامات؟ {#how-can-i-see-what-the-optimizer-did}
+
+استخدم [`EXPLAIN`](/ar/reference/statements/explain) لعرض الخطة التي اختارها، و[`EXPLAIN ANALYZE`](/ar/reference/statements/explain#explain-analyze) لتنفيذ الاستعلام والاطلاع على المقاييس الفعلية لكل خطوة. أما خطوات الربط، فيقارن أيضًا [أعداد الصفوف المقدَّرة بالأعداد الفعلية](/ar/reference/statements/explain#explain-analyze-join-estimation).
+
+## متى تبرز أهمية مُحسِّن الاستعلامات؟ {#when-does-the-optimizer-matter}
+
+لا يعتمد جزء كبير من أداء ClickHouse على مُحسِّن الاستعلامات، إذ إن المفتاح الأساسي وفهارس تخطي البيانات واستبعاد الأقسام والتنفيذ المتجه كفيلة بجعل الاستعلام سريعًا حتى دون البحث عن خطة تنفيذ. وتبرز أهمية المُحسِّن القائم على التكلفة أكثر ما تبرز في الاستعلامات التي تربط عددًا كبيرًا من الجداول، كأحمال العمل TPC-H وTPC-DS وJoin Order Benchmark.
+
+<Tip>
+  للاطلاع على القائمة الكاملة للإعدادات التي تتحكم في تخطيط JOIN، راجع [إعدادات JOIN](/ar/concepts/features/operations/select/join-settings).
+</Tip>
