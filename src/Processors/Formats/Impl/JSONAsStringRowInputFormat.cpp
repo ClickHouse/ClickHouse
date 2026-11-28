@@ -197,7 +197,7 @@ void JSONAsObjectRowInputFormat::readJSONObject(IColumn & column)
 Chunk JSONAsObjectRowInputFormat::getChunkForCount(size_t rows)
 {
     auto object_type = getPort().getHeader().getDataTypes()[0];
-    ColumnPtr column = object_type->createColumnConst(rows, Field(Object()));
+    ColumnPtr column = object_type->createColumnConstWithDefaultValue(rows);
     return Chunk({std::move(column)}, rows);
 }
 

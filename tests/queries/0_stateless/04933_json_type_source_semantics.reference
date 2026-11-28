@@ -1,0 +1,31 @@
+equal objects with different text
+3	3
+{"a":42}
+{"a":42}
+{"a":42}
+{"a":42}
+{"a":42}
+{"a":42}
+3	3
+comparison with a literal
+1
+1	1
+2	0
+3	0
+source is kept by aggregation
+{  "a"  :  42  }
+{"a" : 42}
+{"a":42}
+{"a" : 42}
+source is kept when values are just copied
+1	{"a" : 42}
+2	{"a":42}
+3	{  "a"  :  42  }
+1	{"a" : 42}
+3	{  "a"  :  42  }
+1	{"a" : 42}
+2	{"a":42}
+3	{  "a"  :  42  }
+typed paths keep their types in the created text
+{"d" : "2020-01-01", "n" : 42.42}
+{"d":"2020-01-01","n":42.42}

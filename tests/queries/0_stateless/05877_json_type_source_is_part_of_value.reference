@@ -1,0 +1,41 @@
+comparison
+0	1
+0	1
+ORDER BY
+2	{ "a" : 1 }
+1	{"a":1}
+3	{"a":1}
+4	{"a":2}
+GROUP BY keeps the text of each group
+{ "a" : 1 }	1
+{"a":1}	2
+{"a":2}	1
+DISTINCT
+{ "a" : 1 }
+{"a":1}
+{"a":2}
+uniqExact and groupUniqArray
+3
+['{ "a" : 1 }','{"a":1}','{"a":2}']
+JOIN
+1	1
+1	3
+2	2
+3	1
+3	3
+4	4
+insert deduplication
+{ "a" : 1 }
+{"a":1}
+nested values keep their source in conversions
+{"a":{"z":1,"b":2}}	{"z":1,"b":2}
+{"a":{"z":1,"b":2}}	{"z":1,"b":2}
+{"z":1,"b":2}
+a default has the JSON text of the default
+{ }
+{"a":1}
+{ "e" : "x" }
+{ }
+the text created for binary input is parsed back to the same value
+nan	{"f":"nan"}	nan
+{"a":42}	Int64

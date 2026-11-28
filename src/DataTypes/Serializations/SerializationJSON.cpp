@@ -26,12 +26,12 @@ SerializationJSON<Parser>::SerializationJSON(
     const DataTypeObject::TypedPathsMap & typed_paths_types_,
     const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
     const std::unordered_set<String> & shared_typed_paths_,
-    const std::unordered_set<String> & paths_to_skip_,
-    const std::vector<String> & path_regexps_to_skip_,
+    const DataTypeObject::PathsToSkipPtr & paths_to_skip_,
     const DataTypePtr & dynamic_type_,
     const SerializationPtr & dynamic_serialization_,
+    const SerializationPtr & source_serialization_,
     std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
-    : SerializationObject(typed_paths_types_, typed_paths_serializations_, shared_typed_paths_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, dynamic_serialization_)
+    : SerializationObject(typed_paths_types_, typed_paths_serializations_, shared_typed_paths_, paths_to_skip_, dynamic_type_, dynamic_serialization_, source_serialization_)
     , json_extract_tree(std::move(json_extract_tree_))
 {
 }
@@ -120,10 +120,32 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
 {
     const auto & column_object = assert_cast<const ColumnObject &>(column);
 
+    /// Writing the stored JSON text is much cheaper than constructing it from the object.
+    /// It cannot be used for pretty printing because the stored text has its own formatting.
+    if (column_object.hasSource() && settings.json.json_type_use_source && !pretty)
+    {
+        auto source = column_object.getSourceColumn().getDataAt(row_num);
+        ostr.write(source.data(), source.size());
+        return;
+    }
+
     /// We need to convert the set of paths in this row to a JSON object.
     /// To do it, we construct the resulting JSON object by iterating over sorted list of paths in current row.
     /// For example:
     /// b.c, a.b, a.a, b.e, g, h.u.t -> a.a, a.b, b.c, b.e, g, h.u.t -> {"a" : {"a" : ..., "b" : ...}, "b" : {"c" : ..., "e" : ...}, "g" : ..., "h" : {"u" : {"t" : ...}}}.
+
+    /// See `adjust_json_path_settings`. The settings are copied only when it is set.
+    std::optional<FormatSettings> typed_paths_settings;
+    std::optional<FormatSettings> dynamic_paths_settings;
+    if (settings.json.adjust_json_path_settings)
+    {
+        typed_paths_settings.emplace(settings);
+        settings.json.adjust_json_path_settings(*typed_paths_settings, /*typed=*/ true);
+        dynamic_paths_settings.emplace(settings);
+        settings.json.adjust_json_path_settings(*dynamic_paths_settings, /*typed=*/ false);
+    }
+    const FormatSettings & typed_settings = typed_paths_settings ? *typed_paths_settings : settings;
+    const FormatSettings & dynamic_settings = dynamic_paths_settings ? *dynamic_paths_settings : settings;
 
     if (pretty)
         writeCString("{\n", ostr);
@@ -243,21 +265,26 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
         /// Serialize value of current path.
         if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED)
         {
+            String path(path_info.path);
+            /// The type of a value of a typed `Dynamic` path is inferred from the text, as for a dynamic path.
+            const auto & path_settings = settings.json.adjust_json_path_settings && isDynamic(typed_paths_types.at(path))
+                ? dynamic_settings
+                : typed_settings;
             if (pretty)
-                typed_paths_serializations.at(String(path_info.path))->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, settings, indent + current_prefix.size() + 1);
+                typed_paths_serializations.at(path)->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, path_settings, indent + current_prefix.size() + 1);
             else
-                typed_paths_serializations.at(String(path_info.path))->serializeTextJSON(*path_info.column, path_info.row, ostr, settings);
+                typed_paths_serializations.at(path)->serializeTextJSON(*path_info.column, path_info.row, ostr, path_settings);
         }
         else if (path_info.type == ColumnObject::SortedPathsIterator::PathType::SHARED_DATA)
         {
-            SerializationDynamic::serializeBinaryEncodedValueTextJSON(it.getCurrentSharedDataValue(), ostr, settings, pretty, indent + current_prefix.size() + 1);
+            SerializationDynamic::serializeBinaryEncodedValueTextJSON(it.getCurrentSharedDataValue(), ostr, dynamic_settings, pretty, indent + current_prefix.size() + 1);
         }
         else
         {
             if (pretty)
-                dynamic_serialization->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, settings, indent + current_prefix.size() + 1);
+                dynamic_serialization->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, dynamic_settings, indent + current_prefix.size() + 1);
             else
-                dynamic_serialization->serializeTextJSON(*path_info.column, path_info.row, ostr, settings);
+                dynamic_serialization->serializeTextJSON(*path_info.column, path_info.row, ostr, dynamic_settings);
         }
     }
 
@@ -296,6 +323,12 @@ void SerializationJSON<Parser>::deserializeObject(IColumn & column, std::string_
     insert_settings.use_partial_match_to_skip_paths_by_regexp = settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
     if (!json_extract_tree->insertResultToColumn(column, document, insert_settings, settings, error))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert data into JSON column: {}", error);
+
+    /// Store the original JSON text. Rows where the object itself is not available (for example a NULL
+    /// input with input_format_null_as_default) are already filled during parsing.
+    auto & column_object = assert_cast<ColumnObject &>(column);
+    if (column_object.hasSource() && column_object.getSourceColumn().size() != column_object.size())
+        column_object.insertSource(object, settings.json_max_string_column_growth_step);
 }
 
 template <typename Parser>

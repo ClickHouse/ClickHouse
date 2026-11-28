@@ -9,6 +9,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -157,9 +158,17 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     if (path.empty())
         return std::nullopt;
 
-    /// The index knows nothing about what is stored inside a declared typed path.
-    if (auto it = json_argument_types.find(matched_position); it != json_argument_types.end() && pathIsInsideTypedPath(it->second, path))
-        return std::nullopt;
+    if (auto it = json_argument_types.find(matched_position); it != json_argument_types.end())
+    {
+        /// The index knows nothing about what is stored inside a declared typed path.
+        if (pathIsInsideTypedPath(it->second, path))
+            return std::nullopt;
+
+        /// The source subcolumn is not a path, so the index doesn't have it.
+        const auto & object_type = assert_cast<const DataTypeObject &>(*it->second);
+        if (object_type.hasSource() && DataTypeObject::isSourceSubcolumnPath(path))
+            return std::nullopt;
+    }
 
     return JSONSubcolumnIndexInfo{
         .json_column_name = String(matched_json_column),

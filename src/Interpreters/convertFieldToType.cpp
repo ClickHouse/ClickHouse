@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 
@@ -38,6 +39,7 @@
 #include <Common/DateLUT.h>
 #include <base/arithmeticOverflow.h>
 
+#include <algorithm>
 #include <optional>
 
 namespace DB
@@ -48,6 +50,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int DECIMAL_OVERFLOW;
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
@@ -588,6 +591,110 @@ DataTypePtr widenIntegerElements(const DataTypePtr & type, WideIntegerCarrier ca
     if (to_signed)
         return which.isInt256() ? nullptr : std::make_shared<DataTypeInt256>();
     return which.isUInt256() ? nullptr : std::make_shared<DataTypeUInt256>();
+}
+
+/// The source type hint of a composite value, without `Nullable` and `LowCardinality`, so its element types can be the hints
+/// of the elements: a `Field` holds an element without its type (an `Enum` as its number, a `Date` as days).
+template <typename DataType>
+const DataType * getCompositeTypeHint(const IDataType * from_type_hint)
+{
+    while (from_type_hint)
+    {
+        if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(from_type_hint))
+            from_type_hint = nullable_hint->getNestedType().get();
+        else if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(from_type_hint))
+            from_type_hint = low_cardinality_hint->getDictionaryType().get();
+        else
+            break;
+    }
+    return typeid_cast<const DataType *>(from_type_hint);
+}
+
+bool fieldContainsObject(const Field & field)
+{
+    checkStackSize();
+    switch (field.getType())
+    {
+        case Field::Types::Object:
+            return true;
+        case Field::Types::Array:
+            return std::ranges::any_of(field.safeGet<Array>(), fieldContainsObject);
+        case Field::Types::Tuple:
+            return std::ranges::any_of(field.safeGet<Tuple>(), fieldContainsObject);
+        case Field::Types::Map:
+            return std::ranges::any_of(field.safeGet<Map>(), fieldContainsObject);
+        default:
+            return false;
+    }
+}
+
+/// Converts an object like the parser of the type: skipped paths are dropped, the values of typed paths
+/// are converted to their types, and the absent typed paths get their defaults (see `ColumnObject::insert`).
+/// `src_type` is the type of the object if known: a `Field` holds a value without its type (an `Enum` as its number).
+Field convertObjectToType(
+    const Object & src,
+    const DataTypeObject & type,
+    const DataTypeObject * src_type,
+    const FormatSettings & format_settings,
+    bool strict,
+    bool convert_inexact_floats)
+{
+    const auto & typed_paths = type.getTypedPaths();
+    const auto & paths_to_skip = *type.getPathsToSkip();
+    const bool skip_invalid = format_settings.json.type_json_skip_invalid_typed_paths;
+    Object res;
+    for (const auto & [path, value] : src)
+    {
+        if (type.hasSource() && DataTypeObject::isSourceSubcolumnPath(path))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Path '{}' is not allowed in JSON types with 'with_source=1' because the name '{}' and paths nested in it are reserved for the subcolumn with JSON source",
+                path,
+                DataTypeObject::SOURCE_SUBCOLUMN_NAME);
+
+        /// Typed paths are never skipped.
+        auto typed_it = typed_paths.find(path);
+        if (typed_it == typed_paths.end())
+        {
+            if (!paths_to_skip.shouldSkip(path, format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp, /*check_parents=*/ true))
+                res[path] = value;
+            continue;
+        }
+
+        /// As in parsing, a value that is not valid for a typed path gets the default of the type
+        /// with `type_json_skip_invalid_typed_paths`, and a NULL also with `input_format_null_as_default`
+        /// or with `type_json_skip_null_typed_paths`, which treats a NULL of a source path as absent.
+        const auto & path_type = *typed_it->second;
+        if (value.isNull() && !canContainNull(path_type))
+        {
+            if (format_settings.null_as_default || skip_invalid || format_settings.json.type_json_skip_null_typed_paths)
+                continue;
+            return {};
+        }
+
+        const IDataType * src_path_type = nullptr;
+        if (src_type)
+        {
+            if (auto src_it = src_type->getTypedPaths().find(path); src_it != src_type->getTypedPaths().end())
+                src_path_type = src_it->second.get();
+        }
+
+        Field converted = skip_invalid
+            ? tryConvertFieldToType(value, path_type, src_path_type, format_settings, strict, convert_inexact_floats)
+            : convertFieldToType(value, path_type, src_path_type, format_settings, strict, convert_inexact_floats);
+        if (converted.isNull() && !value.isNull())
+        {
+            if (skip_invalid)
+                continue;
+            return {};
+        }
+        res[path] = std::move(converted);
+    }
+
+    for (const auto & [path, path_type] : typed_paths)
+        res.try_emplace(path, path_type->getDefault());
+
+    return res;
 }
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
@@ -1172,11 +1279,13 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             size_t src_arr_size = src_arr.size();
 
             const auto & element_type = *(type_array->getNestedType());
+            const auto * array_hint = getCompositeTypeHint<DataTypeArray>(from_type_hint);
+            const IDataType * element_hint = array_hint ? array_hint->getNestedType().get() : nullptr;
             bool have_unconvertible_element = false;
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                res[i] = convertFieldToType(src_arr[i], element_type, element_hint, format_settings, strict, convert_inexact_floats);
                 /// Strict: a value that is not representable is not a NULL element.
                 if (res[i].isNull() && (!canContainNull(element_type) || (strict && !src_arr[i].isNull())))
                 {
@@ -1206,10 +1315,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
             Tuple res(dst_tuple_size);
             bool have_unconvertible_element = false;
+            const auto * tuple_hint = getCompositeTypeHint<DataTypeTuple>(from_type_hint);
+            if (tuple_hint && tuple_hint->getElements().size() != dst_tuple_size)
+                tuple_hint = nullptr;
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
-                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                const IDataType * element_hint = tuple_hint ? tuple_hint->getElements()[i].get() : nullptr;
+                res[i] = convertFieldToType(src_tuple[i], element_type, element_hint, format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && (!canContainNull(element_type) || (strict && !src_tuple[i].isNull())))
                 {
                     /*
@@ -1384,6 +1497,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         {
             const auto & key_type = *type_map->getKeyType();
             const auto & value_type = *type_map->getValueType();
+            const auto * map_hint = getCompositeTypeHint<DataTypeMap>(from_type_hint);
+            const IDataType * key_hint = map_hint ? map_hint->getKeyType().get() : nullptr;
+            const IDataType * value_hint = map_hint ? map_hint->getValueType().get() : nullptr;
 
             const auto & map = src.safeGet<Map>();
             size_t map_size = map.size();
@@ -1401,12 +1517,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[0] = convertFieldToType(key, key_type, key_hint, format_settings, strict, convert_inexact_floats);
 
                 if (updated_entry[0].isNull() && (!canContainNull(key_type) || (strict && !key.isNull())))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[1] = convertFieldToType(value, value_type, value_hint, format_settings, strict, convert_inexact_floats);
                 if (updated_entry[1].isNull() && (!canContainNull(value_type) || (strict && !value.isNull())))
                     have_unconvertible_element = true;
 
@@ -1438,10 +1554,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
 
         /// Create temporary column and check if we can insert this field to the variant.
-        /// If we can insert, no need to convert anything.
-        auto col = type_variant->createColumn();
-        if (col->tryInsert(src))
-            return src;
+        /// If we can insert, no need to convert anything. A JSON column accepts an object as it is,
+        /// without the conversion to its type (skipped paths, types of typed paths), so objects are converted below.
+        if (!fieldContainsObject(src))
+        {
+            auto col = type_variant->createColumn();
+            if (col->tryInsert(src))
+                return src;
+        }
 
         /// Note: the exact-alternative preference below applies only to fields that fall through to
         /// the conversion loop. A field accepted by the two fast paths above keeps `ColumnVariant`'s
@@ -1486,10 +1606,22 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         /// We can insert any field to Dynamic column.
         return src;
     }
-    else if (isObject(type))
+    else if (const auto * type_object = typeid_cast<const DataTypeObject *>(&type))
     {
         if (src.getType() == Field::Types::Object)
-            return src; /// Already in needed type.
+        {
+            const auto & paths_to_skip = *type_object->getPathsToSkip();
+            if (type_object->getTypedPaths().empty() && paths_to_skip.getPaths().empty() && paths_to_skip.getRegexps().empty()
+                && !type_object->hasSource())
+                return src;
+            return convertObjectToType(
+                src.safeGet<Object>(),
+                *type_object,
+                getCompositeTypeHint<DataTypeObject>(from_type_hint),
+                format_settings,
+                strict,
+                convert_inexact_floats);
+        }
 
         /// TODO: add conversion from Map/Tuple to Object.
     }

@@ -323,11 +323,13 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         {
             return makeRandomObject(
                 std::move(typed_paths),
-                fuzzObjectPathsToSkip(type_object->getPathsToSkip()),
-                fuzzObjectPathRegexpsToSkip(type_object->getPathRegexpsToSkip()),
+                fuzzObjectPathsToSkip(std::unordered_set<String>(
+                    type_object->getPathsToSkip()->getPaths().begin(), type_object->getPathsToSkip()->getPaths().end())),
+                fuzzObjectPathRegexpsToSkip(type_object->getPathsToSkip()->getRegexps()),
                 type_object->getMaxDynamicPaths(),
                 type_object->getMaxDynamicTypes(),
-                std::move(shared_typed_paths));
+                std::move(shared_typed_paths),
+                type_object->hasSource());
         }
         catch (...) // NOLINT(bugprone-empty-catch) Ok: a fuzzed typed-path type may violate an Object invariant
         {
@@ -485,7 +487,8 @@ DataTypePtr QueryFuzzer::makeRandomObject(
     std::vector<String> path_regexps_to_skip,
     std::optional<size_t> source_max_dynamic_paths,
     std::optional<size_t> source_max_dynamic_types,
-    std::unordered_set<String> shared_typed_paths)
+    std::unordered_set<String> shared_typed_paths,
+    std::optional<bool> source_with_source)
 {
     /// Only the numeric parameters are randomized here; the typed paths, their SHARED marks and the SKIP lists
     /// are used as given.
@@ -496,14 +499,24 @@ DataTypePtr QueryFuzzer::makeRandomObject(
     const size_t max_dynamic_types = (fuzz_rand() % 4 == 0)
         ? fuzz_rand() % (ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT + 1)
         : source_max_dynamic_types.value_or(DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES);
+    const bool with_source = (fuzz_rand() % 4 == 0) ? fuzz_rand() % 2 : source_with_source.value_or(false);
+    /// The source subcolumn name and the paths nested in it are reserved in types with `with_source=1`.
+    if (with_source)
+    {
+        std::erase_if(typed_paths, [](const auto & typed_path) { return DataTypeObject::isSourceSubcolumnPath(typed_path.first); });
+        std::erase_if(shared_typed_paths, [](const auto & path) { return DataTypeObject::isSourceSubcolumnPath(path); });
+        std::erase_if(paths_to_skip, [](const auto & path) { return DataTypeObject::isSourceSubcolumnPath(path); });
+    }
+
     return std::make_shared<DataTypeObject>(
         DataTypeObject::SchemaFormat::JSON,
         std::move(typed_paths),
-        std::move(paths_to_skip),
-        std::move(path_regexps_to_skip),
+        std::make_shared<const DataTypeObject::PathsToSkip>(
+            DataTypeObject::PathsToSkip::Paths(paths_to_skip.begin(), paths_to_skip.end()), std::move(path_regexps_to_skip)),
         max_dynamic_paths,
         max_dynamic_types,
-        std::move(shared_typed_paths));
+        std::move(shared_typed_paths),
+        with_source);
 }
 
 DataTypePtr QueryFuzzer::makeAggregateFunctionType(

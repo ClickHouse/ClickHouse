@@ -1197,12 +1197,12 @@ TEST(ComputeHashInto, ReprIndependenceObjectSplit)
     // The seeder row claims the dynamic slot for one path, so the same object splits oppositely in A and B.
     auto col_a = type->createColumn();
     auto & obj_a = assert_cast<ColumnObject &>(*col_a);
-    obj_a.insert(Object{{"p", Field(static_cast<UInt64>(7))}});
+    obj_a.insert(Object{{"a", Field(static_cast<Int64>(0))}, {"p", Field(static_cast<UInt64>(7))}});
     obj_a.insert(object);
 
     auto col_b = type->createColumn();
     auto & obj_b = assert_cast<ColumnObject &>(*col_b);
-    obj_b.insert(Object{{"q", Field(String("filler"))}});
+    obj_b.insert(Object{{"a", Field(static_cast<Int64>(0))}, {"q", Field(String("filler"))}});
     obj_b.insert(object);
 
     // Guard against the layouts silently becoming identical, which would make the test a tautology.

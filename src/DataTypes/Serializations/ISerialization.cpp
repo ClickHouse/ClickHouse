@@ -178,6 +178,7 @@ bool ISerialization::hasKind(const KindStack & kind_stack, Kind kind)
     StringSizes,
     InlinedStringSizes,
     TupleElement,
+    ObjectSource,
     NamedOffsets,
     NamedNullMap,
     NamedVariantDiscriminators,
@@ -773,6 +774,7 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
             || path[last_elem].type == Substream::InlinedStringSizes
             || path[last_elem].type == Substream::VariantElement
             || path[last_elem].type == Substream::VariantElementNullMap
+            || path[last_elem].type == Substream::ObjectSource
             || path[last_elem].type == Substream::QuantizedCodes
             || path[last_elem].type == Substream::ProductQuantizationCodebook;
 }

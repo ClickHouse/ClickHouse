@@ -35,7 +35,7 @@ CREATE TABLE t_json_default_skip_empty (id UInt32, j JSON(z Enum8('neg' = -1, 'z
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';
 SYSTEM STOP MERGES t_json_default_skip_empty;
--- The all-zero value is skipped and must read back as 'zero', also after a merge with a part that stores j.
+-- The column zero 'zero' is not the default of the type ('neg'), so the column is stored and reads back as 'zero', also after a merge.
 INSERT INTO t_json_default_skip_empty VALUES (1, '{"z":"zero"}');
 INSERT INTO t_json_default_skip_empty (id) VALUES (2);
 SELECT 'skip empty parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_json_default_skip_empty' AND active;

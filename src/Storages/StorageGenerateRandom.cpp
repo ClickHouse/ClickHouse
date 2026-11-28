@@ -49,6 +49,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Core/Settings.h>
+#include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
@@ -62,7 +63,6 @@
 #include <Functions/FunctionGenerateRandomStructure.h>
 
 #include <pcg_random.hpp>
-#include <Common/re2.h>
 
 #include <algorithm>
 #include <cmath>
@@ -774,9 +774,6 @@ public:
         const DataTypeObject & object_type_, UInt64 seed, const GenerateRandomOptions & options_, size_t & remaining_paths_)
         : object_type(object_type_), options(options_), rng(seed), remaining_paths(remaining_paths_)
     {
-        /// The type has already validated them.
-        for (const auto & regexp : object_type.getPathRegexpsToSkip())
-            skip_regexps.push_back(std::make_unique<re2::RE2>(regexp));
     }
 
     JSONSchema generate()
@@ -909,26 +906,14 @@ private:
         return static_cast<UInt32>(std::min(base * factor, cap));
     }
 
-    /// Repeats `SerializationObject::shouldSkipPath`: a path that the serialization of the type would
-    /// drop must not be generated at all, otherwise its values would silently disappear on insertion.
+    /// A path that the type would drop must not be generated at all, otherwise its values would silently
+    /// disappear on insertion. Partial match of regexps drops a superset of full match.
     [[nodiscard]] bool shouldSkipPath(const String & path) const
     {
         if (object_type.getTypedPaths().contains(path))
             return true;
 
-        for (const auto & skip : object_type.getPathsToSkip())
-        {
-            if (path.starts_with(skip))
-                return true;
-        }
-
-        for (const auto & regexp : skip_regexps)
-        {
-            if (re2::RE2::FullMatch(path, *regexp))
-                return true;
-        }
-
-        return false;
+        return object_type.getPathsToSkip()->shouldSkip(path, /*partial_match_regexps=*/ true, /*check_parents=*/ false);
     }
 
     [[nodiscard]] bool hasTypedChildren(const String & path) const
@@ -946,7 +931,6 @@ private:
     const GenerateRandomOptions & options;
     pcg64 rng;
     size_t & remaining_paths;  /// The budget of the whole column, shared with its nested schemas.
-    std::vector<std::unique_ptr<re2::RE2>> skip_regexps;
     std::vector<JSONSchema::Leaf> leaves;
 };
 
@@ -1811,16 +1795,33 @@ ColumnPtr fillColumnWithRandomData(const DataTypePtr & type, UInt64 limit, const
                 max_dynamic_paths,
                 max_dynamic_paths,
                 max_dynamic_paths,
-                object_type.getMaxDynamicTypes());
+                object_type.getMaxDynamicTypes(),
+                /*statistics_=*/ {},
+                object_type.getPtr(),
+                object_type.hasSource() ? ColumnString::create() : nullptr);
 
             /// Takes the leading `max_dynamic_paths` leaves as dynamic paths of the column and
             /// serialises the rest into the shared data, sorted by path, one offset per row.
             unflattenAndInsertPaths(leaf_paths, std::move(leaf_columns), *object, limit);
 
+            /// There is no original text, so the source is created from the generated objects.
+            if (object_type.hasSource())
+            {
+                auto serialization = object_type.getDefaultSerialization();
+                auto & source = object->getSourceColumn();
+                for (size_t i = 0; i != limit; ++i)
+                {
+                    WriteBufferFromVector<ColumnString::Chars> buf(source.getChars(), AppendModeTag());
+                    serialization->serializeText(*object, i, buf, FormatSettings{});
+                    buf.finalize();
+                    source.getOffsets().push_back(source.getChars().size());
+                }
+            }
+
             if (object->size() != limit)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "Generated a `JSON` column of {} rows instead of {}", object->size(), limit);
-            object->validateDynamicPathsSizes();
+            object->validateSubcolumnsSizes();
 
             return object;
         }

@@ -72,6 +72,14 @@ void markNonDefaultRows(const IColumn & column, const IDataType & type, PaddedPO
         for (const auto & [path, path_column] : object_column.getDynamicPaths())
             markNonDefaultRows(*path_column, non_default);
         markNonDefaultRows(*object_column.getSharedDataPtr(), non_default);
+        /// The source is a part of the value: a default row also has the JSON text of the default.
+        if (object_column.hasSource())
+        {
+            const String default_text = object_column.createDefaultSourceText();
+            const auto & source_column = object_column.getSourceColumn();
+            for (size_t row = 0; row < source_column.size(); ++row)
+                non_default[row] |= source_column.getDataAt(row) != default_text;
+        }
     }
     else if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(&type))
         markNonDefaultEnumRows(column, *enum8, non_default);

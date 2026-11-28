@@ -1,0 +1,39 @@
+conversion of an object, inserted into Array and Variant
+['{"e":"minus","x":1}']
+['{"e":"ok","x":1}']
+{"e":"minus","x":1}
+{"e":"ok","x":1}
+with the source, the text is created from the converted object
+['{"e":"minus","x":1}']	['{"e":"minus","x":1}']
+{"e":"minus","x":1}	{"e":"minus","x":1}
+values of typed paths are converted to their types
+['{"e":"ok"}']
+['{"n":42}']
+{"n":42}
+['{"n":0}']
+values of typed paths are converted from the types of the source paths
+ok	{"e":"ok"}
+2020-01-02 00:00:00
+the elements of nested types are converted from their source types
+['{"e":"ok"}']
+('ok')
+{'k':'ok'}
+skipped paths are dropped
+['{"sx":2,"x":4}']
+['{"r1":3,"x":4}']
+the path of the source is not allowed in a type with the source
+default of the type
+{"e":"ok","n":0}
+a column the part marks as missing
+{"n":0,"s":""}
+objects in a Variant are converted to the type
+['x']
+['{"x":2}']
+{"a" : 1}	String
+NULL and invalid values of typed paths
+{"n":0}
+{"n":0}
+{"n":0}
+{"n":0}
+nested timestamps out of the range of DateTime
+('2020-01-02 00:00:00')

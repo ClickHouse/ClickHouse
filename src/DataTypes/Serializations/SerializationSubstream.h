@@ -165,6 +165,7 @@ struct SerializationSubstream
         /// A SHARED typed path of Object: the identity element of the resolved path, with no file of its own.
         ObjectTypedSharedDataPath,
         ObjectStructure,
+        ObjectSource,
 
         MapKeyValue,
         ObjectDistinctPaths,

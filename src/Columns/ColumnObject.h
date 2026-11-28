@@ -51,7 +51,13 @@ public:
 private:
     friend class COWHelper<IColumnHelper<ColumnObject>, ColumnObject>;
 
-    ColumnObject(UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
+    ColumnObject(
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
+        size_t max_dynamic_paths_,
+        size_t max_dynamic_types_,
+        bool with_source_ = false,
+        DataTypePtr object_type_ = nullptr);
+
     ColumnObject(
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> dynamic_paths_,
@@ -60,7 +66,9 @@ private:
         size_t max_dynamic_paths_upper_bound_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const StatisticsPtr & statistics_ = {});
+        const StatisticsPtr & statistics_ = {},
+        DataTypePtr object_type_ = nullptr,
+        MutableColumnPtr source_ = nullptr);
 
     ColumnObject(const ColumnObject & other);
 
@@ -81,7 +89,9 @@ public:
         size_t max_dynamic_paths_upper_bound_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const StatisticsPtr & statistics_ = {});
+        const StatisticsPtr & statistics_ = {},
+        const DataTypePtr & object_type_ = nullptr,
+        const ColumnPtr & source_ = nullptr);
 
     static MutablePtr create(
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
@@ -91,9 +101,16 @@ public:
         size_t max_dynamic_paths_upper_bound_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const StatisticsPtr & statistics_ = {});
+        const StatisticsPtr & statistics_ = {},
+        DataTypePtr object_type_ = nullptr,
+        MutableColumnPtr source_ = nullptr);
 
-    static MutablePtr create(UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
+    static MutablePtr create(
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
+        size_t max_dynamic_paths_,
+        size_t max_dynamic_types_,
+        bool with_source_ = false,
+        DataTypePtr object_type_ = nullptr);
 
     std::string getName() const override;
 
@@ -148,7 +165,7 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
     /// Used for deduplication: hashes the raw in-memory representation of typed paths,
-    /// dynamic paths and shared data. The hash is the same for the same INSERT data,
+    /// dynamic paths, shared data and the source. The hash is the same for the same INSERT data,
     /// but NOT necessarily the same for logically equivalent data with different path
     /// distribution between dynamic paths and shared data.
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
@@ -208,7 +225,7 @@ public:
 
     bool hasDynamicStructure() const override { return true; }
     bool dynamicStructureEquals(const IColumn & rhs) const override;
-    void takeExactDynamicStructureFrom(const IColumn & source) override;
+    void takeExactDynamicStructureFrom(const IColumn & src) override;
     void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override;
 
@@ -271,6 +288,26 @@ public:
         return {assert_cast<const ColumnString *>(&column_tuple.getColumn(0)), assert_cast<const ColumnString *>(&column_tuple.getColumn(1)), &column_array.getOffsets()};
     }
 
+    /// The column with the JSON text of each row, present only with `with_source=1`.
+    bool hasSource() const { return source != nullptr; }
+    const ColumnPtr & getSourcePtr() const { return source; }
+    ColumnPtr & getSourcePtr() { return source; }
+    const ColumnString & getSourceColumn() const { return assert_cast<const ColumnString &>(*source); }
+    ColumnString & getSourceColumn() { return assert_cast<ColumnString &>(*source); }
+
+    /// Append the JSON text of the next row to the source column.
+    /// max_string_column_growth_step limits the growth of the internal buffer (0 - no limit).
+    void insertSource(std::string_view text, size_t max_string_column_growth_step = 0);
+    /// Create the source of the last inserted row from the object itself. Used when the original JSON
+    /// text is not available (for example when the row was restored from an aggregation key).
+    void materializeSourceForLastRow();
+    /// JSON text of a default row with the defaults of the types in the typed paths, created once.
+    const String & getDefaultSourceText();
+    /// The same text created on every call, for readers that must not touch the cache.
+    String createDefaultSourceText() const;
+    /// Append the JSON text of default rows to the source column.
+    void insertDefaultIntoSource(size_t length = 1);
+
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
     size_t getMaxDynamicPathsUpperBound() const { return max_dynamic_paths_upper_bound; }
@@ -309,7 +346,7 @@ public:
     /// offset argument - is the offset from which we should check for duplicates.
     void repairDuplicatesInDynamicPathsAndSharedData(size_t offset = 0);
 
-    void validateDynamicPathsSizes() const;
+    void validateSubcolumnsSizes() const;
 
     /// Returns true if the object is empty on the specified row (has no typed paths, no real values dynamic paths and no paths in shared data).
     /// When skip_null_typed_paths is true, typed paths with NULL values are not considered present.
@@ -390,6 +427,12 @@ public:
 private:
 
     void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, VectorWithMemoryTracking<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length);
+    /// Pop back the rows inserted into the existing sub-columns after the column had prev_size rows.
+    /// Only for a failed default insert: it does not remove new dynamic paths or shared data entries.
+    void restoreSizesAfterDefaultInsert(size_t prev_size);
+    void expandSource(const Filter & mask, bool inverted);
+    /// Copy the source column and fill rows after the end of the original column with default values.
+    MutableColumnPtr cloneResizedSource(size_t new_size) const;
     void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res) const;
     void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res) const;
     void deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in);
@@ -421,6 +464,16 @@ private:
     /// It has type Array(Tuple(String, String)) and stores
     /// an array of pairs (path, binary serialized dynamic value) for each row.
     WrappedPtr shared_data;
+
+    /// String column with the JSON text of each row. It's not null only for JSON types with `with_source=1`.
+    WrappedPtr source;
+    /// Type of this column. Used to create the JSON text of a row for the source column when the
+    /// original text is not available.
+    DataTypePtr object_type;
+    /// Serialization of object_type, created on first use.
+    SerializationPtr object_serialization;
+    /// JSON text of a default row, created on first use.
+    String default_source_text;
 
     /// Maximum number of dynamic paths. If this limit is reached, all new paths will be inserted into shared data.
     /// This limit can be different for different instances of Object column. For example, we can decrease it

@@ -1,0 +1,42 @@
+a skipped path, not a path with the same prefix
+JSON(SKIP a, SKIP b)
+{"ab":2,"t":4}
+{"ab":2,"t":4}
+JSON(SKIP s)
+{"t":5}
+{"t":5}
+a path inside a skipped one, with another skipped path sorted between them
+JSON(SKIP a, SKIP `a-b`)
+{"c":3}
+{"c":3}
+a regular expression that matches an object skips the paths inside it
+JSON(SKIP REGEXP '^a$')
+{"x":2}
+{"x":2}
+{"x":2}
+a typed path is never skipped
+JSON(ab UInt32, SKIP REGEXP '^a') --type_json_use_partial_match_to_skip_paths_by_regexp=1
+{"ab":5}
+{"ab":5}
+{"ab":5}
+JSON(a.b UInt32, SKIP REGEXP '^a$')
+{"a":{"b":1},"x":3}
+{"a":{"b":1},"x":3}
+{"a":{"b":1},"x":3}
+a typed path is never skipped by a conversion between JSON types
+{"ab":5}
+{"ab":5}
+{"ab":5}
+regular expressions match partially or fully by the setting
+JSON(SKIP REGEXP 'b') --type_json_use_partial_match_to_skip_paths_by_regexp=1
+{"c":2}
+{"c":2}
+JSON(SKIP REGEXP 'b') --type_json_use_partial_match_to_skip_paths_by_regexp=0
+{"ab":1,"c":2}
+{"ab":1,"c":2}
+the limit on the number of paths of an object in binary input
+TOO_LARGE_ARRAY_SIZE
+a typed path inside a skipped path is not allowed, a path with the same prefix is
+{"ab":1}
+BAD_ARGUMENTS
+BAD_ARGUMENTS

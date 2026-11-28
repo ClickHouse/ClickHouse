@@ -10,6 +10,7 @@
 #include <Interpreters/castColumn.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/JSONExtractTree.h>
+#include <Formats/JSONRoundTripFormatSettings.h>
 #include <Formats/SchemaInferenceUtils.h>
 
 #if USE_SIMDJSON
@@ -2745,8 +2746,8 @@ ObjectConversionPlan buildObjectConversionPlan(
     }
 
     /// Find new skip rules.
-    const auto & src_skip = src_type.getPathsToSkip();
-    const auto & dst_skip = dst_type.getPathsToSkip();
+    const auto & src_skip = src_type.getPathsToSkip()->getPaths();
+    const auto & dst_skip = dst_type.getPathsToSkip()->getPaths();
     for (const auto & path : dst_skip)
     {
         if (!src_skip.contains(path))
@@ -2763,7 +2764,7 @@ ObjectConversionPlan buildObjectConversionPlan(
     /// Apply every destination regexp, including one already in the source type: its match mode is a
     /// setting, so the source may have been filtered under another mode (see shouldSkip). A true
     /// self-conversion is handled earlier by the identity wrapper, so this does not re-filter a no-op cast.
-    for (const auto & regexp : dst_type.getPathRegexpsToSkip())
+    for (const auto & regexp : dst_type.getPathsToSkip()->getRegexps())
         plan.skip_regexps.push_back(std::make_shared<const re2::RE2>(regexp));
 
     return plan;
@@ -2960,24 +2961,6 @@ bool newLeafTypedPathsNeedFormatParse(
     }
 
     return false;
-}
-
-/// Settings for writing values as JSON text that is parsed back right away: numbers are written unquoted
-/// so they are read back as numbers, and inf and nan, which JSON has no number for, are quoted instead of
-/// being written as null.
-FormatSettings getJSONRoundTripFormatSettings(const FormatSettings & format_settings)
-{
-    FormatSettings result = format_settings;
-    result.json.quote_64bit_integers = false;
-    result.json.quote_denormals = true;
-    /// An internal round trip must be lossless and independent of the user's presentation settings, which
-    /// would otherwise change the stored value: shortest float text and canonical Boolean tokens.
-    result.float_precision = 0;
-    result.bool_true_representation = "true";
-    result.bool_false_representation = "false";
-    /// The text holds stored values, not user input, so a date/time is read back in its type's zone.
-    result.session_time_zone = nullptr;
-    return result;
 }
 
 /// The round trip of the optimized conversion: a DateTime is written as a CAST to String writes it, so a
@@ -3263,6 +3246,62 @@ ColumnPtr castColumnRejectingInvalid(
     return castColumnWithSettings({column, from, ""}, to, convert_settings, CastType::nonAccurate);
 }
 
+void checkPathIsNotReservedForSource(std::string_view path)
+{
+    if (DataTypeObject::isSourceSubcolumnPath(path))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Path '{}' is not allowed in JSON types with 'with_source=1' because the name '{}' and paths nested in it are reserved for the subcolumn with JSON source",
+            path,
+            DataTypeObject::SOURCE_SUBCOLUMN_NAME);
+}
+
+/// A reserved dynamic path is rejected only if some row has a value in it, as the parser sees only present paths
+/// (e.g. after a filter, the path stays with NULLs only). Such a path is removed from the result.
+void removeDynamicPathsReservedForSource(UnorderedMapWithMemoryTracking<String, ColumnPtr> & dynamic_columns)
+{
+    for (auto it = dynamic_columns.begin(); it != dynamic_columns.end();)
+    {
+        if (!DataTypeObject::isSourceSubcolumnPath(it->first))
+        {
+            ++it;
+            continue;
+        }
+
+        const auto & column = *it->second;
+        for (size_t i = 0; i != column.size(); ++i)
+        {
+            if (!column.isNullAt(i))
+                checkPathIsNotReservedForSource(it->first);
+        }
+        it = dynamic_columns.erase(it);
+    }
+}
+
+/// The JSON text of each row of a converted object, written as the format+parse conversion writes it.
+/// The paths reserved for the source subcolumn in the shared data are rejected, as the parser does.
+ColumnPtr createSourceFromObject(const ColumnObject & column, const DataTypeObject & type, const FormatSettings & format_settings)
+{
+    const auto [shared_data_paths, _] = column.getSharedDataPathsAndValues();
+    for (size_t i = 0; i != shared_data_paths->size(); ++i)
+        checkPathIsNotReservedForSource(shared_data_paths->getDataAt(i));
+
+    auto source = ColumnString::create();
+    ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*source, column.size());
+    auto & write_buffer = write_helper.getWriteBuffer();
+    FormatSettings settings = getJSONRoundTripFormatSettings(format_settings);
+    /// The converted value has no source of its own, and nested values with the source keep their text in it.
+    settings.json.json_type_use_source = true;
+    auto serialization = type.getDefaultSerialization();
+    for (size_t i = 0; i != column.size(); ++i)
+    {
+        serialization->serializeTextJSON(column, i, write_buffer, settings);
+        write_helper.finishRow();
+    }
+    write_helper.finalize();
+    return source;
+}
+
 /// Main optimized Object-to-Object conversion.
 ColumnPtr convertObjectColumns(
     const ColumnPtr & src_col_ptr,
@@ -3341,11 +3380,10 @@ ColumnPtr convertObjectColumns(
 
     for (const auto & [path, _col] : src_dynamic_paths)
     {
-        if (shouldSkip(path))
-            continue;
+        /// Typed paths are never skipped.
         if (plan.new_typed_paths.contains(path))
             src_dynamic_paths_to_typed.insert(path);
-        else
+        else if (!shouldSkip(path))
             src_dynamic_paths_to_reuse.push_back(path);
     }
 
@@ -3354,91 +3392,66 @@ ColumnPtr convertObjectColumns(
     using PathToColumnMap = UnorderedMapWithMemoryTracking<String, ColumnPtr>;
     PathToColumnMap dst_typed_columns;
 
-    const auto & dst_typed_path_types = dst_type.getTypedPaths();
-
-    /// Unchanged typed paths: reuse by pointer (unless a new skip rule matches).
+    /// Typed paths are never skipped. Unchanged typed paths: reuse by pointer.
     for (const auto & path : plan.unchanged_typed_paths)
-    {
-        if (shouldSkip(path))
-        {
-            /// New skip rule covers this typed path — fill with defaults, matching format+parse behavior.
-            const auto & type = dst_typed_path_types.at(path);
-            auto col = type->createColumn();
-            type->insertManyDefaultsInto(*col, rows);
-            dst_typed_columns[path] = std::move(col);
-        }
-        else
-        {
-            auto it = src_typed_paths.find(path);
-            dst_typed_columns[path] = it->second;
-        }
-    }
+        dst_typed_columns[path] = src_typed_paths.find(path)->second;
 
-    /// Changed typed paths: CAST (unless a new skip rule matches).
+    /// Changed typed paths: CAST.
     for (const auto & [path, type_pair] : plan.changed_typed_paths)
     {
         const auto & [from_tp, to_tp] = type_pair;
-        if (shouldSkip(path))
+        auto it = src_typed_paths.find(path);
+
+        /// Stripping Nullable and casting reproduces the parser only when a source NULL maps to the
+        /// destination default: nothing but the Nullable wrapper may differ (else the converted source
+        /// default diverges from the destination default), the destination default must be the plain
+        /// zero CAST produces (not e.g. an Enum's first value), and a NULL must become a default at all.
+        /// A NULL becomes a default with null_as_default, or with type_json_skip_null_typed_paths when the
+        /// path itself is the dropped Nullable, since then it is left out of the serialized object.
+        /// Between DateTime types the defaults are the same instant, so the nested types may differ.
+        const bool converts_instants = isDateTimeToDateTimeConversion(from_tp, to_tp);
+        const bool nullable_mismatch = hasNullableMismatchForCast(from_tp, to_tp);
+        const bool can_strip_nullable = nullable_mismatch
+            && (converts_instants || nullableMismatchIsOnlyDifference(from_tp, to_tp))
+            && strippedNullsGetTrivialDefaults(from_tp, to_tp)
+            && (format_settings.null_as_default
+                || (format_settings.json.type_json_skip_null_typed_paths
+                    && !hasNullableMismatchForCast(removeNullableOrLowCardinalityNullable(from_tp), to_tp)));
+
+        /// A CAST between DateTime types cannot fail and does not depend on how the values are written as text.
+        if ((!converts_instants
+                && (skip_invalid
+                    || needsFormatParseFallback(from_tp, format_settings)
+                    || parsesDateTimeNumbersUnlikeCast(to_tp, format_settings)))
+            || (nullable_mismatch && !can_strip_nullable))
         {
-            auto col = to_tp->createColumn();
-            to_tp->insertManyDefaultsInto(*col, rows);
-            dst_typed_columns[path] = std::move(col);
+            dst_typed_columns[path]
+                = convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/skip_invalid);
         }
         else
         {
-            auto it = src_typed_paths.find(path);
+            auto src_col = it->second;
+            auto src_type = from_tp;
 
-            /// Stripping Nullable and casting reproduces the parser only when a source NULL maps to the
-            /// destination default: nothing but the Nullable wrapper may differ (else the converted source
-            /// default diverges from the destination default), the destination default must be the plain
-            /// zero CAST produces (not e.g. an Enum's first value), and a NULL must become a default at all.
-            /// A NULL becomes a default with null_as_default, or with type_json_skip_null_typed_paths when the
-            /// path itself is the dropped Nullable, since then it is left out of the serialized object.
-            /// Between DateTime types the defaults are the same instant, so the nested types may differ.
-            const bool converts_instants = isDateTimeToDateTimeConversion(from_tp, to_tp);
-            const bool nullable_mismatch = hasNullableMismatchForCast(from_tp, to_tp);
-            const bool can_strip_nullable = nullable_mismatch
-                && (converts_instants || nullableMismatchIsOnlyDifference(from_tp, to_tp))
-                && strippedNullsGetTrivialDefaults(from_tp, to_tp)
-                && (format_settings.null_as_default
-                    || (format_settings.json.type_json_skip_null_typed_paths
-                        && !hasNullableMismatchForCast(removeNullableOrLowCardinalityNullable(from_tp), to_tp)));
-
-            /// A CAST between DateTime types cannot fail and does not depend on how the values are written as text.
-            if ((!converts_instants
-                    && (skip_invalid
-                        || needsFormatParseFallback(from_tp, format_settings)
-                        || parsesDateTimeNumbersUnlikeCast(to_tp, format_settings)))
-                || (nullable_mismatch && !can_strip_nullable))
+            /// Strip Nullable where destination is non-Nullable to avoid
+            /// CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN from CAST. NULL rows become the nested
+            /// type default, which is what the parser inserts here (see can_strip_nullable).
+            if (nullable_mismatch)
             {
-                dst_typed_columns[path]
-                    = convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/skip_invalid);
-            }
-            else
-            {
-                auto src_col = it->second;
-                auto src_type = from_tp;
-
-                /// Strip Nullable where destination is non-Nullable to avoid
-                /// CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN from CAST. NULL rows become the nested
-                /// type default, which is what the parser inserts here (see can_strip_nullable).
-                if (nullable_mismatch)
+                if (auto stripped = removeNullableForCast(src_col, src_type, to_tp))
                 {
-                    if (auto stripped = removeNullableForCast(src_col, src_type, to_tp))
-                    {
-                        src_col = std::move(stripped->first);
-                        src_type = std::move(stripped->second);
-                    }
+                    src_col = std::move(stripped->first);
+                    src_type = std::move(stripped->second);
                 }
-
-                ColumnPtr cast_result;
-                if (castMatchesParse(src_col, src_type, to_tp))
-                    cast_result = castColumnRejectingInvalid(src_col, src_type, to_tp, convert_settings);
-
-                dst_typed_columns[path] = cast_result
-                    ? cast_result
-                    : convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/skip_invalid);
             }
+
+            ColumnPtr cast_result;
+            if (castMatchesParse(src_col, src_type, to_tp))
+                cast_result = castColumnRejectingInvalid(src_col, src_type, to_tp, convert_settings);
+
+            dst_typed_columns[path] = cast_result
+                ? cast_result
+                : convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/skip_invalid);
         }
     }
 
@@ -3649,11 +3662,7 @@ ColumnPtr convertObjectColumns(
             {
                 auto path = src_paths_col->getDataAt(idx);
 
-                /// Check skip rules first — skip wins over typed-path promotion.
-                if (shouldSkip(path))
-                    return;
-
-                /// Check if this path should become a new typed path.
+                /// Check if this path should become a new typed path. Typed paths are never skipped.
                 auto it = new_typed_path_mutable_columns.find(String(path));
                 if (it != new_typed_path_mutable_columns.end())
                 {
@@ -3691,6 +3700,9 @@ ColumnPtr convertObjectColumns(
                     populated_in_row.insert(String(path));
                     return;
                 }
+
+                if (shouldSkip(path))
+                    return;
 
                 /// Copy entry to destination.
                 dst_shared_paths_col.insertData(path.data(), path.size());
@@ -3759,6 +3771,9 @@ ColumnPtr convertObjectColumns(
         dst_typed_columns[path] = std::move(col);
     }
 
+    if (dst_type.hasSource())
+        removeDynamicPathsReservedForSource(dst_dynamic_columns);
+
     /// Lock max_dynamic_paths if shared data is non-empty.
     size_t effective_max_dynamic_paths = dst_global_max_dynamic_paths;
     if (!assert_cast<const ColumnArray &>(*dst_shared_data).getData().empty())
@@ -3769,7 +3784,7 @@ ColumnPtr convertObjectColumns(
     dst_max_dynamic_paths_upper_bound = std::max(dst_max_dynamic_paths_upper_bound, dst_dynamic_columns.size());
     effective_max_dynamic_paths = std::min(effective_max_dynamic_paths, dst_max_dynamic_paths_upper_bound);
 
-    return ColumnObject::create(
+    auto result = ColumnObject::create(
         dst_typed_columns,
         dst_dynamic_columns,
         dst_shared_data,
@@ -3777,6 +3792,23 @@ ColumnPtr convertObjectColumns(
         dst_max_dynamic_paths_upper_bound,
         dst_global_max_dynamic_paths,
         dst_max_dynamic_types);
+    if (!dst_type.hasSource())
+        return result;
+
+    /// A type that gains the source gets the text of the converted object. Values that already have the source are
+    /// converted by `convertObjectViaSourceParse` instead.
+    ColumnPtr source = createSourceFromObject(assert_cast<const ColumnObject &>(*result), dst_type, format_settings);
+    return ColumnObject::create(
+        dst_typed_columns,
+        dst_dynamic_columns,
+        dst_shared_data,
+        effective_max_dynamic_paths,
+        dst_max_dynamic_paths_upper_bound,
+        dst_global_max_dynamic_paths,
+        dst_max_dynamic_types,
+        /*statistics_=*/ {},
+        dst_type.getPtr(),
+        source);
 }
 
 /// Format+parse fallback for Object->Object conversion (existing approach).
@@ -3793,6 +3825,9 @@ ColumnPtr convertObjectViaFormatParse(
     ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
     auto & write_buffer = write_helper.getWriteBuffer();
     FormatSettings format_settings = getJSONRoundTripFormatSettings(cast_settings.format_settings);
+    /// The value has no source of its own (a value with the source is converted by parsing it), and the text of
+    /// nested values with the source is written as is, so that they keep it.
+    format_settings.json.json_type_use_source = true;
     auto serialization = arguments[0].type->getDefaultSerialization();
     for (size_t i = 0; i < input_rows_count; ++i)
     {
@@ -3810,6 +3845,25 @@ ColumnPtr convertObjectViaFormatParse(
         return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, parse_settings);
 
     return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, parse_settings);
+}
+
+/// The object of a JSON value with the source is what parsing the source gives, so such a value is converted by parsing
+/// its source as a String is: a destination with the source then stores the same text.
+ColumnPtr convertObjectViaSourceParse(
+    ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    const ColumnNullable * nullable_source,
+    size_t input_rows_count,
+    const FunctionConvertSettings & cast_settings,
+    bool requested_result_is_nullable,
+    CastType cast_type)
+{
+    const auto & src_object = assert_cast<const ColumnObject &>(*arguments[0].column);
+    ColumnsWithTypeAndName args_with_source = {ColumnWithTypeAndName(src_object.getSourcePtr(), std::make_shared<DataTypeString>(), "")};
+    if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
+        return ConvertImplGenericFromString<false>::execute(args_with_source, makeNullable(result_type), nullable_source, input_rows_count, cast_settings);
+
+    return ConvertImplGenericFromString<true>::execute(args_with_source, result_type, nullable_source, input_rows_count, cast_settings);
 }
 
 } /// anonymous namespace
@@ -3839,6 +3893,19 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
         };
     }
 
+    /// A value with the source is converted by parsing the source, so that the object of a type with the source is
+    /// always what its parser gives for the source (for example, a removed SKIP rule brings the skipped paths back).
+    /// TODO: convert without parsing when the change of the type cannot expose more of the source.
+    if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get()); from_object && from_object->hasSource())
+    {
+        return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+        {
+            return convertObjectViaSourceParse(
+                arguments, result_type, nullable_source, input_rows_count,
+                settings, requested_result_is_nullable, cast_type);
+        };
+    }
+
     /// Optimized Object(JSON) -> Object(JSON) conversion: avoid full serialize+parse when
     /// only a subset of paths are affected by parameter changes (typed paths, skip rules).
     if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get());
@@ -3848,7 +3915,8 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
         auto plan = buildObjectConversionPlan(*from_object, *to_object);
 
         /// Identity: only metadata changes (e.g. removing skip rules) — return source column directly.
-        if (plan.isIdentity())
+        /// Adding `with_source` adds the source column, so it is not an identity.
+        if (plan.isIdentity() && !to_object->hasSource())
         {
             return [](ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t)
             {

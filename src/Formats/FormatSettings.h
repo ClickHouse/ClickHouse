@@ -8,6 +8,7 @@
 #include <base/types.h>
 #include <base/unit.h>
 
+#include <functional>
 #include <limits>
 #include <string_view>
 
@@ -19,6 +20,8 @@ namespace DB
 /// Arrow offsets its `Utf8`, `Binary` and `List` buffers with 32-bit integers, and the Apache Arrow
 /// builders additionally reject the last representable value.
 constexpr UInt64 MAX_ARROW_BUFFER_SIZE = std::numeric_limits<Int32>::max() - 1;
+
+struct FormatSettings;
 
 /// `FormatSettings::CSV` and `FormatSettings::JSON`, at namespace level so that they can be forward-declared.
 struct CSVFormatSettings
@@ -100,6 +103,10 @@ struct JSONFormatSettings
     bool read_map_as_array_of_tuples = false;
     bool json_type_escape_dots_in_keys = false;
     size_t max_row_size_for_json_each_row = 0;
+    bool json_type_use_source = false;
+    /// Internal: adjusts the settings for the values of the paths of the `JSON` type. `typed` is true for typed paths,
+    /// whose type is known when the text is read back, and false for dynamic paths, whose type is inferred from it.
+    std::function<void(FormatSettings & settings, bool typed)> adjust_json_path_settings = {};
 };
 
 /**

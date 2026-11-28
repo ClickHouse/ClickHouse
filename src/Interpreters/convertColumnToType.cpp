@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -36,6 +37,7 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
+#include <algorithm>
 #include <limits>
 
 
@@ -395,9 +397,8 @@ void retagBoolInField(Field & field, const DataTypePtr & type)
 /// that range, and inserting it into a `DateTime` column would truncate it modulo 2^32, so such a value is not
 /// representable. This guards the `Field` fallback whatever wraps the source (`Nullable`, `LowCardinality`, the
 /// active alternative of `Dynamic`/`Variant`) or the target; the plain types take the same check in
-/// `tryConvertBetweenDateAndDateTimeColumnNative`. Composites are not covered: inside `Array`/`Tuple`/`Map`,
-/// `convertFieldToType` does not convert `Date` -> `DateTime` at all (pre-existing; the composite step of
-/// closing B3).
+/// `tryConvertBetweenDateAndDateTimeColumnNative`. The elements of `Array`/`Tuple`/`Map` and the typed paths
+/// of `JSON` are checked as well.
 bool dateTimeValueFitsStorage(const Field & field, const IDataType & type)
 {
     if (field.isNull())
@@ -407,6 +408,53 @@ bool dateTimeValueFitsStorage(const Field & field, const IDataType & type)
         return dateTimeValueFitsStorage(field, *nullable->getNestedType());
     if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type))
         return dateTimeValueFitsStorage(field, *low_cardinality->getDictionaryType());
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
+    {
+        if (field.getType() != Field::Types::Array)
+            return true;
+        return std::ranges::all_of(field.safeGet<Array>(), [&](const Field & element)
+            { return dateTimeValueFitsStorage(element, *array_type->getNestedType()); });
+    }
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        if (field.getType() != Field::Types::Tuple)
+            return true;
+        const auto & tuple = field.safeGet<Tuple>();
+        const auto & element_types = tuple_type->getElements();
+        for (size_t i = 0; i != std::min(tuple.size(), element_types.size()); ++i)
+        {
+            if (!dateTimeValueFitsStorage(tuple[i], *element_types[i]))
+                return false;
+        }
+        return true;
+    }
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(&type))
+    {
+        if (field.getType() != Field::Types::Map)
+            return true;
+        for (const auto & entry : field.safeGet<Map>())
+        {
+            const auto & key_value = entry.safeGet<Tuple>();
+            if (!dateTimeValueFitsStorage(key_value[0], *map_type->getKeyType())
+                || !dateTimeValueFitsStorage(key_value[1], *map_type->getValueType()))
+                return false;
+        }
+        return true;
+    }
+    if (const auto * object_type = typeid_cast<const DataTypeObject *>(&type))
+    {
+        if (field.getType() != Field::Types::Object)
+            return true;
+        const auto & object = field.safeGet<Object>();
+        for (const auto & [path, path_type] : object_type->getTypedPaths())
+        {
+            auto it = object.find(path);
+            if (it != object.end() && !dateTimeValueFitsStorage(it->second, *path_type))
+                return false;
+        }
+        return true;
+    }
 
     if (!WhichDataType(type).isDateTime())
         return true;

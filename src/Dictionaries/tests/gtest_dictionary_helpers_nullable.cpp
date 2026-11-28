@@ -103,8 +103,7 @@ TEST(DictionaryAttributeColumnProvider, TypedJsonPathsPreservedForSubcolumns)
     DataTypePtr json_type = std::make_shared<DataTypeObject>(
         DataTypeObject::SchemaFormat::JSON,
         typed_paths,
-        NameSet{},
-        Strings{},
+        /*paths_to_skip_=*/ nullptr,
         DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS,
         DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES);
     DataTypePtr nullable_json_type = makeNullable(json_type);
