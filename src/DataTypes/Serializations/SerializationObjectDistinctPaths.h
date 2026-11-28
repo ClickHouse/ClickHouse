@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnArray.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
@@ -22,6 +23,8 @@ public:
     static UInt128 getHash(const std::vector<String> & typed_paths_);
 
     static SerializationPtr create(const std::vector<String> & typed_paths_);
+
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnArray); }
 
     size_t allocatedBytes() const override;
     bool supportsPooling() const override { return shared_data_paths_serialization->supportsPooling(); }

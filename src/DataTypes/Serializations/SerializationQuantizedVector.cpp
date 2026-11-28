@@ -133,6 +133,8 @@ public:
         return ColumnConst::create(std::move(column), 0);
     }
 
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnConst); }
+
     void deserializeBinaryBulkWithMultipleStreams(
         IColumn & column,
         size_t limit,

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnVariant.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
@@ -79,6 +80,8 @@ private:
 public:
     static UInt128 getHash(const VariantSerializations & variant_serializations_, const String & variant_name_);
     static SerializationPtr create(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);
+
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnVariant); }
 
     /// Whether a resolved subcolumn is really this variant, which its name alone cannot tell: a
     /// sibling element can flatten to the same name.

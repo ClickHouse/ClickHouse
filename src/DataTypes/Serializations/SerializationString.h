@@ -29,6 +29,8 @@ public:
     static UInt128 getHash(MergeTreeStringSerializationVersion version_);
     static SerializationPtr create(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
 
+    bool isColumnCompatible(const IColumn & column) const override;
+
     /// Whether a resolved subcolumn is really the string lengths, which its name alone cannot tell.
     /// Covers both the stored size stream and the virtual one computed from the data.
     static bool isStringSizesSubcolumn(const SubstreamPath & path);

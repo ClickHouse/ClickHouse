@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <Common/Exception.h>
@@ -32,6 +33,8 @@ private:
 public:
     static UInt128 getHash(const SerializationPtr & size_serialization_, MergeTreeMapSerializationVersion serialization_version_);
     static SerializationPtr create(const SerializationPtr & size_serialization_, MergeTreeMapSerializationVersion serialization_version_);
+
+    bool isColumnCompatible(const IColumn & column) const override { return typeid(column) == typeid(ColumnUInt64); }
 
     bool supportsPooling() const override { return size_serialization->supportsPooling(); }
 
