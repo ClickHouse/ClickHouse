@@ -156,9 +156,10 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// `IMPORTANT`, so a peer at this version that does not know the name yet rejects the plan instead of
 /// skipping the name and aggregating with another method.
 /// Version 21 also adds `min_string_column_bytes_for_hash_join_row_store` to the join step settings.
-/// Version 22 adds the `window_sliding_aggregation_min_frame_rows` plan setting, written only towards a peer at this
-/// version or above. A peer below it adds the rows of every window frame again, which can change only the speed, the
-/// memory use and the last digits of floating-point results.
+/// Version 22 adds version 1 of the `ReadFromTable` step, which carries the row policy filter of the read.
+/// Version 22 also adds the `window_sliding_aggregation_min_frame_rows` plan setting, written only towards a peer at
+/// this version or above. A peer below it adds the rows of every window frame again, which can change only the speed,
+/// the memory use and the last digits of floating-point results.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -276,6 +277,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_L
 /// name is not written: the older peer does not store `String` columns in the hash join row store, so the setting has
 /// no effect there.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES = 21;
+/// First global query-plan version that writes version 1 of `ReadFromTable`, which carries the row policy
+/// filter of the read. A read with such a filter is not sent to a peer below this version.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_LEVEL_FILTER = 22;
 /// First query-plan serialization version that carries the set operation of `Join` and the `skip_deduplication` and
 /// `deduplicates_except_join` flags of `Distinct`. Below it, the join of a set operation is not sent.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_OPERATION_AS_JOIN = 21;

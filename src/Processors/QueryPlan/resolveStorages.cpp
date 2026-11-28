@@ -55,6 +55,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int UNKNOWN_TABLE;
     extern const int CANNOT_PARSE_TEXT;
+    extern const int ILLEGAL_PREWHERE;
 }
 
 Identifier parseTableIdentifier(const std::string & str, const ContextPtr & context)
@@ -212,6 +213,22 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     /// table expression modifiers. Reads that need one get a `SELECT` over that table synthesized
     /// and re-analyzed below; the rest read the storage directly.
     const bool read_via_interpreter = storage->readRequiresAnalyzedQuery();
+
+    if (reading_from_table && reading_from_table->getRowLevelFilter())
+    {
+        const auto & row_level_filter = reading_from_table->getRowLevelFilter();
+        const auto required_columns = row_level_filter->actions.getRequiredColumnsNames();
+        if (read_via_interpreter || !canPushDownRowPolicyFilter(*storage, snapshot->metadata->getColumns(), required_columns))
+            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                "Table {} cannot apply the row policy filter of the serialized query plan", storage->getStorageID().getNameForLogs());
+
+        for (const auto & name : required_columns)
+            if (!header->has(name))
+                column_names.push_back(name);
+
+        select_query_info.row_level_filter = std::make_shared<FilterDAGInfo>(
+            row_level_filter->actions.clone(), row_level_filter->column_name, row_level_filter->do_remove_column);
+    }
 
     ASTPtr query;
     if (read_via_interpreter)
