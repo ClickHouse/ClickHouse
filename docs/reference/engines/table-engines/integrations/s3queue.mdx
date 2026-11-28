@@ -299,6 +299,16 @@ Possible values:
 
 Default value: `30000`.
 
+### `idle_unregister_threshold_ms` {#idle_unregister_threshold_ms}
+
+Determines the reschedule interval above which the table unregisters itself from the active-processors registry until the next poll cycle. Setting `0` disables unregistration.
+
+Possible values:
+
+- Non-negative integer.
+
+Default value: `5000`.
+
 ### `tracked_files_limit` {#tracked_files_limit}
 
 Allows to limit the number of Zookeeper nodes if the 'unordered' mode is used, does nothing for 'ordered' or 'exclusive' mode.
