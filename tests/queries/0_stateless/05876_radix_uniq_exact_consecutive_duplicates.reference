@@ -1,0 +1,22 @@
+UInt8	256
+UInt16	20000
+UInt16 high byte	20000
+UInt32	20000
+UInt32 high half	20000
+UInt64	20000
+UInt64 high half	20000
+Tuple of 4 bytes	20000
+Tuple of 5 bytes	20000
+UInt8 long	256
+UInt16 long	20000
+UInt16 high byte long	20000
+UInt32 long	20000
+UInt32 high half long	20000
+UInt64 long	20000
+UInt64 high half long	20000
+Tuple of 4 bytes long	20000
+Tuple of 5 bytes long	20000
+UInt32 small blocks	20000
+UInt64 small blocks	20000
+UInt64 threads	200000
+radix	1
