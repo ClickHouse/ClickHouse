@@ -67,6 +67,9 @@ struct PrometheusQueryEvaluationSettings
     /// If not set then it's 15 seconds by default.
     std::optional<DurationType> default_subquery_step;
 
+    /// Calculate `rate`, `increase` and `delta` without extrapolation to the boundaries of the range (setting `promql_exact_rate`).
+    /// The mode is passed to the aggregate functions as an explicit parameter, so it becomes a part of their type.
+    bool exact_rate = false;
     /// A range query is rejected if (end_time - start_time) / step is greater than this value; 0 means no limit.
     UInt64 max_points_per_series = 0;
     /// Copy label matchers across binary operators, see the setting `promql_push_down_label_matchers`.
