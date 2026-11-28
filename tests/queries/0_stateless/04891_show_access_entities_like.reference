@@ -1,0 +1,23 @@
+-- users like all
+show_like_u_AliceUpper
+show_like_u_alice
+show_like_u_bob
+-- users like alice
+show_like_u_alice
+-- users ilike alice
+show_like_u_AliceUpper
+show_like_u_alice
+-- roles like all
+show_like_r_admin
+show_like_r_reader
+-- roles like admin
+show_like_r_admin
+-- roles ilike admin
+show_like_r_admin
+-- profiles like all
+show_like_p_fast
+show_like_p_slow
+-- profiles like fast
+show_like_p_fast
+-- profiles ilike fast
+show_like_p_fast
