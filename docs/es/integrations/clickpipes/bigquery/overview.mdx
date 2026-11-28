@@ -8,12 +8,10 @@ doc_type: 'guide'
 
 import IntroClickPipe from '/snippets/es/_intro.mdx';
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <IntroClickPipe />
 
 <div id="features">
-  ## Funciones
+  ## Funciones {#features}
 </div>
 
 ### Carga inicial {#initial-load}
@@ -48,59 +46,61 @@ ALTER TABLE `project.dataset.table` SET OPTIONS (enable_change_history = TRUE);
   [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) y [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) solo pueden leer los cambios de la tabla de origen comprendidos en la [ventana de consulta de datos históricos de BigQuery](https://docs.cloud.google.com/bigquery/docs/time-travel), que es de siete días de forma predeterminada y puede reducirse a dos días. Si la replicación se retrasa más allá de ese período, ejecute una nueva carga inicial para restaurar una copia completa. BigQuery cobra por las consultas realizadas mediante los tres métodos. Habilitar el historial de cambios para [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) también genera costos de almacenamiento en BigQuery.
 </Note>
 
-<div id="data-type-mapping">
-  ## Correspondencia de tipos de datos
-</div>
+## Correspondencia de tipos de datos {#data-type-mapping}
 
 [Tipos de datos de BigQuery](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types).
 
-| Tipo de dato de BigQuery | Tipo de dato de ClickHouse | Detalles                                                                           |
-| ------------------------ | -------------------------- | ---------------------------------------------------------------------------------- |
-| `BOOL`                   | `Bool`                     |                                                                                    |
-| `INT64`                  | `Int64`                    |                                                                                    |
-| `FLOAT64`                | `Float64`                  |                                                                                    |
-| `NUMERIC`                | `Decimal(P, S)`            | Precisión de hasta 38 y escala de hasta 9. Se conservan la precisión y la escala.  |
-| `BIGNUMERIC`             | `Decimal(P, S)`            | Precisión de hasta 76 y escala de hasta 38. Se conservan la precisión y la escala. |
-| `STRING`                 | `String`                   |                                                                                    |
-| `BYTES`                  | `String`                   |                                                                                    |
-| `JSON`                   | `String` (JSON)            |                                                                                    |
-| `DATE`                   | `Date`                     |                                                                                    |
-| `TIME`                   | `String`                   | Precisión de microsegundos.                                                        |
-| `DATETIME`               | `DateTime`                 | Precisión de microsegundos.                                                        |
-| `TIMESTAMP`              | `DateTime64(6)`            | Precisión de microsegundos.                                                        |
-| `GEOGRAPHY`              | `String`                   |                                                                                    |
-| `GEOMETRY`               | `String`                   |                                                                                    |
-| `UUID`                   | `String`                   |                                                                                    |
-| `ARRAY<T>`               | `Array(T)`                 |                                                                                    |
-| `ARRAY<DATE>`            | `Array(Date)`              |                                                                                    |
-| `STRUCT` (RECORD)        | `String`                   |                                                                                    |
+| Tipo de datos de BigQuery | Tipo de datos de ClickHouse | Detalles                                                                                                                                                                                                                                                                     |
+| ------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BOOL`                    | `Bool`                      |                                                                                                                                                                                                                                                                              |
+| `INT64`                   | `Int64`                     |                                                                                                                                                                                                                                                                              |
+| `FLOAT64`                 | `Float64`                   |                                                                                                                                                                                                                                                                              |
+| `NUMERIC`                 | `Decimal(P, S)`             | Se conservan la precisión y la escala. Si no está parametrizado, se usa `Decimal(38, 9)` de forma predeterminada.                                                                                                                                                            |
+| `BIGNUMERIC`              | `Decimal(P, S)`             | Se conservan la precisión y la escala. Si no está parametrizado, se usa `Decimal(76, 38)` de forma predeterminada.                                                                                                                                                           |
+| `STRING`                  | `String`                    |                                                                                                                                                                                                                                                                              |
+| `BYTES`                   | `String`                    |                                                                                                                                                                                                                                                                              |
+| `JSON`                    | `String`                    |                                                                                                                                                                                                                                                                              |
+| `DATE`                    | `Date32`                    |                                                                                                                                                                                                                                                                              |
+| `TIME`                    | `DateTime64(6)`             | Hora del día expresada como desplazamiento respecto a la época Unix. Se asigna a `Time64(6)` si el parámetro de configuración [`enable_time_time64_type`](/es/reference/settings/session-settings/enable#enable_time_time64_type) está habilitado en el servicio de ClickHouse. |
+| `DATETIME`                | `DateTime64(6)`             | Precisión de microsegundos. Se almacena como UTC porque `DATETIME` no tiene zona horaria.                                                                                                                                                                                    |
+| `TIMESTAMP`               | `DateTime64(6)`             | Precisión de microsegundos.                                                                                                                                                                                                                                                  |
+| `GEOGRAPHY`               | `String`                    | Formato WKT.                                                                                                                                                                                                                                                                 |
+| `INTERVAL`                | `String`                    |                                                                                                                                                                                                                                                                              |
+| `RANGE`                   | `String`                    |                                                                                                                                                                                                                                                                              |
+| `STRUCT` (RECORD)         | `String`                    | Se serializa como objeto JSON.                                                                                                                                                                                                                                               |
+| `ARRAY<T>`                | `Array(T)`                  | Los tipos de elemento siguen las correspondencias anteriores, salvo las excepciones indicadas a continuación.                                                                                                                                                                |
+| `ARRAY<DATE>`             | `Array(Date)`               |                                                                                                                                                                                                                                                                              |
+| `ARRAY<TIME>`             | `Array(DateTime64(6))`      |                                                                                                                                                                                                                                                                              |
+| `ARRAY<JSON>`             | `String`                    | Se serializa como array JSON.                                                                                                                                                                                                                                                |
+| `ARRAY<STRUCT>`           | `Array(String)`             | Cada elemento se serializa como objeto JSON.                                                                                                                                                                                                                                 |
 
 <div id="access-control">
-  ## Control de acceso
+  ## Control de acceso {#access-control}
 </div>
 
 <div id="authentication">
-  ### Autenticación
+  ### Autenticación {#authentication}
 </div>
 
-<a id="service-account-credentials" />
-#### Credenciales de la cuenta de servicio
+#### Credenciales de la cuenta de servicio {#service-account-credentials}
 
 ClickPipes se autentica en tu proyecto de Google Cloud mediante una [clave de cuenta de servicio](https://docs.cloud.google.com/iam/docs/keys-create-delete). Recomendamos crear una cuenta de servicio dedicada con el conjunto mínimo de [permisos](#permissions) necesarios para permitir que ClickPipes exporte datos desde BigQuery, los cargue en el bucket de GCS de staging y los lea en ClickHouse.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="Creación de una clave de cuenta de servicio con permisos de BigQuery y Cloud Storage" size="lg" border />
-
-<a id="gcp-workload-identity" />
-#### Workload Identity de GCP (Beta)
-
-Siga la [guía de Workload Identity de GCP](/es/integrations/clickpipes/security/gcp-workload-identity) para obtener la cuenta de servicio administrada a partir del contexto del servicio de ClickPipes. Asígnele los [roles de BigQuery y GCS](#permissions) que se indican a continuación y cree la canalización con la autenticación `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. No proporcione credenciales de cuenta de servicio con este método de autenticación.
-
-<div id="permissions">
-  ### Permisos
+<div className="ch-image-lg">
+  <Frame>
+    ![Creación de una clave de cuenta de servicio con permisos de BigQuery y Cloud Storage](/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp)
+  </Frame>
 </div>
 
-<a id="bigquery" />
-#### BigQuery
+#### Workload Identity de GCP (Beta) {#gcp-workload-identity}
+
+Siga la [guía de Workload Identity de GCP](/es/integrations/clickpipes/security/gcp-workload-identity) para obtener la cuenta de servicio administrada desde el contexto del servicio de ClickPipes. Asígnele los [roles de BigQuery y GCS](#permissions) que se indican a continuación y cree la canalización con la autenticación `SERVICE_ACCOUNT_WORKLOAD_IDENTITY`. No proporcione credenciales de cuenta de servicio con este método de autenticación.
+
+<div id="permissions">
+  ### Permisos {#permissions}
+</div>
+
+#### BigQuery {#bigquery}
 
 La cuenta de servicio que usa ClickPipes, ya sea proporcionada por usted o gestionada mediante workload identity, necesita estos roles de BigQuery:
 
@@ -116,7 +116,7 @@ resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
 ```
 
 <div id="cloud-storage">
-  #### Cloud Storage
+  #### Cloud Storage {#cloud-storage}
 </div>
 
 La cuenta de servicio debe tener los siguientes roles de Cloud Storage:

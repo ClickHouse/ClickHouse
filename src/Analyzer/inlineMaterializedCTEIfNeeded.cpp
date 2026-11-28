@@ -153,7 +153,7 @@ public:
         }
     }
 
-    const IQueryTreeNode::ReplacementMap & getReplacementMap() const
+    [[nodiscard]] const IQueryTreeNode::ReplacementMap & getReplacementMap() const
     {
         return replacement_map;
     }

@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeFactory.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Common/logger_useful.h>
@@ -33,23 +34,22 @@ namespace ErrorCodes
 class DistributionEnforcer : public IOptimizationRule
 {
 public:
-    String getName() const override { return "DistributionEnforcer"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
-    Promise getPromise() const override { return 1000; }
-    bool isTransformation() const override { return false; }
+    [[nodiscard]] String getName() const override { return "DistributionEnforcer"; }
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
+    [[nodiscard]] Promise getPromise() const override { return 1000; }
+    [[nodiscard]] bool isTransformation() const override { return false; }
 
     class EnforcerEnumerator;
 
 protected:
-    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
 /// Emits the exchange enforcers that can bridge one distribution gap, one method per
 /// exchange kind. `addEnforcer` centralizes the construction of the self-referential
 /// enforcer expression: it lives in the source group, its single input points back to
 /// the same group with a relaxed requirement, the output distribution is the required
-/// one, and the expression carries the Distribution enforcer axis that the
-/// cycle-avoidance rules key on.
+/// one, and the expression records the required properties that it was made for.
 class DistributionEnforcer::EnforcerEnumerator
 {
 public:
@@ -58,7 +58,7 @@ public:
         GroupExpressionPtr expression_,
         const ExpressionProperties & required_properties_,
         Memo & memo_,
-        std::vector<GroupExpressionPtr> & result_)
+        GroupExpressions & result_)
         : rule(rule_)
         , expression(std::move(expression_))
         , input_header(expression->getQueryPlanStep()->getOutputHeader())
@@ -82,19 +82,20 @@ private:
         StreamLayout output_layout = StreamLayout::Unknown);
     /// Input requirement matching the source expression's own distribution: the exchange
     /// consumes the stream where it already is.
-    ExpressionProperties inputAtSourceDistribution() const;
+    [[nodiscard]] ExpressionProperties inputAtSourceDistribution() const;
 
     const DistributionEnforcer & rule;
     GroupExpressionPtr expression;
     const SharedHeader & input_header;
     const ExpressionProperties & required_properties;
     Memo & memo;
-    std::vector<GroupExpressionPtr> & result;
+    GroupExpressions & result;
 };
 
 bool DistributionEnforcer::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const
 {
-    return !ExpressionProperties::isDistributionSatisfiedBy(required_properties.distribution, expression->properties.distribution);
+    return !required_properties.distribution.without_enforcer
+        && !ExpressionProperties::isDistributionSatisfiedBy(required_properties.distribution, expression->properties.distribution);
 }
 
 ExpressionProperties DistributionEnforcer::EnforcerEnumerator::inputAtSourceDistribution() const
@@ -113,7 +114,7 @@ void DistributionEnforcer::EnforcerEnumerator::addEnforcer(
     output_properties.sorting = std::move(output_sorting);
     output_properties.stream_layout = output_layout;
     auto enforcer_expr = makeEnforcerExpression(
-        expression, std::move(step), std::move(input_required), std::move(output_properties), EnforcedProperty::Distribution);
+        expression, std::move(step), std::move(input_required), std::move(output_properties), required_properties);
 
     rule.addPhysicalToMemo(enforcer_expr, required_properties, memo, result);
 }
@@ -165,6 +166,8 @@ void DistributionEnforcer::EnforcerEnumerator::addSortedGather()
 {
     ExpressionProperties input_required = inputAtSourceDistribution();
     input_required.sorting = expression->properties.sorting;
+    /// The per-node sort of a window stays a window sort, otherwise a plain sort by the same columns could be built for it.
+    input_required.sorting_for_window = expression->properties.sorting_for_window;
 
     /// The sorted merge combines the sources into one stream.
     addEnforcer(
@@ -252,9 +255,9 @@ void DistributionEnforcer::EnforcerEnumerator::addKeyedShuffle()
         is_scatter ? StreamLayout::Single : StreamLayout::Unknown);
 }
 
-std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+GroupExpressions DistributionEnforcer::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
-    std::vector<GroupExpressionPtr> result;
+    GroupExpressions result;
     EnforcerEnumerator enforcers(*this, expression, required_properties, memo, result);
 
     if (required_properties.distribution.columns.empty())

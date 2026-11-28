@@ -3,6 +3,7 @@
 #include <Server/HTTPResponseHeaderWriter.h>
 
 #include <Common/re2.h>
+#include <Common/StringUtils.h>
 #include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
 #include <IO/Operators.h>
@@ -296,13 +297,7 @@ std::optional<std::string> ClickStackUIRequestHandler::getResourcePath(const std
         path.remove_prefix(1);
 
     // Remove query parameters and fragments
-    auto query_pos = path.find('?');
-    if (query_pos != std::string_view::npos)
-        path = path.substr(0, query_pos);
-
-    auto fragment_pos = path.find('#');
-    if (fragment_pos != std::string_view::npos)
-        path = path.substr(0, fragment_pos);
+    path = stripQueryAndFragment(path);
 
     // Remove trailing slash
     if (!path.empty() && path.back() == '/')
@@ -316,7 +311,7 @@ std::optional<std::string> ClickStackUIRequestHandler::getResourcePath(const std
     std::string decoded;
     try
     {
-        Poco::URI::decode(std::string(path), decoded);
+        Poco::URI::decode(path, decoded);
     }
     catch (const Poco::URISyntaxException &)
     {
@@ -416,13 +411,7 @@ std::string SQLConsoleUIRequestHandler::getResourcePath(const std::string & uri)
     if (!path.empty() && path[0] == '/')
         path.remove_prefix(1);
 
-    auto query_pos = path.find('?');
-    if (query_pos != std::string_view::npos)
-        path = path.substr(0, query_pos);
-
-    auto fragment_pos = path.find('#');
-    if (fragment_pos != std::string_view::npos)
-        path = path.substr(0, fragment_pos);
+    path = stripQueryAndFragment(path);
 
     if (!path.empty() && path.back() == '/')
         path.remove_suffix(1);

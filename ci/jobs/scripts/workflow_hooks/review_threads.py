@@ -228,8 +228,8 @@ def store_gate_state(info):
     # jobs and could finish green without ever running the full suite; and
     # any invented value either lets stale narrowing labels filter the run
     # (unset / `False`) or impersonates `ci-force-all` and *widens* it past
-    # a normal full PR run (`True`: opt-in jobs such as `Build Toolchain
-    # (PGO, BOLT)`, ignored `do not test` / `ci-build`). Fail the config run
+    # a normal full PR run (`True`: opt-in jobs such as the LLVM coverage
+    # family, ignored `do not test` / `ci-build`). Fail the config run
     # instead and let a re-run retry the fetch.
     labels = fetch_live_labels(info)
     override = review_threads_gate_bypassed(labels)

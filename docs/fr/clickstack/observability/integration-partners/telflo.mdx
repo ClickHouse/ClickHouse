@@ -1,0 +1,175 @@
+---
+slug: /clickstack/observability/integration-partners/telflo
+title: 'Envoyer des données OpenTelemetry vers ClickHouse Observability avec Telflo'
+sidebarTitle: 'Telflo'
+description: 'Utilisez Telflo pour gérer des collecteurs OpenTelemetry qui envoient des données de télémétrie vers ClickHouse Observability en version entièrement gérée ou Self-managed ClickHouse Observability'
+doc_type: 'guide'
+keywords: ['Telflo', 'OTEL', 'ClickHouse Observability', 'OpenTelemetry', 'gestion des collecteurs', 'gestion de parc', 'exportateur ClickHouse']
+---
+
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **En bref**
+
+  Ce guide explique comment envoyer des données de télémétrie vers ClickHouse Observability depuis des Collecteurs OpenTelemetry gérés par Telflo. Vous apprendrez à :
+
+  * Créer une configuration de collecteur dans l&#39;éditeur visuel de Telflo ou à l&#39;aide de la CLI
+  * Envoyer des données de télémétrie vers ClickHouse Observability en version entièrement gérée ou Self-managed ClickHouse Observability
+  * Déployer des configurations à distance sur un parc de collecteurs
+  * Vérifier que les données de télémétrie sont disponibles dans ClickHouse Observability
+
+  Durée estimée : 15-20 minutes
+</Info>
+
+{/* vale off */}
+
+## Qu&#39;est-ce que Telflo ? {#what-is-telflo}
+
+{/* vale on */}
+
+Telflo est un plan de contrôle indépendant de tout fournisseur pour les Collecteurs OpenTelemetry, qui centralise la gestion de la configuration du collecteur à l’échelle d’un parc. Il facilite l’administration des parcs de grande taille grâce à un éditeur visuel, à des tests de pipeline et au déploiement à distance des configurations. Telflo gère les versions compilées amont standard du collecteur OpenTelemetry, sans distribution propre à Telflo ni agent propriétaire : les collecteurs que vos équipes exécutent déjà conservent ainsi la même version compilée.
+
+Telflo est également accessible en dehors du navigateur, via une [interface en ligne de commande](https://docs.telflo.com/docs/cli/). Combinée au [serveur MCP ClickStack](/fr/clickstack/observability/mcp), elle permet à l’agent qui interroge votre télémétrie de corriger lui-même le pipeline qui l’a produite.
+
+{/* vale off */}
+
+## Pourquoi associer Telflo et ClickHouse Observability ? {#why-telflo-clickstack}
+
+{/* vale on */}
+
+ClickHouse Observability entièrement géré prend en charge l’ingestion, les schémas, le stockage et la mise à l’échelle. Avec Self-managed ClickHouse Observability, vous gardez la maîtrise de l’ingestion et de la configuration de la base de données, tandis que ClickHouse Cloud gère l’infrastructure sous-jacente. Telflo gère les collecteurs OpenTelemetry qui envoient la télémétrie de vos hôtes, clusters et régions vers l’un ou l’autre de ces déploiements.
+
+Telflo offre :
+
+* Une gestion centralisée des collecteurs OpenTelemetry sur les hôtes, les conteneurs et Kubernetes
+* Une modification visuelle des pipelines, avec des déploiements progressifs sécurisés sur l’ensemble du parc ou sur un seul groupe
+* Des modifications vérifiées sur un échantillon de télémétrie avant qu’elles n’atteignent les collecteurs de production
+* Le routage simultané de la même télémétrie vers ClickHouse Observability et d’autres destinations
+* Une visibilité sur l’ensemble du parc : collecteurs en ligne, ce que chacun exécute et ceux qui présentent une dérive
+
+<Tip>
+  **Points clés**
+
+  * **ClickHouse Observability fournit le stockage et l’environnement d’investigation**
+  * **Telflo exploite le parc de collecteurs qui l’alimente**
+</Tip>
+
+## Prérequis {#prerequisites}
+
+* Un [service ClickHouse Observability entièrement géré](/fr/clickstack/observability/getting-started) ou un [déploiement autogéré](/fr/clickstack/self-configured/getting-started/managed)
+* Un compte Telflo ([créez un compte sur telflo.com](https://telflo.com))
+* Un environnement d’exécution pour les collecteurs : une VM ou un cluster Kubernetes
+* **Entièrement géré** : votre point de terminaison OTLP HTTP et votre API key d’ingestion, disponibles dans **Paramètres de l’équipe → Données → Télémétrie gérée**
+* **Autogéré** : l’endpoint de votre service ClickHouse Cloud (port `8443`) et un [utilisateur d’ingestion](/fr/clickstack/self-configured/ingesting-data/collector#creating-an-ingestion-user-self-configured), ou l’endpoint d’un collecteur autonome existant et son `OTLP_AUTH_TOKEN`
+* Une connectivité réseau entre les collecteurs gérés par Telflo et votre endpoint de destination
+
+{/* vale off */}
+
+## Intégrer ClickHouse Observability à Telflo {#integrate-telflo-clickstack}
+
+{/* vale on */}
+
+<Steps>
+  <Step title="Créez une configuration du collecteur" id="build-configuration">
+    1. Connectez-vous à Telflo. Dans la liste **Configurations**, cliquez sur **New Configuration**, puis sur **Blank configuration**.
+    2. Dans **Name Your Configuration**, saisissez un nom et cliquez sur **Create**.
+    3. Ajoutez des récepteurs : faites glisser un récepteur depuis la palette vers le canevas pour chaque type de télémétrie collecté.
+    4. Ajoutez des processeurs : **Memory Limiter** et **Batch**, ainsi que tout autre processeur nécessaire pour structurer les données avant qu&#39;elles ne quittent le collecteur. Consultez la [liste complète des processeurs pris en charge par Telflo](https://docs.telflo.com/docs/build/components#processors).
+  </Step>
+
+  <Step title="Ajoutez l’exportateur" id="add-exporter">
+    Choisissez l’exportateur adapté à votre déploiement. ClickHouse Observability entièrement géré reçoit la télémétrie via son point de terminaison OTLP géré. Pour les déploiements autogérés, vous pouvez écrire directement dans ClickHouse ou envoyer de l’OTLP à un collecteur que vous exploitez déjà.
+
+    <Tabs>
+      <Tab title="Entièrement géré">
+        <BetaBadge label="Offre bêta" />
+
+        Utilisez le point de terminaison OTLP géré. ClickHouse prend en charge l’ingestion, les schémas, le stockage et la mise à l’échelle ; les collecteurs gérés par Telflo collectent et transmettent la télémétrie depuis votre environnement.
+
+        1. Faites glisser l’exportateur **OTLP/HTTP** sur le canevas.
+        2. Définissez **Endpoint** sur votre endpoint OTLP HTTP géré, en incluant le port `4318`, par exemple `https://<service-id>.otel.<region>.aws.clickhouse.com:4318`.
+        3. Sous **HTTP Headers**, cliquez sur **Add header**, puis saisissez `Authorization` comme **Header name** et `Bearer ${env:CLICKSTACK_INGESTION_KEY}` comme **Header value**. Telflo vous demande la valeur de la variable d’environnement lors de l’installation des collecteurs. Indiquez votre clé d’API d’ingestion comme valeur de `CLICKSTACK_INGESTION_KEY`, sans le préfixe `Bearer`.
+
+        Pour les déploiements entièrement gérés, utilisez l’exportateur OTLP et non l’exportateur ClickHouse direct.
+      </Tab>
+
+      <Tab title="Autogéré">
+        Avec ClickHouse Observability autogéré, l’ingestion est à votre charge. Les écritures directes via l’exportateur ClickHouse ne concernent que les déploiements autogérés. Le collecteur que vous configurez ici joue le rôle de [passerelle d’ingestion](/fr/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured) : ajoutez-lui un récepteur **OTLP** en plus de l’exportateur ClickHouse, et il écrira dans votre service ClickHouse Cloud. Vos SDK et vos collecteurs agents lui envoient ensuite de l’OTLP sur le port `4318` (HTTP) ou `4317` (gRPC).
+
+        1. Faites glisser l’exportateur **ClickHouse** sur le canevas.
+        2. Renseignez **Endpoint** avec l’endpoint de votre service ClickHouse Cloud (port `8443`), définissez **Database** sur `default` et **Username** sur votre utilisateur d’ingestion.
+        3. Définissez **Password** sur `${env:CLICKHOUSE_PASSWORD}`. Telflo vous demande la valeur lors de l’installation des collecteurs : la configuration référence ainsi une variable d’environnement au lieu de contenir le mot de passe en clair.
+        4. Sous **Schema &amp; Tables** : si les [tables de télémétrie](/fr/clickstack/self-configured/ingesting-data/schemas) n&#39;existent pas encore, laissez **Create Schema on Startup** activé pour que l’exportateur les crée. Désactivez cette option une fois qu’elles existent.
+
+        Conservez **Batch** en amont de l’exportateur : ClickHouse offre de meilleures performances avec des insertions par lots.
+
+        Si vous exploitez déjà un [collecteur OpenTelemetry autonome](/fr/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured), utilisez plutôt un exportateur **OTLP/HTTP**. Définissez **Endpoint** sur l’adresse OTLP HTTP de ce collecteur (port `4318`) et ajoutez un en-tête `Authorization` avec `${env:OTLP_AUTH_TOKEN}` comme valeur. Fournissez le [jeton d’authentification configuré sur votre collecteur](/fr/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) lors de l’installation des collecteurs gérés par Telflo. N’ajoutez pas de préfixe `Bearer` à ce jeton.
+
+        <div className="ch-image-lg">
+          <Frame>
+            ![Un pipeline de collecteur autogéré dans l’éditeur Telflo, avec l’exportateur ClickHouse configuré](/images/clickstack/telflo/telflo-configuration.webp)
+          </Frame>
+        </div>
+      </Tab>
+    </Tabs>
+
+    Reliez les récepteurs à l’exportateur en passant par les processeurs, avec un pipeline par signal. La ligne d’état affiche **config valid** ou le nombre d’erreurs à corriger, et l’onglet **YAML** présente la configuration générée.
+
+    Avant tout déploiement, vous pouvez faire passer des données de télémétrie d’exemple dans la configuration et vérifier ce qui en ressort. Consultez [les tests dans Telflo](https://docs.telflo.com/docs/testing/overview). Vous pouvez aussi simplement décrire ce que vous souhaitez faire : l’assistant IA de Telflo, accessible via le bouton **AI** de la barre d’outils, construit, valide et teste la configuration pour vous. Votre propre agent peut en faire autant via la [CLI Telflo](https://docs.telflo.com/docs/cli/).
+  </Step>
+
+  <Step title="Publier une version" id="publish-version">
+    Cliquez sur **Publish** dans la barre d&#39;outils. Les versions publiées sont en lecture seule ; pour poursuivre vos itérations, cliquez sur **Create New Version**.
+  </Step>
+
+  <Step title="Créez un parc et déployez-le" id="deploy-collectors">
+    1. Accédez à **Fleet**, cliquez sur **New Fleet**, puis indiquez où s’exécutent vos collecteurs : sur des VM ou dans Kubernetes. Saisissez un **Name** et cliquez sur **Create fleet**.
+    2. Dans l’onglet **Deploy Groups** du parc, cliquez sur **Assign** pour le groupe cible du déploiement, puis choisissez votre configuration publiée et sa version. Commencez par un petit groupe afin de vérifier l’ingestion avant d’étendre le déploiement au reste du parc.
+    3. Cliquez sur **Install** pour le groupe et saisissez une valeur pour chaque variable d’environnement référencée par votre configuration ; Telflo les ajoute à la commande d’installation. Exécutez cette commande sur les machines où les collecteurs doivent tourner, [en suivant les instructions d’installation de Telflo](https://docs.telflo.com/docs/fleet-management/install-collectors). Elle contient le jeton d’installation du parc ainsi que vos valeurs : traitez-la donc comme une donnée sensible.
+    4. Dans l’onglet **Collectors**, l’état des collecteurs passe successivement à **Pending pickup**, **Applying**, puis **In sync**.
+
+    Pour déployer une modification, publiez une nouvelle version et affectez-la au groupe ; pour revenir en arrière, affectez une version précédemment déployée.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Un parc Telflo dont tous les collecteurs sont synchronisés après un déploiement](/images/clickstack/telflo/telflo-fleet.webp)
+      </Frame>
+    </div>
+  </Step>
+
+  <Step title="Vérifier la télémétrie" id="verify-telemetry">
+    Ouvrez ClickHouse Observability pour votre service dans la console ClickHouse Cloud. Recherchez l&#39;un de vos services dans la vue **Recherche** et utilisez l&#39;**Explorateur de graphiques** pour les métriques. Vérifiez que les logs, traces et métriques attendus sont bien arrivés avant de déployer la configuration sur le reste de votre parc.
+  </Step>
+</Steps>
+
+## Configuration avancée {#advanced-configuration}
+
+### Routage en éventail {#fan-out-routing}
+
+Les mêmes données de télémétrie peuvent être envoyées simultanément vers ClickHouse Observability pour un stockage à long terme, vers une autre plateforme lors d&#39;une migration et vers un SIEM pour l&#39;analyse de sécurité. Ajoutez les exportateurs sur le canevas et connectez-les aux pipelines censés les alimenter, ou partez d&#39;un pipeline prêt à l&#39;emploi issu de la [bibliothèque de flux de Telflo](https://telflo.com/flows).
+
+### Compression et performance {#compression-and-performance}
+
+* **Exportateurs OTLP/HTTP et OTLP** : laissez **Compression** sur gzip.
+* **Exportateur ClickHouse (autogéré uniquement)** : laissez **Async Insert** activé, conservez **Compression** sur lz4 et ajoutez un processeur **Batch** en amont. Consultez [Optimiser les insertions](/fr/clickstack/self-configured/ingesting-data/collector#optimizing-inserts-self-configured).
+
+## Prochaines étapes {#next-steps}
+
+* **Créer des tableaux de bord** : créez des visualisations dans ClickHouse Observability pour les logs, les métriques et les traces
+* **Configurer des alertes** : configurez des alertes dans ClickHouse Observability pour les conditions critiques
+* **Affiner avec l&#39;Assistant IA Telflo** : demandez-lui d&#39;ajuster un pipeline ou de proposer des tests
+* **Migration depuis un autre fournisseur** : les [flows](https://telflo.com/flows) prennent en charge le basculement, en remplaçant les agents déjà déployés sur votre parc et en envoyant les données en parallèle vers les deux backends le temps de les comparer
+
+## En savoir plus {#read-more}
+
+* [Documentation Telflo](https://docs.telflo.com/docs)
+* [Guide de démarrage rapide : d&#39;un canevas vide à un collecteur déployé](https://docs.telflo.com/docs/getting-started/quickstart)
+* [Tester les configurations de collecteur](https://docs.telflo.com/docs/testing/overview)
+* [Gestion de parc dans Telflo](https://docs.telflo.com/docs/fleet-management/overview)
+* [Installer des collecteurs](https://docs.telflo.com/docs/fleet-management/install-collectors)
+* [Ingestion avec OpenTelemetry](/fr/clickstack/observability/ingesting-data/opentelemetry)
+* [Schémas de table autogérés](/fr/clickstack/self-configured/ingesting-data/schemas)

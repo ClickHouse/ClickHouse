@@ -71,9 +71,12 @@ MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeT
         const auto * step = range_readers[i].getPrewhereInfo();
         if (step && step->type == PrewhereExprStep::Filter && step->is_query_prewhere)
         {
-            prewhere_granule_stats_enabled = true;
-            first_query_prewhere_reader_index = i;
-            break;
+            if (!prewhere_granule_stats_enabled)
+            {
+                prewhere_granule_stats_enabled = true;
+                first_query_prewhere_reader_index = i;
+            }
+            last_query_prewhere_reader_index = i;
         }
     }
 }
@@ -95,7 +98,9 @@ size_t MergeTreeReadersChain::numRowsInCurrentGranule() const
 
 size_t MergeTreeReadersChain::currentMark() const
 {
-    return range_readers.empty() ? 0 : range_readers.back().currentMark();
+    /// The first reader drives the reading of the chain: take its mark, as `numReadRowsInCurrentGranule` takes its offset.
+    /// The stream of a later reader may not move at all: a PREWHERE step that reads no columns stays at mark 0.
+    return range_readers.empty() ? 0 : range_readers.front().currentMark();
 }
 
 const Block & MergeTreeReadersChain::getSampleBlock() const
@@ -304,34 +309,11 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
     return must_convert;
 }
 
-/// Builds `ColumnsWithTypeAndName` using the on-disk column descriptions (from `IMergeTreeReader::getColumnsToRead`).
-/// This is important when columns have not yet been converted, i.e. their types with differ those contained in `getReadSampleBlock`.
-static ColumnsWithTypeAndName toColumnsWithTypeAndName(const Columns & columns, const NamesAndTypes & on_disk_columns)
-{
-    if (columns.size() != on_disk_columns.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Number of columns doesn't match number of on-disk columns, columns size: {}, on_disk_columns size: {}",
-            columns.size(),
-            on_disk_columns.size());
-
-    ColumnsWithTypeAndName res;
-    res.reserve(columns.size());
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        /// Columns might be null, e.g. not yet filled by `fillMissingColumns`.
-        if (columns[i])
-            res.emplace_back(columns[i], on_disk_columns[i].type, on_disk_columns[i].name);
-    }
-    return res;
-}
-
 MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     size_t max_rows,
     MarkRanges & ranges,
     std::vector<MarkRanges> & patch_ranges,
-    const DataflowCacheUpdateCallback & dataflow_cache_update_cb,
-    size_t max_block_size_rows)
+    size_t max_stripe_block_rows)
 {
     if (max_rows == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
@@ -343,15 +325,9 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
     auto & first_reader = range_readers.front();
 
-    size_t num_attributed_readers = 0;
-    if (first_reader.getReader()->getMergeTreeReaderSettings().use_query_condition_cache)
-        for (size_t i = 0; i < range_readers.size(); ++i)
-            if (const auto * step = range_readers[i].getPrewhereInfo(); step && step->query_condition_cache_attribution_boundary)
-                num_attributed_readers = i + 1;
-
     try
     {
-        read_result = first_reader.startReadingChain(max_rows, ranges, max_block_size_rows, columns_cache_readers);
+        read_result = first_reader.startReadingChain(max_rows, ranges, max_stripe_block_rows, columns_cache_readers);
         LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
     }
     catch (Exception & e)
@@ -360,18 +336,60 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         throw;
     }
 
-    std::optional<bool> should_continue_sampling;
+    /// Survivors per granule entering the first query-PREWHERE step, captured only when an earlier reader
+    /// (on-fly mutation, row-level policy) filtered rows before PREWHERE. When PREWHERE is the first reader it
+    /// stays unset and the raw rows read are used instead. Lets the granule stats count only what PREWHERE saw.
+    std::optional<std::vector<size_t>> rows_entering_prewhere;
+
+    /// Per-granule PREWHERE drop attribution. A granule counts as dropped by PREWHERE only when the user
+    /// predicate alone empties it. We can assert that only if no synthesized dynamic filter (a top-K threshold
+    /// filter, a join runtime filter) removed any of its rows: once a dynamic filter has thinned a granule, a
+    /// user step that empties the remnant is not emptying the granule -- most of it was already gone -- so the
+    /// drop cannot be attributed to PREWHERE (fail-closed). `dynamic_touched[g]` records that a dynamic filter
+    /// reduced g's survivors anywhere in the chain, including a top-K filter that runs before the first user
+    /// step; the final verdict also requires g to be empty after the last user step. Row-level policies, on-fly
+    /// mutations and lightweight deletes are not dynamic filters and do not contaminate: they run before PREWHERE
+    /// and are excluded via the `entering` snapshot instead.
+    std::vector<size_t> prewhere_prev_surviving; /// survivors per granule after the previously tracked step
+    std::vector<char> prewhere_dynamic_touched;  /// a synthesized dynamic filter removed rows from this granule
+    bool prewhere_tracking_started = false;
+
+    /// Fold one chain step into the per-granule attribution above. Called for every reader up to the last
+    /// query-PREWHERE reader; later readers cannot change PREWHERE's verdict. Tracking starts at the first
+    /// reader so a dynamic filter preceding the first user step (a leading top-K) is caught.
+    auto track_prewhere_granules = [&](size_t step_index)
+    {
+        if (!prewhere_granule_stats_enabled || step_index > last_query_prewhere_reader_index)
+            return;
+
+        auto surviving = read_result.survivingRowsPerGranule();
+        if (!prewhere_tracking_started)
+        {
+            /// Survivors before the first reader are the raw rows read.
+            prewhere_prev_surviving = read_result.raw_rows_per_granule;
+            prewhere_dynamic_touched.assign(surviving.size(), 0);
+            prewhere_tracking_started = true;
+        }
+
+        const auto * step = range_readers[step_index].getPrewhereInfo();
+        const bool is_dynamic_filter_step = step && step->type == PrewhereExprStep::Filter && step->is_synthesized_dynamic_filter;
+        /// A synthesized dynamic filter that removes any row of a granule contaminates it: the user predicate
+        /// alone can no longer be shown to empty that granule. User predicates, and the mutation/row-policy
+        /// readers, only reduce the honest survivor count and do not contaminate.
+        if (is_dynamic_filter_step)
+            for (size_t granule = 0; granule < surviving.size(); ++granule)
+                if (surviving[granule] < prewhere_prev_surviving[granule])
+                    prewhere_dynamic_touched[granule] = 1;
+
+        prewhere_prev_surviving = std::move(surviving);
+    };
+
+    /// Flushed after every step, whether it returned rows or not: what a reader loaded is read all the same.
+    first_reader.getReader()->registerReadRanges();
+
     if (read_result.num_rows != 0)
     {
         first_reader.getReader()->fillVirtualColumns(read_result.columns, read_result.num_rows);
-
-        /// Record the statistics before `readPatches`, which fills the columns missing on disk.
-        if (dataflow_cache_update_cb)
-            dataflow_cache_update_cb(
-                toColumnsWithTypeAndName(read_result.columns, first_reader.getReader()->getColumnsToRead()),
-                first_reader.getReader()->getPartiallyReadColumns(),
-                read_result.num_bytes_read,
-                should_continue_sampling);
 
         readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
         executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, previous_steps_columns.front(), read_result.num_rows);
@@ -379,23 +397,17 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         executePrewhereActions(first_reader, read_result, {}, range_readers.size() == 1, last_reader_evaluating_defaults > 0);
         addPatchVirtuals(read_result, first_reader.getSampleBlock());
 
-        if (num_attributed_readers != 0)
-            read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
+        track_prewhere_granules(0);
     }
-
-    /// Survivors per granule at the first query-PREWHERE reader's input, captured only when an earlier reader
-    /// (on-fly mutation, row-level policy) filtered rows before PREWHERE. When PREWHERE is the first reader it
-    /// stays unset and the raw rows read are used instead. Lets the granule stats count only what PREWHERE saw.
-    std::optional<std::vector<size_t>> rows_entering_prewhere;
 
     for (size_t i = 1; i < range_readers.size(); ++i)
     {
         if (prewhere_granule_stats_enabled && i == first_query_prewhere_reader_index)
             rows_entering_prewhere = read_result.survivingRowsPerGranule();
 
-        const size_t num_bytes_read_so_far = read_result.num_bytes_read;
         size_t num_read_rows = 0;
         auto columns = range_readers[i].continueReadingChain(read_result, num_read_rows);
+        range_readers[i].getReader()->registerReadRanges();
 
         /// Even if number of read rows is 0 we need to apply all steps to produce a block with correct structure.
         /// It's also needed to properly advancing streams in later steps.
@@ -412,44 +424,59 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
             if (num_read_rows == 0)
                 num_read_rows = read_result.num_rows;
 
-            if (dataflow_cache_update_cb)
-            {
-                chassert(read_result.num_bytes_read >= num_bytes_read_so_far);
-                // It is important that we call `recordInputColumns` here even if `should_continue_sampling`
-                // is already set to false, because we still need to update the total bytes seen.
-                dataflow_cache_update_cb(
-                    toColumnsWithTypeAndName(columns, range_readers[i].getReader()->getColumnsToRead()),
-                    range_readers[i].getReader()->getPartiallyReadColumns(),
-                    read_result.num_bytes_read - num_bytes_read_so_far,
-                    should_continue_sampling);
-            }
-
             executeActionsBeforePrewhere(read_result, columns, range_readers[i], previous_header, previous_steps_columns[i], num_read_rows);
             read_result.columns.insert(read_result.columns.end(), columns.begin(), columns.end());
         }
 
         executePrewhereActions(range_readers[i], read_result, previous_header, i + 1 == range_readers.size(), i < last_reader_evaluating_defaults);
 
-        if (i < num_attributed_readers)
-            read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
+        track_prewhere_granules(i);
     }
 
     applyPatchesAfterReader(read_result, range_readers.size() - 1);
 
-    /// Account the granules this block read and dropped by PREWHERE. `survivingRowsPerGranule` holds the
-    /// final survivor count of each granule, and `entering` the rows that reached PREWHERE (survivors at its
-    /// input, or the raw rows read when PREWHERE is the first reader). A granule is read by PREWHERE only when
-    /// `entering > 0`, so marks pruned before PREWHERE and granules emptied by an earlier mutation/row-policy
-    /// filter are excluded. Feed them in mark order; a granule split across blocks is reassembled by
-    /// `feedPrewhereGranuleMark`.
+    /// Account the granules this block read and dropped by PREWHERE. For each granule, feed three flags to the
+    /// mark combiner: whether rows reached the user predicate (`read`), whether any survived it (`survived`),
+    /// and whether a synthesized dynamic filter removed rows from it (`contaminated`). `read` is `entering > 0`
+    /// -- the survivors reaching the first query-PREWHERE reader, or the raw rows read when PREWHERE is first --
+    /// so marks pruned before PREWHERE and granules emptied by an earlier mutation/row-policy filter are not
+    /// read. A granule is counted as dropped only when it was read, nothing survived the last user step
+    /// (`prewhere_prev_surviving == 0`, measured before any later dynamic filter), and no dynamic filter
+    /// contaminated it. We also feed granules that a dynamic filter emptied before the user step (`read` false
+    /// but `contaminated` true): they carry the contamination to the mark without being counted as read, which
+    /// matters when another fragment of the same granule was cleanly emptied by the user predicate. Feeding is
+    /// in mark order; `feedPrewhereGranuleMark` OR-s the flags of a granule split across blocks.
+    /// A granule whose rest was skipped unread (see below) is `contaminated` too.
     if (prewhere_granule_stats_enabled)
     {
-        const auto & entering = rows_entering_prewhere.has_value() ? *rows_entering_prewhere : read_result.raw_rows_per_granule;
-        const auto surviving_rows_per_granule = read_result.survivingRowsPerGranule();
-        read_result.forEachGranuleMark(entering, surviving_rows_per_granule, [this](size_t mark, size_t surviving_rows)
+        /// The rest of the pending granule was skipped unread (`canSkipMark`, e.g. by the top-K threshold), so the
+        /// user predicate did not reject the whole granule. This block may read no rows at all, so check it here.
+        if (prewhere_pending_mark && read_result.in_progress_start_mark == prewhere_pending_mark
+            && !read_result.raw_rows_per_granule.empty() && read_result.raw_rows_per_granule.front() == 0)
+            prewhere_pending_contaminated = true;
+
+        /// Feed this block's granules only when tracking ran (it does whenever any row reached PREWHERE in this
+        /// block). When it did not, the per-granule vectors are empty; a pending mark from an earlier block is
+        /// still finalized below once the cursor passes it.
+        if (prewhere_tracking_started)
         {
-            feedPrewhereGranuleMark(mark, surviving_rows > 0);
-        });
+            const auto & entering = rows_entering_prewhere.has_value() ? *rows_entering_prewhere : read_result.raw_rows_per_granule;
+
+            /// Visit a granule if it was read, or if a dynamic filter touched it (so its contamination reaches
+            /// the mark even when no row of this fragment reached the user predicate).
+            std::vector<size_t> visit(entering.size(), 0);
+            for (size_t granule = 0; granule < visit.size(); ++granule)
+                if (entering[granule] > 0 || prewhere_dynamic_touched[granule])
+                    visit[granule] = 1;
+
+            read_result.forEachGranuleMark(visit, [&](size_t mark, size_t granule)
+            {
+                const bool read = entering[granule] > 0;
+                const bool survived = read && prewhere_prev_surviving[granule] > 0;
+                const bool contaminated = prewhere_dynamic_touched[granule] != 0;
+                feedPrewhereGranuleMark(mark, read, survived, contaminated);
+            });
+        }
 
         /// Finalize the pending granule once the first reader's cursor has advanced past its mark, which
         /// proves it was read in full. Comparing the mark (not `numReadRowsInCurrentGranule() == 0`) is needed
@@ -464,14 +491,19 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     return read_result;
 }
 
-void MergeTreeReadersChain::feedPrewhereGranuleMark(size_t mark, bool survived)
+void MergeTreeReadersChain::feedPrewhereGranuleMark(size_t mark, bool was_read, bool survived, bool contaminated)
 {
     /// Marks arrive in non-decreasing order across the whole part read. The only repeat is the trailing
     /// granule of one block continuing as the leading granule of the next, so an equal mark means the same
-    /// granule split across blocks: combine the survivor flags instead of counting it twice.
+    /// granule split across blocks: combine the flags instead of counting it twice.
     if (prewhere_pending_mark && *prewhere_pending_mark == mark)
     {
-        prewhere_pending_mark_survived |= survived;
+        /// Count the granule as read the first time a fragment of it reached the user predicate.
+        if (was_read && !prewhere_pending_read)
+            ProfileEvents::increment(ProfileEvents::GranulesReadByPrewhereReaders);
+        prewhere_pending_read |= was_read;
+        prewhere_pending_survived |= survived;
+        prewhere_pending_contaminated |= contaminated;
         return;
     }
 
@@ -480,21 +512,29 @@ void MergeTreeReadersChain::feedPrewhereGranuleMark(size_t mark, bool survived)
         finalizeCompletedPrewhereGranule();
 
     prewhere_pending_mark = mark;
-    prewhere_pending_mark_survived = survived;
+    prewhere_pending_read = was_read;
+    prewhere_pending_survived = survived;
+    prewhere_pending_contaminated = contaminated;
 
-    /// Count the granule as read as soon as PREWHERE touches it, so an early-terminating query still
-    /// reports the granules it read; whether it is also dropped is decided once the granule is complete.
-    ProfileEvents::increment(ProfileEvents::GranulesReadByPrewhereReaders);
+    /// Count the granule as read as soon as PREWHERE touches it, so an early-terminating query still reports
+    /// the granules it read; whether it is also dropped is decided once the granule is complete. A fragment a
+    /// dynamic filter emptied before the user step (`was_read` false) does not count as read.
+    if (was_read)
+        ProfileEvents::increment(ProfileEvents::GranulesReadByPrewhereReaders);
 }
 
 void MergeTreeReadersChain::finalizeCompletedPrewhereGranule()
 {
-    /// The pending granule has been read in full. If no row survived, PREWHERE dropped it entirely.
-    if (!prewhere_pending_mark_survived)
+    /// The pending granule has been read in full. It was dropped by PREWHERE only if the user predicate read
+    /// it, rejected every surviving row, and no synthesized dynamic filter contaminated it (which would mean
+    /// the user predicate alone cannot be shown to empty the granule).
+    if (prewhere_pending_read && !prewhere_pending_survived && !prewhere_pending_contaminated)
         ProfileEvents::increment(ProfileEvents::GranulesSkippedByPrewhereReaders);
 
     prewhere_pending_mark.reset();
-    prewhere_pending_mark_survived = false;
+    prewhere_pending_read = false;
+    prewhere_pending_survived = false;
+    prewhere_pending_contaminated = false;
 }
 
 void MergeTreeReadersChain::executeActionsBeforePrewhere(

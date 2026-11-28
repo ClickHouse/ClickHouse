@@ -448,7 +448,7 @@ public:
     ~ProcessListEntry();
 
     QueryStatusPtr getQueryStatus() { return *it; }
-    QueryStatusPtr getQueryStatus() const { return *it; }
+    [[nodiscard]] QueryStatusPtr getQueryStatus() const { return *it; }
 };
 
 /** List of currently executing queries.

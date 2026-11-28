@@ -1,5 +1,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
+#include <base/arithmeticOverflow.h>
 #include <base/scope_guard.h>
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
@@ -18,6 +19,16 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_SETTING_VALUE;
+}
+
+namespace
+{
+
+/// The file offsets are rounded to the multiples of the block size (and to the lookahead groups of blocks)
+/// in many places. Bounding the block size keeps all of these computations far from wrapping around.
+constexpr size_t MAX_PAGE_CACHE_BLOCK_SIZE = 1ULL << 40;
+
 }
 
 CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
@@ -30,6 +41,10 @@ CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
     , in(std::move(in_)), read_until_position(file_size.value())
     , inner_read_until_position(read_until_position)
 {
+    if (settings.block_size == 0 || settings.block_size > MAX_PAGE_CACHE_BLOCK_SIZE)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value {} for `page_cache_block_size`: must be between 1 and {}", settings.block_size, MAX_PAGE_CACHE_BLOCK_SIZE);
+
     /// The working buffer is a page cache cell, an exact-size allocation: nothing past its end is readable.
     clearBufferPadding();
 }
@@ -162,10 +177,17 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
                     /// nontrivial seek or setReadUntilPosition call).
                     /// Use aligned groups of blocks (rather than sliding window) to work better
                     /// with distributed cache.
-                    size_t lookahead_bytes = block_size * std::max<size_t>(1, settings.lookahead_blocks);
+                    /// A huge `page_cache_lookahead_blocks` saturates to the whole file instead of wrapping around.
+                    size_t lookahead_bytes = 0;
+                    if (common::mulOverflow(block_size, std::max<size_t>(1, settings.lookahead_blocks), lookahead_bytes))
+                        lookahead_bytes = std::numeric_limits<size_t>::max();
+                    const size_t lookahead_group_start = cache_range.offset - cache_range.offset % lookahead_bytes;
+                    const size_t lookahead_group_end = lookahead_bytes > file_size.value() - lookahead_group_start
+                        ? file_size.value()
+                        : lookahead_group_start + lookahead_bytes;
                     size_t lookahead_block_end = std::min({
                         file_size.value(),
-                        (cache_range.offset / lookahead_bytes + 1) * lookahead_bytes,
+                        lookahead_group_end,
                         (read_until_position + block_size - 1) / block_size * block_size});
 
                     if (inner_read_until_position < cache_range.offset + cache_range.size ||

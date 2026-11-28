@@ -12,7 +12,6 @@ integration:
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -20,7 +19,7 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
 ProbeDeck は、ClickHouse サーバーの健全性を確認し、`system` テーブルを調査して SQL を実行するための iOS／iPadOS クライアントです。デバイスのネットワーク経由または SSH 踏み台サーバー経由で ClickHouse HTTP インターフェイスに接続でき、リレーサーバーは不要です。
 
 <div id="before-you-begin">
-  ## 始める前に
+  ## 始める前に {#before-you-begin}
 </div>
 
 * [App StoreからProbeDeckをインストールします](https://apps.apple.com/app/id6791261174)。
@@ -39,7 +38,7 @@ ProbeDeckが設定済みのメモリ制限の取得に使用する`system.server
 23.3以降が必要です。ログソースが使用不可の場合、ProbeDeckは該当するセクションを制限付きとして表示します。
 
 <div id="how-it-works">
-  ## 仕組み
+  ## 仕組み {#how-it-works}
 </div>
 
 1. ProbeDeck は ClickHouse の HTTP(S) エンドポイントに SQL リクエストを送信します。
@@ -47,9 +46,7 @@ ProbeDeckが設定済みのメモリ制限の取得に使用する`system.server
 3. アプリはデバイス上にクエリ結果と監視ビューを表示します。デバイスからエンドポイントへの直接経路がない場合は、SSH 踏み台サーバー経由で
    同じ HTTP(S) 接続を中継できます。
 
-<div id="connect-to-clickhouse-cloud">
-  ## ClickHouse Cloud への接続
-</div>
+## ClickHouse Cloud への接続 {#connect-to-clickhouse-cloud}
 
 <Steps>
   <Step title="サービスの接続情報を確認する" id="gather-cloud-details">
@@ -71,12 +68,16 @@ ProbeDeckが設定済みのメモリ制限の取得に使用する`system.server
     ClickHouse Cloud では、Cloud API およびクエリ API エンドポイントに対して、**API Keys** ページの組織レベルのキーを使用します。
     ProbeDeck の SQL 接続フローでは、これらのキーは使用しません。
 
-    <Image img="/images/integrations/sql-clients/probedeck-add-connection.png" size="sm" border alt="ClickHouse ユーザー名を使用し、ポート 8443 の HTTPS 向けに設定された ProbeDeck の接続フォーム" />
+    <div className="ch-image-sm">
+      <Frame>
+        ![ClickHouse ユーザー名を使用し、ポート 8443 の HTTPS 向けに設定された ProbeDeck の接続フォーム](/images/integrations/sql-clients/probedeck-add-connection.png)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="connect-to-self-hosted-clickhouse">
-  ## セルフホストの ClickHouse に接続する
+  ## セルフホストの ClickHouse に接続する {#connect-to-self-hosted-clickhouse}
 </div>
 
 <Steps>
@@ -102,7 +103,7 @@ ProbeDeckが設定済みのメモリ制限の取得に使用する`system.server
 </Steps>
 
 <div id="connect-through-an-ssh-bastion">
-  ## SSH 踏み台サーバー経由で接続する
+  ## SSH 踏み台サーバー経由で接続する {#connect-through-an-ssh-bastion}
 </div>
 
 接続フォームで **SSH Tunnel** を有効にし、以下を入力します。
@@ -116,7 +117,7 @@ ProbeDeck は、踏み台サーバーから **Server** セクションで指定�
 フィンガープリントを受け入れる前に、サーバー管理者から取得した値と照合してください。
 
 <div id="configure-authentication-and-tls">
-  ## 認証と TLS を設定する
+  ## 認証と TLS を設定する {#configure-authentication-and-tls}
 </div>
 
 ProbeDeck は、データベースのユーザー名とパスワードを `X-ClickHouse-User` および
@@ -132,9 +133,7 @@ ProbeDeck は SHA-256 フィンガープリント、発行者、subject、有効
 
 ProbeDeck は、接続のシークレットとインポートした鍵素材をデバイス上の iOS Keychain に保存します。
 
-<div id="monitor-clickhouse">
-  ## ClickHouse を監視する
-</div>
+## ClickHouse を監視する {#monitor-clickhouse}
 
 保存した接続を開き、**監視**を選択します。ダッシュボードには、次のログソースの概要が表示されます。
 
@@ -147,15 +146,21 @@ ProbeDeck は、接続のシークレットとインポートした鍵素材を�
 | メモリとサーバーメトリクス              | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
 | クエリレートとディスクレートの履歴          | `system.metric_log`, `system.asynchronous_metric_log`                     |
 
-<Image img="/images/integrations/sql-clients/probedeck-dashboard.png" size="sm" border alt="実行中のクエリ、レプリケーション、ディスク、パーツ、ミューテーション、マージ、クエリレート、メモリを表示する ProbeDeck の監視ダッシュボード" />
+<div className="ch-image-sm">
+  <Frame>
+    ![実行中のクエリ、レプリケーション、ディスク、パーツ、ミューテーション、マージ、クエリレート、メモリを表示する ProbeDeck の監視ダッシュボード](/images/integrations/sql-clients/probedeck-dashboard.png)
+  </Frame>
+</div>
 
 **実行中のクエリ**をタップすると、アクティブなクエリを経過時間順にソートし、メモリ使用量と読み取り行数を確認できます。
 
-<Image img="/images/integrations/sql-clients/probedeck-running-queries.png" size="sm" border alt="経過時間順にソートされた ProbeDeck の実行中クエリ一覧" />
-
-<div id="query-the-uk-property-price-dataset">
-  ## UK property price dataset をクエリする
+<div className="ch-image-sm">
+  <Frame>
+    ![経過時間順にソートされた ProbeDeck の実行中のクエリ一覧](/images/integrations/sql-clients/probedeck-running-queries.png)
+  </Frame>
 </div>
+
+## UK property price dataset をクエリする {#query-the-uk-property-price-dataset}
 
 この例では、[UK property price dataset](/ja/get-started/sample-datasets/uk-price-paid)を使用します。
 データセットを `uk_price_paid` にロードしたら、次の操作を行います。
@@ -178,7 +183,7 @@ LIMIT 10
 結果には、取引件数と平均価格を含む10の町が表示されます。
 
 <div id="known-limits">
-  ## 既知の制限事項
+  ## 既知の制限事項 {#known-limits}
 </div>
 
 * ProbeDeck は iOS および iPadOS 17.0 以降で動作します。
@@ -193,7 +198,7 @@ LIMIT 10
   書き込みおよび DDL ステートメント、その他の運用操作には ProbeDeck Pro が必要です。
 
 <div id="troubleshooting">
-  ## トラブルシューティング
+  ## トラブルシューティング {#troubleshooting}
 </div>
 
 <Accordion title="認証に失敗しました">
@@ -217,9 +222,7 @@ LIMIT 10
   エンドポイントや TLS インターセプト経路を示している可能性があります。
 </Accordion>
 
-<div id="next-steps">
-  ## 次のステップ
-</div>
+## 次のステップ {#next-steps}
 
 * 製品固有の詳細については、[ProbeDeck のウェブサイト](https://probedeck.app)を参照してください。
- * サーバー設定については、[ClickHouse HTTP インターフェイスのドキュメント](/ja/concepts/features/interfaces/http)を参照してください。
+* サーバー構成については、[ClickHouse HTTP インターフェイスのドキュメント](/ja/concepts/features/interfaces/http)を参照してください。

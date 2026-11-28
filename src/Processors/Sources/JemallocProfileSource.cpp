@@ -22,7 +22,7 @@
 #    include <QueryPipeline/QueryPipeline.h>
 #    include <Common/Hex.h>
 #    include <Common/FramePointers.h>
-#    include <Common/MemoryTrackerSwitcher.h>
+#    include <Common/ServerOwnedMemory.h>
 #    include <Common/StackTrace.h>
 #    include <Common/StringUtils.h>
 #    include <Common/filesystemHelpers.h>
@@ -202,7 +202,7 @@ struct SymbolizationLRUCache
     Value put(const Key & key, VectorWithMemoryTracking<std::string> value)
     {
         /// The cache is shared by all queries, so its entries are charged to the global tracker only.
-        MemoryTrackerSwitcher switcher(&total_memory_tracker);
+        ServerOwnedMemoryScope server_owned;
         auto shared = std::make_shared<const VectorWithMemoryTracking<std::string>>(std::move(value));
         std::lock_guard lock(mutex);
         auto it = index.find(key);

@@ -10,45 +10,49 @@ integration:
    - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/fr/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
 [Dot](https://www.getdot.ai/) est votre **analyste de données IA**.
-Il se connecte directement à ClickHouse pour vous permettre de poser des questions sur vos données en langage naturel, d’explorer les données, de tester des hypothèses et de comprendre le pourquoi — directement dans Slack, Microsoft Teams, ChatGPT ou l’interface Web native.
+Il se connecte directement à ClickHouse pour vous permettre de poser des questions sur vos données en langage naturel, d’explorer les données, de tester des hypothèses et de comprendre le pourquoi — directement dans Slack, Microsoft Teams, ChatGPT ou l’UI Web native.
 
 <div id="pre-requisites">
-  ## Prérequis
+  ## Prérequis {#pre-requisites}
 </div>
 
 * Une base de données ClickHouse, autohébergée ou sur [ClickHouse Cloud](https://clickhouse.com/cloud)
 * Un compte [Dot](https://www.getdot.ai/)  
 
-<div id="connecting-dot-to-clickhouse">
-  ## Connecter Dot à ClickHouse
-</div>
+## Connecter Dot à ClickHouse {#connecting-dot-to-clickhouse}
 
-<Image size="md" img="/images/integrations/data-visualization/dot_01.webp" alt="Configuration de la connexion ClickHouse dans Dot (mode clair)" border />
+<div className="ch-image-md">
+  <Frame>
+    ![Configuration de la connexion ClickHouse dans Dot (mode clair)](/images/integrations/data-visualization/dot_01.webp)
+  </Frame>
+</div>
 
 <br />
 
 1. Dans l’UI de Dot, accédez à **Settings → Connections**.
 2. Cliquez sur **Add new connection** et sélectionnez **ClickHouse**.
-3. Renseignez vos informations de connexion :
-   * **Host** : nom d’hôte du serveur ClickHouse ou endpoint ClickHouse Cloud
-   * **Port** : `8443` (HTTPS ClickHouse Cloud) ou `8123` (HTTP auto-hébergé)
-   * **Username / Password** : utilisateur disposant d’un accès en lecture
-   * **Database** : définissez éventuellement un schéma par défaut
+3. Renseignez vos informations de connexion :
+   * **Host** : nom d’hôte du serveur ClickHouse ou endpoint ClickHouse Cloud
+   * **Port** : `8443` (HTTPS ClickHouse Cloud) ou `8123` (HTTP auto-hébergé)
+   * **Username / Password** : utilisateur disposant d’un accès en lecture
+   * **Base de données** : définissez éventuellement un schéma par défaut
 4. Cliquez sur **Connect**.
 
-<Image img="/images/integrations/data-visualization/dot_02.webp" alt="Connexion à ClickHouse" size="sm" />
+<div className="ch-image-sm">
+  <Frame>
+    ![Connexion à ClickHouse](/images/integrations/data-visualization/dot_02.webp)
+  </Frame>
+</div>
 
-Dot utilise le **query-pushdown** : ClickHouse effectue les calculs intensifs à grande échelle, tandis que Dot garantit des résultats exacts et fiables.
+Dot utilise le **query-pushdown** : ClickHouse effectue les calculs intensifs à grande échelle, tandis que Dot garantit des résultats exacts et fiables.
 
 <div id="highlights">
-  ## Points forts
+  ## Points forts {#highlights}
 </div>
 
 Dot rend les données accessibles grâce à la conversation :
@@ -60,7 +64,7 @@ Dot rend les données accessibles grâce à la conversation :
 * **Évolutif** : basé sur le query-pushdown, il associe l’intelligence de Dot à la rapidité de ClickHouse.
 
 <div id="security">
-  ## Sécurité et gouvernance
+  ## Sécurité et gouvernance {#security}
 </div>
 
 Dot est prêt pour les environnements d’entreprise :
@@ -72,7 +76,7 @@ Dot est prêt pour les environnements d’entreprise :
 * **Conformité** : certifié SOC 2 Type I
 
 <div id="additional-resources">
-  ## Ressources supplémentaires
+  ## Ressources supplémentaires {#additional-resources}
 </div>
 
 * Site de Dot : [https://www.getdot.ai/](https://www.getdot.ai/)

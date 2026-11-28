@@ -66,7 +66,7 @@ h3GetResolution(h3index)
 **Valores devueltos**
 
 * Resolución del índice. Rango: `[0, 15]`. [UInt8](/es/reference/data-types/int-uint).
-* Si el índice no es válido, la función devuelve un valor aleatorio. Use [h3IsValid](#h3isvalid) para verificar el índice. [UInt8](/es/reference/data-types/int-uint).
+* Si el índice no es válido, la función lanza una excepción de forma predeterminada, o devuelve `0` cuando [`functions_h3_default_if_invalid`](/es/reference/settings/session-settings/other#functions_h3_default_if_invalid) está habilitado. Use [h3IsValid](#h3isvalid) para verificar el índice. [UInt8](/es/reference/data-types/int-uint).
 
 **Ejemplo**
 
@@ -650,7 +650,8 @@ h3GetResolution(index)
 
 **Valor devuelto**
 
-* Resolución del índice. Intervalo: `[0, 15]`. [UInt8](/es/reference/data-types/int-uint).
+* Resolución del índice. Rango: `[0, 15]`. [UInt8](/es/reference/data-types/int-uint).
+* De forma predeterminada, los índices no válidos generan una excepción, o devuelven `0` si `functions_h3_default_if_invalid` está habilitado.
 
 **Ejemplo**
 

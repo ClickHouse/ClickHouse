@@ -9,13 +9,12 @@ doc_type: 'guide'
 keywords: ['クエリ最適化', 'クエリのボトルネック', 'パフォーマンス', 'ベンチマーク']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import NYCTaxiExampleDataset from '/snippets/ja/_nyc_taxi_example_dataset.mdx';
 
 一度に変更するクエリの箇所を1つに絞り、安定したベースラインと結果を比較することで、クエリ最適化が容易になります。このガイドでは、クエリを段階的に簡略化し、実行ごとの差分から所要時間に最も大きく影響する操作を特定する方法を説明します。その後、最適化を選択する前に、疑わしいボトルネックを検証できます。
 
 <div id="before-you-begin">
-  ## 始める前に
+  ## 始める前に {#before-you-begin}
 </div>
 
 まず、調査対象となる繰り返し発生する低速クエリのパターンを用意します。まだ特定していない場合は、[低速クエリの診断](/ja/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries)で手順を確認してください。
@@ -29,7 +28,7 @@ import NYCTaxiExampleDataset from '/snippets/ja/_nyc_taxi_example_dataset.mdx';
 サンプルテーブルでは`ORDER BY ()`を使用しているため、日付フィルターで読み取り時に順序キーを利用してデータを除外することはできません。この例はパフォーマンス目標としてではなく、比較手法の練習に使用してください。
 
 <div id="how-it-works">
-  ## 仕組み
+  ## 仕組み {#how-it-works}
 </div>
 
 クエリを段階的に簡略化することで、処理ステージを削除する前後の実行時間を比較できます。その差から、スキャンとフィルタリング、グループ化、集計計算、あるいはソートや出力フォーマットなどの後続処理のどれを調査すべきか判断できます。
@@ -44,19 +43,17 @@ import NYCTaxiExampleDataset from '/snippets/ja/_nyc_taxi_example_dataset.mdx';
   これらの差は診断のための推定値であり、ClickHouse の実行ステージを正確に測定したものではありません。クエリを変更すると、実行計画、読み取られるカラム、ステージ間で受け渡されるデータが変わる可能性があります。結果から仮説を立て、クエリログと [`EXPLAIN`](/ja/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) で検証してください。
 </Note>
 
-<div id="establish-a-repeatable-baseline">
-  ## 再現可能なベースラインを確立する
-</div>
+## 再現可能なベースラインを確立する {#establish-a-repeatable-baseline}
 
 測定結果を比較可能にするため、以下を実践してください。
 
 * すべての比較で同じデータと時間範囲を使用できるよう、`FROM`、`JOIN`、`PREWHERE`、`WHERE` 句は変更しないでください。
 * 同程度のシステム負荷の下で、クエリの各バージョンを複数回実行します。
 * キャッシュ条件を統一します。測定を記録する前に各バージョンのクエリを実行するか、以下に示すキャッシュを無効にしてください。キャッシュありの実行とキャッシュなしの実行を比較しないでください。
-* 最速または最遅の結果に頼るのではなく、ウォームアップ実行後に繰り返し実行した結果の中央値など、代表的な所要時間を記録します。
+* 最速または最遅の結果に頼るのではなく、ウォームアップ実行後に繰り返し実行した結果の中央値など、代表的な実行時間を記録します。
 * パフォーマンスの差を特定の変更に結び付けられるよう、一度に変更する変数は1つだけにします。
 
-キャッシュなしで診断比較を行う場合は、リモートデータ用のClickHouseファイルシステムキャッシュ、クエリキャッシュ、クエリ条件キャッシュを無効にします。また、実行Cの`count`が、比較対象のscanを回避する最適化済みの実行計画を使用しないよう、暗黙的なプロジェクションも無効にします。
+キャッシュなしで診断比較を行う場合は、リモートデータ用のClickHouseファイルシステムキャッシュ、クエリキャッシュ、クエリ条件キャッシュを無効にします。また、実行Cの`count`が、比較対象のスキャンを回避する最適化済みの実行計画を使用しないよう、暗黙的なプロジェクションも無効にします。
 
 ```sql
 SET enable_filesystem_cache = 0;
@@ -71,7 +68,11 @@ SET optimize_use_implicit_projections = 0;
 
 このワークフローでは、制御された条件でのクエリ実行と、クエリログから取得した測定値を組み合わせます。
 
-<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="クエリログ内の候補クエリを特定し、変更を分離してテストするためのワークフロー" />
+<div className="ch-image-lg">
+  <Frame>
+    ![クエリログ内の候補クエリを特定し、変更を分離してテストするためのワークフロー](/images/guides/best-practices/query_optimization_diagram_1.webp)
+  </Frame>
+</div>
 
 各実行について、次のように測定値を収集します。
 
@@ -131,7 +132,7 @@ SET optimize_use_implicit_projections = 0;
 </Tabs>
 
 <div id="run-progressively-simpler-queries">
-  ## クエリを段階的に単純化して実行する
+  ## クエリを段階的に単純化して実行する {#run-progressively-simpler-queries}
 </div>
 
 3 種類の比較をすべて示すため、この例ではグループ化を含む[日付範囲ワークロード](/ja/guides/clickhouse/performance-and-monitoring/query-optimization-example#date-range-aggregation)を使用します。この手順例に従わずに、別のクエリにこの方法を適用することもできます。クエリに `GROUP BY` が含まれない場合は、以下で説明するように実行 B をスキップしてください。
@@ -196,7 +197,7 @@ SET optimize_use_implicit_projections = 0;
 </Steps>
 
 <div id="interpret-the-differences">
-  ## 差異を解釈する
+  ## 差異を解釈する {#interpret-the-differences}
 </div>
 
 個別の 2 回の計測値を差し引くのではなく、繰り返し実行した際の代表的な実行時間を比較します。大きく一貫した差異は、次に調査すべき箇所を示します。
@@ -209,7 +210,7 @@ SET optimize_use_implicit_projections = 0;
 | 3 回の実行すべてで実行時間がほぼ同じ | レイテンシの原因が 3 つのバージョンすべてに共通しているか、簡略化によって実行計画が変わった可能性があります | 各実行の `read_rows`、`read_bytes`、ピークメモリを比較します。これらも同程度であれば、実行 C に残る操作を調査します。そうでない場合は、実行計画の差異を比較します |
 
 <div id="compare-rows-read-with-count-result">
-  ### 読み取った行数を count の結果と比較する
+  ### 読み取った行数を count の結果と比較する {#compare-rows-read-with-count-result}
 </div>
 
 実行 C の `read_rows` を、その `count` の戻り値と比較します。たとえば、`read_rows` が 1 億で `count` が 100 万を返した場合、ClickHouse はカウントされた 1 行あたり約 100 行のソース行をスキャンしたことになります。これは、フィルターによってテーブルから読み取られた行の大半が除外されたことを示しますが、その理由はわかりません。この比率は、単純な単一テーブルスキャンを対象としています。複数のデータソースまたはプロジェクションを含むクエリでは、代わりに実行計画を用いて `read_rows` を解釈してください。
@@ -224,7 +225,7 @@ SET use_skip_indexes_on_data_read = 0;
 次に、[`EXPLAIN indexes = 1`](/ja/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement) を使用して、ClickHouse が使用した索引と、各索引によって除外されたパーツおよびグラニュールの数を確認します。ClickHouse が想定より多くのグラニュールを選択した場合は、フィルターがテーブルのソートキーに合致しているか、パーティションプルーニングやデータスキッピングインデックスによってさらに多くのグラニュールを除外できるかを確認してください。プランに `Indexes` セクションがない場合、そのクエリについて `EXPLAIN` は索引プルーニングを報告していません。これに対し、テーブル全体を対象とする分析クエリでは、テーブルの大部分を読み取ることが想定されます。
 
 <div id="validate-the-suspected-bottleneck">
-  ## 想定されるボトルネックを検証する
+  ## 想定されるボトルネックを検証する {#validate-the-suspected-bottleneck}
 </div>
 
 比較の結果、ボトルネックの可能性が示された場合は、スキーマやクエリを変更する前に検証します。想定されるレイテンシの原因に応じた根拠を用いてください。
@@ -236,8 +237,6 @@ SET use_skip_indexes_on_data_read = 0;
 
 `EXPLAIN` が返す索引情報の詳細については、[低速クエリ診断ガイド](/ja/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement)を参照してください。対象を絞った変更を 1 つ適用したら、同じ条件下で実行 A、B、C を繰り返します。変更によって意図した処理が削減され、ボトルネックが別の箇所に移っていないことを確認してください。
 
-<div id="next-steps">
-  ## 次のステップ
-</div>
+## 次のステップ {#next-steps}
 
-[最適化アプローチ](/ja/guides/clickhouse/performance-and-monitoring/optimization-approaches)に進み、疑われるボトルネックに対応する、対象を絞った1つ以上の変更を特定します。
+続いて[最適化のアプローチ](/ja/guides/clickhouse/performance-and-monitoring/optimization-approaches)を参照し、疑われるボトルネックに応じて、的を絞った改善策を 1 つ以上選択してください。

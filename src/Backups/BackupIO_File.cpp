@@ -131,7 +131,11 @@ UInt64 BackupWriterFile::getFileSize(const String & file_name)
 
 std::unique_ptr<ReadBuffer> BackupWriterFile::readFile(const String & file_name, size_t expected_file_size)
 {
-    return createReadBufferFromFileBase(root_path / file_name, read_settings.adjustBufferSize(expected_file_size));
+    /// This reads back a file this process just wrote, so it must observe the filesystem
+    /// rather than a read cache that may still hold the previous contents at the same path.
+    auto settings = read_settings.adjustBufferSize(expected_file_size);
+    settings.disableCaches();
+    return createReadBufferFromFileBase(root_path / file_name, settings);
 }
 
 std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_name)
@@ -164,6 +168,16 @@ void BackupWriterFile::removeEmptyDirectories()
     removeEmptyDirectoriesImpl(root_path);
 }
 
+void BackupWriterFile::removeEmptyRootDirectory()
+{
+    if (root_path.empty())
+        return;
+    const fs::path path = root_path.has_filename() ? root_path : root_path.parent_path();
+    const auto status = fs::symlink_status(path);
+    if (fs::is_directory(status) && fs::is_empty(path))
+        (void)fs::remove(path);
+}
+
 void BackupWriterFile::removeEmptyDirectoriesImpl(const fs::path & current_dir)
 {
     checkStackSize();
@@ -184,7 +198,7 @@ void BackupWriterFile::removeEmptyDirectoriesImpl(const fs::path & current_dir)
         (void)fs::remove(current_dir);
 }
 
-void BackupWriterFile::copyFileFromDisk(
+bool BackupWriterFile::copyFileFromDiskNatively(
     const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// std::filesystem::copy() can copy from the filesystem only, and can't do throttling or copy a part of the file.
@@ -208,14 +222,13 @@ void BackupWriterFile::copyFileFromDisk(
                     auto abs_dest_path = root_path / path_in_backup;
                     fs::create_directories(abs_dest_path.parent_path());
                     fs::copy(abs_source_path, abs_dest_path, fs::copy_options::overwrite_existing);
-                    return; /// copied!
+                    return true;
                 }
             }
         }
     }
 
-    /// Fallback to copy through buffers.
-    BackupWriterDefault::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
+    return false;
 }
 
 void BackupWriterFile::copyFile(const String & destination, const String & source, size_t /*size*/)

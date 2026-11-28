@@ -11,15 +11,15 @@ class IRemoteFileMetadata
 {
 public:
     virtual ~IRemoteFileMetadata() = default;
-    virtual String getName() const = 0; //class name
+    [[nodiscard]] virtual String getName() const = 0; //class name
 
     // deserialize
     virtual bool fromString(const String & buf) = 0;
     // serialize
-    virtual String toString() const = 0;
+    [[nodiscard]] virtual String toString() const = 0;
 
     // Used for comparing two file metadatas are the same or not.
-    virtual String getVersion() const = 0;
+    [[nodiscard]] virtual String getVersion() const = 0;
 
     String remote_path;
     size_t file_size = 0;

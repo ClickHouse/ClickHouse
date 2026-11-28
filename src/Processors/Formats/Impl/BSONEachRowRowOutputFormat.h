@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/BSONTypes.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowOutputFormat.h>
@@ -61,9 +61,7 @@ private:
         const IColumn & column,
         const DataTypePtr & data_type,
         size_t row_num,
-        const String & name,
-        const String & path,
-        UnorderedMapWithMemoryTracking<String, size_t> & nested_document_sizes);
+        const String & name);
 
     /// Count field size in bytes that we will get after serialization in BSON format.
     /// It's needed to calculate document size before actual serialization,
@@ -72,12 +70,15 @@ private:
         const IColumn & column,
         const DataTypePtr & data_type,
         size_t row_num,
-        const String & name,
-        const String & path,
-        UnorderedMapWithMemoryTracking<String, size_t> & nested_document_sizes);
+        const String & name);
 
     NamesAndTypes fields;
     FormatSettings settings;
+
+    /// Sizes of the nested documents (`Array`, `Tuple`, `Map`) of the current row in the order they are written:
+    /// `countBSONFieldSize` fills them, `serializeField` consumes them.
+    VectorWithMemoryTracking<size_t> nested_document_sizes;
+    size_t next_nested_document = 0;
 };
 
 }

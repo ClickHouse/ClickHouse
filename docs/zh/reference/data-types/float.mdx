@@ -54,13 +54,9 @@ ClickHouse 中的 Float 类型有以下别名：
 
 创建表时，可以为浮点数指定数值参数 (例如 `FLOAT(12)`、`FLOAT(15, 22)`、`DOUBLE(12)`、`DOUBLE(4, 18)`) ，但 ClickHouse 会忽略这些参数。
 
-<div id="using-floating-point-numbers">
-  ## 使用浮点数
-</div>
+## 使用浮点数 {#using-floating-point-numbers}
 
 * 浮点数运算可能会产生舍入误差。
-
-{/* */}
 
 ```sql
 SELECT 1 - 0.9
@@ -71,18 +67,14 @@ SELECT 1 - 0.9
 ```
 
 * 计算结果取决于计算方式 (即计算机系统的处理器类型和架构) 。
-* 浮点计算可能会产生无穷大 (`Inf`) 和“非数” (`NaN`) 之类的数值。处理计算结果时应考虑到这一点。
+* 浮点计算可能会产生无穷大 (`Inf`) 和&quot;非数&quot; (`NaN`) 之类的数值。处理计算结果时应考虑到这一点。
 * 从文本中解析浮点数时，结果可能不是机器可表示的最接近值。
 
-<div id="nan-and-inf">
-  ## NaN 和 Inf
-</div>
+## NaN 和 Inf {#nan-and-inf}
 
 不同于标准 SQL，ClickHouse 支持以下几类浮点数：
 
 * `Inf` – 无穷大。
-
-{/* */}
 
 ```sql
 SELECT 0.5 / 0
@@ -94,8 +86,6 @@ SELECT 0.5 / 0
 
 * `-Inf` — 负无穷大。
 
-{/* */}
-
 ```sql
 SELECT -0.5 / 0
 
@@ -105,8 +95,6 @@ SELECT -0.5 / 0
 ```
 
 * `NaN` — 非数值。
-
-{/* */}
 
 ```sql
 SELECT 0 / 0
@@ -118,9 +106,7 @@ SELECT 0 / 0
 
 有关 `NaN` 排序规则，请参见[ORDER BY 子句](/zh/reference/statements/select/order-by)一节。
 
-<div id="nan-values-in-set-semantics">
-  ## 集合语义中的非数字值
-</div>
+## 集合语义中的非数字值 {#nan-values-in-set-semantics}
 
 IEEE 754 标准规定，`NaN` 在标量比较中满足 `NaN = NaN` 返回 `false`。
 ClickHouse 对 `=` 运算符也遵循这一规则。
@@ -162,9 +148,7 @@ FROM (SELECT arrayJoin([0./0., nan, log(-1.)]) AS x);
 
 同样的方法也适用于 `DISTINCT`、`GROUP BY` 和 `JOIN` 的键。
 
-<div id="bfloat16">
-  ## BFloat16
-</div>
+## BFloat16 {#bfloat16}
 
 `BFloat16` 是一种 16 位浮点数据类型，由 8 位指数、符号位和 7 位尾数组成。
 它适用于机器学习和 AI 应用。

@@ -13,32 +13,23 @@ AdaptiveTopKPruning::ProducerBins AdaptiveTopKPruning::finalizeProducerCounts(Ad
     for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
     {
         const UInt16 * bucket_bins = producer.counts.bins.get() + bucket * adaptive_count_bins_per_bucket;
-        producer.bucket_maxima[bucket] = *std::max_element(bucket_bins, bucket_bins + adaptive_count_bins_per_bucket);
+        producer.max_bin_per_bucket[bucket] = *std::max_element(bucket_bins, bucket_bins + adaptive_count_bins_per_bucket);
     }
     return producer;
 }
 
-bool AdaptiveTopKPruning::prepare(size_t expected_producers)
+void AdaptiveTopKPruning::orderBuckets()
 {
-    if (producer_bins.size() + merge_counted_tables.size() != expected_producers)
-        return false;
-
-    /// A bucket's largest bin is at most the sum of the producers' largest bins in it, which orders the buckets.
-    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> priorities{};
-    for (const auto & producer : producer_bins)
-        for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
-            priorities[bucket] += producer.bucket_maxima[bucket];
     std::iota(bucket_order.begin(), bucket_order.end(), 0);
-    std::ranges::stable_sort(bucket_order, [&](UInt8 lhs, UInt8 rhs) { return priorities[lhs] > priorities[rhs]; });
-    return true;
+    std::ranges::stable_sort(bucket_order, [&](UInt8 lhs, UInt8 rhs) { return count_bound_per_bucket[lhs] > count_bound_per_bucket[rhs]; });
 }
 
 AdaptiveTopKPruning::BucketBounds AdaptiveTopKPruning::boundsForBucket(size_t bucket) const
 {
     BucketBounds bounds{};
-    for (const auto & producer : producer_bins)
+    for (const auto & counts : producer_bins)
     {
-        const UInt16 * bins = producer.counts.bins.get() + bucket * adaptive_count_bins_per_bucket;
+        const UInt16 * bins = counts.bins.get() + bucket * adaptive_count_bins_per_bucket;
         for (size_t bin = 0; bin < adaptive_count_bins_per_bucket; ++bin)
         {
             if (bins[bin] == std::numeric_limits<UInt16>::max())

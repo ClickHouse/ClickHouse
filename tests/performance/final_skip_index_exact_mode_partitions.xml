@@ -1,0 +1,33 @@
+<!-- `use_skip_indexes_if_final_exact_mode` with a selective skip index on a table whose partition key is in the
+     primary key, so FINAL merges each partition separately. The selected granules are spread over the key range,
+     and every part covers the whole key range. -->
+<test>
+    <create_query>
+        CREATE TABLE final_skip_index_partitions (k UInt64, p UInt8, ver UInt64, v UInt64, s String, INDEX idx_v v TYPE minmax GRANULARITY 1)
+        ENGINE = ReplacingMergeTree(ver)
+        PARTITION BY p
+        ORDER BY (k, p)
+        SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES final_skip_index_partitions</fill_query>
+
+    <!-- 64 partitions of one part each, each part covers the whole key range. -->
+    <fill_query>
+        INSERT INTO final_skip_index_partitions
+        SELECT (number % 500000) * 64 + intDiv(number, 500000), intDiv(number, 500000), 1, number, toString(cityHash64(number))
+        FROM numbers(32000000)
+        SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 500000, max_insert_block_size = 500000,
+            min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0
+    </fill_query>
+
+    <fill_query>
+        SELECT throwIf(count() != 64 OR uniqExact(partition_id) != 64 OR max(min_key) >= 64 OR min(max_key) &lt; 32000000 - 64,
+            'final_skip_index_exact_mode_partitions: expected 64 partitions of one part each, each covering the whole key range')
+        FROM (SELECT _part, any(_partition_id) AS partition_id, min(k) AS min_key, max(k) AS max_key FROM final_skip_index_partitions GROUP BY _part)
+    </fill_query>
+
+    <query>SELECT count(), sum(length(s)) FROM final_skip_index_partitions FINAL WHERE v IN (37, 520870, 1041703, 1562537, 2083370, 2604203, 3125037, 3645870, 4166703, 4687537, 5208370, 5729203, 6250037, 6770870, 7291703, 7812537, 8333370, 8854203, 9375037, 9895870, 10416703, 10937537, 11458370, 11979203) SETTINGS use_skip_indexes = 1, use_skip_indexes_if_final = 1, use_skip_indexes_if_final_exact_mode = 1, use_query_condition_cache = 0, max_threads = 8</query>
+
+    <drop_query>DROP TABLE IF EXISTS final_skip_index_partitions</drop_query>
+</test>

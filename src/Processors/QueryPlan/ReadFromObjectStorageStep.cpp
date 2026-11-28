@@ -32,6 +32,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 
@@ -60,6 +61,8 @@ namespace Setting
     extern const SettingsBool azure_validate_etag_on_read;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsInt64 delta_lake_snapshot_start_version;
+    extern const SettingsInt64 delta_lake_snapshot_end_version;
     extern const SettingsUInt64 read_in_order_two_level_merge_threshold;
     extern const SettingsBool compile_sort_description;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
@@ -138,27 +141,16 @@ bool ReadFromObjectStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAn
     if (!boost::iequals(configuration->format, "Parquet"))
         return false;
 
-    /// With a structure of only Hive partition columns the format reads them from the file, while the
-    /// query takes their values from the path, so the reader would compare other values than the
-    /// ones the threshold is made from.
-    if (info.formatReadsHivePartitionColumns())
-        return false;
+    return info.formatReturnsColumnUnchanged(sort_column.name, sort_column.type) && !info.defaultsDependOnTheirBlock(getContext());
+}
 
-    /// A column of `format_header` with the name of a column read under another name is another column.
-    if (info.columns_read_under_other_names.contains(sort_column.name))
+bool ReadFromObjectStorageStep::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
+{
+    /// The format of a data lake is only the format new files are written in.
+    if (configuration->isDataLakeConfiguration())
         return false;
-
-    /// The output header is broader than what the format reads: Hive partition columns (from the
-    /// path) and virtual columns (`_path`, `_file`, `_row_id`, ...) are added after the format has
-    /// produced its chunk, so the reader could never compare them against the threshold.
-    const auto * format_column = info.format_header.findByName(sort_column.name);
-    if (!format_column || !format_column->type->equals(*sort_column.type))
-        return false;
-
-    /// A column with a `DEFAULT` / `MATERIALIZED` / `ALIAS` expression is recomputed above the format
-    /// by `AddingDefaultsTransform` for the values the reader reported as missing, so the threshold
-    /// would come from other values than the ones the reader compares against it.
-    return !info.columns_description.hasDefault(sort_column.name);
+    return formatSkipsDataByStatistics(configuration->format, format_settings ? *format_settings : getFormatSettings(getContext()))
+        && info.canSkipDataByStatisticsOf(column);
 }
 
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
@@ -178,9 +170,8 @@ std::shared_ptr<const DataLakeReadEstimate> ReadFromObjectStorageStep::getOrCrea
     return data_lake_read_estimate;
 }
 
-/// Zero means "always preliminary-merge", so it must never reach the group-count division.
-/// The cap and the grouping have to read the same value or the cap admits a file count the
-/// grouping cannot divide.
+/// Zero means "always preliminary-merge". The cap and the in-order pipe read the same value,
+/// so no merge group holds more than this many files.
 static size_t effectiveTwoLevelMergeThreshold(const Settings & settings)
 {
     return std::max<size_t>(1, settings[Setting::read_in_order_two_level_merge_threshold]);
@@ -255,8 +246,9 @@ Pipe ReadFromObjectStorageStep::buildInOrderPipe(
 
     /// Never collapse to one port: the sorting step installs no merge above a single port, so a
     /// single group would leave the concatenation unmerged.
-    const size_t num_groups = std::max<size_t>(2, (num_files + threshold - 1) / threshold);
-    std::vector<Pipes> grouped(num_groups);
+    /// One group per stream, so the preliminary merges run in parallel.
+    const size_t num_groups = std::max<size_t>(2, std::min(num_streams, num_files));
+    VectorWithMemoryTracking<Pipes> grouped(num_groups);
     for (size_t i = 0; i < num_files; ++i)
         grouped[i % num_groups].emplace_back(std::move(pipes[i]));
 
@@ -321,6 +313,12 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         num_streams = 1;
     }
 
+    if (lazy_row_index_registry)
+    {
+        std::lock_guard lock(lazy_row_index_registry->mutex);
+        lazy_row_index_registry->main_read_streams = num_streams;
+    }
+
     // here create for node -> query -> level thread pool
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
@@ -358,12 +356,19 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     }
 
     const auto & settings = context->getSettingsRef();
-    if (join_runtime_filter_predicate && configuration->isIcebergConfiguration()
+    if (format_join_runtime_filter_predicate
         && settings[Setting::use_join_runtime_filters_for_iceberg_pruning] && settings[Setting::enable_join_runtime_filters_index_analysis])
     {
-        format_filter_info->join_runtime_filter_predicate = join_runtime_filter_predicate;
+        format_filter_info->join_runtime_filter_predicate = format_join_runtime_filter_predicate;
+        /// Outside Iceberg a runtime filter that skips nothing must not add a read to every read of a file.
+        format_filter_info->join_runtime_filter_reads_uncached_column_index = configuration->isIcebergConfiguration();
         if (top_k_query_condition_cache_key && top_k_query_condition_cache_key->format_filter_info_tracking_best_values)
-            top_k_query_condition_cache_key->format_filter_info_tracking_best_values->join_runtime_filter_predicate = join_runtime_filter_predicate;
+        {
+            auto & tracking_best_values = *top_k_query_condition_cache_key->format_filter_info_tracking_best_values;
+            tracking_best_values.join_runtime_filter_predicate = format_join_runtime_filter_predicate;
+            tracking_best_values.join_runtime_filter_reads_uncached_column_index
+                = format_filter_info->join_runtime_filter_reads_uncached_column_index;
+        }
     }
 
     auto file_iterator = iterator_wrapper;
@@ -426,10 +431,9 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     pipeline.init(std::move(pipe));
 }
 
-void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(
-    const String & filter_id, const String & column_name, const DataTypePtr & column_type)
+void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(const RuntimeFilterIndexAnalysisDescriptor & descriptor)
 {
-    join_runtime_filters_for_file_pruning.push_back({filter_id, column_name, column_type});
+    join_runtime_filters_for_file_pruning.push_back(descriptor);
 }
 
 void ReadFromObjectStorageStep::createIterator()
@@ -450,7 +454,8 @@ void ReadFromObjectStorageStep::createIterator()
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(context), object_storage, iterator_metadata, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
-        /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
+        /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"),
+        format_settings);
 
     /// The build side registers a join runtime filter in the lookup of the thread's query context, which is not always this step's context.
     if (!join_runtime_filters_for_file_pruning.empty())
@@ -458,8 +463,20 @@ void ReadFromObjectStorageStep::createIterator()
             if (auto lookup = query_context->getRuntimeFilterLookup())
             {
                 join_runtime_filter_predicate
-                    = std::make_shared<const RuntimeFilterPruningPredicate>(join_runtime_filters_for_file_pruning, std::move(lookup), context);
+                    = std::make_shared<const RuntimeFilterPruningPredicate>(join_runtime_filters_for_file_pruning, lookup, context);
                 iterator_wrapper->setJoinRuntimeFilters(join_runtime_filter_predicate);
+
+                RuntimeFilterIndexAnalysisDescriptors format_descriptors;
+                for (const auto & descriptor : join_runtime_filters_for_file_pruning)
+                    if (info.formatReturnsColumnUnchanged(descriptor.key_column_name, descriptor.key_column_type))
+                        format_descriptors.push_back(descriptor);
+                if (format_descriptors.size() == join_runtime_filters_for_file_pruning.size())
+                    format_join_runtime_filter_predicate = join_runtime_filter_predicate;
+                else if (format_descriptors.empty())
+                    format_join_runtime_filter_predicate = nullptr;
+                else
+                    format_join_runtime_filter_predicate
+                        = std::make_shared<const RuntimeFilterPruningPredicate>(std::move(format_descriptors), std::move(lookup), context);
             }
 }
 
@@ -527,6 +544,11 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
         || info.requested_virtual_columns.contains("_table"))
         return {};
 
+    /// The change data feed of a Delta Lake table reads the data files of a range of versions, not of the
+    /// pinned snapshot, so the snapshot does not identify them.
+    if (settings[Setting::delta_lake_snapshot_start_version] != -1 || settings[Setting::delta_lake_snapshot_end_version] != -1)
+        return {};
+
     /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the
     /// key covers, and so must the rows the filter drops after the format, which do not make the threshold.
     /// So the key covers the whole filter of the step and a PREWHERE collected with it, not only the part
@@ -544,22 +566,14 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
     /// input, not the expression (which may be `queryID()`, `now()`, or depend on other columns). So
     /// the same files and filter could let other rows through from query to query. The sort column
     /// itself never has one (see `supportsTopKDynamicFilter`).
-    auto has_default = [&](const String & name)
-    {
-        if (info.columns_description.hasDefault(name))
-            return true;
-        /// A subcolumn (`t.a`) is read from its column.
-        for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
-            if (info.columns_description.hasDefault(name.substr(0, pos)))
-                return true;
-        return false;
-    };
+    auto has_default = [&](const String & name) { return info.hasDefaultOfColumnOrParent(name); };
     auto filter_reads_column_with_default = [&](const ActionsDAG & dag)
     {
         return std::ranges::any_of(dag.getInputs(), [&](const auto * input) { return has_default(input->result_name); });
     };
     if ((filter_actions_dag && filter_reads_column_with_default(*filter_actions_dag))
-        || (query_info.prewhere_info && filter_reads_column_with_default(query_info.prewhere_info->prewhere_actions)))
+        || (query_info.prewhere_info && filter_reads_column_with_default(query_info.prewhere_info->prewhere_actions))
+        || std::ranges::any_of(top_k_filter->columns_deciding_threshold, has_default))
         return {};
 
     /// The metadata of an object (its modification time, ETag, tags) can change without a new snapshot,
@@ -789,7 +803,9 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
         format_settings,
         std::move(*lazy_info),
         getContext(),
-        max_block_size);
+        max_block_size,
+        /*main_read_leaf_columns_=*/ countLeafColumns(info.format_header).value_or(1),
+        /*max_num_streams_=*/ max_num_streams);
 
     return lazy_step;
 }

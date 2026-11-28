@@ -7,12 +7,10 @@ keywords: ['GCS']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 本指南介绍如何安全地完成 Google Cloud Storage (GCS) 身份验证，并从 ClickHouse Cloud 访问您的数据。
 
 <div id="introduction">
-  ## 简介
+  ## 简介 {#introduction}
 </div>
 
 ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希的消息验证码) 密钥连接到 GCS。
@@ -28,7 +26,7 @@ ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希
 这种方式使你能够通过服务账号上的 IAM 策略来统一管理对所有 GCS 桶的访问，无需修改各个桶的策略即可更方便地授予或撤销访问权限。
 
 <div id="prerequisites">
-  ## 前置条件
+  ## 前置条件 {#prerequisites}
 </div>
 
 要按照本指南操作，你需要具备：
@@ -38,18 +36,26 @@ ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希
 * 在 GCP 项目中创建服务账号并生成 HMAC 密钥的权限
 
 <div id="setup">
-  ## 设置
+  ## 设置 {#setup}
 </div>
 
 <Steps>
   <Step title="创建 Google Cloud 服务账号" id="create-gcs-account">
     1. 在 Google Cloud Console 中，前往 IAM &amp; Admin → Service Accounts
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp" size="md" alt="" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp)
+      </Frame>
+    </div>
 
     2. 在左侧菜单中点击 `Service accounts`，然后点击 `Create service account`：
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/create_service_account.webp" size="md" alt="" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/create_service_account.webp)
+      </Frame>
+    </div>
 
     输入服务账号的名称和说明，例如：
 
@@ -60,11 +66,19 @@ ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希
 
     点击 `Create and continue`
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/create_and_continue.webp" size="sm" alt="" />
+    <div className="ch-image-sm">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/create_and_continue.webp)
+      </Frame>
+    </div>
 
     向服务账号授予 `Storage Object User` 角色：
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/storage_object_user.webp" size="sm" alt="" />
+    <div className="ch-image-sm">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/storage_object_user.webp)
+      </Frame>
+    </div>
 
     此角色提供对 GCS object 的读写权限
 
@@ -77,13 +91,17 @@ ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希
 
     记下服务账号的电子邮件地址：
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp" size="md" alt="" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="向服务账号授予存储桶访问权限" id="grant-bucket-access-to-service-account">
     您可以在项目级别或单个存储桶级别授予访问权限。
 
-    #### 选项 1：向特定存储桶授予访问权限 (推荐)
+#### 选项 1：向特定存储桶授予访问权限 (推荐) {#option-1}
 
     1. 导航到 `Cloud Storage` → `Buckets`
     2. 点击您要授予访问权限的存储桶
@@ -98,7 +116,7 @@ ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希
     7. 点击 `Save`
     8. 对其他需要授权的存储桶重复此操作
 
-    #### 选项 2：授予项目级别访问权限
+#### 选项 2：授予项目级别访问权限 {#option-2}
 
     1. 导航到 `IAM & Admin` → `IAM`
     2. 点击 `Grant access`
@@ -116,19 +134,31 @@ ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希
   <Step title="为服务账号生成 HMAC 密钥" id="generate-hmac-keys-for-service-account">
     前往 `Cloud Storage` → `Settings` → `Interoperability`：
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp" size="sm" alt="" />
+    <div className="ch-image-sm">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp)
+      </Frame>
+    </div>
 
     如果未看到 “Access keys” 部分，请点击 `Enable interoperability access`
 
     在 “Access keys for service accounts” 下，点击 `Create a key for a service account`：
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp" size="md" alt="" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp)
+      </Frame>
+    </div>
 
     选择你之前创建的服务账号 (例如 clickhouse-gcs-access@your-project.iam.gserviceaccount.com)
 
     点击 `Create key`：
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/create_a_key.webp" size="md" alt="" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/create_a_key.webp)
+      </Frame>
+    </div>
 
     系统会显示 HMAC 密钥。
     请立即保存 Access Key 和 Secret——之后将无法再次查看该 secret。
@@ -148,7 +178,7 @@ ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希
       如果丢失该 secret，则需要生成新的密钥。
     </Danger>
 
-    ## 在 ClickHouse Cloud 中使用 HMAC 密钥
+## 在 ClickHouse Cloud 中使用 HMAC 密钥 {#use-hmac-keys-with-clickhouse-cloud}
 
     现在，你可以使用 HMAC 凭据从 ClickHouse Cloud 访问 GCS。
     为此，请使用 GCS 表函数：
@@ -175,7 +205,7 @@ ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希
     );
     ```
 
-    ## ClickPipes 中 GCS 的 HMAC 身份验证
+## ClickPipes 中 GCS 的 HMAC 身份验证 {#hmac-authentication-clickpipes-for-gcs}
 
     ClickPipes 使用 HMAC (基于哈希的消息身份验证码) 密钥与 Google Cloud Storage 进行身份验证。
 
@@ -184,7 +214,11 @@ ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希
     1. 在 ClickPipe 设置过程中，在 `Authentication method` 下选择 `Credentials`
     2. 提供在前面步骤中获取的 HMAC 凭据
 
-    <Image img="/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp" size="md" alt="" />
+    <div className="ch-image-md">
+      <Frame>
+        ![](/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp)
+      </Frame>
+    </div>
 
     <Note>
       目前尚不支持服务账号身份验证，你必须使用 HMAC 密钥
@@ -199,11 +233,11 @@ ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希
 </Steps>
 
 <div id="best-practices">
-  ## 最佳实践
+  ## 最佳实践 {#best-practices}
 </div>
 
 <div id="separate-service-accounts">
-  ### 为不同环境使用单独的服务账号
+  ### 为不同环境使用单独的服务账号 {#separate-service-accounts}
 </div>
 
 为开发、暂存和生产环境分别创建独立的服务账号。例如：
@@ -215,7 +249,7 @@ ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希
 这样，你就可以轻松撤销特定环境的访问权限，而不会影响其他环境。
 
 <div id="apply-least-privilege-access">
-  ### 采用最小权限原则
+  ### 采用最小权限原则 {#apply-least-privilege-access}
 </div>
 
 仅授予完成所需操作的最少权限：
@@ -225,7 +259,7 @@ ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希
 * 可考虑使用桶级条件，将访问限制在特定路径下
 
 <div id="rotate-hmac-keys">
-  ### 定期轮换 HMAC 密钥
+  ### 定期轮换 HMAC 密钥 {#rotate-hmac-keys}
 </div>
 
 建立密钥轮换计划：
@@ -240,7 +274,7 @@ ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希
 </Tip>
 
 <div id="monitor-access">
-  ### 使用 Cloud Audit Logs 监控访问
+  ### 使用 Cloud Audit Logs 监控访问 {#monitor-access}
 </div>
 
 为 Cloud Storage 启用并监控 Cloud Audit Logs：

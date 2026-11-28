@@ -20,18 +20,14 @@ doc_type: 'guide'
 * s390/x (تجريبي)
 * RISC-V 64 (تجريبي)
 
-<div id="assumptions">
-  ## الافتراضات
-</div>
+## الافتراضات {#assumptions}
 
 يعتمد الدليل التالي على Ubuntu Linux، لكنه ينبغي أن يعمل أيضًا على أي توزيعة Linux أخرى مع إجراء التعديلات المناسبة.
 الحد الأدنى الموصى به لإصدار Ubuntu الخاص بالتطوير هو 24.04 LTS.
 
 يفترض هذا الدليل أن مستودع ClickHouse وجميع الوحدات الفرعية قد تم سحبها محليًا.
 
-<div id="install-prerequisites">
-  ## تثبيت المتطلبات المسبقة
-</div>
+## تثبيت المتطلبات المسبقة {#install-prerequisites}
 
 أولاً، راجع [وثائق المتطلبات المسبقة العامة](/ar/resources/develop-contribute/introduction/developer-instruction).
 
@@ -44,26 +40,32 @@ sudo apt-get update
 sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
 ```
 
-<div id="install-the-clang-compiler">
-  ## تثبيت المصرّف Clang
-</div>
+## تثبيت المصرّف Clang {#install-the-clang-compiler}
 
-لتثبيت Clang على Ubuntu/Debian، استخدم سكربت التثبيت التلقائي الخاص بـ LLVM من [هنا](https://apt.llvm.org/).
+لتثبيت Clang على Ubuntu/Debian، استخدم برنامج التثبيت النصي التلقائي الخاص بـ LLVM من [هنا](https://apt.llvm.org/).
 
 ```bash
 wget https://apt.llvm.org/llvm.sh
 chmod +x llvm.sh
-sudo ./llvm.sh 22
+sudo ./llvm.sh 23
 ```
 
-بالنسبة إلى توزيعات Linux الأخرى، تحقّق مما إذا كان بإمكانك تثبيت أيٍّ من [الحزم الجاهزة مسبقًا الخاصة بـ LLVM](https://releases.llvm.org/download.html).
+<Note>
+  يوفّر `apt.llvm.org` حزم Clang 23 لـ Ubuntu 24.04 (Noble) والإصدارات الأحدث، ولـ Debian 12 (Bookworm) والإصدارات الأحدث.
+  لا يتوفر مستودع Clang 23 لـ Ubuntu 22.04 (Jammy)؛ لذا ثبّت Clang 21 بدلًا منه على Jammy باستخدام `sudo ./llvm.sh 21`.
+</Note>
+
+بالنسبة إلى توزيعات Linux الأخرى، تحقّق مما إذا كان بإمكانك تثبيت أيٍّ من [الحزم الجاهزة مسبقًا الخاصة بـ LLVM](https://releases.llvm.org/download.html).
 
 اعتبارًا من فبراير 2026، يلزم استخدام Clang 21 أو إصدار أحدث.
 ولا يُدعَم GCC أو أي مُصرّفات أخرى.
 
-<div id="install-the-rust-compiler-optional">
-  ## تثبيت مُصرّف Rust (اختياري)
-</div>
+<Tip>
+  يُصرِّف CI الخاص بـ ClickHouse باستخدام إصدار من Clang نفسه مُحسَّن بتقنيتَي PGO وBOLT، ما يجعله يُصرِّف ClickHouse بسرعة أكبر.
+  على Linux مع glibc 2.38 أو أحدث، يُنزِّل الأمر `eval "$(utils/download-ci-toolchain.sh)"` هذا المصرّف باستخدام `curl` و`zstd`، ويضبط `CC` و`CXX` عليه لتهيئة دليل بناء جديد.
+</Tip>
+
+## تثبيت مُصرّف Rust (اختياري) {#install-the-rust-compiler-optional}
 
 <Note>
   تُعد Rust تبعية اختيارية لـ ClickHouse.
@@ -72,19 +74,22 @@ sudo ./llvm.sh 22
 
 أولًا، اتبع الخطوات الواردة في [وثائق Rust الرسمية](https://www.rust-lang.org/tools/install) لتثبيت `rustup`.
 
-وكما هو الحال مع تبعيات C++، يستخدم ClickHouse آلية vendoring للتحكم بدقة في ما يُثبَّت وتجنّب الاعتماد على خدمات خارجية (مثل registry ‏`crates.io`).
+وكما هو الحال مع تبعيات C++، يستخدم ClickHouse آلية vendoring للتحكم بدقة في ما يُثبَّت وتجنّب الاعتماد على خدمات خارجية (مثل registry ‏`crates.io`).
 
-مع أنه في وضع release يمكن أن يعمل أي إصدار حديث من سلسلة أدوات rustup مع هذه التبعيات، فإذا كنت تخطط لتمكين أدوات sanitizer، فيجب استخدام إصدار يطابق تمامًا نفس `std` المستخدم في CI (والذي نُضمّن له `crates`):
+مع أنه في وضع release يمكن أن يعمل أي إصدار حديث من سلسلة أدوات rustup مع هذه التبعيات، فإذا كنت تخطط لتمكين أدوات sanitizer، فيجب استخدام إصدار يطابق تمامًا نفس `std` المستخدم في CI (والذي نُضمّن له حزم Rust):
 
 ```bash
-rustup toolchain install nightly-2026-03-22
-rustup default nightly-2026-03-22
+rustup toolchain install nightly-2026-11-02
+rustup default nightly-2026-11-02
 rustup component add rust-src
 ```
 
-<div id="build-clickhouse">
-  ## بناء ClickHouse
-</div>
+<Tip>
+  لا يخزّن ccache مخرجات Rust مؤقتًا، لذا فإن أي دليل بناء جديد يعيد تصريف جميع حزم Rust من البداية.
+  عند استخدام `-DRUST_BUILD_CACHE_DIR=<path>`، يحتفظ Cargo بحزم Rust المُصرَّفة في ذلك الدليل، فتعيد أدلة البناء الجديدة التابعة لنسخة العمل نفسها والتهيئة نفسها استخدامها (باستثناء delta-kernel-rs). يشغل هذا الدليل نحو 7 GB لكل نسخة عمل وتهيئة، ولا يخضع لحد أقصى للحجم، ويمكن حذفه في أي وقت.
+</Tip>
+
+## بناء ClickHouse {#build-clickhouse}
 
 نوصي بإنشاء دليل منفصل باسم `build` داخل `ClickHouse` ليحتوي على جميع نواتج البناء:
 
@@ -98,20 +103,20 @@ cd build
 اختياري: إذا كان لديك عدة إصدارات من المصرّف مثبّتة، يمكنك أيضًا تحديد المصرّف المطلوب استخدامه بدقة.
 
 ```sh
-export CC=clang-22
-export CXX=clang++-22
+export CC=clang-23
+export CXX=clang++-23
 ```
 
 لأغراض التطوير، يُوصى باستخدام بُنى تصحيح الأخطاء.
 وبالمقارنة مع بُنى الإصدار، فإنها تستخدم مستوى أقل من تحسينات المصرّف (`-O`)، مما يوفّر تجربة أفضل عند تصحيح الأخطاء.
-كذلك، تتسبب الاستثناءات الداخلية من النوع `LOGICAL_ERROR` في الانهيار فورًا بدلًا من الفشل بصورة متحكَّم فيها.
+كذلك، تتسبب الاستثناءات الداخلية من النوع `LOGICAL_ERROR` في الانهيار فورًا بدلًا من الفشل بصورة متحكَّم فيها.
 
 ```sh
 cmake -D CMAKE_BUILD_TYPE=Debug ..
 ```
 
 <Note>
-  إذا كنت ترغب في استخدام مُصحِّح أخطاء مثل gdb، فأضِف `-D DEBUG_O_LEVEL="0"` إلى الأمر أعلاه لإزالة جميع تحسينات المصرّف، إذ قد تؤثر في قدرة gdb على عرض المتغيرات أو الوصول إليها.
+  إذا كنت ترغب في استخدام مُصحِّح أخطاء مثل gdb، فأضِف `-D DEBUG_O_LEVEL="0"` إلى الأمر أعلاه لإزالة جميع تحسينات المصرّف، إذ قد تؤثر في قدرة gdb على عرض المتغيرات أو الوصول إليها.
 </Note>
 
 شغّل ninja لإتمام عملية البناء:
@@ -145,9 +150,7 @@ ninja -j 1 clickhouse
   ```
 </Tip>
 
-<div id="running-the-clickhouse-executable">
-  ## تشغيل الملف التنفيذي لـ ClickHouse
-</div>
+## تشغيل الملف التنفيذي لـ ClickHouse {#running-the-clickhouse-executable}
 
 بعد اكتمال عملية البناء بنجاح، ستجد الملف التنفيذي في `ClickHouse/<build_dir>/programs/`:
 
@@ -162,13 +165,9 @@ ninja -j 1 clickhouse
 clickhouse client --host 127.0.0.1
 ```
 
-<div id="advanced-options">
-  ## الخيارات المتقدمة
-</div>
+## الخيارات المتقدمة {#advanced-options}
 
-<div id="minimal-build">
-  ### بناء بالحد الأدنى
-</div>
+### بناء بالحد الأدنى {#minimal-build}
 
 إذا لم تكن بحاجة إلى الوظائف التي توفّرها مكتبات الجهات الخارجية، فيمكنك تسريع عملية البناء أكثر:
 
@@ -184,9 +183,7 @@ cmake -DENABLE_LIBRARIES=OFF
 cmake -DENABLE_RUST=OFF
 ```
 
-<div id="running-the-clickhouse-executable-1">
-  ### تشغيل الملف التنفيذي لـ ClickHouse
-</div>
+### تشغيل الملف التنفيذي لـ ClickHouse {#running-the-clickhouse-executable-1}
 
 يمكنك استبدال الإصدار الإنتاجي من الملف التنفيذي لـ ClickHouse المثبّت على نظامك بالملف التنفيذي لـ ClickHouse الذي جرى تجميعه.
 للقيام بذلك، ثبّت ClickHouse على جهازك باتباع الإرشادات الواردة في الموقع الرسمي.
@@ -207,9 +204,7 @@ sudo service clickhouse-server stop
 sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
-<div id="building-on-any-linux">
-  ### البناء على أي نظام Linux
-</div>
+### البناء على أي نظام Linux {#building-on-any-linux}
 
 ثبّت المتطلبات الأساسية على OpenSUSE Tumbleweed:
 
@@ -232,9 +227,7 @@ cmake -S . -B build
 cmake --build build
 ```
 
-<div id="building-in-docker">
-  ### البناء باستخدام Docker
-</div>
+### البناء باستخدام Docker {#building-in-docker}
 
 يمكنك تنفيذ أي عملية بناء محليًا في بيئة مشابهة لبيئة CI باستخدام:
 

@@ -94,7 +94,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             ("decompress,d", "decompress")
             ("offset-in-compressed-file", po::value<size_t>()->default_value(0ULL), "offset to the compressed block (i.e. physical file offset)")
             ("offset-in-decompressed-block", po::value<size_t>()->default_value(0ULL), "offset to the decompressed block (i.e. virtual offset)")
-            ("block-size,b", po::value<size_t>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
+            ("block-size,b", po::value<size_t>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size, at most 256 MiB (larger values are reduced to it)")
             ("hc", "use LZ4HC instead of LZ4")
             ("zstd", "use ZSTD instead of LZ4")
             ("codec", po::value<std::vector<std::string>>()->multitoken(), "use codecs combination instead of LZ4")
@@ -192,7 +192,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
 
             if (offset_in_compressed_file || offset_in_decompressed_block)
             {
-                CompressedReadBufferFromFile compressed_file(std::move(rb));
+                CompressedReadBufferFromFile compressed_file(std::move(rb), /* allow_different_codecs */ true);
                 if (options.contains("no-checksum-validation"))
                     compressed_file.disableChecksumming();
                 compressed_file.seek(offset_in_compressed_file, offset_in_decompressed_block);
@@ -200,7 +200,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             }
             else
             {
-                CompressedReadBuffer from(*rb);
+                CompressedReadBuffer from(*rb, /* allow_different_codecs */ true);
                 if (options.contains("no-checksum-validation"))
                     from.disableChecksumming();
                 copyData(from, *wb);

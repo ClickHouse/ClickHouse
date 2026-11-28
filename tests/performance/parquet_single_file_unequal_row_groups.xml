@@ -11,4 +11,5 @@
 
     <query>SELECT sum(sipHash64(a, b)) FROM file('test_unequal_row_groups.parquet') FORMAT Null</query>
     <query>SELECT count() FROM file('test_unequal_row_groups.parquet') WHERE sipHash64(a) % 3 = 0 FORMAT Null</query>
+    <query>SELECT sum(cityHash64(repeat(toString(b), 300))) FROM file('test_unequal_row_groups.parquet') WHERE a &lt; 3000000 SETTINGS max_threads = 8 FORMAT Null</query>
 </test>

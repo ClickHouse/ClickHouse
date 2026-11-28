@@ -89,7 +89,7 @@ struct MongoDBConfiguration
     void checkServerCredentialsForTable(const ContextPtr & context) const;
     void checkServerCredentialsForDictionary() const;
 
-    bool isOidColumn(const std::string & name) const
+    [[nodiscard]] bool isOidColumn(const std::string & name) const
     {
         return oid_fields.contains(name);
     }
