@@ -4,6 +4,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# The query condition cache lets the second run of a query read fewer rows.
+CLICKHOUSE_CLIENT+=" --use_query_condition_cache=0"
+
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS minmax_idx;"
 
 

@@ -136,6 +136,19 @@ void MarkRangesInfo::appendMarkRanges(const MarkRanges & mark_ranges_)
     mark_ranges.insert(mark_ranges.end(), mark_ranges_.begin(), mark_ranges_.end());
 }
 
+void resetMarkRangesInfoRowPositions(Chunk & chunk)
+{
+    auto mark_ranges_info = chunk.getChunkInfos().get<MarkRangesInfo>();
+    if (!mark_ranges_info || !mark_ranges_info->hasRowPositions())
+        return;
+
+    /// `ChunkInfo` objects are held by `shared_ptr` and may be aliased, so don't mutate in place.
+    auto updated_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
+    updated_info->resetRowPositions();
+    chunk.getChunkInfos().extract<MarkRangesInfo>();
+    chunk.getChunkInfos().add(std::move(updated_info));
+}
+
 size_t MarkRangeHash::operator()(const MarkRange & range) const
 {
     SipHash hash;

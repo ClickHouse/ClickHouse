@@ -1,0 +1,22 @@
+<test>
+    <!-- One match per 8 granules, so every block of granules the reader returns has one, and only the query condition
+         cache entries of single granules let the next runs skip the granules without a match. One part, merges stopped,
+         so the entries stay valid. -->
+
+    <create_query>
+        CREATE TABLE qcc_where_granules (x UInt32) ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
+                 add_minmax_index_for_numeric_columns = 0, auto_statistics_types = ''
+    </create_query>
+
+    <fill_query>
+        INSERT INTO qcc_where_granules
+        SELECT if(number % 65536 = 0, 1, 2 + rand() % 1000000) FROM numbers(100000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE qcc_where_granules FINAL</fill_query>
+    <fill_query>SYSTEM STOP MERGES qcc_where_granules</fill_query>
+
+    <query>SELECT count() FROM qcc_where_granules WHERE x = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS qcc_where_granules</drop_query>
+</test>

@@ -4,6 +4,8 @@
 SET optimize_use_projections = 1, optimize_use_projection_filtering = 1;
 SET min_table_rows_to_use_projection_index = 0;
 SET use_indexes_refiner_in_read_pools = 1;
+-- The query condition cache would skip the marks before the refiner can drop them.
+SET use_query_condition_cache = 0;
 -- Pin the plain pools by default (the prefetched and parallel-replicas pools are
 -- enabled explicitly in dedicated queries below).
 SET enable_parallel_replicas = 0;
