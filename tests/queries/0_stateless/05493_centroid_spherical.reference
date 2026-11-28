@@ -1,0 +1,75 @@
+centroidSpherical Point
+(2,3)
+centroidSpherical Ring
+4.352734	50.846349
+centroidSpherical Polygon
+4.352734	50.846349
+centroidSpherical LineString
+5	0
+centroidSpherical MultiLineString
+5	0
+centroidSpherical MultiPolygon
+2.992674	2.998309
+centroidSpherical date line crossing LineString
+180	0
+centroidSpherical near North Pole
+90
+centroidSpherical Polygon with hole
+5	5.006907
+centroidSpherical square
+2	2.000402
+centroidSpherical Geometry Point
+(2,3)
+centroidSpherical Geometry Polygon
+2	2.000402
+centroidSpherical globe-spanning polygon (triggers adaptive origin)
+-90
+centroidSpherical empty polygon (degenerate)
+0	0
+centroidSpherical MultiPoint
+3	1.667721
+centroidSpherical MultiPoint along meridian
+0	20
+centroidSpherical empty MultiPoint (degenerate)
+nan	nan
+centroidSpherical Polygon with off-center hole, hole wound like the outer ring and reversed, and unclosed
+5.125942	5.131418
+5.125942	5.131418
+5.125942	5.131418
+centroidSpherical MultiPolygon with mixed winding
+2.992674	2.998309
+centroidSpherical MultiLineString empty row followed by nonempty rows
+[]	nan	nan
+[[(10,10),(12,12)]]	10.996607	11.001635
+centroidSpherical MultiPolygon empty row followed by nonempty rows
+[]	nan	nan
+[[[(0,0),(0,4),(4,4),(4,0),(0,0)]]]	2	2.000402
+centroidSpherical zero-area rings along the equator and a meridian
+5	0
+5	0
+0	5
+centroidSpherical ring around a pole in the reverse orientation
+90
+-90
+-90
+centroidSpherical antipodal MultiPoint
+(nan,nan)
+centroidSpherical of empty geometries
+(nan,nan)	(nan,nan)	(nan,nan)	(nan,nan)
+centroidSpherical rings going back and forth along a great circle
+60	0
+0	0
+centroidSpherical and boundingBoxSpherical of rings splitting the sphere into two equal halves
+centrally symmetric	false	-48.346502	-90	45	1	1
+centrally symmetric	true	48.346502	-45	90	1	1
+equator	false	-90	-90	0	1	1
+equator	true	90	0	90	1	1
+tilted great circle	false	-45	-90	45	1	1
+tilted great circle	true	45	-45	90	1	1
+centroidSpherical Point with a longitude outside [-180, 180]
+(-160,10)	(-160,10)	(-160,10)
+centroidSpherical and boundingBoxSpherical nearly a hemisphere, with a repeated vertex
+-1.4e-12	false	-90	-90	[(-180,-90),(180,-90),(180,0),(-180,0),(-180,-90)]	1
+-1.4e-12	true	-90	-90	[(-180,-90),(180,-90),(180,0),(-180,0),(-180,-90)]	1
+1.4e-12	false	90	90	[(-180,0),(180,0),(180,90),(-180,90),(-180,0)]	1
+1.4e-12	true	90	90	[(-180,0),(180,0),(180,90),(-180,90),(-180,0)]	1

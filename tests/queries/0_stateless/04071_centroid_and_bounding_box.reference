@@ -1,0 +1,194 @@
+boundingBoxCartesian Ring
+[(-40,50),(40,50),(40,60),(-40,60),(-40,50)]
+boundingBoxSpherical Ring
+[(-40,50),(40,50),(40,66.1413452015),(-40,66.1413452015),(-40,50)]
+boundingBoxCartesian Polygon
+[(-40,50),(40,50),(40,60),(-40,60),(-40,50)]
+boundingBoxSpherical Polygon
+[(-40,50),(40,50),(40,66.1413452015),(-40,66.1413452015),(-40,50)]
+boundingBoxCartesian Point
+[(3,4),(3,4),(3,4),(3,4),(3,4)]
+boundingBoxCartesian LineString
+[(1,2),(5,2),(5,8),(1,8),(1,2)]
+boundingBoxCartesian MultiPolygon
+[(0,0),(8,0),(8,7),(0,7),(0,0)]
+boundingBoxCartesian WKT
+[(1,1),(4,1),(4,3),(1,3),(1,1)]
+boundingBoxSpherical Ring
+[(4.338074,50.833264),(4.367945,50.833264),(4.367945,50.858306),(4.338074,50.858306),(4.338074,50.833264)]
+boundingBoxSpherical Polygon
+[(4.338074,50.833264),(4.367945,50.833264),(4.367945,50.858306),(4.338074,50.858306),(4.338074,50.833264)]
+boundingBoxSpherical Point
+[(4.35,50.85),(4.35,50.85),(4.35,50.85),(4.35,50.85),(4.35,50.85)]
+boundingBoxSpherical LineString
+[(0,50),(10,50),(10,50.1075266376),(0,50.1075266376),(0,50)]
+Point near date line (179°)
+[(179,50),(179,50),(179,50),(179,50),(179,50)]
+Point near date line (-179°)
+[(-179,50),(-179,50),(-179,50),(-179,50),(-179,50)]
+LineString crossing date line (179° to -179°)
+[(179,50),(181,50),(181,50.0042971958),(179,50.0042971958),(179,50)]
+Polygon crossing date line
+[(178,45),(182,45),(182,55.0164023517),(178,55.0164023517),(178,45)]
+Narrow polygon crossing date line (175° to -175°)
+[(175,50),(185,50),(185,55.1025678246),(175,55.1025678246),(175,50)]
+Same geometry in Cartesian (no date line issue)
+[(-180,45),(180,45),(180,55),(-180,55),(-180,45)]
+MultiPolygon across date line
+[(179,50),(181,50),(181,51.0010670028),(179,51.0010670028),(179,50)]
+boundingBoxCartesian Polygon with hole
+[(0,0),(10,0),(10,10),(0,10),(0,0)]
+boundingBoxSpherical Polygon with hole
+[(0,0),(10,0),(10,10.0374230459),(0,10.0374230459),(0,0)]
+boundingBoxCartesian negative coordinates
+[(-5,-5),(0,-5),(0,0),(-5,0),(-5,-5)]
+boundingBoxSpherical negative coordinates
+[(-5,-5.0047392446),(0,-5.0047392446),(0,0),(-5,0),(-5,-5.0047392446)]
+boundingBoxCartesian large coordinates
+[(10000000000,10000000000),(20000000000,10000000000),(20000000000,20000000000),(10000000000,20000000000),(10000000000,10000000000)]
+boundingBoxCartesian degenerate ring (all same points)
+[(5,5),(5,5),(5,5),(5,5),(5,5)]
+boundingBoxCartesian collinear points
+[(0,0),(10,0),(10,10),(0,10),(0,0)]
+boundingBoxCartesian WKT MultiPolygon
+[(0,0),(7,0),(7,7),(0,7),(0,0)]
+boundingBoxCartesian Geometry Point
+[(3,4),(3,4),(3,4),(3,4),(3,4)]
+boundingBoxCartesian Geometry LineString
+[(1,2),(5,2),(5,8),(1,8),(1,2)]
+boundingBoxCartesian Geometry Polygon
+[(0,0),(4,0),(4,4),(0,4),(0,0)]
+boundingBoxCartesian Geometry MultiPolygon
+[(0,0),(7,0),(7,7),(0,7),(0,0)]
+centroidCartesian Point
+(2,3)
+centroidCartesian Ring
+(2,2)
+centroidCartesian Polygon
+(2,2)
+centroidCartesian LineString
+(2,0)
+centroidCartesian MultiLineString
+(2,0)
+centroidCartesian MultiPolygon
+(3,3)
+centroidCartesian WKT
+(2,2)
+centroidCartesian triangle
+(3,2)
+centroidCartesian Polygon with hole
+(5,5)
+centroidCartesian negative coordinates
+(-2.5,-2.5)
+centroidCartesian large coordinates
+(15000000000,15000000000)
+centroidCartesian degenerate ring (all same points)
+(5,5)
+centroidCartesian collinear points
+(5,5)
+centroidCartesian WKT MultiPolygon
+(3.5,3.5)
+centroidCartesian Geometry Point
+(2,3)
+centroidCartesian Geometry LineString
+(2,0)
+centroidCartesian Geometry Polygon
+(2,2)
+centroidCartesian Geometry MultiPolygon
+(3,3)
+centroidCartesian empty polygon (degenerate)
+(0,0)
+centroidCartesian single-point linestring (degenerate)
+(3,7)
+boundingBoxCartesian MultiPoint
+[(0,0),(6,0),(6,5),(0,5),(0,0)]
+boundingBoxSpherical MultiPoint
+[(0,0),(6,0),(6,5),(0,5),(0,0)]
+boundingBoxSpherical MultiPoint crossing date line
+[(179,50),(181,50),(181,50),(179,50),(179,50)]
+boundingBoxCartesian Geometry MultiPoint
+[(0,0),(6,0),(6,5),(0,5),(0,0)]
+centroidCartesian MultiPoint
+(3,1.6666666666666667)
+centroidCartesian Geometry MultiPoint
+(3,1.6666666666666667)
+centroidCartesian single-point MultiPoint (degenerate)
+(3,7)
+centroidCartesian empty MultiPoint (degenerate)
+(nan,nan)
+centroidCartesian Polygon with off-center hole of the same winding as the outer ring
+(5.125,5.125)
+(5.125,5.125)
+centroidCartesian Polygon with unclosed hole
+(5.125,5.125)
+centroidCartesian MultiPolygon with mixed winding
+(3,3)
+(3,3)
+MultiLineString empty row followed by nonempty rows
+[]	(nan,nan)	[]	[]
+[[(10,10),(12,12)]]	(11,11)	[(10,10),(12,10),(12,12),(10,12),(10,10)]	[(10,10),(12,10),(12,12),(10,12),(10,10)]
+MultiPolygon empty row followed by nonempty rows
+[]	(nan,nan)	[]	[]	0
+[[[(0,0),(0,4),(4,4),(4,0),(0,0)]]]	(2,2)	[(0,0),(4,0),(4,4),(0,4),(0,0)]	[(0,0),(4,0),(4,4.0024302555),(0,4.0024302555),(0,0)]	16
+centroidCartesian collinear points, other starting vertices
+(5,5)	(5,5)
+centroidCartesian polygon with a hole equal to the outer ring (zero area)
+(2,2)
+centroidCartesian tiny square
+5e-10	5e-10
+centroidCartesian of empty geometries
+(nan,nan)	(nan,nan)	(nan,nan)	(nan,nan)
+boundingBoxCartesian of empty geometries
+[]	[]	[]	[]
+boundingBoxSpherical of empty geometries
+[]	[]	[]	[]
+NULL Geometry
+(nan,nan)	[]	[]
+boundingBoxSpherical ring around a pole, in both orientations
+[(-180,89),(180,89),(180,90),(-180,90),(-180,89)]
+[(-180,89),(180,89),(180,90),(-180,90),(-180,89)]
+[(-180,-90),(180,-90),(180,-80),(-180,-80),(-180,-90)]
+[(-180,-90),(180,-90),(180,-80),(-180,-80),(-180,-90)]
+boundingBoxSpherical latitude at the limits
+[(0,-90),(0,-90),(0,90),(0,90),(0,-90)]
+boundingBoxSpherical of an edge between antipodal points
+[(0,0),(179,0),(179,0),(0,0),(0,0)]
+boundingBoxSpherical of a centrally symmetric ring, in both orientations
+[(-180,-90),(180,-90),(180,45),(-180,45),(-180,-90)]
+[(-180,-45),(180,-45),(180,90),(-180,90),(-180,-45)]
+boundingBoxSpherical irregular ring around a pole, all starting vertices and both windings
+0	[(-180,-90),(180,-90),(180,-2.2380850832444468),(-180,-2.2380850832444468),(-180,-90)]	[(-180,-90),(180,-90),(180,-2.2380850832444468),(-180,-2.2380850832444468),(-180,-90)]
+1	[(-180,-90),(180,-90),(180,-2.2380850832444468),(-180,-2.2380850832444468),(-180,-90)]	[(-180,-90),(180,-90),(180,-2.2380850832444468),(-180,-2.2380850832444468),(-180,-90)]
+2	[(-180,-90),(180,-90),(180,-2.2380850832444468),(-180,-2.2380850832444468),(-180,-90)]	[(-180,-90),(180,-90),(180,-2.2380850832444468),(-180,-2.2380850832444468),(-180,-90)]
+boundingBoxSpherical rings with a vertex at a pole
+[(0,0),(90,0),(90,90),(0,90),(0,0)]
+[(0,0),(90,0),(90,90),(0,90),(0,0)]
+[(0,-90),(90,-90),(90,90),(0,90),(0,-90)]
+[(0,-90),(90,-90),(90,90),(0,90),(0,-90)]
+[(180,-90),(360,-90),(360,90),(180,90),(180,-90)]
+[(0,-90),(180,-90),(180,90),(0,90),(0,-90)]
+boundingBoxSpherical ring that goes to a pole and back along the date line
+[(-180,-90),(180,-90),(180,-60),(-180,-60),(-180,-90)]
+[(-180,-90),(180,-90),(180,-60),(-180,-60),(-180,-90)]
+boundingBoxSpherical edge through a pole
+[(180,0),(360,0),(360,90),(180,90),(180,0)]
+[(180,0),(360,0),(360,90),(180,90),(180,0)]
+boundingBoxSpherical polygon with a hole around a pole
+[(-180,60),(180,60),(180,82.892924),(-180,82.892924),(-180,60)]
+[(-180,60),(180,60),(180,82.892924),(-180,82.892924),(-180,60)]
+boundingBoxSpherical MultiPolygon with a pole, in both orders of the parts
+[(-180,10),(180,10),(180,90),(-180,90),(-180,10)]
+[(-180,10),(180,10),(180,90),(-180,90),(-180,10)]
+boundingBoxSpherical edge near a pole
+[(146,-90),(326,-90),(326,-31),(146,-31),(146,-90)]
+[(120,14),(300,14),(300,90),(120,90),(120,14)]
+1
+boundingBoxSpherical long edge near the equator
+-567.277
+boundingBoxSpherical all longitudes
+[(-180,-90),(180,-90),(180,86.270316),(-180,86.270316),(-180,-90)]
+boundingBoxSpherical polygon without an outer ring
+[(1,1),(3,1),(3,3),(1,3),(1,1)]
+[(1,1),(3,1),(3,3),(1,3),(1,1)]
+centroidCartesian small far apart squares, in both orders
+90.000001	45.000001	1
