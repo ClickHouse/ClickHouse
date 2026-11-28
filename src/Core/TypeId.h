@@ -52,6 +52,7 @@ enum class TypeIndex : uint8_t
     Object,
     IPv4,
     IPv6,
+    MacAddress,
     JSONPaths,
     Variant,
     Dynamic
@@ -103,6 +104,7 @@ TYPEID_MAP(Float64)
 TYPEID_MAP(UUID)
 TYPEID_MAP(IPv4)
 TYPEID_MAP(IPv6)
+TYPEID_MAP(MacAddress)
 
 TYPEID_MAP(Decimal32)
 TYPEID_MAP(Decimal64)

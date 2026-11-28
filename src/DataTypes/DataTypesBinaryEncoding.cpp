@@ -194,6 +194,8 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::IPv4;
         case TypeIndex::IPv6:
             return BinaryTypeIndex::IPv6;
+        case TypeIndex::MacAddress:
+            return BinaryTypeIndex::MacAddress;
         case TypeIndex::Variant:
             return BinaryTypeIndex::Variant;
         case TypeIndex::Dynamic:
@@ -608,6 +610,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
         case BinaryTypeIndex::UUID:
         case BinaryTypeIndex::IPv4:
         case BinaryTypeIndex::IPv6:
+        case BinaryTypeIndex::MacAddress:
             return getSimpleDataTypesCache().getType(binary_type_index);
         case BinaryTypeIndex::DateTimeUTC:
             return std::make_shared<DataTypeDateTime>();

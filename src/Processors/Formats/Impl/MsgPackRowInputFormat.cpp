@@ -203,6 +203,11 @@ static void insertInteger(IColumn & column, DataTypePtr type, T value, bool chec
             assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(static_cast<UInt32>(value)));
             break;
         }
+        case TypeIndex::MacAddress:
+        {
+            assert_cast<ColumnVector<MacAddress> &>(column).insertValue(MacAddress(value));
+            break;
+        }
         case TypeIndex::Decimal32:
         {
             assert_cast<ColumnDecimal<Decimal32> &>(column).insertValue(static_cast<Int32>(value));

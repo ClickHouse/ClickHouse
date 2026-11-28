@@ -1676,6 +1676,17 @@ ColumnPtr fillColumnWithRandomData(const DataTypePtr & type, UInt64 limit, const
             fillBufferWithRandomBytes(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(IPv6), rng);
             return column;
         }
+        case TypeIndex::MacAddress:
+        {
+            auto column = ColumnVector<MacAddress>::create();
+            auto & data = column->getData();
+            data.resize(limit);
+            fillBufferWithRandomNumbers<UInt64>(reinterpret_cast<char *>(data.data()), limit, rng, fuzzy);
+            /// Random 64-bit values break the invariant that the upper 16 bits are zero, so mask them off.
+            for (size_t i = 0; i < limit; ++i)
+                data[i] = MacAddress(data[i].toUnderType());
+            return column;
+        }
 
         case TypeIndex::BFloat16:
         {

@@ -82,7 +82,8 @@ bool typeMatchesDefaultnessStat(const DataTypePtr & type)
         || w.isDecimal()
         || w.isUUID()
         || w.isIPv4()
-        || w.isIPv6();
+        || w.isIPv6()
+        || w.isMacAddress();
 }
 
 struct ColumnRef

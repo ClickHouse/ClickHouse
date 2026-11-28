@@ -54,6 +54,7 @@
             <allow_dynamic_type_in_join_keys>1</allow_dynamic_type_in_join_keys>
             <allow_experimental_hash_functions>1</allow_experimental_hash_functions>
             <allow_experimental_iceberg_compaction>1</allow_experimental_iceberg_compaction>
+            <allow_experimental_macaddress_type>1</allow_experimental_macaddress_type>
             <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
             <allow_experimental_shuffle_query>1</allow_experimental_shuffle_query>
             <allow_expire_snapshots>1</allow_expire_snapshots>
