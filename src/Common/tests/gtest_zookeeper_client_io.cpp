@@ -4,15 +4,19 @@
 
 #include <gtest/gtest.h>
 
+#include <Common/ThreadPool.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/tests/gtest_ephemeral_certificate.h>
+#include <base/scope_guard.h>
 
 #include <Poco/ByteOrder.h>
 #include <Poco/Exception.h>
 #include <Poco/Net/AcceptCertificateHandler.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/SecureServerSocket.h>
+#include <Poco/Net/ServerSocket.h>
 
 #include <atomic>
 #include <chrono>
@@ -219,5 +223,32 @@ TEST_P(ZooKeeperClientIO, LargeRequestDuringLargeResponse)
 }
 
 INSTANTIATE_TEST_SUITE_P(TLS, ZooKeeperClientIO, testing::Bool(), [](const auto & param) { return param.param ? "TLS13" : "TLS12"; });
+
+/// Callers retry only Keeper hardware errors, so a client whose threads cannot start must fail with a lost connection.
+TEST(ZooKeeperClient, ThreadStartFailureIsConnectionLoss)
+{
+    Poco::Net::ServerSocket listener(Poco::Net::SocketAddress("127.0.0.1", 0));
+    FakeKeeper keeper(listener);
+
+    zkutil::ShuffleHost host;
+    host.host = "127.0.0.1:" + std::to_string(listener.address().port());
+    zkutil::ZooKeeperArgs args;
+    args.connection_timeout_ms = TIMEOUT_MS;
+    args.operation_timeout_ms = TIMEOUT_MS;
+
+    CannotAllocateThreadFaultInjector::setFaultProbability(1.0);
+    SCOPE_EXIT({ CannotAllocateThreadFaultInjector::setFaultProbability(0.0); });
+
+    try
+    {
+        Coordination::ZooKeeper zookeeper({host}, args, nullptr, nullptr);
+        FAIL() << "The client was created although its threads could not start";
+    }
+    catch (const Coordination::Exception & e)
+    {
+        EXPECT_EQ(e.code, Coordination::Error::ZCONNECTIONLOSS);
+        EXPECT_TRUE(e.message().contains("Cannot schedule a task")) << e.message();
+    }
+}
 
 #endif

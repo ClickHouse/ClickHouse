@@ -109,6 +109,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_SCHEDULE_TASK;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -587,6 +588,9 @@ ZooKeeper::ZooKeeper(
         send_thread.join();
         receive_thread.join();
 
+        /// Callers retry a session that could not start its threads like any other failed connection.
+        if (DB::getCurrentExceptionCode() == DB::ErrorCodes::CANNOT_SCHEDULE_TASK)
+            throw Exception(Error::ZCONNECTIONLOSS, "Cannot start the ZooKeeper client threads: {}", DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
         throw;
     }
 }
