@@ -1,0 +1,33 @@
+<test>
+    <!-- CSS selectors over HTML with `extractHTMLOne` and `extractHTMLAll`, compared to `extractTextFromHTML`.
+         Synthetic shop pages of about 36 KB each: a header, 100 product cards, a footer and some scripts and styles. -->
+    <settings><max_threads>1</max_threads></settings>
+
+    <create_query><![CDATA[
+CREATE TABLE html ENGINE = Memory AS
+SELECT concat(
+    '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Shop page ', toString(number), '</title>',
+    '<meta property="og:image" content="https://example.com/img/', toString(number), '.png">',
+    '<script type="application/ld+json">{"@type": "ItemList", "n": ', toString(number), '}</script>',
+    '<style>.item > a { color: red } .price { font-weight: bold }</style></head><body>',
+    '<header class="top"><nav><ul>', arrayStringConcat(arrayMap(i -> concat('<li><a href="/cat/', toString(i), '">Category ', toString(i), '</a>'), range(10))), '</ul></nav></header>',
+    '<main id="content"><div class="list">',
+    arrayStringConcat(arrayMap(i -> concat(
+        '<div class="item card" data-id="', toString(i), '"><a href="/p/', toString(number * 1000 + i), '" title="Product &amp; ', toString(i), '">',
+        '<img src="/img/', toString(i), '.jpg" alt="Product"></a><h3 class="name">Product <b>', toString(i), '</b></h3>',
+        '<p class="descr">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore.<br>Second line.</p>',
+        '<span class="price">', toString(i * 3 + 1), '.99</span><!-- comment --></div>\n'), range(100))),
+    '</div></main><footer><p>Copyright</p></footer><script>var x = 1 < 2 && "</div>";</script></body></html>') AS s
+FROM numbers(4000)
+    ]]></create_query>
+
+    <query>SELECT sum(length(extractTextFromHTML(s))) FROM html FORMAT Null</query>
+    <query>SELECT sum(length(extractHTMLAll(s, 'table'))) FROM html FORMAT Null</query>
+    <query>SELECT sum(length(extractHTMLAll(s, 'a::attr(href)'))) FROM html FORMAT Null</query>
+    <query>SELECT sum(length(extractHTMLAll(s, 'div.item > a'))) FROM html FORMAT Null</query>
+    <query>SELECT sum(length(extractHTMLAll(s, '.item .price::text'))) FROM html FORMAT Null</query>
+    <query>SELECT sum(length(extractHTMLAll(s, 'main div:nth-child(odd) h3 + p::text'))) FROM html FORMAT Null</query>
+    <query>SELECT sum(length(extractHTMLOne(s, 'footer p::text'))) FROM html FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS html</drop_query>
+</test>

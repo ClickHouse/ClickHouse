@@ -1,0 +1,114 @@
+-- basic
+<p>Hello</p>
+1
+['<p>Hello</p>','<p>World</p>']
+[]
+['<LI>a</LI>','<Li>b</lI>']
+['<div>a<div>b</div>c</div>','<div>b</div>']
+['<p>1</p>','<p>2</p>']
+-- id and class
+['1','3']
+['1']
+['1']
+<p id="1a">x</p>
+-- attributes
+['1','2','4']
+['1','2']
+['1','4']
+['1']
+['1']
+['1','2']
+['2']
+['1']
+['1']
+[]
+[]
+['checkbox']
+['it"s']
+['1']
+<a title="a > b" href="/x">link</a>
+<a href=/x/>link</a>
+-- combinators
+['1']
+['1','2']
+['1']
+['2']
+['1']
+['1','2','3']
+['1']
+[]
+['3']
+-- pseudo-classes
+['1','3','5']
+['2','4']
+['3']
+['1','2']
+['3','5']
+['4']
+['1']
+['2','3','5']
+['3']
+['2']
+['1','2']
+-- selector lists
+['<h1>a</h1>','<h3>c</h3>']
+['/a','/i.png']
+['<p class="x y">1</p>']
+-- text
+Hello, world ! Bye.
+My Title
+\n{"@type": "Person", "name": "<b>Alice</b>"}\n
+<b>bold</b> text
+['a','','']
+-- raw text and comments
+['<div>ok</div>']
+['<p>ok</p>']
+['<SCRIPT>x = "</scripts>";</Script >']
+['yes','yes2']
+['yes']
+['yes']
+['<p>yes</p>']
+-- void and self-closing elements
+['<img src=x.png>']
+['<p>a<br>b<img src=x.png>c</p>']
+['<br/>','<IMG src="x.png" />']
+['<circle r="1"/>','<circle r="2"></circle>']
+-- implicitly closed elements
+['<p>one','<p>two']
+['<li>a','<li>b<ul><li>c<li>d</ul>','<li>c','<li>d','<li>e']
+['<li>b<ul><li>c<li>d</ul>','<li>d']
+['<tr><td>1<td>2','<tr><td>3<td>4']
+['2','4']
+['1','2']
+['outer']
+['a','b','c']
+['c']
+['b','d']
+['<a href=1>x','<a href=2>y</a>']
+['<p>x</p>']
+-- unmatched and missing end tags
+['<div><span>a</div>']
+['<b>x</span>y</b>']
+['<b>x']
+['<td><div>x</td>','<td>y</td>']
+['<p>a']
+['<div><p>a']
+[]
+['<div><p class="x"']
+['<p>a</p']
+1000
+999
+-- columns
+<p>1</p>	['<p>1</p>']
+<b>2</b>	['<b>2</b>','<b>3</b>']
+<b>5</b>	['<b>5</b>','<b>6</b>']
+	[]
+7	['7']
+<p>2</p>	['<p>1</p>','<p>2</p>']
+<p>2</p>	['<p>1</p>','<p>2</p>']
+1
+1
+\N	\N	<p>1</p>
+<p>1</p>	Array(String)
+-- errors
+
