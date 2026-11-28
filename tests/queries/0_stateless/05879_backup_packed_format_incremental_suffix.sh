@@ -62,3 +62,17 @@ restore_and_compare m "$before_m"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE m"
+
+# A Memory backup reads a pack member as a view of the whole pack held in memory, so the suffix starts past the
+# start of its buffer.
+${CLICKHOUSE_CLIENT} -m --query "
+CREATE TABLE t (a UInt64, s String) ENGINE=Log;
+INSERT INTO t SELECT number, toString(number) FROM numbers(50);
+BACKUP TABLE t TO Memory('${name}_base') FORMAT Null;
+INSERT INTO t SELECT number, toString(number) FROM numbers(50, 50);
+BACKUP TABLE t TO Memory('${name}_incr') SETTINGS backup_use_packed_format=1, base_backup=Memory('${name}_base') FORMAT Null;
+RESTORE TABLE t AS t_restored FROM Memory('${name}_incr') SETTINGS base_backup=Memory('${name}_base') FORMAT Null;
+SELECT 'Memory', count(), sum(a) FROM t_restored;
+DROP TABLE t;
+DROP TABLE t_restored;
+"
