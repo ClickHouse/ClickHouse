@@ -91,11 +91,28 @@ printf '%s\n' \
     'EXPLAIN SYNTAX CREATE TABLE t_04093_explain (x String) ENGINE = Memory AS INSERT FORMAT CSV' \
     'payload_04093_secret_csv' | \
     ${CLICKHOUSE_CURL} -sS --fail-with-body "${CLICKHOUSE_URL}&log_queries=1&log_queries_probability=1&query_id=${query_id_csv}" --data-binary @- > /dev/null
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+for attempt in {1..120}; do
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+    logged_queries=$(${CLICKHOUSE_CLIENT} --query "
+        SELECT count()
+        FROM system.query_log
+        WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
+            AND query_id IN ('${query_id_values}', '${query_id_csv}')
+    ")
+    if [ "$logged_queries" -eq 2 ]; then
+        break
+    fi
+    if [ "$attempt" -eq 120 ]; then
+        echo "Timed out waiting for both EXPLAIN queries in query_log" >&2
+        exit 1
+    fi
+    sleep 0.5
+done
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count(), countIf(position(query, 'AS INSERT') > 0), countIf(position(query, 'payload_04093_secret') > 0)
     FROM system.query_log
-    WHERE event_date >= yesterday() AND type = 'QueryFinish' AND query_id IN ('${query_id_values}', '${query_id_csv}')
+    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
+        AND query_id IN ('${query_id_values}', '${query_id_csv}')
 "
 
 printf '1;2\n' | ${CLICKHOUSE_CLIENT} --query \
