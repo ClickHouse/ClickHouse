@@ -20,6 +20,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -377,6 +378,27 @@ static void addIndexReadSteps(PrewhereExprSteps & steps, const IndexReadTasks & 
         {
             if (auto it = first_step_using_column.find(name); it != first_step_using_column.end())
                 it->second = std::min(it->second, i);
+        }
+    }
+
+    /// The score column of a scoring predicate is filled in the same pass over the postings as its match column
+    /// (see `MergeTreeReaderTextIndex`), so both are read before the first step that uses either of them.
+    for (const auto & [_, index_task] : index_read_tasks)
+    {
+        for (const auto & score_column : index_task.columns)
+        {
+            if (!WhichDataType(score_column.type).isFloat32())
+                continue;
+
+            for (const auto & match_column : index_task.columns)
+            {
+                if (!WhichDataType(match_column.type).isUInt8() || match_column.search_query->getHash() != score_column.search_query->getHash())
+                    continue;
+
+                auto & score_step = first_step_using_column.at(score_column.name);
+                auto & match_step = first_step_using_column.at(match_column.name);
+                score_step = match_step = std::min(score_step, match_step);
+            }
         }
     }
 
