@@ -1736,6 +1736,74 @@ void NO_INLINE Aggregator::executeImplBatch(
     executeImplBatchNoAggregates<prefetch, top_k>(method, state, key_columns, aggregates_pool, row_begin, row_end, all_keys_are_const);
 }
 
+namespace
+{
+
+constexpr size_t key_runs_group_rows = 64;
+
+/// With more runs than `max_runs_to_count` in a group, a lookup per row is cheaper.
+constexpr size_t max_runs_to_count = 48;
+constexpr size_t max_runs_to_continue = 40;
+
+/// Bit `i` is set if the keys of rows `i` and `i + 1` differ, so row 64 must exist; bit 63 is always set.
+/// As in `bytes64MaskToBits64Mask`, a `bool` vector holds lane `i` in bit `i` on little-endian targets.
+template <typename Key>
+ALWAYS_INLINE UInt64 runEndsInGroup(const Key * keys)
+{
+    static constexpr size_t lanes = 32 / sizeof(Key);
+    using Keys = Key __attribute__((ext_vector_type(lanes)));
+    using Lanes = bool __attribute__((ext_vector_type(lanes)));
+    static_assert(sizeof(Lanes) == 1 && std::endian::native == std::endian::little);
+
+    UInt64 run_ends = 0;
+    for (size_t i = 0; i < key_runs_group_rows; i += lanes)
+    {
+        Keys current;
+        Keys next;
+        memcpy(&current, keys + i, sizeof(current));
+        memcpy(&next, keys + i + 1, sizeof(next));
+        const Lanes differs = __builtin_convertvector(current ^ next, Lanes);
+        UInt8 bits = 0;
+        memcpy(&bits, &differs, sizeof(bits));
+        run_ends |= static_cast<UInt64>(bits & ((1U << lanes) - 1)) << i;
+    }
+    return run_ends | (1ULL << (key_runs_group_rows - 1));
+}
+
+/// Counts rows from `row_begin` with one lookup per run of equal keys in each 64-row group; returns the first row it did not count.
+template <typename Method, typename State>
+NO_INLINE size_t countRowsByRunsOfEqualKeys(Method & method, State & state, Arena & pool, size_t row_begin, size_t row_end)
+{
+    const auto * keys = state.getKeyData();
+    size_t row = row_begin;
+    for (; row + key_runs_group_rows < row_end; row += key_runs_group_rows)
+    {
+        UInt64 run_ends = runEndsInGroup(keys + row);
+        const size_t runs = static_cast<size_t>(std::popcount(run_ends));
+        if (runs > max_runs_to_count)
+            break;
+
+        size_t run_begin = 0;
+        do
+        {
+            const size_t run_end = static_cast<size_t>(std::countr_zero(run_ends)) + 1;
+            run_ends &= run_ends - 1;
+            auto emplace_result = state.emplaceKey(method.data, row + run_begin, pool);
+            if (emplace_result.isInserted())
+                getInlineCountState(emplace_result.getMapped()) = run_end - run_begin;
+            else
+                getInlineCountState(emplace_result.getMapped()) += run_end - run_begin;
+            run_begin = run_end;
+        } while (run_ends);
+
+        if (runs > max_runs_to_continue)
+            return row + key_runs_group_rows;
+    }
+    return row;
+}
+
+}
+
 /// `count()` alone keeps the count in the hash table cell, so the batch creates no aggregate states.
 template <bool prefetch, bool top_k, typename Method, typename State>
 void NO_INLINE Aggregator::executeImplBatchSimpleCount(
@@ -1802,6 +1870,19 @@ void NO_INLINE Aggregator::executeImplBatchSimpleCount(
     }
     else
     {
+        /// Single-level table, one 4- or 8-byte key that is not `Nullable` or `LowCardinality`, no consecutive-keys cache.
+        static constexpr bool count_by_runs = std::endian::native == std::endian::little && !prefetch && !top_k
+            && !Method::one_key_nullable_optimization && !requires { Method::Data::NUM_BUCKETS; }
+            && !requires(const State & s) { s.positions; } && requires(const State & s)
+            {
+                requires std::is_same_v<State, typename Method::StateNoCache>;
+                requires std::is_same_v<std::remove_cvref_t<decltype(*s.getKeyData())>, UInt32>
+                    || std::is_same_v<std::remove_cvref_t<decltype(*s.getKeyData())>, UInt64>;
+            };
+
+        if constexpr (count_by_runs)
+            row_begin = countRowsByRunsOfEqualKeys(method, state, *aggregates_pool, row_begin, row_end);
+
         top_k_rows.startBatch(key_columns, row_begin, row_end);
 
         static constexpr bool prefetch_cells = prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>;

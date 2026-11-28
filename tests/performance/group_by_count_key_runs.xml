@@ -1,0 +1,8 @@
+<test>
+    <query>SELECT CounterID, count() FROM hits_100m_single GROUP BY CounterID FORMAT Null</query>
+    <query>SELECT toYYYYMMDD(EventDate) AS d, count() FROM hits_100m_single GROUP BY d FORMAT Null</query>
+    <query>SELECT toUInt64(intDiv(number, 4) % 1000) AS k, count() FROM numbers_mt(100000000) GROUP BY k FORMAT Null</query>
+    <query>SELECT toUInt64(intHash64(number) % 1000) AS k, count() FROM numbers_mt(100000000) GROUP BY k FORMAT Null</query>
+    <query>SELECT toUInt64(intHash64(intDiv(number, 3) * 2 + (number % 3 >= 1)) % 1000) AS k, count() FROM numbers_mt(100000000) GROUP BY k FORMAT Null</query>
+    <query>SELECT URLHash, count() FROM hits_100m_single WHERE CounterID = 62 GROUP BY URLHash FORMAT Null</query>
+</test>

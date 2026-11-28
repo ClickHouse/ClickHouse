@@ -1,0 +1,68 @@
+UInt32 runs4	1
+UInt32 alt12	1
+UInt32 mix64	1
+UInt32 noruns_then_runs	1
+UInt32 r63	1
+UInt32 r64	1
+UInt32 r65	1
+UInt32 onekey	1
+UInt32 noruns	1
+UInt32 randruns	1
+UInt32 nearlimit	1
+UInt64 runs4	1
+UInt64 alt12	1
+UInt64 mix64	1
+UInt64 noruns_then_runs	1
+UInt64 r63	1
+UInt64 r64	1
+UInt64 r65	1
+UInt64 onekey	1
+UInt64 noruns	1
+UInt64 randruns	1
+UInt64 nearlimit	1
+Int32 runs4	1
+Int32 randruns	1
+Int64 runs4	1
+Int64 randruns	1
+Float32 runs4	1
+Float32 randruns	1
+Float64 runs4	1
+Float64 randruns	1
+DateTime runs4	1
+DateTime randruns	1
+Date32 runs4	1
+Date32 randruns	1
+DateTime64 runs4	1
+DateTime64 randruns	1
+IPv4 runs4	1
+IPv4 randruns	1
+UInt64 runs4 max_block_size=65	1
+UInt32 r64 max_block_size=65	1
+UInt64 runs4 max_block_size=128	1
+UInt32 r64 max_block_size=128	1
+UInt64 runs4 max_block_size=129	1
+UInt32 r64 max_block_size=129	1
+UInt64 runs4 max_block_size=256	1
+UInt32 r64 max_block_size=256	1
+UInt64 runs4 max_block_size=257	1
+UInt32 r64 max_block_size=257	1
+UInt64 runs4 max_block_size=1000	1
+UInt32 r64 max_block_size=1000	1
+UInt64 runs_then_noruns	1
+UInt64 runs_then_runs12	1
+UInt64 noruns_then_runs4	1
+UInt64 first_group_40_runs	1
+UInt64 first_group_41_runs	1
+UInt64 first_group_48_runs	1
+UInt64 first_group_49_runs	1
+UInt64 runs4 max_rows_to_group_by	1
+0	19
+1	16
+2	16
+
+0	4099
+UInt64 constant key	1
+UInt64 runs4 max_threads=4 no_adaptive	1
+UInt64 runs4 max_threads=4	1
+UInt64 runs4 max_threads=4 frozen	1
+UInt64 alt12 max_threads=4 frozen	1
