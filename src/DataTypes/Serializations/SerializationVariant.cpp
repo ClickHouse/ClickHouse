@@ -314,6 +314,31 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationVariant::deserializeD
     return discriminators_state;
 }
 
+/// Writes the global discriminators of rows [begin, end) of the column.
+static void writeGlobalDiscriminators(const ColumnVariant & col, size_t begin, size_t end, WriteBuffer & out)
+{
+    const ColumnVariant::Discriminator * local_discriminators = col.getLocalDiscriminators().data();
+    if (col.hasGlobalVariantsOrder())
+    {
+        out.write(reinterpret_cast<const char *>(local_discriminators + begin), end - begin);
+        return;
+    }
+
+    std::array<ColumnVariant::Discriminator, 256> global_discriminators_by_local{};
+    global_discriminators_by_local.fill(ColumnVariant::NULL_DISCRIMINATOR);
+    for (size_t i = 0; i != col.getNumVariants(); ++i)
+        global_discriminators_by_local[i] = col.globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(i));
+
+    char buffer[1024];
+    while (begin != end)
+    {
+        const size_t size = std::min(end - begin, sizeof(buffer));
+        for (size_t i = 0; i != size; ++i)
+            buffer[i] = static_cast<char>(global_discriminators_by_local[local_discriminators[begin + i]]);
+        out.write(buffer, size);
+        begin += size;
+    }
+}
 
 void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVariantStatistics(
     const IColumn & column,
@@ -448,9 +473,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
         /// If local and global discriminators are different, we should convert local to global before serializing (because we don't serialize the mapping).
         else
         {
-            const auto & local_discriminators = col.getLocalDiscriminators();
-            for (size_t i = offset; i != offset + limit; ++i)
-                writeBinaryLittleEndian(col.globalDiscriminatorByLocal(local_discriminators[i]), *discriminators_stream);
+            writeGlobalDiscriminators(col, offset, offset + limit, *discriminators_stream);
         }
 
         /// Second, serialize variants in global order.
@@ -471,30 +494,52 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
     /// In general case we should iterate through local discriminators in range [offset, offset + limit] to serialize global discriminators and calculate offset/limit pair for each variant.
     const auto & local_discriminators = col.getLocalDiscriminators();
     const auto & offsets = col.getOffsets();
-    std::vector<std::pair<size_t, size_t>> variant_offsets_and_limits(variant_serializations.size(), {0, 0});
     size_t end = offset + limit;
+    /// First collect them by local discriminator, skipping blocks of NULLs.
+    std::vector<std::pair<size_t, size_t>> local_variant_offsets_and_limits(variant_serializations.size(), {0, 0});
+    size_t row = offset;
+    while (row < end)
+    {
+        if (end - row >= ColumnVariant::DISCRIMINATORS_BLOCK_SIZE && ColumnVariant::isBlockOfNullDiscriminators(local_discriminators.data() + row))
+        {
+            row += ColumnVariant::DISCRIMINATORS_BLOCK_SIZE;
+            continue;
+        }
+
+        size_t block_end = std::min(end, row + ColumnVariant::DISCRIMINATORS_BLOCK_SIZE);
+        for (; row != block_end; ++row)
+        {
+            auto local_discr = local_discriminators[row];
+            if (local_discr != ColumnVariant::NULL_DISCRIMINATOR)
+            {
+                auto & [variant_offset, variant_limit] = local_variant_offsets_and_limits[local_discr];
+                /// If we see this discriminator for the first time, update offset
+                if (!variant_limit)
+                    variant_offset = offsets[row];
+                /// Update limit for this discriminator.
+                ++variant_limit;
+            }
+        }
+    }
+
+    std::vector<std::pair<size_t, size_t>> variant_offsets_and_limits(variant_serializations.size(), {0, 0});
     std::bitset<ColumnVariant::MAX_NESTED_COLUMNS> non_empty_variants_in_range;
     ColumnVariant::Discriminator last_non_empty_variant_discr = 0;
-    for (size_t i = offset; i < end; ++i)
+    for (size_t local_discr = 0; local_discr != local_variant_offsets_and_limits.size(); ++local_discr)
     {
-        auto global_discr = col.globalDiscriminatorByLocal(local_discriminators[i]);
-        if (global_discr != ColumnVariant::NULL_DISCRIMINATOR)
-        {
-            /// If we see this discriminator for the first time, update offset
-            if (!variant_offsets_and_limits[global_discr].second)
-                variant_offsets_and_limits[global_discr].first = offsets[i];
-            /// Update limit for this discriminator.
-            ++variant_offsets_and_limits[global_discr].second;
-            non_empty_variants_in_range.set(global_discr);
-            last_non_empty_variant_discr = global_discr;
-        }
+        if (!local_variant_offsets_and_limits[local_discr].second)
+            continue;
+
+        auto global_discr = col.globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(local_discr));
+        variant_offsets_and_limits[global_discr] = local_variant_offsets_and_limits[local_discr];
+        non_empty_variants_in_range.set(global_discr);
+        last_non_empty_variant_discr = global_discr;
     }
 
     /// In basic mode just serialize discriminators as is row by row.
     if (variant_state->discriminators_mode.value == DiscriminatorsSerializationMode::BASIC)
     {
-        for (size_t i = offset; i < end; ++i)
-            writeBinaryLittleEndian(col.globalDiscriminatorByLocal(local_discriminators[i]), *discriminators_stream);
+        writeGlobalDiscriminators(col, offset, end, *discriminators_stream);
     }
     /// In compact mode check if we have the same discriminator for all rows in this granule.
     /// First, check if all values in granule are NULLs.
@@ -513,8 +558,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
     else
     {
         writeBinaryLittleEndian(UInt8(CompactDiscriminatorsGranuleFormat::PLAIN), *discriminators_stream);
-        for (size_t i = offset; i < end; ++i)
-            writeBinaryLittleEndian(col.globalDiscriminatorByLocal(local_discriminators[i]), *discriminators_stream);
+        writeGlobalDiscriminators(col, offset, end, *discriminators_stream);
     }
 
     /// Serialize variants in global order.

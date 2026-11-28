@@ -15,6 +15,8 @@
 #include <Common/HashTable/Hash.h>
 #include <Columns/MaskOperations.h>
 
+#include <cstring>
+
 
 namespace DB
 {
@@ -591,43 +593,72 @@ void ColumnVariant::insertRangeFromImpl(const DB::IColumn & src_, size_t start, 
 
     /// Iterate through src local_discriminators in range [start, start + length],
     /// collect ranges we need to insert for all variants and update offsets.
-    /// nested_ranges[i].first - offset in src.variants[i]
-    /// nested_ranges[i].second - length in src.variants[i]
-    VectorWithMemoryTracking<std::pair<size_t, size_t>> nested_ranges(src.variants.size(), {0, 0});
-    auto & offsets_data = getOffsets();
-    offsets_data.reserve(offsets_data.size() + length);
-    auto & local_discriminators_data = getLocalDiscriminators();
-    local_discriminators_data.reserve(local_discriminators_data.size() + length);
-    const auto & src_offsets_data = src.getOffsets();
-    const auto & src_local_discriminators_data = src.getLocalDiscriminators();
-    for (size_t i = start; i != start + length; ++i)
+    struct NestedRange
     {
-        /// We insert from src.variants[src_local_discr] to variants[local_discr]
-        Discriminator src_local_discr = src_local_discriminators_data[i];
-        Discriminator src_global_discr = src.globalDiscriminatorByLocal(src_local_discr);
-        Discriminator global_discr = src_global_discr;
-        if (global_discriminators_mapping && src_global_discr != NULL_DISCRIMINATOR)
-            global_discr = (*global_discriminators_mapping)[src_global_discr];
-        Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
-        local_discriminators_data.push_back(local_discr);
-        if (local_discr == NULL_DISCRIMINATOR)
+        /// Offset and length of the range to insert from src.variants[i].
+        size_t nested_start = 0;
+        size_t nested_length = 0;
+        /// Size of our variant before this insertion. Variants are extended only after the loop below.
+        size_t variant_size = 0;
+    };
+    VectorWithMemoryTracking<NestedRange> nested_ranges(src.variants.size());
+    auto & offsets_data = getOffsets();
+    auto & local_discriminators_data = getLocalDiscriminators();
+    const size_t old_size = local_discriminators_data.size();
+    offsets_data.reserve(old_size + length);
+    local_discriminators_data.reserve(old_size + length);
+    offsets_data.resize(old_size + length);
+    local_discriminators_data.resize(old_size + length);
+    Offset * new_offsets = offsets_data.data() + old_size;
+    Discriminator * new_local_discriminators = local_discriminators_data.data() + old_size;
+    const Offset * src_offsets_data = src.getOffsets().data() + start;
+    const Discriminator * src_local_discriminators_data = src.getLocalDiscriminators().data() + start;
+
+    size_t row = 0;
+    while (row != length)
+    {
+        if (length - row >= DISCRIMINATORS_BLOCK_SIZE && isBlockOfNullDiscriminators(src_local_discriminators_data + row))
         {
-            offsets_data.emplace_back();
+            memset(new_local_discriminators + row, NULL_DISCRIMINATOR, DISCRIMINATORS_BLOCK_SIZE);
+            memset(new_offsets + row, 0, DISCRIMINATORS_BLOCK_SIZE * sizeof(Offset));
+            row += DISCRIMINATORS_BLOCK_SIZE;
+            continue;
         }
-        else
+
+        const size_t block_end = std::min(length, row + DISCRIMINATORS_BLOCK_SIZE);
+        for (; row != block_end; ++row)
         {
-            /// If we see this discriminator for the first time, set its range start.
-            if (!nested_ranges[src_local_discr].second)
-                nested_ranges[src_local_discr].first = src_offsets_data[i];
-            /// Update offsets column with correct offset.
-            offsets_data.push_back(variants[local_discr]->size() + nested_ranges[src_local_discr].second);
-            ++nested_ranges[src_local_discr].second;
+            /// We insert from src.variants[src_local_discr] to variants[local_discr]
+            Discriminator src_local_discr = src_local_discriminators_data[row];
+            Discriminator src_global_discr = src.globalDiscriminatorByLocal(src_local_discr);
+            Discriminator global_discr = src_global_discr;
+            if (global_discriminators_mapping && src_global_discr != NULL_DISCRIMINATOR)
+                global_discr = (*global_discriminators_mapping)[src_global_discr];
+            Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
+            new_local_discriminators[row] = local_discr;
+            if (local_discr == NULL_DISCRIMINATOR)
+            {
+                new_offsets[row] = 0;
+            }
+            else
+            {
+                auto & range = nested_ranges[src_local_discr];
+                /// If we see this discriminator for the first time, set its range start and read the size of our variant.
+                if (!range.nested_length)
+                {
+                    range.nested_start = src_offsets_data[row];
+                    range.variant_size = variants[local_discr]->size();
+                }
+                /// Update offsets column with correct offset.
+                new_offsets[row] = range.variant_size + range.nested_length;
+                ++range.nested_length;
+            }
         }
     }
 
     for (Discriminator src_local_discr = 0; src_local_discr != nested_ranges.size(); ++src_local_discr)
     {
-        auto [nested_start, nested_length] = nested_ranges[src_local_discr];
+        const auto & range = nested_ranges[src_local_discr];
         Discriminator src_global_discr = src.globalDiscriminatorByLocal(src_local_discr);
         Discriminator global_discr = src_global_discr;
         if (global_discriminators_mapping && src_global_discr != NULL_DISCRIMINATOR)
@@ -635,8 +666,8 @@ void ColumnVariant::insertRangeFromImpl(const DB::IColumn & src_, size_t start, 
         if (!skip_discriminator || global_discr != *skip_discriminator)
         {
             Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
-            if (nested_length)
-                variants[local_discr]->insertRangeFrom(*src.variants[src_local_discr], nested_start, nested_length);
+            if (range.nested_length)
+                variants[local_discr]->insertRangeFrom(*src.variants[src_local_discr], range.nested_start, range.nested_length);
         }
     }
 }
@@ -1755,10 +1786,23 @@ void ColumnVariant::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, s
     size_t to = limit && from + limit < size() ? from + limit : size();
     indices.reserve(indices.size() + to - from);
 
-    for (size_t i = from; i < to; ++i)
+    /// A row is default if it is NULL, see isDefaultAt.
+    const auto & local_discriminators_data = getLocalDiscriminators();
+    size_t row = from;
+    while (row < to)
     {
-        if (!isDefaultAt(i))
-            indices.push_back(i);
+        if (to - row >= DISCRIMINATORS_BLOCK_SIZE && isBlockOfNullDiscriminators(local_discriminators_data.data() + row))
+        {
+            row += DISCRIMINATORS_BLOCK_SIZE;
+            continue;
+        }
+
+        const size_t block_end = std::min(to, row + DISCRIMINATORS_BLOCK_SIZE);
+        for (; row != block_end; ++row)
+        {
+            if (local_discriminators_data[row] != NULL_DISCRIMINATOR)
+                indices.push_back(row);
+        }
     }
 }
 
