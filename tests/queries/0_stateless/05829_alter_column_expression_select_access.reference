@@ -1,0 +1,20 @@
+-- denied: expressions reading secret
+['public_1','public_2']
+-- metadata unchanged
+id		
+d		
+public		
+secret		
+t		
+-- allowed: expressions reading only granted columns, lambda parameters are not columns
+-- allowed: a grant on the column covers its subcolumns
+-- allowed after GRANT SELECT(secret)
+['secret_1','secret_2']
+id		
+d		
+public	ALIAS	secret
+secret		
+t		
+c4	ALIAS	arrayStringConcat(arrayMap(x -> upper(x), [public]))
+c5	DEFAULT	concat(public, toString(id))
+c6	ALIAS	t.a
