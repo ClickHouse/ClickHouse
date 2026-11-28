@@ -351,10 +351,10 @@ const std::unordered_map<String, String> & getRenames()
         {"millisecond", "toMillisecond"},
 
         /// Arrays.
+        {"flatten", "arrayFlatten"},
         {"array_distinct", "arrayDistinct"},
         {"array_intersect", "arrayIntersect"},
         {"array_union", "arrayUnion"},
-        {"array_except", "arrayExcept"},
         {"array_max", "arrayMax"},
         {"array_min", "arrayMin"},
         {"array_position", "indexOf"},
@@ -478,6 +478,26 @@ const std::unordered_map<String, Rewriter> & getRewriters()
             node = makeFunctionWithArguments("arrayMap",
                 {makeLambda({element}, result),
                  makeFunctionWithArguments("arrayZipUnaligned", {arguments[0], arguments[1]})});
+        }},
+        {"array_except", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
+        {
+            /// Trino's array_except returns the difference without duplicates;
+            /// ClickHouse's arrayExcept preserves them.
+            requireArguments(function, arguments, 2, 2, "(array, array)");
+            node = makeFunctionWithArguments(
+                "arrayDistinct",
+                {makeFunctionWithArguments("arrayExcept", {arguments[0], arguments[1]})});
+        }},
+        {"reverse", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
+        {
+            /// Trino's reverse(varchar) reverses code points; ClickHouse's
+            /// reverse reverses bytes. Rewrite string literals to the UTF8
+            /// variant; non-literal arguments (arrays, VARBINARY expressions,
+            /// columns) keep ClickHouse's reverse to preserve their semantics.
+            requireArguments(function, arguments, 1, 1, "(value)");
+            const auto * literal = arguments[0]->as<ASTLiteral>();
+            if (literal && literal->value.getType() == Field::Types::String)
+                node = makeFunctionWithArguments("reverseUTF8", {arguments[0]});
         }},
         {"array_first", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
         {
