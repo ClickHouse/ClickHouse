@@ -1,0 +1,8 @@
+union unnamed	MULTIPOLYGON(((0 0,0 2,2 2,2 0,0 0)))
+intersection unnamed	MULTIPOLYGON(((0 0,0 2,2 2,2 0,0 0)))
+hull MultiPoint	POLYGON((0 0,0 4,4 4,4 0,0 0))
+hull Geometry MultiPoint	POLYGON((0 0,0 4,4 4,4 0,0 0))
+hull Geometry mixed	POLYGON((-1 1,-1 2,2 6,4 0,0 0,-1 1))
+hull MultiLineString	POLYGON((0 0,5 6,5 5,1 0,0 0))
+hull const Geometry	POLYGON((0 0,0 3,3 0,0 0))
+state roundtrip	POLYGON((0 0,0 1,1 0,0 0))
