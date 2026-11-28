@@ -501,7 +501,8 @@ bool ReadFromFormatInfo::defaultsDependOnTheirBlock(const ContextPtr & context) 
         if (!available.columns())
             available.insert({DataTypeUInt8().createColumn(), std::make_shared<DataTypeUInt8>(), "_dummy"});
 
-        auto dag = evaluateMissingDefaults(available, {{column.name, column.type}}, columns_description, context, false);
+        /// The actions are only inspected, so a default that reads a table (`x IN table`) does not read it here.
+        auto dag = analyzeMissingDefaults(available, {{column.name, column.type}}, columns_description, context, false);
         if (dag && dag->hasNonDeterministicOrStatefulFunctions())
             return true;
     }

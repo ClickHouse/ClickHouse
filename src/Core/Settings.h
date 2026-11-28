@@ -150,6 +150,10 @@ struct Settings
     Settings & operator=(const Settings & other);
     bool operator==(const Settings & other) const;
 
+    /// Whether every setting has the same effective value in both. Unlike `operator==`, which compares the lists of the
+    /// changed settings, it does not tell a default value from the same value assigned explicitly.
+    [[nodiscard]] bool hasSameValues(const Settings & other) const;
+
     COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     /// General API as needed

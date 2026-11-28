@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/inplaceBlockConversions.h>
 
 namespace DB
 {
@@ -17,6 +18,7 @@ FormatParserSharedResources::FormatParserSharedResources(const Settings & settin
     : max_parsing_threads(settings[Setting::max_parsing_threads])
     , max_io_threads(settings[Setting::max_download_threads])
     , num_streams(num_streams_)
+    , default_expressions_sets(createDefaultExpressionsSets())
 {
 }
 

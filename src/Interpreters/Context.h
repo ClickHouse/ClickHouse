@@ -432,6 +432,8 @@ protected:
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
     String current_database;
+    /// See `Context::getDatabaseOfAdditionalTableFilters`. Empty if it is the current database.
+    String additional_table_filters_database;
     /// The SQL-defined HTTP handler name and the HTTP request URL are stored in `client_info` (see
     /// `ClientInfo::http_handler_name` / `http_request_url`) so that they are serialized on distributed
     /// fan-out and remain visible to `currentHandler()` / `currentRequestURL()` on remote shards.
@@ -1326,6 +1328,14 @@ public:
     void clearViewSource();
 
     String getCurrentDatabase() const;
+
+    /// The database that the unqualified table names in the keys of the `additional_table_filters` setting refer to.
+    /// It is the current database, unless the filters are applied on behalf of a query with another current database:
+    /// a default expression of a column that reads a table (`x IN table`) is evaluated with the current database of
+    /// the storage, while the filters name the tables as the reading query sees them.
+    String getDatabaseOfAdditionalTableFilters() const;
+    void setDatabaseOfAdditionalTableFilters(const String & name);
+
     String getCurrentQueryId() const { return client_info.current_query_id; }
 
     /// The name of the SQL-defined HTTP handler that invoked the query, if any (see `currentHandler`).

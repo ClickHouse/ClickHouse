@@ -1,14 +1,20 @@
 #include <Interpreters/inplaceBlockConversions.h>
 
 #include <functional>
+#include <vector>
+#include <mutex>
 #include <utility>
 
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Access/ContextAccess.h>
+#include <Access/ContextAccessParams.h>
+#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Databases/enableAllExperimentalSettings.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTExpressionList.h>
@@ -46,13 +52,19 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageDummy.h>
+#include <Common/SettingsChanges.h>
 #include <Common/checkStackSize.h>
+#include <base/defines.h>
 #include <Common/quoteString.h>
 
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Utils.h>
 #include <Planner/PlannerActionsVisitor.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/traverseQueryTree.h>
+#include <Databases/enableAllExperimentalSettings.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
 
@@ -61,12 +73,14 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int ACCESS_DENIED;
 }
 
 namespace
@@ -235,44 +249,284 @@ struct ResolvedExpressionList
     std::shared_ptr<TableNode> table;
 };
 
-ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr & expr_list, ContextPtr context)
+/// The stored expressions are resolved with all the experimental and suspicious features enabled (see
+/// `resolveExpressionList`), but the queries they contain are planned and executed later, and that reads the tables:
+/// a view is analyzed when its plan is built, with the settings of the query that reads it. Those must be the settings
+/// of `execution_context`, so that enabling the features for the stored expression does not lift the restrictions of
+/// the reading query, such as `allow_fuzz_query_functions = 0`, for the views that the expression reads.
+void restoreSettingsOfSubqueries(const QueryTreeNodePtr & expression, const Context & analysis_context, const Context & execution_context)
+{
+    std::vector<ContextMutablePtr> contexts;
+    traverseQueryTree(
+        expression,
+        [](const QueryTreeNodePtr &, const QueryTreeNodePtr &) { return true; },
+        [&](const QueryTreeNodePtr & node)
+        {
+            if (auto * query_node = node->as<QueryNode>())
+                contexts.push_back(query_node->getMutableContext());
+            else if (auto * union_node = node->as<UnionNode>())
+                contexts.push_back(union_node->getMutableContext());
+        });
+
+    if (contexts.empty())
+        return;
+
+    const auto & analysis_settings = analysis_context.getSettingsRef();
+    const auto & execution_settings = execution_context.getSettingsRef();
+    SettingsChanges restored_settings;
+    for (std::string_view name : execution_settings.getAllRegisteredNames())
+    {
+        Field value = execution_settings.get(name);
+        if (value != analysis_settings.get(name))
+            restored_settings.emplace_back(name, std::move(value));
+    }
+
+    for (const auto & context : contexts)
+        if (context)
+            for (const auto & change : restored_settings)
+                context->setSetting(change.name, change.value);
+}
+
+/// If `enable_experimental_settings` is set, the expressions are resolved with all the experimental and suspicious
+/// features enabled: they are stored in the metadata of a table and were checked when it was created, possibly with
+/// other settings than the ones of the query that reads the table now. The queries inside them still run with the
+/// settings of `context`, see `restoreSettingsOfSubqueries`.
+ResolvedExpressionList resolveExpressionList(
+    const Block & header, const ASTPtr & expr_list, ContextPtr context, bool enable_experimental_settings = false)
 {
     auto execution_context = Context::createCopy(context);
-    auto expression = buildQueryTree(expr_list, execution_context);
+
+    /// A column default containing `x IN table` has its set built in place (see `buildPreparedSetsInplace`),
+    /// by a standalone plan with no initial query around it. Reading old parts passes the global context of
+    /// the storage, which never went through `makeQueryContext` and so carries a zero client version, which a
+    /// distributed set subquery refuses to send. Do as for the scalar subqueries of a standalone expression.
+    execution_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+    execution_context->setInitiatorVersionIfUnset();
+
+    ContextMutablePtr analysis_context = execution_context;
+    if (enable_experimental_settings)
+    {
+        analysis_context = Context::createCopy(execution_context);
+        enableAllExperimentalSettings(analysis_context);
+    }
+
+    auto expression = buildQueryTree(expr_list, analysis_context);
 
     ColumnsDescription fake_column_descriptions{};
     // Add columns from index to ensure names are unique in case of duplicated columns.
     for (const auto & column : header.getIndexByName())
         fake_column_descriptions.add(ColumnDescription(column.first, header.getByPosition(column.second).type), /*after_column=*/ "", /*first=*/false, /*add_subcolumns=*/false);
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
-    auto fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
+    auto fake_table_expression = std::make_shared<TableNode>(storage, analysis_context);
 
     QueryAnalyzer analyzer(false);
-    analyzer.resolve(expression, fake_table_expression, execution_context);
+    analyzer.resolve(expression, fake_table_expression, analysis_context);
+
+    if (enable_experimental_settings)
+        restoreSettingsOfSubqueries(expression, *analysis_context, *execution_context);
 
     return {std::move(expression), std::move(execution_context), std::move(fake_table_expression)};
 }
+
+}
+
+class DefaultExpressionsSets
+{
+public:
+    /// Collect the sets of `expression` into `planner_context`, finding the sets built before instead of registering
+    /// new ones. The collection runs under the lock, because it modifies the shared sets it finds: a `GLOBAL IN` marks
+    /// its set with `markExternalTableExpected`, which other threads collecting the same set would write concurrently.
+    void collect(QueryTreeNodePtr & expression, PlannerContextPtr planner_context)
+    {
+        auto identity = getIdentity(planner_context->getQueryContext());
+        std::lock_guard lock(mutex);
+        auto & prepared_sets = planner_context->getPreparedSets();
+        if (const auto * sets = findSets(identity))
+            for (const auto & subquery : sets->getSubqueries())
+                prepared_sets.addOrReplaceSubquery(subquery);
+
+        collectSetsAndSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
+    }
+
+    /// Build the sets of `planner_context` that are not built yet, and remember them.
+    /// Return false if another thread has built one of them meanwhile, after `collect`: the actions refer to the
+    /// set of this thread, so they have to be built again to use that set, rather than to build the same set twice.
+    bool build(const PlannerContextPtr & planner_context, const ContextPtr & context)
+    {
+        PreparedSets::Subqueries unbuilt;
+        for (const auto & subquery : planner_context->getPreparedSets().getSubqueries())
+            if (!subquery->get())
+                unbuilt.push_back(subquery);
+
+        if (unbuilt.empty())
+            return true;
+
+        auto identity = getIdentity(planner_context->getQueryContext());
+
+        /// The lock is held while the sets are built, so that the threads that need the same set wait for it
+        /// instead of building it as well.
+        std::lock_guard lock(mutex);
+        auto & sets = getOrAddSets(std::move(identity));
+        for (const auto & subquery : unbuilt)
+            if (sets.findSubquery(subquery->getHash()))
+                return false;
+
+        buildPreparedSetsInplace(planner_context, context);
+
+        for (const auto & subquery : unbuilt)
+            sets.addOrReplaceSubquery(subquery);
+        return true;
+    }
+
+    static bool haveSameIdentity(const ContextPtr & lhs, const ContextPtr & rhs)
+    {
+        return getIdentity(lhs) == getIdentity(rhs);
+    }
+
+private:
+    /// The readers sharing the sets may read on behalf of different users, for example the children of a `Merge`
+    /// table that are views with different `SQL SECURITY DEFINER`. The contents of a set depend on the privileges and
+    /// the row policies of the user that builds it, and reusing a set skips the access checks of planning its
+    /// subquery, so a set is shared only by the readers with the same access and the same settings constraints.
+    /// The contents of a set also depend on the settings of the reader: `transform_null_in` decides whether the set
+    /// keeps `NULL`, `max_rows_in_set` with `set_overflow_mode = 'break'` truncates it, and so on, and the readers of
+    /// one query may have different settings, for example the children of a `Merge` table that are views with their
+    /// own `SETTINGS`. So the readers also have to have the same settings, except the ones that only limit the
+    /// parallelism of the reading, which a `Merge` table sets differently for each of its children.
+    struct Identity
+    {
+        ContextAccessParams access;
+        std::shared_ptr<const SettingsConstraintsAndProfileIDs> constraints;
+        Settings settings;
+        /// The database that the unqualified names of `additional_table_filters` refer to, if there are filters.
+        String additional_table_filters_database;
+
+        bool operator==(const Identity & other) const
+        {
+            /// The effective values are compared, not the lists of the changed settings: a `Merge` table assigns
+            /// some settings for its children explicitly, such as `enable_parallel_replicas = 0`, and it must not
+            /// make the child differ from a reader that has the same value by default.
+            return access == other.access && constraints == other.constraints && settings.hasSameValues(other.settings)
+                && additional_table_filters_database == other.additional_table_filters_database;
+        }
+    };
+
+    static Identity getIdentity(const ContextPtr & context)
+    {
+        Settings settings = context->getSettingsCopy();
+        for (const auto * name : {"max_threads", "max_streams_to_max_threads_ratio", "parallelize_output_from_storages"})
+            settings.setDefaultValue(name);
+        String additional_table_filters_database;
+        if (!settings[Setting::additional_table_filters].value.empty())
+            additional_table_filters_database = context->getDatabaseOfAdditionalTableFilters();
+        return {context->getAccess()->getParams(), context->getSettingsConstraintsAndCurrentProfiles(), std::move(settings),
+            std::move(additional_table_filters_database)};
+    }
+
+    [[nodiscard]] const PreparedSets * findSets(const Identity & identity) const TSA_REQUIRES(mutex)
+    {
+        for (const auto & [sets_identity, sets] : sets_by_identity)
+            if (sets_identity == identity)
+                return &sets;
+        return nullptr;
+    }
+
+    PreparedSets & getOrAddSets(Identity identity) TSA_REQUIRES(mutex)
+    {
+        for (auto & [sets_identity, sets] : sets_by_identity)
+            if (sets_identity == identity)
+                return sets;
+        return sets_by_identity.emplace_back(std::move(identity), PreparedSets{}).second;
+    }
+
+    std::mutex mutex;
+    /// There are few distinct identities in one query, and `Settings` are only comparable for equality.
+    std::vector<std::pair<Identity, PreparedSets>> sets_by_identity TSA_GUARDED_BY(mutex);
+};
+
+DefaultExpressionsSetsPtr createDefaultExpressionsSets()
+{
+    return std::make_shared<DefaultExpressionsSets>();
+}
+
+bool canShareSetsOfExpressions(const ContextPtr & lhs, const ContextPtr & rhs)
+{
+    return DefaultExpressionsSets::haveSameIdentity(lhs, rhs);
+}
+
+namespace
+{
+
+/// What to do with the tables that the expressions read (`x IN table`).
+enum class TablesReading : uint8_t
+{
+    /// Build the sets right away, with the access of the context.
+    Read,
+    /// Throw `ACCESS_DENIED`, because there is no query on whose behalf to read.
+    Forbid,
+    /// Leave the sets unbuilt: the actions are only checked, not executed.
+    Skip,
+};
 
 std::optional<ActionsDAG> createExpressionsAnalyzer(
     const Block & header,
     ASTPtr expr_list,
     bool save_unneeded_columns,
-    ContextPtr context)
+    ContextPtr context,
+    TablesReading tables_reading,
+    bool * has_unbuilt_sets = nullptr,
+    DefaultExpressionsSets * reused_sets = nullptr,
+    bool enable_experimental_settings = false)
 {
     if (!expr_list)
         return {};
 
-    auto resolved = resolveExpressionList(header, expr_list, context);
+    auto resolved = resolveExpressionList(header, expr_list, context, enable_experimental_settings);
     auto & expression = resolved.expression;
     auto & execution_context = resolved.context;
 
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
-    collectSetsAndSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
+    if (reused_sets)
+        reused_sets->collect(expression, planner_context);
+    else
+        collectSetsAndSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
 
     auto actions = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {}).first;
     chassert(expression->getChildren().size() == actions.getOutputs().size());
+
+    /// The actions are executed as a standalone `ExpressionActions` over a block, with no query plan
+    /// to carry a `CreatingSet` step, so a column default containing `x IN table` has to have its set
+    /// filled here. This must come after the actions are built: planning a set subquery renames the
+    /// table expressions it reads, and the renamed node is the very `IN` right-hand side the actions
+    /// look the set up by, so building first would make the lookup miss.
+    /// Without a query on whose behalf to read, as for the background merges and mutations, there is no
+    /// user to check the access to the tables of the sets for, nor whose row policies to apply. Do not
+    /// read them with the full access of the storage: that would store their contents in the new part.
+    /// This includes the tables with `ENGINE = Set`, whose sets are ready and so are not subqueries.
+    const auto & prepared_sets = planner_context->getPreparedSets();
+    const bool reads_tables = prepared_sets.hasSubqueries() || prepared_sets.hasSetsFromStorage();
+    if (tables_reading == TablesReading::Forbid && reads_tables)
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot evaluate the default expression of a column without a reading query, "
+            "because it reads a table (as in `x IN table`). Background merges and mutations are not authorized "
+            "to read other tables on behalf of any user");
+
+    if (tables_reading == TablesReading::Skip)
+    {
+        if (has_unbuilt_sets)
+            *has_unbuilt_sets = prepared_sets.hasSubqueries();
+    }
+    else if (reused_sets)
+    {
+        if (!reused_sets->build(planner_context, execution_context))
+            return createExpressionsAnalyzer(
+                header, expr_list, save_unneeded_columns, context, tables_reading, has_unbuilt_sets, reused_sets,
+                enable_experimental_settings);
+    }
+    else
+        buildPreparedSetsInplace(planner_context, execution_context);
 
     NamesWithAliases result_columns;
     for (size_t i = 0; i < expression->getChildren().size(); ++i)
@@ -295,18 +549,54 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 }
 }
 
-void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context, const ColumnDefaults & column_defaults, bool forbid_default_defaults)
+void performRequiredConversions(
+    Block & block,
+    const NamesAndTypesList & required_columns,
+    ContextPtr context,
+    const ColumnDefaults & column_defaults,
+    bool forbid_default_defaults,
+    bool allow_reading_tables,
+    DefaultExpressionsSets * reused_sets,
+    bool enable_experimental_settings)
 {
     ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns, column_defaults, forbid_default_defaults);
     if (conversion_expr_list->children.empty())
         return;
 
-    std::optional<ActionsDAG> dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context);
+    std::optional<ActionsDAG> dag = createExpressionsAnalyzer(
+        block, conversion_expr_list, true, context, allow_reading_tables ? TablesReading::Read : TablesReading::Forbid,
+        /*has_unbuilt_sets=*/ nullptr, reused_sets, enable_experimental_settings);
 
     if (dag)
     {
         auto expression = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context));
         expression->execute(block);
+    }
+}
+
+void checkRequiredConversions(
+    const Block & block,
+    const NamesAndTypesList & required_columns,
+    ContextPtr context,
+    const ColumnDefaults & column_defaults,
+    bool forbid_default_defaults)
+{
+    Block block_copy = block;
+    ASTPtr conversion_expr_list = convertRequiredExpressions(block_copy, required_columns, column_defaults, forbid_default_defaults);
+    if (conversion_expr_list->children.empty())
+        return;
+
+    bool has_unbuilt_sets = false;
+    std::optional<ActionsDAG> dag = createExpressionsAnalyzer(
+        block_copy, conversion_expr_list, true, context, TablesReading::Skip, &has_unbuilt_sets);
+
+    /// Building the actions has already resolved the expressions and checked their types. Executing them,
+    /// even over an empty block, needs the sets of `x IN table` filled, which would read the tables just to
+    /// check the metadata, so the actions are executed only when they read no table.
+    if (dag && !has_unbuilt_sets)
+    {
+        auto expression = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context));
+        expression->execute(block_copy);
     }
 }
 
@@ -339,13 +629,32 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     const ColumnsDescription & columns,
     ContextPtr context,
     bool save_unneeded_columns,
-    bool null_as_default)
+    bool null_as_default,
+    bool allow_reading_tables,
+    DefaultExpressionsSets * reused_sets,
+    bool enable_experimental_settings)
 {
     if (!columns.hasDefaults() && (!null_as_default || !needConvertAnyNullToDefault(header, required_columns, columns)))
         return {};
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
-    return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
+    return createExpressionsAnalyzer(
+        header, expr_list, save_unneeded_columns, context, allow_reading_tables ? TablesReading::Read : TablesReading::Forbid,
+        /*has_unbuilt_sets=*/ nullptr, reused_sets, enable_experimental_settings);
+}
+
+std::optional<ActionsDAG> analyzeMissingDefaults(
+    const Block & header,
+    const NamesAndTypesList & required_columns,
+    const ColumnsDescription & columns,
+    ContextPtr context,
+    bool save_unneeded_columns)
+{
+    if (!columns.hasDefaults())
+        return {};
+
+    ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, /*null_as_default=*/ false);
+    return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context, TablesReading::Skip);
 }
 
 /// Checks that a type-directed `enumerateStreams` walk over `column` cannot meet a column class

@@ -1,0 +1,59 @@
+tables
+t_alias_identities_1	1	1
+t_alias_identities_1	2	1
+t_alias_identities_1	5	0
+t_alias_identities_1	\N	\N
+t_alias_identities_2	1	1
+t_alias_identities_2	2	1
+t_alias_identities_2	5	0
+t_alias_identities_2	\N	\N
+views with transform_null_in
+v_alias_null_0	1	1
+v_alias_null_0	2	1
+v_alias_null_0	5	0
+v_alias_null_0	\N	\N
+v_alias_null_1	1	1
+v_alias_null_1	2	1
+v_alias_null_1	5	0
+v_alias_null_1	\N	1
+v_alias_null_0	1
+v_alias_null_0	2
+v_alias_null_1	1
+v_alias_null_1	2
+v_alias_null_1	\N
+views over Merge with transform_null_in
+v_alias_nested_null_0	1	1
+v_alias_nested_null_0	2	1
+v_alias_nested_null_0	5	0
+v_alias_nested_null_0	\N	\N
+v_alias_nested_null_1	1	1
+v_alias_nested_null_1	2	1
+v_alias_nested_null_1	5	0
+v_alias_nested_null_1	\N	1
+views with max_rows_in_set
+v_alias_limit_0	2
+v_alias_limit_1	1
+views with definers
+v_alias_definers_1	1	1
+v_alias_definers_1	2	1
+v_alias_definers_1	5	0
+v_alias_definers_1	\N	\N
+v_alias_definers_2	1	0
+v_alias_definers_2	2	1
+v_alias_definers_2	5	0
+v_alias_definers_2	\N	\N
+v_alias_definers_1	1
+v_alias_definers_1	2
+v_alias_definers_2	2
+views over Merge with definers
+v_alias_nested_definers_1	1	1
+v_alias_nested_definers_1	2	1
+v_alias_nested_definers_1	5	0
+v_alias_nested_definers_1	\N	\N
+v_alias_nested_definers_2	1	0
+v_alias_nested_definers_2	2	1
+v_alias_nested_definers_2	5	0
+v_alias_nested_definers_2	\N	\N
+after revoking the right-hand table from one definer
+ACCESS_DENIED
+ACCESS_DENIED

@@ -1,0 +1,13 @@
+direct
+1	1
+2	1
+1	0
+2	1
+merge
+v_definers_1	1	1
+v_definers_1	2	1
+v_definers_2	1	0
+v_definers_2	2	1
+merge after revoking the right-hand table from one definer
+ACCESS_DENIED
+ACCESS_DENIED
