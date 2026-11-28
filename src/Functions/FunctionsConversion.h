@@ -5509,8 +5509,10 @@ struct ToStringMonotonicity
         if (const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
             type_ptr = low_cardinality_type->getDictionaryType().get();
 
-        /// Order on enum values (which is the order on integers) is completely arbitrary in respect to the order on strings.
-        if (WhichDataType(*type_ptr).isEnum())
+        /// Enum values are ordered by their numeric codes, even when wrapped in `Nullable`.
+        /// Their string labels need not have the same order.
+        const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type_ptr);
+        if (WhichDataType(nullable_type ? *nullable_type->getNestedType() : *type_ptr).isEnum())
             return not_monotonic;
 
         if (checkDataTypes<DataTypeFixedString>(type_ptr))
