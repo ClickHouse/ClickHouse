@@ -152,5 +152,9 @@ digits it is a timestamp.
   a value taken from a table, matches by its values.
 - The division `%` and the other ratios of q (`wavg`, `ratios`) are floating point ones with any value of the setting
   `sql_compatible_division_for_integers`; a query embedded with `.ch.sql` follows the setting.
+- A null is less than every other value in the sorts, as in q: it is the first in the ascending order (`xasc`, `asc`,
+  `iasc`, `select[n;<col]`, the groups of `by`) and the last in the descending one.
+- `where` takes a list of booleans or of integers: for integers, the index of an item is repeated as many times as
+  the item says.
 - `prds` of a column collects the rows before every row, so its memory grows with the square of the number of the rows
   of a group: ClickHouse has no running product. `prds` of a list does not have this cost.
