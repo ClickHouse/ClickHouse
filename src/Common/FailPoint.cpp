@@ -37,6 +37,9 @@ static struct InitFiu
     ONCE(nats_fail_resubscribe_within_query) \
     ONCE(reverse_index_build_index_throw) \
     REGULAR(replicated_queue_unfail_entries) \
+    REGULAR(mt_throw_before_outdating_empty_parts) \
+    PAUSEABLE_ONCE(mt_pause_before_outdating_detached_empty_parts) \
+    PAUSEABLE_ONCE(mt_pause_after_detach_operations_lock) \
     REGULAR(executing_graph_add_node_fail) \
     ONCE(transaction_metadata_store_fail) \
     ONCE(transaction_mutation_csn_store_fail) \

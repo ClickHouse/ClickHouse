@@ -155,6 +155,37 @@ MergeTreeMergePredicate::canMergeParts(const PartProperties & left, const PartPr
                     original_partition_id));
     }
 
+    if (left.info.max_block < right.info.min_block && left.info.max_block + 1 < right.info.min_block)
+    {
+        /// A merge spanning a detached part would claim its block range without its rows.
+        /// `ATTACH PARTITION` would then discard the detached part as covered. Inspect
+        /// `detached/` only for gaps, and only once while the merge-selection lock is held.
+        if (!detached_parts)
+        {
+            detached_parts = storage.getDetachedParts();
+            /// `ATTACH` and `DROP DETACHED` may roll back their temporary renames.
+            std::erase_if(*detached_parts, [](const DetachedPartInfo & part)
+            {
+                return !part.valid_name || part.has_try_suffix
+                    || (!part.prefix.empty() && part.prefix != "attaching" && part.prefix != "deleting");
+            });
+            std::ranges::sort(*detached_parts, {}, &MergeTreePartInfo::getPartitionId);
+        }
+
+        auto partition_parts = std::ranges::equal_range(
+            *detached_parts, left.info.getPartitionId(), {}, &MergeTreePartInfo::getPartitionId);
+        auto detached_part = std::ranges::find_if(partition_parts, [&](const DetachedPartInfo & part)
+        {
+            return left.info.max_block < part.min_block && part.max_block < right.info.min_block;
+        });
+
+        if (detached_part != partition_parts.end())
+            return std::unexpected(
+                PreformattedMessage::create(
+                    "Merge of parts {} and {} would cover detached part {} without its rows",
+                    left.name, right.name, detached_part->dir_name));
+    }
+
     {
         auto [max_possible_level, max_possible_mutation] = storage.getMaxLevelMutationInBetween(left, right);
 

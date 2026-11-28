@@ -32,6 +32,7 @@ private:
     DataVersionsByPartition data_versions_by_partition;
     CommittingBlocksSet committing_blocks;
     std::optional<Int64> min_update_block;
+    mutable std::optional<DetachedPartsInfo> detached_parts;
 };
 
 using MergeTreeMergePredicatePtr = std::shared_ptr<const MergeTreeMergePredicate>;
