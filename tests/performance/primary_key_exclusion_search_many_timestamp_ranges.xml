@@ -1,0 +1,63 @@
+<test>
+    <settings>
+        <use_lightweight_primary_key_index_analysis>1</use_lightweight_primary_key_index_analysis>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE pk_many_timestamp_ranges (series UInt64, timestamp DateTime64(9))
+        ENGINE = MergeTree ORDER BY (series, timestamp)
+        SETTINGS index_granularity = 4
+    </create_query>
+
+    <fill_query>
+        INSERT INTO pk_many_timestamp_ranges
+        SELECT number % 16, fromUnixTimestamp64Nano(toInt64(intDiv(number, 16)))
+        FROM numbers(1048576)
+    </fill_query>
+
+    <!-- Use bare timestamp comparisons to exercise generic exclusion over both key columns. -->
+    <query><![CDATA[
+        SELECT timestamp
+        FROM pk_many_timestamp_ranges
+        WHERE series IN (1, 3, 5, 7, 9, 11, 13, 15)
+          AND (
+               timestamp BETWEEN fromUnixTimestamp64Nano(900) AND fromUnixTimestamp64Nano(910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(2900) AND fromUnixTimestamp64Nano(2910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(4900) AND fromUnixTimestamp64Nano(4910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(6900) AND fromUnixTimestamp64Nano(6910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(8900) AND fromUnixTimestamp64Nano(8910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(10900) AND fromUnixTimestamp64Nano(10910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(12900) AND fromUnixTimestamp64Nano(12910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(14900) AND fromUnixTimestamp64Nano(14910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(16900) AND fromUnixTimestamp64Nano(16910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(18900) AND fromUnixTimestamp64Nano(18910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(20900) AND fromUnixTimestamp64Nano(20910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(22900) AND fromUnixTimestamp64Nano(22910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(24900) AND fromUnixTimestamp64Nano(24910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(26900) AND fromUnixTimestamp64Nano(26910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(28900) AND fromUnixTimestamp64Nano(28910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(30900) AND fromUnixTimestamp64Nano(30910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(32900) AND fromUnixTimestamp64Nano(32910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(34900) AND fromUnixTimestamp64Nano(34910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(36900) AND fromUnixTimestamp64Nano(36910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(38900) AND fromUnixTimestamp64Nano(38910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(40900) AND fromUnixTimestamp64Nano(40910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(42900) AND fromUnixTimestamp64Nano(42910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(44900) AND fromUnixTimestamp64Nano(44910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(46900) AND fromUnixTimestamp64Nano(46910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(48900) AND fromUnixTimestamp64Nano(48910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(50900) AND fromUnixTimestamp64Nano(50910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(52900) AND fromUnixTimestamp64Nano(52910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(54900) AND fromUnixTimestamp64Nano(54910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(56900) AND fromUnixTimestamp64Nano(56910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(58900) AND fromUnixTimestamp64Nano(58910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(60900) AND fromUnixTimestamp64Nano(60910)
+            OR timestamp BETWEEN fromUnixTimestamp64Nano(62900) AND fromUnixTimestamp64Nano(62910)
+          )
+        LIMIT 1 FORMAT Null
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS pk_many_timestamp_ranges</drop_query>
+</test>
