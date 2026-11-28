@@ -1,0 +1,104 @@
+-- { echoOn }
+
+-- String keys of many lengths at fixed positions; two 17-byte keys share their first 16 bytes and alternate at one position.
+SELECT arrayMap(k -> hex(k), mapKeys(m)), mapValues(m) FROM (SELECT sumMap(map('', 1, 'a', 2, 'a\0', 3, 'a\0b', 4, repeat('p', 15), 5, repeat('q', 16), 6, repeat('r', 17), 7, repeat('s', 31), 8, repeat('t', 32), 9, repeat('u', 33), 10, if(number % 2 = 0, repeat('x', 16) || 'y', repeat('x', 16) || 'z'), number, repeat('k', 100), 12, 'ключ', 13)) AS m FROM numbers(10));
+['','61','6100','610062','6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B6B','707070707070707070707070707070','71717171717171717171717171717171','7272727272727272727272727272727272','73737373737373737373737373737373737373737373737373737373737373','7474747474747474747474747474747474747474747474747474747474747474','757575757575757575757575757575757575757575757575757575757575757575','7878787878787878787878787878787879','787878787878787878787878787878787A','D0BAD0BBD18ED187']	[10,20,30,40,120,50,60,70,80,90,100,20,25,130]
+-- FixedString keys, and the plain form.
+SELECT arrayMap(k -> hex(k), mapKeys(m)), mapValues(m) FROM (SELECT sumMap(map(toFixedString('', 3), 1, toFixedString(toString(number % 3), 3), number, toFixedString('abc', 3), 2)) AS m FROM numbers(10));
+['000000','300000','310000','320000','616263']	[10,18,12,15,20]
+SELECT arrayMap(k -> hex(k), mapKeys(m)), mapValues(m) FROM (SELECT sumMap(map(toFixedString('', 20), 1, toFixedString(repeat('z', 17 + number % 3), 20), number)) AS m FROM numbers(10));
+['0000000000000000000000000000000000000000','7A7A7A7A7A7A7A7A7A7A7A7A7A7A7A7A7A000000','7A7A7A7A7A7A7A7A7A7A7A7A7A7A7A7A7A7A0000','7A7A7A7A7A7A7A7A7A7A7A7A7A7A7A7A7A7A7A00']	[10,18,12,15]
+SELECT sumMap(number, toString(number % 3)) FROM numbers(10);
+{'0':18,'1':12,'2':15}
+SELECT sumMap(number, toFixedString(toString(number % 2), 2)) FROM numbers(10);
+{'0\0':20,'1\0':25}
+-- One state: the same keys in the same order, rotating keys, more than 16 keys per row, a key repeated within a row,
+-- rows of 1 and 5 keys, and empty maps between non-empty ones.
+SELECT sumMap(map('a', number, 'b', 1, 'c', 2)) FROM numbers(1000);
+{'a':499500,'b':1000,'c':2000}
+SELECT sumMap(mapFromArrays(arrayRotateLeft(['a', 'b', 'c', 'd'], number % 4), [1, 10, 100, 1000])) FROM numbers(1000);
+{'a':277750,'b':277750,'c':277750,'d':277750}
+SELECT sumMap(mapFromArrays(arrayMap(i -> concat('k', toString(i)), range(20)), arrayMap(i -> number + i, range(20)))) FROM numbers(100);
+{'k0':4950,'k1':5050,'k10':5950,'k11':6050,'k12':6150,'k13':6250,'k14':6350,'k15':6450,'k16':6550,'k17':6650,'k18':6750,'k19':6850,'k2':5150,'k3':5250,'k4':5350,'k5':5450,'k6':5550,'k7':5650,'k8':5750,'k9':5850}
+SELECT sumMap(map('a', number % 2 + 1, 'a', 10, 'b', 100)) FROM numbers(1000);
+{'a':11500,'b':100000}
+SELECT sumMap(mapFromArrays(arraySlice(['a', 'b', 'c', 'd', 'e'], 1, if(number % 2 = 0, 1, 5)), arraySlice([1, 2, 3, 4, 5], 1, if(number % 2 = 0, 1, 5)))) FROM numbers(1000);
+{'a':1000,'b':1000,'c':1500,'d':2000,'e':2500}
+SELECT sumMap(if(number % 2 = 0, map('a', number), CAST(map(), 'Map(String, UInt64)'))) FROM numbers(1000);
+{'a':249500}
+-- Float keys: -0 and +0, and two NaN payloads, alternate at the same position; they are one key each.
+SELECT arrayMap(k -> if(isNaN(k), 'nan', if(k = 0, 'zero', toString(k))), mapKeys(m)), mapValues(m) FROM (SELECT sumMap(map(if(number % 2 = 0, 0., -0.), 1, if(number % 2 = 0, nan, reinterpretAsFloat64(toUInt64(9221120237041090561))), 10, toFloat64(number % 3), 100)) AS m FROM numbers(20));
+['zero','1','2','nan']	[720,700,600,200]
+SELECT arrayMap(k -> if(isNaN(k), 'nan', if(k = 0, 'zero', toString(k))), mapKeys(m)), mapValues(m) FROM (SELECT sumMap(map(if(number % 2 = 0, toFloat32(0.), toFloat32(-0.)), 1, if(number % 2 = 0, toFloat32(nan), reinterpretAsFloat32(toUInt32(2143289345))), 10, toFloat32(number % 3), 100)) AS m FROM numbers(20));
+['zero','1','2','nan']	[720,700,600,200]
+SELECT g, arrayMap(k -> if(isNaN(k), 'nan', if(k = 0, 'zero', toString(k))), mapKeys(m)), mapValues(m) FROM (SELECT number % 2 AS g, sumMap(map(if(intDiv(number, 2) % 2 = 0, 0., -0.), 1, if(intDiv(number, 2) % 2 = 0, nan, reinterpretAsFloat64(toUInt64(9221120237041090561))), 10)) AS m FROM numbers(20) GROUP BY g) ORDER BY g;
+0	['zero','nan']	[10,100]
+1	['zero','nan']	[10,100]
+-- The -If combinator.
+SELECT sumMapIf(map('a', number, 'b', 1), number % 3 = 0) FROM numbers(30);
+{'a':135,'b':10}
+SELECT number % 2 AS g, sumMapIf(map('a', number, 'b', 1), number % 3 = 0) FROM numbers(30) GROUP BY g ORDER BY g;
+0	{'a':60,'b':5}
+1	{'a':75,'b':5}
+-- GROUP BY: groups sharing keys, interleaved and in runs, and LowCardinality keys in runs.
+SELECT number % 3 AS g, sumMap(map('a', number, 'b', 1, toString(number % 5), 2)) FROM numbers(60) GROUP BY g ORDER BY g;
+0	{'0':8,'1':8,'2':8,'3':8,'4':8,'a':570,'b':20}
+1	{'0':8,'1':8,'2':8,'3':8,'4':8,'a':590,'b':20}
+2	{'0':8,'1':8,'2':8,'3':8,'4':8,'a':610,'b':20}
+SELECT intDiv(number, 4) % 3 AS g, sumMap(map('a', number, 'b', 1, toString(number % 5), 2)) FROM numbers(60) GROUP BY g ORDER BY g;
+0	{'0':8,'1':8,'2':8,'3':8,'4':8,'a':510,'b':20}
+1	{'0':8,'1':8,'2':8,'3':8,'4':8,'a':590,'b':20}
+2	{'0':8,'1':8,'2':8,'3':8,'4':8,'a':670,'b':20}
+SELECT intDiv(number, 4) % 3 AS g, sumMap(CAST(map('a', number, 'b', 1, toString(number % 5), 2), 'Map(LowCardinality(String), UInt64)')) FROM numbers(60) GROUP BY g ORDER BY g;
+0	{'0':8,'1':8,'2':8,'3':8,'4':8,'a':510,'b':20}
+1	{'0':8,'1':8,'2':8,'3':8,'4':8,'a':590,'b':20}
+2	{'0':8,'1':8,'2':8,'3':8,'4':8,'a':670,'b':20}
+-- Other nested functions, and a nested state.
+SELECT uniqMap(map('a', number % 7, 'b', 1)), maxMap(map('a', number, 'b', 1)), avgMap(map('a', number, 'b', 1)) FROM numbers(100);
+{'a':7,'b':1}	{'a':99,'b':1}	{'a':49.5,'b':1}
+SELECT mapKeys(m), arrayMap(v -> arraySort(v), mapValues(m)) FROM (SELECT groupArrayMap(map('a', number, 'b', number % 3)) AS m FROM numbers(10));
+['a','b']	[[0,1,2,3,4,5,6,7,8,9],[0,0,0,0,1,1,1,2,2,2]]
+SELECT quantilesExactMap(0.5)(map('a', number, 'b', 1)) FROM numbers(101);
+{'a':[50],'b':[1]}
+SELECT mapKeys(x), arrayMap(v -> finalizeAggregation(v), mapValues(x)) FROM (SELECT sumStateMap(map('a', number, 'b', 1)) AS x FROM numbers(100));
+['a','b']	[4950,100]
+-- -State and -Merge, external aggregation and remote.
+SELECT sumMapMerge(s) FROM (SELECT number % 5 AS g, sumMapState(map('a', number, repeat('w', 30), 1, toString(number % 7), 2)) AS s FROM numbers(100) GROUP BY g);
+{'0':30,'1':30,'2':28,'3':28,'4':28,'5':28,'6':28,'a':4950,'wwwwwwwwwwwwwwwwwwwwwwwwwwwwww':100}
+SELECT number % 5 AS g, sumMap(map('a', number, repeat('w', 30), 1, toString(number % 7), 2)) FROM numbers(100) GROUP BY g ORDER BY g SETTINGS max_bytes_before_external_group_by = 1;
+0	{'0':6,'1':6,'2':4,'3':6,'4':6,'5':6,'6':6,'a':950,'wwwwwwwwwwwwwwwwwwwwwwwwwwwwww':20}
+1	{'0':6,'1':6,'2':6,'3':4,'4':6,'5':6,'6':6,'a':970,'wwwwwwwwwwwwwwwwwwwwwwwwwwwwww':20}
+2	{'0':6,'1':6,'2':6,'3':6,'4':4,'5':6,'6':6,'a':990,'wwwwwwwwwwwwwwwwwwwwwwwwwwwwww':20}
+3	{'0':6,'1':6,'2':6,'3':6,'4':6,'5':4,'6':6,'a':1010,'wwwwwwwwwwwwwwwwwwwwwwwwwwwwww':20}
+4	{'0':6,'1':6,'2':6,'3':6,'4':6,'5':6,'6':4,'a':1030,'wwwwwwwwwwwwwwwwwwwwwwwwwwwwww':20}
+SELECT sumMap(map(toString(number % 3), number, repeat('w', 30), 1)) FROM remote('127.0.0.{1,2}', numbers(10));
+{'0':36,'1':24,'2':30,'wwwwwwwwwwwwwwwwwwwwwwwwwwwwww':20}
+-- A window frame.
+SELECT n, sumMap(m) OVER (ORDER BY n ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM (SELECT number AS n, map(toString(number % 3), number, 'all', 1) AS m FROM numbers(6)) ORDER BY n;
+0	{'0':0,'all':1}
+1	{'0':0,'1':1,'all':2}
+2	{'1':1,'2':2,'all':2}
+3	{'0':3,'2':2,'all':2}
+4	{'0':3,'1':4,'all':2}
+5	{'1':4,'2':5,'all':2}
+-- -ForEach over arrays of maps of growing length.
+SELECT sumMapForEach(arrayMap(i -> map(toString(i), number, 'x', 1), range(number % 5))) FROM numbers(20);
+[{'0':160,'x':16},{'1':126,'x':12},{'2':88,'x':8},{'3':46,'x':4}]
+-- AggregatingMergeTree merges.
+DROP TABLE IF EXISTS t_map_repeated_keys;
+CREATE TABLE t_map_repeated_keys (g UInt64, s SimpleAggregateFunction(sumMap, Map(String, UInt64)), a AggregateFunction(sumMap, Map(String, UInt64))) ENGINE = AggregatingMergeTree ORDER BY g;
+INSERT INTO t_map_repeated_keys SELECT number % 2, map('a', number, repeat('v', 40), 1), sumMapState(map('a', number, repeat('v', 40), 1)) FROM numbers(10) GROUP BY number;
+INSERT INTO t_map_repeated_keys SELECT number % 2, map('a', number, 'b', 2), sumMapState(map('a', number, 'b', 2)) FROM numbers(10) GROUP BY number;
+INSERT INTO t_map_repeated_keys SELECT number % 2, map(repeat('v', 40), number, 'b', 3), sumMapState(map(repeat('v', 40), number, 'b', 3)) FROM numbers(10) GROUP BY number;
+OPTIMIZE TABLE t_map_repeated_keys FINAL;
+SELECT g, s, finalizeAggregation(a) FROM t_map_repeated_keys ORDER BY g;
+0	{'a':40,'b':25,'vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv':25}	{'a':40,'b':25,'vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv':25}
+1	{'a':50,'b':25,'vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv':30}	{'a':50,'b':25,'vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv':30}
+DROP TABLE t_map_repeated_keys;
+-- Empty states.
+SELECT g, sumMap(if(g = 1, map('a', number), CAST(map(), 'Map(String, UInt64)'))) FROM (SELECT number % 3 AS g, number FROM numbers(30)) GROUP BY g ORDER BY g;
+0	{}
+1	{'a':145}
+2	{}
+SELECT sumMapMerge(s) FROM (SELECT sumMapState(CAST(map(), 'Map(String, UInt64)')) AS s UNION ALL SELECT sumMapState(map('a', toUInt64(1))));
+{'a':1}
