@@ -12,6 +12,11 @@
 #include <memory>
 
 
+namespace Silk
+{
+class FiberSemaphore;
+}
+
 namespace DB
 {
 struct ReadSettings;
@@ -19,6 +24,16 @@ class SeekableReadBuffer;
 class StdStreamFromReadBuffer;
 
 using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
+
+/// Runs the lifecycle of a native multipart copy in Silk fibers: `CreateMultipartUpload`, the `UploadPartCopy` requests,
+/// and `CompleteMultipartUpload` or `AbortMultipartUpload`; the calling thread waits for it. Without it, the calling
+/// thread runs the lifecycle and the parts are scheduled with `schedule`. Other routes of the copy are not affected.
+struct S3MultipartCopyInFibers
+{
+    /// Bounds the `UploadPartCopy` requests of all copies that share it, as a thread pool bounds them in threads.
+    /// No bound if null.
+    Silk::FiberSemaphore * part_copy_limit = nullptr;
+};
 
 /// Builds the S3 upload request body for the part [offset, offset + size) of the source.
 /// The part is read fully into memory up front, so the returned body has no failable inner
@@ -51,7 +66,8 @@ bool copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
+    const std::optional<S3MultipartCopyInFibers> & multipart_copy_in_fibers = std::nullopt);
 
 /// Copies exactly `[src_offset, src_offset + src_size)` of a LARGER source object of size `src_object_size`.
 ///
@@ -74,7 +90,8 @@ bool copyS3FileRange(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
+    const std::optional<S3MultipartCopyInFibers> & multipart_copy_in_fibers = std::nullopt);
 
 /// Copies data from any seekable source to S3.
 /// The same functionality can be done by using the function copyData() and the class WriteBufferFromS3

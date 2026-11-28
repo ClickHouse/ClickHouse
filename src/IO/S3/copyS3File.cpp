@@ -5,8 +5,10 @@
 
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPoolTaskTracker.h>
 #include <Common/ThreadStatus.h>
+#include <Common/Silk/FiberTaskTracker.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/typeid_cast.h>
 #include <IO/S3RequestSettings.h>
@@ -38,6 +40,7 @@ namespace ProfileEvents
     extern const Event S3CopyObject;
     extern const Event S3UploadPart;
     extern const Event S3UploadPartCopy;
+    extern const Event S3MultipartCopyInFibers;
 
     extern const Event DiskS3CreateMultipartUpload;
     extern const Event DiskS3CompleteMultipartUpload;
@@ -304,18 +307,43 @@ namespace
         void performMultipartUpload(size_t start_offset, size_t size)
         {
             calculatePartSize(size);
+
+            LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
+            TaskTracker task_tracker(schedule, request_settings[S3RequestSetting::max_inflight_parts_for_one_file], limited_log);
+            runMultipartUpload(start_offset, size, task_tracker);
+        }
+
+#if USE_SILK
+        /// Runs in a fiber, the parts run in child fibers within `part_copy_limit`.
+        void performMultipartUploadInFiber(size_t start_offset, size_t size, Silk::FiberSemaphore * part_copy_limit)
+        {
+            calculatePartSize(size);
+
+            Silk::FiberTaskTracker task_tracker(
+                num_parts,
+                request_settings[S3RequestSetting::max_inflight_parts_for_one_file],
+                getCurrentThreadGroup(),
+                part_copy_limit);
+            runMultipartUpload(start_offset, size, task_tracker);
+        }
+#endif
+
+        /// The multipart lifecycle for both executors, `TaskTracker` and `Silk::FiberTaskTracker`.
+        /// `calculatePartSize` has to be called before.
+        template <typename Tracker>
+        void runMultipartUpload(size_t start_offset, size_t size, Tracker & task_tracker)
+        {
+            /// Allocated before the upload is created, so that a failed allocation leaves no upload to abort.
+            multipart_tags.resize(num_parts);
+            multipart_checksums.resize(num_parts);
+
             createMultipartUpload();
 
             size_t position = start_offset;
             size_t end_position = start_offset + size;
 
-            LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
-            TaskTracker task_tracker(schedule, request_settings[S3RequestSetting::max_inflight_parts_for_one_file], limited_log);
-
             try
             {
-                multipart_tags.resize(num_parts);
-                multipart_checksums.resize(num_parts);
                 for (size_t part_number = 1; position < end_position; ++part_number)
                 {
                     if (has_failed)
@@ -701,7 +729,8 @@ namespace
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
             std::function<bool()> fallback_method_,
-            bool is_ranged_copy_)
+            bool is_ranged_copy_,
+            const std::optional<S3MultipartCopyInFibers> & multipart_copy_in_fibers_)
             : UploadHelper(
                 client_ptr_,
                 dest_bucket_,
@@ -726,6 +755,7 @@ namespace
             , is_ranged_copy(is_ranged_copy_)
             , read_settings(read_settings_)
             , fallback_method(std::move(fallback_method_))
+            , multipart_copy_in_fibers(multipart_copy_in_fibers_)
         {
         }
 
@@ -780,6 +810,7 @@ namespace
         bool is_ranged_copy;
         const ReadSettings read_settings;
         std::function<bool()> fallback_method;
+        const std::optional<S3MultipartCopyInFibers> multipart_copy_in_fibers;
 
         bool performSingleOperationCopy()
         {
@@ -899,7 +930,10 @@ namespace
         {
             try
             {
-                UploadHelper::performMultipartUpload(offset, size);
+                if (multipart_copy_in_fibers)
+                    performMultipartUploadInFibers(multipart_copy_in_fibers->part_copy_limit);
+                else
+                    UploadHelper::performMultipartUpload(offset, size);
                 return true;
             }
             catch (const S3Exception & e)
@@ -910,6 +944,24 @@ namespace
                 tryLogCurrentException(log, "Multi part copy failed, using fallback path");
                 return fallback_method();
             }
+        }
+
+        /// The calling thread waits for a parent fiber, which runs the lifecycle and rethrows its original exception here,
+        /// so that a genuine `ACCESS_DENIED` keeps the buffered route of the caller.
+        void performMultipartUploadInFibers([[maybe_unused]] Silk::FiberSemaphore * part_copy_limit)
+        {
+#if USE_SILK
+            /// The callers check the runtime before the copy, as `BackupReaderS3` and `BackupWriterS3` do.
+            if (!Silk::isFiberSchedulerInitialized())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Native multipart copy in Silk fibers needs the Silk runtime");
+
+            ProfileEvents::increment(ProfileEvents::S3MultipartCopyInFibers);
+            Silk::FiberTaskTracker parent(/* max_tasks= */ 1, /* max_inflight= */ 1, getCurrentThreadGroup());
+            parent.add([this, part_copy_limit] { UploadHelper::performMultipartUploadInFiber(offset, size, part_copy_limit); });
+            parent.waitAll();
+#else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Native multipart copy in Silk fibers needs a build with Silk");
+#endif
         }
 
         std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const override
@@ -1021,7 +1073,8 @@ namespace
         ThreadPoolCallbackRunnerUnsafe<void> schedule,
         const CreateReadBuffer & fallback_file_reader,
         const std::optional<ObjectAttributes> & object_metadata,
-        bool is_ranged_copy)
+        bool is_ranged_copy,
+        const std::optional<S3MultipartCopyInFibers> & multipart_copy_in_fibers)
     {
         if (!dest_s3_client)
             dest_s3_client = src_s3_client;
@@ -1066,7 +1119,8 @@ namespace
             schedule,
             blob_storage_log,
             std::move(fallback_method),
-            is_ranged_copy};
+            is_ranged_copy,
+            multipart_copy_in_fibers};
         return helper.performCopy();
     }
 }
@@ -1084,7 +1138,8 @@ bool copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata)
+    const std::optional<ObjectAttributes> & object_metadata,
+    const std::optional<S3MultipartCopyInFibers> & multipart_copy_in_fibers)
 {
     return copyS3FileImpl(
         std::move(src_s3_client),
@@ -1102,7 +1157,8 @@ bool copyS3File(
         std::move(schedule),
         fallback_file_reader,
         object_metadata,
-        /* is_ranged_copy= */ false);
+        /* is_ranged_copy= */ false,
+        multipart_copy_in_fibers);
 }
 
 bool copyS3FileRange(
@@ -1120,7 +1176,8 @@ bool copyS3FileRange(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata)
+    const std::optional<ObjectAttributes> & object_metadata,
+    const std::optional<S3MultipartCopyInFibers> & multipart_copy_in_fibers)
 {
     return copyS3FileImpl(
         std::move(src_s3_client),
@@ -1138,7 +1195,8 @@ bool copyS3FileRange(
         std::move(schedule),
         fallback_file_reader,
         object_metadata,
-        /* is_ranged_copy= */ true);
+        /* is_ranged_copy= */ true,
+        multipart_copy_in_fibers);
 }
 
 }
