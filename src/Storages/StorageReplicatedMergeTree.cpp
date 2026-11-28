@@ -8951,20 +8951,9 @@ void StorageReplicatedMergeTree::fetchPartition(
             throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Detached part {} already exists.", part_name);
         LOG_INFO(log, "Will fetch part {} from shard {}", part_name, from_);
 
-        try
-        {
-            /// part name, metadata, part_path, true, 0, zookeeper
-            if (!fetchPart(part_name, metadata_snapshot, from_zookeeper_name, part_path, true, 0, zookeeper, /* try_fetch_shared = */ false))
-                throw Exception(ErrorCodes::UNFINISHED, "Failed to fetch part {} from {}", part_name, from_);
-        }
-        catch (const DB::Exception & e)
-        {
-            if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER && e.code() != ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
-                && e.code() != ErrorCodes::CANNOT_READ_ALL_DATA)
-                throw;
-
-            LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
-        }
+        /// part name, metadata, part_path, true, 0, zookeeper
+        if (!fetchPart(part_name, metadata_snapshot, from_zookeeper_name, part_path, true, 0, zookeeper, /* try_fetch_shared = */ false))
+            throw Exception(ErrorCodes::UNFINISHED, "Failed to fetch part {} from {}", part_name, from_);
         return;
     }
 
