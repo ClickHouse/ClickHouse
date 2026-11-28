@@ -159,6 +159,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+    extern const int BROKEN_PROJECTION;
 }
 
 namespace FailPoints
@@ -2018,7 +2019,15 @@ void IMergeTreeDataPart::loadProjections(
                         part->loadChecksums(require_columns_checksums);
                     }
                     else
+                    {
                         part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
+                        if (String reason = getProjectionPartDeletedRowsReason(*part); !reason.empty())
+                        {
+                            LOG_WARNING(storage.log, "Will consider projection broken. Reason: {}", reason);
+                            has_broken_projection = true;
+                            part->setBrokenReason(reason, ErrorCodes::BROKEN_PROJECTION);
+                        }
+                    }
                 }
                 catch (...)
                 {
@@ -4192,6 +4201,26 @@ bool IMergeTreeDataPart::hasBrokenProjection(const String & projection_name) con
     if (it == projection_parts.end())
         return false;
     return it->second->is_broken;
+}
+
+String IMergeTreeDataPart::getProjectionPartDeletedRowsReason(const IMergeTreeDataPart & projection_part) const
+{
+    /// A normal projection part without `WHERE` has one row per visible row of its parent, so one not smaller than a parent
+    /// with `_row_exists` holds deleted rows, unless the mask has no zero.
+    if (projection_part.rows_count < rows_count || !hasLightweightDelete())
+        return {};
+
+    const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    const auto & projections = metadata_snapshot->getProjections();
+    if (!projections.has(projection_part.name))
+        return {};
+    const auto & projection = projections.get(projection_part.name);
+    if (projection.type != ProjectionDescription::Type::Normal || projection.where_clause_ast)
+        return {};
+
+    return fmt::format(
+        "Projection {} of part {} may contain lightweight-deleted rows written by an older version: it has as many rows as the part ({})",
+        projection_part.name, name, projection_part.rows_count);
 }
 
 bool IMergeTreeDataPart::hasUnloadedProjection(const String & projection_name) const
