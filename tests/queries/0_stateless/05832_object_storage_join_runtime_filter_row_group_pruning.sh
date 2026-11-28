@@ -85,7 +85,10 @@ SELECT number, number FROM numbers(1600) SETTINGS s3_truncate_on_insert = 1, out
 " < /dev/null
 W_QUERY="SELECT count(), sum(v) FROM s3(s3_conn, filename = '${DIR}/fact_w.parquet', format = Parquet, structure = 'k Int64, v Int64') AS f
     INNER JOIN dim AS d ON f.k = d.k"
-W_SETTINGS="input_format_parquet_page_filter_push_down = 1, use_parquet_metadata_cache = 1, input_format_parquet_use_offset_index = 1"
+# A scan served from the columns cache would not read the offset index, and a read from the caches only would not
+# use the page index.
+W_SETTINGS="input_format_parquet_page_filter_push_down = 1, use_parquet_metadata_cache = 1, input_format_parquet_use_offset_index = 1,
+    use_columns_cache = 0"
 probe w1 "$W_QUERY" "$W_SETTINGS"
 probe w2 "$W_QUERY" "$W_SETTINGS"
 probe w3 "$W_QUERY" "$W_SETTINGS"
@@ -130,12 +133,10 @@ CREATE TABLE dim_y (k String) ENGINE = MergeTree ORDER BY k;
 INSERT INTO dim_y SELECT hex(SHA256(toString(number))) FROM numbers(100, 2);
 " < /dev/null
 Y_FILE="s3(s3_conn, filename = '${DIR}/fact_y.parquet', format = Parquet, structure = 'k String')"
-# A scan served from the columns cache would not read the offset index.
-Y_SETTINGS="${W_SETTINGS}, use_columns_cache = 0"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT sum(length(k)) FROM ${Y_FILE} SETTINGS ${SETTINGS}, ${Y_SETTINGS} FORMAT Null;
-    SELECT sum(length(k)) FROM ${Y_FILE} SETTINGS ${SETTINGS}, ${Y_SETTINGS} FORMAT Null;"
-probe y "SELECT count() FROM ${Y_FILE} AS f INNER JOIN dim_y AS d ON f.k = d.k" "$Y_SETTINGS"
+    SELECT sum(length(k)) FROM ${Y_FILE} SETTINGS ${SETTINGS}, ${W_SETTINGS} FORMAT Null;
+    SELECT sum(length(k)) FROM ${Y_FILE} SETTINGS ${SETTINGS}, ${W_SETTINGS} FORMAT Null;"
+probe y "SELECT count() FROM ${Y_FILE} AS f INNER JOIN dim_y AS d ON f.k = d.k" "$W_SETTINGS"
 report y
 # The same bytes and reads with the pruning on as off.
 ${CLICKHOUSE_CLIENT} --query "

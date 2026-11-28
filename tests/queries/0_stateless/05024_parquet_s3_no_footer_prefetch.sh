@@ -69,7 +69,8 @@ run "$qid_big"   big.parquet
 run "$qid_small" small.parquet
 # The same big object with seeks disabled: the reader can no longer read the footer at the tail, it
 # reads the object sequentially from the start, so the from-start prefetch must not be gated off.
-run "$qid_big_no_seeks" big.parquet "input_format_allow_seeks=0"
+# Without the columns cache: with it, the cached footer prunes every row group and the object is not opened.
+run "$qid_big_no_seeks" big.parquet "input_format_allow_seeks=0, use_columns_cache=0"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 

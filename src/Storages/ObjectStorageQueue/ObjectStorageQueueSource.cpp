@@ -1158,7 +1158,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
         if (isCancelled())
         {
             if (reader)
-                reader->cancel();
+                reader.cancel();
 
             /// Are there any started, but not finished files?
             if (processed_files.empty() || processed_files.back().state != FileState::Processing)
@@ -1381,7 +1381,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::ObjectStorageQueuePullMicroseconds);
 
-            result = reader->pull(chunk);
+            result = reader.pull(chunk);
         }
         catch (...)
         {

@@ -508,6 +508,14 @@ struct Reader
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
+
+        /// A delivered subgroup stays in `RowGroup::subgroups` until the end of the read: free its storage, `clear` keeps it.
+        void freeStorage()
+        {
+            output = decltype(output)();
+            columns = decltype(columns)();
+            block_missing_values = BlockMissingValues();
+        }
     };
 
     struct RowGroup
@@ -708,7 +716,8 @@ struct Reader
         VectorWithMemoryTracking<FileColumnChunksPtr> cached_column_chunks_ = {},
         SharedFileColumnChunksPtr shared_column_chunks_ = nullptr,
         KeptOffsetIndexesPtr kept_offset_indexes_ = nullptr);
-    void prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection);
+    /// `only_by_statistics` stops after the pruning by footer statistics, without counting the row groups pruned.
+    void prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection, bool only_by_statistics = false);
     /// Takes or parses the column chunks of `primitive_columns`; called by prefilterAndInitRowGroups.
     void parseColumnChunks();
     /// Takes from the cache, from `shared_column_chunks`, or parses those of `column_indices` (sorted, unique)
@@ -847,6 +856,13 @@ struct Reader
     /// is not called again for the moved-out columns.
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
     ColumnPtr & getOrFormOutputColumn(const RowGroup & row_group, RowSubgroup & row_subgroup, size_t idx_in_output_block);
+    /// The columns of `sample_block` for the rows of the subgroup that passed.
+    Chunk formChunk(const RowGroup & row_group, RowSubgroup & row_subgroup);
+    /// The compressed bytes of the columns read, for `num_rows` rows of the row group.
+    size_t approxBytesRead(const RowGroup & row_group, size_t num_rows) const;
+
+    /// Serves every column of `sample_block` read from the file from the columns cache in every row group; false if a chunk is missing.
+    bool serveFromColumnsCacheOnly();
 
     /// Finish the writes of the row group to the columns cache, once all its row subgroups are read:
     /// take back out the columns that were not written in full.
@@ -897,6 +913,9 @@ private:
     void prepareBloomFilterCondition();
     /// Look up the row groups in the columns cache and decide which columns to write to it.
     void initColumnsCache();
+    /// Fills `columns_cache_identities`; false (and empty) if no column uses the cache.
+    bool initColumnsCacheIdentities();
+    void serveFromColumnsCache(RowGroup & row_group, size_t idx_in_output_block, VectorWithMemoryTracking<ColumnPtr> chunks);
     bool canWriteToColumnsCache() const;
     void addToColumnsCacheWrite(
         RowGroup & row_group, const RowSubgroup & row_subgroup, size_t idx_in_output_block, ColumnPtr & column, bool has_substituted_defaults);

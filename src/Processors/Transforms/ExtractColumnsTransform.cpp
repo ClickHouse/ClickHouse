@@ -20,16 +20,21 @@ Block ExtractColumnsTransform::transformHeader(Block header, const NamesAndTypes
     return Block(std::move(columns));
 }
 
-void ExtractColumnsTransform::transform(Chunk & chunk)
+void ExtractColumnsTransform::transformChunk(const Block & header, const NamesAndTypesList & requested_columns_, Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();
-    auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    auto block = header.cloneWithColumns(chunk.detachColumns());
     Columns columns;
-    columns.reserve(requested_columns.size());
-    for (const auto & required_column : requested_columns)
+    columns.reserve(requested_columns_.size());
+    for (const auto & required_column : requested_columns_)
         columns.emplace_back(getColumnFromBlock(block, required_column));
 
     chunk.setColumns(std::move(columns), num_rows);
+}
+
+void ExtractColumnsTransform::transform(Chunk & chunk)
+{
+    transformChunk(getInputPort().getHeader(), requested_columns, chunk);
 }
 
 }

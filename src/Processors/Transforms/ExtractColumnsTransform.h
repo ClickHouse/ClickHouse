@@ -15,6 +15,8 @@ public:
     String getName() const override { return "ExtractColumnsTransform"; }
 
     static Block transformHeader(Block header, const NamesAndTypesList & requested_columns_);
+    /// `transform` of a chunk with the columns of `header`.
+    static void transformChunk(const Block & header, const NamesAndTypesList & requested_columns_, Chunk & chunk);
 
 protected:
     void transform(Chunk & chunk) override;
