@@ -43,6 +43,12 @@ bool isVirtualRow(const Chunk & chunk)
     return false;
 }
 
+bool virtualRowMatchesFixedKeys(const Block & pk_block, const VirtualRowFixedKeys & fixed_keys)
+{
+    return std::ranges::all_of(
+        fixed_keys, [&](const auto & key) { return (*pk_block.getByPosition(key.first).column)[0] == key.second; });
+}
+
 Block setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_conversions)
 {
     auto read_info = chunk.getChunkInfos().extract<MergeTreeReadInfo>();

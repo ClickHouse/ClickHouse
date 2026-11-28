@@ -70,12 +70,14 @@ ExpressionTransform
   (Limit)
   Limit
     (Sorting)
+    RemoveVirtualRowTransform
       (Expression)
       ExpressionTransform
         (Expression)
         ExpressionTransform
           (ReadFromMergeTree)
-          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+          VirtualRowTransform
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 2020-10-11	0	0
 2020-10-11	0	10
 2020-10-11	0	20
@@ -88,12 +90,14 @@ ExpressionTransform
     (Sorting)
     FinishSortingTransform
       PartialSortingTransform
-        (Expression)
-        ExpressionTransform
+        RemoveVirtualRowTransform
           (Expression)
           ExpressionTransform
-            (ReadFromMergeTree)
-            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+            (Expression)
+            ExpressionTransform
+              (ReadFromMergeTree)
+              VirtualRowTransform
+                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 2020-10-12	0
 2020-10-12	1
 2020-10-12	2
@@ -105,13 +109,15 @@ ExpressionTransform
   (Limit)
   Limit
     (Sorting)
+    RemoveVirtualRowTransform
       (Expression)
       ExpressionTransform
         (Expression)
         ExpressionTransform
           (ReadFromMergeTree)
           ReverseTransform
-            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+            VirtualRowTransform
+              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
 2020-10-12	99999
 2020-10-12	99998
 2020-10-12	99997

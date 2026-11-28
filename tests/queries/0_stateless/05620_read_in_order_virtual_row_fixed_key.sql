@@ -1,6 +1,7 @@
--- A key column fixed by the filter (`WHERE key = constant`) and listed in `ORDER BY` does not determine the direction of reading.
--- If the read goes in the direction of that column anyway, `ORDER BY` follows the sorting key as it is, and the virtual row
--- of reading in order stays enabled. Reading in order through an `INNER JOIN` needs it.
+-- A key column fixed by the filter (`WHERE key = constant`) does not determine the direction of reading and may be absent from
+-- `ORDER BY`. The virtual row of reading in order is an index entry, which bounds the rows of its part in the order of the
+-- sorting key. If `ORDER BY` does not compare the fixed column like the sorting key does, only an index entry with the fixed
+-- value is a virtual row. Reading in order through an `INNER JOIN` needs the virtual row.
 
 DROP TABLE IF EXISTS t_fixed_key;
 DROP TABLE IF EXISTS t_fixed_key_3;
@@ -14,73 +15,63 @@ SET read_in_order_two_level_merge_threshold = 100, max_threads = 1, max_block_si
 SET max_bytes_ratio_before_external_join = 0, max_bytes_before_external_join = 0, query_plan_read_in_order_through_join = 1, join_runtime_filter_min_probe_rows = 0;
 SET query_plan_optimize_join_order_limit = 1, query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 0;
 
-CREATE TABLE t_fixed_key (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 8;
+CREATE TABLE t_fixed_key (a UInt32, b UInt32, x UInt32) ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 8;
 SYSTEM STOP MERGES t_fixed_key;
 
 -- The granule where `a = 1` begins starts with `a = 0`, the one where it ends is followed by `a = 2`.
-INSERT INTO t_fixed_key SELECT intDiv(number, 100) AS a, if(a = 1, 10 * (number % 100) + 1, 100000 + number) FROM numbers(300);
+INSERT INTO t_fixed_key SELECT intDiv(number, 100) AS a, if(a = 1, 10 * (number % 100) + 1, 100000 + number) AS b, b % 4 FROM numbers(300);
 -- Begins with `a = 1`.
-INSERT INTO t_fixed_key SELECT if(number < 80, 1, 2) AS a, if(a = 1, 10 * number + 2, 200000 + number) FROM numbers(120);
+INSERT INTO t_fixed_key SELECT if(number < 80, 1, 2) AS a, if(a = 1, 10 * number + 2, 200000 + number) AS b, b % 4 FROM numbers(120);
 -- Ends with `a = 1`.
-INSERT INTO t_fixed_key SELECT if(number < 44, 0, 1) AS a, if(a = 1, 10 * (number - 44) + 5, 400000 + number) FROM numbers(128);
+INSERT INTO t_fixed_key SELECT if(number < 44, 0, 1) AS a, if(a = 1, 10 * (number - 44) + 5, 400000 + number) AS b, b % 4 FROM numbers(128);
 -- No rows with `a = 1`, but the granule where `a` changes from 0 to 2 is selected.
-INSERT INTO t_fixed_key SELECT if(number < 50, 0, 2), 300000 + number FROM numbers(100);
--- Only `a = 1`, far from both ends of the result.
-INSERT INTO t_fixed_key SELECT 1, 5000 + number FROM numbers(64);
-INSERT INTO t_fixed_key SELECT 1, 6000 + number FROM numbers(64);
-INSERT INTO t_fixed_key SELECT 1, 7000 + number FROM numbers(64);
-INSERT INTO t_fixed_key SELECT 1, 8000 + number FROM numbers(64);
+INSERT INTO t_fixed_key SELECT if(number < 50, 0, 2), 300000 + number AS b, b % 4 FROM numbers(100);
+-- Only `a = 1`, far from the beginning of the result.
+INSERT INTO t_fixed_key SELECT 1, 5000 + number AS b, b % 4 FROM numbers(64);
 
 SELECT '--- key (a, b): plan';
 
 SELECT '-- WHERE a = 1 ORDER BY a, b';
-SELECT extract(explain, '(?:Read type|Virtual row conversions).*') AS e
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
 FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a, b LIMIT 5) WHERE e != '';
 
-SELECT '-- WHERE a = 1 ORDER BY a DESC, b DESC';
-SELECT extract(explain, '(?:Read type|Virtual row conversions).*') AS e
-FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a DESC, b DESC LIMIT 5) WHERE e != '';
-
-SELECT '-- WHERE a IN (1) ORDER BY a, b';
-SELECT extract(explain, '(?:Read type|Virtual row conversions).*') AS e
-FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT b FROM t_fixed_key WHERE a IN (1) ORDER BY a, b LIMIT 5) WHERE e != '';
-
-SELECT '-- WHERE a = 1 ORDER BY a DESC, b: the read does not go in the direction of the fixed column, so its index values bound nothing';
-SELECT extract(explain, '(?:Read type|Virtual row conversions).*') AS e
+SELECT '-- WHERE a = 1 ORDER BY a DESC, b: the read does not go in the direction of the fixed column';
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
 FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a DESC, b LIMIT 5) WHERE e != '';
+
+SELECT '-- WHERE a = 1 ORDER BY b: the fixed key column is not listed';
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
+FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY b LIMIT 5) WHERE e != '';
+
+SELECT '-- WHERE a IN (1) ORDER BY b DESC';
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
+FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT b FROM t_fixed_key WHERE a IN (1) ORDER BY b DESC LIMIT 5) WHERE e != '';
+
+SELECT '-- WHERE x = 1 ORDER BY x, a, b: a fixed column which is not in the sorting key';
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
+FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT a, b FROM t_fixed_key WHERE x = 1 ORDER BY x, a, b LIMIT 5) WHERE e != '';
+
+SELECT '-- WHERE toString(a) = \'1\' ORDER BY b: the fixed value is not known, no virtual row';
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
+FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT b FROM t_fixed_key WHERE toString(a) = '1' ORDER BY b LIMIT 5) WHERE e != '';
 
 SELECT '--- key (a, b): result';
 
-SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a, b LIMIT 5;
-SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a DESC, b DESC LIMIT 5;
-
 SELECT (SELECT groupArray(b) FROM (SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a, b LIMIT 40))
-     = (SELECT arraySlice(arraySort(groupArray(b)), 1, 40) FROM t_fixed_key WHERE a = 1);
-SELECT (SELECT groupArray(b) FROM (SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a, b))
-     = (SELECT arraySort(groupArray(b)) FROM t_fixed_key WHERE a = 1);
-SELECT (SELECT groupArray(b) FROM (SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a DESC, b DESC LIMIT 40))
-     = (SELECT arraySlice(arrayReverseSort(groupArray(b)), 1, 40) FROM t_fixed_key WHERE a = 1);
-SELECT (SELECT groupArray(b) FROM (SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a DESC, b DESC))
-     = (SELECT arrayReverseSort(groupArray(b)) FROM t_fixed_key WHERE a = 1);
-SELECT (SELECT groupArray(b) FROM (SELECT b FROM t_fixed_key WHERE a IN (1) ORDER BY a, b LIMIT 40))
      = (SELECT arraySlice(arraySort(groupArray(b)), 1, 40) FROM t_fixed_key WHERE a = 1);
 
 SELECT '-- the fixed column in the other direction, or not listed';
 SELECT (SELECT groupArray(b) FROM (SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a DESC, b LIMIT 40))
      = (SELECT arraySlice(arraySort(groupArray(b)), 1, 40) FROM t_fixed_key WHERE a = 1);
-SELECT (SELECT groupArray(b) FROM (SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a, b DESC LIMIT 40))
-     = (SELECT arraySlice(arrayReverseSort(groupArray(b)), 1, 40) FROM t_fixed_key WHERE a = 1);
 SELECT (SELECT groupArray(b) FROM (SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY b LIMIT 40))
      = (SELECT arraySlice(arraySort(groupArray(b)), 1, 40) FROM t_fixed_key WHERE a = 1);
 
+SELECT '-- a fixed column which is not in the sorting key';
+SELECT (SELECT groupArray(b) FROM (SELECT b FROM t_fixed_key WHERE a = 1 AND x = 1 ORDER BY x, b))
+     = (SELECT arraySort(groupArray(b)) FROM t_fixed_key WHERE a = 1 AND x = 1);
+
 SELECT '-- a virtual row after each block, several threads';
-SELECT (SELECT groupArray(b) FROM (SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a, b LIMIT 40))
-     = (SELECT arraySlice(arraySort(groupArray(b)), 1, 40) FROM t_fixed_key WHERE a = 1)
-SETTINGS read_in_order_use_virtual_row_per_block = 1;
-SELECT (SELECT groupArray(b) FROM (SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a DESC, b DESC LIMIT 40))
-     = (SELECT arraySlice(arrayReverseSort(groupArray(b)), 1, 40) FROM t_fixed_key WHERE a = 1)
-SETTINGS read_in_order_use_virtual_row_per_block = 1;
-SELECT (SELECT groupArray(b) FROM (SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a, b))
+SELECT (SELECT groupArray(b) FROM (SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a DESC, b))
      = (SELECT arraySort(groupArray(b)) FROM t_fixed_key WHERE a = 1)
 SETTINGS max_threads = 4;
 SELECT (SELECT groupArray(b) FROM (SELECT b FROM t_fixed_key WHERE a = 1 ORDER BY a DESC, b DESC))
@@ -110,30 +101,39 @@ CREATE TABLE t_fixed_key_3 (a UInt32, b UInt32, c UInt32) ENGINE = MergeTree ORD
 SYSTEM STOP MERGES t_fixed_key_3;
 
 INSERT INTO t_fixed_key_3 SELECT intDiv(number, 40), intDiv(number, 10) % 4, ((number * 37) % 120) * 10 + 1 FROM numbers(120);
-INSERT INTO t_fixed_key_3 SELECT 1 + intDiv(number, 40), intDiv(number, 10) % 4, ((number * 37) % 80) * 10 + 2 FROM numbers(80);
 INSERT INTO t_fixed_key_3 SELECT intDiv(number, 30), 1 + intDiv(number, 10) % 3, ((number * 37) % 90) * 10 + 3 FROM numbers(90);
 INSERT INTO t_fixed_key_3 SELECT if(number < 32, 1, 2), if(number < 16, 2, 3), ((number * 37) % 64) * 10 + 4 FROM numbers(64);
-INSERT INTO t_fixed_key_3 SELECT if(number < 40, 0, 2), intDiv(number, 10) % 4, ((number * 37) % 80) * 10 + 5 FROM numbers(80);
 
 SELECT '-- fixed middle key: WHERE b = 1 ORDER BY a, b, c';
-SELECT extract(explain, '(?:Read type|Virtual row conversions).*') AS e
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
 FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT a, c FROM t_fixed_key_3 WHERE b = 1 ORDER BY a, b, c LIMIT 5) WHERE e != '';
 
-SELECT (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_fixed_key_3 WHERE b = 1 ORDER BY a, b, c LIMIT 20))
-     = (SELECT arraySlice(arraySort(groupArray((a, c))), 1, 20) FROM t_fixed_key_3 WHERE b = 1);
-SELECT (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_fixed_key_3 WHERE b = 1 ORDER BY a DESC, b DESC, c DESC))
-     = (SELECT arrayReverseSort(groupArray((a, c))) FROM t_fixed_key_3 WHERE b = 1);
+SELECT '-- fixed middle key in the other direction: WHERE b = 1 ORDER BY a, b DESC, c';
 SELECT (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_fixed_key_3 WHERE b = 1 ORDER BY a, b DESC, c))
      = (SELECT arraySort(groupArray((a, c))) FROM t_fixed_key_3 WHERE b = 1);
 
-SELECT '-- two fixed keys: WHERE a = 1 AND b = 2 ORDER BY a, b, c';
-SELECT extract(explain, '(?:Read type|Virtual row conversions).*') AS e
-FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT c FROM t_fixed_key_3 WHERE a = 1 AND b = 2 ORDER BY a, b, c LIMIT 5) WHERE e != '';
+SELECT '-- fixed middle key, not listed: WHERE b = 1 ORDER BY a, c';
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
+FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT a, c FROM t_fixed_key_3 WHERE b = 1 ORDER BY a, c LIMIT 5) WHERE e != '';
 
-SELECT (SELECT groupArray(c) FROM (SELECT c FROM t_fixed_key_3 WHERE a = 1 AND b = 2 ORDER BY a, b, c LIMIT 20))
-     = (SELECT arraySlice(arraySort(groupArray(c)), 1, 20) FROM t_fixed_key_3 WHERE a = 1 AND b = 2);
-SELECT (SELECT groupArray(c) FROM (SELECT c FROM t_fixed_key_3 WHERE a = 1 AND b = 2 ORDER BY a DESC, b, c DESC))
-     = (SELECT arrayReverseSort(groupArray(c)) FROM t_fixed_key_3 WHERE a = 1 AND b = 2);
+-- A virtual row after each block: the index entries between the ranges of `b = 1` have other values of `b`.
+SELECT (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_fixed_key_3 WHERE b = 1 ORDER BY a, c))
+     = (SELECT arraySort(groupArray((a, c))) FROM t_fixed_key_3 WHERE b = 1)
+SETTINGS read_in_order_use_virtual_row_per_block = 1;
+SELECT (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_fixed_key_3 WHERE b = 1 ORDER BY a DESC, c DESC))
+     = (SELECT arrayReverseSort(groupArray((a, c))) FROM t_fixed_key_3 WHERE b = 1)
+SETTINGS read_in_order_use_virtual_row_per_block = 1;
+
+SELECT '-- two fixed keys, not listed: WHERE a = 1 AND b = 2 ORDER BY c';
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
+FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT c FROM t_fixed_key_3 WHERE a = 1 AND b = 2 ORDER BY c LIMIT 5) WHERE e != '';
+
+SELECT (SELECT groupArray(c) FROM (SELECT c FROM t_fixed_key_3 WHERE a = 1 AND b = 2 ORDER BY c DESC LIMIT 20))
+     = (SELECT arraySlice(arrayReverseSort(groupArray(c)), 1, 20) FROM t_fixed_key_3 WHERE a = 1 AND b = 2);
+
+SELECT '-- a fixed key after the last compared column is not checked: WHERE a = 1 AND c = 2 ORDER BY b';
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
+FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT b FROM t_fixed_key_3 WHERE a = 1 AND c = 2 ORDER BY b LIMIT 5) WHERE e != '';
 
 SELECT '--- key (toDate(ts), b)';
 
@@ -142,14 +142,15 @@ SYSTEM STOP MERGES t_fixed_key_expr;
 
 INSERT INTO t_fixed_key_expr SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + intDiv(number, 60) * 86400 + number % 60 * 600, if(intDiv(number, 60) = 1, 10 * (number % 60) + 1, 100000 + number) FROM numbers(180);
 INSERT INTO t_fixed_key_expr SELECT toDateTime('2024-01-02 00:00:00', 'UTC') + intDiv(number, 48) * 86400 + number % 48 * 600, if(intDiv(number, 48) = 0, 10 * (number % 48) + 2, 200000 + number) FROM numbers(96);
-INSERT INTO t_fixed_key_expr SELECT toDateTime('2024-01-02 00:00:00', 'UTC') + number * 600, 5000 + number FROM numbers(64);
 
-SELECT extract(explain, '(?:Read type|Virtual row conversions).*') AS e
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
 FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT b FROM t_fixed_key_expr WHERE toDate(ts) = '2024-01-02' ORDER BY toDate(ts), b LIMIT 5) WHERE e != '';
 
-SELECT (SELECT groupArray(b) FROM (SELECT b FROM t_fixed_key_expr WHERE toDate(ts) = '2024-01-02' ORDER BY toDate(ts), b LIMIT 20))
-     = (SELECT arraySlice(arraySort(groupArray(b)), 1, 20) FROM t_fixed_key_expr WHERE toDate(ts) = '2024-01-02');
-SELECT (SELECT groupArray(b) FROM (SELECT b FROM t_fixed_key_expr WHERE toDate(ts) = '2024-01-02' ORDER BY toDate(ts) DESC, b))
+SELECT '-- not listed';
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
+FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT b FROM t_fixed_key_expr WHERE toDate(ts) = '2024-01-02' ORDER BY b LIMIT 5) WHERE e != '';
+
+SELECT (SELECT groupArray(b) FROM (SELECT b FROM t_fixed_key_expr WHERE toDate(ts) = '2024-01-02' ORDER BY b))
      = (SELECT arraySort(groupArray(b)) FROM t_fixed_key_expr WHERE toDate(ts) = '2024-01-02');
 
 SELECT '--- key (ts, b): `toDate(ts) = ...` fixes `toDate(ts)` but not the key column `ts`, which still determines the order';
@@ -158,25 +159,44 @@ CREATE TABLE t_fixed_key_ts (ts DateTime('UTC'), b UInt32) ENGINE = MergeTree OR
 SYSTEM STOP MERGES t_fixed_key_ts;
 
 INSERT INTO t_fixed_key_ts SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + number * 3600, 1000 - number FROM numbers(60);
-INSERT INTO t_fixed_key_ts SELECT toDateTime('2024-01-01 00:30:00', 'UTC') + number * 3600, 2000 - number FROM numbers(60);
 
 SELECT b FROM t_fixed_key_ts WHERE toDate(ts) = '2024-01-01' ORDER BY toDate(ts), b LIMIT 5;
-SELECT b FROM t_fixed_key_ts WHERE toDate(ts) = '2024-01-01' ORDER BY toDate(ts) DESC, b LIMIT 5;
+
+SELECT '-- the key column is fixed and listed through a function';
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
+FROM (EXPLAIN PLAN actions = 1, indexes = 0 SELECT b FROM t_fixed_key_ts WHERE ts = '2024-01-01 05:00:00' ORDER BY toDate(ts), b LIMIT 5) WHERE e != '';
+SELECT b FROM t_fixed_key_ts WHERE ts = '2024-01-01 05:00:00' ORDER BY toDate(ts), b LIMIT 5;
+
+SELECT '--- UNION ALL: every read has its own fixed value';
+
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
+FROM (EXPLAIN PLAN actions = 1, indexes = 0
+    SELECT b FROM (SELECT b FROM t_fixed_key WHERE a = 1 UNION ALL SELECT b FROM t_fixed_key WHERE a = 2) ORDER BY b LIMIT 5) WHERE e != '';
+
+SELECT (SELECT groupArray(b) FROM (SELECT b FROM (SELECT b FROM t_fixed_key WHERE a = 1 UNION ALL SELECT b FROM t_fixed_key WHERE a = 2) ORDER BY b LIMIT 60))
+     = (SELECT arraySlice(arraySort(groupArray(b)), 1, 60) FROM t_fixed_key WHERE a IN (1, 2));
 
 SELECT '--- INNER JOIN: reading in order needs the virtual row';
 
 CREATE TABLE t_fixed_key_right (b UInt32, w UInt32) ENGINE = MergeTree ORDER BY b;
-INSERT INTO t_fixed_key_right SELECT number, number * 3 FROM numbers(9000) WHERE number % 7 = 0;
+-- In one block: blocks of 8 rows make this the slowest statement of the test.
+INSERT INTO t_fixed_key_right SELECT number, number * 3 FROM numbers(9000) WHERE number % 7 = 0 SETTINGS max_block_size = 65409;
 
-SELECT extract(explain, '(?:Read type|Virtual row conversions).*') AS e
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
 FROM (EXPLAIN PLAN actions = 1, indexes = 0
     SELECT l.b, r.w FROM t_fixed_key AS l INNER JOIN t_fixed_key_right AS r ON l.b = r.b WHERE l.a = 1 ORDER BY l.a, l.b LIMIT 5) WHERE e != '';
-SELECT extract(explain, '(?:Read type|Virtual row conversions).*') AS e
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
 FROM (EXPLAIN PLAN actions = 1, indexes = 0
     SELECT l.b, r.w FROM t_fixed_key AS l INNER JOIN t_fixed_key_right AS r ON l.b = r.b WHERE l.a = 1 ORDER BY l.a DESC, l.b DESC LIMIT 5) WHERE e != '';
 
 SELECT l.b, r.w FROM t_fixed_key AS l INNER JOIN t_fixed_key_right AS r ON l.b = r.b WHERE l.a = 1 ORDER BY l.a, l.b LIMIT 5;
-SELECT l.b, r.w FROM t_fixed_key AS l INNER JOIN t_fixed_key_right AS r ON l.b = r.b WHERE l.a = 1 ORDER BY l.a DESC, l.b DESC LIMIT 5;
+
+SELECT '-- the fixed key column is not listed';
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
+FROM (EXPLAIN PLAN actions = 1, indexes = 0
+    SELECT l.b, r.w FROM t_fixed_key AS l INNER JOIN t_fixed_key_right AS r ON l.b = r.b WHERE l.a = 1 ORDER BY l.b LIMIT 5) WHERE e != '';
+
+SELECT l.b, r.w FROM t_fixed_key AS l INNER JOIN t_fixed_key_right AS r ON l.b = r.b WHERE l.a = 1 ORDER BY l.b LIMIT 5;
 
 SELECT '-- with FINAL';
 
@@ -187,13 +207,19 @@ INSERT INTO t_fixed_key_final SELECT intDiv(number, 100) AS a, if(a = 1, 7 * (nu
 INSERT INTO t_fixed_key_final SELECT if(number < 44, 0, 1) AS a, if(a = 1, 7 * (number - 44), 400000 + number), 2 FROM numbers(128);
 INSERT INTO t_fixed_key_final SELECT 1, 7 * number + 3500, 3 FROM numbers(64);
 
-SELECT extract(explain, '(?:Read type|Virtual row conversions).*') AS e
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
 FROM (EXPLAIN PLAN actions = 1, indexes = 0
     SELECT l.b, l.ver, r.w FROM t_fixed_key_final AS l FINAL INNER JOIN t_fixed_key_right AS r ON l.b = r.b WHERE l.a = 1 ORDER BY l.a, l.b LIMIT 5) WHERE e != '';
 
 SELECT l.b, l.ver, r.w FROM t_fixed_key_final AS l FINAL INNER JOIN t_fixed_key_right AS r ON l.b = r.b WHERE l.a = 1 ORDER BY l.a, l.b LIMIT 5;
-SELECT (SELECT groupArray((b, ver)) FROM (SELECT l.b AS b, l.ver AS ver FROM t_fixed_key_final AS l FINAL INNER JOIN t_fixed_key_right AS r ON l.b = r.b WHERE l.a = 1 ORDER BY l.a, l.b))
-     = (SELECT arraySort(groupArray((b, ver))) FROM (SELECT l.b AS b, l.ver AS ver FROM t_fixed_key_final AS l FINAL INNER JOIN t_fixed_key_right AS r ON l.b = r.b WHERE l.a = 1));
+
+SELECT extract(explain, '(?:Read type|Virtual row conversions|Virtual row fixed key).*') AS e
+FROM (EXPLAIN PLAN actions = 1, indexes = 0
+    SELECT l.b, l.ver, r.w FROM t_fixed_key_final AS l FINAL INNER JOIN t_fixed_key_right AS r ON l.b = r.b WHERE l.a = 1 ORDER BY l.b LIMIT 5) WHERE e != '';
+-- Several threads: a single stream of `FINAL` is not merged with another one by its virtual row.
+SELECT (SELECT groupArray((b, ver)) FROM (SELECT l.b AS b, l.ver AS ver FROM t_fixed_key_final AS l FINAL INNER JOIN t_fixed_key_right AS r ON l.b = r.b WHERE l.a = 1 ORDER BY l.b))
+     = (SELECT arraySort(groupArray((b, ver))) FROM (SELECT l.b AS b, l.ver AS ver FROM t_fixed_key_final AS l FINAL INNER JOIN t_fixed_key_right AS r ON l.b = r.b WHERE l.a = 1))
+SETTINGS max_threads = 4;
 
 DROP TABLE t_fixed_key;
 DROP TABLE t_fixed_key_3;
