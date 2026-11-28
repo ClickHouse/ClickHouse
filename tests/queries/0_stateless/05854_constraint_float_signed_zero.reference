@@ -1,0 +1,8 @@
+constant filter	1
+constant filter	1
+enum bridge filter	1
+enum bridge filter	1
+constant projection	-inf
+constant projection	-inf
+column projection	-inf
+column projection	-inf

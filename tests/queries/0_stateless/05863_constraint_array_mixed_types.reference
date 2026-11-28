@@ -1,0 +1,9 @@
+array	1	1	0
+array a = c	0
+array a = c	0
+nested	1	1	0
+nested a = c	0
+nested a = c	0
+same a = c	1
+same a = c	1
+same folded	0

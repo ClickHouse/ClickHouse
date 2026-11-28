@@ -12,6 +12,12 @@
 
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TypeTree.h>
+#include <DataTypes/Utils.h>
+#include <DataTypes/hasNullable.h>
+
 #include <Storages/IStorage.h>
 
 #include <Functions/FunctionFactory.h>
@@ -283,6 +289,17 @@ ComparisonGraphCompareResult mostStrict(const ComparisonGraphCompareResult left,
     return UNKNOWN;
 }
 
+/// `key` can replace `replaced` in a comparison with `constant` only if the comparison stays the same: one type
+/// (the name has the time zone, which converts a `Date` or a string), or native numbers, which compare exactly.
+bool keyComparesAsReplaced(const QueryTreeNodePtr & key, const QueryTreeNodePtr & replaced, const QueryTreeNodePtr & constant)
+{
+    const auto key_type = removeLowCardinalityAndNullable(key->getResultType());
+    const auto replaced_type = removeLowCardinalityAndNullable(replaced->getResultType());
+    if (key_type->getName() == replaced_type->getName())
+        return true;
+    return isNativeNumber(key_type) && isNativeNumber(replaced_type) && isNativeNumber(removeLowCardinalityAndNullable(constant->getResultType()));
+}
+
 /// Create OR-group for 'indexHint'.
 /// Consider we have expression like A <op1> C, where C is constant.
 /// Consider we have a constraint I <op2> A, where I depends only on columns from primary key.
@@ -322,6 +339,10 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
                     actual_result = graph.compare(primary_key_node, arguments[index]);
                 else
                     actual_result = graph.compare(arguments[index], primary_key_node);
+
+                /// `CHECK n >= e` must not turn `e >= '9'` into `n >= '9'`, `CHECK n = dt` must not turn `dt < toDate(...)` into `n < toDate(...)`.
+                if (!keyComparesAsReplaced(primary_key_node, arguments[index], arguments[1 - index]))
+                    continue;
 
                 if (canBeSequence(expected_result, actual_result))
                 {
@@ -506,11 +527,30 @@ public:
         if (component_id_it == query_node_to_component.end())
             return;
 
+        /// `CHECK f = g` holds for `f = -0` and `g = 0`, but `1 / f` is `-inf` and `1 / g` is `inf`.
+        if (hasTypeThatCanContainFloat(node->getResultType()))
+            return;
+
         const auto component_id = component_id_it->second;
         auto new_node = id_to_query_node_map.at(component_id)->clone();
 
-        if (!node->getResultType()->equals(*new_node->getResultType()))
+        /// An equality does not make `CAST` keep the value: `CAST(f, 'Decimal(38, 18)')` rounds 12345 to 12344.999999999999737856,
+        /// `CAST('9', ...)` and `CAST` from another `Enum` read a name, and `CAST` from `UInt128` or a decimal to an `Enum` is not supported.
+        if (!canBeSafelyCast(new_node->getResultType(), node->getResultType()))
+            return;
+
+        /// `equals` ignores the time zone of `DateTime`, so compare names to keep the time zone of the replaced term.
+        if (node->getResultType()->getName() != new_node->getResultType()->getName())
         {
+            /// An equality compares the elements of tuples by position, but `CAST` matches named elements by name.
+            auto is_named_tuple = [](const IDataType & type)
+            {
+                const auto * tuple = typeid_cast<const DataTypeTuple *>(&type);
+                return tuple && tuple->hasExplicitNames();
+            };
+            if (anyInTypeTree(*new_node->getResultType(), is_named_tuple))
+                return;
+
             node = buildCastFunction(new_node, node->getResultType(), context);
             return;
         }

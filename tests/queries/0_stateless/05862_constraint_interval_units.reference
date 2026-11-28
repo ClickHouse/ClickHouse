@@ -1,0 +1,11 @@
+check	1
+check	1
+query	1
+query	1
+bridge	0
+bridge	0
+same	1
+same	1
+same equal constant	1
+same equal constant	1
+same folded	0
