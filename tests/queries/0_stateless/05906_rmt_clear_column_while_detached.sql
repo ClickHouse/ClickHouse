@@ -70,9 +70,18 @@ ALTER TABLE t_clear_detached_rename DETACH PARTITION tuple();
 ALTER TABLE t_clear_detached_rename CLEAR COLUMN c, RENAME COLUMN b TO x;
 ALTER TABLE t_clear_detached_rename ATTACH PARTITION tuple();
 SELECT 'clear and rename', k, x, c FROM t_clear_detached_rename;
-ALTER TABLE t_clear_detached_rename UPDATE c = 8 WHERE 1;
-SELECT 'mutated', k, x, c FROM t_clear_detached_rename;
 DROP TABLE t_clear_detached_rename SYNC;
+
+DROP TABLE IF EXISTS t_clear_detached_mutate SYNC;
+CREATE TABLE t_clear_detached_mutate (k UInt32, b UInt32, c UInt32)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_clear_detached_mutate', 'r1') ORDER BY k;
+INSERT INTO t_clear_detached_mutate VALUES (1, 41, 7);
+ALTER TABLE t_clear_detached_mutate DETACH PARTITION tuple();
+ALTER TABLE t_clear_detached_mutate CLEAR COLUMN b;
+ALTER TABLE t_clear_detached_mutate ATTACH PARTITION tuple();
+ALTER TABLE t_clear_detached_mutate UPDATE c = 8 WHERE 1;
+SELECT 'mutated', k, b, c, length(splitByChar('_', _part)) FROM t_clear_detached_mutate;
+DROP TABLE t_clear_detached_mutate SYNC;
 
 DROP TABLE IF EXISTS t_clear_detached_index SYNC;
 CREATE TABLE t_clear_detached_index (k UInt32, b UInt32, INDEX ib b TYPE minmax GRANULARITY 1)

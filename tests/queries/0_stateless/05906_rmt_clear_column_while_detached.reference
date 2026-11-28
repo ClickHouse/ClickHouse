@@ -10,6 +10,6 @@ part	2	42
 part, merged	1	0
 part, merged	2	42
 clear and rename	1	41	7
-mutated	1	41	8
+mutated	1	41	8	5
 skip index	1
 modify	1	41	String	1
