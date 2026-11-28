@@ -61,6 +61,7 @@
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/thread_local_rng.h>
 #include <base/sleep.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -931,6 +932,14 @@ static void splitAndModifyMutationCommands(
         return name;
     };
 
+    auto clearsColumnStoredUnderOldName = [&](const MutationCommand & command)
+    {
+        if (command.type != MutationCommand::Type::DROP_COLUMN || !command.clear)
+            return false;
+        auto old_name = alter_conversions->getClearedColumnOldName(command.column_name);
+        return old_name && (part_columns.has(*old_name) || part->getSerializationInfos().isMissingColumn(*old_name));
+    };
+
     /// `a.b.x` can be a subcolumn of `a.b` even when a column `a` exists, so resolve by type, not by prefix.
     auto getColumnNameInStorage = [&](const String & name) -> std::optional<String>
     {
@@ -1102,6 +1111,12 @@ static void splitAndModifyMutationCommands(
                             dropped_columns.emplace(command.column_name);
                     }
                 }
+            }
+            else if (clearsColumnStoredUnderOldName(command))
+            {
+                for_interpreter.push_back(command);
+                for_file_renames.push_back(command);
+                mutated_columns.emplace(command.column_name);
             }
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
@@ -1405,6 +1420,11 @@ static void splitAndModifyMutationCommands(
                 if (command.type == MutationCommand::Type::DROP_COLUMN && command.clear)
                     for_interpreter.push_back(command);
 
+                for_file_renames.push_back(command);
+            }
+            else if (clearsColumnStoredUnderOldName(command))
+            {
+                for_interpreter.push_back(command);
                 for_file_renames.push_back(command);
             }
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
@@ -2235,6 +2255,7 @@ static NameToNameVector collectFilesForRenames(
     StorageMetadataPtr metadata_snapshot,
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::DataPartPtr new_part,
+    const Block & updated_header,
     const MutationCommands & commands_for_renames,
     const NameSet & updated_columns_in_patches,
     const String & mrk_extension,
@@ -2304,6 +2325,33 @@ static NameToNameVector collectFilesForRenames(
             });
         }
     };
+
+    /// Streams can vanish after MODIFY COLUMN LowCardinality -> String or a CLEAR recomputing a dynamic MATERIALIZED dependent.
+    auto remove_streams_not_in_new_part = [&](const Names & column_names)
+    {
+        auto old_streams = getStreamCounts(source_part, source_part->checksums, column_names);
+        auto new_streams = getStreamCounts(new_part, source_part->checksums, column_names);
+
+        for (const auto & [old_stream, _] : old_streams)
+        {
+            if (new_streams.contains(old_stream))
+                continue;
+
+            /// Every such command walks all streams of the source part, so with several of them
+            /// the count of a stream can already have reached zero (and the stream been removed)
+            /// on behalf of an earlier command. Do not decrement it below zero.
+            auto stream_it = stream_counts.find(old_stream);
+            if (stream_it == stream_counts.end() || stream_it->second == 0)
+                continue;
+
+            --stream_it->second;
+            if (stream_it->second == 0)
+            {
+                add_rename(old_stream + ".bin", "");
+                add_rename(old_stream + mrk_extension, "");
+            }
+        }
+    };
     NameSet columns_renamed_to_not_stored;
 
     /// Files owned by the indices that survive this mutation. `metadata_snapshot` is already the
@@ -2346,6 +2394,17 @@ static NameToNameVector collectFilesForRenames(
             }
         }
     }
+
+    /// The streams of a renamed column are moved or removed by its RENAME_COLUMN entry.
+    UnorderedSetWithMemoryTracking<String> renamed_columns;
+    for (const auto & command : commands_for_renames)
+        if (command.type == MutationCommand::Type::RENAME_COLUMN)
+            renamed_columns.insert(command.column_name);
+
+    Names updated_columns_not_renamed;
+    for (const auto & name : updated_header.getNames())
+        if (!renamed_columns.contains(name))
+            updated_columns_not_renamed.push_back(name);
 
     const auto new_part_column_names = new_part->getColumns().getNameSet();
 
@@ -2393,10 +2452,13 @@ static NameToNameVector collectFilesForRenames(
             if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
                 remove_column_streams(command.column_name);
+                if (command.clear)
+                    remove_streams_not_in_new_part(updated_columns_not_renamed);
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
-                if (!new_part_column_names.contains(command.rename_to))
+                /// A rewritten target gets new files: writing through a hardlink would modify the source part.
+                if (!new_part_column_names.contains(command.rename_to) || updated_header.has(command.rename_to))
                 {
                     if (columns_renamed_to_not_stored.insert(command.column_name).second)
                         remove_column_streams(command.column_name);
@@ -2479,31 +2541,7 @@ static NameToNameVector collectFilesForRenames(
             }
             else if (command.type == MutationCommand::Type::UPDATE || command.type == MutationCommand::Type::READ_COLUMN || command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
-                /// Remove files for streams that exist in source_part,
-                /// but were removed in new_part by MODIFY COLUMN or MATERIALIZE COLUMN from
-                /// type with higher number of streams (e.g. LowCardinality -> String).
-                auto old_streams = getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
-                auto new_streams = getStreamCounts(new_part, source_part->checksums, source_part->getColumns().getNames());
-
-                for (const auto & [old_stream, _] : old_streams)
-                {
-                    if (new_streams.contains(old_stream))
-                        continue;
-
-                    /// Every such command walks all streams of the source part, so with several of them
-                    /// the count of a stream can already have reached zero (and the stream been removed)
-                    /// on behalf of an earlier command. Do not decrement it below zero.
-                    auto stream_it = stream_counts.find(old_stream);
-                    if (stream_it == stream_counts.end() || stream_it->second == 0)
-                        continue;
-
-                    --stream_it->second;
-                    if (stream_it->second == 0)
-                    {
-                        add_rename(old_stream + ".bin", "");
-                        add_rename(old_stream + mrk_extension, "");
-                    }
-                }
+                remove_streams_not_in_new_part(source_part->getColumns().getNames());
             }
         }
     }
@@ -5869,6 +5907,7 @@ bool MutateTask::prepare()
             ctx->metadata_snapshot,
             ctx->source_part,
             ctx->new_data_part,
+            ctx->updated_header,
             ctx->for_file_renames,
             updated_columns_in_patches,
             ctx->mrk_extension,

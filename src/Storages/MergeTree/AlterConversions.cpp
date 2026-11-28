@@ -214,6 +214,7 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
 
     if (command.type == RENAME_COLUMN)
     {
+        cleared_renamed_columns.erase(command.column_name);
         columns_touched_by_metadata_mutations.insert(command.column_name);
         columns_touched_by_metadata_mutations.insert(command.rename_to);
 
@@ -246,6 +247,8 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
             return;
 
         columns_touched_by_metadata_mutations.insert(command.column_name);
+        if (!command.clear)
+            cleared_renamed_columns.erase(command.column_name);
 
         /// Handle a drop after a rename: if column A was renamed to B and B is now dropped,
         /// record the drop under A, and erase the mapping of A to B.
@@ -254,6 +257,8 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
         if (it != rename_map.end())
         {
             dropped_column_name = it->rename_from;
+            if (command.clear)
+                cleared_renamed_columns[command.column_name] = it->rename_from;
             rename_map.erase(it);
         }
 
@@ -355,6 +360,14 @@ std::string AlterConversions::getColumnOldName(const std::string & new_name) con
             return name_from;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} was not renamed", new_name);
+}
+
+std::optional<std::string> AlterConversions::getClearedColumnOldName(const std::string & new_name) const
+{
+    auto it = cleared_renamed_columns.find(new_name);
+    if (it == cleared_renamed_columns.end())
+        return std::nullopt;
+    return it->second;
 }
 
 NameSet AlterConversions::getColumnsInvalidatingIndexes() const

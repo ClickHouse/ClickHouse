@@ -1,0 +1,31 @@
+compact	1	0	1	2
+compact-columns	['a','c','k']
+1
+compact-stored	1	0	1	2
+wide	1	0	1
+wide	2	0	1
+wide-index	2
+wide-columns	['a','k']
+1
+wide-stored	1	0	1
+wide-stored	2	0	1
+renamed-dep	1	0	1
+1
+renamed-dep-copy	1	41	42
+1
+name-taken	1	0	1	2	hello	{"p":1}
+1
+name-taken-count	1
+packed	1	0	1	Packed
+dynamic	1	\N	\N
+1
+dynamic-count	1
+json	1	0	\N
+1
+json-count	1
+marker	99	100
+marker-wide	99	100
+chain	1	0	1
+partition	1	0	1
+partition	2	0	1
+partition-index	2
