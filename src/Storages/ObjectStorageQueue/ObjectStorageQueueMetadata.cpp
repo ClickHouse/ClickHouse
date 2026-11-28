@@ -718,8 +718,18 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 continue;
             }
             /// Keeper was changed after the metadata was read, for example by another server, so start again.
-            if (*code == Coordination::Error::ZBADVERSION || *code == Coordination::Error::ZNONODE)
+            if (*code == Coordination::Error::ZBADVERSION)
                 continue;
+            if (*code == Coordination::Error::ZNONODE)
+            {
+                /// The parent node can be removed concurrently, when the last other table under it is dropped
+                /// (see `StorageObjectStorageQueue::tryRemoveEmptyDatabaseNode`), so recreate it before starting again.
+                /// Creating the ancestors is a no-op if the node was changed in some other way.
+                LOG_INFO(log, "Some node for {} does not exist, it was changed concurrently, will retry", zookeeper_path.string());
+                zk_retries.resetFailures();
+                zk_retries.retryLoop([&] { getZooKeeper(log, zookeeper_name)->createAncestors(zookeeper_path); });
+                continue;
+            }
             if (*code != Coordination::Error::ZOK)
                 zkutil::KeeperMultiException::check(*code, requests, responses);
         }
