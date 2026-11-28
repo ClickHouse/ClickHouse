@@ -55,6 +55,7 @@ SELECT count() FROM t_float WHERE x IN (SELECT toDecimal32(1.23, 2));
 CREATE TABLE t_u32 (x UInt32) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 1;
 INSERT INTO t_u32 VALUES (1), (19389), (1675252801);
 SELECT count() FROM t_u32 WHERE x IN (SELECT toDate('2023-02-01')) SETTINGS session_timezone = 'UTC';
+SELECT count() FROM t_u32 WHERE x IN (SELECT CAST(true, 'SimpleAggregateFunction(any, Bool)'));
 
 CREATE TABLE t_d8 (d Date) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 1;
 INSERT INTO t_d8 VALUES (1), (2), (257);
@@ -143,6 +144,9 @@ CREATE TABLE t_wrap (k Int64) ENGINE = MergeTree ORDER BY k SETTINGS index_granu
 INSERT INTO t_wrap VALUES (1), (5);
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_wrap WHERE k IN (SELECT CAST(toInt64(1), 'Dynamic'))) WHERE explain ILIKE '%Granules: 1/2%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_wrap WHERE k IN (SELECT CAST(toInt64(1), 'Variant(Int64, String)'))) WHERE explain ILIKE '%Granules: 1/2%';
+CREATE TABLE t_saf (id UInt8, v SimpleAggregateFunction(any, Bool), INDEX i v TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_saf VALUES (1, false), (2, true);
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT id FROM t_saf WHERE v IN (SELECT true) SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Granules: 1/2%';
 
 DROP TABLE t_dt;
 DROP TABLE t_dt64;
@@ -176,3 +180,4 @@ DROP TABLE t_d32s;
 DROP TABLE t_time;
 DROP TABLE t_boolb;
 DROP TABLE t_map;
+DROP TABLE t_saf;

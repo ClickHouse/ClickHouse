@@ -3744,8 +3744,11 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
     auto key_which = WhichDataType(key_unwrapped);
     auto set_which = WhichDataType(set_unwrapped);
 
+    /// `SimpleAggregateFunction(f, Bool)` is cast as a `Bool`.
+    const auto is_bool = [](const DataTypePtr & type) { return isBool(type) || isSimpleAggregateFunctionOfBool(*type); };
+
     /// `Bool` takes every nonzero value to `true`, and `equals` does not tell it from `UInt8`.
-    if (isBool(set_unwrapped) && !isBool(key_unwrapped))
+    if (is_bool(set_unwrapped) && !is_bool(key_unwrapped))
         return true;
 
     /// An all-NULL element names no value.
