@@ -143,7 +143,7 @@ AsyncInsertQueueTransform::AsyncInsertQueueTransform(
 AsyncInsertQueueTransform::~AsyncInsertQueueTransform()
 {
     /// Safety net for a non-exceptional abort (e.g. `timeout_overflow_mode = 'break'`), the same
-    /// pattern `AliasSink` uses for its own nested executor: `finish()` already made this a no-op
+    /// pattern `NestedInsertSink` uses for its own nested executor: `finish()` already made this a no-op
     /// on the normal path.
     if (fallback_executor)
     {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Regression test: an Alias forwarding to a deduplicating table must not disable the
 # max_insert_threads write fan-out for a plain INSERT without strict insert block limits. The
-# AliasSink runs its nested INSERT in this query's context with the chunk's DeduplicationInfo intact,
+# NestedInsertSink runs its nested INSERT in this query's context with the chunk's DeduplicationInfo intact,
 # and the nested AddDeduplicationInfoTransform does not restamp a chunk that has already visited a
 # view - and the single-stream head of the outer pipeline always pushes the root entry via
 # setRootViewID before the fan-out. So the globally stamped source block numbering survives the Alias
@@ -31,14 +31,14 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE alias_fanout_dst (x UInt64) ENGINE = MergeTr
 $CLICKHOUSE_CLIENT -q "CREATE TABLE alias_fanout_alias ENGINE = Alias('alias_fanout_dst')"
 
 # Topology 1: a direct INSERT into an Alias of a deduplicating table. Without strict limits the
-# source numbering is global and survives the hop: four AliasSinks.
+# source numbering is global and survives the hop: four NestedInsertSinks.
 $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 -q \
-    "EXPLAIN PIPELINE INSERT INTO alias_fanout_alias VALUES (1)" | grep -c "AliasSink"
+    "EXPLAIN PIPELINE INSERT INTO alias_fanout_alias VALUES (1)" | grep -c "NestedInsertSink"
 
 # Under strict limits the numbering is per-branch and would collide on the deduplicating target: a
-# single AliasSink.
+# single NestedInsertSink.
 $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 --use_strict_insert_block_limits=1 -q \
-    "EXPLAIN PIPELINE INSERT INTO alias_fanout_alias VALUES (1)" | grep -c "AliasSink"
+    "EXPLAIN PIPELINE INSERT INTO alias_fanout_alias VALUES (1)" | grep -c "NestedInsertSink"
 
 # Row integrity with the fan-out active: four identical 100-row blocks must all arrive in the
 # deduplicating target. If the numbering restarted per branch, identical blocks on different branches
@@ -60,14 +60,14 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE alias_fanout_src (x UInt64) ENGINE = MergeTr
 $CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW alias_fanout_mv TO alias_fanout_alias AS SELECT x FROM alias_fanout_src"
 
 # Without strict limits the view-level ids fold in the globally stamped source number, so they stay
-# distinct across branches even behind the alias hop: four AliasSinks.
+# distinct across branches even behind the alias hop: four NestedInsertSinks.
 $CLICKHOUSE_CLIENT $SETTINGS $MV_SETTINGS --max_insert_threads=4 -q \
-    "EXPLAIN PIPELINE INSERT INTO alias_fanout_src VALUES (1)" | grep -c "AliasSink"
+    "EXPLAIN PIPELINE INSERT INTO alias_fanout_src VALUES (1)" | grep -c "NestedInsertSink"
 
 # Under strict limits the per-branch numbering survives the hop and would collide the view-level ids
-# on the deduplicating target: a single AliasSink.
+# on the deduplicating target: a single NestedInsertSink.
 $CLICKHOUSE_CLIENT $SETTINGS $MV_SETTINGS --max_insert_threads=4 --use_strict_insert_block_limits=1 -q \
-    "EXPLAIN PIPELINE INSERT INTO alias_fanout_src VALUES (1)" | grep -c "AliasSink"
+    "EXPLAIN PIPELINE INSERT INTO alias_fanout_src VALUES (1)" | grep -c "NestedInsertSink"
 
 # Row integrity with the fan-out active: four identical 100-row blocks must all reach the
 # deduplicating table behind the MV and the alias hop.
@@ -82,7 +82,7 @@ $CLICKHOUSE_CLIENT -q "SELECT (SELECT count() FROM alias_fanout_src), (SELECT co
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alias_fanout_src_alias"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE alias_fanout_src_alias ENGINE = Alias('alias_fanout_src')"
 $CLICKHOUSE_CLIENT $SETTINGS $MV_SETTINGS --max_insert_threads=4 --use_strict_insert_block_limits=1 -q \
-    "EXPLAIN PIPELINE INSERT INTO alias_fanout_src_alias VALUES (1)" | grep -c "AliasSink"
+    "EXPLAIN PIPELINE INSERT INTO alias_fanout_src_alias VALUES (1)" | grep -c "NestedInsertSink"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE alias_fanout_src_alias"
 $CLICKHOUSE_CLIENT -q "DROP TABLE alias_fanout_mv"

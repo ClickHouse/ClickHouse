@@ -84,6 +84,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/NestedInsertSink.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/ColumnsDescription.h>
@@ -145,6 +146,8 @@ extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int ACCESS_DENIED;
 extern const int DATABASE_ACCESS_DENIED;
 extern const int STORAGE_REQUIRES_PARAMETER;
+extern const int TABLE_IS_READ_ONLY;
+extern const int TOO_DEEP_RECURSION;
 extern const int UNKNOWN_DATABASE;
 extern const int UNKNOWN_TABLE;
 extern const int PARAMETER_OUT_OF_BOUND;
@@ -244,10 +247,13 @@ StorageMerge::DatabaseNameOrRegexp::DatabaseNameOrRegexp(
 StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     const String & comment,
     const String & source_database_name_or_regexp_,
     bool database_is_regexp_,
     const DBToTableSetMap & source_databases_and_tables_,
+    const std::optional<String> & table_to_write_,
+    bool table_to_write_auto_,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -261,18 +267,23 @@ StorageMerge::StorageMerge(
     storage_metadata.setColumns(columns_.empty()
         ? getColumnsDescriptionFromSourceTables(context_, nullptr)
         : columns_);
+    storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+    setTableToWrite(table_to_write_, table_to_write_auto_, source_database_name_or_regexp_, database_is_regexp_);
 }
 
 StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     const String & comment,
     const String & source_database_name_or_regexp_,
     bool database_is_regexp_,
     const String & source_table_regexp_,
+    const std::optional<String> & table_to_write_,
+    bool table_to_write_auto_,
     ContextPtr context_,
     bool keep_inferred_source_metadata)
     : IStorage(table_id_)
@@ -287,9 +298,11 @@ StorageMerge::StorageMerge(
     storage_metadata.setColumns(columns_.empty()
         ? getColumnsDescriptionFromSourceTables(context_, keep_inferred_source_metadata ? &inferred_source_metadata : nullptr)
         : columns_);
+    storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+    setTableToWrite(table_to_write_, table_to_write_auto_, source_database_name_or_regexp_, database_is_regexp_);
 }
 
 StorageMerge::DatabaseTablesIterators StorageMerge::getDatabaseIterators(ContextPtr context_) const
@@ -381,6 +394,141 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
     });
 
     return res;
+}
+
+std::optional<StorageID> StorageMerge::tryGetTableToWrite(ContextPtr query_context) const
+{
+    if (table_to_write)
+        return table_to_write;
+
+    if (!table_to_write_auto)
+        return {};
+
+    const auto access = query_context->getAccess();
+    std::optional<StorageID> chosen_table;
+    traverseTablesUntil([&](const StoragePtr & table)
+    {
+        auto table_id = table->getStorageID();
+        if (!chosen_table || table_id.getFullTableName() > chosen_table->getFullTableName())
+            if (access->isGranted(AccessType::SHOW_TABLES, table_id.database_name, table_id.table_name))
+                chosen_table = table_id;
+
+        return false;
+    });
+    return chosen_table;
+}
+
+StorageID StorageMerge::getTableToWrite(ContextPtr query_context) const
+{
+    if (auto table = tryGetTableToWrite(query_context))
+        return *table;
+
+    if (table_to_write_auto)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Can't find any table to write for storage {}", getStorageID().getNameForLogs());
+
+    throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Inserts are not configured for Merge table {}", getStorageID().getNameForLogs());
+}
+
+StoragePtr StorageMerge::tryGetNestedInsertTarget() const
+{
+    /// With `auto`, the target depends on the grants of the user.
+    if (!table_to_write)
+        return nullptr;
+    return DatabaseCatalog::instance().tryGetTable(*table_to_write, getContext());
+}
+
+StorageMerge::InsertTarget StorageMerge::resolveInsertTarget(const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context) const
+{
+    StorageID target_id = getTableToWrite(local_context);
+    auto target = DatabaseCatalog::instance().getTable(target_id, local_context);
+    auto target_metadata = target->getInMemoryMetadataPtr(local_context, false);
+
+    /// The columns of the `Merge` table that the target table does not have are not written, as they are read
+    /// as defaults from it. The target table fills in its other columns with its defaults.
+    const auto target_insertable = target_metadata->getSampleBlockInsertable();
+    Names columns_to_insert;
+    for (const auto & column : metadata_snapshot->getSampleBlockNonMaterialized())
+        if (target_insertable.has(column.name))
+            columns_to_insert.push_back(column.name);
+
+    /// The grants are checked before anything else about the target table is reported. The nested `INSERT` checks
+    /// them again, but it is executed only in a background flush for asynchronous inserts, see `checkInsertIsAllowed`.
+    if (columns_to_insert.empty())
+    {
+        local_context->checkAccess(AccessType::INSERT, target_id.database_name, target_id.table_name);
+        throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+            "The Merge table {} has no columns in common with the table to write {}",
+            getStorageID().getNameForLogs(), target_id.getNameForLogs());
+    }
+    local_context->checkAccess(AccessType::INSERT, target_id.database_name, target_id.table_name, columns_to_insert);
+
+    /// The target can forward the inserts further (it can be another `Merge` table). The nested queries would never end
+    /// if the chain returned to a table in it. The tables further in the chain are not named in the messages: the grants
+    /// on them are checked only by the nested queries.
+    {
+        static constexpr size_t max_forwarding_depth = 16;
+        auto same_table = [](const StorageID & lhs, const StorageID & rhs)
+        {
+            return lhs.database_name == rhs.database_name && lhs.table_name == rhs.table_name;
+        };
+
+        std::vector<StorageID> chain{getStorageID()};
+        StorageID next_id = target_id;
+        while (true)
+        {
+            for (const auto & id : chain)
+                if (same_table(id, next_id))
+                    throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+                        "Inserts into the Merge table {} are forwarded in a cycle", getStorageID().getNameForLogs());
+
+            if (chain.size() > max_forwarding_depth)
+                throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+                    "Inserts into the Merge table {} are forwarded through more than {} tables",
+                    getStorageID().getNameForLogs(), max_forwarding_depth);
+
+            auto next = DatabaseCatalog::instance().tryGetTable(next_id, local_context);
+            if (!next || !next->insertsThroughNestedQuery())
+                break;
+
+            chain.push_back(next_id);
+            if (const auto * next_merge = dynamic_cast<const StorageMerge *>(next.get()))
+            {
+                auto next_target_id = next_merge->tryGetTableToWrite(local_context);
+                if (!next_target_id)
+                    break;
+                next_id = *next_target_id;
+            }
+            else if (auto next_target = next->tryGetNestedInsertTarget())
+                next_id = next_target->getStorageID();
+            else
+                break;
+        }
+    }
+
+    return {std::move(target), std::move(columns_to_insert)};
+}
+
+void StorageMerge::checkInsertIsAllowed(ContextPtr local_context) const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto target = resolveInsertTarget(metadata_snapshot, local_context);
+    target.storage->checkInsertIsAllowed(local_context);
+}
+
+SinkToStoragePtr StorageMerge::write(
+    const ASTPtr & /*query*/,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr local_context,
+    bool async_insert)
+{
+    auto target = resolveInsertTarget(metadata_snapshot, local_context);
+    return std::make_shared<NestedInsertSink>(
+        std::make_shared<const Block>(metadata_snapshot->getSampleBlock()),
+        target.storage->getStorageID(),
+        std::move(target.columns_to_insert),
+        /*explicit_column_list=*/ true,
+        local_context,
+        async_insert);
 }
 
 template <typename F>
@@ -3536,6 +3684,60 @@ std::optional<UInt64> StorageMerge::totalRowsOrBytes(const ContextPtr & query_co
     return first_table ? std::nullopt : std::make_optional(total_rows_or_bytes);
 }
 
+void StorageMerge::setTableToWrite(
+    const std::optional<String> & table_to_write_,
+    bool table_to_write_auto_,
+    const String & source_database_name_or_regexp_,
+    bool database_is_regexp_)
+{
+    if (table_to_write_auto_)
+    {
+        table_to_write_auto = true;
+        return;
+    }
+    if (!table_to_write_)
+        return;
+
+    auto qualified_name = QualifiedTableName::parseFromString(*table_to_write_);
+
+    if (qualified_name.database.empty())
+    {
+        if (database_is_regexp_)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_to_write' must contain database if 'db_name' is regular expression");
+
+        qualified_name.database = source_database_name_or_regexp_;
+    }
+
+    if (database_name_or_regexp.source_databases_and_tables)
+    {
+        auto tables = database_name_or_regexp.source_databases_and_tables->find(qualified_name.database);
+        if (tables == database_name_or_regexp.source_databases_and_tables->end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "table_to_write database is not matching regexp");
+        if (!tables->second.contains(qualified_name.table))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "table_to_write table is not matching regexp");
+    }
+    else
+    {
+        if (database_name_or_regexp.database_is_regexp)
+        {
+            if  (!database_name_or_regexp.source_database_regexp->match(qualified_name.database))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "table_to_write database is not matching regexp");
+        }
+        else
+        {
+            if  (database_name_or_regexp.source_database_name_or_regexp != qualified_name.database)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "table_to_write database is not matching");
+        }
+
+        chassert(database_name_or_regexp.source_table_regexp.has_value());
+        if (!database_name_or_regexp.source_table_regexp->match(qualified_name.table))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "table_to_write is not matching table regexp");
+    }
+
+    source_table_to_write = qualified_name;
+    table_to_write = StorageID(source_table_to_write->database, source_table_to_write->table);
+}
+
 void registerStorageMerge(StorageFactory & factory);
 void registerStorageMerge(StorageFactory & factory)
 {
@@ -3547,11 +3749,11 @@ void registerStorageMerge(StorageFactory & factory)
 
         ASTs & engine_args = args.engine_args;
 
-        if (engine_args.size() != 2)
+        size_t size = engine_args.size();
+        if (size < 2 || size > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage Merge requires exactly 2 parameters - name "
-                            "of source database and regexp for table names.");
-
+                            "Storage Merge requires 2 or 3 parameters - name "
+                            "of source database, regexp for table names, and optional table name for writing");
         auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(engine_args[0], args.getLocalContext());
 
         if (!is_regexp)
@@ -3577,8 +3779,25 @@ void registerStorageMerge(StorageFactory & factory)
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
         String table_name_regexp = checkAndGetLiteralArgument<String>(engine_args[1], "table_name_regexp");
 
+        std::optional<String> table_to_write = std::nullopt;
+        bool table_to_write_auto = false;
+        if (size == 3)
+        {
+            if (auto *identifier = engine_args[2]->as<ASTIdentifier>(); identifier && identifier->full_name == "auto")
+            {
+                table_to_write = identifier->full_name;
+                table_to_write_auto = true;
+            }
+            else
+            {
+                engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.getLocalContext());
+                table_to_write = checkAndGetLiteralArgument<String>(engine_args[2], "table_to_write");
+            }
+        }
+
         return std::make_shared<StorageMerge>(
-            args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getLocalContext());
+            args.table_id, args.columns, args.constraints, args.comment, source_database_name_or_regexp, is_regexp,
+            table_name_regexp, table_to_write, table_to_write_auto, args.getLocalContext());
     },
     SecretArgumentsSpec{},
     {
@@ -3588,12 +3807,13 @@ void registerStorageMerge(StorageFactory & factory)
         .description = R"DOCS_MD(
 The `Merge` engine (not to be confused with `MergeTree`) does not store data itself, but allows reading from any number of other tables simultaneously.
 
-Reading is automatically parallelized. Writing to a table is not supported. When reading, the indexes of tables that are actually being read are used, if they exist.
+Reading is automatically parallelized. When reading, the indexes of tables that are actually being read are used, if they exist.
+Writing is supported only when the table to write is specified, see [`table_to_write`](#table_to_write).
 
 ## Creating a table {#creating-a-table}
 
 ```sql
-CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
+CREATE TABLE ... Engine=Merge(db_name, tables_regexp[, table_to_write])
 ```
 
 ## Engine parameters {#engine-parameters}
@@ -3612,12 +3832,29 @@ CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 Regular expressions — [re2](https://github.com/google/re2) (supports a subset of PCRE), case-sensitive.
 See the notes about escaping symbols in regular expressions in the "match" section.
 
+### `table_to_write` {#table_to_write}
+
+`table_to_write` — The table that receives the data inserted into the `Merge` table. Optional: without it, the `Merge` table is read-only and inserts fail with `TABLE_IS_READ_ONLY`.
+Possible values:
+- `'db_name.table_name'` — insert into the specific table in the specific database. It must be one of the tables matched by `db_name` and `tables_regexp`.
+- `'table_name'` — insert into the table `table_name` in the database `db_name`. Allowed only when `db_name` is not a regular expression. It must match `tables_regexp`.
+- `auto` — insert into the matched table with the greatest name in lexicographical order among the tables the current user can see.
+
 ## Usage {#usage}
 
 When selecting tables to read, the `Merge` table itself is not selected, even if it matches the regex. This is to avoid loops.
 It is possible to create two `Merge` tables that will endlessly try to read each others' data, but this is not a good idea.
 
 The typical way to use the `Merge` engine is for working with a large number of `TinyLog` tables as if with a single table.
+
+## Inserts {#inserts}
+
+An `INSERT` into a `Merge` table with `table_to_write` is executed as an `INSERT` into the table to write, so:
+- the defaults and the constraints of the `Merge` table are applied first, then the defaults and the constraints of the table to write;
+- the columns are converted to the types of the table to write by their names, the columns that the table to write does not have are not written;
+- the materialized views of both the `Merge` table and the table to write are triggered. An `INSERT` directly into one of the underlying tables does not trigger the materialized views of the `Merge` table.
+
+The table to write can be another `Merge` table with its own table to write. A chain of such tables that returns to a table in it is refused with `TOO_DEEP_RECURSION`.
 
 ## Access rights {#access-rights}
 
@@ -3628,6 +3865,8 @@ Data is read only from the matched tables that the current user can see, that is
 When a `Merge` table is created without a column list, its structure is derived only from the matched tables that the user who creates it can see, and the user needs the [`SHOW COLUMNS`](/reference/statements/grant#show) privilege on the tables it is derived from.
 
 To read all matched tables, grant the `SELECT` privilege on each of them. To make a query fail instead of skipping a matched table that the user has no `SELECT` privilege on, grant the `SHOW TABLES` privilege on that table.
+
+Writing into a `Merge` table requires the [`INSERT`](/reference/statements/grant#insert) privilege on both the `Merge` table and the table to write. With `table_to_write = auto`, only the tables that the user can see are considered.
 
 ## Examples {#examples}
 
@@ -3682,6 +3921,46 @@ SELECT * FROM WatchLog;
 └────────────┴────────┴───────────┴─────┘
 ```
 
+**Example 3**
+
+Let's say you have a table `WatchLog_1`, expect that its partitioning key may change in the future, and want to avoid rewriting the queries that read and write the data when it does.
+
+```sql
+CREATE TABLE WatchLog_1(
+    date Date,
+    UserId Int64,
+    EventType String,
+    Cnt UInt64
+)
+ENGINE=MergeTree
+ORDER BY (date, UserId, EventType);
+
+CREATE TABLE WatchLog AS WatchLog_1 ENGINE=Merge(currentDatabase(), '^WatchLog_', auto);
+
+INSERT INTO WatchLog VALUES ('2018-01-01', 1, 'hit', 3);
+
+CREATE TABLE WatchLog_2(
+    date Date,
+    UserId Int64,
+    EventType String,
+    Cnt UInt64
+)
+ENGINE=MergeTree
+PARTITION BY date
+ORDER BY (UserId, EventType);
+
+INSERT INTO WatchLog VALUES ('2018-01-02', 2, 'hit', 3);
+
+SELECT _table, * FROM WatchLog ORDER BY date;
+```
+
+```text
+   ┌─_table─────┬───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+1. │ WatchLog_1 │ 2018-01-01 │      1 │ hit       │   3 │
+2. │ WatchLog_2 │ 2018-01-02 │      2 │ hit       │   3 │
+   └────────────┴────────────┴────────┴───────────┴─────┘
+```
+
 ## Virtual columns {#virtual-columns}
 
 - `_table` — The name of the table from which data was read. Type: [String](/reference/data-types/string).
@@ -3695,7 +3974,7 @@ SELECT * FROM WatchLog;
 - [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
 - [merge](/reference/functions/table-functions/merge) table function
 )DOCS_MD",
-        .syntax = "ENGINE = Merge(db_name, tables_regexp)",
+        .syntax = "ENGINE = Merge(db_name, tables_regexp[, table_to_write])",
         .related = {"Distributed"}});
 }
 

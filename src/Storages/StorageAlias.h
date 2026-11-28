@@ -83,6 +83,9 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    bool insertsThroughNestedQuery() const override { return true; }
+    StoragePtr tryGetNestedInsertTarget() const override { return tryGetTargetTable(); }
+
     /// Write to target table
     SinkToStoragePtr write(
         const ASTPtr & query,

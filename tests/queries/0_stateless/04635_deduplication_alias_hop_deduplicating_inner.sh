@@ -4,7 +4,7 @@
 # counts decide how many deduplication tokens an insert carries behind the alias hop, and a
 # randomized deduplication window on the inner table would change the outcome.
 # Regression test: the table behind the `Alias` engine deduplicates ITSELF (it is the direct
-# target of the nested INSERT the AliasSink runs, not a table behind another materialized view).
+# target of the nested INSERT the NestedInsertSink runs, not a table behind another materialized view).
 # The deduplication info restored onto the nested chain keeps the visited views of the OUTER
 # insert chain, which the nested chain's InsertDependenciesBuilder does not know about. When a
 # repeated insert collided at the inner table, the deduplication retry looked those views up in

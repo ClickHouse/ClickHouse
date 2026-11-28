@@ -32,19 +32,25 @@ public:
     StorageMerge(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         const String & comment,
         const String & source_database_name_or_regexp_,
         bool database_is_regexp_,
         const DBToTableSetMap & source_databases_and_tables_,
+        const std::optional<String> & table_to_write_,
+        bool table_to_write_auto_,
         ContextPtr context_);
 
     StorageMerge(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         const String & comment,
         const String & source_database_name_or_regexp_,
         bool database_is_regexp_,
         const String & source_table_regexp_,
+        const std::optional<String> & table_to_write_,
+        bool table_to_write_auto_,
         ContextPtr context_,
         bool keep_inferred_source_metadata = false);
 
@@ -118,6 +124,26 @@ public:
         const String & source_table_regexp,
         size_t max_tables_to_look);
 
+    /// Inserts are forwarded into `table_to_write` (the third engine argument) by a nested `INSERT` query,
+    /// which applies the defaults and the constraints of that table and pushes the data to its materialized views.
+    SinkToStoragePtr write(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr local_context,
+        bool async_insert) override;
+
+    /// Checks the grants on the table to write. With asynchronous inserts, the sink is created in a background flush.
+    void checkInsertIsAllowed(ContextPtr local_context) const override;
+
+    bool insertsThroughNestedQuery() const override { return table_to_write.has_value() || table_to_write_auto; }
+    StoragePtr tryGetNestedInsertTarget() const override;
+
+    /// The table the inserts are written into. With `auto`, it is the table with the greatest name among the tables
+    /// of this `Merge` table that the user of `query_context` can see.
+    StorageID getTableToWrite(ContextPtr query_context) const;
+    /// The same, but returns nothing if inserts are not configured, or no table is found for `auto`.
+    std::optional<StorageID> tryGetTableToWrite(ContextPtr query_context) const;
+
 private:
     /// (Database, Table, Lock, TableName, Metadata). The metadata is the snapshot the column-level access check
     /// resolved subcolumns against, so the read uses it too and both see the same schema. It is null when the check
@@ -147,6 +173,10 @@ private:
     };
 
     DatabaseNameOrRegexp database_name_or_regexp;
+
+    std::optional<QualifiedTableName> source_table_to_write;
+    std::optional<StorageID> table_to_write;
+    bool table_to_write_auto = false;
 
     /// The metadata of each data lake source table as the schema inference of the `merge` table function read it, so
     /// that its read uses the same snapshot instead of refreshing the table again. Keyed by the table, not the storage
@@ -195,6 +225,22 @@ private:
 
     template <typename F>
     std::optional<UInt64> totalRowsOrBytes(const ContextPtr & query_context, F && func) const;
+
+    struct InsertTarget
+    {
+        StoragePtr storage;
+        /// The columns of the `Merge` table written into the target table.
+        Names columns_to_insert;
+    };
+
+    /// Resolves the table to write and checks the grants on it, see `write`.
+    InsertTarget resolveInsertTarget(const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context) const;
+
+    void setTableToWrite(
+        const std::optional<String> & table_to_write_,
+        bool table_to_write_auto,
+        const String & source_database_name_or_regexp_,
+        bool database_is_regexp_);
 
     friend class ReadFromMerge;
 };

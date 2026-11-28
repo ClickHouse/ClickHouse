@@ -152,10 +152,13 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
     auto res = std::make_shared<StorageMerge>(
         StorageID(getDatabaseName(), table_name),
         std::move(cached_columns),
+        ConstraintsDescription{},
         String{},
         source_database_name_or_regexp,
         database_is_regexp,
         source_table_regexp,
+        /*table_to_write_=*/ std::nullopt,
+        /*table_to_write_auto_=*/ false,
         context,
         /*keep_inferred_source_metadata=*/ true);
 

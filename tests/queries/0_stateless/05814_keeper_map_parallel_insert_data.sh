@@ -38,7 +38,7 @@ done
 echo keeper_alias
 $CLICKHOUSE_CLIENT "${INSERT_SETTINGS[@]}" -q "
     EXPLAIN PIPELINE INSERT INTO keeper_alias SELECT number % 10, number % 10 FROM numbers_mt(100000)
-" | grep -c "AliasSink" || true
+" | grep -c "NestedInsertSink" || true
 
 $CLICKHOUSE_CLIENT -q "SELECT number % 10, number FROM numbers(100000) FORMAT TSV" > "$DATA_FILE"
 $CLICKHOUSE_CLIENT "${INSERT_SETTINGS[@]}" -q "INSERT INTO keeper_plain FORMAT TSV" < "$DATA_FILE"

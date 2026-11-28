@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# Inserting through an Alias table runs a nested INSERT pipeline inside AliasSink.
+# Inserting through an Alias table runs a nested INSERT pipeline inside NestedInsertSink.
 # When the outer query is cancelled without an exception (timeout_overflow_mode='break'),
-# AliasSink must finalize that nested executor; otherwise ~PushingPipelineExecutor aborts
+# NestedInsertSink must finalize that nested executor; otherwise ~PushingPipelineExecutor aborts
 # with the assertion 'finished || std::uncaught_exceptions() || std::current_exception()'.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -15,7 +15,7 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 # The SELECT is throttled with sleepEachRow so the 0.3s execution timeout reliably fires
-# while the nested AliasSink insert pipeline is still running. timeout_overflow_mode='break'
+# while the nested NestedInsertSink insert pipeline is still running. timeout_overflow_mode='break'
 # cancels the pipeline without raising an exception. Before the fix this crashed the server.
 ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO alias_cancel

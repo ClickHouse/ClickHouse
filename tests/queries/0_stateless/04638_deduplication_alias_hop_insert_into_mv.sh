@@ -6,7 +6,7 @@
 # Regression test: unlike 04635, the insert goes DIRECTLY into a materialized view, so the outer
 # insert chain keeps a non-empty root view. The deduplicating table sits behind a dependent
 # materialized view of the alias inner table, so the END of the retry path does belong to the
-# nested insert chain the AliasSink runs - the guard on the last path element passes - but the
+# nested insert chain the NestedInsertSink runs - the guard on the last path element passes - but the
 # view the deduplication info anchors its original block at (`start_from` of the retry) belongs
 # to the outer chain's InsertDependenciesBuilder. Rebuilding a retry from a view the builder does
 # not own is unsound: path elements the builder does not know are silently skipped (dropping

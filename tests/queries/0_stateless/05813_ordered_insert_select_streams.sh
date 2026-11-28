@@ -38,7 +38,7 @@ for table in ordered_rmt ordered_versioned ordered_cmt ordered_coalescing ordere
     for source in numbers numbers_mt; do
         $CLICKHOUSE_CLIENT "${INSERT_SETTINGS[@]}" -q \
             "EXPLAIN PIPELINE INSERT INTO $table (k, v) SELECT number % 10, number FROM $source(100000)" \
-            | grep -cE "MergeTreeSink|AliasSink" || true
+            | grep -cE "MergeTreeSink|NestedInsertSink" || true
     done
 done
 echo ordered_graphite

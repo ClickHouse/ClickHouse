@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Regression test: a dependent materialized view whose target is an Alias hides the alias target's
 # own dependent-view graph from InsertDependenciesBuilder - that graph is expanded only inside the
-# nested INSERT the AliasSink runs at execution time. With use_strict_insert_block_limits the source
+# nested INSERT the NestedInsertSink runs at execution time. With use_strict_insert_block_limits the source
 # block number is stamped per branch after the max_insert_threads fan-out, and it survives the
-# AliasSink hop (the chunk has already visited a view, so the nested INSERT preserves its
+# NestedInsertSink hop (the chunk has already visited a view, so the nested INSERT preserves its
 # deduplication info instead of restamping it). A deduplicating view target behind the hop
 # (src -> mv1 TO alias(inner, no dedup) -> mv2 TO deduplicating dst) then sees colliding view-level
 # ids for identical blocks on different branches and silently drops rows. Such strict inserts must
@@ -43,12 +43,12 @@ create_tables
 # A strict insert must stay single-stream: the deduplicating dst hides behind the alias hop of the
 # dependent view mv1, so the per-branch source numbering would collide the view-level ids there.
 $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 --use_strict_insert_block_limits=1 -q \
-    "EXPLAIN PIPELINE INSERT INTO alias_hidden_src VALUES (1)" | grep -c "AliasSink"
+    "EXPLAIN PIPELINE INSERT INTO alias_hidden_src VALUES (1)" | grep -c "NestedInsertSink"
 
 # Without strict limits the source numbering is stamped globally before the fan-out and survives the
 # alias hop, so the view-level ids stay distinct across branches and the insert fans out.
 $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 -q \
-    "EXPLAIN PIPELINE INSERT INTO alias_hidden_src VALUES (1)" | grep -c "AliasSink"
+    "EXPLAIN PIPELINE INSERT INTO alias_hidden_src VALUES (1)" | grep -c "NestedInsertSink"
 
 # Row integrity for the strict insert: four identical 100-row blocks must all arrive in dst. With a
 # per-branch fan-out, identical blocks on different branches would produce identical view-level ids
@@ -71,7 +71,7 @@ $CLICKHOUSE_CLIENT -q "SELECT (SELECT count() FROM alias_hidden_src), (SELECT co
 # out: the guard fails closed only on the presence of a dependent view behind the hop.
 $CLICKHOUSE_CLIENT -q "DROP TABLE alias_hidden_mv2"
 $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 --use_strict_insert_block_limits=1 -q \
-    "EXPLAIN PIPELINE INSERT INTO alias_hidden_src VALUES (1)" | grep -c "AliasSink"
+    "EXPLAIN PIPELINE INSERT INTO alias_hidden_src VALUES (1)" | grep -c "NestedInsertSink"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE alias_hidden_mv1"
 $CLICKHOUSE_CLIENT -q "DROP TABLE alias_hidden_alias"

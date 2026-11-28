@@ -143,7 +143,7 @@ public:
     /// Such nested inserts restart the source block numbering per sink branch even when this query
     /// stamps the numbers globally before the fan-out, so the fan-out may produce colliding
     /// deduplication ids for identical blocks regardless of `use_strict_insert_block_limits`. An
-    /// `Alias` is looked through instead: its nested `INSERT` (`AliasSink`) runs in this query's
+    /// `Alias` is looked through instead: its nested `INSERT` (`NestedInsertSink`) runs in this query's
     /// context, receives the chunk's deduplication info intact, and does not restamp a chunk that has
     /// already visited a view, so a globally stamped numbering survives the hop - only a per-branch
     /// numbering (`use_strict_insert_block_limits`), which the callers guard separately, is hazardous
@@ -163,7 +163,7 @@ public:
 
     /// Whether inserting into `storage` can reach a dependent materialized view that is *hidden* from
     /// `collectAllDependencies`. An `Alias` executes a full nested `INSERT` into its target per sink
-    /// (`AliasSink`), so the target's dependent-view graph is expanded only inside that nested `INSERT`
+    /// (`NestedInsertSink`), so the target's dependent-view graph is expanded only inside that nested `INSERT`
     /// at execution time - the outer builder never sees it. A strict insert's per-branch source block
     /// number survives that hop (the chunk has already visited a view, so the nested `INSERT` preserves
     /// its deduplication info instead of restamping it), and a deduplicating view target behind the hop
@@ -195,7 +195,7 @@ public:
     /// Whether inserting into `storage` can reach - through a dependent-view graph *hidden* behind an
     /// `Alias` hop - a materialized view whose write forwards into a separate context (a `Buffer` or a
     /// `Distributed`, see `storageForwardsInsertToSeparateContext`). The hidden graph is expanded only
-    /// inside the nested `INSERT` each `AliasSink` runs, so neither `collectAllDependencies` nor the
+    /// inside the nested `INSERT` each `NestedInsertSink` runs, so neither `collectAllDependencies` nor the
     /// per-entry hazard scan sees it. A parallel write fan-out then runs one such nested `INSERT` per
     /// branch; the separate-context sink at the end of the hidden chain (`BufferSink` /
     /// `DistributedSink`) drops the carried deduplication info and its downstream write restamps the
@@ -215,7 +215,7 @@ public:
         const StoragePtr & storage, ContextPtr context, size_t depth = 0);
 
     /// Whether inserting into `storage` can reach - through a dependent-view graph *hidden* behind an
-    /// `Alias` hop - a destination that requires a single stream for this input. Each `AliasSink` of a write
+    /// `Alias` hop - a destination that requires a single stream for this input. Each `NestedInsertSink` of a write
     /// fan-out runs its own nested `INSERT` into the target, and keeping every nested `INSERT`
     /// single-stream does not order the concurrent nested inserts against one another, so the outer
     /// insert must stay single-stream itself. It fails closed (returns true) when a hop of the chain,

@@ -21,7 +21,7 @@ class PushingAsyncPipelineExecutor;
 /// Additive one-block lookahead for a local `INSERT ... SELECT` under `async_insert`. A result
 /// that fits in a single block within `async_insert_max_data_size` is diverted to the async queue;
 /// any other shape is written through a synchronous fallback pipeline, built lazily (see
-/// `startFallback`) so a destination sink's start-time side effect (e.g. `AliasSink` opening its
+/// `startFallback`) so a destination sink's start-time side effect (e.g. `NestedInsertSink` opening its
 /// nested `INSERT`, or `MergeTreeSink` delaying on "too many parts") is only paid once the fallback
 /// is actually needed, not for every query that merely takes this route.
 class AsyncInsertQueueTransform final : public ExceptionKeepingTransform
