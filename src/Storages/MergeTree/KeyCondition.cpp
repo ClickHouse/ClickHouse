@@ -7733,6 +7733,9 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 
             if (!integer_cast)
             {
+                ColumnsWithTypeAndName * left_input_columns = nullptr;
+                size_t left_input_column_idx = 0;
+
                 /// If we apply function to open interval, we can get empty intervals in result.
                 /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
                 /// To avoid this we make range left and right included.
@@ -7740,6 +7743,8 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
                 /// argument leaves a bound with no position in the `Range` order, so the range cannot be analyzed.
                 if (!key_range.left.isNull())
                 {
+                    left_input_columns = key_range.left.columns;
+                    left_input_column_idx = key_range.left.column_idx;
                     auto transformed = applyFunction(func, function_number, *current_type, key_range.left);
                     if (!transformed || transformed->isNull())
                     {
@@ -7752,7 +7757,13 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 
                 if (!key_range.right.isNull())
                 {
-                    auto transformed = applyFunction(func, function_number, *current_type, key_range.right);
+                    /// A bound in the same index column as the left one has its result in the column just found for the left one.
+                    std::optional<FieldRef> transformed;
+                    if (left_input_columns && key_range.right.columns == left_input_columns
+                        && key_range.right.column_idx == left_input_column_idx)
+                        transformed.emplace(key_range.left.columns, key_range.right.row_idx, key_range.left.column_idx);
+                    else
+                        transformed = applyFunction(func, function_number, *current_type, key_range.right);
                     if (!transformed || transformed->isNull())
                     {
                         ++num_unevaluable_chain_applications;
