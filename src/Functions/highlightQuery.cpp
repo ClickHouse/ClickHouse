@@ -35,12 +35,16 @@ struct HighlightQueryImpl
         PaddedPODArray<UInt64> & data_end,
         PaddedPODArray<Int8> & data_type,
         size_t & total,
-        const QueryTokenizationSettings & settings)
+        const QueryTokenizationSettings & settings,
+        CancellationBudget & budget)
     {
         const char * begin = query.data();
         const char * end = begin + query.size();
 
         Tokens tokens(begin, end, /* max_query_size = */ 0, /* skip_insignificant = */ true);
+        /// The text is not bounded by `max_query_size`, so one row can take arbitrarily long to parse.
+        /// Charge for it as the parser reaches it rather than once per row.
+        tokens.setOnTokenLexed([&budget](const Token & token) { budget.chargeParsedBytes(token.size()); });
         IParser::Pos token_iterator(tokens, static_cast<uint32_t>(settings.max_parser_depth), static_cast<uint32_t>(settings.max_parser_backtracks));
 
         Expected expected;

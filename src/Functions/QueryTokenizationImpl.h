@@ -52,7 +52,10 @@ struct QueryTokenizationSettings
 ///                          PaddedPODArray<UInt64> & data_end,
 ///                          PaddedPODArray<Int8> & data_type,
 ///                          size_t & total,
-///                          const QueryTokenizationSettings & settings);
+///                          const QueryTokenizationSettings & settings,
+///                          CancellationBudget & budget);
+/// and has to charge `budget` for the text it lexes or parses, so that a single long row is
+/// interruptible as well.
 template <typename Impl>
 class FunctionQueryTokenization final : public IFunction
 {
@@ -121,9 +124,10 @@ public:
         {
             std::string_view query = col_query.getDataAt(i);
 
-            budget.chargeParsedBytes(query.size());
+            /// The row itself; `processRow` charges for the text as it goes through it.
+            budget.chargeUnits(1);
 
-            Impl::processRow(query, data_begin, data_end, data_type, total, parser_settings);
+            Impl::processRow(query, data_begin, data_end, data_type, total, parser_settings, budget);
 
             offsets[i] = total;
         }

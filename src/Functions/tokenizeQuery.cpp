@@ -26,7 +26,8 @@ struct TokenizeQueryImpl
         PaddedPODArray<UInt64> & data_end,
         PaddedPODArray<Int8> & data_type,
         size_t & total,
-        const QueryTokenizationSettings & /*settings*/)
+        const QueryTokenizationSettings & /*settings*/,
+        CancellationBudget & budget)
     {
         const char * begin = query.data();
         const char * end = begin + query.size();
@@ -36,6 +37,8 @@ struct TokenizeQueryImpl
             Token token = lexer.nextToken();
             if (token.isEnd())
                 break;
+
+            budget.chargeParsedBytes(token.size());
 
             data_begin.push_back(token.begin - begin);
             data_end.push_back(token.end - begin);

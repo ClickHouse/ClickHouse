@@ -22,6 +22,9 @@ const Token & Tokens::lexUntil(size_t index)
 
         Token token = lexer.nextToken();
 
+        if (on_token_lexed)
+            on_token_lexed(token);
+
         if (!skip_insignificant || token.isSignificant())
             data.emplace_back(token);
     }
