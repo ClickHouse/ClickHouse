@@ -235,6 +235,10 @@ public:
     /// so that a caller may skip repeated values.
     virtual bool ignoresRepeatedValues() const { return false; }
 
+    /// Return true if the function reads its arguments only through their null maps, so that a caller may pass any
+    /// `ColumnNullable` with the same null map in place of an argument.
+    virtual bool readsOnlyNullMap() const { return false; }
+
     /// Should be used only if isAbleToParallelizeMerge() returned true.
     /// Non-virtual public entry point that asserts the source and destination states do not alias.
     /// All overrides must be done on `mergeImpl` below.

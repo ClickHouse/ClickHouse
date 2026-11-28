@@ -1,0 +1,39 @@
+without key
+85714	85714	80000	80000	66666	66666
+0
+keyed
+85714	0	80000	0	1000
+counted column is the key
+85714	0	1	1001
+-State
+85714
+85714	85714
+shared with other aggregates
+85714	0	0	0
+adaptive staging
+85714	0	80000	0	100000
+85714	0	0
+85714
+85714	0	80000	0	100000
+two-level and external
+85714	0	100000
+JIT
+85714	0	66666	0	4999950000
+85714	0	66666	0	4999950000
+in order
+85714	0	100000
+index widths
+UInt8	1	857	857
+UInt8 keyed	857	0
+UInt16	1	8571	8571
+UInt16 keyed	8571	0
+UInt32	1	85714	85714
+UInt32 keyed	85714	0
+constant argument
+10	0
+0	5	0
+1	5	0
+all NULL and never NULL
+0	1000
+grouping sets
+171428	0	8

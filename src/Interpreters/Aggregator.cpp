@@ -32,6 +32,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/NullableUtils.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
@@ -810,6 +811,16 @@ AggregatedDataVariants::Type chooseMergeBlocksMethod(AggregatedDataVariants::Typ
     return method;
 }
 
+/// `Nullable(UInt8)` zeros with the null map of `column`, the form of a `null_map_only_arguments` argument.
+ColumnPtr nullMapOnlyArgument(const IColumn & column)
+{
+    auto null_map = getOuterNullMap(column);
+    if (!null_map)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Expected an aggregate function argument that can contain NULL, got {}", column.getName());
+    return ColumnNullable::create(ColumnUInt8::create(column.size(), static_cast<UInt8>(0)), std::move(null_map));
+}
+
 }
 
 Aggregator::Aggregator(const Block & header_, const Params & params_)
@@ -1024,9 +1035,28 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     if (params.enable_adaptive_aggregator)
         adaptive_packed_key_bytes = std::accumulate(key_sizes.begin(), key_sizes.end(), size_t{0});
 
+    null_map_only_arguments.assign(header_.columns(), 0);
+    if (!params.only_merge)
+    {
+        std::vector<UInt8> read_otherwise(header_.columns(), 0);
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+        {
+            const IAggregateFunction * function = aggregate_functions[i];
+            while (const auto * state = typeid_cast<const AggregateFunctionState *>(function))
+                function = state->getNestedFunction().get();
+            /// Compiled code reads the values of the arguments.
+            const bool null_map_only = aggregates_positions[i].size() == 1 && function->readsOnlyNullMap() && !function->isCompilable();
+            for (const auto position : aggregates_positions[i])
+                (null_map_only ? null_map_only_arguments : read_otherwise)[position] = 1;
+        }
+        for (size_t position = 0; position < null_map_only_arguments.size(); ++position)
+            if (read_otherwise[position] || !header_.getByPosition(position).type->isLowCardinalityNullable())
+                null_map_only_arguments[position] = 0;
+    }
+
     if (params.enable_adaptive_aggregator && params.aggregates_size)
     {
-        adaptive_argument_layout = AdaptiveArgumentLayout::build(header_, keys_positions, aggregates_positions);
+        adaptive_argument_layout = AdaptiveArgumentLayout::build(header_, keys_positions, aggregates_positions, null_map_only_arguments);
         /// Distinct tuples of the arguments describe one set-valued aggregate. Multiple independent sets
         /// can have different reduction factors, so they cannot share this estimate. The fixed states of
         /// the other aggregates are covered by the per-key state cost.
@@ -2491,6 +2521,8 @@ void Aggregator::prepareAggregateInstructions(
             if (dictionary_values && (typeid_cast<const ColumnString *>(dictionary_values) || typeid_cast<const ColumnFixedString *>(dictionary_values))
                 && low_cardinality->getDictionary().size() * 2 <= low_cardinality->size())
                 has_low_cardinality_argument = true;
+            else if (null_map_only_arguments[pos])
+                full_column = nullMapOnlyArgument(*full_column);
             else
                 full_column = recursiveRemoveLowCardinality(full_column);
 

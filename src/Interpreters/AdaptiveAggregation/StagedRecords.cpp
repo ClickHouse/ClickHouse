@@ -6,12 +6,17 @@
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
 
-std::unique_ptr<const AdaptiveArgumentLayout>
-AdaptiveArgumentLayout::build(const Block & header, const ColumnNumbers & keys_positions, const ColumnNumbersList & aggregates_positions)
+std::unique_ptr<const AdaptiveArgumentLayout> AdaptiveArgumentLayout::build(
+    const Block & header,
+    const ColumnNumbers & keys_positions,
+    const ColumnNumbersList & aggregates_positions,
+    const std::vector<UInt8> & null_map_only_arguments)
 {
     auto layout = std::make_unique<AdaptiveArgumentLayout>();
     std::vector<UInt8> staged;
@@ -25,7 +30,9 @@ AdaptiveArgumentLayout::build(const Block & header, const ColumnNumbers & keys_p
             staged[position] = 1;
             layout->num_positions = std::max(layout->num_positions, position + 1);
 
-            auto type = recursiveRemoveLowCardinality(header.getByPosition(position).type);
+            auto type = null_map_only_arguments[position]
+                ? makeNullable(std::make_shared<DataTypeUInt8>())
+                : recursiveRemoveLowCardinality(header.getByPosition(position).type);
             const auto column = type->createColumn();
             const IColumn * values = column.get();
             if (const auto * nullable = typeid_cast<const ColumnNullable *>(values))

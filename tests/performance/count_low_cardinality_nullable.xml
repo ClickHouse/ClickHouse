@@ -1,0 +1,23 @@
+<test iceberg="0">
+    <!-- Requires `LowCardinality` dictionaries, which the Iceberg rewrite removes. -->
+    <create_query>
+        CREATE TABLE count_lc_nullable (k1m UInt32, k10m UInt64, s LowCardinality(Nullable(String)), sl LowCardinality(Nullable(String)), sf LowCardinality(Nullable(FixedString(8))))
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO count_lc_nullable
+        SELECT toUInt32(h2 % 1000000), h2 % 10000000, if(h % 10 = 0, NULL, concat('value_', toString(h3 % 1000))),
+            if(h % 10 = 0, NULL, concat('https://example.com/some/longer/path/segment/', toString(h3 % 5000))),
+            if(h % 5 = 0, NULL, toFixedString(leftPad(toString(h3 % 800), 8, '0'), 8))
+        FROM (SELECT cityHash64(number) AS h, cityHash64(number, 1) AS h2, cityHash64(number, 2) AS h3 FROM numbers_mt(100000000))
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE count_lc_nullable FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+
+    <query>SELECT count(s), count(sl) FROM count_lc_nullable SETTINGS max_threads = 1</query>
+    <query>SELECT k1m, count(s) FROM count_lc_nullable GROUP BY k1m FORMAT Null</query>
+    <query>SELECT k10m, count(s), count(sl) FROM count_lc_nullable GROUP BY k10m FORMAT Null SETTINGS max_threads = 8</query>
+    <query>SELECT k1m % 10000 AS k, count(sl), count(sf) FROM count_lc_nullable GROUP BY k FORMAT Null SETTINGS max_threads = 4</query>
+
+    <drop_query>DROP TABLE IF EXISTS count_lc_nullable SYNC</drop_query>
+</test>

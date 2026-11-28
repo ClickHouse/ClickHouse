@@ -82,6 +82,17 @@ ColumnPtr mergeNullMaps(ColumnPtr lhs, const ColumnPtr & rhs)
     return result;
 }
 
+template <typename IndexType>
+static void fillNullMapFromIndexes(const PaddedPODArray<IndexType> & indexes, size_t null_index, PaddedPODArray<UInt8> & null_map)
+{
+    const IndexType null_position = static_cast<IndexType>(null_index);
+    const IndexType * __restrict src = indexes.data();
+    UInt8 * __restrict dst = null_map.data();
+    const size_t size = indexes.size();
+    for (size_t i = 0; i < size; ++i)
+        dst[i] = src[i] == null_position;
+}
+
 ColumnPtr getOuterNullMap(const IColumn & column)
 {
     if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&column))
@@ -94,10 +105,26 @@ ColumnPtr getOuterNullMap(const IColumn & column)
         column_low_cardinality && column_low_cardinality->nestedIsNullable())
     {
         const size_t null_index = column_low_cardinality->getDictionary().getNullValueIndex();
-        auto null_map = ColumnUInt8::create(column_low_cardinality->size());
+        const IColumn & indexes = column_low_cardinality->getIndexes();
+        auto null_map = ColumnUInt8::create(indexes.size());
         auto & null_map_data = null_map->getData();
-        for (size_t row = 0; row < null_map_data.size(); ++row)
-            null_map_data[row] = column_low_cardinality->getIndexAt(row) == null_index;
+        switch (column_low_cardinality->getSizeOfIndexType())
+        {
+            case sizeof(UInt8):
+                fillNullMapFromIndexes(assert_cast<const ColumnUInt8 &>(indexes).getData(), null_index, null_map_data);
+                break;
+            case sizeof(UInt16):
+                fillNullMapFromIndexes(assert_cast<const ColumnUInt16 &>(indexes).getData(), null_index, null_map_data);
+                break;
+            case sizeof(UInt32):
+                fillNullMapFromIndexes(assert_cast<const ColumnUInt32 &>(indexes).getData(), null_index, null_map_data);
+                break;
+            case sizeof(UInt64):
+                fillNullMapFromIndexes(assert_cast<const ColumnUInt64 &>(indexes).getData(), null_index, null_map_data);
+                break;
+            default:
+                throwUnexpectedLowCardinalityIndexType(column_low_cardinality->getSizeOfIndexType());
+        }
         return null_map;
     }
     return nullptr;
