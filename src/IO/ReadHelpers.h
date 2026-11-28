@@ -1097,6 +1097,65 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
     const char * s = buf.position();
     const char * buf_end = buf.buffer().end();
 
+    /// Look at most at hhh:mm:ss. If more bytes are in the buffer, the whole value is there.
+    const char * token_end = s;
+    const char * scan_end = s + std::min<size_t>(buf_end - s, 9);
+    while (token_end < scan_end && (isNumericASCII(*token_end) || isSymbolIn(*token_end, allowed_time_delimiters)))
+        ++token_end;
+
+    /// The value may continue in the next buffer, so copy it and parse the copy.
+    if (token_end == buf_end && !buf.isMemoryBuffer())
+    {
+        /// hhh:mm:ss. Copy at most this, so a field delimiter after the value (like ':' in CustomSeparated) is left unread.
+        char token[9];
+        size_t token_size = 0;
+        auto copy_digits = [&](size_t max_digits)
+        {
+            for (size_t i = 0; i < max_digits && !buf.eof() && isNumericASCII(*buf.position()); ++i)
+            {
+                token[token_size] = *buf.position();
+                ++token_size;
+                ++buf.position();
+            }
+        };
+
+        copy_digits(3);
+        for (size_t group = 0; group < 2 && !buf.eof() && isSymbolIn(*buf.position(), allowed_time_delimiters); ++group)
+        {
+            /// Take the delimiter only if two digits follow it. If they are past the end of the buffer, assume they are digits.
+            const char * pos = buf.position();
+            const char * end = buf.buffer().end();
+            if ((pos + 1 < end && !isNumericASCII(pos[1])) || (pos + 2 < end && !isNumericASCII(pos[2])))
+                break;
+
+            token[token_size] = *pos;
+            ++token_size;
+            ++buf.position();
+            copy_digits(2);
+        }
+
+        ReadBufferFromMemory token_buf(token, token_size);
+        if constexpr (throw_exception)
+            readTimeTextImpl<ReturnType, t64_mode>(time, token_buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+        else if (!readTimeTextImpl<ReturnType, t64_mode>(time, token_buf, date_lut, allowed_date_delimiters, allowed_time_delimiters))
+            return false;
+
+        if (token_buf.position() != token + token_size)
+        {
+            /// Otherwise the Time64 caller reads the fraction after the failed value, as for -.5
+            while (!buf.eof() && *buf.position() == '.')
+                ++buf.position();
+
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time {}", std::string_view(token, token_size));
+            else
+                return false;
+        }
+
+        time *= negative_multiplier;
+        return ReturnType(true);
+    }
+
     // Additional safety check for buffer boundaries
     size_t available_bytes = buf_end - s;
 
