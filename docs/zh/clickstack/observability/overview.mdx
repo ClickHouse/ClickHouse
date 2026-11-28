@@ -1,0 +1,109 @@
+---
+slug: /clickstack/observability/overview
+title: 'ClickHouse Observability'
+sidebarTitle: '概览'
+description: 'ClickHouse Observability 概览，涵盖全托管和自管理两种选项'
+doc_type: 'guide'
+keywords: ['clickstack', 'observability', 'logs', 'monitoring', 'platform']
+---
+
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+**ClickHouse Observability** 是一个面向 SRE、开发人员及其 AI 智能体的可观测性平台，基于开源 ClickStack 构建。您可以在同一平台中搜索、查询和关联 OpenTelemetry 日志、链路追踪和指标，并结合会话回放进行分析。
+
+您可以通过 ClickStack 用户界面开展调查，也可以通过 [ClickStack MCP 服务器](/zh/clickstack/observability/mcp)接入您自己的智能体。借助调查工具搜索日志、跟踪链路追踪，并使用 SQL 进行更深入的分析。丰富的日志和追踪跨度会记录请求详情、自定义属性以及业务上下文，帮助定位故障原因。
+
+如需由 ClickHouse 运维后端，请选择**全托管**方案；如果您的团队需要自行掌控摄取和数据库配置，请选择**自管理**方案。两者均运行在 ClickHouse Cloud 中，并提供相同的 ClickStack 调查体验。
+
+## 工作原理 {#how-it-works}
+
+无论采用哪种方案，您都需要对应用程序进行插桩，并从环境中采集遥测数据。您可以在 ClickStack 用户界面中探索这些数据，也可以连接兼容 MCP 的智能体来搜索日志、跟踪链路追踪并运行 SQL。两者的区别在于，由谁来管理这一体验背后的摄取流程和数据库配置。
+
+* **全托管：** 将遥测数据发送到托管的 OpenTelemetry 端点；如果已有 Datadog 智能体，也可以使用托管的 Datadog 兼容端点。ClickHouse 负责运维摄取后端，并管理 schema、计算资源、扩缩容和性能。
+
+  <img src="/images/clickstack/observability/clickstack-fully-managed-overview-dark.svg" alt="全托管：您的应用 SDK、采集器和日志传输工具将遥测数据发送到 ClickHouse Observability 中托管的 OTLP 和 Datadog 端点，ClickHouse Observability 提供 ClickStack 用户界面，并负责 schema 优化、工作负载隔离和自动扩缩容。" width="720" height="392" className="ch-transparent hidden dark:block" style={{ width: '100%', height: 'auto', margin: '12px 0 4px', background: 'transparent', borderRadius: 0 }} />
+
+  <img src="/images/clickstack/observability/clickstack-fully-managed-overview-light.svg" alt="全托管：您的应用 SDK、采集器和日志传输工具将遥测数据发送到 ClickHouse Observability 中托管的 OTLP 和 Datadog 端点，ClickHouse Observability 提供 ClickStack 用户界面，并负责 schema 优化、工作负载隔离和自动扩缩容。" width="720" height="392" className="ch-transparent block dark:hidden" style={{ width: '100%', height: 'auto', margin: '12px 0 4px', background: 'transparent', borderRadius: 0 }} />
+* **自管理：** 通过您自行运维的摄取采集器，将遥测数据发送到您的 ClickHouse Cloud 服务。摄取管道、schema、计算资源、扩缩容和性能调优均由您自行配置。ClickHouse Cloud 负责托管和运维数据库及 UI。
+
+  <img src="/images/clickstack/observability/clickstack-self-managed-overview-dark.svg" alt="自管理：您的应用 SDK、采集器和日志传输工具将遥测数据发送到您自行运维的采集器，再由该采集器写入 ClickHouse Cloud 中的 ClickHouse 服务。ClickHouse Cloud 托管 ClickStack 用户界面，并管理基础设施、升级和备份；摄取、schema、计算资源和性能则由您负责管理。" width="720" height="392" className="ch-transparent hidden dark:block" style={{ width: '100%', height: 'auto', margin: '12px 0 4px', background: 'transparent', borderRadius: 0 }} />
+
+  <img src="/images/clickstack/observability/clickstack-self-managed-overview-light.svg" alt="自管理：您的应用 SDK、采集器和日志传输工具将遥测数据发送到您自行运维的采集器，再由该采集器写入 ClickHouse Cloud 中的 ClickHouse 服务。ClickHouse Cloud 托管 ClickStack 用户界面，并管理基础设施、升级和备份；摄取、schema、计算资源和性能则由您负责管理。" width="720" height="392" className="ch-transparent block dark:hidden" style={{ width: '100%', height: 'auto', margin: '12px 0 4px', background: 'transparent', borderRadius: 0 }} />
+
+### 比较两种方案 {#compare-the-offerings}
+
+无论选择哪种方案，您都需要自行对应用程序进行插桩并采集遥测数据。下表列出了 ClickHouse 为您承担的后端职责；短横线 (—) 表示该部分需由您自行管理。
+
+| 由 ClickHouse 管理             | 全托管 | 自管理 |
+| --------------------------- | :-: | :-: |
+| 摄取后端                        |  ✓  |  —  |
+| schema、索引和压缩                |  ✓  |  —  |
+| 计算资源规模规划、扩缩容和工作负载隔离         |  ✓  |  —  |
+| 数据库性能调优                     |  ✓  |  —  |
+| 数据库基础设施、升级和备份               |  ✓  |  ✓  |
+| 托管 ClickStack 用户界面和 MCP 服务器 |  ✓  |  ✓  |
+
+<Tabs>
+  <Tab title="全托管">
+    <BetaBadge label="Beta 版服务" />
+
+    <Tip>
+      **推荐大多数团队使用**
+
+      选择全托管的 ClickHouse Observability，由 ClickHouse 负责运维可观测性后端，您只需专注于排查和分析自己的系统。
+    </Tip>
+
+    只需将遥测数据发送到您的托管端点即可。您无需部署摄取网关，也无需调优 ClickHouse 表和计算资源。您仍可以继续在自己的环境中使用采集器和智能体来采集、处理和转发遥测数据。
+
+    请参阅[全托管入门指南](/zh/clickstack/observability/getting-started)。
+  </Tab>
+
+  <Tab title="自管理">
+    <Info>
+      **适用于需要掌控后端的团队**
+
+      如果您需要自定义摄取管道、schema 或数据库配置，并且具备运维和调优这些组件的专业能力，请选择自管理的 ClickHouse Observability。
+    </Info>
+
+    您需要自行运行摄取采集器，并负责数据库调优和容量规划。底层基础设施、数据库升级和备份则由 ClickHouse Cloud 负责管理。采用自管理方案时，您无需自行托管 ClickHouse 或 ClickStack 用户界面。
+
+    请参阅[自管理入门指南](/zh/clickstack/self-configured/getting-started/managed)，或阅读[自管理概览](/zh/clickstack/self-configured/overview)了解更多详情。
+  </Tab>
+</Tabs>
+
+## 功能 {#features}
+
+* 通过 [MCP](/zh/clickstack/observability/mcp) 接入您自己的智能体，用于搜索遥测数据、追踪链路追踪、分析模式与变化，以及运行 SQL。
+* 在同一处搜索并关联日志、链路追踪、指标和会话回放。
+* 对 high-cardinality 遥测数据执行快速搜索和聚合。
+* 使用[全文搜索和 Lucene 风格的筛选条件](/zh/clickstack/observability/features/search) (例如 `level:err`) ，或借助 SQL 进行更深入的分析。
+* 使用 [AI 笔记本](/zh/clickstack/observability/notebooks)探索遥测数据，并[通过自然语言提问生成图表](/zh/clickstack/observability/text-to-chart)。
+* 构建[仪表盘](/zh/clickstack/observability/features/dashboards/overview)并配置[告警](/zh/clickstack/observability/features/alerts)。
+* 查询日志和追踪跨度中的 JSON 字段及自定义属性。
+* 追踪请求从浏览器交互到后端服务再到数据库查询的完整路径。
+* 使用[事件模式](/zh/clickstack/observability/features/event-patterns)识别反复出现的故障，并借助[事件差异](/zh/clickstack/observability/features/event-deltas)调查变化。
+* 随新事件到达实时查看日志和链路追踪。
+* 根据您使用的产品形态，通过托管端点或自有摄取采集器摄取 OpenTelemetry 数据。
+* 通过[深层链接](/zh/clickstack/observability/url-parameters)共享搜索和调查视图。
+
+## 设计原则 {#clickstack-principles}
+
+### 自带智能体 {#bring-your-own-agents}
+
+通过 MCP 接入您团队现有的智能体和开发工具。智能体可以利用与 UI 中相同的遥测数据搜索日志、追踪链路追踪，并识别模式和变化。它们还可以运行 SQL 来关联证据，探索调查工具未直接覆盖的问题。
+
+### 易于使用且专为特定用途设计 {#user-friendly-purpose-built}
+
+ClickStack 用户界面集搜索、trace 探索、图表、仪表盘和告警于一体。日常问题可借助 Lucene 风格的筛选条件和可视化查询构建器解决；如需更灵活地控制分析过程，再改用 SQL。
+
+### 端到端可观测性 {#end-to-end-observability}
+
+将前端会话回放与应用日志、分布式链路追踪和指标关联起来，跨整个系统追踪故障。宽事件将请求详情、自定义属性和业务上下文一并保存在日志和追踪跨度中，帮助您快速定位受影响的请求、服务和客户。
+
+### 专为 ClickHouse 构建 {#built-for-clickhouse}
+
+借助 ClickHouse 的列式存储、压缩和并行查询执行能力，可以对海量 high-cardinality 遥测数据进行快速搜索和聚合。并发查询让工程师和智能体能够并行分析同一份数据。
+
+### 原生支持 OpenTelemetry {#open-telemetry-native}
+
+使用标准的 OpenTelemetry 插桩、SDK 和采集器发送遥测数据。您可以通过托管的 OTLP 端点或自有的摄取采集器，借助现有插桩发送日志、链路追踪和指标，无需采用专有的采集格式。

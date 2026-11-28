@@ -33,7 +33,7 @@ public:
 
     /// The cache-aligned range this buffer can serve. It may be wider than the requested hit. The
     /// executor clamps it.
-    virtual ByteRange range() const = 0;
+    [[nodiscard]] virtual ByteRange range() const = 0;
 
     /// Read `subrange` (inside `range()`) as a `ChainedBuffers` of file-level nodes. Record `subrange`
     /// so the view can bump its cache priority later. A reader serves only the committed prefix; the
@@ -49,19 +49,19 @@ public:
     virtual ~CacheWriter() = default;
 
     /// The cache-aligned range. It may extend beyond the requested miss range.
-    virtual ByteRange range() const = 0;
+    [[nodiscard]] virtual ByteRange range() const = 0;
 
     /// The end of the committed prefix `[range().offset, committed())` (a segment fills append-only, so
     /// what is committed is always one contiguous prefix). Always within `[range().offset, range().end()]`:
     /// `range().offset` when nothing is committed, `range().end()` when complete. A snapshot: a background
     /// prefetch and the foreground read may grow it concurrently.
-    virtual size_t committed() const = 0;
+    [[nodiscard]] virtual size_t committed() const = 0;
 
-    bool complete() const { return committed() == range().end(); }
+    [[nodiscard]] bool complete() const { return committed() == range().end(); }
 
     /// Whether the tier stores each segment WHOLE (one all-or-nothing write) or appends it
     /// incrementally. Mirrors `ICacheProvider::fillsWholeSegment`.
-    virtual bool fillsWholeSegment() const { return false; }
+    [[nodiscard]] virtual bool fillsWholeSegment() const { return false; }
 
     /// Whether this reader fills one write range: `bool(role)` is true iff it should fetch the
     /// uncommitted part and `write` it. Move-only RAII. A coordinating tier also carries the downloader
@@ -148,15 +148,15 @@ class ICacheProvider
 public:
     virtual ~ICacheProvider() = default;
 
-    virtual CacheTier tier() const = 0;
+    [[nodiscard]] virtual CacheTier tier() const = 0;
 
     /// Whether the tier writes each segment WHOLE (first-writer-wins, never completed later) or
     /// appends it incrementally. The filesystem cache appends. A whole-segment tier is a fill target
     /// only when one connection covers the ENTIRE segment; an incremental tier stores whatever prefix
     /// it covers.
-    virtual bool fillsWholeSegment() const { return false; }
+    [[nodiscard]] virtual bool fillsWholeSegment() const { return false; }
 
-    virtual String name() const = 0;
+    [[nodiscard]] virtual String name() const = 0;
 
     /// One step of the residency walk. The executor consumes these in order.
     struct CacheResolution

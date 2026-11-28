@@ -36,12 +36,6 @@ workflow = Workflow.Config(
     enable_slack_feed=True,
     inputs=[
         Workflow.Config.InputConfig(
-            name="ref",
-            description="Git reference (branch or commit SHA) to cut the new release branch from",
-            is_required=True,
-            default_value="",
-        ),
-        Workflow.Config.InputConfig(
             name="dry-run",
             description="Dry run — show what would be done without making changes",
             is_required=False,

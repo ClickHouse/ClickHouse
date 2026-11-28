@@ -598,7 +598,7 @@ Esta função se comporta da mesma forma que [sumMap](/pt-BR/reference/functions
 
 **Valor retornado**
 
-* Retorna uma tupla de dois arrays: chaves em ordem classificada e valores somados para as chaves correspondentes.
+* Retorna uma tupla de dois arrays: chaves em ordem crescente e valores somados para as chaves correspondentes.
 
 **Exemplo**
 
@@ -609,7 +609,7 @@ CREATE TABLE sum_map
     `timeslot` DateTime,
     `statusMap` Nested(status UInt16, requests UInt64)
 )
-ENGINE = Log
+ENGINE = Log;
 
 INSERT INTO sum_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
@@ -644,7 +644,7 @@ Esta função se comporta da mesma forma que [sumMap](/pt-BR/reference/functions
 
 **Valor retornado**
 
-* Retorna uma tupla de dois arrays: chaves ordenadas e valores somados para as chaves correspondentes.
+* Retorna uma tupla de dois arrays: chaves em ordem crescente e valores somados para as chaves correspondentes.
 
 **Exemplo**
 
@@ -657,7 +657,7 @@ CREATE TABLE sum_map
     `timeslot` DateTime,
     `statusMap` Nested(status UInt8, requests UInt8)
 )
-ENGINE = Log
+ENGINE = Log;
 
 INSERT INTO sum_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),

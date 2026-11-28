@@ -45,7 +45,7 @@ public:
     ArrayJoinNode(QueryTreeNodePtr table_expression_, QueryTreeNodePtr join_expressions_, bool is_left_);
 
     /// Get table expression
-    const ITableExpressionNode & getTableExpression() const
+    [[nodiscard]] const ITableExpressionNode & getTableExpression() const
     {
         return children[table_expression_child_index]->assertTableExpression();
     }
@@ -57,19 +57,19 @@ public:
     }
 
     /// Get table expression
-    const QueryTreeNodePtr & getTableExpressionNode() const
+    [[nodiscard]] const QueryTreeNodePtr & getTableExpressionNode() const
     {
         return children[table_expression_child_index];
     }
 
-    TableExpressionNodePtr getTableExpressionNodeTyped() const
+    [[nodiscard]] TableExpressionNodePtr getTableExpressionNodeTyped() const
     {
         assertTableExpression();
         return static_pointer_cast<ITableExpressionNode>(children[table_expression_child_index]);
     }
 
     /// Get join expressions
-    const ListNode & getJoinExpressions() const
+    [[nodiscard]] const ListNode & getJoinExpressions() const
     {
         return children[join_expressions_child_index]->as<const ListNode &>();
     }
@@ -81,7 +81,7 @@ public:
     }
 
     /// Get join expressions node
-    const QueryTreeNodePtr & getJoinExpressionsNode() const
+    [[nodiscard]] const QueryTreeNodePtr & getJoinExpressionsNode() const
     {
         return children[join_expressions_child_index];
     }
@@ -93,12 +93,12 @@ public:
     }
 
     /// Returns true if array join is left, false otherwise
-    bool isLeft() const
+    [[nodiscard]] bool isLeft() const
     {
         return is_left;
     }
 
-    QueryTreeNodeType getNodeType() const override
+    [[nodiscard]] QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::ARRAY_JOIN;
     }
@@ -106,13 +106,13 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState & state, CompareOptions) const override;
 
-    QueryTreeNodePtr cloneImpl() const override;
+    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     bool is_left = false;

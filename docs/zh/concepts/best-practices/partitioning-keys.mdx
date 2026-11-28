@@ -7,8 +7,6 @@ keywords: ['分区键']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <Info>
   **一种数据管理技术**
 
@@ -34,18 +32,26 @@ PARTITION BY toStartOfMonth(date)
 
 每当向表中插入一组行时，ClickHouse 不会像[这里](/zh/concepts/core-concepts/parts)描述的那样，创建 (至少 [一个](/zh/reference/settings/session-settings/max-insert#max_insert_block_size)) 包含所有已插入行的单个数据分区片段，而是会针对这些插入行中每个唯一的分区键值各创建一个新的数据分区片段：
 
-<Image img="/images/bestpractices/partitions.webp" size="lg" alt="分区" />
+<div className="ch-image-lg">
+  <Frame>
+    ![分区](/images/bestpractices/partitions.webp)
+  </Frame>
+</div>
 
-ClickHouse server 首先按照分区键值 `toStartOfMonth(date)`，将上图中示意的 4 行示例插入数据拆分开来。然后，对于识别出的每个分区，这些行都会像[往常一样](/zh/concepts/core-concepts/parts)经过若干连续步骤进行处理 (① 排序，② 拆分为列，③ 压缩，④ 写入磁盘) 。
+对于上图所示的这个包含 4 行的示例插入，ClickHouse 服务器首先会按照这些行的分区键值 `toStartOfMonth(date)` 对其进行拆分。然后，对于识别出的每个分区，这些行会像[往常](/zh/concepts/core-concepts/parts)一样，依次经过若干步骤进行处理 (① 排序，② 拆分为列，③ 压缩，④ 写入磁盘) 。
 
-如需更详细地了解分区，我们建议阅读[本指南](/zh/concepts/core-concepts/partitions)。
+如需更详细地了解分区，建议参阅[此指南](/zh/concepts/core-concepts/partitions)。
 
-启用分区后，ClickHouse 只会在分区内[合并](/zh/concepts/core-concepts/merges)数据分区片段，而不会跨分区合并。下图以上述示例表对此进行了说明：
+启用分区后，ClickHouse 只会在分区内部[合并](/zh/concepts/core-concepts/merges)数据分区片段，而不会跨分区合并。下面以上文的示例表进行示意：
 
-<Image img="/images/bestpractices/merges_with_partitions.webp" size="md" alt="分区" />
+<div className="ch-image-md">
+  <Frame>
+    ![分区](/images/bestpractices/merges_with_partitions.webp)
+  </Frame>
+</div>
 
 <div id="applications-of-partitioning">
-  ## 分区的应用
+  ## 分区的应用 {#applications-of-partitioning}
 </div>
 
 分区是在 ClickHouse 中管理大型数据集的强大工具，尤其适用于可观测性和分析场景。它允许通过一次元数据操作对整个分区 (通常按时间或业务逻辑划分) 执行删除、移动或归档等操作，从而高效地管理数据生命周期。这比按行删除或复制要快得多，资源开销也更低。分区还能与 ClickHouse 的生存时间 (TTL) 和分层存储等功能无缝集成，无需自定义编排即可实现数据保留策略或冷热存储策略。例如，较新的数据可以保留在基于 SSD 的高速存储上，而较旧的分区则会自动迁移到成本更低的对象存储中。
@@ -59,7 +65,7 @@ ClickHouse server 首先按照分区键值 `toStartOfMonth(date)`，将上图中
 总之，用户应主要将分区视为一种数据管理技术。有关数据管理的示例，请参见可观测性用例指南中的[&quot;管理数据&quot;](/zh/guides/use-cases/observability/build-your-own/managing-data)，以及核心概念 - 表分区中的[&quot;表分区的用途是什么？&quot;](/zh/concepts/core-concepts/partitions#data-management)。
 
 <div id="choose-a-low-cardinality-partitioning-key">
-  ## 选择低基数分区键
+  ## 选择低基数分区键 {#choose-a-low-cardinality-partitioning-key}
 </div>
 
 需要特别注意的是，parts 数量越多，对查询性能的负面影响就越大。因此，如果 parts 数量超过指定限制——无论是[总数](/zh/reference/settings/merge-tree-settings/max-parts#max_parts_in_total)还是[每个分区](/zh/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert)——ClickHouse 都会在插入时返回[“parts 过多”](/zh/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)错误。

@@ -36,5 +36,18 @@
                 </replica>
             </shard>
         </cluster_address_default_db>
+        <cluster_mixed_default_db>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                    <default_database>addrdb</default_database>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster_mixed_default_db>
     </remote_servers>
 </clickhouse>

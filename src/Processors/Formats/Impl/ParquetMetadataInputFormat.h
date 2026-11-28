@@ -5,11 +5,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <parquet/metadata.h>
-
-namespace parquet::arrow { class FileReader; }
-
-namespace arrow { class Buffer; class RecordBatchReader;}
+#include <Processors/Formats/Impl/Parquet/FooterMetadata.h>
 
 namespace DB
 {
@@ -79,15 +75,17 @@ private:
         is_stopped = 1;
     }
 
-    void fillColumnsMetadata(const std::shared_ptr<parquet::FileMetaData> & metadata, MutableColumnPtr & column);
-    void fillRowGroupsMetadata(const std::shared_ptr<parquet::FileMetaData> & metadata, MutableColumnPtr & column);
-    void fillColumnChunksMetadata(const std::unique_ptr<parquet::RowGroupMetaData> & row_group_metadata, IColumn & column);
-    void fillColumnStatistics(const std::shared_ptr<parquet::Statistics> & statistics, IColumn & column, int32_t type_length);
-    void fillColumnSizeStatistics(const std::shared_ptr<parquet::SizeStatistics> & size_statistics, IColumn & column);
-    void fillColumnGeospatialStatistics(const std::shared_ptr<parquet::geospatial::GeoStatistics> & geospatial_statistics, IColumn & column);
+    static void fillColumnsMetadata(const Parquet::FooterMetadata & metadata, IColumn & column);
+    static void fillRowGroupsMetadata(const Parquet::FooterMetadata & metadata, IColumn & column);
+    static void fillColumnChunksMetadata(const Parquet::FooterMetadata & metadata, size_t row_group, IColumn & column);
+    static void fillColumnStatistics(
+        const Parquet::FooterMetadata & metadata, size_t column_index, const Parquet::FooterMetadata::Statistics & statistics, IColumn & column);
+    static void fillColumnSizeStatistics(const Parquet::FooterMetadata & metadata, size_t row_group, size_t column_index, IColumn & column);
+    static void fillColumnGeospatialStatistics(const Parquet::FooterMetadata & metadata, size_t row_group, size_t column_index, IColumn & column);
 
     const FormatSettings format_settings;
     bool done = false;
+    /// Stops reading a non-seekable input into memory when the query is cancelled.
     std::atomic<int> is_stopped{0};
 };
 

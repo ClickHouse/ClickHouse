@@ -7,8 +7,6 @@
 -- otherwise the initiator cannot find the expected column in blocks received from remote replicas.
 -- https://github.com/ClickHouse/ClickHouse/issues/110719
 
-SET allow_experimental_qbit_type = 1;
-
 DROP TABLE IF EXISTS qbit_pr_const;
 
 CREATE TABLE qbit_pr_const

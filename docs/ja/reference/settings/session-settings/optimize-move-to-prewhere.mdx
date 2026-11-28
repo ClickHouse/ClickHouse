@@ -35,7 +35,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 [FINAL](/ja/reference/statements/select/from#final-modifier) 修飾子付きの [SELECT](/ja/reference/statements/select/index) クエリで、自動 [PREWHERE](/ja/reference/statements/select/prewhere) 最適化を有効または無効にします。
 
 sorting key のみに依存し、かつクエリ内で決定論的な条件だけが移動されるため、
-`FINAL` の結果には影響しません。
+`FINAL` の結果には影響しません。[GraphiteMergeTree](/ja/reference/engines/table-engines/mergetree-family/graphitemergetree) では、
+`FINAL` は同じパスを持つ隣接行を 1 行にマージします。そのため、この最適化で移動されるのはパスカラムに対する条件のみで、
+さらにパスが sorting key の先頭カラムである場合に限られます。
 
 [*MergeTree](/ja/reference/engines/table-engines/mergetree-family/index) テーブルでのみ機能します。
 

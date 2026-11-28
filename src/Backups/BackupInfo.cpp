@@ -34,10 +34,10 @@ String BackupInfo::toString() const
 }
 
 
-BackupInfo BackupInfo::fromString(const String & str)
+BackupInfo BackupInfo::fromString(std::string_view str)
 {
     ParserIdentifierWithOptionalParameters parser;
-    ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    ASTPtr ast = parseQuery(parser, str.data(), str.data() + str.size(), "", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     return fromAST(*ast);
 }
 
@@ -436,7 +436,8 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
                 return key
                     && (*key == "access_key_id" || *key == "secret_access_key" || *key == "session_token"
                         || *key == "external_id"
-                        || *key == "google_adc_client_secret" || *key == "google_adc_refresh_token");
+                        || *key == "google_adc_client_secret" || *key == "google_adc_refresh_token"
+                        || *key == "google_service_account_key");
             }),
         res.kv_args.end());
 

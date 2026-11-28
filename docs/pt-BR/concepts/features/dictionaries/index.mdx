@@ -2,33 +2,39 @@
 slug: /dictionary
 title: 'Dicionário'
 keywords: ['dicionário', 'dicionários']
-description: 'Um dicionário fornece uma representação de dados em chave-valor para buscas rápidas.'
+description: 'Um dicionário fornece uma representação de dados em chave-valor para consultas rápidas.'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
-Um dicionário no ClickHouse fornece uma representação em memória de [chave-valor](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) de dados de várias [fontes internas e externas](/pt-BR/reference/statements/create/dictionary/sources/overview#dictionary-sources), otimizada para consultas de busca com latência extremamente baixa.
+Um dicionário no ClickHouse fornece uma representação em memória de [chave-valor](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) de dados de várias [fontes internas e externas](/pt-BR/reference/statements/create/dictionary/sources/overview#dictionary-sources), otimizada para consultas com latência extremamente baixa.
 
 Os dicionários são úteis para:
 
 * Melhorar o desempenho das consultas, especialmente quando usados com `JOIN`s
 * Enriquecer os dados ingeridos em tempo real sem desacelerar o processo de ingestão
 
-<Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="Casos de uso do Dicionário no ClickHouse" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Casos de uso de dicionários no ClickHouse](/images/dictionary/dictionary-use-cases.webp)
+  </Frame>
+</div>
 
 ## Acelerando junções usando um Dicionário {#speeding-up-joins-using-a-dictionary}
 
 Dicionários podem ser usados para acelerar um tipo específico de `JOIN`: o tipo [`LEFT ANY`](/pt-BR/reference/statements/select/join#supported-types-of-join), em que a chave da junção precisa corresponder ao atributo-chave do armazenamento subjacente de chave-valor.
 
-<Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="Usando Dicionário com LEFT ANY JOIN" />
+<div className="ch-image-sm">
+  <Frame>
+    ![Usando Dicionário com LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
+  </Frame>
+</div>
 
-Se esse for o caso, o ClickHouse pode aproveitar o dicionário para executar um [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). Esse é o algoritmo de junção mais rápido do ClickHouse e se aplica quando o [motor de tabela](/pt-BR/reference/engines/table-engines/index) da tabela do lado direito oferece suporte a solicitações de chave-valor de baixa latência. O ClickHouse tem três motores de tabela que oferecem isso: [Join](/pt-BR/reference/engines/table-engines/special/join) (que é basicamente uma tabela hash pré-calculada), [EmbeddedRocksDB](/pt-BR/reference/engines/table-engines/integrations/embedded-rocksdb) e [Dicionário](/pt-BR/reference/engines/table-engines/special/dictionary). Vamos descrever a abordagem baseada em dicionário, mas o funcionamento é o mesmo para os três motores.
+Se esse for o caso, o ClickHouse pode aproveitar o dicionário para executar uma [junção direta](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). Esse é o algoritmo de junção mais rápido do ClickHouse e se aplica quando o [motor de tabela](/pt-BR/reference/engines/table-engines/index) da tabela do lado direito oferece suporte a solicitações de chave-valor de baixa latência. O ClickHouse tem três motores de tabela que oferecem isso: [Join](/pt-BR/reference/engines/table-engines/special/join) (que é basicamente uma tabela hash pré-calculada), [EmbeddedRocksDB](/pt-BR/reference/engines/table-engines/integrations/embedded-rocksdb) e [Dicionário](/pt-BR/reference/engines/table-engines/special/dictionary). Vamos descrever a abordagem baseada em dicionário, mas o funcionamento é o mesmo para os três motores.
 
 O algoritmo de junção direta exige que a tabela da direita seja baseada em um dicionário, de modo que os dados dessa tabela a serem unidos já estejam presentes na memória na forma de uma estrutura de dados de chave-valor de baixa latência.
 
 <div id="example">
-  ### Exemplo
+  ### Exemplo {#example}
 </div>
 
 Usando o [conjunto de dados do Stack Overflow](/pt-BR/get-started/sample-datasets/stackoverflow), vamos responder à pergunta:
@@ -85,9 +91,7 @@ Peak memory usage: 3.18 GiB.
 
 Embora esta consulta seja rápida, ela exige que escrevamos o `JOIN` com cuidado para obter um bom desempenho. O ideal seria simplesmente filtrar os posts para aqueles que contêm &quot;SQL&quot; antes de analisar as contagens de `UpVote` e `DownVote` para o subconjunto de blogs e calcular nossa métrica.
 
-<div id="applying-a-dictionary">
-  #### Aplicando um dicionário
-</div>
+#### Aplicando um dicionário {#applying-a-dictionary}
 
 Para demonstrar esses conceitos, usamos um dicionário para nossos dados de votos. Como os dicionários geralmente ficam na memória ([ssd&#95;cache](/pt-BR/reference/statements/create/dictionary/layouts/ssd-cache) é a exceção), você deve levar em conta o tamanho dos dados. Confirmando o tamanho da nossa tabela `votes`:
 
@@ -109,9 +113,9 @@ GROUP BY table
 
 Os dados serão armazenados sem compressão em nosso dicionário, portanto precisaríamos de pelo menos 4 GB de memória se fôssemos armazenar todas as colunas (não vamos) em um dicionário. O dicionário será replicado em todo o nosso cluster, então essa quantidade de memória precisa ser reservada *por nó*.
 
-> No exemplo abaixo, os dados do nosso dicionário vêm de uma tabela do ClickHouse. Embora essa seja a fonte mais comum de dicionários, [há várias fontes compatíveis](/pt-BR/reference/statements/create/dictionary/sources/overview#dictionary-sources), incluindo arquivos, http e bancos de dados como o [Postgres](/pt-BR/reference/statements/create/dictionary/sources/postgresql). Como veremos, os dicionários podem ser atualizados automaticamente, o que é ideal para garantir que pequenos conjuntos de dados sujeitos a mudanças frequentes estejam disponíveis para direct joins.
+> No exemplo abaixo, os dados do nosso dicionário vêm de uma tabela do ClickHouse. Embora essa seja a fonte mais comum de dicionários, [há várias fontes compatíveis](/pt-BR/reference/statements/create/dictionary/sources/overview#dictionary-sources), incluindo arquivos, http e bancos de dados como o [Postgres](/pt-BR/reference/statements/create/dictionary/sources/postgresql). Como veremos, os dicionários podem ser atualizados automaticamente, o que é ideal para garantir que pequenos conjuntos de dados sujeitos a mudanças frequentes estejam disponíveis para junções diretas.
 
-Nosso dicionário exige uma chave primária sobre a qual os lookups serão feitos. Conceitualmente, isso é idêntico à chave primária de um banco de dados transacional e deve ser único. Nossa consulta acima exige um lookup na chave de join — `PostId`. Por sua vez, o dicionário deve ser preenchido com o total de votos positivos e negativos por `PostId` da nossa tabela `votes`. Aqui está a consulta para obter esses dados do dicionário:
+Nosso dicionário exige uma chave primária sobre a qual as consultas serão feitas. Conceitualmente, isso é idêntico à chave primária de um banco de dados transacional e deve ser único. Nossa consulta acima exige uma consulta na chave de junção — `PostId`. Por sua vez, o dicionário deve ser preenchido com o total de votos positivos e negativos por `PostId` da nossa tabela `votes`. Aqui está a consulta para obter esses dados do dicionário:
 
 ```sql
 SELECT PostId,
@@ -120,6 +124,10 @@ SELECT PostId,
 FROM votes
 GROUP BY PostId
 ```
+
+<Note title="ClickHouse Cloud">
+  Ao criar um dicionário que lê dados de uma tabela do ClickHouse, inclua o nome de usuário e a senha de um usuário dedicado na cláusula `SOURCE`. Esse usuário precisa ter a permissão `SELECT` na tabela de origem. Consulte o [exemplo de fonte de dicionário do ClickHouse](/pt-BR/reference/statements/create/dictionary/sources/clickhouse).
+</Note>
 
 Para criar nosso Dicionário, é preciso usar o DDL a seguir — observe o uso da consulta acima:
 
@@ -168,7 +176,7 @@ SELECT dictGet('votes_dict', ('UpVotes', 'DownVotes'), '11227902') AS votes
 └────────────┘
 ```
 
-Ao aproveitar isso na consulta anterior, podemos remover o JOIN:
+Ao aproveitar isso na consulta anterior, podemos remover a junção:
 
 ```sql
 WITH PostIds AS
@@ -192,10 +200,10 @@ LIMIT 3
 Peak memory usage: 552.26 MiB.
 ```
 
-Esta consulta não é apenas muito mais simples, mas também mais de duas vezes mais rápida! Isso poderia ser otimizado ainda mais carregando no dicionário apenas posts com mais de 10 votos positivos e negativos e armazenando apenas um valor de controvérsia pré-calculado.
+Esta consulta não é apenas muito mais simples, mas também mais de duas vezes mais rápida! Isso poderia ser otimizado ainda mais carregando no dicionário apenas publicações com mais de 10 votos positivos e negativos e armazenando apenas um valor de controvérsia pré-calculado.
 
 <div id="query-time-enrichment">
-  ## Enriquecimento em tempo de consulta
+  ## Enriquecimento em tempo de consulta {#query-time-enrichment}
 </div>
 
 Dicionários podem ser usados para consultar valores em tempo de consulta. Esses valores podem ser retornados nos resultados ou usados em agregações. Suponha que criemos um dicionário para mapear IDs de usuário para sua localização:
@@ -342,13 +350,13 @@ Peak memory usage: 666.82 MiB.
 ```
 
 <div id="advanced-dictionary-topics">
-  ## Tópicos avançados sobre dicionários
+  ## Tópicos avançados sobre dicionários {#advanced-dictionary-topics}
 </div>
 
 Para orientações sobre como escolher layouts de dicionários, quando usar dicionários em vez de junções e como monitorar o uso de dicionários, consulte [Boas práticas de dicionários](/pt-BR/concepts/features/dictionaries/best-practices).
 
 <div id="refreshing-dictionaries">
-  ### Atualizando dicionários
+  ### Atualizando dicionários {#refreshing-dictionaries}
 </div>
 
 Especificamos um `LIFETIME` para o dicionário de `MIN 600 MAX 900`. LIFETIME é o intervalo de atualização do dicionário, e esses valores fazem com que ele seja recarregado periodicamente em um intervalo aleatório entre 600 e 900s. Esse intervalo aleatório é necessário para distribuir a carga na origem do dicionário ao atualizar em um grande número de servidores. Durante as atualizações, a versão antiga de um dicionário ainda pode ser consultada; apenas a carga inicial bloqueia consultas. Observe que definir `(LIFETIME(0))` impede a atualização dos dicionários.
@@ -357,7 +365,7 @@ Os dicionários podem ser recarregados à força usando o comando `SYSTEM RELOAD
 Para origens de banco de dados, como ClickHouse e Postgres, você pode configurar uma consulta que atualizará os dicionários apenas se eles realmente tiverem mudado (a resposta da consulta determina isso), em vez de em um intervalo periódico. Mais detalhes podem ser encontrados [aqui](/pt-BR/reference/statements/create/dictionary/lifetime).
 
 <div id="other-dictionary-types">
-  ### Outros tipos de dicionários
+  ### Outros tipos de dicionários {#other-dictionary-types}
 </div>
 
 O ClickHouse também oferece suporte a dicionários [Hierárquicos](/pt-BR/reference/statements/create/dictionary/layouts/hierarchical), [Polygon](/pt-BR/reference/statements/create/dictionary/layouts/polygon) e de [Expressão Regular](/pt-BR/reference/statements/create/dictionary/layouts/regexp-tree).

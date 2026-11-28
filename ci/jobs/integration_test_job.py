@@ -20,6 +20,7 @@ from ci.jobs.scripts.integration_coverage_export import IntegrationCoverageExpor
 from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,
     LLVM_COVERAGE_SKIP_PREFIXES,
+    PER_TEST_COVERAGE_KEEP_PREFIXES,
     PER_TEST_COVERAGE_SKIP_PREFIXES,
     force_exclusive_modules_sequential,
     get_optimal_test_batch,
@@ -42,7 +43,7 @@ MAX_FAILS_BEFORE_DROP = 5
 # The merge-queue targeted check stops after this many failed tests (fail fast).
 MERGE_QUEUE_MAX_FAILURES = 3
 # The selection sources that are run whatever the coverage ranking (see `protect_selection`).
-MANDATORY_SELECTION_SOURCES = {"changed", "previously_failed", "merge_queue_drift"}
+MANDATORY_SELECTION_SOURCES = {"changed", "previously_failed"}
 # Flaky-check best-effort scope cap: the maximum number of changed test modules a single
 # flaky-check run will execute. A PR can mechanically touch a large number of integration
 # test modules (e.g. a repo-wide lint/format change), and running every one of them
@@ -139,7 +140,9 @@ MEMCG_OOM_OWNER = re.compile(rb"oom_memcg=([^,\s]+)")
 # leaves from a breach OF one. The kernel always prints them adjacent and in this order.
 MEMCG_OOM_KILL = re.compile(rb"oom_memcg=([^,\s]+),task_memcg=([^,\s]+)")
 
-MAX_CPUS_PER_WORKER = 5
+# 16-vCPU runners with a 48 GiB nested budget run 4 workers (12 GiB each): with 5 CPUs per
+# worker they ran 3 and left a fourth worker's memory unused.
+MAX_CPUS_PER_WORKER = 4
 MAX_MEM_PER_WORKER = 11
 # Flaky checks run with --dist=each, so every worker runs the full set
 # of changed modules concurrently (each with its own Docker cluster) instead of
@@ -1351,11 +1354,18 @@ def get_parallel_sequential_tests_to_run(
     ]
 
     if "amd_llvm_coverage" in (job_options or ""):
+        skip_prefixes = LLVM_COVERAGE_SKIP_PREFIXES
+        if "per_test_coverage" in (job_options or ""):
+            # The targeted jobs need the per-module coverage of these modules, see
+            # `PER_TEST_COVERAGE_KEEP_PREFIXES`.
+            skip_prefixes = [
+                p for p in skip_prefixes if p not in PER_TEST_COVERAGE_KEEP_PREFIXES
+            ]
         before = len(test_files)
         test_files = [
             f
             for f in test_files
-            if not any(f.startswith(prefix) for prefix in LLVM_COVERAGE_SKIP_PREFIXES)
+            if not any(f.startswith(prefix) for prefix in skip_prefixes)
         ]
         print(
             f"LLVM coverage: skipped {before - len(test_files)} test files matching LLVM_COVERAGE_SKIP_PREFIXES"
@@ -1922,7 +1932,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         and not is_llvm_coverage
         and not args.test
     ):
-        changed_files = info.get_changed_files()
+        changed_files = info.get_changed_files() or []
         # The `arm_binary` jobs replacing the LLVM coverage jobs in pull requests must run in full
         # when a CI job script changes: `filter_job.py` lets them through for that very reason.
         is_coverage_replacement_with_ci_script_changes = False
@@ -1992,9 +2002,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
         # The merge-queue targeted check runs under a 30-minute cap that ends the run
         # without failing it, so the order decides what is cut off. Keep the priority
         # order of the selection there (the changed modules, the modules owning changed
-        # files, the modules `master` changed since the PR CI, then the coverage
-        # ranking): sorting by name would let a large coverage selection starve the
-        # mandatory modules and report OK without running them.
+        # files, then the coverage ranking): sorting by name would let a large coverage
+        # selection starve the mandatory modules and report OK without running them.
         if is_merge_queue_targeted_check:
             priority = {}
             for t in targeted_tests:
@@ -2079,7 +2088,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
         )
         # Auto-detect available LLVM profdata tool
-        for ver in ["22", "21", "20", "18", "19", "17", "16", ""]:
+        for ver in ["23", "22", "21", "20", "18", "19", "17", "16", ""]:
             cmd = f"llvm-profdata{'-' + ver if ver else ''}"
             if Shell.check(f"command -v {cmd}", verbose=False):
                 llvm_profdata_cmd = cmd

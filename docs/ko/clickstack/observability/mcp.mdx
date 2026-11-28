@@ -1,0 +1,147 @@
+---
+slug: /clickstack/observability/mcp
+title: 'ClickStack MCP 서버'
+sidebarTitle: 'MCP 서버'
+description: 'ClickStack 모델 컨텍스트 프로토콜(MCP) 서버를 사용하여 AI 어시스턴트를 ClickHouse Observability에 연결합니다'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'MCP', 'Model Context Protocol', 'AI', 'observability', 'ClickStack UI', 'Claude', 'Cursor', 'ClickHouse Cloud', 'OAuth']
+---
+
+ClickStack MCP 서버는 [모델 컨텍스트 프로토콜(MCP)](https://modelcontextprotocol.io/)을 사용하여 AI 어시스턴트가 ClickHouse Observability 데이터와 상호 작용할 수 있도록 합니다. 연결이 완료되면 AI 어시스턴트는 자연어만으로 로그, trace, 메트릭을 쿼리하고, 대시보드와 알림을 관리하며, 데이터 소스(Data Sources)를 탐색하고, 저장된 검색을 활용할 수 있습니다.
+
+따라서 [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Cursor](https://www.cursor.com/) 등 MCP 호환 클라이언트라면 어떤 도구로든 개발 환경을 벗어나지 않고 인시던트를 조사하고, 대시보드를 구축하며, 관측성 구성을 관리할 수 있습니다.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/FaL5iOgNogg?si=dUbsRQe4wYuZ78zt" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+## ClickHouse Observability에 연결 {#managed-clickstack}
+
+ClickHouse Observability는 `https://mcp.clickhouse.cloud/clickstack`의 Cloud MCP 엔드포인트를 통해 연결되며, OAuth 2.0으로 인증합니다. 이 엔드포인트에서는 API Key 인증이 지원되지 않습니다.
+
+### 사전 요구 사항 {#managed-prerequisites}
+
+* [관측성이 활성화된](/ko/clickstack/observability/getting-started) 실행 중인 ClickHouse Cloud 서비스
+* 서비스에서 [MCP 활성화](/ko/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) — 클라우드 콘솔을 열고 **연결**을 클릭한 다음, **Connect with MCP**를 선택하고 토글을 켜십시오.
+
+### 엔드포인트 {#managed-endpoint}
+
+```text
+https://mcp.clickhouse.cloud/clickstack
+```
+
+인증에는 OAuth 2.0을 사용합니다. MCP 클라이언트가 처음 연결되면 브라우저 창이 열리며, 이 창에서 ClickHouse Cloud 자격 증명으로 로그인할 수 있습니다. 별도의 API Key는 필요하지 않습니다.
+
+### MCP 클라이언트 연결 {#managed-connecting-a-client}
+
+ClickHouse Observability 서비스에서 **팀 설정 → API &amp; Agents**를 열어 MCP 클라이언트용 구성을 복사하십시오. 생성된 구성에는 서비스 ID가 포함되어 있으므로 요청이 해당 서비스로 전송됩니다.
+
+또는 아래 예시 중 하나를 사용하십시오. 연결하면 클라이언트에서 OAuth 인증을 완료하라는 안내가 표시됩니다.
+
+<Tabs>
+  <Tab title="Claude Code">
+    ```shell
+    claude mcp add --transport http clickstack https://mcp.clickhouse.cloud/clickstack
+    ```
+
+    Claude Code를 시작한 후 `/mcp`를 실행하고 `clickstack`을 선택하여 OAuth 인증 흐름을 완료하십시오.
+  </Tab>
+
+  <Tab title="Cursor">
+    `.cursor/mcp.json`에 다음 내용을 추가하십시오.
+
+    ```json
+    {
+      "mcpServers": {
+        "clickstack": {
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="VS Code">
+    `.vscode/mcp.json`에 다음 내용을 추가하십시오.
+
+    ```json
+    {
+      "servers": {
+        "clickstack": {
+          "type": "http",
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="OpenCode">
+    `opencode.json`에 다음 내용을 추가하십시오.
+
+    ```json
+    {
+      "mcp": {
+        "clickstack": {
+          "type": "remote",
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="LibreChat">
+    `librechat.yaml`에 다음 내용을 추가하십시오.
+
+    ```yaml
+    mcpServers:
+      clickstack:
+        type: streamable-http
+        url: https://mcp.clickhouse.cloud/clickstack
+    ```
+  </Tab>
+
+  <Tab title="기타">
+    OAuth 기반 **Streamable HTTP**를 지원하는 MCP 클라이언트라면 모두 연결할 수 있습니다. 다음 값으로 구성하십시오.
+
+    * **URL:** `https://mcp.clickhouse.cloud/clickstack`
+  </Tab>
+</Tabs>
+
+### 특정 서비스 대상으로 지정 {#managed-service-override}
+
+`x-service-id` 헤더가 없으면 요청은 기본적으로 계정에서 가장 먼저 프로비저닝되어 사용된 관측성 서비스로 전달됩니다. 기본 서비스를 변경하려면 ClickStack에서 **User Preferences**를 열고 기본 서비스를 선택하십시오.
+
+특정 MCP 클라이언트에서 원하는 서비스를 대상으로 지정하려면 해당 클라이언트의 구성에서 `x-service-id: <YOUR_SERVICE_ID>`를 헤더로 전달하십시오. 이 헤더는 기본 서비스 설정을 재정의합니다.
+
+## MCP로 무엇을 할 수 있습니까? {#capabilities}
+
+연결이 완료되면 AI 어시스턴트는 서비스의 핵심 영역 전반을 아우르는 다양한 도구에 액세스할 수 있습니다. 주요 도구는 다음과 같습니다.
+
+* **데이터 쿼리 실행** — 쿼리 빌더(query builder), 검색 구문 또는 원시 SQL(Raw SQL)을 사용하여 로그, trace, 메트릭을 검색하고 집계합니다.
+* **데이터 소스(Data Sources)** — 사용 가능한 데이터 소스(Data Sources), 데이터베이스 연결(database connection), 컬럼 스키마(schemas), 속성 키를 조회합니다.
+* **대시보드** — 대시보드와 해당 타일을 생성, 업데이트, 삭제 및 조회합니다.
+* **알림** — 알림을 생성, 업데이트 및 조회하고 평가 기록을 확인합니다.
+* **저장된 검색** — 재사용 가능한 저장된 검색 정의를 생성, 업데이트 및 조회합니다.
+* **웹훅** — 경보 알림을 보낼 수 있는 웹훅 대상을 조회합니다.
+* **팀** — 현재 사용자가 속한 팀을 조회하고 활성 팀을 확인합니다.
+
+제공되는 도구는 향후 추가될 수 있습니다. MCP 클라이언트는 연결 시 사용 가능한 도구를 자동으로 발견합니다.
+
+## 문제 해결 {#troubleshooting}
+
+<Accordion title="OAuth 인증 흐름이 완료되지 않는 경우">
+  * MCP 클라이언트가 OAuth 2.0을 지원하는지 확인하십시오. Bearer 토큰 또는 stdio 전송 방식만 지원하는 클라이언트는 Cloud 엔드포인트에서 인증할 수 없습니다.
+  * 브라우저에서 OAuth 팝업이나 리디렉션이 차단되고 있지 않은지 확인하십시오.
+  * ClickHouse Cloud 계정에 해당 조직 및 서비스에 대한 액세스 권한이 있는지 확인하십시오.
+</Accordion>
+
+<Accordion title="MCP가 활성화되어 있는데도 클라이언트가 연결되지 않는 경우">
+  * 일반 Cloud MCP 엔드포인트(`https://mcp.clickhouse.cloud/mcp`)가 아닌 관측성 엔드포인트(`https://mcp.clickhouse.cloud/clickstack`)를 사용하고 있는지 확인하십시오.
+  * 클라우드 콘솔에서 해당 서비스에 [MCP가 활성화되어 있는지](/ko/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) 확인하십시오.
+</Accordion>
+
+<Accordion title="요청이 다른 서비스로 전송되는 경우">
+  `x-service-id` 헤더를 지정하지 않으면 요청은 기본적으로 해당 계정에서 처음 프로비저닝되어 사용된 관측성 서비스로 전송됩니다. ClickStack의 **User Preferences**에서 기본 서비스를 변경하거나, 헤더를 전달하여 특정 서비스를 대상으로 지정하십시오. 자세한 내용은 [특정 서비스 대상으로 지정](#managed-service-override)을 참조하십시오.
+</Accordion>

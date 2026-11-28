@@ -1,14 +1,17 @@
 #include <gtest/gtest.h>
+#include <Common/Exception.h>
 #include <Common/FieldBinaryEncoding.h>
 #include <Common/FieldVisitorWriteBinary.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 using namespace DB;
 
 namespace DB::ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -102,4 +105,27 @@ GTEST_TEST(FieldBinaryEncoding, WriteBinarySize)
         Tuple({Field(UInt64(42)), Map({Tuple{Field(UInt64(42)), Field(String("str_42"))}, Tuple{Field(UInt64(43)), Field(String("str_43"))}}), Field(UUID(42)), Field(String("Hello, World!"))}),
         Tuple({Field(UInt64(43)), Map({Tuple{Field(UInt64(43)), Field(String("str_43"))}, Tuple{Field(UInt64(44)), Field(String("str_44"))}}), Field(UUID(43)), Field(String("Hello, World 2!"))})
     }));
+}
+
+
+/// A binary-encoded `Decimal` whose scale exceeds the type's maximum precision must be rejected by
+/// `decodeField`, not run on to the decimal text writer with an oversized scale. The bytes are
+/// hand-built because the encoder cannot produce an out-of-range scale.
+GTEST_TEST(FieldBinaryEncoding, DecodeDecimalOutOfRangeScaleThrows)
+{
+    WriteBufferFromOwnString ostr;
+    writeBinary(UInt8(0x09), ostr);   /// FieldBinaryTypeIndex::Decimal64
+    writeVarUInt(UInt32(1000), ostr); /// scale far above max_precision<Decimal64> = 18
+    writeBinaryLittleEndian(Int64(4242), ostr);
+
+    ReadBufferFromString istr(ostr.str());
+    try
+    {
+        decodeField(istr);
+        FAIL() << "expected ARGUMENT_OUT_OF_BOUND";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    }
 }

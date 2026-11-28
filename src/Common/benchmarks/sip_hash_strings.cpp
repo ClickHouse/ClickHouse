@@ -66,10 +66,10 @@ struct Strings
     PaddedPODArray<UInt64> offsets;
     std::vector<UInt128> expected;
 
-    const char * data() const { return reinterpret_cast<const char *>(chars.data()); }
-    size_t size() const { return offsets.size(); }
-    size_t sizeAt(size_t row) const { return offsets[row] - offsets[static_cast<ssize_t>(row) - 1]; }
-    const char * dataAt(size_t row) const { return data() + offsets[static_cast<ssize_t>(row) - 1]; }
+    [[nodiscard]] const char * data() const { return reinterpret_cast<const char *>(chars.data()); }
+    [[nodiscard]] size_t size() const { return offsets.size(); }
+    [[nodiscard]] size_t sizeAt(size_t row) const { return offsets[row] - offsets[static_cast<ssize_t>(row) - 1]; }
+    [[nodiscard]] const char * dataAt(size_t row) const { return data() + offsets[static_cast<ssize_t>(row) - 1]; }
 };
 
 Strings makeStrings(const Input & input)
@@ -128,8 +128,8 @@ struct FixedStrings
     PaddedPODArray<UInt8> chars;
     std::vector<UInt128> expected;
 
-    const char * data() const { return reinterpret_cast<const char *>(chars.data()); }
-    size_t size() const { return chars.size() / n; }
+    [[nodiscard]] const char * data() const { return reinterpret_cast<const char *>(chars.data()); }
+    [[nodiscard]] size_t size() const { return chars.size() / n; }
 };
 
 FixedStrings makeFixedStrings(size_t n)

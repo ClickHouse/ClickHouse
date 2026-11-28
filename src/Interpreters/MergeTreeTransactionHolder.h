@@ -29,7 +29,7 @@ public:
     MergeTreeTransactionHolder(const MergeTreeTransactionHolder & rhs);
     MergeTreeTransactionHolder & operator=(const MergeTreeTransactionHolder & rhs);
 
-    MergeTreeTransactionPtr getTransaction() const { return txn; }
+    [[nodiscard]] MergeTreeTransactionPtr getTransaction() const { return txn; }
 
 private:
     void onDestroy() noexcept;

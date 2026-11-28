@@ -71,6 +71,7 @@ def test_mark_segment_size_communicated_correctly(
             "parallel_replicas_local_plan": local_plan,
             "query_id": query_id,
             "parallel_replicas_index_analysis_only_on_coordinator": index_analysis_only_on_coordinator,
+            "use_statistics_for_sum_avg_aggregation": 0,
         },
     )
 
@@ -113,3 +114,65 @@ def test_insert_cluster_parallel_replicas(start_cluster):
         },
     )
     nodes[0].query("DROP TABLE t0 ON CLUSTER 'test_cluster_two_shards'")
+
+
+# https://github.com/ClickHouse/ClickHouse/issues/134035
+# Only the initiator's query condition cache knows that the part without the projection has no
+# matching rows. So the initiator reads the whole table from the projection in order, while the
+# other replicas still read that part from the table in the Default mode.
+def test_projection_read_in_order_with_warm_query_condition_cache(start_cluster):
+    table = "t_projection_in_order_qcc"
+    nodes[0].query(f"DROP TABLE IF EXISTS {table} ON CLUSTER 'parallel_replicas' SYNC")
+    nodes[0].query(
+        f"""
+        CREATE TABLE {table} ON CLUSTER 'parallel_replicas'
+            (k Int64, a Int64, b Int64, PROJECTION p (SELECT a, b ORDER BY a))
+        ENGINE = ReplicatedMergeTree('/test_parallel_replicas/shard/{table}', '{{replica}}')
+        ORDER BY k
+        SETTINGS lightweight_mutation_projection_mode = 'rebuild'
+        """
+    )
+    nodes[0].query(f"INSERT INTO {table} VALUES (-1, 5, 5)")
+    nodes[0].query(f"DELETE FROM {table} WHERE k = -1", settings={"mutations_sync": 2})
+    for node in nodes:
+        node.query(f"SYSTEM STOP MERGES {table}")
+    nodes[0].query(
+        f"INSERT INTO {table} SELECT number, 1000000 - number, number % 7 FROM numbers(7000)",
+        settings={"insert_quorum": 3},
+    )
+    nodes[0].query(f"SYSTEM SYNC REPLICA ON CLUSTER 'parallel_replicas' {table}")
+
+    for node in nodes:
+        # The deleted row's part has no projection, the other part has it.
+        assert (
+            node.query(
+                f"SELECT rows, has_lightweight_delete, projections FROM system.parts "
+                f"WHERE database = currentDatabase() AND table = '{table}' AND active ORDER BY name"
+            )
+            == "1\t1\t[]\n7000\t0\t['p']\n"
+        )
+
+    query = f"SELECT count(), sum(a) FROM (SELECT a FROM {table} ORDER BY a LIMIT 20)"
+    for _ in range(3):
+        for node in nodes:
+            node.query("SYSTEM DROP QUERY CONDITION CACHE")
+
+        expected = nodes[0].query(query)
+        assert expected == "20\t19860210\n"
+        assert int(nodes[0].query("SELECT count() FROM system.query_condition_cache")) >= 1
+        for node in nodes[1:]:
+            assert node.query("SELECT count() FROM system.query_condition_cache") == "0\n"
+
+        assert (
+            nodes[0].query(
+                query,
+                settings={
+                    "enable_parallel_replicas": 1,
+                    "max_parallel_replicas": 3,
+                    "cluster_for_parallel_replicas": "parallel_replicas",
+                },
+            )
+            == expected
+        )
+
+    nodes[0].query(f"DROP TABLE {table} ON CLUSTER 'parallel_replicas' SYNC")

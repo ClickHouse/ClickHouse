@@ -6,4 +6,7 @@
     <query>SELECT count() FROM hits_100m_single WHERE URL IN (SELECT URL FROM hits_100m_single WHERE AdvEngineID != 0)</query>
     <query>SELECT count() FROM hits_10m_single WHERE URL IN (SELECT URL FROM hits_10m_single WHERE SearchEngineID != 0)</query>
     <query>SELECT count() FROM hits_100m_single WHERE RegionID IN (SELECT RegionID FROM hits_100m_single)</query>
+    <!-- Several key columns with a String: the set hashes the whole key. -->
+    <query>SELECT count() FROM hits_10m_single WHERE (UserID, SearchPhrase) IN (SELECT UserID, SearchPhrase FROM hits_10m_single)</query>
+    <query>SELECT count() FROM hits_10m_single WHERE (UserID, URL) IN (SELECT UserID, URL FROM hits_10m_single WHERE SearchEngineID != 0)</query>
 </test>

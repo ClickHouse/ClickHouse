@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -14,16 +15,16 @@ namespace DB
 class LocalReadImplementation : public IOptimizationRule
 {
 public:
-    String getName() const override { return "LocalRead"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
+    [[nodiscard]] String getName() const override { return "LocalRead"; }
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
     {
         return typeid_cast<const ReadFromMergeTree *>(expression->getQueryPlanStep()) != nullptr;
     }
-    Promise getPromise() const override { return 1; }
-    bool isTransformation() const override { return false; }
+    [[nodiscard]] Promise getPromise() const override { return 1; }
+    [[nodiscard]] bool isTransformation() const override { return false; }
 
 protected:
-    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
+    GroupExpressions applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
     {
         auto implementation_expression = std::make_shared<GroupExpression>(*expression);
         /// No distribution propagation: output stays at default {1 node}.

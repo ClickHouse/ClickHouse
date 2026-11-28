@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Node.js', 'трассировки', 'OTEL', 'ClickStack', 'распределённая трассировка']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -18,16 +16,14 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <div id="existing-nodejs">
-  ## Интеграция с существующим приложением Node.js
+  ## Интеграция с существующим приложением Node.js {#existing-nodejs}
 </div>
 
 В этом разделе описано, как добавить распределённую трассировку в существующее приложение Node.js с помощью автоматической инструментации OpenTelemetry.
 
 Если вы хотите протестировать интеграцию перед настройкой собственной среды, воспользуйтесь нашей предварительно настроенной средой и примерами данных в [разделе о демо-наборе данных](#demo-dataset).
 
-<div id="prerequisites">
-  ##### Предварительные требования
-</div>
+##### Предварительные требования {#prerequisites}
 
 * Запущенный экземпляр ClickStack с доступными конечными точками OTLP (порты 4317/4318)
 * Существующее приложение Node.js (Node.js 14 или выше)
@@ -36,18 +32,22 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 
 <Steps>
   <Step title="Установите и настройте OpenTelemetry" id="install-configure">
-    Установите пакет `@hyperdx/node-opentelemetry` и инициализируйте его при запуске приложения. Подробные инструкции по установке см. в [руководстве по SDK для Node.js](/ru/clickstack/ingesting-data/sdks/nodejs#getting-started).
+    Установите пакет `@hyperdx/node-opentelemetry` и инициализируйте его при запуске приложения. Подробные инструкции по установке см. в [руководстве по SDK для Node.js](/ru/clickstack/ingesting-data/sdks/nodejs#install).
   </Step>
 
   <Step title="Получите ключ API ClickStack" id="get-api-key">
     Ключ API для отправки трассировок в конечную точку OTLP ClickStack.
 
-    1. Откройте HyperDX по URL вашего ClickStack (например, http://localhost:8080)
+    1. Откройте интерфейс ClickStack по URL вашего ClickStack (например, http://localhost:8080)
     2. При необходимости создайте учётную запись или войдите в систему
     3. Перейдите в **Team Settings → API Keys**
     4. Скопируйте свой **Ingestion API Key**
 
-    <Image img="/images/clickstack/api-key.webp" alt="Ключ API ClickStack" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Ключ API ClickStack](/images/clickstack/api-key.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Запустите приложение" id="run-application">
@@ -73,22 +73,28 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="Проверьте трассировки в HyperDX" id="verify-traces">
-    После настройки войдите в HyperDX и убедитесь, что трассировки поступают. Вы должны увидеть примерно такую картину. Если трассировки не отображаются, попробуйте изменить временной диапазон:
+  <Step title="Проверьте трассировки в интерфейсе ClickStack" id="verify-traces">
+    После настройки войдите в интерфейс ClickStack и убедитесь, что трассировки поступают. Вы должны увидеть примерно такую картину. Если трассировки не отображаются, попробуйте изменить временной диапазон:
 
-    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="Экран поиска трассировок" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Представление поиска трассировок](/images/clickstack/nodejs/traces-search-view.webp)
+      </Frame>
+    </div>
 
     Нажмите на любую трассировку, чтобы открыть подробный просмотр со спанами, длительностью и атрибутами:
 
-    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="Подробный просмотр трассировки" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Представление отдельной трассировки](/images/clickstack/nodejs/trace-view.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
-<div id="demo-dataset">
-  ## Демо-набор данных
-</div>
+## Демо-набор данных {#demo-dataset}
 
-Для пользователей, которые хотят протестировать трассировку Node.js в ClickStack перед добавлением инструментации в свои production-приложения, мы предоставляем пример набора данных с заранее сгенерированными трассировками приложения Node.js с реалистичными шаблонами трафика.
+Для пользователей, которые хотят протестировать трассировку Node.js в ClickStack перед добавлением инструментации в свои продакшн-приложения, мы предоставляем пример набора данных с заранее сгенерированными трассировками приложения Node.js с реалистичными шаблонами трафика.
 
 <Steps>
   <Step title="Загрузите пример набора данных" id="download-sample">
@@ -114,12 +120,16 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
   <Step title="Получите ключ API ClickStack" id="get-api-key-demo">
     Ключ API нужен для отправки трассировок в конечную точку OTLP ClickStack.
 
-    1. Откройте HyperDX по URL вашего ClickStack (например, http://localhost:8080)
+    1. Откройте интерфейс ClickStack по URL вашего ClickStack (например, http://localhost:8080)
     2. Создайте учётную запись или войдите в систему, если это необходимо
     3. Перейдите в **Team Settings → API Keys**
     4. Скопируйте свой **Ingestion API Key**
 
-    <Image img="/images/clickstack/api-key.webp" alt="Ключ API ClickStack" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Ключ API ClickStack](/images/clickstack/api-key.webp)
+      </Frame>
+    </div>
 
     Задайте ключ API как переменную окружения:
 
@@ -139,26 +149,32 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     В ответ вы должны увидеть `{"partialSuccess":{}}` — это означает, что трассировки успешно отправлены.
   </Step>
 
-  <Step title="Проверьте трассировки в HyperDX" id="verify-demo-traces">
-    1. Откройте [HyperDX](http://localhost:8080/) и войдите в свою учётную запись (возможно, сначала потребуется её создать)
+  <Step title="Проверьте трассировки в интерфейсе ClickStack" id="verify-demo-traces">
+    1. Откройте [интерфейс ClickStack](http://localhost:8080/) и войдите в свою учётную запись (возможно, сначала потребуется её создать)
     2. Перейдите в представление **Search** и выберите источник **Traces**
     3. Установите временной диапазон **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
 
-    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="Представление поиска трассировок" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Представление поиска трассировок](/images/clickstack/nodejs/traces-search-view.webp)
+      </Frame>
+    </div>
 
-    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="Представление отдельной трассировки" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Представление отдельной трассировки](/images/clickstack/nodejs/trace-view.webp)
+      </Frame>
+    </div>
 
     <Info>
       **Отображение часового пояса**
 
-      HyperDX отображает временные метки в часовом поясе, установленном в вашем браузере. Демо-данные охватывают период **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. Широкий временной диапазон гарантирует, что вы увидите демо-трассировки независимо от своего местоположения. После этого можно сузить диапазон до 24 часов для более наглядной визуализации.
+      Интерфейс ClickStack отображает временные метки в часовом поясе, установленном в вашем браузере. Демо-данные охватывают период **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. Широкий временной диапазон гарантирует, что вы увидите демо-трассировки независимо от своего местоположения. После этого можно сузить диапазон до 24 часов для более наглядной визуализации.
     </Info>
   </Step>
 </Steps>
 
-<div id="dashboards">
-  ## Панели мониторинга и визуализация
-</div>
+## Панели мониторинга и визуализация {#dashboards}
 
 Чтобы вам было проще начать мониторинг производительности приложения Node.js, мы предоставляем преднастроенную панель мониторинга с основными визуализациями трассировок.
 
@@ -168,18 +184,30 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step title="Импортируйте преднастроенную панель мониторинга" id="import-dashboard">
-    1. Откройте HyperDX и перейдите в раздел **Dashboards**
-    2. Нажмите **Import Dashboard** в правом верхнем углу (в меню с многоточием)
+    1. Откройте интерфейс ClickStack и перейдите в раздел **Панели мониторинга**
+    2. Нажмите **Импортировать дашборд** в правом верхнем углу (в меню с многоточием)
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Импорт панели мониторинга" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Импортировать дашборд](/images/clickstack/import-dashboard.webp)
+      </Frame>
+    </div>
 
-    3. Загрузите файл `nodejs-traces-dashboard.json` и нажмите **Finish Import**
+    3. Загрузите файл `nodejs-traces-dashboard.json` и нажмите **Завершить Импорт**
 
-    <Image img="/images/clickstack/nodejs/finish-import.webp" alt="Завершение импорта" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Завершить Импорт](/images/clickstack/nodejs/finish-import.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="Панель мониторинга будет создана со всеми преднастроенными визуализациями" id="created-dashboard">
-    <Image img="/images/clickstack/nodejs/example-traces-dashboard.webp" alt="Пример панели мониторинга" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![Пример панели мониторинга](/images/clickstack/nodejs/example-traces-dashboard.webp)
+      </Frame>
+    </div>
 
     <Note>
       Для демо-набора данных установите временной диапазон **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (с учётом вашего местного часового пояса). По умолчанию временной диапазон в импортированной панели мониторинга не задан.
@@ -188,14 +216,12 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="troubleshooting">
-  ## Устранение неполадок
+  ## Устранение неполадок {#troubleshooting}
 </div>
 
-<div id="demo-traces-not-appearing">
-  ### Демо-трассировки не появляются при отправке через curl
-</div>
+### Демо-трассировки не появляются при отправке через curl {#demo-traces-not-appearing}
 
-Если вы отправили трассировки через curl, но не видите их в HyperDX, попробуйте отправить их ещё раз:
+Если вы отправили трассировки через curl, но не видите их в интерфейсе ClickStack, попробуйте отправить их ещё раз:
 
 ```bash
 curl -X POST http://localhost:4318/v1/traces \
@@ -204,20 +230,18 @@ curl -X POST http://localhost:4318/v1/traces \
   -d @nodejs-traces-sample.json
 ```
 
-Это известная проблема, которая возникает при использовании демонстрационного сценария через curl и не затрагивает продакшен-приложения с настроенной телеметрией.
+Это известная проблема, которая возникает при использовании демонстрационного сценария через curl и не затрагивает продакшн-приложения с настроенной телеметрией.
 
-<div id="no-traces">
-  ### В HyperDX не отображаются трассировки
-</div>
+### В интерфейсе ClickStack не отображаются трассировки {#no-traces}
 
 **Убедитесь, что переменные окружения заданы:**
 
 ```bash
 echo $CLICKSTACK_API_KEY
-# Должен вывести ваш API key
+# Should output your API key
 
 echo $OTEL_EXPORTER_OTLP_ENDPOINT
-# Должен вывести http://localhost:4318 или хост вашего ClickStack
+# Should output http://localhost:4318 or your ClickStack host
 ```
 
 **Проверьте подключение к сети:**
@@ -232,15 +256,13 @@ curl -v http://localhost:4318/v1/traces
 При запуске приложения ищите сообщения об инициализации OpenTelemetry. SDK HyperDX должен вывести подтверждение успешной инициализации.
 
 <div id="next-steps">
-  ## Следующие шаги
+  ## Следующие шаги {#next-steps}
 </div>
 
 * Настройте [оповещения](/ru/clickstack/features/alerts) для критически важных метрик (частоты ошибок, пороговых значений задержки)
 * Создайте дополнительные панели мониторинга для конкретных сценариев использования (мониторинг API, события безопасности)
 
-<div id="going-to-production">
-  ## Переход к продакшну
-</div>
+## Переход к продакшну {#going-to-production}
 
 В этом руководстве используется SDK HyperDX, который отправляет трассировки напрямую в конечную точку OTLP ClickStack. Это хорошо подходит для разработки, тестирования и небольших или средних продакшн-развертываний.
 Для более крупных продакшн-сред или если вам нужен дополнительный контроль над данными телеметрии, рассмотрите развертывание собственного OpenTelemetry Collector в роли агента.

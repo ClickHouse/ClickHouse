@@ -7,8 +7,6 @@ sidebarTitle: 'データウェアハウジング'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -23,7 +21,7 @@ export const ExclusiveGroup = ({ name, children }) => {
 クラウドオブジェクトストレージに オープンテーブルフォーマット と ClickHouse のような高性能クエリエンジンを組み合わせることで、データレイクのオープン性を損なうことなく、ACID トランザクション、スキーマ適用、高速な分析クエリといったデータベース並みの機能を利用できます。この組み合わせにより、高性能と、相互運用性に優れた費用対効果の高いストレージを両立でき、従来の分析ワークロードから最新の AI/ML ワークロードまで支えられます。
 
 <div id="benefits">
-  ## このアーキテクチャで得られるもの
+  ## このアーキテクチャで得られるもの {#benefits}
 </div>
 
 オープンなオブジェクトストレージとテーブルフォーマットを、クエリエンジンとしての ClickHouse と組み合わせることで、次のような利点が得られます。
@@ -36,15 +34,17 @@ export const ExclusiveGroup = ({ name, children }) => {
 | **ガバナンス**           | カタログとテーブルフォーマットにより、行レベルおよびカラムレベルできめ細かなアクセス制御と監査が可能になり、基本的なデータレイクでは不十分だったセキュリティ制御を補えます。                                                                      |
 | **ストレージとコンピュートの分離** | ストレージとコンピュートは、汎用オブジェクトストレージ上でそれぞれ独立してスケールでき、独自仕様のウェアハウスストレージより大幅に低コストです。こうした分離は最新のクラウドウェアハウスでは一般的ですが、オープンフォーマットであれば、データに合わせて *どの* コンピュートエンジンをスケールさせるかを選べます。 |
 
-<div id="architecture">
-  ## ClickHouseが支えるデータウェアハウスの仕組み
-</div>
+## ClickHouseが支えるデータウェアハウスの仕組み {#architecture}
 
 データはストリーミングプラットフォームや既存のウェアハウスからオブジェクトストレージを経由してClickHouseに取り込まれ、そこで変換・最適化されたうえで、BI/AIツールに提供されます。
 
 <Columns cols={2}>
   <div>
-    <Image img="/images/cloud/onboard/discover/use_cases/data-warehousing.webp" alt="ClickHouseのデータウェアハウジングアーキテクチャ" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![ClickHouseのデータウェアハウジングアーキテクチャ](/images/cloud/onboard/discover/use_cases/data-warehousing.webp)
+      </Frame>
+    </div>
   </div>
 
   <ExclusiveGroup name="dw-arch">
@@ -62,7 +62,7 @@ export const ExclusiveGroup = ({ name, children }) => {
       </Accordion>
 
       <Accordion title="データ変換">
-        ClickHouseの[materialized views](/ja/concepts/features/materialized-views)は、変換処理を自動化します。ソーステーブルに新しいデータが挿入されるとトリガーされるため、専用のパイプラインを構築しなくても、到着したデータをその場で抽出・集計・加工できます。
+        ClickHouseの[materialized view](/ja/concepts/features/materialized-views)は、変換処理を自動化します。ソーステーブルに新しいデータが挿入されるとトリガーされるため、専用のパイプラインを構築しなくても、到着したデータをその場で抽出・集約・加工できます。
 
         より複雑なモデリングには、ClickHouseの[dbt integration](/ja/integrations/connectors/data-ingestion/etl-tools/dbt)を使って、変換をバージョン管理されたSQLモデルとして定義できます。
       </Accordion>
@@ -75,7 +75,7 @@ export const ExclusiveGroup = ({ name, children }) => {
 </Columns>
 
 <div id="hybrid-architecture-the-best-of-both-worlds">
-  ## ハイブリッドアーキテクチャ: 両方の利点を活かす
+  ## ハイブリッドアーキテクチャ: 両方の利点を活かす {#hybrid-architecture-the-best-of-both-worlds}
 </div>
 
 データレイクをクエリするだけでなく、超低レイテンシが求められるユースケース — リアルタイムダッシュボード、運用分析、インタラクティブなアプリケーションなど — に向けて、パフォーマンスクリティカルなデータを ClickHouse ネイティブの [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) ストレージに取り込むこともできます。

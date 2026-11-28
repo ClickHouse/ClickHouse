@@ -1,69 +1,75 @@
 ---
 slug: /migrations/postgresql/data-modeling-techniques
 title: 'Techniques de modélisation des données'
-description: 'Partie 3 d’un guide de migration de PostgreSQL vers ClickHouse'
+description: 'Partie 3 d’un guide de migration de PostgreSQL vers ClickHouse'
 keywords: ['postgres', 'postgresql']
 show_related_blogs: true
-sidebarTitle: 'Partie 3'
+sidebarTitle: 'Partie 3'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 > Voici la **partie 3** d&#39;un guide sur la migration de PostgreSQL vers ClickHouse. À l&#39;aide d&#39;un exemple concret, ce guide montre comment modéliser les données dans ClickHouse lors d&#39;une migration depuis PostgreSQL.
 
-Nous recommandons aux utilisateurs migrant depuis Postgres de lire [le guide sur la modélisation des données dans ClickHouse](/fr/guides/clickhouse/data-modelling/schema-design). Ce guide utilise le même Stack Overflow dataset et présente plusieurs approches à l&#39;aide des fonctionnalités de ClickHouse.
+Nous recommandons aux utilisateurs migrant depuis Postgres de lire [le guide sur la modélisation des données dans ClickHouse](/fr/guides/clickhouse/data-modelling/schema-design). Ce guide utilise le même jeu de données Stack Overflow et présente plusieurs approches à l&#39;aide des fonctionnalités de ClickHouse.
 
 <div id="primary-ordering-keys-in-clickhouse">
-  ## Clés primaires (de tri) dans ClickHouse
+  ## Clés primaires (de tri) dans ClickHouse {#primary-ordering-keys-in-clickhouse}
 </div>
 
 Les utilisateurs venant de bases de données OLTP recherchent souvent un concept équivalent dans ClickHouse. En voyant que ClickHouse prend en charge la syntaxe `PRIMARY KEY`, ils peuvent être tentés de définir le schéma de leur table en utilisant les mêmes clés que dans leur base de données OLTP source. Ce n’est pas adapté.
 
-<div id="how-are-clickhouse-primary-keys-different">
-  ### En quoi les clés primaires de ClickHouse sont-elles différentes ?
-</div>
+### En quoi les clés primaires de ClickHouse sont-elles différentes ? {#how-are-clickhouse-primary-keys-different}
 
 Pour comprendre pourquoi il n’est pas approprié d’utiliser votre clé primaire OLTP dans ClickHouse, il faut comprendre les bases de l’indexation dans ClickHouse. Nous prenons Postgres comme point de comparaison, mais ces concepts généraux s’appliquent à d’autres bases de données OLTP.
 
-* Les clés primaires de Postgres sont, par définition, uniques pour chaque ligne. L’utilisation de [structures B-tree](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales) permet de retrouver efficacement des lignes individuelles à partir de cette clé. Bien que ClickHouse puisse être optimisé pour retrouver une valeur de ligne unique, les charges de travail analytiques nécessitent généralement de lire quelques colonnes sur un grand nombre de lignes. Le plus souvent, les filtres doivent identifier **un sous-ensemble de lignes** sur lequel une agrégation sera effectuée.
-* L’efficacité en mémoire et sur disque est primordiale à l’échelle à laquelle ClickHouse est souvent utilisé. Les données sont écrites dans les tables ClickHouse par blocs appelés parts, qui sont ensuite fusionnés en arrière-plan selon certaines règles. Dans ClickHouse, chaque part possède son propre index primaire. Lorsque des parts sont fusionnées, les index primaires de la part fusionnée le sont également. Contrairement à Postgres, ces index ne sont pas construits pour chaque ligne. À la place, l’index primaire d’une part contient une entrée d’index par groupe de lignes : cette technique s’appelle **l’indexation éparse**.
+* Les clés primaires de Postgres sont, par définition, uniques pour chaque ligne. L’utilisation de [structures B-tree](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales) permet d’effectuer efficacement le lookup de lignes individuelles à partir de cette clé. Bien que ClickHouse puisse être optimisé pour effectuer le lookup d’une valeur de ligne unique, les charges de travail analytiques nécessitent généralement de lire quelques colonnes sur un grand nombre de lignes. Le plus souvent, les filtres doivent identifier **un sous-ensemble de lignes** sur lequel une agrégation sera effectuée.
+* L’efficacité en mémoire et sur disque est primordiale à l’échelle à laquelle ClickHouse est souvent utilisé. Les données sont écrites dans les tables ClickHouse par blocs appelés parts, qui sont ensuite fusionnés en arrière-plan selon certaines règles. Dans ClickHouse, chaque part possède son propre index primaire. Lorsque des parts sont fusionnées, les index primaires de la part fusionnée le sont également. Contrairement à Postgres, ces index ne sont pas construits pour chaque ligne. À la place, l’index primaire d’une part contient une entrée d’index par groupe de lignes : cette technique s’appelle **l’indexation éparse**.
 * **L’indexation éparse** est possible parce que ClickHouse stocke sur disque les lignes d’une part dans l’ordre d’une clé spécifiée. Au lieu de localiser directement des lignes individuelles (comme avec un index basé sur un B-Tree), l’index primaire épars lui permet d’identifier rapidement, via une recherche binaire sur les entrées d’index, des groupes de lignes susceptibles de correspondre à la requête. Les groupes de lignes potentiellement correspondantes ainsi localisés sont ensuite transmis en parallèle au moteur ClickHouse afin de trouver les correspondances. Cette conception permet de conserver un index primaire compact (il tient entièrement en mémoire principale) tout en accélérant significativement les temps d’exécution des requêtes, en particulier pour les requêtes sur des plages de valeurs, typiques des cas d’usage analytiques.
 
 Pour plus de détails, nous recommandons ce [guide approfondi](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
-<Image img="/images/migrations/postgres-b-tree.webp" size="lg" alt="Index B-Tree PostgreSQL" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Index B-Tree PostgreSQL](/images/migrations/postgres-b-tree.webp)
+  </Frame>
+</div>
 
-<Image img="/images/migrations/postgres-sparse-index.webp" size="lg" alt="Index épars PostgreSQL" />
+<div className="ch-image-lg">
+  <Frame>
+    ![Index épars PostgreSQL](/images/migrations/postgres-sparse-index.webp)
+  </Frame>
+</div>
 
 La clé sélectionnée dans ClickHouse déterminera non seulement l’index, mais aussi l’ordre dans lequel les données sont écrites sur disque. De ce fait, elle peut avoir un impact considérable sur les niveaux de compression, ce qui peut à son tour affecter les performances des requêtes. Une clé de tri qui amène les valeurs de la plupart des colonnes à être écrites dans un ordre contigu permettra à l’algorithme de compression sélectionné (et aux codecs) de compresser les données plus efficacement.
 
-> Toutes les colonnes d’une table seront triées selon la valeur de la clé de tri spécifiée, qu’elles soient incluses ou non dans la clé elle-même. Par exemple, si `CreationDate` est utilisée comme clé, l’ordre des valeurs dans toutes les autres colonnes correspondra à l’ordre des valeurs de la colonne `CreationDate`. Plusieurs clés de tri peuvent être spécifiées : le tri suivra alors la même logique qu’une clause `ORDER BY` dans une requête `SELECT`.
+> Toutes les colonnes d’une table seront triées selon la valeur de la clé de tri spécifiée, qu’elles soient incluses ou non dans la clé elle-même. Par exemple, si `CreationDate` est utilisée comme clé, l’ordre des valeurs dans toutes les autres colonnes correspondra à l’ordre des valeurs de la colonne `CreationDate`. Plusieurs clés de tri peuvent être spécifiées : le tri suivra alors la même logique qu’une clause `ORDER BY` dans une requête `SELECT`.
 
 <div id="choosing-an-ordering-key">
-  ### Choisir une clé de tri
+  ### Choisir une clé de tri {#choosing-an-ordering-key}
 </div>
 
 Pour connaître les points à considérer et les étapes du choix d’une clé de tri, en prenant la table Posts comme exemple, consultez [cette section](/fr/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key).
 
 Lorsque vous utilisez la réplication en temps réel avec CDC, des contraintes supplémentaires s’appliquent. Consultez cette [documentation](/fr/integrations/clickpipes/postgres/ordering-keys) pour découvrir comment personnaliser les clés de tri avec CDC.
 
-<div id="partitions">
-  ## Partitions
-</div>
+## Partitions {#partitions}
 
 Si vous venez de Postgres, le concept de partitionnement de table vous est familier : il permet d’améliorer les performances et la facilité de gestion des grandes bases de données en divisant les tables en ensembles plus petits et plus faciles à administrer, appelés partitions. Ce partitionnement peut être mis en place à l’aide d’une plage de valeurs sur une colonne donnée (par exemple des dates), de listes définies ou d’un hash sur une clé. Cela permet aux administrateurs d’organiser les données selon des critères précis, comme des plages de dates ou des zones géographiques. Le partitionnement contribue à améliorer les performances des requêtes en accélérant l’accès aux données grâce au partition pruning et à une indexation plus efficace. Il facilite aussi les tâches de maintenance, comme les sauvegardes et les purges de données, en permettant d’effectuer des opérations sur des partitions individuelles plutôt que sur la table entière. En outre, le partitionnement peut considérablement améliorer la scalabilité des bases de données PostgreSQL en répartissant la charge entre plusieurs partitions.
 
 Dans ClickHouse, le partitionnement est défini sur une table lors de sa création initiale via la clause `PARTITION BY`. Cette clause peut contenir une expression SQL portant sur n’importe quelles colonnes, dont le résultat détermine vers quelle partition une ligne est envoyée.
 
-<Image img="/images/migrations/postgres-partitions.webp" size="md" alt="Partitions PostgreSQL vers partitions ClickHouse" />
+<div className="ch-image-md">
+  <Frame>
+    ![Partitions PostgreSQL vers partitions ClickHouse](/images/migrations/postgres-partitions.webp)
+  </Frame>
+</div>
 
 Les data parts sont associées logiquement à chaque partition sur le disque et peuvent être interrogées isolément. Dans l’exemple ci-dessous, nous partitionnons la table `posts` par année à l’aide de l’expression `toYear(CreationDate)`. À mesure que des lignes sont insérées dans ClickHouse, cette expression est évaluée pour chaque ligne et la ligne est dirigée vers la partition correspondante si elle existe (si c’est la première ligne pour une année donnée, la partition sera créée).
 
 ```sql
  CREATE TABLE posts
 (
-        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `Id` Int32 CODEC(Delta, Default),
         `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
         `AcceptedAnswerId` UInt32,
         `CreationDate` DateTime64(3, 'UTC'),
@@ -78,7 +84,7 @@ PARTITION BY toYear(CreationDate)
 Pour une description complète du partitionnement, voir [&quot;Partitions de table&quot;](/fr/concepts/core-concepts/partitions).
 
 <div id="applications-of-partitions">
-  ### Applications des partitions
+  ### Applications des partitions {#applications-of-partitions}
 </div>
 
 Le partitionnement dans ClickHouse a des usages similaires à ceux de Postgres, avec toutefois quelques différences subtiles. Plus précisément :
@@ -129,7 +135,7 @@ Ok.
 * **Optimisation des requêtes** - Bien que le partitionnement puisse améliorer les performances des requêtes, cela dépend fortement des schémas d’accès. Si les requêtes ne ciblent qu’un petit nombre de partitions (idéalement une seule), les performances peuvent s’améliorer. Cela n’est généralement utile que si la clé de partitionnement ne fait pas partie de la clé primaire et que vous filtrez dessus. En revanche, les requêtes qui doivent parcourir de nombreuses partitions peuvent être moins performantes qu’en l’absence de partitionnement (car celui-ci peut entraîner la création d’un plus grand nombre de parts). L’intérêt de cibler une seule partition sera encore moins marqué, voire nul, si la clé de partitionnement figure déjà parmi les premiers éléments de la clé primaire. Le partitionnement peut aussi être utilisé pour [optimiser les requêtes GROUP BY](/fr/reference/engines/table-engines/mergetree-family/custom-partitioning-key#group-by-optimisation-using-partition-key) si les valeurs de chaque partition sont uniques. Cependant, de manière générale, vous devez vous assurer que la clé primaire est optimisée et n’envisager le partitionnement comme technique d’optimisation des requêtes que dans des cas exceptionnels, lorsque les schémas d’accès portent sur un sous-ensemble spécifique et prévisible des données, par exemple un partitionnement par jour, avec la plupart des requêtes sur le dernier jour.
 
 <div id="recommendations-for-partitions">
-  ### Recommandations pour les partitions
+  ### Recommandations pour les partitions {#recommendations-for-partitions}
 </div>
 
 Considérez le partitionnement comme une technique de gestion des données. Il est particulièrement adapté lorsqu&#39;il faut supprimer des données du cluster, par exemple avec des données de séries temporelles, car la partition la plus ancienne peut [simplement être supprimée](/fr/reference/statements/alter/partition#drop-partitionpart).
@@ -141,7 +147,7 @@ Considérez le partitionnement comme une technique de gestion des données. Il e
 > Comme les parts sont créées indépendamment pour chaque partition, augmenter le nombre de partitions entraîne une hausse du nombre de parts, c.-à-d. qu&#39;il s&#39;agit d&#39;un multiple du nombre de partitions. Les clés de partitionnement à cardinalité élevée peuvent donc provoquer cette erreur et doivent être évitées.
 
 <div id="materialized-views-vs-projections">
-  ## Vues matérialisées vs projections
+  ## Vues matérialisées vs projections {#materialized-views-vs-projections}
 </div>
 
 Postgres permet de créer plusieurs index sur une même table, ce qui permet d’optimiser différents schémas d’accès. Cette flexibilité permet aux administrateurs et aux développeurs d’adapter les performances de la base de données à des requêtes précises et à des besoins opérationnels spécifiques. Le concept de projections dans ClickHouse, bien qu’il ne soit pas totalement analogue, permet toutefois de définir plusieurs clauses `ORDER BY` pour une table.
@@ -265,16 +271,18 @@ WHERE UserId = 8592047
 11 rows in set. Elapsed: 0.004 sec.
 ```
 
-<div id="when-to-use-projections">
-  ### Quand utiliser les projections
-</div>
+### Quand utiliser les projections {#when-to-use-projections}
 
 Les projections constituent une fonctionnalité intéressante pour les nouveaux utilisateurs, car elles sont automatiquement
 mises à jour à mesure que les données sont insérées. De plus, les requêtes peuvent simplement être envoyées à une seule
 table, les projections étant exploitées lorsque c&#39;est possible pour accélérer le temps
 de réponse.
 
-<Image img="/images/migrations/postgres-projections.webp" size="md" alt="Projections PostgreSQL dans ClickHouse" />
+<div className="ch-image-md">
+  <Frame>
+    ![Projections PostgreSQL dans ClickHouse](/images/migrations/postgres-projections.webp)
+  </Frame>
+</div>
 
 À l&#39;inverse des vues matérialisées, l&#39;utilisateur doit alors sélectionner la
 table cible optimisée appropriée ou réécrire sa requête, selon les filtres.
@@ -283,7 +291,7 @@ Cela reporte davantage la charge sur les applications utilisateur et accroît la
 Malgré ces avantages, les projections présentent certaines [limitations intrinsèques](/fr/concepts/features/projections/projections#when-to-use-projections)
 dont vous devez être conscient ; elles doivent donc être déployées avec parcimonie.
 
-Nous recommandons d&#39;utiliser des projections lorsque :
+Nous recommandons d&#39;utiliser des projections lorsque :
 
 * Une réorganisation complète des données est nécessaire. Bien que l&#39;expression de la
   projection puisse, en théorie, utiliser un `GROUP BY,` les vues matérialisées sont plus
@@ -298,15 +306,13 @@ Nous recommandons d&#39;utiliser des projections lorsque :
   Depuis la version 25.5, ClickHouse prend en charge la colonne virtuelle `_part_offset` dans
   les projections. Cela permet de stocker les projections de manière plus économe en espace.
 
-  Pour plus de détails, voir [« Projections »](/fr/concepts/features/projections/projections)
+  Pour plus de détails, voir [« Projections »](/fr/concepts/features/projections/projections)
 </Note>
 
-<div id="denormalization">
-  ## Dénormalisation
-</div>
+## Dénormalisation {#denormalization}
 
-Comme Postgres est une base de données relationnelle, son modèle de données est fortement [normalisé](https://en.wikipedia.org/wiki/Database_normalization) et implique souvent des centaines de tables. Dans ClickHouse, la dénormalisation peut parfois s’avérer utile pour optimiser les performances des JOIN.
+Postgres étant une base de données relationnelle, son modèle de données est fortement [normalisé](https://en.wikipedia.org/wiki/Database_normalization) et comporte souvent des centaines de tables. Dans ClickHouse, la dénormalisation peut parfois s&#39;avérer utile pour optimiser les performances des jointures.
 
-Vous pouvez consulter ce [guide](/fr/guides/clickhouse/data-modelling/denormalization), qui présente les avantages de la dénormalisation du Stack Overflow dataset dans ClickHouse.
+Vous pouvez consulter ce [guide](/fr/guides/clickhouse/data-modelling/denormalization), qui montre les avantages de la dénormalisation du jeu de données Stack Overflow dans ClickHouse.
 
-Ceci conclut notre guide d’introduction à la migration de Postgres vers ClickHouse. Nous vous recommandons de lire le [guide sur la modélisation des données dans ClickHouse](/fr/guides/clickhouse/data-modelling/schema-design) pour en savoir plus sur les fonctionnalités avancées de ClickHouse.
+Ce guide d&#39;introduction à la migration de Postgres vers ClickHouse s&#39;achève ici. Pour en savoir plus sur les fonctionnalités avancées de ClickHouse, nous vous recommandons de lire le [guide de modélisation des données dans ClickHouse](/fr/guides/clickhouse/data-modelling/schema-design).

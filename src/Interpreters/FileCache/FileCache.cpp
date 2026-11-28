@@ -88,6 +88,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 namespace FailPoints
@@ -114,6 +115,8 @@ namespace FileCacheSetting
     extern const FileCacheSettingsUInt64 background_download_threads;
     extern const FileCacheSettingsUInt64 background_download_queue_size_limit;
     extern const FileCacheSettingsUInt64 background_download_max_file_segment_size;
+    extern const FileCacheSettingsNonZeroUInt64 background_cleanup_threads;
+    extern const FileCacheSettingsNonZeroUInt64 background_cleanup_elements_per_thread;
     extern const FileCacheSettingsDouble keep_free_space_size_ratio;
     extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
     extern const FileCacheSettingsUInt64 keep_free_space_remove_batch;
@@ -328,7 +331,9 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , metadata(settings[FileCacheSetting::path],
                settings[FileCacheSetting::background_download_queue_size_limit],
                settings[FileCacheSetting::background_download_threads],
-               write_cache_per_user_directory, settings[FileCacheSetting::use_real_disk_size])
+               write_cache_per_user_directory, settings[FileCacheSetting::use_real_disk_size],
+               settings[FileCacheSetting::background_cleanup_threads],
+               settings[FileCacheSetting::background_cleanup_elements_per_thread])
     , check_cache_probability(settings[FileCacheSetting::check_cache_probability])
 {
     CachePriorityCreatorFunction creator_function;
@@ -600,6 +605,8 @@ void FileCache::initializeImpl(bool load_metadata)
         /// initialization does not leave an orphaned task rescheduling on `this`.
         if (background_cleanup_task)
             background_cleanup_task->deactivate();
+        /// The cleanup thread is not started, and a retried load would queue these directories again.
+        metadata.dropEmptyKeyDirectoriesFromStartup();
         init_exception = std::current_exception();
         tryLogCurrentException(__PRETTY_FUNCTION__);
         throw;
@@ -1320,10 +1327,7 @@ bool FileCache::tryReserve(
         return false;
     }
 
-    cache_reserve_active_threads.fetch_add(1, std::memory_order_relaxed);
-    SCOPE_EXIT({
-        cache_reserve_active_threads.fetch_sub(1, std::memory_order_relaxed);
-    });
+    IFileCachePriority::SharedEvictionCursor::ActiveEvictor reserve_evictor(reserve_cursor);
 
     LOG_TEST(log, "Trying to reserve space ({} bytes) for {}:{}", size, file_segment.key(), file_segment.offset());
 
@@ -1523,22 +1527,12 @@ bool FileCache::doEviction(
                 CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
         };
 
-        /// Under sustained concurrency the `Reserve` eviction cursor is never reset, so eviction
-        /// degrades from strict LRU order to a clock-like sweep. This is a deliberate trade-off:
-        /// resuming from the cursor is cheaper than rescanning the queue head on every reservation.
-        const bool resume_reserve_cursor = cache_reserve_active_threads.load(std::memory_order_relaxed) > 1;
-        const auto eviction_cursor = resume_reserve_cursor
-            ? IFileCachePriority::EvictionCursor::Reserve
-            : IFileCachePriority::EvictionCursor::FromHead;
-        if (!resume_reserve_cursor)
-            main_priority->resetEvictionPos(IFileCachePriority::EvictionCursor::Reserve);
-
         if (!main_priority->collectCandidatesForEviction(
                 main_eviction_info,
                 reserve_stat,
                 eviction_candidates,
                 main_priority_iterator,
-                eviction_cursor,
+                reserve_cursor.getCursor(*main_priority),
                 /* max_candidates_size */0,
                 /* is_total_space_cleanup */false,
                 origin_info,
@@ -1602,8 +1596,11 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     if (shutdown)
         return;
 
-    while (fiu_fail(FailPoints::file_cache_stall_free_space_ratio_keeping_thread))
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    fiu_do_on(FailPoints::file_cache_stall_free_space_ratio_keeping_thread,
+    {
+        while (fiu_fail(FailPoints::file_cache_stall_free_space_ratio_keeping_thread))
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    });
 
     Stopwatch watch;
     size_t reschedule_ms = free_space_keeping_reschedule_ms;
@@ -2085,6 +2082,42 @@ void FileCache::loadMetadata()
     main_priority->shuffle();
 }
 
+struct FileCache::LoadMetadataProgress
+{
+    std::atomic<size_t> listed_key_prefix_directories = 0;
+    std::atomic<size_t> empty_key_prefix_directories = 0;
+    std::atomic<size_t> loaded_keys = 0;
+    std::atomic<size_t> keys_without_file_segments = 0;
+    std::atomic<size_t> loaded_file_segments = 0;
+    std::atomic<size_t> failed_to_fit_file_segments = 0;
+    std::atomic<size_t> empty_key_directories = 0;
+    std::atomic<size_t> empty_key_directories_removed_over_memory_limit = 0;
+
+    void logIfDue(const LoggerPtr & logger)
+    {
+        if (since_last_log.compareAndRestart(log_period_sec))
+            logNow(logger, "Loading");
+    }
+
+    void logNow(const LoggerPtr & logger, std::string_view state) const
+    {
+        LOG_INFO(logger,
+            "{} filesystem cache: {} sec elapsed, {} key prefix directories listed, {} empty key prefix directories removed, "
+            "{} keys with {} file segments loaded, {} keys removed because no file segment was loaded for them, "
+            "{} file segments removed because they do not fit, {} empty key directories left for background cleanup, "
+            "{} empty key directories removed during the load because of the memory limit",
+            state, since_start.elapsedSeconds(), listed_key_prefix_directories.load(),
+            empty_key_prefix_directories.load(), loaded_keys.load(), loaded_file_segments.load(),
+            keys_without_file_segments.load(), failed_to_fit_file_segments.load(),
+            empty_key_directories.load(), empty_key_directories_removed_over_memory_limit.load());
+    }
+
+private:
+    static constexpr double log_period_sec = 30;
+    Stopwatch since_start;
+    AtomicStopwatch since_last_log;
+};
+
 void FileCache::loadMetadataImpl()
 {
     auto parse_user = [&](const fs::path & path) -> std::optional<OriginInfo>
@@ -2242,6 +2275,7 @@ void FileCache::loadMetadataImpl()
     /// so listing threads load all keys directly.
     ConcurrentBoundedQueue<std::pair<fs::path, OriginInfo>> key_dirs_queue(num_loading_threads == 0 ? 0 : 1000);
 
+    LoadMetadataProgress progress;
     std::exception_ptr first_exception;
     std::mutex exception_mutex;
     /// Tracks how many listing threads are still running.
@@ -2268,7 +2302,8 @@ void FileCache::loadMetadataImpl()
                 return;
             try
             {
-                loadMetadataForKey(item.first, item.second);
+                loadMetadataForKey(item.first, item.second, progress);
+                progress.logIfDue(log);
             }
             catch (...)
             {
@@ -2309,6 +2344,7 @@ void FileCache::loadMetadataImpl()
                         {
                             LOG_DEBUG(log, "Removing empty key prefix directory: {}", key_prefix_dir.string());
                             fs::remove(key_prefix_dir);
+                            ++progress.empty_key_prefix_directories;
                             continue;
                         }
 
@@ -2329,9 +2365,11 @@ void FileCache::loadMetadataImpl()
                             {
                                 if (stop_loading_metadata)
                                     break;
-                                loadMetadataForKey(key_dir_path, origin);
+                                loadMetadataForKey(key_dir_path, origin, progress);
                             }
+                            progress.logIfDue(log);
                         }
+                        ++progress.listed_key_prefix_directories;
                     }
                     catch (...)
                     {
@@ -2378,25 +2416,56 @@ void FileCache::loadMetadataImpl()
     if (first_exception)
         std::rethrow_exception(first_exception);
 
+    progress.logNow(log, "Loaded");
+
     main_priority->check(cache_state_guard.lock());
 
     assertCacheCorrectness();
 }
 
-void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginInfo & origin_info)
+void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginInfo & origin_info, LoadMetadataProgress & progress)
 {
+    const auto key_string = key_directory.filename().string();
+
     /// Open the directory once and reuse the iterator for the scan below.
     /// `fs::is_empty` would open the directory just to test for emptiness,
     /// which costs a redundant opendir/readdir per key directory.
     fs::directory_iterator offset_it{key_directory};
     if (offset_it == fs::directory_iterator())
     {
-        LOG_DEBUG(log, "Removing empty key directory: {}", key_directory.string());
-        fs::remove(key_directory);
+        /// The cleanup finds a queued directory by the name which `Key::toString` gives. An empty directory
+        /// with any other name, e.g. in upper case, would never be found, so it is removed here.
+        const bool named_by_key
+            = key_string.size() == Key::KEY_STRING_SIZE && Key::fromKeyString(key_string).toString() == key_string;
+        if (!named_by_key)
+        {
+            if (fs::remove(key_directory))
+                LOG_DEBUG(log, "Removed empty key directory: {}", key_directory.string());
+            return;
+        }
+
+        /// Not removed here: with many such directories the removal takes most of the load time.
+        try
+        {
+            metadata.addEmptyKeyDirectoryFromStartup(key_directory.parent_path().string(), Key::fromKeyString(key_string));
+            ++progress.empty_key_directories;
+        }
+        catch (const Exception & e)
+        {
+            /// The server is over its memory limit, so the queue cannot grow and the directory is removed
+            /// here: the load gets slower, but it does not fail and leaves no directory behind.
+            if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                throw;
+            if (fs::remove(key_directory))
+            {
+                LOG_DEBUG(log, "Removed empty key directory: {}", key_directory.string());
+                ++progress.empty_key_directories_removed_over_memory_limit;
+            }
+        }
         return;
     }
 
-    const auto key = Key::fromKeyString(key_directory.filename().string());
+    const auto key = Key::fromKeyString(key_string);
     auto key_metadata = metadata.getKeyMetadata(
         key,
         CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY,
@@ -2546,6 +2615,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
 
     /// Phase 3: construct FileSegment objects and emplace
     /// (no lock held, because a single key is loaded by a single thread).
+    size_t loaded_file_segments = 0;
     size_t failed_to_fit = 0;
     for (auto & segment : segments)
     {
@@ -2576,6 +2646,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
 
             if (inserted)
             {
+                ++loaded_file_segments;
                 LOG_TEST(log, "Added file segment {}:{} (size: {}) with path: {}", key, segment.offset, segment.size, segment.path.string());
             }
             else
@@ -2601,9 +2672,17 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
             size_limit, failed_to_fit, key);
     }
 
+    progress.loaded_file_segments += loaded_file_segments;
+    progress.failed_to_fit_file_segments += failed_to_fit;
+
     if (key_metadata->sizeUnlocked() == 0)
     {
+        ++progress.keys_without_file_segments;
         metadata.removeKey(key, /* if_exists */false, origin_info.user_id);
+    }
+    else
+    {
+        ++progress.loaded_keys;
     }
 }
 

@@ -1,0 +1,8 @@
+-- every row is live: the statistics describe the read and pick the keys
+1000	0
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
+-- id 0 superseded: the statistics still cover its row, so the keys are in syntax order
+1000	1
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+5660	18454685
+5660	18454685

@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 <Info>
 PlanetScale for Postgres is currently in [early access](https://planetscale.com/postgres).
 </Info>
@@ -34,7 +32,15 @@ ClickPipes supports Postgres version 12 and later.
 
    The output should be `logical` by default. If not, please log into the PlanetScale console and go to `Cluster configuration->Parameters` and scroll down to `Write-ahead log` to change it.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp" alt="Adjusting wal_level in PlanetScale console" size="md" border/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Adjusting wal_level in PlanetScale console](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp)
+
+</Frame>
+
+</div>
 
 <Warning>
 Changing this in the PlanetScale console WILL trigger a restart.
@@ -42,7 +48,15 @@ Changing this in the PlanetScale console WILL trigger a restart.
 
 2. Additionally, it is recommended to increase the setting `max_slot_wal_keep_size` from its default of 4GB. This is also done via the PlanetScale console by going to `Cluster configuration->Parameters` and then scroll down to `Write-ahead log`. To help determine the new value, please take a look [here](/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings).
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp" alt="Adjusting max_slot_wal_keep_size in PlanetScale console" size="md" border/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Adjusting max_slot_wal_keep_size in PlanetScale console](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp)
+
+</Frame>
+
+</div>
 
 ## Creating a user with permissions and publication {#creating-a-user-with-permissions-and-publication}
 

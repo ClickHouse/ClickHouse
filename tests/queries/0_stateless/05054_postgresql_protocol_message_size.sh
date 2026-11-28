@@ -32,6 +32,32 @@ def connect():
     return sock
 
 
+def connect_short():
+    """A connection whose client timeout is well below the server's `handshake_timeout_milliseconds` (30
+    seconds by default), so a message the server waits for shows up as a client timeout. With a timeout
+    at or above the handshake timeout the server would answer the same error response on its own, and a
+    regression that only makes the server wait would not be noticed."""
+    sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+    sock.settimeout(5)
+    return sock
+
+
+def read_message(sock):
+    """Reads one backend message: a type byte, a length that counts itself, and the body."""
+    def recv_exactly(size):
+        data = b""
+        while len(data) < size:
+            chunk = sock.recv(size - len(data))
+            if not chunk:
+                raise AssertionError("the connection closed before a complete message")
+            data += chunk
+        return data
+
+    message_type = recv_exactly(1)
+    (length,) = struct.unpack(">i", recv_exactly(4))
+    return message_type, recv_exactly(length - 4)
+
+
 def startup(sock, user):
     payload = ("user\x00" + user + "\x00\x00").encode()
     sock.sendall(struct.pack(">ii", 8 + len(payload), 196608) + payload)
@@ -91,6 +117,46 @@ try:
 except (BrokenPipeError, ConnectionResetError, socket.timeout):
     pass
 print("password without a terminator:", outcome(sock))
+sock.close()
+
+# The declared length of a message that is parsed before authentication is bounded by the server, because
+# the client that declares it is not trusted yet. Otherwise the client declares the Int32 maximum and the
+# server buffers up to 2 GiB of payload that never completes.
+sock = connect_short()
+startup(sock, user_plain)
+read_message(sock)
+sock.sendall(b"p" + struct.pack(">i", 0x7FFFFFFF))
+print("password message at the Int32 maximum:", outcome(sock))
+sock.close()
+
+# The same for a length just above the limit, which pins the boundary itself.
+sock = connect_short()
+startup(sock, user_plain)
+read_message(sock)
+sock.sendall(b"p" + struct.pack(">i", 10001))
+print("password message above the limit:", outcome(sock))
+sock.close()
+
+# The same for a `SASLInitialResponse`.
+sock = connect_short()
+startup(sock, user_scram)
+read_message(sock)
+sock.sendall(b"p" + struct.pack(">i", 0x7FFFFFFF))
+print("SASL initial response at the Int32 maximum:", outcome(sock))
+sock.close()
+
+# The same for a `SASLResponse`, the second SCRAM message. A well-formed client-first message is needed
+# to get there, and its own declared lengths stay small.
+sock = connect_short()
+startup(sock, user_scram)
+read_message(sock)
+client_first = b"n,,n=,r=abcdefghijklmnopqrstuvwx"
+body = b"SCRAM-SHA-256\x00" + struct.pack(">i", len(client_first)) + client_first
+sock.sendall(b"p" + struct.pack(">i", 4 + len(body)) + body)
+message_type, body = read_message(sock)
+assert message_type == b"R" and struct.unpack(">i", body[:4])[0] == 11, body
+sock.sendall(b"p" + struct.pack(">i", 0x7FFFFFFF))
+print("SASL final response at the Int32 maximum:", outcome(sock))
 sock.close()
 
 # A well-formed exchange still works: authenticate and run a query.

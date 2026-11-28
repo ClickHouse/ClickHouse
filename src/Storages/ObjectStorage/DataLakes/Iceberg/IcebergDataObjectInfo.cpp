@@ -95,16 +95,30 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(const RelativePathWithMetadata & pa
 
 std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransformer(
     ObjectStoragePtr object_storage,
+    const Iceberg::IcebergPathResolver & path_resolver,
     const SharedHeader & header,
     const std::optional<FormatSettings> & format_settings,
     FormatParserSharedResourcesPtr parser_shared_resources,
     ContextPtr context_)
 {
     IcebergDataObjectInfoPtr self = shared_from_this();
+    if (usesStreamingPositionDeletes(context_))
+    {
+        /// Several spellings of the data file in one delete file give one ascending run of positions per spelling.
+        auto streaming = std::make_shared<IcebergStreamingPositionDeleteTransform>(
+            header, self, object_storage, path_resolver, format_settings, parser_shared_resources, context_);
+        if (!streaming->hasUnorderedPositions())
+            return streaming;
+    }
+    return std::make_shared<IcebergBitmapPositionDeleteTransform>(
+        header, self, object_storage, path_resolver, format_settings, parser_shared_resources, context_);
+}
+
+bool IcebergDataObjectInfo::usesStreamingPositionDeletes(const ContextPtr & context_) const
+{
     /// A deletion vector is already a bitmap, so there is nothing to stream.
-    if (info.deletion_vector.has_value() || context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
-        return std::make_shared<IcebergBitmapPositionDeleteTransform>(header, self, object_storage, format_settings, parser_shared_resources, context_);
-    return std::make_shared<IcebergStreamingPositionDeleteTransform>(header, self, object_storage, format_settings, parser_shared_resources, context_);
+    return !info.position_deletes_objects.empty() && !info.deletion_vector.has_value()
+        && !context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value;
 }
 
 namespace
@@ -112,18 +126,20 @@ namespace
 
 void checkDataFileSupportsPositionDeletes(const Iceberg::IcebergObjectSerializableInfo & info)
 {
-    if (Poco::toUpper(info.file_format) != "PARQUET")
+    const String format = Poco::toUpper(info.file_format);
+    if (format != "PARQUET" && format != "ORC" && format != "AVRO")
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Position deletes are only supported for data files of Parquet format in Iceberg, but got {}",
+            "Position deletes are only supported for data files of Parquet, ORC and Avro formats in Iceberg, but got {}",
             info.file_format);
     }
 }
 
 }
 
-void IcebergDataObjectInfo::addPositionDeleteFile(const Iceberg::ProcessedManifestFileEntryPtr & position_delete_file, const String & resolved_storage_path)
+void IcebergDataObjectInfo::addPositionDeleteFile(
+    const Iceberg::ProcessedManifestFileEntryPtr & position_delete_file, const String & resolved_storage_path, bool this_file_only)
 {
     chassert(!position_delete_file->parsed_entry->isDeletionVector());
     checkDataFileSupportsPositionDeletes(info);
@@ -132,8 +148,11 @@ void IcebergDataObjectInfo::addPositionDeleteFile(const Iceberg::ProcessedManife
     if (info.deletion_vector.has_value())
         return;
 
+    std::optional<String> reference_data_file_path;
+    if (this_file_only)
+        reference_data_file_path = info.data_object_file_path_key.serialize();
     info.position_deletes_objects.emplace_back(
-        resolved_storage_path, position_delete_file->parsed_entry->file_format, std::nullopt,
+        resolved_storage_path, position_delete_file->parsed_entry->file_format, std::move(reference_data_file_path),
         position_delete_file->sequence_number);
 }
 

@@ -19,13 +19,13 @@ INSERT INTO t_05427 SELECT number, number + 100, number FROM numbers(1000) SETTI
 
 SELECT 'before the drop';
 SELECT min(x), max(x), count() FROM t_05427;
-SELECT count() FROM (EXPLAIN SELECT min(x), max(x) FROM t_05427) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(x), max(x) FROM t_05427) WHERE explain LIKE '%_statistics_projection%';
 
 ALTER TABLE t_05427 DROP COLUMN spare SETTINGS mutations_sync = 2;
 
 SELECT 'after a finished drop';
 SELECT min(x), max(x), count() FROM t_05427;
-SELECT count() FROM (EXPLAIN SELECT min(x), max(x) FROM t_05427) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(x), max(x) FROM t_05427) WHERE explain LIKE '%_statistics_projection%';
 
 -- A pending `DROP COLUMN b` followed by `ADD COLUMN b` must read the new default, not the stale
 -- statistics of the dropped column.
@@ -36,6 +36,6 @@ ALTER TABLE t_05427 ADD COLUMN b UInt64 DEFAULT 7 STATISTICS(basic) SETTINGS mut
 SELECT 'pending drop and add';
 SELECT count() > 0 FROM system.mutations WHERE database = currentDatabase() AND table = 't_05427' AND NOT is_done;
 SELECT min(b), max(b), count() FROM t_05427;
-SELECT count() FROM (EXPLAIN SELECT min(b), max(b) FROM t_05427) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(b), max(b) FROM t_05427) WHERE explain LIKE '%_statistics_projection%';
 
 DROP TABLE t_05427;

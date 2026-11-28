@@ -7,9 +7,7 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Demo days']
 ---
 
-<div id="version-aware-improved-schema-filtering">
-  ## تحسين تصفية المخطط بحسب الإصدار
-</div>
+## تحسين تصفية المخطط بحسب الإصدار {#version-aware-improved-schema-filtering}
 
 *عرض توضيحي من [@knudtty](https://github.com/knudtty)*
 
@@ -23,9 +21,7 @@ keywords: ['ClickStack', 'Demo days']
 
 **طلبات السحب ذات الصلة:** [#2341](https://github.com/hyperdxio/hyperdx/pull/2341) feat: إضافة تحسين direct&#95;read افتراضيًا للسجلات والتتبعات, [#2405](https://github.com/hyperdxio/hyperdx/pull/2405) feat(common-utils): تطبيق تحسين عناصر direct&#95;read الخاصة بـ KV على مرشحات SQL, [#2376](https://github.com/hyperdxio/hyperdx/pull/2376) feat: استخدام فهرس النص لتشغيل المرشحات والإكمال التلقائي
 
-<div id="better-log-parsing">
-  ## تحسين تحليل السجلات
-</div>
+## تحسين تحليل السجلات {#better-log-parsing}
 
 *عرض توضيحي من [@dhable](https://github.com/dhable)*
 
@@ -39,9 +35,7 @@ keywords: ['ClickStack', 'Demo days']
 
 **طلبات السحب ذات الصلة:** [#2363](https://github.com/hyperdxio/hyperdx/pull/2363) fix(log-parser): تخطّي الاستدلال النصي عندما يُحلَّل المحتوى كـ JSON مع وجود حقل `level`
 
-<div id="mcp-server-improvements">
-  ## تحسينات خادم MCP
-</div>
+## تحسينات خادم MCP {#mcp-server-improvements}
 
 *عرض توضيحي من [@brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -53,25 +47,21 @@ keywords: ['ClickStack', 'Demo days']
 
 **طلبات السحب ذات الصلة:** [#2337](https://github.com/hyperdxio/hyperdx/pull/2337) feat(mcp): تحسين جودة أدوات MCP — تلميحات الأخطاء، والمساعدات المشتركة، ورسائل أفضل، [#2396](https://github.com/hyperdxio/hyperdx/pull/2396) refactor(mcp): إعادة تسمية بادئات الأدوات من hyperdx&#95; إلى clickstack&#95;، [#2343](https://github.com/hyperdxio/hyperdx/pull/2343) feat(mcp): إضافة أدوات patch&#95;dashboard وget&#95;dashboard&#95;tile وsearch&#95;dashboards، [#2418](https://github.com/hyperdxio/hyperdx/pull/2418) fix(mcp): تحسين أوصاف وأمثلة alias لتسهيل قراءة وسائل إيضاح المخططات، [#2412](https://github.com/hyperdxio/hyperdx/pull/2412) refactor: تبسيط التحقق من صحة MCP ObjectId باستخدام المساعدات المشتركة وعمليات التحقق على مستوى المخطط
 
-<div id="new-series-color-palette">
-  ## لوحة ألوان جديدة للسلاسل
-</div>
+## لوحة ألوان جديدة للسلاسل {#new-series-color-palette}
 
-*عرض توضيحي من [@elizabetdev](https://github.com/elizabetdev)*
+*عرض توضيحي يقدّمه [@elizabetdev](https://github.com/elizabetdev)*
 
 <Frame>
   <iframe src="https://www.youtube.com/embed/YzECP3diWvg" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-عملت Elizabet على توحيد لوحة ألوان تصور البيانات عبر سمات HyperDX وClickStack، دعمًا لعمل Alex على منتقي الألوان. كانت لكل سمة لوحة منفصلة مع قواعد استثناء خاصة بها، مما جعل التعامل مع الألوان أعقد من اللازم. وكان الهدف هو اعتماد لوحة واحدة تعمل مع كلتيهما.
+عملت Elizabet على توحيد لوحة ألوان تصور البيانات عبر سمات واجهة مستخدم ClickStack وClickStack، دعمًا لعمل Alex على منتقي الألوان. كانت لكل سمة لوحة منفصلة مع قواعد استثناء خاصة بها، مما جعل التعامل مع الألوان أعقد من اللازم. وكان الهدف هو اعتماد لوحة واحدة تعمل مع كلتيهما.
 
 اختبرت ذلك بمقارنة لوحات ألوان معتمدة في المجال (Tableau وObservable وIBM) باستخدام أداة لمحاكاة الرؤية اللونية للتحقق من التباين وإمكانية الوصول. وكان أداء لوحة ClickHouse ضعيفًا، إذ لا يوفر اللون الأخضر تباينًا كافيًا على خلفية بيضاء. كما أن كلًا من Tableau وObservable يفشل في فحص واحد على الأقل، بينما تجتاز لوحة IBM جميع الفحوصات لكنها تضم خمسة ألوان فقط، وهذا غير كافٍ. وكانت لوحة Observable الأقرب إجمالًا، مع تعديل طفيف على اللون الأزرق، وستُعتمد الآن في كلتا السمتين.
 
 **طلبات السحب ذات الصلة:** [#2362](https://github.com/hyperdxio/hyperdx/pull/2362) refactor(theme): rename chart palette tokens to hue names + unify across themes
 
-<div id="new-page-layout-with-sticky-header">
-  ## تخطيط صفحة جديد مع رأس صفحة مثبت
-</div>
+## تخطيط صفحة جديد مع رأس صفحة مثبت {#new-page-layout-with-sticky-header}
 
 *عرض توضيحي بواسطة [@elizabetdev](https://github.com/elizabetdev)*
 
@@ -85,9 +75,7 @@ keywords: ['ClickStack', 'Demo days']
 
 **طلبات السحب ذات الصلة:** [#2282](https://github.com/hyperdxio/hyperdx/pull/2282) إضافة PageHeader/PageLayout وترحيل Sessions، [#2345](https://github.com/hyperdxio/hyperdx/pull/2345) استخدام عنوان PageHeader في صفحات القوائم، [#2346](https://github.com/hyperdxio/hyperdx/pull/2346) ترحيل Service Map إلى PageLayout، [#2347](https://github.com/hyperdxio/hyperdx/pull/2347) ترحيل لوحة معلومات Kubernetes إلى PageLayout، [#2348](https://github.com/hyperdxio/hyperdx/pull/2348) ترحيل لوحة معلومات ClickHouse إلى PageLayout، [#2364](https://github.com/hyperdxio/hyperdx/pull/2364) feat(dashboard): الترحيل إلى PageLayout مع شريط أدوات استعلام مثبت، [#2394](https://github.com/hyperdxio/hyperdx/pull/2394) fix(PageHeader): إبقاء الرأس المثبت أسفل تراكبات الدرج الجانبي المنزلق
 
-<div id="new-datasource-selector-and-color-picking-for-series">
-  ## محدد مصادر بيانات جديد وانتقاء الألوان للسلاسل
-</div>
+## محدد مصادر بيانات جديد وانتقاء الألوان للسلاسل {#new-datasource-selector-and-color-picking-for-series}
 
 *عرض توضيحي بواسطة [@alex-fedotyev](https://github.com/alex-fedotyev)*
 
@@ -101,9 +89,7 @@ keywords: ['ClickStack', 'Demo days']
 
 **طلبات السحب ذات الصلة:** [#2365](https://github.com/hyperdxio/hyperdx/pull/2365) feat(source-picker): chip + kebab menu UX, [#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): number tile static color picker
 
-<div id="better-hints-for-dashboard-actions">
-  ## تلميحات أفضل لإجراءات لوحة المعلومات
-</div>
+## تلميحات أفضل لإجراءات لوحة المعلومات {#better-hints-for-dashboard-actions}
 
 *عرض توضيحي من [@alex-fedotyev](https://github.com/alex-fedotyev)*
 

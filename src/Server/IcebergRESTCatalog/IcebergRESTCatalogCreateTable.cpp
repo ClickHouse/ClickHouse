@@ -45,7 +45,10 @@ void collectAndValidateNestedFields(const Poco::Dynamic::Var & type, std::set<In
     if (type.isString())
     {
         /// Reuse type validation logic in IcebergSchemaProcessor.
-        IcebergSchemaProcessor::getSimpleType(type.extract<String>());
+        const auto & name = type.extract<String>();
+        if (IcebergSchemaProcessor::getSimpleType(name)->onlyNull())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Iceberg type '{}' requires format-version 3, but only format-version 2 tables can be created", name);
         return;
     }
 
@@ -106,6 +109,8 @@ std::set<Int64> prepareInitialSchema(Poco::JSON::Object::Ptr schema)
     collectAndValidateNestedFields(Poco::Dynamic::Var(schema), ids);
     schema->set(f_type, f_struct);
     schema->set(f_schema_id, 0);
+    if (auto violation = IcebergSchemaProcessor::findSchemaViolation(*schema, /*is_table_schema=*/ true))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid 'schema': {}", *violation);
     return ids;
 }
 

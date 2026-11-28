@@ -34,13 +34,13 @@ struct SettingsProfilesInfo
     {
     }
 
-    std::shared_ptr<const SettingsConstraintsAndProfileIDs> getConstraintsAndProfileIDs(
+    [[nodiscard]] std::shared_ptr<const SettingsConstraintsAndProfileIDs> getConstraintsAndProfileIDs(
         const std::shared_ptr<const SettingsConstraintsAndProfileIDs> & previous = nullptr) const;
 
     friend bool operator ==(const SettingsProfilesInfo & lhs, const SettingsProfilesInfo & rhs);
     friend bool operator !=(const SettingsProfilesInfo & lhs, const SettingsProfilesInfo & rhs) { return !(lhs == rhs); }
 
-    Strings getProfileNames() const;
+    [[nodiscard]] Strings getProfileNames() const;
 
 private:
     const AccessControl & access_control;

@@ -1,0 +1,948 @@
+---
+slug: /clickstack/self-configured/managing/performance-tuning
+title: '성능 튜닝'
+sidebarTitle: '성능 튜닝'
+description: '자체 관리형 ClickHouse Observability 성능 튜닝'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', '관측성', '로그', '성능', '최적화']
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+import OtelLogsSchema from '/snippets/ko/clickstack/_schema_otel_logs.mdx';
+import OtelTracesSchema from '/snippets/ko/clickstack/_schema_otel_traces.mdx';
+
+<Note>
+  이 페이지에서는 **자체 관리형 ClickHouse Observability**를 다룹니다. 권장되는 완전 관리형 환경에 대해서는 [여기](/ko/clickstack/observability/overview)의 문서를 참조하십시오.
+</Note>
+
+## 소개 {#introduction}
+
+이 가이드는 자체 관리형 ClickHouse Observability에서 가장 일반적이고 효과적인 성능 최적화 방법을 중점적으로 다룹니다. 여기서 다루는 최적화만으로도 보통 하루 최대 수십 테라바이트 규모의 데이터를 처리하는 실제 관측성 워크로드(workloads) 대부분을 충분히 최적화할 수 있습니다.
+
+최적화 방법은 순서를 고려하여 배치되어 있으며, 가장 간단하면서도 효과가 큰 기법부터 시작해 점차 고급 및 특수 튜닝으로 이어집니다. 앞부분의 최적화를 먼저 적용하십시오. 이것만으로도 상당한 성능 향상을 얻는 경우가 많습니다. 데이터 양이 늘어나고 워크로드의 요구 수준이 높아질수록 뒷부분의 기법을 검토할 필요성도 커집니다.
+
+## ClickHouse 개념 {#clickhouse-concepts}
+
+이 가이드에서 설명하는 최적화를 적용하기 전에 몇 가지 핵심 ClickHouse 개념을 숙지해 두는 것이 중요합니다.
+
+서비스에서 각 **데이터 소스는 하나 이상의 ClickHouse 테이블에 직접 매핑됩니다**. OpenTelemetry를 사용하면 서비스가 로그, trace, 메트릭 데이터를 저장하는 기본 테이블 세트를 생성하고 관리합니다. 사용자 정의 스키마(schemas)를 사용하거나 테이블을 직접 관리하고 있다면 이러한 개념에 이미 익숙할 수 있습니다. 반면 OpenTelemetry Collector로 데이터를 전송하기만 한다면 이러한 테이블은 자동으로 생성되며, 아래에서 설명하는 모든 최적화는 이 테이블에 적용됩니다.
+
+| 데이터 유형        | 테이블                                                                                                                    |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 로그            | [otel&#95;logs](/ko/clickstack/self-configured/ingesting-data/schemas#logs)                                               |
+| trace         | [otel&#95;traces](/ko/clickstack/self-configured/ingesting-data/schemas#traces)                                           |
+| 메트릭(게이지)      | [otel&#95;metrics&#95;gauge](/ko/clickstack/self-configured/ingesting-data/schemas#gauge)                                 |
+| 메트릭(합계)       | [otel&#95;metrics&#95;sum](/ko/clickstack/self-configured/ingesting-data/schemas#sum)                                     |
+| 메트릭(히스토그램)    | [otel&#95;metrics&#95;histogram](/ko/clickstack/self-configured/ingesting-data/schemas#histogram)                         |
+| 메트릭(지수 히스토그램) | [otel&#95;metrics&#95;exponentialhistogram](/ko/clickstack/self-configured/ingesting-data/schemas#exponential-histograms) |
+| 메트릭(요약)       | [otel&#95;metrics&#95;summary](/ko/clickstack/self-configured/ingesting-data/schemas#summary-table)                       |
+| 세션(Sessions)  | [hyperdx&#95;sessions](/ko/clickstack/self-configured/ingesting-data/schemas#sessions)                                    |
+
+테이블은 ClickHouse의 [데이터베이스](/ko/reference/statements/create/database)에 속합니다. 기본적으로 `default` 데이터베이스가 사용되며, 이는 [OpenTelemetry collector에서 변경](/ko/clickstack/self-configured/managing/config#otel-collector)할 수 있습니다.
+
+<Warning>
+  **로그와 trace에 집중**
+
+  대부분의 경우 성능 튜닝은 로그 및 trace 테이블을 중심으로 이루어집니다. 메트릭 테이블도 필터링에 맞게 최적화할 수 있지만, 해당 스키마(schemas)는 Prometheus 스타일 워크로드에 맞춰 의도적으로 설계되어 있어 일반적인 차트 작성에는 대개 수정할 필요가 없습니다. 반면 로그와 trace는 훨씬 다양한 접근 패턴을 지원하므로 튜닝 효과가 가장 큽니다. 세션 데이터는 사용자 경험이 고정되어 있어 스키마를 수정할 일이 거의 없습니다.
+</Warning>
+
+최소한 다음 ClickHouse 기본 개념은 이해하고 있어야 합니다.
+
+| 개념                                    | 설명                                                                                                                                                       |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **테이블(Tables)**                       | 서비스의 데이터 소스가 기반 ClickHouse 테이블과 어떻게 대응되는지를 다룹니다. ClickHouse의 테이블은 주로 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 엔진을 사용합니다. |
+| **파트(Parts)**                         | 데이터가 변경 불가능한 파트로 기록되고 시간이 지나면서 머지되는 방식입니다.                                                                                                               |
+| **파티션(Partitions)**                   | 파티션은 테이블의 데이터 파트를 체계적인 논리 단위로 묶습니다. 이렇게 묶인 단위는 관리, 쿼리, 최적화가 더 쉽습니다.                                                                                      |
+| **머지(Merges)**                        | 쿼리 대상 파트 수를 줄이기 위해 파트를 하나로 병합하는 내부 프로세스입니다. 쿼리 성능 유지에 필수적입니다.                                                                                            |
+| **그래뉼(Granules)**                     | 쿼리 실행 중 ClickHouse가 읽거나 건너뛰는(프루닝) 최소 데이터 단위입니다.                                                                                                      |
+| **기본(정렬) 키(Primary (ordering) keys)** | `ORDER BY` 키가 디스크상의 데이터 레이아웃, 압축, 쿼리 프루닝을 결정하는 방식입니다.                                                                                                |
+
+이러한 개념은 ClickHouse 성능의 핵심입니다. 데이터가 어떻게 기록되고 디스크에 어떻게 구성되는지, 그리고 쿼리 시점에 ClickHouse가 불필요한 데이터 읽기를 얼마나 효율적으로 건너뛸 수 있는지가 모두 이 개념들에 따라 결정됩니다. materialized 컬럼, 스킵 인덱스, 기본 키(primary keys), 프로젝션, 구체화된 뷰(Materialized View) 등 이 가이드에서 다루는 모든 최적화는 이러한 핵심 메커니즘을 기반으로 합니다.
+
+튜닝을 시작하기 전에 다음 ClickHouse 문서를 먼저 살펴보는 것이 좋습니다.
+
+* [ClickHouse에서 테이블 생성하기](/ko/get-started/quickstarts/creating-tables) - 테이블에 대한 간단한 소개입니다.
+* [파트](/ko/concepts/core-concepts/parts)
+* [파티션](/ko/concepts/core-concepts/partitions)
+* [머지](/ko/concepts/core-concepts/merges)
+* [기본 키/인덱스](/ko/concepts/core-concepts/primary-indexes)
+* [ClickHouse의 데이터 저장 방식: 파트와 그래뉼](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes) - ClickHouse에서 데이터가 구성되고 쿼리되는 방식을 다루는 심화 가이드로, 그래뉼과 기본 키를 자세히 설명합니다.
+* [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree)- 명령어와 내부 세부 사항을 확인할 때 유용한 MergeTree 심화 참고 가이드입니다.
+
+아래에서 설명하는 모든 최적화는 표준 ClickHouse SQL을 사용해 기반 테이블에 직접 적용할 수 있으며, [ClickHouse Cloud SQL 콘솔](/ko/integrations/connectors/sql-clients/sql-console) 또는 [ClickHouse 클라이언트](/ko/concepts/features/interfaces/client)에서 실행하면 됩니다.
+
+## 최적화 1. 자주 조회되는 속성 구체화하기 {#materialize-frequently-queried-attributes}
+
+가장 먼저 적용할 수 있는 가장 간단한 최적화는 `LogAttributes`, `ScopeAttributes`, `ResourceAttributes`에서 자주 조회되는 속성을 파악한 다음, materialized 컬럼을 사용하여 이를 최상위 컬럼으로 승격하는 것입니다.
+
+이 최적화만으로도 하루 수십 테라바이트 규모까지 배포를 확장할 수 있는 경우가 많으므로, 더 고급 튜닝 기법을 검토하기 전에 먼저 적용하십시오.
+
+### 속성을 구체화하는 이유 {#why-materialize-attributes}
+
+이 서비스는 Kubernetes 레이블, 서비스 메타데이터, 사용자 정의 속성 등의 메타데이터를 `Map(String, String)` 컬럼에 저장합니다. 이 방식은 유연성이 높지만, Map 하위 키(Map subkey)를 쿼리할 때 성능에 중요한 영향을 미칩니다.
+
+Map 컬럼에서 단일 키를 쿼리하더라도 ClickHouse는 디스크에서 Map 컬럼 전체를 읽어야 합니다. Map에 키가 많으면 전용 컬럼을 읽을 때보다 불필요한 입출력(IO)이 발생하고 쿼리 속도가 느려집니다.
+
+자주 액세스하는 속성을 구체화(materializing)하면 삽입 시점(insert time)에 값을 추출하여 독립된 컬럼으로 저장하므로 이러한 오버헤드를 피할 수 있습니다.
+
+materialized 컬럼의 특징은 다음과 같습니다.
+
+* 삽입 시 자동으로 계산됩니다
+* INSERT 문에서 값을 명시적으로 설정할 수 없습니다
+* 모든 ClickHouse 표현식을 지원합니다
+* String을 더 효율적인 숫자 또는 날짜 타입으로 변환할 수 있습니다
+* 스킵 인덱스와 프라이머리 키를 활용할 수 있습니다
+* Map 전체에 액세스하지 않으므로 디스크 읽기가 줄어듭니다
+
+<Note>
+  이 서비스는 Map에서 추출된 materialized 컬럼을 자동으로 감지하며, 사용자가 원래 속성 경로로 계속 쿼리하더라도 쿼리 실행(Query Execution) 시 이를 내부적으로 활용합니다.
+</Note>
+
+### 예시 {#materialize-column-example}
+
+Kubernetes 메타데이터가 `ResourceAttributes`에 저장되는 trace용 기본 관측성 스키마(schema)를 살펴보겠습니다.
+
+<OtelTracesSchema />
+
+사용자는 `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`와 같은 Lucene 구문으로 trace를 필터링할 수 있습니다.
+
+<div className="ch-image-lg">
+  <Frame>
+    ![trace 필터링](/images/clickstack/performance_guide/trace_filtering.webp)
+  </Frame>
+</div>
+
+이 필터는 다음과 유사한 SQL 프레디케이트로 변환됩니다.
+
+```sql
+ResourceAttributes['k8s.pod.name'] = 'checkout-675775c4cc-f2p9c'
+```
+
+이 쿼리는 Map 키에 액세스하므로 ClickHouse는 조건에 일치하는 행마다 `ResourceAttributes` 컬럼 전체를 읽어야 합니다. Map에 키가 많으면 읽어야 하는 데이터의 양이 매우 커질 수 있습니다.
+
+이 속성을 자주 쿼리한다면 최상위 컬럼으로 구체화하는 것이 좋습니다.
+
+삽입 시점(insert time)에 파드 이름을 추출하려면 다음과 같이 구체화된 컬럼(materialized column)을 추가하십시오.
+
+```sql
+ALTER TABLE otel_v2.otel_traces
+ADD COLUMN PodName String
+MATERIALIZED ResourceAttributes['k8s.pod.name']
+```
+
+이제부터 **새로** 삽입되는 데이터는 파드 이름을 전용 컬럼인 `PodName`에 저장합니다.
+
+이제 사용자는 Lucene 구문을 사용하여 파드 이름을 효율적으로 쿼리할 수 있습니다(예: `PodName:"checkout-675775c4cc-f2p9c"`).
+
+<div className="ch-image-lg">
+  <Frame>
+    ![trace 필터링 v2](/images/clickstack/performance_guide/trace_filtering_v2.webp)
+  </Frame>
+</div>
+
+새로 삽입된 데이터는 맵 액세스를 완전히 건너뛰므로 I/O가 크게 줄어듭니다.
+
+또한 사용자가 `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`처럼 기존 속성 경로로 계속 쿼리하더라도, **서비스가 내부적으로 쿼리를 자동 재작성하여** 구체화된(materialized) `PodName` 컬럼을 사용합니다. 즉, 다음 프레디케이트를 사용합니다.
+
+```sql
+PodName = 'checkout-675775c4cc-f2p9c'
+```
+
+이를 통해 사용자는 대시보드, 알림, 저장된 쿼리(saved queries)를 변경하지 않고도 최적화의 이점을 누릴 수 있습니다.
+
+<Note>
+  기본적으로 materialized 컬럼은 `SELECT * queries`에서 제외됩니다. 이렇게 하면 쿼리 결과(query results)를 언제든지 테이블에 다시 삽입할 수 있다는 불변식이 유지됩니다.
+</Note>
+
+### 과거 데이터 구체화(materializing) {#materializing-historical-data}
+
+materialized 컬럼은 컬럼이 생성된 이후에 삽입된 데이터에만 자동으로 적용됩니다. 기존 데이터의 경우 materialized 컬럼에 대한 쿼리는 원래 맵에서 데이터를 읽도록 투명하게 폴백됩니다.
+
+과거 데이터에 대한 쿼리 성능이 중요하다면 다음과 같이 뮤테이션을 사용하여 컬럼을 백필할 수 있습니다.
+
+```sql
+ALTER TABLE otel_v2.otel_traces
+MATERIALIZE COLUMN PodName
+```
+
+이 작업은 기존 [파트](/ko/concepts/core-concepts/parts)를 재작성하여 컬럼에 데이터를 채웁니다. 뮤테이션(mutation)은 파트별로 single-threaded 방식으로 실행되므로 대규모 데이터셋에서는 시간이 오래 걸릴 수 있습니다. 영향을 줄이려면 다음과 같이 뮤테이션 범위를 특정 파티션으로 한정할 수 있습니다:
+
+```sql
+ALTER TABLE otel_v2.otel_traces
+MATERIALIZE COLUMN PodName
+IN PARTITION '2026-01-02'
+```
+
+뮤테이션 진행 상황은 다음과 같이 `system.mutations` 테이블에서 모니터링할 수 있습니다.
+
+```sql
+SELECT *
+FROM system.mutations
+WHERE database = 'otel'
+  AND table = 'otel_traces'
+ORDER BY create_time DESC;
+```
+
+해당 뮤테이션(mutation)의 `is_done = 1`이 될 때까지 기다리십시오.
+
+<Warning>
+  뮤테이션은 추가적인 입출력(IO) 및 CPU 오버헤드를 발생시키므로 꼭 필요한 경우에만 사용해야 합니다. 대부분의 경우 오래된 데이터는 자연스럽게 만료되도록 두고, 새로 수집된 데이터에서 얻는 성능 개선 효과를 활용하는 것으로 충분합니다.
+</Warning>
+
+## 최적화 2. 스킵 인덱스 추가 {#adding-skip-indexes}
+
+자주 쿼리하는 속성을 구체화(materializing)했다면, 다음 최적화 단계로 데이터 스키핑 인덱스를 추가하여 쿼리 실행(Query Execution) 시 ClickHouse가 읽어야 하는 데이터 양을 더 줄일 수 있습니다.
+
+스킵 인덱스를 사용하면 ClickHouse는 일치하는 값이 없다고 판단되는 데이터 블록(blocks) 전체를 스캔하지 않고 건너뛸 수 있습니다. 기존의 보조 인덱스(secondary index)와 달리 스킵 인덱스는 그래뉼(granule) 단위로 동작하며, 쿼리 필터가 데이터셋의 상당 부분을 걸러낼 때 가장 효과적입니다. 올바르게 사용하면 쿼리 의미 체계를 바꾸지 않고도 high-cardinality 속성을 기준으로 한 필터링 속도를 크게 높일 수 있습니다.
+
+스킵 인덱스가 포함된 기본 trace 스키마(schema)는 다음과 같습니다.
+
+<OtelTracesSchema />
+
+이 인덱스는 다음 3가지 일반적인 패턴을 주요 대상으로 합니다.
+
+* TraceId, 세션 식별자, 속성 키 또는 값 등 high-cardinality 문자열 필터링
+* [`*AttributeItems`](#map-direct-read-optimization) 컬럼의 [텍스트 인덱스](#text-indexes)로 가속되는 Map 하위 키(Map subkey) 필터링
+* span 소요 시간 등 숫자 범위 필터링
+
+로그 테이블은 블룸 필터(Bloom filter) 대신 모든 곳에 `text(tokenizer = 'array')` 인덱스를 사용하며, 전문 검색을 위해 `lower(Body)`에 `text(tokenizer = 'splitByNonAlpha')` 인덱스를 추가로 정의합니다. 전체 DDL은 [&quot;테이블 및 스키마&quot;](/ko/clickstack/self-configured/ingesting-data/schemas#logs)를 참조하십시오.
+
+### 블룸 필터(Bloom filters) {#bloom-filters}
+
+블룸 필터 인덱스(Bloom filter indexes)는 서비스에서 가장 흔히 사용되는 스킵 인덱스 유형입니다. 고유 값(distinct values)이 보통 최소 수만 개에 이르는 높은 카디널리티(high cardinality)의 문자열 컬럼에 적합합니다. 세분화 수준(granularity) 1과 거짓 양성 비율(false-positive rate) 0.01은 기본 시작점으로 적절하며, 스토리지 오버헤드와 효과적인 프루닝 사이에서 균형을 맞춰 줍니다.
+
+최적화 1의 예시를 이어서, Kubernetes 파드 이름이 ResourceAttributes에서 구체화되었다고 가정합니다.
+
+```sql
+ALTER TABLE otel_traces
+ADD COLUMN PodName String
+MATERIALIZED ResourceAttributes['k8s.pod.name']
+```
+
+그런 다음 블룸 필터(Bloom filter) 스킵 인덱스를 추가하여 이 컬럼에 대한 필터링 속도를 높일 수 있습니다:
+
+```sql
+ALTER TABLE otel_traces
+ADD INDEX idx_pod_name PodName
+TYPE bloom_filter(0.01)
+GRANULARITY 1
+```
+
+스킵 인덱스를 추가한 후에는 구체화해야 합니다. 자세한 내용은 [&quot;스킵 인덱스 구체화(Materialize skip index)&quot;](#materialize-skip-index)를 참조하십시오.
+
+스킵 인덱스를 생성하고 구체화하면 ClickHouse는 요청된 파드 이름이 포함되지 않은 것이 확실한 그래뉼 전체를 건너뛸 수 있으므로, `PodName:"checkout-675775c4cc-f2p9c"`와 같은 쿼리를 실행할 때 읽는 데이터 양을 줄일 수 있습니다.
+
+블룸 필터(Bloom filters)는 특정 값이 비교적 적은 수의 파트에만 나타나도록 값이 분포되어 있을 때 가장 효과적입니다. 이러한 분포는 관측성 워크로드에서 자연스럽게 나타나는 경우가 많습니다. 파드 이름, 트레이스 ID, 세션 식별자와 같은 메타데이터는 시간과 상관관계가 있어 테이블의 정렬 키(ordering key)를 기준으로 모여 저장되기 때문입니다.
+
+모든 스킵 인덱스와 마찬가지로 블룸 필터도 선별적으로 추가해야 하며, 실제 쿼리 패턴(query patterns)으로 검증하여 측정 가능한 효과가 있는지 확인해야 합니다. 자세한 내용은 [&quot;스킵 인덱스 효과 평가&quot;](#evaluating-skip-index-effectiveness)를 참조하십시오.
+
+### 텍스트 인덱스(Text indexes) {#text-indexes}
+
+[텍스트 인덱스](/ko/reference/engines/table-engines/mergetree-family/textindexes)는 블룸 필터(Bloom filter)를 대체할 수 있는 방법입니다. 블룸 필터는 그래뉼을 확실하게 제외할 수 있는 확률적 구조이지만 거짓 양성 비율이 존재하므로, 제외되지 않은 그래뉼은 여전히 로딩하여 `WHERE` 조건으로 평가해야 합니다. 텍스트 인덱스는 토큰을 데이터 파트(part) 내의 정확한 오프셋에 매핑하는 역색인입니다. 그래뉼이 아닌 오프셋 단위로 평가하며 거짓 양성이 발생하지 않으므로, 대부분 원본 열(underlying column)을 로딩하지 않고도 `WHERE` 조건을 처리할 수 있습니다. 이러한 최적화를 [직접 읽기](https://github.com/ClickHouse/clickhouse-docs/pull/6356/%E2%80%A6)라고 합니다. 데이터 로딩은 쿼리 시간에서 가장 큰 비중을 차지하는 경우가 많으므로, 직접 읽기를 사용하면 쿼리 지연 시간을 크게 줄일 수 있습니다.
+
+또한 텍스트 인덱스는 그 자체로 쿼리할 수 있으므로, 서비스의 자동 완성 및 기타 내부 검사 기능에도 활용됩니다.
+
+대부분의 관측성 쿼리 패턴은 다음 2개의 토크나이저로 처리할 수 있습니다.
+
+| 토크나이저             | 용도                                   | 일반적인 컬럼                           |
+| ----------------- | ------------------------------------ | --------------------------------- |
+| `array`           | `Array(String)` 원소를 하나의 온전한 토큰으로 인덱싱 | `mapKeys(...)`, `*AttributeItems` |
+| `splitByNonAlpha` | 일반 텍스트 문자열에 대한 단어 단위 전문 검색           | `Body`, `lower(Body)`, `SpanName` |
+
+#### Map 및 배열 컬럼(array column)용 Array 토크나이저 {#array-tokenizer}
+
+기본 로그 스키마는 `mapKeys`와 구체화된(materialized) 항목 배열을
+`array` 토크나이저로 인덱싱합니다.
+
+```sql
+INDEX idx_log_attr_key mapKeys(LogAttributes) TYPE text(tokenizer = 'array'),
+INDEX idx_log_attr_items LogAttributeItems TYPE text(tokenizer = 'array')
+```
+
+각 Map 키(또는 배열 원소)는 하나의 토큰이 됩니다. 따라서 알려진
+속성 키를 기준으로 필터링하면, 해당 키가 없는 행은 이를 감싸는 Map 컬럼을 스캔(Scan)하지 않고도
+프루닝됩니다. 바로 이 메커니즘 덕분에 [맵 직접 읽기 최적화](#map-direct-read-optimization)가
+효과를 발휘합니다.
+
+#### 로그 본문용 `splitByNonAlpha` {#text-index-body}
+
+`Body` 컬럼에 대한 전문 검색(Full-text search)에는 `splitByNonAlpha` 텍스트
+인덱스가 효과적입니다. 이 서비스는 대소문자를 구분하지 않는 Lucene 검색에서도
+이 인덱스를 활용할 수 있도록 `lower(Body)`에 인덱스를 정의합니다.
+
+```sql
+INDEX idx_lower_body lower(Body) TYPE text(tokenizer = 'splitByNonAlpha')
+```
+
+서비스가 `lower(Body)`에 대한 `text(tokenizer = 'splitByNonAlpha')` 인덱스를
+감지하면, `error` 또는 `"connection refused"`와 같은 암시적 컬럼 Lucene 쿼리를
+`hasAllTokens(lower(Body), lower(...))`로 재작성합니다. 재작성된 쿼리는
+`Body` 컬럼 전체를 읽지 않고 인덱스만으로 처리할 수 있습니다. 대부분의
+관측성 로그 워크로드에서 이는 필터링 속도를 가장 크게 높일 수 있는
+방법입니다.
+
+<Info>
+  **텍스트 인덱스와 `tokenbf_v1` 비교**
+
+  기존 `tokenbf_v1` 인덱스 유형(기본 trace 스키마(schema)의 `lower(SpanName)`에
+  아직 사용됨)은 기능은 유사하지만 ClickHouse 26.2 이상에서는 사용 중단이 권고됩니다.
+  새로 만드는 텍스트 검색 인덱스에는 `text(tokenizer = ...)`를 사용하십시오.
+</Info>
+
+토크나이저 옵션, 전처리기, 검증에 대한 자세한 내용은 [전문 검색 문서](/ko/reference/engines/table-engines/mergetree-family/textindexes)를 참조하십시오.
+
+#### 기본 로그 스키마의 텍스트 인덱스 {#text-indexes-in-default-logs-schema}
+
+업스트림에서 동기화된 기본 `otel_logs` 스키마에는 위에서 설명한 텍스트 인덱스가 모두 포함되어 있습니다. `TraceId`와 각 `mapKeys(...)` 및 `*AttributeItems` 배열에는 `text(tokenizer = 'array')`가 적용되고, 전문 검색을 위해 `lower(Body)`에는 `text(tokenizer = 'splitByNonAlpha')`가 적용됩니다. 정규 DDL은 [&quot;테이블 및 스키마&quot;](/ko/clickstack/self-configured/ingesting-data/schemas#logs)를 참조하십시오. 아래에도 동일한 스키마를 수록했습니다.
+
+<OtelLogsSchema />
+
+### MinMax 인덱스 {#min-max-indexes}
+
+MinMax 인덱스는 그래뉼(granule)마다 최솟값과 최댓값을 저장하며 매우 가볍습니다. 특히 숫자형 컬럼과 범위 쿼리에 효과적입니다. 모든 쿼리를 빠르게 만들어 주지는 않지만, 비용이 적으므로 숫자형 필드에는 거의 항상 추가할 만합니다.
+
+MinMax 인덱스는 숫자 값이 자연스럽게 정렬되어 있거나 각 파트 안에서 좁은 범위에 몰려 있을 때 가장 효과적입니다.
+
+`SpanAttributes`에서 Kafka 오프셋(offset)을 자주 조회한다고 가정해 보겠습니다.
+
+```sql
+SpanAttributes['messaging.kafka.offset']
+```
+
+이 값은 구체화한 후 숫자 유형으로 CAST할 수 있습니다.
+
+```sql
+ALTER TABLE otel_traces
+ADD COLUMN KafkaOffset UInt64
+MATERIALIZED toUInt64(SpanAttributes['messaging.kafka.offset'])
+```
+
+그런 다음 다음과 같이 minmax 인덱스를 추가할 수 있습니다.
+
+```sql
+ALTER TABLE otel_traces
+ADD INDEX idx_kafka_offset KafkaOffset TYPE minmax GRANULARITY 1
+```
+
+이를 통해 ClickHouse는 Kafka 오프셋(offset) 범위로 필터링할 때(예: 컨슈머 지연이나 재적용 동작을 디버깅할 때) 파트를 효율적으로 건너뛸 수 있습니다.
+
+앞서와 마찬가지로, 인덱스를 사용하려면 먼저 인덱스를 [구체화](#materialize-skip-index)해야 합니다.
+
+### 스킵 인덱스 구체화(Materialize skip index) {#materialize-skip-index}
+
+스킵 인덱스는 추가된 이후 새로 수집된 데이터에만 적용됩니다. 기존 데이터는 인덱스를 명시적으로 구체화하기 전까지는 인덱스의 이점을 얻을 수 없습니다.
+
+예를 들어 다음과 같이 스킵 인덱스를 이미 추가했다고 가정합니다.
+
+```sql
+ALTER TABLE otel_traces ADD INDEX idx_kafka_offset KafkaOffset TYPE minmax GRANULARITY 1;
+```
+
+기존 데이터에 대한 인덱스는 명시적으로 빌드해야 합니다:
+
+```sql
+ALTER TABLE otel_traces MATERIALIZE INDEX idx_kafka_offset;
+```
+
+<Info>
+  **스킵 인덱스 구체화(materializing)**
+
+  스킵 인덱스 구체화는 일반적으로 부담이 적은 경량 작업이며 안전하게 실행할 수 있습니다. 특히 minmax 인덱스는 더욱 그렇습니다. 대규모 데이터 세트(datasets)에 블룸 필터 인덱스(Bloom filter indexes)를 구체화할 때는 리소스 사용량을 더 잘 제어할 수 있도록 파티션 단위로 구체화하는 것이 좋습니다. 예를 들면 다음과 같습니다.
+
+  ```sql
+  ALTER TABLE otel_v2.otel_traces
+  MATERIALIZE INDEX idx_kafka_offset
+  IN PARTITION '2026-01-02';
+  ```
+</Info>
+
+스킵 인덱스 구체화는 뮤테이션으로 실행되며, 진행 상황은 시스템 테이블을 통해 모니터링할 수 있습니다.
+
+```sql
+
+SELECT *
+FROM system.mutations
+WHERE database = 'otel'
+  AND table = 'otel_traces'
+ORDER BY create_time DESC;
+```
+
+해당 뮤테이션의 `is_done = 1`이 될 때까지 기다리십시오.
+
+완료되면 다음과 같이 인덱스 데이터가 생성되었는지 확인하십시오.
+
+```sql
+SELECT database, table, name,
+       data_compressed_bytes,
+       data_uncompressed_bytes,
+       marks_bytes
+FROM system.data_skipping_indices
+WHERE database = 'otel'
+  AND table = 'otel_traces'
+  AND name = 'idx_kafka_offset';
+```
+
+0이 아닌 값은 인덱스가 성공적으로 구체화되었음을 의미합니다.
+
+스킵 인덱스의 크기는 쿼리 성능(query performance)에 직접적인 영향을 미친다는 점에 유의해야 합니다. 수십~수백 기가바이트에 달하는 매우 큰 스킵 인덱스는 쿼리 실행(Query Execution) 중 평가하는 데 상당한 시간이 걸릴 수 있으며, 그 결과 인덱스의 이점이 줄어들거나 아예 사라질 수도 있습니다.
+
+실제로 minmax 인덱스는 대개 크기가 매우 작고 평가 비용이 낮으므로 거의 항상 안심하고 구체화할 수 있습니다. 반면 블룸 필터 인덱스(Bloom filter indexes)는 카디널리티(cardinality), 세분화 수준, 거짓 양성(false-positive) 확률에 따라 크기가 크게 늘어날 수 있습니다.
+
+허용되는 거짓 양성 비율을 높이면 블룸 필터(Bloom filter)의 크기를 줄일 수 있습니다. 예를 들어 확률 매개변수를 `0.01`에서 `0.05`로 높이면 인덱스가 더 작아져 평가 속도가 빨라지는 대신 프루닝 효과는 약해집니다. 건너뛰는 그래뉼 수는 줄어들 수 있지만, 인덱스 평가가 빨라지므로 전체 쿼리 지연 시간은 오히려 개선될 수 있습니다.
+
+따라서 블룸 필터 매개변수 튜닝은 워크로드에 따라 효과가 달라지는 최적화이므로, 실제 쿼리 패턴(query patterns)과 운영 환경 수준의 데이터 볼륨으로 검증해야 합니다.
+
+스킵 인덱스에 대한 자세한 내용은 [&quot;ClickHouse 데이터 스키핑 인덱스 이해하기&quot;](/ko/concepts/features/performance/skip-indexes/skipping-indexes-examples) 가이드를 참조하십시오.
+
+### 스킵 인덱스 효과 평가하기 {#evaluating-skip-index-effectiveness}
+
+스킵 인덱스 프루닝을 평가하는 가장 확실한 방법은 `EXPLAIN indexes = 1`을 사용하는 것입니다. 이 명령은 쿼리 계획의 각 스테이지에서 제외되는 [파트](/ko/concepts/core-concepts/parts)와 [그래뉼](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)의 수를 보여 줍니다. 대부분은 Skip 스테이지에서 그래뉼 수가 크게 줄어드는 것이 바람직하며, 이상적으로는 프라이머리 키로 검색 범위가 이미 좁혀진 상태에서 그래뉼 수가 줄어드는 것이 좋습니다. 스킵 인덱스는 파티션 프루닝과 프라이머리 키 프루닝 이후에 평가되므로, 그 효과는 남아 있는 파트와 그래뉼을 기준으로 측정하는 것이 가장 좋습니다.
+
+`EXPLAIN`으로 프루닝 발생 여부는 확인할 수 있지만, 실제 속도 향상까지 보장되는 것은 아닙니다. 스킵 인덱스는 평가 자체에도 비용이 들며, 인덱스가 클수록 그 비용도 커집니다. 실제로 성능이 개선되는지 확인하려면 인덱스를 추가하고 구체화(materializing)하기 전과 후에 반드시 쿼리 벤치마크를 수행하십시오.
+
+예를 들어, 기본 trace 스키마(schema)에 포함된 TraceId용 기본 블룸 필터(Bloom filter) 스킵 인덱스를 살펴보겠습니다.
+
+```sql
+INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1
+```
+
+`EXPLAIN indexes = 1`을 사용하면 선택도가 높은 쿼리에서 인덱스가 얼마나 효과적인지 확인할 수 있습니다:
+
+```sql
+EXPLAIN indexes = 1
+SELECT *
+FROM otel_v2.otel_traces
+WHERE (ServiceName = 'accounting')
+  AND (TraceId = 'aeea7f401feb75fc5af8eb25ebc8e974');
+
+ReadFromMergeTree (otel_v2.otel_traces)
+Indexes:
+  PrimaryKey
+    Keys:
+      ServiceName
+    Parts: 6/18
+    Granules: 255/35898
+  Skip
+    Name: idx_trace_id
+    Description: bloom_filter GRANULARITY 1
+    Parts: 1/6
+    Granules: 1/255
+```
+
+이 경우 프라이머리 키 필터(filter)가 먼저 데이터셋을 크게 줄이고(35898개 그래뉼에서 255개로), 이어서 블룸 필터(Bloom filter)가 이를 단 1개의 그래뉼(1/255)로 추가 프루닝합니다. 이는 스킵 인덱스에 가장 이상적인 패턴입니다. 프라이머리 키 프루닝으로 검색 범위를 좁힌 다음, 스킵 인덱스가 남은 데이터의 대부분을 제거합니다.
+
+실제 효과를 검사하려면 일관된 설정으로 쿼리 벤치마크를 수행하고 실행 시간을 비교하십시오. 결과(result) 직렬화 오버헤드를 피하려면 `FORMAT Null`을 사용하고, 반복 실행 시 동일한 조건을 유지하려면 쿼리 조건 캐시를 비활성화하십시오.
+
+```sql
+SELECT *
+FROM otel_traces
+WHERE (ServiceName = 'accountingservice') AND (TraceId = '4512e822ca3c0c68bbf5d4a263f9943d')
+SETTINGS use_query_condition_cache = 0
+```
+
+```response
+2 rows in set. Elapsed: 0.025 sec. Processed 8.52 thousand rows, 299.78 KB (341.22 thousand rows/s., 12.00 MB/s.)
+Peak memory usage: 41.97 MiB.
+```
+
+이제 스킵 인덱스를 비활성화한 상태에서 동일한 쿼리를 실행합니다:
+
+```sql
+SELECT *
+FROM otel_traces
+WHERE (ServiceName = 'accountingservice') AND (TraceId = '4512e822ca3c0c68bbf5d4a263f9943d')
+FORMAT Null
+SETTINGS use_query_condition_cache = 0, use_skip_indexes = 0;
+```
+
+```response
+0 rows in set. Elapsed: 0.702 sec. Processed 1.62 million rows, 56.62 MB (2.31 million rows/s., 80.71 MB/s.)
+Peak memory usage: 198.39 MiB.
+```
+
+`use_query_condition_cache`를 비활성화하면 결과가 캐시된 필터링 결정의 영향을 받지 않으며, `use_skip_indexes = 0`으로 설정하면 비교를 위한 깨끗한 기준값을 확보할 수 있습니다. 프루닝이 효과적이고 인덱스 평가 비용이 낮다면, 위 예시처럼 인덱스를 사용하는 쿼리가 확연히 빨라집니다.
+
+<Tip>
+  `EXPLAIN`에서 그래뉼 가지치기(Granule pruning)가 거의 나타나지 않거나 스킵 인덱스가 매우 크다면, 인덱스 평가 비용 때문에 얻는 이점이 상쇄될 수 있습니다. `EXPLAIN indexes = 1`로 프루닝 여부를 확인한 다음, 벤치마크를 수행하여 엔드투엔드 성능 개선을 확인하십시오.
+</Tip>
+
+### 스킵 인덱스를 추가해야 하는 경우 {#when-to-add-skip-indexes}
+
+스킵 인덱스는 사용자가 가장 자주 실행하는 필터 유형과 파트 및 그래뉼 내 데이터의 분포 형태를 고려하여 선별적으로 추가해야 합니다. 목표는 인덱스 자체를 평가하는 비용을 상쇄할 만큼 충분히 많은 그래뉼을 프루닝하는 것이며, 따라서 운영 환경과 유사한 데이터로 벤치마킹하는 것이 필수적입니다.
+
+**필터에 사용되는 숫자 컬럼에는 거의 항상 minmax 스킵 인덱스가 좋은 선택입니다.** minmax 인덱스는 경량이고 평가 비용이 낮으며, 범위 프레디케이트에 효과적일 수 있습니다. 특히 값이 대략적으로 정렬되어 있거나 파트 내에서 좁은 범위에 한정되어 있을 때 효과적입니다. minmax가 특정 쿼리 패턴(query pattern)에 도움이 되지 않더라도 일반적으로 오버헤드가 충분히 낮으므로 그대로 유지해도 무방합니다.
+
+**문자열 컬럼에는 지원되는 경우 텍스트 인덱스를 우선 사용하고, 지원되지 않는 경우 블룸 필터(Bloom filters)를 사용하십시오.** 텍스트 인덱스는 블룸 필터와 마찬가지로 동등 및 `IN` 필터를 가속할 뿐만 아니라, 전문 검색과 [맵 직접 읽기 최적화](#map-direct-read-optimization)에서 사용하는 토큰 기반 프레디케이트(`hasToken`, `hasAllTokens`, `has`)도 사용할 수 있게 합니다. 아직 텍스트 인덱스를 지원하지 않는 이전 버전의 클러스터에서는 블룸 필터가 여전히 좋은 선택입니다.
+
+블룸 필터는 각 값의 빈도가 비교적 낮은 high-cardinality 문자열 컬럼, 즉 대부분의 파트와 그래뉼에 검색 대상 값이 포함되지 않는 경우에 가장 효과적입니다. 경험적으로 블룸 필터는 컬럼에 고유 값(distinct values)이 최소 10,000개 이상일 때 효과를 기대할 수 있으며, 100,000개 이상일 때 가장 좋은 성능을 내는 경우가 많습니다. 또한 일치하는 값이 소수의 연속된 파트에 모여 있을 때 더 효과적인데, 이는 일반적으로 컬럼이 순서 지정 키와 상관관계가 있을 때 나타납니다. 다만 결과는 환경에 따라 달라질 수 있으므로, 실제 환경에서의 테스트를 대체할 수 있는 방법은 없습니다.
+
+## 최적화 3. Map 직접 읽기(Map direct read) {#map-direct-read-optimization}
+
+`LogAttributes['k8s.pod.name'] =
+'checkout'`과 같은 Map 하위 키(Map subkey)로 필터링하면, ClickHouse는 프레디케이트를 평가하기 위해 디스크에서
+`LogAttributes` Map 컬럼 전체를 읽고 모든 행을 풀어야 합니다. [자주 쿼리되는 속성 구체화(materializing)](#materialize-frequently-queried-attributes)를 사용하면
+미리 알고 있는 키에 대해서는 이 문제를 해결할 수 있지만, 사용자가 그때그때 필터링하는
+임의의 속성에는 확장하여 적용하기 어렵습니다.
+
+스키마(schema)에 `mapKeys`와 `mapValues`에 대한 인덱스가 있더라도, 이러한 인덱스로는 행에 특정 키가 있는지, 특정 값이 있는지는 알 수 있지만 해당 키와 값이 같은 엔트리에 속하는지는 알 수 없습니다. 즉, `mapKeys`는 `mapContainsKey(ResourceAttributes, 'foo')`를, `mapValues`는 `mapContainsValue(ResourceAttributes, 'bar')`를 판별할 수 있지만, 어느 쪽도 `ResourceAttributes['foo'] = 'bar'`는 판별할 수 없습니다.
+
+맵 직접 읽기 최적화는 키와 값(keys and values)을 하나의 `Array(String)` 컬럼으로 이어 붙여,
+원본 맵을 로딩하지 않고도 `ResourceAttributes['foo'] = 'bar'`를 판별할 수 있게 합니다. 맵은 크기가 큰 경우가 많으며,
+데이터 볼륨이 늘어날수록 크기도 커집니다. 애플리케이션 수준의 쿼리
+재작성과 함께 사용하면, 모든 Map 하위 키에 대한 동등 필터가 해당 인덱스를 활용하는 단일 `has(...)` 호출로 바뀌며,
+쿼리 시점에 Map 역직렬화가 발생하지 않습니다. 또한
+원본 열(underlying column)은 저장되지 않는 `ALIAS` 컬럼이므로, 스토리지 비용은
+텍스트 인덱스에 대해서만 발생합니다.
+
+이 최적화는 자동으로 적용됩니다. 서비스는 기본 로그 및 트레이스 테이블에 필요한 컬럼과
+인덱스를 기본으로 포함하며, 연결된 ClickHouse 서버가 기반 기본형을 지원하는 경우
+런타임에 Map 첨자 필터를 재작성합니다. 스키마에 이러한 컬럼이 없거나,
+기본 제공 컬럼 외에 추가로 가속하려는 Map 컬럼이 있는 경우, 아래 내용을 참고하여
+활성화하십시오.
+
+### 스키마(schema) {#map-direct-read-schema}
+
+서비스는 가속하려는 각 Map 컬럼마다 각 키와 값을 `=`로 연결하는
+`Array(String)` `ALIAS` 컬럼을 정의합니다.
+
+```sql
+ALTER TABLE otel_logs
+ADD COLUMN LogAttributeItems Array(String)
+ALIAS arrayMap(
+  (arr) -> concat(arr.1, '=', arr.2),
+  LogAttributes::Array(Tuple(String, String))
+)
+```
+
+ALIAS 형식을 사용하면 이 배열은 디스크 공간을 전혀 차지하지 않습니다. ClickHouse는 이 배열을
+쿼리 시점과 인덱스 빌드 시점에 계산합니다. `ALIAS` 컬럼에 정의한 `text(tokenizer = 'array')` 스킵 인덱스는
+`key=value` 쌍마다 토큰을 하나씩 저장하며, ClickHouse는 이 토큰을 사용해 원본 Map을 읽지 않고도
+그래뉼을 프루닝합니다:
+
+```sql
+ALTER TABLE otel_logs
+ADD INDEX idx_log_attr_items LogAttributeItems
+TYPE text(tokenizer = 'array')
+```
+
+기존 테이블에 인덱스를 생성한 후에는 과거 데이터에도 인덱스가 적용되도록
+인덱스를 구체화하십시오([&quot;스킵 인덱스 구체화(Materialize skip index)&quot;](#materialize-skip-index) 참조).
+
+기본 관측성 스키마(schemas)에는 다음 컬럼과 인덱스(indexes)가 기본으로 포함되어 있습니다.
+
+| 테이블           | ALIAS 컬럼                                                             | 텍스트 인덱스(Text indexes)                                              |
+| ------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `otel_logs`   | `ResourceAttributeItems`, `ScopeAttributeItems`, `LogAttributeItems` | `idx_res_attr_items`, `idx_scope_attr_items`, `idx_log_attr_items` |
+| `otel_traces` | `ResourceAttributeItems`, `SpanAttributeItems`                       | `idx_res_attr_items`, `idx_span_attr_items`                        |
+
+### 쿼리 재작성(query rewrite) {#map-direct-read-rewrite}
+
+사용자가 UI 또는 SDK에서 Map 하위 키(Map subkey)를 기준으로 필터링하면, 서비스는
+다음과 같이 쿼리를 재작성합니다.
+
+```sql
+LogAttributes['k8s.pod.name'] = 'checkout'
+```
+
+다음과 같이 재작성됩니다:
+
+```sql
+has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
+```
+
+재작성된 형태는 `LogAttributeItems`의 텍스트 인덱스를 활용하여 `key=value` 토큰을 포함하지 않는
+행(rows) 전체를 프루닝하며, 일치하지 않는 행에 대해서는 원본 `LogAttributes` Map을 역직렬화하지 않습니다. high-cardinality
+관측성 워크로드(workloads)에서는 일반적으로 Map 첨자 액세스에 비해 입출력(IO)이
+약 10배 수준으로 감소합니다.
+
+이 재작성(Rewrite)은 자동으로 수행되므로 `LogAttributes['key']`를 참조하는 저장된 쿼리(saved queries), 대시보드, 알림은
+별도로 변경하지 않아도 성능 향상 효과를 얻습니다.
+
+### ClickHouse 버전 요구 사항 {#map-direct-read-version}
+
+쿼리 재작성(query rewrite)을 사용하려면 텍스트 인덱스가 적용된 배열 컬럼(array column)에서 토큰 수준의
+직접 프루닝을 지원하는 ClickHouse 버전이 필요합니다. 서비스는 연결된 서버 버전(server version)(`SELECT version()`, 연결별로 캐시됨)을
+감지하고, 서버가 아래 표의 임계값을 충족하는 경우에만 재작성된 형태를
+생성합니다. 이전 버전에서는 원래의 Map 첨자 형태로 자동
+폴백됩니다.
+
+<Tabs>
+  <Tab title="ClickHouse Cloud">
+    ClickHouse Cloud 빌드와 오픈 소스 릴리스는 서로 독립적인 버전 체계를 사용합니다.
+    아래의 Cloud 최소 버전을 참고하십시오.
+
+    | ClickHouse 브랜치 | Cloud 최소 버전   |
+    | -------------- | ------------- |
+    | 26.2           | `26.2.1.307`  |
+    | 26.3           | `26.3.0.0`    |
+    | 26.4           | `26.4.1.1740` |
+    | 26.5+          | 모든 버전         |
+
+    최소 버전 `26.3.0.0`은 해당 브랜치의 첫 버전이므로 모든 `26.3` 빌드가
+    지원됩니다.
+  </Tab>
+
+  <Tab title="오픈 소스">
+    | ClickHouse 브랜치 | 오픈 소스 최소 버전  |
+    | -------------- | ------------ |
+    | 26.2           | `26.2.19.43` |
+    | 26.3           | `26.3.12.3`  |
+    | 26.4           | `26.4.3.37`  |
+    | 26.5+          | 모든 버전        |
+  </Tab>
+</Tabs>
+
+<Info>
+  **MATERIALIZED가 아닌 ALIAS를 사용하는 이유**
+
+  items 배열은 이미 Map 컬럼에 저장된 데이터를 다른 형태로 보여 주는 뷰일 뿐입니다.
+  Map과 배열에 한 번씩, 총 두 번 저장하면 새로운 쿼리 패턴(query patterns)을 활용할 수 있게 되는 것도 아니면서
+  쓰기 입출력(IO)만 두 배로 늘어납니다. `ALIAS` 컬럼의 텍스트 인덱스는 동일한 소스 데이터로부터
+  삽입 시점(insert time)에 생성되므로, 이 최적화로 디스크에 추가되는 것은 인덱스 용량뿐입니다.
+</Info>
+
+## 최적화 4. 프라이머리 키 수정 {#modifying-the-primary-key}
+
+프라이머리 키(primary key)는 대부분의 워크로드에서 ClickHouse 성능 튜닝의 가장 중요한 요소 중 하나입니다. 이를 효과적으로 튜닝하려면 프라이머리 키의 동작 방식과 쿼리 패턴과의 상호 작용을 이해해야 합니다. 궁극적으로 프라이머리 키는 사용자가 데이터에 액세스하는 방식, 특히 가장 자주 필터링에 사용되는 컬럼과 일치해야 합니다.
+
+프라이머리 키는 압축과 스토리지 레이아웃에도 영향을 주지만, 주된 목적은 쿼리 성능입니다. 서비스에서 기본 제공되는 기본 키(primary keys)는 가장 일반적인 관측성 액세스 패턴과 높은 압축률에 맞게 이미 최적화되어 있습니다. 로그, 트레이스, 메트릭 테이블의 기본 키는 일반적인 워크플로에서 우수한 성능을 발휘하도록 설계되었습니다.
+
+프라이머리 키의 앞쪽에 위치한 컬럼으로 필터링할수록 뒤쪽 컬럼으로 필터링할 때보다 효율적입니다. 대부분의 사용자에게는 기본 구성으로 충분하지만, 특정 워크로드에서는 프라이머리 키를 수정하여 성능을 향상할 수 있습니다.
+
+<Info>
+  **용어 관련 참고 사항**
+
+  이 문서 전반에서 &quot;순서 지정 키&quot;라는 용어는 &quot;프라이머리 키&quot;와 같은 의미로 사용됩니다. 엄밀히 말하면 ClickHouse에서 두 용어는 서로 다르지만, 자체 관리형 ClickHouse Observability에서는 일반적으로 테이블의 `ORDER BY` 절에 지정된 동일한 컬럼을 가리킵니다. 자세한 내용은 정렬 키와 다른 프라이머리 키를 선택하는 방법에 관한 [ClickHouse 문서](/ko/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key)를 참조하십시오.
+</Info>
+
+프라이머리 키를 수정하기 전에 ClickHouse의 [프라이머리 인덱스 동작 방식에 관한 가이드](/ko/concepts/core-concepts/primary-indexes)를 먼저 읽어 보시기를 강력히 권장합니다.
+
+프라이머리 키 튜닝은 테이블과 데이터 타입에 따라 달라집니다. 특정 테이블과 데이터 타입에 효과적인 변경이 다른 테이블이나 데이터 타입에는 적용되지 않을 수 있습니다. 목표는 항상 특정 데이터 타입(예: 로그)에 맞게 최적화하는 것입니다.
+
+**일반적으로 최적화 대상은 로그와 트레이스 테이블입니다. 그 밖의 데이터 타입에서 프라이머리 키를 변경해야 하는 경우는 드뭅니다.**
+
+다음은 로그와 트레이스용 관측성 테이블의 기본 프라이머리 키입니다.
+
+* 로그 ([`otel_logs`](/ko/clickstack/self-configured/ingesting-data/schemas#logs)) - `(toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)`
+* 트레이스 ([`otel_traces`](/ko/clickstack/self-configured/ingesting-data/schemas#traces)) - `(ServiceName, SpanName, toDateTime(Timestamp))`
+
+다른 데이터 타입의 테이블에서 사용하는 프라이머리 키는 [&quot;테이블 및 스키마&quot;](/ko/clickstack/self-configured/ingesting-data/schemas)를 참조하십시오. 트레이스 테이블은 서비스 이름과 span 이름, 그다음 타임스탬프 순으로 필터링하도록 최적화되어 있습니다. 로그 테이블은 5분 단위 시간 버킷을 맨 앞에 두므로, 시간 범위 스캔 시 먼저 프라이머리 인덱스를 활용한 뒤 각 버킷 내에서 서비스 이름으로 범위를 좁힙니다. 이러한 레이아웃은 &quot;최근 N분 동안 서비스 X에서 무슨 일이 있었는가&quot;를 확인하는 일반적인 워크플로에 적합합니다. 프라이머리 키 순서대로 필터를 적용하는 것이 가장 이상적이지만, 이 컬럼들을 어떤 순서로 필터링하더라도 ClickHouse가 [읽기 전에 데이터를 프루닝](/ko/concepts/features/performance/skip-indexes/skipping-indexes)하므로 쿼리 성능이 크게 향상됩니다.
+
+프라이머리 키를 선택할 때는 컬럼의 최적 순서를 정하기 위해 고려해야 할 사항이 더 있습니다. [&quot;프라이머리 키 선택&quot;](#choosing-a-primary-key)을 참조하십시오.
+
+**프라이머리 키는 테이블별로 개별적으로 변경해야 합니다. 로그에 적합한 설정이 트레이스나 메트릭에는 적합하지 않을 수 있습니다.**
+
+### 프라이머리 키 선택 {#choosing-a-primary-key}
+
+먼저 특정 테이블의 액세스 패턴이 기본값과 크게 다른지 확인하십시오. 예를 들어 로그를 서비스 이름보다 Kubernetes 노드 기준으로 먼저 필터링하는 경우가 가장 많고 이것이 주된 워크플로라면, 프라이머리 키를 변경할 만한 근거가 될 수 있습니다.
+
+<Info>
+  **기본 프라이머리 키 수정**
+
+  대부분의 경우 기본 프라이머리 키로 충분합니다. 변경은 쿼리 패턴(query patterns)을 명확히 이해한 상태에서만 신중하게 수행해야 합니다. 프라이머리 키를 수정하면 다른 워크플로의 성능이 저하될 수 있으므로 반드시 테스트해야 합니다.
+</Info>
+
+원하는 컬럼을 추출했다면 순서 지정 키/프라이머리 키 최적화를 시작할 수 있습니다.
+
+순서 지정 키를 선택할 때 참고할 수 있는 몇 가지 간단한 규칙이 있습니다. 다음 규칙은 때때로 서로 충돌할 수 있으므로 순서대로 고려하십시오. 이 과정을 통해 최대 4~5개의 키를 선택하는 것을 목표로 하십시오.
+
+1. 자주 사용하는 필터 및 액세스 패턴에 부합하는 컬럼을 선택하십시오. 관측성 조사를 주로 특정 컬럼(예: pod 이름)으로 필터링하면서 시작한다면, 이 컬럼은 `WHERE` 절에서 자주 사용됩니다. 사용 빈도가 낮은 컬럼보다 이러한 컬럼을 우선적으로 키에 포함하십시오.
+2. 필터링 시 전체 행(rows) 중 많은 비율을 제외하여 읽어야 할 데이터 양을 줄여 주는 컬럼을 우선하십시오. 서비스 이름과 상태 코드가 좋은 후보인 경우가 많습니다. 단, 상태 코드는 대부분의 행을 제외하는 값으로 필터링할 때만 해당합니다. 예를 들어 대부분의 시스템에서 200 코드로 필터링하면 대부분의 행이 일치하지만, 500 오류는 작은 부분 집합에 해당합니다.
+3. 테이블의 다른 컬럼과 상관관계가 높을 가능성이 있는 컬럼을 우선하십시오. 이렇게 하면 해당 값들도 연속적으로 저장되어 압축 효율이 향상됩니다.
+4. 순서 지정 키에 포함된 컬럼에 대한 `GROUP BY`(차트용 집계(aggregations)) 및 `ORDER BY`(정렬) 연산은 메모리를 더 효율적으로 사용할 수 있습니다.
+
+순서 지정 키에 사용할 컬럼의 부분 집합을 정했다면, 이를 특정 순서로 선언해야 합니다. 이 순서는 쿼리에서 보조 키 컬럼(secondary key columns)을 기준으로 필터링하는 효율과 테이블 데이터 파일의 압축률 모두에 상당한 영향을 줄 수 있습니다. 일반적으로 카디널리티(cardinality)의 오름차순으로 키를 정렬하는 것이 가장 좋습니다. 다만 순서 지정 키에서 뒤쪽에 위치한 컬럼을 기준으로 필터링하면 튜플 앞쪽에 위치한 컬럼보다 효율이 떨어진다는 점도 함께 고려해야 합니다. 이러한 특성 간의 균형을 맞추고 액세스 패턴을 고려하십시오. 무엇보다 여러 변형을 테스트하십시오. 순서 지정 키와 그 최적화 방법을 더 깊이 이해하려면 [&quot;Choosing a Primary Key.&quot;](/ko/concepts/best-practices/choosing-a-primary-key)를 읽어 보시기 바랍니다. 프라이머리 키 튜닝과 내부 자료 구조에 대한 더 깊은 내용은 [&quot;A practical introduction to primary indexes in ClickHouse.&quot;](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 참조하십시오.
+
+### 프라이머리 키 변경 {#changing-the-primary-key}
+
+데이터 수집 전에 액세스 패턴을 확실히 파악하고 있다면, 해당 데이터 타입의 테이블을 삭제한 후 다시 생성하면 됩니다.
+
+아래 예시는 기존 스키마(schema)를 그대로 사용하되, `ServiceName` 앞에 `SeverityText` 컬럼을 추가한 새 프라이머리 키로 로그 테이블을 새로 생성하는 간단한 방법을 보여줍니다.
+
+<Steps>
+  <Step title="새 테이블 생성" id="create-new-table-with-key">
+    ```sql
+    CREATE TABLE otel_logs_temp AS otel_logs
+    PRIMARY KEY (SeverityText, ServiceName, Timestamp)
+    ORDER BY (SeverityText, ServiceName, Timestamp)
+    ```
+
+    <Info>
+      **순서 지정 키와 프라이머리 키 비교**
+
+      위 예시에서는 `PRIMARY KEY`와 `ORDER BY`를 모두 지정해야 합니다.
+      서비스에서는 이 두 값이 거의 항상 동일합니다.
+      `ORDER BY`는 물리적 데이터 배치(data layout)를 제어하고, `PRIMARY KEY`는 희소 인덱스(sparse index)를 정의합니다.
+      매우 큰 일부 워크로드에서는 두 값이 다를 수 있지만, 대부분의 경우 두 값을 동일하게 유지하는 것이 좋습니다.
+    </Info>
+  </Step>
+
+  <Step title="테이블 교체 및 삭제" id="exhange-and-drop-table">
+    `EXCHANGE` 문을 사용하면 테이블 이름을 [원자적으로](/ko/concepts/core-concepts/glossary#atomicity) 스왑할 수 있습니다. 이제 기존 기본 테이블이 된 임시 테이블은 삭제해도 됩니다.
+
+    ```sql
+    EXCHANGE TABLES otel_logs_temp AND otel_logs
+    DROP TABLE otel_logs_temp
+    ```
+  </Step>
+</Steps>
+
+그러나 **기존 테이블의 프라이머리 키는 수정할 수 없습니다**. 프라이머리 키를 변경하려면 새 테이블을 생성해야 합니다.
+
+다음 절차를 따르면 기존 데이터를 보존하면서도 투명하게 쿼리할 수 있습니다(필요한 경우 UI에서 기존 키 사용). 동시에 새 데이터는 사용자의 액세스 패턴에 최적화된 새 테이블을 통해 제공됩니다. 이 방식에서는 데이터가 계속 기본 테이블 이름으로 전송되므로 수집 파이프라인을 수정할 필요가 없으며, 모든 변경 사항이 사용자에게 투명하게 적용됩니다.
+
+<Note>
+  대규모 환경에서는 기존 데이터를 새 테이블로 백필하는 것이 득이 되는 경우가 드뭅니다. 일반적으로 컴퓨트 및 입출력(IO) 비용이 커서 성능 향상 효과에 비해 부담이 큽니다. 대신 이전 데이터는 [TTL을 통해](/ko/clickstack/self-configured/managing/ttl) 만료되도록 두고, 새 데이터가 개선된 키의 이점을 누리도록 하십시오.
+</Note>
+
+아래에서도 `SeverityText`를 프라이머리 키의 첫 번째 컬럼으로 추가하는 동일한 예시를 사용합니다. 이 경우 새 데이터용 테이블을 생성하고, 기존 테이블은 과거 데이터 분석용으로 유지합니다.
+
+<Steps>
+  <Step title="새 테이블 생성" id="create-new-table-with-key-2">
+    원하는 프라이머리 키로 새 테이블을 생성합니다. `_23_01_2025` 접미사는 현재 날짜에 맞게 변경하십시오. 예시:
+
+    ```sql
+    CREATE TABLE otel_logs_23_01_2025 AS otel_logs
+    PRIMARY KEY (SeverityText, ServiceName, Timestamp)
+    ORDER BY (SeverityText, ServiceName, Timestamp)
+    ```
+  </Step>
+
+  <Step title="Merge 테이블 생성" id="create-merge-table">
+    [Merge 엔진](/ko/reference/engines/table-engines/special/merge)(MergeTree와 혼동하지 마십시오)은 자체적으로 데이터를 저장하지 않으며, 임의 개수의 다른 테이블에서 동시에 데이터를 읽을 수 있게 해 줍니다.
+
+    ```sql
+    CREATE TABLE otel_logs_merge
+    AS otel_logs
+    ENGINE = Merge(currentDatabase(), 'otel_logs*')
+    ```
+
+    <Note>
+      `currentDatabase()`는 명령이 올바른 데이터베이스에서 실행된다고 가정합니다. 그렇지 않은 경우 데이터베이스 이름을 명시적으로 지정하십시오.
+    </Note>
+
+    이제 이 테이블을 쿼리하여 `otel_logs`의 데이터가 반환되는지 확인할 수 있습니다.
+  </Step>
+
+  <Step title="Merge 테이블에서 읽도록 UI 업데이트" id="update-clickstack-ui-to-read-from-merge-tree">
+    로그 데이터 소스의 테이블로 `otel_logs_merge`를 사용하도록 UI를 구성하십시오.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![Merge 테이블 선택](/images/clickstack/performance_guide/select_merge_table.webp)
+      </Frame>
+    </div>
+
+    이 시점에서 쓰기 작업은 계속 기존 프라이머리 키를 사용하는 `otel_logs`로 이루어지고, 읽기는 Merge 테이블을 통해 이루어집니다. 사용자에게 보이는 변화는 없으며 수집에도 영향이 없습니다.
+  </Step>
+
+  <Step title="테이블 교환" id="exchange-the-tables">
+    이제 `EXCHANGE` 문을 사용하여 `otel_logs`와 `otel_logs_23_01_2025` 테이블의 이름을 원자적으로 스왑합니다.
+
+    ```sql
+    EXCHANGE TABLES otel_logs AND otel_logs_23_01_2025
+    ```
+
+    이제 쓰기 작업은 업데이트된 프라이머리 키를 사용하는 새 `otel_logs` 테이블로 이루어집니다. 기존 데이터는 `otel_logs_23_01_2025`에 남아 있으며, Merge 테이블을 통해 계속 액세스할 수 있습니다. 접미사는 변경이 적용된 날짜를 나타내며, 이는 해당 테이블에 포함된 가장 최근 타임스탬프에 해당합니다.
+
+    이 과정을 통해 수집을 중단하거나 사용자에게 영향을 주지 않고 프라이머리 키를 변경할 수 있습니다.
+  </Step>
+</Steps>
+
+이후 프라이머리 키를 추가로 변경해야 하는 경우에도 이 과정을 응용할 수 있습니다. 예를 들어, 일주일 후 `SeverityText` 대신 `SeverityNumber`를 프라이머리 키에 포함하기로 결정했다고 가정해 보겠습니다. 다음 과정은 프라이머리 키를 변경해야 할 때마다 반복해서 적용할 수 있습니다.
+
+<Steps>
+  <Step title="새 테이블 생성" id="create-new-table-with-key-3">
+    원하는 프라이머리 키로 새 테이블을 생성합니다.
+    아래 예시에서는 테이블의 날짜를 나타내는 접미사로 `30_01_2025`를 사용합니다. 예시:
+
+    ```sql
+    CREATE TABLE otel_logs_30_01_2025 AS otel_logs
+    PRIMARY KEY (SeverityNumber, ServiceName, TimestampTime)
+    ORDER BY (SeverityNumber, ServiceName, TimestampTime)
+    ```
+  </Step>
+
+  <Step title="테이블 교환" id="exchange-the-tables-v2">
+    이제 `EXCHANGE` 문을 사용하여 `otel_logs`와 `otel_logs_30_01_2025` 테이블의 이름을 원자적으로 스왑합니다.
+
+    ```sql
+    EXCHANGE TABLES otel_logs AND otel_logs_30_01_2025
+    ```
+
+    이제 쓰기 작업은 업데이트된 프라이머리 키를 사용하는 새 `otel_logs` 테이블로 이루어집니다. 이전 데이터는 `otel_logs_30_01_2025`에 남아 있으며, Merge 테이블을 통해 액세스할 수 있습니다.
+  </Step>
+</Steps>
+
+<Info>
+  **불필요해진 테이블**
+
+  권장 사항대로 TTL 정책(Policies)이 적용되어 있다면, 더 이상 쓰기 작업이 이루어지지 않는 이전 프라이머리 키의 테이블은 데이터가 만료되면서 점차 비워집니다. 이러한 테이블을 모니터링하고, 데이터가 모두 비워지면 주기적으로 정리해야 합니다. 현재 이 정리 작업은 수동으로 수행해야 합니다.
+</Info>
+
+### 블록 컬럼을 활용한 행 조회 가속화 {#row-lookup-block-columns}
+
+기본 관측성 로그 스키마에서는 두 가지 MergeTree 설정이 활성화되어 있습니다. 이 설정들은
+쿼리 성능(query performance)에 직접적인 영향을 주지는 않지만, UI에서 행 상세 정보를 조회하는 속도를
+크게 높여 줍니다.
+
+```sql
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1
+```
+
+이 설정을 사용하면 테이블의 모든 행에는 파트 내에서 해당 행을 고유하게 식별하는 암묵적인
+`(_block_number, _block_offset)` 쌍이 부여됩니다. UI에서 로그 행을 클릭하여 상세 정보 패널을 열면 서비스는
+해당 행 하나를 가져오기 위한 후속 쿼리를 실행합니다. 블록 컬럼이 없으면 행을 식별하는
+`WHERE` 절에 해당 행을 명확히 구분할 수 있을 만큼의 컬럼(일반적으로 프라이머리 키와
+`Body`, `SeverityText`)이 포함되어야 합니다. 블록 컬럼이 있으면 프라이머리 키와 `_block_number`, `_block_offset`만으로 충분합니다. `Body`와 같은 대용량
+컬럼은 조회(lookup) 시 전혀 읽지 않으므로 쿼리 속도가 크게 향상됩니다.
+
+서비스는 테이블의 `CREATE` 문에서 해당 설정을 감지하고, 두 컬럼이 모두 활성화되어 있으면
+더 간결한 WHERE 절을 자동으로 생성합니다. 애플리케이션 구성은 변경할 필요가 없습니다.
+
+기존 로그 또는 트레이스 테이블에 이 최적화를 적용하려면 다음과 같이 하십시오:
+
+```sql
+ALTER TABLE otel_logs
+MODIFY SETTING enable_block_number_column = 1, enable_block_offset_column = 1
+```
+
+이 설정은 `ALTER` 이후에 기록된 데이터에 적용됩니다. 기존 파트는 머지를 통해 재작성될 때까지
+기존의 행 단위 조회(lookup) 방식을 계속 사용합니다.
+
+## 최적화 5. materialized view 활용 {#exploiting-materialized-views}
+
+<BetaBadge />
+
+서비스는 [증분 구체화된 뷰(Incremental Materialized Views)](/ko/concepts/features/materialized-views/incremental-materialized-view)를 활용하여, 시간 경과에 따른 분당 평균 요청 소요 시간 계산처럼 집계 부하가 큰 쿼리에 의존하는 시각화를 가속할 수 있습니다. 이 기능은 쿼리 성능(query performance)을 크게 향상시킬 수 있으며, 일반적으로 하루 약 10 TB 이상의 대규모 배포에서 가장 큰 효과를 발휘하고 하루 페타바이트 규모까지 스케일링할 수 있게 해 줍니다. 증분 구체화된 뷰는 베타 단계이므로 신중하게 사용하십시오.
+
+서비스에서 이 기능을 사용하는 방법에 대한 자세한 내용은 전용 가이드 [&quot;Materialized views&quot;](/ko/clickstack/self-configured/managing/materialized-views)를 참조하십시오.
+
+## 최적화 6. 프로젝션 활용 {#exploting-projections}
+
+프로젝션은 materialized 컬럼, 스킵 인덱스, 기본 키(primary keys), materialized view를 모두 검토한 후에 고려할 수 있는 마지막 고급 최적화 기법입니다. 프로젝션과 materialized view는 비슷해 보일 수 있지만, 이 서비스에서는 서로 다른 목적으로 사용되며 적합한 사용 시나리오도 다릅니다.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/6CdnUdZSEG0?si=1zUyrP-tCvn9tXse" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+실질적으로 **프로젝션은 테이블의 숨겨진 추가 복사본**으로, 동일한 행(rows)을 **다른 물리적 순서**로 저장한다고 볼 수 있습니다. 이에 따라 프로젝션은 기반 테이블의 `ORDER BY` 키와 별개인 자체 프라이머리 인덱스를 가지며, ClickHouse는 원래 정렬 순서와 맞지 않는 액세스 패턴에서도 데이터를 더 효과적으로 프루닝할 수 있습니다.
+
+materialized view도 다른 순서 지정 키를 사용하는 별도의 target table에 행을 명시적으로 기록하는 방식으로 비슷한 효과를 얻을 수 있습니다. 핵심적인 차이는 **프로젝션은 ClickHouse가 자동으로, 그리고 투명하게 유지 관리**하는 반면, materialized view는 서비스가 직접 등록하고 의도적으로 선택해야 하는 명시적인 테이블이라는 점입니다.
+
+쿼리가 기반 테이블을 대상으로 하면 ClickHouse는 기본 레이아웃과 사용 가능한 모든 프로젝션을 평가하고, 각각의 프라이머리 인덱스를 샘플링한 뒤, 올바른 결과를 생성하면서 가장 적은 그래뉼을 읽는 레이아웃을 선택합니다. 이 결정은 쿼리 분석기가 자동으로 내립니다.
+
+따라서 이 서비스에서 프로젝션은 다음과 같은 **순수한 데이터 재정렬** 용도에 가장 적합합니다.
+
+* 액세스 패턴이 기본 프라이머리 키와 근본적으로 다른 경우
+* 단일 순서 지정 키로 모든 워크플로를 처리하기 어려운 경우
+* ClickHouse가 최적의 물리적 레이아웃을 투명하게 선택하도록 하려는 경우
+
+사전 집계(pre-aggregation)와 메트릭 가속에는 이 서비스에서 **명시적인 materialized view**를 적극 권장합니다. 이를 통해 애플리케이션 계층이 뷰(view)의 선택과 사용을 완전히 제어할 수 있습니다.
+
+자세한 배경 정보는 다음을 참조하십시오.
+
+* [프로젝션 가이드](/ko/concepts/features/projections/projections)
+* [프로젝션을 사용해야 하는 경우](/ko/concepts/features/projections/projections#when-to-use-projections)
+* [materialized view와 프로젝션 비교](/ko/concepts/features/projections/materialized-views-versus-projections)
+
+### 프로젝션 예시 {#example-projections}
+
+trace 테이블이 기본 관측성 접근 패턴에 맞게 최적화되어 있다고 가정합니다.
+
+```sql
+ORDER BY (ServiceName, SpanName, toDateTime(Timestamp))
+```
+
+TraceId로 필터링하는(또는 TraceId를 중심으로 그룹화와 필터링을 자주 수행하는) 주요 워크플로도 있다면, TraceId와 시간 기준으로 정렬된 행(rows)을 저장하는 프로젝션(projection)을 추가할 수 있습니다:
+
+```sql
+ALTER TABLE otel_v2.otel_traces
+ADD PROJECTION prj_traceid_time
+(
+    SELECT *
+    ORDER BY (TraceId, toDateTime(Timestamp))
+);
+```
+
+<Info>
+  **와일드카드 사용**
+
+  위 예시 프로젝션(projection)에서는 와일드카드(`SELECT *`)를 사용합니다. 컬럼의 부분 집합만 선택하면 쓰기 오버헤드를 줄일 수 있지만, 해당 컬럼만으로 완전히 처리할 수 있는 쿼리에만 프로젝션을 사용할 수 있으므로 활용 범위가 제한됩니다. 실제 서비스 환경에서는 이로 인해 프로젝션을 사용할 수 있는 경우가 극히 일부로 한정되는 경우가 많습니다. 따라서 적용 범위를 최대한 넓히려면 일반적으로 와일드카드를 사용하는 것이 좋습니다.
+</Info>
+
+다른 데이터 배치(data layout) 변경과 마찬가지로, 프로젝션은 새로 기록된 파트에만 적용됩니다. 기존 데이터에 대해 프로젝션을 빌드하려면 다음과 같이 구체화하십시오:
+
+```sql
+ALTER TABLE otel_v2.otel_traces
+MATERIALIZE PROJECTION prj_traceid_time;
+```
+
+<Note>
+  프로젝션(projection)을 구체화(materializing)하는 작업은 시간이 오래 걸리고 리소스를 상당히 많이 소비할 수 있습니다. 관측성 데이터는 일반적으로 TTL에 따라 만료되므로, 이 작업은 꼭 필요한 경우에만 수행해야 합니다. 대부분은 프로젝션을 새로 수집된 데이터에만 적용하는 것으로 충분하며, 이렇게 해도 최근 24시간처럼 가장 자주 쿼리되는 시간 범위를 최적화할 수 있습니다.
+</Note>
+
+ClickHouse는 프로젝션이 기본 레이아웃보다 더 적은 그래뉼을 스캔할 것으로 추정되면 해당 프로젝션을 자동으로 선택할 수 있습니다. 프로젝션은 전체 행 집합(`SELECT *`)을 단순히 재정렬한 형태이고 쿼리 필터가 프로젝션의 `ORDER BY`와 잘 맞을 때 가장 안정적으로 동작합니다.
+
+TraceId로 필터링하고(특히 동등 비교) 시간 범위를 지정하는 쿼리는 위 프로젝션의 이점을 얻을 수 있습니다. 예를 들면 다음과 같습니다.
+
+```sql
+-- Fetch a specific trace quickly
+SELECT *
+FROM otel_traces
+WHERE TraceId = 'aeea7f401feb75fc5af8eb25ebc8e974'
+  AND Timestamp >= now() - INTERVAL 1 DAY
+ORDER BY Timestamp;
+
+-- Trace-scoped aggregation
+SELECT
+  toStartOfMinute(Timestamp) AS t,
+  count() AS spans
+FROM otel_traces
+WHERE TraceId = 'aeea7f401feb75fc5af8eb25ebc8e974'
+  AND Timestamp >= now() - INTERVAL 1 DAY
+GROUP BY t
+ORDER BY t;
+```
+
+`TraceId`를 조건으로 지정하지 않는 쿼리나, 프로젝션의 순서 지정 키에서 앞쪽에 위치하지 않는 다른 차원(dimensions)을 주로 필터링하는 쿼리는 대개 이점을 얻지 못하며, 대신 기본 레이아웃에서 데이터를 읽을 수 있습니다.
+
+<Note>
+  프로젝션은 materialized view와 마찬가지로 집계(aggregations)를 저장할 수도 있습니다. 다만 서비스에서는 프로젝션 기반 집계를 일반적으로 권장하지 않습니다. 프로젝션 선택 여부가 ClickHouse 분석기에 따라 결정되므로 사용 여부를 제어하고 예측하기가 더 어렵기 때문입니다. 대신 서비스가 애플리케이션 계층에서 의도적으로 등록하고 선택할 수 있는 명시적인 materialized view를 사용하는 것이 좋습니다.
+</Note>
+
+실제로 프로젝션은 광범위한 검색에서 트레이스 중심의 세부 분석으로 자주 전환하는 워크플로(예: 특정 TraceId의 모든 스팬 가져오기)에 가장 적합합니다.
+
+### 비용 및 가이드 {#projection-costs-and-guidance}
+
+* **삽입 오버헤드**: 순서 지정 키가 다른 `SELECT *` 프로젝션은 사실상 데이터를 두 번 쓰는 셈이므로 쓰기 I/O가 증가하며, 수집을 안정적으로 유지하려면 CPU와 디스크 처리량이 추가로 필요할 수 있습니다.
+* **꼭 필요한 경우에만 사용**: 프로젝션은 액세스 패턴이 실제로 다양하고, 두 번째 물리적 정렬 순서를 통해 상당수 쿼리에서 의미 있는 프루닝 효과를 얻을 수 있는 경우에만 사용하는 것이 가장 좋습니다. 예를 들어 두 팀이 동일한 데이터셋을 근본적으로 다른 방식으로 쿼리하는 경우가 이에 해당합니다.
+* **벤치마크로 검증**: 다른 모든 튜닝과 마찬가지로, 프로젝션을 추가하고 구체화하기 전과 후의 실제 쿼리 지연 시간과 리소스 사용량을 비교하십시오.
+
+자세한 배경 정보는 다음을 참조하십시오.
+
+* [ClickHouse 프로젝션 가이드](/ko/concepts/features/projections/projections#when-to-use-projections)
+* [materialized view와 프로젝션 비교](/ko/concepts/features/projections/materialized-views-versus-projections)
+
+### `_part_offset`을 사용하는 경량 프로젝션 {#lightweight-projections}
+
+<BetaBadge />
+
+<Info>
+  **경량 프로젝션은 자체 관리형 ClickHouse Observability에서 베타 상태입니다**
+
+  `_part_offset-based` 경량 프로젝션은 관측성 워크로드(workloads)에는 권장되지 않습니다. 스토리지 사용량과 쓰기 I/O는 줄여 주지만, 쿼리 시점에 랜덤 액세스가 더 많이 발생할 수 있으며, 관측성 규모의 운영 환경에서 어떻게 동작하는지는 아직 평가 중입니다. 이 권장 사항은 기능이 성숙하고 운영 데이터가 더 축적됨에 따라 변경될 수 있습니다.
+</Info>
+
+최신 ClickHouse 버전에서는 전체 행을 복제하지 않고 프로젝션 정렬 키와 기반 테이블을 가리키는 `_part_offset` 포인터만 저장하는 더 가벼운 프로젝션도 지원합니다. 이 방식은 스토리지 오버헤드를 크게 줄일 수 있으며, 최근 개선으로 그래뉼(granule) 수준의 프루닝이 가능해져 실제 보조 인덱스(secondary index)에 더 가깝게 동작합니다. 자세한 내용은 다음을 참고하십시오.
+
+* [&#95;part&#95;offset을 활용한 더 효율적인 스토리지](/ko/concepts/features/projections/projections#smarter_storage_with_part_offset)
+* [블로그 설명 및 예시](https://clickhouse.com/blog/projections-secondary-indices#example-combining-multiple-projection-indexes)
+
+### 대안 {#projection-alternatives}
+
+여러 개의 순서 지정 키가 필요하다면 프로젝션 외에도 방법이 있습니다. 운영상의 제약 조건과 서비스가 쿼리를 라우팅하는 방식에 따라 다음 방법을 고려하십시오.
+
+* OpenTelemetry collector가 `ORDER BY` 키가 서로 다른 두 개의 테이블에 데이터를 쓰도록 구성하고, 각 테이블마다 별도의 데이터 소스를 생성합니다.
+* materialized view를 복사 파이프라인으로 생성합니다. 즉, 메인 테이블에 materialized view를 연결하여 원시 행을 SELECT 쿼리로 읽어 순서 지정 키가 다른 보조 테이블에 적재합니다(비정규화 또는 라우팅 패턴). 그런 다음 이 target table에 대한 소스를 생성합니다. 예시는 [여기](/ko/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation)에서 확인할 수 있습니다.

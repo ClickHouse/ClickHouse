@@ -37,6 +37,13 @@ totals from a view with SQL SECURITY DEFINER
 1	0	0
 
 0	0	6
+totals from a view with SQL SECURITY NONE
+0	0	0
+0	0	0
+1	0	0
+1	0	0
+
+0	0	6
 totals through a Merge table
 0	0	0
 0	0	0

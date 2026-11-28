@@ -7,13 +7,9 @@ description: 'Conéctese a sus servicios BYOC de ClickHouse a través de balance
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Esta página describe las distintas formas de conectarse a sus servicios de ClickHouse en BYOC. Puede elegir entre balanceadores de carga públicos, balanceadores de carga privados o endpoints privados (AWS PrivateLink, GCP Private Service Connect o Azure Private Link) según sus requisitos de seguridad y red.
 
-<div id="connection-via">
-  ## Seleccionar una ruta de conexión en la consola
-</div>
+## Seleccionar una ruta de conexión en la consola {#connection-via}
 
 Los detalles de conexión de cada servicio BYOC están disponibles en la consola de ClickHouse Cloud: abra el servicio y haga clic en **Conectar**.
 
@@ -21,37 +17,43 @@ En los servicios BYOC, el cuadro de diálogo **Conectar** incluye un menú despl
 
 * **Balanceador de carga público** — el endpoint expuesto a Internet.
 * **Balanceador de carga privado** — el endpoint interno, accesible mediante peering de VPC o redes conectadas. Solo aparece cuando hay un [balanceador de carga privado](#private-load-balancer) habilitado para su infraestructura.
-* **PrivateLink** (AWS) / **Private Service Connect** (GCP) / **Private Link** (Azure) — el hostname del endpoint privado del proveedor de Cloud. Solo aparece cuando hay un [endpoint privado](#privatelink-or-private-service-connect) habilitado.
+* **PrivateLink** (AWS) / **Private Service Connect** (GCP) / **Private Link** (Azure) — el hostname del endpoint privado del proveedor de nube. Solo aparece cuando hay un [endpoint privado](#privatelink-or-private-service-connect) habilitado.
 
 Al seleccionar una ruta, se actualiza el hostname en cada ejemplo de conexión del cuadro de diálogo — el comando HTTPS (`curl`), el client nativo, JDBC y los fragmentos de client para cada lenguaje (Python, Node.js, Java, Go y C#) — para que pueda copiar un comando listo para usar para la ruta exacta que necesita, sin editar el hostname manualmente.
 
 El menú desplegable solo muestra las rutas habilitadas para su infraestructura, y la lista se actualiza cada vez que se abre el cuadro de diálogo: un balanceador de carga privado o un endpoint de PrivateLink recién habilitado aparecerá la próxima vez que abra **Conectar**, sin retraso de propagación. Cuando solo hay una ruta disponible, el menú desplegable aparece deshabilitado con ese endpoint seleccionado.
 
-<Image img="/images/cloud/reference/byoc-connect-via.png" size="lg" alt="Cuadro de diálogo Conectar con el menú desplegable Conexión mediante expandido, que muestra las rutas de balanceador de carga público, balanceador de carga privado y PrivateLink" background="black" />
+<div className="ch-image-lg ch-image-background-black">
+  <Frame>
+    ![Cuadro de diálogo Conectar con el menú desplegable Conexión mediante expandido, que muestra las rutas de balanceador de carga público, balanceador de carga privado y PrivateLink](/images/cloud/reference/byoc-connect-via.png)
+  </Frame>
+</div>
 
 <div id="public-load-balancer">
-  ## Balanceador de carga público
+  ## Balanceador de carga público {#public-load-balancer}
 </div>
 
 Un balanceador de carga público proporciona acceso a tus servicios de ClickHouse desde Internet. Esta es la configuración predeterminada al usar una VPC dedicada gestionada por ClickHouse.
 
 <div id="public-load-balancer-overview">
-  ### Descripción general
+  ### Descripción general {#public-load-balancer-overview}
 </div>
 
 * **Acceso**: Accesible desde internet
 * **Caso de uso**: Adecuado para aplicaciones y usuarios que necesitan conectarse desde distintas ubicaciones o redes
 * **Seguridad**: Protegido con cifrado TLS y filtrado de IP (recomendado)
 
-<div id="connecting-via-public-load-balancer">
-  ### Conexión a través de un balanceador de carga público
-</div>
+### Conexión a través de un balanceador de carga público {#connecting-via-public-load-balancer}
 
 Para conectarte a tu servicio de ClickHouse mediante el endpoint público:
 
-1. **Obtén el endpoint de tu servicio** en la consola de ClickHouse Cloud. El endpoint se muestra en la sección &quot;Connect&quot; de tu servicio.
+1. **Obtén el endpoint de tu servicio** en la consola de ClickHouse Cloud. El endpoint se muestra en la sección &quot;Conectar&quot; de tu servicio.
 
-<Image img="/images/cloud/reference/byoc-connect-1.webp" size="lg" alt="Conexión BYOC" background="black" />
+<div className="ch-image-lg ch-image-background-black">
+  <Frame>
+    ![Conexión BYOC](/images/cloud/reference/byoc-connect-1.webp)
+  </Frame>
+</div>
 
 Por ejemplo:
 
@@ -62,7 +64,7 @@ sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com
 El segmento `aws` indica tu proveedor de nube; para implementaciones en esas nubes, será `gcp` o `azure`.
 
 <div id="public-ip-filtering">
-  ### Filtrado por IP
+  ### Filtrado por IP {#public-ip-filtering}
 </div>
 
 El filtrado por IP (IP Access List) es **muy recomendable** cuando se utiliza un balanceador de carga público para restringir el acceso a direcciones IP o rangos CIDR autorizados.
@@ -70,13 +72,13 @@ El filtrado por IP (IP Access List) es **muy recomendable** cuando se utiliza un
 Para obtener información detallada sobre el filtrado por IP, consulte la [documentación sobre IP Access List](/es/products/cloud/guides/security/connectivity/setting-ip-filters).
 
 <div id="private-load-balancer">
-  ## Balanceador de carga privado
+  ## Balanceador de carga privado {#private-load-balancer}
 </div>
 
 Un balanceador de carga privado proporciona acceso interno a sus servicios de ClickHouse y solo es accesible desde sus redes conectadas (p. ej., VPC/VNet con peering). Esta es la configuración predeterminada cuando se usa una VPC gestionada por el cliente.
 
 <div id="private-load-balancer-overview">
-  ### Descripción general
+  ### Descripción general {#private-load-balancer-overview}
 </div>
 
 * **Acceso**: Accesible solo desde la infraestructura de su red privada
@@ -84,7 +86,7 @@ Un balanceador de carga privado proporciona acceso interno a sus servicios de Cl
 * **Seguridad**: El tráfico permanece dentro de su red privada, sin exposición a la internet pública
 
 <div id="connecting-via-private-load-balancer">
-  ### Conexión a través de un balanceador de carga privado
+  ### Conexión a través de un balanceador de carga privado {#connecting-via-private-load-balancer}
 </div>
 
 Para conectarse mediante el endpoint privado:
@@ -102,13 +104,13 @@ Para conectarse mediante el endpoint privado:
    En lugar de construir manualmente el `hostname` con el sufijo `-private`, seleccione **Private load balancer** en el menú desplegable **Connection via** del cuadro de diálogo **Conectar** para copiar directamente el endpoint y los comandos de conexión ya preparados.
 
 <div id="public-ip-filtering">
-  ### Filtrado por IP
+  ### Filtrado por IP {#private-ip-filtering}
 </div>
 
 Aunque los balanceadores de carga privados restringen el acceso únicamente a redes internas, puede configurar el filtrado por IP para tener un control aún más preciso sobre qué orígenes de su red privada pueden conectarse. El filtrado por IP para balanceadores de carga privados utiliza el mismo mecanismo de configuración que los balanceadores de carga públicos: defina las direcciones IP o los rangos CIDR permitidos, y ClickHouse Cloud aplicará estas reglas según corresponda a cada tipo de endpoint. La plataforma distingue automáticamente entre rangos CIDR públicos y privados y los asigna a los endpoints del balanceador de carga correspondientes. Consulte la [documentación de IP Access List](/es/products/cloud/guides/security/connectivity/setting-ip-filters).
 
 <div id="security-group-configuration">
-  ### Configuración del grupo de seguridad
+  ### Configuración del grupo de seguridad {#security-group-configuration}
 </div>
 
 Para las implementaciones en AWS, el grupo de seguridad del balanceador de carga privado controla qué redes pueden acceder al endpoint. De forma predeterminada, solo se permite el tráfico procedente de la VPC de BYOC.
@@ -116,13 +118,13 @@ Para las implementaciones en AWS, el grupo de seguridad del balanceador de carga
 Para obtener más información, consulta la [configuración del grupo de seguridad del balanceador de carga privado](/es/products/bring-your-own-cloud/configuration/configurations#private-load-balancer-security-group).
 
 <div id="privatelink-or-private-service-connect">
-  ## PrivateLink, Private Service Connect o Private Link
+  ## PrivateLink, Private Service Connect o Private Link {#privatelink-or-private-service-connect}
 </div>
 
 AWS PrivateLink, GCP Private Service Connect y Azure Private Link ofrecen la opción de conectividad más segura, lo que le permite acceder de forma privada a los servicios de ClickHouse sin peering de VPC/VNet ni gateways de Internet.
 
 <div id="public-load-balancer-overview">
-  ### Descripción general
+  ### Descripción general {#privatelink-overview}
 </div>
 
 * **Acceso**: Conectividad privada a través del servicio gestionado del proveedor de nube
@@ -134,7 +136,7 @@ AWS PrivateLink, GCP Private Service Connect y Azure Private Link ofrecen la opc
   * Mayor seguridad y mejor cumplimiento normativo
 
 <div id="connecting-via-privatelink">
-  ### Conexión mediante un endpoint privado
+  ### Conexión mediante un endpoint privado {#connecting-via-privatelink}
 </div>
 
 Complete la configuración de PrivateLink, Private Service Connect o Private Link (consulte [Configuración de red privada](/es/products/bring-your-own-cloud/onboarding/network)). Una vez configurado, puede conectarse a su servicio de ClickHouse mediante un hostname de endpoint privado dedicado. El comportamiento de DNS varía según el proveedor: en AWS, al habilitar **Nombres DNS privados** en el endpoint, la resolución DNS de su VPC enruta automáticamente el tráfico a través de este. GCP Private Service Connect requiere que cree un registro DNS comodín; consulte la [guía de configuración de GCP](/es/products/bring-your-own-cloud/onboarding/network-gcp). De forma similar, Azure Private Link requiere una zona DNS privada con un registro comodín vinculado a su VNet; consulte la [guía de configuración de Azure](/es/products/bring-your-own-cloud/onboarding/network-azure).
@@ -149,7 +151,7 @@ El hostname del endpoint privado es similar al del endpoint público, pero añad
 Una vez configurado el endpoint e incluido en la lista de permitidos, seleccione **PrivateLink** (**Private Service Connect** en GCP, **Private Link** en Azure) en el menú desplegable **Conexión mediante** del cuadro de diálogo **Conectar** para copiar directamente los detalles de conexión del endpoint privado.
 
 <div id="endpoint-id-allowlist">
-  ### Lista de permitidos de Endpoint ID
+  ### Lista de permitidos de Endpoint ID {#endpoint-id-allowlist}
 </div>
 
 Para usar PrivateLink, Private Service Connect o Private Link, el Endpoint ID de la conexión de su client debe estar explícitamente incluido en la lista de permitidos de cada servicio de ClickHouse. Puede administrar esta lista en la consola de ClickHouse Cloud: abra la página Settings del servicio, haga clic en **Set up private endpoint** e introduzca el identificador del endpoint de su proveedor de Cloud:
@@ -159,7 +161,7 @@ Para usar PrivateLink, Private Service Connect o Private Link, el Endpoint ID de
 * **Azure**: el Private Endpoint Resource ID (consulte la [guía de configuración de Azure](/es/products/bring-your-own-cloud/onboarding/network-azure#setup-privatelink))
 
 <div id="choosing-connection-method">
-  ## Elegir el método de conexión adecuado
+  ## Elegir el método de conexión adecuado {#choosing-connection-method}
 </div>
 
 | Método de conexión                                   | Nivel de seguridad         | Requisitos de red                              | Caso de uso                                                                 |
@@ -169,7 +171,7 @@ Para usar PrivateLink, Private Service Connect o Private Link, el Endpoint ID de
 | **PrivateLink/Private Service Connect/Private Link** | Máximo                     | Servicio administrado por el proveedor de nube | Implementaciones empresariales que requieren el máximo nivel de aislamiento |
 
 <div id="troubleshooting">
-  ## Solución de problemas de conexión
+  ## Solución de problemas de conexión {#troubleshooting}
 </div>
 
 Si tiene problemas de conexión:

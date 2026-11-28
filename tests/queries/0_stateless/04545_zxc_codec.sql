@@ -3,7 +3,7 @@
 DROP TABLE IF EXISTS t_zxc_src;
 DROP TABLE IF EXISTS t_zxc;
 
--- ZXC is experimental: without the setting it is rejected.
+-- ZXC is in beta: without the setting it is rejected.
 SET enable_zxc_codec = 0;
 CREATE TABLE t_zxc_bad (x UInt64 CODEC(ZXC)) ENGINE = MergeTree ORDER BY x; -- { serverError BAD_ARGUMENTS }
 

@@ -5,6 +5,7 @@
 #include <base/scope_guard.h>
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
@@ -28,6 +29,11 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_CLOSE_FILE;
+}
+
+namespace FailPoints
+{
+    extern const char local_directory_sync_fail[];
 }
 
 LocalDirectorySyncGuard::LocalDirectorySyncGuard(const String & full_path)
@@ -65,6 +71,12 @@ void LocalDirectorySyncGuard::sync()
 
     ProfileEvents::increment(ProfileEvents::DirectorySync);
     Stopwatch watch;
+
+    /// Fault injection for tests: the directory sync fails like a disk error would.
+    fiu_do_on(FailPoints::local_directory_sync_fail,
+    {
+        ErrnoException::throwWithErrno(ErrorCodes::CANNOT_FSYNC, EIO, "Injected transient failure while syncing directory");
+    });
 
 #if defined(OS_DARWIN)
     /// macOS does not declare `fdatasync` in this build.

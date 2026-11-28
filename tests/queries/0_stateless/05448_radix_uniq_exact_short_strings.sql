@@ -1,8 +1,7 @@
 -- `uniqExact` with radix partitioning represents the strings of up to 15 bytes by their bytes and length, and the longer
 -- ones by a hash. It must count as many distinct strings as without it, also when they differ only in length.
 
--- `count_distinct_optimization` would rewrite `uniqExact` to a `GROUP BY`.
-SET max_threads = 4, count_distinct_optimization = 0, collect_hash_table_stats_during_aggregation = 0;
+SET max_threads = 4, collect_hash_table_stats_during_aggregation = 0;
 
 SELECT 'only zero bytes, by length',
     (SELECT uniqExact(x) FROM (SELECT repeat('\0', number % 21) AS x FROM numbers_mt(200000)) SETTINGS optimize_uniq_exact_radix_partitioning = 1),

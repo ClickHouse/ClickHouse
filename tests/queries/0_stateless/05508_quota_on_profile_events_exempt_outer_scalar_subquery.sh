@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Random settings limits: merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=(0, 0)
+# `PartsSplitter` fault injection reads the granule on each layer border twice, which changes `SelectedRows`.
 # A query without `FROM` reads only `system.one`, which is exempt from quotas, but its scalar subquery is not:
 # what the subquery consumes is charged to the quotas over profile events, with and without the analyzer.
 
@@ -33,10 +35,10 @@ do
     ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${Q} FOR INTERVAL 100 year MAX SelectedRows = 1, SelectedParts = 1 TO ${U}"
     # The first query is allowed and is charged with what its scalar subquery reads (1000 rows of `t_05508`), and with the
     # row of `system.one` it reads itself.
-    ${CLICKHOUSE_CLIENT} --user "${U}" --enable_analyzer "${analyzer}" -q "${QUERY}"
+    ${CLICKHOUSE_CLIENT} --user "${U}" --enable_analyzer "${analyzer}" --use_statistics_for_sum_avg_aggregation 0 -q "${QUERY}"
     ${CLICKHOUSE_CLIENT} -q "SELECT profile_events['SelectedRows'], profile_events['SelectedParts'] FROM system.quotas_usage WHERE quota_name = '${Q}'"
     # The quota is exhausted, so the following one is rejected.
-    ${CLICKHOUSE_CLIENT} --user "${U}" --enable_analyzer "${analyzer}" -q "${QUERY}" 2>&1 | grep -o -m1 "QUOTA_EXCEEDED"
+    ${CLICKHOUSE_CLIENT} --user "${U}" --enable_analyzer "${analyzer}" --use_statistics_for_sum_avg_aggregation 0 -q "${QUERY}" 2>&1 | grep -o -m1 "QUOTA_EXCEEDED"
 done
 
 cleanup
