@@ -1,0 +1,17 @@
+-- Version column
+1	b	2
+2	d	2
+1	a	3
+2	d	2
+1	a	3
+2	c	3
+1	a	3
+2	c	3
+-- Version subcolumn
+1	b	(2,0)
+2	c	(1,0)
+1	a	(3,0)
+2	c	(1,0)
+-- Version in a MATERIALIZED column
+2
+3
