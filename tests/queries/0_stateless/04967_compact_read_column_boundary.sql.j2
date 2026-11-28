@@ -1,0 +1,64 @@
+{% for packed in [0, 1073741824] %}
+{% for substream_marks in [0, 1] %}
+{% for compress_per_column in [0, 1] %}
+CREATE TABLE compact_read_boundary
+(
+    a UInt64,
+    b Tuple(x UInt64, y Array(UInt64)),
+    c String
+)
+ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 8,
+    min_bytes_for_wide_part = 1073741824,
+    min_bytes_for_full_part_storage = {{ packed }},
+    write_marks_for_substreams_in_compact_parts = {{ substream_marks }},
+    compress_per_column_in_compact_parts = {{ compress_per_column }};
+
+INSERT INTO compact_read_boundary
+SELECT number, (number * 2, [number, number + 1]), repeat('x', 8) FROM numbers(128);
+
+SELECT sum(a) FROM compact_read_boundary WHERE a >= 32 AND a < 64;
+SELECT sum(b.x), sum(arraySum(b.y)) FROM compact_read_boundary WHERE a >= 32 AND a < 64;
+SELECT sum(length(c)) FROM compact_read_boundary WHERE a >= 32 AND a < 64;
+
+DROP TABLE compact_read_boundary;
+{% endfor %}
+{% endfor %}
+{% endfor %}
+
+-- A granule with shared compressed blocks that spans several blocks. `a` and `b` share the first block,
+-- `c` overflows the 1 MiB compression buffer of the writer, so `d` starts in a later block.
+{% for substream_marks in [0, 1] %}
+CREATE TABLE compact_read_split_block
+(
+    a UInt64,
+    b UInt64,
+    c String,
+    d UInt64
+)
+ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 8,
+    index_granularity_bytes = 10485760,
+    min_bytes_for_wide_part = 1073741824,
+    min_bytes_for_full_part_storage = 0,
+    ratio_of_defaults_for_sparse_serialization = 1.0,
+    write_marks_for_substreams_in_compact_parts = {{ substream_marks }},
+    compress_per_column_in_compact_parts = 0;
+
+INSERT INTO compact_read_split_block
+SELECT number, number * 2, repeat('x', 200000), number * 3 FROM numbers(32);
+
+SELECT count() > 0 AND count() = countIf(
+        `b.mark`.offset_in_compressed_file = `a.mark`.offset_in_compressed_file
+        AND `b.mark`.offset_in_decompressed_block > 0
+        AND `d.mark`.offset_in_compressed_file > `a.mark`.offset_in_compressed_file)
+FROM mergeTreeIndex(currentDatabase(), 'compact_read_split_block', with_marks = true)
+WHERE rows_in_granule > 0;
+
+SELECT sum(a) FROM compact_read_split_block WHERE a >= 8 AND a < 24;
+SELECT sum(b) FROM compact_read_split_block WHERE a >= 8 AND a < 24;
+SELECT sum(length(c)) FROM compact_read_split_block WHERE a >= 8 AND a < 24;
+SELECT sum(a), sum(d) FROM compact_read_split_block WHERE a >= 8 AND a < 24;
+
+DROP TABLE compact_read_split_block;
+{% endfor %}
