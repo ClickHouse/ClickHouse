@@ -180,8 +180,16 @@ if (OS_LINUX)
 
     if (LINKER_NAME MATCHES "lld" AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
         # Fold identical code and data sections to reduce binary size.
-        # `safe` keeps address-taken functions distinct, as C and C++ require.
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--icf=safe")
+        # `all` also folds the functions whose address is taken (`safe` keeps them distinct, as C and C++ require).
+        # This only matters for code that compares the addresses of two different functions with identical bodies.
+        # zlib-ng did so (`zfree == zcfree`, and gRPC's `zfree_gpr` is folded with `zcfree`), which corrupted the heap
+        # in gRPC compression; our fork of zlib-ng no longer compares the allocation callbacks.
+        # Most of what `all` adds are instances of one template whose address is stored and called, never compared
+        # (`IAggregateFunctionHelper<T>::addFree`, the type-erased thunks of `std::function`), and the whole Rust
+        # library, whose address-significance table is lost when its symbols are stripped. Data is not affected:
+        # the table produced by `-faddrsig` still keeps the data with a significant address (type tags) unique.
+        # The cost is in diagnostics: a stack trace or a profile attributes a folded function to one of its copies.
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--icf=all")
     endif ()
 
     # In Release builds, strip residual debug sections that may come from contrib
@@ -406,8 +414,8 @@ if (NOT SANITIZE_COVERAGE AND (NOT WITH_COVERAGE OR FUZZER))
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -ffunction-sections -fdata-sections")
     # -faddrsig emits an address-significance table that lets lld's ICF
     # distinguish address-taken symbols from non-address-taken ones.
-    # Only useful on Linux where we use lld with --icf=safe; Darwin's ld64
-    # does not consume these sections.
+    # With `--icf=all` it decides which data sections may be folded (code is folded regardless).
+    # Only useful on Linux where we use lld; Darwin's ld64 does not consume these sections.
     if (OS_LINUX)
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -faddrsig")
     endif ()
