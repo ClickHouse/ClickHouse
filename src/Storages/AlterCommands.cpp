@@ -1907,6 +1907,33 @@ NameSet AlterCommands::getAddedIndexNames(const IndicesDescription & existing) c
     return added;
 }
 
+NameSet AlterCommands::getAddedProjectionNames(const ProjectionsDescription & existing) const
+{
+    NameSet present;
+    for (const auto & projection : existing)
+        present.insert(projection.name);
+
+    NameSet added;
+    for (const AlterCommand & command : *this)
+    {
+        if (command.ignore)
+            continue;
+
+        if (command.type == AlterCommand::ADD_PROJECTION)
+        {
+            /// Otherwise `AlterCommand::apply` either skips it, with `IF NOT EXISTS`, or throws.
+            if (present.insert(command.projection_name).second)
+                added.insert(command.projection_name);
+        }
+        else if (command.type == AlterCommand::DROP_PROJECTION && !command.partition && !command.clear)
+        {
+            present.erase(command.projection_name);
+            added.erase(command.projection_name);
+        }
+    }
+    return added;
+}
+
 void AlterCommands::apply(
     StorageInMemoryMetadata & metadata,
     ContextPtr context,
