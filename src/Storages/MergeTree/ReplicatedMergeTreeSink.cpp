@@ -50,6 +50,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool async_insert_use_deduplication_cache;
     extern const SettingsFloat insert_keeper_fault_injection_probability;
     extern const SettingsUInt64 insert_keeper_fault_injection_seed;
     extern const SettingsUInt64 insert_keeper_max_retries;
@@ -921,7 +922,7 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
         }
 
         UInt64 checked_cache_version = 0;
-        if (is_async_insert)
+        if (is_async_insert && settings[Setting::async_insert_use_deduplication_cache])
         {
             /// prefilter by cache
             auto cache_conflicts = storage.deduplication_hashes_cache.detectConflicts(deduplication_hashes, deduplication_cache_min_version);
