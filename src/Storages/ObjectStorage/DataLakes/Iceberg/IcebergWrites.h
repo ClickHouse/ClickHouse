@@ -1,5 +1,7 @@
 #pragma once
 
+#include <list>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <Core/Range.h>
@@ -10,6 +12,8 @@
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
 #include <Processors/Chunk.h>
+#include <Processors/ISink.h>
+#include <Storages/IStorageWriteSession.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Poco/Dynamic/Var.h>
@@ -169,10 +173,11 @@ void generateManifestList(
     const std::vector<Int64> & entry_row_counts = {},
     const std::vector<Int64> & entry_file_counts = {});
 
-class IcebergStorageSink final : public SinkToStorage
+/// One insert into an Iceberg table: reads the table metadata at the start, and commits the files written by its sinks in one snapshot.
+class IcebergWriteSession final : public IStorageWriteSession, public std::enable_shared_from_this<IcebergWriteSession>
 {
 public:
-    IcebergStorageSink(
+    IcebergWriteSession(
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
         const std::optional<FormatSettings> & format_settings_,
@@ -183,32 +188,28 @@ public:
         const StorageID & table_id_,
         std::optional<Int32> planned_schema_id_);
 
-    ~IcebergStorageSink() override;
+    /// Removes the data files and manifests which were not committed.
+    ~IcebergWriteSession() override;
 
+    SinkToStoragePtr createSink() override;
+    void commit() override;
 
-    String getName() const override { return "IcebergStorageSink"; }
+    /// Creates a writer of the data files of a partition for a sink. Its files are committed unless the sink cancels it.
+    /// The reference is valid while the session is alive. Thread-safe.
+    MultipleFileWriter & addWriter(const ChunkPartitioner::PartitionKey & partition_key, DataFileUploads & data_file_uploads);
 
-    void consume(Chunk & chunk) override;
+    /// The sketches of the values a sink writes, for the NDV statistics of the snapshot. Null if they are not written.
+    std::unique_ptr<IcebergColumnSketches> createColumnSketches() const;
+    /// Called by a sink which has finished without an error: only its values get into the statistics. Thread-safe.
+    void addColumnSketches(IcebergColumnSketches & sketches);
 
-    void onFinish() override;
-    void onException(std::exception_ptr exception) override;
+    const String & getWriteFormat() const { return write_format; }
 
 private:
-    LoggerPtr log = getLogger("IcebergStorageSink");
+    LoggerPtr log = getLogger("IcebergWriteSession");
     SharedHeader sample_block;
-    DataFileUploads data_file_uploads;
-    std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
-    /// The sorted chunks of a partition's next data file, merged when it is written.
-    struct SortedPendingFile
-    {
-        Chunks sorted_chunks;
-        size_t rows = 0;
-        size_t bytes = 0;
-    };
-    std::unordered_map<ChunkPartitioner::PartitionKey, SortedPendingFile, ChunkPartitioner::PartitionKeyHasher> sorted_pending_file_per_partition_key;
-    /// Bytes of all pending files; writing the largest early bounds it by `iceberg_insert_max_sort_buffer_bytes`.
-    size_t pending_bytes = 0;
     ObjectStoragePtr object_storage;
+    std::optional<FormatSettings> format_settings;
     Poco::JSON::Object::Ptr metadata;
     /// The schema the query planned the inserted columns with; unset if the query pinned no table state.
     const std::optional<Int32> planned_schema_id;
@@ -216,7 +217,6 @@ private:
     Int64 current_schema_id = 0;
     Poco::JSON::Object::Ptr current_schema;
     ContextPtr context;
-    std::optional<FormatSettings> format_settings;
     KeyDescription sort_description;
     /// The order data is sorted in, NULLs placed as the table's sort order says.
     SortDescription sort_order_description;
@@ -226,16 +226,23 @@ private:
     std::optional<Int32> data_file_sort_order_id;
     Int64 total_rows = 0;
     Int64 total_chunks_size = 0;
-    std::optional<IcebergColumnSketches> column_sketches;
+    bool write_column_sketches = false;
+    /// Of the sinks which have finished without an error.
+    std::mutex column_sketches_mutex;
+    VectorWithMemoryTracking<IcebergColumnSketches::Finished> column_sketches;
 
-    MultipleFileWriter & getWriter(const ChunkPartitioner::PartitionKey & partition_key);
-    void writePendingFile(const ChunkPartitioner::PartitionKey & partition_key, SortedPendingFile & pending_file);
-    void finalizeBuffers();
-    void releaseBuffers();
-    void cancelBuffers();
-    /// Best-effort removal of the written data files and manifests; never throws.
+    struct PartitionWriter
+    {
+        ChunkPartitioner::PartitionKey partition_key;
+        MultipleFileWriter writer;
+        bool data_files_removed = false;
+    };
+
+    /// Best-effort removal of the data files of a writer, at most once; never throws.
+    void removeDataFiles(PartitionWriter & partition_writer);
+    /// Best-effort removal of the data files and manifests; never throws.
     void removeDataFilesAndManifests();
-    /// Reads the latest committed metadata: on the first chunk to write the data files with it,
+    /// Reads the latest committed metadata: when the session begins to write the data files with it,
     /// after a commit lost to a concurrent commit to make it the base of the next attempt.
     void readLatestMetadata();
     /// One commit attempt. Returns false if the attempt lost to a concurrent commit.
@@ -255,6 +262,11 @@ private:
     /// A commit attempt may have published the snapshot referencing the written files, so they must not be removed.
     bool commit_outcome_unknown = false;
 
+    /// The writers of all the sinks. A list: the sinks keep references to them.
+    std::mutex writers_mutex;
+    std::list<PartitionWriter> partition_writers;
+    std::vector<std::pair<const ChunkPartitioner::PartitionKey *, const MultipleFileWriter *>> writers_to_commit;
+
     /// The manifests are written once and reused on commit retries.
     Strings manifest_entries_in_storage;
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
@@ -269,9 +281,68 @@ private:
     /// The catalog pointer `metadata` was read from, which the catalog commit must still find.
     String base_catalog_metadata_location;
     Iceberg::PersistentTableComponents persistent_table_components;
+    /// Shared with the data file writers, which may outlive the sink.
+    const std::shared_ptr<const Iceberg::IcebergPathResolver> path_resolver;
     const DataLakeStorageSettingsPtr data_lake_settings;
     const String write_format;
+};
 
+class IcebergStorageSink final : public SinkToStorage
+{
+public:
+    IcebergStorageSink(
+        std::shared_ptr<IcebergWriteSession> session_,
+        SharedHeader sample_block_,
+        SharedHeader header_with_sort_columns_,
+        ContextPtr context_,
+        const KeyDescription & sort_description_,
+        const SortDescription & sort_order_description_,
+        std::optional<ChunkPartitioner> partitioner_,
+        size_t max_data_files_in_upload);
+
+    ~IcebergStorageSink() override;
+
+    String getName() const override { return "IcebergStorageSink"; }
+
+    void consume(Chunk & chunk) override;
+
+    void onFinish() override;
+    void onException(std::exception_ptr exception) override;
+
+private:
+    /// Owns the writers of this sink and commits their files.
+    std::shared_ptr<IcebergWriteSession> session;
+    SharedHeader sample_block;
+    /// The sample block with the key columns `sortBlockByKeyDescription` appends.
+    SharedHeader header_with_sort_columns;
+    ContextPtr context;
+    /// Of the session.
+    const KeyDescription & sort_description;
+    /// Own copy: `sortBlockByKeyDescription` writes the names of the sort columns into it, and the sinks of a session work in parallel.
+    SortDescription sort_order_description;
+    /// Own copy: the sinks of a session work in parallel.
+    std::optional<ChunkPartitioner> partitioner;
+    /// The uploads of the finished data files of this sink.
+    DataFileUploads data_file_uploads;
+    /// Of the values this sink writes; given to the session when the sink finishes.
+    std::unique_ptr<IcebergColumnSketches> column_sketches;
+    std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter *, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
+    /// The sorted chunks of a partition's next data file, merged when it is written.
+    struct SortedPendingFile
+    {
+        Chunks sorted_chunks;
+        size_t rows = 0;
+        size_t bytes = 0;
+    };
+    std::unordered_map<ChunkPartitioner::PartitionKey, SortedPendingFile, ChunkPartitioner::PartitionKeyHasher> sorted_pending_file_per_partition_key;
+    /// Bytes of all pending files; writing the largest early bounds it by `iceberg_insert_max_sort_buffer_bytes`.
+    size_t pending_bytes = 0;
+
+    MultipleFileWriter & getWriter(const ChunkPartitioner::PartitionKey & partition_key);
+    void writePendingFile(const ChunkPartitioner::PartitionKey & partition_key, SortedPendingFile & pending_file);
+    void finalizeBuffers();
+    void releaseBuffers();
+    void cancelBuffers();
 };
 
 }

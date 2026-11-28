@@ -13,13 +13,13 @@ digraph
     n3[label="CountingTransform_3"];
     n4[label="AddDeduplicationInfoTransform_4"];
     n5[label="PlanSquashingTransform_5"];
-    n6[label="ApplySquashingTransform_11"];
+    n6[label="ApplySquashingTransform_12"];
     n7[label="ConvertingTransform_6"];
     n8[label="RemovingReplicatedColumnsTransform_7"];
     n9[label="NestedElementsValidationTransform_8"];
     n10[label="RemovingSparseTransform_9"];
     n11[label="LogSink_10"];
-    n12[label="EmptySink_12"];
+    n12[label="InsertCommitSink_11"];
   }
   n0 -> n1;
   n1 -> n2;
@@ -47,12 +47,12 @@ digraph
     n3[label="CountingTransform_3"];
     n4[label="AddDeduplicationInfoTransform_4"];
     n5[label="PlanSquashingTransform_5"];
-    n6[label="ApplySquashingTransform_10"];
+    n6[label="ApplySquashingTransform_11"];
     n7[label="ConvertingTransform_6"];
     n8[label="RemovingReplicatedColumnsTransform_7"];
     n9[label="NestedElementsValidationTransform_8"];
     n10[label="MergeTreeSink_9"];
-    n11[label="EmptySink_11"];
+    n11[label="InsertCommitSink_10"];
   }
   n0 -> n1;
   n1 -> n2;
@@ -79,7 +79,7 @@ digraph
     n3[label="CountingTransform_3"];
     n4[label="AddDeduplicationInfoTransform_4"];
     n5[label="PlanSquashingTransform_5"];
-    n6[label="ApplySquashingTransform_21"];
+    n6[label="ApplySquashingTransform_22"];
     n7[label="ConvertingTransform_6"];
     n8[label="RemovingReplicatedColumnsTransform_7"];
     n9[label="NestedElementsValidationTransform_8"];
@@ -95,7 +95,7 @@ digraph
     n19[label="RemovingSparseTransform_16"];
     n20[label="LogSink_17"];
     n21[label="FinalizingViewsTransform_19"];
-    n22[label="EmptySink_22"];
+    n22[label="InsertCommitSink_21"];
   }
   n0 -> n1;
   n1 -> n2;
@@ -134,7 +134,7 @@ digraph
     n3[label="CountingTransform_3"];
     n4[label="AddDeduplicationInfoTransform_4"];
     n5[label="PlanSquashingTransform_5"];
-    n6[label="ApplySquashingTransform_21"];
+    n6[label="ApplySquashingTransform_22"];
     n7[label="ConvertingTransform_6"];
     n8[label="RemovingReplicatedColumnsTransform_7"];
     n9[label="NestedElementsValidationTransform_8"];
@@ -150,7 +150,7 @@ digraph
     n19[label="NestedElementsValidationTransform_16"];
     n20[label="MergeTreeSink_17"];
     n21[label="FinalizingViewsTransform_19"];
-    n22[label="EmptySink_22"];
+    n22[label="InsertCommitSink_21"];
   }
   n0 -> n1;
   n1 -> n2;

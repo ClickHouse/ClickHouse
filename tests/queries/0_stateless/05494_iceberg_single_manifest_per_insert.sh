@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 
-# With `iceberg_insert_single_manifest_for_all_partitions`, each insert stream of an INSERT into a partitioned Iceberg table
-# writes one manifest for all the partitions it touches, like Spark and PyIceberg, instead of one manifest per partition;
-# with `max_insert_threads = 1` the whole INSERT writes exactly one manifest. The manifest-list entry must then describe the whole manifest:
+# With `iceberg_insert_single_manifest_for_all_partitions`, an INSERT into a partitioned Iceberg table writes one manifest
+# for all the partitions it touches, like Spark and PyIceberg, instead of one manifest per partition. The manifest-list entry must then describe the whole manifest:
 # real file/row counts and a `partitions` summary whose bounds span every partition tuple, with `contains_null` when
 # one of them is NULL. Partition pruning keeps working on such a manifest, and DROP PARTITION refuses to drop one of
 # its partitions, since that would require rewriting a manifest shared with other partitions.
@@ -127,15 +126,13 @@ ${CLICKHOUSE_CLIENT} --query "SELECT p, sum(v) FROM ${NULL_TABLE} GROUP BY p ORD
 ${CLICKHOUSE_CLIENT} --query "SELECT sum(v) FROM ${NULL_TABLE} WHERE p IS NULL SETTINGS use_iceberg_partition_pruning = 1"
 ${CLICKHOUSE_CLIENT} --query "SELECT sum(v) FROM ${NULL_TABLE} WHERE p = -7 SETTINGS use_iceberg_partition_pruning = 1"
 
-# Every insert stream commits its own snapshot, so with several streams one INSERT writes one manifest per stream,
-# each covering all the partitions of the rows that stream received. How many streams get rows is not deterministic.
-echo "--- parallel INSERT: one manifest per insert stream, each spanning all partitions"
+# The insert streams commit together, so a parallel INSERT also writes one snapshot with one manifest spanning all partitions.
+echo "--- parallel INSERT: one snapshot with one manifest spanning all partitions"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${PARALLEL_TABLE} (p Int64, n Int64)
     ENGINE = IcebergLocal('${PARALLEL_TABLE_PATH}', 'Parquet')
     PARTITION BY p"
-# The streams race to commit the next metadata version; the loser logs the conflict as an error and retries.
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --send_logs_level=fatal --query "
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
     INSERT INTO ${PARALLEL_TABLE} SELECT number % 3, number FROM numbers_mt(300000)
     SETTINGS max_insert_threads = 4, max_threads = 4, max_block_size = 1000"
 SNAPSHOTS=$(${CLICKHOUSE_CLIENT} --query "
@@ -143,7 +140,7 @@ SNAPSHOTS=$(${CLICKHOUSE_CLIENT} --query "
     WHERE database = currentDatabase() AND table = '${PARALLEL_TABLE}' AND operation = 'APPEND'")
 ${CLICKHOUSE_CLIENT} --query "
     SELECT
-        count() = ${SNAPSHOTS},
+        count() = ${SNAPSHOTS} AND ${SNAPSHOTS} = 1,
         uniqExact(added_snapshot_id) = count(),
         arrayAll(s -> reinterpretAsInt64(tupleElement(s, 'lower_bound')) = 0
             AND reinterpretAsInt64(tupleElement(s, 'upper_bound')) = 2, groupArray(partitions[1]))

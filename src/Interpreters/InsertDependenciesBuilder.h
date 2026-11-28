@@ -6,6 +6,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/StorageIDMaybeEmpty.h>
 #include <QueryPipeline/Chain.h>
+#include <Storages/IStorageWriteSession.h>
 #include <Storages/StorageSnapshot.h>
 
 #include <Common/Logger.h>
@@ -86,6 +87,11 @@ private:
         = std::unordered_map<StorageIDMaybeEmpty, SharedHeader, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using MapIdThreadGroup = std::
         unordered_map<StorageIDMaybeEmpty, ThreadGroupPtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using MapIdWriteSession = std::unordered_map<
+        StorageIDMaybeEmpty,
+        StorageWriteSessionPtr,
+        StorageID::DatabaseAndTableNameHash,
+        StorageID::DatabaseAndTableNameEqual>;
     using MapIdViewType = std::unordered_map<
         StorageIDMaybeEmpty,
         QueryViewsLogElement::ViewType,
@@ -127,6 +133,10 @@ public:
     {
         return sink_stream_size;
     }
+
+    /// The sink for the output of all the chains: commits the insert when they have finished, a table before its dependent views.
+    /// Call it after all the chains are created: it commits the sessions of their sinks.
+    ProcessorPtr createCommitSink(SharedHeader header) const;
 
     /// Whether a synchronous insert into `storage` would actually deduplicate blocks, i.e. some sink
     /// consults the deduplication block ids. For MergeTree-family engines this mirrors how
@@ -259,6 +269,9 @@ private:
     Chain createSinkImpl(StorageIDMaybeEmpty view_id) const;
     Chain createPostSink(StorageIDMaybeEmpty view_id) const;
 
+    /// The session of the destination table (by `root_view`) or of the target of a view, begun on the first call.
+    StorageWriteSessionPtr getWriteSession(const StorageIDMaybeEmpty & view_id) const;
+
     Chain createRetry(const std::vector<StorageIDMaybeEmpty> & path, StorageIDMaybeEmpty start_from, const std::string & partition) const;
 
     static QueryViewsLogElement::ViewStatus getQueryViewStatus(std::exception_ptr exception, bool before_start);
@@ -274,6 +287,8 @@ private:
     bool async_insert = false;
     bool skip_destination_table = false;
     size_t sink_stream_size = 1;
+    /// The sessions of the tables this insert has sinks for, see `getWriteSession`.
+    mutable MapIdWriteSession write_sessions;
 
     /// When the insertion is made into a materialized view, the root_view is the view itself and dependent_views contains its inner table.
     /// When the insertion is made into a regular table (it is init_table_id), the root_view is {} / StorageID::createEmpty() and dependent_views contains init_table_id.

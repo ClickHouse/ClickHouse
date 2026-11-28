@@ -91,6 +91,22 @@ public:
         ContextPtr context,
         bool async_insert) override;
 
+    StorageWriteSessionPtr beginWrite(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert) override;
+
+    /// nullptr if the sinks from `createSink` finish their part of the insert themselves.
+    static StorageWriteSessionPtr createWriteSession(
+        const StorageObjectStorageConfigurationPtr & configuration,
+        const ObjectStoragePtr & object_storage,
+        const StorageID & storage_id,
+        const std::optional<FormatSettings> & format_settings,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & local_context);
+
     static SinkToStoragePtr createSink(
         const StorageObjectStorageConfigurationPtr & configuration,
         const ObjectStoragePtr & object_storage,

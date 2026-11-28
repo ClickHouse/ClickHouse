@@ -55,18 +55,18 @@ ${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" $NO_MEM_THROTTLE
     EXPLAIN PIPELINE
     INSERT INTO t3_dist
     SELECT * FROM t1_local;
-""" | grep -v EmptySink | grep -c Sink
+""" | grep -v -e EmptySink -e InsertCommitSink | grep -c Sink
 
 echo "inserting into a remote table from remote with concurrency max_insert_threads"
 ${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" $NO_MEM_THROTTLE --parallel_distributed_insert_select 0 -q """
     EXPLAIN PIPELINE
     INSERT INTO t3_dist
     SELECT * FROM t3_dist;
-""" | grep -v EmptySink | grep -c Sink
+""" | grep -v -e EmptySink -e InsertCommitSink | grep -c Sink
 
 echo "inserting into a remote table from remote (reading with parallel replicas) with concurrency max_insert_threads"
 ${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" $NO_MEM_THROTTLE --enable_parallel_replicas 2 --cluster_for_parallel_replicas 'parallel_replicas' --max_parallel_replicas 3 -q """
     EXPLAIN PIPELINE
     INSERT INTO t3_dist
     SELECT * FROM t4_pr;
-""" | grep -v EmptySink | grep -c Sink
+""" | grep -v -e EmptySink -e InsertCommitSink | grep -c Sink

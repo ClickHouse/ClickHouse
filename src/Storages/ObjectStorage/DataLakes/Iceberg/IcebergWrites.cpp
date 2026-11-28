@@ -124,7 +124,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int INCORRECT_DATA;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace FailPoints
@@ -1400,7 +1399,7 @@ static bool canTagSortOrder(const Poco::JSON::Object::Ptr & metadata, const Poco
     return true;
 }
 
-IcebergStorageSink::IcebergStorageSink(
+IcebergWriteSession::IcebergWriteSession(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
     const std::optional<FormatSettings> & format_settings_,
@@ -1410,25 +1409,25 @@ IcebergStorageSink::IcebergStorageSink(
     const Iceberg::PersistentTableComponents & persistent_table_components_,
     const StorageID & table_id_,
     std::optional<Int32> planned_schema_id_)
-    : SinkToStorage(sample_block_)
-    , sample_block(sample_block_)
-    , data_file_uploads(object_storage_->supportParallelWrite()
-        ? context_->getSettingsRef()[Setting::iceberg_insert_max_data_files_in_upload] : 0)
+    : sample_block(sample_block_)
     , object_storage(object_storage_)
+    , format_settings(format_settings_)
     , planned_schema_id(planned_schema_id_)
     , context(context_)
-    , format_settings(format_settings_)
     , catalog(catalog_)
     , table_id(table_id_)
     , persistent_table_components(persistent_table_components_)
+    , path_resolver(std::make_shared<const Iceberg::IcebergPathResolver>(persistent_table_components_.path_resolver))
     , data_lake_settings(configuration_->getDataLakeSettings())
     , write_format(configuration_->format)
 {
+    /// Once per insert, whatever the number of its sinks is.
+    readLatestMetadata();
 }
 
-void IcebergStorageSink::readLatestMetadata()
+void IcebergWriteSession::readLatestMetadata()
 {
-    /// The first read, on the first chunk, sets up how the data files are written. A later one, after a commit lost
+    /// The first read, when the session begins, sets up how the data files are written. A later one, after a commit lost
     /// to a concurrent commit, makes the newly committed metadata the base of the next attempt.
     const bool is_retry = !metadata.isNull();
 
@@ -1535,34 +1534,121 @@ void IcebergStorageSink::readLatestMetadata()
         }
     }
 
-    if (shouldWriteIcebergTableStatisticsNdv(context, catalog))
-        column_sketches.emplace(*sample_block, current_schema->getArray(Iceberg::f_fields));
+    write_column_sketches = shouldWriteIcebergTableStatisticsNdv(context, catalog);
+}
+
+IcebergWriteSession::~IcebergWriteSession()
+{
+    /// Covers every way an insert can stop without committing, including cancellation.
+    /// Not if the snapshot which references the files may be published.
+    if (!committed && !commit_outcome_unknown)
+    {
+        removeDataFilesAndManifests();
+        return;
+    }
+
+    /// The files of the cancelled writers were not committed.
+    for (auto & partition_writer : partition_writers)
+    {
+        if (partition_writer.writer.isCancelled())
+            removeDataFiles(partition_writer);
+    }
+}
+
+SinkToStoragePtr IcebergWriteSession::createSink()
+{
+    return std::make_shared<IcebergStorageSink>(
+        shared_from_this(),
+        sample_block,
+        header_with_sort_columns,
+        context,
+        sort_description,
+        sort_order_description,
+        partitioner,
+        object_storage->supportParallelWrite() ? context->getSettingsRef()[Setting::iceberg_insert_max_data_files_in_upload].value : 0);
+}
+
+std::unique_ptr<IcebergColumnSketches> IcebergWriteSession::createColumnSketches() const
+{
+    if (!write_column_sketches)
+        return nullptr;
+    return std::make_unique<IcebergColumnSketches>(*sample_block, current_schema->getArray(Iceberg::f_fields));
+}
+
+void IcebergWriteSession::addColumnSketches(IcebergColumnSketches & sketches)
+{
+    /// A failure must not fail the write, so it only stops the statistics from being written.
+    IcebergColumnSketches::Finished finished;
+    try
+    {
+        finished = sketches.finish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Cannot finish the column sketches, no statistics will be written");
+    }
+
+    std::lock_guard lock(column_sketches_mutex);
+    column_sketches.push_back(std::move(finished));
+}
+
+MultipleFileWriter & IcebergWriteSession::addWriter(const ChunkPartitioner::PartitionKey & partition_key, DataFileUploads & data_file_uploads)
+{
+    MultipleFileWriter writer(
+        context->getSettingsRef()[Setting::iceberg_insert_max_rows_in_data_file],
+        context->getSettingsRef()[Setting::iceberg_insert_max_bytes_in_data_file],
+        current_schema->getArray(Iceberg::f_fields),
+        filename_generator,
+        data_file_uploads,
+        path_resolver,
+        object_storage,
+        context,
+        format_settings,
+        write_format,
+        sample_block);
+
+    std::lock_guard lock(writers_mutex);
+    return partition_writers.emplace_back(partition_key, std::move(writer)).writer;
+}
+
+IcebergStorageSink::IcebergStorageSink(
+    std::shared_ptr<IcebergWriteSession> session_,
+    SharedHeader sample_block_,
+    SharedHeader header_with_sort_columns_,
+    ContextPtr context_,
+    const KeyDescription & sort_description_,
+    const SortDescription & sort_order_description_,
+    std::optional<ChunkPartitioner> partitioner_,
+    size_t max_data_files_in_upload)
+    : SinkToStorage(sample_block_)
+    , session(std::move(session_))
+    , sample_block(sample_block_)
+    , header_with_sort_columns(std::move(header_with_sort_columns_))
+    , context(std::move(context_))
+    , sort_description(sort_description_)
+    , sort_order_description(sort_order_description_)
+    , partitioner(std::move(partitioner_))
+    , data_file_uploads(max_data_files_in_upload)
+    , column_sketches(session->createColumnSketches())
+{
 }
 
 IcebergStorageSink::~IcebergStorageSink()
 {
+    /// The session removes the data files of the cancelled writers.
     cancelBuffers();
-    /// Covers every way an insert can stop without committing, including cancellation, which skips `onException`.
-    if (!committed && !commit_outcome_unknown)
-        removeDataFilesAndManifests();
 }
 
 void IcebergStorageSink::consume(Chunk & chunk)
 {
-    /// A parallel insert creates `max_insert_threads` sinks and many of them receive no data. Such a sink
-    /// commits nothing, so it does not read the latest metadata either, which lists the metadata directory.
     if (isCancelled() || !chunk.hasRows())
         return;
 
-    if (!metadata)
-        readLatestMetadata();
-
-    total_rows += chunk.getNumRows();
     if (column_sketches)
         column_sketches->update(chunk.getColumns());
 
     /// The partitions and the bounds must describe the stored values.
-    if (Poco::toUpper(write_format) == "ORC")
+    if (Poco::toUpper(session->getWriteFormat()) == "ORC")
         ORC::replaceTimestampsStoredAsEpoch(chunk);
 
     size_t start_columns_size = chunk.getNumColumns();
@@ -1626,22 +1712,9 @@ void IcebergStorageSink::consume(Chunk & chunk)
 MultipleFileWriter & IcebergStorageSink::getWriter(const ChunkPartitioner::PartitionKey & partition_key)
 {
     auto it = writer_per_partition_key.find(partition_key);
-    if (it != writer_per_partition_key.end())
-        return it->second;
-
-    auto writer = MultipleFileWriter(
-        context->getSettingsRef()[Setting::iceberg_insert_max_rows_in_data_file],
-        context->getSettingsRef()[Setting::iceberg_insert_max_bytes_in_data_file],
-        current_schema->getArray(Iceberg::f_fields),
-        filename_generator,
-        data_file_uploads,
-        persistent_table_components.path_resolver,
-        object_storage,
-        context,
-        format_settings,
-        write_format,
-        sample_block);
-    return writer_per_partition_key.emplace(partition_key, std::move(writer)).first->second;
+    if (it == writer_per_partition_key.end())
+        it = writer_per_partition_key.emplace(partition_key, &session->addWriter(partition_key, data_file_uploads)).first;
+    return *it->second;
 }
 
 void IcebergStorageSink::writePendingFile(const ChunkPartitioner::PartitionKey & partition_key, SortedPendingFile & pending_file)
@@ -1680,7 +1753,6 @@ void IcebergStorageSink::onFinish()
         if (pending_file.rows)
             writePendingFile(partition_key, pending_file);
     finalizeBuffers();
-    releaseBuffers();
 }
 
 void IcebergStorageSink::onException(std::exception_ptr /* exception */)
@@ -1690,16 +1762,36 @@ void IcebergStorageSink::onException(std::exception_ptr /* exception */)
 
 void IcebergStorageSink::finalizeBuffers()
 {
-    for (auto & [partition_key, writer] : writer_per_partition_key)
+    for (auto & [_, writer] : writer_per_partition_key)
+        writer->finalize();
+    /// The session commits only uploaded files.
+    data_file_uploads.finalize();
+    /// A sink which got an error does not get here: neither its files nor its sketches are committed.
+    if (column_sketches)
+        session->addColumnSketches(*column_sketches);
+    releaseBuffers();
+    /// The writers are finished, and stay in the session to be committed.
+    writer_per_partition_key.clear();
+}
+
+void IcebergWriteSession::commit()
+{
+    /// A sink which got an error has cancelled its writers.
+    for (const auto & partition_writer : partition_writers)
     {
-        writer.finalize();
-        total_chunks_size += writer.getResultBytes();
+        if (!partition_writer.writer.isCancelled())
+            writers_to_commit.emplace_back(&partition_writer.partition_key, &partition_writer.writer);
     }
 
-    data_file_uploads.finalize();
-
-    if (writer_per_partition_key.empty())
+    if (writers_to_commit.empty())
         return;
+
+    for (const auto & [_, writer] : writers_to_commit)
+    {
+        for (UInt64 rows : writer->getDataFileRowCounts())
+            total_rows += static_cast<Int64>(rows);
+        total_chunks_size += static_cast<Int64>(writer->getResultBytes());
+    }
 
     snapshot_id = MetadataGenerator(metadata, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]).generateSnapshotId();
 
@@ -1737,15 +1829,13 @@ void IcebergStorageSink::finalizeBuffers()
     throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Write into iceberg was not successful");
 }
 
-void IcebergStorageSink::waitBeforeCommitRetry(UInt64 delay_ms)
+void IcebergWriteSession::waitBeforeCommitRetry(UInt64 delay_ms)
 {
     /// The delay is waited in slices, so that `KILL QUERY` and `max_execution_time` interrupt a long one.
     static constexpr UInt64 max_slice_ms = 100;
     auto process_list_element = context->getProcessListElement();
     while (true)
     {
-        if (isCancelled())
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Insert into Iceberg was cancelled while waiting to retry the commit");
         if (process_list_element)
             process_list_element->checkTimeLimit();
 
@@ -1761,33 +1851,35 @@ void IcebergStorageSink::waitBeforeCommitRetry(UInt64 delay_ms)
 void IcebergStorageSink::releaseBuffers()
 {
     for (auto & [_, writer] : writer_per_partition_key)
-    {
-        writer.release();
-    }
+        writer->release();
 }
 
 void IcebergStorageSink::cancelBuffers()
 {
     for (auto & [_, writer] : writer_per_partition_key)
-    {
-        writer.cancel();
-    }
+        writer->cancel();
     data_file_uploads.cancel();
 }
 
-void IcebergStorageSink::removeDataFilesAndManifests()
+void IcebergWriteSession::removeDataFiles(PartitionWriter & partition_writer)
 {
-    for (const auto & [_, writer] : writer_per_partition_key)
+    if (std::exchange(partition_writer.data_files_removed, true))
+        return;
+
+    try
     {
-        try
-        {
-            writer.clearAllDataFiles();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Best-effort cleanup of data files failed");
-        }
+        partition_writer.writer.clearAllDataFiles();
     }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Best-effort cleanup of data files failed");
+    }
+}
+
+void IcebergWriteSession::removeDataFilesAndManifests()
+{
+    for (auto & partition_writer : partition_writers)
+        removeDataFiles(partition_writer);
 
     for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
     {
@@ -1802,7 +1894,7 @@ void IcebergStorageSink::removeDataFilesAndManifests()
     }
 }
 
-bool IcebergStorageSink::initializeMetadata()
+bool IcebergWriteSession::initializeMetadata()
 {
     const auto & resolver = persistent_table_components.path_resolver;
     auto metadata_info = filename_generator.generateMetadataPathWithInfo();
@@ -1813,8 +1905,12 @@ bool IcebergStorageSink::initializeMetadata()
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
     Int64 total_data_files = 0;
-    for (const auto & [_, writer] : writer_per_partition_key)
-        total_data_files += static_cast<Int64>(writer.getDataFiles().size());
+    std::unordered_set<ChunkPartitioner::PartitionKey, ChunkPartitioner::PartitionKeyHasher> partition_keys;
+    for (const auto & [partition_key, writer] : writers_to_commit)
+    {
+        total_data_files += static_cast<Int64>(writer->getDataFiles().size());
+        partition_keys.insert(*partition_key);
+    }
 
     /// Incremental refreshable-MV write: the streaming source filled the cursor on the query context;
     /// embed it (as stored) so it commits atomically with these data files. Absent for plain inserts.
@@ -1829,7 +1925,7 @@ bool IcebergStorageSink::initializeMetadata()
         total_data_files,
         total_rows,
         total_chunks_size,
-        /* num_partitions */ static_cast<Int64>(writer_per_partition_key.size()),
+        /* num_partitions */ static_cast<Int64>(partition_keys.size()),
         /* added_delete_files */ 0,
         /* num_deleted_rows */ 0,
         snapshot_id,
@@ -1963,11 +2059,18 @@ bool IcebergStorageSink::initializeMetadata()
                 partition_summary.reset();
             };
 
+            /// Several sinks may write the same partition: group their files, so the manifest of a partition holds all of them.
+            std::unordered_map<ChunkPartitioner::PartitionKey, std::vector<const MultipleFileWriter *>, ChunkPartitioner::PartitionKeyHasher>
+                writers_per_partition;
+            for (const auto & [partition_key, writer] : writers_to_commit)
+                writers_per_partition[*partition_key].push_back(writer);
+
             /// Either one manifest for every partition the insert touched, or one manifest per partition.
             const bool single_manifest = context->getSettingsRef()[Setting::iceberg_insert_single_manifest_for_all_partitions];
-            for (const auto & [partition_key, writer] : writer_per_partition_key)
+            for (const auto & [partition_key, writers] : writers_per_partition)
             {
-                add_partition(partition_key, writer);
+                for (const auto * writer : writers)
+                    add_partition(partition_key, *writer);
                 if (!single_manifest)
                     write_manifest();
             }
@@ -2006,9 +2109,9 @@ bool IcebergStorageSink::initializeMetadata()
             }
         }
 
-        if (column_sketches)
+        if (write_column_sketches)
             statistics_file_path = writeIcebergTableStatisticsNdv(
-                &*column_sketches, /*union_with_parent=*/ true, metadata, new_snapshot, filename_generator, resolver, object_storage,
+                column_sketches, /*union_with_parent=*/ true, metadata, new_snapshot, filename_generator, resolver, object_storage,
                 context);
 
         {

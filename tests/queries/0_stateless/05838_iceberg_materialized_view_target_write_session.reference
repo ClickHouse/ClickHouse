@@ -1,0 +1,13 @@
+=== MergeTree source, Iceberg target ===
+10000
+target: 10000 rows, 1 snapshots
+several sinks: 1
+=== Iceberg source, two Iceberg targets, one view fails ===
+FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
+source: 0 rows, 0 snapshots
+target of the good view: 0 rows, 0 snapshots
+target of the failed view: 0 rows, 0 snapshots
+=== the same with materialized_views_ignore_errors ===
+source: 10000 rows, 1 snapshots
+target of the good view: 10000 rows, 1 snapshots
+target of the failed view has a part of the rows: 1

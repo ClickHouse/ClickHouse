@@ -6,6 +6,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Processors/ForkProcessor.h>
+#include <Processors/ISink.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/ShrinkColumnsTransform.h>
@@ -1202,6 +1203,105 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
 namespace
 {
 
+/// Receives the output of all the streams of an `INSERT` and commits its write sessions when they have finished.
+class InsertCommitSink final : public ISink
+{
+public:
+    struct Session
+    {
+        StorageIDMaybeEmpty view_id;
+        StorageWriteSessionPtr session;
+        /// The session of the target of a view with `materialized_views_ignore_errors`:
+        /// an error of its commit is an error of the view, like an error of its sinks.
+        bool ignore_errors = false;
+    };
+
+    InsertCommitSink(SharedHeader header, std::vector<Session> sessions_)
+        : ISink(std::move(header))
+        , sessions(std::move(sessions_))
+    {
+    }
+
+    String getName() const override { return "InsertCommitSink"; }
+
+protected:
+    void consume(Chunk /*chunk*/) override {}
+
+    void onFinish() override
+    {
+        if (isCancelled())
+            return;
+
+        for (const auto & [view_id, session, ignore_errors] : sessions)
+        {
+            if (!ignore_errors)
+            {
+                session->commit();
+                continue;
+            }
+
+            try
+            {
+                session->commit();
+            }
+            catch (...)
+            {
+                tryLogException(
+                    addStorageToException(std::current_exception(), view_id),
+                    getLogger("InsertCommitSink"),
+                    "Cannot push to the storage. Error is ignored because the setting materialized_views_ignore_errors is enabled.",
+                    LogsLevel::warning);
+            }
+        }
+    }
+
+private:
+    std::vector<Session> sessions;
+};
+
+}
+
+StorageWriteSessionPtr InsertDependenciesBuilder::getWriteSession(const StorageIDMaybeEmpty & view_id) const
+{
+    if (auto it = write_sessions.find(view_id); it != write_sessions.end())
+        return it->second;
+
+    const auto & inner_table_id = inner_tables.at(view_id);
+    auto session = storages.at(inner_table_id)->beginWrite(
+        select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_contexts.at(view_id), async_insert);
+
+    write_sessions.emplace(view_id, session);
+    return session;
+}
+
+ProcessorPtr InsertDependenciesBuilder::createCommitSink(SharedHeader header) const
+{
+    /// The reversed post-order of the views: a view goes after all the views it depends on, even if it is reached by several paths.
+    std::vector<StorageIDMaybeEmpty> views_order;
+    StorageIDSet visited;
+    std::function<void(const StorageIDMaybeEmpty &)> visit = [&](const StorageIDMaybeEmpty & view_id)
+    {
+        if (!visited.insert(view_id).second)
+            return;
+        for (const auto & child_view_id : dependent_views.at(view_id) | std::views::reverse)
+            visit(child_view_id);
+        views_order.push_back(view_id);
+    };
+    visit(root_view);
+
+    std::vector<InsertCommitSink::Session> sessions;
+    sessions.reserve(write_sessions.size());
+    for (const auto & view_id : views_order | std::views::reverse)
+        if (auto it = write_sessions.find(view_id); it != write_sessions.end())
+            sessions.emplace_back(view_id, it->second, materialized_views_ignore_errors && view_id != root_view);
+
+    chassert(sessions.size() == write_sessions.size());
+    return std::make_shared<InsertCommitSink>(std::move(header), std::move(sessions));
+}
+
+namespace
+{
+
 struct SquashingTransformContext
 {
     size_t num_squashing_transforms = 0;
@@ -1966,7 +2066,7 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
     }
     else
     {
-        auto sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
+        auto sink = getWriteSession(view_id)->createSink();
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
         result.addSink(std::move(sink));

@@ -197,6 +197,11 @@ public:
         return getNestedForWrite(context)->write(query, metadata_snapshot, context, async_insert);
     }
 
+    StorageWriteSessionPtr beginWrite(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override
+    {
+        return getNestedForWrite(context)->beginWrite(query, metadata_snapshot, context, async_insert);
+    }
+
     void truncate(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,

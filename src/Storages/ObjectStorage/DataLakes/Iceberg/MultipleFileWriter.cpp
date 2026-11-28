@@ -66,7 +66,7 @@ MultipleFileWriter::MultipleFileWriter(
     Poco::JSON::Array::Ptr schema_,
     FileNamesGenerator & filename_generator_,
     DataFileUploads & data_file_uploads_,
-    const Iceberg::IcebergPathResolver & path_resolver_,
+    std::shared_ptr<const Iceberg::IcebergPathResolver> path_resolver_,
     ObjectStoragePtr object_storage_,
     ContextPtr context_,
     const std::optional<FormatSettings> & format_settings_,
@@ -79,7 +79,7 @@ MultipleFileWriter::MultipleFileWriter(
     , stats(fieldIdsOfWrittenColumns(*column_mapper, *sample_block_), required_field_ids)
     , filename_generator(filename_generator_)
     , data_file_uploads(data_file_uploads_)
-    , path_resolver(path_resolver_)
+    , path_resolver(std::move(path_resolver_))
     , object_storage(object_storage_)
     , context(context_)
     , format_settings(format_settings_)
@@ -96,7 +96,7 @@ void MultipleFileWriter::startNewFile()
     current_file_stats = std::make_shared<DataFileStatistics>(fieldIdsOfWrittenColumns(*column_mapper, *sample_block), required_field_ids);
     current_file_num_rows = 0;
     auto metadata_path = filename_generator.generateDataFileName();
-    auto storage_path = path_resolver.resolve(metadata_path);
+    auto storage_path = path_resolver->resolve(metadata_path);
 
     data_file_names.push_back(metadata_path);
     buffer = object_storage->writeObject(
@@ -182,6 +182,7 @@ void MultipleFileWriter::release()
 
 void MultipleFileWriter::cancel()
 {
+    cancelled = true;
     if (output_format)
         output_format->cancel();
     if (buffer)
@@ -191,7 +192,7 @@ void MultipleFileWriter::cancel()
 void MultipleFileWriter::clearAllDataFiles() const
 {
     for (const auto & metadata_path : data_file_names)
-        object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(metadata_path)));
+        object_storage->removeObjectIfExists(StoredObject(path_resolver->resolve(metadata_path)));
 }
 
 UInt64 MultipleFileWriter::getResultBytes() const

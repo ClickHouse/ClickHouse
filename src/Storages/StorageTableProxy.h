@@ -194,6 +194,18 @@ public:
         return storage->write(query, nested_metadata, context, async_insert);
     }
 
+    StorageWriteSessionPtr beginWrite(
+        const ASTPtr & query,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr context,
+        bool async_insert) override
+    {
+        /// The same metadata as in `write`.
+        auto storage = getNested();
+        auto nested_metadata = storage->getInMemoryMetadataPtr(context, false);
+        return storage->beginWrite(query, nested_metadata, context, async_insert);
+    }
+
     void renameInMemory(const StorageID & new_table_id) override
     {
         std::lock_guard lock{nested_mutex};
