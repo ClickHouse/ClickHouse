@@ -407,7 +407,6 @@ void SchemaConverter::processSubtreeImpl(TraversalNode & node)
                 pos = sample_block->findPositionByName(node.name, options.format.parquet.case_insensitive_column_matching);
             else
             {
-                /// Take the node.match-th of the requested columns matching the element.
                 for (size_t i = 0; i < sample_block->columns(); ++i)
                 {
                     if (!boost::iequals(sample_block->getByPosition(i).name, node.name))
