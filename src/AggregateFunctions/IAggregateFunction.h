@@ -1223,6 +1223,9 @@ struct AggregateFunctionProperties
     bool is_window_function = false;
 
     VariantArgumentsConversion variant_arguments_conversion = VariantArgumentsConversion::None;
+
+    /// Duplicate rows do not change the result (examples: min, max, any, uniq), so the -Distinct combinator is redundant.
+    bool ignores_identical_values = false;
 };
 
 
