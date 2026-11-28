@@ -25,6 +25,7 @@
 #include <Parsers/ParserShowSettingQuery.h>
 #include <Parsers/ParserSnapshotQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Parsers/ParserDescribeCacheQuery.h>
 #include <Parsers/Access/ParserCreateTokenQuery.h>
 #include <Parsers/Access/ParserShowAccessEntitiesQuery.h>
@@ -136,7 +137,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!parsed)
         return false;
 
-    if (const auto * create = query->as<ASTCreateQuery>(); create && create->insert_data)
+    if (getInsertData(query))
     {
         node = std::move(query);
         return true;

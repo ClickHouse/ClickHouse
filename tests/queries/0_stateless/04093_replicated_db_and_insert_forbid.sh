@@ -82,6 +82,22 @@ printf '%s\n' \
     ${CLICKHOUSE_CURL} -sS --fail-with-body "${CLICKHOUSE_URL}" --data-binary @-
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(x) FROM t_04093_http_input"
 
+query_id_values="${CLICKHOUSE_DATABASE}_04093_explain_values_$$"
+query_id_csv="${CLICKHOUSE_DATABASE}_04093_explain_csv_$$"
+printf '%s' \
+    "EXPLAIN SYNTAX CREATE TABLE t_04093_explain (x String) ENGINE = Memory AS INSERT VALUES ('payload_04093_secret_values')" | \
+    ${CLICKHOUSE_CURL} -sS --fail-with-body "${CLICKHOUSE_URL}&log_queries=1&log_queries_probability=1&query_id=${query_id_values}" --data-binary @- > /dev/null
+printf '%s\n' \
+    'EXPLAIN SYNTAX CREATE TABLE t_04093_explain (x String) ENGINE = Memory AS INSERT FORMAT CSV' \
+    'payload_04093_secret_csv' | \
+    ${CLICKHOUSE_CURL} -sS --fail-with-body "${CLICKHOUSE_URL}&log_queries=1&log_queries_probability=1&query_id=${query_id_csv}" --data-binary @- > /dev/null
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count(), countIf(position(query, 'AS INSERT') > 0), countIf(position(query, 'payload_04093_secret') > 0)
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND type = 'QueryFinish' AND query_id IN ('${query_id_values}', '${query_id_csv}')
+"
+
 printf '1;2\n' | ${CLICKHOUSE_CLIENT} --query \
     "CREATE TABLE t_04093_delimiter (x UInt8, y UInt8) ENGINE = Memory AS INSERT SELECT * FROM input('x UInt8, y UInt8') SETTINGS format_csv_delimiter = ';' FORMAT CSV"
 printf '3;4\n' | ${CLICKHOUSE_CLIENT} --query \

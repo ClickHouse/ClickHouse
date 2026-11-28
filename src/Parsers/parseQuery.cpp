@@ -406,27 +406,35 @@ std::string getUnmatchedParenthesesErrorMessage(
 
 static ASTInsertQuery * getInsertAST(const ASTPtr & ast)
 {
-    /// Either it is INSERT or EXPLAIN INSERT.
     if (auto * explain = ast->as<ASTExplainQuery>())
     {
         if (auto explained_query = explain->getExplainedQuery())
-        {
             return explained_query->as<ASTInsertQuery>();
-        }
     }
     else
-    {
         return ast->as<ASTInsertQuery>();
+
+    return nullptr;
+}
+
+static ASTCreateQuery * getCreateAST(const ASTPtr & ast)
+{
+    if (auto * explain = ast->as<ASTExplainQuery>())
+    {
+        if (auto explained_query = explain->getExplainedQuery())
+            return explained_query->as<ASTCreateQuery>();
     }
+    else
+        return ast->as<ASTCreateQuery>();
 
     return nullptr;
 }
 
 const char * getInsertData(const ASTPtr & ast)
 {
-    if (const ASTInsertQuery * insert = getInsertAST(ast))
+    if (const auto * insert = getInsertAST(ast))
         return insert->data;
-    if (const ASTCreateQuery * create = ast->as<ASTCreateQuery>())
+    if (const auto * create = getCreateAST(ast))
         return create->insert_data;
     return nullptr;
 }
@@ -805,6 +813,14 @@ std::pair<const char *, bool> splitMultipartQuery(
             while (*pos && *pos != '\n')
                 ++pos;
             insert->end = pos;
+            is_insert_with_data = true;
+        }
+        else if (ASTCreateQuery * create = getCreateAST(ast); create && create->insert_data)
+        {
+            pos = create->insert_data;
+            while (*pos && *pos != '\n')
+                ++pos;
+            create->insert_data_end = pos;
             is_insert_with_data = true;
         }
 

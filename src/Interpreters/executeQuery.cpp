@@ -2919,7 +2919,8 @@ static BlockIO executeQueryImpl(
             {
                 /// Verify that AST formatting is consistent:
                 /// If you format AST, parse it back, you get the same AST, and if you format it again, you get the same string.
-                std::string_view original_query{begin, static_cast<size_t>(end - begin)};
+                const char * original_query_end = getInsertData(out_ast);
+                std::string_view original_query{begin, static_cast<size_t>((original_query_end ? original_query_end : end) - begin)};
 
                 auto format_ast = [](ASTPtr ast)
                 {
@@ -3063,14 +3064,8 @@ static BlockIO executeQueryImpl(
         const char * query_end = end;
         if (out_ast)
         {
-            if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
-            {
-                query_end = insert_query->data;
-            }
-            else if (const auto * create_query = out_ast->as<ASTCreateQuery>(); create_query && create_query->insert_data)
-            {
-                query_end = create_query->insert_data;
-            }
+            if (const char * insert_data = getInsertData(out_ast))
+                query_end = insert_data;
         }
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
@@ -3117,7 +3112,10 @@ static BlockIO executeQueryImpl(
     {
         /// Anyway log the query.
         if (query.empty())
-            query.assign(begin, std::min(static_cast<size_t>(end - begin), max_query_size));
+        {
+            const char * insert_data = out_ast ? getInsertData(out_ast) : nullptr;
+            query.assign(begin, std::min(static_cast<size_t>((insert_data ? insert_data : end) - begin), max_query_size));
+        }
 
         query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
         logQuery(query_for_logging, context, internal, stage);
@@ -3264,8 +3262,15 @@ static BlockIO executeQueryImpl(
                 ASTPtr input_function;
                 if (insert_query)
                     insert_query->tryFindInputFunction(input_function);
+
+                const auto * create_query = out_ast->as<ASTCreateQuery>();
+                ASTPtr create_input_function;
+                if (create_query && (create_query->has_as_insert || create_query->has_and_insert) && create_query->insert_select)
+                    create_query->tryFindInputFunction(create_input_function);
                 if ((istr && !istr->eof())
-                    || (insert_query && !insert_query->hasInlinedData() && (!insert_query->select || input_function)))
+                    || (insert_query && !insert_query->hasInlinedData() && (!insert_query->select || input_function))
+                    || (create_query && (create_query->has_as_insert || create_query->has_and_insert)
+                        && !create_query->insert_data && (!create_query->insert_select || create_input_function)))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "A query whose data streams over the connection cannot be run in the background");
 
