@@ -1,0 +1,6 @@
+partially downloaded segment with downloaded bytes exists: 1
+passive read served more bytes from the cache than from the source: 1
+passive read fetched nothing from the source: 1
+passive read wrote nothing to the cache: 1
+full table read agrees across cache disabled / normal mode / passive mode: 1
+full table row count: 400000
