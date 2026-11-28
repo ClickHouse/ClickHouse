@@ -36,6 +36,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/System/StorageSystemAsynchronousMetrics.h>
@@ -1343,6 +1344,10 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
             const String table_name = iterator->name();
             if (const auto & table = iterator->table())
             {
+                /// An `Alias` table takes its metadata from its target, which is not resolved when it is in a
+                /// database that the query asked not to contact.
+                if (const auto * alias = table->as<StorageAlias>(); alias && alias->isTargetHiddenFromSystemTables(context))
+                    continue;
                 const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (metadata_snapshot)
                 {

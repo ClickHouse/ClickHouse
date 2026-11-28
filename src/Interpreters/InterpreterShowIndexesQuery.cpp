@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
+#include <Storages/StorageAlias.h>
 
 
 namespace DB
@@ -129,7 +130,20 @@ BlockIO InterpreterShowIndexesQuery::execute()
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
     if (DatabaseCatalog::instance().isRemoteDatabase(database))
+    {
         query_context->setSetting("show_remote_databases_in_system_tables", true);
+    }
+    else if (!DatabaseCatalog::instance().isDatalakeCatalog(database))
+    {
+        /// An explicit `SHOW INDEXES` of an `Alias` table describes its target, also when the target is in a remote
+        /// database or in a data lake catalog, which the catalog tables do not contact on their own.
+        const auto table = DatabaseCatalog::instance().tryGetTable(StorageID(database, query.table), getContext());
+        if (table && table->as<StorageAlias>())
+        {
+            query_context->setSetting("show_remote_databases_in_system_tables", true);
+            query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
+        }
+    }
 
     return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
 }

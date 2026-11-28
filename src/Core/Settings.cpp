@@ -10034,11 +10034,15 @@ Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geom
         {"26.5", false, false, "New setting to allow parsing Iceberg geometry/geography fields as Geometry type. At the time the setting was named `allow_experimental_geo_types_in_iceberg`, which is now an alias of it."}) \
     DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
 Enables showing data lake catalogs in system tables.
+
+When disabled, the system tables also do not resolve a table with the `Alias` engine whose target is in a data lake catalog: its row is shown without the information that comes from the target, and its columns are not listed.
 )", 0, \
         {"25.10", true, false, "Disable catalogs in system tables by default"}, \
         {"25.8", true, true, "New setting"}) \
     DECLARE(Bool, show_remote_databases_in_system_tables, true, R"(
 Enables showing `MySQL` and `PostgreSQL` databases in system tables.
+
+When disabled, the system tables also do not resolve a table with the `Alias` engine whose target is in such a database: its row is shown without the information that comes from the target, and its columns are not listed.
 )", 0, \
         {"26.7", true, true, "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."}, \
         {"26.2", true, true, "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."}) \

@@ -153,6 +153,10 @@ protected:
             SerializationInfoByName serialization_hints{{}};
             StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
             const auto * alias = storage->as<StorageAlias>();
+            /// The columns of an alias are those of its target. The target is not resolved when it is in a database
+            /// that the query asked not to contact, so there is nothing to list for such an alias.
+            if (alias && alias->isTargetHiddenFromSystemTables(context))
+                continue;
             NameSet chain_granted;
 
             {

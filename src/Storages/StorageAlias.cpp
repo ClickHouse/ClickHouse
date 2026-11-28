@@ -23,6 +23,7 @@
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Databases/IDatabase.h>
 
 
@@ -32,6 +33,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
+    extern const SettingsBool show_remote_databases_in_system_tables;
 }
 
 namespace ErrorCodes
@@ -152,6 +155,44 @@ std::vector<std::pair<String, String>> StorageAlias::getTargetChain() const
     }
 
     return chain;
+}
+
+bool StorageAlias::isTargetHiddenFromSystemTables(ContextPtr query_context) const
+{
+    if (!query_context)
+        return false;
+
+    const auto & settings = query_context->getSettingsRef();
+    const bool hide_remote_databases = !settings[Setting::show_remote_databases_in_system_tables];
+    const bool hide_datalake_catalogs = !settings[Setting::show_data_lake_catalogs_in_system_tables];
+    if (!hide_remote_databases && !hide_datalake_catalogs)
+        return false;
+
+    const auto & database_catalog = DatabaseCatalog::instance();
+    UnorderedSetWithMemoryTracking<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> visited;
+    const StorageAlias * alias = this;
+    /// Owns the storage `alias` points into, from the second hop on.
+    StoragePtr alias_holder;
+
+    while (alias && visited.emplace(alias->target_database, alias->target_table).second)
+    {
+        /// The kind of a database is known by its name. It is resolving a table of it that contacts the
+        /// external system, so the chain is not followed into a hidden database.
+        const bool is_remote_database = database_catalog.isRemoteDatabase(alias->target_database);
+        const bool is_datalake_catalog = database_catalog.isDatalakeCatalog(alias->target_database);
+        if ((hide_remote_databases && is_remote_database) || (hide_datalake_catalogs && is_datalake_catalog))
+            return true;
+
+        /// A table of such a database is a table of the external system and never an `Alias`, so the chain
+        /// ends there. It is not resolved to find that out: this question must not add a round trip.
+        if (is_remote_database || is_datalake_catalog)
+            return false;
+
+        alias_holder = alias->tryGetTargetTable();
+        alias = alias_holder ? alias_holder->as<StorageAlias>() : nullptr;
+    }
+
+    return false;
 }
 
 NameSet StorageAlias::filterColumnsSelectableThroughChain(

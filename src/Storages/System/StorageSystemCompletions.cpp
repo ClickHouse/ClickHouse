@@ -93,6 +93,10 @@ static void fillDataWithTableColumns(
         return; // table was dropped while acquiring the lock
 
     const auto * alias = table->as<StorageAlias>();
+    /// The columns of an alias are those of its target, which is not resolved when it is in a database that the
+    /// query asked not to contact. The name of the alias itself is already added above.
+    if (alias && alias->isTargetHiddenFromSystemTables(context))
+        return;
     const auto snapshot = table->getInMemoryMetadataPtr(context, false);
     const auto & columns = snapshot->getColumns();
     NameSet chain_granted;

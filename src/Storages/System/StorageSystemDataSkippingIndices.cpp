@@ -118,8 +118,12 @@ protected:
                 if (!table)
                     continue;
 
+                /// The target of an alias is not resolved, not even for the access check, when it is in a database
+                /// that the query asked not to contact.
                 if (const auto * alias = table->as<StorageAlias>();
-                    alias && !alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}))
+                    alias
+                    && (alias->isTargetHiddenFromSystemTables(context)
+                        || !alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {})))
                     continue;
 
                 const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);

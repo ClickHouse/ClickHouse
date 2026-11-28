@@ -88,8 +88,12 @@ protected:
 
         auto add_constraints = [&](const String & db_name, const String & tbl_name, const StoragePtr & table)
         {
+            /// The target of an alias is not resolved, not even for the access check, when it is in a database
+            /// that the query asked not to contact.
             if (const auto * alias = table->as<StorageAlias>();
-                alias && !alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}))
+                alias
+                && (alias->isTargetHiddenFromSystemTables(context)
+                    || !alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {})))
                 return;
 
             const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
