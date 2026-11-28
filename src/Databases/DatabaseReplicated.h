@@ -13,6 +13,7 @@
 #include <base/defines.h>
 #include <Common/SecretString.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 
 
 namespace zkutil
@@ -84,7 +85,8 @@ public:
                        const String & zookeeper_name_, const String & zookeeper_path_,
                        const String & shard_name_, const String & replica_name_,
                        DatabaseReplicatedSettings db_settings_,
-                       ContextPtr context);
+                       ContextPtr context,
+                       const ZooKeeperRetriesInfo & create_query_zookeeper_retries_info_ = {});
 
     ~DatabaseReplicated() override;
 
@@ -136,6 +138,9 @@ public:
 
     const String & getZooKeeperName() const { return zookeeper_name; }
     const String & getZooKeeperPath() const { return zookeeper_path; }
+    /// Path as `SYSTEM ... FROM ZKPATH` accepts it: that syntax derives the Keeper to act on from the
+    /// literal, so an auxiliary Keeper must be named in it or the command is routed to the default one.
+    String getFullZooKeeperPath() const;
 
     void getStatus(ReplicatedStatus& response, bool with_zk_fields) const;
 
@@ -311,6 +316,12 @@ private:
     /// `MultiGetResponses` is `zkutil::ZooKeeper::MultiTryGetResponse`: a template only to keep `ZooKeeper.h` out of this header.
     template <typename MultiGetResponses>
     ReplicasInfo parseReplicasInfo(const Cluster & cluster_, MultiGetResponses & responses) const;
+
+    /// Retry settings of the CREATE DATABASE query, used only while that query initializes the replica.
+    /// Taken and reset there, because it holds the query's process list element.
+    ZooKeeperRetriesInfo takeCreateQueryZooKeeperRetriesInfo();
+    ZooKeeperRetriesInfo create_query_zookeeper_retries_info TSA_GUARDED_BY(create_query_zookeeper_retries_info_mutex);
+    std::mutex create_query_zookeeper_retries_info_mutex;
 
     std::atomic_bool is_readonly = true;
     std::atomic_bool is_probably_dropped = false;
