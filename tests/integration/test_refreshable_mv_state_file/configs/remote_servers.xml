@@ -1,0 +1,21 @@
+<clickhouse>
+    <remote_servers>
+        <local_shard>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </local_shard>
+        <!-- 127.0.0.2 reaches this server, but it is not one of its addresses, so the shard is remote. -->
+        <remote_shard>
+            <shard>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </remote_shard>
+    </remote_servers>
+</clickhouse>
