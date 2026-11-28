@@ -25,6 +25,7 @@
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/IReadBufferMetadataProvider.h>
+#include <IO/CompressionMethod.h>
 #include <IO/EmptyReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -142,6 +143,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_url_encoding;
+    extern const SettingsSnappyMode snappy_mode;
 }
 
 namespace
@@ -1760,12 +1762,12 @@ static String getCompressionNameForSchemaCache(
     const auto format_name = object_info.getFileFormat().value_or(configuration.format);
     if (Poco::toLower(format_name) == "one")
         return "";
-    const auto & path_for_compression = dynamic_cast<const StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive *>(&object_info)
+    const String path_for_compression = dynamic_cast<const StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive *>(&object_info)
         ? configuration.getPathInArchive()
         : object_info.getFileName();
     return toContentEncodingName(
         chooseCompressionMethod(path_for_compression, configuration.compression_method),
-        context->getSettingsRef()[Setting::snappy_mode]);
+        static_cast<SnappyMode>(context->getSettingsRef()[Setting::snappy_mode]));
 }
 
 void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
@@ -1781,7 +1783,7 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
 
     const auto cache_key = getKeyForSchemaCache(
         getUniqueStoragePathIdentifier(*configuration, object_info),
-        object_info.getFileFormat().value_or(configuration.format),
+        object_info.getFileFormat().value_or(configuration->format),
         format_settings,
         read_context,
         getCompressionNameForSchemaCache(*configuration, object_info, read_context),

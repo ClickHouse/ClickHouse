@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <Core/SettingsEnums.h>
+#include <IO/CompressionMethod.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/StorageURL.h>
 #include <Storages/StorageFile.h>

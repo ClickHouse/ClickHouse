@@ -1,5 +1,6 @@
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/ReadBufferIterator.h>

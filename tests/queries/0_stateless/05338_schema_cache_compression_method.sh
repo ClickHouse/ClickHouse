@@ -479,6 +479,7 @@ except ImportError:
 basic_bytes = open('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_wc_basic.snappy', 'rb').read()
 framed_bytes = open('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_wc_framed.snappy', 'rb').read()
 gzip_bytes = open('${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}_wc_plain.csv.gz', 'rb').read()
+get_counts = {}
 
 class SnappyHandler(BaseHTTPRequestHandler):
     def log_message(self, *args):
@@ -492,8 +493,13 @@ class SnappyHandler(BaseHTTPRequestHandler):
 
     def handle_req(self, with_body):
         path = self.path.split('?')[0]
+        if with_body:
+            get_counts[path] = get_counts.get(path, 0) + 1
         if path == '/snappy_data/':
             data = b'<a href=\"a_basic.snappy\">a_basic.snappy</a>\n<a href=\"b_framed.snappy\">b_framed.snappy</a>\n<a href=\"c_plain.csv.gz\">c_plain.csv.gz</a>\n'
+            ctype = 'text/html'
+        elif path == '/mixed_data/':
+            data = b'<a href=\"m1.csv.gz\">m1.csv.gz</a>\n<a href=\"m2.snappy\">m2.snappy</a>\n'
             ctype = 'text/html'
         elif path == '/snappy_data/a_basic.snappy':
             data = basic_bytes
@@ -501,9 +507,15 @@ class SnappyHandler(BaseHTTPRequestHandler):
         elif path == '/snappy_data/b_framed.snappy':
             data = framed_bytes
             ctype = 'application/octet-stream'
-        elif path == '/snappy_data/c_plain.csv.gz':
+        elif path == '/snappy_data/c_plain.csv.gz' or path == '/mixed_data/m1.csv.gz':
             data = gzip_bytes
             ctype = 'application/gzip'
+        elif path == '/mixed_data/m2.snappy':
+            data = basic_bytes
+            ctype = 'application/octet-stream'
+        elif path == '/stats/b_framed':
+            data = f\"{get_counts.get('/snappy_data/b_framed.snappy', 0)}\n\".encode()
+            ctype = 'text/plain'
         else:
             self.send_response(404)
             self.end_headers()
@@ -530,6 +542,7 @@ ServerClass(('127.0.0.1', $SNAPPY_HTTP_PORT), SnappyHandler).serve_forever()
     wc_snappy_url_a="http://127.0.0.1:${SNAPPY_HTTP_PORT}/snappy_data/a_basic.snappy*"
     wc_snappy_url_b="http://127.0.0.1:${SNAPPY_HTTP_PORT}/snappy_data/b_framed.snappy*"
     wc_gzip_url="http://127.0.0.1:${SNAPPY_HTTP_PORT}/snappy_data/c_plain.csv.gz*"
+    wc_mixed_url="http://127.0.0.1:${SNAPPY_HTTP_PORT}/mixed_data/*"
 
     # 1. Basic Snappy warm count(), then framed -> must fail decompression
     $CLICKHOUSE_CLIENT $wildcard_settings --snappy_mode=basic -q "SELECT count() FROM url('$wc_snappy_url_a', 'CSV', 'x UInt64')"
@@ -542,13 +555,22 @@ ServerClass(('127.0.0.1', $SNAPPY_HTTP_PORT), SnappyHandler).serve_forever()
     # 3. Reverse order: Framed Snappy warm count() & schema, then basic -> must fail decompression
     $CLICKHOUSE_CLIENT $wildcard_settings --snappy_mode=framed -q "SELECT count() FROM url('$wc_snappy_url_b', 'CSV', 'x UInt64')"
     assert_exception "SNAPPY_UNCOMPRESS_FAILED" $CLICKHOUSE_CLIENT $wildcard_settings --snappy_mode=basic -q "SELECT count() FROM url('$wc_snappy_url_b', 'CSV', 'x UInt64')"
-    # Matching decoder repeat hits valid cache
+    # Matching decoder repeat hits valid cache (GET count must remain 1)
     $CLICKHOUSE_CLIENT $wildcard_settings --snappy_mode=framed -q "SELECT count() FROM url('$wc_snappy_url_b', 'CSV', 'x UInt64')"
+    curl -s "http://127.0.0.1:${SNAPPY_HTTP_PORT}/stats/b_framed"
+
+    $CLICKHOUSE_CLIENT $wildcard_settings --snappy_mode=framed -q "DESCRIBE url('$wc_snappy_url_b', 'CSV', 'auto') FORMAT TSV" | cut -f1,2
+    assert_exception "SNAPPY_UNCOMPRESS_FAILED" $CLICKHOUSE_CLIENT $wildcard_settings --snappy_mode=basic -q "DESCRIBE url('$wc_snappy_url_b', 'CSV', 'auto')"
 
     # 4. Non-Snappy wildcard object does not fragment on snappy_mode change
     $CLICKHOUSE_CLIENT $wildcard_settings --snappy_mode=basic -q "SELECT count() FROM url('$wc_gzip_url', 'CSV', 'x UInt64')"
     $CLICKHOUSE_CLIENT $wildcard_settings --snappy_mode=framed -q "SELECT count() FROM url('$wc_gzip_url', 'CSV', 'x UInt64')"
     $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.schema_inference_cache WHERE storage = 'URL' AND source LIKE '%${SNAPPY_HTTP_PORT}/snappy_data/c_plain.csv.gz%' AND compression_method = 'gzip'"
+
+    # 5. Mixed-extension wildcard set selects per-object effective compression
+    $CLICKHOUSE_CLIENT $wildcard_settings --snappy_mode=basic -q "SELECT count() FROM url('$wc_mixed_url', 'CSV', 'x UInt64')"
+    assert_exception "SNAPPY_UNCOMPRESS_FAILED" $CLICKHOUSE_CLIENT $wildcard_settings --snappy_mode=framed -q "SELECT count() FROM url('$wc_mixed_url', 'CSV', 'x UInt64')"
+    $CLICKHOUSE_CLIENT -q "SELECT count(), arraySort(groupArray(compression_method)) FROM system.schema_inference_cache WHERE storage = 'URL' AND source LIKE '%${SNAPPY_HTTP_PORT}/mixed_data/%'"
 else
     echo 10
     echo "SNAPPY_UNCOMPRESS_FAILED"
@@ -557,7 +579,13 @@ else
     echo 10
     echo "SNAPPY_UNCOMPRESS_FAILED"
     echo 10
+    echo 1
+    echo "c1	Nullable(Int64)"
+    echo "SNAPPY_UNCOMPRESS_FAILED"
     echo 5
     echo 5
     echo 1
+    echo 15
+    echo "SNAPPY_UNCOMPRESS_FAILED"
+    echo "2	['gzip','snappy:basic']"
 fi
