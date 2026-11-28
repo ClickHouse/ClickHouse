@@ -3,8 +3,18 @@
         CREATE TABLE test_date(date String) ENGINE = Memory;
     </create_query>
 
+    <create_query>
+        CREATE TABLE test_valid_date(s String, st String) ENGINE = Memory;
+    </create_query>
+
     <fill_query>
         INSERT INTO test_date SELECT 'invalid' FROM numbers(100000);
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO test_valid_date
+        SELECT formatDateTime(d, '%Y-%m-%d %H:%i:%s', 'UTC'), formatDateTime(d, '%W, %d %M %Y %H:%i:%s', 'UTC')
+        FROM (SELECT toDateTime('2000-01-01 00:00:00', 'UTC') + number * 397 AS d FROM numbers(1000000));
     </fill_query>
 
     <settings>
@@ -27,7 +37,23 @@
         SELECT parseDateTimeInJodaSyntaxOrNull(date, 'yyyy-MM-dd HH:mm:ss', 'Asia/Shanghai') FROM test_date FORMAT Null;
     </query>
 
+    <query>
+        SELECT parseDateTime(s, '%Y-%m-%d %H:%i:%s', 'UTC') FROM test_valid_date FORMAT Null;
+    </query>
+
+    <query>
+        SELECT parseDateTimeInJodaSyntax(s, 'yyyy-MM-dd HH:mm:ss', 'UTC') FROM test_valid_date FORMAT Null;
+    </query>
+
+    <query>
+        SELECT parseDateTime(st, '%W, %d %M %Y %H:%i:%s', 'UTC') FROM test_valid_date FORMAT Null;
+    </query>
+
     <drop_query>
         DROP TABLE IF EXISTS test_date
+    </drop_query>
+
+    <drop_query>
+        DROP TABLE IF EXISTS test_valid_date
     </drop_query>
 </test>
