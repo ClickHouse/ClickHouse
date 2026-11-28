@@ -131,6 +131,7 @@ def test_format_query_post_urlencoded():
         "foo +",  # incomplete expression
         'foo{bar="unclosed',  # unterminated string
         "foo bar",  # trailing garbage
+        "foo_bar(x)",  # unknown function
     ],
 )
 def test_format_query_rejects_invalid_query(query):
