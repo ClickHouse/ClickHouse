@@ -1106,6 +1106,67 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentIdentifierQuotingForPo
         "SELECT CamelCase FROM MixedCase");
 }
 
+TEST(TransformQueryForExternalDatabase, QueryTableArgumentClickHouseKeywordsForPostgreSQL)
+{
+    const State & state = State::instance();
+
+    auto format = [&](const char * argument)
+    {
+        return formatQueryTableArgument(state,
+            argument,
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL,
+            IdentifierQuotingRule::AlwaysUnlessUpperCase);
+    };
+
+    /// `ROLLUP` and `CUBE` in a list of grouping elements are parsed as functions. The ClickHouse parser
+    /// reads the unquoted words as modifiers of `GROUP BY`, so ClickHouse quotes such a function name in
+    /// its own dialect. In PostgreSQL they are grouping keywords and cannot be quoted, in any quoting
+    /// style: `"ROLLUP"(b)` is a call of a function that does not exist, and a backtick is not a quote.
+    EXPECT_EQ(
+        format("(SELECT a, b, count(*) AS n FROM t GROUP BY a, ROLLUP(b))"),
+        R"(SELECT "a", "b", count(*) AS "n" FROM "t" GROUP BY "a", ROLLUP("b"))");
+    EXPECT_EQ(
+        format("(SELECT a, b, count(*) AS n FROM t GROUP BY a, CUBE(b))"),
+        R"(SELECT "a", "b", count(*) AS "n" FROM "t" GROUP BY "a", CUBE("b"))");
+    EXPECT_EQ(
+        format("(SELECT a, b, count(*) AS n FROM t GROUP BY a, rollup(b))"),
+        R"(SELECT "a", "b", count(*) AS "n" FROM "t" GROUP BY "a", rollup("b"))");
+
+    /// A function name is written the way it is spelled in the query.
+    EXPECT_EQ(
+        format("(SELECT COALESCE(a, 0) AS c, Count(*) AS n FROM t GROUP BY a)"),
+        R"(SELECT COALESCE("a", 0) AS "c", Count(*) AS "n" FROM "t" GROUP BY "a")");
+
+    /// The same words as names of columns. Quoted, a name with upper-case characters would refer to a
+    /// column spelled exactly this way instead of the column `cube`, and PostgreSQL does not need the
+    /// quotes: for it these are ordinary names.
+    EXPECT_EQ(
+        format("(SELECT CUBE AS x, ROLLUP AS y, RECURSIVE AS z FROM t2)"),
+        R"(SELECT CUBE AS "x", ROLLUP AS "y", RECURSIVE AS "z" FROM "t2")");
+
+    /// So are the other words that only the ClickHouse parser reads as something else than a name.
+    EXPECT_EQ(
+        format(R"((SELECT "Inf", "Infinity", "NaN", "Top", "Values", "Interval", "Strict" FROM kw))"),
+        R"(SELECT Inf, Infinity, NaN, Top, Values, Interval, Strict FROM "kw")");
+
+    /// The words that PostgreSQL does not read as a name either keep the quotes.
+    EXPECT_EQ(
+        format(R"((SELECT "True", "False", "Distinct", "All", "Some", "Table", "Select", "From", "Not", "As" FROM kw))"),
+        R"(SELECT "True", "False", "Distinct", "All", "Some", "Table", "Select", "From", "Not", "As" FROM "kw")");
+
+    /// A name without upper-case characters is quoted whatever it is: this does not change the column it refers to.
+    EXPECT_EQ(
+        format(R"((SELECT cube, rollup, recursive, top, "values", "interval", strict, "select" FROM kw))"),
+        R"(SELECT "cube", "rollup", "recursive", "top", "values", "interval", "strict", "select" FROM "kw")");
+
+    /// In the dialect of ClickHouse the function name stays quoted, or `GROUP BY a, rollup(b)` would be parsed back differently.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT a, b, count(*) AS n FROM t GROUP BY a, ROLLUP(b))",
+            IdentifierQuotingStyle::Backticks, LiteralEscapingStyle::Regular),
+        "SELECT a, b, count(*) AS n FROM t GROUP BY a, `ROLLUP`(b)");
+}
+
 TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
 {
     const State & state = State::instance();
