@@ -1,0 +1,17 @@
+-- inner target tables opened by each query
+empty_http_async	1	0
+empty_http_sync	0	0
+empty_select_async	0	0
+empty_select_sync	0	0
+partial_metadata_sync	0	1
+partial_samples_sync	0	4
+stream_async	1	0
+stream_sync	0	5
+-- inner table parity between async and sync
+metric_families	1	2
+recent_samples	1	2
+samples	1	2
+tags	1	2
+time_ranges	1	2
+-- empty table and partial table counts
+0	0	0	1	1	1

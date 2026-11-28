@@ -862,12 +862,21 @@ TimeSeriesSink::TimeSeriesSink(
         || is_insert_column(TimeSeriesColumnNames::Type)
         || is_insert_column(TimeSeriesColumnNames::Unit)
         || is_insert_column(TimeSeriesColumnNames::Help);
+}
+
+
+void TimeSeriesSink::initPipelines()
+{
+    if (pipelines_initialized)
+        return;
 
     if (insert_tags_and_samples)
         initTagsAndSamplesPipelines();
 
     if (insert_metric_families)
         initMetricFamiliesPipeline();
+
+    pipelines_initialized = true;
 }
 
 
@@ -875,6 +884,8 @@ void TimeSeriesSink::consume(Chunk & chunk)
 {
     if (!chunk.getNumRows())
         return;
+
+    initPipelines();
 
     Block block = getHeader().cloneWithColumns(chunk.getColumns());
 
