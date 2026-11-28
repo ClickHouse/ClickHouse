@@ -1,0 +1,10 @@
+<test>
+    <query>SELECT WatchID % 1000 AS k, sum(UserID) FROM hits_100m_single GROUP BY k FORMAT Null</query>
+    <query>SELECT toNullable(WatchID % 10000) AS k, sum(UserID) FROM hits_100m_single GROUP BY k FORMAT Null</query>
+    <query>SELECT toString(WatchID % 5000) AS k, sum(UserID) FROM hits_100m_single GROUP BY k FORMAT Null</query>
+    <query>SELECT WatchID % 100 AS k1, WatchID % 77 AS k2, sum(UserID) FROM hits_100m_single GROUP BY k1, k2 FORMAT Null</query>
+    <query>SELECT CounterID, sum(UserID) FROM hits_100m_single GROUP BY CounterID FORMAT Null</query>
+    <query>SELECT RegionID, sum(UserID) FROM hits_100m_single GROUP BY RegionID FORMAT Null</query>
+    <query>SELECT MobilePhoneModel, sum(UserID) FROM hits_100m_single GROUP BY MobilePhoneModel FORMAT Null</query>
+    <query>SELECT intDiv(number, 2) AS k, sum(number) FROM numbers(65536) GROUP BY k FORMAT Null</query>
+</test>
