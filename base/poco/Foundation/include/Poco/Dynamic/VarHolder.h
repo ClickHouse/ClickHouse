@@ -2213,6 +2213,8 @@ namespace Dynamic
 
         VarHolderImpl(const std::string & val) : _val(val) { }
 
+        VarHolderImpl(std::string && val) : _val(std::move(val)) { }
+
         ~VarHolderImpl() { }
 
         const std::type_info & type() const { return typeid(std::string); }

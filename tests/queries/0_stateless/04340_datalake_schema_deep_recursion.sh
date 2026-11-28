@@ -26,9 +26,8 @@ expect_contains() {
     fi
 }
 
-# Iceberg parses the whole metadata JSON with Poco before any field validation, so a deeply nested
-# metadata file overflows the parser (reachable at default settings, no kernel involved). Must be
-# rejected with a JSON exception.
+# Iceberg parses the whole metadata JSON before any field validation, so a deeply nested metadata file
+# must be rejected by the depth limit of the parser (reachable at default settings, no kernel involved).
 mkdir -p "$TMP_DIR/ice/metadata"
 python3 -c "
 N = 2000
@@ -36,7 +35,7 @@ open('$TMP_DIR/ice/metadata/v1.metadata.json', 'wb').write(b'{' + b'\"a\":{' * N
 open('$TMP_DIR/ice/metadata/version-hint.text', 'w').write('1')
 "
 $CLICKHOUSE_LOCAL --query "DESCRIBE TABLE icebergLocal('$TMP_DIR/ice') FORMAT Null" 2>&1 \
-    | expect_contains iceberg_depth "Maximum allowed JSON depth exceeded"
+    | expect_contains iceberg_depth "The JSON document was too deep"
 
 # Paimon parses its schema file (schema/schema-N) with Poco before validation; a deeply nested
 # schema must be rejected with a JSON exception, not crash (reachable at default settings).

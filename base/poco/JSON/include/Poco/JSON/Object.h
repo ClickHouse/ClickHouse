@@ -215,6 +215,9 @@ namespace JSON
         void set(const std::string & key, const Dynamic::Var & value);
         /// Sets a new value.
 
+        void set(std::string && key, Dynamic::Var && value);
+        /// Sets a new value, moving the key and the value in.
+
         void stringify(std::ostream & out, unsigned int indent = 0, int step = -1) const;
         /// Prints the object to out stream.
         ///

@@ -178,6 +178,9 @@ namespace JSON
         void add(const Dynamic::Var & value);
         /// Add the given value to the array
 
+        void add(Dynamic::Var && value);
+        /// Add the given value to the array, moving it in
+
         void set(unsigned int index, const Dynamic::Var & value);
         /// Update the element on the given index to specified value
 
@@ -270,6 +273,13 @@ namespace JSON
     inline void Array::add(const Dynamic::Var & value)
     {
         _values.push_back(value);
+        _modified = true;
+    }
+
+
+    inline void Array::add(Dynamic::Var && value)
+    {
+        _values.push_back(std::move(value));
         _modified = true;
     }
 
