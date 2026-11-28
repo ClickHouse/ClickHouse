@@ -25,25 +25,3 @@ FROM
     ORDER BY number
     LIMIT 2 AFTER number IN (2, 3) ALL UNTIL number IN (3, 5)
 );
-
-SELECT number
-FROM numbers(8)
-ORDER BY number
-LIMIT 2 AFTER number IN (2, 3) ALL
-SETTINGS enable_analyzer = 0;
-
-SELECT number
-FROM numbers(10)
-ORDER BY number
-LIMIT AFTER number IN (3, 7) ALL UNTIL number IN (1, 5, 9)
-SETTINGS enable_analyzer = 0;
-
-SELECT count()
-FROM
-(
-    SELECT number
-    FROM numbers(6)
-    ORDER BY number
-    LIMIT 2 AFTER number IN (2, 3) ALL UNTIL number IN (3, 5)
-)
-SETTINGS enable_analyzer = 0;

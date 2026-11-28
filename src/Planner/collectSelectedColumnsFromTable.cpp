@@ -2,7 +2,6 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/TableNode.h>
-#include <Analyzer/FunctionNode.h>
 #include <Storages/IStorage.h>
 
 
@@ -21,12 +20,6 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (isIndexHintFunction(node))
-        {
-            is_inside_index_hint_function = true;
-            return;
-        }
-
         auto * column_node = node->as<ColumnNode>();
         if (!column_node)
             return;
@@ -38,25 +31,11 @@ public:
         if (!source_table || source_table->getStorageID() != storage_id)
             return;
 
-        /// A special case for the "indexHint" function. We don't need its arguments for execution if column's source table is MergeTree.
-        /// Instead, we prepare an ActionsDAG for its arguments and store it inside a function (see ActionsDAG::buildFilterActionsDAG).
-        /// So this optimization allows not to read arguments of "indexHint" (if not needed in other contexts) but only to use index analysis for them.
-        if (is_inside_index_hint_function && source_table->getStorage()->isMergeTree())
-            return;
-
+        /// Note that arguments of the "indexHint" function need to be checked for SELECT privilege
         selected_columns.insert(column_node->getColumnName());
     }
 
-    void leaveImpl(QueryTreeNodePtr & node)
-    {
-        if (isIndexHintFunction(node))
-        {
-            is_inside_index_hint_function = false;
-            return;
-        }
-    }
-
-    bool isAliasColumn(const QueryTreeNodePtr & node) const
+    [[nodiscard]] bool isAliasColumn(const QueryTreeNodePtr & node) const
     {
         const auto * column_node = node->as<ColumnNode>();
         if (!column_node || !column_node->hasExpression())
@@ -67,25 +46,18 @@ public:
         return column_source->getNodeType() == QueryTreeNodeType::TABLE;
     }
 
-    bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr &) const
+    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr &) const
     {
         /// Don't go inside alias column expression.
         return !isAliasColumn(parent_node);
     }
 
-    bool isIndexHintFunction(const QueryTreeNodePtr & node) const
-    {
-        return node->as<FunctionNode>() && node->as<FunctionNode>()->getFunctionName() == "indexHint";
-    }
-
-    std::vector<String> getSelectedColumns() const
+    [[nodiscard]] std::vector<String> getSelectedColumns() const
     {
         return std::vector<String>(selected_columns.begin(), selected_columns.end());
     }
 
 private:
-    /// True if we are traversing arguments of function "indexHint".
-    bool is_inside_index_hint_function = false;
     const StorageID & storage_id;
     std::unordered_set<String> selected_columns;
 };

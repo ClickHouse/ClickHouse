@@ -37,10 +37,6 @@ SET force_optimize_skip_unused_shards = 1;
 SELECT 'carrier', min(a) FROM dist_04875
     WHERE s = '2020-01-01 00:00:00' AND e = '2020-01-01 00:00:10'; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 
-SELECT 'carrier old analyzer', min(a) FROM dist_04875
-    WHERE s = '2020-01-01 00:00:00' AND e = '2020-01-01 00:00:10'
-    SETTINGS enable_analyzer = 0; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
-
 SELECT 'hatch', min(a) FROM dist_04875
     WHERE s = '2020-01-01 00:00:00' AND e = '2020-01-01 00:00:10'
     SETTINGS allow_nondeterministic_optimize_skip_unused_shards = 1;

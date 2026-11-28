@@ -1,0 +1,5 @@
+SELECT * FROM companies AS c LEFT JOIN LATERAL (SELECT * FROM invoices AS i WHERE i.company_id = c.id) AS inv ON true
+SELECT * FROM companies AS c INNER JOIN LATERAL (SELECT * FROM invoices AS i WHERE i.company_id = c.id) AS inv ON true
+1	1
+1	2
+2	3

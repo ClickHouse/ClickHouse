@@ -1,0 +1,25 @@
+lazy plan	1
+cold	0	0	pppp
+cold	1000	0	pppp
+cold	2000	0	pppp
+cold	3000	0	pppp
+cold	4000	0	pppp
+warm	0	0	pppp
+warm	1000	0	pppp
+warm	2000	0	pppp
+warm	3000	0	pppp
+warm	4000	0	pppp
+no cache	0	0	pppp
+no cache	1000	0	pppp
+no cache	2000	0	pppp
+no cache	3000	0	pppp
+no cache	4000	0	pppp
+reads disabled	0	0	pppp
+reads disabled	1000	0	pppp
+reads disabled	2000	0	pppp
+reads disabled	3000	0	pppp
+reads disabled	4000	0	pppp
+cached columns	['a','b','payload']
+05230_lazy_cold	0	1
+05230_lazy_reads_disabled	0	0
+05230_lazy_warm	1	0

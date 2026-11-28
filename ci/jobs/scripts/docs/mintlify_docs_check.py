@@ -57,7 +57,7 @@ MINT = "NODE_OPTIONS=--max-old-space-size=8192 mint"
 # the docs (see that script). The external-links check is a non-blocking
 # warning because it depends on third-party sites being reachable.
 LYCHEE = "python3 ../ci/jobs/scripts/docs/lychee_check.py"
-VALIDATE_CHECK = ("Validate docs.json", f"{MINT} validate")
+VALIDATE_CHECK = ("Validate docs.json", "python3 ../ci/jobs/scripts/docs/mint_validate.py .")
 INTERNAL_LINKS_CHECK = ("Check internal links and anchors", f"{LYCHEE} --mode links .")
 REDIRECTS_CHECK = ("Check redirects", f"{LYCHEE} --mode redirects .")
 EXTERNAL_LINKS_CHECK = ("Check external links (warnings)", f"{LYCHEE} --mode external .")
@@ -140,6 +140,16 @@ LOCALE_CHECKS = [LOCALE_LINKS_CHECK, LOCALE_COMPONENTS_CHECK]
 QUICKSTARTS_CHECK = (
     "Check quickstarts",
     "python3 ../ci/jobs/scripts/docs/quickstarts_check.py .",
+)
+
+# ClickStack SDK-docs-only check, kept out of DEFAULT_CHECKS: the Praktika job
+# runs it only when a PR touches the SDK docs folder or the checker. Validates
+# the conventions in-app onboarding mirrors from these pages -- the
+# `<ClickStackIntegrates>` signals, the standardized env-var placeholders, and
+# the exact deployment tab titles. See sdk_docs_check.py for the rules.
+SDK_DOCS_CHECK = (
+    "Check ClickStack SDK docs",
+    "python3 ../ci/jobs/scripts/docs/sdk_docs_check.py .",
 )
 
 

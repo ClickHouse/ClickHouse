@@ -6,6 +6,10 @@
 drafts/
 *.draft.mdx
 
+# Repository instructions are not documentation pages. In particular,
+# `AGENTS.md` would otherwise take precedence over the `/agents/` section.
+/AGENTS.md
+
 # Skill scaffolds (internal docs for Claude Code, not user-facing pages).
 # Ignore everything under .mintlify/ EXCEPT each skill's SKILL.md definition.
 .mintlify/*

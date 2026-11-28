@@ -1,3 +1,4 @@
+SET min_marks_per_part_to_load_statistics = 0;
 SET explain_query_plan_default = 'legacy';
 SET allow_experimental_statistics = 1;
 SET allow_statistics = 1;
@@ -6,10 +7,8 @@ SET materialize_statistics_on_insert = 1;
 -- The assertions match plan text, so pin the settings that reshape it. Both projection settings must
 -- stay 1 (the effective value is their conjunction): at 0 the first query prunes nothing even
 -- without the fix.
-SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;
 

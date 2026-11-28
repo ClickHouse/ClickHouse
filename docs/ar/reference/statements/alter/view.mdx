@@ -195,9 +195,24 @@ SELECT * FROM mv;
 └───┘
 ```
 
-<div id="alter-table--modify-refresh-statement">
-  ## تعليمة ALTER TABLE ... MODIFY REFRESH
-</div>
+## الامتيازات المطلوبة {#required-privileges}
+
+تتطلب `ALTER TABLE ... MODIFY QUERY` امتياز `ALTER VIEW MODIFY QUERY` على العرض. يُنفَّذ الاستعلام الجديد وفق إعداد [SQL security](/ar/reference/statements/create/view#sql_security) الخاص بالعرض، لذا تتطلب العبارة أيضًا الأذونات اللازمة لإنشاء عرض بإعداد SQL security ذاته:
+
+* `SQL SECURITY DEFINER` مع مُعرِّف (definer) غير المستخدم الحالي: امتياز `SET DEFINER` على ذلك المُعرِّف.
+* `SQL SECURITY NONE`: امتياز `ALLOW SQL SECURITY NONE`.
+
+إذا غيّرت العبارة نفسها إعداد SQL security باستخدام `MODIFY SQL SECURITY`، فإن هذه الأذونات تُشترط لإعداد SQL security الجديد بدلًا من القديم.
+
+عند استخدام `ON CLUSTER`، يجري التحقق من صلاحية تنفيذ العبارة على المضيف الذي تُنفَّذ عليه، لذا يجب أن يكون العرض موجودًا على ذلك المضيف، وإلا فستفشل العبارة بالخطأ `UNKNOWN_TABLE`.
+
+```sql
+GRANT ALTER VIEW MODIFY QUERY ON db.mv TO alice;
+-- Only if `db.mv` runs as another user, for example `bob`:
+GRANT SET DEFINER ON bob TO alice;
+```
+
+## تعليمة ALTER TABLE ... MODIFY REFRESH {#alter-table--modify-refresh-statement}
 
 تُغيّر `ALTER TABLE ... MODIFY REFRESH` مَعلمات التحديث الخاصة بـ [العرض المادي القابل للتحديث](/ar/reference/statements/create/view#refreshable-materialized-view)، بما في ذلك الجدول الزمني، والتبعيات، والعشوائية، و[إعدادات التحديث](/ar/reference/statements/create/view#refresh-settings).
 

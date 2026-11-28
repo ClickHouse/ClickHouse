@@ -1,0 +1,22 @@
+<test>
+    <settings>
+        <short_circuit_function_evaluation>force_enable</short_circuit_function_evaluation>
+        <max_threads>1</max_threads>
+        <max_block_size>65536</max_block_size>
+        <compile_expressions>0</compile_expressions>
+    </settings>
+
+    <!-- Sparse, mixed and dense masks; every result is consumed without output overhead. -->
+    <!-- The sparse masks select rows by a hash: an exact 64-row period makes their timing bimodal on arm. -->
+    <!-- cityHash64 of an integer is intHash64, so the selector uses intHash32 to stay independent of the other arguments. -->
+    <query>SELECT and(intHash32(number) % 64 = 0, bitAnd(cityHash64(number), 1), bitAnd(cityHash64(number + 1), 1)) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT or(intHash32(number) % 64 != 0, bitAnd(cityHash64(number), 1), bitAnd(cityHash64(number + 1), 1)) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT and(number % 2 = 0, bitAnd(cityHash64(number), 1), bitAnd(cityHash64(number + 1), 1)) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT or(number % 2 != 0, bitAnd(cityHash64(number), 1), bitAnd(cityHash64(number + 1), 1)) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT and(number % 64 != 0, bitAnd(cityHash64(number), 1), bitAnd(cityHash64(number + 1), 1)) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT or(number % 64 = 0, bitAnd(cityHash64(number), 1), bitAnd(cityHash64(number + 1), 1)) FROM numbers(10000000) FORMAT Null</query>
+
+    <!-- NULL must keep a row active until a decisive false (AND) or true (OR). -->
+    <query>SELECT and(number % 8 = 0, nullIf(bitAnd(cityHash64(number), 3), 2), bitAnd(cityHash64(number + 1), 1)) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT or(number % 8 != 0, nullIf(bitAnd(cityHash64(number), 3), 2), bitAnd(cityHash64(number + 1), 1)) FROM numbers(10000000) FORMAT Null</query>
+</test>

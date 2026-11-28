@@ -1,0 +1,4 @@
+reattached	1
+parent_before_drop	1
+parent_after_drop	1
+own_znode_after_drop	0

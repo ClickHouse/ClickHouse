@@ -1,5 +1,4 @@
 {
-  "icon": "/images/icons/icon-get-started.svg",
   "item": "Get started",
   "pages": [
     {
@@ -30,8 +29,7 @@
               "group": "实时分析",
               "pages": [
                 "zh/get-started/quickstarts/create-your-first-materialized-view",
-                "zh/get-started/quickstarts/create-your-first-projection",
-                "zh/get-started/quickstarts/tutorial"
+                "zh/get-started/quickstarts/create-your-first-projection"
               ]
             },
             {
@@ -66,10 +64,10 @@
           "group": "Use cases",
           "pages": [
             "zh/get-started/use-cases/overview",
+            "zh/get-started/use-cases/choosing-a-service",
             "zh/get-started/use-cases/real-time-analytics",
             "zh/get-started/use-cases/observability",
-            "zh/get-started/use-cases/data-warehousing",
-            "zh/get-started/use-cases/agentic-analytics"
+            "zh/get-started/use-cases/data-warehousing"
           ]
         },
         "zh/get-started/about/deployment-modes"

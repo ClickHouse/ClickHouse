@@ -18,10 +18,10 @@ CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE 
 
 これらのクエリを正しく実行するには、各ホストで同じクラスター定義が設定されている必要があります (設定の同期を容易にするために、ZooKeeper の置換機能を使用できます) 。また、各ホストは ZooKeeper サーバーに接続できる必要があります。
 
-クエリのローカル版は、一部のホストが現在利用できない場合でも、最終的にはクラスター内の各ホストで実行されます。
+一般に、クエリのローカル版は、一部のホストが現在利用できない場合でも、最終的にはクラスター内の各ホストで実行されます。ただし、これらのクエリはキューに格納され、項目がキュー内に保持される時間は[いくつかの設定](/ja/reference/settings/server-settings/settings/distributed)によって制限されます。そのため、ホストが一定時間以上使用不可の状態にあった場合、再び利用可能になっても、そのクエリが実行されないことがあります。
 
 <Warning>
-  単一ホスト内でのクエリ実行順序は保証されます。
+  単一ホスト内でのクエリ実行順序は、[distributed&#95;ddl.pool&#95;size](/ja/reference/settings/server-settings/settings/distributed#distributed_ddl.pool_size) が 1 に設定されている限り保証されます。
 </Warning>
 
 **構文**

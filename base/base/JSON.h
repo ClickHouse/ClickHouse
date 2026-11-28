@@ -69,8 +69,8 @@ public:
 
     JSON & operator=(const JSON & rhs) = default;
 
-    const char * data() const { return ptr_begin; }
-    const char * dataEnd() const { return ptr_end; }
+    [[nodiscard]] const char * data() const { return ptr_begin; }
+    [[nodiscard]] const char * dataEnd() const { return ptr_end; }
 
     enum ElementType : uint8_t
     {
@@ -84,21 +84,21 @@ public:
         TYPE_NOTYPE,
     };
 
-    ElementType getType() const;
+    [[nodiscard]] ElementType getType() const;
 
-    bool isObject() const        { return getType() == TYPE_OBJECT; }
-    bool isArray() const         { return getType() == TYPE_ARRAY; }
-    bool isNumber() const        { return getType() == TYPE_NUMBER; }
-    bool isString() const        { return getType() == TYPE_STRING; }
-    bool isBool() const          { return getType() == TYPE_BOOL; }
-    bool isNull() const          { return getType() == TYPE_NULL; }
-    bool isNameValuePair() const { return getType() == TYPE_NAME_VALUE_PAIR; }
+    [[nodiscard]] bool isObject() const        { return getType() == TYPE_OBJECT; }
+    [[nodiscard]] bool isArray() const         { return getType() == TYPE_ARRAY; }
+    [[nodiscard]] bool isNumber() const        { return getType() == TYPE_NUMBER; }
+    [[nodiscard]] bool isString() const        { return getType() == TYPE_STRING; }
+    [[nodiscard]] bool isBool() const          { return getType() == TYPE_BOOL; }
+    [[nodiscard]] bool isNull() const          { return getType() == TYPE_NULL; }
+    [[nodiscard]] bool isNameValuePair() const { return getType() == TYPE_NAME_VALUE_PAIR; }
 
     /// Number of elements in array or object; if element is not array or object, then exception.
-    size_t size() const;
+    [[nodiscard]] size_t size() const;
 
     /// Whether array or object is empty; if element is not array or object, then exception.
-    bool empty() const;
+    [[nodiscard]] bool empty() const;
 
     /// Get array element by index; if element is not array, then exception.
     JSON operator[] (size_t n) const;
@@ -107,7 +107,7 @@ public:
     JSON operator[] (const std::string & name) const;
 
     /// Whether object has element with given name; if element is not object, then exception.
-    bool has(const std::string & name) const { return has(name.data(), name.size()); }
+    [[nodiscard]] bool has(const std::string & name) const { return has(name.data(), name.size()); }
     bool has(const char * data, size_t size) const;
 
     /// Get element value; exception if element has wrong type.
@@ -118,26 +118,26 @@ public:
     template <class T>
     T getWithDefault(const std::string & key, const T & default_ = T()) const;
 
-    double      getDouble() const;
-    Int64       getInt() const;    /// Discard fractional part.
-    UInt64      getUInt() const;    /// Discard fractional part. If number is negative - exception.
-    std::string getString() const;
-    bool        getBool() const;
-    std::string getName() const;    /// Get name of name-value pair.
-    JSON        getValue() const;    /// Get value of name-value pair.
+    [[nodiscard]] double      getDouble() const;
+    [[nodiscard]] Int64       getInt() const;    /// Discard fractional part.
+    [[nodiscard]] UInt64      getUInt() const;    /// Discard fractional part. If number is negative - exception.
+    [[nodiscard]] std::string getString() const;
+    [[nodiscard]] bool        getBool() const;
+    [[nodiscard]] std::string getName() const;    /// Get name of name-value pair.
+    [[nodiscard]] JSON        getValue() const;    /// Get value of name-value pair.
 
-    std::string_view getRawString() const;
-    std::string_view getRawName() const;
+    [[nodiscard]] std::string_view getRawString() const;
+    [[nodiscard]] std::string_view getRawName() const;
 
     /// Get element value; if element is string, then parse value from string; if not string or number - then exception.
-    double      toDouble() const;
-    Int64       toInt() const;
-    UInt64      toUInt() const;
+    [[nodiscard]] double      toDouble() const;
+    [[nodiscard]] Int64       toInt() const;
+    [[nodiscard]] UInt64      toUInt() const;
 
     /** Convert any element to string.
       * For string returns its value, for all other elements - serialized representation.
       */
-    std::string toString() const;
+    [[nodiscard]] std::string toString() const;
 
     /// JSON class is simultaneously an iterator over itself.
     using iterator = JSON;
@@ -151,21 +151,21 @@ public:
     /** If element is array or object, then begin() returns iterator,
       * which points to the first element of array or first name-value pair of object.
       */
-    iterator begin() const;
+    [[nodiscard]] iterator begin() const;
 
     /** end() - value that cannot be used; signals that elements are finished.
       */
-    iterator end() const;
+    [[nodiscard]] iterator end() const;
 
     /// Move to next array element or next name-value pair of object.
     iterator & operator++();
     iterator operator++(int); // NOLINT(cert-dcl21-cpp)
 
     /// Whether string has escape sequences
-    bool hasEscapes() const;
+    [[nodiscard]] bool hasEscapes() const;
 
     /// Whether string has special characters from the set \, ', \0, \b, \f, \r, \n, \t, possibly escaped.
-    bool hasSpecialChars() const;
+    [[nodiscard]] bool hasSpecialChars() const;
 
 private:
     /// Check recursion depth and memory range correctness.
@@ -174,22 +174,22 @@ private:
     void checkPos(Pos pos) const;
 
     /// Return position after given element.
-    Pos skipString() const;
-    Pos skipNumber() const;
-    Pos skipBool() const;
-    Pos skipNull() const;
-    Pos skipNameValuePair() const;
-    Pos skipObject() const;
-    Pos skipArray() const;
+    [[nodiscard]] Pos skipString() const;
+    [[nodiscard]] Pos skipNumber() const;
+    [[nodiscard]] Pos skipBool() const;
+    [[nodiscard]] Pos skipNull() const;
+    [[nodiscard]] Pos skipNameValuePair() const;
+    [[nodiscard]] Pos skipObject() const;
+    [[nodiscard]] Pos skipArray() const;
 
-    Pos skipElement() const;
+    [[nodiscard]] Pos skipElement() const;
 
     /// Find name-value pair with given name in object.
-    Pos searchField(const std::string & name) const { return searchField(name.data(), name.size()); }
+    [[nodiscard]] Pos searchField(const std::string & name) const { return searchField(name.data(), name.size()); }
     Pos searchField(const char * data, size_t size) const;
 
     template <class T>
-    bool isType() const;
+    [[nodiscard]] bool isType() const;
 };
 
 template <class T>

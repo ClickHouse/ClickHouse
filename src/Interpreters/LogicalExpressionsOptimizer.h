@@ -78,10 +78,10 @@ private:
       * 1. It's not too small
       * 2. x1, ... xN have the same type
       */
-    bool mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const;
+    [[nodiscard]] bool mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const;
 
     /// Check if is LowCardinality OR chain
-    bool isLowCardinalityEqualityChain(const std::vector<ASTFunction *> & functions) const;
+    [[nodiscard]] bool isLowCardinalityEqualityChain(const std::vector<ASTFunction *> & functions) const;
 
     /// Insert the IN expression into the OR chain.
     static void addInExpression(const DisjunctiveEqualityChain & chain);

@@ -1,6 +1,4 @@
--- Tags: no-old-analyzer, no-replicated-database, shard
---       no-old-analyzer: this suite assumes the analyzer as the default, like its first half;
---       the explicit `SETTINGS enable_analyzer = 0` lines still cover the old one.
+-- Tags: no-replicated-database, shard
 --       no-replicated-database: for the lazy_load_tables section below.
 --       shard: the Remote-engine and Distributed sections need a second server address.
 
@@ -133,7 +131,7 @@ ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 -- as the style check requires (a `{...:String}` parameter is not recognized by it).
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-SELECT '-- re-attached tables are lazy proxies --';
+SELECT '-- only the re-attached MergeTree is a lazy proxy --';
 SELECT name, engine FROM system.tables WHERE database = currentDatabase() ORDER BY name;
 
 SELECT '-- the proxy must still reject the mismatched column, not abort --';
@@ -223,7 +221,6 @@ DROP TABLE IF EXISTS sub_buf;
 DROP TABLE IF EXISTS sub_merge;
 DROP TABLE IF EXISTS sub_merge_bad;
 
-SET enable_json_type = 1;
 CREATE TABLE sub_leaf (j JSON, t Tuple(a UInt64), x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO sub_leaf SELECT '{"a":1}'::JSON, tuple(number), number FROM numbers(10);
 CREATE TABLE sub_buf (j JSON, t Tuple(a UInt64), x UInt64)

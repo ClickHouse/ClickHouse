@@ -86,6 +86,16 @@ def started_cluster():
             stay_alive=True,
         )
 
+        cluster.add_instance(
+            "instance_old",
+            with_zookeeper=True,
+            image="clickhouse/clickhouse-server",
+            # A release that is no longer supported, so it never gets the source hash in a backport.
+            tag="26.7",
+            with_installed_binary=True,
+            stay_alive=True,
+        )
+
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -470,6 +480,21 @@ def test_move_after_processing(started_cluster, engine_name, move_to):
     assert counts[(src_bucket, files_path)] == 0, (
         f"objects left: {counts[(src_bucket, files_path)]}"
     )
+
+    node.query("SYSTEM FLUSH LOGS blob_storage_log")
+    if engine_name == "S3Queue":
+        moved = node.query(
+            "SELECT uniqExact(source_remote_path) FROM system.blob_storage_log "
+            f"WHERE event_type = 'Copy' AND error_code = 0 AND source_bucket = '{src_bucket}' AND bucket = '{dst_bucket}' "
+            f"AND source_remote_path LIKE '{files_path}/%' AND remote_path LIKE '{processed_prefix}%'"
+        )
+    else:
+        # AzureQueue storages do not use the native copy, so a move is a read and an upload.
+        moved = node.query(
+            "SELECT uniqExact(remote_path) FROM system.blob_storage_log "
+            f"WHERE event_type = 'Upload' AND error_code = 0 AND bucket = '{dst_bucket}' AND remote_path LIKE '{processed_prefix}%'"
+        )
+    assert int(moved) == files_num, f"blob_storage_log rows for moved objects: {moved.strip()} != {files_num}"
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
@@ -1165,6 +1190,43 @@ def test_multiple_tables_meta_mismatch(started_cluster):
             "keeper_path": keeper_path,
         },
     )
+
+
+def test_source_hash_after_upgrade(started_cluster):
+    """A queue that an older version created gets the hash of its source in Keeper after the upgrade."""
+    node = started_cluster.instances["instance_old"]
+    keeper_path = f"/clickhouse/test_upgrade_{generate_random_string()}"
+
+    def create_queue(name, bucket):
+        return f"""
+            CREATE TABLE {name} (x String)
+            ENGINE = S3Queue('http://localhost:11111/{bucket}/upgrade/*', NOSIGN, 'CSV')
+            SETTINGS mode = 'unordered', keeper_path = '{keeper_path}'
+            """
+
+    def get_source_hash():
+        return node.query(
+            f"SELECT JSONExtractString(value, 'source_hash') FROM system.zookeeper "
+            f"WHERE path = '{keeper_path}' AND name = 'metadata'"
+        ).strip()
+
+    try:
+        node.query(create_queue("queue", "test"))
+        assert get_source_hash() == ""
+
+        node.restart_with_latest_version()
+        # Tables are loaded in the background, and a query to a table waits until it is loaded.
+        node.query("DESCRIBE TABLE queue")
+        assert get_source_hash() != ""
+
+        # Now the source is checked: a queue of another bucket cannot use this `keeper_path`.
+        error = node.query_and_get_error(create_queue("other", "other"))
+        assert "differs in source" in error
+        node.query(create_queue("same", "test"))
+    finally:
+        node.query("DROP TABLE IF EXISTS queue SYNC")
+        node.query("DROP TABLE IF EXISTS same SYNC")
+        node.restart_with_original_version()
 
 
 def test_virtual_columns(started_cluster):

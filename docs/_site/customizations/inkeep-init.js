@@ -30,9 +30,11 @@
   // the *.mintlify.site source includes a /docs prefix.
   var INKEEP_PREVIEW_URL_RE = /^https?:\/\/private-7c7dfe99\.mintlify\.(?:app|site)\/(?:docs(?:\/|(?=[?#]|$)))?/;
 
-  // cxkit-mintlify CDN bundle. @0.5 resolves to the latest 0.5.x; pin a full
-  // version (e.g. @0.5.119) when deploying for reproducible builds.
-  var INKEEP_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/@inkeep/cxkit-mintlify@0.5/dist/index.js';
+  // cxkit-mintlify CDN bundle, pinned to an exact version with its subresource integrity hash, so a
+  // compromised CDN or package release cannot run its code on the docs site. To update, change the version
+  // and set the hash of the new file: `curl -sS <url> | openssl dgst -sha384 -binary | openssl base64 -A`.
+  var INKEEP_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/@inkeep/cxkit-mintlify@0.5.119/dist/index.js';
+  var INKEEP_SCRIPT_INTEGRITY = 'sha384-OKNhfMZ+h0gW6FG70qh63B4y84W9fnZj2w7OfxSvMJF38jlZOgah0YnAXZ499OnJ';
 
   // ── Search tabs ──────────────────────────────────────────────────────────
   // Row 1 (always visible): the top-level tabs. 'Docs' is first because cxkit
@@ -51,7 +53,7 @@
   var DOCS_SUBAREAS = [
     'Get started', 'Concepts', 'Guides', 'Reference',
     'Cloud', 'ClickHouse Private', 'Managed Postgres', 'ClickStack',
-    'Agentic Data Stack', 'chDB', 'Kubernetes Operator',
+    'chDB', 'Kubernetes Operator',
     'ClickPipes', 'Connectors', 'Language clients', 'Ecosystem',
   ];
   var SEARCH_TABS = ROW1_TABS.concat(DOCS_SUBAREAS);
@@ -67,7 +69,6 @@
     ['products/bring-your-own-cloud', 'Cloud'],
     ['products/clickhouse-private', 'ClickHouse Private'],
     ['products/managed-postgres', 'Managed Postgres'],
-    ['products/agentic-data-stack', 'Agentic Data Stack'],
     ['chdb', 'chDB'],
     ['products/kubernetes-operator', 'Kubernetes Operator'],
     ['clickstack', 'ClickStack'],
@@ -135,6 +136,8 @@
     var script = document.createElement('script');
     script.id = 'inkeep-cxkit-script';
     script.src = url;
+    script.integrity = INKEEP_SCRIPT_INTEGRITY;
+    script.crossOrigin = 'anonymous';
     script.type = 'text/javascript';
     script.onload = callback;
     document.head.appendChild(script);

@@ -3,6 +3,8 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ActionsDAGTraversal.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 
@@ -24,8 +26,7 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
 
     auto * child_node = parent_node->children.front();
     auto * array_join = typeid_cast<ArrayJoinStep *>(child_node->step.get());
-    /// skip LEFT: optimizeReadInOrder keeps LIMIT through it, but a fused filter drops rows
-    if (!array_join || array_join->isLeft() || array_join->hasElementFilter())
+    if (!array_join || array_join->hasElementFilter())
         return 0;
 
     auto & expression = filter->getExpression();
@@ -34,23 +35,21 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
         return 0;
 
     const auto & joined_columns = array_join->getColumns();
+
+    if (!expression.splitActionsBeforeArrayJoin(joined_columns).first.trivial())
+        return 0;
+
     NameSet joined_set(joined_columns.begin(), joined_columns.end());
 
-    /// The filter may read row columns too (the step broadcasts them), but it must read at least one element.
-    const auto required
-        = ActionsDAG::cloneSubDAG({&expression.findInOutputs(filter->getFilterColumnName())}, false).getRequiredColumnsNames();
-    if (std::ranges::none_of(required, [&](const auto & name) { return joined_set.contains(name); }))
-        return 0;
+    const auto * whole_filter_node = &expression.findInOutputs(filter->getFilterColumnName());
+    const auto required = ActionsDAG::cloneSubDAG({whole_filter_node}, false).getRequiredColumnsNames();
     NameSet required_set(required.begin(), required.end());
     ColumnsWithTypeAndName all_inputs;
     for (const auto & column : filter->getInputHeaders().front()->getColumnsWithTypeAndName())
         if (required_set.contains(column.name))
             all_inputs.push_back(column);
 
-    /// Only fuse when the WHOLE filter moves into the ARRAY JOIN. If any conjunct must stay above, lifting
-    /// an element conjunct out of the AND changes short-circuit evaluation - a throwing element predicate
-    /// (intDiv(1, elem)) could run where a sibling above would have skipped it, and ARRAY JOIN does not
-    /// support short-circuit. Split on a clone so bailing out leaves the real filter untouched.
+    /// Split on a clone so bailing out leaves the real filter untouched.
     auto residual = expression.clone();
     auto split = residual.splitActionsForFilterPushDown(
         filter->getFilterColumnName(),
@@ -61,28 +60,54 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
     if (!split)
         return 0;
 
+    const auto * filter_node = split->dag.getOutputs()[split->filter_pos];
+
+    /// the element filter can read row columns (the step broadcasts them), but it must read an element
+    if (!anyReachableNode({filter_node}, [&](const auto * node) { return node->type == ActionsDAG::ActionType::INPUT && joined_set.contains(node->result_name); }))
+        return 0;
+
     /// Fully fused iff nothing is left to filter above: the residual filter column was removed, or it
-    /// collapsed to a constant. Otherwise a real sibling conjunct remains and we must not fuse.
+    /// collapsed to a constant.
     const bool fully_fused = !residual.tryFindInOutputs(filter->getFilterColumnName()) || split->is_filter_const_after_push_down;
-    if (!fully_fused)
+
+    /// the conjuncts that stay above take the place of the filter column: only the filter may read it (totals skip the fused ones)
+    auto reads_whole_filter = [&](const auto & node) { return std::ranges::contains(node.children, whole_filter_node); };
+    if (!fully_fused && (!filter->removesFilterColumn() || std::ranges::any_of(expression.getNodes(), reads_whole_filter)))
+        return 0;
+
+    /// a conjunct that stays above (e.g. with rand) no longer guards the fused ones and sees fewer rows
+    auto ignores_row_count = [](const IFunctionBase & function) { return !function.isStateful() && !function.hasObservableSideEffects(); };
+    if (!fully_fused
+        && (!std::ranges::all_of(expression.getNodes(), [&](const auto & node) { return allNodeFunctions(node, ignores_row_count); })
+            || !std::ranges::all_of(ActionsDAG::extractConjunctionAtoms(filter_node), canBeMovedToTheFrontOfAndChain)))
         return 0;
 
     /// With short-circuit off, a FilterStep still masks a throwing atom by splitting the AND into sequential
     /// filters. The fused path runs the whole predicate at once, so don't fuse a multi-atom AND in this mode.
-    const auto * filter_node = split->dag.getOutputs()[split->filter_pos];
     if (settings.short_circuit_function_evaluation_disabled
         && filter_node->type == ActionsDAG::ActionType::FUNCTION
         && filter_node->function_base && filter_node->function_base->getName() == "and")
         return 0;
 
     String element_filter_column = filter_node->result_name;
+
+    /// the step broadcasts each input of the element filter: drop the columns that only the conjuncts above read
+    NameSet element_filter_columns{element_filter_column};
+    for (const auto & name : ActionsDAG::cloneSubDAG({filter_node}, false).getRequiredColumnsNames())
+        element_filter_columns.insert(name);
+    split->dag.removeUnusedActions(element_filter_columns);
+
     array_join->setElementFilter(std::move(split->dag), element_filter_column, split->remove_filter);
 
-    /// The whole filter is now the element filter; replace it with its residual (an all-columns pass-through).
+    /// the residual is an all-columns pass-through if the whole filter is now the element filter
     const auto & array_join_output = child_node->step->getOutputHeader();
-    auto expression_step = std::make_unique<ExpressionStep>(array_join_output, std::move(residual));
-    expression_step->setStepDescription(*filter);
-    parent = std::move(expression_step);
+    QueryPlanStepPtr residual_step;
+    if (fully_fused)
+        residual_step = std::make_unique<ExpressionStep>(array_join_output, std::move(residual));
+    else
+        residual_step = std::make_unique<FilterStep>(array_join_output, std::move(residual), filter->getFilterColumnName(), filter->removesFilterColumn());
+    residual_step->setStepDescription(*filter);
+    parent = std::move(residual_step);
 
     return 2;
 }

@@ -1,0 +1,38 @@
+top-level UNION ALL
+6
+6
+shadowed by an enclosing plain CTE
+6
+6
+CTE column alias list
+6
+6
+INTERSECT
+6
+EXCEPT
+6
+three branches
+3
+6
+6
+RECURSIVE survives in a stored view definition
+2
+RECURSIVE survives in the rewritten query
+2
+control: non-recursive CTE is propagated as before
+1
+1
+control: a non-recursive list is propagated without a RECURSIVE marker
+0
+control: WITH RECURSIVE carrying only a scalar alias
+1
+1
+control: WITH RECURSIVE whose CTE does not reference itself
+7
+7
+control: without the propagation the later branch sees no CTE at all
+boundary: the later branch has its own WITH
+boundary: a later branch with its own WITH keeps it non-recursive
+5
+6
+1

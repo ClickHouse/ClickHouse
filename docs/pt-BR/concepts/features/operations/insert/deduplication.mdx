@@ -7,9 +7,7 @@ keywords: ['estratégias de desduplicação', 'desduplicação de dados', 'upser
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
-**Desduplicação** refere-se ao processo de ***remover linhas duplicadas de um conjunto de dados***. Em um banco de dados OLTP, isso é feito com facilidade porque cada linha tem uma chave primária exclusiva — mas ao custo de inserções mais lentas. Cada linha inserida precisa primeiro ser procurada e, se for encontrada, precisa ser substituída.
+**Desduplicação** refere-se ao processo de ***remover linhas duplicadas de um conjunto de dados***. Em um banco de dados OLTP, isso é feito com facilidade porque cada linha tem uma chave primária única — mas ao custo de inserts mais lentos. Cada linha inserida precisa primeiro ser procurada e, se for encontrada, precisa ser substituída.
 
 O ClickHouse foi projetado para ser rápido na inserção de dados. Os arquivos de armazenamento são imutáveis, e o ClickHouse não verifica a existência de uma chave primária antes de inserir uma linha — por isso, a desduplicação exige um pouco mais de esforço. Isso também significa que a desduplicação não é imediata — ela ocorre **eventualmente**, o que traz alguns efeitos colaterais:
 
@@ -18,13 +16,13 @@ O ClickHouse foi projetado para ser rápido na inserção de dados. Os arquivos 
 * Suas consultas precisam levar em conta a possibilidade de duplicatas
 
 <div class="transparent-table">
-  |                                                                                                        |                                                                                                                                                                                                                                                                                 |
-  | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | <Image img="/images/guides/developer/de_duplication.webp" alt="Logotipo de desduplicação" size="sm" /> | O ClickHouse oferece treinamento gratuito sobre desduplicação e muitos outros tópicos. O [módulo de treinamento Deleting and Updating Data](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) é um bom ponto de partida. |
+  |                                                                                                                                |                                                                                                                                                                                                                                                 |
+  | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | <span className="ch-image-sm"><Frame>![Logotipo de desduplicação](/images/guides/developer/de_duplication.webp)</Frame></span> | O ClickHouse oferece treinamento gratuito sobre desduplicação e muitos outros tópicos. O [Módulo de treinamento sobre Exclusão e Atualização de Dados](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) é um bom ponto de partida. |
 </div>
 
 <div id="options-for-deduplication">
-  ## Opções de desduplicação
+  ## Opções de desduplicação {#options-for-deduplication}
 </div>
 
 A desduplicação é implementada no ClickHouse usando os seguintes motores de tabela:
@@ -33,10 +31,10 @@ A desduplicação é implementada no ClickHouse usando os seguintes motores de t
 
 2. Colapso de linhas: os motores de tabela `CollapsingMergeTree` e `VersionedCollapsingMergeTree` usam uma lógica em que uma linha existente é &quot;cancelada&quot; e uma nova linha é inserida. Eles são mais complexos de implementar do que `ReplacingMergeTree`, mas suas consultas e agregações podem ser mais simples de escrever, sem a preocupação de saber se os dados já foram mesclados ou não. Esses dois motores de tabela são úteis quando você precisa atualizar dados com frequência.
 
-Apresentamos as duas técnicas abaixo. Para mais detalhes, confira nosso [módulo de treinamento Deleting and Updating Data](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs), gratuito e sob demanda.
+Apresentamos as duas técnicas abaixo. Para mais detalhes, confira nosso [Módulo de treinamento sobre Exclusão e Atualização de Dados](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461), gratuito e sob demanda.
 
 <div id="using-replacingmergetree-for-upserts">
-  ## Usando ReplacingMergeTree para Upserts
+  ## Usando ReplacingMergeTree para Upserts {#using-replacingmergetree-for-upserts}
 </div>
 
 Vamos ver um exemplo simples em que uma tabela contém comentários do Hacker News com uma coluna de visualizações que representa o número de vezes que um comentário foi visto. Suponha que inserimos uma nova linha quando um artigo é publicado e fazemos um upsert de uma nova linha uma vez por dia com o número total de visualizações, caso esse valor aumente:
@@ -109,11 +107,9 @@ O resultado tem apenas 2 linhas, e a última linha inserida é a que é retornad
   encontrar o valor mais recente de uma coluna.
 </Note>
 
-<div id="avoiding-final">
-  ### Evitando FINAL
-</div>
+### Evitando FINAL {#avoiding-final}
 
-Vamos atualizar a coluna `views` novamente nas duas linhas distintas:
+Vamos atualizar a coluna `views` novamente nas duas linhas únicas:
 
 ```sql
 INSERT INTO hackernews_rmt VALUES
@@ -164,10 +160,10 @@ GROUP BY (id, author, comment)
 
 O agrupamento, como mostrado na consulta acima, pode, na verdade, ser mais eficiente (em termos de desempenho da consulta) do que usar a palavra-chave `FINAL`.
 
-Nosso [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) aprofunda este exemplo, incluindo como usar uma coluna `version` com `ReplacingMergeTree`.
+Nosso [Módulo de treinamento sobre Exclusão e Atualização de Dados](https://learn.clickhouse.com/real-time-analytics-with-clickhouse/550461) aprofunda este exemplo, incluindo como usar uma coluna `version` com `ReplacingMergeTree`.
 
 <div id="using-collapsingmergetree-for-updating-columns-frequently">
-  ## Usando CollapsingMergeTree para atualizar colunas com frequência
+  ## Usando CollapsingMergeTree para atualizar colunas com frequência {#using-collapsingmergetree-for-updating-columns-frequently}
 </div>
 
 Atualizar uma coluna envolve excluir uma linha existente e substituí-la por novos valores. Como você já viu, esse tipo de mutação no ClickHouse acontece *eventualmente* — durante a mesclagem. Se houver muitas linhas para atualizar, pode ser mais eficiente evitar `ALTER TABLE..UPDATE` e, em vez disso, simplesmente inserir os novos dados ao lado dos dados existentes. Poderíamos adicionar uma coluna para indicar se os dados estão desatualizados ou são novos... e, na verdade, já existe um motor de tabela que implementa esse comportamento muito bem, especialmente porque exclui automaticamente os dados desatualizados para você. Vamos ver como isso funciona.
@@ -253,7 +249,7 @@ Mas, é claro, não é recomendável usar `FINAL` em tabelas grandes.
 </Note>
 
 <div id="real-time-updates-from-multiple-threads">
-  ## Atualizações em tempo real de várias threads
+  ## Atualizações em tempo real de várias threads {#real-time-updates-from-multiple-threads}
 </div>
 
 Com uma tabela `CollapsingMergeTree`, as linhas se cancelam mutuamente usando uma coluna de sinal, e o estado de uma linha é determinado pela última linha inserida. Mas isso pode ser problemático se você estiver inserindo linhas de threads diferentes, em que as linhas podem ser inseridas fora de ordem. Usar a &quot;última&quot; linha não funciona nessa situação.
@@ -344,10 +340,8 @@ FROM hackernews_views_vcmt
 
 Uma tabela `VersionedCollapsingMergeTree` é bastante útil quando você deseja implementar desduplicação ao inserir linhas de vários clientes e/ou threads.
 
-<div id="why-arent-my-rows-being-deduplicated">
-  ## Por que minhas linhas não estão sendo desduplicadas?
-</div>
+## Por que minhas linhas não estão sendo desduplicadas? {#why-arent-my-rows-being-deduplicated}
 
-Um dos motivos pelos quais as linhas inseridas podem não ser desduplicadas é o uso de uma função ou expressão não idempotente na sua instrução `INSERT`. Por exemplo, se você estiver inserindo linhas com a coluna `createdAt DateTime64(3) DEFAULT now()`, essas linhas serão necessariamente únicas, porque cada uma terá um valor padrão exclusivo na coluna `createdAt`. O motor de tabela MergeTree / ReplicatedMergeTree não saberá desduplicá-las, já que cada linha inserida gerará um checksum único.
+Um dos motivos pelos quais as linhas inseridas podem não ser desduplicadas é o uso de uma função ou expressão não idempotente na sua instrução `INSERT`. Por exemplo, se você estiver inserindo linhas com a coluna `createdAt DateTime64(3) DEFAULT now()`, suas linhas certamente serão únicas, porque cada linha terá um valor default único para a coluna `createdAt`. O motor de tabela MergeTree / ReplicatedMergeTree não terá como deduplicar as linhas, pois cada linha inserida gerará um checksum único.
 
-Nesse caso, você pode especificar seu próprio `insert_deduplication_token` para cada lote de linhas, para garantir que várias inserções do mesmo lote não façam com que as mesmas linhas sejam inseridas novamente. Consulte a [documentação sobre `insert_deduplication_token`](/pt-BR/reference/settings/session-settings/insert#insert_deduplication_token) para mais detalhes sobre como usar essa configuração.
+Nesse caso, você pode especificar seu próprio `insert_deduplication_token` para cada lote de linhas, garantindo que vários inserts do mesmo lote não resultem na reinserção das mesmas linhas. Consulte a [documentação sobre `insert_deduplication_token`](/pt-BR/reference/settings/session-settings/insert#insert_deduplication_token) para mais detalhes sobre como usar essa configuração.

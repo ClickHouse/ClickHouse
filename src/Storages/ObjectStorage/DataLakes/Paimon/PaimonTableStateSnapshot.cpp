@@ -39,6 +39,10 @@ void TableStateSnapshot::serialize(DB::WriteBuffer & out) const
     write_optional_int64(delta_record_count);
     write_optional_int64(changelog_record_count);
     write_optional_int64(watermark);
+
+    DB::writeChar(index_manifest.has_value() ? 1 : 0, out);
+    if (index_manifest.has_value())
+        DB::writeStringBinary(*index_manifest, out);
 }
 
 TableStateSnapshot TableStateSnapshot::deserialize(DB::ReadBuffer & in, const int datalake_state_protocol_version)
@@ -74,6 +78,15 @@ TableStateSnapshot TableStateSnapshot::deserialize(DB::ReadBuffer & in, const in
     read_optional_int64(state.delta_record_count);
     read_optional_int64(state.changelog_record_count);
     read_optional_int64(state.watermark);
+
+    char has_index_manifest = 0;
+    DB::readChar(has_index_manifest, in);
+    if (has_index_manifest != 0)
+    {
+        String value;
+        DB::readStringBinary(value, in);
+        state.index_manifest = std::move(value);
+    }
 
     return state;
 }

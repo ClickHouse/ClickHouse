@@ -8,7 +8,6 @@ keywords: ['Google Cloud Storage ClickHouse', 'GCS ClickHouse 集成', '基于 G
 ---
 
 import BucketDetails from '/snippets/zh/_GCS_authentication_and_bucket.mdx';
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 <Note>
   如果您在 [Google Cloud](https://cloud.google.com) 上使用 ClickHouse Cloud，则本页不适用，因为您的服务已在使用 [Google Cloud Storage](https://cloud.google.com/storage)。如果您想从 GCS `SELECT` 或向 GCS `INSERT` 数据，请参阅 [`gcs` 表函数](/zh/reference/functions/table-functions/gcs)。
@@ -17,17 +16,17 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 ClickHouse 认识到，对于希望将存储与计算分离的用户来说，GCS 是一种很有吸引力的存储解决方案。为此，现已支持将 GCS 用作 MergeTree 引擎的存储后端。这样，您既可以利用 GCS 在可扩展性和成本方面的优势，也能获得 MergeTree 引擎的插入和查询性能。
 
 <div id="gcs-backed-mergetree">
-  ## 基于 GCS 的 MergeTree
+  ## 基于 GCS 的 MergeTree {#gcs-backed-mergetree}
 </div>
 
 <div id="creating-a-disk">
-  ### 创建磁盘
+  ### 创建磁盘 {#creating-a-disk}
 </div>
 
 要将 GCS 存储桶用作磁盘，首先必须在 `conf.d` 下的某个文件中，在 ClickHouse 配置里声明它。下面展示了一个 GCS 磁盘声明示例。此配置包含多个部分，分别用于配置 GCS“磁盘”、缓存，以及在需要在 GCS 磁盘上创建表时在 DDL queries 中指定的策略。下面将分别介绍这些部分。
 
 <div id="storage_configuration--disks--gcs">
-  #### 存储配置 &gt; disks &gt; gcs
+  #### 存储配置 &gt; disks &gt; gcs {#storage_configuration--disks--gcs}
 </div>
 
 配置中的这一部分显示在高亮区域，用于指定以下内容：
@@ -64,7 +63,7 @@ ClickHouse 认识到，对于希望将存储与计算分离的用户来说，GCS
 ```
 
 <div id="storage_configuration--disks--cache">
-  #### 存储配置 &gt; disks &gt; cache
+  #### 存储配置 &gt; disks &gt; cache {#storage_configuration--disks--cache}
 </div>
 
 下面高亮显示的示例配置会为 `gcs` 磁盘启用 10Gi 的内存缓存。
@@ -102,7 +101,7 @@ ClickHouse 认识到，对于希望将存储与计算分离的用户来说，GCS
 ```
 
 <div id="storage_configuration--policies--gcs_main">
-  #### 存储配置 &gt; 策略 &gt; gcs_main
+  #### 存储配置 &gt; 策略 &gt; gcs_main {#storage_configuration--policies--gcs_main}
 </div>
 
 存储配置策略可用于指定数据的存储位置。下面重点说明的策略通过指定 `gcs_main`，允许将数据存储在磁盘 `gcs` 上。例如：`CREATE TABLE ... SETTINGS storage_policy='gcs_main'`。
@@ -136,7 +135,7 @@ ClickHouse 认识到，对于希望将存储与计算分离的用户来说，GCS
 此磁盘声明的相关设置完整列表可参见[此处](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)。
 
 <div id="creating-a-table">
-  ### 创建表
+  ### 创建表 {#creating-a-table}
 </div>
 
 假设你已将磁盘配置为使用具有写入权限的 存储桶，那么你应该能够像下面的示例一样创建一个表。为简洁起见，我们只使用 NYC taxi 部分列，并将数据直接流式写入以 GCS 作为后端的表中：
@@ -175,13 +174,13 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 ```
 
 <div id="handling-replication">
-  ### 实现复制
+  ### 实现复制 {#handling-replication}
 </div>
 
 使用 GCS 磁盘时，可以通过 `ReplicatedMergeTree` 表引擎实现复制。详情请参阅[使用 GCS 在两个 GCP 区域间复制单个分片](#gcs-multi-region)指南。
 
 <div id="learn-more">
-  ### 了解更多
+  ### 了解更多 {#learn-more}
 </div>
 
 [Cloud Storage XML API](https://cloud.google.com/storage/docs/xml-api/overview) 可与部分适用于 Amazon Simple Storage Service (Amazon S3) 等服务的工具和库互操作。
@@ -189,7 +188,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 有关线程调优的更多信息，请参阅[性能优化](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#s3-optimizing-performance)。
 
 <div id="gcs-multi-region">
-  ## 使用 Google Cloud Storage (GCS)
+  ## 使用 Google Cloud Storage (GCS) {#gcs-multi-region}
 </div>
 
 <Tip>
@@ -197,7 +196,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 </Tip>
 
 <div id="plan-the-deployment">
-  ### 规划部署
+  ### 规划部署 {#plan-the-deployment}
 </div>
 
 本教程介绍如何在 Google Cloud 上部署一个复制的 ClickHouse 集群，并使用 Google Cloud Storage (GCS) 作为 ClickHouse 存储磁盘的“类型”。
@@ -213,7 +212,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 ClickHouse Keeper 至少需要两个节点才能正常工作，因此要实现高可用性，需要三个节点。
 
 <div id="prepare-vms">
-  ### 准备虚拟机
+  ### 准备虚拟机 {#prepare-vms}
 </div>
 
 在三个区域部署五台虚拟机：
@@ -227,7 +226,7 @@ ClickHouse Keeper 至少需要两个节点才能正常工作，因此要实现�
 `*` 这也可以是在与 1 或 2 相同区域内的另一个可用区。
 
 <div id="deploy-clickhouse">
-  #### 部署 ClickHouse
+  #### 部署 ClickHouse {#deploy-clickhouse}
 </div>
 
 在两台主机上部署 ClickHouse；在示例配置中，这两台主机分别命名为 `chnode1` 和 `chnode2`。
@@ -241,7 +240,7 @@ ClickHouse Keeper 至少需要两个节点才能正常工作，因此要实现�
 在 ClickHouse 服务器 节点上执行部署步骤时，请参阅[安装说明](/zh/get-started/setup/install)。
 
 <div id="deploy-clickhouse-keeper">
-  #### 部署 ClickHouse Keeper
+  #### 部署 ClickHouse Keeper {#deploy-clickhouse-keeper}
 </div>
 
 在三台主机上部署 ClickHouse Keeper。在示例配置中，这三台主机分别命名为 `keepernode1`、`keepernode2` 和 `keepernode3`。`keepernode1` 可部署在与 `chnode1` 相同的区域，`keepernode2` 可与 `chnode2` 部署在同一区域，`keepernode3` 则可部署在任一区域，但需与该区域中的 ClickHouse 节点位于不同的可用区。
@@ -249,7 +248,7 @@ ClickHouse Keeper 至少需要两个节点才能正常工作，因此要实现�
 在 ClickHouse Keeper 节点上执行部署步骤时，请参阅[安装说明](/zh/get-started/setup/install)。
 
 <div id="create-two-buckets">
-  ### 创建两个存储桶
+  ### 创建两个存储桶 {#create-two-buckets}
 </div>
 
 两个 ClickHouse 服务器将部署在不同区域中，以实现高可用性。每个服务器都会在相同区域中配备一个 GCS 存储桶。
@@ -261,7 +260,7 @@ ClickHouse Keeper 至少需要两个节点才能正常工作，因此要实现�
 <BucketDetails />
 
 <div id="configure-clickhouse-keeper">
-  ### 配置 ClickHouse Keeper
+  ### 配置 ClickHouse Keeper {#configure-clickhouse-keeper}
 </div>
 
 除 `server_id` 这一行 (下方第一处高亮的行) 外，所有 ClickHouse Keeper 节点的配置文件都相同。请将文件中的主机名替换为你的 ClickHouse Keeper 服务器主机名，并在每台服务器上将 `server_id` 设置为与 `raft_configuration` 中对应 `server` 条目一致的值。由于此示例中的 `server_id` 设为 `3`，我们在 `raft_configuration` 中高亮了对应的行。
@@ -314,7 +313,7 @@ ClickHouse Keeper 至少需要两个节点才能正常工作，因此要实现�
 ```
 
 <div id="configure-clickhouse-server">
-  ### 配置 ClickHouse 服务器
+  ### 配置 ClickHouse 服务器 {#configure-clickhouse-server}
 </div>
 
 <Info>
@@ -324,7 +323,7 @@ ClickHouse Keeper 至少需要两个节点才能正常工作，因此要实现�
 </Info>
 
 <div id="networking">
-  #### 网络
+  #### 网络 {#networking}
 </div>
 
 默认情况下，ClickHouse 仅监听回环接口；在启用复制的部署中，机器之间必须能够进行网络通信。请监听所有接口：
@@ -336,7 +335,7 @@ ClickHouse Keeper 至少需要两个节点才能正常工作，因此要实现�
 ```
 
 <div id="remote-clickhouse-keeper-servers">
-  #### 远程 ClickHouse Keeper 服务器
+  #### 远程 ClickHouse Keeper 服务器 {#remote-clickhouse-keeper-servers}
 </div>
 
 复制由 ClickHouse Keeper 负责协调。此配置文件通过主机名和端口号指定 ClickHouse Keeper 节点。
@@ -363,7 +362,7 @@ ClickHouse Keeper 至少需要两个节点才能正常工作，因此要实现�
 ```
 
 <div id="remote-clickhouse-servers">
-  #### 远程 ClickHouse 服务器
+  #### 远程 ClickHouse 服务器 {#remote-clickhouse-servers}
 </div>
 
 此文件用于配置集群中每个 ClickHouse 服务器的主机名和端口。默认配置文件包含示例集群定义；为了只显示已完整配置的集群，需要在 `remote_servers` 条目中添加 `replace="true"` 标签。这样，当此配置与默认配置合并时，它会替换 `remote_servers` 部分，而不是在其中追加内容。
@@ -390,7 +389,7 @@ ClickHouse Keeper 至少需要两个节点才能正常工作，因此要实现�
 ```
 
 <div id="replica-identification">
-  #### 副本标识
+  #### 副本标识 {#replica-identification}
 </div>
 
 此文件用于配置与 ClickHouse Keeper 路径相关的设置。具体来说，是配置用于标识数据所属副本的宏。在一台服务器上，副本应指定为 `replica_1`，而在另一台服务器上则应指定为 `replica_2`。这些名称可以更改；根据我们的示例，如果一个副本存储在南卡罗来纳，另一个存储在北弗吉尼亚，那么相应的值也可以设为 `carolina` 和 `virginia`；只需确保它们在每台机器上各不相同即可。
@@ -409,7 +408,7 @@ ClickHouse Keeper 至少需要两个节点才能正常工作，因此要实现�
 ```
 
 <div id="storage-in-gcs">
-  #### GCS 中的存储
+  #### GCS 中的存储 {#storage-in-gcs}
 </div>
 
 ClickHouse 存储配置包含 `disks` 和 `policies`。下面配置的磁盘名为 `gcs`，其 `type` 为 `s3`。之所以使用 s3 类型，是因为 ClickHouse 访问 GCS 存储桶时，会将其视为 AWS S3 存储桶。此配置需要准备两份，每个 ClickHouse 服务器 节点各一份。
@@ -459,7 +458,7 @@ ClickHouse 存储配置包含 `disks` 和 `policies`。下面配置的磁盘名�
 ```
 
 <div id="start-clickhouse-keeper">
-  ### 启动 ClickHouse Keeper
+  ### 启动 ClickHouse Keeper {#start-clickhouse-keeper}
 </div>
 
 使用适合您所用操作系统的命令，例如：
@@ -471,7 +470,7 @@ sudo systemctl status clickhouse-keeper
 ```
 
 <div id="check-clickhouse-keeper-status">
-  #### 检查 ClickHouse Keeper 状态
+  #### 检查 ClickHouse Keeper 状态 {#check-clickhouse-keeper-status}
 </div>
 
 使用 `netcat` 向 ClickHouse Keeper 发送命令。例如，`mntr` 会返回 ClickHouse Keeper 集群的状态信息。如果在每个 Keeper 节点上运行该命令，你会看到其中一个是 leader，另外两个是跟随者：
@@ -503,7 +502,7 @@ zk_synced_followers     2
 ```
 
 <div id="start-clickhouse-server">
-  ### 启动 ClickHouse 服务器
+  ### 启动 ClickHouse 服务器 {#start-clickhouse-server}
 </div>
 
 在 `chnode1` 和 `chnode` 上运行：
@@ -517,11 +516,11 @@ sudo service clickhouse-server status
 ```
 
 <div id="verification">
-  ### 验证
+  ### 验证 {#verification}
 </div>
 
 <div id="verify-disk-configuration">
-  #### 验证磁盘配置
+  #### 验证磁盘配置 {#verify-disk-configuration}
 </div>
 
 `system.disks` 中应包含每个磁盘对应的记录：
@@ -589,7 +588,7 @@ cache_path:
 ```
 
 <div id="verify-that-tables-created-on-the-cluster-are-created-on-both-nodes">
-  #### 验证在集群上创建的表是否已在两个节点上创建成功
+  #### 验证在集群上创建的表是否已在两个节点上创建成功 {#verify-that-tables-created-on-the-cluster-are-created-on-both-nodes}
 </div>
 
 ```sql highlight={1,18}
@@ -625,7 +624,7 @@ SETTINGS storage_policy='gcs_main'
 ```
 
 <div id="verify-that-data-can-be-inserted">
-  #### 验证数据可成功插入
+  #### 验证数据可成功插入 {#verify-that-data-can-be-inserted}
 </div>
 
 ```sql
@@ -648,7 +647,7 @@ LIMIT 1000000
 ```
 
 <div id="verify-that-the-storage-policy-gcs_main-is-used-for-the-table">
-  #### 验证该表是否使用存储策略 `gcs_main`。
+  #### 验证该表是否使用存储策略 `gcs_main`。 {#verify-that-the-storage-policy-gcs_main-is-used-for-the-table}
 </div>
 
 ```sql
@@ -676,19 +675,23 @@ formatReadableSize(total_bytes): 36.42 MiB
 ```
 
 <div id="verify-in-google-cloud-console">
-  #### 在 Google Cloud Console 中验证
+  #### 在 Google Cloud Console 中验证 {#verify-in-google-cloud-console}
 </div>
 
 查看这些存储桶时，你会看到系统已在每个存储桶中创建了一个文件夹，名称与 `storage.xml` 配置文件中使用的名称相同。展开这些文件夹后，你会看到许多文件，对应各个数据分区。
 
-<div id="bucket-for-replica-one">
-  #### 副本一的存储桶
+#### 副本一的存储桶 {#bucket-for-replica-one}
+
+<div className="ch-image-lg">
+  <Frame>
+    ![Google Cloud Storage 中副本一的存储桶，显示包含数据分区的文件夹结构](/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp)
+  </Frame>
 </div>
 
-<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp" size="lg" border alt="Google Cloud Storage 中副本一的存储桶，展示包含数据分区的文件夹结构" />
+#### 副本二的存储桶 {#bucket-for-replica-two}
 
-<div id="bucket-for-replica-two">
-  #### 副本二的存储桶
+<div className="ch-image-lg">
+  <Frame>
+    ![Google Cloud Storage 中副本二的存储桶，显示包含数据分区的文件夹结构](/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp)
+  </Frame>
 </div>
-
-<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp" size="lg" border alt="Google Cloud Storage 中副本二的存储桶，显示包含数据分区的文件夹结构" />

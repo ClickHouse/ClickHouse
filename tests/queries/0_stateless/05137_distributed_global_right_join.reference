@@ -1,0 +1,36 @@
+initiator
+k1	v1	k2	v2
+1	a	1	A
+1	a	1	A
+1	a	1	A
+1	a	1	A
+2	b	2	B
+2	b	2	B
+2	b	2	B
+2	b	2	B
+\N	\N	3	C
+\N	\N	3	C
+distributed_product_mode
+k1	v1	k2	v2
+1	a	1	A
+1	a	1	A
+1	a	1	A
+1	a	1	A
+2	b	2	B
+2	b	2	B
+2	b	2	B
+2	b	2	B
+\N	\N	3	C
+\N	\N	3	C
+explicit_global
+k1	v1	k2	v2
+1	a	1	A
+1	a	1	A
+1	a	1	A
+1	a	1	A
+2	b	2	B
+2	b	2	B
+2	b	2	B
+2	b	2	B
+\N	\N	3	C
+\N	\N	3	C

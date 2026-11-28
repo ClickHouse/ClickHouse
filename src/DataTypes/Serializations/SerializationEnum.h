@@ -37,7 +37,7 @@ public:
     static SerializationPtr create(const std::shared_ptr<const DataTypeEnum<Type>> & enum_type);
     static SerializationPtr create(const Values & values_);
 
-    size_t allocatedBytes() const override;
+    [[nodiscard]] size_t allocatedBytes() const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
@@ -48,6 +48,8 @@ public:
     bool tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     bool tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    bool tryDeserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
@@ -67,7 +69,7 @@ public:
         FieldType x;
         readText(x, istr);
         /// Validate that value exists (throws if not found)
-        ref_enum_values.getNameForValue(x);
+        (void)ref_enum_values.getNameForValue(x);
         return x;
     }
 

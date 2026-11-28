@@ -1,0 +1,8 @@
+SELECT 1 < `SOME`((a, b) -> 1)
+1
+1
+SELECT 1 = `SOME`((SELECT 1))
+SELECT 1 < `ALL`((a, b) -> 1)
+SELECT `some`, `SOME`, `Some`, somex, some_1
+SELECT has([1, 2, 3], 3)
+SELECT arrayExists(lambda(tuple(_a), 5 < _a), [1, 2, 6])

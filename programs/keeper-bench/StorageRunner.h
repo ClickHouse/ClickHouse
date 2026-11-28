@@ -19,7 +19,7 @@
 #include <Interpreters/Context.h>
 
 #include <Generator.h>
-#include <Runner.h>
+#include <NodesSetup.h>
 
 /// In-process benchmark for `KeeperStorage` alone (no network, no raft, no state machine).
 ///
@@ -145,8 +145,9 @@ private:
     DB::SharedMutex state_machine_storage_mutex;
     std::shared_ptr<Storage> storage;
 
-    BenchmarkContext benchmark_context;
-    std::vector<std::shared_ptr<Generator>> generators;
+    NodesSetup nodes_setup;
+    /// Shared by all generator threads; immutable after startup.
+    std::shared_ptr<Generator> generator;
     std::vector<int64_t> generator_session_ids;
     int64_t setup_session_id = 0;
 

@@ -1,0 +1,6 @@
+-- preprocessor and postprocessor
+5
+1
+5
+-- preprocessor that maps NULL to a string
+5

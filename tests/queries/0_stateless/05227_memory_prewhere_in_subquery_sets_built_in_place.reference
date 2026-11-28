@@ -1,0 +1,34 @@
+-- control: a filter that stays above the source keeps the pipeline-level set creation
+(CreatingSets)
+DelayedPorts 2 → 1
+  (Expression)
+  ExpressionTransform
+    (Filter)
+    FilterTransform
+      (ReadFromMemoryStorage)
+  (CreatingSet)
+  CreatingSetsTransform
+    (Expression)
+    ExpressionTransform
+      (ReadFromMemoryStorage)
+-- explicit PREWHERE: the set is built in place
+(CreatingSets)
+  (Expression)
+  ExpressionTransform
+    (ReadFromMemoryStorage)
+-- moved to PREWHERE by the optimizer, after applyFilters already ran
+(CreatingSets)
+  (Expression)
+  ExpressionTransform
+    (Expression)
+    ExpressionTransform
+      (ReadFromMemoryStorage)
+-- the shape that motivated this: a downstream JOIN with an empty right side closes its inputs early
+-- a row policy with IN (subquery) is built in place as well
+(CreatingSets)
+  (Expression)
+  ExpressionTransform
+    (ReadFromMemoryStorage)
+2	2
+4	4
+6	6

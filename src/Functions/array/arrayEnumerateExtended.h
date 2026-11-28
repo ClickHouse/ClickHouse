@@ -32,14 +32,21 @@ class FunctionArrayEnumerateExtended : public IFunction
 public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<Derived>(); }
 
-    String getName() const override { return Derived::name; }
+    [[nodiscard]] String getName() const override { return Derived::name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// Declarative signature — accepts one or more arrays of any element
+    /// type and returns an array of `UInt32` enumeration ranks.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(Array, ...) -> Array(UInt32)";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
@@ -58,7 +65,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 private:
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
@@ -118,7 +125,11 @@ private:
     bool executeString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const;
     bool executeFixedString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const;
     bool execute128bit(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values) const;
-    void executeHashed(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values) const;
+    void executeHashed(
+        const ColumnArray::Offsets & offsets,
+        const ColumnRawPtrs & columns,
+        const NullMap * null_map,
+        ColumnUInt32::Container & res_values) const;
 };
 
 
@@ -194,12 +205,12 @@ ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWith
             || executeNumber<Float64>(*offsets, *data_columns[0], null_map, res_values)
             || executeString(*offsets, *data_columns[0], null_map, res_values)
             || executeFixedString(*offsets, *data_columns[0], null_map, res_values)))
-            executeHashed(*offsets, data_columns, res_values);
+            executeHashed(*offsets, data_columns, null_map, res_values);
     }
     else
     {
         if (!execute128bit(*offsets, data_columns, res_values))
-            executeHashed(*offsets, data_columns, res_values);
+            executeHashed(*offsets, data_columns, nullptr, res_values);
     }
 
     return ColumnArray::create(std::move(res_nested), offsets_column);
@@ -329,7 +340,7 @@ template <typename Derived>
 bool FunctionArrayEnumerateExtended<Derived>::executeFixedString(
         const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const
 {
-    const auto * nested = checkAndGetColumn<ColumnString>(&data);
+    const auto * nested = checkAndGetColumn<ColumnFixedString>(&data);
     if (nested)
         executeMethod<MethodFixedString>(offsets, {nested}, {}, null_map, res_values);
 
@@ -365,9 +376,10 @@ template <typename Derived>
 void FunctionArrayEnumerateExtended<Derived>::executeHashed(
     const ColumnArray::Offsets & offsets,
     const ColumnRawPtrs & columns,
+    const NullMap * null_map,
     ColumnUInt32::Container & res_values) const
 {
-    executeMethod<MethodHashed>(offsets, columns, {}, nullptr, res_values);
+    executeMethod<MethodHashed>(offsets, columns, {}, null_map, res_values);
 }
 
 }

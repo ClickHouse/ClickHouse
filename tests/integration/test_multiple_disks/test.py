@@ -9,6 +9,7 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -1769,7 +1770,16 @@ def test_move_while_merge(start_cluster):
         optimize = threading.Thread(target=optimize)
         optimize.start()
 
-        time.sleep(0.5)
+        # The MOVE below fails only once the merge holds the part or has replaced it;
+        # a MOVE that arrives before the merge is selected succeeds.
+        assert_eq_with_retry(
+            node1,
+            f"SELECT (SELECT count() FROM system.merges WHERE table = '{name}') > 0"
+            f" OR (SELECT count() FROM system.parts WHERE table = '{name}' AND name = '{parts[0]}' AND active) = 0",
+            "1",
+            retry_count=100,
+            sleep_time=0.1,
+        )
 
         with pytest.raises(QueryRuntimeException):
             node1.query(

@@ -1,0 +1,36 @@
+empty, ASCII, Unicode, and binary strings
+	[]
+20090A0D005F217F	[]
+2F30393A415A5B617A7B	['3039','415A','617A']
+3039415A617A	['3039415A617A']
+615F5F6100627F63	['61','61','62','63']
+61FF5F6280	['61FF','6280']
+80BFC0FF	['80BFC0FF']
+C3A9E4B8ADF09F9982C2A078	['C3A9E4B8ADF09F9982C2A078']
+all byte values at offsets 0 through 64
+16640	0
+homogeneous tokens and separator runs of lengths 0 through 64
+16640	0
+tokens separated by runs spanning multiple blocks
+4225	0
+adjacent rows and fixed strings
+1	['616161616161616161616161616161']
+2	['62626262626262626262626262626262']
+3	[]
+4	[]
+5	['FFFF']
+6	['7A']
+['61','62']
+[]
+['a','b','a']
+[]
+string and array needles, early matches, last matches, and misses
+0	0	0	0	0
+1	0	0	1	1
+2	0	0	1	1
+3	0	0	1	1
+4	1	1	1	1
+5	1	1	1	1
+6	0	0	1	1
+7	0	0	0	0
+8	0	0	0	0

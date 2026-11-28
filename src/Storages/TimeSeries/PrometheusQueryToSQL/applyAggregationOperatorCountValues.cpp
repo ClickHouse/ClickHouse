@@ -6,6 +6,7 @@
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <Common/Exception.h>
@@ -33,43 +34,6 @@ constexpr const char * SET_GROUP = "set_group";
 constexpr const char * VALUE_COUNT = "value_count";
 constexpr const char * COUNT_PAIRS = "count_pairs";
 constexpr const char * COUNTS = "counts";
-
-void checkArgumentTypes(
-    const PrometheusQueryTree::AggregationOperator * operator_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
-{
-    const auto & operator_name = operator_node->operator_name;
-
-    if (arguments.size() != 2)
-    {
-        throw Exception(
-            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-            "Aggregation operator '{}' expects 2 arguments, but was called with {} arguments",
-            operator_name,
-            arguments.size());
-    }
-
-    if (arguments[0].type != ResultType::STRING)
-    {
-        throw Exception(
-            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-            "Aggregation operator '{}' expects first argument of type {}, but expression {} has type {}",
-            operator_name,
-            ResultType::STRING,
-            getPromQLText(arguments[0], context),
-            arguments[0].type);
-    }
-
-    if (arguments[1].type != ResultType::INSTANT_VECTOR)
-    {
-        throw Exception(
-            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-            "Aggregation operator '{}' expects second argument of type {}, but expression {} has type {}",
-            operator_name,
-            ResultType::INSTANT_VECTOR,
-            getPromQLText(arguments[1], context),
-            arguments[1].type);
-    }
-}
 
 ASTPtr setValueLabel(ASTPtr group, const String & label_name)
 {
@@ -116,7 +80,9 @@ ASTPtr transformGroup(const PrometheusQueryTree::AggregationOperator * operator_
 SQLQueryPiece applyAggregationOperatorCountValues(
     const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
-    checkArgumentTypes(operator_node, arguments, context);
+    checkNumberOfArguments(operator_node, arguments, 2);
+    checkArgumentType(operator_node, arguments, 0, ResultType::STRING, context);
+    checkArgumentType(operator_node, arguments, 1, ResultType::INSTANT_VECTOR, context);
 
     const auto * label_argument_node = operator_node->getArguments().at(0);
     const auto * label_node = static_cast<const PrometheusQueryTree::StringLiteral *>(label_argument_node);
@@ -125,7 +91,8 @@ SQLQueryPiece applyAggregationOperatorCountValues(
     {
         throw Exception(
             ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-            "Aggregation operator 'count_values' received invalid label name {}",
+            "{} received invalid label name {}",
+            operator_node->getTypeAndName(),
             quoteString(label_name));
     }
 
@@ -260,8 +227,8 @@ SQLQueryPiece applyAggregationOperatorCountValues(
         auto count_at_index = makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(COUNTS), make_intrusive<ASTIdentifier>("i"));
         auto nullable_count = makeASTFunction(
             "nullIf",
-            timeSeriesScalarASTCast(std::move(count_at_index), context.scalar_data_type),
-            timeSeriesScalarToAST(0, context.scalar_data_type));
+            timeSeriesScalarASTCast(std::move(count_at_index)),
+            timeSeriesScalarToAST(0));
 
         builder.select_list.push_back(
             makeASTFunction("arrayMap", makeASTLambda({"i"}, std::move(nullable_count)), std::move(grid_indices)));

@@ -1,0 +1,108 @@
+InsertQuery   (children 2)
+ Identifier t
+ SelectWithUnionQuery (children 1)
+  ExpressionList (children 1)
+   SelectQuery (children 1)
+    ExpressionList (children 1)
+     Literal UInt64_1
+InsertQuery   (children 2)
+ Identifier t
+ SelectWithUnionQuery (children 1)
+  ExpressionList (children 1)
+   SelectQuery (children 1)
+    ExpressionList (children 1)
+     Literal UInt64_1
+InsertQuery   (children 2)
+ Literal \'f\'
+ Identifier t
+InsertQuery   (children 2)
+ Identifier t
+ SelectWithUnionQuery (children 1)
+  ExpressionList (children 1)
+   SelectQuery (children 2)
+    ExpressionList (children 1)
+     Asterisk
+    TablesInSelectQuery (children 1)
+     TablesInSelectQueryElement (children 1)
+      TableExpression (children 1)
+       Function input (children 1)
+        ExpressionList (children 1)
+         Literal \'x Int32\'
+DeleteQuery  t (children 2)
+ Literal UInt64_1
+ Identifier t
+CreateQuery t (children 3)
+ Identifier t
+ Columns definition (children 1)
+  ExpressionList (children 1)
+   ColumnDeclaration x (children 1)
+    DataType UInt8
+ Storage definition (children 1)
+  Function Memory
+Explain EXPLAIN SYNTAX (children 1)
+ InsertQuery   (children 2)
+  Identifier t
+  SelectWithUnionQuery (children 1)
+   ExpressionList (children 1)
+    SelectQuery (children 1)
+     ExpressionList (children 1)
+      Literal UInt64_1
+Explain EXPLAIN SYNTAX (children 2)
+ InsertQuery   (children 2)
+  Identifier t
+  SelectWithUnionQuery (children 1)
+   ExpressionList (children 1)
+    SelectQuery (children 1)
+     ExpressionList (children 1)
+      Literal UInt64_1
+ Identifier JSON
+SYSTEM CLEAR MARK CACHE
+SelectWithUnionQuery (children 2)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Literal UInt64_1
+ Identifier TSV
+SelectWithUnionQuery (children 2)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Literal UInt64_1
+ Set
+Explain EXPLAIN SYNTAX (children 2)
+ SelectWithUnionQuery (children 1)
+  ExpressionList (children 1)
+   SelectQuery (children 1)
+    ExpressionList (children 1)
+     Literal UInt64_1
+ Identifier TSV
+InsertQuery   (children 3)
+ Identifier t
+ SelectWithUnionQuery (children 1)
+  ExpressionList (children 1)
+   SelectQuery (children 1)
+    ExpressionList (children 1)
+     Literal UInt64_1
+ Set
+InsertQuery   (children 2)
+ Identifier t
+ SelectWithUnionQuery (children 1)
+  ExpressionList (children 1)
+   SelectQuery (children 1)
+    ExpressionList (children 1)
+     Literal UInt64_1
+EXPLAIN AST (INSERT INTO t SELECT 1) FORMAT `Values` SETTINGS max_threads = 1	1
+EXPLAIN AST (INSERT INTO t SELECT 1) FORMAT TSV	1
+EXPLAIN AST (INSERT INTO t FROM INFILE \'f\') FORMAT TSV	1
+EXPLAIN AST (DELETE FROM t WHERE 1) SETTINGS max_threads = 1	1
+EXPLAIN AST (CREATE TABLE t (`x` UInt8) ENGINE = Memory) FORMAT TSV	1
+EXPLAIN AST SELECT 1 FORMAT TSV	1
+EXPLAIN AST INSERT INTO t SELECT 1 FORMAT Null	1
+EXPLAIN AST (EXPLAIN SYNTAX INSERT INTO t SELECT 1) FORMAT TSV	1
+EXPLAIN AST (EXPLAIN SYNTAX INSERT INTO t SELECT 1 FORMAT JSON) FORMAT TSV	1
+EXPLAIN AST SELECT * FROM viewExplain(\'EXPLAIN SYNTAX\', \'\', (SELECT 1)) FORMAT TSV	1
+EXPLAIN SYNTAX SYSTEM CLEAR MARK CACHE FORMAT TSV	1
+EXPLAIN AST (SELECT 1 FORMAT TSV) SETTINGS max_threads = 1	1
+EXPLAIN AST (SELECT 1 INTO OUTFILE \'f\') FORMAT TSV	1
+EXPLAIN AST (EXPLAIN SYNTAX SELECT 1 FORMAT TSV) SETTINGS max_threads = 1	1
+EXPLAIN AST SELECT 1 FORMAT TSV FORMAT TSV	1

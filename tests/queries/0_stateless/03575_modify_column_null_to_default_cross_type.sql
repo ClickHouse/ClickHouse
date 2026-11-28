@@ -87,9 +87,9 @@ SELECT x, y FROM t_cross_variant ORDER BY y;
 DROP TABLE t_cross_variant;
 
 -- Case 9: else-branch with a target default not castable back to the source type (Map
--- target, Tuple source). Needs allow_experimental_nullable_tuple_type for the source.
+-- target, Tuple source). Needs enable_nullable_tuple_type for the source.
 SET use_variant_as_common_type = 0;
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 DROP TABLE IF EXISTS t_cross_map_default;
 CREATE TABLE t_cross_map_default (x Nullable(Tuple(Array(String), Array(UInt8))), y String) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_cross_map_default VALUES (([], []), 'a'), (NULL, 'b');

@@ -1,0 +1,88 @@
+{
+  "location": "data/persistent/row_lineage_stored_columns/warehouse/default/row_lineage_stored_columns",
+  "table-uuid": "988c9471-5b52-4698-9160-215cca12b663",
+  "last-updated-ms": 1760000000000,
+  "last-column-id": 2,
+  "schemas": [
+    {
+      "type": "struct",
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "type": "long",
+          "required": true
+        },
+        {
+          "id": 2,
+          "name": "val",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "schema-id": 0,
+      "identifier-field-ids": []
+    }
+  ],
+  "current-schema-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "default-spec-id": 0,
+  "last-partition-id": 999,
+  "properties": {},
+  "snapshots": [
+    {
+      "snapshot-id": 1111111111111111111,
+      "sequence-number": 1,
+      "timestamp-ms": 1760000000000,
+      "summary": {
+        "operation": "append",
+        "added-data-files": "1",
+        "added-records": "4",
+        "added-files-size": "1789",
+        "total-data-files": "1",
+        "total-records": "4",
+        "total-files-size": "1789",
+        "total-delete-files": "0",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0"
+      },
+      "manifest-list": "data/persistent/row_lineage_stored_columns/warehouse/default/row_lineage_stored_columns/metadata/snap-1111111111111111111-stored-lineage.avro",
+      "schema-id": 0
+    }
+  ],
+  "snapshot-log": [
+    {
+      "snapshot-id": 1111111111111111111,
+      "timestamp-ms": 1760000000000
+    }
+  ],
+  "metadata-log": [
+    {
+      "metadata-file": "data/persistent/row_lineage_stored_columns/warehouse/default/row_lineage_stored_columns/metadata/00000-4ad7236f-0e4f-443e-bde8-a21090418239.metadata.json",
+      "timestamp-ms": 1759999999999
+    }
+  ],
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "default-sort-order-id": 0,
+  "refs": {
+    "main": {
+      "snapshot-id": 1111111111111111111,
+      "type": "branch"
+    }
+  },
+  "statistics": [],
+  "partition-statistics": [],
+  "format-version": 2,
+  "last-sequence-number": 1,
+  "current-snapshot-id": 1111111111111111111
+}

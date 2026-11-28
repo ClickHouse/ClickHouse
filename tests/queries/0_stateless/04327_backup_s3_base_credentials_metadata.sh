@@ -63,6 +63,15 @@ function rewrite_backup_metadata()
     $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "INSERT INTO FUNCTION s3($(s3_location $name/.backup), 'LineAsString') SETTINGS s3_truncate_on_insert=1 FORMAT LineAsString" <<< "$content"
 }
 
+function rewrite_base_backup_in_metadata()
+{
+    local name=$1 && shift
+    local base_backup=$1 && shift
+    local content
+    content=$($CLICKHOUSE_CLIENT "${client_opts[@]}" --param_base_backup="$base_backup" -q "SELECT replaceRegexpOne(line, '<base_backup>[^<]*</base_backup>', concat('<base_backup>', {base_backup:String}, '</base_backup>')) FROM s3($(s3_location $name/.backup), 'LineAsString') FORMAT LineAsString") || return 1
+    $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "INSERT INTO FUNCTION s3($(s3_location $name/.backup), 'LineAsString') SETTINGS s3_truncate_on_insert=1 FORMAT LineAsString" <<< "$content"
+}
+
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "
     DROP TABLE IF EXISTS data;
     CREATE TABLE data (key Int) ENGINE=MergeTree() ORDER BY tuple();
@@ -114,7 +123,7 @@ $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "BACKUP TABLE data TO S3($(s3_location
 # Imitate old metadata with embedded credentials and no marker.
 rewrite_backup_metadata inc_6 '<base_backup_copy_s3_credentials_from_backup>true</base_backup_copy_s3_credentials_from_backup>' ''
 rewrite_backup_metadata inc_6 '<use_same_s3_credentials_for_base_backup>true</use_same_s3_credentials_for_base_backup>' ''
-rewrite_backup_metadata inc_6 "S3('$(s3_url base)')" "S3('$(s3_url base)', 'test', 'testtest')"
+rewrite_base_backup_in_metadata inc_6 "S3('$(s3_url base)', 'test', 'testtest')"
 check_base_backup_in_metadata inc_6
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "RESTORE TABLE data AS data_6 FROM S3($(s3_location inc_6))" | cut -f2
 $CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT count() FROM data_6"

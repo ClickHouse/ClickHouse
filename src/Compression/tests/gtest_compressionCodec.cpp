@@ -1,10 +1,15 @@
 #include "config.h"
 
+#include <base/defines.h>
+
+#include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
@@ -14,10 +19,10 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/LZ4_decompress_faster.h>
 #include <Compression/getCompressionCodecForFile.h>
+#include <Compression/CompressionCodecT64Transpose.h>
 #include <IO/BufferWithOwnMemory.h>
 
 #include <bit>
-#include <random>
 #include <bitset>
 #include <cmath>
 #include <initializer_list>
@@ -26,6 +31,7 @@
 #include <iterator>
 #include <memory>
 #include <numbers>
+#include <random>
 #include <typeinfo>
 #include <vector>
 
@@ -161,7 +167,7 @@ public:
         return current_value;
     }
 
-    size_t itemsLeft() const
+    [[nodiscard]] size_t itemsLeft() const
     {
         return reinterpret_cast<const char *>(data_end) - reinterpret_cast<const char *>(data);
     }
@@ -444,7 +450,7 @@ struct StopwatchTimer
         stopwatch.stop();
     }
 
-    const std::vector<std::tuple<const char*, UInt64>> & getResults() const
+    [[nodiscard]] const std::vector<std::tuple<const char*, UInt64>> & getResults() const
     {
         return results;
     }
@@ -457,7 +463,7 @@ private:
 CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePtr data_type)
 {
     const std::string codec_statement = "(" + codec_string + ")";
-    Tokens tokens(codec_statement.begin().base(), codec_statement.end().base());
+    Tokens tokens(codec_statement.data(), codec_statement.data() + codec_statement.size());
     IParser::Pos token_iterator(tokens, 0, 0);
 
     Expected expected;
@@ -679,12 +685,21 @@ auto SameValueGenerator = [](auto value)
     };
 };
 
+/// A negative stride is the documented way of asking for `0xFF, 0xFE, 0xFD, ...` from an unsigned
+/// type, so the product is expected to wrap. The attribute cannot be put on the lambda below - it
+/// does not reach a lambda body - hence a named helper.
+template <typename ValueType, typename StrideType>
+NO_SANITIZE_UNSIGNED_OVERFLOW ValueType wrappedStride(StrideType stride, ValueType i)
+{
+    return static_cast<ValueType>(static_cast<ValueType>(stride) * i);
+}
+
 auto SequentialGenerator = [](auto stride = 1)
 {
     return [=](auto i)
     {
         using ValueType = decltype(i);
-        return static_cast<ValueType>(static_cast<ValueType>(stride) * i);
+        return wrappedStride<ValueType>(stride, i);
     };
 };
 
@@ -1225,16 +1240,26 @@ INSTANTIATE_TEST_SUITE_P(DoubleDeltaUnalignedTranscode,
 );
 
 
+/// The corner points fed to the generator below are negative, so over an unsigned `ValueType` every
+/// addition of this recurrence wraps around - which is the sequence the test is built to exercise.
+/// All three additions live in one annotated function, both because `no_sanitize` does not reach a
+/// lambda body and because a helper per addition would still leave the accumulators unsigned.
+template <typename DeltaType>
+NO_SANITIZE_UNSIGNED_OVERFLOW auto wrappedDoubleDeltaStep(DeltaType dd, Int64 & prev, Int64 & prev_delta)
+{
+    const auto curr = dd + prev + prev_delta;
+    prev = curr;
+    prev_delta = dd + prev_delta;
+    return curr;
+}
+
 template <typename ValueType>
 auto DDCompatibilityTestSequence()
 {
     // Generates sequences with double delta in given range.
     auto dd_generator = [prev_delta = static_cast<Int64>(0), prev = static_cast<Int64>(0)](auto dd) mutable
     {
-        const auto curr = dd + prev + prev_delta;
-        prev = curr;
-        prev_delta = dd + prev_delta;
-        return curr;
+        return wrappedDoubleDeltaStep(dd, prev, prev_delta);
     };
 
     auto ret = generateSeq<ValueType>(G(SameValueGenerator(42)), 0, 3);
@@ -1732,6 +1757,107 @@ TEST(T64Test, DecompressMalformedInputShortHeader)
     ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
 }
 
+#if T64_CODEC_SIMD_TRANSPOSE
+TEST(T64Test, SimdTransposeMatchesScalar)
+{
+    namespace tt = DB::T64Transpose;
+
+    std::mt19937_64 rng(0xC0FFEEULL); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
+    constexpr size_t iterations = 2048;
+
+    for (size_t it = 0; it < iterations; ++it)
+    {
+        UInt64 line[8];
+        for (auto & v : line)
+            v = rng();
+
+        auto run64x8 = [&](auto kernel, UInt64 (&buf)[8]) { memcpy(buf, line, sizeof(buf)); kernel(buf); };
+
+        UInt64 fwd_scalar[8];
+        UInt64 fwd_simd[8];
+        run64x8(tt::scalar::transpose64x8, fwd_scalar);
+        run64x8(tt::simd::transpose64x8, fwd_simd);
+        ASSERT_EQ(memcmp(fwd_scalar, fwd_simd, sizeof(fwd_scalar)), 0) << "transpose64x8 mismatch at iteration " << it;
+
+        UInt64 rev_scalar[8];
+        UInt64 rev_simd[8];
+        run64x8(tt::scalar::reverseTranspose64x8, rev_scalar);
+        run64x8(tt::simd::reverseTranspose64x8, rev_simd);
+        ASSERT_EQ(memcmp(rev_scalar, rev_simd, sizeof(rev_scalar)), 0) << "reverseTranspose64x8 mismatch at iteration " << it;
+
+        /// Only the 8-byte, full-64 case takes the SIMD group shuffle, other widths and tails delegate to the scalar loop in both.
+        UInt64 src[64];
+        for (auto & v : src)
+            v = rng();
+
+        UInt64 mat_scalar[64] = {};
+        UInt64 mat_simd[64] = {};
+        tt::scalar::transposeMatrixBytes<UInt64>(src, mat_scalar, 64);
+        tt::simd::transposeMatrixBytes<UInt64>(src, mat_simd, 64);
+        ASSERT_EQ(memcmp(mat_scalar, mat_simd, sizeof(mat_scalar)), 0) << "transposeMatrixBytes mismatch at iteration " << it;
+
+        const UInt64 common_negative = rng();
+        const UInt64 common_positive = rng();
+        const UInt64 sign_bit = UInt64(1) << (rng() % 64);
+        char dst_scalar[64 * sizeof(UInt64)];
+        char dst_simd[64 * sizeof(UInt64)];
+        tt::scalar::reverseTransposeMatrixBytes<UInt64>(mat_scalar, dst_scalar, 64, common_negative, common_positive, sign_bit);
+        tt::simd::reverseTransposeMatrixBytes<UInt64>(mat_simd, dst_simd, 64, common_negative, common_positive, sign_bit);
+        ASSERT_EQ(memcmp(dst_scalar, dst_simd, sizeof(dst_scalar)), 0) << "reverseTransposeMatrixBytes mismatch at iteration " << it;
+    }
+}
+#endif
+
+TEST(CompressionCodecMultipleTest, UnconfiguredNestedCodec)
+{
+    /// A `LOGICAL_ERROR` aborts in debug and sanitizer builds.
+#ifndef DEBUG_OR_SANITIZER_BUILD
+    auto decoder = std::make_shared<CompressionCodecMultiple>();
+    EXPECT_THROW((void)decoder->getCodecDescription(), Exception);
+    EXPECT_THROW((void)decoder->getFullCodecDescription(), Exception);
+    /// Reject an unconfigured nested `Multiple` during construction, before requesting its description.
+    EXPECT_THROW(CompressionCodecMultiple{Codecs{decoder}}, Exception);
+#endif
+
+    /// An explicitly configured empty chain has a description and can be nested.
+    auto empty = std::make_shared<CompressionCodecMultiple>(Codecs{});
+    EXPECT_EQ(empty->getFullCodecDescription()->formatForErrorMessage(), "CODEC()");
+    EXPECT_NO_THROW(CompressionCodecMultiple{Codecs{empty}});
+}
+
+TEST(CompressionCodecMultipleTest, NestedCodecDescription)
+{
+    auto inner = CompressionCodecFactory::instance().get("LZ4, ZSTD(3)");
+    CompressionCodecPtr outer = std::make_shared<CompressionCodecMultiple>(Codecs{inner});
+
+    /// The inner chain is one argument of `CODEC`, even though its description is a list.
+    const auto full_description = outer->getFullCodecDescription();
+    const auto * function = full_description->as<ASTFunction>();
+    ASSERT_NE(function, nullptr);
+    EXPECT_EQ(function->name, "CODEC");
+    ASSERT_EQ(function->arguments->children.size(), 1);
+
+    const auto & inner_description = function->arguments->children.front();
+    ASSERT_NE(inner_description->as<ASTExpressionList>(), nullptr);
+    ASSERT_EQ(inner_description->children.size(), 2);
+    EXPECT_EQ(inner_description->formatForErrorMessage(), "LZ4, ZSTD(3)");
+}
+
+TEST(CompressionCodecMultipleTest, DescriptionsHaveCodecKind)
+{
+    /// `findSecretArguments` skips `Kind::CODEC`, so programs without a secret arguments finder can format these.
+    const auto kind = [](const ASTPtr & description) { return description->as<const ASTFunction &>().getKind(); };
+
+    const auto single = CompressionCodecFactory::instance().get("ZSTD(3)");
+    const auto chain = CompressionCodecFactory::instance().get("LZ4, ZSTD(3)");
+    const CompressionCodecPtr nested = std::make_shared<CompressionCodecMultiple>(Codecs{chain});
+
+    EXPECT_EQ(kind(single->getCodecDescription()), ASTFunction::Kind::CODEC);
+    EXPECT_EQ(kind(single->getFullCodecDescription()), ASTFunction::Kind::CODEC);
+    EXPECT_EQ(kind(chain->getFullCodecDescription()), ASTFunction::Kind::CODEC);
+    EXPECT_EQ(kind(nested->getFullCodecDescription()), ASTFunction::Kind::CODEC);
+}
+
 TEST(CompressionCodecMultipleTest, DecompressMalformedInputReversedRange)
 {
     /// Reproducer for process abort when `compression_methods_size + 1 > source_size`:
@@ -2134,7 +2260,7 @@ TEST(GetCompressionCodecForFileTest, ThrowsOnCorruptSizeEvenWithoutSkip)
 
 TEST(GetCompressionCodecForFileTest, ThrowsOnCompressedSizeAboveLimit)
 {
-    /// size_compressed (2 GiB) is above DBMS_MAX_COMPRESSED_SIZE (1 GiB): must throw TOO_LARGE_SIZE_COMPRESSED.
+    /// size_compressed (2 GiB) is above DBMS_MAX_COMPRESSED_SIZE (512 MiB): must throw TOO_LARGE_SIZE_COMPRESSED.
     constexpr unsigned char block[] = {
         0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
         0x82, /// LZ4 method byte

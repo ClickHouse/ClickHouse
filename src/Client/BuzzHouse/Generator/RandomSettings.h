@@ -80,7 +80,14 @@ extern std::unordered_map<String, CHSetting> formatSettings;
 
 extern std::unordered_map<String, CHSetting> allDatabaseSettings;
 
+extern std::unordered_map<String, CHSetting> replicatedDatabaseSettings;
+
+extern std::unordered_map<String, CHSetting> dataLakeCatalogSettings;
+
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
+
+/// `allTableSettings` without the settings that break result oracles
+extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> oracleTableSettings;
 
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allColumnSettings;
 
@@ -105,12 +112,15 @@ extern std::vector<SystemTable> systemTables;
 extern std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSetting>> allDictionaryLayoutSettings;
 
 String settingCombinations(RandomGenerator & rg, DB::Strings && choices);
-String generateNextCodecString(RandomGenerator & rg);
-String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp);
+String formatFirstApplicable(RandomGenerator & rg, bool bad_args = false);
+/// With `bad_args`, codec arguments are sometimes out of range: only where a rejected codec costs one query
+String generateNextCodecString(RandomGenerator & rg, bool bad_args = false);
+/// `lossy` allows `SZ3` and `Quantized`, whose values a merge may change; exact-content oracles need it off
+String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp, bool lossy);
 String getNextIcebergTimestamp(RandomGenerator & rg, FuzzConfig & fc);
 String getNextIcebergExpireTimestamp(RandomGenerator & rg, FuzzConfig & fc);
 void loadFuzzerServerSettings(const FuzzConfig & fc);
-void loadFuzzerTableSettings(const FuzzConfig & fc);
+void loadFuzzerTableSettings(const FuzzConfig & fc, bool has_cloud_features);
 void loadSystemTables(FuzzConfig & fc);
 
 }

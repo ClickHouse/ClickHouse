@@ -1,0 +1,8 @@
+DateTime = Date	DateTime(\'UTC\'), UInt32(size = 1)	2020-01-01 00:00:00
+DateTime64 = Date	DateTime64(3, \'UTC\'), DateTime64(size = 1)	2020-01-01 00:00:00.000000
+Date = DateTime	Date, UInt16(size = 1)	2020-01-01
+Date32 = DateTime64	Date32, Int32(size = 1)	2020-01-01
+Time = DateTime	Time, Int32(size = 1)	14:45:40
+Time64 = DateTime64	Time64(3), Time64(size = 1)	14:45:40.123
+DateTime = Time	DateTime(\'UTC\'), UInt32(size = 1)	1970-01-01 00:00:00
+DateTime64 = Time64	DateTime64(3, \'UTC\'), DateTime64(size = 1)	1970-01-01 00:00:00.000000

@@ -593,7 +593,7 @@
 #define PACKAGE_NAME "PostgreSQL"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "PostgreSQL 18.3"
+#define PACKAGE_STRING "PostgreSQL 18.6"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "postgresql"
@@ -602,7 +602,7 @@
 #define PACKAGE_URL "https://www.postgresql.org/"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "18.3"
+#define PACKAGE_VERSION "18.6"
 
 /* Define to the name of a signed 128-bit integer type. */
 #define PG_INT128_TYPE __int128
@@ -618,7 +618,7 @@
 #define PG_MAJORVERSION_NUM 18
 
 /* PostgreSQL minor version number */
-#define PG_MINORVERSION_NUM 4
+#define PG_MINORVERSION_NUM 6
 
 /* Define to best C++ printf format archetype, usually gnu_printf if
    available. */
@@ -629,13 +629,13 @@
 #define PG_C_PRINTF_ATTRIBUTE gnu_printf
 
 /* PostgreSQL version as a string */
-#define PG_VERSION "18.4"
+#define PG_VERSION "18.6"
 
 /* PostgreSQL version as a number */
-#define PG_VERSION_NUM 180004
+#define PG_VERSION_NUM 180006
 
 /* A string containing the version number, platform, and C compiler */
-#define PG_VERSION_STR "PostgreSQL 18.4 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 15.2.1 20250813, 64-bit"
+#define PG_VERSION_STR "PostgreSQL 18.6 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 15.2.1 20250813, 64-bit"
 
 /* Define to 1 to allow profiling output to be saved separately for each
    process. */

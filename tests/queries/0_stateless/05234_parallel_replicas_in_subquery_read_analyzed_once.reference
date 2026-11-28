@@ -1,0 +1,12 @@
+3749925000
+3749925000
+3749925000
+3749925000
+499500
+3749925000
+pr_in_subquery_read_analyzed_once_estimate	2	1	1
+pr_in_subquery_read_analyzed_once_estimate_no_prewhere	2	1	1
+pr_in_subquery_read_analyzed_once_estimate_row_limit	2	1	1
+pr_in_subquery_read_analyzed_once_global_in	2	1	2
+pr_in_subquery_read_analyzed_once_materialized_cte	1	1	1
+pr_in_subquery_read_analyzed_once_no_estimate	2	1	1

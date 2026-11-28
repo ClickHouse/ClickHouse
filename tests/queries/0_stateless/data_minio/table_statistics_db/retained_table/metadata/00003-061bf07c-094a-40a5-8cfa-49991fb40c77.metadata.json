@@ -1,0 +1,176 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "f7391b09-fe84-4703-b7ba-49c24fd78694",
+  "location" : "local:///catalog/table_statistics_db/retained_table-cbf55610edcb42258fe56df88add6b6e",
+  "last-sequence-number" : 3,
+  "last-updated-ms" : 1793826156190,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "k",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "s",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "u",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.format.default" : "PARQUET",
+    "write.parquet.compression-codec" : "zstd",
+    "commit.retry.num-retries" : "4"
+  },
+  "current-snapshot-id" : 4459882726943271934,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 4459882726943271934,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 548401055481998119,
+    "timestamp-ms" : 1793826154532,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20261104_210234_00001_f76mg",
+      "trino_user" : "trino",
+      "changed-partition-count" : "0",
+      "total-records" : "0",
+      "total-files-size" : "0",
+      "total-data-files" : "0",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "engine-version" : "474",
+      "engine-name" : "trino",
+      "iceberg-version" : "Apache Iceberg 1.8.1 (commit 9ce0fcf0af7becf25ad9fc996c3bad2afdcfd33d)"
+    },
+    "manifest-list" : "local:///catalog/table_statistics_db/retained_table-cbf55610edcb42258fe56df88add6b6e/metadata/snap-548401055481998119-1-f932367f-2a47-4d32-b7ee-21aefbfba3bc.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 2,
+    "snapshot-id" : 75667572448823849,
+    "parent-snapshot-id" : 548401055481998119,
+    "timestamp-ms" : 1793826155745,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20261104_210234_00002_f76mg",
+      "trino_user" : "trino",
+      "added-data-files" : "1",
+      "added-records" : "300",
+      "added-files-size" : "1344",
+      "changed-partition-count" : "1",
+      "total-records" : "300",
+      "total-files-size" : "1344",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "engine-version" : "474",
+      "engine-name" : "trino",
+      "iceberg-version" : "Apache Iceberg 1.8.1 (commit 9ce0fcf0af7becf25ad9fc996c3bad2afdcfd33d)"
+    },
+    "manifest-list" : "local:///catalog/table_statistics_db/retained_table-cbf55610edcb42258fe56df88add6b6e/metadata/snap-75667572448823849-1-ac476669-1cf1-46cc-b185-dacebd15d91d.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 3,
+    "snapshot-id" : 4459882726943271934,
+    "parent-snapshot-id" : 75667572448823849,
+    "timestamp-ms" : 1793826156190,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20261104_210235_00004_f76mg",
+      "trino_user" : "trino",
+      "added-data-files" : "1",
+      "added-records" : "20",
+      "added-files-size" : "598",
+      "changed-partition-count" : "1",
+      "total-records" : "320",
+      "total-files-size" : "1942",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "engine-version" : "474",
+      "engine-name" : "trino",
+      "iceberg-version" : "Apache Iceberg 1.8.1 (commit 9ce0fcf0af7becf25ad9fc996c3bad2afdcfd33d)"
+    },
+    "manifest-list" : "local:///catalog/table_statistics_db/retained_table-cbf55610edcb42258fe56df88add6b6e/metadata/snap-4459882726943271934-1-697d818d-b7c5-442f-b963-0fa46ddb5bff.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ {
+    "snapshot-id" : 75667572448823849,
+    "statistics-path" : "local:///catalog/table_statistics_db/retained_table-cbf55610edcb42258fe56df88add6b6e/metadata/20261104_210234_00002_f76mg-5ca29775-c093-419e-9f21-72532315c72e.stats",
+    "file-size-in-bytes" : 3763,
+    "file-footer-size-in-bytes" : 629,
+    "blob-metadata" : [ {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 75667572448823849,
+      "sequence-number" : 2,
+      "fields" : [ 1 ],
+      "properties" : {
+        "ndv" : "300"
+      }
+    }, {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 75667572448823849,
+      "sequence-number" : 2,
+      "fields" : [ 2 ],
+      "properties" : {
+        "ndv" : "50"
+      }
+    }, {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 75667572448823849,
+      "sequence-number" : 2,
+      "fields" : [ 3 ],
+      "properties" : {
+        "ndv" : "30"
+      }
+    } ]
+  } ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1793826154532,
+    "snapshot-id" : 548401055481998119
+  }, {
+    "timestamp-ms" : 1793826155745,
+    "snapshot-id" : 75667572448823849
+  }, {
+    "timestamp-ms" : 1793826156190,
+    "snapshot-id" : 4459882726943271934
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1793826154532,
+    "metadata-file" : "local:///catalog/table_statistics_db/retained_table-cbf55610edcb42258fe56df88add6b6e/metadata/00000-b7465add-1ed9-40da-8a17-add01a5f5fa7.metadata.json"
+  }, {
+    "timestamp-ms" : 1793826155745,
+    "metadata-file" : "local:///catalog/table_statistics_db/retained_table-cbf55610edcb42258fe56df88add6b6e/metadata/00001-28a13273-197f-4c29-8007-197186a2b288.metadata.json"
+  }, {
+    "timestamp-ms" : 1793826155825,
+    "metadata-file" : "local:///catalog/table_statistics_db/retained_table-cbf55610edcb42258fe56df88add6b6e/metadata/00002-4242b8a1-8c25-4781-9f93-e1f0b70af233.metadata.json"
+  } ]
+}

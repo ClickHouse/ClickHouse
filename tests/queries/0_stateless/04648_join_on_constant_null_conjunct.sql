@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- A constant conjunct of the ON expression belongs to neither side, so it is grouped with the left
 -- one when conditions are pushed out of the join. No filter can be built from a constant predicate,
 -- and the conjunct used to be dropped instead of staying in the ON expression.
@@ -21,8 +19,7 @@ WHERE l.pk = 'cc' AND r.id >= 3;
 
 SELECT 'variant';
 SELECT count() FROM t_04648 AS l INNER JOIN t_04648 AS r
-ON l.id = r.id AND CAST(CAST(NULL AS Variant(UInt8, String)) AS Nullable(UInt8))
-SETTINGS enable_variant_type = 1;
+ON l.id = r.id AND CAST(CAST(NULL AS Variant(UInt8, String)) AS Nullable(UInt8));
 
 SELECT 'plan';
 SELECT extract(explain, 'Join conditions:.*') AS cond FROM (

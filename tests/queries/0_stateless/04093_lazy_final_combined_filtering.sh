@@ -26,9 +26,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 
-settings="--enable_analyzer=1"
-
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_lazy_final_combined;
     CREATE TABLE t_lazy_final_combined
     (
@@ -70,12 +68,12 @@ $CLICKHOUSE_CLIENT $settings -q "
 
 ## Test 1: Correctness — results must match with and without optimization.
 echo "=== Correctness ==="
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT count(), sum(value) FROM t_lazy_final_combined FINAL
     WHERE key >= 500 AND key < 5500 AND status = 'active'
     SETTINGS query_plan_optimize_lazy_final = 0
 "
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT count(), sum(value) FROM t_lazy_final_combined FINAL
     WHERE key >= 500 AND key < 5500 AND status = 'active'
     SETTINGS query_plan_optimize_lazy_final = 1,
@@ -85,7 +83,7 @@ $CLICKHOUSE_CLIENT $settings -q "
 
 ## Test 2: Plan has both Union (non-intersecting split) and InputSelector.
 echo "=== Plan structure ==="
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     EXPLAIN actions = 0
     SELECT count(), sum(value) FROM t_lazy_final_combined FINAL
     WHERE key >= 500 AND key < 5500 AND status = 'active'
@@ -94,7 +92,7 @@ $CLICKHOUSE_CLIENT $settings -q "
              min_filtered_ratio_for_lazy_final = 0
 " | grep -c 'Union'
 
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     EXPLAIN actions = 0
     SELECT count(), sum(value) FROM t_lazy_final_combined FINAL
     WHERE key >= 500 AND key < 5500 AND status = 'active'
@@ -107,7 +105,7 @@ $CLICKHOUSE_CLIENT $settings -q "
 ## pk_filtered_marks is the baseline after WHERE's PK condition.
 ## selected_marks is after the IN-set filter — should be less than pk_filtered_marks.
 echo "=== PK and IN-set pruning ==="
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT count() FROM t_lazy_final_combined FINAL
     WHERE key >= 500 AND key < 5500 AND status = 'active'
     SETTINGS query_plan_optimize_lazy_final = 1,
@@ -121,7 +119,7 @@ $CLICKHOUSE_CLIENT $settings -q "
 
 ## Test 4: Verify the "Selected" line shows reduced parts/marks after IN-set index.
 echo "=== Selected after index ==="
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT count() FROM t_lazy_final_combined FINAL
     WHERE key >= 500 AND key < 5500 AND status = 'active'
     SETTINGS query_plan_optimize_lazy_final = 1,
@@ -134,7 +132,7 @@ $CLICKHOUSE_CLIENT $settings -q "
 
 ## Test 5: Fallback path still correct.
 echo "=== Fallback (set truncated) ==="
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT count(), sum(value) FROM t_lazy_final_combined FINAL
     WHERE key >= 500 AND key < 5500 AND status = 'active'
     SETTINGS query_plan_optimize_lazy_final = 1,
@@ -143,7 +141,7 @@ $CLICKHOUSE_CLIENT $settings -q "
 
 ## Test 6: Full EXPLAIN showing all plan components.
 echo "=== Full EXPLAIN ==="
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     EXPLAIN indexes=1
     SELECT count(), sum(value) FROM t_lazy_final_combined FINAL
     WHERE key >= 500 AND key < 5500 AND status = 'active'
@@ -155,7 +153,7 @@ $CLICKHOUSE_CLIENT $settings -q "
 ## Test 7: Set plan's ReadFromMergeTree should only read columns needed for
 ## set building (PK + filter columns), not query output columns like 'value'.
 echo "=== Set plan reads only needed columns ==="
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT -q "
     EXPLAIN header=1
     SELECT count(), sum(value) FROM t_lazy_final_combined FINAL
     WHERE key >= 500 AND key < 5500 AND status = 'active'
@@ -164,4 +162,4 @@ $CLICKHOUSE_CLIENT $settings -q "
              min_filtered_ratio_for_lazy_final = 0
 " | sed -n '/CreatingSet/{n; :a; /ReadFromMergeTree/{n; p; q}; n; ba}'
 
-$CLICKHOUSE_CLIENT $settings -q "DROP TABLE t_lazy_final_combined"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_final_combined"
