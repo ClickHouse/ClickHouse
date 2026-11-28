@@ -47,6 +47,10 @@ public:
 
     void updateAllMarkRanges(const MarkRanges & ranges) override;
 
+    /// The data of a Parquet file is not in compressed blocks, so the reader has no ranges of them to register:
+    /// what it reads is not counted into the input bytes of the runtime dataflow statistics.
+    void registerReadRanges() override {}
+
 private:
     /// How to obtain the requested column (an element of `columns_to_read`) from the columns read from the file.
     struct RequestedColumn
