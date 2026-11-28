@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -231,11 +232,13 @@ public:
         : constructor(std::move(constructor_))
     {}
 
-    Regexps * get()
+    Regexps * get(const std::function<void()> & check_before_construct = {})
     {
         std::lock_guard lock(mutex);
         if (regexps)
             return &*regexps;
+        if (check_before_construct)
+            check_before_construct();
         regexps = constructor();
         return &*regexps;
     }
