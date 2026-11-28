@@ -1,0 +1,16 @@
+frame from the partition start to the current row
+300	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+300	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+frame of the whole partition and the default frame
+300	0	0	0	0	0	0	0	0
+300	0	0	0	0	0	0	0	0
+before the first counted row: NULL with a Nullable argument, nan without one
+1	1	\N	nan	\N	nan	\N	nan	\N	nan
+1	2	\N	nan	\N	nan	\N	nan	\N	nan
+1	3	nan	nan	nan	nan	nan	nan	nan	nan
+1	4	1	1	1	1	1	1	1	1
+1	5	0.5	0.5	0.5	0.5	0.274018	0.274018	0.274018	0.274018
+2	1	\N	nan	\N	nan	\N	nan	\N	nan
+2	2	\N	nan	\N	nan	\N	nan	\N	nan
+result types
+Nullable(Float64)	Float64	Nullable(Float64)	Float64

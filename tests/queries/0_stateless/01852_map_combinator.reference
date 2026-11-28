@@ -53,3 +53,5 @@ AggregateFunction(sumMap, UInt8, Decimal(10, 2))
 {0:[{'a':1},{'a':1}],1:[{'a':1}]}
 {0:{'a':0},1:{'a':1}}
 AggregateFunction(groupArrayMap, Map(String, UInt8), UInt8)
+['0','14','21','28','7']
+['xx14','xx21','xx28','xxx0','xxx7']

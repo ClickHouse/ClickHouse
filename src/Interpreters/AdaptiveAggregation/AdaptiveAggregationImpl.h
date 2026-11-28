@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -107,9 +108,10 @@ constexpr size_t adaptive_parallel_merge_max_work = 1'000'000;
 /// Each thread decides on its own stream: its baseline table would absorb only the repeats it sees itself,
 /// and a key that every thread stages once costs no more than the one cell per thread the baseline would
 /// keep. The repeat factor is estimated from a sparse sample of distinct staged hashes and the exact number
-/// of staged records. The repeats weigh only while the staged records are at least a share of the rows the
-/// frozen table saw (`adaptive_thaw_staged_share_inverse`): a table that absorbs nearly every row in place
-/// loses little to a sliver of repeated misses, and its thaw would give up the frozen table's merge.
+/// of staged records. For several producers, the repeats weigh only while the staged records are at least a
+/// share of the rows the frozen table saw (`adaptive_thaw_staged_share_inverse`): a table that absorbs nearly
+/// every row in place loses little to a sliver of repeated misses, and its thaw would give up the frozen
+/// table's merge; a lone producer has no such merge on its ordinary path.
 ///
 /// The weighting separates the shapes by how much a repeat costs. With an accurate cardinality estimate,
 /// a near-unique stream has repeat ~ 1 and wasted bytes ~ 0 regardless of the records' size. A stream of
@@ -289,7 +291,8 @@ struct AdaptiveAggregationSession
         /// in `scope` on the first append, and returns the block's bytes. On a temporary volume the stream is created
         /// on a disk with `reserve_size` bytes of room, and the append throws `NOT_ENOUGH_SPACE` when no disk has them.
         /// A later append throws it when the disk of the stream lacks them. The appends of one spill share
-        /// `space_check`, which checks each disk once. Producers append concurrently.
+        /// `space_check`, which checks each disk once. Producers append concurrently. After a failed write the stream
+        /// takes no more appends: they rethrow that failure.
         UInt64 append(
             const TemporaryDataOnDiskScopePtr & scope,
             const PartitionedRecordBuffer & partitions,
@@ -315,6 +318,8 @@ struct AdaptiveAggregationSession
         /// Serializes the producers' appends and the creation of the stream.
         std::mutex mutex;
         std::unique_ptr<TemporaryDataBuffer> stream;
+        /// A failed write cancels the stream and may leave a partial block in it.
+        std::exception_ptr write_failure;
         size_t record_count = 0;
     };
     /// One per partition of the layout.
