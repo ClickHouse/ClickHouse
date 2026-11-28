@@ -6,10 +6,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # An aggregate function over a sliding window frame must return what the same function returns over the rows of
 # the frame, for any frame length and any split of the input into blocks. Every query counts the rows where the two
-# differ, so every number after the row count must be 0.
+# differ, so these numbers must be 0; the floats query also counts its NaN and infinite results.
 
 $CLICKHOUSE_CLIENT -q "
-    CREATE TABLE t (i UInt32, p UInt8, k UInt32, v Int64, nv Nullable(Int64), f Float64) ENGINE = MergeTree ORDER BY i;
+    CREATE TABLE t (i UInt32, p UInt8, k UInt32, v Int64, nv Nullable(Int64), f Float64, g Float64) ENGINE = MergeTree ORDER BY i;
 "
 
 # Partitions of 1, 15, 16, 17, 255, 256, 257 and 1200 rows.
@@ -20,9 +20,21 @@ $CLICKHOUSE_CLIENT -q "
         intDiv(number, 3),
         (number * 7919) % 1000,
         if(number % 5 = 0, NULL, (number * 7919) % 1000),
-        ((number * 7919) % 1000) / 7
+        ((number * 7919) % 1000) / 7,
+        multiIf(number = 100, nan, number = 1000, inf, number = 1450, -inf, ((number * 7919) % 1000) / 7)
     FROM numbers(2017);
 "
+
+# The condition that a floating-point value differs from the expected one: NaN matches only NaN, an infinity only the same
+# infinity, and finite values match within the relative tolerance.
+function float_differs()
+{
+    local value=$1
+    local expected=$2
+    local tolerance=$3
+    echo "NOT ((isNaN($value) AND isNaN($expected)) OR $value = $expected
+        OR (isFinite($value) AND isFinite($expected) AND abs($value - $expected) <= $tolerance * greatest(abs($expected), 1)))"
+}
 
 # Frames in rows over a unique key: the order of the rows in a frame is fixed, so the first and the last value are checked too.
 function check_rows()
@@ -34,7 +46,7 @@ function check_rows()
         echo "
             SELECT '$name, block size $block_size', count(),
                 countIf(s != arraySum(a)), countIf(mn != arrayMin(a)), countIf(mx != arrayMax(a)),
-                countIf(length(a) > 0 AND av != arraySum(a) / length(a)),
+                countIf($(float_differs av 'arraySum(a) / length(a)' 0)),
                 countIf(si != arraySum(arrayFilter(x -> x % 3 = 0, a))), countIf(st != arraySum(a)),
                 countIf(ifNull(sn, 0) != arraySum(an)), countIf(fi != a[1]), countIf(la != a[-1])
             FROM
@@ -61,7 +73,7 @@ function check_peers()
         echo "
             SELECT '$name, block size $block_size', count(),
                 countIf(s != arraySum(a)), countIf(mn != arrayMin(a)), countIf(mx != arrayMax(a)),
-                countIf(length(a) > 0 AND av != arraySum(a) / length(a)),
+                countIf($(float_differs av 'arraySum(a) / length(a)' 0)),
                 countIf(si != arraySum(arrayFilter(x -> x % 3 = 0, a))), countIf(st != arraySum(a)),
                 countIf(ifNull(sn, 0) != arraySum(an))
             FROM
@@ -98,20 +110,23 @@ function check_series()
 }
 
 # Functions over floating-point values can differ from the value over the rows of the frame in the last digits.
+# `g` has a NaN and two infinities, so some of its frames sum to NaN or to an infinity.
 function check_floats()
 {
     for block_size in 7 65505
     do
         echo "
             SELECT 'floats, block size $block_size', count(),
-                countIf(abs(sd - arrayReduce('stddevPop', a)) > 1e-9 * greatest(abs(sd), 1)),
-                countIf(abs(co - arrayReduce('corr', a, b)) > 1e-9),
-                countIf(abs(sf - arraySum(c)) > 1e-9 * greatest(abs(sf), 1))
+                countIf($(float_differs sd "arrayReduce('stddevPop', a)" 1e-9)),
+                countIf($(float_differs co "arrayReduce('corr', a, b)" 1e-9)),
+                countIf($(float_differs sf 'arraySum(c)' 1e-9)),
+                countIf($(float_differs sg 'arraySum(d)' 1e-9)),
+                countIf(isNaN(co)), countIf(isNaN(sg)), countIf(sg = inf), countIf(sg = -inf)
             FROM
             (
                 SELECT
-                    stddevPop(v) OVER w AS sd, corr(v, i) OVER w AS co, sum(f) OVER w AS sf,
-                    groupArray(v) OVER w AS a, groupArray(i) OVER w AS b, groupArray(f) OVER w AS c
+                    stddevPop(v) OVER w AS sd, corr(v, i) OVER w AS co, sum(f) OVER w AS sf, sum(g) OVER w AS sg,
+                    groupArray(v) OVER w AS a, groupArray(i) OVER w AS b, groupArray(f) OVER w AS c, groupArray(g) OVER w AS d
                 FROM t
                 WINDOW w AS (PARTITION BY p ORDER BY i ROWS BETWEEN 300 PRECEDING AND 290 FOLLOWING)
             )
