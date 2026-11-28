@@ -1,0 +1,17 @@
+<clickhouse>
+    <zookeeper>
+        <node>
+            <host>keeper1</host>
+            <port>9181</port>
+        </node>
+        <node>
+            <host>keeper2</host>
+            <port>9181</port>
+        </node>
+        <node>
+            <host>keeper3</host>
+            <port>9181</port>
+        </node>
+        <zookeeper_load_balancing>in_order</zookeeper_load_balancing>
+    </zookeeper>
+</clickhouse>

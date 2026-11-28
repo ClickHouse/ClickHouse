@@ -704,6 +704,9 @@ public:
 private:
     void init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper> existing_impl);
     void updateAvailabilityZones();
+    /// Connects to every node at once and returns the session to the node chosen by `connect_to_all_nodes_policy`.
+    /// Ranks `shuffled_hosts` again when it detects availability zones.
+    std::unique_ptr<Coordination::IKeeper> connectToAllNodes(std::vector<ShuffleHost> & shuffled_hosts);
 
     /// The following methods don't any throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);

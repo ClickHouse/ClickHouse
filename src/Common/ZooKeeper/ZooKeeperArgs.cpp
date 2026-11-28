@@ -172,6 +172,8 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
 void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
 {
     zookeeper_name = config_name;
+    /// On by default only for nodes listed by hand: `keeper_server` lists the nodes of its own cluster.
+    connect_to_all_nodes = true;
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_name, keys);
@@ -288,6 +290,22 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         else if (key == "availability_zone_autodetect")
         {
             availability_zone_autodetect = config.getBool(config_name + "." + key);
+        }
+        else if (key == "connect_to_all_nodes")
+        {
+            connect_to_all_nodes = config.getBool(config_name + "." + key);
+        }
+        else if (key == "connect_to_all_nodes_wait_ms")
+        {
+            connect_to_all_nodes_wait_ms = config.getUInt64(config_name + "." + key);
+        }
+        else if (key == "connect_to_all_nodes_policy")
+        {
+            String policy_str = config.getString(config_name + "." + key);
+            auto policy = magic_enum::enum_cast<NodeSelectionPolicy>(Poco::toUpper(policy_str));
+            if (!policy)
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown node selection policy: {}", policy_str);
+            connect_to_all_nodes_policy = *policy;
         }
         else if (key == "password")
         {

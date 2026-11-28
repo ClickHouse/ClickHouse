@@ -183,6 +183,7 @@ namespace DB
     M(WORKLOAD_ENTRY_WATCH, "WrkldEntWatch") \
     M(WORKLOAD_RESOURCE_MANAGER, "WorkloadResMgr") \
     M(ZOOKEEPER_ACL_WATCHER, "ZooACLWatch") \
+    M(ZOOKEEPER_CONNECT, "ZooKeeperConn") \
     M(ZOOKEEPER_RECV, "ZooKeeperRecv") \
     M(ZOOKEEPER_SEND, "ZooKeeperSend") \
     M(BLOB_KILLER_TASK, "BlobKillerTask") \

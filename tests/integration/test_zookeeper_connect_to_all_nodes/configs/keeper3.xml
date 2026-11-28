@@ -1,0 +1,43 @@
+<clickhouse>
+    <placement>
+        <use_imds>0</use_imds>
+        <availability_zone>az-keeper3</availability_zone>
+    </placement>
+
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>3</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+        <coordination_settings>
+            <operation_timeout_ms>5000</operation_timeout_ms>
+            <session_timeout_ms>10000</session_timeout_ms>
+            <raft_logs_level>trace</raft_logs_level>
+        </coordination_settings>
+
+        <!-- keeper3 leads, so that delaying keeper1 does not slow down the quorum. -->
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>keeper1</hostname>
+                <port>9234</port>
+                <start_as_follower>true</start_as_follower>
+                <priority>1</priority>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>keeper2</hostname>
+                <port>9234</port>
+                <start_as_follower>true</start_as_follower>
+                <priority>2</priority>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>keeper3</hostname>
+                <port>9234</port>
+                <priority>3</priority>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
