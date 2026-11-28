@@ -52,6 +52,7 @@ public:
     /// `absent_columns` are known to be missing from the file and get defaults even if `allow_missing_fields` is false:
     /// their `initial-default` from `column_mapper` if any (not for `absent_columns_without_default`), else the type default.
     /// No field of the file is read into them.
+    /// `top_level_read_names_`, if set: the name each top-level field of the file is read as; a field without one is not read.
     AvroDeserializer(
         const Block & header,
         avro::ValidSchema schema,
@@ -60,7 +61,8 @@ public:
         const FormatSettings & settings_,
         const NameSet & absent_columns_ = {},
         const NameSet & absent_columns_without_default = {},
-        const ColumnMapper * column_mapper = nullptr);
+        const ColumnMapper * column_mapper = nullptr,
+        std::optional<UnorderedMapWithMemoryTracking<String, String>> top_level_read_names_ = {});
     AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
 
     /// Not movable: stored closures capture `this` and references into `symbolic_skip_fn_map`.
@@ -159,6 +161,7 @@ private:
     /// Bitmap of columns found in Avro schema
     VectorWithMemoryTracking<bool> column_found;
     NameSet absent_columns;
+    std::optional<UnorderedMapWithMemoryTracking<String, String>> top_level_read_names;
     /// By column position.
     VectorWithMemoryTracking<std::optional<Field>> absent_column_defaults;
     DataTypes column_types;
