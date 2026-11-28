@@ -106,13 +106,20 @@ SELECT sum(cityHash64(y)) > 0 FROM t_sizes SETTINGS log_comment = '05260_full_da
 SYSTEM FLUSH LOGS query_log;
 
 -- Reading the sizes alone must stay an order of magnitude cheaper than reading the string data.
+-- Summed over the initial query and the queries it sent to replicas: with parallel replicas a varying
+-- share of the read is done by the replicas, whose queries are logged under another `current_database`,
+-- so the initial query's own counter can be anywhere between nothing and the whole read.
 SELECT
-    (SELECT argMax(ProfileEvents['CompressedReadBufferBytes'], event_time_microseconds)
+    (SELECT sum(ProfileEvents['CompressedReadBufferBytes'])
      FROM system.query_log
-     WHERE current_database = currentDatabase() AND log_comment = '05260_sizes_only' AND type = 'QueryFinish') * 10
-    < (SELECT argMax(ProfileEvents['CompressedReadBufferBytes'], event_time_microseconds)
-       FROM system.query_log
-       WHERE current_database = currentDatabase() AND log_comment = '05260_full_data' AND type = 'QueryFinish');
+     WHERE type = 'QueryFinish' AND initial_query_id IN (
+         SELECT query_id FROM system.query_log
+         WHERE current_database = currentDatabase() AND log_comment = '05260_sizes_only' AND type = 'QueryFinish' AND is_initial_query)) * 10
+    < (SELECT sum(ProfileEvents['CompressedReadBufferBytes'])
+     FROM system.query_log
+     WHERE type = 'QueryFinish' AND initial_query_id IN (
+         SELECT query_id FROM system.query_log
+         WHERE current_database = currentDatabase() AND log_comment = '05260_full_data' AND type = 'QueryFinish' AND is_initial_query));
 
 DROP TABLE t_sizes;
 DROP TABLE t_nested_compact;
