@@ -413,7 +413,7 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
 
 }
 
-UInt64 MergeTreeReadTask::estimateNumRows() const
+UInt64 MergeTreeReadTask::estimateNumRows(bool scale_by_filtration_ratio) const
 {
     if (!size_predictor)
     {
@@ -428,6 +428,25 @@ UInt64 MergeTreeReadTask::estimateNumRows() const
     if (!rows_to_read)
         return rows_to_read;
 
+    /// The estimation counts the rows that pass the filters, but the rows are read before the filters drop some of them.
+    /// Not scaled after a read in which no row passed, as the next read may start a run of passing rows.
+    if (scale_by_filtration_ratio && size_predictor->filtered_rows_ratio > 0 && !size_predictor->all_rows_filtered_in_last_read)
+    {
+        static constexpr size_t max_growth = 8;
+        size_t max_rows = std::min<size_t>(
+            size_predictor->estimateNumRowsBeforeFilter(block_size_params.preferred_block_size_bytes),
+            rows_to_read > block_size_params.max_block_size_rows / max_growth ? block_size_params.max_block_size_rows
+                                                                               : rows_to_read * max_growth);
+
+        if (max_rows > rows_to_read)
+        {
+            double filtration_ratio = std::max(block_size_params.min_filtration_ratio, 1.0 - size_predictor->filtered_rows_ratio);
+            double rows_for_filtered_block = static_cast<double>(rows_to_read) / filtration_ratio;
+            rows_to_read = rows_for_filtered_block < static_cast<double>(max_rows) ? static_cast<size_t>(rows_for_filtered_block)
+                                                                                    : max_rows;
+        }
+    }
+
     auto total_row_in_current_granule = readers_chain.numRowsInCurrentGranule();
     rows_to_read = std::max(total_row_in_current_granule, rows_to_read);
 
@@ -437,12 +456,15 @@ UInt64 MergeTreeReadTask::estimateNumRows() const
         auto rows_to_read_for_max_size_column
             = size_predictor->estimateNumRowsForMaxSizeColumn(block_size_params.preferred_max_column_in_block_size_bytes);
 
-        double filtration_ratio = std::max(block_size_params.min_filtration_ratio, 1.0 - size_predictor->filtered_rows_ratio);
-        auto rows_to_read_for_max_size_column_with_filtration
-            = static_cast<size_t>(static_cast<double>(rows_to_read_for_max_size_column) / filtration_ratio);
+        double filtration_ratio = scale_by_filtration_ratio
+            ? std::max(block_size_params.min_filtration_ratio, 1.0 - size_predictor->filtered_rows_ratio)
+            : 1.0;
+        double rows_to_read_for_max_size_column_with_filtration
+            = static_cast<double>(rows_to_read_for_max_size_column) / filtration_ratio;
 
         /// If preferred_max_column_in_block_size_bytes is used, number of rows to read can be less than current_index_granularity.
-        rows_to_read = std::min(rows_to_read, rows_to_read_for_max_size_column_with_filtration);
+        if (rows_to_read_for_max_size_column_with_filtration < static_cast<double>(rows_to_read))
+            rows_to_read = static_cast<size_t>(rows_to_read_for_max_size_column_with_filtration);
     }
 
     auto unread_rows_in_current_granule = readers_chain.numPendingRowsInCurrentGranule();
@@ -459,19 +481,21 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     if (size_predictor)
         size_predictor->startBlock();
 
-    UInt64 recommended_rows = estimateNumRows();
+    UInt64 recommended_rows = estimateNumRows(/*scale_by_filtration_ratio=*/ true);
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(block_size_params.max_block_size_rows, recommended_rows));
 
     /// A block that is a whole stripe of the columns cache is read whole, beyond `rows_to_read`, because it shares the
     /// columns of the cache. But the functions and filters of the query run over the whole block and copy what passes,
-    /// so the rows that pass the filters of `PREWHERE` must stay within `rows_to_read`, which keeps a block of wide rows
+    /// so the rows that pass the filters of `PREWHERE` must stay within the rows of the filtered block, which keeps a block of wide rows
     /// to `preferred_block_size_bytes`. A selective `PREWHERE` lets whole stripes be read, as the filtered rows cost
     /// little to the later steps. Never beyond `max_block_size_rows`, which a `LIMIT` lowers to read no more than it needs.
     UInt64 max_stripe_block_rows = block_size_params.max_block_size_rows;
     if (size_predictor)
     {
+        UInt64 filtered_block_rows = std::max<UInt64>(
+            1, std::min(block_size_params.max_block_size_rows, estimateNumRows(/*scale_by_filtration_ratio=*/ false)));
         double filtration_ratio = std::max(block_size_params.min_filtration_ratio, 1.0 - size_predictor->filtered_rows_ratio);
-        double rows_before_filtration = static_cast<double>(rows_to_read) / filtration_ratio;
+        double rows_before_filtration = static_cast<double>(filtered_block_rows) / filtration_ratio;
         if (rows_before_filtration < static_cast<double>(max_stripe_block_rows))
             max_stripe_block_rows = std::max(rows_to_read, static_cast<UInt64>(rows_before_filtration));
     }
@@ -497,6 +521,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     if (size_predictor)
     {
         size_predictor->updateFilteredRowsRation(read_result.numReadRows(), num_filtered_rows);
+        size_predictor->updateReadBytesPerRow(num_read_rows, num_read_bytes);
         if (!read_result.columns.empty())
             size_predictor->update(sample_block, read_result.columns, read_result.num_rows);
     }

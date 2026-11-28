@@ -272,7 +272,7 @@ public:
         bool collect_predicate_statistics);
 
 private:
-    [[nodiscard]] UInt64 estimateNumRows() const;
+    [[nodiscard]] UInt64 estimateNumRows(bool scale_by_filtration_ratio) const;
 
     /// Shared information required for reading.
     MergeTreeReadTaskInfoPtr info;

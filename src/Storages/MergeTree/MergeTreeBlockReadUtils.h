@@ -99,6 +99,27 @@ struct MergeTreeBlockSizePredictor
         filtered_rows_ratio = current_ration < filtered_rows_ratio
             ? current_ration
             : alpha * filtered_rows_ratio + (1.0 - alpha) * current_ration;
+        all_rows_filtered_in_last_read = rows_was_read != 0 && rows_was_filtered == rows_was_read;
+    }
+
+    /// Predicts what number of rows, as read before they are filtered, takes `bytes_quota`. 0 while nothing was read.
+    [[nodiscard]] size_t estimateNumRowsBeforeFilter(size_t bytes_quota) const
+    {
+        if (read_bytes_per_row <= 0 || static_cast<double>(bytes_quota) >= static_cast<double>(std::numeric_limits<size_t>::max()))
+            return 0;
+        return static_cast<size_t>(
+            static_cast<double>(bytes_quota) / std::max(1.0, read_bytes_per_row + subcolumns_bytes_per_row_global));
+    }
+
+    void updateReadBytesPerRow(size_t rows_was_read, size_t bytes_was_read, double decay = calculateDecay())
+    {
+        if (rows_was_read == 0)
+            return;
+        double alpha = std::pow(1. - decay, rows_was_read);
+        double current = static_cast<double>(bytes_was_read) / static_cast<double>(rows_was_read);
+        read_bytes_per_row = current > read_bytes_per_row
+            ? current
+            : alpha * read_bytes_per_row + (1.0 - alpha) * current;
     }
 
     /// Aggressiveness of bytes_per_row updates. See update() implementation.
@@ -124,6 +145,8 @@ protected:
 
     std::vector<ColumnInfo> dynamic_columns_infos;
     size_t fixed_columns_bytes_per_row = 0;
+    /// Reading a subcolumn may deserialize more than it returns (the whole `Map` for a key), which `read_bytes_per_row` misses.
+    double subcolumns_bytes_per_row_global = 0;
 
     double max_size_per_row_fixed = 0;
     double max_size_per_row_dynamic = 0;
@@ -151,6 +174,10 @@ public:
     double bytes_per_row_global = 0;
 
     double filtered_rows_ratio = 0;
+
+    /// Bytes per row of the columns as they are read, before the rows are filtered.
+    double read_bytes_per_row = 0;
+    bool all_rows_filtered_in_last_read = false;
 };
 
 }

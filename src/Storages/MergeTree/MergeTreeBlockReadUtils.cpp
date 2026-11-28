@@ -336,10 +336,13 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
     }
 
     bytes_per_row_global = static_cast<double>(fixed_columns_bytes_per_row);
+    subcolumns_bytes_per_row_global = 0;
     for (auto & info : dynamic_columns_infos)
     {
         info.bytes_per_row = info.bytes_per_row_global;
         bytes_per_row_global += info.bytes_per_row_global;
+        if (info.is_subcolumn)
+            subcolumns_bytes_per_row_global += info.bytes_per_row_global;
 
         max_size_per_row_dynamic = std::max<double>(max_size_per_row_dynamic, info.bytes_per_row);
     }

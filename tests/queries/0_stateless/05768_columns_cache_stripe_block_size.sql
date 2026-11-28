@@ -34,3 +34,32 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comm
 ORDER BY log_comment;
 
 DROP TABLE t_columns_cache_wide_rows;
+
+-- With `preferred_max_column_in_block_size_bytes` too, the rows of a stripe that pass `PREWHERE` stay within the
+-- filtered block: the pass ratio of `PREWHERE` is applied once. One row in 8 passes, with a wide value.
+DROP TABLE IF EXISTS t_columns_cache_max_column;
+CREATE TABLE t_columns_cache_max_column (d UInt8, s String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    ratio_of_defaults_for_sparse_serialization = 1, use_const_adaptive_granularity = 0, enable_block_number_column = 0,
+    enable_block_offset_column = 0, string_serialization_version = 'single_stream';
+INSERT INTO t_columns_cache_max_column SELECT number % 8, if(number % 8 = 0, repeat('x', 150), '') FROM numbers(1000000);
+OPTIMIZE TABLE t_columns_cache_max_column FINAL;
+
+SET preferred_block_size_bytes = 10000000, preferred_max_column_in_block_size_bytes = 100000, use_query_condition_cache = 0,
+    allow_prefetched_read_pool_for_local_filesystem = 0;
+SYSTEM DROP COLUMNS CACHE;
+
+SELECT max(bs) <= 5120, sum(h) FROM (SELECT blockSize() AS bs, cityHash64(s) AS h FROM t_columns_cache_max_column PREWHERE d = 0)
+SETTINGS log_comment = '05768_max_column_first';
+SELECT max(bs) <= 5120, sum(h) FROM (SELECT blockSize() AS bs, cityHash64(s) AS h FROM t_columns_cache_max_column PREWHERE d = 0)
+SETTINGS log_comment = '05768_max_column_second';
+SELECT max(bs) <= 5120, sum(h) FROM (SELECT blockSize() AS bs, cityHash64(s) AS h FROM t_columns_cache_max_column PREWHERE d = 0)
+SETTINGS use_columns_cache = 0;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, ProfileEvents['ColumnsCacheHits'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05768_max_column_first', '05768_max_column_second')
+ORDER BY log_comment;
+
+DROP TABLE t_columns_cache_max_column;
