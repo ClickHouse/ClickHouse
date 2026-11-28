@@ -12,6 +12,8 @@ MarkCache::MarkCache(const String & cache_policy,
     double size_ratio)
     : Base(cache_policy, size_in_bytes_metric, count_metric, max_size_in_bytes, 0, size_ratio)
 {
+    /// Shared by all queries, see `CacheBase::markServerOwned`.
+    markServerOwned();
 }
 
 UInt128 MarkCache::hash(const String& path_to_file)

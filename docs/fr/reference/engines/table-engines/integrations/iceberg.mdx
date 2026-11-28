@@ -79,23 +79,24 @@ Le tableau suivant montre comment les types de données Iceberg sont associés a
 
 ### Types primitifs {#primitive-types}
 
-| Type Iceberg       | Type ClickHouse        | Remarques                                                            |
-| ------------------ | ---------------------- | -------------------------------------------------------------------- |
-| `boolean`          | `Bool`                 |                                                                      |
-| `int`              | `Int32`                |                                                                      |
-| `long`, `bigint`   | `Int64`                |                                                                      |
-| `float`            | `Float32`              |                                                                      |
-| `double`           | `Float64`              |                                                                      |
-| `date`             | `Date32`               |                                                                      |
-| `time`             | `Int64`                | Microsecondes depuis minuit                                          |
-| `timestamp`        | `DateTime64(6)`        | Microsecondes, sans fuseau horaire                                   |
-| `timestamptz`      | `DateTime64(6, 'UTC')` | Microsecondes, fuseau horaire UTC                                    |
-| `timestamp_ns`     | `DateTime64(9)`        | Nanosecondes, sans fuseau horaire (uniquement à partir d’Iceberg v3) |
-| `timestamptz_ns`   | `DateTime64(9, 'UTC')` | Nanosecondes, fuseau horaire UTC (uniquement à partir d’Iceberg v3)  |
-| `string`, `binary` | `String`               |                                                                      |
-| `uuid`             | `UUID`                 |                                                                      |
-| `fixed(N)`         | `FixedString(N)`       |                                                                      |
-| `decimal(P, S)`    | `Decimal(P, S)`        |                                                                      |
+| type Iceberg       | Type ClickHouse        | Remarques                                                                                                                             |
+| ------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `boolean`          | `Bool`                 |                                                                                                                                       |
+| `int`              | `Int32`                |                                                                                                                                       |
+| `long`, `bigint`   | `Int64`                |                                                                                                                                       |
+| `float`            | `Float32`              |                                                                                                                                       |
+| `double`           | `Float64`              |                                                                                                                                       |
+| `date`             | `Date32`               |                                                                                                                                       |
+| `time`             | `Int64`                | Microsecondes depuis minuit                                                                                                           |
+| `timestamp`        | `DateTime64(6)`        | Microsecondes, sans fuseau horaire                                                                                                    |
+| `timestamptz`      | `DateTime64(6, 'UTC')` | Microsecondes, le time zone est défini par le paramètre de table `iceberg_timezone_for_timestamptz`                                   |
+| `timestamp_ns`     | `DateTime64(9)`        | Nanosecondes, sans fuseau horaire (uniquement à partir d’Iceberg v3)                                                                  |
+| `timestamptz_ns`   | `DateTime64(9, 'UTC')` | Nanosecondes, le time zone est défini par le paramètre de table `iceberg_timezone_for_timestamptz` (uniquement à partir d’Iceberg v3) |
+| `string`, `binary` | `String`               |                                                                                                                                       |
+| `uuid`             | `UUID`                 |                                                                                                                                       |
+| `fixed(N)`         | `FixedString(N)`       |                                                                                                                                       |
+| `decimal(P, S)`    | `Decimal(P, S)`        |                                                                                                                                       |
+| `unknown`          | `Nullable(Nothing)`    | Toujours `NULL`, non stocké dans les fichiers de données (uniquement à partir d’Iceberg v3)                                           |
 
 ### Types complexes {#complex-types}
 
@@ -109,19 +110,20 @@ Le tableau suivant montre comment les types de données Iceberg sont associés a
 
 Les mappages de types de données ci-dessus s’appliquent aux lectures. Les limitations suivantes s’appliquent lorsque ClickHouse crée ou fait évoluer des schémas Iceberg et écrit des données :
 
-* ClickHouse ne peut pas créer de schéma Iceberg contenant `Bool`, `FixedString`, `Int8`, `UInt8`, `Int16`, `UInt16`, `Time` ou `Time64`, ni ajouter ou modifier une colonne pour lui attribuer l’un de ces types. L’opération échoue avec une exception de type non pris en charge. Cela n’empêche pas l’insertion de valeurs `Bool` dans des colonnes Iceberg existantes.
+* ClickHouse ne peut pas créer de schéma Iceberg contenant `FixedString`, `Time` ou `Time64`, ni ajouter ou modifier une colonne pour lui attribuer l’un de ces types. L’opération échoue avec une exception de type non pris en charge. `Bool` est stocké au format `boolean` d’Iceberg. Iceberg ne dispose pas de types entiers sur 8 ou 16 bits ; les colonnes `Int8`, `UInt8`, `Int16` et `UInt16` sont donc élargies au type `int` d’Iceberg et sont par conséquent relues en tant que `Int32`.
 * ClickHouse ne peut pas non plus créer de schéma Iceberg contenant `UInt64` : le type entier le plus large d’Iceberg est `long`, un entier signé sur 64 bits, qui ne peut pas représenter toutes les valeurs `UInt64`. Utilisez plutôt `Int64` ou `Decimal(20, 0)`. La création d’une table comportant une colonne `UInt64`, y compris imbriquée, comme `Array(UInt64)`, échoue avec une exception, même si la table Iceberg existe déjà à cet emplacement. Pour la même raison, une colonne `UInt32` est élargie au type `long` d’Iceberg et est donc relue en tant que `Int64`.
 * Lorsque ClickHouse crée ou fait évoluer un schéma Iceberg, il mappe chaque colonne `DateTime` et `DateTime64` vers le type `timestamp` d’Iceberg, qui a une précision à la microseconde et ne comporte pas de fuseau horaire. ClickHouse ne peut pas générer les types de schéma `timestamptz`, `timestamp_ns` ou `timestamptz_ns` ; une précision supérieure et la sémantique des fuseaux horaires ne sont donc pas représentées dans le schéma Iceberg.
 * ClickHouse ne peut pas écrire dans une table Iceberg qui utilise une colonne `decimal`, `fixed`, `timestamp_ns` ou `timestamptz_ns` comme champ de partition direct. L’opération échoue avec une exception de type non pris en charge.
-* Pour les fichiers de données contenant des types dont ClickHouse ne peut pas sérialiser les limites, notamment `Bool` et `Decimal`, ClickHouse omet toutes les limites inférieures et supérieures des colonnes dans l’entrée du manifeste Iceberg. Les tailles des colonnes et le nombre de valeurs nulles sont toujours inclus, et les données restent correctes, mais les lecteurs ne peuvent pas utiliser l’élagage min-max au niveau du manifeste pour ces fichiers.
+* Pour les fichiers de données contenant des types dont ClickHouse ne peut pas sérialiser les limites, comme `UUID`, ClickHouse omet les limites inférieures et supérieures de ces colonnes dans l’entrée du manifeste Iceberg. Les tailles des colonnes et le nombre de valeurs nulles sont toujours inclus, et les données restent correctes, mais les lecteurs ne peuvent pas utiliser l’élagage min-max au niveau du manifeste pour ces fichiers.
 
 ## Évolution du schéma {#schema-evolution}
 
-ClickHouse prend en charge la lecture de tables Iceberg dont le schéma a évolué au fil du temps. Cela inclut les tables où des colonnes ont été ajoutées, supprimées ou réordonnées, ainsi que celles dont des colonnes sont passées de required à Nullable. De plus, les conversions de type suivantes sont prises en charge :
+ClickHouse prend en charge la lecture de tables Iceberg dont le schéma a évolué au fil du temps. Cela inclut les tables où des colonnes ont été ajoutées, supprimées ou réordonnées, ainsi que celles dont des colonnes sont passées de required à Nullable. De plus, les conversions de type suivantes sont prises en charge :
 
 * int -&gt; long
 * float -&gt; double
 * decimal(P, S) -&gt; decimal(P&#39;, S) si P&#39; &gt; P.
+* unknown -&gt; tout type primitif (uniquement à partir d&#39;Iceberg v3)
 
 À ce jour, il n&#39;est pas possible de modifier les structures imbriquées ni les types des éléments au sein des Array et des Map.
 
@@ -137,7 +139,7 @@ ClickHouse prend en charge l’élagage des partitions dans les requêtes SELECT
 
 Activez `allow_insert_into_iceberg` pour utiliser cette opération.
 
-L&#39;opération est prise en charge uniquement pour les tables Iceberg en `format-version` 2 disposant d&#39;une spécification de partition unique et non modifiée. Chaque manifeste contenant la partition sélectionnée ne doit contenir aucun fichier issu d&#39;autres partitions. Si un manifeste est partagé entre la partition sélectionnée et une autre partition, l&#39;opération échoue sans modifier la table. L&#39;opération rejette également les manifestes concernés qui contiennent des fichiers de suppression par égalité.
+L&#39;opération est prise en charge uniquement pour les tables Iceberg en `format-version` 2 disposant d&#39;une spécification de partition unique et non modifiée. Chaque manifeste contenant la partition sélectionnée ne doit contenir aucun fichier issu d&#39;autres partitions. Si un manifeste est partagé entre la partition sélectionnée et une autre partition, l&#39;opération échoue sans modifier la table. Lorsque `iceberg_insert_single_manifest_for_all_partitions` est activé, chaque flux d&#39;insertion d&#39;un `INSERT` écrit dans un seul manifeste les fichiers de toutes les partitions qu&#39;il a reçues (exactement un manifeste par `INSERT` avec `max_insert_threads = 1`) ; une partition écrite par le même `INSERT` que d&#39;autres partitions ne peut donc pas être supprimée. L&#39;opération rejette également les manifestes concernés qui contiennent des fichiers de suppression par égalité.
 
 La valeur de partition obéit aux mêmes règles que pour `MergeTree`. Pour une partition portant sur une seule colonne, passez un littéral scalaire ; pour une partition portant sur plusieurs colonnes, passez un tuple de valeurs :
 
@@ -423,7 +425,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 Les paramètres stockés uniquement dans la définition de table, et non dans les métadonnées Iceberg, peuvent être modifiés sur une table existante à l&#39;aide de `ALTER TABLE ... MODIFY SETTING` et `ALTER TABLE ... RESET SETTING` :
 
 * le lookup du fichier de métadonnées : `iceberg_use_version_hint`, `iceberg_recent_metadata_file_by_last_updated_ms_field` et `iceberg_metadata_async_prefetch_period_ms` ;
-* le compactage en arrière-plan et le nettoyage qui le suit : `allow_experimental_iceberg_compaction`, `allow_experimental_cleanup_old_data_files_compaction`, `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction` et `iceberg_data_file_size_upper_threshold_compaction`.
+* le compactage en arrière-plan et le nettoyage qui le suit : `allow_experimental_iceberg_compaction`, `enable_cleanup_old_data_files_compaction` (ou son alias `allow_experimental_cleanup_old_data_files_compaction`), `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction` et `iceberg_data_file_size_upper_threshold_compaction`.
 
 Les nouvelles valeurs s&#39;appliquent aux requêtes suivantes et sont stockées dans la définition de table. Les jobs en arrière-plan de la table sont arrêtés pendant la modification des paramètres, puis relancés avec les nouveaux paramètres : ainsi, désactiver `allow_experimental_iceberg_compaction` arrête le compactage en arrière-plan de la table, et l&#39;activer le démarre. Les autres paramètres ne sont pas modifiables, et une modification de paramètres ne peut pas être combinée à d&#39;autres commandes `ALTER` au sein d&#39;une même requête. Les tables d&#39;une base de données `DataLakeCatalog` ne permettent pas de modifier les paramètres.
 

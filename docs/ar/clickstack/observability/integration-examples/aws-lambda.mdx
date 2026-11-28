@@ -1,0 +1,304 @@
+---
+slug: /clickstack/observability/integration-examples/aws-lambda
+title: 'مراقبة سجلات AWS Lambda باستخدام ClickHouse Observability عبر Rotel'
+sidebarTitle: 'سجلات AWS Lambda'
+description: 'اجمع سجلات AWS Lambda باستخدام Rotel Lambda Extension التي يتولى المجتمع صيانتها، ثم أرسلها إلى ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['AWS', 'Lambda', 'OTEL', 'ClickHouse Observability', 'logs', 'CloudWatch']
+---
+
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+اجمع سجلات الدالة وسجلات الإضافة باستخدام Rotel Lambda Extension، وأرسلها مباشرةً إلى ClickHouse Observability عبر OTLP. تعمل الإضافة جنبًا إلى جنب مع دالة Lambda، فلا حاجة إلى جامع بيانات منفصل. ويمكنك أيضًا إضافة أدوات الرصد من OpenTelemetry لجمع بيانات التتبّع.
+
+## المتطلبات المسبقة {#prerequisites}
+
+* خدمة ClickHouse Observability
+* دالة AWS Lambda تعتمد النشر بحزمة ZIP وتستخدم بيئة تشغيل يدعمها [Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension)
+* أداة AWS CLI v2 مُهيّأة لمنطقة دالتك، إذا كنت ستستخدم أمثلة واجهة سطر الأوامر
+* صلاحية تحديث طبقات الدالة ومتغيرات البيئة الخاصة بها
+* إمكانية الوصول إلى الشبكة من دالة Lambda إلى نقطة نهاية OTLP الخاصة بك، بما في ذلك الوصول الصادر للدوال الموجودة داخل شبكة VPC
+
+### بيانات الاتصال {#connection-details}
+
+<Tabs>
+  <Tab title="مُدار بالكامل">
+    <BetaBadge label="عرض تجريبي" />
+
+    افتح ClickHouse Observability وانتقل إلى **Team Settings → Data → Managed Telemetry**. انسخ نقطة نهاية OTLP HTTP ومفتاح API الخاصين بك.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![بيانات اتصال Managed Telemetry](/images/clickstack/getting-started/observability-managed-telemetry.png)
+      </Frame>
+    </div>
+
+    استخدم نقطة النهاية كما هي تمامًا، بما في ذلك المنفذ، قيمةً لـ `ROTEL_OTLP_EXPORTER_ENDPOINT` أدناه. استخدم نقطة نهاية HTTP الأساسية دون اللاحقة `/v1/logs`، واضبط البروتوكول على `http`. تتطلب الخدمة المُدارة ترويسة `Authorization=Bearer YOUR_API_KEY`.
+  </Tab>
+
+  <Tab title="مُدار ذاتيًا">
+    استخدم نقطة نهاية OTLP HTTP وإعدادات المصادقة الخاصة بجامع البيانات لديك. احذف `ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS` إذا كانت الوجهة لا تتطلب مصادقة. يجب أن يكون الوصول إلى نقطة النهاية ممكنًا من Lambda؛ إذ يشير `localhost` إلى بيئة تنفيذ Lambda نفسها. راجع [دليل الإعداد المُدار ذاتيًا](/ar/clickstack/self-configured/getting-started/managed).
+
+    استخدم قيم الوجهة هذه في أمثلة متغيرات بيئة Lambda وملف `rotel.env` أدناه:
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_COLLECTOR_HOST:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=YOUR_INGESTION_KEY"
+    ```
+  </Tab>
+</Tabs>
+
+## التكامل مع دوال Lambda الموجودة {#existing-lambda}
+
+<Steps>
+  <Step title="اختر طبقة Rotel Lambda Extension المناسبة" id="choose-layer">
+    اختر طبقة تتوافق مع معمارية دالتك (`amd64` أو `arm64`) وبيئة التشغيل الخاصة بها ومنطقة AWS. انسخ معرّف ARN الكامل للطبقة متضمنًا رقم الإصدار من [إصدارات Rotel](https://github.com/streamfold/rotel-lambda-extension/releases). استخدم معرّف ARN هذا في الأمثلة أدناه؛ إذ تختلف إصدارات الطبقات ومدى توافرها من منطقة إلى أخرى.
+  </Step>
+
+  <Step title="أضف طبقة Rotel إلى دالة Lambda الخاصة بك" id="add-layer">
+    استبدل `YOUR_ROTEL_LAYER_ARN` بمعرّف ARN الذي اخترته، و`my-function` باسم دالتك.
+
+##### الخيار 1: وحدة تحكم AWS {#console}
+
+    1. افتح وحدة تحكم AWS Lambda
+    2. انتقل إلى دالة Lambda الخاصة بك
+    3. مرّر إلى قسم **Layers** وانقر على **Add a layer**
+    4. اختر **Specify an ARN**
+    5. أدخل معرّف ARN الخاص بطبقة Rotel:
+       ```text
+       YOUR_ROTEL_LAYER_ARN
+       ```
+    6. انقر على **Add**
+
+##### الخيار 2: واجهة سطر أوامر AWS ‏(AWS CLI) {#cli}
+
+    صدِّر قائمة الطبقات الحالية:
+
+    ```bash
+    aws lambda get-function-configuration \
+      --function-name my-function \
+      --query 'Layers[].Arn || `[]`' \
+      --output json > layers.json
+    ```
+
+    ألحِق مُعرّف ARN الخاص بطبقة Rotel بوصفه string في مصفوفة `layers.json`، مع الإبقاء على العناصر الموجودة. ثم طبّق القائمة الكاملة:
+
+    ```bash
+    aws lambda update-function-configuration \
+      --function-name my-function \
+      --layers file://layers.json
+    aws lambda wait function-updated --function-name my-function
+    ```
+
+##### الخيار 3: AWS SAM {#sam}
+
+    ```yaml
+    Resources:
+      MyFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+          # ... other configuration ...
+          Layers:
+            # Keep any existing layer entries here.
+            - YOUR_ROTEL_LAYER_ARN
+    ```
+  </Step>
+
+  <Step title="هيّئ الامتداد لتصدير البيانات إلى خدمة إمكانية المراقبة في ClickHouse" id="configure-extension">
+    في وحدة تحكم Lambda، افتح **Configuration → Environment variables** وأضف الإعدادات التالية مع الإبقاء على أي متغيرات موجودة مسبقًا. هذه قيم تهيئة خاصة بـ Lambda، وليست أوامر تُنفَّذ في الطرفية المحلية لديك. عند إدخال القيم في وحدة التحكم، احذف علامات الاقتباس المحيطة بها كما تظهر في الأمثلة.
+
+##### التهيئة الأساسية (متغيرات البيئة) {#basic-config}
+
+    أضف متغيرات البيئة التالية إلى دالة Lambda لديك:
+
+    ```bash
+    # OTLP HTTP endpoint from Connection details
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+
+    # Required for managed ingestion
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer YOUR_API_KEY"
+
+    # Optional: Service name (defaults to Lambda function name)
+    ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
+    ```
+
+##### التهيئة المتقدمة (باستخدام ملف .env) {#advanced-config}
+
+    للتهيئات الأكثر تعقيدًا، أنشئ ملف `rotel.env` ضمن حزمة دالة لامبدا الخاصة بك:
+
+    **rotel.env:**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer YOUR_API_KEY"
+    ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,deployment.environment=production"
+    ```
+
+    ثم اضبط متغير البيئة ليشير إلى هذا الملف:
+
+    ```bash
+    ROTEL_ENV_FILE=/var/task/rotel.env
+    ```
+
+##### استخدام AWS Secrets Manager أو Parameter Store {#secrets}
+
+    يمكنك تخزين مفتاح API في AWS Secrets Manager أو Parameter Store، ثم الإشارة إلى معرّف ARN الخاص به في `rotel.env`. تعتمد الأمثلة أدناه على المصادقة المُدارة بالكامل، وتفترض أن الـ secret يحتوي على مفتاح API فقط، إذ يضيف Rotel البادئة `Bearer` استنادًا إلى التهيئة. أما إذا كنت تستخدم جامع بيانات مُدارًا ذاتيًا بمفتاح إدخال، فاحذف البادئة `Bearer `. استبدل المنطقة والحساب وأسماء الأسرار الواردة في المثال بالقيم الخاصة بك:
+
+    **مثال على AWS Secrets Manager:**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer ${arn:aws:secretsmanager:us-east-1:123456789012:secret:observability-api-key-abc123}"
+    ```
+
+    **مثال باستخدام AWS Parameter Store:**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://YOUR_OTEL_ENDPOINT:4318
+    ROTEL_OTLP_EXPORTER_PROTOCOL=http
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=Bearer ${arn:aws:ssm:us-east-1:123456789012:parameter/observability-api-key}"
+    ```
+
+    **أذونات IAM المطلوبة:**
+
+    أضف هذه الصلاحيات إلى دور التنفيذ الخاص بدالة Lambda:
+
+    لـ Secrets Manager:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "secretsmanager:GetSecretValue",
+            "secretsmanager:BatchGetSecretValue"
+          ],
+          "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:observability-api-key-*"
+        }
+      ]
+    }
+    ```
+
+    بالنسبة إلى Parameter Store:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "ssm:GetParameters"
+          ],
+          "Resource": "arn:aws:ssm:us-east-1:123456789012:parameter/observability-api-key"
+        }
+      ]
+    }
+    ```
+
+    <Note>
+      يجري استرداد الـ secret أثناء التهيئة، وقد يزيد ذلك من زمن الانتقال عند البدء البارد. راجع [إعداد secret في Rotel](https://github.com/streamfold/rotel-lambda-extension#secrets) للاطلاع على الصيغ المدعومة والصلاحيات المطلوبة. وقد تتطلب مفاتيح التشفير التي يُديرها العميل أيضًا صلاحية `kms:Decrypt`.
+    </Note>
+  </Step>
+
+  <Step title="اختبر التكامل" id="test-integration">
+    استدعِ دالة Lambda بحدثٍ تقبله، وتأكد من أن المعالج يكتب سجلًا. استبدل حمولة المثال هذه إذا كانت دالتك تتوقع حدثًا مختلفًا:
+
+    ```bash
+    aws lambda invoke \
+      --function-name my-function \
+      --cli-binary-format raw-in-base64-out \
+      --payload '{"test": "data"}' \
+      response.json
+    ```
+
+    راجِع سجلات Lambda بحثًا عن أي أخطاء:
+
+    ```bash
+    aws logs tail /aws/lambda/my-function --follow
+    ```
+  </Step>
+
+  <Step title="تحقق من السجلات" id="verify-logs">
+    افتح صفحة **بحث** في ClickHouse Observability، واختر المصدر **Logs**، ثم طبّق عامل التصفية `ServiceName:my-lambda-api` إذا استخدمت اسم الخدمة الوارد في المثال، وإلا فاستخدم اسم دالة Lambda الخاصة بك. ثم اختر **Last 15 minutes**.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![عرض سجلات Lambda](/images/clickstack/lambda/lambda-log-view.webp)
+      </Frame>
+    </div>
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![تفاصيل سجل Lambda](/images/clickstack/lambda/lambda-log.webp)
+      </Frame>
+    </div>
+
+    ابحث في السجلات عن السمات الرئيسية التالية:
+
+    * `service.name`: اسم الخدمة الذي هيّأته، أو اسم دالة Lambda افتراضيًا
+    * `faas.name`: اسم دالة AWS Lambda
+    * `faas.invocation_id`: معرّف الاستدعاء الفريد
+    * `cloud.provider`: &quot;aws&quot;
+    * `cloud.platform`: &quot;aws&#95;lambda&quot;
+  </Step>
+</Steps>
+
+## تعطيل CloudWatch Logs (تحسين التكلفة) {#disable-cloudwatch}
+
+يرسل AWS Lambda افتراضيًا جميع السجلات إلى CloudWatch Logs، وقد يكون ذلك مكلفًا عند التشغيل على نطاق واسع. وبعد التحقق من وصول السجلات إلى ClickHouse Observability، يمكنك تعطيل تسجيل السجلات في CloudWatch لتقليل التكاليف.
+
+<Steps>
+  <Step title="إزالة صلاحيات CloudWatch من دور التنفيذ" id="remove-permissions">
+    1. افتح وحدة التحكم في AWS وانتقل إلى **AWS Lambda**
+    2. انتقل إلى دالة Lambda الخاصة بك
+    3. اختر **Configuration** ← **الصلاحيات**
+    4. انقر على اسم دور التنفيذ لفتح وحدة تحكم IAM
+    5. أزل صلاحيات الكتابة في CloudWatch Logs التي تستخدمها هذه الدالة. وإذا كان الدور مشتركًا، فخصّص دورًا لهذه الدالة وحدها قبل إجراء هذا التغيير:
+       * إذا كنت تستخدم سياسة مخصصة، فعدّلها لإزالة `logs:CreateLogGroup` و`logs:CreateLogStream` و`logs:PutLogEvents`
+       * إذا كنت تستخدم سياسة AWS المُدارة `AWSLambdaBasicExecutionRole`، فأزلها من الدور
+    6. احفظ الدور
+  </Step>
+
+  <Step title="التحقق من تعطيل تسجيل السجلات في CloudWatch" id="verify-disabled">
+    استدعِ الدالة مرة أخرى وتحقق مما يلي:
+
+    1. عدم ظهور أحداث جديدة في مجموعة سجلات CloudWatch الخاصة بالدالة
+    2. استمرار ظهور السجلات في ClickHouse Observability
+
+    ```bash
+    aws logs tail /aws/lambda/my-function --since 5m --follow
+    ```
+  </Step>
+</Steps>
+
+## إضافة auto-instrumentation الخاص بـ OpenTelemetry {#auto-instrumentation}
+
+يستطيع Rotel استقبال بيانات القياس عن بُعد من طبقة إضافة أدوات الرصد الخاصة بلغة البرمجة، المثبّتة إلى جانبه. اتبع [تعليمات auto-instrumentation الخاصة بـ Rotel](https://github.com/streamfold/rotel-lambda-extension#auto-instrumentation) ووثائق طبقات اللغات المرتبطة بها لاختيار طبقة متوافقة وتعيين قيمة `AWS_LAMBDA_EXEC_WRAPPER`.
+
+احرص على إبقاء طبقة Rotel وأي طبقات موجودة مسبقًا عند إضافة أدوات الرصد. بعد استدعاء الدالة، اختر مصدر **التتبّعات** في ClickHouse Observability وطبّق عامل تصفية على اسم الخدمة الذي هيّأته. يتطلب الربط بين السجلات والتتبّع أن تُضمِّن أدوات الرصد في التطبيق معرّفات التتبّع وspan في سجلاته.
+
+## أمثلة على التطبيقات {#examples}
+
+اطّلع على مثال تطبيق بايثون الذي يوضّح استخدام Rotel Lambda Extension:
+
+* **[بايثون + ClickHouse](https://github.com/streamfold/python-aws-lambda-clickhouse-example)**: تطبيق بايثون تُضاف إليه أدوات الرصد يدويًا عبر OpenTelemetry، ويُرسل بيانات التتبّع والسجلات مباشرةً إلى ClickHouse
+
+## انضم إلى مجتمع Rotel {#join-rotel-community}
+
+إذا كانت لديك أسئلة حول Rotel، فانضم إلى [خادم Rotel على Discord](https://rotel.dev) وشاركنا ملاحظاتك أو أسئلتك. ويمكنك المساهمة بأي تحسينات عبر مستودع [Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension).
+
+## موارد إضافية {#resources}
+
+* **[Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension)**: الشيفرة المصدرية والوثائق المفصّلة
+* **[Rotel Core](https://github.com/streamfold/rotel)**: مستوى بيانات OTEL الخفيف الذي تقوم عليه الإضافة

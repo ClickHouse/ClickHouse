@@ -10,7 +10,7 @@ doc_type: 'guide'
 
 ## ClickHouse にトレースコンテキストを渡す {#supplying-trace-context-to-clickhouse}
 
-ClickHouse は、[W3C 勧告](https://www.w3.org/TR/trace-context/)で説明されているトレースコンテキストの HTTP ヘッダーを受け付けます。また、ClickHouse サーバー間、またはクライアントとサーバー間の通信に使用されるネイティブプロトコル経由でもトレースコンテキストを受け付けます。手動テストでは、Trace Context 勧告に準拠したトレースコンテキストのヘッダーを、`--opentelemetry-traceparent` および `--opentelemetry-tracestate` フラグを使用して `clickhouse-client` に渡せます。
+ClickHouse は、[W3C 勧告](https://www.w3.org/TR/trace-context/)で説明されているトレースコンテキストの HTTP ヘッダーを受け付けます。また、ClickHouse サーバー間、またはクライアントとサーバー間の通信に使用されるネイティブプロトコル経由でもトレースコンテキストを受け付けます。Prometheusプロトコル(メトリクスの公開、リモート書き込み、リモート読み取り、クエリ API)のHTTPハンドラーも、同様にトレースコンテキストの HTTP ヘッダーを受け付けます。手動テストでは、Trace Context 勧告に準拠したトレースコンテキストのヘッダーを、`--opentelemetry-traceparent` および `--opentelemetry-tracestate` フラグを使用して `clickhouse-client` に渡せます。
 
 親トレースコンテキストが渡されていない場合、または渡されたトレースコンテキストが上記の W3C 標準に準拠していない場合、ClickHouse は新しいトレースを開始できます。このときの確率は、[opentelemetry&#95;start&#95;trace&#95;probability](/ja/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability) 設定で制御されます。
 

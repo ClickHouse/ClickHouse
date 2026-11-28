@@ -10,13 +10,13 @@ doc_type: 'guide'
 Оповещения о расходах уведомляют вас, когда использование вашей организации достигает настроенных пороговых значений в течение расчётного периода, чтобы вы могли избежать неожиданных списаний. Они лишь отправляют уведомления; о порогах, при достижении которых автоматически выставляются счета, см. в разделе [Платёжные пороги](/ru/products/cloud/reference/billing/payment-thresholds).
 
 <div id="prerequisites">
-  ## Предварительные требования
+  ## Предварительные требования {#prerequisites}
 </div>
 
 * Чтобы настраивать и просматривать оповещения о расходах, у вас должна быть роль **Organization Admin** или **Billing Admin**.
 
 <div id="how-spend-alerts-work">
-  ## Как работают оповещения о расходах
+  ## Как работают оповещения о расходах {#how-spend-alerts-work}
 </div>
 
 * Оповещения основаны на общем объёме использования за расчётный период и сбрасываются в начале каждого нового цикла.
@@ -28,9 +28,7 @@ doc_type: 'guide'
   Достижение 100% по оповещению о расходах не ограничивает объём использования и не устанавливает лимит — расходы продолжают накапливаться сверх порога в 100%.
 </Info>
 
-<div id="set-up-spend-alert">
-  ## Настройте оповещение о расходах
-</div>
+## Настройте оповещение о расходах {#set-up-spend-alert}
 
 <Steps>
   <Step title="Откройте диалоговое окно оповещений о расходах" id="open-spend-alerts-dialog">
@@ -38,13 +36,9 @@ doc_type: 'guide'
     2. Нажмите **Actions &gt; Add spend alerts**.
 
     <div className="ch-image-lg">
-
-    <Frame>
-
-    ![Страница Billing с открытым меню Actions и выделенным пунктом Add spend alerts](/images/cloud/reference/billing/spend-alerts-actions.webp)
-
-    </Frame>
-
+      <Frame>
+        ![Страница Billing с открытым меню Actions и выделенным пунктом Add spend alerts](/images/cloud/reference/billing/spend-alerts-actions.webp)
+      </Frame>
     </div>
   </Step>
 
@@ -54,19 +48,15 @@ doc_type: 'guide'
     3. Нажмите **Save**.
 
     <div className="ch-image-md">
-
-    <Frame>
-
-    ![Диалоговое окно оповещений о расходах организации с лимитом расходов, автоматическими пороговыми оповещениями и каналами уведомлений](/images/cloud/reference/billing/spend-alerts-config.png)
-
-    </Frame>
-
+      <Frame>
+        ![Диалоговое окно оповещений о расходах организации с лимитом расходов, автоматическими пороговыми оповещениями и каналами уведомлений](/images/cloud/reference/billing/spend-alerts-config.png)
+      </Frame>
     </div>
   </Step>
 </Steps>
 
 <div id="threshold-alerts">
-  ## Автоматические пороговые оповещения
+  ## Автоматические пороговые оповещения {#threshold-alerts}
 </div>
 
 Четыре оповещения создаются автоматически и срабатывают в зависимости от настроенной суммы оповещения о расходах:
@@ -79,7 +69,7 @@ doc_type: 'guide'
 | **100%** | Достигнут полный лимит расходов | $10                        |
 
 <div id="notification-channels">
-  ## Каналы уведомлений
+  ## Каналы уведомлений {#notification-channels}
 </div>
 
 | Канал         | Описание                                                                                                              |

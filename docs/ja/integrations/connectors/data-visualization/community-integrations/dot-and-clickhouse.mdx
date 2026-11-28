@@ -18,24 +18,18 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
 ClickHouse に直接接続できるため、自然言語でデータについて質問したり、データを探索したり、仮説を検証したり、「なぜそうなったのか」に答えたりできます。しかも、これらはすべて Slack、Microsoft Teams、ChatGPT、またはネイティブ Web UI から直接行えます。
 
 <div id="pre-requisites">
-  ## 前提条件
+  ## 前提条件 {#pre-requisites}
 </div>
 
 * セルフホスト環境または [ClickHouse Cloud](https://clickhouse.com/cloud) 上の ClickHouse データベース
 * [Dot](https://www.getdot.ai/) アカウント  
 
-<div id="connecting-dot-to-clickhouse">
-  ## Dot を ClickHouse に接続する
-</div>
+## Dot を ClickHouse に接続する {#connecting-dot-to-clickhouse}
 
 <div className="ch-image-md">
-
-<Frame>
-
-![Dot で ClickHouse 接続を設定する（ライトモード）](/images/integrations/data-visualization/dot_01.webp)
-
-</Frame>
-
+  <Frame>
+    ![Dot で ClickHouse 接続を設定する（ライトモード）](/images/integrations/data-visualization/dot_01.webp)
+  </Frame>
 </div>
 
 <br />
@@ -46,23 +40,19 @@ ClickHouse に直接接続できるため、自然言語でデータについて
    * **Host**: ClickHouse server のホスト名、または ClickHouse Cloud のエンドポイント
    * **Port**: `8443` (ClickHouse Cloud HTTPS) または `8123` (セルフホスト HTTP)
    * **Username / Password**: 読み取り権限を持つユーザー
-   * **Database**: 必要に応じてデフォルトのスキーマを設定
+   * **データベース**: 必要に応じてデフォルトのスキーマを設定
 4. **Connect** をクリックします。
 
 <div className="ch-image-sm">
-
-<Frame>
-
-![ClickHouse に接続する](/images/integrations/data-visualization/dot_02.webp)
-
-</Frame>
-
+  <Frame>
+    ![ClickHouse に接続する](/images/integrations/data-visualization/dot_02.webp)
+  </Frame>
 </div>
 
 Dot は **クエリプッシュダウン** を使用します。大規模で負荷の高い集計処理は ClickHouse が担い、Dot は正確で信頼できる結果を返します。
 
 <div id="highlights">
-  ## 特長
+  ## 特長 {#highlights}
 </div>
 
 Dot は会話を通じて、データをより身近にします。
@@ -74,7 +64,7 @@ Dot は会話を通じて、データをより身近にします。
 * **スケーラブル**: クエリプッシュダウンを基盤とし、Dot のインテリジェンスと ClickHouse の高速性を組み合わせています。
 
 <div id="security">
-  ## セキュリティとガバナンス
+  ## セキュリティとガバナンス {#security}
 </div>
 
 Dot はエンタープライズ利用に対応しています。
@@ -86,7 +76,7 @@ Dot はエンタープライズ利用に対応しています。
 * **コンプライアンス**: SOC 2 Type I 認証を取得済み
 
 <div id="additional-resources">
-  ## 参考資料
+  ## 参考資料 {#additional-resources}
 </div>
 
 * Dot のウェブサイト: [https://www.getdot.ai/](https://www.getdot.ai/)

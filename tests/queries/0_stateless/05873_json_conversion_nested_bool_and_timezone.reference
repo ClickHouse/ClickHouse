@@ -1,0 +1,26 @@
+-- standalone nested UInt8 -> Bool CAST normalizes the byte
+1
+[1,0]
+1
+1
+1
+[1]
+1
+-- a zone-only or domain-only change keeps the values
+1767225600123
+[1767225600123]
+[1767225600]
+1767225600123
+[(1.5,2.5)]	Array(Tuple(Float64, Float64))
+[(1.5,2.5)]	Array(Point)
+-- JSON typed path UInt8 -> Bool normalizes, alone and with another path change
+1
+1
+[1,0]
+-- zone-only DateTime change keeps the instant with another path change
+1767225600	1767225600	1767225600000
+-- zone-only change inside a carrier keeps the instant
+1767225600	1767225600
+1767225600
+-- ALTER MODIFY COLUMN on MergeTree keeps the instant and normalizes Bool
+1767225600	1

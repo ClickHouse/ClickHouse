@@ -149,8 +149,8 @@ ORDER BY [...]
 可用的 HNSW 专用参数如下：
 
 * `<quantization>` 用于控制邻近图中向量的量化方式。可能值为 `f64`、`f32`、`f16`、`bf16`、`i8` 或 `b1`。默认值为 `bf16`。请注意，此参数不会影响底层列中向量的表示形式。
-* `<hnsw_max_connections_per_layer>` 用于控制每个图节点的邻居数，也称为 HNSW 超参数 `M`。默认值为 `32`。值为 `0` 表示使用默认值。
-* `<hnsw_candidate_list_size_for_construction>` 用于控制构建 HNSW 图期间动态候选列表的大小，也称为 HNSW 超参数 `ef_construction`。默认值为 `128`。值为 `0` 表示使用默认值。
+* `<hnsw_max_connections_per_layer>` 用于控制每个图节点的邻居数，也称为 HNSW 超参数 `M`。默认值为 `32`。值为 `0` 表示使用默认值。最大值为 `512`。
+* `<hnsw_candidate_list_size_for_construction>` 用于控制构建 HNSW 图期间动态候选列表的大小，也称为 HNSW 超参数 `ef_construction`。默认值为 `128`。值为 `0` 表示使用默认值。最大值为 `3200`。
 
 所有 HNSW 专用参数的默认值在大多数使用场景下都表现良好。
 因此，我们不建议自定义这些 HNSW 专用参数。
@@ -162,6 +162,7 @@ ORDER BY [...]
 * 向量相似度索引可以构建在计算表达式上 (例如 `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`) ，但这类索引之后无法用于近似邻居搜索。
 * 向量相似度索引要求底层列中的所有数组都必须包含 `<dimension>` 个元素——这一点会在创建索引时进行检查。为了尽早发现不满足此要求的情况，用户可以为向量列添加一个[约束](/zh/reference/statements/create/table#constraints)，例如 `CONSTRAINT same_length CHECK length(vectors) = 256`。
 * 同样，底层列中的数组值不能为空 (`[]`) ，也不能为默认值 (默认值同样是 `[]`) 。
+* 向量相似度索引只能在引擎为 `MergeTree` 或 `ReplicatedMergeTree` 的表上创建。该系列中的其他引擎 (例如 `ReplacingMergeTree` 或 `CollapsingMergeTree`) 不受支持，因为使用该索引时，`SELECT ... FINAL` 可能会返回错误结果。启用 MergeTree 设置 `allow_vector_similarity_index_in_specialized_merge_tree` 后，仍可在这些引擎上创建该索引。
 
 **估算存储和内存消耗**
 
@@ -175,22 +176,22 @@ ORDER BY [...]
 Storage consumption = Number of vectors * Dimension * Size of column data type
 ```
 
-以 [dbpedia dataset](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M) 为例：
+[dbpedia 数据集](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)示例：
 
 ```text
-存储消耗 = 100万 * 1536 * 4（Float32）= 6.1 GB
+Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
 ```
 
 必须先将向量相似度索引从磁盘完整加载到主内存中，才能执行搜索。
 同样，向量索引也是先在内存中完整构建，然后再保存到磁盘。
 
-加载向量索引所需的内存占用：
+加载向量索引所需的内存消耗：
 
 ```text
-索引中向量的内存占用 (mv) = 向量数量 * 维度 * 量化数据类型的大小
-内存图的内存占用 (mg) = 向量数量 * hnsw_max_connections_per_layer * Bytes_per_node_id (= 4) * Layer_node_repetition_factor (= 2)
+Memory for vectors in the index (mv) = Number of vectors * Dimension * Size of quantized data type
+Memory for in-memory graph (mg) = Number of vectors * hnsw_max_connections_per_layer * Bytes_per_node_id (= 4) * Layer_node_repetition_factor (= 2)
 
-内存消耗：mv + mg
+Memory consumption: mv + mg
 ```
 
 [dbpedia 数据集](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)示例：
@@ -226,7 +227,7 @@ ClickHouse 的查询优化器会尝试匹配上述查询模板，并利用可用
 
 高级用户可以为设置项 [hnsw&#95;candidate&#95;list&#95;size&#95;for&#95;search](/zh/reference/settings/session-settings/other#hnsw_candidate_list_size_for_search) (也称为 HNSW 超参数 &quot;ef&#95;search&quot;) 指定自定义值，以调整搜索过程中候选列表的大小 (例如 `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`) 。
 该设置项的默认值 256 在绝大多数场景下均能满足需求。
-设置值越高，精度越好，但性能开销也越大。
+设置值越高，准确性越好，但性能开销也越大。
 
 如果查询可以使用向量相似度索引，ClickHouse 会检查 SELECT 查询中提供的 LIMIT `<N>` 是否在合理范围内。
 更具体地说，如果 `<N>` 大于设置项 [max&#95;limit&#95;for&#95;vector&#95;search&#95;queries](/zh/reference/settings/session-settings/max#max_limit_for_vector_search_queries) 的值 (默认值为 100) ，则会返回错误。
@@ -267,14 +268,16 @@ LIMIT 10;
     └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-在此示例中，[dbpedia 数据集](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M) 中的 100 万个向量 (每个向量维度为 1536) 存储在 575 个粒度中，即每个粒度约 1.7k 行。该查询请求 10 个最近邻，向量相似度索引在 10 个独立粒度中找到这 10 个最近邻。查询执行期间将读取这 10 个粒度。
+在此示例中，[dbpedia 数据集](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M) 中的 100 万个向量 (每个向量维度为 1536) 存储在 575 个粒度中，即每个粒度约 1.7k 行。
+该查询请求 10 个最近邻，向量相似度索引在 10 个独立粒度中找到这 10 个最近邻。
+查询执行期间将读取这 10 个粒度。
 
 如果输出中包含 `Skip` 以及向量索引的名称和类型 (在本示例中为 `idx` 和 `vector_similarity`) ，则表示向量相似度索引已生效。
 在本例中，向量相似度索引跳过了四个粒度中的两个，即 50% 的数据。
 可跳过的粒度越多，索引的使用效率就越高。
 
 <Tip>
-  要强制使用索引，你可以在运行 SELECT 查询时启用设置 [force&#95;data&#95;skipping&#95;indices](/zh/reference/settings/session-settings/force#force_data_skipping_indices) (将索引名称作为该设置的值) 。
+  要强制使用索引，你可以在运行 SELECT 查询时启用设置 [force&#95;data&#95;skipping&#95;indices](/zh/reference/settings/session-settings/force#force_data_skipping_indexes) (将索引名称作为该设置的值) 。
 </Tip>
 
 **后过滤与前过滤**
