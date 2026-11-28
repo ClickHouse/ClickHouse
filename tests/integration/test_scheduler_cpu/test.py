@@ -9,6 +9,7 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -341,3 +342,57 @@ def test_slot_allocation_fairness():
     total = production + development
     if total > 1000: # do not check if CI is too slow to run 1000 threads in 3 seconds
         assert (abs(production / 3.0 - development) / total) < 0.05 # unfairness should be around 1 slot in theory, but we allow up to 5 percent
+
+
+def test_kill_and_timeout_while_waiting_for_cpu_slot():
+    node.query(
+        """
+        create resource cpu (master thread, worker thread);
+        create workload all settings max_concurrent_threads=1;
+        drop table if exists mv sync;
+        drop table if exists src sync;
+        drop table if exists dst sync;
+        create table dst (x UInt64, s String) engine = MergeTree order by x;
+        create table src (x UInt64) engine = Null;
+        create materialized view mv to dst as select x, toString(x) as s from src;
+    """
+    )
+
+    # The nested insert pipeline of an async INSERT ... SELECT waits for the only slot, held by the outer pipeline
+    with pytest.raises(QueryRuntimeException, match="TIMEOUT_EXCEEDED"):
+        node.query(
+            "insert into dst select number, toString(number) from numbers(1000000) settings workload='all', max_threads=1, max_block_size=10000, async_insert=1, async_insert_select_as_async_insert=1, max_execution_time=2",
+            timeout=60,
+        )
+
+    # The same for the pipeline of a materialized view
+    with pytest.raises(QueryRuntimeException, match="TIMEOUT_EXCEEDED"):
+        node.query(
+            "insert into src select number from numbers(10) settings workload='all', max_threads=1, async_insert=0, max_execution_time=2",
+            timeout=60,
+        )
+
+    # A query waiting for the slot of another query is killed while that query still runs
+    busy = BusyPeriod("all", 1)
+    try:
+        assert_eq_with_retry(node, "select inflight_requests from system.scheduler where resource='cpu' and type='inflight_limit'", "1", retry_count=600, sleep_time=0.1)
+
+        def waiting_query():
+            try:
+                node.query("select count() from numbers(10) settings workload='all'", query_id="waiting_for_slot")
+            except QueryRuntimeException:
+                pass
+
+        waiting = threading.Thread(target=waiting_query)
+        waiting.start()
+        assert_eq_with_retry(node, "select queue_length from system.scheduler where resource='cpu' and type='request_queue'", "1", retry_count=600, sleep_time=0.1)
+
+        node.query("kill query where query_id='waiting_for_slot' sync", timeout=30)
+        waiting.join(30)
+        assert not waiting.is_alive()
+        assert node.query("select count() from system.processes where query_id='busy_all'") == "1\n"
+    finally:
+        busy.release()
+        busy.background_thread.join()
+
+    node.query("drop table mv sync; drop table src sync; drop table dst sync")
