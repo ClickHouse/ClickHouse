@@ -18,7 +18,7 @@ ALTER TABLE prewhere_stats_group MATERIALIZE STATISTICS all;
 
 SET use_statistics = 1;
 
-SELECT explain FROM (
+SELECT trimLeft(explain) FROM (
     EXPLAIN PLAN actions = 1 SELECT count() FROM prewhere_stats_group WHERE a > 2500 AND b = 1 AND a < 2502
 ) WHERE explain LIKE '%Prewhere filter column%';
 

@@ -30,13 +30,13 @@ INSERT INTO test_i16 SELECT 15, 995 FROM numbers(999);
 INSERT INTO test_i16 SELECT 995, 995 FROM numbers(10);
 
 SELECT 'Float32 - expect b first:';
-SELECT replaceRegexpAll(explain, '__table1\\.', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM test_f32 WHERE a = 1.5 AND b = 1.5) WHERE explain LIKE '%Prewhere%';
+SELECT trimLeft(replaceRegexpAll(explain, '__table1\\.', '')) FROM (EXPLAIN actions=1 SELECT count(*) FROM test_f32 WHERE a = 1.5 AND b = 1.5) WHERE explain LIKE '%Prewhere%';
 
 SELECT 'Float64 - expect b first:';
-SELECT replaceRegexpAll(explain, '__table1\\.', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM test_f64 WHERE a = 1.5 AND b = 1.5) WHERE explain LIKE '%Prewhere%';
+SELECT trimLeft(replaceRegexpAll(explain, '__table1\\.', '')) FROM (EXPLAIN actions=1 SELECT count(*) FROM test_f64 WHERE a = 1.5 AND b = 1.5) WHERE explain LIKE '%Prewhere%';
 
 SELECT 'Int16 - expect b first:';
-SELECT replaceRegexpAll(explain, '__table1\\.', '') FROM (EXPLAIN actions=1 SELECT count(*) FROM test_i16 WHERE a = 15 AND b = 15) WHERE explain LIKE '%Prewhere%';
+SELECT trimLeft(replaceRegexpAll(explain, '__table1\\.', '')) FROM (EXPLAIN actions=1 SELECT count(*) FROM test_i16 WHERE a = 15 AND b = 15) WHERE explain LIKE '%Prewhere%';
 
 DROP TABLE test_f32;
 DROP TABLE test_f64;

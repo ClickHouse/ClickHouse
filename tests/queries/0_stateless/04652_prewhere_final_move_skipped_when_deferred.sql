@@ -27,7 +27,7 @@ SELECT '= sorting-key-only row policy is not deferred, so the move happens =';
 DROP ROW POLICY pol_prewhere_final_defer ON t_prewhere_final_defer;
 CREATE ROW POLICY pol_prewhere_final_defer ON t_prewhere_final_defer USING k != 100 TO ALL;
 
-SELECT replaceRegexpAll(explain, '__table1\.|_UInt8|_UInt16', '') FROM (EXPLAIN actions=1 SELECT k, cat FROM t_prewhere_final_defer FINAL WHERE k >= 1) WHERE explain LIKE '%Prewhere filter%';
+SELECT trimLeft(replaceRegexpAll(explain, '__table1\.|_UInt8|_UInt16', '')) FROM (EXPLAIN actions=1 SELECT k, cat FROM t_prewhere_final_defer FINAL WHERE k >= 1) WHERE explain LIKE '%Prewhere filter%';
 
 DROP ROW POLICY pol_prewhere_final_defer ON t_prewhere_final_defer;
 DROP TABLE t_prewhere_final_defer;
