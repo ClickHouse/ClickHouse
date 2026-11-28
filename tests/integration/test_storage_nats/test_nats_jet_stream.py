@@ -3070,6 +3070,195 @@ def test_hiding_credentials(nats_cluster):
     assert "nats_credential_file = \\'[HIDDEN]\\'" in  message
 
 
+def test_nats_stream_cursor(nats_cluster):
+    """`STREAM` reads the JetStream stream with its own ephemeral consumer, starting after the sequence
+    of the cursor {stream: sequence}, without acknowledging the messages of the durable consumer."""
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
+
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow';
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    messages = [json.dumps({"key": i, "value": i}) for i in range(3)]
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", messages))
+
+    def query(q):
+        return instance.query(q, settings={"enable_streaming_queries": 1})
+
+    # The messages have the stream sequences 1, 2 and 3.
+    everything = "0\n1\n2\n"
+    assert query("SELECT key FROM test.nats STREAM BOUNDED ORDER BY ALL") == everything
+    # Nothing was acknowledged, so the same messages are read again.
+    assert query("SELECT key FROM test.nats STREAM BOUNDED ORDER BY ALL") == everything
+
+    assert query("SELECT key FROM test.nats STREAM BOUNDED CURSOR {'test_stream': 1} ORDER BY ALL") == "1\n2\n"
+
+    # An unbounded stream waits for new messages.
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [json.dumps({"key": 3, "value": 3})]))
+    assert query("SELECT key FROM test.nats STREAM CURSOR {'test_stream': 3} LIMIT 1") == "3\n"
+
+    # An incremental refresh appends only the messages published after the previous refresh.
+    instance.query("CREATE TABLE test.nats_target (key UInt64) ENGINE = MergeTree ORDER BY key")
+    instance.query(
+        """CREATE MATERIALIZED VIEW test.nats_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL
+            TO test.nats_target EMPTY AS SELECT key FROM test.nats"""
+    )
+
+    def refresh():
+        instance.query("SYSTEM REFRESH VIEW test.nats_mv")
+        instance.query("SYSTEM WAIT VIEW test.nats_mv")
+        return instance.query("SELECT count(), sum(key) FROM test.nats_target")
+
+    assert refresh() == "4\t6\n"
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [json.dumps({"key": 4, "value": 4})]))
+    assert refresh() == "5\t10\n"
+    assert refresh() == "5\t10\n"
+    instance.query("DROP TABLE test.nats_mv")
+
+    # A table that reads one message per block, so that a query can stop the read before the end of the stream.
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer_small"))
+    instance.query(
+        """
+        CREATE TABLE test.nats_small (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer_small',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_max_block_size = 1;
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats_small")
+
+    def refresh_view(view, target):
+        instance.query(f"SYSTEM REFRESH VIEW {view}")
+        instance.query(f"SYSTEM WAIT VIEW {view}")
+        return instance.query(f"SELECT count(), sum(key) FROM {target}")
+
+    # A query that stops reading early has the result over all the messages of the bounded read, so the next
+    # refresh does not read them again.
+    instance.query("CREATE TABLE test.nats_distinct_target (key UInt64) ENGINE = MergeTree ORDER BY key")
+    instance.query(
+        """CREATE MATERIALIZED VIEW test.nats_distinct_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL
+            TO test.nats_distinct_target EMPTY AS SELECT DISTINCT toUInt64(0) AS key FROM test.nats_small"""
+    )
+    assert refresh_view("test.nats_distinct_mv", "test.nats_distinct_target") == "1\t0\n"
+    assert refresh_view("test.nats_distinct_mv", "test.nats_distinct_target") == "1\t0\n"
+    instance.query("DROP TABLE test.nats_distinct_mv")
+
+    # A read that is cut by a limit with the overflow mode `break` continues in the next refresh from the last
+    # message it returned: no message is appended twice or skipped.
+    instance.query("CREATE TABLE test.nats_break_target (key UInt64) ENGINE = MergeTree ORDER BY key")
+    instance.query(
+        """CREATE MATERIALIZED VIEW test.nats_break_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL
+            TO test.nats_break_target EMPTY AS SELECT key FROM test.nats_small
+            SETTINGS max_rows_to_read = 2, read_overflow_mode = 'break'"""
+    )
+    counts = []
+    for _ in range(5):
+        counts.append(refresh_view("test.nats_break_mv", "test.nats_break_target"))
+    assert counts[0] != "5\t10\n", counts
+    assert counts[-1] == "5\t10\n", counts
+    instance.query("DROP TABLE test.nats_break_mv")
+
+    # A read with an empty block would never fetch a message.
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer_zero"))
+    instance.query(
+        """
+        CREATE TABLE test.nats_zero (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer_zero',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_max_block_size = 0;
+        """
+    )
+    assert "BAD_ARGUMENTS" in instance.query_and_get_error(
+        "SELECT key FROM test.nats_zero STREAM BOUNDED", settings={"enable_streaming_queries": 1}
+    )
+
+    # The core NATS has no persistence, so there is nothing to stream from.
+    instance.query(
+        """
+        CREATE TABLE test.nats_core (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'core_subject',
+                     nats_format = 'JSONEachRow';
+        """
+    )
+    assert "ILLEGAL_STREAM" in instance.query_and_get_error(
+        "SELECT key FROM test.nats_core STREAM", settings={"enable_streaming_queries": 1}
+    )
+
+
+def test_nats_stream_concurrent_publishing(nats_cluster):
+    """A bounded `STREAM` finishes at the end of the stream at its start while publishing continues, and an
+    unbounded one returns the messages as they arrive, even if they are fewer than the block size."""
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
+
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow';
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.nats")
+
+    preloaded = 1000
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject",
+                                 [json.dumps({"key": i, "value": i}) for i in range(preloaded)]))
+
+    stop = threading.Event()
+
+    def publish_continuously():
+        key = preloaded
+        while not stop.is_set():
+            asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject",
+                                         [json.dumps({"key": key + i, "value": 0}) for i in range(10)]))
+            key += 10
+            stop.wait(0.05)
+
+    publisher = threading.Thread(target=publish_continuously)
+    publisher.start()
+    try:
+        settings = {"enable_streaming_queries": 1}
+        result = instance.query("SELECT count(), min(key) FROM test.nats STREAM BOUNDED", settings=settings, timeout=120)
+        count, min_key = map(int, result.split())
+        assert min_key == 0 and count >= preloaded
+
+        # Far fewer messages than `nats_max_block_size` arrive during a poll interval.
+        assert instance.query(
+            f"SELECT key >= {preloaded} FROM test.nats STREAM CURSOR {{'test_stream': {preloaded}}} LIMIT 1",
+            settings=settings, timeout=60) == "1\n"
+    finally:
+        stop.set()
+        publisher.join()
+
+    # The consumers created by the streaming reads are deleted, only the durable consumer of the table remains.
+    deadline = time.monotonic() + 30
+    while asyncio.run(get_stream_info(cluster, "test_stream")).state.consumer_count != 1:
+        assert time.monotonic() < deadline
+        time.sleep(0.5)
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
