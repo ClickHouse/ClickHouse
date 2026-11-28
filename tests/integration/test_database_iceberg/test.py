@@ -3255,6 +3255,8 @@ def test_namespace_serialized_plan_reads_table_as_written(started_cluster):
     """
     A serialized query plan names a table as `db`.`table`; the receiving server reads it as
     written and does not also try it as table `db.table` of its current database.
+    A cluster table function computes its header from a query printed the same way, and the
+    initiator reads the names of that query as written too.
     """
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]
@@ -3344,6 +3346,17 @@ def test_namespace_serialized_plan_reads_table_as_written(started_cluster):
         # a `Merge` table is read through a synthesized `SELECT`, which reads `default`.`M` as written too
         result = int(node1.query(f"SELECT count() FROM default.{DM}", settings={**on, "serialize_query_plan": 1}))
         assert result == 2, f"`Merge` table through a serialized plan: expected 2 rows, got {result}"
+
+        # a cluster table function analyzes the printed query, which names the table as `demo`.`X.T`, for its header
+        result = int(
+            node1.query(
+                f"USE {CATALOG_NAME}; SELECT count() FROM "
+                f"urlCluster('cluster_simple', 'http://node1:8123/?query=SELECT+5', 'TSV', 'x UInt64') "
+                f"WHERE x IN (SELECT count() FROM `{X}.{T}`)",
+                settings=on,
+            )
+        )
+        assert result == 1, f"cluster table function with a subquery over X.T (5 rows): expected 1, got {result}"
     finally:
         node1.query(f"DROP TABLE IF EXISTS default.{D}")
         node1.query(f"DROP TABLE IF EXISTS default.{D2}")

@@ -10440,6 +10440,8 @@ When the setting is enabled, the analyzer additionally:
   a filter from `additional_result_filter`. A `Buffer` table over
   such a table (for example, over a `Distributed` table) reads the rows it still holds through a query
   generated from the calling one, and table names in that query are read as written too.
+  A cluster table function (`s3Cluster`, `fileCluster`, `urlCluster` and the like) computes its header
+  from a query generated from the calling one, and table names in that query are read as written too.
   When `parallel_distributed_insert_select` runs an `INSERT ... SELECT` from a `Distributed` table (or from
   `remote` / `cluster` naming a table) into a `Distributed` table on the shards, the table of the shard is read
   through a rewritten query. On the local replica (with `prefer_localhost_replica`) the table names of that
