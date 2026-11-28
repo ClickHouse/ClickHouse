@@ -8,12 +8,15 @@
 #include <Common/ErrnoException.h>
 #include <Common/SignalHandlers.h>
 #include <Client/JWTProvider.h>
+#include <Core/Settings.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Common/config_version.h>
 #include "config.h"
 
 #include <unordered_set>
 #include <string>
+#include <fmt/ranges.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -223,6 +226,26 @@ void ClientApplicationBase::init(int argc, char ** argv)
         else
             printHelpMessage(options_description_non_verbose);
         exit(0); // NOLINT(concurrency-mt-unsafe)
+    }
+
+    /// Obsolete settings have no effect (or must be defined in the server configuration instead).
+    /// Refuse them on the command line, so that they are removed from scripts instead of being silently ignored.
+    /// With `--allow_merge_tree_settings`, `MergeTree` settings can be specified on the command line as well.
+    std::vector<String> obsolete_settings;
+    for (const auto & name : cmd_settings->getChangedAndObsoleteNames())
+        obsolete_settings.emplace_back(name);
+    for (const auto & change : cmd_merge_tree_settings->changes())
+        if (MergeTreeSettings::tryGetTierOfBuiltin(change.name) == SettingsTierType::OBSOLETE)
+            obsolete_settings.emplace_back(change.name);
+
+    if (!obsolete_settings.empty())
+    {
+        bool single_element = obsolete_settings.size() == 1;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Obsolete setting{} ['{}'] {} specified on the command line. Obsolete settings have no effect or must be defined "
+            "in the server configuration instead, and they will be removed. Please remove {} from the command line. "
+            "See 'SELECT name, description FROM system.settings WHERE is_obsolete'",
+            single_element ? "" : "s", fmt::join(obsolete_settings, "', '"), single_element ? "is" : "are", single_element ? "it" : "them");
     }
 
     addOptionsToTheClientConfiguration(options);

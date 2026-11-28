@@ -19,7 +19,7 @@ do
     EXPECTED="file('${DATA_DIR}/mode_${mode}/expected/*.parquet', Parquet)"
 
     # `clickhouse-local` allows reading only inside the current directory.
-    (cd "${DATA_DIR}" && ${CLICKHOUSE_LOCAL} --allow_experimental_delta_kernel_rs=1 -q "
+    (cd "${DATA_DIR}" && ${CLICKHOUSE_LOCAL} -q "
     SELECT ByteType, array_of_structs, map_of_rows, nested_struct FROM ${TABLE} ORDER BY ByteType;
     SELECT ByteType, array_of_structs.ab, mapValues(map_of_rows).ab FROM ${TABLE} ORDER BY ByteType;
     SELECT count() FROM ${TABLE} WHERE has(array_of_structs.ab, 3);
