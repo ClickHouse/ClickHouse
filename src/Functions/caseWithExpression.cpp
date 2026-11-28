@@ -16,6 +16,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool case_with_expression_null_equals_null;
 }
 
 namespace ErrorCodes
@@ -48,6 +49,7 @@ public:
         , fun_transform(FunctionFactory::instance().get("transform", context_))
         , fun_multi_if(FunctionFactory::instance().get("multiIf", context_))
         , use_variant_as_common_type(context_->getSettingsRef()[Setting::use_variant_as_common_type])
+        , null_equals_null(context_->getSettingsRef()[Setting::case_with_expression_null_equals_null])
     {
     }
     [[nodiscard]] bool isVariadic() const override { return true; }
@@ -67,6 +69,7 @@ public:
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] String getName() const override { return name; }
+    void updateHash(SipHash & hash) const override { hash.update(null_equals_null); }
 
     [[nodiscard]] String getSignatureString() const override
     {
@@ -88,27 +91,11 @@ public:
         return number_of_arguments == 0 ? ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION : ErrorCodes::BAD_ARGUMENTS;
     }
 
-    /// Helper function to implement CASE WHEN equality semantics where NULL = NULL is true
+    /// Helper function to implement equality for a simple `CASE` expression.
     [[nodiscard]] ColumnPtr caseWhenEquals(const ColumnWithTypeAndName & expr, const ColumnWithTypeAndName & when_value, size_t input_rows_count) const
     {
-        // for CASE WHEN semantics, NULL should match NULL
-        // we need: if (isNull(expr)) then (isNull(when)) else if (isNull(when)) then 0 else (expr = when)
-
-        const auto & is_null_func = fun_is_null;
-        const auto & if_func = fun_if;
         const auto & equals_func = fun_equals;
 
-        // isNull(expr)
-        ColumnsWithTypeAndName is_null_expr_args{expr};
-        auto is_null_expr = is_null_func->build(is_null_expr_args)
-            ->execute(is_null_expr_args, std::make_shared<DataTypeUInt8>(), input_rows_count, false);
-
-        // isNull(when)
-        ColumnsWithTypeAndName is_null_when_args{when_value};
-        auto is_null_when = is_null_func->build(is_null_when_args)
-            ->execute(is_null_when_args, std::make_shared<DataTypeUInt8>(), input_rows_count, false);
-
-        // expr = when
         ColumnsWithTypeAndName equals_args{expr, when_value};
 
         auto function_base = equals_func->build(equals_args);
@@ -129,6 +116,19 @@ public:
                 ->execute(if_null_args, std::make_shared<DataTypeUInt8>(), input_rows_count, false);
         }
 
+        /// Mask NULL operands independently of the comparison function's own null handling.
+        /// Legacy `Variant` comparison can return a non-nullable true value for two NULLs.
+        const auto & is_null_func = fun_is_null;
+        const auto & if_func = fun_if;
+
+        ColumnsWithTypeAndName is_null_expr_args{expr};
+        auto is_null_expr = is_null_func->build(is_null_expr_args)
+            ->execute(is_null_expr_args, std::make_shared<DataTypeUInt8>(), input_rows_count, false);
+
+        ColumnsWithTypeAndName is_null_when_args{when_value};
+        auto is_null_when = is_null_func->build(is_null_when_args)
+            ->execute(is_null_when_args, std::make_shared<DataTypeUInt8>(), input_rows_count, false);
+
         // if (isNull(when)) then 0 else (expr = when)
         ColumnPtr zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
         ColumnsWithTypeAndName inner_if_args
@@ -140,11 +140,11 @@ public:
         auto inner_if_result = if_func->build(inner_if_args)
             ->execute(inner_if_args, std::make_shared<DataTypeUInt8>(), input_rows_count, false);
 
-        // if (isNull(expr)) then (isNull(when)) else inner_if_result
+        // if (isNull(expr)) then (isNull(when) when enabled, else 0) else inner_if_result
         ColumnsWithTypeAndName outer_if_args
         {
             {is_null_expr, std::make_shared<DataTypeUInt8>(), ""},
-            {is_null_when, std::make_shared<DataTypeUInt8>(), ""},
+            {null_equals_null ? is_null_when : zero_const, std::make_shared<DataTypeUInt8>(), ""},
             {inner_if_result, std::make_shared<DataTypeUInt8>(), ""}
         };
         return if_func->build(outer_if_args)
@@ -218,11 +218,13 @@ public:
             /// `transform` uses standard equality (`NULL != NULL`), so skip it when WHEN values
             /// are Nullable; `multiIf` via `caseWhenEquals` handles CASE's `NULL = NULL` semantics.
             /// See https://github.com/ClickHouse/ClickHouse/issues/101262.
+            /// The `multiIf` path also handles the standard-compatible setting.
             /// Also skip Dynamic/Variant: their hash-based lookup keys on type discriminator.
             auto src_supertype = tryGetLeastSupertype(src_array_types);
             auto dst_supertype = tryGetLeastSupertype(dst_array_types);
             auto expr_type = removeNullable(args.front().type);
             bool can_use_transform = src_supertype && dst_supertype
+                && null_equals_null
                 && !isNullableOrLowCardinalityNullable(src_supertype)
                 && !isDynamic(expr_type)
                 && !isVariant(expr_type);
@@ -292,7 +294,7 @@ public:
         // Convert CASE expression into multiIf(expr = when1, then1, expr = when2, then2, ..., else)
         for (size_t i = 1; i < args.size() - 1; i += 2)
         {
-            // use CASE WHEN equality semantics (NULL = NULL is true)
+            // Use the configured equality semantics for a simple `CASE` expression.
             auto condition = caseWhenEquals(args.front(), args[i], input_rows_count);
 
             multi_if_args.push_back({condition, std::make_shared<DataTypeUInt8>(), ""});
@@ -316,6 +318,7 @@ private:
     FunctionOverloadResolverPtr fun_transform;
     FunctionOverloadResolverPtr fun_multi_if;
     bool use_variant_as_common_type;
+    bool null_equals_null;
 };
 
 }
@@ -323,7 +326,7 @@ private:
 REGISTER_FUNCTION(CaseWithExpression)
 {
     FunctionDocumentation::Description description = R"(
-Implements the `CASE expr WHEN val1 THEN result1 ... ELSE default END` expression. Internally transforms into a series of `multiIf` calls using equality comparison. Note that `NULL = NULL` evaluates to true in this context, unlike standard SQL equality.
+Implements the `CASE expr WHEN val1 THEN result1 ... ELSE default END` expression. Internally transforms into a series of `multiIf` calls using equality comparison. By default, `NULL` matches `NULL` in this context. Set `case_with_expression_null_equals_null` to `false` to use the SQL-standard behavior, where a `NULL` comparison does not select a `WHEN` branch.
     )";
     FunctionDocumentation::Syntax syntax = "caseWithExpression(expr, val1, result1[, val2, result2, ...], default)";
     FunctionDocumentation::Arguments arguments = {
