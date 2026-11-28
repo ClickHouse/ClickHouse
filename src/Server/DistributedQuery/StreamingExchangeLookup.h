@@ -19,6 +19,10 @@ struct Settings;
 /// native protocol: `network_compression_method` and `network_zstd_compression_level`.
 CompressionCodecPtr streamingExchangeCompressionCodec(const Settings & settings);
 
+/// The largest packet body of the exchange: `distributed_plan_exchange_max_packet_bytes`, checked to be
+/// large enough for the end-of-stream packet and small enough for the size arithmetic.
+UInt64 streamingExchangeMaxPacketBytes(const Settings & settings);
+
 ExchangeLookupPtr createStreamingExchangeLookup(
     const String & query_id,
     ExchangeConnectionsPtr connections,
@@ -27,7 +31,9 @@ ExchangeLookupPtr createStreamingExchangeLookup(
     /// Auth token presented when opening the exchange connection; empty leaves the
     /// connection unauthenticated.
     const String & auth_token,
-    CompressionCodecPtr codec);
+    CompressionCodecPtr codec,
+    /// See `distributed_plan_exchange_max_packet_bytes`.
+    UInt64 max_packet_body_bytes);
 
 }
 

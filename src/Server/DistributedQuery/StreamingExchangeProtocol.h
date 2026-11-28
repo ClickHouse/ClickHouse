@@ -30,10 +30,13 @@ namespace StreamingExchangeProtocol
     /// Sanity cap for the body of a Hello packet.
     static constexpr UInt64 MAX_HELLO_BODY_BYTES = 64 * 1024;
 
-    /// Sanity cap for the body of a Data packet. The peer-supplied size is allocated
-    /// before any payload is read, so an unbounded value would let a buggy or hostile
-    /// sink make the source allocate arbitrarily large buffers.
-    static constexpr UInt64 MAX_DATA_PACKET_BODY_BYTES = 256ULL * 1024 * 1024;
+    /// The size of the Data packets a sender makes: a larger chunk is sent as several packets, each
+    /// with a range of its rows. See `StreamingExchangeSerializingTransform` for the larger packets.
+    static constexpr UInt64 TARGET_DATA_PACKET_BODY_BYTES = 16ULL * 1024 * 1024;
+
+    /// The largest body of a Data packet, by default: the default of the setting
+    /// `distributed_plan_exchange_max_packet_bytes`, and the fixed limit of versions without it.
+    static constexpr UInt64 DEFAULT_MAX_DATA_PACKET_BODY_BYTES = 256ULL * 1024 * 1024;
 
     /// Per-recv/send timeout applied to the Hello exchange on the server side.
     /// The handshake runs inline on the accept thread, so a silent peer must not
@@ -104,7 +107,7 @@ namespace StreamingExchangeProtocol
     size_t writeEndOfStreamPacket(WriteBuffer & out);
 
     /// Writes the body size into the header of the packet that starts at `packet` and is
-    /// `packet_bytes` long in total.
+    /// `packet_bytes` long in total. The caller keeps the body within the limit of the receiver.
     void finishDataPacket(char * packet, size_t packet_bytes);
 
     /// The header of a stream of packets: one `String` column with one packet per row. The

@@ -19,6 +19,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentMetrics.h>
@@ -33,6 +34,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
@@ -174,11 +176,13 @@ struct LoopbackExchange
     LoopbackExchange() { server.start(); }
 };
 
-/// Runs `pipeline` to the end; returns the code it threw with, if any.
-std::optional<int> run(QueryPipeline & pipeline, size_t threads)
+/// Runs `pipeline` to the end, or until `should_cancel` returns true; returns the code it threw with, if any.
+std::optional<int> run(QueryPipeline & pipeline, size_t threads, const std::function<bool()> & should_cancel = {})
 {
     pipeline.setNumThreads(threads);
     CompletedPipelineExecutor executor(pipeline);
+    if (should_cancel)
+        executor.setCancelCallback(should_cancel, /*interactive_timeout_ms_=*/ 10);
     try
     {
         executor.execute();
@@ -193,7 +197,12 @@ std::optional<int> run(QueryPipeline & pipeline, size_t threads)
 /// The sending task: `chunks_per_stream` streams, each serializing its chunks, into one real sink on
 /// `connection`, as the send steps arrange it.
 QueryPipeline makeSendingPipeline(
-    const SharedHeader & header, std::vector<Chunks> chunks_per_stream, FutureConnectionPtr connection, bool advisory = false)
+    const SharedHeader & header,
+    std::vector<Chunks> chunks_per_stream,
+    FutureConnectionPtr connection,
+    bool advisory = false,
+    CompressionCodecPtr codec = CompressionCodecFactory::instance().getDefaultCodec(),
+    size_t packet_target_bytes = StreamingExchangeProtocol::TARGET_DATA_PACKET_BODY_BYTES)
 {
     Pipes pipes;
     for (auto & chunks : chunks_per_stream)
@@ -201,9 +210,10 @@ QueryPipeline makeSendingPipeline(
 
     QueryPipelineBuilder builder;
     builder.init(Pipe::unitePipes(std::move(pipes)));
-    builder.addSimpleTransform([](const SharedHeader & stream_header)
+    builder.addSimpleTransform([&](const SharedHeader & stream_header)
     {
-        return std::make_shared<StreamingExchangeSerializingTransform>(stream_header, CompressionCodecFactory::instance().getDefaultCodec());
+        return std::make_shared<StreamingExchangeSerializingTransform>(
+            stream_header, codec, StreamingExchangeProtocol::DEFAULT_MAX_DATA_PACKET_BODY_BYTES, advisory, packet_target_bytes);
     });
     builder.resize(1);
     builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
@@ -807,7 +817,8 @@ ExchangeLookupPtr makeLookup(ExchangeConnectionsPtr connections, const ExchangeS
         sources,
         /*cancellation=*/ nullptr,
         /*auth_token=*/ String{},
-        CompressionCodecFactory::instance().getDefaultCodec());
+        CompressionCodecFactory::instance().getDefaultCodec(),
+        StreamingExchangeProtocol::DEFAULT_MAX_DATA_PACKET_BODY_BYTES);
 }
 
 /// Like `receiveFrom`, with the source built as a receive step builds it: by `receiveExchangeStreams`
@@ -864,7 +875,7 @@ TEST(StreamingExchangeTransport, SourceRejectsMalformedPackets)
             EXPECT_EQ(receiveFrom(peer, source_hands_packets).first, ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT) << "an unknown packet type";
         }
         {
-            ExchangeTest::FakePeer peer(sendAfterHandshake(rawHeader(StreamingExchangeProtocol::PacketType::Data, StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES + 1)));
+            ExchangeTest::FakePeer peer(sendAfterHandshake(rawHeader(StreamingExchangeProtocol::PacketType::Data, StreamingExchangeProtocol::DEFAULT_MAX_DATA_PACKET_BODY_BYTES + 1)));
             EXPECT_EQ(receiveFrom(peer, source_hands_packets).first, ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT) << "an oversized body";
         }
         {
@@ -1483,7 +1494,7 @@ QueryPipeline makeBuildTaskPipeline(LoopbackExchange & exchange, const ExchangeS
     auto lookup = makeLookup(exchange.connections, ExchangeStreamSources{});
     QueryPipelineBuilder builder;
     builder.init(Pipe(std::make_shared<SourceFromSingleChunk>(runtimeFilterPartialsHeader(), makePartialChunk(10))));
-    builder.addSimpleTransform([&](const SharedHeader & header) { return lookup->createSerializer(header, stream.exchange_id); });
+    builder.addSimpleTransform([&](const SharedHeader & header) { return lookup->createSerializer(header, stream.exchange_id, /*advisory=*/ true); });
     builder.setSinks([&](const SharedHeader & header, Pipe::StreamType) { return lookup->createSink(header, stream, /*advisory=*/ true); });
     return QueryPipelineBuilder::getPipeline(std::move(builder));
 }
@@ -1582,6 +1593,129 @@ TEST(RuntimeFilterMergeTask, AReceiverThatNeverConnectsDoesNotHoldBackTheOthers)
     EXPECT_EQ(build.cancel(), std::nullopt);
     EXPECT_EQ(countRows(sink->chunks), 1u);
     EXPECT_EQ(merge.cancel(), std::nullopt);
+}
+
+/// A chunk much larger than one packet should be is sent as several packets, each with a part of its rows,
+/// so that neither end holds the whole chunk serialized. The values arrive complete and in order.
+TEST(StreamingExchangeTransport, LargeChunkIsSentAsSeveralPackets)
+{
+    MainThreadStatus::getInstance();
+
+    /// 40 MiB of values that do not compress.
+    constexpr size_t rows = 5 * 1024 * 1024;
+
+    for (bool source_hands_packets : {false, true})
+    {
+        SCOPED_TRACE(fmt::format("source_hands_packets={}", source_hands_packets));
+
+        UInt64 state = 42;
+        Chunk chunk = makeIncompressibleChunk(rows, state);
+        const auto expected = chunk.getColumns().front();
+
+        std::vector<Chunks> chunks_per_stream_list(1);
+        chunks_per_stream_list[0].push_back(std::move(chunk));
+
+        auto header = makeHeader();
+        LoopbackExchange exchange;
+        auto sending = makeSendingPipeline(header, std::move(chunks_per_stream_list), exchange);
+        auto sink = std::make_shared<CollectingSink>(header);
+        auto receiving = makeReceivingPipeline(header, exchange.server.port(), source_hands_packets, sink);
+
+        std::optional<int> sending_code;
+        std::thread sender([&] { sending_code = run(sending, 1); });
+        const auto receiving_code = run(receiving, 1);
+        sender.join();
+
+        EXPECT_EQ(sending_code, std::nullopt);
+        EXPECT_EQ(receiving_code, std::nullopt);
+
+        size_t data_chunks = 0;
+        size_t received_rows = 0;
+        bool same_values = true;
+        const auto & expected_values = assert_cast<const ColumnUInt64 &>(*expected).getData();
+        for (const auto & received : sink->chunks)
+        {
+            if (received.getNumRows() == 0)
+                continue;
+            ++data_chunks;
+            const auto & values = assert_cast<const ColumnUInt64 &>(*received.getColumns().front()).getData();
+            for (size_t row = 0; row < values.size() && same_values; ++row)
+                same_values = received_rows + row < expected_values.size() && values[row] == expected_values[received_rows + row];
+            received_rows += values.size();
+        }
+
+        EXPECT_GE(data_chunks, 2u);
+        EXPECT_EQ(received_rows, rows);
+        EXPECT_TRUE(same_values);
+    }
+}
+
+/// A column compressed in memory reports its compressed size, so the chunk looks small enough for one
+/// packet. When the packet turns out too large, the chunk is decompressed before it is cut into pieces.
+TEST(StreamingExchangeTransport, CompressedColumnThatIsLargerThanItsSizeIsSplit)
+{
+    MainThreadStatus::getInstance();
+
+    constexpr size_t rows = 4;
+    constexpr size_t value_bytes = 1024 * 1024;
+    constexpr size_t packet_target_bytes = value_bytes;
+
+    auto type = std::make_shared<DataTypeString>();
+    auto header = std::make_shared<const Block>(Block{ColumnWithTypeAndName(type->createColumn(), type, "s")});
+
+    auto strings = ColumnString::create();
+    for (size_t row = 0; row < rows; ++row)
+        strings->insert(Field(std::string(value_bytes, static_cast<char>('a' + row))));
+    const ColumnPtr expected = std::move(strings);
+    const ColumnPtr compressed = expected->compress(/*force_compression=*/ true);
+    ASSERT_TRUE(typeid_cast<const ColumnCompressed *>(compressed.get()));
+    ASSERT_LT(compressed->byteSize(), packet_target_bytes);
+
+    std::vector<Chunks> chunks_per_stream_list(1);
+    chunks_per_stream_list[0].push_back(Chunk(Columns{compressed}, rows));
+
+    LoopbackExchange exchange;
+    auto sending = makeSendingPipeline(
+        header,
+        std::move(chunks_per_stream_list),
+        exchange.connections->getConnection("query", "stream"),
+        /*advisory=*/ false,
+        CompressionCodecFactory::instance().get("NONE", {}),
+        packet_target_bytes);
+    auto sink = std::make_shared<CollectingSink>(header);
+    auto receiving = makeReceivingPipeline(header, exchange.server.port(), /*source_hands_packets=*/ false, sink);
+
+    /// Without the cancel, the receiver would wait for the rest of the stream after the sender fails.
+    std::optional<int> sending_code;
+    std::atomic<bool> sending_failed = false;
+    std::thread sender([&]
+    {
+        sending_code = run(sending, 1);
+        sending_failed = sending_code.has_value();
+    });
+    const auto receiving_code = run(receiving, 1, [&] { return sending_failed.load(); });
+    sender.join();
+
+    EXPECT_EQ(sending_code, std::nullopt);
+    EXPECT_EQ(receiving_code, std::nullopt);
+
+    size_t data_chunks = 0;
+    size_t received_rows = 0;
+    bool same_values = true;
+    for (const auto & received : sink->chunks)
+    {
+        if (received.getNumRows() == 0)
+            continue;
+        ++data_chunks;
+        const auto & values = *received.getColumns().front();
+        for (size_t row = 0; row < values.size() && same_values; ++row)
+            same_values = received_rows + row < rows && values.getDataAt(row) == expected->getDataAt(received_rows + row);
+        received_rows += values.size();
+    }
+
+    EXPECT_GE(data_chunks, 2u);
+    EXPECT_EQ(received_rows, rows);
+    EXPECT_TRUE(same_values);
 }
 
 #endif

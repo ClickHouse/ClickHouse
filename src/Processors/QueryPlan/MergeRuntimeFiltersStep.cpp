@@ -117,7 +117,7 @@ MergeRuntimeFiltersStep::updatePipeline(QueryPipelineBuilders pipelines, const B
     /// exchange) serves every destination and the copies share its packets.
     pipeline->addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
     {
-        return settings.exchange_lookup->createSerializer(header, destination_streams.front().exchange_id);
+        return settings.exchange_lookup->createSerializer(header, destination_streams.front().exchange_id, /*advisory=*/ true);
     });
 
     if (destination_streams.size() > 1)

@@ -63,8 +63,9 @@ struct IExchangeLookup : boost::noncopyable
     /// A processor that turns data chunks into the form the sinks of exchange `exchange_id` send.
     /// The send steps put one on every stream in front of a sink, so serialization runs on all
     /// streams instead of in the single sink of a destination. Returns nullptr when the sinks send
-    /// data chunks as they are.
-    virtual std::shared_ptr<IProcessor> createSerializer(SharedHeader /*input_header*/, const String & /*exchange_id*/)
+    /// data chunks as they are. `advisory`: the data is optional for the receiver (a runtime filter),
+    /// as for `createSink`; data that cannot be sent is dropped instead of throwing.
+    virtual std::shared_ptr<IProcessor> createSerializer(SharedHeader /*input_header*/, const String & /*exchange_id*/, bool /*advisory*/)
     {
         return nullptr;
     }

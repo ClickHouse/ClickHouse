@@ -6,9 +6,9 @@
 namespace DB
 {
 
-/// Largest serialized filter state a receiver accepts. Equal to the streaming exchange packet limit
-/// (a `static_assert` in `DistributedPlanExecutor.cpp` checks it); persisted and in-memory exchanges
-/// have no limit of their own, so this one applies to them.
+/// Largest serialized filter state a receiver accepts, for every kind of exchange. A streaming exchange
+/// also has its own packet limit (`distributed_plan_exchange_max_packet_bytes`): a state that does not
+/// fit in one packet is not sent, and the receiver does without the filter.
 constexpr UInt64 MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES = 256ULL * 1024 * 1024;
 
 /// Header of the stream carrying serialized partial runtime filters between tasks.

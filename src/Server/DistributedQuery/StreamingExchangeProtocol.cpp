@@ -41,7 +41,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int EXCHANGE_PEER_DISCONNECTED;
-    extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 }
 
@@ -168,13 +167,6 @@ size_t writeEndOfStreamPacket(WriteBuffer & out)
 void finishDataPacket(char * packet, size_t packet_bytes)
 {
     const size_t packet_data_size = packet_bytes - sizeof(PacketHeader);
-
-    /// The receiver rejects Data packets above this limit; fail here with a clear, local error
-    /// instead of sending one the peer would reject. Splitting large chunks is not implemented yet.
-    if (packet_data_size > MAX_DATA_PACKET_BODY_BYTES)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Exchange data packet of {} bytes exceeds the maximum {}; splitting large chunks is not implemented",
-            packet_data_size, MAX_DATA_PACKET_BODY_BYTES);
 
     /// memcpy: the header may sit at an unaligned offset of the buffer.
     static_assert(sizeof(PacketHeader::bytes_size) == sizeof(packet_data_size));
