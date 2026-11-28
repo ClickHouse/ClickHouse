@@ -37,6 +37,7 @@ ReplicatedMergeTreeSinkPatch::~ReplicatedMergeTreeSinkPatch()
 {
     auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeSinkPatch::~ReplicatedMergeTreeSinkPatch");
     update_holder.reset();
+    storage.merge_selecting_task->schedule();
 }
 
 void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper)
