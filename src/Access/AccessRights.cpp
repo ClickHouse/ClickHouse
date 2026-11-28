@@ -38,6 +38,10 @@ namespace
             if (left.full_name.size() != right.full_name.size())
                 return left.full_name.size() < right.full_name.size();
 
+            /// Wildcards before exact names: `db*` covers `db`, so its element must be applied first.
+            if (left.wildcard != right.wildcard)
+                return left.wildcard;
+
             /// Grants before partial revokes.
             if (left.is_partial_revoke != right.is_partial_revoke)
                 return right.is_partial_revoke; /// if left is grant, right is partial revoke, we assume left < right

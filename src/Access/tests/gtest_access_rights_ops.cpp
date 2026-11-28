@@ -98,13 +98,13 @@ TEST(AccessRights, GrantWildcard)
     root.grantWildcard(AccessType::INSERT, "default", "t");
     ASSERT_EQ(root.isGranted(AccessType::SELECT, "default", "t"), true);
     ASSERT_EQ(root.isGranted(AccessType::INSERT, "default", "t"), true);
-    ASSERT_EQ(root.toString(), "GRANT SELECT ON default.t, GRANT INSERT ON default.t*");
+    ASSERT_EQ(root.toString(), "GRANT INSERT ON default.t*, GRANT SELECT ON default.t");
 
     root.revoke(AccessType::INSERT, "default", "t");
     ASSERT_EQ(root.isGranted(AccessType::SELECT, "default", "t"), true);
     ASSERT_EQ(root.isGranted(AccessType::INSERT, "default", "t"), false);
     ASSERT_EQ(root.isGranted(AccessType::INSERT, "default", "test"), true);
-    ASSERT_EQ(root.toString(), "GRANT SELECT ON default.t, GRANT INSERT ON default.t*, REVOKE INSERT ON default.t");
+    ASSERT_EQ(root.toString(), "GRANT INSERT ON default.t*, GRANT SELECT ON default.t, REVOKE INSERT ON default.t");
 
     root = {};
     root.grant(AccessType::SELECT, "default", "t");
@@ -235,6 +235,51 @@ TEST(AccessRights, GrantWildcard)
     ASSERT_EQ(root.isGranted(AccessType::INSERT, "db", "table"), true);
     ASSERT_EQ(root.isGranted(AccessType::INSERT, "db", "other_table"), false);
     ASSERT_EQ(root.toString(), "GRANT SELECT ON db*.* WITH GRANT OPTION, GRANT INSERT ON db.`table`");
+}
+
+TEST(AccessRights, WildcardBeforeExactNameInElements)
+{
+    /// The elements are applied in the order of `getElements`, so `REVOKE ... ON dbx*.*` must precede `GRANT ... ON dbx.*`.
+    AccessRights root;
+    root.grantWildcard(AccessType::SELECT, "db");
+    root.revokeWildcard(AccessType::SELECT, "dbx");
+    root.grant(AccessType::SELECT, "dbx");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON db*.*, REVOKE SELECT ON dbx*.*, GRANT SELECT ON dbx.*");
+    AccessRights restored{root.getElements()};
+    ASSERT_TRUE(restored.isGranted(AccessType::SELECT, "dbx"));
+    ASSERT_FALSE(restored.isGranted(AccessType::SELECT, "dbx1"));
+    ASSERT_EQ(restored, root);
+
+    root = {};
+    root.grant(AccessType::SELECT, "db");
+    root.revokeWildcard(AccessType::SELECT, "db", "t");
+    root.grant(AccessType::SELECT, "db", "t");
+    ASSERT_EQ(root.toString(), "GRANT SELECT ON db.*, REVOKE SELECT ON db.t*, GRANT SELECT ON db.t");
+    restored = AccessRights{root.getElements()};
+    ASSERT_TRUE(restored.isGranted(AccessType::SELECT, "db", "t"));
+    ASSERT_FALSE(restored.isGranted(AccessType::SELECT, "db", "t1"));
+    ASSERT_EQ(restored, root);
+
+    root = {};
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.revokeWildcardGrantOption(AccessType::SELECT, "db");
+    root.grantWithGrantOption(AccessType::SELECT, "db");
+    ASSERT_EQ(root.toString(),
+        "GRANT SELECT ON *.* WITH GRANT OPTION, REVOKE GRANT OPTION SELECT ON db*.*, GRANT SELECT ON db.* WITH GRANT OPTION");
+    restored = AccessRights{root.getElements()};
+    ASSERT_TRUE(restored.hasGrantOption(AccessType::SELECT, "db"));
+    ASSERT_FALSE(restored.hasGrantOption(AccessType::SELECT, "db1"));
+    ASSERT_EQ(restored, root);
+
+    /// The same after a union, like the rights of two roles.
+    AccessRights lhs;
+    AccessRights rhs;
+    lhs.grant(AccessType::SELECT);
+    lhs.revokeWildcard(AccessType::SELECT, "db");
+    rhs.grant(AccessType::SELECT, "db");
+    lhs.makeUnion(rhs);
+    ASSERT_EQ(lhs.toString(), "GRANT SELECT ON *.*, REVOKE SELECT ON db*.*, GRANT SELECT ON db.*");
+    ASSERT_TRUE(AccessRights{lhs.getElements()}.isGranted(AccessType::SELECT, "db"));
 }
 
 TEST(AccessRights, Union)
