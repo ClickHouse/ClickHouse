@@ -103,7 +103,11 @@ static void coalescePreliminaryDistinctOutput(QueryPlan::Node & node)
 }
 
 static std::optional<StreamDisjointnessProperty> applyStreamDisjointness(
-    QueryPlan::Node & node, std::optional<StreamDisjointnessProperty> property, const QueryPlanOptimizationSettings & settings)
+    QueryPlan::Node & node,
+    std::optional<StreamDisjointnessProperty> property,
+    const QueryPlanOptimizationSettings & settings,
+    const UnorderedSetWithMemoryTracking<const QueryPlan::Node *> & distinct_to_aggregation_candidates,
+    QueryPlan::Nodes & nodes)
 {
     IQueryPlanStep & step = *node.step;
 
@@ -155,6 +159,11 @@ static std::optional<StreamDisjointnessProperty> applyStreamDisjointness(
             distinct->skipStreamMerging();
             return property;
         }
+
+        /// Aggregation deduplicates with more streams than the hash scatter has, and merges its two-level tables
+        /// bucket by bucket in parallel. Its output streams are not known to be disjoint.
+        if (distinct_to_aggregation_candidates.contains(&node) && tryConvertDistinctToAggregation(node, nodes, settings))
+            return {};
 
         if (!can_scatter)
             return {};
@@ -291,8 +300,12 @@ static std::optional<StreamDisjointnessProperty> applyStreamDisjointness(
     return {};
 }
 
-void applyStreamDisjointness(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
+void applyStreamDisjointness(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
+    const auto distinct_to_aggregation_candidates = optimization_settings.convert_distinct_to_aggregation
+        ? collectDistinctToAggregationCandidates(root)
+        : UnorderedSetWithMemoryTracking<const QueryPlan::Node *>{};
+
     /// An absent property means that the streams are not known to be disjoint.
     std::optional<StreamDisjointnessProperty> property;
     auto propagate = [&](QueryPlan::Node & node)
@@ -302,7 +315,7 @@ void applyStreamDisjointness(const QueryPlanOptimizationSettings & optimization_
         if (node.children.size() != 1)
             property.reset();
 
-        property = applyStreamDisjointness(node, std::move(property), optimization_settings);
+        property = applyStreamDisjointness(node, std::move(property), optimization_settings, distinct_to_aggregation_candidates, nodes);
     };
 
     Stack stack;

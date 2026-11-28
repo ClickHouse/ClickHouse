@@ -77,7 +77,7 @@ static bool requiresDistinctPreservation(const IQueryPlanStep & step)
     return typeid_cast<const ReadFromRecursiveCTEStep *>(&step) || dynamic_cast<const ReadFromStreamLikeEngine *>(&step);
 }
 
-std::unordered_set<const QueryPlan::Node *> collectDistinctToAggregationCandidates(const QueryPlan::Node & root)
+UnorderedSetWithMemoryTracking<const QueryPlan::Node *> collectDistinctToAggregationCandidates(const QueryPlan::Node & root)
 {
     /// Positional limits constrain their inputs even when no limit hint reaches `DISTINCT`.
     /// Source and auxiliary stream restrictions constrain consumers, so those propagate upwards.
@@ -89,8 +89,8 @@ std::unordered_set<const QueryPlan::Node *> collectDistinctToAggregationCandidat
         bool requires_distinct_preservation = false;
     };
 
-    std::unordered_set<const QueryPlan::Node *> candidates;
-    std::vector<Frame> stack{{.node = &root}};
+    UnorderedSetWithMemoryTracking<const QueryPlan::Node *> candidates;
+    VectorWithMemoryTracking<Frame> stack{{.node = &root}};
     while (!stack.empty())
     {
         auto & frame = stack.back();
@@ -133,16 +133,14 @@ bool tryConvertDistinctToAggregation(
     QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
 {
     const auto & distinct = assert_cast<const DistinctStep &>(*node.step);
+    chassert(!distinct.isPreliminary() && !distinct.preservesInputOrder() && !distinct.skipsStreamMerging());
 
-    /// A final `DISTINCT` over partition-disjoint streams deduplicates each stream on its own and never
-    /// merges them, so it is already parallel and has no single-threaded merge to replace.
-    if (distinct.isPreliminary() || distinct.getLimitHint() != 0 || distinct.skipsStreamMerging())
+    /// A limit hint lets the step stop early. A sorted input lets it deduplicate in order. Rows that are already
+    /// distinct leave it only the limit on rows to enforce.
+    if (distinct.getLimitHint() != 0 || !distinct.getSortDescription().empty() || distinct.isDeduplicationSkipped())
         return false;
 
-    if (!distinct.getSortDescription().empty())
-        return false;
-
-    const auto & limits = distinct.getSetSizeLimits();
+    const auto & limits = distinct.getSettings().set_size_limits;
 
     /// Aggregation's producers decide where to stop in `break` mode, whereas the final `DISTINCT`
     /// stops against a single global set. Retain that behavior when a stopping bound is configured.

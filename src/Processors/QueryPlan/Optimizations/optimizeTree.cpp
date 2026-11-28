@@ -1041,7 +1041,7 @@ void optimizeTreeSecondPass(
         optimizeLimitForAggregationInOrder(root);
 
     /// Propagate stream disjointness so that DISTINCT / LIMIT BY / GROUP BY can skip merging streams.
-    applyStreamDisjointness(optimization_settings, root);
+    applyStreamDisjointness(optimization_settings, root, nodes);
 
     /// Before the sharding, which splits all inputs of the multiway join by the same ranges.
     if (optimization_settings.query_plan_join_multiway_merge && !optimization_settings.make_distributed_plan)
