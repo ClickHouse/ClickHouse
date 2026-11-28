@@ -90,3 +90,19 @@ EXPLAIN SYNTAX SELECT CAST(0.1, 'Decimal256(76)');
 EXPLAIN SYNTAX SELECT CAST(0.1 AS Float64);
 EXPLAIN SYNTAX SELECT CAST(1 AS DateTime);
 EXPLAIN SYNTAX SELECT CAST([0.1] AS Array(Decimal32(2)));
+
+-- A number in hexadecimal or binary, or with digit separators, is read as the same number written in decimal
+-- by a type that reads it exactly, also when it does not fit 64 bits or has more digits than a Float64 keeps.
+SELECT -0x8000000000000001::Int128, CAST(-0X8000000000000001 AS Int128), 0x10000000000000001::UInt128;
+SELECT 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF::UInt256;
+SELECT -9_223_372_036_854_775_809::Int128, 0.1_0000_0000_0000_0000_0001::Decimal256(76);
+SELECT [-0x8000000000000001, 0x10000000000000001]::Array(Int128);
+CREATE TEMPORARY TABLE t_wide (x Int128);
+INSERT INTO t_wide VALUES (-0x8000000000000001::Int128), (-0x8000000000000002::Int128), (-9_223_372_036_854_775_811::Int128);
+SELECT * FROM t_wide ORDER BY x DESC;
+SELECT formatQuerySingleLine('SELECT -0x8000000000000001::Int128, CAST(0x10000000000000001 AS UInt128), [-0x8000000000000001]::Array(Int128), 0xFF::IPv4') AS formatted,
+    formatQuerySingleLine(formatted) = formatted;
+-- Every other type keeps reading the number: `255` is not the `IPv4` that `0xFF` is.
+SELECT 0xFF::IPv4, 0b11111111::IPv4, [0xFF]::Array(IPv4);
+-- An integer wider than 256 bits is not rewritten.
+SELECT 0x10000000000000000000000000000000000000000000000000000000000000000::Decimal256(0); -- { serverError ARGUMENT_OUT_OF_BOUND }
