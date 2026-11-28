@@ -14,7 +14,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/SecretArgumentsSpec.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Storages/Kafka/Kafka_fwd.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
@@ -383,6 +383,20 @@ void registerStorageKafka(StorageFactory & factory)
             /// secret and makes the collection name optional, so a named argument can be the first one.
             .secret_settings = Kafka::settingsToHide(),
             .settings_as_arguments = true,
+            .custom = [](FunctionSecretArgumentsFinder & finder)
+            {
+                for (size_t i = 0; i < finder.function->arguments->size(); ++i)
+                {
+                    const auto arg = finder.function->arguments->at(i)->getFunction();
+                    if (!arg || arg->name() != "equals" || !arg->arguments || arg->arguments->size() != 2)
+                        continue;
+
+                    String key;
+                    if (FunctionSecretArgumentsFinder::tryGetStringFromArgument(*arg->arguments->at(0), &key)
+                        && KafkaConfigLoader::isSensitiveNamedCollectionKey(key))
+                        finder.markSecretArgument(i, /* argument_is_named= */ true);
+                }
+            },
         },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
@@ -500,7 +514,16 @@ For `ENGINE = Kafka(named_collection)`:
 
 When a named collection is used, **the global server `<kafka>` block in `config.xml` is not merged**. Each collection must include every extended property the table needs (including TLS files and `security.protocol` when it is not set via non-empty table `SETTINGS`).
 
-A named collection created with `CREATE NAMED COLLECTION` accepts only `librdkafka` properties on the [allowlist](https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/Kafka/KafkaConfigLoader.cpp), such as `security.protocol`, `sasl.username`, and `fetch.min.bytes`. If a table uses a collection with an unlisted property, ClickHouse returns `BAD_ARGUMENTS`. To use other supported properties, such as `sasl.kerberos.keytab` or `sasl.oauthbearer.token.endpoint.url`, define the collection in the server configuration file. This restriction also applies to properties added with `ALTER NAMED COLLECTION` after the table was created.
+A named collection created with `CREATE NAMED COLLECTION` accepts only `librdkafka` properties on the [allowlist](https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/Kafka/KafkaConfigLoader.cpp). The allowlist has all properties of `librdkafka` except the ones that use a resource of the ClickHouse server:
+
+- Paths of files, libraries, and commands, such as `ssl.ca.location`, `sasl.kerberos.keytab`, `sasl.oauthbearer.assertion.file`, and `plugin.library.paths`.
+- `offset.store.method`, which selects a local file to store offsets.
+- `sasl.oauthbearer.metadata.authentication.type`, which sends the token of the cloud instance of the server to the broker.
+- `internal.termination.signal` and `log.queue`.
+
+If a table uses a collection with one of these properties, ClickHouse returns `BAD_ARGUMENTS`. To use them, define the collection in the server configuration file. This restriction also applies to properties added with `ALTER NAMED COLLECTION` after the table was created.
+
+The host of `sasl.oauthbearer.token.endpoint.url` in a named collection created with SQL must be allowed by [remote_url_allow_hosts](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts), like the brokers.
 
 In a named collection created with SQL, pass the contents of the file instead of its path: `ssl.key.pem`, `ssl.certificate.pem`, `ssl.ca.pem`, `https.ca.pem`, and `sasl.oauthbearer.assertion.private.key.pem`. The value `probe` of `ssl.ca.location` and `https.ca.location` is also accepted, because it is not a path.
 

@@ -5,7 +5,6 @@ kafka.ssl_ca_location: Kafka property `ssl.ca.location` can only be specified in
 kafka.ssl_crl_location: Kafka property `ssl.crl.location` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
 kafka.ssl_keystore_location: Kafka property `ssl.keystore.location` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
 kafka.ssl_engine_location: Kafka property `ssl.engine.location` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
-kafka.ssl_engine_id: Kafka property `ssl.engine.id` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
 kafka.ssl_providers: Kafka property `ssl.providers` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
 kafka.https_ca_location: Kafka property `https.ca.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `https.ca.pem` instead. (BAD_ARGUMENTS)
 kafka.sasl_kerberos_keytab: Kafka property `sasl.kerberos.keytab` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)

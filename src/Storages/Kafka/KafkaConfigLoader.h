@@ -59,5 +59,6 @@ struct KafkaConfigLoader
     /// The same check is done when the configuration of a consumer or a producer is loaded, because the named
     /// collection can change while the table exists.
     static void checkNamedCollection(const NamedCollection & collection);
+    static bool isSensitiveNamedCollectionKey(std::string_view key);
 };
 }
