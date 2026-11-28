@@ -231,6 +231,29 @@ static bool prewhereFiltersByTopKThreshold(const PrewhereInfoPtr & prewhere_info
     return std::ranges::any_of(output->children, is_top_k_filter);
 }
 
+bool MergeTreeSelectProcessor::partStoresColumnsAsRead(
+    const IMergeTreeDataPart & part, const AlterConversions * alter_conversions, const NamesAndTypesList & columns)
+{
+    if (alter_conversions
+        && (alter_conversions->hasMutations() || alter_conversions->hasPatches() || !alter_conversions->getRenameMap().empty()
+            || !alter_conversions->getAllUpdatedColumns().empty()))
+        return false;
+
+    const auto & serialization_infos = part.getSerializationInfos();
+    for (const auto & column : columns)
+    {
+        /// Not a subcolumn or a virtual column, not missing in the part, not dropped by a pending mutation (maybe re-added since).
+        if (!part.getColumnPosition(column.name) || serialization_infos.isMissingColumn(column.name)
+            || part.isSystemColumnInvalidated(column.name) || (alter_conversions && alter_conversions->isColumnDropped(column.name)))
+            return false;
+
+        auto column_in_part = part.tryGetColumn(column.name);
+        if (!column_in_part || !column_in_part->type->equals(*column.type) || !part.hasColumnFiles(*column_in_part))
+            return false;
+    }
+    return true;
+}
+
 MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     MergeTreeReadPoolPtr pool_,
     MergeTreeSelectAlgorithmPtr algorithm_,
@@ -283,6 +306,11 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
                     prewhere_condition_for_query_condition_cache.emplace(
                         queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_settings_salt),
                         prewhere_info->prewhere_actions.getNames()[0]);
+                    /// The rows passing PREWHERE are exactly the rows matching it, unless it does not filter or only some rows are read.
+                    write_prewhere_match_counts_to_query_condition_cache = reader_settings.query_condition_cache_write_match_counts
+                        && prewhere_info->need_filter && !reader_settings.query_condition_cache_top_k_salt && !lazy_materializing_rows;
+                    if (write_prewhere_match_counts_to_query_condition_cache)
+                        prewhere_columns_for_match_counts = prewhere_info->prewhere_actions.getRequiredColumns();
                     break;
                 }
 
@@ -533,11 +561,16 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             /// Some rows survived PREWHERE, but individual granules within this batch may
             /// still have been fully filtered out. Record those granules immediately so that
             /// future queries can skip them without waiting for an entire batch to be zero.
-            if (prewhere_info && !res.unmatched_mark_ranges.empty()
+            if (prewhere_info
                 && !current_task.readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
                 && !current_task.appliesMutationsBeforePrewhere()
                 && !row_level_filter)
-                current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
+            {
+                if (!res.unmatched_mark_ranges.empty())
+                    current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
+                if (write_prewhere_match_counts_to_query_condition_cache && !res.mark_match_counts.empty())
+                    current_task.addPrewhereMarkMatchCounts(res.mark_match_counts);
+            }
         }
 
         return ChunkAndProgress{
@@ -558,7 +591,11 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
         && !current_task.readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
         && !current_task.appliesMutationsBeforePrewhere()
         && !row_level_filter)
+    {
         current_task.addPrewhereUnmatchedMarks(res.read_mark_ranges);
+        if (write_prewhere_match_counts_to_query_condition_cache && !res.mark_match_counts.empty())
+            current_task.addPrewhereMarkMatchCounts(res.mark_match_counts);
+    }
 
     return {Chunk(), res.num_read_rows, res.num_read_bytes, false, std::move(res.read_mark_ranges)};
 }
@@ -665,6 +702,21 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                         task->getPrewhereUnmatchedMarks(),
                         data_part_info->getIndexGranularity().getMarksCount(),
                         data_part_info->getIndexGranularity().hasFinalMark());
+
+                    if (write_prewhere_match_counts_to_query_condition_cache && prewhere_condition_for_query_condition_cache
+                        && !task->getPrewhereMarkMatchCounts().empty()
+                        && partStoresColumnsAsRead(
+                            *data_part_info->getDataPart(), task->getInfo().alter_conversions.get(), prewhere_columns_for_match_counts))
+                    {
+                        query_condition_cache->writeMatchCounts(
+                            data_part_info->getDataPart()->storage.getStorageID().uuid,
+                            part_name,
+                            prewhere_condition_for_query_condition_cache->first,
+                            prewhere_condition_for_query_condition_cache->second,
+                            task->getPrewhereMarkMatchCounts(),
+                            data_part_info->getIndexGranularity().getMarksCount(),
+                            data_part_info->getIndexGranularity().hasFinalMark());
+                    }
                 }
 
                 task = algorithm->getNewTask(*pool, task.get());
