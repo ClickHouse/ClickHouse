@@ -1,0 +1,91 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "5e5fbaea-e478-4fcd-a9e5-90c4f6056826",
+  "location" : "s3a://warehouse/partitioning_with_null_value",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1741595751611,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "c1",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "c2",
+      "required" : false,
+      "type" : "date"
+    }, {
+      "id" : 3,
+      "name" : "c3",
+      "required" : false,
+      "type" : "double"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "c1",
+      "transform" : "identity",
+      "source-id" : 1,
+      "field-id" : 1000
+    }, {
+      "name" : "c2",
+      "transform" : "identity",
+      "source-id" : 2,
+      "field-id" : 1001
+    } ]
+  } ],
+  "last-partition-id" : 1001,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.format.default" : "PARQUET",
+    "write.parquet.compression-codec" : "zstd",
+    "commit.retry.num-retries" : "4"
+  },
+  "current-snapshot-id" : 90806248637524814,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 90806248637524814,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 90806248637524814,
+    "timestamp-ms" : 1741595751611,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20250307_214705_00009_sdejt",
+      "trino_user" : "trino",
+      "changed-partition-count" : "0",
+      "total-records" : "0",
+      "total-files-size" : "0",
+      "total-data-files" : "0",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "engine-version" : "471",
+      "engine-name" : "trino",
+      "iceberg-version" : "Apache Iceberg 1.7.1 (commit 4a432839233f2343a9eae8255532f911f06358ef)"
+    },
+    "manifest-list" : "s3a://warehouse/partitioning_with_null_value/metadata/snap-90806248637524814-1-0515af81-651e-42e0-92f8-e8f55839a5ce.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1741595751611,
+    "snapshot-id" : 90806248637524814
+  } ],
+  "metadata-log" : [ ]
+}

@@ -1,0 +1,166 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "7247381d-b06d-43f1-b312-0ce7e5129130",
+  "location" : "s3a://warehouse/bucket_partitioning",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1741365214180,
+  "last-column-id" : 10,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "col_int",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col_long",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 3,
+      "name" : "col_decimal",
+      "required" : false,
+      "type" : "decimal(12, 2)"
+    }, {
+      "id" : 4,
+      "name" : "col_date",
+      "required" : false,
+      "type" : "date"
+    }, {
+      "id" : 5,
+      "name" : "col_time",
+      "required" : false,
+      "type" : "time"
+    }, {
+      "id" : 6,
+      "name" : "col_timestamp",
+      "required" : false,
+      "type" : "timestamp"
+    }, {
+      "id" : 7,
+      "name" : "col_timestamptz",
+      "required" : false,
+      "type" : "timestamptz"
+    }, {
+      "id" : 8,
+      "name" : "col_string",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 9,
+      "name" : "col_uuid",
+      "required" : false,
+      "type" : "uuid"
+    }, {
+      "id" : 10,
+      "name" : "col_varbinary",
+      "required" : false,
+      "type" : "binary"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "col_int_bucket",
+      "transform" : "bucket[2]",
+      "source-id" : 1,
+      "field-id" : 1000
+    }, {
+      "name" : "col_long_bucket",
+      "transform" : "bucket[3]",
+      "source-id" : 2,
+      "field-id" : 1001
+    }, {
+      "name" : "col_decimal_bucket",
+      "transform" : "bucket[4]",
+      "source-id" : 3,
+      "field-id" : 1002
+    }, {
+      "name" : "col_date_bucket",
+      "transform" : "bucket[5]",
+      "source-id" : 4,
+      "field-id" : 1003
+    }, {
+      "name" : "col_time_bucket",
+      "transform" : "bucket[6]",
+      "source-id" : 5,
+      "field-id" : 1004
+    }, {
+      "name" : "col_timestamp_bucket",
+      "transform" : "bucket[100]",
+      "source-id" : 6,
+      "field-id" : 1005
+    }, {
+      "name" : "col_timestamptz_bucket",
+      "transform" : "bucket[123]",
+      "source-id" : 7,
+      "field-id" : 1006
+    }, {
+      "name" : "col_string_bucket",
+      "transform" : "bucket[42]",
+      "source-id" : 8,
+      "field-id" : 1007
+    }, {
+      "name" : "col_uuid_bucket",
+      "transform" : "bucket[55]",
+      "source-id" : 9,
+      "field-id" : 1008
+    }, {
+      "name" : "col_varbinary_bucket",
+      "transform" : "bucket[812]",
+      "source-id" : 10,
+      "field-id" : 1009
+    } ]
+  } ],
+  "last-partition-id" : 1009,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.format.default" : "PARQUET",
+    "write.parquet.compression-codec" : "zstd",
+    "commit.retry.num-retries" : "4"
+  },
+  "current-snapshot-id" : 8928121299234260333,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 8928121299234260333,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 8928121299234260333,
+    "timestamp-ms" : 1741365214180,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20250307_163007_00007_sdejt",
+      "trino_user" : "trino",
+      "changed-partition-count" : "0",
+      "total-records" : "0",
+      "total-files-size" : "0",
+      "total-data-files" : "0",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "engine-version" : "471",
+      "engine-name" : "trino",
+      "iceberg-version" : "Apache Iceberg 1.7.1 (commit 4a432839233f2343a9eae8255532f911f06358ef)"
+    },
+    "manifest-list" : "s3a://warehouse/bucket_partitioning/metadata/snap-8928121299234260333-1-c5e0a865-4a76-41b8-a80c-ba21dbea7714.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1741365214180,
+    "snapshot-id" : 8928121299234260333
+  } ],
+  "metadata-log" : [ ]
+}

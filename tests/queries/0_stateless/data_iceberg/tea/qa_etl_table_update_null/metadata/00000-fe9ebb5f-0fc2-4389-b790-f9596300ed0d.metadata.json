@@ -1,0 +1,81 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "53fb4e20-4569-494e-9d74-09b05dda95ee",
+  "location" : "s3a://warehouse/qa_etl_table_update_null",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1742812316689,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "text_field",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "int_field",
+      "required" : false,
+      "type" : "int"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.format.default" : "PARQUET",
+    "write.parquet.compression-codec" : "zstd",
+    "commit.retry.num-retries" : "4"
+  },
+  "current-snapshot-id" : 4531705079736119272,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 4531705079736119272,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 4531705079736119272,
+    "timestamp-ms" : 1742812316689,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20250324_103156_00000_2t5ie",
+      "trino_user" : "trino",
+      "changed-partition-count" : "0",
+      "total-records" : "0",
+      "total-files-size" : "0",
+      "total-data-files" : "0",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "engine-version" : "471",
+      "engine-name" : "trino",
+      "iceberg-version" : "Apache Iceberg 1.7.1 (commit 4a432839233f2343a9eae8255532f911f06358ef)"
+    },
+    "manifest-list" : "s3a://warehouse/qa_etl_table_update_null/metadata/snap-4531705079736119272-1-c993262e-35e3-40f2-a79a-5ee9c669ec53.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1742812316689,
+    "snapshot-id" : 4531705079736119272
+  } ],
+  "metadata-log" : [ ]
+}

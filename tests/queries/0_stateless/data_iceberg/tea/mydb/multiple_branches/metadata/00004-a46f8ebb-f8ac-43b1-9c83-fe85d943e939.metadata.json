@@ -1,0 +1,146 @@
+{
+    "format-version": 2,
+    "table-uuid": "9e74e1b4-acd8-41e2-b773-50f6eaf64a32",
+    "location": "s3://warehouse/mydb/multiple_branches",
+    "last-sequence-number": 2,
+    "last-updated-ms": 1781616547241,
+    "last-column-id": 2,
+    "current-schema-id": 1,
+    "schemas": [
+        {
+            "type": "struct",
+            "schema-id": 0,
+            "fields": [
+                {
+                    "id": 1,
+                    "name": "a",
+                    "required": false,
+                    "type": "int"
+                },
+                {
+                    "id": 2,
+                    "name": "b",
+                    "required": false,
+                    "type": "int"
+                }
+            ]
+        },
+        {
+            "type": "struct",
+            "schema-id": 1,
+            "fields": [
+                {
+                    "id": 1,
+                    "name": "a",
+                    "required": false,
+                    "type": "int"
+                }
+            ]
+        }
+    ],
+    "default-spec-id": 0,
+    "partition-specs": [
+        {
+            "spec-id": 0,
+            "fields": []
+        }
+    ],
+    "last-partition-id": 999,
+    "default-sort-order-id": 0,
+    "sort-orders": [
+        {
+            "order-id": 0,
+            "fields": []
+        }
+    ],
+    "properties": {
+        "owner": "root",
+        "write.parquet.compression-codec": "zstd"
+    },
+    "current-snapshot-id": 4741018521999590032,
+    "refs": {
+        "new_branch": {
+            "snapshot-id": 7178038598552999887,
+            "type": "branch"
+        },
+        "main": {
+            "snapshot-id": 4741018521999590032,
+            "type": "branch"
+        }
+    },
+    "snapshots": [
+        {
+            "sequence-number": 1,
+            "snapshot-id": 7178038598552999887,
+            "timestamp-ms": 1781616534369,
+            "summary": {
+                "operation": "append",
+                "spark.app.id": "local-1781616422580",
+                "added-data-files": "3",
+                "added-records": "3",
+                "added-files-size": "1778",
+                "changed-partition-count": "1",
+                "total-records": "3",
+                "total-files-size": "1778",
+                "total-data-files": "3",
+                "total-delete-files": "0",
+                "total-position-deletes": "0",
+                "total-equality-deletes": "0"
+            },
+            "manifest-list": "s3://warehouse/mydb/multiple_branches/metadata/snap-7178038598552999887-1-b9813fdd-5012-46c4-98e5-a385775e2755.avro",
+            "schema-id": 0
+        },
+        {
+            "sequence-number": 2,
+            "snapshot-id": 4741018521999590032,
+            "parent-snapshot-id": 7178038598552999887,
+            "timestamp-ms": 1781616547236,
+            "summary": {
+                "operation": "append",
+                "spark.app.id": "local-1781616422580",
+                "added-data-files": "3",
+                "added-records": "3",
+                "added-files-size": "1158",
+                "changed-partition-count": "1",
+                "total-records": "6",
+                "total-files-size": "2936",
+                "total-data-files": "6",
+                "total-delete-files": "0",
+                "total-position-deletes": "0",
+                "total-equality-deletes": "0"
+            },
+            "manifest-list": "s3://warehouse/mydb/multiple_branches/metadata/snap-4741018521999590032-1-0e0682b9-5e9f-40ed-bd36-b24cdf7237f6.avro",
+            "schema-id": 1
+        }
+    ],
+    "statistics": [],
+    "partition-statistics": [],
+    "snapshot-log": [
+        {
+            "timestamp-ms": 1781616534369,
+            "snapshot-id": 7178038598552999887
+        },
+        {
+            "timestamp-ms": 1781616547236,
+            "snapshot-id": 4741018521999590032
+        }
+    ],
+    "metadata-log": [
+        {
+            "timestamp-ms": 1781616529693,
+            "metadata-file": "s3://warehouse/mydb/multiple_branches/metadata/00000-b74a3b4e-f58a-4fee-af9c-143f3acf19f3.metadata.json"
+        },
+        {
+            "timestamp-ms": 1781616534386,
+            "metadata-file": "s3://warehouse/mydb/multiple_branches/metadata/00001-5b20ec5a-954c-4255-819b-b9e5a0aed300.metadata.json"
+        },
+        {
+            "timestamp-ms": 1781616536616,
+            "metadata-file": "s3://warehouse/mydb/multiple_branches/metadata/00002-f7f7376d-e187-4385-8637-0f9ed893133d.metadata.json"
+        },
+        {
+            "timestamp-ms": 1781616542698,
+            "metadata-file": "s3://warehouse/mydb/multiple_branches/metadata/00003-da8e633b-d951-4c49-8a56-7eb643259bcb.metadata.json"
+        }
+    ]
+}

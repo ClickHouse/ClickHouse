@@ -1,0 +1,81 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "f680da2e-60ba-43f6-9ba3-e2a25790c193",
+  "location" : "s3a://warehouse/no_partitioning",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1741623447800,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "c1",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "c2",
+      "required" : false,
+      "type" : "date"
+    }, {
+      "id" : 3,
+      "name" : "c3",
+      "required" : false,
+      "type" : "double"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.format.default" : "PARQUET",
+    "write.parquet.compression-codec" : "zstd",
+    "commit.retry.num-retries" : "4"
+  },
+  "current-snapshot-id" : 4752200045239310452,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 4752200045239310452,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 4752200045239310452,
+    "timestamp-ms" : 1741623447800,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20250310_161727_00003_i9wr4",
+      "trino_user" : "trino",
+      "changed-partition-count" : "0",
+      "total-records" : "0",
+      "total-files-size" : "0",
+      "total-data-files" : "0",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "engine-version" : "471",
+      "engine-name" : "trino",
+      "iceberg-version" : "Apache Iceberg 1.7.1 (commit 4a432839233f2343a9eae8255532f911f06358ef)"
+    },
+    "manifest-list" : "s3a://warehouse/no_partitioning/metadata/snap-4752200045239310452-1-115f159d-0e8c-4af2-8d7e-9fd6540236e5.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1741623447800,
+    "snapshot-id" : 4752200045239310452
+  } ],
+  "metadata-log" : [ ]
+}

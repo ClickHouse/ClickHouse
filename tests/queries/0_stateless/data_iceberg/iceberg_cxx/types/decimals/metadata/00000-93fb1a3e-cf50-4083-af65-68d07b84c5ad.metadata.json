@@ -1,0 +1,119 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "64951afd-bcb0-46f6-b663-892a0c2fe8e2",
+  "location" : "s3://warehouse/types/decimals",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1748507779670,
+  "last-column-id" : 10,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "col0",
+      "required" : false,
+      "type" : "decimal(6, 3)"
+    }, {
+      "id" : 2,
+      "name" : "col1",
+      "required" : false,
+      "type" : "decimal(16, 10)"
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : "decimal(19, 11)"
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : "decimal(20, 11)"
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : "decimal(21, 11)"
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : "decimal(22, 11)"
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : "decimal(23, 11)"
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : "decimal(24, 11)"
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "decimal(25, 11)"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "decimal(26, 11)"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "root",
+    "created-at" : "2025-05-29T08:36:17.883355840Z",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 7566918053174708835,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 7566918053174708835,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 7566918053174708835,
+    "timestamp-ms" : 1748507779670,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1748507775536",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "3232",
+      "changed-partition-count" : "1",
+      "total-records" : "1",
+      "total-files-size" : "3232",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "engine-version" : "3.5.1",
+      "app-id" : "local-1748507775536",
+      "engine-name" : "spark",
+      "iceberg-version" : "Apache Iceberg 1.8.0 (commit c277c2014a1b37fe755cfe37f173b6465bb8cb73)"
+    },
+    "manifest-list" : "s3://warehouse/types/decimals/metadata/snap-7566918053174708835-1-26d9b3c8-c8e7-4a35-ae5f-0bf7bec65734.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1748507779670,
+    "snapshot-id" : 7566918053174708835
+  } ],
+  "metadata-log" : [ ]
+}
