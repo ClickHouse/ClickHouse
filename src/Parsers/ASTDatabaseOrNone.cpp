@@ -11,7 +11,10 @@ void ASTDatabaseOrNone::formatImpl(WriteBuffer & ostr, const FormatSettings &, F
         ostr << "NONE";
         return;
     }
-    ostr << backQuoteIfNeed(database_name);
+    // Always back-quote the database name to avoid collision with the NONE keyword.
+    // Using backQuoteIfNeed would emit an unquoted NONE, which the parser would then
+    // read back as the sentinel (no default database) instead of the database name.
+    ostr << backQuote(database_name);
 }
 
 }
