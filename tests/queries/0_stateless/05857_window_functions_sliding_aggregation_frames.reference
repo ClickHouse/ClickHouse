@@ -28,5 +28,5 @@ series current row unbounded following, default setting	140000	0	0	0
 series 5000 preceding 4999 following, block size 1000	140000	0	0	0
 series 5000 preceding 4999 following	140000	0	0	0
 series 5000 preceding 4999 following, default setting	140000	0	0	0
-floats, block size 7	2017	0	0	0
-floats, block size 65505	2017	0	0	0
+floats, block size 7	2017	0	0	0	0	1	396	343	450
+floats, block size 65505	2017	0	0	0	0	1	396	343	450
