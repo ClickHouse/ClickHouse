@@ -11037,7 +11037,7 @@ bool StorageReplicatedMergeTree::addOpsToDropAllPartsInPartition(
 
     if (detach && supportsLightweightUpdate())
     {
-        /// clearLockedBlockNumbersInPartition above waited for the updates that allocated block numbers in the range, so their patches are visible here.
+        /// The wait in clearLockedBlockNumbersInPartition above makes the patches of in-flight updates in the range visible here.
         auto sync_timeout_ms = getContext()->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
         if (!waitForProcessingQueue(sync_timeout_ms, SyncReplicaMode::LIGHTWEIGHT, {}))
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to sync replica with timeout {} to satisfy update_sequential_consistency", sync_timeout_ms);
@@ -11106,7 +11106,7 @@ void StorageReplicatedMergeTree::dropAllPartsInPartitions(
         /// Just update version, because merges assignment relies on it
         ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "log", "", -1));
 
-        /// Remove the deduplication blocks only after every partition passed the checks, so that a rejected query keeps them.
+        /// Only after every partition passed the checks, so a rejected query keeps its deduplication blocks.
         for (const auto & entry : entries)
         {
             auto drop_range_info = MergeTreePartInfo::fromPartName(entry->new_part_name, format_version);
