@@ -8,8 +8,8 @@
 -- Accepted shapes: a plain and a subquery constraint, the argument-less functions an over-broad screen
 -- would break, and `greater()`, whose argument list is present but empty.
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (a UInt8 CODEC(LZ4), b UInt8 STATISTICS(tdigest), INDEX i a TYPE minmax GRANULARITY 1, CONSTRAINT c CHECK a > 0, CONSTRAINT d CHECK a IN (SELECT 1), CONSTRAINT e CHECK greater()) ENGINE = MergeTree ORDER BY a'));
--- `ASTColumnsApplyTransformer` owns `lambda` and `parameters` outside `IAST::children`, which is what the
--- rejection walks, so these two shapes lie outside it and must keep round-tripping unchanged.
+-- The rejection also walks `lambda` and `parameters` of `ASTColumnsApplyTransformer`, which are children of it,
+-- so these two shapes must keep round-tripping unchanged.
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (a UInt8, CONSTRAINT c CHECK COLUMNS(''a'') APPLY (x -> x > 0), CONSTRAINT d CHECK COLUMNS(''a'') APPLY quantile(0.5)) ENGINE = MergeTree ORDER BY a'));
 
 -- Each deletion below must leave a parseable document holding exactly one copy of the member, otherwise a
