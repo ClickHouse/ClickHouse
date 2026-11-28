@@ -227,8 +227,19 @@ void ASTCreateWasmFunctionQuery::readJSON(const Poco::JSON::Object & json)
         bool has_bare_type = false;
         for (const auto & argument : ast->children)
         {
-            if (argument->as<ASTNameTypePair>())
+            if (const auto * name_type_pair = argument->as<ASTNameTypePair>())
+            {
+                /// `ParserCreateFunctionQuery` builds this list with `ParserNameTypePairList`, which
+                /// never attaches an element `DEFAULT` expression (that shape exists only for
+                /// `Tuple`/`Nested` elements and is normalized away by `pullUpTupleElementDefaults`).
+                /// A restored `default_expression` would format as parser-impossible SQL
+                /// (`ARGUMENTS (x UInt8 DEFAULT 1)`) while `validateAndGetDefinition` silently
+                /// ignores it, so reject it at the deserialization boundary.
+                if (name_type_pair->default_expression)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "'arguments' name-type pair cannot have a default expression for `CreateWasmFunctionQuery` during AST JSON deserialization");
                 has_name_type_pair = true;
+            }
             else if (dynamic_cast<const ASTDataType *>(argument.get()))
                 has_bare_type = true;
             else

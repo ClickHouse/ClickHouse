@@ -84,6 +84,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/pullUpTupleElementDefaults.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
 
 #include <Access/Common/AccessRightsElement.h>
@@ -782,9 +783,19 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         && !already_normalized_on_initiator
         && !is_restore_from_backup;
 
+    /// Normalize DEFAULT expressions written inside Tuple data types by pulling them up to the
+    /// column level, so the stored type carries no DEFAULTs (https://github.com/ClickHouse/ClickHouse/issues/2797).
+    /// The same condition as for `flattenNested` below: a default may reference a flattened column.
+    const bool flatten_nested = mode < LoadingStrictnessLevel::SECONDARY_CREATE && !already_normalized_on_initiator
+        && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested];
+
+    pullUpTupleElementDefaultsInColumnList(columns_ast,
+        pin_current_state_version ? TupleElementDefaultStateVersion::PinCurrent : TupleElementDefaultStateVersion::PinOldest,
+        flatten_nested);
+
     for (const auto & ast : columns_ast.children)
     {
-        const auto & col_decl = ast->as<ASTColumnDeclaration &>();
+        auto & col_decl = ast->as<ASTColumnDeclaration &>();
 
         if (col_decl.getCollation() && !context_->getSettingsRef()[Setting::compatibility_ignore_collation_in_create_table])
         {
@@ -901,8 +912,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         res.add(std::move(column));
     }
 
-    if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !already_normalized_on_initiator
-        && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
+    if (flatten_nested)
         res.flattenNested();
 
     if (res.getAllPhysical().empty())
