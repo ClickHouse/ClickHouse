@@ -1,5 +1,4 @@
 -- The composition and the placeholders are resolved only in the analyzer.
-SET enable_analyzer = 1;
 
 -- The alias of an `ARRAY JOIN` expression binds a bare identifier inside the subquery, so the
 -- `y` it defines is local and the composition does not have to substitute into the subquery.

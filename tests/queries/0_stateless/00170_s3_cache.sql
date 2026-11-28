@@ -1,4 +1,4 @@
--- Tags: stateful, no-parallel, no-random-settings
+-- Tags: stateful, no-parallel, no-random-settings, no-msan
 -- no-parallel: Heavy and it drops filesystem cache
 
 -- { echo }
@@ -6,7 +6,6 @@
 SET allow_prefetched_read_pool_for_remote_filesystem=0;
 SET enable_filesystem_cache_on_write_operations=0;
 SET max_memory_usage='20G';
-SET read_through_distributed_cache = 1;
 SYSTEM CLEAR FILESYSTEM CACHE;
 SELECT count() FROM test.hits_s3;
 SELECT count() FROM test.hits_s3 WHERE AdvEngineID != 0;

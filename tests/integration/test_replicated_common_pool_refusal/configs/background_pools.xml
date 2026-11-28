@@ -1,0 +1,6 @@
+<clickhouse>
+    <!-- One slot, so a single delayed DROP_RANGE fills the common pool. -->
+    <background_common_pool_size>1</background_common_pool_size>
+    <!-- Every idle backoff step is the 600 s cap, as after a long idle period with the default settings. -->
+    <background_processing_pool_task_sleep_seconds_when_no_work_multiplier>6000</background_processing_pool_task_sleep_seconds_when_no_work_multiplier>
+</clickhouse>

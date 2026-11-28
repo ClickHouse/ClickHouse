@@ -7,35 +7,35 @@ doc_type: 'guide'
 keywords: ['ClickStack', '仪表盘', '可视化', 'sql', '可观测性']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
-ClickStack 支持基于原始 SQL 查询的可视化。这让你能够完全控制查询逻辑，同时仍可与仪表板级别的时间范围、过滤器和图表渲染集成。
+ClickStack 支持基于原始 SQL 查询的可视化。这让你能够完全控制查询逻辑，同时仍可与仪表盘级别的时间范围、过滤器和图表渲染集成。
 
 当你需要实现内置 Chart Explorer 不支持的功能时，基于 SQL 的可视化就非常有用——例如，关联多个表，或构建图表构建器不支持的复杂聚合。
 
-<div id="creating-a-raw-sql-chart">
-  ## 创建基于 SQL 的可视化
+## 创建基于 SQL 的可视化 {#creating-a-raw-sql-chart}
+
+要创建基于 SQL 的可视化，请打开仪表盘卡片编辑器并选择 **SQL** 选项卡。
+
+<div className="ch-image-lg">
+  <Frame>
+    ![SQL 编辑器按钮](/images/use-cases/observability/sql-editor-button.webp)
+  </Frame>
 </div>
-
-要创建基于 SQL 的可视化，请打开仪表板卡片编辑器并选择 **SQL** 选项卡。
-
-<Image img="/images/use-cases/observability/sql-editor-button.webp" alt="SQL 编辑器按钮" size="lg" />
 
 接下来：
 
 1. 选择一个要用于运行查询的 **ClickHouse 连接**。
-2. 也可以选择一个 **Source** —— 这样就能通过 `$__filters` 宏将仪表板级过滤器应用到图表。
-3. 在编辑器中编写 SQL 查询，使用查询参数和宏与仪表板的时间范围、过滤器及变量集成。
+2. 也可以选择一个 **Source** —— 这样就能通过 `$__filters` 宏将仪表盘级过滤器应用到图表。
+3. 在编辑器中编写 SQL 查询，使用查询参数和宏与仪表盘的时间范围、过滤器及变量集成。
 4. 点击 **play** 按钮预览结果，然后点击 **Save**。
 
 <div id="query-parameters">
-  ## 查询参数
+  ## 查询参数 {#query-parameters}
 </div>
 
 [查询参数](/zh/reference/syntax#defining-and-using-query-parameters) 允许你在 SQL 中引用当前仪表板的时间范围和粒度。它们使用 ClickHouse 的参数化查询语法：`{paramName:Type}`。
 
 <div id="available-parameters">
-  ### 可用参数
+  ### 可用参数 {#available-parameters}
 </div>
 
 可用参数取决于图表类型：
@@ -57,13 +57,13 @@ ClickStack 支持基于原始 SQL 查询的可视化。这让你能够完全控�
 | `{endDateMilliseconds:Int64}`   | Int64 | 仪表板日期范围的结束时间 (自纪元以来的毫秒数)  |
 
 <div id="macros">
-  ## 宏
+  ## 宏 {#macros}
 </div>
 
 宏是会展开为常见 ClickHouse SQL 表达式的简写。它们以前缀 `$__` 开头，并会在查询发送到 ClickHouse 之前完成替换。
 
 <div id="time-boundary-macros">
-  ### 时间边界宏
+  ### 时间边界宏 {#time-boundary-macros}
 </div>
 
 这些宏返回一个 ClickHouse 表达式，表示 仪表板 的开始时间或结束时间。它们不接受任何参数。
@@ -77,7 +77,7 @@ ClickStack 支持基于原始 SQL 查询的可视化。这让你能够完全控�
 | `$__interval_s`  | `{intervalSeconds:Int64}`                                             | Int64      |
 
 <div id="time-filter-macros">
-  ### 时间过滤宏
+  ### 时间过滤宏 {#time-filter-macros}
 </div>
 
 这些宏会生成一个 `WHERE` 子句片段，用于按仪表板的时间范围过滤某一列。
@@ -98,7 +98,7 @@ AND TimestampTime <= toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:In
 ```
 
 <div id="time-interval-macros">
-  ### 时间间隔宏
+  ### 时间间隔宏 {#time-interval-macros}
 </div>
 
 这些宏会将时间戳列分组到与仪表板粒度相匹配的时间间隔中。它们通常用于时间序列图表的 `SELECT` 和 `GROUP BY` 子句。仅适用于 折线图 和 Stacked-bar 可视化。
@@ -115,7 +115,7 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 ```
 
 <div id="dashboard-filter-macro">
-  ### 仪表板过滤器宏
+  ### 仪表板过滤器宏 {#dashboard-filter-macro}
 </div>
 
 | Macro        | Description                 |
@@ -127,7 +127,7 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 只有启用了 **Broadcast filter condition** 的过滤器才会由 `$__filters` 应用。作为变量公开的过滤器会被显式引用，如下所述。
 
 <div id="dashboard-variables">
-  ### 仪表板变量宏
+  ### 仪表板变量宏 {#dashboard-variables}
 </div>
 
 当仪表板过滤器[可用作变量](/zh/clickstack/features/dashboards/overview#dashboard-variables)时，可在查询的任何位置引用其选中值。只有属于声明了至少一个变量的仪表板的卡片才能使用这些宏。
@@ -141,13 +141,13 @@ toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} se
 变量值也可直接插值为 `$name` 或 `${name}`，并可选择指定格式：`${name:sqlstring}` (默认) 、`${name:csv}` 或 `${name:regex}`。在默认格式下，未选择任何值时，直接引用会呈现为 `NULL`；因此，凡是需要谓词的位置，建议优先使用上述宏。
 
 <div id="how-results-are-plotted">
-  ## 查询结果的绘制方式
+  ## 查询结果的绘制方式 {#how-results-are-plotted}
 </div>
 
 ClickStack 会根据列类型，自动将查询结果中的列映射到图表元素。映射规则因图表类型而异。
 
 <div id="line-and-stacked-bar-charts">
-  ### 折线图和堆叠条形图
+  ### 折线图和堆叠条形图 {#line-and-stacked-bar-charts}
 </div>
 
 | 角色       | 列类型                       | 说明                             |
@@ -157,7 +157,7 @@ ClickStack 会根据列类型，自动将查询结果中的列映射到图表元
 | **分组名称** | String、Map 或 Array 列      | 可选。分组值不同的行会绘制为单独的 series。      |
 
 <div id="pie-chart">
-  ### 饼图
+  ### 饼图 {#pie-chart}
 </div>
 
 | 角色       | 列类型                  | 描述                  |
@@ -166,7 +166,7 @@ ClickStack 会根据列类型，自动将查询结果中的列映射到图表元
 | **切片标签** | String、Map 或 Array 列 | 可选。每个唯一值都会成为一个切片标签。 |
 
 <div id="number-chart">
-  ### 数值图表
+  ### 数值图表 {#number-chart}
 </div>
 
 | 角色     | 列类型    | 描述             |
@@ -174,13 +174,13 @@ ClickStack 会根据列类型，自动将查询结果中的列映射到图表元
 | **数值** | 第一个数值列 | 显示第一个数值列第一行的值。 |
 
 <div id="table-chart">
-  ### 表格图表
+  ### 表格图表 {#table-chart}
 </div>
 
 所有结果列都会直接显示为表格中的列。
 
 <div id="examples">
-  ## 示例
+  ## 示例 {#examples}
 </div>
 
 <Info>
@@ -190,7 +190,7 @@ ClickStack 会根据列类型，自动将查询结果中的列映射到图表元
 </Info>
 
 <div id="example-line-chart">
-  ### 折线图 — 按服务划分的日志计数随时间变化
+  ### 折线图 — 按服务划分的日志计数随时间变化 {#example-line-chart}
 </div>
 
 此查询按服务统计日志事件数，并按与仪表板粒度一致的时间间隔进行分组。
@@ -213,7 +213,7 @@ ORDER BY ts ASC
 * `ServiceName` (string) 为每个服务生成一条单独的折线。
 
 <div id="example-line-chart-macros">
-  ### 折线图 — 使用宏
+  ### 折线图 — 使用宏 {#example-line-chart-macros}
 </div>
 
 为简洁起见，以下是使用宏编写的同一查询：
@@ -231,7 +231,7 @@ ORDER BY ts ASC
 ```
 
 <div id="example-line-chart-variables">
-  ### 折线图 — 使用仪表板变量
+  ### 折线图 — 使用仪表板变量 {#example-line-chart-variables}
 </div>
 
 假设仪表板中有一个基于 `ServiceName` 的 `service` 变量，以及一个基于 `SeverityText` 的 `severity` 变量，此查询会将图表范围限定为当前选定的服务，并排除选定的严重性级别。当变量未选择任何值时，两个宏都会展开为 `1=1`，因此在查看者选择值之前，图表不会应用过滤器。
@@ -249,7 +249,7 @@ ORDER BY ts ASC
 ```
 
 <div id="example-stacked-bar">
-  ### 堆叠条形图 — 按严重级别统计的错误数
+  ### 堆叠条形图 — 按严重级别统计的错误数 {#example-stacked-bar}
 </div>
 
 ```sql
@@ -266,7 +266,7 @@ ORDER BY ts ASC
 ```
 
 <div id="example-table">
-  ### 表格图表 — 最慢的 10 个端点
+  ### 表格图表 — 最慢的 10 个端点 {#example-table}
 </div>
 
 ```sql
@@ -283,7 +283,7 @@ LIMIT 10
 ```
 
 <div id="example-pie">
-  ### 饼图——按服务统计的请求分布
+  ### 饼图——按服务统计的请求分布 {#example-pie}
 </div>
 
 ```sql
@@ -300,7 +300,7 @@ GROUP BY ServiceName
 * `ServiceName` (字符串) 用于标注每个扇区。
 
 <div id="example-number">
-  ### 数值图表——错误总数
+  ### 数值图表——错误总数 {#example-number}
 </div>
 
 ```sql
@@ -315,7 +315,7 @@ WHERE $__timeFilter(TimestampTime)
 将显示第一行中的数值 `total_errors`。
 
 <div id="notes">
-  ## 注意事项
+  ## 注意事项 {#notes}
 </div>
 
 * 基于 SQL 的可视化会在启用 `readonly` 模式的情况下执行——仅允许 `SELECT` 查询。

@@ -6,8 +6,6 @@ description: 'Monitoring JVM with ClickStack'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -32,12 +30,20 @@ If you would like to test the integration before configuring your production set
 
 The OpenTelemetry Java agent sends data to ClickStack's OTLP endpoint, which requires authentication.
 
-1. Open HyperDX at your ClickStack URL (e.g., http://localhost:8080)
+1. Open ClickStack UI at your ClickStack URL (e.g., http://localhost:8080)
 2. Create an account or log in if needed
 3. Navigate to **Team Settings → API Keys**
 4. Copy your **Ingestion API Key**
 
-<Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![ClickStack API Key](/images/clickstack/api-key.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="Download OpenTelemetry Java agent" id="download-agent">
 
@@ -108,11 +114,11 @@ The OpenTelemetry Java agent automatically collects these JVM metrics:
 - **CPU**: `jvm.cpu.time`, `jvm.cpu.count`
 </Tip>
 </Step>
-<Step title="Verify metrics in HyperDX" id="verifying-metrics">
+<Step title="Verify metrics in ClickStack UI" id="verifying-metrics">
 
 Once your application is running with the agent, verify metrics are flowing to ClickStack:
 
-1. Open HyperDX at http://localhost:8080 (or your ClickStack URL)
+1. Open ClickStack UI at http://localhost:8080 (or your ClickStack URL)
 2. Navigate to **Chart Explorer**
 3. Search for metrics starting with `jvm.` (e.g., `jvm.memory.used`, `jvm.gc.duration`, `jvm.thread.count`)
 </Step>
@@ -172,7 +178,7 @@ This imports the metrics directly into ClickStack's metrics tables.
 
 Once imported:
 
-1. Open HyperDX at http://localhost:8080 and log in (create an account if needed)
+1. Open ClickStack UI at http://localhost:8080 and log in (create an account if needed)
 2. Navigate to the Search view and set source to **Metrics**
 3. Set the time range to **2025-12-06 14:00:00 - 2025-12-09 14:00:00**
 4. Search for `jvm.memory.used` or `jvm.gc.duration`
@@ -182,7 +188,7 @@ You should see metrics for the demo service.
 <Info>
 **Timezone Display**
 
-HyperDX displays timestamps in your browser's local timezone. The demo data spans **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)**. Set your time range to **2025-12-06 14:00:00 - 2025-12-09 14:00:00** to ensure you see the demo metrics regardless of your location. Once you see the metrics, you can narrow the range to a 24-hour period for clearer visualizations.
+ClickStack UI displays timestamps in your browser's local timezone. The demo data spans **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)**. Set your time range to **2025-12-06 14:00:00 - 2025-12-09 14:00:00** to ensure you see the demo metrics regardless of your location. Once you see the metrics, you can narrow the range to a 24-hour period for clearer visualizations.
 </Info>
 </Step>
 </Steps>
@@ -198,20 +204,44 @@ To help you monitor JVM applications with ClickStack, we provide a pre-built das
 </Step>
 <Step title="Import the pre-built dashboard" id="import-dashboard">
 
-1. Open HyperDX and navigate to the Dashboards section
+1. Open ClickStack UI and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
 
-<Image img="/images/clickstack/import-dashboard.webp" alt="Import dashboard button"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Import dashboard button](/images/clickstack/import-dashboard.webp)
+
+</Frame>
+
+</div>
 
 3. Upload the `jvm-metrics-dashboard.json` file and click **Finish Import**
 
-<Image img="/images/clickstack/jvm/jvm-metrics-import.webp" alt="Finish import"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Finish import](/images/clickstack/jvm/jvm-metrics-import.webp)
+
+</Frame>
+
+</div>
 </Step>
 <Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured:
 
-<Image img="/images/clickstack/jvm/jvm-metrics-dashboard.webp" alt="Kafka Metrics dashboard"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Kafka Metrics dashboard](/images/clickstack/jvm/jvm-metrics-dashboard.webp)
+
+</Frame>
+
+</div>
 
 <Note>
 For the demo dataset, set the time range to **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)**. Adjust based on your local timezone.
@@ -240,7 +270,7 @@ When your application starts, you should see:
 [otel.javaagent] OpenTelemetry Javaagent v2.22.0 started
 ```
 
-### No metrics appearing in HyperDX {#no-metrics}
+### No metrics appearing in ClickStack UI {#no-metrics}
 
 **Verify ClickStack is running and accessible:**
 

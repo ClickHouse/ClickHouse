@@ -19,6 +19,8 @@ $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE small_table FINAL;"
 # from the num_defaults counter (n's default is 0), otherwise nothing touches the uncompressed cache.
 cached_query="SELECT count() FROM small_table WHERE n > 0 SETTINGS optimize_trivial_count_with_sparsity_filter = 0;"
 
+# Start from an empty uncompressed cache: under some policies (SIEVE) entries left by earlier tests evict this test's blocks before the second read.
+$CLICKHOUSE_CLIENT --query="SYSTEM CLEAR UNCOMPRESSED CACHE"
 $CLICKHOUSE_CLIENT --log_queries 1 --use_uncompressed_cache 1 --use_columns_cache 0 --query="$cached_query"
 $CLICKHOUSE_CLIENT --log_queries 1 --use_uncompressed_cache 1 --use_columns_cache 0 --allow_prefetched_read_pool_for_remote_filesystem 0 --allow_prefetched_read_pool_for_local_filesystem 0 --query_id="test-query-uncompressed-cache" --query="$cached_query"
 

@@ -3,6 +3,9 @@
 -- since the epoch; other time zones and interval kinds take the generic path.
 
 -- Equivalence with the dedicated functions (which use the same rounding via a compile-time constant).
+-- Also covers the clamping of `DateTime64` arguments into a `DateTime` result, which happens in the legacy mode.
+SET to_start_of_interval_preserves_argument_type = 0;
+
 SELECT 'equivalence with dedicated functions';
 SELECT countIf(toStartOfInterval(t, INTERVAL 1 MINUTE) != toStartOfMinute(t))
      + countIf(toStartOfInterval(t, INTERVAL 5 MINUTE) != toStartOfFiveMinutes(t))

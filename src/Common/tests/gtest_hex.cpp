@@ -319,7 +319,7 @@ struct DefaultHexTrait
     }
 };
 
-#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
+#if USE_X86_64_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
 
 struct X86V3HexTrait
 {
@@ -364,7 +364,7 @@ protected:
 
 using HexImplementations = ::testing::Types<
     DefaultHexTrait
-#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
+#if USE_X86_64_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
     , X86V3HexTrait
 #endif
     >;

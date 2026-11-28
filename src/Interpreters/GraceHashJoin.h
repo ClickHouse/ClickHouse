@@ -3,6 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/SpillableAdapter.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 
 #include <Core/Block.h>
@@ -10,6 +11,7 @@
 
 #include <Common/MultiVersion.h>
 #include <Common/SharedMutex.h>
+#include <base/defines.h>
 
 #include <mutex>
 
@@ -28,7 +30,7 @@ class HashJoin;
  * Each input block is split into multiple buckets based on the hash of the row join keys.
  * The first bucket is added to the in-memory HashJoin, and the remaining buckets are written to disk for further processing.
  * When the size of HashJoin exceeds the limits, we double the number of buckets.
- * There can be multiple threads calling addBlockToJoin, just like @ConcurrentHashJoin.
+ * There can be multiple threads calling addBlockToJoin, just like HashJoin.
  *
  * 2) At the second stage we process left table blocks via @joinBlock.
  * Again, each input block is split into multiple buckets by hash.
@@ -40,7 +42,7 @@ class HashJoin;
  * And then join them with left table blocks.
  *
  * After joining the left table blocks, we can load non-joined rows from the right table for RIGHT/FULL JOINs.
- * Note that non-joined rows are processed in multiple threads, unlike HashJoin/ConcurrentHashJoin/MergeJoin.
+ * Note that non-joined rows are processed in multiple threads, unlike MergeJoin.
  */
 class GraceHashJoin final : public IJoin
 {
@@ -79,7 +81,8 @@ public:
         SharedHeader left_sample_block_, SharedHeader right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
         bool any_take_last_row_,
-        size_t external_join_threshold_);
+        size_t external_join_threshold_,
+        size_t max_threads_);
 
     ~GraceHashJoin() override;
 
@@ -104,6 +107,7 @@ public:
     bool alwaysReturnsEmptySet() const override;
 
     bool supportParallelJoin() const override { return true; }
+    size_t getMaxBuildThreads() const override { return max_threads; }
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size) const override;
@@ -117,11 +121,13 @@ public:
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
-    bool canSpillToDisk() const override { return true; }
-    size_t getSpillableBytes() const override;
-    void requestSpill(JoinBuildContext /*context*/) override { force_spill = true; }
+    ISpillable * getSpillable() override { return &spillable; }
+    ProcessorMemoryStats getMemoryStats() const;
+    size_t spill(size_t at_least_bytes);
 
 private:
+    SpillableAdapter<GraceHashJoin> spillable{*this};
+
     void initBuckets();
     /// Create empty join for in-memory processing.
     InMemoryJoinPtr makeInMemoryJoin(const String & bucket_id, size_t reserve_num = 0);
@@ -132,7 +138,6 @@ private:
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
     void repartitionCurrentBucket(size_t prev_keys_num, Block leftover, JoinBuildContext context);
     bool canForceRepartition() const;
-    bool forcedSpillPending() const;
 
     /// Check that join satisfies limits on rows/bytes in table_join.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
@@ -172,6 +177,7 @@ private:
     const size_t initial_num_buckets;
     const size_t max_num_buckets;
     const size_t external_join_threshold;
+    const size_t max_threads;
 
     Names left_key_names;
     Names right_key_names;
@@ -191,7 +197,6 @@ private:
     InMemoryJoinPtr hash_join;
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
-    std::atomic<bool> force_spill = false;
 
     /// What the buckets built and already released held, for the `max_rows_in_join` /
     /// `max_bytes_in_join` check. The bucket in memory right now is added on top, see `checkSizeLimits`.

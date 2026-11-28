@@ -22,6 +22,7 @@ ExpressionTransform::ExpressionTransform(
     , input_positions(expression->getInputPositions(*header_))
     , updater(std::move(updater_))
 {
+    set_spillables.add(expression->getActionsDAG());
 }
 
 ExpressionTransform::ExpressionTransform(
@@ -34,6 +35,7 @@ ExpressionTransform::ExpressionTransform(
     , input_positions(expression->getInputPositions(*input_header_))
     , updater(std::move(updater_))
 {
+    set_spillables.add(expression->getActionsDAG());
 }
 
 void ExpressionTransform::transform(Chunk & chunk)
@@ -88,6 +90,7 @@ ConvertingTransform::ConvertingTransform(SharedHeader header_, ExpressionActions
     : ExceptionKeepingTransform(header_, std::make_shared<const Block>(ExpressionTransform::transformHeader(*header_, expression_->getActionsDAG())))
     , expression(std::move(expression_))
 {
+    set_spillables.add(expression->getActionsDAG());
 }
 
 void ConvertingTransform::onCancel() noexcept

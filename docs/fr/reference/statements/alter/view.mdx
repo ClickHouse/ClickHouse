@@ -195,9 +195,24 @@ SELECT * FROM mv;
 └───┘
 ```
 
-<div id="alter-table--modify-refresh-statement">
-  ## Instruction ALTER TABLE ... MODIFY REFRESH
-</div>
+## Privilèges requis {#required-privileges}
+
+`ALTER TABLE ... MODIFY QUERY` requiert le privilège `ALTER VIEW MODIFY QUERY` sur la vue. La nouvelle requête s&#39;exécute avec le mode [SQL security](/fr/reference/statements/create/view#sql_security) de la vue ; le statement requiert donc également les grants nécessaires à la création d&#39;une vue avec ce mode SQL security :
+
+* `SQL SECURITY DEFINER` avec un definer autre que l&#39;utilisateur courant : `SET DEFINER` sur ce definer.
+* `SQL SECURITY NONE` : `ALLOW SQL SECURITY NONE`.
+
+Lorsque le même statement modifie le mode SQL security via `MODIFY SQL SECURITY`, ces grants sont requis pour le nouveau mode SQL security, et non pour l&#39;ancien.
+
+Avec `ON CLUSTER`, l&#39;autorisation du statement est vérifiée sur l&#39;hôte où il s&#39;exécute ; la vue doit donc exister sur cet hôte. Sinon, le statement échoue avec l&#39;erreur `UNKNOWN_TABLE`.
+
+```sql
+GRANT ALTER VIEW MODIFY QUERY ON db.mv TO alice;
+-- Only if `db.mv` runs as another user, for example `bob`:
+GRANT SET DEFINER ON bob TO alice;
+```
+
+## Instruction ALTER TABLE ... MODIFY REFRESH {#alter-table--modify-refresh-statement}
 
 `ALTER TABLE ... MODIFY REFRESH` modifie les paramètres de rafraîchissement d&#39;une [vue matérialisée rafraîchissable](/fr/reference/statements/create/view#refreshable-materialized-view), notamment la planification, les dépendances, l&#39;aléa et les [paramètres de rafraîchissement](/fr/reference/statements/create/view#refresh-settings).
 

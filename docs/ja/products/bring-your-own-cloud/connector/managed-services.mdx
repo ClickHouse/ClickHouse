@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -36,50 +35,54 @@ Managed モードは enroll 時に選択します。`clicklink clctl init` に `
 
 サービスの作成には 2 つのコマンドを使用します。`prepare` はユーザー側に必要なものをすべて作成し、`instances create` は コネクタエンドポイント を通じて ClickHouse Cloud に作成要求を送信します。ClickHouse Cloud はサービス定義を生成し、アウトバウンド チャネル経由で executor に作成要求を送ります。executor はそれをお客様のクラスターに適用し、結果を報告します。
 
-AWS 認証情報 が必要なのは `prepare` のみで、S3 バケットと IAM role を作成します。`instances create` は コネクタ の設定と認証情報を必要とし、executor のローカル API にアクセスするのは `--wait` を指定した場合のみです。VM では、いずれも コネクタ ホスト上で root として実行します。Kubernetes では、managed クラスターの kube context を持つ workstation から両方を実行します。
+AWS 認証情報 が必要なのは `prepare` のみで、S3 バケットと IAM role を作成します。`instances create` は コネクタ の設定と認証情報を必要とし、executor のローカル API にアクセスするのは `--wait` を指定した場合のみです。VM では、いずれも コネクタ ホスト上で root として実行します。Kubernetes では、managed クラスターの kube context を持つ ワークステーション から両方を実行します。
 
 * `prepare` には、コネクタ 設定のコピー (`--config`) 、executor のローカル API への `kubectl port-forward`、および書き込み可能な `--output-dir` が必要です。executor に対して service name を照合し、到達できない場合は実行を拒否します。
 * このホストに設定で指定された認証情報ファイルが存在しない場合、`instances create` はそれらを `clicklink-hmac` および `clicklink-mtls` Secret から読み取り、読み取るたびにその旨を通知します。コネクタ のネームスペースが `clicklink` でない場合は `--connector-namespace` を追加してください。このフォールバックがあるのは `instances create` のみです。
 
-<Image img="/images/cloud/reference/byoc-connector-service-lifecycle.svg" size="lg" alt="ClickHouse Connector service lifecycle in managed mode" />
+<div className="ch-image-lg">
+  <Frame>
+    ![managed モードにおける ClickHouse Connector のサービスライフサイクル](/images/cloud/reference/byoc-connector-service-lifecycle.svg)
+  </Frame>
+</div>
 
 <Steps>
   <Step title="サービスを準備する" id="prepare">
     <Tabs>
       <Tab title="Kubernetes" id="prepare-kubernetes">
         ```bash
-        CONNECTOR_NAMESPACE='clicklink'   # init 時に選択したコネクタのネームスペース
+        CONNECTOR_NAMESPACE='clicklink'   # init 時に選択したコネクタの名前空間
         kubectl -n "${CONNECTOR_NAMESPACE}" get configmap clicklink-connector-executor \
           -o jsonpath='{.data.config\.yaml}' > clicklink-config.yaml
         kubectl -n "${CONNECTOR_NAMESPACE}" port-forward deployment/clicklink-connector-executor 9999:9999 &
         clicklink clctl executor prepare --config clicklink-config.yaml --output-dir ./clicklink-access
         ```
 
-        出力ディレクトリは削除せずに保持してください。`instances create` や再試行時に読み取られる create ボディと name レコードが格納されています。
+        出力ディレクトリは削除せずに残しておいてください。このディレクトリには、`instances create` とその再試行時に読み込まれる作成リクエストの本文と、名前の記録が格納されています。
       </Tab>
 
-      <Tab title="Linux VM" id="prepare-vm">
+      <Tab title="Linux 仮想マシン" id="prepare-vm">
         ```bash
         sudo clicklink clctl executor prepare --config /etc/clicklink/config.yaml
         ```
       </Tab>
     </Tabs>
 
-    このコマンドは 4 つのステップを順に実行し、最初に失敗した時点で停止します。
+    このコマンドは 4 つのステップを順に実行し、いずれかのステップが失敗した時点で停止します。
 
-    1. **Name.** service name を選択するか、`--instance <name>` で渡された名前を検証します。生成された名前は `<output-dir>/_prepare/<eks-cluster-name>.name` に記録され、次回の実行で引き継がれるため、再試行しても初回実行時の buckets と role がそのまま再利用されます。別の名前を選択させるには `--new-name` を指定します。executor がまだ保持している名前や、ネームスペースにすでに ClickHouse cluster が存在する名前は受け付けられません。
-    2. **Storage.** data と backup の buckets、および IAM role `CH-S3-<name>-<region>-00-Role` を作成します。デフォルトの bucket 名は `<cluster>-clickhouse-data-<rand>` と `<cluster>-clickhouse-backup-<rand>` で、`--data-bucket` と `--backup-bucket` で上書きできます。`--role-arn` を指定した場合は、持ち込んだ role を検証するだけで IAM への書き込みは行いません。
-    3. **Grant and apply.** VM 上では、service のネームスペース (`ns-<name>`) 向けに executor の access bundle をレンダリングし、その RBAC を適用したうえで、executor の registry に service を登録します。Kubernetes ではこのステップはスキップされます。executor は自身の Pod の ServiceAccount として動作し、create を受け取った時点で自ら service を登録するためです。
-    4. **Summary.** `default` USER の password を生成し、create ボディを `<output-dir>/_prepare/<name>.create.json` に書き込みます (mode `0600`。含まれるのは password の hashes のみです) 。続けて実行すべきコマンドは `Next:` 行に出力されます。
+    1. **名前。** サービス名を選択するか、`--instance <name>` で指定された名前を検証します。生成された名前は `<output-dir>/_prepare/<eks-cluster-name>.name` に記録され、次回の実行時に引き継がれます。そのため、再試行時には初回実行で作成したバケットとロールがそのまま使われます。別の名前を選択するには `--new-name` を指定します。executor がまだ保持している名前や、対応する名前空間にすでに ClickHouse クラスターが存在する名前は拒否されます。
+    2. **ストレージ。** データ用とバックアップ用のバケット、および IAM role `CH-S3-<name>-<region>-00-Role` を作成します。デフォルトのバケット名は `<cluster>-clickhouse-data-<rand>` と `<cluster>-clickhouse-backup-<rand>` で、`--data-bucket` と `--backup-bucket` でオーバーライドできます。`--role-arn` を指定した場合は、既存のロールを検証するだけで、IAM への書き込みは行いません。
+    3. **権限付与と適用。** VM 上では、サービスの名前空間 (`ns-<name>`) 用に executor のアクセスバンドルをレンダリングし、その RBAC を適用したうえで、サービスを executor のレジストリに登録します。Kubernetes 上ではこのステップはスキップされます。executor は Pod の ServiceAccount で動作し、作成リクエストを受信した時点でサービスを自ら登録します。
+    4. **概要。** `default` ユーザーのパスワードを発行し、作成リクエストの本文を `<output-dir>/_prepare/<name>.create.json` に書き込みます (モードは `0600`。格納されるのはパスワードのハッシュ値のみです)。最後に、次に実行するコマンドを `Next:` 行に出力します。
 
     <Warning>
-      `prepare` は `default` USER の password を stderr に一度だけ出力します。create ボディにも `--output json` にも含まれず、ClickHouse Cloud が受け取るのは hashes のみです。次に進む前に必ず保存してください。create ボディが存在する状態で再実行した場合は、すでに書き込まれた hashes がそのまま維持され、その旨が表示されます。
+      `prepare` は `default` ユーザーのパスワードを stderr に一度だけ出力します。パスワードは作成リクエストの本文にも `--output json` の出力にも含まれず、ClickHouse Cloud に送られるのもハッシュ値のみです。次に進む前に必ず控えておいてください。作成リクエストの本文が存在する状態で再実行すると、書き込み済みのハッシュ値がそのまま維持され、その旨が表示されます。
     </Warning>
 
-    kubeconfig に複数の context がある場合は `--context <name>` を指定してください。context は config の `executor.cluster` に指定した EKS cluster を指している必要があります。`--dry-run` を指定すると、何も作成・書き込みせずにすべてのステップを実行します。hashing のステップは SHA-1 を使用しますが、Go は `GODEBUG=fips140=only` 環境下ではこれを拒否します。この設定が有効でないホストで `prepare` を実行してください。
+    kubeconfig に複数のコンテキストが含まれている場合は、`--context <name>` を指定してください。指定するコンテキストは、設定ファイルの `executor.cluster` で指定した EKS クラスターを指している必要があります。`--dry-run` を指定すると、リソースの作成や書き込みを一切行わずにすべてのステップを実行します。ハッシュ化のステップでは SHA-1 を使用しますが、`GODEBUG=fips140=only` が設定されていると Go は SHA-1 を拒否します。`prepare` は、この設定がされていないホストで実行してください。
   </Step>
 
-  <Step title="作成する" id="create">
+  <Step title="作成リクエストを送信します" id="create">
     <Tabs>
       <Tab title="Kubernetes" id="create-kubernetes">
         ```bash
@@ -89,10 +92,10 @@ AWS 認証情報 が必要なのは `prepare` のみで、S3 バケットと IAM
           --wait
         ```
 
-        `prepare` で開いたポートフォワードは開いたままにしてください。`--wait` はこれを経由して executor をポーリングします。
+        `prepare` で開始したポートフォワードは開いたままにしておいてください。`--wait` はこのポートフォワードを経由して executor をポーリングします。
       </Tab>
 
-      <Tab title="Linux VM" id="create-vm">
+      <Tab title="Linux 仮想マシン" id="create-vm">
         ```bash
         sudo clicklink clctl instances create \
           --from-prepare /etc/clicklink/access/executor/_prepare/<name>.create.json \
@@ -102,11 +105,11 @@ AWS 認証情報 が必要なのは `prepare` のみで、S3 バケットと IAM
       </Tab>
     </Tabs>
 
-    このコマンドは、準備済みのボディをコネクタ自身の認証情報を用いてコネクタエンドポイントへ送信します。実行すると `created <spoken-name> (state provisioning)` と `watch:` ヒントが出力されます。`<spoken-name>` は ClickHouse Cloud が割り当てた名前 (例: `amberaws-kq-42`) であり、準備時に指定した service name ではありません。`watch:` ヒントおよびすべての `clctl` コマンドでは、指定した service name を使用します。
+    このコマンドは、準備済みのボディを、コネクタ自身の認証情報を使ってコネクタエンドポイントに送信します。実行すると `created <spoken-name> (state provisioning)` と `watch:` ヒントが出力されます。`<spoken-name>` は ClickHouse Cloud が割り当てた名前 (例: `amberaws-kq-42`) であり、準備時に指定したサービス名とは異なります。`watch:` ヒントおよびすべての `clctl` コマンドでは、指定したサービス名を使用します。
 
-    同じ入力での再試行は安全です。冪等キーはデフォルトで環境と service name から導出されるため、再送信しても最初の作成結果が返されます。
+    同じ入力で再試行しても問題ありません。冪等性キーはデフォルトで環境とサービス名から導出されるため、再送信しても最初の作成結果が返されます。
 
-    `--wait` は、service が `running` になるまで executor のローカル API を 10 秒ごとにポーリングし、最大で `--wait-timeout` (デフォルト `30m`) まで待機します。executor がその名前に対する作成の失敗を記録した場合、または service が `terminating`、`terminated`、`stale` に変化した場合は、記録された error とともに即座に失敗します。
+    `--wait` は、サービスが `running` になるまで、10 秒ごとに executor のローカル API をポーリングします。待機時間の上限は `--wait-timeout` (デフォルトは `30m`) です。executor がその名前の作成失敗を記録した場合、またはサービスが `terminating`、`terminated`、`stale` のいずれかの状態になった場合は、待機せずに即座に失敗し、記録されたエラーを返します。
   </Step>
 
   <Step title="確認" id="verify">
@@ -114,7 +117,7 @@ AWS 認証情報 が必要なのは `prepare` のみで、S3 バケットと IAM
     clicklink clctl instances get --name <name> --cluster <eks-cluster-name>
     ```
 
-    `status` が `running` になれば、そのサービスは利用可能です。`default` ユーザーには、`prepare` で出力されたパスワードが設定されます。`--cluster` は `CLCTL_CLUSTER` 環境変数から指定することもできます。
+    `status` が `running` になると、サービスが利用可能になります。サービスの `default` ユーザーのパスワードには、`prepare` が出力したパスワードを使用します。`--cluster` は環境変数 `CLCTL_CLUSTER` で指定することもできます。
   </Step>
 </Steps>
 
@@ -222,10 +225,10 @@ ClickHouse ユーザーへの権限付与は、上記のとおり SQL で行っ�
 
 ## コネクタがオフラインの場合 {#when-the-connector-is-offline}
 
-稼働中の サービス は executor に依存しません。クラスター内の ClickHouse operator がそれらを稼働させ続けるため、コネクタが切断されても、すでにクエリを処理しているものが中断されることはありません。
+稼働中のサービスは executor に依存しません。サービスの稼働はクラスター内の ClickHouse Operator が維持するため、コネクタが切断されても、すでにクエリを処理しているものが中断されることはありません。
 
-executor が接続されていない間、ClickHouse Cloud は新しい作業を割り当てられません。すでに受理済みの作成、削除、プラットフォーム同期は保持され、再試行されます。作成は最後の進捗報告から 30 分間、削除は 2 時間、プラットフォーム同期は最大 10 回まで再試行されます。この上限を超えると、コネクタエンドポイントはそのコマンドを失敗としてマークします。その他のライフサイクルコマンド (スケール、停止、開始、再起動、バックアップ、バックアップ の削除) は、キューに入れられることなく拒否されます。executor が接続されていない間に送信した作成や削除も同様に拒否され、再試行されるのはすでに受理済みのコマンドのみです。
+executor が接続されていない間、ClickHouse Cloud は executor に新しい処理を渡せません。executor がすでに受け付けた作成、削除、プラットフォーム同期は保持され、再試行されます。作成は最後の進捗報告から 30 分間、削除は 2 時間、プラットフォーム同期は最大 10 回まで再試行されます。この上限を超えると、コネクタエンドポイントはそのコマンドを失敗として記録します。その他のライフサイクルコマンド (スケール、停止、開始、再起動、バックアップ、バックアップの削除) はキューに入らず、拒否されます。executor が接続されていない間に送信した作成や削除も同様に拒否されます。再試行の対象となるのは、すでに受け付けられたコマンドのみです。
 
-executor がすでに受理したコマンドは完了まで実行され、報告できなかった結果は次回の接続時に送信されます。
+executor がすでに受け付けたコマンドは最後まで実行されます。報告できなかった結果は、次回の接続時に送信されます。
 
-`instances create` は、実行元のホストからコネクタエンドポイントに到達できる必要があります。`--wait`、`instances list`、`instances get`、`commands list` は executor のローカル API を利用するため、executor が稼働している必要があります。プラットフォーム承認のトークンは、接続状態に関係なく独自のタイマーで有効期限を迎えます。[承認ウィンドウ](/ja/products/bring-your-own-cloud/connector/platform-updates#the-approval-window)を参照してください。
+`instances create` を実行するには、実行元のホストからコネクタエンドポイントに接続可能である必要があります。`--wait`、`instances list`、`instances get`、`commands list` は executor のローカル API を使用するため、executor が稼働している必要があります。プラットフォーム承認のトークンの有効期限は、接続状態に関係なく独自に経過します。詳しくは[承認ウィンドウ](/ja/products/bring-your-own-cloud/connector/platform-updates#the-approval-window)を参照してください。

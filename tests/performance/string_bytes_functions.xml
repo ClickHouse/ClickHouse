@@ -1,11 +1,19 @@
 <test>
     <create_query>DROP TABLE IF EXISTS test_string_bytes</create_query>
     <create_query>CREATE TABLE test_string_bytes(s String) ENGINE Memory</create_query>
+    <create_query>CREATE TABLE test_string_bytes_text(s String) ENGINE Memory</create_query>
+    <create_query>CREATE TABLE test_string_bytes_binary(s String) ENGINE Memory</create_query>
 
     <fill_query>INSERT INTO test_string_bytes SELECT reinterpretAsString(arrayJoin(range(0, 256))) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO test_string_bytes_text SELECT repeat(concat(toString(number), ' lorem ipsum dolor sit amet '), 30) FROM numbers(500000)</fill_query>
+    <fill_query>INSERT INTO test_string_bytes_binary SELECT arrayStringConcat(arrayMap(k -> reinterpretAsString(cityHash64(number, k)), range(8))) FROM numbers(5000000)</fill_query>
 
     <query>SELECT sum(stringBytesUniq(s)) FROM test_string_bytes FORMAT Null</query>
     <query>SELECT sum(stringBytesEntropy(s)) FROM test_string_bytes FORMAT Null</query>
+    <query>SELECT sum(stringBytesUniq(s)) FROM test_string_bytes_text FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT sum(stringBytesUniq(s)) FROM test_string_bytes_binary FORMAT Null SETTINGS max_threads = 1</query>
 
     <drop_query>DROP TABLE IF EXISTS test_string_bytes</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_string_bytes_text</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_string_bytes_binary</drop_query>
 </test>

@@ -201,10 +201,13 @@ struct DocSnippet
 };
 
 const DocSnippet DOC_SNIPPETS[] = {
-    {"_snippet_dictionary_in_cloud.mdx", R"DOCS_MD(<Tip>
-If you are using a dictionary with ClickHouse Cloud please use the DDL query option to create your dictionaries, and create your dictionary as user `default`.
-Also, verify the list of supported dictionary sources in the [Cloud Compatibility guide](/products/cloud/guides/cloud-compatibility).
-</Tip>)DOCS_MD"},
+    {"_snippet_dictionary_in_cloud.mdx", R"DOCS_MD(<Note title="ClickHouse Cloud">
+Use [`CREATE DICTIONARY`](/reference/statements/create/dictionary#creating-a-dictionary-with-a-ddl-query) to create dictionaries.
+
+When creating a dictionary that reads from a ClickHouse table, include a dedicated user's username and password in the `SOURCE` clause. That user needs `SELECT` permission on the source table. See the [ClickHouse dictionary source example](/reference/statements/create/dictionary/sources/clickhouse).
+
+Verify the list of supported dictionary sources in the [Cloud Compatibility guide](/products/cloud/guides/cloud-compatibility).
+</Note>)DOCS_MD"},
 
     {"_when-to-use-json.mdx", R"DOCS_MD(## When to use the `JSON` Type {#when-to-use-json-type}
 
@@ -398,7 +401,7 @@ bool isMdxAdmonitionComponent(std::string_view name)
 bool isMdxLayoutComponent(std::string_view name)
 {
     return name == "Tabs" || name == "Tab" || name == "TabItem" || name == "Card" || name == "CardGroup"
-        || name == "VerticalStepper" || name == "Image";
+        || name == "VerticalStepper" || name == "Image" || name == "Accordion" || name == "Frame";
 }
 
 std::optional<std::vector<String>> mdxStringArrayAttribute(std::string_view attrs, std::string_view name)
@@ -633,7 +636,7 @@ private:
     const bool ansi;
     String out;
 
-    std::string_view horizontalRule() const { return "─"; }
+    [[nodiscard]] std::string_view horizontalRule() const { return "─"; }
 
     void appendRepeated(std::string_view unit, size_t count)
     {
@@ -663,7 +666,7 @@ private:
         return result;
     }
 
-    String sgr(Style style) const
+    [[nodiscard]] String sgr(Style style) const
     {
         if (!ansi)
             return {};
@@ -683,7 +686,7 @@ private:
     }
 
     /// Splits a Markdown string into inline tokens, applying inline styling on top of `base`.
-    std::vector<Token> renderInline(std::string_view text, Style base = {}) const
+    [[nodiscard]] std::vector<Token> renderInline(std::string_view text, Style base = {}) const
     {
         std::vector<Token> tokens;
 
@@ -953,7 +956,7 @@ private:
     }
 
     /// Joins tokens into a single line (no wrapping), returning the rendered string and its visible width.
-    std::pair<String, size_t> inlineLine(std::string_view text, Style base = {}) const
+    [[nodiscard]] std::pair<String, size_t> inlineLine(std::string_view text, Style base = {}) const
     {
         auto tokens = renderInline(text, base);
         String result;
@@ -1308,7 +1311,7 @@ private:
         }
     }
 
-    bool startsNewBlock(std::string_view line) const
+    [[nodiscard]] bool startsNewBlock(std::string_view line) const
     {
         std::string_view s = stripCR(line);
         if (isBlank(s))

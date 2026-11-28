@@ -369,10 +369,11 @@ def test_names_that_only_look_reserved_are_kept():
     ] == []
 
     node.query("DROP TABLE t SYNC")
-    for key in preexisting_keys:
-        if key not in marked_keys:
-            remove_key(key)
-    wait_for_empty_prefix()
+    # The kept directories are still in the loaded metadata, so the disk is not empty and keeps its snapshot
+    # (`__meta/snapshot.bin`): remove everything while the server is stopped.
+    node.stop_clickhouse()
+    remove_all_keys()
+    node.start_clickhouse()
 
 
 def remove_all_keys():

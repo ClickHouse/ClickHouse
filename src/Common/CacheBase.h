@@ -4,7 +4,10 @@
 #include <Common/ICachePolicy.h>
 #include <Common/LRUCachePolicy.h>
 #include <Common/SLRUCachePolicy.h>
+#include <Common/SIEVECachePolicy.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ServerOwnedMemory.h>
+#include <base/scope_guard.h>
 
 #include <base/UUID.h>
 #include <base/defines.h>
@@ -29,7 +32,7 @@ namespace ErrorCodes
 /// of that value.
 /// Cache starts to evict entries when their total weight exceeds max_size_in_bytes.
 /// Value weight should not change after insertion.
-template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = EqualWeightFunction<TMapped>>
+template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = EqualWeightFunction<TMapped>, typename TLocker = std::mutex>
 class CacheBase
 {
 private:
@@ -43,6 +46,7 @@ public:
 
     static constexpr auto NO_MAX_COUNT = 0uz;
     static constexpr auto DEFAULT_SIZE_RATIO = 0.5l;
+    static constexpr auto DEFAULT_CACHE_POLICY = "SLRU";
 
     /// Use this ctor if you only care about the cache size but not internals like the cache policy.
     explicit CacheBase(
@@ -51,11 +55,14 @@ public:
         size_t max_size_in_bytes,
         size_t max_count = NO_MAX_COUNT,
         double size_ratio = DEFAULT_SIZE_RATIO)
-        : CacheBase("SLRU", size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio)
     {
+        /// Construct the default policy directly instead of delegating to the ctor below, so that caches which never
+        /// select a policy by name do not instantiate the code of the other policies.
+        using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
+        cache_policy = std::make_unique<SLRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio, makeOnRemoveEntryFunction());
     }
 
-    /// Use this ctor if the user should be able to configure the cache policy and cache sizes via settings. Supports only general-purpose policies LRU and SLRU.
+    /// Use this ctor if the user should be able to configure the cache policy and cache sizes via settings. Supports only general-purpose policies LRU, SLRU and SIEVE.
     explicit CacheBase(
         std::string_view cache_policy_name,
         CurrentMetrics::Metric size_in_bytes_metric,
@@ -64,15 +71,11 @@ public:
         size_t max_count,
         double size_ratio)
     {
-        auto on_remove_entry_function = [this](size_t weight_loss, const MappedPtr & mapped_ptr)
-        {
-            onEntryRemoval(weight_loss, mapped_ptr);
-        };
+        auto on_remove_entry_function = makeOnRemoveEntryFunction();
 
         if (cache_policy_name.empty())
         {
-            static constexpr auto default_cache_policy = "SLRU";
-            cache_policy_name = default_cache_policy;
+            cache_policy_name = DEFAULT_CACHE_POLICY;
         }
 
         if (cache_policy_name == "LRU")
@@ -85,6 +88,11 @@ public:
             using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
             cache_policy = std::make_unique<SLRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio, on_remove_entry_function);
         }
+        else if (cache_policy_name == "SIEVE")
+        {
+            using SIEVEPolicy = SIEVECachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
+            cache_policy = std::make_unique<SIEVEPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, on_remove_entry_function);
+        }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy name: {}", cache_policy_name);
     }
@@ -93,6 +101,10 @@ public:
     explicit CacheBase(std::unique_ptr<ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>> cache_policy_)
         : cache_policy(std::move(cache_policy_))
     {}
+
+    /// The entries and the bookkeeping of the cache are the server's: setting, evicting and removing entries is done in a
+    /// `ServerOwnedMemoryScope`, see `Common/ServerOwnedMemory.h`. Not for caches owned by a query.
+    void markServerOwned() { server_owned = true; }
 
     MappedPtr get(const Key & key)
     {
@@ -140,6 +152,7 @@ public:
     /// Insert several entries under one lock.
     void setMany(const std::vector<Key> & keys, const std::vector<MappedPtr> & mapped)
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         chassert(keys.size() == mapped.size());
         std::lock_guard lock(mutex);
         for (size_t i = 0; i < keys.size(); ++i)
@@ -164,8 +177,23 @@ public:
 
     void set(const Key & key, const MappedPtr & mapped)
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         std::lock_guard lock(mutex);
         cache_policy->set(key, mapped);
+    }
+
+    /// `set`, and whether `mapped` is in the cache right after it: the policy can refuse it or evict it at once.
+    /// If it is, calls `on_resident` under the same lock, so nothing else can replace it before the call returns.
+    template <typename OnResident>
+    bool setAndContains(const Key & key, const MappedPtr & mapped, OnResident && on_resident)
+    {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
+        std::lock_guard lock(mutex);
+        cache_policy->set(key, mapped);
+        if (!cache_policy->contains(key))
+            return false;
+        on_resident();
+        return true;
     }
 
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
@@ -179,6 +207,8 @@ public:
     template <typename LoadFunc>
     std::pair<MappedPtr, bool> getOrSet(const Key & key, LoadFunc && load_func)
     {
+        /// Declared first, so that it covers the release of the token too.
+        auto server_owned_scope = serverOwnedScope();
         InsertTokenHolder token_holder;
         {
             std::lock_guard cache_lock(mutex);
@@ -210,7 +240,12 @@ public:
         }
 
         ++misses;
-        token->value = load_func();
+        {
+            /// The value is made at the level of the caller, who decides whom it is charged to.
+            server_owned_scope.reset();
+            SCOPE_EXIT({ server_owned_scope = serverOwnedScope(); });
+            token->value = load_func();
+        }
 
         std::lock_guard cache_lock(mutex);
 
@@ -245,6 +280,7 @@ public:
 
     void clear()
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         std::lock_guard lock(mutex);
         insert_tokens.clear();
         hits = 0;
@@ -254,12 +290,14 @@ public:
 
     void remove(const Key & key)
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         std::lock_guard lock(mutex);
         cache_policy->remove(key);
     }
 
     void remove(std::function<bool(const Key&, const MappedPtr &)> predicate)
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         std::lock_guard lock(mutex);
         cache_policy->remove(predicate);
     }
@@ -275,11 +313,39 @@ public:
     /// Callers reasoning about use_count should account for the extra ref.
     bool removeIfMatches(const Key & key, std::function<bool(const MappedPtr &)> predicate)
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         std::lock_guard lock(mutex);
         auto value = cache_policy->get(key);
         if (!value || !predicate(value))
             return false;
         cache_policy->remove(key);
+        return true;
+    }
+
+    /// "Compare and set" by key: replaces the resident under `key` with `mapped` only when the
+    /// resident is `expected` (the same object). Returns whether it was replaced. Atomic like
+    /// removeIfMatches, and like it bumps the LRU position of the resident.
+    bool replaceIfMatches(const Key & key, const MappedPtr & expected, const MappedPtr & mapped)
+    {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
+        std::lock_guard lock(mutex);
+        auto value = cache_policy->get(key);
+        if (!value || value != expected)
+            return false;
+        cache_policy->set(key, mapped);
+        return true;
+    }
+
+    /// Like `removeIfMatches`, but if `update(resident)` returns true, sets the resident again to recompute its weight.
+    /// `update` runs under the cache lock, so no eviction sees a changed resident with its old weight.
+    bool updateIfMatches(const Key & key, std::function<bool(const MappedPtr &)> update)
+    {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
+        std::lock_guard lock(mutex);
+        auto value = cache_policy->get(key);
+        if (!value || !update(value))
+            return false;
+        cache_policy->set(key, value);
         return true;
     }
 
@@ -309,12 +375,14 @@ public:
 
     void setMaxCount(size_t max_count)
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         std::lock_guard lock(mutex);
         cache_policy->setMaxCount(max_count);
     }
 
     void setMaxSizeInBytes(size_t max_size_in_bytes)
     {
+        [[maybe_unused]] auto server_owned_scope = serverOwnedScope();
         std::lock_guard lock(mutex);
         cache_policy->setMaxSizeInBytes(max_size_in_bytes);
     }
@@ -325,13 +393,37 @@ public:
         cache_policy->setQuotaForUser(user_id, max_size_in_bytes, max_entries);
     }
 
+    /// For unit tests.
+    /// Do not use it anywhere else as this is not thread-safe.
+    const CachePolicy & getCachePolicy()
+    {
+        std::lock_guard lock(mutex);
+        return *cache_policy;
+    }
+
     virtual ~CacheBase() = default;
 
 protected:
-    mutable std::mutex mutex;
+    mutable TLocker mutex;
 
 private:
     std::unique_ptr<CachePolicy> cache_policy TSA_GUARDED_BY(mutex);
+    bool server_owned = false;
+
+    std::optional<ServerOwnedMemoryScope> serverOwnedScope() const
+    {
+        if (!server_owned)
+            return {};
+        return std::optional<ServerOwnedMemoryScope>(std::in_place);
+    }
+
+    typename CachePolicy::OnRemoveEntryFunction makeOnRemoveEntryFunction()
+    {
+        return [this](size_t weight_loss, const MappedPtr & mapped_ptr)
+        {
+            onEntryRemoval(weight_loss, mapped_ptr);
+        };
+    }
 
     std::atomic<size_t> hits{0};
     std::atomic<size_t> misses{0};
@@ -341,7 +433,7 @@ private:
     {
         explicit InsertToken(CacheBase & cache_) : cache(cache_) {}
 
-        std::mutex mutex;
+        TLocker mutex;
         bool cleaned_up TSA_GUARDED_BY(mutex) = false;
         MappedPtr value TSA_GUARDED_BY(mutex);
 
@@ -362,7 +454,7 @@ private:
 
         InsertTokenHolder() = default;
 
-        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, std::lock_guard<std::mutex> & /* cache_lock */)
+        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, std::lock_guard<TLocker> & /* cache_lock */)
             TSA_NO_THREAD_SAFETY_ANALYSIS // disabled only because we can't reference the parent-level cache mutex from here
         {
             key = key_;
@@ -370,7 +462,7 @@ private:
             ++token->refcount;
         }
 
-        void cleanup(std::lock_guard<std::mutex> & /* token_lock */, std::lock_guard<std::mutex> & /* cache_lock */)
+        void cleanup(std::lock_guard<TLocker> & /* token_lock */, std::lock_guard<TLocker> & /* cache_lock */)
             TSA_NO_THREAD_SAFETY_ANALYSIS // disabled only because we can't reference the parent-level cache mutex from here
         {
             token->cache.insert_tokens.erase(*key);

@@ -6,8 +6,6 @@
 -- ROWS BETWEEN N PRECEDING AND N FOLLOWING frame, which is required to reach
 -- BoundaryType::Offset and the hasFrameBeginOffset/hasFrameEndOffset output sections.
 
-SET enable_analyzer = 1;
-
 EXPLAIN QUERY TREE
 SELECT sum(number) OVER (ORDER BY number ROWS BETWEEN 1 PRECEDING AND 2 FOLLOWING)
 FROM numbers(5);

@@ -6,15 +6,15 @@
 #include <bit>
 
 /// The `heks` AVX/AVX2 entry points are needed both by the runtime-dispatched `x86_64_v3`
-/// target - which only exists under `USE_MULTITARGET_CODE` - and by builds whose own baseline
+/// target - which only exists under `USE_X86_64_MULTITARGET_CODE` - and by builds whose own baseline
 /// already guarantees those instruction sets. The latter matters for `-DX86_ARCH_LEVEL=4`,
 /// for which `src/CMakeLists.txt` deliberately turns multi-target dispatch off: without the
 /// `__AVX__` / `__AVX2__` arms below `fast_hex_inline.hpp` would not even compile the vector
 /// entry points, and such a build would silently fall back to the scalar loops.
-#if USE_MULTITARGET_CODE || defined(__AVX__)
+#if USE_X86_64_MULTITARGET_CODE || defined(__AVX__)
 #define FAST_HEX_AVX 1
 #endif
-#if USE_MULTITARGET_CODE || defined(__AVX2__)
+#if USE_X86_64_MULTITARGET_CODE || defined(__AVX2__)
 #define FAST_HEX_AVX2 1
 #endif
 #if defined(__aarch64__)
@@ -399,7 +399,7 @@ namespace DB
 
 void encodeHexIntUpper(uint8_t * dst, const void * value, size_t num_bytes)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v3))
     {
         ::TargetSpecific::x86_64_v3::encodeHexIntImpl(dst, value, num_bytes, heks::upper);
@@ -411,7 +411,7 @@ void encodeHexIntUpper(uint8_t * dst, const void * value, size_t num_bytes)
 
 void encodeHexIntLower(uint8_t * dst, const void * value, size_t num_bytes)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v3))
     {
         ::TargetSpecific::x86_64_v3::encodeHexIntImpl(dst, value, num_bytes, heks::lower);
@@ -423,7 +423,7 @@ void encodeHexIntLower(uint8_t * dst, const void * value, size_t num_bytes)
 
 void encodeHexStringUpper(uint8_t * dst, const uint8_t * src, size_t size)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v3))
     {
         ::TargetSpecific::x86_64_v3::encodeHexStringImpl(dst, src, size, heks::upper);
@@ -435,7 +435,7 @@ void encodeHexStringUpper(uint8_t * dst, const uint8_t * src, size_t size)
 
 void encodeHexStringLower(uint8_t * dst, const uint8_t * src, size_t size)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v3))
     {
         ::TargetSpecific::x86_64_v3::encodeHexStringImpl(dst, src, size, heks::lower);
@@ -447,7 +447,7 @@ void encodeHexStringLower(uint8_t * dst, const uint8_t * src, size_t size)
 
 void decodeHexString(uint8_t * dst, const uint8_t * src, size_t size)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v3))
     {
         ::TargetSpecific::x86_64_v3::decodeHexStringImpl(dst, src, size);
@@ -459,7 +459,7 @@ void decodeHexString(uint8_t * dst, const uint8_t * src, size_t size)
 
 void decodeHexStrings(uint8_t * dst, const uint8_t * src, const UInt64 * src_offsets, UInt64 * dst_offsets, size_t row_count)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v3))
     {
         ::TargetSpecific::x86_64_v3::decodeHexStringsImpl(dst, src, src_offsets, dst_offsets, row_count);
@@ -471,7 +471,7 @@ void decodeHexStrings(uint8_t * dst, const uint8_t * src, const UInt64 * src_off
 
 void encodeHex16LEUpper(uint8_t * dst, const uint8_t * src)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v3))
     {
         ::TargetSpecific::x86_64_v3::encodeHex16LEImpl(dst, src, heks::upper);
@@ -483,7 +483,7 @@ void encodeHex16LEUpper(uint8_t * dst, const uint8_t * src)
 
 void encodeHex16LELower(uint8_t * dst, const uint8_t * src)
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v3))
     {
         ::TargetSpecific::x86_64_v3::encodeHex16LEImpl(dst, src, heks::lower);

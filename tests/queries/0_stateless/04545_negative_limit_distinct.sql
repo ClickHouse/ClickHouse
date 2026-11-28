@@ -26,7 +26,6 @@ INSERT INTO nl SELECT number + 100 FROM numbers(100);
 INSERT INTO nl SELECT number + 200 FROM numbers(100);
 INSERT INTO nl SELECT number + 300 FROM numbers(100);
 
-SET enable_analyzer = 1;
 SELECT 'analyzer';
 SELECT DISTINCT intDiv(x, 100) AS d FROM nl ORDER BY d LIMIT -1;          -- 3
 SELECT DISTINCT intDiv(x, 100) AS d FROM nl ORDER BY d LIMIT -2;          -- 2 3
@@ -57,7 +56,6 @@ DROP TABLE IF EXISTS big;
 CREATE TABLE big (x Int64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO big SELECT number FROM numbers(200000);
 
-SET enable_analyzer = 1;
 SELECT 'analyzer single part';
 SELECT DISTINCT intDiv(x, 100) AS d FROM big ORDER BY d LIMIT -3;                             -- 1997 1998 1999
 -- The same rows must come back for any block size, not just the default one.

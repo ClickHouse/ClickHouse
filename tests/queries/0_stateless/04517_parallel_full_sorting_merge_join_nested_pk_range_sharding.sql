@@ -51,8 +51,6 @@ INSERT INTO pfsmj_pkr_dim SELECT number, number * 2 FROM numbers(0, 12000);
 INSERT INTO pfsmj_pkr_dim SELECT number, number * 2 FROM numbers(6000, 12000);
 INSERT INTO pfsmj_pkr_probe SELECT number, number FROM numbers(9000);
 
-SET enable_analyzer = 1;
-
 -- The outer join is NOT scattered: its left side is a sorted subquery (a pre-sorted `FinishSorting` side),
 -- so the sharded rewrite must not fire.
 SELECT 'analyzer outer_not_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 0

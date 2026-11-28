@@ -328,7 +328,7 @@ export const IntegrationGrid = () => {
         } catch (cmsErr) {
           if (cmsErr instanceof Error) {
             if (cmsErr.name === "AbortError") {
-              console.log("CMS 请求因超时被中止，正在使用备用数据")
+              console.log("CMS 请求因超时被中止")
             } else {
               console.error("从 CMS 加载集成时出错：", cmsErr.message)
             }

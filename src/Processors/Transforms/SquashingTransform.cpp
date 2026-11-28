@@ -3,6 +3,8 @@
 #include <Columns/IColumn.h>
 #include <Interpreters/Squashing.h>
 #include <Processors/Chunk.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -133,6 +135,78 @@ bool SimpleSquashingChunksTransform::canGenerate()
 Chunk SimpleSquashingChunksTransform::getRemaining()
 {
     chassert(!flushed_chunk);
+    return Squashing::squash(squashing.flush(), getOutputPort().getSharedHeader());
+}
+
+ProgressiveSquashingChunksTransform::ProgressiveSquashingChunksTransform(
+    SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes_)
+    : IInflatingTransform(header, header)
+    , squashing(header, min_block_size_rows, min_block_size_bytes_)
+    , min_block_size_bytes(min_block_size_bytes_)
+{
+}
+
+void ProgressiveSquashingChunksTransform::addToPipeline(
+    QueryPipelineBuilder & pipeline, size_t min_block_size_rows, size_t min_block_size_bytes)
+{
+    if (!min_block_size_rows && !min_block_size_bytes)
+        return;
+
+    pipeline.addSimpleTransform([&](const SharedHeader & header)
+    {
+        return std::make_shared<ProgressiveSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes);
+    });
+}
+
+void ProgressiveSquashingChunksTransform::consume(Chunk chunk)
+{
+    /// These chunks pass as they are, after the rows that came before them.
+    if (!chunk.hasRows() || chunk.getChunkInfos().has<AggregatedChunkInfo>())
+    {
+        takeSquashedChunks(/*all_rows=*/ true);
+        ready_chunks.push_back(std::move(chunk));
+        return;
+    }
+
+    held_bytes += squashedBytes(chunk);
+    squashing.add(std::move(chunk));
+    takeSquashedChunks(/*all_rows=*/ false);
+
+    /// Keep at most as many rows as the stream already sent: the first chunk leaves at once and the
+    /// next ones double. Otherwise a `LIMIT` would wait for a full chunk or for the end of the stream.
+    /// The check in bytes is for constant columns: `Squashing` counts them as one value.
+    if (squashing.getRows() >= squashed_rows_sent || (min_block_size_bytes && held_bytes >= min_block_size_bytes))
+        takeSquashedChunks(/*all_rows=*/ true);
+}
+
+void ProgressiveSquashingChunksTransform::takeSquashedChunks(bool all_rows)
+{
+    const auto & header = getOutputPort().getSharedHeader();
+    while (Chunk squashed = Squashing::squash(all_rows ? squashing.flush() : squashing.generate(), header))
+    {
+        squashed_rows_sent += squashed.getNumRows();
+        ready_chunks.push_back(std::move(squashed));
+    }
+
+    if (!squashing.getRows())
+        held_bytes = 0;
+}
+
+bool ProgressiveSquashingChunksTransform::canGenerate()
+{
+    return !ready_chunks.empty();
+}
+
+Chunk ProgressiveSquashingChunksTransform::generate()
+{
+    Chunk chunk = std::move(ready_chunks.front());
+    ready_chunks.pop_front();
+    return chunk;
+}
+
+Chunk ProgressiveSquashingChunksTransform::getRemaining()
+{
+    chassert(ready_chunks.empty());
     return Squashing::squash(squashing.flush(), getOutputPort().getSharedHeader());
 }
 

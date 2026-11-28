@@ -156,7 +156,7 @@ CaresPTRResolver::CaresPTRResolver(CaresPTRResolver::provider_token)
     /*
          * ares_library_init is not thread safe. Currently, the only other usage of c-ares seems to be in grpc.
          * In grpc, ares_library_init seems to be called only in Windows.
-         * See https://github.com/grpc/grpc/blob/master/src/core/ext/filters/client_channel/resolver/dns/c_ares/grpc_ares_wrapper.cc#L1187
+         * See https://github.com/grpc/grpc/blob/17d37ac9cf2753e4ea6d820ad5c8bb5dd8b5ce04/src/core/ext/filters/client_channel/resolver/dns/c_ares/grpc_ares_wrapper.cc#L1187
          * That means it's safe to init it here, but we should be cautious when introducing new code that depends on c-ares and even updates
          * to grpc. As discussed in https://github.com/ClickHouse/ClickHouse/pull/37827#discussion_r919189085, c-ares should be adapted to be atomic
          *
@@ -247,7 +247,7 @@ bool CaresPTRResolver::wait_and_process(AresChannelRAII & channel_raii)
         for (size_t i = 0; i < dns_state.poll_nfds; ++i)
         {
             const struct pollfd & pfd = dns_state.poll_fds[i];
-            const int rfd = (pfd.revents & POLLIN) ? pfd.fd : ARES_SOCKET_BAD;
+            const int rfd = (pfd.revents & (POLLIN | POLLERR | POLLHUP)) ? pfd.fd : ARES_SOCKET_BAD;
             const int wfd = (pfd.revents & POLLOUT) ? pfd.fd : ARES_SOCKET_BAD;
 
             if (rfd != ARES_SOCKET_BAD || wfd != ARES_SOCKET_BAD)
@@ -278,14 +278,5 @@ void CaresPTRResolver::process_possible_timeout(ares_channel channel)
     /* Call ares_process() unconditionally here, even if we simply timed out
         above, as otherwise the ares name resolve won't timeout! */
     ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
-}
-
-void CaresPTRResolver::process_readable_sockets(std::span<pollfd> readable_sockets, ares_channel channel)
-{
-    for (auto readable_socket : readable_sockets)
-    {
-        auto fd = readable_socket.revents & C_ARES_POLL_EVENTS ? readable_socket.fd : ARES_SOCKET_BAD;
-        ares_process_fd(channel, fd, ARES_SOCKET_BAD);
-    }
 }
 }

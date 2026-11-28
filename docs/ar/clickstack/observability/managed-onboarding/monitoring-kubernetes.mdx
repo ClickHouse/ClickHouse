@@ -1,0 +1,340 @@
+---
+slug: /clickstack/observability/managed-onboarding/monitoring-kubernetes
+title: 'مراقبة Kubernetes باستخدام ClickHouse Observability المُدار ذاتيًا'
+description: 'جمع السجلات ومقاييس البنية التحتية والأحداث من عنقود Kubernetes إلى ClickHouse Observability المُدار ذاتيًا'
+doc_type: 'guide'
+keywords: ['clickstack', 'kubernetes', 'k8s', 'managed', 'observability', 'logs', 'metrics', 'events', 'daemonset', 'helm']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+sidebarTitle: 'مراقبة kubernetes'
+---
+
+يشرح هذا الدليل خطوات جمع السجلات ومقاييس البنية التحتية وأحداث Kubernetes من عنقود وإرسالها إلى ClickHouse Observability المُدار ذاتيًا، ثم عرضها في لوحة معلومات Kubernetes المدمجة.
+
+يعتمد هذا النمط على النهج القياسي في OpenTelemetry: يُنشر جامعا بيانات عبر [مخطط Helm الخاص بـ OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector)، ويُرسل كلٌّ منهما البيانات إلى جامع البيانات البوابة في ClickStack عبر OTLP. تعمل **مجموعة العمليات الخلفية (DaemonSet)** على كل عقدة لجمع سجلات الحاويات ومقاييس كيوبليت، بينما يجمع **نشر (Deployment)** بنسخة متماثلة واحدة أحداث Kubernetes والمقاييس على مستوى العنقود بأكمله. لمزيد من المعلومات حول دور البوابة، راجع [أدوار المجمّع](/ar/clickstack/self-configured/ingesting-data/collector#collector-roles-self-configured).
+
+يفترض هذا الدليل أنك أكملت خطوات [إعداد مُجمِّع OpenTelemetry الخاص بك](/ar/clickstack/self-configured/managed-onboarding/setting-up-your-opentelemetry-collector)، وأن لديك جامع بيانات بوابة ClickStack قيد التشغيل.
+
+بالنسبة إلى أعباء العمل العاملة داخل Kubernetes، ينبغي نشر جامع البيانات البوابة نفسه **داخل العنقود ذاته باستخدام مخطط Helm الخاص بـ OpenTelemetry من المصدر الأصلي مع صورة مُجمِّع ClickStack**. لتثبيته، اتبع خطوات Helm الواردة في [نشر جامع البيانات](/ar/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured). **احرص على تدوين نقطة نهاية OTLP هذه**.
+
+<Steps>
+  <Step title="جهّز المتطلبات المسبقة" id="gather-prerequisites">
+    ستحتاج إلى:
+
+    * **عنقود Kubernetes** (يُوصى بالإصدار v1.20+) مع تهيئة `kubectl` للعمل عليه.
+    * **[Helm](https://helm.sh/) v3+**.
+    * **نقطة نهاية OTLP** لجامع البيانات الذي يعمل كبوابة في ClickStack، على أن تكون قابلة للوصول من داخل العنقود، مثل `http://clickstack-otel-collector.observability.svc.cluster.local:4318`. يجب نشر جامع البيانات في موقع تستطيع مجموعات العمليات الخلفية وكائن النشر الوصول إليه، وعادةً ما يكون ذلك في العنقود نفسه أو عبر خدمة من النوع `LoadBalancer`.
+    * قيمة `OTLP_AUTH_TOKEN` التي عيّنتها عند نشر جامع البيانات الذي يعمل كبوابة. إذا لم تؤمّن جامع البيانات، فيمكنك تخطي خطوة إنشاء secret أدناه وحذف ترويسة `authorization` من ملفات التعريف.
+
+    <Info>
+      **مكان تشغيل البوابة**
+
+      عند النشر داخل العنقود، شغّل جامع البيانات الذي يعمل كبوابة بوصفه `Deployment` أو `StatefulSet` في Kubernetes ضمن العنقود نفسه، ثم صِل إليه عبر اسم DNS الخاص بخدمته داخل العنقود. أما إذا كانت البوابة تعمل خارج العنقود، فاستخدم عنوان URL الخاص بها القابل للوصول من الخارج.
+    </Info>
+  </Step>
+
+  <Step title="أنشئ secret للمصادقة وConfigMap" id="create-secret-and-configmap">
+    اختر مساحة الأسماء التي تريد تشغيل جامعي البيانات فيها، ثم أنشئ secret يحتوي على `OTLP_AUTH_TOKEN`، وConfigMap يشير إلى البوابة الخاصة بك:
+
+    ```shell
+    export OTLP_AUTH_TOKEN="a-strong-shared-secret"
+    export OTEL_COLLECTOR_ENDPOINT="http://clickstack-otel-collector.observability.svc.cluster.local:4318"
+    export NAMESPACE=observability
+
+    kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+
+    kubectl create secret generic clickstack-otlp-secret \
+      --from-literal=OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+      -n ${NAMESPACE}
+
+    kubectl create configmap otel-config-vars \
+      --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=${OTEL_COLLECTOR_ENDPOINT} \
+      -n ${NAMESPACE}
+    ```
+
+    يقرأ جامعا البيانات الموضَّحان أدناه هذه القيم عبر `extraEnvs`، ومن ثَمّ يُعاد استخدام الـ secret والـ ConfigMap ذاتهما في كليهما.
+  </Step>
+
+  <Step title="أضف مستودع helm الخاص بـ OpenTelemetry" id="add-otel-helm-repo">
+    ```shell
+    helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+    helm repo update
+    ```
+  </Step>
+
+  <Step title="انشر جامع بيانات العنقود" id="deploy-cluster-collector">
+    هذا نشر (Deployment) بنسخة متماثلة واحدة يجمع **أحداث Kubernetes** و**المقاييس على مستوى العنقود بأكمله** (أعداد العقد، ومراحل الـ pod، وحالة النشر، وغير ذلك). أما تشغيل أكثر من نسخة متماثلة فسيؤدي إلى بيانات مكررة.
+
+    احفظ ما يلي في ملف باسم `k8s_deployment.yaml`:
+
+    <Accordion title="k8s_deployment.yaml">
+      ```yaml
+      # k8s_deployment.yaml
+      mode: deployment
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.123.0
+
+      # نحتاج إلى جامع بيانات واحد فقط من هذا النوع، فأي عدد إضافي سينتج بيانات مكررة
+      replicaCount: 1
+
+      presets:
+        kubernetesAttributes:
+          enabled: true
+          extractAllPodLabels: true
+          extractAllPodAnnotations: true
+        # يجمع أحداث Kubernetes عبر k8sobject receiver.
+        kubernetesEvents:
+          enabled: true
+        # يجمع المقاييس على مستوى العنقود عبر k8s_cluster receiver.
+        clusterMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: OTLP_AUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: clickstack-otlp-secret
+              key: OTLP_AUTH_TOKEN
+              optional: true
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "${env:OTLP_AUTH_TOKEN}"
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+
+    ثبّته باستخدام الأمر التالي:
+
+    ```shell
+    helm install k8s-otel-deployment open-telemetry/opentelemetry-collector \
+      -f k8s_deployment.yaml \
+      -n ${NAMESPACE}
+    ```
+  </Step>
+
+  <Step title="انشر جامع بيانات العقدة" id="deploy-node-collector">
+    هذه مجموعة عمليات خلفية (DaemonSet) تعمل على كل عقدة لجمع **سجلات الحاويات** و**مقاييس المضيف** و**مقاييس كيوبليت** (نسبة استخدام CPU والذاكرة لكل pod ولكل حاوية مقارنةً بالطلبات والحدود).
+
+    احفظ ما يلي باسم `k8s_daemonset.yaml`:
+
+    <Accordion title="k8s_daemonset.yaml">
+      ```yaml
+      # k8s_daemonset.yaml
+      mode: daemonset
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.123.0
+
+      # مطلوب لاستخدام مقاييس نسبة استخدام cpu/memory في kubeletstats
+      clusterRole:
+        create: true
+        rules:
+          - apiGroups:
+              - ''
+            resources:
+              - nodes/proxy
+            verbs:
+              - get
+
+      presets:
+        logsCollection:
+          enabled: true
+        hostMetrics:
+          enabled: true
+        kubernetesAttributes:
+          enabled: true
+          extractAllPodLabels: true
+          extractAllPodAnnotations: true
+        kubeletMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: OTLP_AUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: clickstack-otlp-secret
+              key: OTLP_AUTH_TOKEN
+              optional: true
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        receivers:
+          # مقاييس كيوبليت إضافية تُعبّر عن نسبة الاستخدام مقارنةً بالطلبات والحدود.
+          kubeletstats:
+            collection_interval: 20s
+            auth_type: 'serviceAccount'
+            endpoint: '${env:K8S_NODE_NAME}:10250'
+            insecure_skip_verify: true
+            metrics:
+              k8s.pod.cpu_limit_utilization:
+                enabled: true
+              k8s.pod.cpu_request_utilization:
+                enabled: true
+              k8s.pod.memory_limit_utilization:
+                enabled: true
+              k8s.pod.memory_request_utilization:
+                enabled: true
+              k8s.pod.uptime:
+                enabled: true
+              k8s.node.uptime:
+                enabled: true
+              k8s.container.cpu_limit_utilization:
+                enabled: true
+              k8s.container.cpu_request_utilization:
+                enabled: true
+              k8s.container.memory_limit_utilization:
+                enabled: true
+              k8s.container.memory_request_utilization:
+                enabled: true
+              container.uptime:
+                enabled: true
+
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "${env:OTLP_AUTH_TOKEN}"
+
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+
+    ثبّتها:
+
+    ```shell
+    helm install k8s-otel-daemonset open-telemetry/opentelemetry-collector \
+      -f k8s_daemonset.yaml \
+      -n ${NAMESPACE}
+    ```
+
+    تحقق من سلامة الحالة التشغيلية لكلا الإصدارين:
+
+    ```shell
+    kubectl get pods -n ${NAMESPACE} -l app.kubernetes.io/name=opentelemetry-collector
+    ```
+
+    من المفترض أن ترى pod واحدًا للنشر (Deployment) وpod واحدًا لمجموعة العمليات الخلفية (DaemonSet) على كل عقدة، وجميعها في الحالة `Running`.
+  </Step>
+
+  <Step title="مرّر سمات Kubernetes إلى تطبيقاتك (يُوصى بذلك)" id="forward-k8s-attributes">
+    لربط سجلات التطبيقات والمقاييس والتتبّعات بالبيانات الوصفية لـ Kubernetes (اسم الـ pod، ومساحة الاسم، والعقدة، والنشر)، مرّر هذه البيانات الوصفية إلى تطبيقك عبر `OTEL_RESOURCE_ATTRIBUTES`. بعد ذلك، يتولى المعالج `k8sattributes` في مجموعة العمليات الخلفية (DaemonSet) إثراء بيانات القياس عن بُعد الواردة بالسمات المطابقة للـ pod والعقدة.
+
+    ```yaml
+    # my_app_deployment.yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: app-deployment
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: app
+      template:
+        metadata:
+          labels:
+            app: app
+            service.name: <MY_APP_NAME>
+        spec:
+          containers:
+            - name: app-container
+              image: my-image
+              env:
+                - name: POD_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.name
+                - name: POD_UID
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.uid
+                - name: POD_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: NODE_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: spec.nodeName
+                - name: DEPLOYMENT_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['deployment']
+                - name: OTEL_RESOURCE_ATTRIBUTES
+                  value: k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME),k8s.deployment.name=$(DEPLOYMENT_NAME)
+    ```
+  </Step>
+
+  <Step title="تحقّق في واجهة مستخدم ClickStack" id="confirm-in-ui">
+    افتح خدمتك في [وحدة تحكم ClickHouse Cloud](https://console.clickhouse.cloud) واختر **ClickStack** من القائمة اليسرى.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![تشغيل ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
+      </Frame>
+    </div>
+
+    في **واجهة البحث**، غيّر المصدر إلى `Logs` واضبط النطاق الزمني على **Last 15 minutes**. يُفترض أن تظهر سجلات الحاويات من جميع أنحاء العنقود خلال بضع ثوانٍ، مُثراةً بسمات مثل `k8s.namespace.name` و`k8s.pod.name` و`k8s.node.name`.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![واجهة البحث في ClickStack مع سجلات Kubernetes](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
+      </Frame>
+    </div>
+
+    لعرض مقاييس البنية التحتية والأحداث ضمن سياقها، افتح لوحة معلومات **Kubernetes** المدمجة بالانتقال إلى **Dashboards** -&gt; **Kubernetes**. يُفترض أن تحتوي علامات التبويب `Pods` و`Nodes` و`Namespaces` جميعها على بيانات.
+
+    <div className="ch-image-lg">
+      <Frame>
+        ![لوحة معلومات Kubernetes في ClickStack](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
+      </Frame>
+    </div>
+
+    إذا لم تظهر أي بيانات:
+
+    * تحقّق من أن حاويات pod التابعة لمجموعة العمليات الخلفية (DaemonSet) والنشر (Deployment) في حالة `Running`، وتابع سجلاتها باستخدام `kubectl logs -n ${NAMESPACE} <pod>`.
+    * تأكّد من إمكانية الوصول إلى `YOUR_OTEL_COLLECTOR_ENDPOINT` من داخل العنقود (ادخل إلى أحد pod جامع البيانات عبر `kubectl exec` ثم اختبر الوصول باستخدام `curl`).
+    * تحقّق من أن قيمة `OTLP_AUTH_TOKEN` في الـ secret تطابق القيمة المضبوطة على جامع البيانات العامل كبوابة.
+  </Step>
+
+  <Step title="للمزيد من الاطّلاع" id="further-reading">
+    * [مرجع التكامل مع Kubernetes](/ar/clickstack/observability/integration-examples/kubernetes#self-managed) للاطلاع على المجموعة الكاملة من المستقبِلات والمعالجات وخيارات الضبط.
+    * [تمرير وسوم الموارد إلى الـ pod](/ar/clickstack/observability/integration-examples/kubernetes#application-metadata) لمزيد من التفاصيل حول الإثراء من جانب التطبيق.
+    * [تأمين جامع البيانات](/ar/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) عبر تفعيل TLS على نقطة نهاية OTLP واستخدام مستخدمي إدخال بأدنى حد من الامتيازات.
+    * [تقدير الموارد](/ar/clickstack/self-configured/ingesting-data/collector#estimating-resources-self-configured) اللازمة لعمليات نشر البوابة والوكيل وفقًا لمعدل النقل المتوقع لديك.
+    * [الانتقال إلى بيئة الإنتاج](/ar/clickstack/self-configured/managing/production) للاطلاع على التوصيات الخاصة بالانتقال إلى بيئة الإنتاج.
+  </Step>
+</Steps>

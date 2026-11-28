@@ -11,22 +11,32 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # RowsReadByPrewhereReaders counts the rows each prewhere read step that reads columns reads, so it
 # grows with the number of steps that read: 4 grouped conditions over one Map read 1 x N rows, and
-# three steps over three different storage columns read 3 x N.
+# three steps over three different columns read 3 x N.
 # gate and gate2 are constant 1, so conditions on them filter nothing and only change how the
 # conditions are grouped into steps.
+# The Maps are not bucketed, so `tags['kN']` is not rewritten to a key subcolumn and every condition
+# on it reads the column `tags`.
 ${CLICKHOUSE_CLIENT} -q "
   DROP TABLE IF EXISTS t_steps_group;
   DROP TABLE IF EXISTS t_steps_throwing;
+  DROP TABLE IF EXISTS t_steps_top_k;
 
   CREATE TABLE t_steps_group (id UInt64, gate UInt8, gate2 UInt8, tags Map(String, String))
   ENGINE = MergeTree ORDER BY id
   SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0,
-           ratio_of_defaults_for_sparse_serialization = 1.0;
+           ratio_of_defaults_for_sparse_serialization = 1.0,
+           map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
 
   CREATE TABLE t_steps_throwing (id UInt64, tags Map(String, String))
   ENGINE = MergeTree ORDER BY id
   SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0,
-           ratio_of_defaults_for_sparse_serialization = 1.0;
+           ratio_of_defaults_for_sparse_serialization = 1.0,
+           map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
+
+  CREATE TABLE t_steps_top_k (id UInt64, s String)
+  ENGINE = MergeTree ORDER BY id
+  SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0,
+           add_minmax_index_for_string_columns = 0, ratio_of_defaults_for_sparse_serialization = 1.0;
 
   INSERT INTO t_steps_group
   SELECT number, 1, 1, mapFromArrays(arrayMap(i -> 'k' || toString(i), range(4)), arrayMap(i -> toString(number + i), range(4)))
@@ -36,8 +46,42 @@ ${CLICKHOUSE_CLIENT} -q "
   SELECT number, map('safe', if(number % 3 = 0, '', 'y'), 'val', if(number % 3 = 0, 'not a number', toString(number % 100)))
   FROM numbers(100000);
 
+  INSERT INTO t_steps_top_k SELECT number, if(number % 3 = 0, '', toString(number)) FROM numbers(100000);
+
   OPTIMIZE TABLE t_steps_group FINAL;
   OPTIMIZE TABLE t_steps_throwing FINAL;
+  OPTIMIZE TABLE t_steps_top_k FINAL;
+"
+
+# A string key looked up in the keys of an Enum keyed Map is converted to the Enum, which may throw.
+${CLICKHOUSE_CLIENT} -q "
+  DROP TABLE IF EXISTS t_steps_enum;
+
+  CREATE TABLE t_steps_enum (id UInt64, em Map(Enum8('a' = 1, 'b' = 2), String))
+  ENGINE = MergeTree ORDER BY id
+  SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0,
+           ratio_of_defaults_for_sparse_serialization = 1.0,
+           map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
+
+  INSERT INTO t_steps_enum SELECT number, map('a', toString(number), 'b', toString(number + 1)) FROM numbers(100000);
+
+  OPTIMIZE TABLE t_steps_enum FINAL;
+"
+
+# When WHERE is moved to PREWHERE, a condition on one subcolumn guards a throwing condition on its sibling,
+# a condition that cannot throw does not need it.
+${CLICKHOUSE_CLIENT} -q "
+  DROP TABLE IF EXISTS t_steps_sibling;
+
+  CREATE TABLE t_steps_sibling (id UInt64, t Tuple(safe String, val String))
+  ENGINE = MergeTree ORDER BY id
+  SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0,
+           ratio_of_defaults_for_sparse_serialization = 1.0;
+
+  INSERT INTO t_steps_sibling
+  SELECT number, if(number % 3 = 0, ('', 'n/a'), (hex(sipHash128(toString(number))), toString(number % 100))) FROM numbers(100000);
+
+  OPTIMIZE TABLE t_steps_sibling FINAL;
 "
 
 query_id_group=group_$CLICKHOUSE_DATABASE
@@ -46,15 +90,22 @@ query_id_interleaved=interleaved_$CLICKHOUSE_DATABASE
 query_id_nested=nested_$CLICKHOUSE_DATABASE
 query_id_nested_split=nested_split_$CLICKHOUSE_DATABASE
 query_id_read_ahead=read_ahead_$CLICKHOUSE_DATABASE
+query_id_top_k_where=top_k_where_$CLICKHOUSE_DATABASE
+query_id_top_k_prewhere=top_k_prewhere_$CLICKHOUSE_DATABASE
+query_id_starts_with=starts_with_$CLICKHOUSE_DATABASE
+query_id_like=like_$CLICKHOUSE_DATABASE
+query_id_like_column=like_column_$CLICKHOUSE_DATABASE
+query_id_like_invalid=like_invalid_$CLICKHOUSE_DATABASE
+query_id_starts_with_lower=starts_with_lower_$CLICKHOUSE_DATABASE
+query_id_enum_key=enum_key_$CLICKHOUSE_DATABASE
 
 opts=(
-  --enable_analyzer 1
   --optimize_functions_to_subcolumns 1
   --enable_multiple_prewhere_read_steps 1
   --use_query_condition_cache 0
 )
 
-# The rows a step reads cannot count a run of steps over one storage column, because only its first
+# The rows a step reads cannot count a run of steps over the same columns, because only its first
 # step reads: MergeTreeRangeReader::continueReadingChain returns before the row counter when a step
 # reads no columns, so such a run reads the rows once, exactly like a single step over them would.
 # MergeTreeSelectProcessor reports the number of steps at TEST level, so ask it directly.
@@ -95,8 +146,9 @@ steps_read_ahead=$(read_steps "$query_id_read_ahead" "
   FORMAT Null
 ")
 
-# Only adjacent conditions over the same storage column are merged, so the condition on gate keeps
-# the two Map conditions in separate steps and the query reads the rows three times.
+# Only adjacent conditions over the same columns are merged, so the condition on gate keeps
+# the two Map conditions in separate steps. The last step takes the Map the first one read,
+# so the query reads the rows twice.
 steps_interleaved=$(read_steps "$query_id_interleaved" "
   SELECT count() FROM t_steps_group
   PREWHERE tags['k0'] != '' AND gate = 1 AND tags['k1'] != ''
@@ -105,9 +157,10 @@ steps_interleaved=$(read_steps "$query_id_interleaved" "
 
 # A WHERE moved into an existing PREWHERE arrives as a nested conjunction. Flattening it must not
 # fragment conditions that used to be grouped, so these three non throwing conditions over one Map
-# still read the rows once.
+# still read the rows once. The query reads id too: a condition that reads all queried columns is
+# not moved to PREWHERE.
 steps_nested=$(read_steps "$query_id_nested" "
-  SELECT count() FROM t_steps_group
+  SELECT sum(id) FROM t_steps_group
   PREWHERE tags['k0'] != ''
   WHERE tags['k1'] != '' AND tags['k2'] != ''
   FORMAT Null
@@ -122,6 +175,65 @@ steps_nested_split=$(read_steps "$query_id_nested_split" "
   WHERE gate = 1 AND gate2 = 1
   FORMAT Null
   SETTINGS optimize_prewhere_after_pushdown = 1
+")
+
+# A condition on the column of `ORDER BY ... LIMIT` gets its own step after `__topKFilter`, which reads that
+# column first, whether it is written in WHERE (and moved to PREWHERE) or in PREWHERE.
+steps_top_k_where=$(read_steps "$query_id_top_k_where" "
+  SELECT s FROM t_steps_top_k WHERE s != 'zzzz' ORDER BY s LIMIT 5 FORMAT Null
+  SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1
+")
+
+steps_top_k_prewhere=$(read_steps "$query_id_top_k_prewhere" "
+  SELECT s FROM t_steps_top_k PREWHERE s != 'zzzz' ORDER BY s LIMIT 5 FORMAT Null
+  SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1
+")
+
+# startsWith and LIKE with a constant pattern on a String cannot throw, so they share the step of the condition
+# before them, while a condition containing a function that is not known to be unable to throw keeps its own step.
+steps_starts_with=$(read_steps "$query_id_starts_with" "
+  SELECT count() FROM t_steps_group PREWHERE tags['k0'] != '' AND startsWith(tags['k1'], '1') FORMAT Null
+")
+
+steps_like=$(read_steps "$query_id_like" "
+  SELECT count() FROM t_steps_group PREWHERE tags['k0'] != '' AND tags['k1'] LIKE '1%' FORMAT Null
+")
+
+# A pattern that is not constant is compiled for every row.
+steps_like_column=$(read_steps "$query_id_like_column" "
+  SELECT count() FROM t_steps_group PREWHERE tags['k0'] != '' AND tags['k1'] LIKE tags['k2'] FORMAT Null
+")
+
+# The pattern 1\ ends with an escape character, so building it throws. The first condition rejects every row.
+steps_like_invalid=$(read_steps "$query_id_like_invalid" "
+  SELECT count() FROM t_steps_group PREWHERE tags['k0'] = 'none' AND tags['k1'] LIKE '1\\\\' FORMAT Null
+")
+
+steps_starts_with_lower=$(read_steps "$query_id_starts_with_lower" "
+  SELECT count() FROM t_steps_group PREWHERE tags['k0'] != '' AND startsWith(lower(tags['k1']), '1') FORMAT Null
+")
+
+steps_enum_key=$(read_steps "$query_id_enum_key" "
+  SELECT count() FROM t_steps_enum PREWHERE em['a'] != '' AND startsWith(em['b'], '1') FORMAT Null
+")
+
+# The first function inside the PREWHERE conjunction.
+# pretty = 0: the pretty form does not print the conjuncts in the order of the steps.
+first_prewhere_function() {
+  ${CLICKHOUSE_CLIENT} "${opts[@]}" -q "$1" | grep -m1 'Prewhere filter column' \
+    | sed -n 's/.*Prewhere filter column: and(\([a-zA-Z0-9]*\)(.*/\1/p'
+}
+
+order_sibling_safe=$(first_prewhere_function "
+  EXPLAIN actions = 1, pretty = 0 SELECT count() FROM t_steps_sibling WHERE t.safe != '' AND startsWith(t.val, '5')
+  SETTINGS optimize_move_to_prewhere = 1, allow_reorder_prewhere_conditions = 1, move_all_conditions_to_prewhere = 1,
+           use_statistics = 0
+")
+
+order_sibling_throwing=$(first_prewhere_function "
+  EXPLAIN actions = 1, pretty = 0 SELECT count() FROM t_steps_sibling WHERE t.safe != '' AND toUInt64(t.val) > 50
+  SETTINGS optimize_move_to_prewhere = 1, allow_reorder_prewhere_conditions = 1, move_all_conditions_to_prewhere = 1,
+           use_statistics = 0
 ")
 
 ${CLICKHOUSE_CLIENT} -q "
@@ -146,8 +258,8 @@ ${CLICKHOUSE_CLIENT} -q "
          (SELECT ProfileEvents['ReadCompressedBytes'] AS b FROM system.query_log
            WHERE current_database = currentDatabase() AND query_id = '$query_id_group' AND type = 'QueryFinish') AS g;
 
-  -- Exactly three steps over three different storage columns, so each of them reads.
-  SELECT 'interleaved steps', '$steps_interleaved' = '3' AND ProfileEvents['RowsReadByPrewhereReaders'] = 300000
+  -- Three steps, but the last one reuses the Map read by the first, so only two of them read.
+  SELECT 'interleaved steps', '$steps_interleaved' = '3' AND ProfileEvents['RowsReadByPrewhereReaders'] = 200000
     FROM system.query_log
    WHERE current_database = currentDatabase() AND query_id = '$query_id_interleaved' AND type = 'QueryFinish';
 
@@ -161,6 +273,27 @@ ${CLICKHOUSE_CLIENT} -q "
     FROM system.query_log
    WHERE current_database = currentDatabase() AND query_id = '$query_id_nested_split' AND type = 'QueryFinish';
 
+  -- __topKFilter in the first step, the condition on its column in the second.
+  SELECT 'top-k where steps', '$steps_top_k_where' = '2';
+  SELECT 'top-k prewhere steps', '$steps_top_k_prewhere' = '2';
+
+  -- Conditions that cannot throw share one step: the Map is read once.
+  SELECT 'startsWith grouped steps', '$steps_starts_with' = '1' AND ProfileEvents['RowsReadByPrewhereReaders'] = 100000
+    FROM system.query_log
+   WHERE current_database = currentDatabase() AND query_id = '$query_id_starts_with' AND type = 'QueryFinish';
+  SELECT 'like grouped steps', '$steps_like' = '1';
+  SELECT 'like column pattern split steps', '$steps_like_column' = '2';
+  SELECT 'like invalid pattern split steps', '$steps_like_invalid' = '2';
+  SELECT 'startsWith lower split steps', '$steps_starts_with_lower' = '2';
+  SELECT 'enum key split steps', '$steps_enum_key' = '2';
+
+  -- t.val is smaller than t.safe, so cost order puts the condition on it first unless it is kept behind its guard.
+  SELECT 'sibling cannot throw reordered', '$order_sibling_safe' = 'startsWith';
+  SELECT 'sibling throwing guarded', '$order_sibling_throwing' = 'notEquals';
+
   DROP TABLE t_steps_group;
   DROP TABLE t_steps_throwing;
+  DROP TABLE t_steps_top_k;
+  DROP TABLE t_steps_enum;
+  DROP TABLE t_steps_sibling;
 "

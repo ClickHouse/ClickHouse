@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/resolveStorages.h>
@@ -10,6 +11,7 @@
 #include <Analyzer/TableNode.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/Set.h>
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Formats/NativeReader.h>
@@ -29,6 +31,8 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TOO_DEEP_RECURSION;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace Setting
@@ -40,6 +44,10 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
 }
+
+/// The maximum nesting depth of plans for sets from subqueries in a deserialized query plan.
+/// The serialized plan may come from a client, and the deserialization is recursive.
+static constexpr size_t MAX_SUBQUERY_PLAN_NESTING_DEPTH = 1000;
 
 enum class SetSerializationKind : UInt8
 {
@@ -55,7 +63,7 @@ QueryPlanAndSets::QueryPlanAndSets(QueryPlanAndSets &&) noexcept = default;
 struct QueryPlanAndSets::Set
 {
     CityHash_v1_0_2::uint128 hash;
-    std::list<ColumnSet *> columns;
+    ListWithMemoryTracking<ColumnSet *> columns;
 };
 struct QueryPlanAndSets::SetFromStorage : public QueryPlanAndSets::Set
 {
@@ -217,6 +225,15 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             readVarUInt(num_columns, in);
             readVarUInt(num_rows, in);
 
+            if (num_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                    "Suspiciously many columns ({}) in a serialized set (maximum: {})",
+                    num_columns, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS);
+            if (num_rows > DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                    "Suspiciously many rows ({}) in a serialized set (maximum: {})",
+                    num_rows, DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS);
+
             ColumnsWithTypeAndName set_columns;
             set_columns.reserve(num_columns);
 
@@ -240,7 +257,15 @@ QueryPlanAndSets QueryPlan::deserializeSets(
         }
         else if (kind == UInt8(SetSerializationKind::SubqueryPlan))
         {
-            auto plan_for_set = QueryPlan::deserialize(in, context, flags, max_type_complexity);
+            auto nested_flags = flags;
+            ++nested_flags.subquery_nesting_depth;
+            if (nested_flags.subquery_nesting_depth > MAX_SUBQUERY_PLAN_NESTING_DEPTH)
+                throw Exception(
+                    ErrorCodes::TOO_DEEP_RECURSION,
+                    "Too deep nesting of subqueries for sets in deserialized query plan (more than {} levels)",
+                    MAX_SUBQUERY_PLAN_NESTING_DEPTH);
+
+            auto plan_for_set = QueryPlan::deserialize(in, context, nested_flags, max_type_complexity);
 
             res.sets_from_subquery.emplace_back(QueryPlanAndSets::SetFromSubquery{
                 {hash, std::move(columns)},
@@ -254,7 +279,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
     return res;
 }
 
-static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets, const ContextPtr & context)
+static void makeSetsFromStorage(ListWithMemoryTracking<QueryPlanAndSets::SetFromStorage> sets, const ContextPtr & context)
 {
     for (auto & set : sets)
     {
@@ -275,7 +300,7 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
     }
 }
 
-static void makeSetsFromTuple(std::list<QueryPlanAndSets::SetFromTuple> sets, const ContextPtr & context)
+static void makeSetsFromTuple(ListWithMemoryTracking<QueryPlanAndSets::SetFromTuple> sets, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     const FutureSetSettings set_settings(settings);
@@ -288,7 +313,7 @@ static void makeSetsFromTuple(std::list<QueryPlanAndSets::SetFromTuple> sets, co
     }
 }
 
-static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets::SetFromSubquery> sets, const ContextPtr & context)
+static void makeSetsFromSubqueries(QueryPlan & plan, ListWithMemoryTracking<QueryPlanAndSets::SetFromSubquery> sets, const ContextPtr & context)
 {
     if (sets.empty())
         return;
@@ -320,6 +345,18 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
         prepared_sets_cache);
 
     plan.addStep(std::move(step));
+}
+
+void QueryPlan::serializeReadySets(SerializedSetsRegistry & registry, WriteBuffer & out)
+{
+    SerializationFlags flags;
+    flags.sets_must_be_ready = true;
+    serializeSets(registry, out, flags);
+}
+
+void QueryPlan::deserializeAndMakeSets(DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context)
+{
+    makeSets(deserializeSets(QueryPlan{}, registry, in, SerializationFlags{}, context, 0), context);
 }
 
 QueryPlan QueryPlan::makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context)

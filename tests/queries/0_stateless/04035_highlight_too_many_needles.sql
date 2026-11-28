@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 SELECT '-- Error: too many needles';
 SELECT highlight('text', arrayMap(x -> toString(x), range(256))); -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }

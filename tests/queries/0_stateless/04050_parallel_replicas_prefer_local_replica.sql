@@ -64,7 +64,6 @@ INSERT INTO t_dest
 SELECT key, value
 FROM t
 SETTINGS
-    allow_experimental_analyzer = 1,
     enable_parallel_replicas = 1,
     max_parallel_replicas = 1,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',

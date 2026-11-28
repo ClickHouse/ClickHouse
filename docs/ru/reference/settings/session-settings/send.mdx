@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются из [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="send_profile_events">
-  ## send_profile_events
-</div>
+## send_profile_events {#send_profile_events}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,9 +28,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Отключено.
 * 1 — Включено.
 
-<div id="send_progress_in_http_headers">
-  ## send_progress_in_http_headers
-</div>
+## send_progress_in_http_headers {#send_progress_in_http_headers}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -45,9 +41,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Отключено.
 * 1 — Включено.
 
-<div id="send_table_structure_on_insert_with_inline_data">
-  ## send_table_structure_on_insert_with_inline_data
-</div>
+## send_table_structure_on_insert_with_inline_data {#send_table_structure_on_insert_with_inline_data}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -55,9 +49,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Если параметр отключён и запрос INSERT содержит встроенные данные, сервер не будет отправлять клиенту по собственному протоколу структуру таблицы и значения столбцов по умолчанию. Вместо этого сервер будет сам разбирать встроенные данные. Это может повысить производительность при большом количестве небольших вставок по собственному протоколу.
 
-<div id="send_timeout">
-  ## send_timeout
-</div>
+## send_timeout {#send_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="300" />
 

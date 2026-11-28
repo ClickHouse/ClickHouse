@@ -2,12 +2,11 @@
 slug: /use-cases/observability/clickstack/integration-partners/telflo
 title: 'إرسال OpenTelemetry إلى ClickStack باستخدام Telflo'
 sidebarTitle: 'Telflo'
-description: 'أنشئ ونشر تهيئات OpenTelemetry Collector التي ترسل بيانات telemetry إلى ClickStack أو تكتبها مباشرةً في ClickHouse، مع تولّي Telflo إدارة أسطول الـ collector'
+description: 'أنشئ ونشر إعدادات جامع بيانات OpenTelemetry التي ترسل بيانات القياس عن بُعد إلى ClickStack أو تكتبها مباشرةً في ClickHouse، مع تولّي Telflo إدارة أسطول جامع البيانات'
 doc_type: 'guide'
-keywords: ['Telflo', 'OTEL', 'ClickStack', 'OpenTelemetry', 'collector management', 'fleet management', 'ClickHouse exporter']
+keywords: ['Telflo', 'OpenTelemetry', 'ClickStack', 'OpenTelemetry', 'collector management', 'fleet management', 'ClickHouse exporter']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -15,12 +14,12 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 <Info>
   **باختصار**
 
-  يوضّح لك هذا الدليل كيفية إرسال telemetry إلى ClickStack من OpenTelemetry Collectors التي تديرها Telflo. ستتعلّم كيفية:
+  يوضّح لك هذا الدليل كيفية إرسال بيانات القياس عن بُعد إلى ClickStack من جامعي بيانات OpenTelemetry التي تديرها Telflo. ستتعلّم كيفية:
 
-  * إنشاء تهيئة collector في المحرر المرئي لـ Telflo أو باستخدام CLI
-  * إرسال telemetry إلى ClickStack مفتوح المصدر أو Managed ClickStack، أو كتابتها مباشرةً في ClickHouse
-  * نشر التهيئة عن بُعد على أسطول من collectors
-  * التأكد من وصول telemetry إلى ClickStack أو إلى جداول ClickHouse الخاصة بك
+  * إنشاء إعدادات جامع البيانات في المحرر المرئي لـ Telflo أو باستخدام CLI
+  * إرسال بيانات القياس عن بُعد إلى ClickHouse Observability مفتوح المصدر أو Self-managed ClickHouse Observability، أو كتابتها مباشرةً في ClickHouse
+  * نشر الإعدادات عن بُعد على أسطول من جامعي البيانات
+  * التأكد من وصول بيانات القياس عن بُعد إلى ClickStack أو إلى جداول ClickHouse الخاصة بك
 
   الوقت المطلوب: 15-20 دقيقة
 </Info>
@@ -60,13 +59,13 @@ Telflo هو control plane محايد تجاه المزوّدين لـ OpenTeleme
 
 ## المتطلبات المسبقة {#prerequisites}
 
-* وجهة: [Open Source ClickStack](/ar/clickstack/getting-started/oss)، أو [Managed ClickStack](/ar/clickstack/getting-started/managed)، أو نسخة ClickHouse ذاتية الإدارة
+* وجهة: [Open Source ClickStack](/ar/clickstack/getting-started/oss)، أو [Self-managed ClickHouse Observability](/ar/clickstack/self-configured/getting-started/managed)، أو نسخة ClickHouse ذاتية الإدارة
 * حساب Telflo ([أنشئ حسابًا على telflo.com](https://telflo.com))
-* مكان لتشغيل الـ collectors: جهاز افتراضي أو عنقود Kubernetes
-* **Open Source ClickStack**: نقطة نهاية OTLP الخاصة بـ ClickStack (المنفذ `4318` لـ HTTP و`4317` لـ gRPC) ومفتاح واجهة برمجة التطبيقات الخاص بالاستيعاب، وتجده في HyperDX ضمن **Team Settings → API Keys** ([راجع الوثائق هنا](/ar/clickstack/ingesting-data/opentelemetry#sending-otel-data))
-* **Managed ClickStack**: نقطة نهاية خدمة ClickHouse Cloud الخاصة بك (المنفذ `8443`) ومستخدم للاستيعاب (راجع [إنشاء مستخدم للاستيعاب](/ar/clickstack/ingesting-data/collector#creating-an-ingestion-user))
-* **ClickHouse ذاتي الإدارة**: نقطة نهاية ClickHouse الخاصة بك، وقاعدة بيانات لـ [جداول ClickStack](/ar/clickstack/ingesting-data/schemas)، ومستخدم قادر على إنشائها والكتابة فيها (راجع [إنشاء مستخدم للاستيعاب](/ar/clickstack/ingesting-data/collector#creating-an-ingestion-user-oss))
-* اتصال شبكي من الـ collectors إلى نقطة نهاية ClickStack أو ClickHouse الخاصة بك
+* مكان لتشغيل جامعي البيانات: جهاز افتراضي أو عنقود Kubernetes
+* **Open Source ClickStack**: نقطة نهاية OTLP الخاصة بـ ClickStack (المنفذ `4318` لـ HTTP و`4317` لـ gRPC) ومفتاح واجهة برمجة التطبيقات الخاص بالإدخال، وتجده في واجهة مستخدم ClickStack ضمن **Team Settings → API Keys** ([راجع الوثائق هنا](/ar/clickstack/ingesting-data/opentelemetry#sending-otel-data))
+* **Self-managed ClickHouse Observability**: نقطة نهاية خدمة ClickHouse Cloud الخاصة بك (المنفذ `8443`) ومستخدم للإدخال (راجع [إنشاء مستخدم للإدخال](/ar/clickstack/ingesting-data/collector#creating-an-ingestion-user))
+* **ClickHouse ذاتي الإدارة**: نقطة نهاية ClickHouse الخاصة بك، وقاعدة بيانات لـ [جداول ClickStack](/ar/clickstack/ingesting-data/schemas)، ومستخدم قادر على إنشائها والكتابة فيها (راجع [إنشاء مستخدم للإدخال](/ar/clickstack/ingesting-data/collector#creating-an-ingestion-user-oss))
+* اتصال شبكي من جامعي البيانات إلى نقطة نهاية ClickStack أو ClickHouse الخاصة بك
 
 {/* vale off */}
 
@@ -83,7 +82,7 @@ Telflo هو control plane محايد تجاه المزوّدين لـ OpenTeleme
   </Step>
 
   <Step title="أضِف المُصدِّر" id="add-exporter">
-    تستخدم المسارات الثلاثة جميعها المحرر نفسه، وخطوة النشر نفسها، والأسطول نفسه؛ ولا يختلف بينها سوى المُصدِّر. اختر علامة التبويب المناسبة لطريقة النشر لديك: يستقبل ClickStack مفتوح المصدر بيانات OTLP باستخدام مفتاح استيعاب؛ أما ClickStack المُدار وClickHouse ذاتي الإدارة فيستقبلان عمليات كتابة مباشرة إلى جداول ClickStack.
+    تستخدم المسارات الثلاثة جميعها المحرر نفسه، وخطوة النشر نفسها، والأسطول نفسه؛ ولا يختلف بينها سوى المُصدِّر. اختر علامة التبويب المناسبة لطريقة النشر لديك: يستقبل ClickStack مفتوح المصدر بيانات OTLP باستخدام مفتاح استيعاب؛ أما Self-managed ClickHouse Observability وClickHouse ذاتي الإدارة فيستقبلان عمليات كتابة مباشرة إلى جداول ClickStack.
 
     <Tabs>
       <Tab title="Open Source ClickStack">
@@ -94,8 +93,8 @@ Telflo هو control plane محايد تجاه المزوّدين لـ OpenTeleme
         أما مع gRPC، فاستخدم مُصدِّر **OTLP** على المنفذ `4317` مع الترويسة نفسها ضمن **gRPC Metadata Headers**.
       </Tab>
 
-      <Tab title="Managed ClickStack">
-        لا يأتي Managed ClickStack مع مجمّع بوابة، لذا لا توجد نقطة نهاية OTLP مستضافة لإرسال بيانات القياس إليها. والمجمّع الذي تهيئه هنا هو الذي يقوم بدور تلك [البوابة](/ar/clickstack/ingesting-data/collector#collector-roles): امنحه مُستقبِل **OTLP** إلى جانب مُصدِّر ClickHouse، فيكتب إلى خدمة ClickHouse Cloud الخاصة بك. وبعد ذلك ترسل إليه حِزم SDK ومجمّعات الوكيل بيانات OTLP على المنفذ `4318` (HTTP) أو `4317` (gRPC).
+      <Tab title="Self-managed ClickHouse Observability">
+        لا يأتي Self-managed ClickHouse Observability مع مجمّع بوابة، لذا لا توجد نقطة نهاية OTLP مستضافة لإرسال بيانات القياس إليها. والمجمّع الذي تهيئه هنا هو الذي يقوم بدور تلك [البوابة](/ar/clickstack/ingesting-data/collector#collector-roles): امنحه مُستقبِل **OTLP** إلى جانب مُصدِّر ClickHouse، فيكتب إلى خدمة ClickHouse Cloud الخاصة بك. وبعد ذلك ترسل إليه حِزم SDK ومجمّعات الوكيل بيانات OTLP على المنفذ `4318` (HTTP) أو `4317` (gRPC).
 
         1. اسحب مُصدِّر **ClickHouse** إلى لوحة العمل.
         2. املأ **Endpoint** بنقطة نهاية خدمة ClickHouse Cloud الخاصة بك (المنفذ `8443`)، واضبط **Database** على `default`، واضبط **Username** على مستخدم الاستيعاب الخاص بك.
@@ -119,7 +118,11 @@ Telflo هو control plane محايد تجاه المزوّدين لـ OpenTeleme
 
     ارسم الأسهم (edges) من المستقبلات (receivers) مروراً بالمعالجات (processors) وصولاً إلى المُصدِّر (exporter)، بواقع pipeline واحد لكل إشارة. ويعرض صف الـ status إما **config valid** أو عدد الأخطاء التي يلزم إصلاحها، بينما يعرض تبويب **YAML** الإعداد (configuration) المُولَّد.
 
-    <Image img="/images/clickstack/telflo/telflo-configuration.webp" alt="مسار تجميع في محرر Telflo مع تهيئة مُصدِّر ClickHouse" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![مسار تجميع في محرر Telflo مع تهيئة مُصدِّر ClickHouse](/images/clickstack/telflo/telflo-configuration.webp)
+      </Frame>
+    </div>
 
     قبل نشر أي شيء، يمكنك تمرير عيّنة من بيانات التتبع (telemetry) عبر التكوين والتحقق من الناتج في الطرف الآخر. راجع [الاختبار في Telflo](https://docs.telflo.com/docs/testing/overview). أو بدلاً من ذلك، يمكنك وصف ما تريد تحقيقه، فيقوم مساعد الذكاء الاصطناعي في Telflo، الذي يُفتح بزر **AI** في شريط الأدوات، ببناء التكوين والتحقق من صحته واختباره نيابةً عنك. ويمكن للوكيل (agent) الخاص بك القيام بالأمر نفسه عبر [واجهة سطر أوامر Telflo](https://docs.telflo.com/docs/cli/).
   </Step>
@@ -136,11 +139,15 @@ Telflo هو control plane محايد تجاه المزوّدين لـ OpenTeleme
 
     لتنفيذ rollout لتغيير ما، انشر إصدارًا جديدًا وأسنِده إلى المجموعة؛ وللرجوع إلى الوضع السابق، أسنِد إصدارًا سبق نشره.
 
-    <Image img="/images/clickstack/telflo/telflo-fleet.webp" alt="fleet في Telflo وجميع collectors فيه متزامنة بعد عملية rollout" size="lg" />
+    <div className="ch-image-lg">
+      <Frame>
+        ![fleet في Telflo وجميع collectors فيه متزامنة بعد عملية rollout](/images/clickstack/telflo/telflo-fleet.webp)
+      </Frame>
+    </div>
   </Step>
 
   <Step title="تحقّق من بيانات التتبّع" id="verify-telemetry">
-    افتح HyperDX وابحث عن إحدى خدماتك في عرض **Search**؛ واستخدم **Chart Explorer** للمقاييس. أما مع Managed ClickStack، فافتح خدمتك في وحدة تحكم ClickHouse Cloud وانقر على **Launch ClickStack**. وفي حالة ClickHouse ذاتي الإدارة، استعلم [جداول ClickStack](/ar/clickstack/ingesting-data/schemas) مباشرةً، على سبيل المثال `SELECT ServiceName, count() FROM otel_logs GROUP BY ServiceName`.
+    افتح واجهة مستخدم ClickStack وابحث عن إحدى خدماتك في عرض **Search**؛ واستخدم **Chart Explorer** للمقاييس. أما مع Self-managed ClickHouse Observability، فافتح خدمتك في وحدة تحكم ClickHouse Cloud وانقر على **Launch ClickStack**. وفي حالة ClickHouse ذاتي الإدارة، استعلم [جداول ClickStack](/ar/clickstack/ingesting-data/schemas) مباشرةً، على سبيل المثال `SELECT ServiceName, count() FROM otel_logs GROUP BY ServiceName`.
   </Step>
 </Steps>
 
@@ -157,17 +164,17 @@ Telflo هو control plane محايد تجاه المزوّدين لـ OpenTeleme
 
 ## الخطوات التالية {#next-steps}
 
-* **إنشاء لوحات المعلومات**: أنشئ تصورات في HyperDX للسجلات والمقاييس والتتبعات
+* **إنشاء لوحات المعلومات**: أنشئ تصورات في واجهة مستخدم ClickStack للسجلات والمقاييس والتتبعات
 * **إعداد التنبيهات**: هيّئ التنبيهات في ClickStack للحالات الحرجة
-* **التحسين بمساعد الذكاء الاصطناعي**: اطلب منه تعديل خط معالجة بيانات أو اقتراح اختبارات
+* **التحسين بمساعد الذكاء الاصطناعي**: اطلب منه تعديل مسار تنفيذ الاستعلام أو اقتراح اختبارات
 * **الانتقال من مزوّد آخر**: تغطي [flows](https://telflo.com/flows) عملية التحويل، إذ تحلّ محل الوكلاء الموجودين بالفعل في أسطولك وترسل البيانات بشكل مزدوج إلى كلتا الواجهتين الخلفيتين أثناء مقارنتك بينهما
 
-## اقرأ المزيد {#read-more}
+## لمزيد من القراءة {#read-more}
 
 * [وثائق Telflo](https://docs.telflo.com/docs)
-* [البداية السريعة: من لوحة فارغة إلى collector منشور](https://docs.telflo.com/docs/getting-started/quickstart)
-* [اختبار تهيئة collector](https://docs.telflo.com/docs/testing/overview)
+* [دليل البدء السريع: من مساحة عمل مرئية فارغة إلى جامع بيانات منشور](https://docs.telflo.com/docs/getting-started/quickstart)
+* [اختبار إعدادات جامعي البيانات](https://docs.telflo.com/docs/testing/overview)
 * [إدارة الأسطول في Telflo](https://docs.telflo.com/docs/fleet-management/overview)
-* [تثبيت collectors](https://docs.telflo.com/docs/fleet-management/install-collectors)
+* [تثبيت جامعي البيانات](https://docs.telflo.com/docs/fleet-management/install-collectors)
 * [استيعاب البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry)
 * [مخططات جداول ClickStack](/ar/clickstack/ingesting-data/schemas)

@@ -1,7 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/TypeId.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -13,8 +12,6 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/register_objects.h>
 
-#include <limits>
-
 namespace DB
 {
 
@@ -22,7 +19,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
-    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 namespace
@@ -39,34 +35,33 @@ namespace
             return std::make_shared<FunctionSubstringIndex>(name, is_utf8);
         }
 
-        String getName() const override { return function_name; }
+        [[nodiscard]] String getName() const override { return function_name; }
 
-        size_t getNumberOfArguments() const override { return 3; }
+        [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        bool useDefaultImplementationForConstants() const override { return true; }
-        ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+        [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        /// A row whose result is NULL, or an unused dictionary entry of a `LowCardinality` argument, may hold a UInt64 that
+        /// does not fit Int64, and `executeImpl` would throw for it
+        [[nodiscard]] bool canBeExecutedOnDefaultArguments(const ColumnsWithTypeAndName & arguments) const override
         {
-            FunctionArgumentDescriptors mandatory_args{
-                {"s", &isString, nullptr, "String"},
-                {"delim", &isString, nullptr, "String"},
-                {"count", &isNativeInteger, nullptr, "UInt or Int"}
-            };
+            return !uint64ArgumentMayHoldUnusedValues(arguments);
+        }
 
-            validateFunctionArguments(*this, arguments, mandatory_args);
+        [[nodiscard]] String getSignatureString() const override
+        {
+            return "(String, const String, NativeInteger) -> String";
+        }
 
+        [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        {
             return std::make_shared<DataTypeString>();
         }
 
-        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-        {
-            return std::make_shared<DataTypeString>();
-        }
-
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             ColumnPtr column_string = arguments[0].column;
             ColumnPtr column_delim = arguments[1].column;
@@ -88,6 +83,10 @@ namespace
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument to {} must be a single UTF-8 character", getName());
             }
 
+            /// The count is read with IColumn::getInt() below, so a UInt64 value that does not fit
+            /// Int64 must be rejected here rather than read as a negative count.
+            checkIntegerArgumentFitsInt64(*column_count, getName(), "count");
+
             auto column_res = ColumnString::create();
             ColumnString::Chars & vec_res = column_res->getChars();
             ColumnString::Offsets & offsets_res = column_res->getOffsets();
@@ -107,7 +106,7 @@ namespace
                 bool is_count_const = isColumnConst(*column_count);
                 if (is_count_const)
                 {
-                    Int64 count = getInt64(*column_count, 0);
+                    Int64 count = column_count->getInt(0);
                     vectorConstant(col_str, delim, count, vec_res, offsets_res, input_rows_count);
                 }
                 else
@@ -137,7 +136,7 @@ namespace
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 std::string_view str_ref = str_column->getDataAt(i);
-                Int64 count = getInt64(*count_column, i);
+                Int64 count = count_column->getInt(i);
 
                 std::string_view res_ref;
                 if (is_actually_utf8)
@@ -200,7 +199,7 @@ namespace
             std::string_view str_ref{str};
             for (size_t i = 0; i < rows; ++i)
             {
-                Int64 count = getInt64(*count_column, i);
+                Int64 count = count_column->getInt(i);
 
                 std::string_view res_ref;
                 if (is_actually_utf8)
@@ -210,22 +209,6 @@ namespace
 
                 appendToResultColumn<false>(res_ref, res_data, res_offsets);
             }
-        }
-
-        Int64 getInt64(const IColumn & column, size_t index) const
-        {
-            if (column.getDataType() == TypeIndex::UInt64)
-            {
-                const UInt64 value = column.getUInt(index);
-                if (value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-                    throw Exception(
-                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                        "The count argument of function {} is out of range for Int64: {}",
-                        getName(), value);
-                return static_cast<Int64>(value);
-            }
-
-            return column.getInt(index);
         }
 
         template <bool padded>

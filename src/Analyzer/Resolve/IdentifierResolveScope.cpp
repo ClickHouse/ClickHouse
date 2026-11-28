@@ -238,7 +238,7 @@ std::optional<IdentifierResolveResult> IdentifierResolveScope::findCachedIdentif
 
     /// There are 2 kinds of expressions:
     /// 1. Does not contain any subquery -- it is safe to return by reference
-    /// 2. Contains subqueries -- it is required to make a deep copy becuase
+    /// 2. Contains subqueries -- it is required to make a deep copy because
     ///    distributed queries may fail.
     /// It could be simplified once StorageDistributed and Parallel Replicas
     /// stop using AST to send task to the shards.

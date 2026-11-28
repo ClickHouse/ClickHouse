@@ -11,20 +11,16 @@ doc_type: 'guide'
 
 수집 및 활용 경로는 [통합 빌드하기](/ko/resources/develop-contribute/integrations/building-integrations)를, 결과 게시 방법은 [통합 문서화하기](/ko/resources/develop-contribute/integrations/documenting-your-integration)를 참조하십시오.
 
-<div id="test-matrix">
-  ## 테스트 매트릭스
-</div>
+## 테스트 매트릭스 {#test-matrix}
 
 두 배포 모드를 모두 포함하십시오. 대부분의 고객은 둘 중 하나만 사용하며, 일부 영역에서는 동작이 다릅니다(인증, 네트워킹, 사용 가능한 기능).
 
-* **ClickHouse Cloud:** [무료 체험](https://clickhouse.com/cloud)에 가입하십시오. 개발 tier는 신용카드 없이 사용할 수 있습니다
+* **ClickHouse Cloud:** [무료 체험](https://clickhouse.cloud/signUp?loc=docs-resources-develop-contribute-integrations-testing-your-integration)에 가입하십시오. 개발 tier는 신용카드 없이 사용할 수 있습니다
 * **자체 호스팅(오픈 소스):** [GitHub releases](https://github.com/ClickHouse/ClickHouse/releases)에서 최신 안정 릴리스를 사용하십시오. [설치 가이드](/ko/get-started/setup/install)는 Docker로 로컬 인스턴스를 가장 빠르게 준비하는 방법입니다
 
 두 환경 모두에서 테스트하고, 통합 페이지에 기능 차이를 문서화하십시오.
 
-<div id="what-to-test">
-  ## 무엇을 테스트해야 하는가
-</div>
+## 무엇을 테스트해야 하는가 {#what-to-test}
 
 **기능적 정확성.** 통합에서 제공하는 모든 코드 경로를 점검하십시오. 수집, 쿼리, 스키마 디스커버리, 오류 처리, 재연결을 모두 테스트해야 합니다. 제품이 최종 사용자에게 SQL을 노출한다면, UI가 생성한 쿼리가 왕복 과정에서 문제없이 처리되는지 확인하십시오.
 
@@ -36,9 +32,7 @@ doc_type: 'guide'
 
 **연결 수명 주기.** 연결 끊김, 서버 재시작, 느린 쿼리 상황에서 동작이 합리적인지 확인하십시오. 에스컬레이션 사례 상당수는 쿼리 의미론보다 연결 처리 문제에서 비롯됩니다.
 
-<div id="recommended-example-datasets">
-  ## 권장 예시 데이터셋
-</div>
+## 권장 예시 데이터셋 {#recommended-example-datasets}
 
 전체 목록은 [**예시 데이터셋**](/ko/get-started/sample-datasets/index) 섹션에서 확인할 수 있습니다. 다음 4개의 데이터셋은 대부분의 통합 테스트 요구를 충족합니다:
 
@@ -49,9 +43,7 @@ doc_type: 'guide'
 
 초대규모 검증에는 **[WikiStat](/ko/get-started/sample-datasets/wikistat)**(~5,000억 개의 레코드)를 사용하십시오.
 
-<div id="what-to-capture-from-your-testing">
-  ## 테스트에서 수집할 항목
-</div>
+## 테스트에서 수집할 항목 {#what-to-capture-from-your-testing}
 
 통합을 검토용으로 제출할 때는 다음 내용을 공유하십시오:
 

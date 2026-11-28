@@ -1,8 +1,6 @@
 -- Lower an `arrayJoin` function into a real ARRAY JOIN step. Must never change results, so each case
 -- compares query_plan_lower_array_join_function on vs off and expects equality (1).
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_laj;
 CREATE TABLE t_laj (id UInt64, a Array(String), b Array(String)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_laj VALUES (1, ['x', 'y'], ['p', 'q']), (2, [], ['z']), (3, ['m'], []);

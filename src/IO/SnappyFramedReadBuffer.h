@@ -33,7 +33,8 @@ private:
     /// Read and validate the stream identifier chunk.
     bool readStreamIdentifier();
 
-    String decompress_buffer;
+    /// Padded: working_buffer points here and the base reports isPadded().
+    Memory<> decompress_buffer;
     bool identifier_read = false;
 };
 

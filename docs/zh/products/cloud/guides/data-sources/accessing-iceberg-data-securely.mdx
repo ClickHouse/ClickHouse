@@ -7,12 +7,10 @@ keywords: ['Iceberg', 'RBAC', 'Amazon S3', '身份验证']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickHouse Cloud 通过基于 ARN 的 AWS IAM 信任关系，支持对存储在对象存储 (通常为 S3) 中的 Iceberg 数据进行安全的基于角色的访问控制。本指南沿用与[安全访问 S3 数据](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)相同的安全配置模式，并在 ClickHouse 中补充了 Iceberg 特有的配置。
 
 <div id="overview">
-  ## 概述
+  ## 概述 {#overview}
 </div>
 
 * 获取 ClickHouse Cloud 服务角色 ID (IAM) 。
@@ -20,9 +18,7 @@ ClickHouse Cloud 通过基于 ARN 的 AWS IAM 信任关系，支持对存储在�
 * 将 Iceberg 专用的对象和 catalog 策略附加到该角色。
 * 使用基于角色的凭证，通过 Iceberg 表函数或 IcebergS3 表引擎进行访问。
 
-<div id="obtaining-the-clickhouse-service-iam-role-arn">
-  ## 获取 ClickHouse 服务角色 ID (ARN)
-</div>
+## 获取 ClickHouse 服务角色 ID (ARN) {#obtaining-the-clickhouse-service-iam-role-arn}
 
 <Steps>
   <Step title="1. 登录您的 ClickHouse Cloud 账户。" id="login" />
@@ -34,14 +30,18 @@ ClickHouse Cloud 通过基于 ARN 的 AWS IAM 信任关系，支持对存储在�
   <Step title={<>4. 向下滚动到 <strong>Network security 信息</strong>。</>} id="network-security-information" />
 
   <Step title={<>5. 复制 <strong>服务角色 ID (IAM)</strong> 的值。</>} id="service-role-iam-value">
-    此 ARN 是为将访问您的 Iceberg 数据的 AWS IAM 角色配置信任策略所必需的。
+    此 ARN 是为将访问您的 Iceberg 数据的 AWS IAM role 配置信任策略所必需的。
 
-    <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="获取 ClickHouse 服务 IAM 角色 ARN" border />
+    <div className="ch-image-lg">
+      <Frame>
+        ![获取 ClickHouse 服务 IAM role ARN](/images/cloud/security/secures3_arn.webp)
+      </Frame>
+    </div>
   </Step>
 </Steps>
 
 <div id="setting-up-iam-assume-role">
-  ## 设置 IAM Assume Role
+  ## 设置 IAM Assume Role {#setting-up-iam-assume-role}
 </div>
 
 <Steps>
@@ -122,11 +122,11 @@ ClickHouse Cloud 通过基于 ARN 的 AWS IAM 信任关系，支持对存储在�
 </Steps>
 
 <div id="configure-iceberg-access">
-  ## 在 ClickHouse Cloud 中配置对 Iceberg 的访问
+  ## 在 ClickHouse Cloud 中配置对 Iceberg 的访问 {#configure-iceberg-access}
 </div>
 
 <div id="iceberg-table-function-with-role-arn">
-  ### 选项 A：带角色 ARN 的 Iceberg 表函数
+  ### 选项 A：带角色 ARN 的 Iceberg 表函数 {#iceberg-table-function-with-role-arn}
 </div>
 
 使用带 `NOSIGN` 选项和基于角色的凭证的 `icebergS3` 表函数。ClickHouse Cloud 将调用 STS 以承担该角色。
@@ -141,7 +141,7 @@ FROM icebergS3(
 ```
 
 <div id="persistent-iceberg-table-engine">
-  ### 选项 B：持久化 Iceberg 表引擎
+  ### 选项 B：持久化 Iceberg 表引擎 {#persistent-iceberg-table-engine}
 </div>
 
 ```sql
@@ -158,7 +158,7 @@ ENGINE = IcebergS3(
 ```
 
 <div id="glue-catalog-plus-icebergs3">
-  ### 选项 C：Glue catalog + IcebergS3
+  ### 选项 C：Glue catalog + IcebergS3 {#glue-catalog-plus-icebergs3}
 </div>
 
 ```sql
@@ -179,7 +179,7 @@ SETTINGS
 > 注意：使用 Glue catalog 时，请确保您的 IAM role 同时具备 S3 和 Glue 的读取及列出权限。
 
 <div id="datalake-catalog-for-glue">
-  ### 选项 D：面向 Glue 的 DataLake Catalog
+  ### 选项 D：面向 Glue 的 DataLake Catalog {#datalake-catalog-for-glue}
 </div>
 
 <Note>
@@ -199,7 +199,7 @@ SETTINGS
 ```
 
 <div id="validate-access">
-  ## 验证访问
+  ## 验证访问 {#validate-access}
 </div>
 
 1. 运行一个简单查询：
@@ -212,7 +212,7 @@ LIMIT 5;
 2. 检查是否有 `AccessDenied` 或 `InvalidAccessKeyId` 之类的 IAM 错误。
 
 <div id="troubelshooting">
-  ## 故障排查
+  ## 故障排查 {#troubelshooting}
 </div>
 
 * 验证 ClickHouse Cloud 服务设置中的角色 ARN。

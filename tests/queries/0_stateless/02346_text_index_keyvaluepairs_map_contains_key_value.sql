@@ -5,7 +5,6 @@
 -- key's first occurrence or a repetition, so both tokens are searched as one `Any` query, exact.
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET query_plan_direct_read_from_text_index = 1;
 

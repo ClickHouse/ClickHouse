@@ -97,6 +97,7 @@ TotalsHavingTransform::TotalsHavingTransform(
     /// via a different code path in defaultImplementationForNulls at 0 rows.
     if (expression)
     {
+        set_spillables.add(expression->getActionsDAG());
         /// Use updateHeader (dry-run evaluation) instead of expression->execute(),
         /// because sets from subqueries may not be ready yet at this point.
         auto totals_header = expression->getActionsDAG().updateHeader(finalized_header);
@@ -210,7 +211,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
 
     auto finalized = chunk.clone();
     if (final)
-        finalizeChunk(finalized, aggregates_mask);
+        finalizeChunk(finalized, aggregates_mask, finalized_header);
 
     total_keys += finalized.getNumRows();
 
@@ -417,7 +418,7 @@ void TotalsHavingTransform::prepareTotals()
     }
 
     totals = Chunk(std::move(current_totals), 1);
-    finalizeChunk(totals, aggregates_mask);
+    finalizeChunk(totals, aggregates_mask, finalized_header);
 
     if (isCancelled())
     {

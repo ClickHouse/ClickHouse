@@ -1,0 +1,38 @@
+---
+sidebarTitle: 'Servidores MCP'
+slug: /agents/builder/mcp-servers
+title: 'Servidores MCP'
+description: 'Cómo adjuntar servidores MCP de terceros a un ClickHouse Agent'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'MCP', 'Model Context Protocol']
+doc_type: 'reference'
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+Model Context Protocol (MCP) es el estándar abierto para exponer herramientas y fuentes de datos a un modelo de IA. Al adjuntar un servidor MCP a un ClickHouse Agent, el agente obtiene acceso a todas las capacidades que expone ese servidor: sistemas de seguimiento de issues, backends de observabilidad, API internas, SaaS de terceros o cualquier otro servicio con un endpoint MCP.
+
+## Adjuntar un servidor MCP {#attach-an-mcp-server}
+
+En el Constructor de Agentes, abra la sección **Servidores MCP** y haga clic en **Añadir servidor**. Introduzca la URL del servidor y los ajustes de autenticación y, a continuación, seleccione qué herramientas del servidor debe utilizar este agente en concreto. Guarde el agente.
+
+Puede adjuntar varios servidores a un mismo agente. Cada herramienta que invoca el agente queda registrada en la conversación, de modo que los usuarios pueden ver qué ha hecho el agente.
+
+## Transporte {#transport}
+
+ClickHouse Agents utiliza Streamable HTTP, el transporte MCP apto para producción. El servidor que adjunte debe ser accesible mediante HTTP(S) desde ClickHouse Cloud.
+
+## Autenticación {#authentication}
+
+Los servidores MCP pueden requerir credenciales. Agents admite:
+
+* **Tokens Bearer** y otros encabezados estáticos: valores fijos que usted proporciona al configurar el servidor.
+* **OAuth 2.0**: flujo interactivo. La primera vez que usted (o cualquier usuario con acceso) llama a una herramienta del servidor, el navegador abre una ventana de inicio de sesión; los tokens se gestionan y se renuevan automáticamente.
+* **Credenciales por usuario**: variables de la configuración del servidor que se sustituyen con valores del perfil del usuario que realiza la llamada, de modo que cada usuario se autentica con su propia identidad en lugar de hacerlo con una cuenta de servicio compartida.
+
+Las credenciales que proporcionan los usuarios se almacenan cifradas y su alcance se limita al usuario que las introdujo. Las credenciales de un usuario nunca son visibles en las ejecuciones de agentes de otro usuario.
+
+## Límites {#limits}
+
+Una sola ejecución de un agente puede hacer referencia, como máximo, a 50 destinos de servidor MCP distintos y a 100 configuraciones de herramientas expandidas por solicitud. Los agentes que necesiten más deben dividirse en [subagentes](/es/agents/builder/subagents).

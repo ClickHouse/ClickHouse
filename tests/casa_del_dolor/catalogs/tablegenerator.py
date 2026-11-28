@@ -70,7 +70,37 @@ def sample_from_dict(d: dict[str, Parameter], sample: int) -> dict[str, Paramete
     return dict(items)
 
 
+def contains_variant(dtype: sp.DataType) -> bool:
+    if hasattr(sp, "VariantType") and isinstance(dtype, sp.VariantType):
+        return True
+    if isinstance(dtype, sp.ArrayType):
+        return contains_variant(dtype.elementType)
+    if isinstance(dtype, sp.MapType):
+        return contains_variant(dtype.keyType) or contains_variant(dtype.valueType)
+    if isinstance(dtype, sp.StructType):
+        return any(contains_variant(f.dataType) for f in dtype.fields)
+    return False
+
+
+def variant_under_list_or_map(dtype: sp.DataType, nested: bool = False) -> bool:
+    if hasattr(sp, "VariantType") and isinstance(dtype, sp.VariantType):
+        return nested
+    if isinstance(dtype, sp.ArrayType):
+        return variant_under_list_or_map(dtype.elementType, True)
+    if isinstance(dtype, sp.MapType):
+        return variant_under_list_or_map(
+            dtype.keyType, True
+        ) or variant_under_list_or_map(dtype.valueType, True)
+    if isinstance(dtype, sp.StructType):
+        return any(variant_under_list_or_map(f.dataType, nested) for f in dtype.fields)
+    return False
+
+
 class LakeTableGenerator:
+    # Properties that change what a reader sees on disk: each gets its own roll, instead of
+    # depending on the uniform sample over the whole property dict.
+    HOT_PROPERTIES: tuple[str, ...] = ()
+
     def __init__(self):
         self.type_mapper = ClickHouseTypeMapper()
         self.write_format: FileFormat = FileFormat.Parquet
@@ -93,10 +123,16 @@ class LakeTableGenerator:
     def generate_table_properties(
         self,
         table: SparkTable,
+        hot_only: bool = False,
     ) -> dict[str, str]:
         properties = {}
         props = self.generate_table_properties_impl(table)
-        selected_properties = sample_from_dict(props, random.randint(0, len(props)))
+        selected_properties = (
+            {} if hot_only else sample_from_dict(props, random.randint(0, len(props)))
+        )
+        for key in self.HOT_PROPERTIES:
+            if key in props and random.randint(1, 4) != 1:
+                selected_properties[key] = props[key]
         for key, val in selected_properties.items():
             properties[key] = val()
         return properties
@@ -205,14 +241,18 @@ class LakeTableGenerator:
         tpath = table.get_table_full_path()
 
         if next_operation <= 200:
-            # Set random properties
-            properties = self.generate_table_properties(table)
+            # Set random properties, half the time one of the hot ones
+            properties = self.generate_table_properties(
+                table, hot_only=bool(self.HOT_PROPERTIES) and random.randint(1, 4) == 1
+            )
             if properties:
                 key = random.choice(list(properties.keys()))
                 return f"ALTER TABLE {tpath} SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
         elif next_operation <= 400:
-            # Unset a property
-            properties = self.generate_table_properties(table)
+            # Unset a property, half the time one of the hot ones
+            properties = self.generate_table_properties(
+                table, hot_only=bool(self.HOT_PROPERTIES) and random.randint(1, 4) == 1
+            )
             if properties:
                 key = random.choice(list(properties.keys()))
                 return f"ALTER TABLE {tpath} UNSET TBLPROPERTIES ('{key}');"
@@ -298,7 +338,10 @@ class LakeTableGenerator:
     def random_ordered_columns(self, table: SparkTable, with_asc_desc: bool):
         columns_list = []
         flattened_columns = table.flat_columns()
-        for k in flattened_columns.keys():
+        # VARIANT can't be a sort, Z-order or identifier key. If every column holds one,
+        # keep them all and let Spark reject the statement
+        orderable = [k for k, v in flattened_columns.items() if not contains_variant(v)]
+        for k in orderable or flattened_columns.keys():
             if with_asc_desc:
                 columns_list.append(f"{k} ASC NULLS FIRST")
                 columns_list.append(f"{k} ASC NULLS LAST")
@@ -492,8 +535,9 @@ class LakeTableGenerator:
 
         properties = self.set_basic_properties()
         # Add table properties
-        if random.randint(1, 2) == 1:
-            properties.update(self.generate_table_properties(res))
+        properties.update(
+            self.generate_table_properties(res, hot_only=random.randint(1, 4) == 1)
+        )
         if len(properties) > 0:
             ddl += " TBLPROPERTIES ("
             prop_lines = []
@@ -522,6 +566,14 @@ class LakeTableGenerator:
 
 
 class IcebergTableGenerator(LakeTableGenerator):
+    # The format version, and merge-on-read writes that leave position deletes (deletion
+    # vectors on v3) for the reader to apply.
+    HOT_PROPERTIES = (
+        "format-version",
+        "write.delete.mode",
+        "write.update.mode",
+        "write.merge.mode",
+    )
 
     def __init__(self):
         super().__init__()
@@ -637,8 +689,10 @@ class IcebergTableGenerator(LakeTableGenerator):
         )
         flattened_columns = table.flat_columns()
         for k, val in flattened_columns.items():
-            # Iceberg cannot partition by container types
-            if isinstance(val, (sp.ArrayType, sp.MapType, sp.StructType)):
+            # Iceberg cannot partition by container or VARIANT types
+            if isinstance(
+                val, (sp.ArrayType, sp.MapType, sp.StructType)
+            ) or contains_variant(val):
                 continue
             res.append(k)
             is_timestamp = isinstance(val, timestamp_types)
@@ -714,8 +768,9 @@ class IcebergTableGenerator(LakeTableGenerator):
             first = False
         nschema = Schema(*fields)
 
-        if random.randint(1, 2) == 1:
-            nproperties.update(self.generate_table_properties(table))
+        nproperties.update(
+            self.generate_table_properties(table, hot_only=random.randint(1, 4) == 1)
+        )
         npartition_spec, npartition_clauses = (
             self.type_mapper.generate_random_iceberg_partition_spec(nschema)
         )
@@ -1053,13 +1108,23 @@ class IcebergTableGenerator(LakeTableGenerator):
     def generate_table_properties(
         self,
         table: SparkTable,
+        hot_only: bool = False,
     ) -> dict[str, str]:
-        properties = super().generate_table_properties(table)
+        properties = super().generate_table_properties(table, hot_only)
         if (
             "write.parquet.compression-level" in properties
             and properties.get("write.parquet.compression-codec") != "zstd"
         ):
             del properties["write.parquet.compression-level"]
+        if any(contains_variant(col.spark_type) for col in table.columns.values()):
+            # VARIANT (also nested) needs v3, and the default is v2. Always set, so CREATE gets it
+            # and SET TBLPROPERTIES never picks an older version for the table
+            properties["format-version"] = "3"
+        if properties.get("format-version") == "1":
+            # v1 has no row-level deletes, so merge-on-read only makes Spark DML fail
+            for key in ("write.delete.mode", "write.update.mode", "write.merge.mode"):
+                if properties.get(key) == "merge-on-read":
+                    properties[key] = "copy-on-write"
         return properties
 
     def get_snapshots(self, spark: SparkSession, table: SparkTable):
@@ -1298,6 +1363,12 @@ class IcebergTableGenerator(LakeTableGenerator):
 
 
 class DeltaLakePropertiesGenerator(LakeTableGenerator):
+    HOT_PROPERTIES = (
+        "delta.enableDeletionVectors",
+        "delta.columnMapping.mode",
+        "delta.checkpointInterval",
+        "delta.enableChangeDataFeed",
+    )
 
     def __init__(self):
         super().__init__()
@@ -1310,9 +1381,11 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
     def add_partition_clauses(self, table: SparkTable) -> list[str]:
         res = []
-        # No partition by subcolumns in delta, and no partitioning by container types
+        # No partition by subcolumns in delta, and no partitioning by container or VARIANT types
         for k, sc in table.columns.items():
-            if not isinstance(sc.spark_type, (sp.ArrayType, sp.MapType, sp.StructType)):
+            if not isinstance(
+                sc.spark_type, (sp.ArrayType, sp.MapType, sp.StructType)
+            ) and not contains_variant(sc.spark_type):
                 res.append(k)
         return res
 
@@ -1509,8 +1582,9 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
     def generate_table_properties(
         self,
         table: SparkTable,
+        hot_only: bool = False,
     ) -> dict[str, str]:
-        properties = super().generate_table_properties(table)
+        properties = super().generate_table_properties(table, hot_only)
         if (
             properties.get("delta.enableDeletionVectors") == "true"
             and properties.get("delta.compatibility.symlinkFormatManifest.enabled")
@@ -1668,6 +1742,13 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
 
 class PaimonTableGenerator(LakeTableGenerator):
+    # Primary-key tables (LSM levels, merged on read), the deletion vectors that only they
+    # keep, and fixed buckets.
+    HOT_PROPERTIES = (
+        "primary-key",
+        "deletion-vectors.enabled",
+        "bucket",
+    )
 
     def __init__(self):
         super().__init__()
@@ -1684,11 +1765,19 @@ class PaimonTableGenerator(LakeTableGenerator):
         properties["file.format"] = out_format
         return properties
 
+    def allow_variant_column(
+        self, spark: SparkSession, table: SparkTable, dtype: sp.DataType
+    ) -> bool:
+        return table.file_format == FileFormat.Parquet
+
     def add_partition_clauses(self, table: SparkTable) -> list[str]:
         res = []
-        # No partitioning by container types
+        # No partitioning by container types. Paimon accepts a VARIANT partition at CREATE,
+        # but every Spark write then fails with PARTITION_BY_VARIANT
         for k, sc in table.columns.items():
-            if not isinstance(sc.spark_type, (sp.ArrayType, sp.MapType, sp.StructType)):
+            if not isinstance(
+                sc.spark_type, (sp.ArrayType, sp.MapType, sp.StructType)
+            ) and not contains_variant(sc.spark_type):
                 res.append(k)
         return res
 
@@ -1708,9 +1797,28 @@ class PaimonTableGenerator(LakeTableGenerator):
     def generate_table_properties(
         self,
         table: SparkTable,
+        hot_only: bool = False,
     ) -> dict[str, str]:
-        properties = super().generate_table_properties(table)
-        flat_cols = list(table.flat_columns().keys())
+        properties = super().generate_table_properties(table, hot_only)
+        # A primary key uses top-level atomic columns and must contain every partition
+        # column plus at least one more, and a bucket key must come from it
+        part_cols = [c for c in table.partition_keys if c in table.columns]
+        key_cols = [
+            n
+            for n, c in table.columns.items()
+            if n not in part_cols
+            and not isinstance(c.spark_type, (sp.ArrayType, sp.MapType, sp.StructType))
+            and not contains_variant(c.spark_type)
+        ]
+        pk_cols: list[str] = []
+        if "primary-key" in properties:
+            if key_cols:
+                pk_cols = random.sample(
+                    key_cols, k=random.randint(1, min(3, len(key_cols)))
+                )
+                properties["primary-key"] = ",".join(pk_cols + part_cols)
+            else:
+                del properties["primary-key"]
         has_pk = "primary-key" in properties
         if not has_pk:
             for key in (
@@ -1743,8 +1851,15 @@ class PaimonTableGenerator(LakeTableGenerator):
             del properties["deletion-vectors.bitmap64"]
         if "bucket-key" in properties and "bucket" not in properties:
             del properties["bucket-key"]
-        elif "bucket" in properties and "bucket-key" not in properties:
-            properties["bucket-key"] = random.choice(flat_cols)
+        elif "bucket" in properties:
+            # A bucket key can't use partition columns, and a bucketed append table needs one
+            bucket_cols = pk_cols if has_pk else key_cols
+            if bucket_cols:
+                properties["bucket-key"] = random.choice(bucket_cols)
+            else:
+                properties.pop("bucket-key", None)
+                if not has_pk:
+                    del properties["bucket"]
         # full-compaction.delta-commits is only valid for fixed-bucket tables. Paimon rejects it
         # for unaware bucket (append-only without a 'bucket') and dynamic bucket (primary key
         # without a fixed 'bucket') alike, so require a fixed bucket here.

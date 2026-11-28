@@ -30,17 +30,17 @@ ClickHouse Connect — это основной драйвер для подкл�
 
 ## Требования и совместимость {#requirements-and-compatibility}
 
-| Компонент  | Поддерживаемые версии                                                                                                      |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Python     | От 3.10 до 3.14. Сборки без GIL, такие как 3.14t, поддерживаются в экспериментальном режиме.                               |
-| ClickHouse | Актуальные поддерживаемые релизы ClickHouse. В CI выполняется тестирование на последних LTS- и стабильных релизах сервера. |
-| SQLAlchemy | 1.4.40 или новее, но ниже 3.0 — для синхронного диалекта; 2.0.44 или новее, но ниже 3.0 — для асинхронного диалекта.       |
-| Pandas     | 2.x и 3.x                                                                                                                  |
-| Polars     | 1.0 или новее                                                                                                              |
-| aiohttp    | 3.9 или новее                                                                                                              |
-| Платформы  | Linux, macOS и Windows на архитектурах wheel-пакетов, опубликованных для каждой версии Python                              |
+| Компонент  | Поддерживаемые версии                                                                                                                                                                                                               |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Python     | От 3.10 до 3.15. Сборки без GIL, такие как 3.14t и 3.15t, поддерживаются в экспериментальном режиме.                                                                                                                                |
+| ClickHouse | Актуальные поддерживаемые релизы ClickHouse. В CI выполняется тестирование на [сериях LTS- и стабильных релизов, перечисленных здесь](https://github.com/ClickHouse/clickhouse-connect/blob/main/.github/clickhouse-versions.json). |
+| SQLAlchemy | 1.4.40 или новее, но ниже 3.0 — для синхронного диалекта; 2.0.44 или новее, но ниже 3.0 — для асинхронного диалекта.                                                                                                                |
+| Pandas     | 2.x и 3.x                                                                                                                                                                                                                           |
+| Polars     | 1.0 или новее                                                                                                                                                                                                                       |
+| aiohttp    | 3.9 или новее                                                                                                                                                                                                                       |
+| Платформы  | Linux, macOS и Windows на архитектурах wheel-пакетов, опубликованных для каждой версии Python                                                                                                                                       |
 
-Пакет включает скомпилированные wheel-пакеты там, где они доступны, и использует реализацию на чистом Python, если расширения Cython не удаётся собрать. PyArrow поддерживается для Python 3.10–3.14. Для Python 3.14 требуется PyArrow 22 или новее.
+Пакет включает скомпилированные wheel-пакеты там, где они доступны, и использует реализацию на чистом Python, если расширения Cython не удаётся собрать. PyArrow поддерживается для Python 3.10–3.15. Для Python 3.14 требуется PyArrow 22 или новее, а для Python 3.15 — PyArrow 26 или новее. Начиная с Python 3.14, `lz4` является необязательным дополнительным модулем, а для сжатия по умолчанию используется модуль zstd из стандартной библиотеки. Для `lz4` пока не публикуются wheel-пакеты под CPython 3.15 и сборки Python 3.14+ без GIL, поэтому при установке дополнительного модуля `lz4` на этих версиях он собирается из исходного кода и требуется компилятор C.
 
 ## Установка {#installation}
 
@@ -61,11 +61,12 @@ pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
 pip install "clickhouse-connect[sqlalchemy-async]" # Async SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
-pip install "clickhouse-connect[rust,arrow]" # Experimental Rust codec evaluation setup
+pip install "clickhouse-connect[rust]"       # Experimental Rust codec
+pip install "clickhouse-connect[lz4]"        # lz4 compression on Python 3.14+
 pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal systems
 ```
 
-ClickHouse Connect также можно установить из исходников:
+ClickHouse Connect также можно установить из исходного кода:
 
 * Выполните `git clone` [репозитория GitHub](https://github.com/ClickHouse/clickhouse-connect).
 * Перейдите в корневой каталог проекта и выполните `pip install .`. Система сборки автоматически устанавливает Cython для компиляции необязательных C-расширений.
@@ -88,10 +89,10 @@ ClickHouse Connect также можно установить из исходн�
 pip cache remove clickhouse_connect
 ```
 
-Проверьте, присутствуют ли все три extension-модуля. Если да, будет выведено `True`:
+Проверьте, присутствуют ли все четыре модуля расширений. Если да, будет выведено `True`:
 
 ```bash
-python -c "from importlib.util import find_spec; print(all(find_spec(m) for m in ('clickhouse_connect.driverc.buffer', 'clickhouse_connect.driverc.dataconv', 'clickhouse_connect.driverc.npconv')))"
+python -c "from importlib.util import find_spec; print(all(find_spec(m) for m in ('clickhouse_connect.driverc.buffer', 'clickhouse_connect.driverc.dataconv', 'clickhouse_connect.driverc.npconv', 'clickhouse_connect.driverc.sqlscan')))"
 ```
 
 Прямой импорт `clickhouse_connect.driverc.npconv` также требует установленного NumPy.

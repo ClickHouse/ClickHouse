@@ -1,3 +1,4 @@
+SET query_plan_remove_unused_joins = 0; -- The joins are what is tested, including the ones whose other side is not read
 SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 CREATE TABLE nation(n_nationkey Int32, n_name String) ENGINE MergeTree ORDER BY n_nationkey;
@@ -11,7 +12,6 @@ INSERT INTO customer SELECT number, 7, 7 FROM numbers(10000);
 INSERT INTO customer SELECT number, 100, 100 FROM numbers(10);
 
 
-SET enable_analyzer=1;
 SET enable_parallel_replicas=0;
 SET enable_join_runtime_filters=0;
 SET query_plan_join_swap_table = 0;

@@ -72,6 +72,13 @@ namespace Net
         /// delimited by a carriage return and a linefeed
         /// character. See RFC 2822 for details.
 
+        void write(std::string & out) const;
+        /// Appends the message header to the given string, in the same
+        /// format as the `std::ostream` overload writes it.
+        ///
+        /// Lets a client serialize the header without an `std::ostream`,
+        /// so that the header can be handed to a socket directly.
+
         virtual void read(std::istream & istr);
         /// Reads the message header from the given input stream.
         ///

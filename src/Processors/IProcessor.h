@@ -2,15 +2,16 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Port.h>
-#include <Common/ProcessorMemoryStats.h>
 #include <Common/Stopwatch.h>
 
 #include <atomic>
 #include <list>
 #include <memory>
+#include <span>
 #include <vector>
 #include <Processors/ProcessorsProfileLogInfo.h>
 #include <Processors/IProcessor_fwd.h>
+#include <Processors/QueryPlan/PlanStepIndex.h>
 #include <fmt/format.h>
 
 class EventCounter;
@@ -19,6 +20,8 @@ namespace DB
 {
 
 class IQueryPlanStep;
+
+class ISpillable;
 
 struct StorageLimits;
 using StorageLimitsList = std::list<StorageLimits>;
@@ -131,6 +134,9 @@ class IProcessor
 protected:
     InputPorts inputs;
     OutputPorts outputs;
+
+    /// True if an unfinished output asks for data.
+    bool isAnyOutputNeeded() const;
 
 public:
 
@@ -327,7 +333,8 @@ public:
     void inheritQueryPlanStepFromParent(const IProcessor & parent, size_t group);
 
     const IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
-    const String & getStepUniqID() const { return step_uniq_id; }
+    /// `IQueryPlanStep::getStepIndex` of the step, or `PlanStepIndex::NONE` if there is none.
+    [[nodiscard]] UInt64 getQueryPlanStepIndex() const { return query_plan_step_index; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
     const String & getPlanStepName() const { return plan_step_name; }
     const String & getPlanStepDescription() const { return plan_step_description; }
@@ -392,18 +399,9 @@ public:
     /// This counter is used to calculate the number of rows right before AggregatingTransform.
     virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
 
-    /// Returns true if processor can spill memory to disk.
-    /// Aggregate, join and sort processors can be spillable.
-    /// For unspillable processors, the memory usage is not tracked.
-    inline bool isSpillable() const { return spillable; }
-
-    virtual ProcessorMemoryStats getMemoryStats()
-    {
-        return {};
-    }
-
-    // If the in-memory data's size is not larger then bytes, it doesn't spill
-    virtual bool spillOnSize(size_t /*bytes*/) { return false; }
+    /// Distinct, non-null components this processor can service. The range and its objects remain
+    /// valid through graph removal, including after `Finished`.
+    virtual std::span<ISpillable * const> getSpillables() { return {}; }
 
     /// True for a fan-out that cannot take its next input chunk until every one of its outputs has
     /// accepted a share of the current one, so it cannot progress while an output is undemanded.
@@ -414,7 +412,6 @@ protected:
     virtual void onCancel() noexcept {}
 
     std::atomic<bool> is_cancelled{false};
-    bool spillable = false;
 
 private:
     /// For:
@@ -440,7 +437,7 @@ private:
     size_t stream_number = NO_STREAM;
 
     const IQueryPlanStep * query_plan_step = nullptr;
-    String step_uniq_id;
+    UInt64 query_plan_step_index = PlanStepIndex::NONE;
     size_t query_plan_step_group = 0;
     StepWallClock * query_plan_step_wall_clock_ptr = nullptr;
 

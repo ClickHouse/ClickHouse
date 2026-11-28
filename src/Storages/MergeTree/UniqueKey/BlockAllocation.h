@@ -29,10 +29,7 @@ public:
     ~BlockAllocation();
 
     /// Block ids already in the dedup log: the block is a replay, and nothing is published.
-    const std::vector<std::string> & dedupConflicts() const { return dedup_conflicts; }
-
-    /// Names `part` after the allocated block number
-    void assignTo(IMergeTreeDataPart & part) const;
+    [[nodiscard]] const std::vector<std::string> & dedupConflicts() const { return dedup_conflicts; }
 
     void commit() { committed = true; }
 

@@ -1,0 +1,15 @@
+toUnixTimestamp(DateTime)
+50	9950
+50	9950
+toUInt64(DateTime)
+50	49
+50	49
+toDateTime(UInt32)
+50	9950
+50	9950
+CAST(Date AS DateTime)
+100	9900
+100	9900
+toUnixTimestamp(Date)
+100	99
+100	99

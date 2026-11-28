@@ -1,0 +1,68 @@
+---
+description: 'Fornece acesso em tempo real às tabelas de um banco de dados em um cluster definido na configuração do servidor, encaminhando consultas `SELECT` e `INSERT` para esse cluster.'
+sidebarTitle: 'Cluster'
+slug: /engines/database-engines/cluster
+title: 'Cluster'
+doc_type: 'reference'
+---
+
+O motor de banco de dados `Cluster` fornece acesso em tempo real às tabelas de um banco de dados em um cluster definido na configuração do servidor. Ele equivale ao motor de banco de dados [`Remote`](/pt-BR/reference/engines/database-engines/remote), mas usa um cluster nomeado, assim como a função de tabela [`cluster`](/pt-BR/reference/functions/table-functions/cluster) corresponde à função de tabela [`remote`](/pt-BR/reference/functions/table-functions/remote).
+
+A lista de tabelas e a estrutura de cada uma são obtidas do cluster sob demanda, de modo que o banco de dados sempre reflita o estado atual do cluster. Cada tabela é exposta como um armazenamento [`Distributed`](/pt-BR/reference/engines/table-engines/special/distributed) sobre o cluster nomeado, para o qual são encaminhadas as consultas `SELECT` e `INSERT`.
+
+Isso é útil para federar vários clusters ClickHouse ou conectar um cluster inteiro ao `clickhouse-local` ou a outro cluster sem precisar informar seus endereços: basta definir o cluster uma vez na configuração, incluindo credenciais por réplica, conexões seguras e o segredo entre servidores.
+
+## Criando um banco de dados {#creating-a-database}
+
+```sql
+CREATE DATABASE cluster_db
+ENGINE = Cluster('cluster_name', 'database');
+```
+
+**Parâmetros do motor**
+
+* `cluster_name` — O nome de um cluster da configuração do servidor (consulte [Clusters](/pt-BR/reference/engines/table-engines/special/distributed#distributed-clusters)), como no motor de tabela `Distributed`. [Macros](/pt-BR/reference/settings/server-settings/settings/other#macros) como `{cluster}` são suportadas e expandidas a cada acesso.
+* `database` — O nome do banco de dados no cluster.
+
+Diferentemente do motor de banco de dados `Remote`, o motor `Cluster` não recebe argumentos de credencial e não armazena segredos: as conexões usam as configurações de cada réplica definidas na configuração do cluster (usuário, senha, conexões seguras, compressão, o segredo entre servidores). O cluster é resolvido novamente a partir da configuração a cada acesso, de modo que o banco de dados acompanha as recargas de configuração e a [descoberta automática de cluster](/pt-BR/guides/oss/deployment-and-scaling/cluster-discovery), assim como uma tabela `Distributed`. O cluster deve existir quando o banco de dados é criado; se ele desaparecer posteriormente da configuração, o servidor continua iniciando normalmente e o banco de dados informa que o cluster está ausente até que a configuração o restaure.
+
+Uma réplica que aponta para o servidor atual é tratada como um shard local: `SELECT` e `INSERT` são executados diretamente com o usuário atual — que, portanto, precisa dos privilégios correspondentes no banco de dados subjacente e em suas tabelas — e as credenciais configuradas do cluster são usadas apenas para réplicas de fato remotas. Se a réplica local de um shard não tiver o banco de dados ou uma tabela, a busca recorre às réplicas remotas do shard, assim como uma tabela [`Distributed`](/pt-BR/reference/engines/table-engines/special/distributed).
+
+Quando o cluster tem vários shards, cada tabela proxy lê de todos eles, mas os metadados — a lista de tabelas e sua estrutura — são obtidos de um shard arbitrário (com preferência por um local), exatamente como faz a função de tabela [`cluster`](/pt-BR/reference/functions/table-functions/cluster), de modo que uma listagem custa uma única consulta em vez de uma por shard. Espera-se, portanto, que os shards de um cluster disponibilizem o mesmo conjunto de tabelas; uma tabela presente apenas em alguns deles é servida por um proxy cujas consultas falham nos shards que não a possuem. Um `INSERT` em uma tabela de um banco de dados com vários shards envia cada linha para um shard aleatório (as tabelas proxy `Distributed` têm uma chave de sharding implícita `rand()`, que respeita os pesos de shard configurados); para fixar o shard de uma consulta, defina [`insert_shard_id`](/pt-BR/reference/settings/session-settings/insert#insert_shard_id). A chave implícita serve apenas para distribuir as linhas inseridas: na leitura, a tabela se comporta como uma tabela `Distributed` sem chave de sharding (em particular, [`optimize_skip_unused_shards`](/pt-BR/reference/settings/session-settings/optimize-skip#optimize_skip_unused_shards) e [`force_optimize_skip_unused_shards`](/pt-BR/reference/settings/session-settings/force-optimize#force_optimize_skip_unused_shards) não a tratam como uma chave de poda de shards).
+
+Em particular, uma tabela que existe apenas em um shard que não é usado na resolução não aparece em `SHOW TABLES` nem em `EXISTS TABLE`, e resolvê-la pelo nome retorna `UNKNOWN_TABLE`; não há tabela proxy para consultá-la. Uma tabela que existe no shard usado na resolução, mas está ausente de outro shard, fica visível, porém as consultas do proxy podem falhar nesse outro shard.
+
+Não existe uma definição reexecutável equivalente para uma tabela proxy `Cluster`, portanto `SHOW CREATE TABLE` retorna o erro `THERE_IS_NO_QUERY`. Isso inclui os seguintes casos:
+
+* A tabela está sendo servida no momento por meio do fallback para réplicas remotas descrito acima (a réplica local de um shard não tem o banco de dados ou a tabela). Uma tabela `Distributed` sobre o cluster inteiro não realiza esse fallback, e o subconjunto do cluster usado no fallback não tem nome próprio.
+* O nome do cluster do banco de dados contém macros. `Cluster` expande essas macros a cada acesso, enquanto `Distributed` as expande apenas quando a tabela é criada; assim, tanto a expressão da macro quanto sua expansão atual reproduziriam um comportamento diferente após uma alteração na configuração.
+* Uma recarga de configuração pode transformar um cluster de um único shard em um cluster com vários shards. O proxy ativo passa então a ter uma chave implícita `rand()` para distribuir as linhas de `INSERT`, enquanto uma tabela serializada antes da recarga não tem chave. Serializar a chave incondicionalmente também não seria equivalente, pois faria com que uma tabela `Distributed` independente a usasse para poda de shards na leitura; `CREATE TABLE` não permite expressar uma chave de sharding usada apenas para inserção.
+
+## Observações {#notes}
+
+* O motor oferece uma visão do cluster para consulta: instruções DDL como `CREATE TABLE`, `DROP TABLE` e `ALTER`, entre outras, não são aceitas no banco de dados `Cluster`. Gerencie o schema diretamente no cluster, por exemplo, com consultas DDL que usem [`ON CLUSTER`](/pt-BR/reference/statements/distributed-ddl).
+* Os direitos de acesso são verificados nos servidores remotos para os usuários configurados na definição do cluster (ou para o usuário atual, quando o cluster usa um segredo entre servidores). Localmente, aplicam-se os privilégios habituais sobre o banco de dados e suas tabelas.
+* As particularidades do motor de banco de dados `Remote` — as regras de visibilidade das tabelas de um shard local, a abrangência da listagem, o relato de erros quando um cluster está indisponível e o encadeamento de bancos de dados proxy — também se aplicam ao motor `Cluster`; consulte as [observações](/pt-BR/reference/engines/database-engines/remote#notes) sobre esse motor.
+
+## Exemplo {#example}
+
+Crie um banco de dados `Cluster` que aponte para o banco de dados `default` do cluster `test_shard_localhost` especificado na configuração do servidor e use-o:
+
+```sql
+CREATE DATABASE cluster_db
+ENGINE = Cluster('test_shard_localhost', 'default');
+```
+
+```sql
+SHOW TABLES FROM cluster_db;
+```
+
+```text
+┌─name─┐
+│ t    │
+└──────┘
+```
+
+```sql
+SELECT * FROM cluster_db.t;
+```

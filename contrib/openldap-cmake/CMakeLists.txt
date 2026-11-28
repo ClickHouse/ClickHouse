@@ -14,6 +14,8 @@ if (
     set (_system_processor "x86_64")
 elseif ("${_system_processor}" STREQUAL "arm64")
     set (_system_processor "aarch64")
+elseif ("${_system_processor}" STREQUAL "powerpc64le")
+    set (_system_processor "ppc64le")
 endif ()
 if (NOT(
     ( "${_system_name}" STREQUAL "linux"   AND "${_system_processor}" STREQUAL "x86_64"  ) OR
@@ -23,6 +25,7 @@ if (NOT(
     ( "${_system_name}" STREQUAL "linux"   AND "${_system_processor}" STREQUAL "loongarch64") OR
     ( "${_system_name}" STREQUAL "freebsd" AND "${_system_processor}" STREQUAL "x86_64"  ) OR
     ( "${_system_name}" STREQUAL "freebsd" AND "${_system_processor}" STREQUAL "aarch64" ) OR
+    ( "${_system_name}" STREQUAL "freebsd" AND "${_system_processor}" STREQUAL "ppc64le" ) OR
     ( "${_system_name}" STREQUAL "darwin"  AND "${_system_processor}" STREQUAL "x86_64"  ) OR
     ( "${_system_name}" STREQUAL "darwin"  AND "${_system_processor}" STREQUAL "aarch64"   )
 ))
@@ -34,7 +37,7 @@ set(OPENLDAP_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/openldap")
 # How these lists were generated?
 # I compiled the original OpenLDAP with it's original build system and copied the list of source files from build commands.
 
-set(OPENLDAP_VERSION_STRING "2.6.15")
+set(OPENLDAP_VERSION_STRING "2.6.16")
 
 macro(mkversion _lib_name)
     add_custom_command(
@@ -58,6 +61,8 @@ elseif(
     "${_system_processor}" STREQUAL "arm64"
 )
     set (_system_processor "aarch64")
+elseif("${_system_processor}" STREQUAL "powerpc64le")
+    set (_system_processor "ppc64le")
 endif()
 
 set(_extra_build_dir "${CMAKE_CURRENT_SOURCE_DIR}/${_system_name}_${_system_processor}")

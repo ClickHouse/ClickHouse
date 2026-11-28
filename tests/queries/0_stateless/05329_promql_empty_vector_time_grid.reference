@@ -1,0 +1,12 @@
+instant: (0 < clamp(up, 1, -1)) or vector(7)
+[]	1700000000	7
+range: (0 < clamp(up, 1, -1)) or vector(7)
+[]	[(1700000000,7),(1700000030,7),(1700000060,7)]
+range: (clamp(up, 1, -1) > up) or vector(7)
+[]	[(1700000000,7),(1700000030,7),(1700000060,7)]
+range: histogram_quantile(0.5, clamp(up, 1, -1)) or vector(7)
+[]	[(1700000000,7),(1700000030,7),(1700000060,7)]
+instant: scalar(0 < clamp(up, 1, -1))
+1700000000	nan
+range: scalar(0 < clamp(up, 1, -1))
+[]	[(1700000000,nan),(1700000030,nan),(1700000060,nan)]

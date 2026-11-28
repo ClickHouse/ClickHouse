@@ -1,0 +1,68 @@
+---
+description: '서버 구성에 정의된 클러스터의 데이터베이스 테이블에 실시간으로 액세스할 수 있도록 하며, `SELECT` 및 `INSERT` 쿼리를 해당 클러스터로 전달합니다.'
+sidebarTitle: 'Cluster'
+slug: /engines/database-engines/cluster
+title: 'Cluster'
+doc_type: 'reference'
+---
+
+`Cluster` 데이터베이스 엔진은 서버 구성에 정의된 클러스터의 데이터베이스 테이블에 실시간으로 액세스할 수 있도록 합니다. 이 엔진은 [`Remote`](/ko/reference/engines/database-engines/remote) 데이터베이스 엔진에 대응하는 명명된 클러스터(named cluster)용 엔진이며, 두 엔진의 관계는 [`cluster`](/ko/reference/functions/table-functions/cluster) 테이블 함수와 [`remote`](/ko/reference/functions/table-functions/remote) 테이블 함수의 관계와 정확히 같습니다.
+
+테이블 목록과 구조는 필요할 때마다 클러스터에서 가져오므로, 데이터베이스는 항상 클러스터의 현재 상태를 반영합니다. 각 테이블은 명명된 클러스터를 대상으로 하는 [`Distributed`](/ko/reference/engines/table-engines/special/distributed) 저장소로 노출되며, 이 저장소가 `SELECT` 및 `INSERT` 쿼리를 클러스터로 전달합니다.
+
+이 엔진은 여러 ClickHouse 클러스터를 연합(federation)하거나, 주소를 일일이 지정하지 않고 클러스터 전체를 `clickhouse-local` 또는 다른 클러스터에 연결할 때 유용합니다. 레플리카별 자격 증명, 보안 연결, 서버 간 시크릿까지 포함하여 클러스터를 구성에 한 번만 정의하면 됩니다.
+
+## 데이터베이스 생성 {#creating-a-database}
+
+```sql
+CREATE DATABASE cluster_db
+ENGINE = Cluster('cluster_name', 'database');
+```
+
+**엔진 매개변수**
+
+* `cluster_name` — `Distributed` 테이블 엔진과 마찬가지로 서버 구성에 정의된 클러스터 이름입니다([클러스터](/ko/reference/engines/table-engines/special/distributed#distributed-clusters) 참조). `{cluster}`와 같은 [매크로](/ko/reference/settings/server-settings/settings/other#macros)를 지원하며, 매크로는 액세스할 때마다 확장됩니다.
+* `database` — 클러스터에 있는 데이터베이스 이름입니다.
+
+`Remote` 데이터베이스 엔진과 달리 `Cluster` 엔진은 자격 증명 인수를 받지 않으며 시크릿도 저장하지 않습니다. 연결 시에는 클러스터 구성에 정의된 레플리카별 설정(사용자, 비밀번호, 보안 연결, 압축, 서버 간 시크릿)이 사용됩니다. 클러스터는 액세스할 때마다 구성에서 다시 확인되므로, 데이터베이스는 `Distributed` 테이블과 마찬가지로 구성 다시 로드와 [클러스터 자동 디스커버리](/ko/guides/oss/deployment-and-scaling/cluster-discovery)를 반영합니다. 데이터베이스를 생성하는 시점에는 클러스터가 존재해야 합니다. 이후 구성에서 클러스터가 사라지더라도 서버는 정상적으로 시작되며, 구성에 클러스터가 다시 추가될 때까지 데이터베이스는 클러스터가 없다고 보고합니다.
+
+현재 서버를 가리키는 레플리카는 로컬 세그먼트로 취급됩니다. `SELECT`와 `INSERT`는 현재 사용자 권한으로 직접 실행되므로, 현재 사용자에게 기반 데이터베이스와 그 테이블에 대한 해당 권한이 있어야 합니다. 구성된 클러스터 자격 증명은 실제 원격 레플리카에만 사용됩니다. 세그먼트의 로컬 레플리카에 데이터베이스나 테이블이 없으면, [`Distributed`](/ko/reference/engines/table-engines/special/distributed) 테이블과 마찬가지로 해당 세그먼트의 원격 레플리카로 폴백하여 조회합니다.
+
+클러스터에 세그먼트가 여러 개 있으면 각 프록시 테이블은 모든 세그먼트에서 데이터를 읽지만, 메타데이터(테이블 목록과 구조)는 [`cluster`](/ko/reference/functions/table-functions/cluster) 테이블 함수와 마찬가지로 임의의 세그먼트(로컬 세그먼트 우선)에서 가져옵니다. 덕분에 목록을 조회할 때 세그먼트마다 쿼리를 보낼 필요 없이 쿼리 한 번이면 됩니다. 따라서 클러스터의 모든 세그먼트는 동일한 테이블 집합을 제공해야 합니다. 일부 세그먼트에만 있는 테이블도 프록시로 제공되지만, 해당 테이블이 없는 세그먼트에서는 쿼리가 실패합니다. 다중 세그먼트 데이터베이스의 테이블에 `INSERT`하면 각 행은 임의의 세그먼트로 전송됩니다(프록시 `Distributed` 테이블은 구성된 세그먼트 가중치를 반영하는 암시적 `rand()` 세그먼트 분할 키를 가집니다). 쿼리의 대상 세그먼트를 고정하려면 [`insert_shard_id`](/ko/reference/settings/session-settings/insert#insert_shard_id)를 설정하십시오. 암시적 키는 삽입되는 행을 분산하는 용도로만 사용됩니다. 읽기 시에는 테이블이 세그먼트 분할 키가 없는 `Distributed` 테이블처럼 동작합니다(특히 [`optimize_skip_unused_shards`](/ko/reference/settings/session-settings/optimize-skip#optimize_skip_unused_shards)와 [`force_optimize_skip_unused_shards`](/ko/reference/settings/session-settings/force-optimize#force_optimize_skip_unused_shards)는 이 키를 세그먼트 프루닝 키로 취급하지 않습니다).
+
+특히 메타데이터를 확인하는 세그먼트가 아닌 다른 세그먼트에만 존재하는 테이블은 `SHOW TABLES`나 `EXISTS TABLE`에 나타나지 않으며, 이름으로 조회하면 `UNKNOWN_TABLE`이 보고됩니다. 이러한 테이블에는 쿼리할 프록시 테이블이 없습니다. 메타데이터를 확인하는 세그먼트에는 있지만 다른 세그먼트에는 없는 테이블은 목록에 표시되지만, 테이블이 없는 세그먼트에서는 프록시 쿼리가 실패할 수 있습니다.
+
+`Cluster` 프록시 테이블은 동등하게 다시 실행할 수 있는 정의가 없으므로 `SHOW CREATE TABLE`을 실행하면 `THERE_IS_NO_QUERY` 오류가 보고됩니다. 여기에는 다음과 같은 경우가 포함됩니다.
+
+* 테이블이 현재 앞서 설명한 원격 레플리카 폴백을 통해 제공되는 경우(세그먼트의 로컬 레플리카에 데이터베이스나 테이블이 없는 경우). 전체 클러스터를 대상으로 하는 `Distributed` 테이블은 이러한 폴백을 수행하지 않으며, 폴백에 사용되는 클러스터의 부분 집합에는 별도의 이름이 없습니다.
+* 데이터베이스 클러스터 이름에 매크로가 포함된 경우. `Cluster`는 액세스할 때마다 매크로를 확장하지만 `Distributed`는 테이블을 생성할 때만 확장하므로, 매크로 표현식과 현재 확장된 값 중 어느 쪽을 사용하더라도 구성이 변경된 후에는 다르게 동작하는 테이블이 재생성됩니다.
+* 구성 다시 로드로 단일 세그먼트 클러스터가 다중 세그먼트 클러스터로 바뀔 수 있는 경우. 이때 실행 중인 프록시는 `INSERT` 행을 분산하기 위해 암시적 `rand()` 키를 갖게 되지만, 다시 로드 전에 직렬화된 테이블에는 키가 없습니다. 그렇다고 키를 무조건 직렬화해도 동등하지 않습니다. 독립형 `Distributed` 테이블이 그 키를 읽기 시 세그먼트 프루닝에 사용하게 되기 때문입니다. `CREATE TABLE`로는 삽입 전용 세그먼트 분할 키를 표현할 방법이 없습니다.
+
+## 참고 {#notes}
+
+* 이 엔진은 클러스터를 직접 조회하는 뷰입니다. `Cluster` 데이터베이스에서는 `CREATE TABLE`, `DROP TABLE`, `ALTER` 등의 DDL 문을 지원하지 않습니다. [`ON CLUSTER`](/ko/reference/statements/distributed-ddl) DDL 쿼리 등을 사용해 클러스터에서 직접 스키마를 관리하세요.
+* 접근 권한은 클러스터 정의에 지정된 사용자에 대해 원격 서버에서 적용됩니다. 클러스터가 서버 간 시크릿을 사용한다면 현재 사용자의 접근 권한이 적용됩니다. 로컬에서는 데이터베이스와 해당 테이블에 부여된 일반적인 권한이 적용됩니다.
+* 로컬 세그먼트의 테이블 표시 규칙, 테이블 목록의 완전성, 사용할 수 없는 클러스터에 대한 오류 보고, 프록시 데이터베이스의 연쇄 연결 등 `Remote` 데이터베이스 엔진의 동작 방식은 `Cluster` 엔진에도 적용됩니다. 자세한 내용은 `Remote` 엔진의 [참고](/ko/reference/engines/database-engines/remote#notes)를 확인하세요.
+
+## 예시 {#example}
+
+서버 구성에 정의된 `test_shard_localhost` 클러스터의 `default` 데이터베이스를 가리키는 `Cluster` 데이터베이스를 생성한 후 사용합니다:
+
+```sql
+CREATE DATABASE cluster_db
+ENGINE = Cluster('test_shard_localhost', 'default');
+```
+
+```sql
+SHOW TABLES FROM cluster_db;
+```
+
+```text
+┌─name─┐
+│ t    │
+└──────┘
+```
+
+```sql
+SELECT * FROM cluster_db.t;
+```

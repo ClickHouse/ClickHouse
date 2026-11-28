@@ -6,7 +6,6 @@
 -- off also for a `Distributed` table, whether the local shard is queried directly or over the network.
 -- The first case is the reproducer of https://github.com/ClickHouse/ClickHouse/issues/121913.
 
-SET enable_analyzer = 1;
 SET optimize_rewrite_like_perfect_affix = 0;
 
 DROP TABLE IF EXISTS t1_dist;

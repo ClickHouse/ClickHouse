@@ -4,6 +4,7 @@
             <local_disk>
                 <type>local_blob_storage</type>
                 <path>/test_tmp_data_in_cache_local_disk/</path>
+                <persistent_removal_log>true</persistent_removal_log>
             </local_disk>
 
             <tiny_local_cache>
