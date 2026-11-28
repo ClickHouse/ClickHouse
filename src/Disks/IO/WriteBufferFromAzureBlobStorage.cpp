@@ -126,6 +126,7 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
 
 void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost)
 {
+    num_tries = std::max<size_t>(num_tries, 1);
     size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t i = 0; i < num_tries; ++i)
     {
