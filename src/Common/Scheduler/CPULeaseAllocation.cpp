@@ -544,6 +544,11 @@ void CPULeaseAllocation::failed(const std::exception_ptr & ptr)
     requests.scheduled();
     scheduled_increment.sub();
     wait_timer.reset();
+    failImpl(lock, ptr);
+}
+
+void CPULeaseAllocation::failImpl(std::unique_lock<std::mutex> &, const std::exception_ptr & ptr)
+{
     exception = ptr;
 
     // Notify all preempted threads to wake and throw an exception
@@ -560,7 +565,15 @@ void CPULeaseAllocation::grant()
     requests.scheduled();
     scheduled_increment.sub();
     wait_timer.reset();
-    grantImpl(lock);
+    try
+    {
+        grantImpl(lock);
+    }
+    catch (...)
+    {
+        // The next request's queue may be purged by another resource's scheduler thread; fail the allocation instead of throwing
+        failImpl(lock, std::current_exception());
+    }
 }
 
 void CPULeaseAllocation::grantImpl(std::unique_lock<std::mutex> & lock)

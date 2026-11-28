@@ -57,10 +57,10 @@ public:
 
         // Take ownership
         chassert(child->parent == nullptr);
-        if (auto [it, inserted] = children.emplace(child->basename, child); !inserted)
+        if (auto [it, inserted] = children.emplace(child.get(), child); !inserted)
             throw Exception(
                 ErrorCodes::INVALID_SCHEDULER_NODE,
-                "Can't add another child with the same path: {}",
+                "Can't add the same scheduler node twice: {}",
                 it->second->getPath());
 
         // Attach
@@ -73,7 +73,7 @@ public:
 
     void removeChild(ISchedulerNode * child) override
     {
-        if (auto iter = children.find(child->basename); iter != children.end())
+        if (auto iter = children.find(child); iter != children.end())
         {
             SchedulerNodePtr removed = iter->second;
 
@@ -101,8 +101,11 @@ public:
 
     ISchedulerNode * getChild(const String & child_name) override
     {
-        if (auto iter = children.find(child_name); iter != children.end())
-            return iter->second.get();
+        for (const auto & [node, _] : children)
+        {
+            if (node->basename == child_name)
+                return node;
+        }
         return nullptr;
     }
 
@@ -167,7 +170,8 @@ private:
     std::vector<Item> items;
 
     /// All children with ownership
-    std::unordered_map<String, TimeSharedNodePtr> children; // basename -> child
+    /// Keyed by node, not by name: a workload may have the same name as an internal node next to it (e.g. `p1_fair`)
+    std::unordered_map<ISchedulerNode *, TimeSharedNodePtr> children;
 };
 
 }
